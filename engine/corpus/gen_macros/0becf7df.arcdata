@@ -1,0 +1,13 @@
+;; 0becf7df
+
+(param &corner DiagDir (DIAG_TL))
+(param &key_dim (Axis number) (AXIS_V 2) (AXIS_H 2))
+(param &axis Axis (AXIS_H))
+(param &src (Position Ident)
+  (grid
+    (0 1)
+    (2 3)))
+(param &dst (Position Ident)
+  (grid
+    (1 0)
+    (3 2)))

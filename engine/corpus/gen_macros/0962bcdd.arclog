@@ -1,0 +1,227 @@
+;; 0962bcdd
+
+(DET &bg DominantColor)
+
+(RULE &arm
+  (input *P)
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (input (:P Q) *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &marker
+  (input *P (:Col *C_center))
+  (&arm P (:Col *C_arm))
+  (ALL ((dir_elem *D))
+       ((&arm P D (:Col C_arm)))))
+
+(RULE &arm_dir
+  (&marker (:P *Key))
+  (dir_elem *D))
+
+(RULE &arm_dir_ray
+  (&arm_dir *Key *D))
+
+(RULE &arm_node
+  (&arm_dir *Key)
+  (input *P))
+
+(RULE &arm_source
+  (&marker (:P *Key)))
+
+;; One cast per kind, keyed by the marker cell.
+(INIT &arm2 Distance
+  (key ((&arm_source (:Key ^Ky))
+        (&arm_dir_ray (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&arm_source (:Key Ky))
+           (&arm_dir_ray (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P Ky) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A Ky) (:B V_m1) (:C *A2))
+           (&arm_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&arm_node (:Key Ky) (:P Q)))
+          ((&arm_source (:Key Ky))
+           (&arm_dir_ray (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A Ky) (:B V_m12) (:C Q))
+           (&arm_node (:Key Ky) (:P Q))
+           (= A2 Ky))
+          ((&arm_source (:Key Ky))
+           (&arm_dir_ray (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P Ky) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A Ky) (:B V_m13) (:C A2))
+           (&arm_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&arm_node (:Key Ky) (:P Q)))))
+    (source ((:n Ky))
+      (&arm_source (:Key Ky))
+      (&arm_dir_ray (:Key Ky) D))))
+
+(RULE &arm_ray
+  (&arm2.distance (:key (:Ky *Key) *D (:Ky *Origin)) (:n *P) *K))
+
+(RULE &arm_end
+  (&arm_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&arm_ray Key (:P Q) D Origin)))
+
+(RULE &diag_dir
+  (&marker (:P *Key))
+  (diag_dir_elem *D))
+
+(RULE &diag_dir_ray
+  (&diag_dir *Key *D))
+
+(RULE &diag_node
+  (&diag_dir *Key)
+  (input *P))
+
+(RULE &diag_source
+  (&marker (:P *Key)))
+
+(INIT &diag Distance
+  (key ((&diag_source (:Key ^Ky))
+        (&diag_dir_ray (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&diag_source (:Key Ky))
+           (&diag_dir_ray (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P Ky) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A Ky) (:B V_m1) (:C *A2))
+           (&diag_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&diag_node (:Key Ky) (:P Q)))
+          ((&diag_source (:Key Ky))
+           (&diag_dir_ray (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A Ky) (:B V_m12) (:C Q))
+           (&diag_node (:Key Ky) (:P Q))
+           (= A2 Ky))
+          ((&diag_source (:Key Ky))
+           (&diag_dir_ray (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P Ky) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A Ky) (:B V_m13) (:C A2))
+           (&diag_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&diag_node (:Key Ky) (:P Q)))))
+    (source ((:n Ky))
+      (&diag_source (:Key Ky))
+      (&diag_dir_ray (:Key Ky) D))))
+
+(RULE &diag_ray
+  (&diag.distance (:key (:Ky *Key) *D (:Ky *Origin)) (:n *P) *K))
+
+(RULE &diag_end
+  (&diag_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&diag_ray Key (:P Q) D Origin)))
+
+(DET &radius SepThickness)
+
+(RULE &arm_cell
+  (&marker (:P *Key))
+  (input *P))
+
+(RULE &diag_cell
+  (&marker (:P *Key))
+  (input *P))
+
+(RULE &paint
+  (&radius (:G *R))
+  (OR ((&arm_ray (:Key *Pm) *P *K)
+       (&arm_cell (:Key Pm) P)
+       (&marker (:P Pm) (:C_arm *Col)))
+      ((&diag_ray (:Key Pm) P K)
+       (&diag_cell (:Key Pm) P)
+       (&marker (:P Pm) (:C_center Col))))
+  (!= K 0)
+  (<= K R))
+
+(ALTS $choice "how the marker's growth is drawn" $Ray
+  (ALT $Lookup
+    (DET &comps_steps
+      (OR ((dir_elem *D)
+           (step_offset D (:V *Delta)))
+          ((diag_dir_elem (:D *D2))
+           (step_offset (:D D2) (:V Delta)))))
+
+    (DET &star
+      (ex_output *E *P *Col)
+      (NOT (&bg (:C Col))))
+
+    (INIT &comps Quotient
+      (edge ((:a (:Key E) P) (:b (:Key E) (:P P3)))
+        (OR ((&star *E *P)
+             (&comps_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P3))
+             (&star E (:P P3)))
+            ((&star E P)
+             (= P3 P)))))
+
+    (DET &comps_component
+      (&comps.class (:a *Key *P) *Id))
+
+    (DET &star_marker
+      (&marker *E *P *C_center *C_arm)
+      (&comps_component (:Key E) P *Id))
+
+    (DET &star_cell
+      (&comps_component (:Key *E) *P *Id)
+      (&star E P *Col)
+      (&star_marker E Id (:P *Pm))
+      (relative (:Base Pm) (:X P) (:X_rel *Delta)))
+
+    (DET &template_arm
+      (&star_marker *E *Id (:C_arm *Ca))
+      (&star_cell E Id *Delta (:Col Ca)))
+
+    (DET &template_center
+      (&star_marker *E *Id (:C_center *Cc))
+      (&star_cell E Id *Delta (:Col Cc)))
+
+    (RULE &paint
+      (&marker (:P *C) (:C_center *Cc) (:C_arm *Ca))
+      (OR ((&template_arm (:Delta *V))
+           (= *Col Ca))
+          ((&template_center (:Delta V))
+           (= Col Cc)))
+      (compose (:A C) (:B V) (:C *P))
+      (input P))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

@@ -1,0 +1,42 @@
+;; 1d398264
+
+(DET &bg DominantColor)
+
+(RULE &block
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &border Boundary
+  (cell (P)
+    (&block *P))
+  (dir (D)
+    (dir8_elem *D)))
+
+(RULE &center
+  (&block *P)
+  (NOT (&border.boundary P)))
+
+;; Each cell around the center casts along the direction that reaches it.
+(INIT &burst Ray
+  (key ((dir8_elem ^D))
+    (source (P)
+      (&center (:P *C))
+      (neighbor (:P C) D (:Q *P))))
+  (node (P)
+    (input *P)))
+
+(RULE &burst_cell
+  (input *P)
+  (dir8_elem (:D *Key)))
+
+(RULE &painted
+  (&burst.ray (:key (:D *Ky)) *P *K (:Origin *Src))
+  (&burst_cell (:Key Ky) P)
+  (!= K 0)
+  (input (:P Src) *Col))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&painted P *Col))
+      ((NOT (&painted P))
+       (= Col Col_in))))

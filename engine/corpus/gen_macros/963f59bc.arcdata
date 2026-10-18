@@ -1,0 +1,4 @@
+;; 963f59bc
+
+(param &bg Color (0))
+(param &shape Color (1))

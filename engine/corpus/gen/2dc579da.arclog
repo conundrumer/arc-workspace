@@ -1,0 +1,62 @@
+;; 2dc579da
+
+(DET &divisor SepTileCount)
+
+(DET &gap SepThickness)
+
+(INIT &tile_cell_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (parts (A N)
+    (axis_elem *A)
+    (&divisor *N))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap *G)))
+
+(RULE &tile_cell
+  (input (:P *P_grid) *Col)
+  (&tile_cell_division.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(INIT &tile_color Singleton
+  (key ((&tile_cell ^P_tile *Col))
+    (member ((:v Col))
+      (&tile_cell P_tile *Col))))
+
+(RULE &special
+  (&tile_color.plural (:key *P_tile)))
+
+(ALTS $choice "what makes the quadrant special" $Clash
+  (ALT $Ink
+    (INIT &common_count Cardinality
+      (key ((input (:P *P_grid) ^Col))
+        (member ((:m P_grid))
+          (input (:P *P_grid) Col))))
+
+    (INIT &common Order
+      (member ((:t Col))
+        (&common_count.size (:key *Col)))
+      (score ((:t Col) (:S N))
+        (&common_count.size (:key *Col) *N)))
+
+    (RULE &special
+      (&tile_cell *P_tile *Col)
+      (NOT (&common.maximal (:t Col)))))
+  (ALT $Odd
+    (RULE &tile
+      (&tile_cell *P_tile))
+
+    (RULE &differs
+      (&tile_cell *P_tile *P_intile *Col)
+      (&tile_cell (:P_tile *P_tile2) P_intile (:Col *Col2))
+      (!= Col Col2))
+
+    (RULE &special
+      (&tile *P_tile)
+      (ALL ((&tile (:P_tile *P_tile2))
+            (!= P_tile P_tile2))
+           ((&differs P_tile P_tile2))))))
+
+(RULE &output
+  (&special *P_tile)
+  (&tile_cell P_tile (:P_intile *P) *Col))

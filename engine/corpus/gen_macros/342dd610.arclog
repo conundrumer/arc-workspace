@@ -1,0 +1,54 @@
+;; 342dd610
+
+(DET &bg DominantColor)
+
+(DET &ink
+  (ex_input *E *P (:Col *C))
+  (NOT (&bg C)))
+
+;; Seat each color's ink among its output's cells, color for color.
+(INIT &occ Occurrences
+  (key ((OR ((&ink ^E (:P *P_in) (:C ^Col)))
+            ((&ink E (:C Col))
+             (ex_output E (:P *P_out) (:Col *Col2)))))
+    (cell ((:P P_out) (:v Col2))
+      (&ink E (:C Col))
+      (ex_output E (:P *P_out) (:Col *Col2)))
+    (shape ((:P P_in) (:v Col))
+      (&ink E (:P *P_in) (:C Col)))))
+
+(DET &broken
+  (&occ.occurrence (:key (:Col *C)) (:P *Delta))
+  (&ink *E C)
+  (ex_output E)
+  (NOT (&occ.occurrence (:key E (:Col C)) (:P Delta))))
+
+(DET &move
+  (&occ.occurrence (:key (:Col *C)) (:P *Delta))
+  (NOT (&broken C Delta))
+  (dir_elem *D)
+  (opposite D (:Opp *O_m1))
+  (margin (:B Delta) D (:K *K1))
+  (margin (:B Delta) (:D O_m1) *K)
+  (< K1 K)
+  (dir8_opposite D (:D2 *O_m2))
+  (edge_inset (:D O_m2) K (:B *B1_m3))
+  (edge_inset D K (:B *I_m5))
+  (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+  (compose (:A B1_m3) (:B B2_m4) (:C Delta)))
+
+(RULE &moved
+  (input (:P *P_in) *Col)
+  (&move (:C Col) *D *K)
+  (dir8_opposite D (:D2 *O_m2))
+  (edge_inset (:D O_m2) K (:B *B1_m3))
+  (edge_inset D K (:B *I_m5))
+  (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+  (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+  (compose (:A P_in) (:B V_m1) (:C *P)))
+
+(RULE &output
+  (OR ((&moved *P *Col))
+      ((input P)
+       (NOT (&moved P))
+       (&bg (:C Col)))))

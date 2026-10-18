@@ -1,0 +1,4 @@
+;; 2a5f8217
+
+(param &bg Color (0))
+(param &blank Color (1))

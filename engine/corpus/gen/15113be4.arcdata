@@ -1,0 +1,8 @@
+;; 15113be4
+
+(param &bg Color (0))
+(param &ink Color (1))
+(param &sep Color (4))
+(param &gap number (1))
+(param &cell_count number (6))
+(param &dim number (3))

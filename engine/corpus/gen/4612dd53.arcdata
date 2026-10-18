@@ -1,0 +1,5 @@
+;; 4612dd53
+
+(param &bg Color (0))
+(param &fill Color (2))
+(param &min_marks number (4))

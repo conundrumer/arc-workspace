@@ -1,0 +1,39 @@
+;; 9caf5b84
+
+(DET &mark AnyOutNewColor)
+
+(DET &keep_n TileCount)
+
+(INIT &color_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &by_count Order
+  (member ((:t Col))
+    (&color_count.size (:key *Col)))
+  (before ((:a Col) (:b Col2))
+    (&color_count.size (:key *Col) *N)
+    (&color_count.size (:key (:Col *Col2)) (:N *N2))
+    (< N N2)))
+
+(RULE &survives
+  (&by_count.dual_rank (:t *Col) *R)
+  (&keep_n (:N *K))
+  (< R K))
+
+(ALTS $choice "where the cut between kept and marked colors sits" $Keep
+  (ALT $Drop
+    (DET &drop_n NumberDomain)
+
+    (RULE &survives
+      (&by_count.rank (:t *Col) *R)
+      (&drop_n (:N *K))
+      (>= R K))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&survives Col))
+      ((input P (:Col *C0))
+       (NOT (&survives (:Col C0)))
+       (&mark (:C Col)))))

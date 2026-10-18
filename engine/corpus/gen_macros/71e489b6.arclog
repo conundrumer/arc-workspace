@@ -1,0 +1,94 @@
+;; 71e489b6
+
+(RULE &cluster_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &ground SharedColor)
+
+(RULE &figure
+  (input *P (:Col *C))
+  (NOT (&ground C)))
+
+(INIT &rim Boundary
+  (cell (P)
+    (&figure *P)))
+
+(RULE &figure_nbr
+  (&figure *P)
+  (dir_elem *D)
+  (NOT (&rim.exposed P D)))
+
+(RULE &ground2
+  (input *P)
+  (ALL ((&figure_nbr P (:D *D1))
+        (&figure_nbr P (:D *D2)))
+       ((= D1 D2))))
+
+;; The 2x2 square a solid cell lies in.
+;; TODO no-det-plan: &square: the plan gives no verdict
+(DET &square)
+
+;; The 2x2 blocks of ground.
+(INIT &block Occurrences
+  (cell (P)
+    (&ground2 *P))
+  (shape ((:P S))
+    (&square (:P *S))))
+
+(RULE &solid
+  (&block.occurrence (:P *M))
+  (&square (:P *S))
+  (compose (:A M) (:B S) (:C *P)))
+
+;; The clusters of thin ground.
+(INIT &cluster Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&ground2 *P)
+         (NOT (&solid P))
+         (&cluster_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ground2 (:P P3))
+         (NOT (&solid (:P P3))))
+        ((&ground2 P)
+         (NOT (&solid P))
+         (= P3 P)))))
+
+(RULE &cluster_component
+  (&cluster.class (:a *P) *Id))
+
+(DET &halo AnyOutNewColor)
+
+(RULE &anchor
+  (&cluster_component *P *Id)
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&solid (:P Q)))
+
+(RULE &hole
+  (input *P (:Col *C))
+  (&ground C)
+  (&cluster_component P *Id)
+  (ALL ((&anchor Id (:Q *Q1))
+        (&anchor Id (:Q *Q2)))
+       ((= Q1 Q2))))
+
+(RULE &halo2
+  (&hole (:P *Q))
+  (dir8_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A Q) (:B V_m1) (:C *P))
+  (input P)
+  (NOT (&hole P)))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&halo2 P)
+       (&halo (:C *Col)))
+      ((NOT (&halo2 P))
+       (&ground2 P)
+       (&ground (:C Col)))
+      ((NOT (&halo2 P))
+       (NOT (&ground2 P))
+       (= Col C_in))))

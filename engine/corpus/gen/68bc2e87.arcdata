@@ -1,0 +1,4 @@
+;; 68bc2e87
+
+(param &bg Color (8))
+(param &order_dir Dir (DIR_T))

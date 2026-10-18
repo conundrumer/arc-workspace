@@ -1,0 +1,98 @@
+;; ed74f2f2
+
+(DET &bg DominantColor)
+
+(DET &target_tile PositionDomain)
+
+(DET &border SepThickness)
+
+(DET &decompose_tiles Division)
+
+(RULE &decompose
+  (&decompose_tiles (:P *P_frame) (:P_outer *P_tile) (:P_inner *P_intile))
+  (&border (:G *K2))
+  (uniform_inset (:K K2) *B)
+  (compose (:A P_frame) B (:C *P_grid)))
+
+(DET &key_tile
+  (&decompose (:P_tile *P))
+  (NOT (&target_tile P)))
+
+(RULE &key_cell
+  (&decompose *P_grid *P_tile *P_intile)
+  (&key_tile (:P P_tile)))
+
+(RULE &decompose2
+  (&decompose *P_grid *P_tile *P_intile))
+
+(DET &key_content
+  (ex_input *E (:P *P_grid) *Col)
+  (&key_cell P_grid *P_intile))
+
+;; Examples whose key tiles agree share an entry.
+(INIT &same Inclusion
+  (pattern ((:pattern E) (:m (:P P_intile) Col))
+    (&key_content *E *P_intile *Col))
+  (observed ((:observed E) (:m (:P P_intile) Col))
+    (&key_content *E *P_intile *Col)))
+
+(INIT &entry Quotient
+  (equivalent ((:a E) (:b E2))
+    (&same.equal (:observed *E) (:pattern *E2))))
+
+(DET &key_member
+  (&entry.class (:a *E) *Id)
+  (&key_content E *P_intile *Col))
+
+(DET &key_color
+  (&entry.class (:a *E) *Id)
+  (ex_output E *Col)
+  (NOT (&bg (:C Col))))
+
+(ALTS $choice "how the arrangement is decomposed; every grid of the task is 5×9, so the decomposition reads two ways. The division by tile size gets no case: &key_tile is a position of the tile arrangement, so a grid the two divisions read differently leaves the arrangement without that tile, and the size reading emits nothing" $Table
+  (ALT $Count
+    (DET &gap SepThickness)
+
+    (DET &arr_dim SepTileCountAxis)
+
+    (RULE &inner_cell
+      (input (:P *P_grid))
+      (&border (:G *K))
+      (uniform_inset K *B)
+      (inside (:A P_grid) B)
+      (relative (:Base B) (:X P_grid) (:X_rel *P_inner)))
+
+    (INIT &div Division
+      (cell ((:P P_inner))
+        (&inner_cell *P_inner))
+      (parts (A N)
+        (&arr_dim *A *N))
+      (gap (A G)
+        (&arr_dim *A *N)
+        (&gap *G)))
+
+    (RULE &decompose2
+      (&inner_cell *P_grid *P_inner)
+      (&div.tile (:P P_inner) (:P_outer *P_tile) (:P_inner *P_intile)))))
+
+;; Key tile content → color.
+(INIT &key_match Inclusion
+  (pattern ((:pattern Id) (:m (:P P_intile) Col))
+    (&key_member *Id *P_intile *Col))
+  (observed ((:m (:P P_intile) Col))
+    (input (:P *P_grid) *Col)
+    (&decompose2 P_grid *P_tile *P_intile)
+    (&key_tile (:P P_tile))))
+
+(RULE &target
+  (input (:P *P_grid) *Col)
+  (&decompose2 P_grid *P_tile *P_intile)
+  (&target_tile (:P P_tile)))
+
+(RULE &output
+  (OR ((&target (:P_intile *P) (:Col *C))
+       (NOT (&bg C))
+       (&key_match.equal (:pattern *Id))
+       (&key_color Id *Col))
+      ((&target (:P_intile P) Col)
+       (&bg (:C Col)))))

@@ -1,0 +1,118 @@
+;; 95a58926
+
+(RULE &cell_split_split1
+  (input (:P *P_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P_) (:X_rel *P_across_)))
+
+(DET &bg DominantColor)
+
+;; The color the mesh is drawn in.
+(DET &mesh SharedColor)
+
+(RULE &cell_split
+  (input *P *Col)
+  (axis_elem *A)
+  (&cell_split_split1 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:P_across_ *P_across)))
+
+(RULE &line
+  (&cell_split *A *P_across))
+
+(RULE &accent
+  (input (:Col *C))
+  (NOT (&bg C))
+  (NOT (&mesh C)))
+
+(RULE &gapped
+  (&cell_split *A *Col *P_across)
+  (&bg (:C Col)))
+
+(RULE &located
+  (&line *A *P_across)
+  (NOT (&gapped A P_across)))
+
+(ALTS $l "what marks a line as carrying mesh" $Whole
+  (ALT $Predominant
+    (INIT &line_mode_count Cardinality
+      (key ((&cell_split ^A *P ^Col ^P_across))
+        (member ((:m P))
+          (&cell_split A *P Col P_across))))
+
+    (INIT &line_mode Order
+      (key ((&line_mode_count.size (:key ^A ^P_across *Col)))
+        (member ((:t Col))
+          (&line_mode_count.size (:key A P_across *Col)))
+        (score ((:t Col) (:S N))
+          (&line_mode_count.size (:key A P_across *Col) *N))))
+
+    (RULE &located
+      (&line_mode.maximal (:key *A *P_across) (:t *Col))
+      (&mesh (:C Col)))))
+
+(ALTS $d "which lines the mesh holds" $AsFound
+  (ALT $Lattice
+    ;; The corner the lattice runs from.
+    (DET &anchor DiagDirDomain)
+
+    ;; How many lines separate two tiles of the lattice.
+    (DET &sep_width DivisorRatio)
+
+    (RULE &anchor_dist
+      (&line *A *P_across)
+      (&anchor (:D *Diag))
+      (corner_dir (:C Diag) A (:D *D1_m1))
+      (perp A (:A2 *A2_m2))
+      (corner_dir (:C Diag) (:A A2_m2) *D)
+      (margin (:B P_across) D *K))
+
+    ;; The lattice's tile size is the anchor's distance to the nearest located
+    ;; line.
+    (INIT &lead Order
+      (key ((&located ^A *P_across)
+            (&anchor_dist A P_across *K))
+        (member ((:t K))
+          (&located A *P_across)
+          (&anchor_dist A P_across *K))
+        (score ((:t K) (:S K))
+          (&located A *P_across)
+          (&anchor_dist A P_across *K))))
+
+    (RULE &in_tile
+      (&anchor_dist *A *P_across *K)
+      (&lead.minimal (:key A) (:t *K_tile))
+      (&sep_width (:K *G))
+      (divide (:T K) (:Side K_tile) (:Gap G)))
+
+    (RULE &mesh_line
+      (&line *A *P_across)
+      (NOT (&in_tile A P_across)))))
+
+(RULE &mesh_line
+  (&located *A *P_across))
+
+(RULE &on_mesh
+  (&cell_split *A *P *P_across)
+  (&mesh_line A P_across))
+
+(RULE &crossing
+  (&on_mesh *P *A)
+  (&on_mesh P (:A *A2))
+  (perp A A2))
+
+(RULE &output
+  (input *P)
+  (OR ((&crossing P)
+       (&accent (:C *Col)))
+      ((&on_mesh P)
+       (NOT (&crossing P))
+       (&mesh (:C Col)))
+      ((NOT (&on_mesh P))
+       (&bg (:C Col)))))

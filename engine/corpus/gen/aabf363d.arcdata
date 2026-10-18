@@ -1,0 +1,5 @@
+;; aabf363d
+
+(param &bg Color (0))
+(param &marker_corner DiagDir (DIAG_BL))
+(param &marker_count number (1))

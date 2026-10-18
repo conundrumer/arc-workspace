@@ -1,0 +1,197 @@
+;; 17b866bd
+
+(RULE &blocks_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &block TileCount)
+
+(RULE &gap
+  (&block (:N *K)))
+
+(RULE &lattice_division_cell
+  (input *P)
+  (axis_elem (:A *Key)))
+
+(DET &line DivisorRatio)
+
+(RULE &line2
+  (&line *K))
+
+(RULE &lattice_division_gap_held
+  (axis_elem *A)
+  (&gap (:K *G)))
+
+(RULE &lattice_division_axis_split1
+  (&lattice_division_cell (:Key *Ky) (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+  (relative (:Base Pi_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &lattice_division_side_held
+  (axis_elem *A)
+  (&line2 (:K *W)))
+
+(RULE &lattice_division_axis
+  (OR ((&lattice_division_cell *Key *P)
+       (axis_elem *A)
+       (OR ((!= A Key))
+           ((NOT (&lattice_division_side_held (:A Key)))))
+       (&lattice_division_axis_split1 (:P_ P) (:A_ A) (:Pi_ *P_inner) (:X_m1_ *X_m1))
+       (relative (:Base P_inner) (:X P_inner) (:X_rel *P_outer)))
+      ((&lattice_division_cell Key P)
+       (axis_elem (:A Key))
+       (&line2 (:K *W))
+       (&gap (:K *G))
+       (axis_of *D (:A Key))
+       (opposite D (:Opp *O))
+       (margin (:B P) D (:K *T))
+       (margin (:B P) (:D O) (:K *T2))
+       (divide T (:Side W) (:Gap G) (:Part *I) (:Remainder *R))
+       (divide (:T T2) (:Side W) (:Gap G) (:Part *I2) (:Remainder *R2))
+       (opposite D (:Opp *O_m1))
+       (edge_inset D (:K I) (:B *B1_m2))
+       (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+       (compose (:A B1_m2) (:B B2_m3) (:C P_outer))
+       (opposite D (:Opp *O_m4))
+       (edge_inset D (:K R) (:B *B1_m5))
+       (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+       (compose (:A B1_m5) (:B B2_m6) (:C P_inner))
+       (frame_extent (:P P_inner) (:A Key) (:N W))
+       (= A Key))
+      ((&lattice_division_cell Key P)
+       (axis_elem (:A Key))
+       (&line2 (:K *W2))
+       (OR ((!= Key Key))
+           ((NOT (&lattice_division_gap_held (:A Key)))))
+       (axis_of (:D *D2) (:A Key))
+       (opposite (:D D2) (:Opp *O2))
+       (margin (:B P) (:D D2) (:K *T3))
+       (margin (:B P) (:D O2) (:K *T22))
+       (divide (:T T3) (:Side W2) (:Gap 0) (:Part *I3) (:Remainder *R3))
+       (divide (:T T22) (:Side W2) (:Gap 0) (:Part *I22) (:Remainder *R22))
+       (opposite (:D D2) (:Opp *O_m12))
+       (edge_inset (:D D2) (:K I3) (:B *B1_m22))
+       (edge_inset (:D O_m12) (:K I22) (:B *B2_m32))
+       (compose (:A B1_m22) (:B B2_m32) (:C P_outer))
+       (opposite (:D D2) (:Opp *O_m42))
+       (edge_inset (:D D2) (:K R3) (:B *B1_m52))
+       (edge_inset (:D O_m42) (:K R22) (:B *B2_m62))
+       (compose (:A B1_m52) (:B B2_m62) (:C P_inner))
+       (frame_extent (:P P_inner) (:A Key) (:N W2))
+       (= A Key))))
+
+(RULE &lattice_division_tile
+  (&lattice_division_axis *Key *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+  (perp (:A A1) *A2)
+  (&lattice_division_axis Key P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+  (compose (:A Po1) (:B Po2) (:C *P_outer))
+  (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+(RULE &lattice
+  (input *P)
+  (&lattice_division_tile (:Key *A) P))
+
+(RULE &blocks_node
+  (input *P)
+  (NOT (&lattice P)))
+
+;; Blocks: connected components of off-lattice cells.
+(INIT &blocks Quotient
+  (edge ((:a P) (:b P2))
+    (OR ((&blocks_node *P)
+         (&blocks_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&blocks_node (:P P2)))
+        ((&blocks_node P)
+         (= P2 P)))))
+
+(RULE &blocks_component
+  (&blocks.class (:a *P) *Id))
+
+(DET &node SharedColor)
+
+(DET &corner DiagDirDomain)
+
+(DET &hole SharedColor)
+
+(RULE &junction
+  (&lattice *P *A)
+  (perp A *A2)
+  (&lattice P (:A A2)))
+
+(RULE &node2
+  (&node (:C *Col)))
+
+(RULE &mark
+  (&junction *P)
+  (input P *Col)
+  (NOT (&node2 Col)))
+
+(RULE &label
+  (&blocks_component *P *Id))
+
+(RULE &mark_block
+  (&mark *P)
+  (diag_dir_elem (:D *Diag))
+  (&line2 (:K *W))
+  (dir8_opposite (:D Diag) (:D2 *O_m2))
+  (edge_inset (:D O_m2) (:K W) (:B *B1_m3))
+  (edge_inset (:D Diag) (:K W) (:B *I_m5))
+  (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+  (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+  (compose (:A P) (:B V_m1) (:C *P0))
+  (&label (:P P0) *Id))
+
+(RULE &painted
+  (&mark *P *Col)
+  (&corner (:D *Diag))
+  (&mark_block P Diag *Id))
+
+(RULE &fill
+  (&painted *Id *Col)
+  (&label *P Id)
+  (input P (:Col *Hole))
+  (&hole (:C Hole)))
+
+(ALTS $choice "what the paint covers" $Holes
+  (ALT $Stamp
+    (INIT &bbox BoundingBox
+      (key ((&label *P ^Id))
+        (cell (P)
+          (&label *P Id))))
+
+    (RULE &box
+      (&bbox.box (:key *Id) *B))
+
+    (DET &repaint
+      (ex_output *E *P *Col)
+      (ex_input E P (:Col *Col2))
+      (!= Col Col2)
+      (&label E P *Id))
+
+    (DET &stamp
+      (&repaint *E (:P *P2) *Id)
+      (&box E Id *B)
+      (relative (:Base B) (:X P2) (:X_rel *P)))
+
+    (RULE &fill
+      (&painted *Id *Col)
+      (&box Id *B)
+      (&stamp (:P *P_inner))
+      (compose (:A B) (:B P_inner) (:C *P)))))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((&mark P)
+       (&node (:C Col)))
+      ((input P Col)
+       (NOT (&mark P))
+       (NOT (&fill P)))))

@@ -1,0 +1,228 @@
+;; 9841fdad
+
+(RULE &item_split1
+  (input (:P *P_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (&item_split1 (:P_ P) (:A_ A) (:L_ ^L) (:X_m1_ *X_m1)))
+    (member ((:v Col))
+      (input *P *Col)
+      (axis_elem A)
+      (&item_split1 (:P_ P) (:A_ A) (:L_ L) (:X_m1_ *X_m1)))))
+
+(RULE &cut_divider
+  (&line_color.value (:key *A *L)))
+
+(RULE &cut_on_divider
+  (input *P)
+  (&cut_divider *A *L)
+  (axis_of *D A)
+  (margin (:B P) D (:K *K_m1))
+  (margin (:B L) D (:K K_m1)))
+
+;; A uniform line spans the grid, so it divides panels rather than sit in one.
+(INIT &cut_rank Order
+  (key ((OR ((&cut_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (dir_elem D)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&cut_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&cut_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (dir_elem D)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (dir_elem D)
+      (margin (:B P) D *K))))
+
+(RULE &cut_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&cut_on_divider P A))
+  (margin (:B P) D *K)
+  (&cut_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &cut_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&cut_part_idx *P D (:N *N1))
+  (&cut_part_idx P (:D D2) (:N *N2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K N1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+(RULE &cut_tile_of
+  (&cut_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&cut_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &rect_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &panel BoundingBox
+  (key ((&cut_tile_of *P ^P_tile))
+    (cell (P)
+      (&cut_tile_of *P P_tile))))
+
+(INIT &ground_count Cardinality
+  (key ((&panel.cell (:key ^P_tile) *P)
+        (input P ^Col))
+    (member ((:m P))
+      (&panel.cell (:key P_tile) *P)
+      (input P Col))))
+
+;; the color a panel is filled with
+(INIT &ground Order
+  (key ((&ground_count.size (:key ^P_tile *Col)))
+    (member ((:t Col))
+      (&ground_count.size (:key P_tile *Col)))
+    (score ((:t Col) (:S N))
+      (&ground_count.size (:key P_tile *Col) *N))))
+
+(INIT &rect Quotient
+  (edge ((:a P_tile Col P) (:b P_tile Col (:P P3)))
+    (OR ((&panel.cell (:key *P_tile) *P)
+         (input P *Col)
+         (NOT (&ground.maximal (:key P_tile) (:t Col)))
+         (&rect_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&panel.cell (:key P_tile) (:P P3))
+         (input (:P P3) Col))
+        ((&panel.cell (:key P_tile) P)
+         (input P Col)
+         (NOT (&ground.maximal (:key P_tile) (:t Col)))
+         (= P3 P)))))
+
+(RULE &rect_component
+  (&rect.class (:a *P_tile *Col *P) *Id))
+
+(RULE &panel_cell
+  (&panel.cell (:key *P_tile) *P)
+  (&panel.box (:key P_tile) *B)
+  (ALL ((&panel.cell (:key (:P_tile *P_tilem)) P)
+        (&panel.box (:key (:P_tile P_tilem)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &rect_cell
+  (&rect_component *P_tile *P *Id)
+  (&panel_cell P_tile P *P_inner))
+
+(INIT &rect_box BoundingBox
+  (key ((&rect_cell ^Id *P_inner))
+    (cell ((:P P_inner))
+      (&rect_cell Id *P_inner))))
+
+(RULE &rect_of
+  (&rect_component *P_tile *Col *Id))
+
+(RULE &attached
+  (&rect_box.box (:key *Id) *B)
+  (opposite *D (:Opp *O_m1))
+  (margin B D (:K *K1))
+  (margin B (:D O_m1) (:K *K2))
+  (<= K1 K2))
+
+(ALTS $choice "what attaches a rectangle to a side of its panel" $Nearer
+  (ALT $Extreme
+    ;; how deep each rectangle of a panel lies from each side of that panel
+    (INIT &depth Order
+      (key ((&rect_of *Id ^P_tile)
+            (&rect_box.box (:key Id) *B)
+            (dir_elem ^D)
+            (margin B D *K))
+        (member ((:t (:V Id) (:S K)))
+          (&rect_of *Id P_tile)
+          (&rect_box.box (:key Id) *B)
+          (dir_elem D)
+          (margin B D *K))
+        (score ((:t (:V Id) (:S K)) (:S K))
+          (&rect_of *Id P_tile)
+          (&rect_box.box (:key Id) *B)
+          (dir_elem D)
+          (margin B D *K))))
+
+    ;; the shallowest: no rectangle of the panel lies nearer that side
+    (RULE &attached
+      (&depth.minimal (:key *D) (:t (:V *Id))))))
+
+(RULE &anchor
+  (&attached *Id *D)
+  (opposite D (:Opp *D2))
+  (NOT (&attached Id (:D D2))))
+
+(RULE &seat_axis
+  (&panel_cell *P_tile *P *P_inner)
+  (&rect_of *Id (:P_tile *P_src))
+  (!= P_tile P_src)
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (OR ((&anchor Id D)
+       (&rect_cell Id (:P_inner *Q))
+       (margin (:B Q) D (:K *K_m1))
+       (margin (:B P_inner) D (:K K_m1)))
+      ((NOT (&anchor Id D))
+       (NOT (&anchor Id (:D D2)))
+       (&rect_box.box (:key Id) *B)
+       (axis_of (:D *D_m3) A)
+       (opposite (:D D_m3) (:Opp *O_m4))
+       (margin B (:D D_m3) (:K *K1_m5))
+       (margin B (:D O_m4) (:K *K2_m6))
+       (opposite (:D D_m3) (:Opp *O_m7))
+       (edge_inset (:D D_m3) (:K K1_m5) (:B *B1_m8))
+       (edge_inset (:D O_m7) (:K K2_m6) (:B *B2_m9))
+       (compose (:A B1_m8) (:B B2_m9) (:C *B_along))
+       (relative (:Base B_along) (:X B) (:X_rel *Across_m2))
+       (relative (:Base B_along) (:X P_inner) (:X_rel *R_m10))
+       (axis_of (:D *D1_m11) (:A *A1_m12))
+       (opposite (:D D1_m11) (:Opp *O1_m13))
+       (perp (:A A1_m12) (:A2 *A2_m14))
+       (axis_of (:D *D2_m15) (:A A2_m14))
+       (opposite (:D D2_m15) (:Opp *O2_m16))
+       (margin (:B R_m10) (:D D1_m11) (:K *K1_m17))
+       (>= K1_m17 0)
+       (margin (:B R_m10) (:D O1_m13) (:K *K2_m18))
+       (>= K2_m18 0)
+       (margin (:B R_m10) (:D D2_m15) (:K *K3_m19))
+       (>= K3_m19 0)
+       (margin (:B R_m10) (:D O2_m16) (:K *K4_m20))
+       (>= K4_m20 0))))
+
+(RULE &seated
+  (&seat_axis *Id *A *P)
+  (perp A *A2)
+  (&seat_axis Id (:A A2) P)
+  (&rect_of Id *Col))
+
+(RULE &output
+  (input *P (:Col *Col0))
+  (OR ((&seated P *Col))
+      ((NOT (&seated P))
+       (= Col Col0))))

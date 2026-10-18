@@ -1,0 +1,70 @@
+;; 7bb29440
+
+(RULE &blocks_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(INIT &blocks Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&blocks_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &blocks_component
+  (&blocks.class (:a *P) *Id))
+
+(DET &body ColorDomain)
+
+(DET &mark
+  (ex_input (:Col *C))
+  (NOT (&bg C))
+  (NOT (&body C)))
+
+(RULE &marked
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(ALTS $choice "what counts as one of those cells" $Marks
+  (ALT $Body
+    (RULE &marked
+      (input *P *Col)
+      (NOT (&body (:C Col))))))
+
+(INIT &marks Cardinality
+  (key ((&blocks_component ^Id))
+    (member ((:m P))
+      (&marked *P)
+      (&blocks_component P Id))
+    (domain ()
+      (&blocks_component Id))))
+
+(INIT &cleanest Order
+  (member ((:t (:V Id) (:S N)))
+    (&marks.size (:key *Id) *N))
+  (score ((:t (:V Id) (:S N)) (:S N))
+    (&marks.size (:key *Id) *N)))
+
+;; The kept block's box, which the output is cropped to.
+(INIT &crop_box BoundingBox
+  (cell (P)
+    (&cleanest.minimal (:t (:V *Id)))
+    (&blocks_component *P Id)))
+
+(RULE &output
+  (&crop_box.box *B)
+  (input (:P *P2) *Col)
+  (ALL ((input (:P P2) (:Col *Colm))
+        (&crop_box.box B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P2) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P2) (:X_rel *P)))

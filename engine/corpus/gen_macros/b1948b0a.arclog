@@ -1,0 +1,9 @@
+;; b1948b0a
+
+(DET &mapping ChangedPairs)
+
+(RULE &output
+  (OR ((input *P (:Col *Col_in))
+       (&mapping (:C_from Col_in) (:C_to *Col)))
+      ((input P Col)
+       (NOT (&mapping (:C_from Col))))))

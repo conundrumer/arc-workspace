@@ -1,0 +1,148 @@
+;; 62593bfd
+
+(RULE &blobs_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &blobs_node
+  (input *P (:Col *Key))
+  (NOT (&bg_mode.maximal (:t Key))))
+
+(INIT &blobs Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&blobs_node (:Key *Ky) *P)
+         (&blobs_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&blobs_node (:Key Ky) (:P P2)))
+        ((&blobs_node (:Key Ky) P)
+         (= P2 P)))))
+
+(RULE &blobs_component
+  (&blobs.class (:a *Key *P) *Id))
+
+;; Where a partnered blob goes.
+(DET &paired_dir DirDomain)
+
+(INIT &size Cardinality
+  (key ((&blobs_component *P ^Id))
+    (member ((:m P))
+      (&blobs_component *P Id))))
+
+(RULE &paired
+  (&size.size (:key *Id) *N)
+  (&size.size (:key (:Id *Id2)) N)
+  (!= Id Id2))
+
+(ALTS $choice "what makes two blobs partners" $Size
+  (ALT $Shape
+    (INIT &bbox BoundingBox
+      (key ((&blobs_component *P ^Id))
+        (cell (P)
+          (&blobs_component *P Id))))
+
+    (RULE &blob_inner
+      (&blobs_component *P *Id)
+      (&bbox.box (:key Id) *B)
+      (ALL ((&blobs_component P (:Id *Idm))
+            (&bbox.box (:key (:Id Idm)) B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+    ;; Each ordered pair of blobs, both seen from their own boxes.
+    (INIT &shape_map Agreement
+      (key ((OR ((&blob_inner ^Id *P_inner)
+                 (&blobs_component (:Id ^Id2))
+                 (!= Id Id2))
+                ((&blob_inner (:Id Id2) P_inner)
+                 (&blobs_component Id)
+                 (!= Id Id2))))
+        (source ((:i P_inner))
+          (&blob_inner Id *P_inner)
+          (&blobs_component (:Id Id2))
+          (!= Id Id2))
+        (target ((:i P_inner))
+          (&blob_inner (:Id Id2) *P_inner)
+          (&blobs_component Id)
+          (!= Id Id2))
+        (correspondence ((:m D) (:i P_inner) (:j Q))
+          (&blob_inner Id *P_inner)
+          (&blobs_component (:Id Id2))
+          (!= Id Id2)
+          (d4_elem *D)
+          (apply D (:P P_inner) (:P_out *Q)))))
+
+    (RULE &shape_map_src
+      (&blob_inner (:Id *A) (:P_inner *P))
+      (&blobs_component (:Id *B))
+      (!= A B))
+
+    (RULE &shape_map_dst
+      (&blob_inner (:Id *B) (:P_inner *P))
+      (&blobs_component (:Id *A))
+      (!= A B))
+
+    (RULE &onto
+      (&shape_map_src *A *B)
+      (d4_elem *D)
+      (NOT (&shape_map.mismatch (:key (:Id A) (:Id2 B)) (:m D)))
+      (ALL ((&shape_map_dst A B (:P *Q))
+            (d4_inverse D (:D_inv *D_back))
+            (apply (:D D_back) (:P Q) (:P_out *P)))
+           ((&shape_map_src A B P))))
+
+    (RULE &paired
+      (&onto (:A *Id)))))
+
+(RULE &dest
+  (&blobs_component *Id)
+  (&paired_dir (:D *D_paired))
+  (OR ((NOT (&paired Id))
+       (opposite (:D D_paired) (:Opp *D)))
+      ((&paired Id)
+       (= D D_paired))))
+
+;; The blob slides until it touches the destination edge.
+(INIT &slide Distance
+  (key ((&blobs_component *P ^Id)
+        (&dest Id *D)
+        (margin (:B P) D *K))
+    (source_distance (K)
+      (&blobs_component *P Id)
+      (&dest Id *D)
+      (margin (:B P) D *K))))
+
+(RULE &slide_dir
+  (&dest (:Id *Key) *D))
+
+(RULE &paint
+  (&blobs_component (:Key *Col) (:P *P2) *Id)
+  (&slide.distance (:key Id) *K)
+  (&slide_dir (:Key Id) *D)
+  (dir8_opposite D (:D2 *O_m1))
+  (edge_inset (:D O_m1) K (:B *B1_m2))
+  (edge_inset D K (:B *I_m4))
+  (relative (:Base I_m4) (:X 0) (:X_rel *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *V))
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (&bg_mode.maximal (:t Col))
+       (NOT (&paint P)))))

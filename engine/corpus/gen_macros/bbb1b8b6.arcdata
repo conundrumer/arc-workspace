@@ -1,0 +1,7 @@
+;; bbb1b8b6
+
+(param &bg Color (0))
+(param &base_dir Dir (DIR_L))
+(param &gap number (1))
+(param &tile_count number (2))
+(param &tile_size number (4))

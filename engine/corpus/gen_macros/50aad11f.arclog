@@ -1,0 +1,226 @@
+;; 50aad11f
+
+(DET &shape VanishedColor)
+
+(RULE &shapes_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &shapes Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (&shape (:C Col))
+         (&shapes_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (&shape (:C Col2)))
+        ((input P (:Col *Col3))
+         (&shape (:C Col3))
+         (= P3 P)))))
+
+(RULE &shapes_component
+  (&shapes.class (:a *P) *Id))
+
+(RULE &shape_cell
+  (&shapes_component *P *Id))
+
+(RULE &layout_axis
+  (perp *A (:A2 *A_across))
+  (ALL ((&shape_cell (:Id *Id1) (:P *P1))
+        (&shape_cell (:Id *Id2) (:P *P2))
+        (perp (:A A_across) (:A2 *A2_m1))
+        (axis_of (:D *D_m2) (:A A2_m1))
+        (margin (:B P1) (:D D_m2) (:K *K_m3))
+        (margin (:B P2) (:D D_m2) (:K K_m3)))
+       ((= Id1 Id2))))
+
+(RULE &before_split1
+  (&shape_cell *Id (:P *P_))
+  (&layout_axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_along_))
+  (relative (:Base P_along_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &before_split2
+  (&shape_cell (:Id *Id2) (:P *P2_))
+  (&layout_axis (:A *A2_))
+  (axis_of (:D *D_m1) (:A A2_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P2_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P2_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_along2_))
+  (relative (:Base P_along2_) (:X P2_) (:X_rel *X_m2_)))
+
+(RULE &elem_split1
+  (&shape_cell *Id (:P *P_))
+  (&layout_axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_along_))
+  (relative (:Base P_along_) (:X P_) (:X_rel *X_m1_)))
+
+(INIT &order Order
+  (key ((&layout_axis (:A ^A2))
+        (axis_of ^D (:A A2)))
+    (before ((:a Id) (:b Id2))
+      (&shape_cell *Id *P)
+      (&layout_axis *A)
+      (&before_split1 (:P_ P) (:A_ A) (:P_along_ *P_along) (:X_m1_ *X_m1))
+      (&shape_cell (:Id *Id2) (:P *P2))
+      (&layout_axis (:A *A22))
+      (&before_split2 (:P2_ P2) (:A2_ A22) (:P_along2_ *P_along2) (:X_m2_ *X_m2))
+      (!= Id Id2)
+      (margin (:B P_along) D (:K *K1))
+      (margin (:B P_along2) D (:K *K2))
+      (< K1 K2)))
+  (member ((:t Id))
+    (&shape_cell *Id *P)
+    (&layout_axis *A)
+    (&elem_split1 (:P_ P) (:A_ A) (:P_along_ *P_along) (:X_m1_ *X_m1))))
+
+(RULE &order_pos
+  (&order.rank (:key (:A2 *A) *D) (:t *M) (:R *R1))
+  (&order.dual_rank (:key (:A2 A) D) (:t M) (:R *R2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K R1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K R2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_pos)))
+
+(INIT &bbox BoundingBox
+  (key ((&shape_cell ^Id *P))
+    (cell (P)
+      (&shape_cell Id *P))))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&order_pos (:P_pos *P_tile)))
+  (inner ((:P P_intile))
+    (input (:P *P_grid_in))
+    (&bbox.box *B)
+    (ALL ((dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P_grid_in) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B) (:X P_grid_in) (:X_rel *P_intile))))
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&shape (:C Col))))
+
+(RULE &shape_color
+  (&mark (:P *P_mark) *Col)
+  (&shape_cell *Id *P)
+  (&layout_axis *A)
+  (perp A (:A2 *A_across))
+  (perp (:A A_across) (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P_mark) (:D D_m2) (:K *K_m3))
+  (margin (:B P) (:D D_m2) (:K K_m3)))
+
+(ALTS $choice "how a shape gets its marker's color (each pair puts every marker on its own shape's band, which hides which reading it is)" $Aligned
+  (ALT $Ranked
+    (RULE &before_split3
+      (&mark (:P *P_))
+      (&layout_axis (:A *A_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *P_along_))
+      (relative (:Base P_along_) (:X P_) (:X_rel *X_m1_)))
+
+    (RULE &before_split4
+      (&mark (:P *P2_))
+      (&layout_axis (:A *A2_))
+      (axis_of (:D *D_m1) (:A A2_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P2_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P2_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *P_along2_))
+      (relative (:Base P_along2_) (:X P2_) (:X_rel *X_m2_)))
+
+    (RULE &elem_split2
+      (&mark (:P *P_))
+      (&layout_axis (:A *A_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *P_along_))
+      (relative (:Base P_along_) (:X P_) (:X_rel *X_m1_)))
+
+    (INIT &mark_order Order
+      (key ((&layout_axis (:A ^A2))
+            (axis_of ^D (:A A2)))
+        (before ((:a P) (:b P2))
+          (&mark *P)
+          (&layout_axis *A)
+          (&before_split3 (:P_ P) (:A_ A) (:P_along_ *P_along) (:X_m1_ *X_m1))
+          (&mark (:P *P2))
+          (&layout_axis (:A *A22))
+          (&before_split4 (:P2_ P2) (:A2_ A22) (:P_along2_ *P_along2) (:X_m2_ *X_m2))
+          (!= P P2)
+          (margin (:B P_along) D (:K *K1))
+          (margin (:B P_along2) D (:K *K2))
+          (< K1 K2)))
+      (member ((:t P))
+        (&mark *P)
+        (&layout_axis *A)
+        (&elem_split2 (:P_ P) (:A_ A) (:P_along_ *P_along) (:X_m1_ *X_m1))))
+
+    (RULE &mark_order_pos
+      (&mark_order.rank (:key (:A2 *A) *D) (:t *M) (:R *R1))
+      (&mark_order.dual_rank (:key (:A2 A) D) (:t M) (:R *R2))
+      (opposite D (:Opp *O_m1))
+      (edge_inset D (:K R1) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K R2) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *P_pos)))
+
+    (RULE &shape_color
+      (&order_pos (:M *Id) (:P_pos *P_place))
+      (&mark_order_pos (:M *P_mark) (:P_pos P_place))
+      (&mark (:P P_mark) *Col))))
+
+(RULE &output
+  (input (:P *P_grid_in))
+  (&bbox.box (:key *Id) *B)
+  (ALL ((&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P_grid_in) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P_grid_in) (:X_rel *P_intile))
+  (&order_pos (:M Id) (:P_pos *P_tile))
+  (&layout_axis)
+  (&output_tiling.cell (:P_outer P_tile) (:P_inner P_intile) *P)
+  (&shape_color Id (:Col *Col_shape))
+  (OR ((NOT (&shape_cell Id (:P P_grid_in)))
+       (&bg (:C *Col)))
+      ((&shape_cell Id (:P P_grid_in))
+       (= Col Col_shape))))

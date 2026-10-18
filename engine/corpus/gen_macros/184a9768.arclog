@@ -1,0 +1,135 @@
+;; 184a9768
+
+(RULE &flood_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(RULE &obj_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+;; Scattered single cells that take no part.
+(DET &noise VanishedColor)
+
+(RULE &obj_node
+  (input *P (:Col *Key))
+  (NOT (&bg (:C Key)))
+  (NOT (&noise (:C Key))))
+
+(INIT &obj Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&obj_node (:Key *Ky) *P)
+         (&obj_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&obj_node (:Key Ky) (:P P2)))
+        ((&obj_node (:Key Ky) P)
+         (= P2 P)))))
+
+(RULE &obj_component
+  (&obj.class (:a *Key *P) *Id))
+
+(RULE &flood_node
+  (input *P *Col)
+  (&bg (:C Col)))
+
+;; Background the grid's content closes off from the edge.
+(INIT &flood Propagation
+  (source ((:n P))
+    (&flood_node *P)
+    (dir_elem *D)
+    (margin (:B P) D (:K 0))
+    (input P *Col)
+    (&bg (:C Col)))
+  (edge ((:a P) (:b P2))
+    (input *P *Col)
+    (&bg (:C Col))
+    (&flood_steps (:Delta *S))
+    (compose (:A P) (:B S) (:C *P2))
+    (input (:P P2) (:Col *Col2))
+    (&bg (:C Col2))))
+
+(RULE &hole
+  (&flood_node *P)
+  (NOT (&flood.reached (:n P))))
+
+(RULE &obj_cell
+  (&obj_component (:Key *Col) *P (:Id *O)))
+
+(RULE &frame
+  (&obj_cell *O *P)
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&hole (:P Q)))
+
+(RULE &piece
+  (&obj_cell *O)
+  (NOT (&frame O)))
+
+;; A piece's shape, viewed from its own bbox.
+(INIT &bbox BoundingBox
+  (key ((&piece ^O))
+    (cell (P)
+      (&obj_cell O *P))))
+
+;; Where a piece lands with each of its cells on a hole.
+(INIT &occ Occurrences
+  (key ((OR ((&bbox.cell (:key ^O) *P)
+             (&bbox.box (:key O) *B)
+             (ALL ((&bbox.cell (:key (:O *Om)) P)
+                   (&bbox.box (:key (:O Om)) B)
+                   (dir_elem (:D *D_m1))
+                   (relative (:Base B) (:X P) (:X_rel *R_m2))
+                   (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+                  ((>= K_m3 0)))
+             (relative (:Base B) (:X P) (:X_rel *P_inner)))
+            ((&piece O)
+             (&hole P))))
+    (cell (P)
+      (&piece O)
+      (&hole *P))
+    (shape ((:P P_inner))
+      (&bbox.cell *P)
+      (&bbox.box *B)
+      (ALL ((&bbox.cell (:key (:O *Om)) P)
+            (&bbox.box (:key (:O Om)) B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (relative (:Base B) (:X P) (:X_rel *P_inner)))))
+
+(RULE &covers
+  (&occ.occurrence (:key *O) (:P *Cd_p))
+  (&occ.shape (:key O) (:P *P_inner))
+  (compose (:A Cd_p) (:B P_inner) (:C *P)))
+
+;; Where the covers differ, every rival spot stays alive; the rivals agree
+;; on the color they paint.
+(CHOOSE &pruning
+  (for ((&occ.occurrence (:key ^O)))
+    (from (&occ.occurrence (:key O) (:P *P_spot))))
+  (never
+    (&occ.occurrence (:key *O) (:P *P_spot))
+    (&occ.occurrence (:key (:O *O2)) (:P *P_spot2))
+    (&covers O (:Cd_p P_spot) *P)
+    (&covers (:O O2) (:Cd_p P_spot2) P)))
+
+(RULE &frame_cell
+  (&obj_cell *O *Col *P)
+  (&frame O))
+
+(RULE &fill
+  (&pruning *O (:P_spot *Cd_p_spot))
+  (&covers (:O *Cd_o) (:Cd_p Cd_p_spot) *P)
+  (&obj_cell O *Col))
+
+(RULE &output
+  (input *P)
+  (OR ((&frame_cell P *Col))
+      ((&fill P Col))
+      ((NOT (&frame_cell P))
+       (NOT (&hole P))
+       (&bg (:C Col)))))

@@ -1,0 +1,10 @@
+;; ea9794b1
+
+(param &bg Color (0))
+(param &tiles number (2))
+(param &tile_dim number (5))
+(param &prio (Position number)
+  (grid
+    (3 0)
+    (1 2)))
+(param &ink_rank (Color number) (3 0) (9 1) (8 2) (4 3))

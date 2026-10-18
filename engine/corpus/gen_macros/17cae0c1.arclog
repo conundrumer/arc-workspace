@@ -1,0 +1,154 @@
+;; 17cae0c1
+
+(DET &tile_axis AxisDomain)
+
+;; A panel is square and spans the strip, so its width is the strip's
+;; extent across the tiling axis.
+(DET &size2
+  (ex_input *E *P)
+  (&tile_axis *A)
+  (perp A *A2)
+  (frame_extent P (:A A2) (:N *K)))
+
+(DET &panel_division_side2
+  (&tile_axis *A)
+  (&size2 *E *K))
+
+(RULE &panel_division_axis_split1
+  (input (:P *P_grid_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_grid_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_grid_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+  (relative (:Base Pi_) (:X P_grid_) (:X_rel *X_m1_)))
+
+(DET &panel_division_axis2
+  (OR ((ex_input *E *P)
+       (&panel_division_side2 E *A (:K *K2))
+       (axis_of *D A)
+       (opposite D (:Opp *O))
+       (margin (:B P) D (:K *T))
+       (margin (:B P) (:D O) (:K *T2))
+       (divide T (:Side K2) (:Gap 0) (:Part *I) (:Remainder *R))
+       (divide (:T T2) (:Side K2) (:Gap 0) (:Part *I2) (:Remainder *R2))
+       (opposite D (:Opp *O_m1))
+       (edge_inset D (:K I) (:B *B1_m2))
+       (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+       (compose (:A B1_m2) (:B B2_m3) (:C *P_outer))
+       (opposite D (:Opp *O_m4))
+       (edge_inset D (:K R) (:B *B1_m5))
+       (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+       (compose (:A B1_m5) (:B B2_m6) (:C *P_inner))
+       (frame_extent (:P P_inner) A (:N K2)))
+      ((ex_input E P)
+       (axis_elem A)
+       (NOT (&panel_division_side2 E A))
+       (&panel_division_axis_split1 (:P_grid_ P) (:A_ A) (:Pi_ P_inner) (:X_m1_ *X_m1))
+       (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
+
+(DET &panel_division_tile2
+  (&panel_division_axis2 *E *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+  (perp (:A A1) *A2)
+  (&panel_division_axis2 E P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+  (compose (:A Po1) (:B Po2) (:C *P_outer))
+  (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+(DET &bg ChangedColor)
+
+(DET &panel2
+  (&panel_division_tile2 *E (:P *P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(DET &mark2
+  (ex_input *E (:P *P_grid) *Col)
+  (NOT (&bg (:C Col)))
+  (&panel2 E P_grid *P_tile *P_intile))
+
+(DET &panel_mark
+  (&mark2 *E (:P_tile *Tile) (:P_intile *P)))
+
+;; Panels carrying the same glyph share a catalog entry.
+(INIT &same Inclusion
+  (pattern ((:pattern (:E Ep_e) (:Tile Ep_tile)) (:m P))
+    (&panel_mark (:E *Ep_e) (:Tile *Ep_tile) *P))
+  (observed ((:observed (:E Ep_e) (:Tile Ep_tile)) (:m P))
+    (&panel_mark (:E *Ep_e) (:Tile *Ep_tile) *P)))
+
+(INIT &entry Quotient
+  (equivalent ((:a (:E Ep_e) (:Tile Ep_tile)) (:b (:E Ep2_e) (:Tile Ep2_tile)))
+    (&same.equal (:observed (:E *Ep_e) (:Tile *Ep_tile)) (:pattern (:E *Ep2_e) (:Tile *Ep2_tile)))))
+
+(DET &glyph_member
+  (&entry.class (:a (:E *Ep_e) (:Tile *Ep_tile)) *Id)
+  (&panel_mark (:E Ep_e) (:Tile Ep_tile) *P))
+
+(RULE &tile_size
+  (&tile_axis *A)
+  (&glyph_member *P)
+  (frame_extent P A (:N *K)))
+
+(RULE &size
+  (&tile_size *K))
+
+(RULE &panel_division_side
+  (&tile_axis *A)
+  (&size *K))
+
+(RULE &panel_division_axis
+  (OR ((input *P)
+       (&panel_division_side *A (:K *K2))
+       (axis_of *D A)
+       (opposite D (:Opp *O))
+       (margin (:B P) D (:K *T))
+       (margin (:B P) (:D O) (:K *T2))
+       (divide T (:Side K2) (:Gap 0) (:Part *I) (:Remainder *R))
+       (divide (:T T2) (:Side K2) (:Gap 0) (:Part *I2) (:Remainder *R2))
+       (opposite D (:Opp *O_m1))
+       (edge_inset D (:K I) (:B *B1_m2))
+       (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+       (compose (:A B1_m2) (:B B2_m3) (:C *P_outer))
+       (opposite D (:Opp *O_m4))
+       (edge_inset D (:K R) (:B *B1_m5))
+       (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+       (compose (:A B1_m5) (:B B2_m6) (:C *P_inner))
+       (frame_extent (:P P_inner) A (:N K2)))
+      ((input P)
+       (axis_elem A)
+       (NOT (&panel_division_side A))
+       (&panel_division_axis_split1 (:P_grid_ P) (:A_ A) (:Pi_ P_inner) (:X_m1_ *X_m1))
+       (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
+
+(RULE &panel_division_tile
+  (&panel_division_axis *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+  (perp (:A A1) *A2)
+  (&panel_division_axis P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+  (compose (:A Po1) (:B Po2) (:C *P_outer))
+  (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+(RULE &panel
+  (&panel_division_tile (:P *P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(RULE &mark
+  (input (:P *P_grid) *Col)
+  (NOT (&bg (:C Col)))
+  (&panel P_grid *P_tile *P_intile))
+
+(INIT &glyph Inclusion
+  (pattern ((:pattern Id) (:m P))
+    (&glyph_member *Id *P))
+  (observed ((:observed P_tile) (:m P))
+    (&mark *P_tile (:P_intile *P))))
+
+(DET &glyph_color
+  (&entry.class (:a *E (:Tile *P_tile)) *Id)
+  (ex_output E (:P *P_grid) *Col)
+  (&panel2 E P_grid P_tile))
+
+(RULE &output
+  (&panel (:P_grid *P) *P_tile)
+  (&glyph.equal (:observed P_tile) (:pattern *Id))
+  (&glyph_color Id *Col))

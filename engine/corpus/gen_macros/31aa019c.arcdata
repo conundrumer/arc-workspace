@@ -1,0 +1,10 @@
+;; 31aa019c
+
+(param &bg Color (0))
+(param &border Color (2))
+(param &mark_count number (1))
+(param &shape Offset
+  (grid
+    (1 1 1)
+    (1 @_ 1)
+    (1 1 1)))

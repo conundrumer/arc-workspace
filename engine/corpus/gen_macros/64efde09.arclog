@@ -1,0 +1,287 @@
+;; 64efde09
+
+(RULE &obj_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(INIT &obj Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&obj_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &obj_component
+  (&obj.class (:a *P) *Id))
+
+(RULE &back_dir
+  (dir_elem *D))
+
+(RULE &back_blocked
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &back_node
+  (input *P)
+  (NOT (&back_blocked P)))
+
+(RULE &part
+  (&obj_component *P *Id)
+  (input P *Col))
+
+(RULE &bar
+  (&part *Id *P)
+  (&part Id (:P *Q))
+  (!= P Q))
+
+(RULE &tip
+  (&part *Id *P *Col)
+  (NOT (&bar Id)))
+
+(RULE &back_source
+  (&tip *P))
+
+;; A tip casts along its own row and column; the lane it came down is the one
+;; that reaches a bar.
+(INIT &back Distance
+  (key ((&back_source (:P ^O))
+        (&back_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&back_source (:P O))
+           (&back_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&back_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&back_node (:P Q)))
+          ((&back_source (:P O))
+           (&back_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&back_node (:P Q))
+           (= A2 O))
+          ((&back_source (:P O))
+           (&back_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&back_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&back_node (:P Q)))))
+    (source ((:n O))
+      (&back_source (:P O))
+      (&back_dir D))))
+
+(RULE &back_ray
+  (&back.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &back_end
+  (&back_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&back_ray (:P Q) D Origin)))
+
+(INIT &bbox BoundingBox
+  (key ((&bar ^Id))
+    (cell (P)
+      (&part Id *P))))
+
+(RULE &bar_cell
+  (&bbox.cell (:key *Id) *P)
+  (&bbox.box (:key Id) *B)
+  (ALL ((&bbox.cell (:key (:Id *Idm)) P)
+        (&bbox.box (:key (:Id Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (&part Id P *Col))
+
+(INIT &cong Agreement
+  (key ((OR ((&bar_cell (:Id ^A) *P_inner *Col)
+             (&bar (:Id ^B)))
+            ((&bar_cell (:Id B) P_inner Col)
+             (&bar (:Id A)))))
+    (source ((:i P_inner) (:v Col))
+      (&bar_cell (:Id A) *P_inner *Col)
+      (&bar (:Id B)))
+    (target ((:i P_inner) (:v Col))
+      (&bar_cell (:Id B) *P_inner *Col)
+      (&bar (:Id A)))
+    (correspondence ((:m D) (:i P_inner) (:j Q))
+      (&bar_cell (:Id A) *P_inner *Col)
+      (&bar (:Id B))
+      (d4_elem *D)
+      (apply D (:P P_inner) (:P_out *Q)))))
+
+(RULE &cong_src
+  (&bar_cell (:Id *A) (:P_inner *P) (:Col *V))
+  (&bar (:Id *B)))
+
+(RULE &reach
+  (&tip (:P *P_tip) *Col)
+  (&back_end (:P *E) (:D *D_back) (:Origin P_tip))
+  (step_offset (:D D_back) (:V *V_m1))
+  (compose (:A E) (:B V_m1) (:C *P))
+  (input P)
+  (&bbox.cell (:key *Id) P)
+  (opposite (:D D_back) (:Opp *D)))
+
+(RULE &source
+  (&reach *P_tip *Col *Id *P *D)
+  (margin (:B P_tip) D (:K 0)))
+
+(ALTS $choice "The cases differ in what tells a beam's heading from its reverse" $Edge
+  (ALT $Lane
+    (INIT &lane_color Cardinality
+      (key ((&bar_cell ^Id *P *P_inner ^Col)
+            (&bbox.box (:key Id) *B)
+            (axis_elem *A)
+            (relative (:Base B) (:X P) (:X_rel *R_m1))
+            (frame_extent (:P R_m1) A (:N *N1))
+            (perp A *A2)
+            (axis_elem (:A A2))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (frame_extent (:P R_m2) (:A A2) (:N *N2))
+            (< N1 N2)
+            (axis_of ^D A)
+            (margin (:B P_inner) D (:K 0)))
+        (member ((:m P_inner))
+          (&bar_cell Id *P *P_inner Col)
+          (&bbox.box (:key Id) *B)
+          (axis_elem *A)
+          (relative (:Base B) (:X P) (:X_rel *R_m1))
+          (frame_extent (:P R_m1) A (:N *N1))
+          (perp A *A2)
+          (axis_elem (:A A2))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (frame_extent (:P R_m2) (:A A2) (:N *N2))
+          (< N1 N2)
+          (axis_of D A)
+          (margin (:B P_inner) D (:K 0)))))
+
+    ;; The way out: the lane where one color covers the most cells.
+    (INIT &exit Order
+      (key ((&lane_color.size (:key ^Id *D) *N))
+        (member ((:t (:V D) (:S N)))
+          (&lane_color.size (:key Id *D) *N))
+        (score ((:t (:V D) (:S N)) (:S N))
+          (&lane_color.size (:key Id *D) *N))))
+
+    (RULE &source
+      (&reach *Col *Id *P *D)
+      (&exit.maximal (:key Id) (:t (:V D))))))
+
+(RULE &emit
+  (&source (:Id *M) (:P *S) (:D *D3) *Col)
+  (&bar_cell (:Id M) (:P S) *P_inner)
+  (&cong_src (:A M) (:B *M2))
+  (d4_elem (:D *G))
+  (NOT (&cong.mismatch (:key (:A M) (:B M2)) (:m G)))
+  (apply (:D G) (:P P_inner) (:P_out *P_inner2))
+  (&bar_cell (:Id M2) *P (:P_inner P_inner2))
+  (d4_elem (:D G))
+  (dir_elem (:D D3))
+  (dir_elem *D)
+  (step_offset (:D D3) (:V *S_m1))
+  (apply (:D G) (:P S_m1) (:P_out *S2_m2))
+  (step_offset D (:V S2_m2)))
+
+(RULE &beam_dir
+  (&emit (:P *Key) *D))
+
+(RULE &beam_node
+  (&emit (:P *Key) *D)
+  (input *P))
+
+(RULE &beam_source
+  (&emit (:P *Key)))
+
+(INIT &beam Distance
+  (key ((&beam_source (:Key ^Ky))
+        (&beam_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&beam_source (:Key Ky))
+           (&beam_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P Ky) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A Ky) (:B V_m1) (:C *A2))
+           (&beam_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&beam_node (:Key Ky) (:P Q)))
+          ((&beam_source (:Key Ky))
+           (&beam_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A Ky) (:B V_m12) (:C Q))
+           (&beam_node (:Key Ky) (:P Q))
+           (= A2 Ky))
+          ((&beam_source (:Key Ky))
+           (&beam_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P Ky) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A Ky) (:B V_m13) (:C A2))
+           (&beam_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&beam_node (:Key Ky) (:P Q)))))
+    (source ((:n Ky))
+      (&beam_source (:Key Ky))
+      (&beam_dir (:Key Ky) D))))
+
+(RULE &beam_ray
+  (&beam.distance (:key (:Ky *Key) *D (:Ky *Origin)) (:n *P) *K))
+
+(RULE &beam_end
+  (&beam_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&beam_ray Key (:P Q) D Origin)))
+
+(RULE &beam_cell
+  (&emit (:P *Key))
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &paint
+  (&emit (:P *S) *Col)
+  (&beam_ray (:Key S) *P)
+  (&beam_cell (:Key S) P))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

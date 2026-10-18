@@ -1,0 +1,141 @@
+;; 22eb0ac0
+
+(DET &axis AxisDomain)
+
+(DET &bg DominantColor)
+
+(RULE &spans_mark
+  (input *P (:Col *Key))
+  (NOT (&bg (:C Key))))
+
+(RULE &spans_axis
+  (&spans_mark *Key)
+  (&axis *A))
+
+(RULE &spans_dir
+  (&spans_axis *Key *A)
+  (axis4_of *D A))
+
+(RULE &spans_node
+  (&spans_axis *Key)
+  (input *P))
+
+(RULE &spans_source
+  (input *P (:Col *Key))
+  (NOT (&bg (:C Key))))
+
+(INIT &spans Distance
+  (key ((&spans_source (:Key ^Ky) (:P ^O))
+        (&spans_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&spans_source (:Key Ky) (:P O))
+           (&spans_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&spans_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&spans_node (:Key Ky) (:P Q)))
+          ((&spans_source (:Key Ky) (:P O))
+           (&spans_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&spans_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&spans_source (:Key Ky) (:P O))
+           (&spans_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&spans_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&spans_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&spans_source (:Key Ky) (:P O))
+      (&spans_dir (:Key Ky) D))))
+
+(RULE &spans_ray
+  (&spans.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &spans_end
+  (&spans_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&spans_ray Key (:P Q) D Origin)))
+
+(RULE &edge_match_split1
+  (input (:P *P1_) *Col)
+  (&axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P1_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P1_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P1_) (:X_rel *Ac_)))
+
+(RULE &out_split1
+  (input (:P *P_) *Col)
+  (&axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P_) (:X_rel *Ac_)))
+
+(RULE &edge_match
+  (&axis *A)
+  (axis_of *D A)
+  (opposite D (:Opp *D2))
+  (input (:P *P1) *Col)
+  (margin (:B P1) D (:K 0))
+  (&edge_match_split1 (:P1_ P1) (:A_ A) (:X_m1_ *X_m1) (:Ac_ *Ac))
+  (input (:P *P2) Col)
+  (margin (:B P2) (:D D2) (:K 0))
+  (perp A (:A2 *A2_m2))
+  (axis_of (:D *D_m3) (:A A2_m2))
+  (margin (:B P1) (:D D_m3) (:K *K_m4))
+  (margin (:B P2) (:D D_m3) (:K K_m4)))
+
+(ALTS $choice "which pair of cells counts, and how far its color reaches" $Flood
+  (ALT $Span
+    (RULE &spans_between
+      (&spans_mark *Key)
+      (input *P)
+      (&spans_axis Key *A)
+      (axis4_of *D A)
+      (dir8_opposite D (:D2 *O))
+      (&spans_ray Key P D)
+      (&spans_ray Key P (:D O)))
+
+    (RULE &output
+      (OR ((&spans_between (:Key *Col) *P))
+          ((input P Col)
+           (NOT (&spans_between P)))))))
+
+(RULE &output
+  (input *P (:Col *Col2))
+  (&axis *A)
+  (&out_split1 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:Ac_ *Ac))
+  (OR ((&edge_match Ac *Col))
+      ((NOT (&edge_match Ac))
+       (= Col Col2))))

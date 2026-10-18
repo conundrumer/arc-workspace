@@ -1,0 +1,5 @@
+;; 60a26a3e
+
+(param &bg Color (0))
+(param &line Color (1))
+(param &ring Color (2))

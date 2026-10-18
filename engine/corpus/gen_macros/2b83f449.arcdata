@@ -1,0 +1,8 @@
+;; 2b83f449
+
+(param &bg Color (8))
+(param &wall Color (0))
+(param &bar Color (7))
+(param &post Color (6))
+(param &dot Color (3))
+(param &fall_dir Dir (DIR_B))

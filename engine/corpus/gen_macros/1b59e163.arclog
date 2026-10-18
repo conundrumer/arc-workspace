@@ -1,0 +1,81 @@
+;; 1b59e163
+
+(RULE &obj_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(DET &bg DominantColor)
+
+(INIT &obj Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&obj_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &obj_component
+  (&obj.class (:a *P) *Id))
+
+(RULE &obj_cell
+  (&obj_component *P *Id)
+  (input P *Col))
+
+;; A shape holds more than one cell; a dot is an object of one cell.
+(INIT &obj_pos Singleton
+  (key ((&obj_cell ^Id *P))
+    (member ((:v P))
+      (&obj_cell Id *P))))
+
+(RULE &shape_cell
+  (&obj_cell *Id *P *Col)
+  (&obj_pos.plural (:key Id)))
+
+(RULE &dot
+  (&obj_pos.value (:key *Id) (:v *P))
+  (&obj_cell Id P *Col))
+
+(INIT &tally Cardinality
+  (key ((&shape_cell ^Id *P ^Col))
+    (member ((:m P))
+      (&shape_cell Id *P Col))))
+
+(INIT &rare Order
+  (key ((&tally.size (:key ^Id *Col) *N))
+    (member ((:t (:V Col) (:S N)))
+      (&tally.size (:key Id *Col) *N))
+    (score ((:t (:V Col) (:S N)) (:S N))
+      (&tally.size (:key Id *Col) *N))))
+
+(RULE &anchor
+  (&rare.minimal (:key *Id) (:t (:V *Col)))
+  (&shape_cell Id *P Col))
+
+(ALTS $choice "which cell of a shape is its anchor" $Odd
+  (ALT $Match
+    (RULE &anchor
+      (&shape_cell *P))))
+
+(RULE &attract
+  (&anchor (:P *P_anchor))
+  (&shape_cell *Id (:P P_anchor) *Col)
+  (&dot (:P *P_dot) Col))
+
+(RULE &paint
+  (&attract *Id *P_anchor *P_dot)
+  (relative (:Base P_anchor) (:X P_dot) (:X_rel *Delta))
+  (&shape_cell Id (:P *P_src) *Col)
+  (compose (:A P_src) (:B Delta) (:C *P))
+  (input P))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))

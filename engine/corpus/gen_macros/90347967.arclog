@@ -1,0 +1,22 @@
+;; 90347967
+
+(DET &bg DominantColor)
+
+(DET &marker RarestColor)
+
+(DET &transform D4Domain)
+
+(RULE &moved
+  (input (:P *M) (:Col *C))
+  (&marker C)
+  (input (:P *P2) *Col)
+  (relative (:Base M) (:X P2) (:X_rel *V))
+  (&transform *D)
+  (apply D (:P V) (:P_out *V2))
+  (compose (:A M) (:B V2) (:C *P)))
+
+(RULE &output
+  (input *P)
+  (OR ((&moved P *Col))
+      ((NOT (&moved P))
+       (&bg (:C Col)))))

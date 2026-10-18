@@ -1,0 +1,112 @@
+;; 7ed72f31
+
+(RULE &obj_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The field is the commonest color; everything else is ink.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&field.maximal (:t Col))))
+
+;; An object is a shape with its mirror, 8-connected.
+(INIT &obj Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&ink *P)
+         (&obj_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ink (:P P3)))
+        ((&ink P)
+         (= P3 P)))))
+
+(RULE &obj_component
+  (&obj.class (:a *P) *Id))
+
+(DET &mirror UnchangedColor)
+
+(RULE &mirror2
+  (&obj_component *P *Id)
+  (input P *Col)
+  (&mirror (:C Col)))
+
+(RULE &item_split1
+  (&mirror2 *Id (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &shape
+  (&obj_component *P *Id)
+  (&ink P *Col)
+  (NOT (&mirror (:C Col))))
+
+(RULE &image_along_split1
+  (&shape *Id (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Al_))
+  (relative (:Base Al_) (:X P_) (:X_rel *X_m1_)))
+
+(INIT &mirror_line Singleton
+  (key ((&mirror2 ^Id *P)
+        (axis_elem ^A)
+        (&item_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+    (member ((:v L))
+      (&mirror2 Id *P)
+      (axis_elem A)
+      (&item_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))))
+
+(RULE &image_along
+  (&shape *Id *P)
+  (axis_elem *A)
+  (&image_along_split1 (:P_ P) (:A_ A) (:Al_ *Al2) (:X_m1_ *X_m1))
+  (OR ((&mirror_line.value (:key Id A) (:v *L))
+       (relative (:Base L) (:X Al2) (:X_rel *Off))
+       (axis_inversion A (:T *D))
+       (apply D (:P Off) (:P_out *Off_img))
+       (compose (:A L) (:B Off_img) (:C *Al)))
+      ((NOT (&mirror_line.value (:key Id A)))
+       (= Al Al2))))
+
+(RULE &image
+  (&shape (:P *P2) *Col)
+  (&image_along (:P P2) *A *Al)
+  (perp A *A2)
+  (&image_along (:P P2) (:A A2) (:Al *Al2))
+  (compose (:A Al) (:B Al2) (:C *P)))
+
+(RULE &output
+  (input *P (:Col *Col2))
+  (OR ((NOT (&ink P))
+       (&image P *Col))
+      ((&ink P)
+       (= Col Col2))
+      ((NOT (&ink P))
+       (NOT (&image P))
+       (= Col Col2))))

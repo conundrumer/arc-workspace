@@ -1,0 +1,444 @@
+;; b9e38dc0
+
+(INPUT background "the most common color fills the rest of the grid")
+
+(INPUT cup "one outline of one color, the largest object, whose cells join at sides or corners into one chain with two ends, where its two walls end. The flow is the direction the last step into each end advances along. The cup closes off a region on every side but the flow's; the mouth is the line of the end further back along the flow.")
+
+(INPUT liquid "one or more cells of one other color lie inside the cup, and no cell of that color lies outside it")
+
+(INPUT walls-repeat "each wall, walked back from its end, has one cell on each line across the flow for at least one step, and steps outward or straight, up to where it turns inward or has two cells on a line")
+
+(INPUT obstacles "other cells of colors other than the cup's and the liquid's lie on the background, some of them inside the cup or in front of the mouth")
+
+(OUTPUT fill-cup "each background cell the liquid reaches by side steps, without passing a wall or the mouth line, takes the liquid color"
+
+  (RULE &pool_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &object_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((diag_dir_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  (INIT &common_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &common Order
+    (member ((:t Col))
+      (&common_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&common_count.size (:key *Col) *N)))
+
+  (RULE &bg
+    (&common.maximal (:t *Col)))
+
+  (RULE &object_node
+    (input *P (:Col *Key))
+    (NOT (&bg (:Col Key))))
+
+  ;; The objects: same-color cells joined at sides or corners.
+  (INIT &object Quotient
+    (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+      (OR ((&object_node (:Key *Ky) *P)
+           (&object_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P2))
+           (&object_node (:Key Ky) (:P P2)))
+          ((&object_node (:Key Ky) P)
+           (= P2 P)))))
+
+  (RULE &object_component
+    (&object.class (:a *Key *P) *Id))
+
+  (RULE &hollow_flood_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &hollow_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (INIT &object_size Cardinality
+    (key ((&object_component *P ^Id))
+      (member ((:m P))
+        (&object_component *P Id))))
+
+  (INIT &largest Order
+    (member ((:t (:V Id) (:S N)))
+      (&object_size.size (:key *Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&object_size.size (:key *Id) *N)))
+
+  (RULE &cup
+    (&largest.maximal (:t (:V *Id)))
+    (&object_component *P Id))
+
+  (RULE &cup_touch
+    (&cup *P)
+    (step_offset (:D *D_m1) (:V *V_m2))
+    (compose (:A P) (:B V_m2) (:C *Q))
+    (&cup (:P Q)))
+
+  (RULE &wall_end
+    (&cup_touch (:P *E1) *Q)
+    (ALL ((&cup_touch (:P E1) (:Q *Q1))
+          (&cup_touch (:P E1) (:Q *Q2)))
+         ((= Q1 Q2))))
+
+  (RULE &flow
+    (&wall_end *E1 (:Q *Q1))
+    (&wall_end (:E1 *E2) (:Q *Q2))
+    (!= E1 E2)
+    (dir_elem *D)
+    (dir_elem D)
+    (margin (:B E1) D (:K *K1_m1))
+    (margin (:B Q1) D (:K *K2_m2))
+    (< K1_m1 K2_m2)
+    (dir_elem D)
+    (margin (:B E2) D (:K *K1_m3))
+    (margin (:B Q2) D (:K *K2_m4))
+    (< K1_m3 K2_m4))
+
+  (RULE &wall
+    (&wall_end *E1)
+    (&wall_end (:E1 *E2))
+    (&flow *D)
+    (axis_of D (:A *A_m1))
+    (perp (:A A_m1) (:A2 *A2_m2))
+    (axis_of (:D *O) (:A A2_m2))
+    (dir_elem (:D O))
+    (margin (:B E1) (:D O) (:K *K1_m3))
+    (margin (:B E2) (:D O) (:K *K2_m4))
+    (< K1_m3 K2_m4))
+
+  (RULE &mouth
+    (&wall (:E1 *M))
+    (&flow *D)
+    (&wall (:E1 *E))
+    (!= E M)
+    (dir_elem D)
+    (margin (:B M) D (:K *K1_m1))
+    (margin (:B E) D (:K *K2_m2))
+    (>= K1_m1 K2_m2))
+
+  (RULE &hollow_cell
+    (input *P)
+    (NOT (&cup P))
+    (&mouth *M)
+    (&flow *D)
+    (dir_elem D)
+    (margin (:B M) D (:K *K1_m1))
+    (margin (:B P) D (:K *K2_m2))
+    (< K1_m1 K2_m2))
+
+  (INIT &hollow_flood Propagation
+    (source ((:n P))
+      (&hollow_cell *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0))
+      (input P)
+      (NOT (&cup P))
+      (&mouth *M)
+      (&flow (:D *D2))
+      (dir_elem (:D D2))
+      (margin (:B M) (:D D2) (:K *K1_m1))
+      (margin (:B P) (:D D2) (:K *K2_m2))
+      (< K1_m1 K2_m2))
+    (edge ((:a P) (:b P2))
+      (input *P)
+      (NOT (&cup P))
+      (&mouth *M)
+      (&flow *D)
+      (dir_elem D)
+      (margin (:B M) D (:K *K1_m1))
+      (margin (:B P) D (:K *K2_m2))
+      (< K1_m1 K2_m2)
+      (&hollow_flood_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *P2))
+      (input (:P P2))
+      (NOT (&cup (:P P2)))
+      (&mouth (:M *M2))
+      (&flow (:D *D2))
+      (dir_elem (:D D2))
+      (margin (:B M2) (:D D2) (:K *K1_m3))
+      (margin (:B P2) (:D D2) (:K *K2_m4))
+      (< K1_m3 K2_m4)))
+
+  (RULE &hollow_node
+    (&hollow_cell *P)
+    (NOT (&hollow_flood.reached (:n P))))
+
+  ;; The region the cup and the mouth line close off.
+  (INIT &hollow Quotient
+    (edge ((:a P) (:b P2))
+      (OR ((&hollow_node *P)
+           (&hollow_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P2))
+           (&hollow_node (:P P2)))
+          ((&hollow_node P)
+           (= P2 P)))))
+
+  (RULE &hollow_component
+    (&hollow.class (:a *P) *Id))
+
+  (RULE &cup_color
+    (&cup *P)
+    (input P *Col))
+
+  (RULE &held
+    (&hollow_component *P))
+
+  (RULE &liquid_color
+    (input *Col)
+    (ALL ((input *P Col))
+         ((&held P))))
+
+  (RULE &obstacle
+    (input *P *Col)
+    (NOT (&bg Col))
+    (NOT (&cup_color Col))
+    (NOT (&liquid_color Col)))
+
+  (RULE &back_touch
+    (&cup_touch (:P *C) (:Q *B))
+    (&flow *D)
+    (dir_elem D)
+    (margin (:B C) D (:K *K1_m1))
+    (margin B D (:K *K2_m2))
+    (< K1_m1 K2_m2))
+
+  ;; Each wall walked back from its end while the line behind holds one cup cell
+  ;; that touches it, no further out.
+  (INIT &run Propagation
+    (key ((OR ((&wall (:E1 *E) ^O))
+              ((&wall O)
+               (&back_touch *C *B)
+               (ALL ((&back_touch C (:B *B1))
+                     (&back_touch C (:B *B2)))
+                    ((= B1 B2)))
+               (dir_elem (:D O))
+               (margin B (:D O) (:K *K1_m1))
+               (margin (:B C) (:D O) (:K *K2_m2))
+               (>= K1_m1 K2_m2))))
+      (source ((:n E))
+        (&wall (:E1 *E) O))
+      (edge ((:a C) (:b B))
+        (&wall O)
+        (&back_touch *C *B)
+        (ALL ((&back_touch C (:B *B1))
+              (&back_touch C (:B *B2)))
+             ((= B1 B2)))
+        (dir_elem (:D O))
+        (margin B (:D O) (:K *K1_m1))
+        (margin (:B C) (:D O) (:K *K2_m2))
+        (>= K1_m1 K2_m2))))
+
+  (RULE &pattern_cand
+    (&wall (:E1 *E) *O)
+    (&run.reached (:key O) (:n *C))
+    (!= C E)
+    (relative (:Base E) (:X C) (:X_rel *W)))
+
+  (RULE &pattern_fit
+    (&pattern_cand *O *C)
+    (ALL ((&pattern_cand O C *W)
+          (&flow *D)
+          (&run.reached (:key O) (:n *Q))
+          (dir_elem D)
+          (margin (:B C) D (:K *K1_m1))
+          (margin (:B Q) D (:K *K2_m2))
+          (>= K1_m1 K2_m2)
+          (compose (:A Q) (:B W) (:C *Q2))
+          (&run.reached (:key O) (:n *S))
+          (dir_elem D)
+          (margin (:B S) D (:K *K1_m3))
+          (margin (:B Q2) D (:K *K2_m4))
+          (>= K1_m3 K2_m4))
+         ((&run.reached (:key O) (:n Q2)))))
+
+  (RULE &pattern
+    (&pattern_fit *O *C)
+    (ALL ((&pattern_fit O (:C *C2))
+          (&flow *D)
+          (dir_elem D)
+          (margin (:B C2) D (:K *K1_m1))
+          (margin (:B C) D (:K *K2_m2)))
+         ((>= K1_m1 K2_m2)))
+    (&wall (:E1 *E) O)
+    (relative (:Base C) (:X E) (:X_rel *V)))
+
+  ;; Each wall continued past its end by repeats of its pattern, while on the
+  ;; grid.
+  (INIT &extend Propagation
+    (key ((OR ((&pattern ^O *C)
+               (&run.reached (:key O) (:n *Q))
+               (&flow *D)
+               (dir_elem D)
+               (margin (:B Q) D (:K *K1_m1))
+               (margin (:B C) D (:K *K2_m2))
+               (< K1_m1 K2_m2))
+              ((&pattern O *V)
+               (input *P)
+               (compose (:A P) (:B V) (:C Q))
+               (input (:P Q)))))
+      (source ((:n Q))
+        (&pattern O *C)
+        (&run.reached (:n *Q))
+        (&flow *D)
+        (dir_elem D)
+        (margin (:B Q) D (:K *K1_m1))
+        (margin (:B C) D (:K *K2_m2))
+        (< K1_m1 K2_m2))
+      (edge ((:a P) (:b Q))
+        (&pattern O *V)
+        (input *P)
+        (compose (:A P) (:B V) (:C *Q))
+        (input (:P Q)))))
+
+  (RULE &wall_cell
+    (OR ((&run.reached (:key *O) (:n *P)))
+        ((&extend.reached (:key O) (:n P)))))
+
+  (RULE &between
+    (input (:P *X))
+    (ALL ((&wall_cell *O (:P *Q))
+          (&flow *D)
+          (margin (:B Q) D (:K *K_m1))
+          (margin (:B X) D (:K K_m1))
+          (dir_elem (:D O))
+          (margin (:B Q) (:D O) (:K *K1_m2))
+          (margin (:B X) (:D O) (:K *K2_m3)))
+         ((< K1_m2 K2_m3))))
+
+  (RULE &stream
+    (input (:P *X) *Col)
+    (&bg Col)
+    (&mouth *M)
+    (&flow *D)
+    (dir_elem D)
+    (margin (:B M) D (:K *K1_m1))
+    (margin (:B X) D (:K *K2_m2))
+    (>= K1_m1 K2_m2)
+    (&between X))
+
+  (RULE &pool_node
+    (OR ((&held *P)
+         (input P *Col)
+         (&bg Col))
+        ((input P (:Col *Col2))
+         (&liquid_color (:Col Col2)))))
+
+  (INIT &pool Propagation
+    (source ((:n P))
+      (input *P *Col)
+      (&liquid_color Col)
+      (&pool_node P))
+    (edge ((:a P) (:b Q))
+      (&pool_node *P)
+      (&pool_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *Q))
+      (&pool_node (:P Q))))
+
+  ;; The cells straight behind an obstacle, through the cup and the stream.
+  (INIT &cup_shade Propagation
+    (source ((:n P))
+      (&obstacle *P))
+    (edge ((:a B) (:b X))
+      (input (:P *X) *Col)
+      (&bg Col)
+      (OR ((&pool.reached (:n X)))
+          ((&stream X)))
+      (&flow *D)
+      (opposite D (:Opp *D_back))
+      (step_offset (:D D_back) (:V *V_m1))
+      (compose (:A X) (:B V_m1) (:C *B)))))
+
+(OUTPUT flow "the stream moves straight out of the mouth, away from the cup, to the grid edge")
+
+(OUTPUT widen "each wall is continued past its end, to the grid edge, by repeating the shortest pattern of its last steps that the steps before it repeat, as far back as `walls-repeat` walks; on each line across the flow, from the mouth line on, the stream holds the cells strictly between the two walls")
+
+(OUTPUT pour "a background stream cell takes the liquid color when the cell straight behind it along the flow holds the liquid; where that cell is a wall, drawn or continued, or lies beyond one, it takes the liquid color when the nearest cell between the walls on the line behind holds the liquid. An obstacle holds no liquid, so it leaves a straight shadow behind it."
+
+  (RULE &feed
+    (&stream *X)
+    (&flow *D)
+    (opposite D (:Opp *D_back))
+    (step_offset (:D D_back) (:V *V_m1))
+    (compose (:A X) (:B V_m1) (:C *B))
+    (OR ((&wall_cell *O (:P *Q))
+         (margin (:B Q) D (:K *K_m2))
+         (margin B D (:K K_m2))
+         (dir_elem (:D O))
+         (margin (:B Q) (:D O) (:K *K1_m3))
+         (margin B (:D O) (:K *K2_m4))
+         (>= K1_m3 K2_m4)
+         (opposite (:D O) (:Opp *D_in))
+         (step_offset (:D D_in) (:V *V_m5))
+         (compose (:A Q) (:B V_m5) (:C *F)))
+        ((&between (:X B))
+         (= F B))))
+
+  (RULE &wet_cup
+    (&pool.reached (:n *P)))
+
+  (INIT &pour Propagation
+    (source ((:n P))
+      (&wet_cup *P))
+    (edge ((:a F) (:b X))
+      (&feed *X *F)))
+
+  ;; The cells straight behind an obstacle between the walls.
+  (INIT &shade Propagation
+    (source ((:n P))
+      (&obstacle *P))
+    (edge ((:a B) (:b X))
+      (&stream *X)
+      (&flow *D)
+      (opposite D (:Opp *D_back))
+      (step_offset (:D D_back) (:V *V_m1))
+      (compose (:A X) (:B V_m1) (:C *B))
+      (&between (:X B)))))
+
+(OUTPUT keep "every other cell keeps its color")
+
+(ALTS $f "how a stream cell takes the liquid" $FedStream
+  (ALT $GeometricStream
+    (OUTPUT pour "every background stream cell takes the liquid color, except the cells straight behind an obstacle, whether or not the liquid reaches it")
+    (RULE &liquid
+      (OR ((&stream (:X *P))
+           (NOT (&shade.reached (:n P))))
+          ((&wet_cup P))))))
+
+(ALTS $s "where a shadow starts" $CupFill
+  (ALT $CupShadow
+    (OUTPUT fill-cup "a cup cell straight behind an obstacle in the cup keeps its color")
+    (OUTPUT pour "a stream cell straight behind an obstacle in the cup keeps its color"
+      (RULE &dry
+        (&cup_shade.reached (:n *P))
+        (input P *Col)
+        (&bg Col))
+
+      (RULE &wet_cup
+        (&pool.reached (:n *P))
+        (NOT (&dry P)))
+
+      (INIT &pour Propagation
+        (source ((:n P))
+          (&wet_cup *P))
+        (edge ((:a F) (:b X))
+          (&feed *X *F)
+          (NOT (&dry (:P X))))))))
+
+(RULE &liquid
+  (OR ((&wet_cup *P))
+      ((&pour.reached (:n P)))))
+
+(RULE &output
+  (OR ((&liquid *P)
+       (&liquid_color *Col))
+      ((input P Col)
+       (&liquid_color)
+       (NOT (&liquid P)))))

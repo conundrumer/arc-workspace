@@ -1,0 +1,99 @@
+;; 97d7923e
+
+;; The train pairs admit a second color; the DominantColor proposer, exact here, fixes this value.
+(DET &bg DominantColor)
+
+;; The edge the headers lie on. The runs go inward from it, and the bars lie along its axis.
+(DET &head_dir DirDomain)
+
+(RULE &inward
+  (&head_dir (:D *D2))
+  (opposite (:D D2) (:Opp *D)))
+
+(RULE &run_node
+  (input *P (:Col *Key))
+  (NOT (&bg (:C Key))))
+
+;; Every run of one color, inward.
+(INIT &run Ray
+  (key ((OR ((&run_node (:Key ^Ky) *P))
+            ((&run_node (:Key Ky))
+             (&inward (:D *D_in)))))
+    (source (P)
+      (&run_node (:Key Ky) *P))
+    (node (P)
+      (&run_node (:Key Ky) *P))
+    (dir ((:D D_in))
+      (&run_node (:Key Ky))
+      (&inward (:D *D_in)))))
+
+(RULE &header
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&head_dir *D)
+  (margin (:B P) D (:K 0)))
+
+(RULE &reach
+  (&header *Col *P)
+  (&inward (:D *D_in))
+  (&run.end (:key (:Ky Col)) (:P *P_end) (:D D_in) (:Origin P))
+  (&head_dir *D)
+  (margin (:B P_end) D *K))
+
+(RULE &bar
+  (input (:P *P_cap) *Col)
+  (NOT (&bg (:C Col)))
+  (&inward (:D *D_in))
+  (neighbor (:P P_cap) (:D D_in) (:Q *P_first))
+  (input (:P P_first) (:Col *Body))
+  (NOT (&bg (:C Body)))
+  (!= Body Col)
+  (&run.end (:key (:Ky Body)) (:P *P_last) (:D D_in) (:Origin P_first))
+  (neighbor (:P P_last) (:D D_in) (:Q *P_tail))
+  (input (:P P_tail) Col))
+
+(RULE &bar_cell
+  (&bar *Col *P_cap *Body *P_first)
+  (&inward (:D *D_in))
+  (OR ((&run.ray (:key (:Ky Body)) *P (:D D_in) (:K *N) (:Origin P_first))
+       (> N 0))
+      ((= P P_first))))
+
+(INIT &bar_size Cardinality
+  (key ((&bar_cell ^Col ^P_cap *P))
+    (member ((:m P))
+      (&bar_cell Col P_cap *P))))
+
+(INIT &bar_ord Order
+  (key ((OR ((&bar ^Col *P_cap))
+            ((&bar_size.size (:key Col P_cap) *N)
+             (&bar_size.size (:key Col (:P_cap *P_cap2)) (:N *N2))
+             (> N N2))))
+    (member ((:t P_cap))
+      (&bar Col *P_cap))
+    (before ((:a P_cap) (:b P_cap2))
+      (&bar_size.size (:key Col *P_cap) *N)
+      (&bar_size.size (:key Col (:P_cap *P_cap2)) (:N *N2))
+      (> N N2))))
+
+(ALTS $choice "how the bars of one cap color rank" $Size
+  (ALT $Head
+    (INIT &bar_ord Order
+      (key ((&bar ^Col *P_cap))
+        (member ((:t P_cap))
+          (&bar Col *P_cap))
+        (before ((:a P_cap) (:b P_cap2))
+          (&bar Col *P_cap)
+          (&bar Col (:P_cap *P_cap2))
+          (&head_dir *D)
+          (nearer D (:P P_cap) (:Q P_cap2)))))))
+
+(RULE &fill
+  (&reach *Col *K)
+  (&bar_ord.rank (:key Col) (:t *P_cap) (:R K))
+  (&bar_cell Col P_cap *P))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&fill P)))))

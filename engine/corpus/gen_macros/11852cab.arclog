@@ -1,0 +1,122 @@
+;; 11852cab
+
+(DET &bg DominantColor)
+
+(DET &cell
+  (ex_output *E *P *Col))
+
+(INIT &bbox2 BoundingBox
+  (key ((&cell ^E *P *Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (&cell E *P *Col)
+      (NOT (&bg (:C Col))))))
+
+(DET &inner_inside12
+  (&cell (:E *K) (:P *P_))
+  (&bbox2.box (:key (:E K)) (:B *B_))
+  (dir_elem (:D *D_m1))
+  (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+  (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+  (< K_m3 0))
+
+(DET &inner2
+  (&cell *E *P)
+  (&bbox2.box (:key E) *B)
+  (NOT (&inner_inside12 (:P_ P) (:B_ B)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(DET &figure2
+  (&cell *E *P *Col)
+  (NOT (&bg (:C Col)))
+  (&inner2 E P *P_inner))
+
+(INIT &self2 Agreement
+  (key ((&figure2 ^E (:P_inner *P) *Col))
+    (source ((:i P) (:v Col))
+      (&figure2 E (:P_inner *P) *Col))
+    (target ((:i P) (:v Col))
+      (&figure2 E (:P_inner *P) *Col))
+    (correspondence ((:m D) (:i P) (:j Q))
+      (&figure2 E (:P_inner *P) *Col)
+      (d4_elem *D)
+      (apply D P (:P_out *Q)))))
+
+(DET &self_map2
+  (&figure2 *E)
+  (d4_elem *D)
+  (NOT (&self2.mismatch (:key E) (:m D))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &inner
+  (input *P)
+  (&bbox.box *B)
+  (ALL ((input P)
+        (&bbox.box B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &figure
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&inner P *P_inner))
+
+(INIT &self Agreement
+  (source ((:i P) (:v Col))
+    (&figure (:P_inner *P) *Col))
+  (target ((:i P) (:v Col))
+    (&figure (:P_inner *P) *Col))
+  (correspondence ((:m D) (:i P) (:j Q))
+    (&figure (:P_inner *P) *Col)
+    (d4_elem *D)
+    (apply D P (:P_out *Q))))
+
+(RULE &self_map
+  (&figure)
+  (d4_elem *D)
+  (NOT (&self.mismatch (:m D))))
+
+(DET &missing
+  (ex_output *E)
+  (d4_elem *D)
+  (NOT (&self_map2 E D)))
+
+;; Name the shared set as a subgroup value.
+(INIT &named Inclusion
+  (pattern ((:pattern S) (:m D))
+    (sym_member *S *D))
+  (observed ((:m D))
+    (d4_elem *D)
+    (NOT (&missing D))))
+
+(DET &sym
+  (&named.equal (:pattern *S)))
+
+(RULE &transform
+  (&sym *S)
+  (sym_member S *D))
+
+(ALTS $choice "the transforms the case admits" $Stored
+  (ALT $Derived
+    (RULE &transform
+      (&figure)
+      (d4_elem *D)
+      (NOT (&self.conflict (:m D))))))
+
+(RULE &paint
+  (&figure *P_inner *Col)
+  (&transform *D)
+  (apply D (:P P_inner) (:P_out *P_inner2))
+  (&inner (:P *P_grid) (:P_inner P_inner2)))
+
+(RULE &output
+  (OR ((&paint (:P_grid *P) *Col))
+      ((input P Col)
+       (NOT (&paint (:P_grid P))))))

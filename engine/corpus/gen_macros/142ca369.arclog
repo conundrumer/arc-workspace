@@ -1,0 +1,216 @@
+;; 142ca369
+
+(DET &bg DominantColor)
+
+(INIT &exposed Boundary
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &no_arm
+  (corner_dir (:C *G) *D)
+  (&exposed.exposed (:key *Col) *P D))
+
+(RULE &elbow
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (diag_dir_elem (:D *Gap))
+  (NOT (&no_arm P Col (:G Gap)))
+  (step_offset (:D Gap) (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *P_gap))
+  (input (:P P_gap) (:Col *Bg))
+  (&bg (:C Bg)))
+
+(RULE &mark
+  (&elbow (:P *P2) (:Gap *G))
+  (OR ((corner_dir (:C G) *D)
+       (step_offset D (:V *V_m1))
+       (compose (:A P2) (:B V_m1) (:C *P)))
+      ((= P P2))))
+
+(RULE &launch2
+  (&elbow *P *Col (:Gap *G))
+  (diag_opposite (:D G) (:Opp *D)))
+
+(RULE &hue
+  (input *Col)
+  (NOT (&bg (:C Col))))
+
+(ALTS $choice "what a marker is" $Gap
+  (ALT $Glyph
+    (DET &flood_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (DET &painted
+      (ex_output *E *P *Col)
+      (NOT (&bg (:C Col)))
+      (ex_input E P (:Col *Bg))
+      (&bg (:C Bg)))
+
+    (DET &beside_ink
+      (&painted *E (:P *Q) *Col)
+      (dir_elem *D)
+      (step_offset D (:V *V_m1))
+      (compose (:A Q) (:B V_m1) (:C *W))
+      (ex_input E (:P W) Col))
+
+    (DET &launch_cell
+      (&painted *E (:P *Q) *Col)
+      (NOT (&beside_ink E Q Col))
+      (diag_opposite *D (:Opp *D_back))
+      (step_offset (:D D_back) (:V *V_m1))
+      (compose (:A Q) (:B V_m1) (:C *P_l))
+      (ex_input E (:P P_l) Col))
+
+    (INIT &flood Propagation
+      (key ((OR ((&launch_cell ^E ^P_l)
+                 (&launch_cell E P_l *Col)
+                 (ex_input E (:P P_l) Col))
+                ((&launch_cell E P_l Col)
+                 (ex_input E *P Col)
+                 (&flood_steps (:Delta *S))
+                 (compose (:A P) (:B S) (:C *P2))
+                 (&launch_cell E P_l (:Col *Col2))
+                 (ex_input E (:P P2) (:Col Col2)))))
+        (source ((:n P_l))
+          (&launch_cell E P_l)
+          (&launch_cell E P_l *Col)
+          (ex_input E (:P P_l) Col))
+        (edge ((:a P) (:b P2))
+          (&launch_cell E P_l *Col)
+          (ex_input E *P Col)
+          (&flood_steps (:Delta *S))
+          (compose (:A P) (:B S) (:C *P2))
+          (&launch_cell E P_l (:Col *Col2))
+          (ex_input E (:P P2) (:Col Col2)))))
+
+    (INIT &bbox BoundingBox
+      (key ((&flood.reached (:key ^E (:P_l ^P)) (:n *P2)))
+        (cell ((:P P2))
+          (&flood.reached (:key E (:P_l P)) (:n *P2)))))
+
+    (DET &marker_glyph_inside1
+      (&bbox.cell (:key *E (:P *P_l)) (:P *P_))
+      (&bbox.box (:key E (:P P_l)) (:B *B_))
+      (dir_elem (:D *D_m1))
+      (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+      (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+      (< K_m3 0))
+
+    (DET &marker_launch_inside1
+      (&bbox.box (:key *E (:P *P_l_)) (:B *B_))
+      (dir_elem (:D *D_m1))
+      (relative (:Base B_) (:X P_l_) (:X_rel *R_m2))
+      (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+      (< K_m3 0))
+
+    (DET &aim
+      (&launch_cell *E *P_l *D))
+
+    (DET &glyph
+      (&bbox.cell (:key *E (:P *P_l)) (:P *P2))
+      (&bbox.box (:key E (:P P_l)) *B)
+      (NOT (&marker_glyph_inside1 (:P_ P2) (:B_ B)))
+      (relative (:Base B) (:X P2) (:X_rel *P)))
+
+    (DET &launch
+      (&bbox.box (:key *E (:P *P_l)) *B)
+      (NOT (&marker_launch_inside1 (:P_l_ P_l) (:B_ B)))
+      (relative (:Base B) (:X P_l) (:X_rel *P)))
+
+    ;; The marker: its shape, the cell a ray leaves from, and where it heads.
+    (RIGID_DET &marker
+      (&glyph *E *P_l *P)
+      (&launch *E *P_l *P)
+      (&aim *E *P_l *D))
+
+    (INIT &occ Occurrences
+      (key ((OR ((d4_elem ^D)
+                 (input *P ^Col)
+                 (NOT (&bg (:C Col))))
+                ((input Col)
+                 (NOT (&bg (:C Col)))
+                 (&marker.glyph (:Pose D) (:P *P2)))))
+        (cell (P)
+          (d4_elem D)
+          (input *P Col)
+          (NOT (&bg (:C Col))))
+        (shape ((:P P2))
+          (input Col)
+          (NOT (&bg (:C Col)))
+          (&marker.glyph (:Pose D) (:P *P2)))))
+
+    (RULE &mark
+      (&occ.occurrence (:key *D *Col) (:P *A))
+      (&occ.shape (:key D Col) (:P *P_m2))
+      (compose A (:B P_m2) (:C *P)))
+
+    (RULE &launch2
+      (&occ.occurrence (:key (:D *D2) *Col) (:P *A))
+      (&marker.launch (:Pose D2) (:P *P_l))
+      (compose A (:B P_l) (:C *P))
+      (&marker.aim (:Pose D2) *D))))
+
+(RULE &wall
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&mark P)))
+
+(RULE &side_wall
+  (input *P)
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *P_side))
+  (&wall (:P P_side) *Col))
+
+(RULE &hit
+  (corner_dir (:C *D) (:D *D_cmp))
+  (&side_wall *P (:D D_cmp) *Col))
+
+(RULE &leave_dir
+  (input *P)
+  (corner_dir (:C *D) (:D *D_cmp))
+  (IF ((&side_wall P (:D D_cmp)))
+      ((opposite (:D D_cmp) (:Opp *D_out)))
+      ((= D_out D_cmp))))
+
+(RULE &bounce
+  (&leave_dir *P *D (:D_out *D1))
+  (&leave_dir P D (:D_out *D2))
+  (corner_dir (:C *D_out) (:A *A_m1) (:D D1))
+  (perp (:A A_m1) (:A2 *A2_m2))
+  (corner_dir (:C D_out) (:A A2_m2) (:D D2)))
+
+(RULE &leave
+  (&bounce *P *D *D_out)
+  (&hue *Col)
+  (OR ((&hit P D (:Col *Col_out)))
+      ((NOT (&hit P D))
+       (= Col_out Col))))
+
+;; The rays' walk from the launches: a ray reaches the next cell along the
+;; direction it leaves with, when that cell is empty.
+(INIT &walk Propagation
+  (source ((:n P D Col))
+    (&launch2 *P *D *Col))
+  (edge ((:a P D Col) (:b (:P P_next) (:D D_out) (:Col Col_out)))
+    (&leave *P *D *Col *D_out *Col_out)
+    (step_offset (:D D_out) (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *P_next))
+    (input (:P P_next) (:Col *Bg))
+    (&bg (:C Bg))))
+
+;; A ray paints an empty cell with the color it leaves that cell with.
+(RULE &paint
+  (&walk.reached (:n *P *D (:Col *C)))
+  (&leave P D (:Col C) (:Col_out *Col))
+  (input P (:Col *Bg))
+  (&bg (:C Bg)))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

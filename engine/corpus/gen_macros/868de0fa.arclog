@@ -1,0 +1,131 @@
+;; 868de0fa
+
+(DET &ink RarestColor)
+
+(DET &odd_fill AnyOutNewColor)
+
+(DET &even_fill AnyOutNewColor)
+
+(INIT &drect Outlines
+  (node (P)
+    (input *P *Col)
+    (&ink (:C Col))))
+
+(RULE &hole
+  (&drect.box *B)
+  (input *P)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((> K_m3 0))))
+
+;; The hole's own box.
+(INIT &rect_hole BoundingBox
+  (key ((&hole ^B *P))
+    (cell (P)
+      (&hole B *P))))
+
+(RULE &rect_odd
+  (&hole *B *P)
+  (&rect_hole.box (:key B) (:B *B_hole))
+  (ALL ((&hole (:B *Bm) P)
+        (&rect_hole.box (:key (:B Bm)) (:B B_hole))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B_hole) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B_hole) (:X P) (:X_rel *P_inner))
+  (ALL ((&rect_hole.box (:key (:B *Bmm)) (:B *B_holem))
+        (&hole (:B Bmm) (:P *Pm))
+        (relative (:Base B_holem) (:X Pm) (:X_rel P_inner))
+        (opposite (:D *D_m1m) (:Opp *O_m2))
+        (margin (:B P_inner) (:D D_m1m) (:K *K1_m3))
+        (margin (:B P_inner) (:D O_m2) (:K *K2_m4)))
+       ((= K1_m3 K2_m4))))
+
+(RULE &fill
+  (&hole *B *P)
+  (IF ((&rect_odd B))
+      ((&odd_fill (:C *Col)))
+      ((&even_fill (:C Col)))))
+
+(ALTS $choice "how an outline and its hole are found" $Rect
+  (ALT $Enclose
+    (RULE &closed_flood_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (RULE &closed_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (RULE &closed_cell
+      (input *P *Col)
+      (NOT (&ink (:C Col))))
+
+    (INIT &closed_flood Propagation
+      (source ((:n P))
+        (&closed_cell *P)
+        (dir_elem *D)
+        (margin (:B P) D (:K 0))
+        (input P *Col)
+        (NOT (&ink (:C Col))))
+      (edge ((:a P) (:b P2))
+        (input *P *Col)
+        (NOT (&ink (:C Col)))
+        (&closed_flood_steps (:Delta *S))
+        (compose (:A P) (:B S) (:C *P2))
+        (input (:P P2) (:Col *Col2))
+        (NOT (&ink (:C Col2)))))
+
+    (RULE &closed_node
+      (&closed_cell *P)
+      (NOT (&closed_flood.reached (:n P))))
+
+    ;; The ink walls the rest of the grid off; a region it closes is a hole.
+    (INIT &closed Quotient
+      (edge ((:a P) (:b P2))
+        (OR ((&closed_node *P)
+             (&closed_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P2))
+             (&closed_node (:P P2)))
+            ((&closed_node P)
+             (= P2 P)))))
+
+    (RULE &closed_component
+      (&closed.class (:a *P) *Id))
+
+    ;; The region's own box.
+    (INIT &region_box BoundingBox
+      (key ((&closed_component *P ^Id))
+        (cell (P)
+          (&closed_component *P Id))))
+
+    (RULE &region_odd
+      (&closed_component *P *Id)
+      (&region_box.box (:key Id) *B)
+      (ALL ((&closed_component P (:Id *Idm))
+            (&region_box.box (:key (:Id Idm)) B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (relative (:Base B) (:X P) (:X_rel *P_inner))
+      (ALL ((&region_box.box (:key (:Id *Idmm)) (:B *Bm))
+            (&closed_component (:P *Pm) (:Id Idmm))
+            (relative (:Base Bm) (:X Pm) (:X_rel P_inner))
+            (opposite (:D *D_m1m) (:Opp *O_m2))
+            (margin (:B P_inner) (:D D_m1m) (:K *K1_m3))
+            (margin (:B P_inner) (:D O_m2) (:K *K2_m4)))
+           ((= K1_m3 K2_m4))))
+
+    (RULE &fill
+      (&closed_component *P *Id)
+      (IF ((&region_odd Id))
+          ((&odd_fill (:C *Col)))
+          ((&even_fill (:C Col)))))))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&fill P)))))

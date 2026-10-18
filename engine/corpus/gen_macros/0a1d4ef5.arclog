@@ -1,0 +1,157 @@
+;; 0a1d4ef5
+
+(RULE &region_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+;; Touching cells of one color.
+(INIT &region Quotient
+  (edge ((:a Col P) (:b Col (:P P3)))
+    (OR ((input *P *Col)
+         (&region_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) Col))
+        ((input P Col)
+         (= P3 P)))))
+
+(RULE &region_component
+  (&region.class (:a (:Col *Key) *P) *Id))
+
+(RULE &region_cell
+  (&region_component *P *Id))
+
+(RULE &region_line_split1
+  (&region_cell *Id (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_line_))
+  (relative (:Base P_line_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &region_line
+  (&region_cell *Id *P)
+  (axis_elem *A)
+  (&region_line_split1 (:P_ P) (:A_ A) (:P_line_ *P_line) (:X_m1_ *X_m1)))
+
+(RULE &hole
+  (&region_line *Id *A *P_line)
+  (&region_line Id (:A *A2) (:P_line *P_line2))
+  (perp A A2)
+  (compose (:A P_line) (:B P_line2) (:C *P))
+  (NOT (&region_cell Id P)))
+
+(DET &rect
+  (&region_component *E (:Key *Col) *Id)
+  (ex_output E Col)
+  (NOT (&hole E Id)))
+
+;; Side length on each axis: how many lines it spans.
+(INIT &side Cardinality
+  (key ((&region_line ^Id ^A *P_line))
+    (member ((:m P_line))
+      (&region_line Id A *P_line))))
+
+;; The least side of a rectangle.
+(INIT &sides Order
+  (member ((:t N))
+    (&rect *E *Id)
+    (&side.size E (:key Id) *N))
+  (score ((:t N) (:S N))
+    (&rect *E *Id)
+    (&side.size E (:key Id) *N)))
+
+(DET &min_side
+  (&sides.minimal (:t *K)))
+
+(RULE &block
+  (&side.size (:key *Id))
+  (NOT (&hole Id))
+  (ALL ((&side.size (:key Id) *N)
+        (&min_side *K))
+       ((>= N K))))
+
+(RULE &region_line2
+  (&region_line *Id *A *P_line))
+
+(RULE &runs_node
+  (&block *Id)
+  (&region_line2 Id (:A *Key) (:P_line *P)))
+
+(RULE &runs_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+;; A band is a run of adjacent occupied lines.
+(INIT &runs Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&runs_node (:Key *Ky) *P)
+         (&runs_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&runs_node (:Key Ky) (:P P2)))
+        ((&runs_node (:Key Ky) P)
+         (= P2 P)))))
+
+(RULE &runs_component
+  (&runs.class (:a *Key *P) *Id))
+
+(RULE &block_band
+  (&block *Id)
+  (&region_line2 Id *A *P_line)
+  (&runs_component (:Key A) (:P P_line) (:Id *B)))
+
+(ALTS $choice "what makes a band" $Runs
+  (ALT $Overlap
+    (RULE &overlap
+      (&block *Id)
+      (&block (:Id *Id2))
+      (&region_line2 Id *A *P_line)
+      (&region_line2 (:Id Id2) A P_line))
+
+    ;; The classes a chain of alignments connects.
+    (INIT &cls Quotient
+      (edge ((:a Id A) (:b (:Id Id2) A))
+        (&overlap *A *Id *Id2)))
+
+    (RULE &block_band
+      (&cls.class (:a *Id *A) (:Id *B)))))
+
+;; One output line per band: the frame the bands induce on each axis. A
+;; band's line set is the union of its rectangles' spans; band line sets
+;; are disjoint intervals, as OrderFrame assumes.
+(INIT &layout Order
+  (key ((&block_band ^A)
+        (axis_of ^D A))
+    (member ((:t B))
+      (&block_band A *Id *B)
+      (&region_line2 Id A *P_line))
+    (before ((:a B) (:b B2))
+      (&block_band A *Id *B)
+      (&region_line2 Id A *P_line)
+      (&block_band A (:Id *Id2) (:B *B2))
+      (&region_line2 (:Id Id2) A (:P_line *P_line2))
+      (!= B B2)
+      (margin (:B P_line) D (:K *K1))
+      (margin (:B P_line2) D (:K *K2))
+      (< K1 K2))))
+
+(RULE &layout_pos
+  (&layout.rank (:key (:A *Key) *A *D) (:t *M) (:R *R1))
+  (&layout.dual_rank (:key (:A Key) A D) (:t M) (:R *R2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K R1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K R2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_pos)))
+
+(RULE &output
+  (&region_component (:Key *Col) *Id)
+  (&block_band *A Id *B)
+  (&block_band (:A *A2) Id (:B *B2))
+  (perp A A2)
+  (&layout_pos (:Key A) (:M B) (:P_pos *P_line))
+  (&layout_pos (:Key A2) (:M B2) (:P_pos *P_line2))
+  (compose (:A P_line) (:B P_line2) (:C *P)))

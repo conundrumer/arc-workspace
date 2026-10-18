@@ -1,0 +1,313 @@
+;; b9630600
+
+(INPUT hollow-rooms "every input holds several hollow rectangles, the rooms, on a field of `background`, each with a wall 1 cell thick in `room_color` and an interior of at least 1×1 cells, and no two rooms touch")
+
+(INPUT facing-network-connected "the rooms are linked into one group through facing pairs, as `facing-pair` defines them")
+
+(OUTPUT facing-pair "two rooms face each other when, on one axis, their interiors share a span of lines, and the band between their facing walls across that span holds only `background`; the gap of the pair is the count of cells between the two facing walls")
+
+(OUTPUT shortest-joins "the corridors are those of one spanning tree of the facing pairs with the least total gap; where several such trees exist, any one of them"
+  (APPROXIMATED "a facing pair gets a corridor unless the two rooms are linked by a chain of facing pairs whose gaps are each strictly smaller than its gap")
+
+  (RULE &sight_dir
+    (dir_elem (:D *Key)))
+
+  (DET_OR_RULE &background DominantColor)
+
+  (RULE &sight_blocked
+    (dir_elem (:D *Key))
+    (input *P *Col)
+    (NOT (&background Col)))
+
+  (RULE &sight_node
+    (dir_elem (:D *Key))
+    (input *P)
+    (NOT (&sight_blocked Key P)))
+
+  (DET_OR_RULE &room_color RarestColor)
+
+  (INIT &room Outlines
+    (node (P)
+      (input *P *Col)
+      (&room_color Col)))
+
+  (RULE &face_cell
+    (&room.box (:B *A))
+    (input *P)
+    (ALL ((dir_elem (:D *D_m1))
+          (relative (:Base A) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (margin (:B P) *D (:K *K_m1))
+    (margin (:B A) D (:K K_m1))
+    (opposite D (:Opp *D_in))
+    (step_offset (:D D_in) (:V *V_m2))
+    (compose (:A P) (:B V_m2) (:C *P_in))
+    (ALL ((input (:P *Pm))
+          (opposite (:D *Dm) (:Opp *D_inm))
+          (step_offset (:D D_inm) (:V *V_m1))
+          (compose (:A Pm) (:B V_m1) (:C P_in))
+          (dir_elem (:D *D_m1m))
+          (relative (:Base A) (:X P_in) (:X_rel *R_m2m))
+          (margin (:B R_m2m) (:D D_m1m) (:K *K_m3m)))
+         ((> K_m3m 0)))
+    (step_offset D (:V *V_m3))
+    (compose (:A P) (:B V_m3) (:C *Q)))
+
+  (RULE &sight_source
+    (&face_cell (:D *Key) (:Q *P)))
+
+  ;; Casts toward each direction from the cell beyond each room wall on that
+  ;; side; every cell not of `background` blocks.
+  (INIT &sight Distance
+    (key ((&sight_source (:Key ^Ky) (:P ^O))
+          (&sight_dir (:Key Ky)))
+      (edge ((:a A2) (:b Q))
+        (OR ((&sight_source (:Key Ky) (:P O))
+             (&sight_dir (:Key Ky))
+             (axis_of (:D Ky) *A)
+             (sub_extent (:P O) A *K)
+             (dir8_opposite (:D Ky) (:D2 *O_m2))
+             (edge_inset (:D O_m2) K (:B *B1_m3))
+             (edge_inset (:D Ky) K (:B *I_m5))
+             (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+             (compose (:A O) (:B V_m1) (:C *A2))
+             (&sight_node (:Key Ky) (:P A2))
+             (step_offset (:D Ky) (:V *V_m6))
+             (compose (:A A2) (:B V_m6) (:C *Q))
+             (&sight_node (:Key Ky) (:P Q)))
+            ((&sight_source (:Key Ky) (:P O))
+             (&sight_dir (:Key Ky))
+             (step_offset (:D Ky) (:V *V_m12))
+             (compose (:A O) (:B V_m12) (:C Q))
+             (&sight_node (:Key Ky) (:P Q))
+             (= A2 O))
+            ((&sight_source (:Key Ky) (:P O))
+             (&sight_dir (:Key Ky))
+             (diag_dir_elem (:D Ky))
+             (axis_elem (:A *A3))
+             (sub_extent (:P O) (:A A3) (:K *K2))
+             (dir8_opposite (:D Ky) (:D2 *O_m22))
+             (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+             (edge_inset (:D Ky) (:K K2) (:B *I_m52))
+             (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+             (compose (:A O) (:B V_m13) (:C A2))
+             (&sight_node (:Key Ky) (:P A2))
+             (step_offset (:D Ky) (:V *V_m62))
+             (compose (:A A2) (:B V_m62) (:C Q))
+             (&sight_node (:Key Ky) (:P Q)))))
+      (source ((:n O))
+        (&sight_source (:Key Ky) (:P O))
+        (&sight_dir (:Key Ky)))))
+
+  (RULE &sight_ray
+    (&sight.distance (:key (:Ky *Key) (:Ky *D) (:O *Origin)) (:n *P) *K))
+
+  (RULE &sight_end
+    (&sight_ray *Key *P *D *K *Origin)
+    (step_offset D (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *Q))
+    (NOT (&sight_ray Key (:P Q) D Origin)))
+
+  (RULE &sight_full_dir
+    (dir_elem (:D *Key)))
+
+  (RULE &sight_full_node
+    (dir_elem (:D *Key))
+    (input *P))
+
+  (RULE &sight_full_source
+    (&face_cell (:D *Key) (:Q *P)))
+
+  (INIT &sight_full Distance
+    (key ((&sight_full_source (:Key ^Ky) (:P ^O))
+          (&sight_full_dir (:Key Ky)))
+      (edge ((:a A2) (:b Q))
+        (OR ((&sight_full_source (:Key Ky) (:P O))
+             (&sight_full_dir (:Key Ky))
+             (axis_of (:D Ky) *A)
+             (sub_extent (:P O) A *K)
+             (dir8_opposite (:D Ky) (:D2 *O_m2))
+             (edge_inset (:D O_m2) K (:B *B1_m3))
+             (edge_inset (:D Ky) K (:B *I_m5))
+             (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+             (compose (:A O) (:B V_m1) (:C *A2))
+             (&sight_full_node (:Key Ky) (:P A2))
+             (step_offset (:D Ky) (:V *V_m6))
+             (compose (:A A2) (:B V_m6) (:C *Q))
+             (&sight_full_node (:Key Ky) (:P Q)))
+            ((&sight_full_source (:Key Ky) (:P O))
+             (&sight_full_dir (:Key Ky))
+             (step_offset (:D Ky) (:V *V_m12))
+             (compose (:A O) (:B V_m12) (:C Q))
+             (&sight_full_node (:Key Ky) (:P Q))
+             (= A2 O))
+            ((&sight_full_source (:Key Ky) (:P O))
+             (&sight_full_dir (:Key Ky))
+             (diag_dir_elem (:D Ky))
+             (axis_elem (:A *A3))
+             (sub_extent (:P O) (:A A3) (:K *K2))
+             (dir8_opposite (:D Ky) (:D2 *O_m22))
+             (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+             (edge_inset (:D Ky) (:K K2) (:B *I_m52))
+             (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+             (compose (:A O) (:B V_m13) (:C A2))
+             (&sight_full_node (:Key Ky) (:P A2))
+             (step_offset (:D Ky) (:V *V_m62))
+             (compose (:A A2) (:B V_m62) (:C Q))
+             (&sight_full_node (:Key Ky) (:P Q)))))
+      (source ((:n O))
+        (&sight_full_source (:Key Ky) (:P O))
+        (&sight_full_dir (:Key Ky)))))
+
+  (RULE &sight_full_ray
+    (&sight_full.distance (:key (:Ky *Key) (:Ky *D) (:O *Origin)) (:n *P) *K))
+
+  (RULE &face_line
+    (&face_cell *A *D *P *Q)
+    (&sight_full_ray (:Key D) (:P *P2) D *K (:Origin Q))
+    (opposite D (:Opp *D2))
+    (&face_cell (:A *A2) (:D D2) (:P P2)))
+
+  (RULE &clear_line
+    (&face_line *A *A2 *D *Q *P2 *K)
+    (&sight_end (:Key D) (:P *E) D (:Origin Q))
+    (step_offset D (:V *V_m1))
+    (compose (:A E) (:B V_m1) (:C P2))
+    (&sight_full_ray (:Key D) (:P P2) D K (:Origin Q))
+    (NOT (&sight_blocked (:Key D) (:P Q))))
+
+  (RULE &facing
+    (&face_line *A *A2 *D *K)
+    (ALL ((&face_line A A2 *Q))
+         ((&clear_line A A2 Q))))
+
+  (RULE &corridor_line
+    (&facing *A *A2 *D)
+    (&face_line A A2 D *P *Q *P2 *K))
+
+  (RULE &corridor_cell
+    (&corridor_line *A *A2 *D *P *Q *K)
+    (&sight_full_ray (:Key D) (:P *X) D (:K *K_x) (:Origin Q))
+    (< K_x K))
+
+  ;; The count of cells a corridor's band covers.
+  (INIT &area Cardinality
+    (key ((&corridor_cell ^A ^A2 *X))
+      (member ((:m X))
+        (&corridor_cell A A2 *X)))))
+
+(OUTPUT corridor-shape "a corridor covers the span the two interiors share; across the gap, the two outermost lines of that span become `room_color`, and on the two facing walls, the lines strictly between those two become `background`. A span of 1 or 2 lines gives a solid bar with no opening.")
+
+(OUTPUT keep-rest "every other cell keeps its input color")
+
+(ALTS $s "how the measures of the facing pairs select the pairs that get a corridor" $SpanningTree
+  (ALT $GapLimit
+    (OUTPUT shortest-joins "a facing pair gets a corridor when its gap is at most `max_gap`"
+      (DET &max_gap NumberDomain))
+    (RULE &joined
+      (&facing *A *A2 *K)
+      (&max_gap (:N *M))
+      (<= K M))))
+
+(ALTS $w "what measures a facing pair" $GapWeight
+  (ALT $AreaWeight
+    (OUTPUT shortest-joins "a facing pair is measured by its gap times the count of lines in its corridor's span, in place of its gap")
+    (RULE &measure
+      (OR ((&area.size (:key *A *A2) *N))
+          ((&area.size (:key (:A A2) (:A2 A)) N))))))
+
+(ALTS $sp "which lines a corridor covers" $SharedSpan
+  (ALT $NarrowerSpan
+    (OUTPUT corridor-shape "a corridor covers every line of the interior of the room whose interior is narrower, out to the line of the other room's facing wall; undefined on an input where two facing rooms have interiors of one width at different lines"
+      (RULE &not_wider
+        (&facing *A *A2 *D)
+        (axis_of D (:A *Ax))
+        (perp (:A Ax) (:A2 *Ax_across))
+        (&face_cell A D *P)
+        (axis_elem (:A Ax_across))
+        (relative (:Base A) (:X P) (:X_rel *R_m1))
+        (frame_extent (:P R_m1) (:A Ax_across) *N)
+        (axis_elem (:A Ax_across))
+        (relative (:Base A2) (:X P) (:X_rel *R_m2))
+        (frame_extent (:P R_m2) (:A Ax_across) (:N *N2))
+        (<= N N2))
+
+      (RULE &corridor_line
+        (&not_wider *A *A2 *D)
+        (&face_cell A D *P *Q)
+        (&sight_full_ray (:Key D) (:P *P2) D *K (:Origin Q))
+        (opposite D (:Opp *D2))
+        (margin (:B P2) (:D D2) (:K *K_m1))
+        (margin (:B A2) (:D D2) (:K K_m1)))
+
+      (RULE &no_narrower
+        (&not_wider *A *A2 *D *N (:N2 N))
+        (&face_cell A D *P)
+        (NOT (&face_line A A2 D P))))
+    (RULE &live
+      (NOT (&no_narrower)))))
+
+(ALTS $f "what may stand between two facing rooms" $ClearBand
+  (ALT $IgnoreBlocking
+    (OUTPUT facing-pair "two rooms face each other when, on one axis, their interiors share a span of lines, whatever stands between their facing walls"
+      (RULE &facing
+        (&face_line *A *A2 *D *K)))))
+
+(RULE &sight_full_end
+  (&sight_full_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&sight_full_ray Key (:P Q) D Origin)))
+
+(RULE &outer_line
+  (&corridor_line *A *A2 *D *P)
+  (axis_of D (:A *A_m1))
+  (perp (:A A_m1) (:A2 *A2_m2))
+  (axis_of (:D *D_side) (:A A2_m2))
+  (step_offset (:D D_side) (:V *V_m3))
+  (compose (:A P) (:B V_m3) (:C *P_side))
+  (NOT (&corridor_line A A2 D (:P P_side))))
+
+(RULE &measure
+  (&facing *A *A2 (:K *N)))
+
+;; Under each facing pair, the rooms that facing pairs of a strictly smaller
+;; measure link to its first room.
+(INIT &linked Propagation
+  (key ((&measure ^A ^A2))
+    (source ((:n A))
+      (&measure A A2))
+    (edge ((:a B) (:b B2))
+      (&measure A A2 *N)
+      (&measure (:A *B) (:A2 *B2) (:N *N2))
+      (< N2 N))))
+
+(RULE &joined
+  (&measure *A *A2)
+  (NOT (&linked.reached (:key A A2) (:n A2))))
+
+(RULE &paint
+  (&joined *A *A2)
+  (OR ((&corridor_cell A A2 *P *X)
+       (&outer_line A A2 P)
+       (&room_color *Col))
+      ((&corridor_line A A2 P *P2)
+       (NOT (&outer_line A A2 P))
+       (OR ((= X P))
+           ((= X P2))
+           ((&corridor_cell A A2 P X)))
+       (&background Col))))
+
+(RULE &live)
+
+(RULE &output
+  (OR ((&live)
+       (&paint (:X *P) *Col))
+      ((&live)
+       (input P Col)
+       (NOT (&paint (:X P))))))

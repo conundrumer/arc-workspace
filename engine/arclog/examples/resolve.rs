@@ -1,6 +1,6 @@
 //! The end check of the registry and resolver stage over the corpus: `cargo
 //! run --example resolve -- <dir> <report>`, with `<dir>` the corpus
-//! directory, such as `work/arclog/gen/`, and `<report>` the Python lint's
+//! directory, such as `engine/corpus/gen/`, and `<report>` the Python lint's
 //! output over `<dir>`, read by [`arclog::harness::LintReport`]: the run
 //! checks the files with no error in the report.
 //!

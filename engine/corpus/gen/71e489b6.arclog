@@ -1,0 +1,78 @@
+;; 71e489b6
+
+(DET &ground SharedColor)
+
+(DET &halo AnyOutNewColor)
+
+;; The 2x2 square a solid cell lies in.
+;; TODO no-det-plan: &square: the plan gives no verdict
+(DET &square)
+
+(RULE &figure
+  (input *P (:Col *C))
+  (NOT (&ground C)))
+
+(INIT &rim Boundary
+  (cell (P)
+    (&figure *P)))
+
+(RULE &figure_nbr
+  (&figure *P)
+  (dir_elem *D)
+  (NOT (&rim.exposed P D)))
+
+(RULE &ground2
+  (input *P)
+  (ALL ((&figure_nbr P (:D *D1))
+        (&figure_nbr P (:D *D2)))
+       ((= D1 D2))))
+
+;; The 2x2 blocks of ground.
+(INIT &block Occurrences
+  (cell (P)
+    (&ground2 *P))
+  (shape ((:P S))
+    (&square (:P *S))))
+
+(RULE &solid
+  (&block.occurrence (:P *M))
+  (&square (:P *S))
+  (compose (:A M) (:B S) (:C *P)))
+
+;; The clusters of thin ground.
+(INIT &cluster Connectivity
+  (node (P)
+    (&ground2 *P)
+    (NOT (&solid P))))
+
+(RULE &anchor
+  (&cluster.component *P *Id)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&solid (:P Q)))
+
+(RULE &hole
+  (input *P (:Col *C))
+  (&ground C)
+  (&cluster.component P *Id)
+  (ALL ((&anchor Id (:Q *Q1))
+        (&anchor Id (:Q *Q2)))
+       ((= Q1 Q2))))
+
+(RULE &halo2
+  (&hole (:P *Q))
+  (dir8_elem *D)
+  (neighbor (:P Q) D (:Q *P))
+  (input P)
+  (NOT (&hole P)))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&halo2 P)
+       (&halo (:C *Col)))
+      ((NOT (&halo2 P))
+       (&ground2 P)
+       (&ground (:C Col)))
+      ((NOT (&halo2 P))
+       (NOT (&ground2 P))
+       (= Col C_in))))

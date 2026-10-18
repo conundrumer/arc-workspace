@@ -1,0 +1,171 @@
+;; 63613498
+
+(DET &painted_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(RULE &shapes_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(DET &mark
+  (ex_input *E *P (:Col *Col_in))
+  (ex_output E P (:Col *C))
+  (!= C Col_in))
+
+(INIT &shapes Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (NOT (&mark (:C Col)))
+         (&shapes_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2)))
+         (NOT (&mark (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (NOT (&mark (:C Col3)))
+         (= P3 P)))))
+
+(RULE &shapes_component
+  (&shapes.class (:a *P) *Id))
+
+(INIT &bbox BoundingBox
+  (key ((&shapes_component *P ^Id))
+    (cell (P)
+      (&shapes_component *P Id))))
+
+(RULE &shape_inner
+  (&shapes_component *P *Id)
+  (&bbox.box (:key Id) *B)
+  (ALL ((&shapes_component P (:Id *Idm))
+        (&bbox.box (:key (:Id Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(INIT &same Inclusion
+  (pattern ((:pattern Id) (:m P_inner))
+    (&shape_inner *Id *P_inner))
+  (observed ((:observed Id) (:m P_inner))
+    (&shape_inner *Id *P_inner)))
+
+(DET &painted_node
+  (ex_input (:E *Key) *P *Col)
+  (NOT (&mark (:C Col)))
+  (ex_output (:E Key)))
+
+;; The part the output paints in, of the parts the wall cuts each train
+;; grid into. The ex_out atom holds the test inputs out.
+(INIT &painted Propagation
+  (key ((OR ((ex_input ^E *P *Col)
+             (ex_output E P (:Col *Col_out))
+             (!= Col Col_out)
+             (&painted_node (:Key E) P))
+            ((&painted_node (:Key E) P)
+             (&painted_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *Q))
+             (&painted_node (:Key E) (:P Q)))))
+    (source ((:n P))
+      (ex_input E *P *Col)
+      (ex_output E P (:Col *Col_out))
+      (!= Col Col_out)
+      (&painted_node (:Key E) P))
+    (edge ((:a P) (:b Q))
+      (&painted_node (:Key E) *P)
+      (&painted_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *Q))
+      (&painted_node (:Key E) (:P Q)))))
+
+;; The panel is the box of the part the output leaves alone.
+(INIT &panel_box BoundingBox
+  (key ((&painted_node (:Key ^E) *P)
+        (NOT (&painted.reached (:key E) (:n P))))
+    (cell (P)
+      (&painted_node (:Key E) *P)
+      (NOT (&painted.reached (:n P))))))
+
+(DET &panel
+  (&panel_box.box *B))
+
+;; The key's box lies within the panel, so every cell of it does.
+(RULE &key
+  (&bbox.box (:key *Id) *B)
+  (&panel (:B *B_panel))
+  (ALL ((&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B_panel) (:X B) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(ALTS $choice "how the cut-off corner is delimited" $Panel
+  (ALT $Wall
+    (RULE &walled_off_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    ;; The corner the wall cuts off.
+    (DET &corner DiagDirDomain)
+
+    (RULE &walled_off_node
+      (input *P *Col)
+      (NOT (&mark (:C Col))))
+
+    ;; The part the wall cuts off: the grid apart from the wall, reached from the
+    ;; corner cell.
+    (INIT &walled_off Propagation
+      (source ((:n P))
+        (&walled_off_node *P)
+        (&corner *D)
+        (relative (:Base 0) (:X P) (:X_rel *R_m1))
+        (axis_of (:D *D1_m2) (:A *A1_m3))
+        (opposite (:D D1_m2) (:Opp *O1_m4))
+        (perp (:A A1_m3) (:A2 *A2_m5))
+        (axis_of (:D *D2_m6) (:A A2_m5))
+        (opposite (:D D2_m6) (:Opp *O2_m7))
+        (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+        (>= K1_m8 0)
+        (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+        (>= K2_m9 0)
+        (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+        (>= K3_m10 0)
+        (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+        (>= K4_m11 0)
+        (corner_dir (:C D) (:A *A_m12) (:D *D1_m13))
+        (perp (:A A_m12) (:A2 *A2_m14))
+        (corner_dir (:C D) (:A A2_m14) (:D *D2_m15))
+        (margin (:B P) (:D D1_m13) (:K *K1_m16))
+        (margin (:B 0) (:D D1_m13) (:K K1_m16))
+        (margin (:B P) (:D D2_m15) (:K *K2_m17))
+        (margin (:B 0) (:D D2_m15) (:K K2_m17))
+        (input P *Col)
+        (NOT (&mark (:C Col))))
+      (edge ((:a P) (:b P2))
+        (input *P *Col)
+        (NOT (&mark (:C Col)))
+        (&walled_off_steps (:Delta *S))
+        (compose (:A P) (:B S) (:C *P2))
+        (input (:P P2) (:Col *Col2))
+        (NOT (&mark (:C Col2)))))
+
+    ;; The key is a shape in that part.
+    (RULE &key
+      (&shapes_component *P *Id)
+      (&walled_off.reached (:n P)))))
+
+(RULE &twin
+  (&key (:Id *K))
+  (&same.equal (:observed *Id) (:pattern K))
+  (NOT (&key Id))
+  (&shapes_component *P Id))
+
+(RULE &output
+  (input *P (:Col *Col2))
+  (IF ((&twin P))
+      ((&mark (:C *Col)))
+      ((= Col Col2))))

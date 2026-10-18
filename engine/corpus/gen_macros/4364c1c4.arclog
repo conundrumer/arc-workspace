@@ -1,0 +1,103 @@
+;; 4364c1c4
+
+(RULE &comps_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The field is the commonest color; the parts are what it leaves.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(RULE &bg
+  (&field.maximal (:t *Col)))
+
+;; A part: one color's touching cells. A cell holds one color, so the
+;; parts' cell sets are disjoint and the label alone names the part.
+(INIT &comps Quotient
+  (edge ((:a Col P) (:b Col (:P P3)))
+    (OR ((input *P *Col)
+         (NOT (&bg Col))
+         (&comps_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) Col))
+        ((input P Col)
+         (NOT (&bg Col))
+         (= P3 P)))))
+
+(RULE &comps_component
+  (&comps.class (:a (:Col *Key) *P) *Id))
+
+;; The slide distance.
+(DET &shift DivisorRatio)
+
+(DET &sense SenseDomain)
+
+(RULE &part
+  (&comps_component (:Key *Col) *P *Id))
+
+(RULE &side
+  (&part *Id *P)
+  (dir_elem (:D *D2))
+  (step_offset (:D D2) (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&part (:Id *Id2) (:P Q))
+  (!= Id2 Id)
+  (opposite (:D D2) (:Opp *D)))
+
+(RULE &slide_dir
+  (&sense *S)
+  (turn S *D (:D2 *D_out)))
+
+(ALTS $choice "what fixes the slide direction" $Turn
+  (ALT $Table
+    ;; Where each part seats on its example's output: the translations that
+    ;; carry every cell of the part onto an output cell of its color.
+    (INIT &seating Occurrences
+      (key ((OR ((&part ^E ^Id *P *Col))
+                ((&part E Id)
+                 (ex_output E P Col))))
+        (cell (P (:v Col))
+          (&part E Id)
+          (ex_output E *P *Col))
+        (shape (P (:v Col))
+          (&part E Id *P *Col))))
+
+    (DET &slide_map
+      (&side *E *Id *D)
+      (&seating.occurrence (:key E Id) (:P *M))
+      (&shift *K)
+      (dir_elem (:D *D_out))
+      (dir8_opposite (:D D_out) (:D2 *O_m1))
+      (edge_inset (:D O_m1) K (:B *B1_m2))
+      (edge_inset (:D D_out) K (:B *I_m4))
+      (relative (:Base I_m4) (:X 0) (:X_rel *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C M)))
+
+    (RULE &slide_dir
+      (&slide_map *D *D_out))))
+
+(RULE &moved
+  (&part *Id (:P *P2) *Col)
+  (&side Id (:D *D_side))
+  (&slide_dir (:D D_side) (:D_out *D))
+  (&shift *K)
+  (dir8_opposite D (:D2 *O_m2))
+  (edge_inset (:D O_m2) K (:B *B1_m3))
+  (edge_inset D K (:B *I_m5))
+  (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+  (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+  (compose (:A P2) (:B V_m1) (:C *P)))
+
+(RULE &output
+  (input *P)
+  (OR ((&moved P *Col))
+      ((NOT (&moved P))
+       (&bg Col))))

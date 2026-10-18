@@ -1,0 +1,47 @@
+;; 09c534e7
+
+(RULE &comp_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P (:Col *C))
+  (NOT (&bg C)))
+
+(INIT &comp Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&ink *P)
+         (&comp_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ink (:P P3)))
+        ((&ink P)
+         (= P3 P)))))
+
+(RULE &comp_component
+  (&comp.class (:a *P) *Id))
+
+(DET &outline SharedColor)
+
+(INIT &border Boundary
+  (cell (P)
+    (&ink *P))
+  (dir (D)
+    (dir8_elem *D)))
+
+(RULE &seed
+  (&comp_component *P *Id)
+  (input P *Col)
+  (NOT (&outline (:C Col))))
+
+(RULE &fill
+  (&ink *P)
+  (NOT (&border.boundary P))
+  (&comp_component P *Id)
+  (&seed Id *Col))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&fill P)))))

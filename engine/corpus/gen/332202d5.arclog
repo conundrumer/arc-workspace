@@ -1,0 +1,75 @@
+;; 332202d5
+
+;; The axis the marked lines stack along; the divider runs along it.
+(DET &axis AxisDomain)
+
+;; The field the marked lines sit in.
+(DET &bg DominantColor)
+
+;; The divider's color in the input; the crossings take it in the output.
+(DET &divider_color SharedColor)
+
+;; The crossings' color in the input; every line takes it in the output.
+(DET &cross_color RarestColor)
+
+(RULE &cell_split
+  (input *P *Col)
+  (&axis *A)
+  (split P A (:Along *P_along) (:Across *P_across)))
+
+(RULE &divider
+  (&cell_split *Col *P_across)
+  (&divider_color (:C Col)))
+
+(RULE &mark
+  (&cell_split *Col *P_along *P_across)
+  (NOT (&bg (:C Col)))
+  (NOT (&divider P_across)))
+
+;; Each marked line casts its color both ways along the stacking axis.
+(INIT &casts Ray
+  (source ((:P P_along))
+    (&mark *P_along))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&axis *A)
+    (axis_of *D A)))
+
+(RULE &casts_cell
+  (&cell_split (:P_along *P)))
+
+;; The colors carried by the nearest marked lines.
+(INIT &nearest Order
+  (key ((&casts_cell (:P ^P_along)))
+    (member ((:t (:V Col) (:S K)))
+      (&casts.ray (:P P_along) *K (:Origin *Src))
+      (&mark (:P_along Src) *Col))
+    (score ((:t (:V Col) (:S K)) (:S K))
+      (&casts.ray (:P P_along) *K (:Origin *Src))
+      (&mark (:P_along Src) *Col))))
+
+(INIT &agree Singleton
+  (key ((&nearest.minimal (:key ^P_along) (:t (:V *Col))))
+    (member ((:v Col))
+      (&nearest.minimal (:t (:V *Col))))))
+
+(RULE &field
+  (OR ((&agree.value (:key *P_along) (:v *Col)))
+      ((&agree.plural (:key P_along))
+       (&cross_color (:C Col)))))
+
+(RULE &output
+  (&cell_split *P *P_along *P_across)
+  (OR ((&mark P_along)
+       (&divider P_across)
+       (&divider_color (:C *Col)))
+      ((&mark P_along)
+       (NOT (&divider P_across))
+       (&cross_color (:C Col)))
+      ((NOT (&mark P_along))
+       (&divider P_across)
+       (&cross_color (:C Col)))
+      ((NOT (&mark P_along))
+       (NOT (&divider P_across))
+       (&field P_along Col))))

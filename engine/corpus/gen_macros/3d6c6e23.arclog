@@ -1,0 +1,148 @@
+;; 3d6c6e23
+
+(RULE &line_of_split1
+  (input (:P *P_))
+  (axis_of *D (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P_) (:X_rel *L_)))
+
+(DET &bg DominantColor)
+
+(DET &gravity DirDomain)
+
+(RULE &line_of
+  (input *P)
+  (&gravity *D)
+  (axis_of D *A)
+  (&line_of_split1 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:L_ *L)))
+
+(RULE &pixel
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&line_of P *L))
+
+(RULE &above
+  (&pixel (:P *P1) *L)
+  (&pixel (:P *P2) L)
+  (&gravity *D)
+  (dir_elem D)
+  (margin (:B P2) D (:K *K1_m1))
+  (margin (:B P1) D (:K *K2_m2))
+  (< K1_m1 K2_m2))
+
+(RULE &cand
+  (&pixel *L)
+  (&line_of (:P *A) L))
+
+(RULE &cone
+  (&cand *A)
+  (input *P)
+  (ALL ((&gravity *D)
+        (opposite D (:Opp *D_up))
+        (corner_dir (:C *Diag) (:D D_up))
+        (corner_dist P Diag (:K *K_q))
+        (corner_dist (:P A) Diag (:K *K_a)))
+       ((>= K_q K_a))))
+
+(INIT &cone_size Cardinality
+  (key ((&cone ^A *P))
+    (member ((:m P))
+      (&cone A *P))))
+
+(INIT &line_size Cardinality
+  (key ((&pixel *P ^L))
+    (member ((:m P))
+      (&pixel *P L))))
+
+(RULE &apex
+  (&cand *L *A)
+  (&cone_size.size (:key A) *N)
+  (&line_size.size (:key L) N))
+
+(RULE &pile
+  (&apex *L *A)
+  (&cone A *P))
+
+(INIT &lex Order
+  (key ((&pile ^L *P)
+        (sense_elem ^S))
+    (member ((:t P))
+      (&pile L *P)
+      (sense_elem S))
+    (before ((:a P) (:b P2))
+      (&pile L *P)
+      (sense_elem S)
+      (&pile L (:P *P2))
+      (&pile L)
+      (&gravity *D)
+      (opposite D (:Opp *D_up))
+      (turn S (:D D_up) (:D2 *Lat))
+      (corner_dir (:C *Diag) (:A *A_m1) (:D D_up))
+      (perp (:A A_m1) (:A2 *A2_m2))
+      (corner_dir (:C Diag) (:A A2_m2) (:D Lat))
+      (&gravity (:D *D2))
+      (axis_of (:D D2) (:A *Ax))
+      (OR ((corner_dir (:C Diag) (:A Ax) (:D *D3))
+           (dir_elem (:D D3))
+           (margin (:B P) (:D D3) (:K *K1_m3))
+           (margin (:B P2) (:D D3) (:K *K2_m4))
+           (< K1_m3 K2_m4))
+          ((corner_dir (:C Diag) (:A Ax) (:D D3))
+           (perp (:A Ax) (:A2 *A2_m5))
+           (corner_dir (:C Diag) (:A A2_m5) (:D *D22))
+           (margin (:B P) (:D D3) (:K *K_m6))
+           (margin (:B P2) (:D D3) (:K K_m6))
+           (dir_elem (:D D22))
+           (margin (:B P) (:D D22) (:K *K1_m7))
+           (margin (:B P2) (:D D22) (:K *K2_m8))
+           (< K1_m7 K2_m8))))))
+
+(INIT &fill Order
+  (key ((OR ((&pixel *P ^L))
+            ((&above L *P1 *P2))))
+    (member ((:t P))
+      (&pixel *P L))
+    (before ((:a P1) (:b P2))
+      (&above L *P1 *P2))))
+
+(ALTS $choice "the order the pixels fill in" $Fall
+  (ALT $Sink
+    (INIT &group Cardinality
+      (key ((&pixel *P ^L ^Col))
+        (member ((:m P))
+          (&pixel *P L Col))))
+
+    (INIT &fill Order
+      (key ((OR ((&pixel *P ^L))
+                ((&pixel (:P *P1) L (:Col *C1))
+                 (&pixel (:P *P2) L (:Col *C2))
+                 (OR ((&group.size (:key L (:Col C1)) (:N *N1))
+                      (&group.size (:key L (:Col C2)) (:N *N2))
+                      (< N1 N2))
+                     ((= C1 C2)
+                      (&above L P1 P2))))))
+        (member ((:t P))
+          (&pixel *P L))
+        (before ((:a P1) (:b P2))
+          (&pixel (:P *P1) L (:Col *C1))
+          (&pixel (:P *P2) L (:Col *C2))
+          (OR ((&group.size (:key L (:Col C1)) (:N *N1))
+               (&group.size (:key L (:Col C2)) (:N *N2))
+               (< N1 N2))
+              ((= C1 C2)
+               (&above L P1 P2))))))))
+
+(RULE &output
+  (OR ((&lex.rank (:key *L *S) (:t *P) *R)
+       (&fill.rank (:key L) (:t *P_px) R)
+       (&pixel (:P P_px) L *Col))
+      ((input P)
+       (NOT (&pile P))
+       (&bg (:C Col)))))

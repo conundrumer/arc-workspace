@@ -1,0 +1,184 @@
+;; 88e364bc
+
+(DET &head RarestColor)
+
+(DET &bg DominantColor)
+
+(DET &marker ChangedColor)
+
+(RULE &wall_color
+  (input (:Col *C))
+  (NOT (&bg C))
+  (NOT (&marker C)))
+
+(RULE &head_of
+  (&wall_color *C)
+  (&head (:C *Col)))
+
+(RULE &closed_cell
+  (&wall_color (:C *Key))
+  (input *P (:Col *C2))
+  (!= C2 Key))
+
+(RULE &closed_flood_node
+  (&wall_color (:C *Key))
+  (input *P (:Col *C2))
+  (!= C2 Key))
+
+(RULE &closed_flood_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &closed_flood Propagation
+  (key ((OR ((&closed_cell (:Key ^Ky) *P)
+             (dir_elem *D)
+             (margin (:B P) D (:K 0))
+             (&closed_flood_node (:Key Ky) P))
+            ((&closed_flood_node (:Key Ky) P)
+             (&closed_flood_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *Q))
+             (&closed_flood_node (:Key Ky) (:P Q)))))
+    (source ((:n P))
+      (&closed_cell (:Key Ky) *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0))
+      (&closed_flood_node (:Key Ky) P))
+    (edge ((:a P) (:b Q))
+      (&closed_flood_node (:Key Ky) *P)
+      (&closed_flood_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *Q))
+      (&closed_flood_node (:Key Ky) (:P Q)))))
+
+(RULE &closed_node
+  (&closed_cell *Key *P)
+  (NOT (&closed_flood.reached (:key (:Ky Key)) (:n P))))
+
+(RULE &closed_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &closed Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&closed_node (:Key *Ky) *P)
+         (&closed_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&closed_node (:Key Ky) (:P P2)))
+        ((&closed_node (:Key Ky) P)
+         (= P2 P)))))
+
+(RULE &closed_component
+  (&closed.class (:a *Key *P) *Id))
+
+(RULE &legend_cell
+  (&closed_component (:Key *C) *P)
+  (input P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&marker (:C Col))))
+
+(RULE &slide_node
+  (&closed_component *Key *P))
+
+(RULE &slide_source
+  (&closed_component *Key *P))
+
+(RULE &marker_cell
+  (input *P *Col)
+  (&marker (:C Col)))
+
+(RULE &cleared
+  (OR ((input *P *Col)
+       (NOT (&marker_cell P)))
+      ((&marker_cell P)
+       (&bg (:C Col)))))
+
+(ALTS $choice "what marks an arrow's head" $Stored
+  (ALT $Minority
+    (INIT &ink_count Cardinality
+      (key ((&legend_cell ^C *P ^Col))
+        (member ((:m P))
+          (&legend_cell C *P Col))))
+
+    (INIT &rarest Order
+      (key ((&ink_count.size (:key ^C *Col) *N))
+        (member ((:t (:V Col) (:S N)))
+          (&ink_count.size (:key C *Col) *N))
+        (score ((:t (:V Col) (:S N)) (:S N))
+          (&ink_count.size (:key C *Col) *N))))
+
+    (RULE &head_of
+      (&rarest.minimal (:key *C) (:t (:V *Col))))))
+
+(RULE &arrow
+  (&head_of *C (:Col *Col_head))
+  (&legend_cell C (:P *P_head) (:Col Col_head))
+  (&legend_cell C (:P *P_tail) (:Col *Col_tail))
+  (NOT (&head_of C (:Col Col_tail)))
+  (dir8_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P_tail) (:B V_m1) (:C P_head)))
+
+(RULE &slide_dir
+  (&arrow (:C *Key) *D))
+
+;; A marker moves through the cells its enclosing color closes off.
+(INIT &slide Distance
+  (key ((&slide_source (:Key ^Ky) (:P ^O))
+        (&slide_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&slide_source (:Key Ky) (:P O))
+           (&slide_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&slide_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&slide_node (:Key Ky) (:P Q)))
+          ((&slide_source (:Key Ky) (:P O))
+           (&slide_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&slide_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&slide_source (:Key Ky) (:P O))
+           (&slide_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&slide_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&slide_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&slide_source (:Key Ky) (:P O))
+      (&slide_dir (:Key Ky) D))))
+
+(RULE &slide_ray
+  (&slide.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &slide_end
+  (&slide_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&slide_ray Key (:P Q) D Origin)))
+
+(RULE &landed
+  (&marker_cell (:P *P2))
+  (&slide_end *P (:Origin P2)))
+
+(RULE &output
+  (OR ((&landed *P)
+       (&marker (:C *Col)))
+      ((&cleared P Col)
+       (NOT (&landed P)))))

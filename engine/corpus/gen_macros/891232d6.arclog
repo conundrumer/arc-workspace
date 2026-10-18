@@ -1,0 +1,264 @@
+;; 891232d6
+
+(DET &climb_dir DirDomain)
+
+(RULE &climb_dir2
+  (&climb_dir *D))
+
+(DET &wall SharedColor)
+
+(RULE &open
+  (input *P *Col)
+  (NOT (&wall (:C Col))))
+
+(RULE &climb_node
+  (&open *P))
+
+(RULE &climb_source
+  (&open *P))
+
+;; A climb runs through open cells.
+(INIT &climb Distance
+  (key ((&climb_source (:P ^O))
+        (&climb_dir2 ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&climb_source (:P O))
+           (&climb_dir2 D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&climb_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&climb_node (:P Q)))
+          ((&climb_source (:P O))
+           (&climb_dir2 D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&climb_node (:P Q))
+           (= A2 O))
+          ((&climb_source (:P O))
+           (&climb_dir2 D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&climb_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&climb_node (:P Q)))))
+    (source ((:n O))
+      (&climb_source (:P O))
+      (&climb_dir2 D))))
+
+(RULE &climb_ray
+  (&climb.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &climb_end
+  (&climb_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&climb_ray (:P Q) D Origin)))
+
+(DET &aside_sense SenseDomain)
+
+(RULE &aside_dir
+  (&climb_dir (:D *D_up))
+  (&aside_sense *S)
+  (turn S (:D D_up) (:D2 *D)))
+
+(RULE &slide_dir
+  (&aside_dir *D))
+
+(RULE &slide_node
+  (&open *P)
+  (&climb_dir *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (input (:P Q) *Col)
+  (&wall (:C Col)))
+
+(RULE &slide_source
+  (&open *P)
+  (&climb_dir *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (input (:P Q) *Col)
+  (&wall (:C Col)))
+
+;; A slide runs through open cells with a wall cell directly ahead of the
+;; climb.
+(INIT &slide Distance
+  (key ((&slide_source (:P ^O))
+        (&slide_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&slide_source (:P O))
+           (&slide_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&slide_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&slide_node (:P Q)))
+          ((&slide_source (:P O))
+           (&slide_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&slide_node (:P Q))
+           (= A2 O))
+          ((&slide_source (:P O))
+           (&slide_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&slide_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&slide_node (:P Q)))))
+    (source ((:n O))
+      (&slide_source (:P O))
+      (&slide_dir D))))
+
+(RULE &slide_ray
+  (&slide.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &slide_end
+  (&slide_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&slide_ray (:P Q) D Origin)))
+
+(DET &marker RarestColor)
+
+(RULE &turn_step
+  (&slide_end (:P *Q) (:Origin *B))
+  (&aside_dir *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A Q) (:B V_m1) (:C *R))
+  (&open (:P R)))
+
+;; The climb starts the walk reaches: a climb from p rests under a wall,
+;; and the turn there leads to the next start r.
+(INIT &walk Propagation
+  (source ((:n P))
+    (input *P *Col)
+    (&marker (:C Col)))
+  (edge ((:a P) (:b R))
+    (&climb_end (:P *B) (:Origin *P))
+    (&turn_step B *R)))
+
+(RULE &climb_leg
+  (&walk.reached (:n *P))
+  (&climb_end (:P *Q) (:Origin P)))
+
+(RULE &turned
+  (&climb_leg (:Q *B))
+  (&turn_step B *R))
+
+(RULE &trail2
+  (OR ((&climb_leg (:P *P2))
+       (&climb_ray *P (:K *N) (:Origin P2))
+       (> N 0))
+      ((&turned *B)
+       (&slide_ray P (:K *N2) (:Origin B))
+       (> N2 0))))
+
+(DET &changed
+  (ex_input *E *P (:Col *Col_in))
+  (ex_output E P *Col)
+  (!= Col Col_in))
+
+(DET &hit_cell
+  (&changed *E *P)
+  (ex_input E P *Col)
+  (&wall (:C Col)))
+
+(DET &aside_cell
+  (&hit_cell *E (:P *P2))
+  (&climb_dir *D)
+  (opposite D (:Opp *D2))
+  (step_offset (:D D2) (:V *V_m1))
+  (compose (:A P2) (:B V_m1) (:C *P)))
+
+(DET &aside
+  (&aside_cell *E *P)
+  (ex_output E P *Col))
+
+(DET &onward_cell
+  (&changed *E *P)
+  (&climb_dir *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *W))
+  (ex_input E (:P W) (:Col *Col_w))
+  (NOT (&wall (:C Col_w)))
+  (&aside_dir (:D *D_a))
+  (opposite (:D D_a) (:Opp *D_b))
+  (step_offset (:D D_b) (:V *V_m2))
+  (compose (:A P) (:B V_m2) (:C *Q))
+  (&changed E (:P Q))
+  (NOT (&hit_cell E (:P Q)))
+  (step_offset D (:V *V_m3))
+  (compose (:A Q) (:B V_m3) (:C *W_q))
+  (ex_input E (:P W_q) (:Col *Col_q))
+  (&wall (:C Col_q)))
+
+(DET &onward
+  (&onward_cell *E *P)
+  (ex_output E P *Col))
+
+(DET &hit
+  (&hit_cell *E *P)
+  (ex_output E P *Col))
+
+(RULE &mark
+  (OR ((&turned (:B *P))
+       (&aside *Col))
+      ((&turned (:R P))
+       (&onward Col))
+      ((&turned *B)
+       (&climb_dir *D)
+       (step_offset D (:V *V_m1))
+       (compose (:A B) (:B V_m1) (:C P))
+       (&hit Col))
+      ((&climb_leg (:Q P))
+       (NOT (&turned (:B P)))
+       (&marker (:C Col)))))
+
+(DET &trail
+  (&changed *Col)
+  (NOT (&hit Col))
+  (NOT (&aside Col))
+  (NOT (&onward Col))
+  (NOT (&marker (:C Col))))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&mark P *Col))
+      ((NOT (&mark P))
+       (&trail2 P)
+       (&trail Col))
+      ((NOT (&mark P))
+       (NOT (&trail2 P))
+       (= Col Col_in))))

@@ -1,0 +1,225 @@
+;; 18286ef8
+
+;; The color of the cutting lines.
+(DET &divider SharedColor)
+
+(RULE &frame_divider_split1
+  (input (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &line_broken_split1
+  (input (:P *P_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &frame_divider
+  (input *P)
+  (axis_elem *A)
+  (&frame_divider_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1))
+  (ALL ((input (:P *Pm) *Col)
+        (axis_elem (:A *Am))
+        (&line_broken_split1 (:P_ Pm) (:A_ Am) (:L_ L) (:X_m1_ *X_m1m)))
+       ((&divider (:C Col)))))
+
+(RULE &frame_on_divider
+  (input *P)
+  (&frame_divider *A *L)
+  (axis_of *D A)
+  (margin (:B P) D (:K *K_m1))
+  (margin (:B L) D (:K K_m1)))
+
+(INIT &frame_rank Order
+  (key ((OR ((&frame_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (dir_elem D)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&frame_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&frame_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (dir_elem D)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (dir_elem D)
+      (margin (:B P) D *K))))
+
+(RULE &frame_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&frame_on_divider P A))
+  (margin (:B P) D *K)
+  (&frame_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &frame_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&frame_part_idx *P D (:N *N1))
+  (&frame_part_idx P (:D D2) (:N *N2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K N1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+(RULE &frame_tile_of
+  (&frame_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&frame_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+;; The color of the relocating cell.
+(DET &gaze ChangedColor)
+
+;; The color of the marker it looks at.
+(DET &target VanishedColor)
+
+(RULE &gaze_cell
+  (input *P *Col)
+  (&gaze (:C Col))
+  (&frame_tile_of P *P_tile))
+
+(RULE &gaze_tile_cell
+  (&gaze_cell *P_tile)
+  (&frame_tile_of *P P_tile))
+
+(RULE &target_cell
+  (input *P *Col)
+  (&target (:C Col)))
+
+(RULE &target_tile
+  (&target_cell *P)
+  (&frame_tile_of P *P_tile))
+
+(RULE &look
+  (&gaze_cell *P_tile)
+  (&target_tile (:P_tile *P_tile_t))
+  (dir8_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P_tile) (:B V_m1) (:C P_tile_t)))
+
+(RULE &dest
+  (&gaze_cell (:P *P2))
+  (&look *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P2) (:B V_m1) (:C *P)))
+
+(ALTS $choice "where the gaze lands" $Step
+  (ALT $Slide
+    (RULE &slide_dir
+      (&look *D))
+
+    (RULE &slide_node
+      (&gaze_tile_cell *P))
+
+    (RULE &slide_source
+      (&gaze_tile_cell *P))
+
+    ;; The gaze slides across its own tile, the way it looks.
+    (INIT &slide Distance
+      (key ((&slide_source (:P ^O))
+            (&slide_dir ^D))
+        (edge ((:a A2) (:b Q))
+          (OR ((&slide_source (:P O))
+               (&slide_dir D)
+               (axis_of D *A)
+               (sub_extent (:P O) A *K)
+               (dir8_opposite D (:D2 *O_m2))
+               (edge_inset (:D O_m2) K (:B *B1_m3))
+               (edge_inset D K (:B *I_m5))
+               (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+               (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+               (compose (:A O) (:B V_m1) (:C *A2))
+               (&slide_node (:P A2))
+               (step_offset D (:V *V_m6))
+               (compose (:A A2) (:B V_m6) (:C *Q))
+               (&slide_node (:P Q)))
+              ((&slide_source (:P O))
+               (&slide_dir D)
+               (step_offset D (:V *V_m12))
+               (compose (:A O) (:B V_m12) (:C Q))
+               (&slide_node (:P Q))
+               (= A2 O))
+              ((&slide_source (:P O))
+               (&slide_dir D)
+               (diag_dir_elem D)
+               (axis_elem (:A *A3))
+               (sub_extent (:P O) (:A A3) (:K *K2))
+               (dir8_opposite D (:D2 *O_m22))
+               (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+               (edge_inset D (:K K2) (:B *I_m52))
+               (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+               (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+               (compose (:A O) (:B V_m13) (:C A2))
+               (&slide_node (:P A2))
+               (step_offset D (:V *V_m62))
+               (compose (:A A2) (:B V_m62) (:C Q))
+               (&slide_node (:P Q)))))
+        (source ((:n O))
+          (&slide_source (:P O))
+          (&slide_dir D))))
+
+    (RULE &slide_ray
+      (&slide.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+    (RULE &slide_end
+      (&slide_ray *P *D *K *Origin)
+      (step_offset D (:V *V_m1))
+      (compose (:A P) (:B V_m1) (:C *Q))
+      (NOT (&slide_ray (:P Q) D Origin)))
+
+    (RULE &dest
+      (&gaze_cell (:P *P2))
+      (&slide_end *P (:Origin P2))))
+  (ALT $Map
+    ;; The gaze's tile viewed from its own extent, so a tile position of the
+    ;; arrangement names a cell inside it.
+    (INIT &bbox BoundingBox
+      (cell (P)
+        (&gaze_tile_cell *P)))
+
+    (RULE &dest
+      (&target_tile (:P_tile *P_tile_t))
+      (&gaze_tile_cell *P)
+      (&bbox.box *B)
+      (ALL ((dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (relative (:Base B) (:X P) (:X_rel P_tile_t)))))
+
+(RULE &output
+  (OR ((&dest *P)
+       (&gaze (:C *Col)))
+      ((&gaze_cell P)
+       (&dest (:P *Q))
+       (input (:P Q) Col))
+      ((&target_cell P)
+       (&gaze (:C Col)))
+      ((input P Col)
+       (NOT (&dest P))
+       (NOT (&gaze_cell P))
+       (NOT (&target_cell P)))))

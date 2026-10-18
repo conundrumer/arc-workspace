@@ -1,0 +1,107 @@
+;; 985ae207
+
+;; The train pairs admit a second color; the DominantColor proposer, exact here, fixes this value.
+(DET &bg DominantColor)
+
+(RULE &ring
+  (input *P)
+  (dir8_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (input (:P Q) *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &mark
+  (input *P (:Col *C_center))
+  (NOT (&bg (:C C_center)))
+  (&ring P (:Col *Cr))
+  (ALL ((dir8_elem *D)
+        (step_offset D (:V *V_m1))
+        (compose (:A P) (:B V_m1) (:C *Q)))
+       ((input (:P Q) (:Col Cr))))
+  (!= Cr C_center))
+
+(RULE &mark_cell
+  (OR ((&mark (:P *P_mark))
+       (dir8_elem *D)
+       (step_offset D (:V *V_m1))
+       (compose (:A P_mark) (:B V_m1) (:C *P)))
+      ((&mark (:P P_mark))
+       (= P P_mark))))
+
+(RULE &block
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&mark_cell P)))
+
+(RULE &copy_cell
+  (&mark_cell *P_mark (:P *X))
+  (input (:P X) *Col)
+  (relative (:Base P_mark) X (:X_rel *V))
+  (input (:P *Q))
+  (compose (:A Q) (:B V) (:C *P)))
+
+(RULE &at_block
+  (&mark (:P *P_mark) (:C_center *Cc))
+  (&copy_cell P_mark *Q *P)
+  (&block (:Col Cc) P))
+
+(INIT &mbox BoundingBox
+  (key ((&mark_cell (:P_mark ^Pm) *P))
+    (cell (P)
+      (&mark_cell (:P_mark Pm) *P))))
+
+(RULE &march
+  (dir_elem *D)
+  (axis_of D *A)
+  (&mbox.box (:key (:Pm *P_mark)) *B)
+  (axis_elem A)
+  (relative (:Base B) (:X P_mark) (:X_rel *R_m1))
+  (frame_extent (:P R_m1) A (:N *K)))
+
+(ALTS $choice "what fixes the march's pitch" $Abut
+  (ALT $Stride
+    (DET &pitch TileCount)
+
+    (RULE &march
+      (&mark (:P *P_mark))
+      (dir_elem *D)
+      (&pitch (:N *K)))))
+
+(RULE &step_copy
+  (&march *P_mark *D *K)
+  (axis_of D *A)
+  (opposite D (:Opp *O))
+  (input (:P *Q))
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P_mark) (:D D_m2) (:K *K_m3))
+  (margin (:B Q) (:D D_m2) (:K K_m3))
+  (relative (:Base P_mark) (:X Q) (:X_rel *V))
+  (margin (:B V) (:D O) (:K *T))
+  (divide T (:Side K) (:Gap 0) (:Part *N) (:Remainder 0)))
+
+(RULE &landing
+  (&step_copy *P_mark *D *Q *N)
+  (&at_block P_mark Q))
+
+(RULE &landed_before
+  (&step_copy *P_mark *D *N)
+  (&landing P_mark D (:N *N2))
+  (< N2 N))
+
+(RULE &copy
+  (&step_copy *P_mark *D *Q *N)
+  (&landing P_mark D (:N *N2))
+  (<= N N2)
+  (NOT (&landed_before P_mark D N)))
+
+(RULE &paint
+  (&copy (:P_mark *Pm) *Q)
+  (&copy_cell (:P_mark Pm) Q *P *Col)
+  (input P))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

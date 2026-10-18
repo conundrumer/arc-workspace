@@ -1,0 +1,60 @@
+;; 48d8fb45
+
+(DET &mark RarestColor)
+
+(DET &bg DominantColor)
+
+(RULE &mark2
+  (input *P *Col)
+  (&mark (:C Col)))
+
+;; The shapes; the mark is a cell of the one it touches.
+(INIT &blob Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+  (step ((:Delta S))
+    (diag_dir_elem *D)
+    (step_offset D (:V *S))))
+
+(RULE &marked
+  (&mark2 (:P *M))
+  (&blob.connected (:P M) (:Q *P))
+  (NOT (&mark2 P))
+  (input P *Col))
+
+;; The marked shape's box, and the grid seen from it.
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&marked *P)))
+
+(ALTS $choice "where the crop's box comes from, and what it keeps inside it" $Object
+  (ALT $Interior
+    (RULE &output
+      (&bbox.box *B)
+      (input (:P *P2) *Col)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P))))
+  (ALT $Window
+    ;; The window's box, as margins from the mark's cell.
+    (DET &win_box BoxDomain)
+
+    (RULE &window
+      (&mark2 (:P *M))
+      (&win_box (:B *B_mark))
+      (compose (:A M) (:B B_mark) (:C *B)))
+
+    (RULE &output
+      (&window *B)
+      (input (:P *P2) *Col)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P)))))
+
+(RULE &output
+  (&bbox.box *B)
+  (input (:P *P2))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (OR ((&marked (:P P2) *Col))
+      ((NOT (&marked (:P P2)))
+       (&bg (:C Col)))))

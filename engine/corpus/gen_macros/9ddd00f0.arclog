@@ -1,0 +1,517 @@
+;; 9ddd00f0
+
+(INPUT blocks "single background lines divide the grid into an arrangement of square blocks, and the arrangement holds as many blocks along an axis as a block holds cells"
+
+  (RULE &block_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (INIT &block Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((input *P *Col)
+           (NOT (&bg Col))
+           (&block_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (input (:P P3) (:Col *Col2))
+           (NOT (&bg (:Col Col2))))
+          ((input P (:Col *Col3))
+           (NOT (&bg (:Col Col3)))
+           (= P3 P)))))
+
+  (RULE &block_component
+    (&block.class (:a *P) *Id))
+
+  (INIT &block_box BoundingBox
+    (key ((&block_component *P ^Id))
+      (cell (P)
+        (&block_component *P Id))))
+
+  (RULE &cut_cell
+    (input *P)))
+
+(INPUT ink "one color draws the blocks")
+
+(OUTPUT mark "every block is filled with ink but for one background cell — the cell whose place in the block is the block's place in the arrangement"
+
+  (RULE &cell_division_cell
+    (input *P)
+    (sub_extent P (:K *Key)))
+
+  (DET_OR_RULE &gap "The background line between neighboring blocks." SepThickness)
+
+  (RULE &cell_division_gap
+    (axis_elem *A)
+    (input *P)
+    (sub_extent P (:K *Key))
+    (&gap *G))
+
+  (INIT &cell_division_sides ExtentDivisions
+    (key ((&cell_division_cell (:Key ^Ky) *P))
+      (frame (P)
+        (&cell_division_cell (:Key Ky) *P))))
+
+  (RULE &cell_division_axis_split1
+    (&cell_division_cell (:Key *Ky) (:P *P_))
+    (axis_elem (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+    (relative (:Base Pi_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &cell_division_parts_held
+    (axis_elem (:A *A2))
+    (input *P)
+    (sub_extent P (:K *N)))
+
+  (RULE &cell_division_axis
+    (OR ((&cell_division_cell *Key *P)
+         (axis_elem *A)
+         (input (:P *P3))
+         (sub_extent (:P P3) (:K Key))
+         (&cell_division_gap Key A *G)
+         (&cell_division_sides.division (:key (:Ky Key)) A (:N Key) *K G)
+         (axis_of *D A)
+         (opposite D (:Opp *O))
+         (margin (:B P) D (:K *T))
+         (margin (:B P) (:D O) (:K *T2))
+         (divide T (:Side K) (:Gap G) (:Part *I) (:Remainder *R))
+         (divide (:T T2) (:Side K) (:Gap G) (:Part *I2) (:Remainder *R2))
+         (opposite D (:Opp *O_m1))
+         (edge_inset D (:K I) (:B *B1_m2))
+         (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+         (compose (:A B1_m2) (:B B2_m3) (:C *P_outer))
+         (opposite D (:Opp *O_m4))
+         (edge_inset D (:K R) (:B *B1_m5))
+         (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+         (compose (:A B1_m5) (:B B2_m6) (:C *P_inner))
+         (frame_extent (:P P_inner) A (:N K)))
+        ((&cell_division_cell Key P)
+         (axis_elem A)
+         (input (:P *P32))
+         (sub_extent (:P P32) (:K Key))
+         (&cell_division_gap Key A (:G *G2))
+         (frame_extent P A (:N *K2))
+         (axis_of (:D *D2) A)
+         (opposite (:D D2) (:Opp *O2))
+         (margin (:B P) (:D D2) (:K *T3))
+         (margin (:B P) (:D O2) (:K *T22))
+         (divide (:T T3) (:Side K2) (:Gap G2) (:Part *I3) (:Remainder *R3))
+         (divide (:T T22) (:Side K2) (:Gap G2) (:Part *I22) (:Remainder *R22))
+         (opposite (:D D2) (:Opp *O_m12))
+         (edge_inset (:D D2) (:K I3) (:B *B1_m22))
+         (edge_inset (:D O_m12) (:K I22) (:B *B2_m32))
+         (compose (:A B1_m22) (:B B2_m32) (:C P_outer))
+         (opposite (:D D2) (:Opp *O_m42))
+         (edge_inset (:D D2) (:K R3) (:B *B1_m52))
+         (edge_inset (:D O_m42) (:K R22) (:B *B2_m62))
+         (compose (:A B1_m52) (:B B2_m62) (:C P_inner))
+         (frame_extent (:P P_inner) A (:N K2))
+         (frame_extent (:P P_outer) A (:N Key)))
+        ((&cell_division_cell Key P)
+         (axis_elem A)
+         (input (:P *P33))
+         (sub_extent (:P P33) (:K Key))
+         (NOT (&cell_division_gap Key A))
+         (&cell_division_sides.division (:key (:Ky Key)) A (:N Key) (:K *K3) (:G 0))
+         (axis_of (:D *D3) A)
+         (opposite (:D D3) (:Opp *O3))
+         (margin (:B P) (:D D3) (:K *T4))
+         (margin (:B P) (:D O3) (:K *T23))
+         (divide (:T T4) (:Side K3) (:Gap 0) (:Part *I4) (:Remainder *R4))
+         (divide (:T T23) (:Side K3) (:Gap 0) (:Part *I23) (:Remainder *R23))
+         (opposite (:D D3) (:Opp *O_m13))
+         (edge_inset (:D D3) (:K I4) (:B *B1_m23))
+         (edge_inset (:D O_m13) (:K I23) (:B *B2_m33))
+         (compose (:A B1_m23) (:B B2_m33) (:C P_outer))
+         (opposite (:D D3) (:Opp *O_m43))
+         (edge_inset (:D D3) (:K R4) (:B *B1_m53))
+         (edge_inset (:D O_m43) (:K R23) (:B *B2_m63))
+         (compose (:A B1_m53) (:B B2_m63) (:C P_inner))
+         (frame_extent (:P P_inner) A (:N K3)))
+        ((&cell_division_cell Key P)
+         (axis_elem A)
+         (input (:P *P34))
+         (sub_extent (:P P34) (:K Key))
+         (NOT (&cell_division_gap Key A))
+         (frame_extent P A (:N *K4))
+         (axis_of (:D *D4) A)
+         (opposite (:D D4) (:Opp *O4))
+         (margin (:B P) (:D D4) (:K *T5))
+         (margin (:B P) (:D O4) (:K *T24))
+         (divide (:T T5) (:Side K4) (:Gap 0) (:Part *I5) (:Remainder *R5))
+         (divide (:T T24) (:Side K4) (:Gap 0) (:Part *I24) (:Remainder *R24))
+         (opposite (:D D4) (:Opp *O_m14))
+         (edge_inset (:D D4) (:K I5) (:B *B1_m24))
+         (edge_inset (:D O_m14) (:K I24) (:B *B2_m34))
+         (compose (:A B1_m24) (:B B2_m34) (:C P_outer))
+         (opposite (:D D4) (:Opp *O_m44))
+         (edge_inset (:D D4) (:K R5) (:B *B1_m54))
+         (edge_inset (:D O_m44) (:K R24) (:B *B2_m64))
+         (compose (:A B1_m54) (:B B2_m64) (:C P_inner))
+         (frame_extent (:P P_inner) A (:N K4))
+         (frame_extent (:P P_outer) A (:N Key)))
+        ((&cell_division_cell Key P)
+         (axis_elem A)
+         (NOT (&cell_division_parts_held (:N Key) (:A2 A)))
+         (&cell_division_axis_split1 (:P_ P) (:A_ A) (:Pi_ P_inner) (:X_m1_ *X_m1))
+         (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
+
+  (RULE &cell_division_tile
+    (&cell_division_axis *Key *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+    (perp (:A A1) *A2)
+    (&cell_division_axis Key P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+    (compose (:A Po1) (:B Po2) (:C *P_outer))
+    (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+  (RULE &line_ink_split1
+    (input (:P *P_) *Col)
+    (axis_elem (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+    (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &blank_line_split1
+    (input (:P *P_))
+    (axis_elem (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+    (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &ink
+    (input *Col)
+    (NOT (&bg Col)))
+
+  ;; The one division whose block holds as many cells as the grid holds blocks.
+  (RULE &cell
+    (&cell_division_tile (:Key *N) *P (:P_outer *P_tile) (:P_inner *P_intile))
+    (axis_elem *A)
+    (sub_extent P A (:K N))
+    (frame_extent (:P P_intile) A N))
+
+  (RULE &line_ink
+    (input *P *Col)
+    (NOT (&bg Col))
+    (axis_elem *A)
+    (&line_ink_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+  (RULE &blank_line
+    (input *P)
+    (axis_elem *A)
+    (&blank_line_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1))
+    (NOT (&line_ink A L)))
+
+  (RULE &paint
+    (OR ((&cell *P *P_tile *P_intile)
+         (OR ((!= P_tile P_intile)
+              (&ink *Col))
+             ((= P_tile P_intile)
+              (&bg Col))))
+        ((input P)
+         (NOT (&cell P))
+         (&bg Col)))))
+
+(ALTS $s "how the grid divides into blocks" $Frame
+  (ALT $Drawn
+    (INPUT blocks "single background lines divide the grid into an arrangement of square blocks, each of the extent a drawn block shows"
+      (RULE &cell_division2_cell
+        (input *P)
+        (&block_box.box *B)
+        (axis_elem (:A *A_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (frame_extent (:P R_m2) (:A A_m1) (:N *Key)))
+
+      (RULE &cell_division2_gap
+        (axis_elem *A)
+        (input *P)
+        (&block_box.box *B)
+        (axis_elem (:A *A_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (frame_extent (:P R_m2) (:A A_m1) (:N *Key))
+        (&gap *G))
+
+      (RULE &cell_division2_axis_split1
+        (&cell_division2_cell (:Key *Ky) (:P *P_))
+        (axis_elem (:A *A_))
+        (axis_of (:D *D_m1) (:A A_))
+        (opposite (:D D_m1) (:Opp *O_m2))
+        (margin (:B P_) (:D D_m1) (:K *K1_m3))
+        (margin (:B P_) (:D O_m2) (:K *K2_m4))
+        (opposite (:D D_m1) (:Opp *O_m1))
+        (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+        (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+        (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+        (relative (:Base Pi_) (:X P_) (:X_rel *X_m1_)))
+
+      (RULE &cell_division2_side_held
+        (axis_elem *A)
+        (input *P)
+        (&block_box.box *B)
+        (axis_elem (:A *A_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (frame_extent (:P R_m2) (:A A_m1) (:N *K)))
+
+      (RULE &cell_division2_axis
+        (OR ((&cell_division2_cell *Key *P)
+             (axis_elem *A)
+             (input (:P *P3))
+             (&block_box.box *B)
+             (axis_elem (:A *A_m1))
+             (relative (:Base B) (:X P3) (:X_rel *R_m2))
+             (frame_extent (:P R_m2) (:A A_m1) (:N Key))
+             (&cell_division2_gap Key A *G)
+             (axis_of *D A)
+             (opposite D (:Opp *O))
+             (margin (:B P) D (:K *T))
+             (margin (:B P) (:D O) (:K *T2))
+             (divide T (:Side Key) (:Gap G) (:Part *I) (:Remainder *R))
+             (divide (:T T2) (:Side Key) (:Gap G) (:Part *I2) (:Remainder *R2))
+             (opposite D (:Opp *O_m3))
+             (edge_inset D (:K I) (:B *B1_m4))
+             (edge_inset (:D O_m3) (:K I2) (:B *B2_m5))
+             (compose (:A B1_m4) (:B B2_m5) (:C *P_outer))
+             (opposite D (:Opp *O_m6))
+             (edge_inset D (:K R) (:B *B1_m7))
+             (edge_inset (:D O_m6) (:K R2) (:B *B2_m8))
+             (compose (:A B1_m7) (:B B2_m8) (:C *P_inner))
+             (frame_extent (:P P_inner) A (:N Key)))
+            ((&cell_division2_cell Key P)
+             (axis_elem A)
+             (input (:P *P32))
+             (&block_box.box (:B *B2))
+             (axis_elem (:A *A_m12))
+             (relative (:Base B2) (:X P32) (:X_rel *R_m22))
+             (frame_extent (:P R_m22) (:A A_m12) (:N Key))
+             (NOT (&cell_division2_gap Key A))
+             (axis_of (:D *D2) A)
+             (opposite (:D D2) (:Opp *O2))
+             (margin (:B P) (:D D2) (:K *T3))
+             (margin (:B P) (:D O2) (:K *T22))
+             (divide (:T T3) (:Side Key) (:Gap 0) (:Part *I3) (:Remainder *R3))
+             (divide (:T T22) (:Side Key) (:Gap 0) (:Part *I22) (:Remainder *R22))
+             (opposite (:D D2) (:Opp *O_m32))
+             (edge_inset (:D D2) (:K I3) (:B *B1_m42))
+             (edge_inset (:D O_m32) (:K I22) (:B *B2_m52))
+             (compose (:A B1_m42) (:B B2_m52) (:C P_outer))
+             (opposite (:D D2) (:Opp *O_m62))
+             (edge_inset (:D D2) (:K R3) (:B *B1_m72))
+             (edge_inset (:D O_m62) (:K R22) (:B *B2_m82))
+             (compose (:A B1_m72) (:B B2_m82) (:C P_inner))
+             (frame_extent (:P P_inner) A (:N Key)))
+            ((&cell_division2_cell Key P)
+             (axis_elem A)
+             (NOT (&cell_division2_side_held (:K Key) A))
+             (&cell_division2_axis_split1 (:P_ P) (:A_ A) (:Pi_ P_inner) (:X_m1_ *X_m1))
+             (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
+
+      (RULE &cell_division2_tile
+        (&cell_division2_axis *Key *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+        (perp (:A A1) *A2)
+        (&cell_division2_axis Key P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+        (compose (:A Po1) (:B Po2) (:C *P_outer))
+        (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+      ;; The division into blocks of a drawn block's extent.
+      (RULE &cell
+        (&cell_division2_tile *P (:P_outer *P_tile) (:P_inner *P_intile)))))
+  (ALT $Separator
+    (INPUT blocks "a background line that neighbors an inked line cuts the grid, and the cuts divide it into an arrangement of blocks"
+      (RULE &cut_divider
+        (&blank_line *A *L)
+        (axis_of *D A)
+        (step_offset D (:V *V_m1))
+        (compose (:A L) (:B V_m1) (:C *L2))
+        (&line_ink A (:L L2)))
+
+      (RULE &cut_on_divider
+        (&cut_cell *P)
+        (&cut_divider *A *L)
+        (axis_of *D A)
+        (margin (:B P) D (:K *K_m1))
+        (margin (:B L) D (:K K_m1)))
+
+      (INIT &cut_rank Order
+        (key ((OR ((&cut_divider *A *L)
+                   (axis_of ^D A)
+                   (margin (:B L) D *K))
+                  ((&cut_cell *P)
+                   (dir_elem D)
+                   (margin (:B P) D K))))
+          (member ((:t K))
+            (&cut_divider *A *L)
+            (axis_of D A)
+            (margin (:B L) D *K))
+          (score ((:t K) (:S K))
+            (OR ((&cut_divider *A *L)
+                 (axis_of D A)
+                 (margin (:B L) D *K))
+                ((&cut_cell *P)
+                 (dir_elem D)
+                 (margin (:B P) D K))))
+          (probe ((:t K))
+            (&cut_cell *P)
+            (dir_elem D)
+            (margin (:B P) D *K))))
+
+      (RULE &cut_part_idx
+        (&cut_cell *P)
+        (axis_of *D *A)
+        (NOT (&cut_on_divider P A))
+        (margin (:B P) D *K)
+        (&cut_rank.rank (:key D) (:t K) (:R *N)))
+
+      (RULE &cut_part_of
+        (axis_of *D *A)
+        (opposite D (:Opp *D2))
+        (&cut_part_idx *P D (:N *N1))
+        (&cut_part_idx P (:D D2) (:N *N2))
+        (opposite D (:Opp *O_m1))
+        (edge_inset D (:K N1) (:B *B1_m2))
+        (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+        (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+      (RULE &cut_tile_of
+        (&cut_part_of *P *A (:P_part *P1))
+        (perp A *A2)
+        (&cut_part_of P (:A A2) (:P_part *P2))
+        (compose (:A P1) (:B P2) (:C *P_tile)))
+
+      (INIT &cut_box BoundingBox
+        (key ((&cut_tile_of *P ^P_tile))
+          (cell (P)
+            (&cut_tile_of *P P_tile))))
+
+      ;; The parts the cuts leave, each read in its own frame.
+      (RULE &cell
+        (&cut_tile_of *P *P_tile)
+        (&cut_box.box (:key P_tile) *B)
+        (ALL ((&cut_tile_of P (:P_tile *P_tilem))
+              (&cut_box.box (:key (:P_tile P_tilem)) B)
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (relative (:Base B) (:X P) (:X_rel *P_intile)))))
+  (ALT $Mirror
+    (INPUT blocks "a background line whose mirror line is also background cuts the grid, and the cuts divide it into an arrangement of blocks"
+      (RULE &cut_divider
+        (&blank_line *A *L)
+        (axis_inversion A (:T *D))
+        (apply D (:P L) (:P_out *L2))
+        (&blank_line A (:L L2)))
+
+      (RULE &cut_on_divider
+        (&cut_cell *P)
+        (&cut_divider *A *L)
+        (axis_of *D A)
+        (margin (:B P) D (:K *K_m1))
+        (margin (:B L) D (:K K_m1)))
+
+      (INIT &cut_rank Order
+        (key ((OR ((&cut_divider *A *L)
+                   (axis_of ^D A)
+                   (margin (:B L) D *K))
+                  ((&cut_cell *P)
+                   (dir_elem D)
+                   (margin (:B P) D K))))
+          (member ((:t K))
+            (&cut_divider *A *L)
+            (axis_of D A)
+            (margin (:B L) D *K))
+          (score ((:t K) (:S K))
+            (OR ((&cut_divider *A *L)
+                 (axis_of D A)
+                 (margin (:B L) D *K))
+                ((&cut_cell *P)
+                 (dir_elem D)
+                 (margin (:B P) D K))))
+          (probe ((:t K))
+            (&cut_cell *P)
+            (dir_elem D)
+            (margin (:B P) D *K))))
+
+      (RULE &cut_part_idx
+        (&cut_cell *P)
+        (axis_of *D *A)
+        (NOT (&cut_on_divider P A))
+        (margin (:B P) D *K)
+        (&cut_rank.rank (:key D) (:t K) (:R *N)))
+
+      (RULE &cut_part_of
+        (axis_of *D *A)
+        (opposite D (:Opp *D2))
+        (&cut_part_idx *P D (:N *N1))
+        (&cut_part_idx P (:D D2) (:N *N2))
+        (opposite D (:Opp *O_m1))
+        (edge_inset D (:K N1) (:B *B1_m2))
+        (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+        (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+      (RULE &cut_tile_of
+        (&cut_part_of *P *A (:P_part *P1))
+        (perp A *A2)
+        (&cut_part_of P (:A A2) (:P_part *P2))
+        (compose (:A P1) (:B P2) (:C *P_tile)))
+
+      (INIT &cut_box BoundingBox
+        (key ((&cut_tile_of *P ^P_tile))
+          (cell (P)
+            (&cut_tile_of *P P_tile))))
+
+      ;; The parts the cuts leave, each read in its own frame.
+      (RULE &cell
+        (&cut_tile_of *P *P_tile)
+        (&cut_box.box (:key P_tile) *B)
+        (ALL ((&cut_tile_of P (:P_tile *P_tilem))
+              (&cut_box.box (:key (:P_tile P_tilem)) B)
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (relative (:Base B) (:X P) (:X_rel *P_intile))))))
+
+(ALTS $p "what the output does with the input's ink" $Redraw
+  (ALT $Complete
+    (OUTPUT mark "a block's background cells take ink but for the cell whose place in the block is the block's place in the arrangement, and every ink cell of the input keeps its color")
+    (RULE &output
+      (input *P (:Col *C))
+      (OR ((&bg (:Col C))
+           (&paint P *Col))
+          ((NOT (&bg (:Col C)))
+           (= Col C)))))
+  (ALT $Blank
+    (OUTPUT mark "a block that holds no ink is filled with ink but for the cell whose place in the block is the block's place in the arrangement, and every other cell keeps its input color"
+      (RULE &drawn
+        (&cell *P *P_tile)
+        (input P *Col)
+        (NOT (&bg Col)))
+
+      (RULE &blank
+        (&cell *P *P_tile)
+        (NOT (&drawn P_tile))))
+    (RULE &output
+      (input *P (:Col *C))
+      (IF ((&blank P))
+          ((&paint P *Col))
+          ((= Col C))))))
+
+(RULE &output
+  (&paint *P *Col))

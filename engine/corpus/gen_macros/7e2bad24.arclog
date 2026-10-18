@@ -1,0 +1,110 @@
+;; 7e2bad24
+
+(DET &bg DominantColor)
+
+;; The beam's color, which is the seed's.
+(DET &ray RarestColor)
+
+;; Walls the beam passes through.
+(DET &transparent ColorDomain)
+
+;; Walls the beam turns at.
+(DET &reflective UnchangedColor)
+
+(RULE &passable
+  (OR ((&bg (:C *Col)))
+      ((&transparent (:C Col)))))
+
+(RULE &wall
+  (input *P *Col)
+  (&reflective (:C Col)))
+
+(RULE &side
+  (input *P)
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&wall (:P Q)))
+
+(RULE &leave_dir
+  (input *P)
+  (corner_dir (:C *D) (:A *A_m1) (:D *D_cmp))
+  (perp (:A A_m1) (:A2 *A2_m3))
+  (corner_dir (:C D) (:A A2_m3) (:D *D2_m2))
+  (IF ((&side P (:D D_cmp)))
+      ((opposite (:D D_cmp) (:Opp *D_out)))
+      ((= D_out D_cmp))))
+
+(RULE &bounce
+  (&leave_dir *P *D (:D_out *D1))
+  (&leave_dir P D (:D_out *D2))
+  (corner_dir (:C *D_out) (:A *A_m1) (:D D1))
+  (perp (:A A_m1) (:A2 *A2_m2))
+  (corner_dir (:C D_out) (:A A2_m2) (:D D2)))
+
+(RULE &seed_dir
+  (input *P *Col)
+  (&ray (:C Col))
+  (diag_dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (input (:P Q) Col))
+
+(RULE &step
+  (input (:P *Q) *Col)
+  (&passable Col)
+  (diag_opposite *D (:Opp *D_back))
+  (step_offset (:D D_back) (:V *V_m1))
+  (compose (:A Q) (:B V_m1) (:C *P)))
+
+;; The beam's walk: a beam heading d at p moves on to the next cell, or turns.
+(INIT &walk Propagation
+  (source ((:n P D))
+    (diag_opposite *D (:Opp *D_back))
+    (&seed_dir *P (:D D_back))
+    (NOT (&seed_dir P D)))
+  (edge ((:a P D) (:b (:P Q) (:D D_out)))
+    (&bounce *P *D *D_out)
+    (&step P (:D D_out) *Q)))
+
+(ALTS $choice "how a reflective wall turns the beam" $Contact
+  (ALT $WallAxis
+    (RULE &wall_axis
+      (&wall *P)
+      (axis_of *D *A)
+      (step_offset D (:V *V_m1))
+      (compose (:A P) (:B V_m1) (:C *Q))
+      (&wall (:P Q)))
+
+    ;; The beam's walk: a beam heading d at p moves on to the next cell, or turns.
+    (INIT &walk Propagation
+      (source ((:n P D))
+        (diag_opposite *D (:Opp *D_back))
+        (&seed_dir *P (:D D_back))
+        (NOT (&seed_dir P D)))
+      (edge ((:a P D) (:b (:P P2) (:D D_out)))
+        (OR ((input *P)
+             (diag_dir_elem *D)
+             (step_offset D (:V *V_m1))
+             (compose (:A P) (:B V_m1) (:C *Q))
+             (&wall_axis (:P Q) *A)
+             (perp A (:A2 *A_flip))
+             (axis_inversion (:A A_flip) (:T *F))
+             (d4_elem (:D F))
+             (diag_dir_elem D)
+             (diag_dir_elem (:D *D_out))
+             (step_offset D (:V *S_m2))
+             (apply (:D F) (:P S_m2) (:P_out *S2_m3))
+             (step_offset (:D D_out) (:V S2_m3))
+             (= *P2 P))
+            ((&step P D (:Q P2))
+             (= D_out D)))))))
+
+(RULE &enter
+  (&walk.reached (:n *P)))
+
+(RULE &output
+  (OR ((&enter *P)
+       (&ray (:C *Col)))
+      ((input P Col)
+       (NOT (&enter P)))))

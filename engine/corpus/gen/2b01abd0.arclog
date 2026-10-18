@@ -1,0 +1,48 @@
+;; 2b01abd0
+
+(DET &bg DominantColor)
+
+(DET &line UnchangedColor)
+
+(RULE &line_cell
+  (input *P *Col)
+  (&line (:C Col)))
+
+(RULE &line_axis
+  (&line_cell *P)
+  (&line_cell (:P *Q))
+  (!= P Q)
+  (axis_elem *A)
+  (same_line A P Q))
+
+(RULE &mirror
+  (input *P)
+  (&line_axis *A)
+  (perp A *A2)
+  (axis_inversion (:A A2) (:T *F4))
+  (&line_cell (:P *F))
+  (relative (:Base F) (:X P) (:X_rel *V))
+  (apply (:D F4) (:P V) (:P_out *V2))
+  (compose (:A F) (:B V2) (:C *Q))
+  (input (:P Q)))
+
+(RULE &figure
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&line (:C Col))))
+
+(RULE &swap
+  (&figure *Col)
+  (&figure (:Col *Col2))
+  (!= Col Col2))
+
+(RULE &ink
+  (OR ((&figure *P (:Col *C))
+       (&swap (:Col C) (:Col2 *Col)))
+      ((&figure (:P *P2) Col)
+       (&mirror (:P P2) (:Q P)))))
+
+(RULE &output
+  (OR ((&ink *P *Col))
+      ((input P Col)
+       (NOT (&ink P)))))

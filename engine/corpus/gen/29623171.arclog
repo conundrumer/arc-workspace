@@ -1,0 +1,65 @@
+;; 29623171
+
+(DET &bg DominantColor)
+
+(DET &gap DivisorRatio)
+
+(DET &tile_count SepTileCount)
+
+(INIT &tile_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (parts (A N)
+    (axis_elem *A)
+    (&tile_count *N))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap (:K *G))))
+
+(RULE &tile
+  (&tile_division.tile (:P *P_grid) (:P_outer *P_tile)))
+
+(ALTS $choice "what the lattice is read by" $Count
+  (ALT $Size
+    (DET &tile_dim SepTileCount)
+
+    (INIT &tile_division2 Division
+      (cell ((:P P_grid))
+        (input (:P *P_grid)))
+      (side (A K)
+        (axis_elem *A)
+        (&tile_dim (:N *K)))
+      (gap (A G)
+        (axis_elem *A)
+        (&gap (:K *G))))
+
+    (RULE &tile
+      (&tile_division2.tile (:P *P_grid) (:P_outer *P_tile)))))
+
+(RULE &mark
+  (&tile *P_grid *P_tile)
+  (input (:P P_grid) *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &most_count Cardinality
+  (key ((&mark (:P_tile ^T) *P_grid))
+    (member ((:m P_grid))
+      (&mark (:P_tile T) *P_grid))))
+
+(INIT &most Order
+  (member ((:t T))
+    (&most_count.size (:key *T)))
+  (score ((:t T) (:S N))
+    (&most_count.size (:key *T) *N)))
+
+(RULE &fill
+  (&most.maximal (:t *P_tile))
+  (&mark P_tile *Col))
+
+(RULE &output
+  (OR ((&tile (:P_grid *P) (:P_tile *T))
+       (OR ((&fill (:P_tile T) *Col))
+           ((NOT (&fill (:P_tile T)))
+            (&bg (:C Col)))))
+      ((input P Col)
+       (NOT (&tile (:P_grid P))))))

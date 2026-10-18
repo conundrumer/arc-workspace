@@ -1,0 +1,29 @@
+;; 21897d95
+
+(param &arrow_color Color (1))
+(param &arrow.glyph (Ident Position Color)
+  (0 (grid
+    (1 _ 1)
+    (_ 1 _)))
+  (1 (grid
+    (1 1 1)
+    (_ 1 _))))
+(param &arrow.center (Ident Position)
+  (0 (grid
+    (_ 1 _)
+    (_ _ _)))
+  (1 (grid
+    (_ 1 _)
+    (_ _ _))))
+(param &arrow.tip (Ident Dir) (0 DIR_B) (1 DIR_B))
+(param &sweep_axis Axis (AXIS_H))
+(param &bracket_glyph (Ident Position Color)
+  (2 (grid
+    (9 9 9)
+    (9 _ _)
+    (9 _ _)))
+  (3 (grid
+    (9 9 9)
+    (_ _ 9)
+    (_ _ 9))))
+(param &bracket_sense (Ident Sense) (2 SENSE_CW) (3 SENSE_CC))

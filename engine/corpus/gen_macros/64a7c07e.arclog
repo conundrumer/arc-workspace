@@ -1,0 +1,55 @@
+;; 64a7c07e
+
+(RULE &blob_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; A blob holds together through diagonal contact.
+(INIT &blob Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&ink *P)
+         (&blob_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ink (:P P3)))
+        ((&ink P)
+         (= P3 P)))))
+
+(RULE &blob_component
+  (&blob.class (:a *P) *Id))
+
+(DET &move_dir DirDomain)
+
+(INIT &bbox BoundingBox
+  (key ((&blob_component *P ^Id))
+    (cell (P)
+      (&blob_component *P Id))))
+
+(RULE &landed
+  (&blob_component (:P *P2) *Id)
+  (&ink (:P P2) *Col)
+  (&move_dir *D)
+  (axis_of D *A)
+  (&bbox.box (:key Id) *B)
+  (axis_elem A)
+  (relative (:Base B) (:X P2) (:X_rel *R_m1))
+  (frame_extent (:P R_m1) A *N)
+  (dir8_opposite D (:D2 *O_m3))
+  (edge_inset (:D O_m3) (:K N) (:B *B1_m4))
+  (edge_inset D (:K N) (:B *I_m6))
+  (relative (:Base I_m6) (:X 0) (:X_rel *B2_m5))
+  (compose (:A B1_m4) (:B B2_m5) (:C *V_m2))
+  (compose (:A P2) (:B V_m2) (:C *P)))
+
+(RULE &output
+  (input *P)
+  (OR ((&landed P *Col))
+      ((NOT (&landed P))
+       (&bg (:C Col)))))

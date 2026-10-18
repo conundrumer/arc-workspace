@@ -1,0 +1,112 @@
+;; 54dc2872
+
+(RULE &comps_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(INIT &comps Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&comps_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &comps_component
+  (&comps.class (:a *P) *Id))
+
+(RULE &piece
+  (&comps_component *P *Id)
+  (input P *Col))
+
+(INIT &own_color_count Cardinality
+  (key ((&piece ^Id *P ^Col))
+    (member ((:m P))
+      (&piece Id *P Col))))
+
+(RULE &mark
+  (&piece *Id *P *Col)
+  (ALL ((&piece Id (:P *Pm))
+        (&piece Id (:P *Q)))
+       ((= Pm Q))))
+
+;; The L's own color is the commonest of its cells: its tag is one cell.
+(INIT &own_color Order
+  (key ((&own_color_count.size (:key ^Id *Col)))
+    (member ((:t Col))
+      (&own_color_count.size (:key Id *Col)))
+    (score ((:t Col) (:S N))
+      (&own_color_count.size (:key Id *Col) *N))))
+
+(RULE &arm
+  (&piece *Id *P *Col)
+  (&own_color.maximal (:key Id) (:t Col)))
+
+(RULE &tag
+  (&piece *Id *P *Col)
+  (NOT (&arm Id P)))
+
+(RULE &bend
+  (&arm *Id *P)
+  (corner_dir (:C *Corner) (:A *A_m1) *D)
+  (perp (:A A_m1) (:A2 *A2_m2))
+  (corner_dir (:C Corner) (:A A2_m2) (:D *D2))
+  (step_offset D (:V *V_m3))
+  (compose (:A P) (:B V_m3) (:C *Q))
+  (&arm Id (:P Q))
+  (step_offset (:D D2) (:V *V_m4))
+  (compose (:A P) (:B V_m4) (:C *Q2))
+  (&arm Id (:P Q2)))
+
+(RULE &target
+  (&tag *Id *Col)
+  (&mark Col *P))
+
+(RULE &shift
+  (&bend *Id (:P *B))
+  (&target Id (:P *T))
+  (relative (:Base B) (:X T) (:X_rel *V)))
+
+(RULE &moves
+  (&shift *Id))
+
+(ALTS $choice "how far a tagged L can travel to reach its mark" $Translate
+  (ALT $Slide
+    (RULE &moves
+      (&bend *Id (:P *B) (:Corner *G))
+      (diag_opposite (:D G) (:Opp *D))
+      (diag_axis_of D (:Da *A))
+      (&target Id (:P *T))
+      (diag_perp (:Da A) (:Da2 *A2_m1))
+      (diag_axis_of (:D *D_m2) (:Da A2_m1))
+      (corner_dist (:P B) (:Diag D_m2) (:K *K_m3))
+      (corner_dist (:P T) (:Diag D_m2) (:K K_m3))
+      (diag_dir_elem D)
+      (corner_dist (:P T) (:Diag D) (:K *K1_m4))
+      (corner_dist (:P B) (:Diag D) (:K *K2_m5))
+      (< K1_m4 K2_m5))))
+
+(RULE &vacated
+  (&moves *Id)
+  (OR ((&piece Id *P))
+      ((&target Id P))))
+
+(RULE &render
+  (OR ((&piece *P *Col)
+       (NOT (&vacated P)))
+      ((&piece *Id (:P *P3) Col)
+       (&moves Id)
+       (&shift Id *V)
+       (compose (:A P3) (:B V) (:C P)))))
+
+(RULE &output
+  (input *P)
+  (OR ((&render P *Col))
+      ((NOT (&render P))
+       (&bg (:C Col)))))

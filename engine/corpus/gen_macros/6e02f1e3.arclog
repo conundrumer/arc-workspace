@@ -1,0 +1,81 @@
+;; 6e02f1e3
+
+(INIT &palette Cardinality
+  (member ((:m Col))
+    (input *Col)))
+
+(RULE &ncolors
+  (&palette.size *N))
+
+(DET &lookup_grid
+  (&ncolors *E *N)
+  (ex_output E *P *Col))
+
+(ALTS $choice "the render: table or rule" $Lookup
+  (ALT $Figure
+    (DET &fig_edge NumberDirDomain)
+
+    (DET &mark AnyOutNewColor)
+
+    (DET &bg AnyOutNewColor)
+
+    (RULE &canvas
+      (input *P))
+
+    (DET &mark_cell
+      (ex_output *E *P *Col)
+      (&mark (:C Col)))
+
+    (DET &mismatch
+      (OR ((diag_dir_elem (:D *Dg))
+           (&mark_cell *E *P)
+           (corner_dir (:C Dg) (:A *A_m1) (:D *D1_m2))
+           (perp (:A A_m1) (:A2 *A2_m4))
+           (corner_dir (:C Dg) (:A A2_m4) (:D *D2_m3))
+           (margin (:B P) (:D D1_m2) (:K *K1))
+           (margin (:B P) (:D D2_m3) (:K *K2))
+           (!= K1 K2))
+          ((diag_dir_elem (:D Dg))
+           (ex_output E (:P *P2))
+           (corner_dir (:C Dg) (:A *A_m12) (:D *D1_m22))
+           (perp (:A A_m12) (:A2 *A2_m42))
+           (corner_dir (:C Dg) (:A A2_m42) (:D *D2_m32))
+           (margin (:B P2) (:D D1_m22) *K)
+           (margin (:B P2) (:D D2_m32) K)
+           (NOT (&mark_cell E (:P P2))))))
+
+    (DET &fig_diag
+      (&ncolors *E *N)
+      (ex_output E)
+      (diag_dir_elem (:D *Dg))
+      (NOT (&mismatch E Dg))
+      (diag_axis_of (:D Dg) *Da))
+
+    (RULE &figure_cell
+      (&canvas *P)
+      (&ncolors *N)
+      (OR ((&fig_edge N *D)
+           (margin (:B P) D (:K 0)))
+          ((&fig_diag N (:Da *DA))
+           (diag_axis_of (:D *Dg) (:Da DA))
+           (corner_dir (:C Dg) (:A *A_m1) (:D *D1_m2))
+           (perp (:A A_m1) (:A2 *A2_m4))
+           (corner_dir (:C Dg) (:A A2_m4) (:D *D2_m3))
+           (margin (:B P) (:D D1_m2) *K)
+           (margin (:B P) (:D D2_m3) K))))
+
+    (RULE &output
+      (OR ((&figure_cell *P)
+           (&mark (:C *Col)))
+          ((&canvas P)
+           (NOT (&figure_cell P))
+           (&bg (:C Col)))))
+    (ALTS $canvas "the frame the figure is drawn in" $Input
+      (ALT $Fixed
+        (DET &out_pos Frame)
+        (RULE &canvas
+          (&out_pos *P))))))
+
+(RULE &output
+  (&ncolors *N)
+  (&lookup_grid N *P *Col))

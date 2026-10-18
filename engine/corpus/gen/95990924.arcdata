@@ -1,0 +1,20 @@
+;; 95990924
+
+(param &bg Color (0))
+(param &corner_paint (DiagDir Color)
+  (DIAG_TL 1)
+  (DIAG_TR 2)
+  (DIAG_BL 3)
+  (DIAG_BR 4))
+(param &square (Position Color)
+  (grid
+    (_ _ _ _)
+    (_ 5 5 _)
+    (_ 5 5 _)
+    (_ _ _ _)))
+(param &mark (Position Color)
+  (grid
+    (1 _ _ 2)
+    (_ _ _ _)
+    (_ _ _ _)
+    (3 _ _ 4)))

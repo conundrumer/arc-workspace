@@ -1,0 +1,146 @@
+;; 7447852a
+
+(RULE &pockets_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(INIT &pockets Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (&bg (:C Col))
+         (&pockets_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (&bg (:C Col2)))
+        ((input P (:Col *Col3))
+         (&bg (:C Col3))
+         (= P3 P)))))
+
+(RULE &pockets_component
+  (&pockets.class (:a *P) *Id))
+
+(DET &mark AnyOutNewColor)
+
+;; The repetition runs from this edge.
+(DET &anchor DirDomain)
+
+;; The rhythm along the pocket sequence: mark_run marked pockets, then keep_run kept, repeating.
+(DET &mark_run DivisorRatio)
+
+(DET &keep_run TileCount)
+
+(INIT &pocket_box BoundingBox
+  (key ((&pockets_component *P ^Id))
+    (cell (P)
+      (&pockets_component *P Id))))
+
+(RULE &pocket_margin
+  (&anchor *D)
+  (&pocket_box.box (:key *Id) *B)
+  (margin B D *K))
+
+(INIT &seq Order
+  (member ((:t K))
+    (&pocket_margin *K))
+  (score ((:t K) (:S K))
+    (&pocket_margin *K)))
+
+(RULE &marked_pocket
+  (&pocket_margin *Id *K)
+  (&seq.rank (:t K) *R)
+  (&mark_run (:K *N))
+  (&keep_run (:N *G))
+  (divide (:T R) (:Side N) (:Gap G)))
+
+(RULE &mark_cell
+  (&marked_pocket *Id)
+  (&pockets_component *P Id))
+
+(ALTS $choice "what repeats" $Rank
+  (ALT $Stamp
+    (INIT &si Periods
+      (key ((ex_output ^E *P *Col))
+        (cell (P (:v Col))
+          (ex_output E *P *Col))))
+
+    (DET &min_period
+      (&anchor *D)
+      (axis_of D *A)
+      (&si.fundamental_period A *K))
+
+    ;; The stamp's frame: one period along the anchor's axis, the strip's
+    ;; extent across.
+    (INIT &frame Frame
+      (key ((OR ((ex_output ^E)
+                 (&anchor *D)
+                 (axis_of D *A)
+                 (&min_period *K))
+                ((ex_output E *P)
+                 (&anchor D)
+                 (axis_of D A)
+                 (perp A *A2)
+                 (frame_extent P (:A A2) *N))))
+        (extent (A (:N K))
+          (OR ((ex_output E)
+               (&anchor *D)
+               (axis_of D *A)
+               (&min_period *K))
+              ((ex_output E *P)
+               (&anchor (:D *D2))
+               (axis_of (:D D2) (:A *A3))
+               (perp (:A A3) (:A2 A))
+               (frame_extent P A (:N K)))))))
+
+    (DET &marked
+      (ex_input *E (:P *Q) (:Col *C_in))
+      (ex_output E (:P Q) (:Col *C_out))
+      (!= C_in C_out))
+
+    (DET &stamp_slab_anchor1
+      (&anchor (:D *D_))
+      (&frame.cell (:key *E) (:P *Pm_))
+      (&marked E (:Q *Q_))
+      (axis_of (:D D_) (:A *A_m1))
+      (perp (:A A_m1) (:A2 *A2_m2))
+      (axis_of (:D *E_m3) (:A A2_m2))
+      (margin (:B Pm_) (:D E_m3) (:K *K1_m4))
+      (margin (:B Q_) (:D E_m3) (:K *K2_m5))
+      (!= K1_m4 K2_m5))
+
+    (DET &stamp
+      (&frame.cell (:key *E) *P)
+      (&anchor *D)
+      (margin (:B P) D (:K *K_m1))
+      (&marked E *Q)
+      (margin (:B Q) D (:K K_m1))
+      (NOT (&stamp_slab_anchor1 (:D_ D) (:Pm_ P) (:Q_ Q))))
+
+    (RULE &period
+      (&stamp *P)
+      (&anchor *D)
+      (axis_of D *A)
+      (frame_extent P A (:N *K)))
+
+    ;; The stamp seats on the anchor edge and repeats along the strip: a cell
+    ;; takes the stamp cell on its across line at its place within the period.
+    (RULE &mark_cell
+      (input *P)
+      (&stamp (:P *Pm))
+      (&anchor *D)
+      (axis_of D *A)
+      (perp A (:A2 *A2_m1))
+      (axis_of (:D *D_m2) (:A A2_m1))
+      (margin (:B P) (:D D_m2) (:K *K_m3))
+      (margin (:B Pm) (:D D_m2) (:K K_m3))
+      (margin (:B Pm) D (:K *R))
+      (&period *K)
+      (margin (:B P) D (:K *T))
+      (divide T (:Side K) (:Gap 0) (:Remainder R)))))
+
+(RULE &output
+  (OR ((&mark_cell *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&mark_cell P)))))

@@ -1,0 +1,190 @@
+;; 834ec97d
+
+(DET &period TileCount)
+
+(DET &dir DirDomain)
+
+(RULE &row_dir
+  (&dir (:D *D3))
+  (axis_of (:D D3) (:A *A_m1))
+  (perp (:A A_m1) (:A2 *A2_m2))
+  (axis_of *D (:A A2_m2)))
+
+(RULE &row_node
+  (input *P))
+
+(DET &bg DominantColor)
+
+(RULE &marker
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &row_source
+  (&marker *P))
+
+;; The marker's row, walked outward from the marker.
+(INIT &row Distance
+  (key ((&row_source (:P ^O))
+        (&row_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&row_source (:P O))
+           (&row_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&row_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&row_node (:P Q)))
+          ((&row_source (:P O))
+           (&row_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&row_node (:P Q))
+           (= A2 O))
+          ((&row_source (:P O))
+           (&row_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&row_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&row_node (:P Q)))))
+    (source ((:n O))
+      (&row_source (:P O))
+      (&row_dir D))))
+
+(RULE &row_ray
+  (&row.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+;; A whole number of jumps out.
+(RULE &beam
+  (&row_ray *P *K)
+  (&period (:N *W))
+  (divide (:T K) (:Side W) (:Gap 0) (:Remainder 0)))
+
+(RULE &rays_dir
+  (&dir (:D *D2))
+  (opposite (:D D2) (:Opp *D)))
+
+(RULE &rays_dir_ray
+  (&rays_dir *D))
+
+(RULE &rays_node
+  (&rays_dir)
+  (input *P))
+
+(RULE &row_end
+  (&row_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&row_ray (:P Q) D Origin)))
+
+(DET &fill AnyOutNewColor)
+
+(RULE &moved
+  (&marker (:P *P2))
+  (&dir *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P2) (:B V_m1) (:C *P)))
+
+(ALTS $choice "how the alternating columns are picked; coincide at period 2" $Period
+  (ALT $Parity
+    ;; An even distance out: a cell of the row lies midway.
+    (RULE &beam
+      (&row_ray (:P *M) (:D *D2) *K)
+      (dir8_opposite (:D D2) (:D2 *O_m2))
+      (edge_inset (:D O_m2) K (:B *B1_m3))
+      (edge_inset (:D D2) K (:B *I_m5))
+      (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+      (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+      (compose (:A M) (:B V_m1) (:C *P))
+      (input P))))
+
+(RULE &rays_cell
+  (&beam)
+  (input *P))
+
+(RULE &rays_source
+  (&beam *P))
+
+;; The filled region: each beam cell and its column toward the edge opposite
+;; the move.
+(INIT &rays Distance
+  (key ((&rays_source (:P ^O))
+        (&rays_dir_ray ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&rays_source (:P O))
+           (&rays_dir_ray D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&rays_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&rays_node (:P Q)))
+          ((&rays_source (:P O))
+           (&rays_dir_ray D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&rays_node (:P Q))
+           (= A2 O))
+          ((&rays_source (:P O))
+           (&rays_dir_ray D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&rays_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&rays_node (:P Q)))))
+    (source ((:n O))
+      (&rays_source (:P O))
+      (&rays_dir_ray D))))
+
+(RULE &rays_ray2
+  (&rays.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &rays_ray
+  (&rays_ray2 *P *D *K (:Origin *Src))
+  (&rays_cell P))
+
+(RULE &rays_end
+  (&rays_ray2 *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&rays_ray2 (:P Q) D Origin)))
+
+(RULE &output
+  (OR ((&rays_ray2 *P)
+       (&rays_cell P)
+       (&fill (:C *Col)))
+      ((&moved P)
+       (&marker Col))
+      ((input P)
+       (NOT (&rays_ray P))
+       (NOT (&moved P))
+       (&bg (:C Col)))))

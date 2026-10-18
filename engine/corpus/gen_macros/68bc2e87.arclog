@@ -1,0 +1,62 @@
+;; 68bc2e87
+
+(DET &bg DominantColor)
+
+;; The rectangle each color draws: the box its cells bound.
+(INIT &rect BoundingBox
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &under
+  (&rect.cell (:key (:Col *Col2)) *P)
+  (&rect.box (:key *Col) *B)
+  (!= Col Col2)
+  (ALL ((&rect.cell (:key (:Col *Col2m)) P)
+        (&rect.box (:key (:Col *Colm)) B)
+        (dir_elem (:D *D_m1m))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1m) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B P) (:D *D_m1) (:K *K_m2))
+  (margin B (:D D_m1) (:K K_m2)))
+
+;; Drawn later through any run of overwrites. Each color starts its own walk
+;; to the colors drawn after it.
+(INIT &later Propagation
+  (key ((&rect.box (:key ^Col))))
+  (edge ((:a Col3) (:b Col2))
+    (&under (:Col *Col3) *Col2)))
+
+(INIT &order Order
+  (member ((:t Col))
+    (&rect.cell (:key *Col)))
+  (before ((:a Col) (:b Col2))
+    (&later.reached (:key *Col) (:n *Col2))
+    (!= Col Col2)))
+
+;; The listing: one cell per rank, from the edge the order runs from.
+(INIT &listing_size Cardinality
+  (member ((:m R))
+    (&order.rank *R)))
+
+;; The edge the listing runs from, the first-drawn color first.
+(DET &order_dir DirDomain)
+
+(INIT &listing_frame Frame
+  (extent (A N)
+    (&order_dir *D)
+    (axis_of D *A)
+    (&listing_size.size *N)))
+
+(RULE &listing_pos
+  (&listing_frame.cell *P)
+  (&order_dir *D)
+  (margin (:B P) D *K)
+  (&order.rank (:R K)))
+
+(RULE &output
+  (&order.rank (:t *Col) *R)
+  (&listing_pos (:K R) *P))

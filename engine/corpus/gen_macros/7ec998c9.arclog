@@ -1,0 +1,209 @@
+;; 7ec998c9
+
+;; The axis of the mark's own line, the stem of the Z.
+(DET &axis AxisDomain)
+
+(RULE &stem_dir_ray
+  (&axis *A)
+  (axis_of (:D *Key) A))
+
+(RULE &stem_node
+  (&axis *A)
+  (axis_of (:D *Key) A)
+  (input *P))
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The field is the commonest color; the mark is the cell that differs.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&field.maximal (:t Col))))
+
+(RULE &stem_dir
+  (&axis *A)
+  (axis_of (:D *Key) A))
+
+(RULE &stem_source
+  (&stem_dir *Key)
+  (&mark *P))
+
+;; The Z's stem: rays from the mark both ways along the axis, keyed by their
+;; cast direction.
+(INIT &stem Distance
+  (key ((&stem_source (:Key ^Ky) (:P ^O))
+        (&stem_dir_ray (:Key Ky)))
+    (edge ((:a A2) (:b Q))
+      (OR ((&stem_source (:Key Ky) (:P O))
+           (&stem_dir_ray (:Key Ky))
+           (axis_of (:D Ky) *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite (:D Ky) (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset (:D Ky) K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&stem_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&stem_node (:Key Ky) (:P Q)))
+          ((&stem_source (:Key Ky) (:P O))
+           (&stem_dir_ray (:Key Ky))
+           (step_offset (:D Ky) (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&stem_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&stem_source (:Key Ky) (:P O))
+           (&stem_dir_ray (:Key Ky))
+           (diag_dir_elem (:D Ky))
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite (:D Ky) (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset (:D Ky) (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&stem_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&stem_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&stem_source (:Key Ky) (:P O))
+      (&stem_dir_ray (:Key Ky)))))
+
+(RULE &stem_ray
+  (&stem.distance (:key (:Ky *Key) (:Ky *D) (:O *Origin)) (:n *P) *K))
+
+(RULE &stem_end
+  (&stem_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&stem_ray Key (:P Q) D Origin)))
+
+(RULE &arm_dir
+  (dir_elem (:D *Key)))
+
+(RULE &arm_node
+  (dir_elem (:D *Key))
+  (input *P))
+
+;; The checkerboard's anchor corner, and the sense its shade turns by. Every grid is square, so the pairs do not separate DIAG_TL from DIAG_BR.
+(DET &corner DiagDirDomain)
+
+(RULE &corner_steps
+  (&mark *P)
+  (&corner (:D *Diag))
+  (corner_dist P Diag *K))
+
+;; The checkerboard: the anchor corner cell takes &corner_sense, and
+;; each unit step swaps sense.
+(INIT &checker Walk
+  (successor ((:p S) (:p_next S2))
+    (sense_elem *S)
+    (sense_elem (:S *S2))
+    (!= S S2))
+  (steps ((:N K))
+    (&corner_steps *K)))
+
+(DET &corner_sense SenseDomain)
+
+(RULE &shade
+  (&corner_steps *K)
+  (&corner_sense (:S *S0))
+  (&checker.walk (:p0 S0) (:N K) (:p *S)))
+
+(RULE &arm_source
+  (&mark (:P *M))
+  (&stem_ray (:Key *D) *P D (:Origin M))
+  (margin (:B P) D (:K 0))
+  (&shade *S)
+  (turn S D (:D2 *Key)))
+
+;; The Z's arms: each casts from the stem's end on the edge, in the direction
+;; the mark's shade turns to.
+(INIT &arm Distance
+  (key ((&arm_source (:Key ^Ky) (:P ^O))
+        (&arm_dir (:Key Ky)))
+    (edge ((:a A2) (:b Q))
+      (OR ((&arm_source (:Key Ky) (:P O))
+           (&arm_dir (:Key Ky))
+           (axis_of (:D Ky) *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite (:D Ky) (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset (:D Ky) K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&arm_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&arm_node (:Key Ky) (:P Q)))
+          ((&arm_source (:Key Ky) (:P O))
+           (&arm_dir (:Key Ky))
+           (step_offset (:D Ky) (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&arm_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&arm_source (:Key Ky) (:P O))
+           (&arm_dir (:Key Ky))
+           (diag_dir_elem (:D Ky))
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite (:D Ky) (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset (:D Ky) (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&arm_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&arm_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&arm_source (:Key Ky) (:P O))
+      (&arm_dir (:Key Ky)))))
+
+(RULE &arm_ray
+  (&arm.distance (:key (:Ky *Key) (:Ky *D) (:O *Origin)) (:n *P) *K))
+
+(RULE &arm_end
+  (&arm_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&arm_ray Key (:P Q) D Origin)))
+
+;; The Z's color.
+(DET &line AnyOutNewColor)
+
+(RULE &stem_cell
+  (&stem_dir *Key)
+  (input *P)
+  (NOT (&mark P)))
+
+(RULE &arm_cell
+  (dir_elem (:D *Key))
+  (input *P)
+  (NOT (&mark P)))
+
+(RULE &lit
+  (OR ((&stem_ray (:Key *Ky) *P)
+       (&stem_cell (:Key Ky) P))
+      ((&arm_ray (:Key Ky) P)
+       (&arm_cell (:Key Ky) P))))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (IF ((&lit P))
+      ((&line (:C *Col)))
+      ((= Col Col_in))))

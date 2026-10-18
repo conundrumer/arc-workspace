@@ -1,0 +1,58 @@
+;; 6bcdb01e
+
+(DET &wall UnchangedColor)
+
+(INIT &open_rim Boundary
+  (cell (P)
+    (input *P *Col)
+    (NOT (&wall (:C Col))))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &open_rim_dir
+  (&open_rim.exposed *P *D)
+  (dir_elem D))
+
+(DET &seed RarestColor)
+
+;; The walker may stand on any cell but a wall.
+(INIT &open Ray
+  (source (P)
+    (input *P *Col)
+    (NOT (&wall (:C Col))))
+  (node (P)
+    (input *P *Col)
+    (NOT (&wall (:C Col))))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &start
+  (&seed (:C *Col))
+  (input (:P *Q) Col)
+  (input *P Col)
+  (dir_elem *D)
+  (neighbor (:P Q) D (:Q P)))
+
+;; The walker turns onto a new leg where its run halts with one side open
+;; and the other closed.
+(INIT &legs Propagation
+  (source ((:n (:P A0) (:D D0)))
+    (&start (:P *A0) (:D *D0)))
+  (edge ((:a (:P A) D) (:b (:P E) (:D D2)))
+    (&open.end (:P *E) *D (:Origin *A))
+    (perp_dir D *D2)
+    (NOT (&open_rim_dir (:P E) (:D D2)))
+    (opposite (:D D2) (:Opp *D3))
+    (&open_rim.exposed (:P E) (:D D3))
+    (dir_elem (:D D3))))
+
+(RULE &path
+  (&legs.reached (:n (:P *A) *D))
+  (&open.ray *P D (:K *N) (:Origin A))
+  (> N 0))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (IF ((&path P))
+      ((&seed (:C *Col)))
+      ((= Col Col_in))))

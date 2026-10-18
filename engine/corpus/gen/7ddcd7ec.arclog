@@ -1,0 +1,48 @@
+;; 7ddcd7ec
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &block
+  (&ink *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&ink (:P Q)))
+
+(RULE &tail
+  (&block (:P *Q))
+  (diag_dir_elem *D)
+  (neighbor (:P Q) D (:Q *P))
+  (&ink P)
+  (NOT (&block P)))
+
+;; Each tail casts along its own diagonal, away from the block.
+(INIT &cast Ray
+  (key ((OR ((&tail *P ^D))
+            ((diag_dir_elem D))))
+    (source (P)
+      (&tail *P D))
+    (node (P)
+      (diag_dir_elem D)
+      (input *P))
+    (dir (D)
+      (diag_dir_elem D))))
+
+(RULE &cast_cell
+  (diag_dir_elem (:D *Key))
+  (input *P))
+
+(RULE &cast_ray
+  (&cast.ray (:key (:D *Key)) *P *D *K (:Origin *Src))
+  (&cast_cell Key P))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&cast.ray (:key (:D *Ky)) P (:Origin *Src))
+       (&cast_cell (:Key Ky) P)
+       (&ink (:P Src) *Col))
+      ((NOT (&cast_ray P))
+       (= Col Col_in))))

@@ -1,0 +1,61 @@
+;; 7c9b52a0
+
+(RULE &panels_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &frame_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The frame color: what covers the grid outside the panels.
+(INIT &frame Order
+  (member ((:t Col))
+    (&frame_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&frame_count.size (:key *Col) *N)))
+
+(INIT &panels Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&frame.maximal (:t Col)))
+         (&panels_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&frame.maximal (:t Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&frame.maximal (:t Col3)))
+         (= P3 P)))))
+
+(RULE &panels_component
+  (&panels.class (:a *P) *Id))
+
+(DET &bg SharedColor)
+
+(INIT &panel BoundingBox
+  (key ((&panels_component *P ^Id))
+    (cell (P)
+      (&panels_component *P Id))))
+
+(RULE &canvas
+  (&panel.cell (:key *Id) (:P *P_grid))
+  (&panel.box (:key Id) *B)
+  (ALL ((&panel.cell (:key (:Id *Idm)) (:P P_grid))
+        (&panel.box (:key (:Id Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P_grid) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P_grid) (:X_rel *P_frame)))
+
+(RULE &ink
+  (&canvas *P_grid (:P_frame *P))
+  (input (:P P_grid) *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &output
+  (&canvas (:P_frame *P))
+  (OR ((&ink P *Col))
+      ((NOT (&ink P))
+       (&bg (:C Col)))))

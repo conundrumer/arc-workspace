@@ -1,0 +1,5 @@
+;; 8719f442
+
+(param &bg Color (0))
+(param &ring_width number (1))
+(param &fill Color (5))

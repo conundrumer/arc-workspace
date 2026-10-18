@@ -1,0 +1,171 @@
+;; 9356391f
+
+(DET &divider SharedColor)
+
+;; The side of the divider the legend sits on.
+(DET &legend_dir DirDomain)
+
+(RULE &panel_divider_split1
+  (input (:P *P_) *Col)
+  (axis_of *D (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &panel_divider
+  (input *P *Col)
+  (&divider (:C Col))
+  (&legend_dir *D)
+  (axis_of D *A)
+  (&panel_divider_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+(RULE &panel_on_divider
+  (input *P)
+  (&panel_divider *A *L)
+  (axis_of *D A)
+  (margin (:B P) D (:K *K_m1))
+  (margin (:B L) D (:K K_m1)))
+
+;; The panels the divider cuts.
+(INIT &panel_rank Order
+  (key ((OR ((&panel_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (dir_elem D)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&panel_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&panel_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (dir_elem D)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (dir_elem D)
+      (margin (:B P) D *K))))
+
+(RULE &panel_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&panel_on_divider P A))
+  (margin (:B P) D *K)
+  (&panel_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &panel_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&panel_part_idx *P D (:N *N1))
+  (&panel_part_idx P (:D D2) (:N *N2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K N1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+(RULE &panel_tile_of
+  (&panel_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&panel_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+;; The quarter turn from legend_dir onto the edge the legend is read from.
+(DET &read_sense SenseDomain)
+
+(RULE &read_dir
+  (&legend_dir (:D *D0))
+  (&read_sense *S)
+  (turn S (:D D0) (:D2 *D)))
+
+(RULE &legend
+  (input *P *Col)
+  (&legend_dir *D)
+  (&panel_part_idx P D (:N 0))
+  (&read_dir (:D *D_read))
+  (margin (:B P) (:D D_read) *K))
+
+(RULE &ring_color_uniform_outset1
+  (&legend (:K *K_) *Col)
+  (axis_of (:D *D1_m1) (:A *A1_m2))
+  (perp (:A A1_m2) (:A2 *A2_m3))
+  (axis_of (:D *D2_m4) (:A A2_m3))
+  (opposite (:D D1_m1) (:Opp *O_m7))
+  (edge_inset (:D D1_m1) (:K K_) (:B *B1_m8))
+  (edge_inset (:D O_m7) (:K K_) (:B *B2_m9))
+  (compose (:A B1_m8) (:B B2_m9) (:C *B1_m5))
+  (opposite (:D D2_m4) (:Opp *O_m10))
+  (edge_inset (:D D2_m4) (:K K_) (:B *B1_m11))
+  (edge_inset (:D O_m10) (:K K_) (:B *B2_m12))
+  (compose (:A B1_m11) (:B B2_m12) (:C *B2_m6))
+  (compose (:A B1_m5) (:B B2_m6) (:C *I_m1))
+  (relative (:Base I_m1) (:X 0) (:X_rel *W_)))
+
+(DET &bg DominantColor)
+
+(RULE &canvas
+  (&legend_dir *D)
+  (opposite D (:Opp *D2))
+  (&panel_part_idx *P (:D D2) (:N 0)))
+
+(RULE &marker
+  (&canvas *P)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &ring_color
+  (&marker (:P *P_mark))
+  (&legend *K *Col)
+  (&ring_color_uniform_outset1 (:K_ K) (:W_ *W))
+  (compose (:A P_mark) (:B W) (:C *B))
+  (&canvas *P)
+  (ALL ((&marker (:P *P_markm))
+        (&legend (:K *Km) (:Col *Colm))
+        (axis_of (:D *D1_m2) (:A *A1_m3))
+        (perp (:A A1_m3) (:A2 *A2_m4))
+        (axis_of (:D *D2_m5) (:A A2_m4))
+        (opposite (:D D1_m2) (:Opp *O_m8))
+        (edge_inset (:D D1_m2) (:K Km) (:B *B1_m9))
+        (edge_inset (:D O_m8) (:K Km) (:B *B2_m10))
+        (compose (:A B1_m9) (:B B2_m10) (:C *B1_m6))
+        (opposite (:D D2_m5) (:Opp *O_m11))
+        (edge_inset (:D D2_m5) (:K Km) (:B *B1_m12))
+        (edge_inset (:D O_m11) (:K Km) (:B *B2_m13))
+        (compose (:A B1_m12) (:B B2_m13) (:C *B2_m7))
+        (compose (:A B1_m6) (:B B2_m7) (:C *I_m1))
+        (relative (:Base I_m1) (:X 0) (:X_rel *Wm))
+        (compose (:A P_markm) (:B Wm) (:C B))
+        (dir_elem (:D *D_m1m))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1m) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B P) (:D *D_m1) (:K *K_m2))
+  (margin B (:D D_m1) (:K K_m2)))
+
+(ALTS $choice "what a bg legend entry means" $Paint
+  (ALT $Skip
+    (RULE &inked
+      (&ring_color *P *Col)
+      (NOT (&bg (:C Col))))
+
+    (RULE &output
+      (OR ((&canvas *P)
+           (OR ((&inked P *Col))
+               ((NOT (&inked P))
+                (input P Col))))
+          ((input P Col)
+           (NOT (&canvas P)))))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&canvas P)))
+      ((&ring_color P Col))))

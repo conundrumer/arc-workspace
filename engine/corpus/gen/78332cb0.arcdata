@@ -1,0 +1,5 @@
+;; 78332cb0
+
+(param &bg Color (7))
+(param &sep Color (6))
+(param &gap number (1))

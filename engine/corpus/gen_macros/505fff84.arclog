@@ -1,0 +1,260 @@
+;; 505fff84
+
+(DET &axis AxisDomain)
+
+(DET &marker RarestColor)
+
+(RULE &set_spans_dir
+  (&axis *A)
+  (axis4_of *D A))
+
+(RULE &set_spans_node
+  (input *P))
+
+(RULE &set_spans_source
+  (input *P *Col)
+  (&marker (:C Col)))
+
+(INIT &set_spans Distance
+  (key ((&set_spans_source (:P ^O))
+        (&set_spans_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&set_spans_source (:P O))
+           (&set_spans_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&set_spans_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&set_spans_node (:P Q)))
+          ((&set_spans_source (:P O))
+           (&set_spans_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&set_spans_node (:P Q))
+           (= A2 O))
+          ((&set_spans_source (:P O))
+           (&set_spans_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&set_spans_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&set_spans_node (:P Q)))))
+    (source ((:n O))
+      (&set_spans_source (:P O))
+      (&set_spans_dir D))))
+
+(RULE &set_spans_ray
+  (&set_spans.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &set_spans_between
+  (input *P *Col)
+  (NOT (&marker (:C Col)))
+  (&axis *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&set_spans_ray P D)
+  (&set_spans_ray P (:D O)))
+
+(RULE &seg
+  (&set_spans_between *P))
+
+(RULE &set_spans_end
+  (&set_spans_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&set_spans_ray (:P Q) D Origin)))
+
+(RULE &sided_rays_dir
+  (&marker (:C *Key))
+  (&axis *A)
+  (axis_of *D A))
+
+(RULE &sided_rays_dir_ray
+  (&sided_rays_dir *Key *D))
+
+(RULE &sided_rays_node
+  (&sided_rays_dir *Key)
+  (input *P))
+
+(RULE &sided_rays_source
+  (input *P (:Col *Key))
+  (&marker (:C Key)))
+
+(INIT &sided_rays Distance
+  (key ((&sided_rays_source (:Key ^Ky) (:P ^O))
+        (&sided_rays_dir_ray (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&sided_rays_source (:Key Ky) (:P O))
+           (&sided_rays_dir_ray (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&sided_rays_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&sided_rays_node (:Key Ky) (:P Q)))
+          ((&sided_rays_source (:Key Ky) (:P O))
+           (&sided_rays_dir_ray (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&sided_rays_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&sided_rays_source (:Key Ky) (:P O))
+           (&sided_rays_dir_ray (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&sided_rays_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&sided_rays_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&sided_rays_source (:Key Ky) (:P O))
+      (&sided_rays_dir_ray (:Key Ky) D))))
+
+(RULE &sided_rays_ray
+  (&sided_rays.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &sided_rays_end
+  (&sided_rays_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&sided_rays_ray Key (:P Q) D Origin)))
+
+(ALTS $choice "data-equivalent on this task — every marked row has 1 west of 8" $Set
+  (ALT $Sided
+    (DET &mark_split1
+      (ex_input *E (:P *P_) *Col)
+      (&axis (:A *A_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+      (relative (:Base X_m1_) (:X P_) (:X_rel *Row_)))
+
+    (RULE &sided_rays_cell
+      (&marker (:C *Key))
+      (input *P *Col)
+      (NOT (&marker (:C Col))))
+
+    (DET &mark
+      (ex_input *E *P *Col)
+      (&marker (:C Col))
+      (&axis *A)
+      (&mark_split1 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:Row_ *Row)))
+
+    (DET &side
+      (&mark *E *Row *P (:Col *C))
+      (&mark E Row (:P *Q) (:Col *C2))
+      (!= C C2)
+      (&axis *A)
+      (axis_of *D A)
+      (dir_elem D)
+      (margin (:B P) D (:K *K1_m1))
+      (margin (:B Q) D (:K *K2_m2))
+      (< K1_m1 K2_m2))
+
+    ;; The marks on their own ends. A ray toward d means its mark lies away
+    ;; from d, so each end's color casts toward the opposite end.
+    (RULE &seg
+      (&side *D (:C *C1))
+      (opposite D (:Opp *O))
+      (&side (:D O) (:C *C2))
+      (&sided_rays_ray (:Key C1) *P (:D O))
+      (&sided_rays_cell (:Key C1) P)
+      (&sided_rays_ray (:Key C2) P D)
+      (&sided_rays_cell (:Key C2) P))))
+
+(RULE &seg_split_split1
+  (&seg (:P *P_))
+  (&axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_along_))
+  (relative (:Base P_along_) (:X P_) (:X_rel *Row_)))
+
+(RULE &seg_split
+  (&seg *P)
+  (input P *Col)
+  (&axis *A)
+  (&seg_split_split1 (:P_ P) (:A_ A) (:P_along_ *P_along) (:Row_ *Row)))
+
+(RULE &rows_axis
+  (&seg_split)
+  (&axis (:A *A3))
+  (perp (:A A3) (:A2 *A)))
+
+;; Out placement: contributing rows take their order positions.
+(INIT &rows Order
+  (key ((&rows_axis ^A)
+        (axis_of ^D A))
+    (before ((:a Row) (:b Row2))
+      (&seg_split *Row)
+      (&seg_split (:Row *Row2))
+      (!= Row Row2)
+      (margin (:B Row) D (:K *K1))
+      (margin (:B Row2) D (:K *K2))
+      (< K1 K2)))
+  (member ((:t Row))
+    (&seg_split *Row)))
+
+(RULE &rows_pos
+  (&rows.rank (:key *A *D) (:t *M) (:R *R1))
+  (&rows.dual_rank (:key A D) (:t M) (:R *R2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K R1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K R2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_pos)))
+
+(INIT &shift BoundingBox
+  (key ((&seg_split *P_along ^Row))
+    (cell ((:P P_along))
+      (&seg_split *P_along Row))))
+
+(RULE &output
+  (&rows_pos (:M *Row) (:P_pos *P_outer_v))
+  (&seg_split *P_along Row *Col)
+  (&shift.box (:key Row) *B)
+  (ALL ((&seg_split P_along (:Row *Rowm) (:Col *Colm))
+        (&shift.box (:key (:Row Rowm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P_along) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P_along) (:X_rel *P_inner_h))
+  (compose (:A P_outer_v) (:B P_inner_h) (:C *P)))

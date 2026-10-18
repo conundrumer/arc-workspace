@@ -1,0 +1,159 @@
+;; 2c181942
+
+(RULE &objs_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(DET &bg DominantColor)
+
+(INIT &objs Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&objs_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &objs_component
+  (&objs.class (:a *P) *Id))
+
+(RULE &object
+  (&objs_component *P *Id))
+
+(INIT &obj_color Singleton
+  (key ((&object ^Id *P)
+        (input P *Col))
+    (member ((:v Col))
+      (&object Id *P)
+      (input P *Col))))
+
+(RULE &hub
+  (&object *Id *P)
+  (&obj_color.plural (:key Id)))
+
+(INIT &hub_box BoundingBox
+  (cell (P)
+    (&hub *P)))
+
+(RULE &bar
+  (&hub *P)
+  (&hub_box.box *B)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B P) *D (:K *K_m1))
+  (margin B D (:K K_m1))
+  (input P *Col))
+
+(RULE &seat
+  (&bar *D (:P *P2))
+  (step_offset D (:V *V_m1))
+  (compose (:A P2) (:B V_m1) (:C *P)))
+
+(RULE &piece
+  (&obj_color.value (:key *Id) (:v *Col))
+  (&bar *D Col))
+
+(INIT &bbox BoundingBox
+  (key ((&piece ^Id))
+    (cell (P)
+      (&object Id *P))))
+
+(RULE &side_cell
+  (&bbox.cell (:key *Id) *P)
+  (&bbox.box (:key Id) *B)
+  (ALL ((&bbox.cell (:key (:Id *Idm)) P)
+        (&bbox.box (:key (:Id Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B P) *D (:K *K_m1))
+  (margin B D (:K K_m1))
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(INIT &side_sym Agreement
+  (key ((&side_cell ^Id ^D *P_inner))
+    (source ((:i P_inner))
+      (&side_cell Id D *P_inner))
+    (target ((:i P_inner))
+      (&side_cell Id D *P_inner))
+    (correspondence ((:m D2) (:i P_inner) (:j Q))
+      (&side_cell Id D *P_inner)
+      (d4_elem (:D *D2))
+      (apply (:D D2) (:P P_inner) (:P_out *Q)))))
+
+(RULE &side_sym_src
+  (&side_cell *Id *D (:P_inner *P)))
+
+(RULE &notch
+  (&side_cell *Id *D)
+  (axis_of D *A)
+  (perp A *A2)
+  (axis_inversion (:A A2) (:T *F))
+  (&side_sym_src Id D)
+  (d4_elem (:D F))
+  (NOT (&side_sym.mismatch (:key Id D) (:m F))))
+
+(RULE &dock_cell
+  (&piece *Id *D)
+  (opposite D (:Opp *D_faced))
+  (&notch Id (:D *D_notch))
+  (c4_elem (:D *G))
+  (d4_elem (:D G))
+  (dir_elem (:D D_notch))
+  (dir_elem (:D D_faced))
+  (step_offset (:D D_notch) (:V *S_m1))
+  (apply (:D G) (:P S_m1) (:P_out *S2_m2))
+  (step_offset (:D D_faced) (:V S2_m2))
+  (&side_cell Id (:D D_notch) (:P_inner *P_notch))
+  (apply (:D G) (:P P_notch) (:P_out *P_turned_notch))
+  (&seat D (:P *P_seat))
+  (relative (:Base P_turned_notch) (:X P_seat) (:X_rel *V))
+  (&bbox.cell (:key Id) *P)
+  (&bbox.box (:key Id) *B)
+  (ALL ((&bbox.cell (:key (:Id *Idm)) P)
+        (&bbox.box (:key (:Id Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (apply (:D G) (:P P_inner) (:P_out *P_turned))
+  (compose (:A P_turned) (:B V) (:C *P_grid)))
+
+;; The notch fills the seat: the cells a candidate puts on the seat's line
+;; are the seat's.
+(INIT &mate Inclusion
+  (pattern ((:pattern D) (:m P_seat))
+    (&seat *D (:P *P_seat)))
+  (observed ((:observed Id G V) (:m P_grid))
+    (&dock_cell *Id *G *V *P_grid)
+    (&piece Id *D)
+    (&seat D (:P *P_seat))
+    (margin (:B P_grid) D (:K *K_m1))
+    (margin (:B P_seat) D (:K K_m1))))
+
+(RULE &placed
+  (&dock_cell *Id *G *V (:P_grid *P))
+  (&piece Id *D)
+  (&mate.equal (:observed Id G V) (:pattern D)))
+
+(RULE &paint
+  (OR ((&hub *P)
+       (input P *Col))
+      ((&placed *Id P)
+       (&piece Id Col))))
+
+(RULE &output
+  (input *P)
+  (OR ((&paint P *Col))
+      ((NOT (&paint P))
+       (&bg (:C Col)))))

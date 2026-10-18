@@ -1,0 +1,5 @@
+;; 4938f0c2
+
+(param &bg Color (0))
+(param &marker Color (3))
+(param &sym Sym (SYM_BOX))

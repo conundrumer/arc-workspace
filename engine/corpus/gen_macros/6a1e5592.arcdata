@@ -1,0 +1,6 @@
+;; 6a1e5592
+
+(param &bg Color (0))
+(param &wall Color (2))
+(param &sprite Color (5))
+(param &fill Color (1))

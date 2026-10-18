@@ -1,0 +1,422 @@
+;; b8cdaf2b
+
+(INPUT background "every cell outside the base is &background"
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT base-row "the line along the &base_side edge is full: a middle run of one color (the inner color), flanked on both sides by runs of a second color (the outer color) of equal length"
+
+  ;; the edge the base lies on
+  (DET &base_side DirDomain)
+
+  (RULE &open_edge
+    (input *P *Col)
+    (&background (:C Col))
+    (dir_elem *D)
+    (margin (:B P) D (:K 0)))
+
+  (INIT &full_edge Singleton
+    (member ((:v D))
+      (dir_elem *D)
+      (NOT (&open_edge D)))))
+
+(INPUT cap-row "the next line in from the &base_side edge holds a run of the outer color exactly over the middle run of the base row, and &background everywhere else")
+
+(OUTPUT keep-input "every cell off the rays keeps its input color")
+
+(OUTPUT cap "the cap is the one run of non-background cells on the line next to the &base_side edge, and the inner color is the one color of the base-line cells under it"
+
+  (RULE &base_dir
+    (&base_side *D))
+
+  (RULE &base_cell
+    (&base_dir *D)
+    (input *P *Col)
+    (margin (:B P) D (:K 0)))
+
+  (RULE &middle_run_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (INIT &end_color Singleton
+    (member ((:v Col))
+      (&base_cell *P *Col)
+      (&base_dir *D)
+      (axis_of D (:A *A_m1))
+      (perp (:A A_m1) (:A2 *A2_m2))
+      (axis_of (:D *A) (:A A2_m2))
+      (margin (:B P) (:D A) (:K 0))))
+
+  (RULE &middle
+    (&base_cell *P *Col)
+    (&end_color.value)
+    (NOT (&end_color.value (:v Col))))
+
+  (INIT &middle_run Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((&middle *P)
+           (&middle_run_steps (:Delta *S2))
+           (compose (:A P) (:B S2) (:C *P3))
+           (&middle (:P P3)))
+          ((&middle P)
+           (= P3 P)))))
+
+  (INIT &middle_color Singleton
+    (member ((:v Col))
+      (&middle *Col)))
+
+  (INIT &color_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &fewest Order
+    (member ((:t (:V Col) (:S N)))
+      (&color_count.size (:key *Col) *N))
+    (score ((:t (:V Col) (:S N)) (:S N))
+      (&color_count.size (:key *Col) *N)))
+
+  (INIT &rarest Singleton
+    (member ((:v Col))
+      (&fewest.minimal (:t (:V *Col))))))
+
+(OUTPUT diagonal-rays "from each end of the cap, a ray starts at the cell one step farther from the &base_side edge and one step outward along the base, and runs on that diagonal, away from the base and outward, to the frame edge; each ray cell takes the inner color"
+
+  (RULE &cap_run_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &cap_line
+    (&base_cell (:P *B))
+    (&base_dir *D)
+    (opposite D (:Opp *U))
+    (step_offset (:D U) (:V *V_m1))
+    (compose (:A B) (:B V_m1) (:C *P))
+    (input P *Col))
+
+  (RULE &cap
+    (&cap_line *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &cap_run Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((&cap *P)
+           (&cap_run_steps (:Delta *S2))
+           (compose (:A P) (:B S2) (:C *P3))
+           (&cap (:P P3)))
+          ((&cap P)
+           (= P3 P)))))
+
+  (RULE &cap_run_component
+    (&cap_run.class (:a *P) *Id))
+
+  (RULE &flank_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (INIT &cap_color Singleton
+    (member ((:v Col))
+      (&cap *P)
+      (input P *Col)))
+
+  (RULE &split_cap
+    (&cap_run_component (:Id *I))
+    (&cap_run_component (:Id *J))
+    (!= I J))
+
+  (RULE &outer
+    (&cap_color.value (:v *Col))
+    (NOT (&split_cap)))
+
+  (RULE &anchor_end
+    (&outer)
+    (&cap (:P *E1))
+    (&base_dir *D)
+    (axis_of D (:A *A_m1))
+    (perp (:A A_m1) (:A2 *A2_m2))
+    (axis_of (:D *A) (:A A2_m2))
+    (step_offset (:D A) (:V *V_m3))
+    (compose (:A E1) (:B V_m3) (:C *Q))
+    (NOT (&cap (:P Q))))
+
+  (RULE &end_dir
+    (&anchor_end *E1 *A)
+    (&base_dir *D)
+    (opposite D (:Opp *U))
+    (corner_dir *C (:A *A_m1) (:D U))
+    (perp (:A A_m1) (:A2 *A2_m2))
+    (corner_dir C (:A A2_m2) (:D A)))
+
+  (RULE &ray_dir
+    (&end_dir (:C *D)))
+
+  (RULE &ray_node
+    (&end_dir *C)
+    (input *P))
+
+  (RULE &ray_source
+    (&end_dir (:E1 *P)))
+
+  (INIT &ray Distance
+    (key ((&ray_source (:P ^O))
+          (&ray_dir ^D))
+      (edge ((:a A2) (:b Q))
+        (OR ((&ray_source (:P O))
+             (&ray_dir D)
+             (axis_of D *A)
+             (sub_extent (:P O) A *K)
+             (dir8_opposite D (:D2 *O_m2))
+             (edge_inset (:D O_m2) K (:B *B1_m3))
+             (edge_inset D K (:B *I_m5))
+             (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+             (compose (:A O) (:B V_m1) (:C *A2))
+             (&ray_node (:P A2))
+             (step_offset D (:V *V_m6))
+             (compose (:A A2) (:B V_m6) (:C *Q))
+             (&ray_node (:P Q)))
+            ((&ray_source (:P O))
+             (&ray_dir D)
+             (step_offset D (:V *V_m12))
+             (compose (:A O) (:B V_m12) (:C Q))
+             (&ray_node (:P Q))
+             (= A2 O))
+            ((&ray_source (:P O))
+             (&ray_dir D)
+             (diag_dir_elem D)
+             (axis_elem (:A *A3))
+             (sub_extent (:P O) (:A A3) (:K *K2))
+             (dir8_opposite D (:D2 *O_m22))
+             (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+             (edge_inset D (:K K2) (:B *I_m52))
+             (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+             (compose (:A O) (:B V_m13) (:C A2))
+             (&ray_node (:P A2))
+             (step_offset D (:V *V_m62))
+             (compose (:A A2) (:B V_m62) (:C Q))
+             (&ray_node (:P Q)))))
+      (source ((:n O))
+        (&ray_source (:P O))
+        (&ray_dir D))))
+
+  (RULE &ray_ray
+    (&ray.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+  (RULE &stop_ray_dir
+    (&end_dir (:C *D)))
+
+  (RULE &stop_ray_node
+    (&end_dir *C)
+    (input *P)
+    (ALL ((input P *Col))
+         ((&background (:C Col)))))
+
+  (RULE &stop_ray_source
+    (&end_dir (:E1 *P)))
+
+  (INIT &stop_ray Distance
+    (key ((&stop_ray_source (:P ^O))
+          (&stop_ray_dir ^D))
+      (edge ((:a A2) (:b Q))
+        (OR ((&stop_ray_source (:P O))
+             (&stop_ray_dir D)
+             (axis_of D *A)
+             (sub_extent (:P O) A *K)
+             (dir8_opposite D (:D2 *O_m2))
+             (edge_inset (:D O_m2) K (:B *B1_m3))
+             (edge_inset D K (:B *I_m5))
+             (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+             (compose (:A O) (:B V_m1) (:C *A2))
+             (&stop_ray_node (:P A2))
+             (step_offset D (:V *V_m6))
+             (compose (:A A2) (:B V_m6) (:C *Q))
+             (&stop_ray_node (:P Q)))
+            ((&stop_ray_source (:P O))
+             (&stop_ray_dir D)
+             (step_offset D (:V *V_m12))
+             (compose (:A O) (:B V_m12) (:C Q))
+             (&stop_ray_node (:P Q))
+             (= A2 O))
+            ((&stop_ray_source (:P O))
+             (&stop_ray_dir D)
+             (diag_dir_elem D)
+             (axis_elem (:A *A3))
+             (sub_extent (:P O) (:A A3) (:K *K2))
+             (dir8_opposite D (:D2 *O_m22))
+             (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+             (edge_inset D (:K K2) (:B *I_m52))
+             (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+             (compose (:A O) (:B V_m13) (:C A2))
+             (&stop_ray_node (:P A2))
+             (step_offset D (:V *V_m62))
+             (compose (:A A2) (:B V_m62) (:C Q))
+             (&stop_ray_node (:P Q)))))
+      (source ((:n O))
+        (&stop_ray_source (:P O))
+        (&stop_ray_dir D))))
+
+  (RULE &stop_ray_ray
+    (&stop_ray.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+  (INIT &under_cap Singleton
+    (member ((:v Col))
+      (&cap *P)
+      (&base_dir *D)
+      (step_offset D (:V *V_m1))
+      (compose (:A P) (:B V_m1) (:C *B))
+      (&base_cell (:P B) *Col)))
+
+  (RULE &inner
+    (&under_cap.value (:v *Col))
+    (NOT (&split_cap)))
+
+  (RULE &ray_cell
+    (&end_dir)
+    (input *P))
+
+  (RULE &on_ray
+    (&end_dir *E1 *C)
+    (&ray_ray *P (:D C) (:Origin E1))
+    (&ray_cell P)
+    (!= P E1))
+
+  (INIT &flank Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((&outer *Col)
+           (&base_cell *P Col)
+           (&flank_steps (:Delta *S2))
+           (compose (:A P) (:B S2) (:C *P3))
+           (&outer (:Col *Col2))
+           (&base_cell (:P P3) (:Col Col2)))
+          ((&outer (:Col *Col3))
+           (&base_cell P (:Col Col3))
+           (= P3 P))))))
+
+(ALTS $side "where the base side comes from" $StoredSide
+  (ALT $BaseSideDerived
+    (INPUT base-row "the base lies along the one edge whose line holds no &background cell. Undefined where no edge, or more than one edge, has such a line."
+      (RULE &base_dir
+        (&full_edge.value (:v *D))))))
+
+(ALTS $extent "how far each ray runs" $ToEdge
+  (ALT $RayLenFlank
+    (OUTPUT diagonal-rays "each ray runs as many cells as the outer-color run on the base line beside the cap's end is long, clipped to the frame"
+      (RULE &flank_component
+        (&flank.class (:a *P) *Id))
+
+      (RULE &flank_cell
+        (&anchor_end *E1 *A)
+        (&base_dir *D)
+        (corner_dir *C (:A *A_m1) D)
+        (perp (:A A_m1) (:A2 *A2_m2))
+        (corner_dir C (:A A2_m2) (:D A))
+        (step_offset (:D C) (:V *V_m3))
+        (compose (:A E1) (:B V_m3) (:C *B))
+        (&flank_component (:P B) (:Id *I))
+        (&flank_component (:P *Q) (:Id I))))
+    (RULE &painted
+      (&on_ray (:E1 *E) *P)
+      (&anchor_end (:E1 E) *A)
+      (&flank_cell (:E1 E) *Q)
+      (margin (:B P) (:D A) (:K *K_m1))
+      (margin (:B Q) (:D A) (:K K_m1)))))
+
+(ALTS $color "which color the rays take" $CapColor
+  (ALT $RayColorRarest
+    (OUTPUT cap "the ray color is the color with the fewest cells in the input. Undefined where two colors tie for fewest.")
+    (RULE &ray_color
+      (&anchor_end)
+      (&rarest.value (:v *Col))))
+  (ALT $RayColorBaseCenter
+    (OUTPUT cap "the ray color is the color of the base-line cell at the middle of the line. Undefined where the line has even length.")
+    (RULE &ray_color
+      (&anchor_end *A)
+      (&base_cell *P *Col)
+      (opposite (:D A) (:Opp *O_m1))
+      (margin (:B P) (:D A) *K)
+      (margin (:B P) (:D O_m1) K))))
+
+(ALTS $anchor "where the rays start" $CapAnchor
+  (ALT $RayFromMiddleRun
+    (OUTPUT cap "the rays anchor at the ends of the base line's middle run, the cells whose color differs from the color at the line's ends, and the inner color is that run's color. Undefined where the line's two ends differ in color, or where the middle is not one run of one color."
+      (RULE &middle_run_component
+        (&middle_run.class (:a *P) *Id))
+
+      (RULE &split_middle
+        (&middle_run_component (:Id *I))
+        (&middle_run_component (:Id *J))
+        (!= I J))
+
+      (RULE &inner
+        (&middle_color.value (:v *Col))
+        (NOT (&split_middle)))
+
+      (RULE &outer
+        (&end_color.value (:v *Col))
+        (NOT (&split_middle)))
+
+      (RULE &anchor_end
+        (&inner)
+        (&outer)
+        (&middle (:P *M))
+        (&base_dir *D)
+        (axis_of D (:A *A_m1))
+        (perp (:A A_m1) (:A2 *A2_m2))
+        (axis_of (:D *A) (:A A2_m2))
+        (step_offset (:D A) (:V *V_m3))
+        (compose (:A M) (:B V_m3) (:C *Q))
+        (NOT (&middle (:P Q)))
+        (opposite D (:Opp *U))
+        (step_offset (:D U) (:V *V_m4))
+        (compose (:A M) (:B V_m4) (:C *E1))))))
+
+(ALTS $obstacle "what a ray does at a non-background cell" $PaintOver
+  (ALT $RayStopAtObstacle
+    (OUTPUT stop-at-obstacle "a ray stops before its first non-background cell"
+      (RULE &stop_ray_cell
+        (&end_dir)
+        (input *P))
+
+      (RULE &on_ray
+        (&end_dir *E1 *C)
+        (&stop_ray_ray *P (:D C) (:Origin E1))
+        (&stop_ray_cell P)
+        (!= P E1))))
+  (ALT $RayBehindObstacle
+    (OUTPUT behind-obstacle "a ray keeps the color of each non-background cell on it and continues past that cell"
+      (RULE &on_ray
+        (&end_dir *E1 *C)
+        (&ray_ray *P (:D C) (:Origin E1))
+        (&ray_cell P)
+        (!= P E1)
+        (input P *Col)
+        (&background (:C Col))))))
+
+(RULE &ray_end
+  (&ray_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&ray_ray (:P Q) D Origin)))
+
+(RULE &stop_ray_end
+  (&stop_ray_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&stop_ray_ray (:P Q) D Origin)))
+
+(RULE &ray_color
+  (&anchor_end)
+  (&inner *Col))
+
+(RULE &painted
+  (&on_ray *P))
+
+(RULE &output
+  (OR ((&ray_color *Col)
+       (&painted *P))
+      ((&ray_color)
+       (input P Col)
+       (NOT (&painted P)))))

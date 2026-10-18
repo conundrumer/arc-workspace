@@ -1,0 +1,36 @@
+;; 4a1cacc2
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &place_nearer
+  (&mark *P)
+  (dir_elem *D)
+  (dist_pair P D *K *K2)
+  (< K K2))
+
+(RULE &place_quadrant
+  (diag_dirs (:D *Diag) *D1 *D2)
+  (&place_nearer *P (:D D1))
+  (&place_nearer P (:D D2)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (OR ((&mark *P))
+        ((input P)
+         (&place_quadrant *Diag)
+         (corner_dist P Diag (:K 0))))))
+
+(RULE &covered
+  (input *P)
+  (&bbox.box *B)
+  (inside (:A P) B))
+
+(RULE &output
+  (input *P (:Col *C0))
+  (IF ((&covered P))
+      ((&mark *Col))
+      ((= Col C0))))

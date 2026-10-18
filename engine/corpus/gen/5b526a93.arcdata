@@ -1,0 +1,9 @@
+;; 5b526a93
+
+(param &bg Color (0))
+(param &fill Color (8))
+(param &footprint Position
+  (grid
+    (1 1 1)
+    (1 _ 1)
+    (1 1 1)))

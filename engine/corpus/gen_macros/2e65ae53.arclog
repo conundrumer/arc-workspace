@@ -1,0 +1,154 @@
+;; 2e65ae53
+
+(RULE &frames_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(INIT &ink_count Cardinality
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (member ((:m P))
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+;; The frames are drawn in the commonest non-bg color.
+(INIT &ink Order
+  (member ((:t Col))
+    (&ink_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&ink_count.size (:key *Col) *N)))
+
+;; Each frame is one ink component.
+(INIT &frames Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (&ink.maximal (:t Col))
+         (&frames_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (&ink.maximal (:t Col2)))
+        ((input P (:Col *Col3))
+         (&ink.maximal (:t Col3))
+         (= P3 P)))))
+
+(RULE &frames_component
+  (&frames.class (:a *P) *Id))
+
+(INIT &bbox BoundingBox
+  (key ((&frames_component *P ^Id))
+    (cell (P)
+      (&frames_component *P Id))))
+
+(RULE &box_cell
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (ALL ((&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(RULE &broken_split1
+  (&box_cell *Id (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &cut_divider_split1
+  (&box_cell *Id (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &cut_divider
+  (&box_cell (:Id *Key) *P)
+  (axis_elem *A)
+  (&cut_divider_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1))
+  (ALL ((&box_cell (:Id Key) (:P *Pm))
+        (input (:P Pm) *Col)
+        (axis_elem (:A *Am))
+        (&broken_split1 (:P_ Pm) (:A_ Am) (:L_ L) (:X_m1_ *X_m1m)))
+       ((&ink.maximal (:t Col)))))
+
+(RULE &cut_on_divider
+  (&box_cell (:Id *Key) *P)
+  (&cut_divider Key *A *L)
+  (axis_of *D A)
+  (margin (:B P) D (:K *K_m1))
+  (margin (:B L) D (:K K_m1)))
+
+(INIT &cut_rank Order
+  (key ((OR ((&cut_divider (:Key ^Ky) *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((&box_cell (:Id Ky) *P)
+             (dir_elem D)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&cut_divider (:Key Ky) *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&cut_divider (:Key Ky) *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((&box_cell (:Id Ky) *P)
+           (dir_elem D)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (&box_cell (:Id Ky) *P)
+      (dir_elem D)
+      (margin (:B P) D *K))))
+
+(RULE &cut_part_idx
+  (&box_cell (:Id *Key) *P)
+  (axis_of *D *A)
+  (NOT (&cut_on_divider Key P A))
+  (margin (:B P) D *K)
+  (&cut_rank.rank (:key (:Ky Key) D) (:t K) (:R *N)))
+
+(RULE &cut_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&cut_part_idx *Key *P D (:N *N1))
+  (&cut_part_idx Key P (:D D2) (:N *N2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K N1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+(RULE &cut_tile_of
+  (&cut_part_of *Key *P *A (:P_part *P1))
+  (perp A *A2)
+  (&cut_part_of Key P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &tile_color
+  (&cut_tile_of *P *P_tile)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &painted
+  (&cut_tile_of *P *P_tile)
+  (&tile_color P_tile *Col))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))

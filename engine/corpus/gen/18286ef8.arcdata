@@ -1,0 +1,5 @@
+;; 18286ef8
+
+(param &divider Color (0))
+(param &gaze Color (9))
+(param &target Color (6))

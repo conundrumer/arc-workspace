@@ -1,0 +1,149 @@
+;; a5313dff
+
+(INPUT walls "cells of one color other than &background are drawn as lines and closed outlines, and some outlines close off regions of background cells from the grid edge."
+
+  (DET_OR_RULE &background DominantColor))
+
+(OUTPUT enclosed-fill "a &background cell that has no 4-connected path of &background cells to the grid edge takes &fill"
+
+  (RULE &flood_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &leak_steps
+    (step_offset (:V *Delta)))
+
+  (RULE &walls_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &blocks
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &walls Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((&blocks *P)
+           (&walls_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&blocks (:P P3)))
+          ((&blocks P)
+           (= P3 P)))))
+
+  (RULE &walls_component
+    (&walls.class (:a *P) *Id))
+
+  (RULE &holes_flood_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &holes_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &holes_cell
+    (&walls_component (:Id *Key))
+    (input *P)
+    (NOT (&walls_component P (:Id Key))))
+
+  (INIT &holes_flood Propagation
+    (key ((&walls_component ^Id))
+      (source ((:n P))
+        (&holes_cell (:Key Id) *P)
+        (dir_elem *D)
+        (margin (:B P) D (:K 0))
+        (input P)
+        (NOT (&walls_component P Id)))
+      (edge ((:a P) (:b P2))
+        (input *P)
+        (NOT (&walls_component P Id))
+        (&holes_flood_steps (:Delta *S))
+        (compose (:A P) (:B S) (:C *P2))
+        (input (:P P2))
+        (NOT (&walls_component (:P P2) Id)))))
+
+  (RULE &holes_node
+    (&holes_cell *Key *P)
+    (NOT (&holes_flood.reached (:key (:Id Key)) (:n P))))
+
+  (DET &fill AnyOutNewColor)
+
+  (RULE &on_edge
+    (input *P)
+    (dir_elem *D)
+    (margin (:B P) D (:K 0)))
+
+  (RULE &open
+    (input *P)
+    (NOT (&blocks P)))
+
+  (INIT &flood Propagation
+    (source ((:n P))
+      (&open *P)
+      (&on_edge P))
+    (edge ((:a P) (:b P2))
+      (&open *P)
+      (&flood_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *P2))
+      (&open (:P P2))))
+
+  (INIT &leak Propagation
+    (source ((:n P))
+      (&open *P)
+      (&on_edge P))
+    (edge ((:a P) (:b P2))
+      (&open *P)
+      (&leak_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *P2))
+      (&open (:P P2))))
+
+  ;; Each wall alone: every cell outside it is open.
+  (INIT &holes Quotient
+    (edge ((:a (:Id Ky) P) (:b (:Id Ky) (:P P2)))
+      (OR ((&holes_node (:Key *Ky) *P)
+           (&holes_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P2))
+           (&holes_node (:Key Ky) (:P P2)))
+          ((&holes_node (:Key Ky) P)
+           (= P2 P))))))
+
+(OUTPUT rest-kept "every other cell keeps its input color"
+
+  (RULE &bg_cell
+    (input *P *Col)
+    (&background (:C Col))))
+
+(ALTS $barrier "which cells stop a background path to the edge" $AnyInk
+  (ALT $WallColor
+    (OUTPUT enclosed-fill "only cells of &wall block the path"
+      (DET_OR_RULE &wall RarestColor)
+
+      (RULE &blocks
+        (input *P *Col)
+        (&wall (:C Col))))))
+
+(ALTS $conn "the neighbor relation of a background path to the edge" $FourPath
+  (ALT $FourPath
+    (ALTS $e "what closes a region off from the edge" $AllWalls
+      (ALT $ComponentHoles
+        (OUTPUT enclosed-fill "each 4-connected component of blocking cells is taken alone, and a background cell takes &fill when one such component alone closes it off from the edge"
+          (RULE &holes_component
+            (&holes.class (:a (:Id *Key) *P) *Id)))
+        (RULE &enclosed
+          (&bg_cell *P)
+          (&holes_component P)))))
+  (ALT $DiagonalLeak
+    (OUTPUT enclosed-fill "the path may also step diagonally")
+    (RULE &enclosed
+      (&bg_cell *P)
+      (NOT (&leak.reached (:n P))))))
+
+(RULE &enclosed
+  (&bg_cell *P)
+  (NOT (&flood.reached (:n P))))
+
+(RULE &output
+  (OR ((&enclosed *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&enclosed P)))))

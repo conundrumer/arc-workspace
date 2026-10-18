@@ -1,0 +1,764 @@
+;; 9f8de559
+
+(INPUT field "a solid rectangle of &field_color sits inside the grid and does not touch the grid edge"
+
+  (DET &body_color UnchangedColor)
+
+  (DET_OR_RULE &head_color RarestColor)
+
+  (RULE &pointer_of
+    (&head_color (:C *Head))
+    (&body_color (:C *Body)))
+
+  (RULE &body3
+    (&pointer_of *Head *Body)
+    (input *P (:Col Body)))
+
+  (RULE &head3
+    (&pointer_of *Head *Body)
+    (input *P (:Col Head)))
+
+  (DET_OR_RULE &field_color DominantColor)
+
+  (INIT &around_count Cardinality
+    (key ((OR ((&head3 (:Head ^H) (:Body ^B) *P))
+              ((&body3 (:Head H) (:Body B) P)))
+          (step_offset (:D *D_m1) (:V *V_m2))
+          (compose (:A P) (:B V_m2) (:C *Q))
+          (input (:P Q) ^Col)
+          (!= Col H)
+          (!= Col B))
+      (member ((:m Q))
+        (OR ((&head3 (:Head H) (:Body B) *P))
+            ((&body3 (:Head H) (:Body B) P)))
+        (step_offset (:D *D_m1) (:V *V_m2))
+        (compose (:A P) (:B V_m2) (:C *Q))
+        (input (:P Q) Col)
+        (!= Col H)
+        (!= Col B))))
+
+  ;; The commonest color among the cells next to the pointer, other than the
+  ;; pointer colors.
+  (INIT &around Order
+    (key ((&around_count.size (:key (:H ^Head) (:B ^Body) *Col)))
+      (member ((:t Col))
+        (&around_count.size (:key (:H Head) (:B Body) *Col)))
+      (score ((:t Col) (:S N))
+        (&around_count.size (:key (:H Head) (:B Body) *Col) *N)))))
+
+(INPUT pointer "inside the field, a straight line of &body_color cells runs along a row, a column, or a diagonal, and one &head_color cell continues that line at one end")
+
+(OUTPUT ray "the ray starts at the head and steps away from the body, in the direction from the body cell next to the head to the head"
+
+  (DET &head2
+    (ex_input *E *P *Col)
+    (&head_color (:C Col)))
+
+  (RULE &head
+    (&head3 *Head *Body *P))
+
+  (RULE &scan_cell
+    (&head *Head *Body *P)
+    (diag_dir_elem (:D *Corner))
+    (axis_elem (:A *Axis)))
+
+  (INIT &scan Order
+    (key ((&head (:Head ^Ky_head) (:Body ^Ky_body) *P)
+          (diag_dir_elem (:D ^C))
+          (axis_elem ^A))
+      (member ((:t P))
+        (&head (:Head Ky_head) (:Body Ky_body) *P)
+        (diag_dir_elem (:D C))
+        (axis_elem A))
+      (before ((:a P) (:b P2))
+        (&head (:Head Ky_head) (:Body Ky_body) *P)
+        (diag_dir_elem (:D C))
+        (axis_elem A)
+        (&head (:Head Ky_head) (:Body Ky_body) (:P *P2))
+        (&scan_cell (:Head Ky_head) (:Body Ky_body) (:Corner C) (:Axis A))
+        (OR ((corner_dir C A *D)
+             (dir_elem D)
+             (margin (:B P) D (:K *K1_m1))
+             (margin (:B P2) D (:K *K2_m2))
+             (< K1_m1 K2_m2))
+            ((corner_dir C A D)
+             (perp A (:A2 *A2_m3))
+             (corner_dir C (:A A2_m3) (:D *D2))
+             (margin (:B P) D (:K *K_m4))
+             (margin (:B P2) D (:K K_m4))
+             (dir_elem (:D D2))
+             (margin (:B P) (:D D2) (:K *K1_m5))
+             (margin (:B P2) (:D D2) (:K *K2_m6))
+             (< K1_m5 K2_m6))))))
+
+  (DET &scan_cell2
+    (&head2 (:E *Ky) *P)
+    (diag_dir_elem (:D *Corner))
+    (axis_elem (:A *Axis)))
+
+  (INIT &scan2 Order
+    (key ((&head2 (:E ^Ky) *P)
+          (diag_dir_elem (:D ^C))
+          (axis_elem ^A))
+      (member ((:t P))
+        (&head2 (:E Ky) *P)
+        (diag_dir_elem (:D C))
+        (axis_elem A))
+      (before ((:a P) (:b P2))
+        (&head2 (:E Ky) *P)
+        (diag_dir_elem (:D C))
+        (axis_elem A)
+        (&head2 (:E Ky) (:P *P2))
+        (&scan_cell2 Ky (:Corner C) (:Axis A))
+        (OR ((corner_dir C A *D)
+             (dir_elem D)
+             (margin (:B P) D (:K *K1_m1))
+             (margin (:B P2) D (:K *K2_m2))
+             (< K1_m1 K2_m2))
+            ((corner_dir C A D)
+             (perp A (:A2 *A2_m3))
+             (corner_dir C (:A A2_m3) (:D *D2))
+             (margin (:B P) D (:K *K_m4))
+             (margin (:B P2) D (:K K_m4))
+             (dir_elem (:D D2))
+             (margin (:B P) (:D D2) (:K *K1_m5))
+             (margin (:B P2) (:D D2) (:K *K2_m6))
+             (< K1_m5 K2_m6))))))
+
+  ;; The axis on which body cells touch.
+  (INIT &aligned Singleton
+    (key ((&body3 ^Head ^Body *P)
+          (&body3 Head Body (:P *Q))
+          (step_offset *D (:V *V_m1))
+          (compose (:A P) (:B V_m1) (:C Q))
+          (axis4_of D *A))
+      (member ((:v A))
+        (&body3 Head Body *P)
+        (&body3 Head Body (:P *Q))
+        (step_offset *D (:V *V_m1))
+        (compose (:A P) (:B V_m1) (:C Q))
+        (axis4_of D *A))))
+
+  ;; The step on that axis from each body cell toward the head cell.
+  (INIT &away Singleton
+    (key ((&head3 (:Head ^Ptr_head) (:Body ^Ptr_body) ^P))
+      (member ((:v D))
+        (OR ((&aligned.value (:key (:Head Ptr_head) (:Body Ptr_body)) (:v *A))
+             (axis4_of *D A)
+             (&body3 (:Head Ptr_head) (:Body Ptr_body) (:P *Q))
+             (dir_elem D)
+             (margin (:B P) D (:K *K1_m1))
+             (margin (:B Q) D (:K *K2_m2))
+             (< K1_m1 K2_m2))
+            ((&aligned.value (:key (:Head Ptr_head) (:Body Ptr_body)) (:v *A2))
+             (axis4_of D (:A A2))
+             (&body3 (:Head Ptr_head) (:Body Ptr_body) (:P *Q2))
+             (diag_dir_elem D)
+             (corner_dist P (:Diag D) (:K *K1_m12))
+             (corner_dist (:P Q2) (:Diag D) (:K *K2_m22))
+             (< K1_m12 K2_m22)))))))
+
+(OUTPUT exit "the ray passes over field cells, and the first cell it reaches outside the field takes the field color; no other cell changes"
+
+  ;; The step from each body cell next to a head cell.
+  (INIT &touch Singleton
+    (key ((&head3 (:Head ^Ptr_head) (:Body ^Ptr_body) ^P))
+      (member ((:v D))
+        (&body3 (:Head Ptr_head) (:Body Ptr_body) (:P *Q))
+        (step_offset *D (:V *V_m1))
+        (compose (:A Q) (:B V_m1) (:C P)))))
+
+  (RULE &heading
+    (&touch.value (:key (:Ptr_head *Head) (:Ptr_body *Body) *P) (:v *D)))
+
+  (RULE &field_of
+    (&pointer_of *Head *Body)
+    (&field_color (:C *F)))
+
+  (RULE &palette
+    (&pointer_of *Head *Body)
+    (&field_of Head Body *F))
+
+  (DET &changed
+    (ex_input *E (:P *Q) (:Col *C_in))
+    (ex_output E (:P Q) (:Col *C_out))
+    (!= C_in C_out))
+
+  (DET &cast
+    (OR ((&head2 *E *P)
+         (&changed E *Q)
+         (perp *A (:A2 *A2_m1))
+         (axis_of (:D *D_m2) (:A A2_m1))
+         (margin (:B P) (:D D_m2) (:K *K_m3))
+         (margin (:B Q) (:D D_m2) (:K K_m3))
+         (axis4_of *D A)
+         (dir_elem D)
+         (margin (:B Q) D (:K *K1_m4))
+         (margin (:B P) D (:K *K2_m5))
+         (< K1_m4 K2_m5))
+        ((&head2 E P)
+         (&changed E (:Q *Q2))
+         (perp (:A *A2) (:A2 *A2_m12))
+         (axis_of (:D *D_m22) (:A A2_m12))
+         (margin (:B P) (:D D_m22) (:K *K_m32))
+         (margin (:B Q2) (:D D_m22) (:K K_m32))
+         (axis4_of D (:A A2))
+         (diag_dir_elem D)
+         (corner_dist (:P Q2) (:Diag D) (:K *K1_m42))
+         (corner_dist P (:Diag D) (:K *K2_m52))
+         (< K1_m42 K2_m52))
+        ((&head2 E P)
+         (&changed E (:Q *Q3))
+         (diag_perp (:Da *A3) (:Da2 *A2_m13))
+         (diag_axis_of (:D *D_m23) (:Da A2_m13))
+         (corner_dist P (:Diag D_m23) (:K *K_m33))
+         (corner_dist (:P Q3) (:Diag D_m23) (:K K_m33))
+         (axis4_of D (:A A3))
+         (dir_elem D)
+         (margin (:B Q3) D (:K *K1_m43))
+         (margin (:B P) D (:K *K2_m53))
+         (< K1_m43 K2_m53))
+        ((&head2 E P)
+         (&changed E (:Q *Q4))
+         (diag_perp (:Da *A4) (:Da2 *A2_m14))
+         (diag_axis_of (:D *D_m24) (:Da A2_m14))
+         (corner_dist P (:Diag D_m24) (:K *K_m34))
+         (corner_dist (:P Q4) (:Diag D_m24) (:K K_m34))
+         (axis4_of D (:A A4))
+         (diag_dir_elem D)
+         (corner_dist (:P Q4) (:Diag D) (:K *K1_m44))
+         (corner_dist P (:Diag D) (:K *K2_m54))
+         (< K1_m44 K2_m54))))
+
+  (DET &body2
+    (ex_input *E *P *Col)
+    (&body_color (:C Col)))
+
+  ;; The body cells nearest each head cell, by taxicab distance.
+  (INIT &near2 Order
+    (key ((&head2 (:E ^Ky) ^P))
+      (member ((:t (:V Q) (:S N)))
+        (&body2 (:E Ky) (:P *Q))
+        (relative (:Base P) (:X Q) (:X_rel *V))
+        (corner_dir (:C *Diag) (:A *A_m1) (:D *D1_m2))
+        (perp (:A A_m1) (:A2 *A2_m4))
+        (corner_dir (:C Diag) (:A A2_m4) (:D *D2_m3))
+        (margin (:B V) (:D D1_m2) (:K *K1))
+        (margin (:B V) (:D D2_m3) (:K *K2))
+        (>= K1 0)
+        (>= K2 0)
+        (corner_dist (:P V) Diag (:K *N)))
+      (score ((:t (:V Q) (:S N)) (:S N))
+        (&body2 (:E Ky) (:P *Q))
+        (relative (:Base P) (:X Q) (:X_rel *V))
+        (corner_dir (:C *Diag) (:A *A_m1) (:D *D1_m2))
+        (perp (:A A_m1) (:A2 *A2_m4))
+        (corner_dir (:C Diag) (:A A2_m4) (:D *D2_m3))
+        (margin (:B V) (:D D1_m2) (:K *K1))
+        (margin (:B V) (:D D2_m3) (:K *K2))
+        (>= K1 0)
+        (>= K2 0)
+        (corner_dist (:P V) Diag (:K *N)))))
+
+  (DET &tie_cell2
+    (&near2.minimal (:key *Ky (:P *Key_p)) (:t (:V *P)))
+    (diag_dir_elem (:D *Corner))
+    (axis_elem (:A *Axis)))
+
+  (INIT &tie2 Order
+    (key ((&near2.minimal (:key ^Ky ^P) (:t (:V *Q)))
+          (diag_dir_elem (:D ^C))
+          (axis_elem ^A))
+      (member ((:t Q))
+        (&near2.minimal (:key Ky P) (:t (:V *Q)))
+        (diag_dir_elem (:D C))
+        (axis_elem A))
+      (before ((:a Q) (:b Q2))
+        (&near2.minimal (:key Ky P) (:t (:V *Q)))
+        (diag_dir_elem (:D C))
+        (axis_elem A)
+        (&near2.minimal (:key Ky P) (:t (:V *Q2)))
+        (&tie_cell2 Ky (:Key_p P) (:Corner C) (:Axis A))
+        (OR ((corner_dir C A *D)
+             (dir_elem D)
+             (margin (:B Q) D (:K *K1_m1))
+             (margin (:B Q2) D (:K *K2_m2))
+             (< K1_m1 K2_m2))
+            ((corner_dir C A D)
+             (perp A (:A2 *A2_m3))
+             (corner_dir C (:A A2_m3) (:D *D2))
+             (margin (:B Q) D (:K *K_m4))
+             (margin (:B Q2) D (:K K_m4))
+             (dir_elem (:D D2))
+             (margin (:B Q) (:D D2) (:K *K1_m5))
+             (margin (:B Q2) (:D D2) (:K *K2_m6))
+             (< K1_m5 K2_m6))))))
+
+  (DET &tie_step2
+    (&tie2.minimal (:key (:Ky *E) *P *C *A) (:t *Q))
+    (OR ((axis_of *D (:A *A_m1))
+         (perp (:A A_m1) (:A2 *A2_m2))
+         (axis_of (:D *D2) (:A A2_m2))
+         (dir_elem D)
+         (margin (:B P) D (:K *K1_m3))
+         (margin (:B Q) D (:K *K2_m4))
+         (< K1_m3 K2_m4)
+         (margin (:B P) (:D D2) (:K *K_m5))
+         (margin (:B Q) (:D D2) (:K K_m5)))
+        ((corner_dir (:C D) (:A *A_m6) (:D *D1))
+         (perp (:A A_m6) (:A2 *A2_m7))
+         (corner_dir (:C D) (:A A2_m7) (:D D2))
+         (dir_elem (:D D1))
+         (margin (:B P) (:D D1) (:K *K1_m8))
+         (margin (:B Q) (:D D1) (:K *K2_m9))
+         (< K1_m8 K2_m9)
+         (dir_elem (:D D2))
+         (margin (:B P) (:D D2) (:K *K1_m10))
+         (margin (:B Q) (:D D2) (:K *K2_m11))
+         (< K1_m10 K2_m11))))
+
+  (DET &tie_cast
+    (&cast *E *P *D)
+    (&tie_step2 E P *C *A D))
+
+  (DET &tie_missed
+    (&tie_cast *C *A)
+    (&tie_step2 *E *P C A)
+    (ex_output E)
+    (NOT (&tie_cast E P C A)))
+
+  (DET &tie_order
+    (&tie_cast *C *A)
+    (NOT (&tie_missed C A))
+    (ONE))
+
+  (RULE &body
+    (&body3 *Head *Body *P))
+
+  ;; The body cells nearest each head cell, by taxicab distance.
+  (INIT &near Order
+    (key ((&head (:Head ^Ky_head) (:Body ^Ky_body) ^P))
+      (member ((:t (:V Q) (:S N)))
+        (&body (:Head Ky_head) (:Body Ky_body) (:P *Q))
+        (relative (:Base P) (:X Q) (:X_rel *V))
+        (corner_dir (:C *Diag) (:A *A_m1) (:D *D1_m2))
+        (perp (:A A_m1) (:A2 *A2_m4))
+        (corner_dir (:C Diag) (:A A2_m4) (:D *D2_m3))
+        (margin (:B V) (:D D1_m2) (:K *K1))
+        (margin (:B V) (:D D2_m3) (:K *K2))
+        (>= K1 0)
+        (>= K2 0)
+        (corner_dist (:P V) Diag (:K *N)))
+      (score ((:t (:V Q) (:S N)) (:S N))
+        (&body (:Head Ky_head) (:Body Ky_body) (:P *Q))
+        (relative (:Base P) (:X Q) (:X_rel *V))
+        (corner_dir (:C *Diag) (:A *A_m1) (:D *D1_m2))
+        (perp (:A A_m1) (:A2 *A2_m4))
+        (corner_dir (:C Diag) (:A A2_m4) (:D *D2_m3))
+        (margin (:B V) (:D D1_m2) (:K *K1))
+        (margin (:B V) (:D D2_m3) (:K *K2))
+        (>= K1 0)
+        (>= K2 0)
+        (corner_dist (:P V) Diag (:K *N)))))
+
+  (RULE &tie_cell
+    (&near.minimal (:key (:Ky_head *Head) (:Ky_body *Body) (:P *Key_p)) (:t (:V *P)))
+    (diag_dir_elem (:D *Corner))
+    (axis_elem (:A *Axis)))
+
+  (INIT &tie Order
+    (key ((&near.minimal (:key ^Ky_head ^Ky_body ^P) (:t (:V *Q)))
+          (diag_dir_elem (:D ^C))
+          (axis_elem ^A))
+      (member ((:t Q))
+        (&near.minimal (:key Ky_head Ky_body P) (:t (:V *Q)))
+        (diag_dir_elem (:D C))
+        (axis_elem A))
+      (before ((:a Q) (:b Q2))
+        (&near.minimal (:key Ky_head Ky_body P) (:t (:V *Q)))
+        (diag_dir_elem (:D C))
+        (axis_elem A)
+        (&near.minimal (:key Ky_head Ky_body P) (:t (:V *Q2)))
+        (&tie_cell (:Head Ky_head) (:Body Ky_body) (:Key_p P) (:Corner C) (:Axis A))
+        (OR ((corner_dir C A *D)
+             (dir_elem D)
+             (margin (:B Q) D (:K *K1_m1))
+             (margin (:B Q2) D (:K *K2_m2))
+             (< K1_m1 K2_m2))
+            ((corner_dir C A D)
+             (perp A (:A2 *A2_m3))
+             (corner_dir C (:A A2_m3) (:D *D2))
+             (margin (:B Q) D (:K *K_m4))
+             (margin (:B Q2) D (:K K_m4))
+             (dir_elem (:D D2))
+             (margin (:B Q) (:D D2) (:K *K1_m5))
+             (margin (:B Q2) (:D D2) (:K *K2_m6))
+             (< K1_m5 K2_m6))))))
+
+  (RULE &tie_step
+    (&tie.minimal (:key (:Ky_head *Head) (:Ky_body *Body) *P *C *A) (:t *Q))
+    (OR ((axis_of *D (:A *A_m1))
+         (perp (:A A_m1) (:A2 *A2_m2))
+         (axis_of (:D *D2) (:A A2_m2))
+         (dir_elem D)
+         (margin (:B P) D (:K *K1_m3))
+         (margin (:B Q) D (:K *K2_m4))
+         (< K1_m3 K2_m4)
+         (margin (:B P) (:D D2) (:K *K_m5))
+         (margin (:B Q) (:D D2) (:K K_m5)))
+        ((corner_dir (:C D) (:A *A_m6) (:D *D1))
+         (perp (:A A_m6) (:A2 *A2_m7))
+         (corner_dir (:C D) (:A A2_m7) (:D D2))
+         (dir_elem (:D D1))
+         (margin (:B P) (:D D1) (:K *K1_m8))
+         (margin (:B Q) (:D D1) (:K *K2_m9))
+         (< K1_m8 K2_m9)
+         (dir_elem (:D D2))
+         (margin (:B P) (:D D2) (:K *K1_m10))
+         (margin (:B Q) (:D D2) (:K *K2_m11))
+         (< K1_m10 K2_m11))))
+
+  (RULE &tie_heading
+    (&tie_step *Head *Body *P *C *A *D)
+    (&tie_order C A))
+
+  (RULE &ray_dir
+    (&palette (:F *Field) *Head *Body)
+    (OR ((&heading Head Body *D))
+        ((&tie_heading Head Body D))))
+
+  ;; The bounding box of each color's cells.
+  (INIT &field BoundingBox
+    (key ((input *P ^Col))
+      (cell (P)
+        (input *P Col))))
+
+  (RULE &ray_blocked
+    (&palette (:F *Field) *Head *Body)
+    (&field.box (:key (:Col Field)) *B)
+    (input *P)
+    (dir_elem (:D *D_m1))
+    (relative (:Base B) (:X P) (:X_rel *R_m2))
+    (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+    (< K_m3 0))
+
+  (RULE &ray_node
+    (&palette (:F *Field) *Head *Body)
+    (OR ((&heading Head Body *D))
+        ((&tie_heading Head Body D)))
+    (input *P)
+    (NOT (&ray_blocked Field Head Body P)))
+
+  (RULE &ray_source
+    (&palette (:F *Field) *Head *Body)
+    (&head3 Head Body *P))
+
+  ;; The cast from each head cell toward its step.
+  (INIT &ray Distance
+    (key ((&ray_source (:Field ^Ky_field) (:Head ^Ky_head) (:Body ^Ky_body) (:P ^O))
+          (&ray_dir (:Field Ky_field) (:Head Ky_head) (:Body Ky_body) ^D))
+      (edge ((:a A2) (:b Q))
+        (OR ((&ray_source (:Field Ky_field) (:Head Ky_head) (:Body Ky_body) (:P O))
+             (&ray_dir (:Field Ky_field) (:Head Ky_head) (:Body Ky_body) D)
+             (axis_of D *A)
+             (sub_extent (:P O) A *K)
+             (dir8_opposite D (:D2 *O_m2))
+             (edge_inset (:D O_m2) K (:B *B1_m3))
+             (edge_inset D K (:B *I_m5))
+             (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+             (compose (:A O) (:B V_m1) (:C *A2))
+             (&ray_node (:Field Ky_field) (:Head Ky_head) (:Body Ky_body) (:P A2))
+             (step_offset D (:V *V_m6))
+             (compose (:A A2) (:B V_m6) (:C *Q))
+             (&ray_node (:Field Ky_field) (:Head Ky_head) (:Body Ky_body) (:P Q)))
+            ((&ray_source (:Field Ky_field) (:Head Ky_head) (:Body Ky_body) (:P O))
+             (&ray_dir (:Field Ky_field) (:Head Ky_head) (:Body Ky_body) D)
+             (step_offset D (:V *V_m12))
+             (compose (:A O) (:B V_m12) (:C Q))
+             (&ray_node (:Field Ky_field) (:Head Ky_head) (:Body Ky_body) (:P Q))
+             (= A2 O))
+            ((&ray_source (:Field Ky_field) (:Head Ky_head) (:Body Ky_body) (:P O))
+             (&ray_dir (:Field Ky_field) (:Head Ky_head) (:Body Ky_body) D)
+             (diag_dir_elem D)
+             (axis_elem (:A *A3))
+             (sub_extent (:P O) (:A A3) (:K *K2))
+             (dir8_opposite D (:D2 *O_m22))
+             (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+             (edge_inset D (:K K2) (:B *I_m52))
+             (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+             (compose (:A O) (:B V_m13) (:C A2))
+             (&ray_node (:Field Ky_field) (:Head Ky_head) (:Body Ky_body) (:P A2))
+             (step_offset D (:V *V_m62))
+             (compose (:A A2) (:B V_m62) (:C Q))
+             (&ray_node (:Field Ky_field) (:Head Ky_head) (:Body Ky_body) (:P Q)))))
+      (source ((:n O))
+        (&ray_source (:Field Ky_field) (:Head Ky_head) (:Body Ky_body) (:P O))
+        (&ray_dir (:Field Ky_field) (:Head Ky_head) (:Body Ky_body) D))))
+
+  (RULE &ray_ray
+    (&ray.distance (:key (:Ky_field *Field) (:Ky_head *Head) (:Ky_body *Body) *D (:O *Origin)) (:n *P) *K))
+
+  (RULE &ray_end
+    (&ray_ray *Field *Head *Body *P *D *K *Origin)
+    (step_offset D (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *Q))
+    (NOT (&ray_ray Field Head Body (:P Q) D Origin)))
+
+  (RULE &unaimed
+    (&heading *Head *Body)
+    (&head3 Head Body *P)
+    (NOT (&heading Head Body P)))
+
+  (RULE &exit
+    (&palette *F (:Head *Ptr_head) (:Body *Ptr_body))
+    (&heading (:Head Ptr_head) (:Body Ptr_body) (:P *Src) *D)
+    (&head3 (:Head Ptr_head) (:Body Ptr_body) (:P Src))
+    (&ray_end (:Field F) (:Head Ptr_head) (:Body Ptr_body) (:P *E) D (:Origin Src))
+    (step_offset D (:V *V_m1))
+    (compose (:A E) (:B V_m1) (:C *P))
+    (input P))
+
+  (RULE &framed
+    (&field.box (:key (:Col *F))))
+
+  ;; The exit cells take the field's color.
+  (RULE &paint_of
+    (&palette *F)))
+
+(ALTS $direction "how the ray's direction is read" $Adjacent
+  (ALT $NearestBody
+    (OUTPUT ray "the ray steps from the head away from the body cell nearest the head (taxicab distance), along the sign of each axis; among nearest body cells, the first in the order &tie_order gives"
+      (RULE &ray_dir
+        (&palette (:F *Field) *Head *Body)
+        (&tie_heading Head Body *D))
+
+      (RULE &ray_node
+        (&palette (:F *Field) *Head *Body)
+        (&tie_heading Head Body *D)
+        (input *P)
+        (NOT (&ray_blocked Field Head Body P)))
+
+      (RULE &tie_exit
+        (&palette *F (:Head *Ptr_head) (:Body *Ptr_body))
+        (&tie_heading (:Head Ptr_head) (:Body Ptr_body) *C *A (:P *Src) *D)
+        (&head3 (:Head Ptr_head) (:Body Ptr_body) (:P Src))
+        (&ray_end (:Field F) (:Head Ptr_head) (:Body Ptr_body) (:P *E) D (:Origin Src))
+        (step_offset D (:V *V_m1))
+        (compose (:A E) (:B V_m1) (:C *P))
+        (input P)))
+    ;; One grid per tie order, read at every head order.
+    (RULE &output
+      (&palette *F (:Head *Ptr_head) (:Body *Ptr_body))
+      (&head3 (:Head Ptr_head) (:Body Ptr_body))
+      (&tie_order (:C *Tc) (:A *Ta))
+      (ALL ((&head3 (:Head Ptr_head) (:Body Ptr_body) (:P *Pm)))
+           ((&tie_heading (:Head Ptr_head) (:Body Ptr_body) (:C Tc) (:A Ta) (:P Pm))))
+      (&framed F)
+      (&paint_of F)
+      (OR ((input *P *Col)
+           (NOT (&tie_exit (:C Tc) (:A Ta) P)))
+          ((&tie_exit (:C Tc) (:A Ta) P)
+           (= Col F))))
+    (ALT $ScanHead
+      (OUTPUT ray "only the head cell that comes first in the order &head_order gives casts"
+        (RULE &tie_head_exit
+          (&palette *F (:Head *Ptr_head) (:Body *Ptr_body))
+          (&scan_source (:Head Ptr_head) (:Body Ptr_body) (:C *Hc) (:A *Ha) (:P *Src))
+          (&tie_heading (:Head Ptr_head) (:Body Ptr_body) (:C *Tc) (:A *Ta) (:P Src) *D)
+          (&ray_end (:Field F) (:Head Ptr_head) (:Body Ptr_body) (:P *E) D (:Origin Src))
+          (step_offset D (:V *V_m1))
+          (compose (:A E) (:B V_m1) (:C *P))
+          (input P)))
+      ;; One grid per pair of orders.
+      (RULE &output
+        (&palette *F (:Head *Ptr_head) (:Body *Ptr_body))
+        (&scan_source (:Head Ptr_head) (:Body Ptr_body) (:C *Hc) (:A *Ha))
+        (&tie_order (:C *Tc) (:A *Ta))
+        (ALL ((&scan_source (:Head Ptr_head) (:Body Ptr_body) (:C Hc) (:A Ha) (:P *Pm)))
+             ((&tie_heading (:Head Ptr_head) (:Body Ptr_body) (:C Tc) (:A Ta) (:P Pm))))
+        (&framed F)
+        (&paint_of F)
+        (OR ((input *P *Col)
+             (NOT (&tie_head_exit Tc Ta Hc Ha P)))
+            ((&tie_head_exit Tc Ta Hc Ha P)
+             (= Col F)))))
+    (ALT $StoredPaint
+      ;; One grid per tie order, read at every head order.
+      (RULE &output
+        (&palette *F (:Head *Ptr_head) (:Body *Ptr_body))
+        (&head3 (:Head Ptr_head) (:Body Ptr_body))
+        (&tie_order (:C *Tc) (:A *Ta))
+        (ALL ((&head3 (:Head Ptr_head) (:Body Ptr_body) (:P *Pm)))
+             ((&tie_heading (:Head Ptr_head) (:Body Ptr_body) (:C Tc) (:A Ta) (:P Pm))))
+        (&framed F)
+        (&paint_of F (:Col *C))
+        (OR ((input *P *Col)
+             (NOT (&tie_exit (:C Tc) (:A Ta) P)))
+            ((&tie_exit (:C Tc) (:A Ta) P)
+             (= Col C)))))
+    (ALT $ScanHead
+      (ALT $StoredPaint
+        ;; One grid per pair of orders.
+        (RULE &output
+          (&palette *F (:Head *Ptr_head) (:Body *Ptr_body))
+          (&scan_source (:Head Ptr_head) (:Body Ptr_body) (:C *Hc) (:A *Ha))
+          (&tie_order (:C *Tc) (:A *Ta))
+          (ALL ((&scan_source (:Head Ptr_head) (:Body Ptr_body) (:C Hc) (:A Ha) (:P *Pm)))
+               ((&tie_heading (:Head Ptr_head) (:Body Ptr_body) (:C Tc) (:A Ta) (:P Pm))))
+          (&framed F)
+          (&paint_of F (:Col *C))
+          (OR ((input *P *Col)
+               (NOT (&tie_head_exit Tc Ta Hc Ha P)))
+              ((&tie_head_exit Tc Ta Hc Ha P)
+               (= Col C)))))))
+  (ALT $BodyAxis
+    (OUTPUT ray "the ray steps from the head along the axis on which body cells touch, away from the body; undefined when body cells touch on two axes or lie on both sides of the head"
+      (RULE &heading
+        (&away.value (:key (:Ptr_head *Head) (:Ptr_body *Body) *P) (:v *D))))))
+
+(ALTS $source "which head cells cast" $EveryHead
+  (ALT $ScanHead
+    (OUTPUT ray "only the head cell that comes first in the order &head_order gives casts"
+      (DET &head_first
+        (&cast *E *P)
+        (&scan2.minimal (:key (:Ky E) *C *A) (:t P)))
+
+      (DET &head_missed
+        (&head_first *C *A)
+        (ex_output *E)
+        (NOT (&head_first E C A)))
+
+      (DET &head_order
+        (&head_first *C *A)
+        (NOT (&head_missed C A))
+        (ONE))
+
+      (RULE &scan_source
+        (&scan.minimal (:key (:Ky_head *Head) (:Ky_body *Body) *C *A) (:t *P))
+        (&head_order C A))
+
+      (RULE &head_unaimed
+        (&heading *Head *Body)
+        (&scan_source Head Body *C *A *P)
+        (NOT (&heading Head Body P)))
+
+      (RULE &head_exit
+        (&palette *F (:Head *Ptr_head) (:Body *Ptr_body))
+        (&scan_source (:Head Ptr_head) (:Body Ptr_body) *C *A (:P *Src))
+        (&heading (:Head Ptr_head) (:Body Ptr_body) (:P Src) *D)
+        (&ray_end (:Field F) (:Head Ptr_head) (:Body Ptr_body) (:P *E) D (:Origin Src))
+        (step_offset D (:V *V_m1))
+        (compose (:A E) (:B V_m1) (:C *P))
+        (input P)))
+    ;; One grid per head order, read at every tie order.
+    (RULE &output
+      (&palette *F (:Head *Ptr_head) (:Body *Ptr_body))
+      (&scan_source (:Head Ptr_head) (:Body Ptr_body) (:C *Hc) (:A *Ha))
+      (&heading (:Head Ptr_head) (:Body Ptr_body))
+      (NOT (&head_unaimed (:Head Ptr_head) (:Body Ptr_body) (:C Hc) (:A Ha)))
+      (&framed F)
+      (&paint_of F)
+      (OR ((input *P *Col)
+           (NOT (&head_exit (:C Hc) (:A Ha) P)))
+          ((&head_exit (:C Hc) (:A Ha) P)
+           (= Col F))))
+    (ALT $StoredPaint
+      ;; One grid per head order, read at every tie order.
+      (RULE &output
+        (&palette *F (:Head *Ptr_head) (:Body *Ptr_body))
+        (&scan_source (:Head Ptr_head) (:Body Ptr_body) (:C *Hc) (:A *Ha))
+        (&heading (:Head Ptr_head) (:Body Ptr_body))
+        (NOT (&head_unaimed (:Head Ptr_head) (:Body Ptr_body) (:C Hc) (:A Ha)))
+        (&framed F)
+        (&paint_of F (:Col *C))
+        (OR ((input *P *Col)
+             (NOT (&head_exit (:C Hc) (:A Ha) P)))
+            ((&head_exit (:C Hc) (:A Ha) P)
+             (= Col C)))))))
+
+(ALTS $stop "which cell the ray paints" $FieldExit
+  (ALT $FirstNonfield
+    (OUTPUT exit "the first cell on the ray that is not the field color takes the field color; no field cell needs to exist"
+      (RULE &framed
+        (&palette *F))
+
+      (RULE &ray_blocked
+        (&palette (:F *Field) *Head *Body)
+        (input *P *Col)
+        (!= Col Field)))))
+
+(ALTS $paint "the color the painted cell takes" $FieldPaint
+  (ALT $StoredPaint
+    (OUTPUT exit "the first cell the ray reaches outside the field takes &paint_color"
+      (DET_OR_RULE &paint_color DominantColor)
+
+      ;; The exit cells take the stored paint color.
+      (RULE &paint_of
+        (&palette *F)
+        (&paint_color (:C *Col))))
+    (RULE &output
+      ;; One grid, read at every order.
+      (&palette *F (:Head *Ptr_head) (:Body *Ptr_body))
+      (&heading (:Head Ptr_head) (:Body Ptr_body))
+      (NOT (&unaimed (:Head Ptr_head) (:Body Ptr_body)))
+      (&framed F)
+      (&paint_of F (:Col *C))
+      (OR ((input *P *Col)
+           (NOT (&exit P)))
+          ((&exit P)
+           (= Col C))))))
+
+(ALTS $field "how the field color is found" $StoredField
+  (ALT $DerivedField
+    (INPUT field "a solid rectangle of the color most common among the cells next to the pointer, other than the pointer colors; undefined at a tie"
+      (RULE &field_of
+        (&around.maximal (:key *Head *Body) (:t *F))))))
+
+(ALTS $pointer "how the head and body colors are found" $StoredPointer
+  (ALT $DerivedPointer
+    (INPUT pointer "inside the field's bounding box, the cells not of the field color have two colors; the head color has one cell and the body color more; undefined otherwise"
+      (RULE &inset
+        (&field.box (:key (:Col *F)) *B)
+        (input *P *Col)
+        (ALL ((input P (:Col *Colm))
+              (&field.box (:key (:Col *Fm)) B)
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (!= Col F))
+
+      (RULE &repeated
+        (&inset *F *P *Col)
+        (&inset F (:P *Q) Col)
+        (!= P Q))
+
+      (RULE &derived_pointer
+        (&inset *F (:Col *Head))
+        (NOT (&repeated F (:Col Head)))
+        (&inset F (:Col *Body))
+        (&repeated F (:Col Body))
+        (ALL ((&inset F *Col)
+              (!= Col Head))
+             ((= Col Body))))
+
+      (RULE &pointer_of
+        (&derived_pointer *Head *Body))
+
+      (RULE &palette
+        (&derived_pointer *F *Head *Body)
+        (&field_of Head Body F)))))
+
+;; One grid, read at every order.
+(RULE &output
+  (&palette *F (:Head *Ptr_head) (:Body *Ptr_body))
+  (&heading (:Head Ptr_head) (:Body Ptr_body))
+  (NOT (&unaimed (:Head Ptr_head) (:Body Ptr_body)))
+  (&framed F)
+  (&paint_of F)
+  (OR ((input *P *Col)
+       (NOT (&exit P)))
+      ((&exit P)
+       (= Col F))))

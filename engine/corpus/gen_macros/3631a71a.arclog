@@ -1,0 +1,100 @@
+;; 3631a71a
+
+(DET &apos_split1
+  (ex_input (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Along_))
+  (relative (:Base Along_) (:X P_) (:X_rel *X_m1_)))
+
+(DET &cell_split_split1
+  (ex_input *E (:P *P_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Along_))
+  (relative (:Base Along_) (:X P_) (:X_rel *Across_)))
+
+(DET &mask ChangedColor)
+
+(RULE &masked
+  (input *P *Col)
+  (&mask (:C Col)))
+
+(DET &apos
+  (ex_input *P)
+  (axis_elem *A)
+  (&apos_split1 (:P_ P) (:A_ A) (:Along_ *Along) (:X_m1_ *X_m1)))
+
+(DET &cand
+  (&apos *A *Along)
+  (axis_of (:D *Flush) A)
+  (OR ((sub_extent (:P Along) A *K))
+      ((= K 0))))
+
+(DET &band_map
+  (&cand *A *Flush *K)
+  (&apos A *Along)
+  (axis_inversion A (:T *F))
+  (apply (:D F) (:P Along) (:P_out *L_flip))
+  (dir8_opposite (:D Flush) (:D2 *O_m2))
+  (edge_inset (:D O_m2) K (:B *B1_m3))
+  (edge_inset (:D Flush) K (:B *I_m5))
+  (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+  (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+  (compose (:A L_flip) (:B V_m1) (:C *Along2))
+  (&apos A (:Along Along2)))
+
+(DET &cell_split
+  (ex_input *E *P *Col)
+  (NOT (&mask (:C Col)))
+  (axis_elem *A)
+  (&cell_split_split1 (:P_ P) (:A_ A) (:Along_ *Along) (:Across_ *Across)))
+
+(DET &broken
+  (&band_map *A *Flush *K (:Along *L1) (:Along2 *L2))
+  (&cell_split *E A (:Along L1) (:Across *X) (:Col *C1))
+  (&cell_split E A (:Along L2) (:Across X) (:Col *C2))
+  (!= C1 C2))
+
+(DET &witnessed
+  (&band_map *A *Flush *K (:Along *L1) (:Along2 *L2))
+  (!= L1 L2)
+  (&cell_split *E A (:Along L1) (:Across *X))
+  (&cell_split E A (:Along L2) (:Across X)))
+
+(DET &mirror_band
+  (&witnessed *A *Flush *K)
+  (NOT (&broken A Flush K)))
+
+(RULE &mirror
+  (input *P)
+  (&mirror_band *A (:Flush *D) *K)
+  (axis_inversion A (:T *F))
+  (apply (:D F) P (:P_out *P_flip))
+  (dir8_opposite D (:D2 *O_m2))
+  (edge_inset (:D O_m2) K (:B *B1_m3))
+  (edge_inset D K (:B *I_m5))
+  (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+  (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+  (compose (:A P_flip) (:B V_m1) (:C *Q))
+  (input (:P Q)))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&masked P)))
+      ((&masked P)
+       (&mirror P *Q)
+       (NOT (&masked (:P Q)))
+       (input (:P Q) Col))))

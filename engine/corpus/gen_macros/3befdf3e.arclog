@@ -1,0 +1,237 @@
+;; 3befdf3e
+
+(RULE &objs_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(RULE &objs_node
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &objs Quotient
+  (edge ((:a P) (:b P2))
+    (OR ((&objs_node *P)
+         (&objs_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&objs_node (:P P2)))
+        ((&objs_node P)
+         (= P2 P)))))
+
+(RULE &objs_component
+  (&objs.class (:a *P) *Id))
+
+(RULE &obj_cell
+  (&objs_component *P (:Id *O)))
+
+;; The wall is the object's rim; the core is what it holds.
+(INIT &rim Boundary
+  (key ((&obj_cell (:O ^Id) *P))
+    (cell (P)
+      (&obj_cell (:O Id) *P))))
+
+(RULE &arm_mark
+  (&rim.exposed (:key *Id) *P *D)
+  (dir_elem D))
+
+(RULE &arm_dir
+  (&arm_mark *Id *D))
+
+(RULE &arm_node
+  (&arm_mark *Id *D)
+  (input *P))
+
+(RULE &arm_source
+  (&rim.exposed (:key *Id) *P *D)
+  (dir_elem D))
+
+(INIT &arm Distance
+  (key ((&arm_source (:Id ^Ky_id) (:D ^Ky_d) (:P ^O))
+        (&arm_dir (:Id Ky_id) (:D Ky_d)))
+    (edge ((:a A2) (:b Q))
+      (OR ((&arm_source (:Id Ky_id) (:D Ky_d) (:P O))
+           (&arm_dir (:Id Ky_id) (:D Ky_d))
+           (axis_of (:D Ky_d) *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite (:D Ky_d) (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset (:D Ky_d) K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&arm_node (:Id Ky_id) (:D Ky_d) (:P A2))
+           (step_offset (:D Ky_d) (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&arm_node (:Id Ky_id) (:D Ky_d) (:P Q)))
+          ((&arm_source (:Id Ky_id) (:D Ky_d) (:P O))
+           (&arm_dir (:Id Ky_id) (:D Ky_d))
+           (step_offset (:D Ky_d) (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&arm_node (:Id Ky_id) (:D Ky_d) (:P Q))
+           (= A2 O))
+          ((&arm_source (:Id Ky_id) (:D Ky_d) (:P O))
+           (&arm_dir (:Id Ky_id) (:D Ky_d))
+           (diag_dir_elem (:D Ky_d))
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite (:D Ky_d) (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset (:D Ky_d) (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&arm_node (:Id Ky_id) (:D Ky_d) (:P A2))
+           (step_offset (:D Ky_d) (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&arm_node (:Id Ky_id) (:D Ky_d) (:P Q)))))
+    (source ((:n O))
+      (&arm_source (:Id Ky_id) (:D Ky_d) (:P O))
+      (&arm_dir (:Id Ky_id) (:D Ky_d)))))
+
+(RULE &arm_ray
+  (&arm.distance (:key (:Ky_id *Id) (:Ky_d *Key_d) (:Ky_d *D) (:O *Origin)) (:n *P) *K))
+
+(RULE &arm_end
+  (&arm_ray *Id *Key_d *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&arm_ray Id Key_d (:P Q) D Origin)))
+
+(RULE &core
+  (&obj_cell *O *P)
+  (NOT (&rim.boundary (:key (:Id O)) P)))
+
+(RULE &wall_col
+  (&rim.boundary (:key (:Id *O)) *P)
+  (input P *Col))
+
+(RULE &core_col
+  (&core *O *P)
+  (input P *Col))
+
+(INIT &core_box BoundingBox
+  (key ((&core (:O ^Id) *P))
+    (cell (P)
+      (&core (:O Id) *P))))
+
+(RULE &arm_cell
+  (&arm_mark *Id *D)
+  (input *P))
+
+(RULE &paint
+  (OR ((&rim.boundary (:key (:Id *O)) *P)
+       (&core_col O *Col))
+      ((&core (:O *O2) P)
+       (&wall_col (:O O2) Col))
+      ((&arm_ray *Id (:Key_d *D) P D *K)
+       (&arm_cell Id D P)
+       (!= K 0)
+       (axis_of D *A)
+       (&core_box.box (:key Id) *B)
+       (axis_elem A)
+       (relative (:Base B) (:X P) (:X_rel *R_m1))
+       (frame_extent (:P R_m1) A *N)
+       (<= K N)
+       (&wall_col (:O Id) Col))))
+
+(ALTS $choice "how the figure is built" $Cast
+  (ALT $Lookup
+    (DET &figs_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (DET &figs_node
+      (ex_output (:E *Key) *P *Col)
+      (NOT (&bg (:C Col))))
+
+    ;; The figure an object leaves: the output ink its own cells sit in.
+    (INIT &figs Quotient
+      (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+        (OR ((&figs_node (:Key *Ky) *P)
+             (&figs_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P2))
+             (&figs_node (:Key Ky) (:P P2)))
+            ((&figs_node (:Key Ky) P)
+             (= P2 P)))))
+
+    (DET &figs_component
+      (&figs.class (:a *Key *P) *Id))
+
+    (DET &fig
+      (&obj_cell *E (:O *Id) (:P *Q))
+      (&figs_component (:Key E) (:P Q) (:Id *F))
+      (&figs_component (:Key E) *P (:Id F)))
+
+    ;; The figure's own box — the frame the catalog stores.
+    (INIT &fig_box BoundingBox
+      (key ((&fig ^E ^Id *P))
+        (cell (P)
+          (&fig E Id *P))))
+
+    (DET &fig_cell_inside1
+      (&fig (:E *O_e) (:Id *O_id) (:P *P_))
+      (&fig_box.box (:key (:E O_e) (:Id O_id)) (:B *B_))
+      (dir_elem (:D *D_m1))
+      (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+      (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+      (< K_m3 0))
+
+    (RULE &core_size
+      (&core *O *P)
+      (&core_box.box (:key (:Id O)) *B)
+      (axis_elem *A)
+      (relative (:Base B) (:X P) (:X_rel *R_m1))
+      (frame_extent (:P R_m1) A *N)
+      (perp A *A2)
+      (axis_elem (:A A2))
+      (relative (:Base B) (:X P) (:X_rel *R_m2))
+      (frame_extent (:P R_m2) (:A A2) N))
+
+    (DET &fig_cell
+      (&fig *E *Id *P)
+      (&fig_box.box (:key E Id) *B)
+      (NOT (&fig_cell_inside1 (:P_ P) (:B_ B)))
+      (relative (:Base B) (:X P) (:X_rel *P_fig)))
+
+    (DET &fig_view
+      (&core_size *E (:O *Id) *N)
+      (&fig_cell E Id *P *P_fig)
+      (ex_output E P *Col))
+
+    (DET &fig_core
+      (&fig_view *E *Id *N (:P_fig *P) *Col)
+      (&core_col E (:O Id) Col))
+
+    (INIT &core_in_fig BoundingBox
+      (key ((&fig_cell ^E ^Id *P *P_fig)
+            (&core E (:O Id) P))
+        (cell ((:P P_fig))
+          (&fig_cell E Id *P *P_fig)
+          (&core E (:O Id) P))))
+
+    (DET &fig_core_box
+      (&core_size *E (:O *Id) *N)
+      (&core_in_fig.box (:key E Id) *B))
+
+    (DET &fig_wall
+      (&fig_view *E *Id *N (:P_fig *P) *Col)
+      (&wall_col E (:O Id) Col))
+
+    (RULE &paint
+      (OR ((&fig_wall *N (:P *P_fig))
+           (&wall_col *O *Col))
+          ((&fig_core N (:P P_fig))
+           (&core_col O Col)))
+      (&fig_core_box N (:B *B_fig))
+      (relative (:Base B_fig) (:X P_fig) (:X_rel *P_inner))
+      (&core_size O N)
+      (&core_box.box (:key (:Id O)) *B)
+      (compose (:A B) (:B P_inner) (:C *P))
+      (input P))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))

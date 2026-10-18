@@ -1,0 +1,134 @@
+;; 88a62173
+
+(DET &gap SepThickness)
+
+(DET &tile_count ConstOutDim)
+
+(INIT &tile_val_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (parts (A N)
+    (axis_elem *A)
+    (&tile_count *N))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap *G)))
+
+(RULE &tile_val
+  (input (:P *P_grid) *Col)
+  (&tile_val_division.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(ALTS $choice "how the cases find the tiles" $Count
+  (ALT $Size
+    (DET &tile_size ConstOutDim)
+
+    (INIT &tile_val_division2 Division
+      (cell ((:P P_grid))
+        (input (:P *P_grid)))
+      (side (A K)
+        (axis_elem *A)
+        (&tile_size (:N *K)))
+      (gap (A G)
+        (axis_elem *A)
+        (&gap *G)))
+
+    (RULE &tile_val
+      (input (:P *P_grid) *Col)
+      (&tile_val_division2.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile))))
+  (ALT $Cross
+    (INIT &line_color Singleton
+      (key ((input *P *Col)
+            (axis_elem ^A)
+            (split P A (:Along ^L)))
+        (member ((:v Col))
+          (input *P *Col)
+          (axis_elem A)
+          (split P A (:Along L)))))
+
+    (RULE &lattice_divider
+      (&line_color.value (:key *A *L)))
+
+    (RULE &lattice_on_divider
+      (input *P)
+      (&lattice_divider *A *L)
+      (axis_of *D A)
+      (same_dist D (:P1 P) (:P2 L)))
+
+    (INIT &lattice_rank Order
+      (key ((OR ((&lattice_divider *A *L)
+                 (axis_of ^D A)
+                 (margin (:B L) D *K))
+                ((input *P)
+                 (dir_elem D)
+                 (margin (:B P) D K))))
+        (member ((:t K))
+          (&lattice_divider *A *L)
+          (axis_of D A)
+          (margin (:B L) D *K))
+        (score ((:t K) (:S K))
+          (OR ((&lattice_divider *A *L)
+               (axis_of D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (dir_elem D)
+               (margin (:B P) D K))))
+        (probe ((:t K))
+          (input *P)
+          (dir_elem D)
+          (margin (:B P) D *K))))
+
+    (RULE &lattice_part_idx
+      (input *P)
+      (axis_of *D *A)
+      (NOT (&lattice_on_divider P A))
+      (margin (:B P) D *K)
+      (&lattice_rank.rank (:key D) (:t K) (:R *N)))
+
+    (RULE &lattice_part_of
+      (axis_of *D *A)
+      (opposite D (:Opp *D2))
+      (&lattice_part_idx *P D (:N *N1))
+      (&lattice_part_idx P (:D D2) (:N *N2))
+      (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+    (RULE &lattice_tile_of
+      (&lattice_part_of *P *A (:P_part *P1))
+      (perp A *A2)
+      (&lattice_part_of P (:A A2) (:P_part *P2))
+      (compose (:A P1) (:B P2) (:C *P_tile)))
+
+    ;; The box each tile spans.
+    (INIT &bbox BoundingBox
+      (key ((&lattice_tile_of *P (:P_tile ^T)))
+        (cell (P)
+          (&lattice_tile_of *P (:P_tile T)))))
+
+    (RULE &tile_val
+      (input (:P *P_grid) *Col)
+      (&bbox.cell (:key (:T *P_tile)) (:P P_grid))
+      (&bbox.box (:key (:T P_tile)) *B)
+      (inside (:A P_grid) B)
+      (relative (:Base B) (:X P_grid) (:X_rel *P_intile)))))
+
+;; Tiles carrying the same pattern.
+(INIT &same Inclusion
+  (pattern ((:pattern T) (:m P_intile Col))
+    (&tile_val (:P_tile *T) *P_intile *Col))
+  (observed ((:observed T) (:m P_intile Col))
+    (&tile_val (:P_tile *T) *P_intile *Col)))
+
+;; How many tiles carry each tile's pattern.
+(INIT &alike Cardinality
+  (key ((&same.equal (:observed ^T) (:pattern *T2)))
+    (member ((:m T2))
+      (&same.equal (:observed T) (:pattern *T2)))))
+
+(INIT &rarest Order
+  (member ((:t (:V T) (:S N)))
+    (&alike.size (:key *T) *N))
+  (score ((:t (:V T) (:S N)) (:S N))
+    (&alike.size (:key *T) *N)))
+
+(RULE &output
+  (&rarest.minimal (:t (:V *T)))
+  (&tile_val (:P_tile T) (:P_intile *P) *Col))

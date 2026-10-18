@@ -1,0 +1,10 @@
+;; 272f95fa
+
+(param &line Color (8))
+(param &center_paint Color (6))
+(param &arm_paint (Dir Color) (DIR_T 2) (DIR_B 1) (DIR_L 4) (DIR_R 3))
+(param &tile_paint (Position Color)
+  (grid
+    (_ 2 _)
+    (4 6 3)
+    (_ 1 _)))

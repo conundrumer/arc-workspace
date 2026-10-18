@@ -1,0 +1,741 @@
+;; 351d6448
+
+(INPUT panels "full lines of &divider_color, &divider_width wide, cut the grid along the axis of &time_dir into &panel_count panels of one size, and no line inside a panel is full of that color; the panels are the frames of an animation, in time order toward &time_dir"
+
+  (DET &panel_count SepTileCount)
+
+  (DET_OR_RULE &divider_color SharedColor)
+
+  ;; Time runs toward this edge, so the last frame sits on it.
+  (DET &time_dir DirDomain)
+
+  (DET &divider_width ScaleRatio))
+
+(INPUT steady-step "the frames show one motion of a kind the steps between them demonstrate, toward the side and by the count of cells that every step advances the front of its recolorings: the frame's content translating, with the one color of the frame's back edge entering behind it; each run of a recoloring's new color growing from its end over the color the recoloring replaces; or the front of each recoloring's new color advancing over the color it replaces; the frames show at least two steps"
+
+  (RULE &count_read
+    (&panel_count *N))
+
+  (RULE &time_read
+    (&time_dir (:D *T)))
+
+  (RULE &item_split1
+    (input (:P *P_) *Col)
+    (axis_elem (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+    (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+  ;; The color of a line all of one color.
+  (INIT &line_color Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (&item_split1 (:P_ P) (:A_ A) (:L_ ^L) (:X_m1_ *X_m1)))
+      (member ((:v Col))
+        (input *P *Col)
+        (axis_elem A)
+        (&item_split1 (:P_ P) (:A_ A) (:L_ L) (:X_m1_ *X_m1)))))
+
+  (RULE &admitted
+    (input *P)
+    (dir_elem *D)
+    (margin (:B P) D (:K *N))
+    (> N 0))
+
+  (INIT &panel_line_division_sides ExtentDivisions
+    (key ((&line_color.member (:key ^A *L))
+          (&admitted (:N ^G))
+          (&admitted ^N))
+      (frame ((:P L))
+        (&line_color.member (:key A *L))
+        (&admitted (:N G))
+        (&admitted N))))
+
+  (RULE &panel_line_division_gap_held
+    (&line_color.member (:key *A))
+    (&admitted (:N *G))
+    (&admitted *N))
+
+  (RULE &panel_line_division_axis_split1
+    (&line_color.member (:key *A (:L *L_)))
+    (axis_elem (:A *A2_))
+    (axis_of (:D *D_m1) (:A A2_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B L_) (:D D_m1) (:K *K1_m3))
+    (margin (:B L_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+    (relative (:Base Pi_) (:X L_) (:X_rel *X_m1_)))
+
+  (RULE &panel_line_division_parts_held
+    (&line_color.member (:key *A))
+    (&admitted (:N *G))
+    (&admitted *N))
+
+  (RULE &panel_line_division_axis
+    (OR ((&line_color.member (:key (:A *Key_a) (:L *P)))
+         (&admitted (:N *G))
+         (&admitted *N)
+         (axis_elem *A)
+         (OR ((!= A Key_a))
+             ((NOT (&panel_line_division_parts_held (:A Key_a) G N))))
+         (&panel_line_division_axis_split1 (:L_ P) (:A2_ A) (:Pi_ *P_inner) (:X_m1_ *X_m1))
+         (relative (:Base P_inner) (:X P_inner) (:X_rel *P_outer)))
+        ((&line_color.member (:key (:A Key_a) (:L P)))
+         (&admitted (:N G))
+         (&admitted N)
+         (&line_color.member (:key (:A Key_a)))
+         (&panel_line_division_sides.division (:key (:A Key_a) G N) (:A Key_a) N *K G)
+         (axis_of *D (:A Key_a))
+         (opposite D (:Opp *O))
+         (margin (:B P) D (:K *T))
+         (margin (:B P) (:D O) (:K *T2))
+         (divide T (:Side K) (:Gap G) (:Part *I) (:Remainder *R))
+         (divide (:T T2) (:Side K) (:Gap G) (:Part *I2) (:Remainder *R2))
+         (opposite D (:Opp *O_m1))
+         (edge_inset D (:K I) (:B *B1_m2))
+         (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+         (compose (:A B1_m2) (:B B2_m3) (:C P_outer))
+         (opposite D (:Opp *O_m4))
+         (edge_inset D (:K R) (:B *B1_m5))
+         (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+         (compose (:A B1_m5) (:B B2_m6) (:C P_inner))
+         (frame_extent (:P P_inner) (:A Key_a) (:N K))
+         (= A Key_a))
+        ((&line_color.member (:key (:A Key_a) (:L P)))
+         (&admitted (:N G))
+         (&admitted N)
+         (&line_color.member (:key (:A Key_a)))
+         (frame_extent P (:A Key_a) (:N *K2))
+         (axis_of (:D *D2) (:A Key_a))
+         (opposite (:D D2) (:Opp *O2))
+         (margin (:B P) (:D D2) (:K *T3))
+         (margin (:B P) (:D O2) (:K *T22))
+         (divide (:T T3) (:Side K2) (:Gap G) (:Part *I3) (:Remainder *R3))
+         (divide (:T T22) (:Side K2) (:Gap G) (:Part *I22) (:Remainder *R22))
+         (opposite (:D D2) (:Opp *O_m12))
+         (edge_inset (:D D2) (:K I3) (:B *B1_m22))
+         (edge_inset (:D O_m12) (:K I22) (:B *B2_m32))
+         (compose (:A B1_m22) (:B B2_m32) (:C P_outer))
+         (opposite (:D D2) (:Opp *O_m42))
+         (edge_inset (:D D2) (:K R3) (:B *B1_m52))
+         (edge_inset (:D O_m42) (:K R22) (:B *B2_m62))
+         (compose (:A B1_m52) (:B B2_m62) (:C P_inner))
+         (frame_extent (:P P_inner) (:A Key_a) (:N K2))
+         (frame_extent (:P P_outer) (:A Key_a) N)
+         (= A Key_a))
+        ((&line_color.member (:key (:A Key_a) (:L P)))
+         (&admitted (:N G))
+         (&admitted N)
+         (&line_color.member (:key (:A Key_a)))
+         (OR ((!= Key_a Key_a))
+             ((NOT (&panel_line_division_gap_held (:A Key_a) G N))))
+         (&panel_line_division_sides.division (:key (:A Key_a) G N) (:A Key_a) N (:K *K3) (:G 0))
+         (axis_of (:D *D3) (:A Key_a))
+         (opposite (:D D3) (:Opp *O3))
+         (margin (:B P) (:D D3) (:K *T4))
+         (margin (:B P) (:D O3) (:K *T23))
+         (divide (:T T4) (:Side K3) (:Gap 0) (:Part *I4) (:Remainder *R4))
+         (divide (:T T23) (:Side K3) (:Gap 0) (:Part *I23) (:Remainder *R23))
+         (opposite (:D D3) (:Opp *O_m13))
+         (edge_inset (:D D3) (:K I4) (:B *B1_m23))
+         (edge_inset (:D O_m13) (:K I23) (:B *B2_m33))
+         (compose (:A B1_m23) (:B B2_m33) (:C P_outer))
+         (opposite (:D D3) (:Opp *O_m43))
+         (edge_inset (:D D3) (:K R4) (:B *B1_m53))
+         (edge_inset (:D O_m43) (:K R23) (:B *B2_m63))
+         (compose (:A B1_m53) (:B B2_m63) (:C P_inner))
+         (frame_extent (:P P_inner) (:A Key_a) (:N K3))
+         (= A Key_a))
+        ((&line_color.member (:key (:A Key_a) (:L P)))
+         (&admitted (:N G))
+         (&admitted N)
+         (&line_color.member (:key (:A Key_a)))
+         (OR ((!= Key_a Key_a))
+             ((NOT (&panel_line_division_gap_held (:A Key_a) G N))))
+         (frame_extent P (:A Key_a) (:N *K4))
+         (axis_of (:D *D4) (:A Key_a))
+         (opposite (:D D4) (:Opp *O4))
+         (margin (:B P) (:D D4) (:K *T5))
+         (margin (:B P) (:D O4) (:K *T24))
+         (divide (:T T5) (:Side K4) (:Gap 0) (:Part *I5) (:Remainder *R5))
+         (divide (:T T24) (:Side K4) (:Gap 0) (:Part *I24) (:Remainder *R24))
+         (opposite (:D D4) (:Opp *O_m14))
+         (edge_inset (:D D4) (:K I5) (:B *B1_m24))
+         (edge_inset (:D O_m14) (:K I24) (:B *B2_m34))
+         (compose (:A B1_m24) (:B B2_m34) (:C P_outer))
+         (opposite (:D D4) (:Opp *O_m44))
+         (edge_inset (:D D4) (:K R5) (:B *B1_m54))
+         (edge_inset (:D O_m44) (:K R24) (:B *B2_m64))
+         (compose (:A B1_m54) (:B B2_m64) (:C P_inner))
+         (frame_extent (:P P_inner) (:A Key_a) (:N K4))
+         (frame_extent (:P P_outer) (:A Key_a) N)
+         (= A Key_a))))
+
+  (RULE &panel_line_division_tile
+    (&panel_line_division_axis (:Key_a *A) *G *N *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+    (perp (:A A1) *A2)
+    (&panel_line_division_axis (:Key_a A) G N P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+    (compose (:A Po1) (:B Po2) (:C *P_outer))
+    (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+  (RULE &panel_line
+    (&panel_line_division_tile *A *G *N (:P *L)))
+
+  (RULE &cut_defect
+    (&panel_line *A *G *N)
+    (input (:Col *C))
+    (&line_color.member (:key A *L))
+    (OR ((NOT (&panel_line A G N L))
+         (NOT (&line_color.value (:key A L) (:v C))))
+        ((&panel_line A G N L)
+         (&line_color.value (:key A L) (:v C)))))
+
+  (RULE_OR_DET &valid_cut
+    (&panel_line *A *G *N)
+    (&line_color.member (:key A *L))
+    (NOT (&panel_line A G N L))
+    (input (:Col *C))
+    (NOT (&cut_defect A C G N)))
+
+  (RULE &width_read
+    (&divider_width (:K *G)))
+
+  (RULE &frames_of
+    (&time_read *T)
+    (axis_of (:D T) *A)
+    (&divider_color *C)
+    (&width_read *G)
+    (&count_read *N)
+    (&valid_cut A C G N))
+
+  (INIT &panel_division_sides ExtentDivisions
+    (key ((&frames_of ^T ^C ^G ^N)))
+    (frame ((:P P_grid))
+      (input (:P *P_grid))))
+
+  (RULE &panel_division_gap_held
+    (&frames_of *T *C *G *N)
+    (axis_of (:D T) *A))
+
+  (RULE &panel_division_axis_split1
+    (input (:P *P_grid_))
+    (axis_elem (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_grid_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_grid_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+    (relative (:Base Pi_) (:X P_grid_) (:X_rel *X_m1_)))
+
+  (RULE &panel_division_parts_held
+    (&frames_of *T *C *G *N)
+    (axis_of (:D T) *A))
+
+  (RULE &panel_division_axis
+    (OR ((&frames_of *T *C *G *N)
+         (input *P)
+         (axis_of (:D T) *A)
+         (&panel_division_sides.division (:key T C G N) A N *K G)
+         (axis_of *D A)
+         (opposite D (:Opp *O))
+         (margin (:B P) D (:K *T2))
+         (margin (:B P) (:D O) (:K *T22))
+         (divide (:T T2) (:Side K) (:Gap G) (:Part *I) (:Remainder *R))
+         (divide (:T T22) (:Side K) (:Gap G) (:Part *I2) (:Remainder *R2))
+         (opposite D (:Opp *O_m1))
+         (edge_inset D (:K I) (:B *B1_m2))
+         (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+         (compose (:A B1_m2) (:B B2_m3) (:C *P_outer))
+         (opposite D (:Opp *O_m4))
+         (edge_inset D (:K R) (:B *B1_m5))
+         (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+         (compose (:A B1_m5) (:B B2_m6) (:C *P_inner))
+         (frame_extent (:P P_inner) A (:N K)))
+        ((&frames_of T C G N)
+         (input P)
+         (axis_of (:D T) A)
+         (frame_extent P A (:N *K2))
+         (axis_of (:D *D2) A)
+         (opposite (:D D2) (:Opp *O2))
+         (margin (:B P) (:D D2) (:K *T23))
+         (margin (:B P) (:D O2) (:K *T222))
+         (divide (:T T23) (:Side K2) (:Gap G) (:Part *I3) (:Remainder *R3))
+         (divide (:T T222) (:Side K2) (:Gap G) (:Part *I22) (:Remainder *R22))
+         (opposite (:D D2) (:Opp *O_m12))
+         (edge_inset (:D D2) (:K I3) (:B *B1_m22))
+         (edge_inset (:D O_m12) (:K I22) (:B *B2_m32))
+         (compose (:A B1_m22) (:B B2_m32) (:C P_outer))
+         (opposite (:D D2) (:Opp *O_m42))
+         (edge_inset (:D D2) (:K R3) (:B *B1_m52))
+         (edge_inset (:D O_m42) (:K R22) (:B *B2_m62))
+         (compose (:A B1_m52) (:B B2_m62) (:C P_inner))
+         (frame_extent (:P P_inner) A (:N K2))
+         (frame_extent (:P P_outer) A N))
+        ((&frames_of T C G N)
+         (input P)
+         (axis_of (:D T) A)
+         (NOT (&panel_division_gap_held T C G N A))
+         (&panel_division_sides.division (:key T C G N) A N (:K *K3) (:G 0))
+         (axis_of (:D *D3) A)
+         (opposite (:D D3) (:Opp *O3))
+         (margin (:B P) (:D D3) (:K *T24))
+         (margin (:B P) (:D O3) (:K *T223))
+         (divide (:T T24) (:Side K3) (:Gap 0) (:Part *I4) (:Remainder *R4))
+         (divide (:T T223) (:Side K3) (:Gap 0) (:Part *I23) (:Remainder *R23))
+         (opposite (:D D3) (:Opp *O_m13))
+         (edge_inset (:D D3) (:K I4) (:B *B1_m23))
+         (edge_inset (:D O_m13) (:K I23) (:B *B2_m33))
+         (compose (:A B1_m23) (:B B2_m33) (:C P_outer))
+         (opposite (:D D3) (:Opp *O_m43))
+         (edge_inset (:D D3) (:K R4) (:B *B1_m53))
+         (edge_inset (:D O_m43) (:K R23) (:B *B2_m63))
+         (compose (:A B1_m53) (:B B2_m63) (:C P_inner))
+         (frame_extent (:P P_inner) A (:N K3)))
+        ((&frames_of T C G N)
+         (input P)
+         (axis_of (:D T) A)
+         (NOT (&panel_division_gap_held T C G N A))
+         (frame_extent P A (:N *K4))
+         (axis_of (:D *D4) A)
+         (opposite (:D D4) (:Opp *O4))
+         (margin (:B P) (:D D4) (:K *T25))
+         (margin (:B P) (:D O4) (:K *T224))
+         (divide (:T T25) (:Side K4) (:Gap 0) (:Part *I5) (:Remainder *R5))
+         (divide (:T T224) (:Side K4) (:Gap 0) (:Part *I24) (:Remainder *R24))
+         (opposite (:D D4) (:Opp *O_m14))
+         (edge_inset (:D D4) (:K I5) (:B *B1_m24))
+         (edge_inset (:D O_m14) (:K I24) (:B *B2_m34))
+         (compose (:A B1_m24) (:B B2_m34) (:C P_outer))
+         (opposite (:D D4) (:Opp *O_m44))
+         (edge_inset (:D D4) (:K R5) (:B *B1_m54))
+         (edge_inset (:D O_m44) (:K R24) (:B *B2_m64))
+         (compose (:A B1_m54) (:B B2_m64) (:C P_inner))
+         (frame_extent (:P P_inner) A (:N K4))
+         (frame_extent (:P P_outer) A N))
+        ((&frames_of T C G N)
+         (input P)
+         (axis_elem A)
+         (NOT (&panel_division_parts_held T C G N A))
+         (&panel_division_axis_split1 (:P_grid_ P) (:A_ A) (:Pi_ P_inner) (:X_m1_ *X_m1))
+         (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
+
+  (RULE &panel_division_tile
+    (&panel_division_axis *T *C *G *N *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+    (perp (:A A1) *A2)
+    (&panel_division_axis T C G N P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+    (compose (:A Po1) (:B Po2) (:C *P_outer))
+    (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+  (RULE &panel
+    (&panel_division_tile *T *C *G *N (:P *P_grid) (:P_outer *P_tile) (:P_inner *P_intile))
+    (input (:P P_grid) *Col))
+
+  (RULE &succ_panel
+    (&panel *T *C *G *N *P_tile)
+    (step_offset (:D T) (:V *V_m1))
+    (compose (:A P_tile) (:B V_m1) (:C *P_tile2))
+    (&panel T C G N (:P_tile P_tile2)))
+
+  (RULE &first_step
+    (&succ_panel *T *C *G *N *P_tile)
+    (NOT (&succ_panel T C G N (:P_tile2 P_tile)))))
+
+(OUTPUT next-frame "the output is the last frame with the motion made once more; undefined where the steps advance no front by one count, or where no motion matches every step"
+
+  (RULE &scope
+    (&panel *T *C *G *N *P_intile)
+    (= *S 0))
+
+  (RULE &checked
+    (&succ_panel *T *C *G *N *P_tile))
+
+  (RULE &change
+    (&succ_panel *T *C *G *N *P_tile *P_tile2)
+    (&panel T C G N P_tile *P_intile (:Col *From))
+    (&panel T C G N (:P_tile P_tile2) P_intile (:Col *To))
+    (!= From To))
+
+  (RULE &change_behind
+    (&change *T *C *G *N *P_tile *P_intile)
+    (&scope T C G N P_intile *S)
+    (&change T C G N P_tile (:P_intile *Q))
+    (&scope T C G N (:P_intile Q) S)
+    (dir_elem *D)
+    (dir_elem D)
+    (margin (:B Q) D (:K *K1_m1))
+    (margin (:B P_intile) D (:K *K2_m2))
+    (< K1_m1 K2_m2))
+
+  (RULE &change_front
+    (&change *T *C *G *N *P_tile *P_intile)
+    (&scope T C G N P_intile)
+    (dir_elem *D)
+    (NOT (&change_behind T C G N P_tile D P_intile)))
+
+  (RULE &front_shift
+    (&succ_panel *T *C *G *N *P_tile *P_tile2)
+    (&change_front T C G N P_tile *D (:P_intile *P))
+    (&scope T C G N (:P_intile P) *S)
+    (&change_front T C G N (:P_tile P_tile2) D (:P_intile *P2))
+    (&scope T C G N (:P_intile P2) S)
+    (&panel T C G N (:P_intile *Q))
+    (margin (:B Q) D (:K *J))
+    (> J 0)
+    (dir8_opposite D (:D2 *O_m2))
+    (edge_inset (:D O_m2) (:K J) (:B *B1_m3))
+    (edge_inset D (:K J) (:B *I_m5))
+    (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+    (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+    (compose (:A P) (:B V_m1) (:C *P_far))
+    (margin (:B P_far) D (:K *K_m6))
+    (margin (:B P2) D (:K K_m6)))
+
+  (RULE &shift_defect
+    (&front_shift *T *C *G *N *S *D *J)
+    (&checked T C G N *P_tile)
+    (&succ_panel T C G N P_tile *P_tile2)
+    (&checked T C G N (:P_tile P_tile2))
+    (NOT (&front_shift T C G N S P_tile D J)))
+
+  (RULE &front_step
+    (&front_shift *T *C *G *N *S *D *J)
+    (&checked T C G N)
+    (NOT (&shift_defect T C G N S D J)))
+
+  (RULE_OR_DET &step_dir "The side each step moves toward."
+    (&front_step *D))
+
+  (RULE &shift
+    (&front_step *T *C *G *N *S *D *J)
+    (&step_dir D))
+
+  (RULE &motion_cell
+    (&shift *T *C *G *N *S)
+    (&panel T C G N *P_tile *P_intile *Col)
+    (&scope T C G N P_intile S))
+
+  (RULE &recoloring
+    (&shift *T *C *G *N *S)
+    (&change T C G N *P_intile *From *To)
+    (&scope T C G N P_intile S))
+
+  (RULE &run_dir
+    (&shift *T *C *G *N *S *D)
+    (&recoloring T C G N S *From *To)
+    (&motion_cell T C G N S *P_tile))
+
+  (RULE &run_blocked
+    (&recoloring *T *C *G *N *S *From *To)
+    (&motion_cell T C G N S *P_tile (:P_intile *P) (:Col *Col3))
+    (!= Col3 From))
+
+  (RULE &run_node
+    (&shift *T *C *G *N *S *D)
+    (&recoloring T C G N S *From *To)
+    (&motion_cell T C G N S *P_tile)
+    (input *P)
+    (NOT (&run_blocked T C G N S P_tile From To P)))
+
+  (RULE &run_source
+    (&recoloring *T *C *G *N *S *From *To)
+    (&motion_cell T C G N S *P_tile (:P_intile *P) (:Col To)))
+
+  ;; The cells of a recoloring's new color cast toward d over the color it
+  ;; replaces.
+  (INIT &run Distance
+    (key ((&run_source (:T ^Ky_t) (:C ^Ky_c) (:G ^Ky_g) (:N ^Ky_n) (:S ^Ky_s) (:P_tile ^Ky_p_tile) (:From ^Ky_from) (:To ^Ky_to) (:P ^O))
+          (&run_dir (:T Ky_t) (:C Ky_c) (:G Ky_g) (:N Ky_n) (:S Ky_s) (:P_tile Ky_p_tile) (:From Ky_from) (:To Ky_to) ^D))
+      (edge ((:a A2) (:b Q))
+        (OR ((&run_source (:T Ky_t) (:C Ky_c) (:G Ky_g) (:N Ky_n) (:S Ky_s) (:P_tile Ky_p_tile) (:From Ky_from) (:To Ky_to) (:P O))
+             (&run_dir (:T Ky_t) (:C Ky_c) (:G Ky_g) (:N Ky_n) (:S Ky_s) (:P_tile Ky_p_tile) (:From Ky_from) (:To Ky_to) D)
+             (axis_of D *A)
+             (sub_extent (:P O) A *K)
+             (dir8_opposite D (:D2 *O_m2))
+             (edge_inset (:D O_m2) K (:B *B1_m3))
+             (edge_inset D K (:B *I_m5))
+             (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+             (compose (:A O) (:B V_m1) (:C *A2))
+             (&run_node (:T Ky_t) (:C Ky_c) (:G Ky_g) (:N Ky_n) (:S Ky_s) (:P_tile Ky_p_tile) (:From Ky_from) (:To Ky_to) (:P A2))
+             (step_offset D (:V *V_m6))
+             (compose (:A A2) (:B V_m6) (:C *Q))
+             (&run_node (:T Ky_t) (:C Ky_c) (:G Ky_g) (:N Ky_n) (:S Ky_s) (:P_tile Ky_p_tile) (:From Ky_from) (:To Ky_to) (:P Q)))
+            ((&run_source (:T Ky_t) (:C Ky_c) (:G Ky_g) (:N Ky_n) (:S Ky_s) (:P_tile Ky_p_tile) (:From Ky_from) (:To Ky_to) (:P O))
+             (&run_dir (:T Ky_t) (:C Ky_c) (:G Ky_g) (:N Ky_n) (:S Ky_s) (:P_tile Ky_p_tile) (:From Ky_from) (:To Ky_to) D)
+             (step_offset D (:V *V_m12))
+             (compose (:A O) (:B V_m12) (:C Q))
+             (&run_node (:T Ky_t) (:C Ky_c) (:G Ky_g) (:N Ky_n) (:S Ky_s) (:P_tile Ky_p_tile) (:From Ky_from) (:To Ky_to) (:P Q))
+             (= A2 O))
+            ((&run_source (:T Ky_t) (:C Ky_c) (:G Ky_g) (:N Ky_n) (:S Ky_s) (:P_tile Ky_p_tile) (:From Ky_from) (:To Ky_to) (:P O))
+             (&run_dir (:T Ky_t) (:C Ky_c) (:G Ky_g) (:N Ky_n) (:S Ky_s) (:P_tile Ky_p_tile) (:From Ky_from) (:To Ky_to) D)
+             (diag_dir_elem D)
+             (axis_elem (:A *A3))
+             (sub_extent (:P O) (:A A3) (:K *K2))
+             (dir8_opposite D (:D2 *O_m22))
+             (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+             (edge_inset D (:K K2) (:B *I_m52))
+             (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+             (compose (:A O) (:B V_m13) (:C A2))
+             (&run_node (:T Ky_t) (:C Ky_c) (:G Ky_g) (:N Ky_n) (:S Ky_s) (:P_tile Ky_p_tile) (:From Ky_from) (:To Ky_to) (:P A2))
+             (step_offset D (:V *V_m62))
+             (compose (:A A2) (:B V_m62) (:C Q))
+             (&run_node (:T Ky_t) (:C Ky_c) (:G Ky_g) (:N Ky_n) (:S Ky_s) (:P_tile Ky_p_tile) (:From Ky_from) (:To Ky_to) (:P Q)))))
+      (source ((:n O))
+        (&run_source (:T Ky_t) (:C Ky_c) (:G Ky_g) (:N Ky_n) (:S Ky_s) (:P_tile Ky_p_tile) (:From Ky_from) (:To Ky_to) (:P O))
+        (&run_dir (:T Ky_t) (:C Ky_c) (:G Ky_g) (:N Ky_n) (:S Ky_s) (:P_tile Ky_p_tile) (:From Ky_from) (:To Ky_to) D))))
+
+  (RULE &run_ray
+    (&run.distance (:key (:Ky_t *T) (:Ky_c *C) (:Ky_g *G) (:Ky_n *N) (:Ky_s *S) (:Ky_p_tile *P_tile) (:Ky_from *From) (:Ky_to *To) *D (:O *Origin)) (:n *P) *K))
+
+  (RULE &last_frame
+    (&succ_panel *T *C *G *N (:P_tile2 *P_tile))
+    (NOT (&succ_panel T C G N P_tile)))
+
+  (DEMONSTRATED &catalog
+    (key ((OR ((&motion_cell ^T ^C ^G ^N ^S *P_tile *P_intile *Col))
+              ((&shift T C G N S)
+               (&checked T C G N P_tile)
+               (&succ_panel T C G N P_tile *P_tile2))))
+      (value ((:o P_tile) (:i P_intile) (:v Col))
+        (&motion_cell T C G N S *P_tile *P_intile *Col))
+      (demonstration ((:o P_tile) (:o2 P_tile2))
+        (&shift T C G N S)
+        (&checked T C G N *P_tile)
+        (&succ_panel T C G N P_tile *P_tile2)))
+    (DEMO_RULE $Translate "The frame's content moves j cells toward d, and the ground enters behind it."
+      (RULE &back_ground
+        (&shift *T *C *G *N *S *D)
+        (opposite D (:Opp *D_back))
+        (&motion_cell T C G N S *P_tile (:P_intile *P) *Col)
+        (margin (:B P) (:D D_back) (:K 0))
+        (ALL ((&shift T C G N S (:D *Dm))
+              (opposite (:D Dm) (:Opp *D_backm))
+              (&motion_cell T C G N S P_tile (:P_intile *Pm) (:Col *Colm))
+              (margin (:B Pm) (:D D_backm) (:K 0))
+              (&motion_cell T C G N S P_tile (:P_intile *Q) (:Col *Col2))
+              (margin (:B Q) (:D D_backm) (:K 0)))
+             ((= Colm Col2))))
+
+      (RULE &prediction
+        (&shift *T *C *G *N *S *D *J)
+        (&motion_cell T C G N S *P_tile *P_intile)
+        (opposite D (:Opp *D_back))
+        (dir8_opposite (:D D_back) (:D2 *O_m2))
+        (edge_inset (:D O_m2) (:K J) (:B *B1_m3))
+        (edge_inset (:D D_back) (:K J) (:B *I_m5))
+        (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+        (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+        (compose (:A P_intile) (:B V_m1) (:C *P))
+        (OR ((&motion_cell T C G N S P_tile (:P_intile P) *Col))
+            ((&back_ground T C G N S P_tile Col)
+             (NOT (&motion_cell T C G N S P_tile (:P_intile P)))))))
+    (DEMO_RULE $Extend "Each run of a recoloring's new color grows j cells from its end toward d, over the color the recoloring replaces."
+      (RULE &run_cell
+        (&recoloring *T *C *G *N *S *From *To)
+        (&motion_cell T C G N S *P_tile (:P_intile *P)))
+
+      (RULE &run_reach
+        (&shift *T *C *G *N *S *D *J)
+        (&run_ray T C G N S *P_tile (:To *Col) (:P *P_intile) D (:K *J2))
+        (&run_cell T C G N S P_tile (:To Col) (:P P_intile))
+        (> J2 0)
+        (<= J2 J))
+
+      (RULE &prediction
+        (&motion_cell *T *C *G *N *S *P_tile *P_intile (:Col *Col0))
+        (OR ((&run_reach T C G N S P_tile P_intile *Col))
+            ((= Col Col0)
+             (NOT (&run_reach T C G N S P_tile P_intile))))))
+    (DEMO_RULE $Advance "The front of each recoloring's new color advances j lines toward d over the color the recoloring replaces."
+      (RULE &advance
+        (&shift *T *C *G *N *S *D *J)
+        (&recoloring T C G N S (:From *Col3) (:To *Col))
+        (&motion_cell T C G N S *P_tile (:P_intile *P) Col)
+        (dir8_opposite D (:D2 *O_m2))
+        (edge_inset (:D O_m2) (:K J) (:B *B1_m3))
+        (edge_inset D (:K J) (:B *I_m5))
+        (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+        (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+        (compose (:A P) (:B V_m1) (:C *P_far))
+        (&motion_cell T C G N S P_tile *P_intile (:Col Col3))
+        (dir_elem D)
+        (margin (:B P_intile) D (:K *K1_m6))
+        (margin (:B P_far) D (:K *K2_m7))
+        (>= K1_m6 K2_m7)
+        (ALL ((&shift T C G N S (:D *Dm))
+              (&motion_cell T C G N S P_tile (:P_intile *Pm) Col)
+              (dir_elem (:D Dm))
+              (margin (:B P_intile) (:D Dm) (:K *K1_m1))
+              (margin (:B Pm) (:D Dm) (:K *K2_m2)))
+             ((< K1_m1 K2_m2))))
+
+      (RULE &prediction
+        (&motion_cell *T *C *G *N *S *P_tile *P_intile (:Col *Col0))
+        (OR ((&advance T C G N S P_tile P_intile *Col))
+            ((= Col Col0)
+             (NOT (&advance T C G N S P_tile P_intile)))))))
+
+  (RULE &motion_next
+    (&catalog (:key *T *C *G *N *S) (:o *P_tile) (:i *P_intile) (:v *Col))
+    (&last_frame T C G N P_tile))
+
+  (RULE &result
+    (&motion_next *T *C *G *N *S *P_intile *Col)))
+
+(ALTS $reading "what the frames show" $ObjectMotion
+  (ALT $FirstChange
+    (INPUT steady-step "each frame is the one before it with one change applied: the change from the first frame to the second, moved a fixed count of cells across the time axis, toward one end, once per frame; moved, the change recolors a cell only where the cell holds the color it recolors from")
+    (OUTPUT next-frame "the output is the last frame with the change moved one step further and applied once more; undefined where no frame changes, or where two steps that every frame follows disagree on it"
+      (RULE &motion
+        (&first_step *T *C *G *N *P_tile)
+        (&change T C G N P_tile)
+        (&succ_panel T C G N P_tile *P_tile2)
+        (&succ_panel T C G N (:P_tile P_tile2))
+        (axis_of (:D T) (:A *A_m1))
+        (perp (:A A_m1) (:A2 *A2_m2))
+        (axis_of *D (:A A2_m2))
+        (&panel T C G N (:P_intile *Q))
+        (margin (:B Q) D (:K *J))
+        (> J 0))
+
+      (RULE &frame_index
+        (&first_step *T *C *G *N (:P_tile *P_tile0))
+        (&panel T C G N *P_tile)
+        (relative (:Base P_tile0) (:X P_tile) (:X_rel *R))
+        (opposite (:D T) (:Opp *O))
+        (margin (:B R) (:D O) (:K *I))
+        (>= I 0))
+
+      (RULE &placed
+        (&motion *T *C *G *N *D *J)
+        (&first_step T C G N (:P_tile *P_tile0))
+        (&change T C G N (:P_tile P_tile0) (:P_intile *P) *From *To)
+        (&frame_index T C G N *P_tile *I)
+        (&panel T C G N P_tile *P_intile)
+        (relative (:Base P) (:X P_intile) (:X_rel *R))
+        (axis_of D (:A *A_m1))
+        (perp (:A A_m1) (:A2 *A2_m2))
+        (axis_of (:D *D_across) (:A A2_m2))
+        (margin (:B R) (:D D_across) (:K 0))
+        (opposite D (:Opp *O))
+        (margin (:B R) (:D O) (:K *Tq))
+        (divide (:T Tq) (:Side J) (:Gap 0) (:Part I) (:Remainder 0)))
+
+      (RULE &paint
+        (&placed *T *C *G *N *D *J *P_tile *P_intile (:From *Col3) (:To *Col))
+        (&panel T C G N P_tile P_intile (:Col Col3)))
+
+      (RULE &defect
+        (OR ((&paint *T *C *G *N *D *J *P_tile *P_intile *Col)
+             (NOT (&change T C G N P_tile P_intile (:To Col))))
+            ((&change T C G N P_tile P_intile (:To *Col2))
+             (&motion T C G N D J)
+             (&frame_index T C G N P_tile)
+             (NOT (&paint T C G N D J P_tile P_intile (:Col Col2))))))
+
+      (RULE &refuted
+        (&defect *T *C *G *N *D *J *P_tile *P_intile)
+        (&checked T C G N P_tile)
+        (&scope T C G N P_intile *S))
+
+      (RULE &next_frame
+        (&last_frame *T *C *G *N *P_tile)
+        (&panel T C G N P_tile *P_intile (:Col *Col0))
+        (&scope T C G N P_intile *S)
+        (&checked T C G N)
+        (&motion T C G N *D *J)
+        (NOT (&refuted T C G N S D J))
+        (OR ((&paint T C G N D J P_tile P_intile *Col))
+            ((= Col Col0)
+             (NOT (&paint T C G N D J P_tile P_intile)))))
+
+      (RULE &step_dir
+        (&next_frame *D))
+
+      (RULE &result
+        (&next_frame *T *C *G *N *D *P_intile *Col)
+        (&step_dir D)))))
+
+(ALTS $check "which steps the step is checked against" $EveryStep
+  (ALT $StepFromFirstTwo
+    (INPUT steady-step "the motion and its count are the ones the first two steps demonstrate, and the later frames are not checked"
+      (RULE &checked
+        (OR ((&first_step *T *C *G *N *P_tile))
+            ((&first_step T C G N (:P_tile *P_tile3))
+             (&succ_panel T C G N (:P_tile P_tile3) (:P_tile2 P_tile))
+             (&succ_panel T C G N P_tile)))))))
+
+(ALTS $scope "what the step is read over" $WholePanel
+  (ALT $StepPerLine
+    (INPUT steady-step "each line across the time axis has its own motion and its own count; a line that no step recolors stays as it is"
+      (RULE &scope_split1
+        (&panel *T *C *G *N (:P_intile *P_intile_))
+        (axis_of (:D T) (:A *A_))
+        (axis_of (:D *D_m1) (:A A_))
+        (opposite (:D D_m1) (:Opp *O_m2))
+        (margin (:B P_intile_) (:D D_m1) (:K *K1_m3))
+        (margin (:B P_intile_) (:D O_m2) (:K *K2_m4))
+        (opposite (:D D_m1) (:Opp *O_m1))
+        (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+        (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+        (compose (:A B1_m2) (:B B2_m3) (:C *S_))
+        (relative (:Base S_) (:X P_intile_) (:X_rel *X_m1_)))
+
+      (RULE &scope
+        (&panel *T *C *G *N *P_intile)
+        (axis_of (:D T) *A)
+        (&scope_split1 (:P_intile_ P_intile) (:A_ A) (:S_ *S) (:X_m1_ *X_m1))))))
+
+(ALTS $axis "where the axis the panels stack along comes from" $StoredAxis
+  (ALT $PanelAxisFromLines
+    (INPUT panels "the panels stack along whichever axis the full lines of the divider color cut so, in time order toward the end &time_corner has on that axis; undefined where no axis's lines cut the grid so"
+      ;; Time runs toward this corner's edge on the axis the panels stack along. Every pair stacks its panels top to bottom, so the corner's side on the other axis is open.
+      ;; TODO no-det-plan: &time_corner: the plan gives no verdict
+      (DET &time_corner (ONE))
+
+      (RULE &time_read
+        (&time_corner (:D *Dc))
+        (corner_dir (:C Dc) (:D *T))))
+    ;; One grid per time corner: the frames whose time direction is one of the
+    ;; corner's edges.
+    (RULE &output
+      (&frames_of *T *C *G *N)
+      (&result T C G N (:P_intile *P) *Col)
+      (&time_corner (:D *Dc))
+      (corner_dir (:C Dc) (:D T)))))
+
+(ALTS $width "where the divider width comes from" $StoredWidth
+  (ALT $DividerWidthFromLines
+    (INPUT panels "the dividers are as wide as the runs of full lines of the divider color; undefined where the runs differ in width"
+      (RULE &width_read
+        (&admitted (:N *G))))))
+
+(ALTS $panels "where the panel count comes from" $StoredCount
+  (ALT $AnyPanelCount
+    (INPUT panels "the full lines of the divider color cut the grid into any count of panels of one size"
+      (RULE &count_read
+        (&admitted *N)))))
+
+(RULE &run_end
+  (&run_ray *T *C *G *N *S *P_tile *From *To *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&run_ray T C G N S P_tile From To (:P Q) D Origin)))
+
+;; One grid, read at every time corner.
+(RULE &output
+  (&frames_of (:T *K_t) (:C *K_c) (:G *K_g) (:N *K_n))
+  (&result (:T K_t) (:C K_c) (:G K_g) (:N K_n) (:P_intile *P) *Col))

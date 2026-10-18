@@ -1,0 +1,43 @@
+;; 5bd6f4ac
+
+(DET &diag DiagDirDomain)
+
+(DET &window Frame)
+
+(ALTS $choice "which structure locates the corner block" $Corner
+  (ALT $Count
+    (DET &divisor ConstOutDim)
+
+    (INIT &output_division Division
+      (cell ((:P P_in))
+        (input (:P *P_in)))
+      (parts (A N)
+        (axis_elem *A)
+        (&divisor *N)))
+
+    (RULE &output
+      (input (:P *P_in) *Col)
+      (&output_division.tile (:P P_in) (:P_outer *P_tile) (:P_inner *P))
+      (&diag *D)
+      (same_corner D (:P1 P_tile) (:P2 0))))
+  (ALT $Block
+    (DET &tile_dim ConstOutDim)
+
+    (INIT &output_division2 Division
+      (cell ((:P P_in))
+        (input (:P *P_in)))
+      (side (A K)
+        (axis_elem *A)
+        (&tile_dim (:N *K))))
+
+    (RULE &output
+      (input (:P *P_in) *Col)
+      (&output_division2.tile (:P P_in) (:P_outer *P_tile) (:P_inner *P))
+      (&diag *D)
+      (same_corner D (:P1 P_tile) (:P2 0)))))
+
+(RULE &output
+  (input (:P *P_in) *Col)
+  (&window *P)
+  (&diag *D)
+  (same_corner D (:P1 P) (:P2 P_in)))

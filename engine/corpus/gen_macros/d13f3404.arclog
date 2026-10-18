@@ -1,0 +1,98 @@
+;; d13f3404
+
+(DET &side ConstOutDim)
+
+(INIT &frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&side *N)))
+
+(DET &sweep DiagDirDomain)
+
+(RULE &rays_dir
+  (&sweep *D))
+
+(RULE &rays_node
+  (input *P))
+
+(DET &bg DominantColor)
+
+(RULE &seated
+  (input (:P *P_in) *Col)
+  (NOT (&bg (:C Col)))
+  (&frame.cell *P)
+  (&sweep (:D *Diag))
+  (diag_opposite (:D Diag) (:Opp *Anchor))
+  (ALL ((diag_opposite (:D *Diagm) (:Opp Anchor))
+        (input (:P P_in) (:Col *Colm))
+        (corner_dir (:C Anchor) (:D *D_m1))
+        (margin (:B P_in) (:D D_m1) (:K *K1_m2))
+        (margin (:B P) (:D D_m1) (:K *K2_m3)))
+       ((= K1_m2 K2_m3))))
+
+(RULE &rays_source
+  (&seated *P))
+
+(INIT &rays Distance
+  (key ((&rays_source (:P ^O))
+        (&rays_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&rays_source (:P O))
+           (&rays_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&rays_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&rays_node (:P Q)))
+          ((&rays_source (:P O))
+           (&rays_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&rays_node (:P Q))
+           (= A2 O))
+          ((&rays_source (:P O))
+           (&rays_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&rays_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&rays_node (:P Q)))))
+    (source ((:n O))
+      (&rays_source (:P O))
+      (&rays_dir D))))
+
+(RULE &rays_ray2
+  (&rays.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &rays_ray
+  (&rays_ray2 *P *D *K (:Origin *Src))
+  (&frame.cell P))
+
+(RULE &rays_end
+  (&rays_ray2 *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&rays_ray2 (:P Q) D Origin)))
+
+(RULE &output
+  (OR ((&rays_ray2 *P (:Origin *Q))
+       (&frame.cell P)
+       (&seated (:P Q) *Col))
+      ((&frame.cell P)
+       (NOT (&rays_ray P))
+       (&bg (:C Col)))))

@@ -1,0 +1,8 @@
+;; 759f3fd3
+
+(param &cross Color (3))
+(param &first_ring Color (0))
+(param &ring_cycle (Color Color) (0 4) (4 0))
+(param &bg Color (0))
+(param &fill Color (4))
+(param &period number (2))

@@ -1,0 +1,6 @@
+;; 45bbe264
+
+(representative 23581191)
+
+(param &bg Color (0))
+(param &cross_color Color (2))

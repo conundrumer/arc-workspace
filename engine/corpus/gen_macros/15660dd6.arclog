@@ -1,0 +1,250 @@
+;; 15660dd6
+
+(RULE &rings_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &frame_col VanishedColor)
+
+(RULE &frame_cell
+  (input *P *Col)
+  (&frame_col (:C Col)))
+
+;; One panel per ring of frame color.
+(INIT &rings Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&frame_cell *P)
+         (&rings_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&frame_cell (:P P3)))
+        ((&frame_cell P)
+         (= P3 P)))))
+
+(RULE &rings_component
+  (&rings.class (:a *P) *Id))
+
+;; Panel columns run along this axis; bands and their labels run across it.
+(DET &layout_axis AxisDomain)
+
+(INIT &panel BoundingBox
+  (key ((&rings_component *P ^Id))
+    (cell (P)
+      (&rings_component *P Id))))
+
+(RULE &panel_pos_split1
+  (&panel.box (:key *Id) (:B *B_))
+  (&layout_axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B B_) (:D D_m1) (:K *K1_m3))
+  (margin (:B B_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_col_))
+  (relative (:Base P_col_) (:X B_) (:X_rel *P_band_)))
+
+(INIT &lattice BoundingBox
+  (cell (P)
+    (&frame_cell *P)))
+
+(RULE &in_lattice_inside1
+  (input (:P *P_))
+  (&lattice.box (:B *B_))
+  (dir_elem (:D *D_m1))
+  (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+  (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+  (< K_m3 0))
+
+(RULE &out_pos_split1
+  (&lattice.box (:B *B_lat))
+  (input (:P *P_grid))
+  (relative (:Base B_lat) (:X P_grid) (:X_rel *P_lat_))
+  (&layout_axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_lat_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_lat_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_along_))
+  (relative (:Base P_along_) (:X P_lat_) (:X_rel *X_m1_)))
+
+(RULE &out_pos_split2
+  (&panel.box (:key *Id) *B)
+  (input (:P *P_grid))
+  (relative (:Base B) (:X P_grid) (:X_rel *P_intile_))
+  (&layout_axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_intile_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_intile_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m2_))
+  (relative (:Base X_m2_) (:X P_intile_) (:X_rel *P_across_)))
+
+(DET &bg DominantColor)
+
+(DET &ink VanishedColor)
+
+(RULE &ring_pos
+  (input *P)
+  (&panel.box *B)
+  (ALL ((dir_elem (:D *D_m1m))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1m) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B P) (:D *D_m1) (:K *K_m2))
+  (margin B (:D D_m1) (:K K_m2))
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(RULE &inner_cell
+  (input *P *Col)
+  (&panel.box (:key *Id) *B)
+  (ALL ((input P (:Col *Colm))
+        (&panel.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_intile))
+  (relative (:Base 0) (:X P_intile) (:X_rel *R_m1))
+  (axis_of (:D *D1_m2) (:A *A1_m3))
+  (opposite (:D D1_m2) (:Opp *O1_m4))
+  (perp (:A A1_m3) (:A2 *A2_m5))
+  (axis_of (:D *D2_m6) (:A A2_m5))
+  (opposite (:D D2_m6) (:Opp *O2_m7))
+  (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+  (> K1_m8 0)
+  (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+  (> K2_m9 0)
+  (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+  (> K3_m10 0)
+  (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+  (> K4_m11 0))
+
+(RULE &panel_pos
+  (&panel.box (:key *Id) *B)
+  (&layout_axis *A)
+  (&panel_pos_split1 (:B_ B) (:A_ A) (:P_col_ *P_col) (:P_band_ *P_band)))
+
+(RULE &band_label
+  (input (:P *P_label) *Col)
+  (NOT (&bg (:C Col)))
+  (ALL ((&lattice.box *B))
+       ((&in_lattice_inside1 (:P_ P_label) (:B_ B))))
+  (&panel_pos *P_band)
+  (ALL ((input (:P P_label) (:Col *Colm))
+        (dir_elem (:D *D_m1))
+        (relative (:Base P_band) (:X P_label) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(INIT &panel_color Singleton
+  (key ((&inner_cell ^Id *Col))
+    (member ((:v Col))
+      (&inner_cell Id *Col))))
+
+(RULE &donor
+  (&panel_pos *Id *P_col)
+  (NOT (&panel_color.plural (:key Id))))
+
+;; One band of the lattice.
+(INIT &out_frame Frame
+  (extent (A N)
+    (OR ((&layout_axis *A)
+         (&lattice.box *B)
+         (&lattice.cell *P)
+         (axis_elem A)
+         (relative (:Base B) (:X P) (:X_rel *R_m1))
+         (frame_extent (:P R_m1) A *N))
+        ((&layout_axis (:A *A2))
+         (perp (:A A2) (:A2 A))
+         (&panel.box (:key *Id) (:B *B2))
+         (&panel.cell (:key Id) (:P *P2))
+         (axis_elem A)
+         (relative (:Base B2) (:X P2) (:X_rel *R_m12))
+         (frame_extent (:P R_m12) A N)))))
+
+(RULE &out_pos
+  (input (:P *P_grid))
+  (&panel.box (:key *Id) *B)
+  (ALL ((&panel.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P_grid) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P_grid) (:X_rel *P_intile))
+  (&panel_pos Id *P_col)
+  (&lattice.box (:B *B_lat))
+  (ALL ((dir_elem (:D *D_m1m))
+        (relative (:Base B_lat) (:X P_grid) (:X_rel *R_m2m))
+        (margin (:B R_m2m) (:D D_m1m) (:K *K_m3m)))
+       ((>= K_m3m 0)))
+  (relative (:Base B_lat) (:X P_grid) (:X_rel *P_lat))
+  (&layout_axis *A)
+  (&out_pos_split1 (:P_lat_ P_lat) (:A_ A) (:P_along_ *P_along) (:X_m1_ *X_m1))
+  (&out_pos_split2 (:P_intile_ P_intile) (:A_ A) (:X_m2_ *X_m2) (:P_across_ *P_across))
+  (compose (:A P_along) (:B P_across) (:C *P)))
+
+(ALTS $donor "two hypotheses name the donor of a column" $Solid
+  (ALT $Odd
+    (INIT &same Inclusion
+      (pattern ((:pattern Id) (:m P_intile Col))
+        (&inner_cell *Id *P_intile *Col))
+      (observed ((:observed Id) (:m P_intile Col))
+        (&inner_cell *Id *P_intile *Col)))
+
+    (RULE &donor
+      (&panel_pos *Id *P_col)
+      (ALL ((&panel_pos Id (:P_col *P_colm))
+            (&panel_pos (:Id *Id2) (:P_col P_colm))
+            (&same.equal (:observed Id) (:pattern Id2)))
+           ((= Id Id2))))))
+
+(ALTS $render "two hypotheses render the interior" $Map
+  (ALT $Mask
+    (RULE &output
+      (OR ((&out_pos *P_col *P_intile *P)
+           (&stencil P_col P_intile (:Col *Col2))
+           (OR ((NOT (&bg (:C Col2)))
+                (&fill P_col *Col))
+               ((&bg (:C Col2))
+                (&bg (:C Col)))))
+          ((&out_pos (:P_col *P_col2) (:P_intile *P_intile2) P)
+           (&ring_pos (:P_intile P_intile2))
+           (&border (:P_col P_col2) Col))
+          ((&out_frame.cell P)
+           (NOT (&out_pos P))
+           (&bg (:C Col)))))))
+
+(RULE &fill
+  (&donor *P_col *Id)
+  (&inner_cell Id *Col))
+
+(RULE &border
+  (&donor *P_col *Id)
+  (&panel_pos Id *P_band)
+  (&band_label P_band *Col))
+
+(RULE &stencil
+  (&donor *P_col)
+  (&panel_pos *Id P_col)
+  (NOT (&donor P_col Id))
+  (&inner_cell Id *P_intile *Col))
+
+(RULE &output
+  (OR ((&out_pos *P_col *P_intile *P)
+       (&ring_pos P_intile)
+       (&border P_col *Col))
+      ((&out_frame.cell P)
+       (NOT (&out_pos P))
+       (&bg (:C Col)))
+      ((&out_pos (:P_col *P_col2) (:P_intile *P_intile2) P)
+       (&stencil (:P_col P_col2) (:P_intile P_intile2) (:Col *Col2))
+       (IF ((&ink (:C Col2)))
+           ((&fill (:P_col P_col2) Col))
+           ((= Col Col2))))))

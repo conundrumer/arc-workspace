@@ -1,0 +1,72 @@
+;; 2bee17df
+
+(RULE &line_of_split1
+  (input (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(DET &open DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(RULE &open_cell
+  (input *P *Col)
+  (&open (:C Col)))
+
+(RULE &line_of
+  (input *P)
+  (axis_elem *A)
+  (&line_of_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&open_cell *P)))
+
+(RULE &boxed_line
+  (&bbox.box *B)
+  (&line_of *P *L)
+  (ALL ((&line_of P (:L *Lm))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(RULE &painted
+  (&boxed_line *P *L)
+  (ALL ((&boxed_line (:P *Pm) L))
+       ((&open_cell (:P Pm)))))
+
+(ALTS $choice "what makes a line qualify" $Clear
+  (ALT $Widest
+    (INIT &widest_count Cardinality
+      (key ((&open_cell *P)
+            (&line_of P ^A ^L))
+        (member ((:m P))
+          (&open_cell *P)
+          (&line_of P A L))))
+
+    (INIT &widest Order
+      (key ((&widest_count.size (:key ^A *L)))
+        (member ((:t L))
+          (&widest_count.size (:key A *L)))
+        (score ((:t L) (:S N))
+          (&widest_count.size (:key A *L) *N))))
+
+    (RULE &painted
+      (&open_cell *P)
+      (&line_of P *A *L)
+      (&widest.maximal (:key A) (:t L)))))
+
+(RULE &output
+  (input *P (:Col *Col2))
+  (IF ((&painted P))
+      ((&fill (:C *Col)))
+      ((= Col Col2))))

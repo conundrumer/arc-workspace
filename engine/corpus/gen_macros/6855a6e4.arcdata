@@ -1,0 +1,5 @@
+;; 6855a6e4
+
+(param &bg Color (0))
+(param &mirror Color (2))
+(param &mover Color (5))

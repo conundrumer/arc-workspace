@@ -1,0 +1,6 @@
+;; 230f2e48
+
+(param &bg Color (7))
+(param &body Color (2))
+(param &anchor Color (5))
+(param &joint Color (0))

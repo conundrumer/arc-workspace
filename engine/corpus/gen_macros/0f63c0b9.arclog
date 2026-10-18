@@ -1,0 +1,122 @@
+;; 0f63c0b9
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The marks spread along this Dir's axis and their lines run across it. A tie-winning reach travels toward tie_dir.
+(DET &tie_dir DirDomain)
+
+(RULE &reach_dir
+  (&mark (:P *Key))
+  (&tie_dir (:D *D_tie))
+  (axis_of (:D D_tie) *A)
+  (axis_of *D A))
+
+(RULE &reach_dir_ray
+  (&reach_dir *Key *D))
+
+(RULE &reach_node
+  (&reach_dir *Key)
+  (input *P))
+
+(RULE &mark_line
+  (&mark (:P *P_mark))
+  (input *P)
+  (&tie_dir *D)
+  (axis_of D *A)
+  (perp A (:A2 *A_line))
+  (perp (:A A_line) (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B P_mark) (:D D_m2) (:K K_m3)))
+
+(RULE &reach_source
+  (&mark_line (:P_mark *Key) *P))
+
+;; Each line reaches across the marks' axis, one cell per step.
+(INIT &reach Distance
+  (key ((&reach_source (:Key ^Ky) (:P ^O))
+        (&reach_dir_ray (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&reach_source (:Key Ky) (:P O))
+           (&reach_dir_ray (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&reach_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&reach_node (:Key Ky) (:P Q)))
+          ((&reach_source (:Key Ky) (:P O))
+           (&reach_dir_ray (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&reach_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&reach_source (:Key Ky) (:P O))
+           (&reach_dir_ray (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&reach_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&reach_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&reach_source (:Key Ky) (:P O))
+      (&reach_dir_ray (:Key Ky) D))))
+
+(RULE &reach_ray
+  (&reach.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &reach_end
+  (&reach_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&reach_ray Key (:P Q) D Origin)))
+
+(RULE &reach_cell
+  (&mark (:P *Key))
+  (input *P))
+
+(RULE &beaten
+  (&reach_ray (:Key *P_mark) *P *K)
+  (&reach_cell (:Key P_mark) P)
+  (&reach_ray (:Key *M2) P (:D *D2) (:K *K2))
+  (&reach_cell (:Key M2) P)
+  (!= M2 P_mark)
+  (OR ((< K2 K))
+      ((= K2 K)
+       (&tie_dir (:D D2)))))
+
+(RULE &territory
+  (&reach_ray (:Key *M) *P)
+  (&reach_cell (:Key M) P)
+  (NOT (&beaten P (:P_mark M)))
+  (&mark (:P M) *Col))
+
+(RULE &paint
+  (&territory *P *Col)
+  (OR ((dir_elem *D)
+       (margin (:B P) D (:K 0)))
+      ((&mark_line P))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))

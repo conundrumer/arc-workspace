@@ -1,0 +1,5 @@
+;; 2697da3f
+
+(param &bg Color (0))
+(param &arm Dir (DIR_L))
+(param &sym Sym (SYM_C4))

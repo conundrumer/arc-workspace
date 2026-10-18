@@ -1,0 +1,4 @@
+;; c3f564a4
+
+(param &noise Color (0))
+(param &diag DiagAxis (DAXIS_AD))

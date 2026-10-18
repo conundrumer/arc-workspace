@@ -1,0 +1,75 @@
+;; 1a07d186
+
+(RULE &cell_line_split1
+  (input (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(DET &bg DominantColor)
+
+(RULE &cell_line
+  (input *P)
+  (axis_elem *A)
+  (&cell_line_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+(INIT &line_color Singleton
+  (key ((&cell_line *P ^A ^L)
+        (input P *Col))
+    (member ((:v Col))
+      (&cell_line *P A L)
+      (input P *Col))))
+
+(RULE &line
+  (&line_color.value (:key *A *L) (:v *Col))
+  (NOT (&bg (:C Col))))
+
+(RULE &line_cell
+  (&line *A *L *Col)
+  (&cell_line *P A L))
+
+(RULE &loose
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&line_cell P)))
+
+(RULE &arrive_split1
+  (&loose (:P *P_grid_in_) *Col)
+  (&line (:A *A_) *L Col)
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_grid_in_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_grid_in_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_in_))
+  (relative (:Base L_in_) (:X P_grid_in_) (:X_rel *Across_)))
+
+(RULE &arrive
+  (&loose (:P *P_grid_in) *Col)
+  (&line *A *L Col)
+  (&arrive_split1 (:P_grid_in_ P_grid_in) (:A_ A) (:L_in_ *L_in) (:Across_ *Across))
+  (axis_of *D A)
+  (dir_elem D)
+  (margin (:B L_in) D (:K *K1_m1))
+  (margin (:B L) D (:K *K2_m2))
+  (< K1_m1 K2_m2)
+  (compose (:A L) (:B Across) (:C *P_foot))
+  (step_offset D (:V *V_m3))
+  (compose (:A P_foot) (:B V_m3) (:C *P)))
+
+(RULE &output
+  (input *P)
+  (OR ((&line_cell P *Col))
+      ((&arrive P Col))
+      ((NOT (&line_cell P))
+       (NOT (&arrive P))
+       (&bg (:C Col)))))

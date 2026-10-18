@@ -1,0 +1,235 @@
+;; 4acc7107
+
+(RULE &shapes_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(RULE &shapes_node
+  (input *P (:Col *Key))
+  (NOT (&bg (:C Key))))
+
+;; The shapes: connected runs of one color.
+(INIT &shapes Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&shapes_node (:Key *Ky) *P)
+         (&shapes_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&shapes_node (:Key Ky) (:P P2)))
+        ((&shapes_node (:Key Ky) P)
+         (= P2 P)))))
+
+(RULE &shapes_component
+  (&shapes.class (:a *Key *P) *Id))
+
+;; The corner the layout builds from: lanes pile from one of its edges, and the shapes of a lane pile from the other.
+(DET &corner DiagDirDomain)
+
+;; The axis the shapes of a lane pile along.
+(DET &stack_axis AxisDomain)
+
+;; Blank lines between adjacent lanes, and between adjacent slots.
+(DET &gap DivisorRatio)
+
+(RULE &stack_dir
+  (&corner (:D *Cnr))
+  (&stack_axis *A)
+  (corner_dir (:C Cnr) A *D)
+  (perp A (:A2 *A2_m2))
+  (corner_dir (:C Cnr) (:A A2_m2) (:D *D2_m1)))
+
+(RULE &lane_dir
+  (&corner (:D *Cnr))
+  (&stack_axis *A)
+  (corner_dir (:C Cnr) A (:D *D1_m1))
+  (perp A (:A2 *A2_m2))
+  (corner_dir (:C Cnr) (:A A2_m2) *D))
+
+(RULE &shape_color
+  (&shapes_component (:Key *Col) *Id))
+
+(INIT &bbox BoundingBox
+  (key ((&shapes_component *P ^Id))
+    (cell (P)
+      (&shapes_component *P Id))))
+
+(RULE &shape_size
+  (&shapes_component *P *Id)
+  (&bbox.box (:key Id) *B)
+  (&stack_axis *A)
+  (perp A *A2)
+  (axis_elem A)
+  (relative (:Base B) (:X P) (:X_rel *R_m1))
+  (frame_extent (:P R_m1) A (:N *Depth))
+  (axis_elem (:A A2))
+  (relative (:Base B) (:X P) (:X_rel *R_m2))
+  (frame_extent (:P R_m2) (:A A2) (:N *Width)))
+
+(RULE &lane_dist
+  (&lane_dir *D)
+  (&bbox.box (:key *Id) *B)
+  (margin B D *K))
+
+;; Shapes of one color rank by nearness to the lane edge.
+(INIT &shape_ord Order
+  (key ((&shape_color *Id ^Col))
+    (member ((:t Id))
+      (&shape_color *Id Col))
+    (before ((:a Id) (:b Id2))
+      (&shape_color *Id Col)
+      (&lane_dist Id *K)
+      (&shape_color (:Id *Id2) Col)
+      (&lane_dist (:Id Id2) (:K *K2))
+      (< K K2))))
+
+(RULE &color_dist
+  (&shape_ord.minimal (:key *Col) (:t *Id))
+  (&lane_dist Id *K))
+
+(INIT &color_ord Order
+  (member ((:t Col))
+    (&shape_color *Col))
+  (before ((:a Col) (:b Col2))
+    (&color_dist *Col *K)
+    (&color_dist (:Col *Col2) (:K *K2))
+    (< K K2)))
+
+;; A lane is as wide as its widest shape.
+(INIT &lane_size Order
+  (key ((&shape_color *Id ^Col)
+        (&shape_size Id (:Width *W)))
+    (member ((:t W))
+      (&shape_color *Id Col)
+      (&shape_size Id (:Width *W)))
+    (score ((:t W) (:S W))
+      (&shape_color *Id Col)
+      (&shape_size Id (:Width *W)))))
+
+(RULE &corner_cell
+  (input *P)
+  (&corner (:D *Cnr))
+  (corner_dist P (:Diag Cnr) (:K 0)))
+
+(RULE &claims
+  (OR ((&lane_size.maximal (:t *N))
+       (&lane_dir *D))
+      ((&shape_size (:Depth N))
+       (&stack_dir D)))
+  (&corner_cell (:P *Z))
+  (opposite D (:Opp *D_on))
+  (&gap (:K *G))
+  (dir8_opposite (:D D_on) (:D2 *O_m2))
+  (edge_inset (:D O_m2) (:K N) (:B *B1_m3))
+  (edge_inset (:D D_on) (:K N) (:B *I_m5))
+  (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+  (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+  (compose (:A Z) (:B V_m1) (:C *Q))
+  (dir8_opposite (:D D_on) (:D2 *O_m7))
+  (edge_inset (:D O_m7) (:K G) (:B *B1_m8))
+  (edge_inset (:D D_on) (:K G) (:B *I_m10))
+  (relative (:Base I_m10) (:X 0) (:X_rel *B2_m9))
+  (compose (:A B1_m8) (:B B2_m9) (:C *V_m6))
+  (compose (:A Q) (:B V_m6) (:C *Y))
+  (input *P)
+  (margin (:B P) D *K)
+  (dir8_opposite (:D D_on) (:D2 *O_m12))
+  (edge_inset (:D O_m12) K (:B *B1_m13))
+  (edge_inset (:D D_on) K (:B *I_m15))
+  (relative (:Base I_m15) (:X 0) (:X_rel *B2_m14))
+  (compose (:A B1_m13) (:B B2_m14) (:C *V_m11))
+  (compose (:A Z) (:B V_m11) (:C *L))
+  (dir_elem D)
+  (margin (:B L) D (:K *K1_m16))
+  (margin (:B Y) D (:K *K2_m17))
+  (< K1_m16 K2_m17))
+
+(RULE &lane_line
+  (&lane_size.maximal (:key *Col) (:t *W))
+  (&lane_dir *D)
+  (&claims D (:N W) *K))
+
+;; Lanes pile from the lane edge in color rank: each lane's lines, gap
+;; included, come before every later lane's.
+(INIT &lane_pile Order
+  (member ((:t Col K))
+    (&lane_line *Col *K))
+  (before ((:a Col K) (:b (:Col Col2) (:K K2)))
+    (&lane_line *Col *K)
+    (&lane_line (:Col *Col2) (:K *K2))
+    (&color_ord.before (:a Col) (:b Col2))))
+
+(RULE &lane
+  (&lane_pile.rank (:t *Col) *R)
+  (&corner_cell (:P *Z))
+  (&lane_dir *D)
+  (opposite D (:Opp *D_on))
+  (dir8_opposite (:D D_on) (:D2 *O_m2))
+  (edge_inset (:D O_m2) (:K R) (:B *B1_m3))
+  (edge_inset (:D D_on) (:K R) (:B *I_m5))
+  (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+  (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+  (compose (:A Z) (:B V_m1) (:C *P)))
+
+(RULE &shape_line
+  (&shape_size *Id (:Depth *N))
+  (&stack_dir *D)
+  (&claims D N *K))
+
+;; Within a lane, shapes pile from the stack edge in shape rank.
+(INIT &slot_pile Order
+  (key ((OR ((&shape_color *Id ^Col)
+             (&shape_line Id *K))
+            ((&shape_line Id K)
+             (&shape_line (:Id *Id2) (:K *K2))
+             (&shape_ord.before (:key Col) (:a Id) (:b Id2)))))
+    (member ((:t Id K))
+      (&shape_color *Id Col)
+      (&shape_line Id *K))
+    (before ((:a Id K) (:b (:Id Id2) (:K K2)))
+      (&shape_line *Id *K)
+      (&shape_line (:Id *Id2) (:K *K2))
+      (&shape_ord.before (:a Id) (:b Id2)))))
+
+(RULE &slot
+  (&slot_pile.rank (:key *Col) (:t *Id) *R)
+  (&lane Col (:P *P0))
+  (&stack_dir *D)
+  (opposite D (:Opp *D_on))
+  (dir8_opposite (:D D_on) (:D2 *O_m2))
+  (edge_inset (:D O_m2) (:K R) (:B *B1_m3))
+  (edge_inset (:D D_on) (:K R) (:B *I_m5))
+  (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+  (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+  (compose (:A P0) (:B V_m1) (:C *P)))
+
+(RULE &anchor
+  (&bbox.box (:key *Id) *B)
+  (&corner (:D *Cnr))
+  (input *P)
+  (ALL ((&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (ALL ((&bbox.box (:key (:Id *Idmm)) B)
+        (corner_dir (:C Cnr) (:D *D_m1m))
+        (margin (:B P) (:D D_m1m) (:K *K1_m2))
+        (margin B (:D D_m1m) (:K *K2_m3)))
+       ((= K1_m2 K2_m3))))
+
+(RULE &move
+  (&anchor *Id (:P *A))
+  (&slot Id (:P *P_slot))
+  (relative (:Base A) (:X P_slot) (:X_rel *V)))
+
+(RULE &placed
+  (&shapes_component (:Key *Col) (:P *P2) *Id)
+  (&move Id *V)
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&placed *P *Col))
+      ((input P)
+       (NOT (&placed P))
+       (&bg (:C Col)))))

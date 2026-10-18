@@ -1,0 +1,61 @@
+;; 484b58aa
+
+(DET &hole ChangedColor)
+
+(RULE &intact
+  (input *P *Col)
+  (NOT (&hole (:C Col))))
+
+(RULE &damaged
+  (input *P *Col)
+  (&hole (:C Col)))
+
+(INIT &si Periods
+  (cell (P (:v Col))
+    (&intact *P *Col)))
+
+(RULE &period_at
+  (&damaged *P)
+  (&si.fundamental_period *A *K))
+
+(ALTS $choice "the scope the period is measured over" $Lattice
+  (ALT $Lines
+    (DET &axis AxisDomain)
+
+    (INIT &si_line Periods
+      (key ((&intact *P *Col)
+            (&axis *A)
+            (split P A (:Across ^L)))
+        (cell (P (:v Col))
+          (&intact *P *Col)
+          (&axis *A)
+          (split P A (:Across L)))))
+
+    (RULE &period_at
+      (&damaged *P)
+      (&axis *A)
+      (split P A (:Across *L))
+      (&si_line.fundamental_period (:key L) A *K))))
+
+(RULE &axis_agree
+  (&damaged *P)
+  (input (:P *Q))
+  (axis_of *D *A)
+  (OR ((&period_at P A *K)
+       (margin (:B P) D (:K *T))
+       (divide T (:Side K) (:Gap 0) (:Remainder *R))
+       (margin (:B Q) D (:K *T2))
+       (divide (:T T2) (:Side K) (:Gap 0) (:Remainder R)))
+      ((NOT (&period_at P A))
+       (same_dist D (:P1 P) (:P2 Q)))))
+
+(RULE &orbit
+  (&axis_agree *P *A *Q)
+  (perp A *A2)
+  (&axis_agree P (:A A2) Q))
+
+(RULE &output
+  ;; Intact cells pass through under every case.
+  (OR ((&intact *P *Col))
+      ((&orbit P *Q)
+       (&intact (:P Q) Col))))

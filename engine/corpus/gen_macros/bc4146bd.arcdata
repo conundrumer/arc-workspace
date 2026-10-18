@@ -1,0 +1,11 @@
+;; bc4146bd
+
+(representative 4c4377d9)
+
+(param &tile_d4 (Position D4)
+  (grid
+    (D4_ID D4_LR D4_ID D4_LR D4_ID)))
+(param &arr_pos Position (Frame
+  ((:A AXIS_V) (:N 1))
+  ((:A AXIS_H) (:N 5))))
+(param &strip_axis Axis (AXIS_H))

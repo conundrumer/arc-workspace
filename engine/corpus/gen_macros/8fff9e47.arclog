@@ -1,0 +1,129 @@
+;; 8fff9e47
+
+(RULE &peel_depth_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &block_size TileCount)
+
+(RULE &block_division_axis_split1
+  (input (:P *P_grid_in_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_grid_in_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_grid_in_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+  (relative (:Base Pi_) (:X P_grid_in_) (:X_rel *X_m1_)))
+
+(RULE &block_division_side
+  (axis_elem *A)
+  (&block_size (:N *K)))
+
+(RULE &block_division_axis
+  (OR ((input *P)
+       (axis_elem *A)
+       (&block_size (:N *K))
+       (axis_of *D A)
+       (opposite D (:Opp *O))
+       (margin (:B P) D (:K *T))
+       (margin (:B P) (:D O) (:K *T2))
+       (divide T (:Side K) (:Gap 0) (:Part *I) (:Remainder *R))
+       (divide (:T T2) (:Side K) (:Gap 0) (:Part *I2) (:Remainder *R2))
+       (opposite D (:Opp *O_m1))
+       (edge_inset D (:K I) (:B *B1_m2))
+       (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+       (compose (:A B1_m2) (:B B2_m3) (:C *P_outer))
+       (opposite D (:Opp *O_m4))
+       (edge_inset D (:K R) (:B *B1_m5))
+       (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+       (compose (:A B1_m5) (:B B2_m6) (:C *P_inner))
+       (frame_extent (:P P_inner) A (:N K)))
+      ((input P)
+       (axis_elem A)
+       (NOT (&block_division_side A))
+       (&block_division_axis_split1 (:P_grid_in_ P) (:A_ A) (:Pi_ P_inner) (:X_m1_ *X_m1))
+       (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
+
+(RULE &block_division_tile
+  (&block_division_axis *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+  (perp (:A A1) *A2)
+  (&block_division_axis P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+  (compose (:A Po1) (:B Po2) (:C *P_outer))
+  (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+(RULE &block
+  (input (:P *P_grid_in) *Col)
+  (&block_division_tile (:P P_grid_in) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+;; One ring per block.
+(INIT &rings Cardinality
+  (member ((:m P_tile))
+    (&block *P_tile)))
+
+;; A quarter is one cell per ring wide.
+(INIT &quarter Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&rings.size *N)))
+
+(INIT &out_frame_tiling Tiling
+  (outer ((:P P_intile))
+    (&block *P_intile))
+  (inner ((:P P_inner))
+    (&quarter.cell (:P *P_inner))))
+
+(RULE &out_frame
+  (&out_frame_tiling.cell (:P_outer *P_intile) (:P *P_grid_out)))
+
+;; The output frame peels into concentric rings.
+(INIT &peel Boundary
+  (cell (P)
+    (&out_frame (:P_grid_out *P))))
+
+(INIT &peel_depth Distance
+  (edge ((:a P) (:b P2))
+    (&out_frame (:P_grid_out *P))
+    (&peel_depth_steps (:Delta *S))
+    (compose (:A P) (:B S) (:C *P2))
+    (&out_frame (:P_grid_out P2)))
+  (source ((:n P))
+    (&peel.boundary *P)))
+
+;; The order the blocks nest in, outermost first.
+(DET &corner DiagDirDomain)
+
+(DET &axis AxisDomain)
+
+;; The blocks in nesting order: rank 0 is the outermost ring.
+(INIT &nesting Order
+  (member ((:t P_tile))
+    (&block *P_tile))
+  (before ((:a P_tile) (:b P_tile2))
+    (&block *P_tile)
+    (&block (:P_tile *P_tile2))
+    (&corner *D)
+    (&axis *A)
+    (OR ((corner_dir (:C D) A (:D *D2))
+         (dir_elem (:D D2))
+         (margin (:B P_tile) (:D D2) (:K *K1_m1))
+         (margin (:B P_tile2) (:D D2) (:K *K2_m2))
+         (< K1_m1 K2_m2))
+        ((corner_dir (:C D) A (:D D2))
+         (perp A (:A2 *A2_m3))
+         (corner_dir (:C D) (:A A2_m3) (:D *D22))
+         (margin (:B P_tile) (:D D2) (:K *K_m4))
+         (margin (:B P_tile2) (:D D2) (:K K_m4))
+         (dir_elem (:D D22))
+         (margin (:B P_tile) (:D D22) (:K *K1_m5))
+         (margin (:B P_tile2) (:D D22) (:K *K2_m6))
+         (< K1_m5 K2_m6)))))
+
+(RULE &output
+  (&peel_depth.distance (:n *P) *K)
+  (&nesting.rank (:t *P_tile) (:R K))
+  (&out_frame *P_intile (:P_grid_out P))
+  (&block P_tile P_intile *Col))

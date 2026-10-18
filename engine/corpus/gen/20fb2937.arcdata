@@ -1,0 +1,13 @@
+;; 20fb2937
+
+(param &bg Color (7))
+(param &header_dir Dir (DIR_T))
+(param &swatch_dir Dir (DIR_T))
+(param &band_gap number (1))
+(param &tile_count (Axis number) (AXIS_V 2) (AXIS_H 3))
+(param &tile_dim (Axis number) (AXIS_V 3) (AXIS_H 3))
+(param &shape Offset
+  (grid
+    (1 1 1)
+    (1 @1 1)
+    (1 1 1)))

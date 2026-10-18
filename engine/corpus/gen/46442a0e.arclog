@@ -1,0 +1,46 @@
+;; 46442a0e
+
+(DET &tile_d4 TileD4)
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&tile_d4 (:Pt *P_tile)))
+  (inner ((:P P_intile))
+    (input (:P *P_in))
+    (&tile_d4 (:T *D))
+    (apply D (:P P_in) (:P_out *P_intile))))
+
+(ALTS $choice "data-equivalent on this task" $Lookup
+  (ALT $Rot
+    (DET &anchor DiagDirDomain)
+
+    (DET &arr_pos Frame)
+
+    (RULE &anchor_tile
+      (&arr_pos *P)
+      (&anchor (:D *Diag))
+      (same_corner (:D Diag) (:P1 P) (:P2 0)))
+
+    (INIT &output_tiling2 Tiling
+      (outer ((:P T2))
+        (&anchor_tile (:P *T))
+        (c4_elem (:D *R))
+        (apply (:D R) (:P T) (:P_out *T2)))
+      (inner ((:P P2))
+        (input *P)
+        (c4_elem (:D *R))
+        (apply (:D R) P (:P_out *P2))))
+
+    (RULE &output
+      (&anchor_tile (:P *T))
+      (input (:P *P3) *Col)
+      (c4_elem (:D *R))
+      (apply (:D R) (:P T) (:P_out *T2))
+      (apply (:D R) (:P P3) (:P_out *P2))
+      (&output_tiling2.cell (:P_outer T2) (:P_inner P2) *P))))
+
+(RULE &output
+  (input (:P *P_in) *Col)
+  (&tile_d4 (:Pt *P_tile) (:T *D))
+  (apply D (:P P_in) (:P_out *P_intile))
+  (&output_tiling.cell (:P_outer P_tile) (:P_inner P_intile) *P))

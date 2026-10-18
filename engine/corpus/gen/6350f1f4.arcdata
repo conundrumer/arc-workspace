@@ -1,0 +1,4 @@
+;; 6350f1f4
+
+(param &sep Color (0))
+(param &noise Color (5))

@@ -1,0 +1,364 @@
+;; b548a754
+
+(INPUT background "every cell outside the box and the marker is &background"
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT framed-box "one solid rectangle on &background, with a 1-wide border of one color around an interior of another color"
+
+  (RULE &piece_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background Col)))
+
+  (DET_OR_RULE &marker_color RarestColor)
+
+  (RULE &marker
+    (input *P *Col)
+    (&marker_color Col))
+
+  (RULE &body
+    (&ink *P)
+    (NOT (&marker P)))
+
+  (INIT &piece Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((&body *P)
+           (&piece_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&body (:P P3)))
+          ((&body P)
+           (= P3 P)))))
+
+  (RULE &piece_component
+    (&piece.class (:a *P) *Id))
+
+  (RULE &box_cell
+    (&body *P))
+
+  (INIT &box BoundingBox
+    (cell (P)
+      (&box_cell *P)))
+
+  (INIT &core_color Singleton
+    (member ((:v Col))
+      (&box.box *B)
+      (&box_cell *P)
+      (ALL ((&box_cell P)
+            (&box.box B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((> K_m3 0)))
+      (input P *Col)))
+
+  (INIT &rim_color Singleton
+    (member ((:v Col))
+      (&box.box *B)
+      (&box_cell *P)
+      (dir_elem (:D *D_m1))
+      (relative (:Base B) (:X P) (:X_rel *R_m2))
+      (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+      (<= K_m3 0)
+      (input P *Col)))
+
+  (RULE &multi
+    (&piece_component *P *Id)
+    (&piece_component (:P *Q) Id)
+    (!= P Q))
+
+  (INIT &the_piece Singleton
+    (member ((:v Id))
+      (&multi *Id))))
+
+(INPUT marker "one cell of &marker_color, outside the box, within the box's span on one axis, so that it lies straight out from one side of the box"
+
+  (INIT &one Singleton
+    (member ((:v P))
+      (&marker *P))))
+
+(OUTPUT stretch-to-marker "the side of the box that faces the marker moves out to the marker's row or column, and the opposite side stays; the stretched box is drawn with the same 1-wide border color and the interior color fills its inside, so the marker cell becomes border"
+
+  ;; The stretched box: the bounding box of the box and the markers.
+  (INIT &stretched BoundingBox
+    (cell (P)
+      (OR ((&box_cell *P))
+          ((&box.box)
+           (&marker P))))))
+
+(OUTPUT keep-rest "every other cell keeps its input color")
+
+(ALTS $b "which cells are the box" $AllInk
+  (ALT $MultiCellPiece
+    (INPUT framed-box "the box is the one 4-connected piece of more than one cell among the cells outside &background and the markers; undefined where there is no such piece or more than one"
+      (RULE &box_cell
+        (&the_piece.value (:v *Id))
+        (&piece_component *P Id)))
+    (INPUT background "every cell outside the box, the marker and the pieces of one cell is &background")))
+
+(ALTS $m "which cells are markers" $StoredMarker
+  (ALT $LoneMarker
+    (INPUT marker "the marker is a non-background cell with no non-background 4-neighbor, of any color; undefined where the dot touches the box, and where there is no such cell"
+      (RULE &touching
+        (&ink *P)
+        (dir_elem *D)
+        (step_offset D (:V *V_m1))
+        (compose (:A P) (:B V_m1) (:C *Q))
+        (&ink (:P Q)))
+
+      (RULE &marker
+        (&ink *P)
+        (NOT (&touching P))))))
+
+(ALTS $c "how many markers an input holds" $OneMarker
+  (ALT $EachMarker
+    (INPUT marker "one or more marker cells, each straight out from a side of the box")
+    (OUTPUT stretch-to-marker "each side that faces a marker moves out to the line of the farthest marker on that side")
+    (RULE &output
+      (&box.box)
+      (NOT (&broken))
+      (NOT (&misplaced))
+      (NOT (&unfit))
+      (input *P (:Col *Col_in))
+      (OR ((&fill P *Col))
+          ((NOT (&fill P))
+           (= Col Col_in))))
+    (ALT $CoverDiagonal
+      (RULE &output
+        (&box.box)
+        (NOT (&broken))
+        (NOT (&unfit))
+        (input *P (:Col *Col_in))
+        (OR ((&fill P *Col))
+            ((NOT (&fill P))
+             (= Col Col_in)))))))
+
+(ALTS $pl "where a marker may lie" $StraightOut
+  (ALT $CoverDiagonal
+    (INPUT marker "the marker may lie outside the box's span on both axes")
+    (OUTPUT stretch-to-marker "the box stretches on both axes to the bounding box of the box and the marker")
+    (RULE &output
+      (&box.box)
+      (NOT (&broken))
+      (NOT (&miscount))
+      (NOT (&unfit))
+      (input *P (:Col *Col_in))
+      (OR ((&fill P *Col))
+          ((NOT (&fill P))
+           (= Col Col_in))))))
+
+(ALTS $t "what fills the stretched box" $Redraw
+  (ALT $RepeatInnerSlice
+    (INPUT framed-box "one solid rectangle on &background, of any colors")
+    (OUTPUT stretch-to-marker "the box's far line moves to the marker's line, and each line between takes a copy of the box's line next to the old far side; undefined where the box is narrower than 3 along the stretch"
+      (RULE &box_line_split1
+        (&box_cell (:P *P_))
+        (axis_elem (:A *A_))
+        (axis_of (:D *D_m1) (:A A_))
+        (opposite (:D D_m1) (:Opp *O_m2))
+        (margin (:B P_) (:D D_m1) (:K *K1_m3))
+        (margin (:B P_) (:D O_m2) (:K *K2_m4))
+        (opposite (:D D_m1) (:Opp *O_m1))
+        (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+        (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+        (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+        (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+      (RULE &grid_line_split1
+        (input (:P *P_))
+        (axis_elem (:A *A_))
+        (axis_of (:D *D_m1) (:A A_))
+        (opposite (:D D_m1) (:Opp *O_m2))
+        (margin (:B P_) (:D D_m1) (:K *K1_m3))
+        (margin (:B P_) (:D O_m2) (:K *K2_m4))
+        (opposite (:D D_m1) (:Opp *O_m1))
+        (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+        (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+        (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+        (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+      (RULE &fill_split1
+        (input (:P *P_))
+        (axis_elem (:A *A_))
+        (axis_of (:D *D_m1) (:A A_))
+        (opposite (:D D_m1) (:Opp *O_m2))
+        (margin (:B P_) (:D D_m1) (:K *K1_m3))
+        (margin (:B P_) (:D O_m2) (:K *K2_m4))
+        (opposite (:D D_m1) (:Opp *O_m1))
+        (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+        (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+        (compose (:A B1_m2) (:B B2_m3) (:C *L1_))
+        (relative (:Base L1_) (:X P_) (:X_rel *L2_)))
+
+      (RULE &box_line
+        (&box_cell *P)
+        (axis_elem *A)
+        (&box_line_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+      (RULE &grown
+        (&box.box *B)
+        (&stretched.box (:B *B2))
+        (dir_elem *D)
+        (margin B D *K)
+        (margin (:B B2) D (:K *K2))
+        (< K2 K))
+
+      (RULE &far_line
+        (&grown *D)
+        (&box.box *B)
+        (margin B D *K)
+        (axis_of D *A)
+        (&box_line A *L)
+        (margin (:B L) D K))
+
+      (RULE &slice
+        (&far_line *D (:L *L_far))
+        (axis_of D *A)
+        (&box_line A *L)
+        (step_offset D (:V *V_m1))
+        (compose (:A L) (:B V_m1) (:C L_far)))
+
+      (RULE &grid_line
+        (input *P)
+        (axis_elem *A)
+        (&grid_line_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+      (RULE &line_src
+        (OR ((&far_line *D (:L *L_far))
+             (axis_of D *A)
+             (&stretched.box *B)
+             (margin B D *K)
+             (&grid_line A *L)
+             (margin (:B L) D (:K *Kl))
+             (OR ((< K Kl)
+                  (dir_elem D)
+                  (margin (:B L_far) D (:K *K1_m1))
+                  (margin (:B L) D (:K *K2_m2))
+                  (>= K1_m1 K2_m2)
+                  (&slice D (:L *L_src)))
+                 ((= Kl K)
+                  (= L_src L_far))))
+            ((&box_line A L)
+             (NOT (&far_line L))
+             (= L_src L)))))
+    (RULE &unfit
+      (&grown *D)
+      (ALL ((&slice D *L)
+            (&box.box *B)
+            (opposite D (:Opp *D2))
+            (margin B (:D D2) *K)
+            (margin (:B L) (:D D2) (:K *Kl)))
+           ((>= K Kl))))
+
+    (RULE &fill
+      (input *P)
+      (axis_elem *A)
+      (perp A *A2)
+      (&fill_split1 (:P_ P) (:A_ A) (:L1_ *L1) (:L2_ *L2))
+      (&line_src A (:L L1) (:L_src *L1_src))
+      (&line_src (:A A2) (:L L2) (:L_src *L2_src))
+      (compose (:A L1_src) (:B L2_src) (:C *Q))
+      (input (:P Q) *Col))))
+
+(RULE &straight_split1
+  (&box.box (:B *B_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B B_) (:D D_m1) (:K *K1_m3))
+  (margin (:B B_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *B_band_))
+  (relative (:Base B_band_) (:X B_) (:X_rel *X_m1_)))
+
+(RULE &broken
+  (OR ((NOT (&marker)))
+      ((&box.box *B)
+       (input *P)
+       (ALL ((&box.box B)
+             (dir_elem (:D *D_m1))
+             (relative (:Base B) (:X P) (:X_rel *R_m2))
+             (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+            ((>= K_m3 0)))
+       (NOT (&box_cell P)))))
+
+(RULE &fill
+  (&stretched.box *B)
+  (input *P)
+  (ALL ((&stretched.box B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (OR ((relative (:Base B) (:X P) (:X_rel *R_m1))
+       (axis_of (:D *D1_m2) (:A *A1_m3))
+       (opposite (:D D1_m2) (:Opp *O1_m4))
+       (perp (:A A1_m3) (:A2 *A2_m5))
+       (axis_of (:D *D2_m6) (:A A2_m5))
+       (opposite (:D D2_m6) (:Opp *O2_m7))
+       (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+       (> K1_m8 0)
+       (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+       (> K2_m9 0)
+       (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+       (> K3_m10 0)
+       (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+       (> K4_m11 0)
+       (&core_color.value (:v *Col)))
+      ((dir_elem (:D *D_m12))
+       (relative (:Base B) (:X P) (:X_rel *R_m13))
+       (margin (:B R_m13) (:D D_m12) (:K *K_m14))
+       (<= K_m14 0)
+       (&rim_color.value (:v Col)))))
+
+(RULE &miscount
+  (&one.plural))
+
+(RULE &straight
+  (&marker *P)
+  (&box.box *B)
+  (axis_elem *A)
+  (&straight_split1 (:B_ B) (:A_ A) (:B_band_ *B_band) (:X_m1_ *X_m1))
+  (ALL ((&marker P)
+        (&box.box (:B *Bm))
+        (axis_elem (:A *Am))
+        (axis_of (:D *D_m2) (:A Am))
+        (opposite (:D D_m2) (:Opp *O_m3))
+        (margin (:B Bm) (:D D_m2) (:K *K1_m4))
+        (margin (:B Bm) (:D O_m3) (:K *K2_m5))
+        (opposite (:D D_m2) (:Opp *O_m6))
+        (edge_inset (:D D_m2) (:K K1_m4) (:B *B1_m7))
+        (edge_inset (:D O_m6) (:K K2_m5) (:B *B2_m8))
+        (compose (:A B1_m7) (:B B2_m8) (:C B_band))
+        (relative (:Base B_band) (:X Bm) (:X_rel *Across_m1))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B_band) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(RULE &misplaced
+  (&box.box)
+  (&marker *P)
+  (NOT (&straight P)))
+
+(RULE &unfit
+  (&box.box)
+  (ALL ((&rim_color.value (:v *Col1))
+        (&core_color.value (:v *Col2)))
+       ((= Col1 Col2))))
+
+(RULE &output
+  (&box.box)
+  (NOT (&broken))
+  (NOT (&miscount))
+  (NOT (&misplaced))
+  (NOT (&unfit))
+  (input *P (:Col *Col_in))
+  (OR ((&fill P *Col))
+      ((NOT (&fill P))
+       (= Col Col_in))))

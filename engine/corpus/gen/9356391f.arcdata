@@ -1,0 +1,6 @@
+;; 9356391f
+
+(param &bg Color (0))
+(param &divider Color (5))
+(param &legend_dir Dir (DIR_T))
+(param &read_sense Sense (SENSE_CC))

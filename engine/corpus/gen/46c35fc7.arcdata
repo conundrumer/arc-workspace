@@ -1,0 +1,17 @@
+;; 46c35fc7
+
+(param &bg Color (7))
+(param &corner_sense Sense (SENSE_CC))
+(param &edge_sense Sense (SENSE_CW))
+(param &cycle_sense Sense (SENSE_CC))
+(param &corner_step number (2))
+(param &edge_step number (6))
+(param &move (Dir8 Dir8)
+  (DIAG_TL DIAG_BL)
+  (DIAG_BL DIAG_BR)
+  (DIAG_BR DIAG_TR)
+  (DIAG_TR DIAG_TL)
+  (DIR_T DIR_R)
+  (DIR_R DIR_B)
+  (DIR_B DIR_L)
+  (DIR_L DIR_T))

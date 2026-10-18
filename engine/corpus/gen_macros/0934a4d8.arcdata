@@ -1,0 +1,10 @@
+;; 0934a4d8
+
+(param &mask Color (8))
+(param &mosaic_margin Box ((0 2 0 2)))
+(param &tile_sym (Position Sym)
+  (grid
+    (SYM_BOX SYM_D4 SYM_D4 SYM_BOX)
+    (SYM_D4 SYM_BOX SYM_BOX SYM_D4)
+    (SYM_D4 SYM_BOX SYM_BOX SYM_D4)
+    (SYM_BOX SYM_D4 SYM_D4 SYM_BOX)))

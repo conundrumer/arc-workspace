@@ -1,0 +1,13 @@
+;; 17b866bd
+
+(param &line number (1))
+(param &block number (4))
+(param &node Color (0))
+(param &corner DiagDir (DIAG_BR))
+(param &hole Color (0))
+(param &stamp Position
+  (grid
+    (_ 1 1 _)
+    (1 1 1 1)
+    (1 1 1 1)
+    (_ 1 1 _)))

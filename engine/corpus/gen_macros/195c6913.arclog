@@ -1,0 +1,226 @@
+;; 195c6913
+
+;; The strip is read toward this direction, and lies along its axis.
+(DET &read_dir DirDomain)
+
+(RULE &strip_axis
+  (&read_dir *D)
+  (axis_of D *A))
+
+(RULE &field
+  (input *P *Col)
+  (dir_elem *D)
+  (margin (:B P) D (:K 0))
+  (input (:P *Q) Col)
+  (dir_elem (:D *D2))
+  (margin (:B Q) (:D D2) (:K 0))
+  (!= D D2))
+
+(RULE &legend_cell
+  (input *P *Col)
+  (NOT (&field Col)))
+
+(RULE &swatch_cell
+  (&legend_cell *P)
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&legend_cell (:P Q)))
+
+(RULE &swatch_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &swatch Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&swatch_cell *P)
+         (&swatch_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&swatch_cell (:P P3)))
+        ((&swatch_cell P)
+         (= P3 P)))))
+
+(RULE &swatch_component
+  (&swatch.class (:a *P) *Id))
+
+(RULE &before_split1
+  (&swatch_component (:P *P_) *Id)
+  (&strip_axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_line_))
+  (relative (:Base P_line_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &before_split2
+  (&swatch_component (:P *P2_) (:Id *Id2))
+  (&strip_axis (:A *A2_))
+  (axis_of (:D *D_m1) (:A A2_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P2_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P2_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_line2_))
+  (relative (:Base P_line2_) (:X P2_) (:X_rel *X_m2_)))
+
+(RULE &elem_split1
+  (&swatch_component (:P *P_) *Id)
+  (&strip_axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_line_))
+  (relative (:Base P_line_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &on_strip
+  (&swatch_component *P *Id)
+  (&swatch_component (:P *Q) (:Id *Id2))
+  (!= Id Id2)
+  (&strip_axis *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B Q) (:D D_m2) (:K K_m3)))
+
+(INIT &strip Order
+  (key ((&strip_axis (:A ^A2))
+        (axis_of ^D (:A A2)))
+    (before ((:a Id) (:b Id2))
+      (&on_strip *Id)
+      (&swatch_component *P Id)
+      (&strip_axis *A)
+      (&before_split1 (:P_ P) (:A_ A) (:P_line_ *P_line) (:X_m1_ *X_m1))
+      (&on_strip (:Id *Id2))
+      (&swatch_component (:P *P2) (:Id Id2))
+      (&strip_axis (:A *A22))
+      (&before_split2 (:P2_ P2) (:A2_ A22) (:P_line2_ *P_line2) (:X_m2_ *X_m2))
+      (!= Id Id2)
+      (margin (:B P_line) D (:K *K1))
+      (margin (:B P_line2) D (:K *K2))
+      (< K1 K2)))
+  (member ((:t Id))
+    (&on_strip *Id)
+    (&swatch_component *P Id)
+    (&strip_axis *A)
+    (&elem_split1 (:P_ P) (:A_ A) (:P_line_ *P_line) (:X_m1_ *X_m1))))
+
+(RULE &strip_pos
+  (&strip.rank (:key (:A2 *A) *D) (:t *M) (:R *R1))
+  (&strip.dual_rank (:key (:A2 A) D) (:t M) (:R *R2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K R1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K R2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_pos)))
+
+;; The walk's second heading, as a quarter turn off its first.
+(DET &turn_sense SenseDomain)
+
+(RULE &wall
+  (&swatch_cell *P)
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (input (:P Q) *Col)
+  (&field Col))
+
+(RULE &wall_cell
+  (input *P *Col)
+  (&wall Col))
+
+(RULE &corridor_cell
+  (input *P *Col)
+  (&field Col)
+  (NOT (&wall Col)))
+
+(RULE &swatch_col
+  (&swatch_component *P *Id)
+  (input P *Col))
+
+(RULE &pattern
+  (&strip_pos (:M *Id) *P_pos)
+  (&swatch_col Id *Col)
+  (&read_dir *D)
+  (opposite (:D *D_start) (:Opp D))
+  (margin (:B P_pos) (:D D_start) *K))
+
+;; The pattern's length.
+(INIT &period Cardinality
+  (member ((:m K))
+    (&pattern *K)))
+
+(RULE &head
+  (&legend_cell *P)
+  (NOT (&swatch_cell P))
+  (opposite (:D *D_edge) (:Opp *D))
+  (margin (:B P) (:D D_edge) (:K 0)))
+
+(RULE &alt
+  (&head (:D *D0))
+  (&turn_sense *S)
+  (turn S (:D D0) (:D2 *D1))
+  (OR ((= *D D0)
+       (= *D2 D1))
+      ((= D D1)
+       (= D2 D0))))
+
+;; The walk: each hop is one step onto a corridor cell, and the heading flips
+;; where a run meets the wall.
+(INIT &walk Distance
+  (edge ((:a P D) (:b (:P Q) (:D D2)))
+    (input *P)
+    (&alt *D)
+    (step_offset D (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *Q))
+    (&corridor_cell (:P Q))
+    (OR ((step_offset D (:V *V_m2))
+         (compose (:A Q) (:B V_m2) (:C *R))
+         (&wall_cell (:P R))
+         (&alt D *D2))
+        ((= D2 D))))
+  (source ((:n P D))
+    (OR ((&head *P *D))
+        ((&head P (:D *D3))
+         (step_offset (:D D3) (:V *V_m1))
+         (compose (:A P) (:B V_m1) (:C *Q))
+         (&wall_cell (:P Q))
+         (&alt (:D D3) (:D2 D))))))
+
+(RULE &step
+  (&walk.distance (:n *P *D))
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&corridor_cell (:P Q)))
+
+(RULE &stop
+  (&step *D (:Q *P2))
+  (step_offset D (:V *V_m1))
+  (compose (:A P2) (:B V_m1) (:C *P))
+  (&wall_cell P))
+
+(RULE &phase
+  (&walk.distance (:n *P) (:K *N))
+  (&period.size (:N *L))
+  (divide (:T N) (:Side L) (:Gap 0) (:Remainder *K)))
+
+(RULE &output
+  (OR ((&phase *P *K)
+       (&pattern K *Col))
+      ((&stop P)
+       (&swatch_col *Id Col)
+       (NOT (&on_strip Id)))
+      ((&swatch_cell P)
+       (&wall Col))
+      ((input P Col)
+       (NOT (&phase P))
+       (NOT (&stop P))
+       (NOT (&swatch_cell P)))))

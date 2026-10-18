@@ -1,0 +1,13 @@
+;; e3497940
+
+(param &frame_dim (Axis number) (AXIS_V 10) (AXIS_H 4))
+(param &frame Position (Frame
+  ((:A AXIS_V) (:N 10))
+  ((:A AXIS_H) (:N 4))))
+(param &base Dir (DIR_L))
+(param &bg Color (0))
+(param &tile_decompose (Position Position Position) (Division
+  ((:A AXIS_V) (:Count 1) (:Size 10) (:Gap 0))
+  ((:A AXIS_H) (:Count 2) (:Size 4) (:Gap 1))))
+(param &divide_gap number (1))
+(param &divisor number (2))

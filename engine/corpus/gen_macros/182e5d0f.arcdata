@@ -1,0 +1,6 @@
+;; 182e5d0f
+
+(param &bg Color (7))
+(param &wire Color (3))
+(param &cap Color (0))
+(param &bead Color (5))

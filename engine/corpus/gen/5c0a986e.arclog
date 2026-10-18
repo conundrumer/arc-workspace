@@ -1,0 +1,61 @@
+;; 5c0a986e
+
+(DET &bg DominantColor)
+
+;; Each ink color's block, as the box bounding it.
+(INIT &bx2 BoundingBox
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &bx BoundingBox
+  (key ((ex_input ^E *P ^Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (ex_input E *P Col)
+      (NOT (&bg (:C Col))))))
+
+(DET &new_ink
+  (ex_output *E *P *Col)
+  (ex_input E P (:Col *Bg))
+  (&bg (:C Bg)))
+
+(DET &heading
+  (&bx.cell (:key *E *Col) *P)
+  (&bx.box (:key E Col) *B)
+  (inside (:A P) B)
+  (same_corner *D (:P1 P) (:P2 B))
+  (neighbor P D *Q)
+  (&new_ink E Col (:P Q)))
+
+;; The ray a block casts.
+(INIT &beam Ray
+  (key ((&heading ^Col *D))
+    (source (P)
+      (&heading Col *D)
+      (&bx2.cell *P)
+      (&bx2.box *B)
+      (inside (:A P) B)
+      (same_corner D (:P1 P) (:P2 B)))
+    (node (P)
+      (&heading Col *D)
+      (input *P))
+    (dir (D)
+      (&heading Col *D))))
+
+(RULE &beam_cell
+  (&heading (:Col *Key))
+  (input *P (:Col *Bg))
+  (&bg (:C Bg)))
+
+(RULE &beam_ray
+  (&beam.ray (:key (:Col *Key)) *P *D *K (:Origin *Src))
+  (&beam_cell Key P))
+
+(RULE &output
+  (OR ((&beam.ray (:key *Col) *P)
+       (&beam_cell (:Key Col) P))
+      ((input P Col)
+       (NOT (&beam_ray P)))))

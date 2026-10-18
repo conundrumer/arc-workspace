@@ -1,0 +1,335 @@
+;; 87ab05b8
+
+(DET &divisor TileCount)
+
+(DET &marker RarestColor)
+
+(RULE &marker2
+  (input *P *Col)
+  (&marker (:C Col)))
+
+(RULE &region_division_cell
+  (&marker2 *P)
+  (&divisor (:N *Key)))
+
+(INIT &region_division_sides ExtentDivisions
+  (key ((&region_division_cell (:Key ^Ky) *P))
+    (frame (P)
+      (&region_division_cell (:Key Ky) *P))))
+
+(RULE &region_division_axis_split1
+  (&region_division_cell (:Key *Ky) (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+  (relative (:Base Pi_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &region_division_parts_held
+  (axis_elem *A)
+  (&divisor *N))
+
+(RULE &region_division_axis
+  (OR ((&region_division_cell *Key *P)
+       (axis_elem *A)
+       (&divisor (:N Key))
+       (&region_division_sides.division (:key (:Ky Key)) A (:N Key) *K (:G 0))
+       (axis_of *D A)
+       (opposite D (:Opp *O))
+       (margin (:B P) D (:K *T))
+       (margin (:B P) (:D O) (:K *T2))
+       (divide T (:Side K) (:Gap 0) (:Part *I) (:Remainder *R))
+       (divide (:T T2) (:Side K) (:Gap 0) (:Part *I2) (:Remainder *R2))
+       (opposite D (:Opp *O_m1))
+       (edge_inset D (:K I) (:B *B1_m2))
+       (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+       (compose (:A B1_m2) (:B B2_m3) (:C *P_outer))
+       (opposite D (:Opp *O_m4))
+       (edge_inset D (:K R) (:B *B1_m5))
+       (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+       (compose (:A B1_m5) (:B B2_m6) (:C *P_inner))
+       (frame_extent (:P P_inner) A (:N K)))
+      ((&region_division_cell Key P)
+       (axis_elem A)
+       (&divisor (:N Key))
+       (frame_extent P A (:N *K2))
+       (axis_of (:D *D2) A)
+       (opposite (:D D2) (:Opp *O2))
+       (margin (:B P) (:D D2) (:K *T3))
+       (margin (:B P) (:D O2) (:K *T22))
+       (divide (:T T3) (:Side K2) (:Gap 0) (:Part *I3) (:Remainder *R3))
+       (divide (:T T22) (:Side K2) (:Gap 0) (:Part *I22) (:Remainder *R22))
+       (opposite (:D D2) (:Opp *O_m12))
+       (edge_inset (:D D2) (:K I3) (:B *B1_m22))
+       (edge_inset (:D O_m12) (:K I22) (:B *B2_m32))
+       (compose (:A B1_m22) (:B B2_m32) (:C P_outer))
+       (opposite (:D D2) (:Opp *O_m42))
+       (edge_inset (:D D2) (:K R3) (:B *B1_m52))
+       (edge_inset (:D O_m42) (:K R22) (:B *B2_m62))
+       (compose (:A B1_m52) (:B B2_m62) (:C P_inner))
+       (frame_extent (:P P_inner) A (:N K2))
+       (frame_extent (:P P_outer) A (:N Key)))
+      ((&region_division_cell Key P)
+       (axis_elem A)
+       (NOT (&region_division_parts_held (:N Key) A))
+       (&region_division_axis_split1 (:P_ P) (:A_ A) (:Pi_ P_inner) (:X_m1_ *X_m1))
+       (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
+
+(RULE &region_division_tile
+  (&region_division_axis *Key *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+  (perp (:A A1) *A2)
+  (&region_division_axis Key P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+  (compose (:A Po1) (:B Po2) (:C *P_outer))
+  (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+(RULE &region_division2_cell
+  (&region_division_tile *Key)
+  (input *P))
+
+(INIT &region_division2_sides ExtentDivisions
+  (key ((&region_division2_cell (:Key ^Ky) *P))
+    (frame (P)
+      (&region_division2_cell (:Key Ky) *P))))
+
+(RULE &region_division2_axis_split1
+  (&region_division2_cell (:Key *Ky) (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+  (relative (:Base Pi_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &region_division2_parts_held
+  (axis_elem *A)
+  (&region_division_tile (:Key *N)))
+
+(RULE &region_division2_axis
+  (OR ((&region_division2_cell *Key *P)
+       (axis_elem *A)
+       (&region_division_tile Key)
+       (&region_division2_sides.division (:key (:Ky Key)) A (:N Key) *K (:G 0))
+       (axis_of *D A)
+       (opposite D (:Opp *O))
+       (margin (:B P) D (:K *T))
+       (margin (:B P) (:D O) (:K *T2))
+       (divide T (:Side K) (:Gap 0) (:Part *I) (:Remainder *R))
+       (divide (:T T2) (:Side K) (:Gap 0) (:Part *I2) (:Remainder *R2))
+       (opposite D (:Opp *O_m1))
+       (edge_inset D (:K I) (:B *B1_m2))
+       (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+       (compose (:A B1_m2) (:B B2_m3) (:C *P_outer))
+       (opposite D (:Opp *O_m4))
+       (edge_inset D (:K R) (:B *B1_m5))
+       (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+       (compose (:A B1_m5) (:B B2_m6) (:C *P_inner))
+       (frame_extent (:P P_inner) A (:N K)))
+      ((&region_division2_cell Key P)
+       (axis_elem A)
+       (&region_division_tile Key)
+       (frame_extent P A (:N *K2))
+       (axis_of (:D *D2) A)
+       (opposite (:D D2) (:Opp *O2))
+       (margin (:B P) (:D D2) (:K *T3))
+       (margin (:B P) (:D O2) (:K *T22))
+       (divide (:T T3) (:Side K2) (:Gap 0) (:Part *I3) (:Remainder *R3))
+       (divide (:T T22) (:Side K2) (:Gap 0) (:Part *I22) (:Remainder *R22))
+       (opposite (:D D2) (:Opp *O_m12))
+       (edge_inset (:D D2) (:K I3) (:B *B1_m22))
+       (edge_inset (:D O_m12) (:K I22) (:B *B2_m32))
+       (compose (:A B1_m22) (:B B2_m32) (:C P_outer))
+       (opposite (:D D2) (:Opp *O_m42))
+       (edge_inset (:D D2) (:K R3) (:B *B1_m52))
+       (edge_inset (:D O_m42) (:K R22) (:B *B2_m62))
+       (compose (:A B1_m52) (:B B2_m62) (:C P_inner))
+       (frame_extent (:P P_inner) A (:N K2))
+       (frame_extent (:P P_outer) A (:N Key)))
+      ((&region_division2_cell Key P)
+       (axis_elem A)
+       (NOT (&region_division2_parts_held (:N Key) A))
+       (&region_division2_axis_split1 (:P_ P) (:A_ A) (:Pi_ P_inner) (:X_m1_ *X_m1))
+       (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
+
+(RULE &region_division2_tile
+  (&region_division2_axis *Key *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+  (perp (:A A1) *A2)
+  (&region_division2_axis Key P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+  (compose (:A Po1) (:B Po2) (:C *P_outer))
+  (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+(DET &bg DominantColor)
+
+;; $Count — the marker's tile in a &divisor arrangement.
+(RULE &region
+  (&region_division_tile (:Key *N) (:P_outer *P_tile))
+  (&region_division2_tile (:Key N) *P (:P_outer P_tile)))
+
+(RULE &fill_color
+  (&marker (:C *Col)))
+
+(ALTS $l "locate the region" $Count
+  (ALT $Block
+    (DET &tile_dim TileCount)
+
+    (RULE &region_division3_cell
+      (&marker2 *P)
+      (&tile_dim (:N *Key)))
+
+    (RULE &region_division3_axis_split1
+      (&region_division3_cell (:Key *Ky) (:P *P_))
+      (axis_elem (:A *A_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+      (relative (:Base Pi_) (:X P_) (:X_rel *X_m1_)))
+
+    (RULE &region_division3_side_held
+      (axis_elem *A)
+      (&tile_dim (:N *K)))
+
+    (RULE &region_division3_axis
+      (OR ((&region_division3_cell *Key *P)
+           (axis_elem *A)
+           (&tile_dim (:N Key))
+           (axis_of *D A)
+           (opposite D (:Opp *O))
+           (margin (:B P) D (:K *T))
+           (margin (:B P) (:D O) (:K *T2))
+           (divide T (:Side Key) (:Gap 0) (:Part *I) (:Remainder *R))
+           (divide (:T T2) (:Side Key) (:Gap 0) (:Part *I2) (:Remainder *R2))
+           (opposite D (:Opp *O_m1))
+           (edge_inset D (:K I) (:B *B1_m2))
+           (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+           (compose (:A B1_m2) (:B B2_m3) (:C *P_outer))
+           (opposite D (:Opp *O_m4))
+           (edge_inset D (:K R) (:B *B1_m5))
+           (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+           (compose (:A B1_m5) (:B B2_m6) (:C *P_inner))
+           (frame_extent (:P P_inner) A (:N Key)))
+          ((&region_division3_cell Key P)
+           (axis_elem A)
+           (NOT (&region_division3_side_held (:K Key) A))
+           (&region_division3_axis_split1 (:P_ P) (:A_ A) (:Pi_ P_inner) (:X_m1_ *X_m1))
+           (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
+
+    (RULE &region_division3_tile
+      (&region_division3_axis *Key *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+      (perp (:A A1) *A2)
+      (&region_division3_axis Key P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+      (compose (:A Po1) (:B Po2) (:C *P_outer))
+      (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+    (RULE &region_division4_cell
+      (&region_division3_tile *Key)
+      (input *P))
+
+    (RULE &region_division4_axis_split1
+      (&region_division4_cell (:Key *Ky) (:P *P_))
+      (axis_elem (:A *A_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+      (relative (:Base Pi_) (:X P_) (:X_rel *X_m1_)))
+
+    (RULE &region_division4_side_held
+      (axis_elem *A)
+      (&region_division3_tile (:Key *K)))
+
+    (RULE &region_division4_axis
+      (OR ((&region_division4_cell *Key *P)
+           (axis_elem *A)
+           (&region_division3_tile Key)
+           (axis_of *D A)
+           (opposite D (:Opp *O))
+           (margin (:B P) D (:K *T))
+           (margin (:B P) (:D O) (:K *T2))
+           (divide T (:Side Key) (:Gap 0) (:Part *I) (:Remainder *R))
+           (divide (:T T2) (:Side Key) (:Gap 0) (:Part *I2) (:Remainder *R2))
+           (opposite D (:Opp *O_m1))
+           (edge_inset D (:K I) (:B *B1_m2))
+           (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+           (compose (:A B1_m2) (:B B2_m3) (:C *P_outer))
+           (opposite D (:Opp *O_m4))
+           (edge_inset D (:K R) (:B *B1_m5))
+           (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+           (compose (:A B1_m5) (:B B2_m6) (:C *P_inner))
+           (frame_extent (:P P_inner) A (:N Key)))
+          ((&region_division4_cell Key P)
+           (axis_elem A)
+           (NOT (&region_division4_side_held (:K Key) A))
+           (&region_division4_axis_split1 (:P_ P) (:A_ A) (:Pi_ P_inner) (:X_m1_ *X_m1))
+           (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
+
+    (RULE &region_division4_tile
+      (&region_division4_axis *Key *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+      (perp (:A A1) *A2)
+      (&region_division4_axis Key P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+      (compose (:A Po1) (:B Po2) (:C *P_outer))
+      (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+    ;; $Block — the marker's block in a &tile_dim tiling.
+    (RULE &region
+      (&region_division3_tile (:Key *K) (:P_outer *P_tile))
+      (&region_division4_tile (:Key K) *P (:P_outer P_tile))))
+  (ALT $Corner
+    (RULE &dp_nearer
+      (&marker2 *P)
+      (dir_elem *D)
+      (opposite D (:Opp *O_m1))
+      (margin (:B P) D *K)
+      (margin (:B P) (:D O_m1) (:K *K2))
+      (< K K2))
+
+    (RULE &dp_quadrant
+      (corner_dir (:C *Diag) (:A *A_m1) (:D *D1))
+      (perp (:A A_m1) (:A2 *A2_m2))
+      (corner_dir (:C Diag) (:A A2_m2) (:D *D2))
+      (&dp_nearer *P (:D D1))
+      (&dp_nearer P (:D D2)))
+
+    (DET &block_dim TileCount)
+
+    (RULE &region
+      (input *P)
+      (&dp_quadrant *Diag)
+      (&block_dim *N)
+      (corner_dir (:C Diag) (:A *A_m1) (:D *D1_m2))
+      (perp (:A A_m1) (:A2 *A2_m4))
+      (corner_dir (:C Diag) (:A A2_m4) (:D *D2_m3))
+      (margin (:B P) (:D D1_m2) (:K *K1))
+      (margin (:B P) (:D D2_m3) (:K *K2))
+      (< K1 N)
+      (< K2 N))))
+
+(ALTS $f "fill color" $Marker
+  (ALT $Fixed
+    (DET &fill RarestColor)
+
+    (RULE &fill_color
+      (&fill (:C *Col)))))
+
+(RULE &output
+  (OR ((&region *P)
+       (&fill_color *Col))
+      ((input P)
+       (NOT (&region P))
+       (&bg (:C Col)))))

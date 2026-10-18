@@ -1,0 +1,39 @@
+;; 55059096
+
+(DET &bg DominantColor)
+
+(RULE &mark_cell
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &exposed Boundary
+  (cell (P)
+    (&mark_cell *P)))
+
+;; Field cells with a plus center on each side along one diagonal.
+(INIT &span Ray
+  (source (P)
+    (&mark_cell *P)
+    (NOT (&exposed.boundary P)))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (diag_axis_elem (:Da *A))
+    (axis4_of *D A)))
+
+(RULE &span_between
+  (input *P *Col)
+  (&bg (:C Col))
+  (diag_axis_elem (:Da *A))
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&span.ray P D)
+  (&span.ray P (:D O)))
+
+(DET &trail AnyOutNewColor)
+
+(RULE &output
+  (OR ((&span_between *P)
+       (&trail (:C *Col)))
+      ((input P Col)
+       (NOT (&span_between P)))))

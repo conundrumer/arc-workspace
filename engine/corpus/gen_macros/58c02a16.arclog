@@ -1,0 +1,91 @@
+;; 58c02a16
+
+(DET &bg DominantColor)
+
+;; The corner the pattern block sits in.
+(DET &corner DiagDirDomain)
+
+;; The corner box: the pattern block with the separator lines that close it.
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &sep_cell
+  (&corner *D)
+  (diag_opposite D (:Opp *D_far))
+  (corner_dir (:C D_far) (:D *D_away))
+  (&bbox.cell *P)
+  (&bbox.box *B)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B P) (:D D_away) (:K *K_m1))
+  (margin B (:D D_away) (:K K_m1)))
+
+(RULE &sep
+  (&sep_cell *P)
+  (input P *Col))
+
+(RULE &pat_cell
+  (&bbox.box *B)
+  (input *P)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (NOT (&sep_cell P)))
+
+;; The block's own size is the period of the layout.
+(INIT &block BoundingBox
+  (cell (P)
+    (&pat_cell *P)))
+
+(RULE &phase
+  (input *P)
+  (&pat_cell (:P *P_fine))
+  (&pat_cell (:P *P_coarse))
+  (&corner *D)
+  (corner_dir (:C D) *A (:D *D1_m1))
+  (perp A (:A2 *A2_m3))
+  (corner_dir (:C D) (:A A2_m3) (:D *D2_m2))
+  (margin (:B P) (:D D1_m1) (:K *T1))
+  (margin (:B P) (:D D2_m2) (:K *T2))
+  (&block.box *B)
+  (perp A *A2)
+  (axis_elem A)
+  (relative (:Base B) (:X P) (:X_rel *R_m4))
+  (frame_extent (:P R_m4) A (:N *N1))
+  (axis_elem (:A A2))
+  (relative (:Base B) (:X P) (:X_rel *R_m5))
+  (frame_extent (:P R_m5) (:A A2) (:N *N2))
+  (divide (:T T1) (:Side N1) (:Gap 0) (:Part *B1) (:Remainder *F1))
+  (divide (:T B1) (:Side N1) (:Gap 0) (:Remainder *C1))
+  (divide (:T T2) (:Side N2) (:Gap 0) (:Part *B2) (:Remainder *F2))
+  (divide (:T B2) (:Side N2) (:Gap 0) (:Remainder *C2))
+  (corner_dir (:C D) A (:D *D1_m6))
+  (perp A (:A2 *A2_m8))
+  (corner_dir (:C D) (:A A2_m8) (:D *D2_m7))
+  (margin (:B P_fine) (:D D1_m6) (:K F1))
+  (margin (:B P_fine) (:D D2_m7) (:K F2))
+  (corner_dir (:C D) A (:D *D1_m9))
+  (perp A (:A2 *A2_m11))
+  (corner_dir (:C D) (:A A2_m11) (:D *D2_m10))
+  (margin (:B P_coarse) (:D D1_m9) (:K C1))
+  (margin (:B P_coarse) (:D D2_m10) (:K C2)))
+
+(RULE &block_ink
+  (&pat_cell (:P *P_coarse))
+  (input (:P P_coarse) (:Col *C))
+  (OR ((&bg C)
+       (&sep *Col))
+      ((NOT (&bg C))
+       (= Col C))))
+
+(RULE &output
+  (&phase *P *P_fine *P_coarse)
+  (input (:P P_fine) (:Col *C))
+  (IF ((&bg C))
+      ((&bg (:C *Col)))
+      ((&block_ink P_coarse Col))))

@@ -1,0 +1,101 @@
+;; 2f0c5170
+
+(RULE &panels_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(INIT &panels Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&panels_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &panels_component
+  (&panels.class (:a *P) *Id))
+
+(DET &canvas SharedColor)
+
+(INIT &bbox BoundingBox
+  (key ((&panels_component *P ^Id))
+    (cell (P)
+      (&panels_component *P Id))))
+
+(RULE &mark
+  (&panels_component *P *Id)
+  (input P *Col)
+  (NOT (&canvas (:C Col))))
+
+;; The glyph panel's marks disagree on where they sit; the other panel's
+;; mark is alone.
+(INIT &alone Singleton
+  (key ((&mark ^Id *P))
+    (member ((:v P))
+      (&mark Id *P))))
+
+(RULE &glyph_mark
+  (&alone.plural (:key *Id))
+  (&mark Id *P *Col))
+
+(RULE &lone_mark
+  (&alone.value (:key *Id) (:v *P))
+  (&mark Id P *Col))
+
+(RULE &handle
+  (&glyph_mark *P *Col)
+  (&lone_mark Col))
+
+(ALTS $choice "what the glyph's handle is" $Match
+  (ALT $Odd
+    (INIT &glyph_color_count Cardinality
+      (key ((&glyph_mark *P ^Col))
+        (member ((:m P))
+          (&glyph_mark *P Col))))
+
+    (INIT &glyph_color Order
+      (member ((:t Col))
+        (&glyph_color_count.size (:key *Col)))
+      (score ((:t Col) (:S N))
+        (&glyph_color_count.size (:key *Col) *N)))
+
+    (RULE &handle
+      (&glyph_mark *P *Col)
+      (NOT (&glyph_color.maximal (:t Col)))))
+  (ALT $Ink
+    (DET &ink SharedColor)
+
+    (RULE &handle
+      (&glyph_mark *P *Col)
+      (NOT (&ink (:C Col))))))
+
+(RULE &travel
+  (&handle *P)
+  (&lone_mark (:P *P2))
+  (relative (:Base P) (:X P2) (:X_rel *V)))
+
+(RULE &stamped
+  (&glyph_mark (:P *P2) *Col)
+  (&travel *V)
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (&lone_mark *Id)
+  (&bbox.cell (:key Id) (:P *P2))
+  (&bbox.box (:key Id) *B)
+  (ALL ((&bbox.cell (:key (:Id *Idm)) (:P P2))
+        (&bbox.box (:key (:Id Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P2) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (OR ((&stamped (:P P2) *Col))
+      ((NOT (&stamped (:P P2)))
+       (&canvas (:C Col)))))

@@ -1,0 +1,6 @@
+;; 712bf12e
+
+(param &bg Color (0))
+(param &mark Color (2))
+(param &sense Sense (SENSE_CW))
+(param &dir Dir (DIR_B))

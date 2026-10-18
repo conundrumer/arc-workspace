@@ -1,0 +1,6 @@
+;; 928ad970
+
+(param &bg Color (0))
+(param &mark_col Color (5))
+(param &mark_inset number (1))
+(param &content_inset number (1))

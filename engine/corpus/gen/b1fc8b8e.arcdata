@@ -1,0 +1,37 @@
+;; b1fc8b8e
+
+(param &ink Color (8))
+(param &unit Position
+  (grid
+    (1 1)
+    (1 1)))
+(param &covered_class Ident (1))
+(param &broken_class Ident (0))
+(param &class_count (Ident number) (0 12) (1 16))
+(param &class_grid (Ident Position Color)
+  (0 (grid
+    (0 8 0 0 8)
+    (8 8 0 8 8)
+    (0 0 0 0 0)
+    (0 8 0 0 8)
+    (8 8 0 8 8)))
+  (1 (grid
+    (8 8 0 8 8)
+    (8 8 0 8 8)
+    (0 0 0 0 0)
+    (8 8 0 8 8)
+    (8 8 0 8 8))))
+(param &class_tile (Ident Position Color)
+  (0 (grid
+    (0 8)
+    (8 8)))
+  (1 (grid
+    (8 8)
+    (8 8))))
+(param &canvas Position (Frame
+  ((:A AXIS_V) (:N 5))
+  ((:A AXIS_H) (:N 5))))
+(param &bg Color (0))
+(param &arrange (Position Position) (Division
+  ((:A AXIS_V) (:Count 2) (:Size 2) (:Gap 1))
+  ((:A AXIS_H) (:Count 2) (:Size 2) (:Gap 1))))

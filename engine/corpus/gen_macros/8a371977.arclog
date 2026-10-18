@@ -1,0 +1,178 @@
+;; 8a371977
+
+(RULE &cut_divider_split1
+  (input (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(DET &bg UnchangedColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &off_line_split1
+  (&ink (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &off_line
+  (&ink *P)
+  (axis_elem *A)
+  (&off_line_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+(RULE &cut_divider
+  (input *P)
+  (axis_elem *A)
+  (&cut_divider_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1))
+  (NOT (&off_line A L)))
+
+(RULE &cut_on_divider
+  (input *P)
+  (&cut_divider *A *L)
+  (axis_of *D A)
+  (margin (:B P) D (:K *K_m1))
+  (margin (:B L) D (:K K_m1)))
+
+(INIT &cut_rank Order
+  (key ((OR ((&cut_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (dir_elem D)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&cut_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&cut_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (dir_elem D)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (dir_elem D)
+      (margin (:B P) D *K))))
+
+(RULE &cut_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&cut_on_divider P A))
+  (margin (:B P) D *K)
+  (&cut_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &cut_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&cut_part_idx *P D (:N *N1))
+  (&cut_part_idx P (:D D2) (:N *N2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K N1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+(RULE &cut_tile_of
+  (&cut_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&cut_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &blob_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &blob Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&ink *P)
+         (&blob_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ink (:P P3)))
+        ((&ink P)
+         (= P3 P)))))
+
+(RULE &blob_component
+  (&blob.class (:a *P) *Id))
+
+(DET &ring AnyOutNewColor)
+
+(DET &within AnyOutNewColor)
+
+;; The tile arrangement: the tile positions of the parts that hold ink.
+(INIT &lattice BoundingBox
+  (cell ((:P T))
+    (&ink *P)
+    (&cut_tile_of P (:P_tile *T))))
+
+(RULE &ring_cell
+  (&ink *P)
+  (&cut_tile_of P (:P_tile *T))
+  (&lattice.box *B)
+  (ALL ((&cut_tile_of (:P *Pm) (:P_tile T))
+        (dir_elem (:D *D_m1m))
+        (relative (:Base B) (:X T) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1m) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B T) (:D *D_m1) (:K *K_m2))
+  (margin B (:D D_m1) (:K K_m2)))
+
+(ALTS $choice "what a tile is, and how the ring tiles are found" $Lattice
+  (ALT $Blobs
+    (INIT &hull BoundingBox
+      (cell (P)
+        (&ink *P)))
+
+    ;; P shares a tile with a cell on the hull's edge.
+    (RULE &ring_cell
+      (&blob_component *P (:Id *I))
+      (&blob_component (:P *Q) (:Id I))
+      (&hull.box *B)
+      (ALL ((&blob_component (:P Q) (:Id *Im))
+            (dir_elem (:D *D_m1m))
+            (relative (:Base B) (:X Q) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1m) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (margin (:B Q) (:D *D_m1) (:K *K_m2))
+      (margin B (:D D_m1) (:K K_m2))))
+  (ALT $Sight
+    (RULE &ring_cell
+      (&blob_component *P *Id)
+      (dir_elem *D)
+      (ALL ((&blob_component (:P *Pm) Id)
+            (&blob_component (:P *Q) (:Id *Id2))
+            (!= Id Id2)
+            (axis_of D *A)
+            (perp A (:A2 *A2_m1))
+            (axis_of (:D *D_m2) (:A A2_m1))
+            (margin (:B Pm) (:D D_m2) (:K *K_m3))
+            (margin (:B Q) (:D D_m2) (:K K_m3))
+            (margin (:B Q) D (:K *K1_m4))
+            (margin (:B Pm) D (:K *K2_m5)))
+           ((>= K1_m4 K2_m5))))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&bg (:C Col)))
+      ((&ring_cell P)
+       (&ring (:C Col)))
+      ((&ink P)
+       (NOT (&ring_cell P))
+       (&within (:C Col)))))

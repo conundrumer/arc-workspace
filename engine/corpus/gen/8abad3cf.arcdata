@@ -1,0 +1,6 @@
+;; 8abad3cf
+
+(param &bg Color (7))
+(param &pack_dir Dir (DIR_L))
+(param &rest_sense Sense (SENSE_CC))
+(param &gap number (1))

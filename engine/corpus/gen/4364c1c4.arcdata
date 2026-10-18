@@ -1,0 +1,5 @@
+;; 4364c1c4
+
+(param &shift number (1))
+(param &sense Sense (SENSE_CC))
+(param &slide_map (Dir Dir) (DIR_T DIR_L) (DIR_B DIR_R))

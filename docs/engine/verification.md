@@ -1,0 +1,40 @@
+# Verification
+
+How each step of the [build order](overview.md#build-order) is checked against the Souffle solvers, and how an agent's loop of edit, build and check stays fast. This doc ends no step. The snapshot and the commands are in place before the first comparison of step 2, and every later step uses them.
+
+## Snapshot of the Souffle outcomes
+
+- A one-time snapshot stores the Souffle outcomes as files: each case's output on each pair, whether it solves each split task, the witness outcomes, and each solver's run time.
+- Each engine check compares against the snapshot, and never starts Souffle.
+- A solver's snapshot is made again only when its `.dl` file changes.
+
+## Order of a check run
+
+- After each change, the solvers that use what it touches run first. A map from each construct, lib relation and component to the files that use it gives those solvers. The map comes from the survey's pass over the files.
+- Then the whole corpus runs in the background.
+
+## Mismatch report
+
+- A mismatch report gives the solver, the case and the pair. A command runs that Souffle call again with every relation written out, and gives the first relation whose rows differ, by arclog names.
+- Where the Souffle outcome departs from Principles, the report gives the difference as a fault of the solver or of the Souffle lib, as the Principles requirement of [Requirements](overview.md#requirements) gives.
+
+## Lib comparison
+
+- Each solver of `gen/` and its expanded form in `work/arclog/gen_macros/` give the same outcomes. This compares each lib name that has a definition with that definition, inside every solver that uses it.
+- Each lib relation and component is compared with its Souffle version on small generated inputs, outside any solver.
+- This comparison is a command, not a test of the test suite.
+- Agreement with Souffle does not show that a lib element is equivariant, as [Equivalence and subsumption](../../docs/handbook/principles.md#equivalence-and-subsumption) gives for agreement on some inputs. How the lib keeps equivariance is in [equivariance.md](equivariance.md).
+- The comparison also runs each small input in its eight D4 images and under one color permutation, and compares each element's rows with the image of its rows, as [equivariance.md](equivariance.md#each-lib-element-has-no-free-choice-or-its-choice-is-a-model) gives.
+
+## Build speed
+
+- The constructions are in a crate of their own, as [Crates](overview.md#crates) gives.
+- Agent loops use `cargo check`, and a debug build that optimizes the dependencies.
+- Each agent that builds in parallel has its own Cargo target directory, since Cargo locks a target directory while it builds. Each such agent owns one construction or one step.
+- The corpus run is the check. The engine's tests are the kinds that [Tests](../../prompts/agents/notes/tests.md#tests) keeps, such as a reader or a check that must refuse wrong input.
+
+## How each decision can fail
+
+| Decision | Failure | What catches or bounds it |
+| --- | --- | --- |
+| Rust in the agents' loop | compile time slows iteration | the crate split, `cargo check` in the loop, and the corpus run as the check |

@@ -1,0 +1,103 @@
+;; 20270e3b
+
+(RULE &pieces_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(DET &bg ColorDomain)
+
+(INIT &pieces Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&pieces_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &pieces_component
+  (&pieces.class (:a *P) *Id))
+
+(DET &socket_color VanishedColor)
+
+(RULE &piece
+  (&pieces_component *P *Id))
+
+(RULE &wall
+  (&piece *Id *P)
+  (input P *Col)
+  (NOT (&socket_color (:C Col))))
+
+(RULE &socket
+  (&piece *Id *P)
+  (input P *Col)
+  (&socket_color (:C Col)))
+
+(INIT &socket_box BoundingBox
+  (key ((&socket ^Id *P))
+    (cell (P)
+      (&socket Id *P))))
+
+(RULE &seat
+  (&piece (:Id *M) *P)
+  (&socket_box.box (:key (:Id M)) (:B *B_m))
+  (relative (:Base B_m) (:X P) (:X_rel *P_rel))
+  (&socket_box.box (:key (:Id *H)) (:B *B_h))
+  (!= H M)
+  (compose (:A B_h) (:B P_rel) (:C *P_reg))
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P_reg) (:B V_m1) (:C *P_seat)))
+
+(RULE &laid_wall
+  (OR ((&seat *H *M *D)
+       (&wall (:Id H) *P *Col))
+      ((&seat H M D (:P *P2) (:P_seat P))
+       (&wall (:Id M) (:P P2) Col))))
+
+(RULE &laid_socket
+  (OR ((&seat *H *M *D)
+       (&socket (:Id H) *P))
+      ((&seat H M D (:P *P2) (:P_seat P))
+       (&socket (:Id M) (:P P2)))))
+
+(RULE &figure
+  (&laid_wall *H *M *D *P *Col)
+  (ALL ((&laid_socket H M D (:P *Pm)))
+       ((&laid_wall H M D (:P Pm)))))
+
+(INIT &figure_box BoundingBox
+  (key ((&figure ^H ^M *P))
+    (cell (P)
+      (&figure H M *P))))
+
+(RULE &painted
+  (&figure *H *M (:P *P2) *Col)
+  (&figure_box.box (:key H M) *B)
+  (ALL ((&figure (:H *Hm) (:M *Mm) (:P P2) (:Col *Colm))
+        (&figure_box.box (:key (:H Hm) (:M Mm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P2) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(INIT &sheet Frame
+  (extent (A N)
+    (&figure_box.box (:key (:H *J_h) (:M *J_m)) *B)
+    (&figure_box.cell (:key (:H J_h) (:M J_m)) *P)
+    (axis_elem *A)
+    (axis_elem A)
+    (relative (:Base B) (:X P) (:X_rel *R_m1))
+    (frame_extent (:P R_m1) A *N)))
+
+(RULE &output
+  (&sheet.cell *P)
+  (OR ((&painted P *Col))
+      ((NOT (&painted P))
+       (&bg (:C Col)))))

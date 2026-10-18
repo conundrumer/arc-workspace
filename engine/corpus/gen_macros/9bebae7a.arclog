@@ -1,0 +1,120 @@
+;; 9bebae7a
+
+(INPUT pieces "the ink is one shape of &shape_color and one marker of &mark_color"
+
+  (DET &shape_color UnchangedColor)
+
+  (DET &mark_color ChangedColor))
+
+(INPUT arms "the marker is two straight arms crossing at one cell, and it reaches farther from that cell toward one direction than toward any other"
+
+  (DET &bg DominantColor)
+
+  ;; Each piece's own bounding box.
+  (INIT &bbox BoundingBox
+    (key ((input *P ^Col)
+          (NOT (&bg (:C Col))))
+      (cell (P)
+        (input *P Col)
+        (NOT (&bg (:C Col))))))
+
+  (RULE &mark
+    (input *P *Col)
+    (&mark_color (:C Col)))
+
+  (RULE &crossing
+    (&mark *P)
+    (axis_of *D (:A *A_m1))
+    (perp (:A A_m1) (:A2 *A2_m2))
+    (axis_of (:D *D2) (:A A2_m2))
+    (step_offset D (:V *V_m3))
+    (compose (:A P) (:B V_m3) (:C *Q))
+    (&mark (:P Q))
+    (step_offset (:D D2) (:V *V_m4))
+    (compose (:A P) (:B V_m4) (:C *Q2))
+    (&mark (:P Q2)))
+
+  (RULE &reach
+    (&crossing *P)
+    (&mark_color (:C *Col))
+    (&bbox.box (:key Col) *B)
+    (ALL ((&bbox.box (:key (:Col *Colm)) B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B) (:X P) (:X_rel *P_inner))
+    (dir_elem *D)
+    (margin (:B P_inner) D *K))
+
+  ;; The direction the marker reaches farthest toward.
+  (INIT &far Order
+    (member ((:t (:V D) (:S K)))
+      (&reach *D *K))
+    (score ((:t (:V D) (:S K)) (:S K))
+      (&reach *D *K))))
+
+(OUTPUT side "the marker's far direction, turned a quarter turn in &turn_sense, gives the side the copy goes to"
+
+  ;; The quarter turn from the marker's far direction to the copy's side.
+  (DET &turn_sense SenseDomain))
+
+(OUTPUT copy "the shape's reflection across that side of its bounding box sits just beyond that edge, in the shape's color")
+
+(OUTPUT erase "every other cell is &bg, the marker's cells included")
+
+(RULE &copy_dir
+  (&far.maximal (:t (:V *D3)))
+  (&turn_sense *S)
+  (turn S (:D D3) (:D2 *D)))
+
+(RULE &copy_box
+  (&copy_dir *D)
+  (axis_of D *A)
+  (&shape_color (:C *Col))
+  (&bbox.box (:key Col) (:B *B3))
+  (input *P)
+  (axis_elem A)
+  (relative (:Base B3) (:X P) (:X_rel *R_m1))
+  (frame_extent (:P R_m1) A *N)
+  (dir8_opposite D (:D2 *O_m3))
+  (edge_inset (:D O_m3) (:K N) (:B *B1_m4))
+  (edge_inset D (:K N) (:B *I_m6))
+  (relative (:Base I_m6) (:X 0) (:X_rel *B2_m5))
+  (compose (:A B1_m4) (:B B2_m5) (:C *V_m2))
+  (compose (:A B3) (:B V_m2) (:C *B)))
+
+(RULE &paint
+  (input (:P *P_grid_in) *Col)
+  (&shape_color (:C Col))
+  (OR ((&bbox.box (:key Col) *B)
+       (relative (:Base B) (:X P_grid_in) (:X_rel *R_m1))
+       (axis_of (:D *D1_m2) (:A *A1_m3))
+       (opposite (:D D1_m2) (:Opp *O1_m4))
+       (perp (:A A1_m3) (:A2 *A2_m5))
+       (axis_of (:D *D2_m6) (:A A2_m5))
+       (opposite (:D D2_m6) (:Opp *O2_m7))
+       (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+       (>= K1_m8 0)
+       (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+       (>= K2_m9 0)
+       (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+       (>= K3_m10 0)
+       (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+       (>= K4_m11 0)
+       (relative (:Base B) (:X P_grid_in) (:X_rel *P_inner))
+       (&copy_dir *D)
+       (axis_of D *A)
+       (axis_inversion A (:T *F))
+       (apply (:D F) (:P P_inner) (:P_out *P_flip))
+       (&copy_box (:B *B2))
+       (compose (:A B2) (:B P_flip) (:C *P))
+       (input P))
+      ((= P P_grid_in))))
+
+(RULE &output
+  (OR ((&paint *P)
+       (&shape_color (:C *Col)))
+      ((input P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))

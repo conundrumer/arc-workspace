@@ -1,0 +1,84 @@
+;; 52fd389e
+
+(RULE &rects_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &body SharedColor)
+
+(INIT &rects Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (&body (:C Col))
+         (&rects_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (&body (:C Col2)))
+        ((input P (:Col *Col3))
+         (&body (:C Col3))
+         (= P3 P)))))
+
+(RULE &rects_component
+  (&rects.class (:a *P) *Id))
+
+(INIT &rect_box BoundingBox
+  (key ((&rects_component *P ^Id))
+    (cell (P)
+      (&rects_component *P Id))))
+
+(RULE &within
+  (input *P)
+  (&rect_box.box (:key *Id) *B)
+  (ALL ((&rect_box.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(RULE &marker
+  (&within *Id *P)
+  (input P *Col)
+  (NOT (&body (:C Col))))
+
+(INIT &marker_count Cardinality
+  (key ((&marker ^Id *P))
+    (member ((:m P))
+      (&marker Id *P))))
+
+(RULE &ring_box_uniform_outset1
+  (&marker_count.size (:key *Id) (:N *K_))
+  (axis_of (:D *D1_m1) (:A *A1_m2))
+  (perp (:A A1_m2) (:A2 *A2_m3))
+  (axis_of (:D *D2_m4) (:A A2_m3))
+  (opposite (:D D1_m1) (:Opp *O_m7))
+  (edge_inset (:D D1_m1) (:K K_) (:B *B1_m8))
+  (edge_inset (:D O_m7) (:K K_) (:B *B2_m9))
+  (compose (:A B1_m8) (:B B2_m9) (:C *B1_m5))
+  (opposite (:D D2_m4) (:Opp *O_m10))
+  (edge_inset (:D D2_m4) (:K K_) (:B *B1_m11))
+  (edge_inset (:D O_m10) (:K K_) (:B *B2_m12))
+  (compose (:A B1_m11) (:B B2_m12) (:C *B2_m6))
+  (compose (:A B1_m5) (:B B2_m6) (:C *I_m1))
+  (relative (:Base I_m1) (:X 0) (:X_rel *B_frame_)))
+
+(RULE &ring_box
+  (&marker_count.size (:key *Id) (:N *K))
+  (&ring_box_uniform_outset1 (:K_ K) (:B_frame_ *B_frame))
+  (&rect_box.box (:key Id) (:B *B_rect))
+  (compose (:A B_frame) (:B B_rect) (:C *B)))
+
+(RULE &ring
+  (input *P)
+  (&ring_box *Id *B)
+  (ALL ((&ring_box (:Id *Idm) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (NOT (&within Id P)))
+
+(RULE &output
+  (OR ((&ring *Id *P)
+       (&marker Id *Col))
+      ((input P Col)
+       (NOT (&ring P)))))

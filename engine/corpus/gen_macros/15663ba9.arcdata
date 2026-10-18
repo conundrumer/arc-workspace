@@ -1,0 +1,5 @@
+;; 15663ba9
+
+(param &bg Color (0))
+(param &open_paint Color (4))
+(param &enclosed_paint Color (2))

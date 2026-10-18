@@ -1,0 +1,186 @@
+;; 0e671a1a
+
+;; The axis the half leaving the source runs along.
+(DET &axis AxisDomain)
+
+(DET &bg DominantColor)
+
+(DET &path AnyOutNewColor)
+
+(DET &cell
+  (ex_output *E *P *Col)
+  (NOT (&path (:C Col))))
+
+(DET &mark2
+  (&cell *E *P *Col)
+  (NOT (&bg (:C Col))))
+
+(DET &elbow_split12
+  (&mark2 (:E *K) (:Col *D) (:P *P_dst_))
+  (&axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_dst_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_dst_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Along_))
+  (relative (:Base Along_) (:X P_dst_) (:X_rel *X_m1_)))
+
+(DET &elbow_split22
+  (&mark2 (:E *K) (:Col *S) (:P *P_src_))
+  (&axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_src_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_src_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m2_))
+  (relative (:Base X_m2_) (:X P_src_) (:X_rel *Across_)))
+
+(DET &elbow2
+  (&mark2 *E (:Col *Src) (:P *P_src))
+  (&mark2 E (:Col *Dst) (:P *P_dst))
+  (!= Src Dst)
+  (&axis *A)
+  (&elbow_split12 (:P_dst_ P_dst) (:A_ A) (:Along_ *Along) (:X_m1_ *X_m1))
+  (&elbow_split22 (:P_src_ P_src) (:A_ A) (:X_m2_ *X_m2) (:Across_ *Across))
+  (compose (:A Along) (:B Across) (:C *P)))
+
+(DET &refuted
+  (&elbow2 *E *Src *Dst *P)
+  (ex_output E P *Col)
+  (NOT (&path (:C Col))))
+
+(DET &leg
+  (&elbow2 *Src *Dst)
+  (NOT (&refuted Src Dst)))
+
+(RULE &span_dir
+  (&leg *Src *Dst)
+  (axis_elem *A)
+  (axis4_of *D A))
+
+(RULE &span_node
+  (&leg *Src *Dst)
+  (axis_elem *A)
+  (input *P))
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &elbow_split1
+  (&mark (:Col *D) (:P *P_dst_))
+  (&axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_dst_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_dst_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Along_))
+  (relative (:Base Along_) (:X P_dst_) (:X_rel *X_m1_)))
+
+(RULE &elbow_split2
+  (&mark (:Col *S) (:P *P_src_))
+  (&axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_src_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_src_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m2_))
+  (relative (:Base X_m2_) (:X P_src_) (:X_rel *Across_)))
+
+(RULE &elbow
+  (&mark (:Col *Src) (:P *P_src))
+  (&mark (:Col *Dst) (:P *P_dst))
+  (!= Src Dst)
+  (&axis *A)
+  (&elbow_split1 (:P_dst_ P_dst) (:A_ A) (:Along_ *Along) (:X_m1_ *X_m1))
+  (&elbow_split2 (:P_src_ P_src) (:A_ A) (:X_m2_ *X_m2) (:Across_ *Across))
+  (compose (:A Along) (:B Across) (:C *P)))
+
+(RULE &span_source
+  (&leg *Src *Dst)
+  (OR ((&mark (:Col Src) *P))
+      ((&mark (:Col Dst) P))
+      ((&elbow Src Dst P))))
+
+;; Each half of a leg spans two of its three points: source to elbow down one
+;; line, elbow to destination along the other. The domain is background only,
+;; so every mark keeps its own color.
+(INIT &span Distance
+  (key ((&span_source (:Src ^Ky_src) (:Dst ^Ky_dst) (:P ^O))
+        (&span_dir (:Src Ky_src) (:Dst Ky_dst) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&span_source (:Src Ky_src) (:Dst Ky_dst) (:P O))
+           (&span_dir (:Src Ky_src) (:Dst Ky_dst) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&span_node (:Src Ky_src) (:Dst Ky_dst) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&span_node (:Src Ky_src) (:Dst Ky_dst) (:P Q)))
+          ((&span_source (:Src Ky_src) (:Dst Ky_dst) (:P O))
+           (&span_dir (:Src Ky_src) (:Dst Ky_dst) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&span_node (:Src Ky_src) (:Dst Ky_dst) (:P Q))
+           (= A2 O))
+          ((&span_source (:Src Ky_src) (:Dst Ky_dst) (:P O))
+           (&span_dir (:Src Ky_src) (:Dst Ky_dst) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&span_node (:Src Ky_src) (:Dst Ky_dst) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&span_node (:Src Ky_src) (:Dst Ky_dst) (:P Q)))))
+    (source ((:n O))
+      (&span_source (:Src Ky_src) (:Dst Ky_dst) (:P O))
+      (&span_dir (:Src Ky_src) (:Dst Ky_dst) D))))
+
+(RULE &span_ray
+  (&span.distance (:key (:Ky_src *Src) (:Ky_dst *Dst) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &span_between
+  (&leg *Src *Dst)
+  (input *P *Col)
+  (&bg (:C Col))
+  (axis_elem *A)
+  (axis4_of (:D *D2) A)
+  (dir8_opposite (:D D2) (:D2 *O))
+  (&span_ray Src Dst P (:D D2))
+  (&span_ray Src Dst P (:D O)))
+
+(RULE &span_end
+  (&span_ray *Src *Dst *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&span_ray Src Dst (:P Q) D Origin)))
+
+(RULE &output
+  (OR ((&span_between *P)
+       (&path (:C *Col)))
+      ((input P Col)
+       (NOT (&span_between P)))))

@@ -1,0 +1,6 @@
+;; 7ec998c9
+
+(param &line Color (1))
+(param &axis Axis (AXIS_V))
+(param &corner DiagDir (DIAG_TL))
+(param &corner_sense Sense (SENSE_CW))

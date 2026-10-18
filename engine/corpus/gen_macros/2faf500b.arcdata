@@ -1,0 +1,4 @@
+;; 2faf500b
+
+(param &bg Color (0))
+(param &mark Color (6))

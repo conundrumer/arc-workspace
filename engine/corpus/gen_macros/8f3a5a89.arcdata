@@ -1,0 +1,6 @@
+;; 8f3a5a89
+
+(param &bg Color (8))
+(param &wall Color (1))
+(param &start Color (6))
+(param &paint Color (7))

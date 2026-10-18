@@ -1,0 +1,5 @@
+;; 81c0276b
+
+(param &bg Color (0))
+(param &rank_dir Dir (DIR_T))
+(param &bar_sense Sense (SENSE_CC))

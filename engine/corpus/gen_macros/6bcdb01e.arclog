@@ -1,0 +1,114 @@
+;; 6bcdb01e
+
+(DET &wall UnchangedColor)
+
+(INIT &open_rim Boundary
+  (cell (P)
+    (input *P *Col)
+    (NOT (&wall (:C Col))))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &open_rim_dir
+  (&open_rim.exposed *P *D)
+  (dir_elem D))
+
+(RULE &open_dir
+  (dir_elem *D))
+
+(RULE &open_node
+  (input *P *Col)
+  (NOT (&wall (:C Col))))
+
+(RULE &open_source
+  (input *P *Col)
+  (NOT (&wall (:C Col))))
+
+;; The walker may stand on any cell but a wall.
+(INIT &open Distance
+  (key ((&open_source (:P ^O))
+        (&open_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&open_source (:P O))
+           (&open_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&open_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&open_node (:P Q)))
+          ((&open_source (:P O))
+           (&open_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&open_node (:P Q))
+           (= A2 O))
+          ((&open_source (:P O))
+           (&open_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&open_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&open_node (:P Q)))))
+    (source ((:n O))
+      (&open_source (:P O))
+      (&open_dir D))))
+
+(RULE &open_ray
+  (&open.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &open_end
+  (&open_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&open_ray (:P Q) D Origin)))
+
+(DET &seed RarestColor)
+
+(RULE &start
+  (&seed (:C *Col))
+  (input (:P *Q) Col)
+  (input *P Col)
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A Q) (:B V_m1) (:C P)))
+
+;; The walker turns onto a new leg where its run halts with one side open
+;; and the other closed.
+(INIT &legs Propagation
+  (source ((:n (:P A0) (:D D0)))
+    (&start (:P *A0) (:D *D0)))
+  (edge ((:a (:P A) D) (:b (:P E) (:D D2)))
+    (&open_end (:P *E) *D (:Origin *A))
+    (axis_of D (:A *A_m1))
+    (perp (:A A_m1) (:A2 *A2_m2))
+    (axis_of (:D *D2) (:A A2_m2))
+    (NOT (&open_rim_dir (:P E) (:D D2)))
+    (opposite (:D D2) (:Opp *D3))
+    (&open_rim.exposed (:P E) (:D D3))
+    (dir_elem (:D D3))))
+
+(RULE &path
+  (&legs.reached (:n (:P *A) *D))
+  (&open_ray *P D (:K *N) (:Origin A))
+  (> N 0))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (IF ((&path P))
+      ((&seed (:C *Col)))
+      ((= Col Col_in))))

@@ -1,0 +1,225 @@
+;; e9afcf9a
+
+(INIT &cand Singleton
+  (key ((ex_input *E (:P ^P_in) *Col)
+        (ex_output E (:P *P_out) Col)
+        (axis_elem ^A)
+        (perp A *A2)
+        (perp (:A A2) (:A2 *A2_m1))
+        (axis_of (:D *D_m2) (:A A2_m1))
+        (margin (:B P_in) (:D D_m2) (:K *K_m3))
+        (margin (:B P_out) (:D D_m2) (:K K_m3)))
+    (member ((:v P_out))
+      (ex_input *E (:P P_in) *Col)
+      (ex_output E (:P *P_out) Col)
+      (axis_elem A)
+      (perp A *A2)
+      (perp (:A A2) (:A2 *A2_m1))
+      (axis_of (:D *D_m2) (:A A2_m1))
+      (margin (:B P_in) (:D D_m2) (:K *K_m3))
+      (margin (:B P_out) (:D D_m2) (:K K_m3)))))
+
+(DET &ambiguous
+  (&cand.plural (:key *A)))
+
+(DET &divide_axis
+  (&cand.member (:key *A))
+  (NOT (&ambiguous A)))
+
+(DET &pair
+  (&divide_axis *A)
+  (&cand.value (:key A *P_in) (:v *P_out)))
+
+(INIT &ident Quotient
+  (equivalent ((:a P_in) (:b P_in))
+    (&pair *P_in)))
+
+(DET &in_label
+  (&pair (:P_in *P))
+  (&ident.class (:a P) *Id))
+
+(DET &out_label
+  (&pair *P_in (:P_out *P))
+  (&ident.class (:a P_in) *Id))
+
+(RULE &label_pair
+  (&in_label (:P *P_in) *Id)
+  (&out_label (:P *P_out) Id))
+
+(RULE &perm
+  (&label_pair *P_in *P_out))
+
+(ALTS $choice "how the permutation is derived" $LabeledGrids
+  (ALT $Size
+    (DET &tiled_division_axis_split1
+      (&pair (:P_in *P_in_))
+      (axis_elem (:A *A2_))
+      (axis_of (:D *D_m1) (:A A2_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_in_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_in_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+      (relative (:Base Pi_) (:X P_in_) (:X_rel *X_m1_)))
+
+    (DET &tiled_division_side_held
+      (&pair *P_in)
+      (&divide_axis *A)
+      (sub_extent (:P P_in) A *K))
+
+    (DET &tiled_division_axis
+      (OR ((&pair (:P_in *P))
+           (&divide_axis (:A *Key_a))
+           (sub_extent P (:A Key_a) *K)
+           (axis_elem *A)
+           (OR ((!= A Key_a))
+               ((NOT (&tiled_division_side_held K (:A Key_a)))))
+           (&tiled_division_axis_split1 (:P_in_ P) (:A2_ A) (:Pi_ *P_inner) (:X_m1_ *X_m1))
+           (relative (:Base P_inner) (:X P_inner) (:X_rel *P_outer)))
+          ((&pair (:P_in P))
+           (&divide_axis (:A Key_a))
+           (sub_extent P (:A Key_a) K)
+           (&pair (:P_in *P_in2))
+           (sub_extent (:P P_in2) (:A Key_a) K)
+           (axis_of *D (:A Key_a))
+           (opposite D (:Opp *O))
+           (margin (:B P) D (:K *T))
+           (margin (:B P) (:D O) (:K *T2))
+           (divide T (:Side K) (:Gap 0) (:Part *I) (:Remainder *R))
+           (divide (:T T2) (:Side K) (:Gap 0) (:Part *I2) (:Remainder *R2))
+           (opposite D (:Opp *O_m1))
+           (edge_inset D (:K I) (:B *B1_m2))
+           (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+           (compose (:A B1_m2) (:B B2_m3) (:C P_outer))
+           (opposite D (:Opp *O_m4))
+           (edge_inset D (:K R) (:B *B1_m5))
+           (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+           (compose (:A B1_m5) (:B B2_m6) (:C P_inner))
+           (frame_extent (:P P_inner) (:A Key_a) (:N K))
+           (= A Key_a))))
+
+    (DET &tiled_division_tile
+      (&tiled_division_axis *K (:Key_a *A) *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+      (perp (:A A1) *A2)
+      (&tiled_division_axis K (:Key_a A) P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+      (compose (:A Po1) (:B Po2) (:C *P_outer))
+      (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+    (DET &tiled_split1
+      (&tiled_division_tile *K (:A *A_) (:P *P_in) (:P_inner *P_slab_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_slab_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_slab_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *P_inner_axis_))
+      (relative (:Base P_inner_axis_) (:X P_slab_) (:X_rel *X_m1_)))
+
+    (RULE &perm_division_cell
+      (input *P)
+      (&divide_axis (:A *Key)))
+
+    (DET &cell_transform
+      (&pair *P_in *P_out)
+      (d4_elem *D)
+      (apply D (:P P_in) P_out))
+
+    (DET &tiled
+      (&tiled_division_tile *K *A (:P *P_in) (:P_inner *P_slab))
+      (&tiled_split1 (:P_slab_ P_slab) (:A_ A) (:P_inner_axis_ *P_inner_axis) (:X_m1_ *X_m1)))
+
+    (INIT &inner_transform Singleton
+      (key ((&tiled ^K *P_in ^P_inner_axis)
+            (&cell_transform P_in *D))
+        (member ((:v D))
+          (&tiled K *P_in P_inner_axis)
+          (&cell_transform P_in *D))))
+
+    (DET &mixed
+      (&inner_transform.plural (:key *K)))
+
+    (DET &col_transform
+      (&inner_transform.value (:key *K (:P_inner_axis *P_inner)) (:v *D))
+      (NOT (&mixed K)))
+
+    (RULE &tile_size
+      (&col_transform (:P_inner *P_inner_axis))
+      (&divide_axis *A)
+      (frame_extent (:P P_inner_axis) A (:N *K)))
+
+    (RULE &perm_division_axis_split1
+      (&perm_division_cell (:Key *Ky) (:P *P_))
+      (axis_elem (:A *A_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+      (relative (:Base Pi_) (:X P_) (:X_rel *X_m1_)))
+
+    (RULE &perm_division_side_held
+      (&divide_axis *A)
+      (&tile_size *K))
+
+    (RULE &perm_division_axis
+      (OR ((&perm_division_cell *Key *P)
+           (axis_elem *A)
+           (OR ((!= A Key))
+               ((NOT (&perm_division_side_held (:A Key)))))
+           (&perm_division_axis_split1 (:P_ P) (:A_ A) (:Pi_ *P_inner) (:X_m1_ *X_m1))
+           (relative (:Base P_inner) (:X P_inner) (:X_rel *P_outer)))
+          ((&perm_division_cell Key P)
+           (&divide_axis (:A Key))
+           (&tile_size *K)
+           (axis_of *D (:A Key))
+           (opposite D (:Opp *O))
+           (margin (:B P) D (:K *T))
+           (margin (:B P) (:D O) (:K *T2))
+           (divide T (:Side K) (:Gap 0) (:Part *I) (:Remainder *R))
+           (divide (:T T2) (:Side K) (:Gap 0) (:Part *I2) (:Remainder *R2))
+           (opposite D (:Opp *O_m1))
+           (edge_inset D (:K I) (:B *B1_m2))
+           (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+           (compose (:A B1_m2) (:B B2_m3) (:C P_outer))
+           (opposite D (:Opp *O_m4))
+           (edge_inset D (:K R) (:B *B1_m5))
+           (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+           (compose (:A B1_m5) (:B B2_m6) (:C P_inner))
+           (frame_extent (:P P_inner) (:A Key) (:N K))
+           (= A Key))))
+
+    (RULE &perm_division_tile
+      (&perm_division_axis *Key *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+      (perp (:A A1) *A2)
+      (&perm_division_axis Key P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+      (compose (:A Po1) (:B Po2) (:C *P_outer))
+      (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+    (RULE &perm_split1
+      (&perm_division_tile (:Key *A_) (:P *P_grid_in) (:P_inner *P_slab_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_slab_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_slab_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *P_inner_axis_))
+      (relative (:Base P_inner_axis_) (:X P_slab_) (:X_rel *X_m1_)))
+
+    (RULE &perm
+      (&perm_division_tile (:Key *A) (:P *P_in) (:P_inner *P_slab))
+      (&perm_split1 (:P_slab_ P_slab) (:A_ A) (:P_inner_axis_ *P_inner_axis) (:X_m1_ *X_m1))
+      (&col_transform (:P_inner P_inner_axis) (:D *T))
+      (apply (:D T) (:P P_in) *P_out))))
+
+(RULE &output
+  (input (:P *P_grid_in) *Col)
+  (&perm (:P_in P_grid_in) (:P_out *P)))

@@ -1,0 +1,64 @@
+;; 5521c0d9
+
+(RULE &objs_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &common_count Cardinality
+  (key ((ex_input *E *P ^Col))
+    (member ((:m E P))
+      (ex_input *E *P Col))))
+
+;; The color that covers most of the grid.
+(INIT &common Order
+  (member ((:t Col))
+    (&common_count.size (:key *Col)))
+  (score ((:t Col) (:S Count))
+    (&common_count.size (:key *Col) (:N *Count))))
+
+(DET &bg
+  (&common.maximal (:t *C)))
+
+(INIT &objs Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&objs_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &objs_component
+  (&objs.class (:a *P) *Id))
+
+(DET &move_dir DirDomain)
+
+(INIT &bbox BoundingBox
+  (key ((&objs_component *P ^Id))
+    (cell (P)
+      (&objs_component *P Id))))
+
+(RULE &moved
+  (input (:P *P2) *Col)
+  (&objs_component (:P P2) *Id)
+  (&move_dir *D)
+  (axis_of D *A)
+  (&bbox.box (:key Id) *B)
+  (axis_elem A)
+  (relative (:Base B) (:X P2) (:X_rel *R_m1))
+  (frame_extent (:P R_m1) A *N)
+  (dir8_opposite D (:D2 *O_m3))
+  (edge_inset (:D O_m3) (:K N) (:B *B1_m4))
+  (edge_inset D (:K N) (:B *I_m6))
+  (relative (:Base I_m6) (:X 0) (:X_rel *B2_m5))
+  (compose (:A B1_m4) (:B B2_m5) (:C *V_m2))
+  (compose (:A P2) (:B V_m2) (:C *P)))
+
+(RULE &output
+  (input *P)
+  (OR ((&moved P *Col))
+      ((NOT (&moved P))
+       (&bg (:C Col)))))

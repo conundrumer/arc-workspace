@@ -1,0 +1,65 @@
+;; 60b61512
+
+(DET &bg DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(INIT &objs Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+  (step ((:Delta S))
+    (diag_dir_elem *D)
+    (step_offset D (:V *S))))
+
+(INIT &bx2 BoundingBox
+  (key ((&objs.component *P ^Id))
+    (cell (P)
+      (&objs.component *P Id))))
+
+(RULE &region
+  (input *P)
+  (&bx2.box *B)
+  (inside (:A P) B))
+
+(ALTS $choice "what the region covers" $Box
+  (ALT $Stamp
+    (INIT &objs2 Connectivity
+      (key ((ex_input ^E *P *Col)
+            (NOT (&bg (:C Col))))
+        (node (P)
+          (ex_input E *P *Col)
+          (NOT (&bg (:C Col)))))
+      (step ((:Delta S))
+        (diag_dir_elem *D)
+        (step_offset D (:V *S))))
+
+    (INIT &bx BoundingBox
+      (key ((&objs2.component (:key ^E) *P ^Id))
+        (cell (P)
+          (&objs2.component (:key E) *P Id))))
+
+    (DET &footprint
+      (&bx.box (:key *E) *B)
+      (ex_output E (:P *P2) *Col)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P))
+      (NOT (&bg (:C Col))))
+
+    (RULE &region
+      (input *P)
+      (&bx2.box *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner))
+      (&footprint (:P P_inner)))))
+
+(RULE &painted
+  (&region *P)
+  (input P *Col)
+  (&bg (:C Col)))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))

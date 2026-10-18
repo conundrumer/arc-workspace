@@ -1,0 +1,74 @@
+;; e179c5f4
+
+(DET &bg ChangedColor)
+
+(DET &fill AnyOutNewColor)
+
+(DET &axis AxisDomain)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &travel_axis
+  (&axis *A))
+
+(RULE &paint
+  (&mark *Col))
+
+(ALTS $t "travel axis — the walls beside it reflect" $Axis
+  (ALT $Long
+    (RULE &travel_axis
+      (&mark *P)
+      (perp *A (:A2 *A2_m1))
+      (frame_extent P A (:N *N1))
+      (frame_extent P (:A A2_m1) (:N *N2))
+      (> N1 N2))))
+
+(ALTS $f "ball color" $Mark
+  (ALT $Ink
+    (DET &ink RarestColor)
+
+    (RULE &paint
+      (&ink (:C *Col)))))
+
+(RULE &launch
+  (&mark *P)
+  (&travel_axis *A)
+  (axis_of (:D *Et) A)
+  (margin (:B P) (:D Et) (:K 0))
+  (opposite (:D Et) (:Opp *D_travel))
+  (perp A *A2)
+  (axis_of (:D *Eb) (:A A2))
+  (margin (:B P) (:D Eb) (:K 0))
+  (opposite (:D Eb) (:Opp *D_bounce)))
+
+;; One travel step per cell, side component toward d; the wall reflects it.
+(INIT &walk Propagation
+  (source ((:n P D))
+    (&launch *P (:D_bounce *D)))
+  (edge ((:a P D) (:b (:P P2) (:D D_out)))
+    (&launch (:D_travel *Dt))
+    (input *P)
+    (axis_of (:D Dt) (:A *A_m1))
+    (perp (:A A_m1) (:A2 *A2_m2))
+    (axis_of *D (:A A2_m2))
+    (OR ((margin (:B P) D (:K 0))
+         (opposite D (:Opp *D_out)))
+        ((NOT (margin (:B P) D (:K 0)))
+         (= D_out D)))
+    (step_offset (:D Dt) (:V *V_m3))
+    (compose (:A P) (:B V_m3) (:C *M))
+    (step_offset (:D D_out) (:V *V_m4))
+    (compose (:A M) (:B V_m4) (:C *P2))
+    (input (:P P2))))
+
+(RULE &path
+  (&walk.reached (:n *P)))
+
+(RULE &output
+  (OR ((&path *P)
+       (&paint *Col))
+      ((input P)
+       (NOT (&path P))
+       (&fill (:C Col)))))

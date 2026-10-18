@@ -1,0 +1,4 @@
+;; 97239e3d
+
+(param &bg Color (0))
+(param &wall Color (8))

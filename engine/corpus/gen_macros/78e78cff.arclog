@@ -1,0 +1,212 @@
+;; 78e78cff
+
+(RULE &flood_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(RULE &leak_dir
+  (dir_elem *D))
+
+(INIT &palette_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &palette Order
+  (member ((:t Col))
+    (&palette_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&palette_count.size (:key *Col) *N)))
+
+;; The lone cell of its color.
+(INIT &lone Singleton
+  (key ((input *P ^Col))
+    (member ((:v P))
+      (input *P Col))))
+
+(RULE &seed
+  (&lone.value (:key *Col) (:v *P)))
+
+(RULE &frame
+  (input *P *Col)
+  (NOT (&palette.maximal (:t Col)))
+  (NOT (&seed Col)))
+
+(RULE &leak_node
+  (input *P)
+  (NOT (&frame P)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&frame *P)))
+
+(RULE &box_cell
+  (&bbox.box *B)
+  (input *P)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(INIT &flood Propagation
+  (source ((:n P))
+    (&seed *P)
+    (&box_cell P)
+    (NOT (&frame P)))
+  (edge ((:a P) (:b P2))
+    (&box_cell *P)
+    (NOT (&frame P))
+    (&flood_steps (:Delta *S))
+    (compose (:A P) (:B S) (:C *P2))
+    (&box_cell (:P P2))
+    (NOT (&frame (:P P2)))))
+
+(RULE &leak_source
+  (&flood.reached (:n *P)))
+
+(INIT &leak Distance
+  (key ((&leak_source (:P ^O))
+        (&leak_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&leak_source (:P O))
+           (&leak_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&leak_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&leak_node (:P Q)))
+          ((&leak_source (:P O))
+           (&leak_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&leak_node (:P Q))
+           (= A2 O))
+          ((&leak_source (:P O))
+           (&leak_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&leak_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&leak_node (:P Q)))))
+    (source ((:n O))
+      (&leak_source (:P O))
+      (&leak_dir D))))
+
+(RULE &leak_ray
+  (&leak.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &leak_end
+  (&leak_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&leak_ray (:P Q) D Origin)))
+
+(RULE &cross_dir
+  (axis_of *D (:A *Key)))
+
+(RULE &cross_blocked
+  (axis_elem (:A *Key))
+  (&frame *P))
+
+(RULE &cross_node
+  (axis_of *D (:A *Key))
+  (input *P)
+  (NOT (&cross_blocked Key P)))
+
+(RULE &cross_source
+  (&box_cell *P)
+  (NOT (&frame P))
+  (&seed (:P *S))
+  (perp (:A *A_seed) (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B S) (:D D_m2) (:K K_m3))
+  (perp (:A A_seed) (:A2 *Key)))
+
+;; Keyed by the cast axis: a mark on the seed's line of one axis casts
+;; along the other.
+(INIT &cross Distance
+  (key ((&cross_source (:Key ^Ky) (:P ^O))
+        (&cross_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&cross_source (:Key Ky) (:P O))
+           (&cross_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&cross_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&cross_node (:Key Ky) (:P Q)))
+          ((&cross_source (:Key Ky) (:P O))
+           (&cross_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&cross_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&cross_source (:Key Ky) (:P O))
+           (&cross_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&cross_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&cross_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&cross_source (:Key Ky) (:P O))
+      (&cross_dir (:Key Ky) D))))
+
+(RULE &cross_ray
+  (&cross.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &cross_end
+  (&cross_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&cross_ray Key (:P Q) D Origin)))
+
+(RULE &fill
+  (&leak_ray *P))
+
+(ALTS $choice "how the fill escapes the box; the cases diverge only where a frame cell lies on the seed's row or column inside the box" $Leak
+  (ALT $Crosshair
+    (RULE &cross_cell
+      (axis_elem (:A *Key))
+      (input *P))
+
+    (RULE &fill
+      (&cross_ray (:Key *Ky) *P)
+      (&cross_cell (:Key Ky) P))))
+
+(RULE &output
+  (OR ((&fill *P)
+       (&seed *Col))
+      ((input P Col)
+       (NOT (&fill P)))))

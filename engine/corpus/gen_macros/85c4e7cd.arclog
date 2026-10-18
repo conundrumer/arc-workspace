@@ -1,0 +1,35 @@
+;; 85c4e7cd
+
+(RULE &peel_depth_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+;; The grid peels into concentric rings, one per depth.
+(INIT &peel Boundary
+  (cell (P)
+    (input *P)))
+
+(INIT &peel_depth Distance
+  (edge ((:a P) (:b P2))
+    (input *P)
+    (&peel_depth_steps (:Delta *S))
+    (compose (:A P) (:B S) (:C *P2))
+    (input (:P P2)))
+  (source ((:n P))
+    (&peel.boundary *P)))
+
+(INIT &rings Order
+  (member ((:t K))
+    (&peel_depth.distance *K))
+  (score ((:t K) (:S K))
+    (&peel_depth.distance *K)))
+
+(RULE &ring_color
+  (&peel_depth.distance (:n *P) *K)
+  (input P *Col))
+
+(RULE &output
+  (&peel_depth.distance (:n *P) *K)
+  (&rings.rank (:t K) *R)
+  (&rings.dual_rank (:t *K2) R)
+  (&ring_color (:K K2) *Col))

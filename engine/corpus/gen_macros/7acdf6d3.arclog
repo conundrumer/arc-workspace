@@ -1,0 +1,136 @@
+;; 7acdf6d3
+
+(DET &bg DominantColor)
+
+(RULE &comps_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &comps Quotient
+  (edge ((:a (:Key Col) P) (:b (:Key Col) (:P P3)))
+    (OR ((&ink *P *Col)
+         (&comps_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ink (:P P3) Col))
+        ((&ink P Col)
+         (= P3 P)))))
+
+(RULE &comps_component
+  (&comps.class (:a *Key *P) *Id))
+
+(RULE &container
+  (&comps_component (:Key *Col) *Id))
+
+(DET &hollow_axis AxisDomain)
+
+(RULE &hollow_axis2
+  (&container (:Id *Key))
+  (&hollow_axis *A))
+
+(RULE &hollow_dir
+  (&hollow_axis2 *Key *A)
+  (axis4_of *D A))
+
+(RULE &hollow_node
+  (&hollow_axis2 *Key)
+  (input *P))
+
+(RULE &hollow_source
+  (&comps_component *P (:Id *Key)))
+
+;; The hollow: bg cells with the container on both sides along the axis.
+(INIT &hollow Distance
+  (key ((&hollow_source (:Key ^Ky) (:P ^O))
+        (&hollow_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&hollow_source (:Key Ky) (:P O))
+           (&hollow_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&hollow_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&hollow_node (:Key Ky) (:P Q)))
+          ((&hollow_source (:Key Ky) (:P O))
+           (&hollow_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&hollow_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&hollow_source (:Key Ky) (:P O))
+           (&hollow_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&hollow_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&hollow_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&hollow_source (:Key Ky) (:P O))
+      (&hollow_dir (:Key Ky) D))))
+
+(RULE &hollow_ray
+  (&hollow.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &hollow_between
+  (&container (:Id *Key))
+  (input *P *Col)
+  (&bg (:C Col))
+  (&hollow_axis2 Key *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&hollow_ray Key P D)
+  (&hollow_ray Key P (:D O)))
+
+(RULE &hollow_end
+  (&hollow_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&hollow_ray Key (:P Q) D Origin)))
+
+(INIT &hollow_size Cardinality
+  (key ((&hollow_between (:Key ^Id) *P))
+    (member ((:m P))
+      (&hollow_between (:Key Id) *P))))
+
+(INIT &pieces Cardinality
+  (key ((&ink *P ^Col))
+    (member ((:m P))
+      (&ink *P Col))))
+
+(RULE &fit
+  (&hollow_size.size (:key *Id) *N)
+  (&pieces.size (:key *Col) N)
+  (&container Id (:Col *Col2))
+  (!= Col Col2))
+
+(RULE &move
+  (OR ((&fit *Id *Col)
+       (&hollow_between (:Key Id) *P))
+      ((&fit (:Col *Col2))
+       (input P (:Col Col2))
+       (&bg (:C Col)))))
+
+(RULE &output
+  (OR ((&move *P *Col))
+      ((input P Col)
+       (NOT (&move P)))))

@@ -1,0 +1,271 @@
+;; b9b7f026
+
+(INPUT rectangles "each input holds several axis-aligned rectangles on a field of &bg, each of its own color; two rectangles may touch."
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &comps8_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((diag_dir_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  (INIT &color_ids Quotient
+    (equivalent ((:a Col) (:b Col))
+      (&ink *Col)))
+
+  (INIT &comps8 Quotient
+    (edge ((:a (:Key Col) P) (:b (:Key Col) (:P P3)))
+      (OR ((&ink *P *Col)
+           (&comps8_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&ink (:P P3) Col))
+          ((&ink P Col)
+           (= P3 P))))))
+
+(INPUT one-holed "exactly one rectangle has a hole: a region of bg cells inside it that no walk through bg cells reaches from the frame edge."
+
+  (RULE &comps_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (INIT &comps Quotient
+    (edge ((:a (:Key Col) P) (:b (:Key Col) (:P P3)))
+      (OR ((&ink *P *Col)
+           (&comps_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&ink (:P P3) Col))
+          ((&ink P Col)
+           (= P3 P)))))
+
+  (RULE &comps_component
+    (&comps.class (:a *Key *P) *Id))
+
+  (RULE &flood8_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((dir8_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  (RULE &own8_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((dir8_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  (RULE &bg_cell
+    (input *P *Col)
+    (&bg (:C Col)))
+
+  (RULE &own_flood_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &own_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &member
+    (&comps_component (:Key *Col) *P *Id))
+
+  (RULE &outside
+    (&member *Id)
+    (input *P)
+    (NOT (&member Id P)))
+
+  (RULE &own_cell
+    (&outside (:Id *Key) *P))
+
+  (INIT &own_flood Propagation
+    (key ((OR ((&own_cell (:Key ^Id) *P)
+               (dir_elem *D)
+               (margin (:B P) D (:K 0))
+               (&outside Id P))
+              ((&outside Id P)
+               (&own_flood_steps (:Delta *S))
+               (compose (:A P) (:B S) (:C *P2))
+               (&outside Id (:P P2)))))
+      (source ((:n P))
+        (&own_cell (:Key Id) *P)
+        (dir_elem *D)
+        (margin (:B P) D (:K 0))
+        (&outside Id P))
+      (edge ((:a P) (:b P2))
+        (&outside Id *P)
+        (&own_flood_steps (:Delta *S))
+        (compose (:A P) (:B S) (:C *P2))
+        (&outside Id (:P P2)))))
+
+  (RULE &own_node
+    (&own_cell *Key *P)
+    (NOT (&own_flood.reached (:key (:Id Key)) (:n P))))
+
+  (INIT &flood8 Propagation
+    (source ((:n P))
+      (&bg_cell *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0)))
+    (edge ((:a P) (:b P2))
+      (&bg_cell *P)
+      (&flood8_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *P2))
+      (&bg_cell (:P P2))))
+
+  (INIT &own Quotient
+    (edge ((:a (:Id Ky) P) (:b (:Id Ky) (:P P2)))
+      (OR ((&own_node (:Key *Ky) *P)
+           (&own_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P2))
+           (&own_node (:Key Ky) (:P P2)))
+          ((&own_node (:Key Ky) P)
+           (= P2 P)))))
+
+  (INIT &own8 Propagation
+    (key ((OR ((&outside ^Id *P)
+               (dir_elem *D)
+               (margin (:B P) D (:K 0)))
+              ((&outside Id P)
+               (&own8_steps (:Delta *S))
+               (compose (:A P) (:B S) (:C *P2))
+               (&outside Id (:P P2)))))
+      (source ((:n P))
+        (&outside Id *P)
+        (dir_elem *D)
+        (margin (:B P) D (:K 0)))
+      (edge ((:a P) (:b P2))
+        (&outside Id *P)
+        (&own8_steps (:Delta *S))
+        (compose (:A P) (:B S) (:C *P2))
+        (&outside Id (:P P2))))))
+
+(OUTPUT holed-color "the output is a 1×1 grid whose cell is the color of the rectangle that encloses the hole."
+
+  (RULE &hole_flood_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &hole_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &hole_cell
+    (&bg_cell *P))
+
+  (INIT &hole_flood Propagation
+    (source ((:n P))
+      (&hole_cell *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0))
+      (&bg_cell P))
+    (edge ((:a P) (:b P2))
+      (&bg_cell *P)
+      (&hole_flood_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *P2))
+      (&bg_cell (:P P2))))
+
+  (RULE &hole_node
+    (&hole_cell *P)
+    (NOT (&hole_flood.reached (:n P))))
+
+  (INIT &hole Quotient
+    (edge ((:a P) (:b P2))
+      (OR ((&hole_node *P)
+           (&hole_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P2))
+           (&hole_node (:P P2)))
+          ((&hole_node P)
+           (= P2 P)))))
+
+  (RULE &hole_component
+    (&hole.class (:a *P) *Id))
+
+  (INIT &box BoundingBox
+    (key ((&member ^Id *P))
+      (cell (P)
+        (&member Id *P))))
+
+  (RULE &closed
+    (&hole_component *P)))
+
+(ALTS $pick "which rectangle the output takes its color from" $Closure
+  (ALT $Closure
+    (ALTS $walk "which cells the walk runs through, and how a closed cell picks the rectangle" $BgWalk
+      (ALT $HoleNeighbors
+        (OUTPUT holed-color "the output is the color of the rectangle 4-adjacent to a closed bg cell.")
+        (RULE &picked
+          (&closed (:P *Q))
+          (dir_elem *D)
+          (step_offset D (:V *V_m1))
+          (compose (:A Q) (:B V_m1) (:C *P))
+          (&member *Id P *Col)))
+      (ALT $OwnEnclosure
+        (INPUT one-holed "exactly one rectangle closes off some cell from the frame edge, by a walk through the cells outside it."
+          (RULE &own_component
+            (&own.class (:a (:Id *Key) *P) *Id))
+          (RULE &encloses
+            (&own_component (:Key *Id))))
+        (RULE &picked
+          (&encloses *Id)
+          (&member Id *Col))
+        (ALT $Walk8
+          (INPUT one-holed "the walk also steps diagonally."
+            (RULE &encloses
+              (&outside *Id *P)
+              (NOT (&own8.reached (:key Id) (:n P))))))))
+    (ALTS $adj "the adjacency of the walk" $Walk4
+      (ALT $Walk8
+        (INPUT one-holed "the walk also steps diagonally."
+          (RULE &closed
+            (&bg_cell *P)
+            (NOT (&flood8.reached (:n P))))
+          (RULE &encloses
+            (&outside *Id *P)
+            (NOT (&own8.reached (:key Id) (:n P))))))))
+  (ALT $NotSolid
+    (INPUT one-holed "exactly one rectangle's box holds a cell that is not one of its own.")
+    (OUTPUT holed-color "the output is the color of the rectangle whose box holds a cell outside it. Undefined where every rectangle fills its box.")
+    (RULE &picked
+      (&box.box (:key *Id) *B)
+      (&outside Id *P)
+      (ALL ((&outside (:Id *Idm) P)
+            (&box.box (:key (:Id Idm)) B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (&member Id *Col))))
+
+(ALTS $object "what one rectangle is" $Component
+  (ALT $ColorClass
+    (INPUT rectangles "all the cells of one color form one rectangle."
+      (RULE &member
+        (&ink *P *Col)
+        (&color_ids.class (:a Col) *Id))))
+  (ALT $Object8
+    (INPUT rectangles "a rectangle's cells join through diagonal neighbors as well."
+      (RULE &comps8_component
+        (&comps8.class (:a *Key *P) *Id))
+
+      (RULE &member
+        (&comps8_component (:Key *Col) *P *Id)))))
+
+(DET &out_pos Frame)
+
+(RULE &picked
+  (&closed *P)
+  (&box.box (:key *Id) *B)
+  (ALL ((&closed P)
+        (&box.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (&member Id *Col))
+
+(RULE &output
+  (&picked *Col)
+  (&out_pos *P))

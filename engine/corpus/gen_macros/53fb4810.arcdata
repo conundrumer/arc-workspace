@@ -1,0 +1,4 @@
+;; 53fb4810
+
+(param &bg Color (8))
+(param &anchor_color Color (1))

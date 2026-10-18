@@ -1,0 +1,285 @@
+;; a8d7556c
+
+(INPUT speckle-field "&hole cells lie in no pattern among cells of another color, and some of them form solid rectangles with each side at least &min_side"
+
+  (DET_OR_RULE &hole RarestColor)
+
+  (DET &min_side TileCount))
+
+(OUTPUT greedy-rect-fill "from the &hole cells not yet claimed, take the all-&hole rectangle of largest area with each side at least &min_side, and paint its cells &fill; repeat until no such rectangle is left. Undefined where overlapping rectangles of equal area claim differently under different claim orders."
+
+  (DET &fill AnyOutNewColor))
+
+(OUTPUT keep-rest "every other cell keeps its input color"
+
+  (RULE &hole_cell
+    (input *P *Col)
+    (&hole (:C Col)))
+
+  ;; The box two hole cells span.
+  (INIT &span BoundingBox
+    (key ((&hole_cell ^P)
+          (&hole_cell (:P ^Q)))
+      (cell ((:P P2))
+        (OR ((= *P2 P))
+            ((= P2 Q))))))
+
+  (RULE &rect
+    (&span.box *B)
+    (ALL ((input *P *Col)
+          (inside (:A P) B))
+         ((&hole (:C Col))))
+    (ALL ((&span.box (:key (:P *Pm)) B)
+          (box_extent B (:P Pm) *N)
+          (&min_side (:N *K)))
+         ((>= N K))))
+
+  (RULE &rect_cell
+    (&rect *B)
+    (&hole_cell *P)
+    (inside (:A P) B))
+
+  (RULE &overlap
+    (&rect_cell *B *P)
+    (&rect_cell (:B *B2) P))
+
+  (INIT &area Cardinality
+    (key ((&rect_cell ^B *P))
+      (member ((:m P))
+        (&rect_cell B *P))))
+
+  (RULE &corner_cell
+    (&rect_cell *B *P)
+    (inside (:A P) B)
+    (same_corner *D (:P1 P) (:P2 B)))
+
+  (RULE &cand
+    (&rect *B))
+
+  (RULE &scan
+    (diag_dir_elem (:D *C))
+    (axis_elem *A))
+
+  (INIT &lex Order
+    (key ((&scan ^C ^A))
+      (before ((:a P) (:b P2))
+        (&corner_cell *P)
+        (&corner_cell (:P *P2))
+        (OR ((corner_dir C A *D)
+             (nearer D P (:Q P2)))
+            ((diag_dirs (:D C) A (:D1 D) *D2)
+             (same_dist D (:P1 P) P2)
+             (nearer (:D D2) P (:Q P2))))))
+    (member ((:t P))
+      (&corner_cell *P)))
+
+  (RULE &larger
+    (&area.size (:key *B) *N)
+    (&area.size (:key (:B *B2)) (:N *N2))
+    (> N N2))
+
+  (RULE &same_area
+    (&area.size (:key *B) *N)
+    (&area.size (:key (:B *B2)) N))
+
+  (RULE &prior
+    (&larger *B *B2))
+
+  (RULE &level
+    (&same_area *B *B2))
+
+  (RULE &scan_before
+    (&corner_cell *B (:D *C) *P)
+    (&corner_cell (:B *B2) (:D C) (:P *P2))
+    (OR ((&lex.before (:key C *A) (:a P) (:b P2)))
+        ((= P P2)
+         (diag_opposite (:D C) (:Opp *C2))
+         (&corner_cell B (:D C2) (:P *Q))
+         (&corner_cell (:B B2) (:D C2) (:P *Q2))
+         (&lex.before (:key C A) (:a Q) (:b Q2)))))
+
+  (INIT &claim_order Order
+    (key ((&scan ^C ^A))
+      (before ((:a B) (:b B2))
+        (OR ((&prior *B *B2))
+            ((&level B B2)
+             (&scan_before C A B B2)))))
+    (member ((:t B))
+      (&cand *B)))
+
+  (RULE &blocks
+    (&claim_order.member (:key *C *A) (:t *B_last))
+    (&overlap (:B B_last) (:B2 *B)))
+
+  ;; The walk along the claim order: a rectangle no earlier claim took out
+  ;; claims, and takes out each rectangle it blocks; a rectangle taken out
+  ;; is passed over.
+  (INIT &claim Unfold
+    (key ((OR ((&claim_order.minimal (:key ^C ^A) (:t *B)))
+              ((&claim_order.member (:key C A) (:t B)))
+              ((&blocks C A (:B_last B) (:B *B2)))))
+      (start ((:t B))
+        (&claim_order.minimal (:t *B)))
+      (initial_untaken ((:item B))
+        (&claim_order.member (:t *B)))
+      (conflict ((:item B) (:item2 B2))
+        (&blocks C A (:B_last *B) (:B *B2)))
+      (step ((:t B) (:t2 B2))
+        (&claim_order.successor (:a *B) (:b *B2))
+        (&claim.untaken (:t B) (:item B)))
+      (skip ((:t B) (:t2 B2))
+        (&claim_order.successor (:a *B) (:b *B2))
+        (&claim.excluded (:t B) (:item B)))
+      (take ((:t B) (:item B))
+        (&claim_order.member (:t *B))
+        (&claim.untaken (:t B) (:item B)))))
+
+  (RULE &claimed_cell
+    (&claim.take (:key *C *A) (:t *B) (:item B))
+    (&rect_cell B *P)))
+
+(ALTS $overlap "which cells stay claimed when rectangles share cells" $LargestFirst
+  (ALT $DropDominated
+    (OUTPUT greedy-rect-fill "each rectangle that no other rectangle contains fills, unless such a rectangle of larger area overlaps it"
+      (RULE &contained
+        (&cand *B)
+        (&cand (:B *B2))
+        (!= B B2)
+        (inside (:A B) (:B B2)))
+
+      (RULE &maximal
+        (&cand *B)
+        (NOT (&contained B)))
+
+      (RULE &dominated
+        (&maximal *B)
+        (&maximal (:B *B2))
+        (&overlap B B2)
+        (&area.size (:key B) *N)
+        (&area.size (:key (:B B2)) (:N *N2))
+        (> N2 N))
+
+      (RULE &kept_cell
+        (&maximal *B)
+        (NOT (&dominated B))
+        (&rect_cell B *P)))
+    (RULE &output
+      (input *P (:Col *C))
+      (IF ((&kept_cell P))
+          ((&fill (:C *Col)))
+          ((= Col C)))))
+  (ALT $AxisFirst
+    (OUTPUT greedy-rect-fill "rectangles claim in order of their extent along &first_axis, then of their area"
+      (DET &first_axis AxisDomain)
+
+      (RULE &axis_len
+        (&first_axis *A)
+        (&rect_cell *B *P)
+        (box_extent B P A *N))
+
+      ;; The longer rectangle along the first axis claims first, and area
+      ;; decides between two of one length.
+      (RULE &prior
+        (&axis_len *B *N)
+        (&axis_len (:B *B2) (:N *N2))
+        (OR ((> N N2))
+            ((= N N2)
+             (&larger B B2))))
+
+      (RULE &level
+        (&axis_len *B *N)
+        (&axis_len (:B *B2) N)
+        (&same_area B B2)))
+    (ALT $ThicknessTwo
+      (OUTPUT greedy-rect-fill "a rectangle counts only when its extent along one axis is &min_side and no line of &hole cells beside it extends it along that axis"
+        ;; The corner at which a strip across the first axis starts.
+        ;; TODO no-det-plan: &start_corner: the plan gives no verdict
+        (DET &start_corner (ONE))
+
+        (RULE &along_cell
+          (&first_axis *A)
+          (perp A *A2)
+          (&strip *B (:A A2))
+          (&rect_cell B *P))
+
+        (INIT &claim_order Order
+          (key ((OR ((&scan ^C ^A)
+                     (&cand *B))
+                    ((&scan C A)
+                     (OR ((&prior B *B2))
+                         ((&level B B2)
+                          (&scan_before C A B B2))))
+                    ((&first_axis A)
+                     (&strip B A)
+                     (&corner_cell B (:D C) *P)
+                     (NOT (&along_cell P)))
+                    ((&first_axis A)
+                     (&strip B A)
+                     (&strip (:B *B22) A)
+                     (&corner_cell B (:D C) (:P *P3))
+                     (&corner_cell (:B B22) (:D C) (:P *P2))
+                     (OR ((&lex.before (:key C A) (:a P3) (:b P2)))
+                         ((= P3 P2)
+                          (&larger B (:B2 B22)))))))
+            (member ((:t B))
+              (OR ((&scan C A)
+                   (&cand *B))
+                  ((&first_axis A)
+                   (&strip B A)
+                   (&corner_cell B (:D C) *P)
+                   (NOT (&along_cell P)))))
+            (before ((:a B) (:b B2))
+              (OR ((&scan C A)
+                   (OR ((&prior *B *B2))
+                       ((&level B B2)
+                        (&scan_before C A B B2))))
+                  ((&first_axis A)
+                   (&strip B A)
+                   (&strip (:B B2) A)
+                   (&corner_cell B (:D C) *P)
+                   (&corner_cell (:B B2) (:D C) (:P *P2))
+                   (OR ((&lex.before (:a P) (:b P2)))
+                       ((= P P2)
+                        (&larger B B2))))))))
+
+        (RULE &blocks
+          (&claim_order.member (:key *C *A) (:t *B_last))
+          (&rect_cell (:B B_last) *P)
+          (&corner_cell *B (:D C) P))
+
+        (RULE &strip_fill
+          (&claimed_cell *C *P)))
+      (RULE &output
+        (input *P (:Col *C))
+        (&start_corner *D)
+        (IF ((&strip_fill (:C D) P))
+            ((&fill (:C *Col)))
+            ((= Col C)))))))
+
+(ALTS $qualify "which rectangles count" $AnyRect
+  (ALT $ThicknessTwo
+    (OUTPUT greedy-rect-fill "a rectangle counts only when its extent along one axis is &min_side and no line of &hole cells beside it extends it along that axis"
+      (RULE &strip
+        (&rect_cell *B *P)
+        (box_extent B P *A (:N *K))
+        (&min_side (:N K))
+        (ALL ((&rect (:B *B2))
+              (inside (:A B) (:B B2))
+              (perp A *A2)
+              (axis_of *D (:A A2))
+              (opposite D (:Opp *D2))
+              (same_dist D (:P1 B) (:P2 B2))
+              (same_dist (:D D2) (:P1 B) (:P2 B2)))
+             ((= B B2))))
+
+      (RULE &cand
+        (&strip *B)))))
+
+;; Every scan's claims fill, so a cell two scans claim differently takes two
+;; colors.
+(RULE &output
+  (input *P (:Col *C))
+  (&scan (:C *D) *A)
+  (IF ((&claimed_cell (:C D) A P))
+      ((&fill (:C *Col)))
+      ((= Col C))))

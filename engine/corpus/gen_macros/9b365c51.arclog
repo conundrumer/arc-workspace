@@ -1,0 +1,148 @@
+;; 9b365c51
+
+(INPUT bars "a bar is a line across the axis that holds one color throughout, neither the background nor the ink")
+
+(INPUT shapes "the ink forms solid rectangles, no two on one line across the axis, so a rectangle is a maximal run of neighboring lines that agree at every place along them")
+
+(INPUT count "there are as many bars as rectangles")
+
+(OUTPUT erase "the bars become background")
+
+(OUTPUT recolor "each rectangle takes the color of the bar at the same rank along the axis"
+
+  ;; the axis the bars and the rectangles are ordered along
+  (DET &axis AxisDomain)
+
+  (DET &bg DominantColor)
+
+  ;; the color the rectangles are drawn in
+  (DET &ink VanishedColor)
+
+  (RULE &line_cell_split1
+    (input (:P *P_) *Col)
+    (&axis (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+    (relative (:Base L_) (:X P_) (:X_rel *X_)))
+
+  (RULE &line_cell
+    (input *P *Col)
+    (&axis *A)
+    (&line_cell_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_ *X)))
+
+  (INIT &uniform Singleton
+    (key ((&line_cell ^L *Col))
+      (member ((:v Col))
+        (&line_cell L *Col))))
+
+  (RULE &bar
+    (&uniform.value (:key *L) (:v *Col))
+    (NOT (&bg (:C Col)))
+    (NOT (&ink (:C Col))))
+
+  (INIT &bar_order Order
+    (key ((&axis ^A)
+          (axis_of ^D A))
+      (before ((:a L) (:b L2))
+        (&bar *L)
+        (&bar (:L *L2))
+        (!= L L2)
+        (margin (:B L) D (:K *K1))
+        (margin (:B L2) D (:K *K2))
+        (< K1 K2)))
+    (member ((:t L))
+      (&bar *L)))
+
+  (RULE &uncut
+    (&line_cell *L)
+    (&line_cell (:L *L2))
+    (&axis *A)
+    (axis_of *D A)
+    (step_offset D (:V *V_m1))
+    (compose (:A L) (:B V_m1) (:C L2))
+    (ALL ((&line_cell L *X *Col)
+          (&line_cell (:L L2) X (:Col *Col2)))
+         ((= Col Col2))))
+
+  ;; A band is a maximal run of lines that agree.
+  (INIT &bands Quotient
+    (edge ((:a L) (:b B))
+      (OR ((&uncut *L (:L2 *B)))
+          ((&line_cell L)
+           (= B L)))))
+
+  (RULE &shape
+    (&bands.class (:a *L) *Id)
+    (&line_cell L *Col)
+    (&ink (:C Col)))
+
+  (INIT &shape_order Order
+    (key ((&axis ^A)
+          (axis_of ^D A))
+      (before ((:a Id) (:b Id2))
+        (&shape *Id)
+        (&bands.class (:a *L) Id)
+        (&shape (:Id *Id2))
+        (&bands.class (:a *L2) (:Id Id2))
+        (!= Id Id2)
+        (margin (:B L) D (:K *K1))
+        (margin (:B L2) D (:K *K2))
+        (< K1 K2)))
+    (member ((:t Id))
+      (&shape *Id)
+      (&bands.class (:a *L) Id))))
+
+(OUTPUT keep "every other cell keeps its color")
+
+(RULE &bar_order_pos
+  (&bar_order.rank (:key *A *D) (:t *M) (:R *R1))
+  (&bar_order.dual_rank (:key A D) (:t M) (:R *R2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K R1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K R2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_pos)))
+
+(RULE &shape_order_pos
+  (&shape_order.rank (:key *A *D) (:t *M) (:R *R1))
+  (&shape_order.dual_rank (:key A D) (:t M) (:R *R2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K R1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K R2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_pos)))
+
+(RULE &out_split1
+  (input (:P *P_) (:Col *C))
+  (&axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &shape_color
+  (&shape_order_pos (:M *Id) *P_pos)
+  (&bar_order_pos (:M *L) P_pos)
+  (&bar L *Col))
+
+(RULE &output
+  (input *P (:Col *C))
+  (&axis *A)
+  (&out_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1))
+  (OR ((&ink C)
+       (&bands.class (:a L) *Id)
+       (&shape_color Id *Col))
+      ((&bar L)
+       (&bg (:C Col)))
+      ((NOT (&ink C))
+       (NOT (&bar L))
+       (= Col C))))

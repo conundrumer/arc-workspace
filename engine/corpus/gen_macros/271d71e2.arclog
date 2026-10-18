@@ -1,0 +1,297 @@
+;; 271d71e2
+
+(RULE &frames_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &edge_color
+  (ex_input *P *Col)
+  (dir_elem *D)
+  (margin (:B P) D (:K 0)))
+
+(DET &gauge
+  (ex_input *Col)
+  (NOT (&edge_color Col)))
+
+(DET &frame
+  (ex_input *E *P (:Col *G))
+  (&gauge (:Col G))
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (ex_input E (:P Q) *Col)
+  (NOT (&gauge Col)))
+
+(INIT &frames Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (&frame Col)
+         (&frames_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (&frame (:Col Col2)))
+        ((input P (:Col *Col3))
+         (&frame (:Col Col3))
+         (= P3 P)))))
+
+(RULE &frames_component
+  (&frames.class (:a *P) *Id))
+
+(INIT &bbox BoundingBox
+  (key ((&frames_component *P ^Id))
+    (cell (P)
+      (&frames_component *P Id))))
+
+(RULE &abut
+  (&frames_component (:P *Q) *Id)
+  (&bbox.box (:key Id) *B)
+  (ALL ((&frames_component (:P Q) (:Id *Idm))
+        (&bbox.box (:key (:Id Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X Q) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B Q) *D (:K *K_m1))
+  (margin B D (:K K_m1))
+  (step_offset D (:V *V_m2))
+  (compose (:A Q) (:B V_m2) (:C *P)))
+
+(INIT &in_count Cardinality
+  (key ((ex_input ^E *P ^Col))
+    (member ((:m P))
+      (ex_input E *P Col))))
+
+(INIT &out_count Cardinality
+  (key ((ex_output ^E *P ^Col))
+    (member ((:m P))
+      (ex_output E *P Col))))
+
+(DET &shrank
+  (&in_count.size (:key *E *Col) (:N *N1))
+  (&out_count.size (:key E Col) (:N *N2))
+  (< N2 N1))
+
+(DET &marker
+  (&shrank *Col)
+  (NOT (&gauge Col)))
+
+(RULE &handle_dir
+  (&abut *Id *D)
+  (ALL ((&abut Id D *P)
+        (&marker (:Col *M)))
+       ((input P (:Col M)))))
+
+(RULE &probe_dir
+  (&handle_dir (:Id *Key) *D))
+
+(RULE &probe_node
+  (&handle_dir (:Id *Key) *D)
+  (input *P))
+
+(RULE &probe_source
+  (&handle_dir (:Id *Key) *D)
+  (&abut (:Id Key) D *P))
+
+;; Cast from the handle: offset K is the distance the block travels to bring
+;; its handle onto the line K cells ahead.
+(INIT &probe Distance
+  (key ((&probe_source (:Key ^Ky) (:P ^O))
+        (&probe_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&probe_source (:Key Ky) (:P O))
+           (&probe_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&probe_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&probe_node (:Key Ky) (:P Q)))
+          ((&probe_source (:Key Ky) (:P O))
+           (&probe_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&probe_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&probe_source (:Key Ky) (:P O))
+           (&probe_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&probe_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&probe_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&probe_source (:Key Ky) (:P O))
+      (&probe_dir (:Key Ky) D))))
+
+(RULE &probe_ray
+  (&probe.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &probe_end
+  (&probe_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&probe_ray Key (:P Q) D Origin)))
+
+;; The turn from the heading to the side the sweep starts on.
+(DET &sweep SenseDomain)
+
+(RULE &block
+  (&frames_component *Id))
+
+(RULE &probe_cell
+  (&block (:Id *Key))
+  (input *P))
+
+(RULE &ahead
+  (&probe_ray (:Key *Id) *P *K)
+  (&probe_cell (:Key Id) P)
+  (!= K 0))
+
+(DET &empty
+  (&gauge *Col)
+  (&shrank Col))
+
+(RULE &empty_cell
+  (&bbox.box (:key *Id) *B)
+  (input *P *Col)
+  (ALL ((input P (:Col *Colm))
+        (&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (&empty Col))
+
+(INIT &empty_count Cardinality
+  (key ((OR ((&empty_cell ^Id *P))
+            ((&block Id))))
+    (member ((:m P))
+      (&empty_cell Id *P))
+    (domain ()
+      (&block Id))))
+
+;; The block advances the least of: the distance to a marker line ahead, and
+;; the number of empty gauge cells.
+(INIT &advance Order
+  (key ((OR ((&ahead ^Id *K)
+             (ALL ((&ahead Id *P K)
+                   (&marker (:Col *M)))
+                  ((input P (:Col M)))))
+            ((&empty_count.size (:key Id) *N))))
+    (member ((:t K))
+      (OR ((&ahead Id *K)
+           (ALL ((&ahead Id *P K)
+                 (&marker (:Col *M)))
+                ((input P (:Col M)))))
+          ((&empty_count.size (:N K)))))
+    (score ((:t K) (:S K))
+      (OR ((&ahead Id *K)
+           (ALL ((&ahead Id *P K)
+                 (&marker (:Col *M)))
+                ((input P (:Col M)))))
+          ((&empty_count.size (:N K)))))))
+
+(INIT &fill_order Order
+  (key ((&empty_cell ^Id *P))
+    (member ((:t P))
+      (&empty_cell Id *P))
+    (before ((:a P) (:b P2))
+      (&empty_cell Id *P)
+      (&empty_cell Id (:P *P2))
+      (&handle_dir Id *D)
+      (&sweep *S)
+      (turn S D (:D2 *D_side))
+      (corner_dir (:C *Diag) (:A *A_m1) D)
+      (perp (:A A_m1) (:A2 *A2_m2))
+      (corner_dir (:C Diag) (:A A2_m2) (:D D_side))
+      (&handle_dir Id (:D *D2))
+      (axis_of (:D D2) *A)
+      (OR ((corner_dir (:C Diag) A (:D *D3))
+           (dir_elem (:D D3))
+           (margin (:B P) (:D D3) (:K *K1_m3))
+           (margin (:B P2) (:D D3) (:K *K2_m4))
+           (< K1_m3 K2_m4))
+          ((corner_dir (:C Diag) A (:D D3))
+           (perp A (:A2 *A2_m5))
+           (corner_dir (:C Diag) (:A A2_m5) (:D *D22))
+           (margin (:B P) (:D D3) (:K *K_m6))
+           (margin (:B P2) (:D D3) (:K K_m6))
+           (dir_elem (:D D22))
+           (margin (:B P) (:D D22) (:K *K1_m7))
+           (margin (:B P2) (:D D22) (:K *K2_m8))
+           (< K1_m7 K2_m8))))))
+
+(RULE &fills
+  (&fill_order.rank (:key *Id) (:t *P) *R)
+  (&advance.minimal (:key Id) (:t *N))
+  (< R N))
+
+(RULE &assembly
+  (&handle_dir *Id *D)
+  (OR ((&bbox.box (:key Id) *B)
+       (input *P)
+       (relative (:Base B) (:X P) (:X_rel *R_m1))
+       (axis_of (:D *D1_m2) (:A *A1_m3))
+       (opposite (:D D1_m2) (:Opp *O1_m4))
+       (perp (:A A1_m3) (:A2 *A2_m5))
+       (axis_of (:D *D2_m6) (:A A2_m5))
+       (opposite (:D D2_m6) (:Opp *O2_m7))
+       (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+       (>= K1_m8 0)
+       (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+       (>= K2_m9 0)
+       (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+       (>= K3_m10 0)
+       (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+       (>= K4_m11 0))
+      ((&abut Id D P))))
+
+(DET &grew
+  (&in_count.size (:key *E *Col) (:N *N1))
+  (&out_count.size (:key E Col) (:N *N2))
+  (< N1 N2))
+
+(DET &filled
+  (&gauge *Col)
+  (&grew Col))
+
+(RULE &paint
+  (&assembly *Id (:P *P2))
+  (&handle_dir Id *D)
+  (&advance.minimal (:key Id) (:t *N))
+  (dir8_opposite D (:D2 *O_m2))
+  (edge_inset (:D O_m2) (:K N) (:B *B1_m3))
+  (edge_inset D (:K N) (:B *I_m5))
+  (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+  (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+  (compose (:A P2) (:B V_m1) (:C *P))
+  (OR ((input (:P P2) *Col)
+       (NOT (&fills (:P P2))))
+      ((&fills (:P P2))
+       (&filled Col))))
+
+(DET &bg
+  (&grew *Col)
+  (NOT (&gauge Col)))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((OR ((&assembly P)
+            (&bg Col))
+           ((input P Col)
+            (NOT (&assembly P))))
+       (NOT (&paint P)))))

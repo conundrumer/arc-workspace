@@ -1,0 +1,19 @@
+;; 3618c87e
+
+(param &fall_to Dir (DIR_B))
+(param &bg Color (0))
+(param &marker Color (1))
+(param &slice_in (Position Color)
+  (grid
+    (0)
+    (0)
+    (1)
+    (5)
+    (5)))
+(param &slice_out (Position Color)
+  (grid
+    (0)
+    (0)
+    (0)
+    (5)
+    (1)))

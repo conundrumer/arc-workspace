@@ -1,0 +1,4 @@
+;; 30f42897
+
+(param &bg Color (8))
+(param &period_blocks number (2))

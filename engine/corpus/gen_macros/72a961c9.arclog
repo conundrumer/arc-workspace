@@ -1,0 +1,186 @@
+;; 72a961c9
+
+(RULE &cell
+  (input *P *Col))
+
+(DET &dir DirDomain)
+
+(RULE &rays_dir
+  (&cell)
+  (&dir *D))
+
+(RULE &rays_dir_ray
+  (&rays_dir *D))
+
+(RULE &rays_node
+  (&rays_dir)
+  (&cell *P))
+
+(DET &bg DominantColor)
+
+(DET &line3 SharedColor)
+
+(DET &line2
+  (ex_input *E)
+  (&line3 (:C *Col)))
+
+(DET &mark2
+  (&cell *E *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&line2 E Col)))
+
+(DET &rays_source2
+  (&mark2 *E *P))
+
+(INIT &rays2 Distance
+  (key ((&rays_source2 (:E ^Ky) (:P ^O))
+        (&rays_dir_ray (:E Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&rays_source2 (:E Ky) (:P O))
+           (&rays_dir_ray (:E Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&rays_node (:E Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&rays_node (:E Ky) (:P Q)))
+          ((&rays_source2 (:E Ky) (:P O))
+           (&rays_dir_ray (:E Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&rays_node (:E Ky) (:P Q))
+           (= A2 O))
+          ((&rays_source2 (:E Ky) (:P O))
+           (&rays_dir_ray (:E Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&rays_node (:E Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&rays_node (:E Ky) (:P Q)))))
+    (source ((:n O))
+      (&rays_source2 (:E Ky) (:P O))
+      (&rays_dir_ray (:E Ky) D))))
+
+(DET &rays_ray2
+  (&rays2.distance (:key (:Ky *E) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &line
+  (&line3 (:C *Col)))
+
+(RULE &rays_cell
+  (&cell *P))
+
+(DET &reach
+  (&rays_ray2 *E *P *K (:Origin *M))
+  (&rays_cell E P)
+  (!= K 0)
+  (&mark2 E (:P M) *Col)
+  (ex_output E P Col))
+
+(ALTS $choice "The cases differ on where the line's color comes from" $Stored
+  (ALT $Dominant
+    (INIT &tally_count Cardinality
+      (key ((input *P ^Col)
+            (NOT (&bg (:C Col))))
+        (member ((:m P))
+          (input *P Col)
+          (NOT (&bg (:C Col))))))
+
+    (INIT &tally Order
+      (member ((:t Col))
+        (&tally_count.size (:key *Col)))
+      (score ((:t Col) (:S N))
+        (&tally_count.size (:key *Col) *N)))
+
+    (RULE &line
+      (&tally.maximal (:t *Col)))))
+
+(RULE &mark
+  (&cell *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&line Col)))
+
+(RULE &rays_source
+  (&mark *P))
+
+(INIT &rays Distance
+  (key ((&rays_source (:P ^O))
+        (&rays_dir_ray ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&rays_source (:P O))
+           (&rays_dir_ray D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&rays_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&rays_node (:P Q)))
+          ((&rays_source (:P O))
+           (&rays_dir_ray D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&rays_node (:P Q))
+           (= A2 O))
+          ((&rays_source (:P O))
+           (&rays_dir_ray D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&rays_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&rays_node (:P Q)))))
+    (source ((:n O))
+      (&rays_source (:P O))
+      (&rays_dir_ray D))))
+
+(RULE &rays_ray
+  (&rays.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &rays_end
+  (&rays_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&rays_ray (:P Q) D Origin)))
+
+(RULE &paint
+  (&rays_ray *P *K (:Origin *M))
+  (&rays_cell P)
+  (!= K 0)
+  (&mark (:P M) (:Col *Col_m))
+  (&reach (:Col Col_m) (:K *R))
+  (OR ((< K R)
+       (&line *Col))
+      ((= K R)
+       (= Col Col_m))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

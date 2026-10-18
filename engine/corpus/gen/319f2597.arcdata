@@ -1,0 +1,5 @@
+;; 319f2597
+
+(param &mark Color (0))
+(param &spare Color (2))
+(param &paint Color (0))

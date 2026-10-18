@@ -1,0 +1,114 @@
+;; 694f12f3
+
+(RULE &rects_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg UnchangedColor)
+
+(RULE &rects_node
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &rects Quotient
+  (edge ((:a P) (:b P2))
+    (OR ((&rects_node *P)
+         (&rects_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&rects_node (:P P2)))
+        ((&rects_node P)
+         (= P2 P)))))
+
+(RULE &rects_component
+  (&rects.class (:a *P) *Id))
+
+(INIT &size Cardinality
+  (key ((&rects_component *P ^Id))
+    (member ((:m P))
+      (&rects_component *P Id))))
+
+;; The size order, ascending; each anchor reads it from its own end.
+(INIT &order Order
+  (member ((:t Id))
+    (&size.size (:key *Id)))
+  (before ((:a Id) (:b Id2))
+    (&size.size (:key *Id) *N)
+    (&size.size (:key (:Id *Id2)) (:N *N2))
+    (< N N2)))
+
+(DET &rect_color
+  (&rects_component *E *P *Id)
+  (ex_input E P (:Col *C_in))
+  (ex_output E P *Col)
+  (!= Col C_in))
+
+(DET &large_color
+  (&order.dual_rank *E (:t *Id) *R)
+  (&rect_color E Id *Col))
+
+(RULE &fill
+  (&order.dual_rank (:t *Id) *R)
+  (&large_color R *Col))
+
+(INIT &bbox BoundingBox
+  (key ((&rects_component *P ^Id))
+    (cell (P)
+      (&rects_component *P Id))))
+
+(RULE &inner_cell
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (ALL ((&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((> K_m3 0))))
+
+(ALTS $a "which end of the size order is first" $Large
+  (ALT $Small
+    (DET &small_color
+      (&order.rank *E (:t *Id) *R)
+      (&rect_color E Id *Col))
+
+    (RULE &fill
+      (&order.rank (:t *Id) *R)
+      (&small_color R *Col))
+    (ALT $Extreme
+      (DET &smallest_color AnyOutNewColor)
+
+      (DET &small_rest_color AnyOutNewColor)
+
+      (RULE &fill
+        (&order.member (:t *Id))
+        (IF ((&order.minimal (:t Id)))
+            ((&smallest_color (:C *Col)))
+            ((&small_rest_color (:C Col))))))))
+
+(ALTS $k "how the place picks the color" $Table
+  (ALT $Extreme
+    (DET &largest_color AnyOutNewColor)
+
+    (DET &large_rest_color AnyOutNewColor)
+
+    (RULE &fill
+      (&order.member (:t *Id))
+      (IF ((&order.maximal (:t Id)))
+          ((&largest_color (:C *Col)))
+          ((&large_rest_color (:C Col)))))))
+
+(ALTS $i "what the interior is" $Box
+  (ALT $Erode
+    (INIT &rim Boundary
+      (key ((&rects_component *P ^Id))
+        (cell (P)
+          (&rects_component *P Id))))
+
+    (RULE &inner_cell
+      (&rects_component *P *Id)
+      (NOT (&rim.boundary (:key Id) P)))))
+
+(RULE &output
+  (OR ((&inner_cell *Id *P)
+       (&fill Id *Col))
+      ((input P Col)
+       (NOT (&inner_cell P)))))

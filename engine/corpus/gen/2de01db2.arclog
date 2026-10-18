@@ -1,0 +1,52 @@
+;; 2de01db2
+
+(DET &axis AxisDomain)
+
+(DET &bg SharedColor)
+
+(RULE &cell_line
+  (input *P *Col)
+  (&axis *A)
+  (split P A (:Across *P_line)))
+
+(RULE &line_color
+  (&cell_line *Col *P_line))
+
+(DET &ink
+  (ex_output (:Col *C))
+  (NOT (&bg C)))
+
+(RULE &main
+  (&line_color *P_line *Col)
+  (&ink (:C Col)))
+
+(ALTS $choice "which model identifies a line's main color" $Palette
+  (ALT $Owned
+    (INIT &own_count_count Cardinality
+      (key ((&cell_line *P ^Col ^P_line)
+            (ALL ((&line_color (:P_line *L1) Col)
+                  (&line_color (:P_line *L2) Col))
+                 ((= L1 L2))))
+        (member ((:m P))
+          (&cell_line *P Col P_line)
+          (ALL ((&line_color (:P_line *L1) Col)
+                (&line_color (:P_line *L2) Col))
+               ((= L1 L2))))))
+
+    ;; The line's own colors, by cell count.
+    (INIT &own_count Order
+      (key ((&own_count_count.size (:key ^P_line *Col)))
+        (member ((:t Col))
+          (&own_count_count.size (:key P_line *Col)))
+        (score ((:t Col) (:S N))
+          (&own_count_count.size (:key P_line *Col) *N))))
+
+    (RULE &main
+      (&own_count.maximal (:key *P_line) (:t *Col)))))
+
+(RULE &output
+  (&cell_line *P (:Col *C_in) *P_line)
+  (OR ((&main P_line *Col)
+       (!= C_in Col))
+      ((&main P_line (:Col C_in))
+       (&bg (:C Col)))))

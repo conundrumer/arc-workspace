@@ -1,0 +1,5 @@
+;; 3cd86f4f
+
+(param &slide Axis (AXIS_H))
+(param &sense Sense (SENSE_CW))
+(param &bg Color (0))

@@ -1,0 +1,69 @@
+;; 94be5b80
+
+(DET &bg DominantColor)
+
+;; The stack of copies runs along this axis.
+(DET &stack_axis AxisDomain)
+
+;; A quarter turn in this sense takes a stack direction to the legend direction that steps along with it.
+(DET &legend_sense SenseDomain)
+
+(RULE &carry
+  (&stack_axis *A)
+  (axis_of (:D *D_stack) A)
+  (&legend_sense *S)
+  (turn S (:D D_stack) (:D2 *D_legend)))
+
+(RULE &legend
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&carry (:D_legend *D))
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (input (:P Q) (:Col *Col2))
+  (NOT (&bg (:C Col2)))
+  (!= Col2 Col))
+
+(RULE &copy
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&legend P)))
+
+(INIT &copy_box BoundingBox
+  (key ((&copy ^Col *P))
+    (cell (P)
+      (&copy Col *P))))
+
+(RULE &ink
+  (&carry *D_legend *D_stack)
+  (axis_of (:D D_stack) *A)
+  (opposite (:D D_stack) (:Opp *O))
+  (&copy (:Col *Col3) (:P *P2))
+  (&copy_box.box (:key (:Col Col3)) *B)
+  (axis_elem A)
+  (relative (:Base B) (:X P2) (:X_rel *R_m1))
+  (frame_extent (:P R_m1) A (:N *W))
+  (relative (:Base B) (:X P2) (:X_rel *P_rel))
+  (margin (:B P_rel) (:D O) *K)
+  (input *P)
+  (perp A (:A2 *A2_m2))
+  (axis_of (:D *D_m3) (:A A2_m2))
+  (margin (:B P2) (:D D_m3) (:K *K_m4))
+  (margin (:B P) (:D D_m3) (:K K_m4))
+  (relative (:Base B) (:X P) (:X_rel *Q_rel))
+  (margin (:B Q_rel) (:D O) (:K *T))
+  (divide T (:Side W) (:Gap 0) (:Part *N) (:Remainder K))
+  (&legend (:P *L) (:Col Col3))
+  (dir8_opposite (:D D_legend) (:D2 *O_m6))
+  (edge_inset (:D O_m6) (:K N) (:B *B1_m7))
+  (edge_inset (:D D_legend) (:K N) (:B *I_m9))
+  (relative (:Base I_m9) (:X 0) (:X_rel *B2_m8))
+  (compose (:A B1_m7) (:B B2_m8) (:C *V_m5))
+  (compose (:A L) (:B V_m5) (:C *L2))
+  (&legend (:P L2) *Col))
+
+(RULE &output
+  (OR ((&ink *P *Col))
+      ((input P)
+       (NOT (&ink P))
+       (&bg (:C Col)))))

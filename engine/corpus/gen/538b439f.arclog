@@ -1,0 +1,113 @@
+;; 538b439f
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The field is the commonest color.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(INIT &parts Connectivity
+  (key ((input *P ^Col)
+        (NOT (&field.maximal (:t Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&field.maximal (:t Col))))))
+
+(INIT &bbox BoundingBox
+  (key ((&parts.component *P ^Id))
+    (cell (P)
+      (&parts.component *P Id))))
+
+;; The lines a component reaches across each axis.
+(INIT &reach Singleton
+  (key ((&parts.component *P ^Id)
+        (axis_elem ^A)
+        (split P A (:Along *L)))
+    (member ((:v L))
+      (&parts.component *P Id)
+      (axis_elem A)
+      (split P A (:Along *L)))))
+
+(RULE &thin
+  (&reach.value (:key *Id)))
+
+(RULE &rect
+  (&parts.component (:key *Col) *P *Id)
+  (ALL ((input (:P *Pm))
+        (&bbox.box (:key Id) *B)
+        (inside (:A Pm) B))
+       ((&parts.component (:P Pm) Id)))
+  (NOT (&thin Id)))
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (axis_elem A)
+      (split P A (:Along L)))))
+
+(RULE &divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (NOT (&field.maximal (:t Col))))
+
+(RULE &span_axis
+  (&rect (:Id *Key))
+  (&divider *A))
+
+(RULE &image
+  (&rect *Id (:P *P2) *Col)
+  (&divider *A *L)
+  (axis_inversion A (:T *F))
+  (relative (:Base L) (:X P2) (:X_rel *V))
+  (apply (:D F) (:P V) (:P_out *V_img))
+  (compose (:A L) (:B V_img) (:C *P))
+  (input P))
+
+(RULE &span_mark
+  (OR ((&rect (:Id *Key) *P))
+      ((&image (:Id Key) P))))
+
+;; Each rectangle and its image bracket a span along the reflection's axis.
+(INIT &span Ray
+  (key ((OR ((&span_mark (:Key ^Ky) *P))
+            ((&span_axis (:Key Ky) *A)
+             (axis4_of *D A))
+            ((&span_axis (:Key Ky))
+             (input P))))
+    (source (P)
+      (&span_mark (:Key Ky) *P))
+    (node (P)
+      (&span_axis (:Key Ky))
+      (input *P))
+    (dir (D)
+      (&span_axis (:Key Ky) *A)
+      (axis4_of *D A))))
+
+(RULE &span_between
+  (&rect (:Id *Key))
+  (input *P)
+  (&span_axis Key *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&span.ray (:key (:Ky Key)) P D)
+  (&span.ray (:key (:Ky Key)) P (:D O)))
+
+(RULE &paint
+  (&span_between (:Key *Id) *P)
+  (OR ((&image Id P *Col))
+      ((NOT (&rect Id P))
+       (NOT (&image Id P))
+       (&divider Col))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

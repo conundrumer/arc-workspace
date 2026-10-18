@@ -1,0 +1,135 @@
+;; 36a08778
+
+(DET &water RarestColor)
+
+(DET &block UnchangedColor)
+
+(DET &fall DirDomain)
+
+(RULE &source
+  (input *P *Col)
+  (&water (:C Col)))
+
+(RULE &block2
+  (input *P *Col)
+  (&block (:C Col)))
+
+(RULE &pour
+  (&source *P)
+  (&fall *D))
+
+(RULE &stream_blocked
+  (dir_elem (:D *Key))
+  (&block2 *P))
+
+;; The course water poured at a cell toward a direction takes: a cast toward
+;; that direction, halted by a block. Keyed by direction.
+(INIT &stream Ray
+  (key ((dir_elem ^D))
+    (node (P)
+      (input *P)
+      (NOT (&stream_blocked (:Key D) P))))
+  (source (P)
+    (input *P)
+    (NOT (&block2 P))))
+
+(RULE &stream_cell
+  (dir_elem (:D *Key))
+  (input *P))
+
+(RULE &barred
+  (&stream.ray (:key *D) *P D (:Origin *M))
+  (&stream_cell (:Key D) P)
+  (neighbor P D (:Q *B))
+  (&stream.end (:key D) (:P *E) D (:Origin M))
+  (neighbor (:P E) D (:Q B))
+  (input (:P B)))
+
+;; A cell to each side, across the flow, pours on.
+(RULE &pour_on
+  (&barred *M *D *P)
+  (perp_dir D *D2)
+  (neighbor P (:D D2) *Q)
+  (input (:P Q))
+  (NOT (&block2 (:P Q))))
+
+(ALTS $flow "how the water passes a barring block" $Step
+  (ALT $Shell
+    ;; A block's maximal run along an axis: a cast over block cells that any
+    ;; other cell halts.
+    (INIT &run Ray
+      (key ((OR ((axis_elem ^A)
+                 (&block2 *P))
+                ((axis_of *D A))))
+        (source (P)
+          (axis_elem A)
+          (&block2 *P))
+        (node (P)
+          (axis_of *D A)
+          (input *P)
+          (ALL ()
+               ((&block2 P))))
+        (dir (D)
+          (axis_of *D A))))
+
+    (RULE &run_cell
+      (axis_elem (:A *Key))
+      (&block2 *P))
+
+    (RULE &span
+      (OR ((&run.ray (:key *A) *P (:Origin *B))
+           (&run_cell (:Key A) P))
+          ((&run.end (:key A) (:P *E) *D (:Origin B))
+           (neighbor (:P E) D (:Q P))
+           (input P))))
+
+    (RULE &shell
+      (axis_of *D (:A *A0))
+      (perp (:A A0) (:A2 *A))
+      (&span A *B (:P *Q))
+      (opposite D (:Opp *D_back))
+      (neighbor (:P Q) (:D D_back) (:Q *P))
+      (input P)
+      (NOT (&block2 P)))
+
+    ;; Where a block stands on another's shell row (test 1), the water past it
+    ;; arrives by another pour, so $Step and $Shell agree there too.
+    (RULE &pour_on
+      (&barred *M *D *B)
+      (&shell D B (:P *Q)))))
+
+(ALTS $seat "where the pour direction comes from" $Dir
+  (ALT $Stub
+    (INIT &stub Connectivity
+      (node (P)
+        (&source *P)))
+
+    (RULE &stub_flow
+      (&stub.component *P *Id)
+      (opposite *D (:Opp *E))
+      (margin (:B P) (:D E) (:K 0))
+      (neighbor P D *Q)
+      (&source (:P Q)))
+
+    (RULE &pour
+      (&stub.component *P *Id)
+      (&stub_flow Id *D))))
+
+;; The pours the water makes: the stub's pours, and each pour on from a
+;; barred one.
+(INIT &flow Propagation
+  (source ((:n P D))
+    (&pour *P *D))
+  (edge ((:a (:P M) D) (:b (:P Q) D))
+    (&pour_on *M *D *Q)))
+
+(RULE &wet
+  (&flow.reached (:n (:P *M) *D))
+  (&stream.ray (:key D) *P D (:Origin M))
+  (&stream_cell (:Key D) P))
+
+(RULE &output
+  (OR ((&wet *P)
+       (&water (:C *Col)))
+      ((input P Col)
+       (NOT (&wet P)))))

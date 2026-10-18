@@ -1,0 +1,108 @@
+;; 3e980e27
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &joined
+  (&ink *P)
+  (dir8_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&ink (:P Q)))
+
+(RULE &lone
+  (&ink *P *Col)
+  (NOT (&joined P)))
+
+(RULE &obj_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(INIT &obj Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&ink *P)
+         (&obj_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ink (:P P3)))
+        ((&ink P)
+         (= P3 P)))))
+
+(RULE &obj_component
+  (&obj.class (:a *P) *Id))
+
+(RULE &footprint
+  (&lone (:Col *Col_mark))
+  (&ink (:P *P0) (:Col Col_mark))
+  (&joined (:P P0))
+  (&obj_component (:P P0) *Id)
+  (&obj_component *P Id)
+  (&ink P *Col)
+  (relative (:Base P0) (:X P) (:X_rel *V)))
+
+;; Each bare marker's stamp, and the output about that marker, both as
+;; displacements from the marker.
+(INIT &stamp Agreement
+  (key ((OR ((&lone ^E ^P (:Col *M))
+             (&footprint E (:Col_mark M) *V *Col)
+             (ex_output E))
+            ((&lone E P)
+             (ex_output E (:P *Q) Col)
+             (relative (:Base P) (:X Q) (:X_rel V)))))
+    (source ((:i V) (:v Col))
+      (&lone E P (:Col *M))
+      (&footprint E (:Col_mark M) *V *Col)
+      (ex_output E))
+    (target ((:i V) (:v Col))
+      (&lone E P)
+      (ex_output E (:P *Q) *Col)
+      (relative (:Base P) (:X Q) (:X_rel *V)))
+    (correspondence ((:m D) (:i V) (:j Q))
+      (&lone E P (:Col *M))
+      (&footprint E (:Col_mark M) *V *Col)
+      (ex_output E)
+      (d4_elem *D)
+      (apply D (:P V) (:P_out *Q)))))
+
+(DET &stamp_src
+  (&lone *E (:P *Key_p) (:Col *M))
+  (&footprint E (:Col_mark M) (:V *P) (:Col *V))
+  (ex_output E))
+
+(DET &stamp_compatible
+  (&stamp_src *E (:Key_p *P))
+  (d4_elem *D)
+  (NOT (&stamp.conflict (:key E P) (:m D))))
+
+(DET &carries
+  (&lone *E *P *Col)
+  (&stamp_src E (:Key_p P))
+  (d4_elem *D)
+  (NOT (&stamp.conflict (:key E P) (:m D))))
+
+(DET &uncarried
+  (&carries *Col *D)
+  (&stamp_src *E (:Key_p *P))
+  (&lone E P Col)
+  (NOT (&stamp_compatible E P D)))
+
+(DET &stamp_d4
+  (&carries *Col *D)
+  (NOT (&uncarried Col D)))
+
+(RULE &paint
+  (&lone (:P *P2) (:Col *M))
+  (&stamp_d4 (:Col M) *D)
+  (&footprint (:Col_mark M) *V *Col)
+  (apply D (:P V) (:P_out *V2))
+  (compose (:A P2) (:B V2) (:C *P))
+  (input P))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

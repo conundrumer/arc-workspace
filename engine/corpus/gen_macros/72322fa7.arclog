@@ -1,0 +1,87 @@
+;; 72322fa7
+
+(DET &bg DominantColor)
+
+(RULE &empty
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &template
+  (input *P (:Col *C_center))
+  (NOT (&bg (:C C_center)))
+  (dir8_opposite *D *D2)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (input (:P Q) (:Col *C_arm))
+  (NOT (&bg (:C C_arm)))
+  (!= C_arm C_center)
+  (step_offset (:D D2) (:V *V_m2))
+  (compose (:A P) (:B V_m2) (:C *Q2))
+  (input (:P Q2) (:Col C_arm))
+  (step_offset D *V))
+
+(ALTS $choice "what an intact figure is" $Line
+  (ALT $Figure
+    (RULE &figure_steps
+      (OR ((dir_elem *D)
+           (step_offset D (:V *Delta)))
+          ((diag_dir_elem (:D *D2))
+           (step_offset (:D D2) (:V Delta)))))
+
+    (INIT &figure Quotient
+      (edge ((:a P) (:b P3))
+        (OR ((input *P *Col)
+             (NOT (&bg (:C Col)))
+             (&figure_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P3))
+             (input (:P P3) (:Col *Col2))
+             (NOT (&bg (:C Col2))))
+            ((input P (:Col *Col3))
+             (NOT (&bg (:C Col3)))
+             (= P3 P)))))
+
+    (RULE &figure_component
+      (&figure.class (:a *P) *Id))
+
+    (RULE &touch
+      (&figure_component *P)
+      (dir8_elem *D)
+      (step_offset D (:V *V_m1))
+      (compose (:A P) (:B V_m1) (:C *Q)))
+
+    (RULE &template
+      (&figure_component *P *Id)
+      (ALL ((&figure_component P (:Id *Idm))
+            (&figure_component (:P *Qm) (:Id Idm))
+            (!= Qm P))
+           ((&touch P (:Q Qm))))
+      (input P (:Col *C_center))
+      (&figure_component (:P *Q) Id)
+      (!= Q P)
+      (input (:P Q) (:Col *C_arm))
+      (!= C_arm C_center)
+      (relative (:Base P) (:X Q) (:X_rel *V)))))
+
+(INIT &arms Occurrences
+  (key ((OR ((&template (:C_center ^Cc))
+             (input *P *Col))
+            ((&template (:C_center Cc) *V (:C_arm *Ca)))))
+    (cell (P (:v Col))
+      (&template (:C_center Cc))
+      (input *P *Col))
+    (shape ((:P V) (:v Ca))
+      (&template (:C_center Cc) *V (:C_arm *Ca)))))
+
+(RULE &fill
+  ;; A center's empty arm cells take the arm color.
+  (OR ((input (:P *P2) (:Col *Cc))
+       (&template (:C_center Cc) *V (:C_arm *Col))
+       (compose (:A P2) (:B V) (:C *P))
+       (&empty P))
+      ((&arms.occurrence (:key (:Cc Col)) P)
+       (&empty P))))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&fill P)))))

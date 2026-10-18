@@ -1,0 +1,6 @@
+;; a416b8f3
+
+(param &tile_axis Axis (AXIS_H))
+(param &tile Position (Frame
+  ((:A AXIS_V) (:N 1))
+  ((:A AXIS_H) (:N 2))))

@@ -1,0 +1,3 @@
+;; 20818e16
+
+(param &corner DiagDir (DIAG_TL))

@@ -1,0 +1,6 @@
+;; 08ed6ac7
+
+(param &ink Color (5))
+(param &axis Axis (AXIS_V))
+(param &tall_color (number Color) (0 1) (1 2) (2 3) (3 4))
+(param &short_color (number Color) (0 4) (1 3) (2 2) (3 1))

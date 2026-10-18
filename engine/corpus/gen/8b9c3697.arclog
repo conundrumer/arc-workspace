@@ -1,0 +1,136 @@
+;; 8b9c3697
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The background: the commonest color.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &bg
+  (&bg_mode.maximal (:t *Col)))
+
+(DET &mover ChangedColor)
+
+;; An anchor: a component of what is neither background nor mover.
+(INIT &anchors Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg Col))
+    (NOT (&mover (:C Col)))))
+
+(RULE &anchor
+  (&anchors.component *P *Id))
+
+(RULE &cavity_axis
+  (&anchor (:Id *Key))
+  (axis_elem *A))
+
+;; Each anchor's cavity.
+(INIT &cavity Ray
+  (key ((OR ((&anchor ^Id *P))
+            ((&cavity_axis (:Key Id) *A)
+             (axis4_of *D A))
+            ((&cavity_axis (:Key Id))
+             (input P))))
+    (source (P)
+      (&anchor Id *P))
+    (node (P)
+      (&cavity_axis (:Key Id))
+      (input *P))
+    (dir (D)
+      (&cavity_axis (:Key Id) *A)
+      (axis4_of *D A))))
+
+(RULE &cavity_between
+  (&anchor (:Id *Key))
+  (input *P)
+  (&cavity_axis Key *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&cavity.ray (:key (:Id Key)) P D)
+  (&cavity.ray (:key (:Id Key)) P (:D O)))
+
+(DET &trail AnyOutNewColor)
+
+(INIT &movers Connectivity
+  (node (P)
+    (input *P *Col)
+    (&mover (:C Col))))
+
+(RULE &mover2
+  (&movers.component *P *Id))
+
+;; Each mover slides toward each direction until it meets the frame edge or
+;; a cell that is neither background nor its own.
+(INIT &slide Distance
+  (key ((dir_elem ^D)
+        (&mover2 ^Id))
+    (source_distance (K)
+      (OR ((&mover2 Id *P)
+           (margin (:B P) D *K))
+          ((&mover2 Id (:P *P3))
+           (input (:P *P2) *Col)
+           (NOT (&bg Col))
+           (NOT (&mover2 Id (:P P2)))
+           (gap D (:P P3) (:Q P2) K))))))
+
+(RULE &slide_dir
+  (&mover2 *Id)
+  (dir_elem *D))
+
+(RULE &rest
+  (&slide.distance (:key *Id *D) *K)
+  (&slide_dir Id D)
+  (jump_offset D K (:V *Delta))
+  (&mover2 Id (:P *P3))
+  (compose (:A P3) (:B Delta) (:C *P)))
+
+(RULE &docked
+  (&rest *Id *D *P)
+  (neighbor P D (:Q *P2))
+  (&anchor (:Id *A) (:P P2)))
+
+(RULE &seated
+  (&docked *Id *D *A)
+  (ALL ((&rest Id D *P))
+       ((&cavity_between (:Key A) P))))
+
+(RULE &landed
+  (&seated *Id *D)
+  (&rest Id D *P))
+
+(RULE &trail2
+  (&seated *Id *D)
+  (&slide.distance (:key Id D) *K)
+  (&slide_dir Id D)
+  (jump_offset D K (:V *Delta))
+  (&mover2 Id (:P *P0))
+  (compose (:A P0) (:B Delta) (:C *P1))
+  (input *P)
+  (axis_of D *A)
+  (same_line A (:P P0) (:Q P))
+  (OR ((= P P0))
+      ((nearer D P (:Q P0))))
+  (nearer D (:P P1) (:Q P))
+  (NOT (&landed P)))
+
+(RULE &cleared
+  (OR ((input *P *Col)
+       (NOT (&mover2 P)))
+      ((&mover2 P)
+       (&bg Col))))
+
+(RULE &output
+  (OR ((&landed *P)
+       (&mover (:C *Col)))
+      ((&trail2 P)
+       (&trail (:C Col)))
+      ((&cleared P Col)
+       (NOT (&landed P))
+       (NOT (&trail2 P)))))

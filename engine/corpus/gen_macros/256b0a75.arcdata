@@ -1,0 +1,4 @@
+;; 256b0a75
+
+(param &bg Color (0))
+(param &frame Color (8))

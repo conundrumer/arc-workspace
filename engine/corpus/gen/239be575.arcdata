@@ -1,0 +1,10 @@
+;; 239be575
+
+(param &mark Color (2))
+(param &link Color (8))
+(param &out_pos Position (Frame
+  ((:A AXIS_V) (:N 1))
+  ((:A AXIS_H) (:N 1))))
+(param &bg Color (0))
+(param &join_paint Color (8))
+(param &apart_paint Color (0))

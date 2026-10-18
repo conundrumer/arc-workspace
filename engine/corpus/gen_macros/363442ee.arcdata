@@ -1,0 +1,6 @@
+;; 363442ee
+
+(param &bg Color (0))
+(param &mark Color (1))
+(param &divider Color (5))
+(param &key_side Dir (DIR_L))

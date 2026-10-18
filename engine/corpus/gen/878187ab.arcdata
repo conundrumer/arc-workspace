@@ -1,0 +1,8 @@
+;; 878187ab
+
+(param &bg Color (7))
+(param &fill Color (2))
+(param &x_color Color (4))
+(param &canvas_side number (16))
+(param &anchor DiagDir (DIAG_BL))
+(param &long_axis Axis (AXIS_H))

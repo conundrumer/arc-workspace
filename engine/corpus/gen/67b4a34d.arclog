@@ -1,0 +1,46 @@
+;; 67b4a34d
+
+(DET &mask VanishedColor)
+
+(RULE &clean
+  (input *P *Col)
+  (NOT (&mask (:C Col))))
+
+;; The hole: the masked cells.
+(INIT &hole BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&mask (:C Col))))
+
+(RULE &hole_cell
+  (&hole.cell *P)
+  (&hole.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(ALTS $choice "which D4 elements the grid is symmetric under" $Full
+  (ALT $Detect
+    ;; Self-symmetry of the clean cells.
+    (INIT &sym Agreement
+      (source ((:i P) (:v Col))
+        (&clean *P *Col))
+      (target ((:i P) (:v Col))
+        (&clean *P *Col))
+      (correspondence ((:m D) (:i P) (:j Q))
+        (&clean *P *Col)
+        (d4_elem *D)
+        (apply D P (:P_out *Q))))
+
+    (RULE &output
+      (&hole_cell (:P *P3) (:P_inner *P))
+      (&clean)
+      (d4_elem *D)
+      (NOT (&sym.conflict (:m D)))
+      (apply D (:P P3) (:P_out *P2))
+      (&clean (:P P2) *Col))))
+
+(RULE &output
+  (&hole_cell (:P *P3) (:P_inner *P))
+  (d4_elem *D)
+  (apply D (:P P3) (:P_out *P2))
+  (&clean (:P P2) *Col))

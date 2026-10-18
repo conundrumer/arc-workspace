@@ -1,0 +1,395 @@
+;; 98c475bf
+
+(DET &bg DominantColor)
+
+;; An edge line of one ink color is border.
+(INIT &edge Singleton
+  (key ((ex_input ^E *P *Col)
+        (dir_elem ^D)
+        (margin (:B P) D (:K 0)))
+    (member ((:v Col))
+      (ex_input E *P *Col)
+      (dir_elem D)
+      (margin (:B P) D (:K 0)))))
+
+(DET &border_dir
+  (&edge.value (:key *E *D) (:v *Col))
+  (NOT (&bg (:C Col))))
+
+(DET &line_axis
+  (&border_dir *D)
+  (axis_of D *A))
+
+(DET &border_cell
+  (ex_input *E *P)
+  (&border_dir E *D)
+  (margin (:B P) D (:K 0)))
+
+;; The canvas is what the border leaves.
+(INIT &cbox BoundingBox
+  (key ((ex_input ^E *P)
+        (NOT (&border_cell E P)))
+    (cell (P)
+      (ex_input E *P)
+      (NOT (&border_cell E P)))))
+
+(DET &border_width
+  (&cbox.box (:key *E) *B)
+  (&border_dir E *D)
+  (margin B D *K))
+
+(RULE &canvas
+  (&line_axis *A)
+  (axis_of *D A)
+  (&border_width *K)
+  (opposite D (:Opp *O_m1))
+  (edge_inset D K (:B *B1_m2))
+  (edge_inset (:D O_m1) K (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *B)))
+
+(RULE &cell_split_split1
+  (&canvas *B)
+  (input *P)
+  (relative (:Base B) (:X P) (:X_rel *P_c_))
+  (&line_axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_c_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_c_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_col_))
+  (relative (:Base P_col_) (:X P_c_) (:X_rel *P_row_)))
+
+(RULE &cell_split
+  (input *P)
+  (&canvas *B)
+  (ALL ((input P)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_c))
+  (&line_axis *A)
+  (&cell_split_split1 (:P_c_ P_c) (:A_ A) (:P_col_ *P_col) (:P_row_ *P_row)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&canvas *B)
+  (ALL ((input P (:Col *Colm))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(RULE &side_inside1
+  (input (:P *P_))
+  (&canvas (:B *B_))
+  (dir_elem (:D *D_m1))
+  (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+  (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+  (< K_m3 0))
+
+(RULE &drawn
+  (&ink *P *Col)
+  (ALL ((&canvas *B)
+        (&line_axis *A)
+        (axis_of *D A)
+        (margin (:B P) D (:K *K_m1))
+        (margin B D (:K K_m1)))
+       ((&side_inside1 (:P_ P) (:B_ B)))))
+
+(DET &fig
+  (&drawn *E *Col)
+  (&ink E *P Col)
+  (&cell_split E P *P_col *P_row))
+
+;; The figure's own frame: its rows, across the canvas.
+(INIT &fbox BoundingBox
+  (key ((&fig ^E ^Col *P_row))
+    (cell ((:P P_row))
+      (&fig E Col *P_row))))
+
+(DET &line_row
+  (&fig *E *Col *P_col (:P_row *B))
+  (&border_dir E *D)
+  (relative (:Base 0) (:X P_col) (:X_rel *R_m1))
+  (axis_of (:D *D1_m2) (:A *A1_m3))
+  (opposite (:D D1_m2) (:Opp *O1_m4))
+  (perp (:A A1_m3) (:A2 *A2_m5))
+  (axis_of (:D *D2_m6) (:A A2_m5))
+  (opposite (:D D2_m6) (:Opp *O2_m7))
+  (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+  (>= K1_m8 0)
+  (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+  (>= K2_m9 0)
+  (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+  (>= K3_m10 0)
+  (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+  (>= K4_m11 0)
+  (margin (:B P_col) D (:K *K_m12))
+  (margin (:B 0) D (:K K_m12)))
+
+(DET &miss
+  (&line_row *E *Col (:B *R))
+  (&cell_split E *P_col (:P_row R))
+  (NOT (&fig E Col P_col (:P_row R))))
+
+(DET &shape_of
+  (OR ((&fig *E *Col *P_col *P_row)
+       (&line_row E Col (:B *R))
+       (!= P_row R))
+      ((&miss E Col (:P_col *Q_col))
+       (&line_row E Col (:B P_row))
+       (&border_dir E *D)
+       (step_offset D (:V *V_m1))
+       (compose (:A Q_col) (:B V_m1) (:C P_col))
+       (&fig E Col P_col P_row))))
+
+(DET &shape_inside1
+  (&shape_of *E *Col *P_col *P_row)
+  (compose (:A P_row) (:B P_col) (:C *P_c_))
+  (&fbox.box (:key E Col) (:B *F_))
+  (dir_elem (:D *D_m1))
+  (relative (:Base F_) (:X P_c_) (:X_rel *R_m2))
+  (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+  (< K_m3 0))
+
+(DET &shape
+  (&shape_of *E (:Col *C) *P_col *P_row)
+  (compose (:A P_row) (:B P_col) (:C *P_c))
+  (&fbox.box (:key E (:Col C)) (:B *F))
+  (NOT (&shape_inside1 (:P_c_ P_c) (:F_ F)))
+  (relative (:Base F) (:X P_c) (:X_rel *P)))
+
+(RULE &shape_at_split1
+  (&shape *C (:P *P_))
+  (&line_axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_col_))
+  (relative (:Base P_col_) (:X P_) (:X_rel *P_row_)))
+
+(RULE &mark
+  (&ink *P *Col)
+  (NOT (&drawn Col)))
+
+(RULE &pair_row
+  (&mark *Col (:P *M))
+  (&cell_split (:P M) (:P_row *B)))
+
+(RULE &inward_dir
+  (&pair_row (:Col *Key))
+  (&line_axis *A)
+  (axis_of *D A))
+
+(RULE &inward_dir_ray
+  (&inward_dir *Key *D))
+
+(DET &mark_row
+  (&line_row *E (:Col *C) (:B *R))
+  (&fbox.box (:key E (:Col C)) (:B *F))
+  (relative (:Base F) (:X R) (:X_rel *B)))
+
+(RULE &shape_at
+  (&shape *C *P)
+  (&line_axis *A)
+  (&shape_at_split1 (:P_ P) (:A_ A) (:P_col_ *P_col) (:P_row_ *P_row))
+  (&mark_row C (:B *L))
+  (relative (:Base L) (:X P_row) (:X_rel *V))
+  (compose (:A V) (:B P_col) (:C *B)))
+
+(RULE &shape_cell
+  (&pair_row *Col (:B *R))
+  (&shape_at (:C Col) (:B *G))
+  (compose (:A R) (:B G) (:C *Q))
+  (&canvas *B)
+  (compose (:A B) (:B Q) (:C *P))
+  (input P))
+
+(RULE &inward_node
+  (&inward_dir *Key)
+  (input *P)
+  (NOT (&shape_cell (:Col Key) P)))
+
+(RULE &inward_source
+  (&mark (:Col *Key) *P))
+
+;; The line's run inward from each marker, stopped by the shape.
+(INIT &inward Distance
+  (key ((&inward_source (:Key ^Ky) (:P ^O))
+        (&inward_dir_ray (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&inward_source (:Key Ky) (:P O))
+           (&inward_dir_ray (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&inward_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&inward_node (:Key Ky) (:P Q)))
+          ((&inward_source (:Key Ky) (:P O))
+           (&inward_dir_ray (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&inward_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&inward_source (:Key Ky) (:P O))
+           (&inward_dir_ray (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&inward_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&inward_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&inward_source (:Key Ky) (:P O))
+      (&inward_dir_ray (:Key Ky) D))))
+
+(RULE &inward_ray
+  (&inward.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &inward_end
+  (&inward_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&inward_ray Key (:P Q) D Origin)))
+
+(RULE &row_cell
+  (&pair_row *Col (:B *R))
+  (&cell_split *P *P_col (:P_row R)))
+
+(DET &line
+  (&fig *E (:Col *C) (:P_col *P) (:P_row *R))
+  (&line_row E (:Col C) (:B R)))
+
+(RULE &figure
+  (OR ((&shape_cell *Col *P))
+      ((&row_cell Col P *P_col)
+       (&line (:C Col) (:P P_col)))))
+
+(ALTS $choice "what a figure's line is" $Drawn
+  (ALT $Across
+    (RULE &seal_flood_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (RULE &seal_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (RULE &seal_cell
+      (&pair_row (:Col *Key))
+      (input *P)
+      (NOT (&shape_cell (:Col Key) P)))
+
+    (RULE &seal_flood_node
+      (&pair_row (:Col *Key))
+      (input *P)
+      (NOT (&shape_cell (:Col Key) P)))
+
+    (INIT &seal_flood Propagation
+      (key ((OR ((&seal_cell (:Key ^Ky) *P)
+                 (dir_elem *D)
+                 (margin (:B P) D (:K 0))
+                 (&seal_flood_node (:Key Ky) P))
+                ((&seal_flood_node (:Key Ky) P)
+                 (&seal_flood_steps (:Delta *S))
+                 (compose (:A P) (:B S) (:C *Q))
+                 (&seal_flood_node (:Key Ky) (:P Q)))))
+        (source ((:n P))
+          (&seal_cell (:Key Ky) *P)
+          (dir_elem *D)
+          (margin (:B P) D (:K 0))
+          (&seal_flood_node (:Key Ky) P))
+        (edge ((:a P) (:b Q))
+          (&seal_flood_node (:Key Ky) *P)
+          (&seal_flood_steps (:Delta *S))
+          (compose (:A P) (:B S) (:C *Q))
+          (&seal_flood_node (:Key Ky) (:P Q)))))
+
+    (RULE &seal_node
+      (&seal_cell *Key *P)
+      (NOT (&seal_flood.reached (:key (:Ky Key)) (:n P))))
+
+    ;; What the shape closes off from the frame edge.
+    (INIT &seal Quotient
+      (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+        (OR ((&seal_node (:Key *Ky) *P)
+             (&seal_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P2))
+             (&seal_node (:Key Ky) (:P P2)))
+            ((&seal_node (:Key Ky) P)
+             (= P2 P)))))
+
+    (RULE &seal_component
+      (&seal.class (:a *Key *P) *Id))
+
+    (DET &gap
+      (&miss *E (:Col *C) (:P_col *P)))
+
+    (RULE &lit
+      (&row_cell *Col *P *P_col)
+      (NOT (&gap (:C Col) (:P P_col))))
+
+    (RULE &figure
+      (OR ((&lit *Col *P))
+          ((&shape_cell Col P))))
+
+    (RULE &inward_cell
+      (&row_cell (:Col *Key) *P))
+    (ALTS $g "what a figure's line misses" $Stored
+      (ALT $Sealed
+        (RULE &lit
+          (&row_cell *Col *P)
+          (NOT (&seal_component (:Key Col) P))))
+      (ALT $Halted
+        (RULE &lit
+          (&inward_ray (:Key *Col) *P)
+          (&inward_cell (:Key Col) P))))))
+
+(RULE &output
+  (OR ((&figure *P *Col))
+      ((input P (:Col *C_in))
+       (&canvas *B)
+       (OR ((relative (:Base B) (:X P) (:X_rel *R_m4))
+            (axis_of (:D *D1_m5) (:A *A1_m6))
+            (opposite (:D D1_m5) (:Opp *O1_m7))
+            (perp (:A A1_m6) (:A2 *A2_m8))
+            (axis_of (:D *D2_m9) (:A A2_m8))
+            (opposite (:D D2_m9) (:Opp *O2_m10))
+            (margin (:B R_m4) (:D D1_m5) (:K *K1_m11))
+            (>= K1_m11 0)
+            (margin (:B R_m4) (:D O1_m7) (:K *K2_m12))
+            (>= K2_m12 0)
+            (margin (:B R_m4) (:D D2_m9) (:K *K3_m13))
+            (>= K3_m13 0)
+            (margin (:B R_m4) (:D O2_m10) (:K *K4_m14))
+            (>= K4_m14 0)
+            (NOT (&figure P))
+            (&bg (:C Col)))
+           ((dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+            (< K_m3 0)
+            (= Col C_in))))))

@@ -1,0 +1,92 @@
+;; 758abdf0
+
+(DET &bg DominantColor)
+
+(DET &wall UnchangedColor)
+
+(DET &mark RarestColor)
+
+;; The run length at which a run leaves.
+(DET &full TileDim)
+
+;; The color an edge line holds throughout.
+(INIT &edge Singleton
+  (key ((dir_elem ^D))
+    (member ((:v Col))
+      (input *P *Col)
+      (margin (:B P) D (:K 0)))))
+
+(RULE &away
+  (&edge.value (:key (:D *D2)) (:v *Col))
+  (&wall (:C Col))
+  (opposite (:D D2) (:Opp *D)))
+
+;; Runs of marks along the away axis. Components within one line: the
+;; perpendicular steps connect nothing.
+(INIT &runs Connectivity
+  (key ((input *P *Col)
+        (&mark (:C Col))
+        (&away (:D *A))
+        (axis_of (:D A) (:A *Ax))
+        (split P (:A Ax) (:Across ^L)))
+    (node (P)
+      (input *P *Col)
+      (&mark (:C Col))
+      (&away (:D *A))
+      (axis_of (:D A) (:A *Ax))
+      (split P (:A Ax) (:Across L)))))
+
+(RULE &run
+  (&runs.component *P *Id))
+
+(INIT &len Cardinality
+  (key ((&run ^Id *P))
+    (member ((:m P))
+      (&run Id *P))))
+
+(RULE &landing_cell
+  (&run (:Id *Key) *P)
+  (&len.size (:key (:Id Key)) *N)
+  (&full (:D N)))
+
+;; A full run slides away from the wall until it lands against the far edge.
+(INIT &landing Distance
+  (key ((&landing_cell (:Key ^Id)))
+    (source_distance (K)
+      (&run Id *P)
+      (&len.size *N)
+      (&full (:D N))
+      (&away (:D *A))
+      (margin (:B P) (:D A) *K))))
+
+(RULE &landing_dir
+  (&landing_cell *Key)
+  (&away *D))
+
+(RULE &placed
+  (OR ((&len.size (:key *Id) *N)
+       (&full (:D *F))
+       (< N F)
+       (&run Id (:P *P2))
+       (&away (:D *A))
+       (neighbor (:P P2) (:D A) (:Q *P))
+       (&mark (:C *Col)))
+      ((&landing_cell (:Key *Id2) (:P *P22))
+       (&landing.distance (:key (:Id Id2)) *K)
+       (&landing_dir (:Key Id2) *D)
+       (jump_offset D K *V)
+       (compose (:A P22) (:B V) (:C P))
+       (&wall (:C Col)))))
+
+(RULE &vacated
+  (&landing_cell *P))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&placed P *Col))
+      ((NOT (&placed P))
+       (&vacated P)
+       (&bg (:C Col)))
+      ((NOT (&placed P))
+       (NOT (&vacated P))
+       (= Col Col_in))))

@@ -1,0 +1,104 @@
+;; 40853293
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &mark_axis
+  (&mark *Col *P)
+  (&mark Col (:P *Q))
+  (!= P Q)
+  (axis_elem *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B Q) (:D D_m2) (:K K_m3)))
+
+(RULE &spans_dir
+  (&mark_axis (:Col *Key) *A)
+  (axis4_of *D A))
+
+(RULE &spans_node
+  (&mark_axis (:Col *Key) *A)
+  (input *P))
+
+(RULE &spans_source
+  (&mark (:Col *Key) *P))
+
+(INIT &spans Distance
+  (key ((&spans_source (:Key ^Ky) (:P ^O))
+        (&spans_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&spans_source (:Key Ky) (:P O))
+           (&spans_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&spans_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&spans_node (:Key Ky) (:P Q)))
+          ((&spans_source (:Key Ky) (:P O))
+           (&spans_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&spans_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&spans_source (:Key Ky) (:P O))
+           (&spans_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&spans_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&spans_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&spans_source (:Key Ky) (:P O))
+      (&spans_dir (:Key Ky) D))))
+
+(RULE &spans_ray
+  (&spans.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &spans_between
+  (&mark_axis (:Col *Key))
+  (input *P)
+  (&mark_axis (:Col Key) *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&spans_ray Key P D)
+  (&spans_ray Key P (:D O)))
+
+(RULE &spans_end
+  (&spans_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&spans_ray Key (:P Q) D Origin)))
+
+(DET &over_axis AxisDomain)
+
+(RULE &over
+  (&spans_between (:Key *Col) *P)
+  (&mark_axis Col *A)
+  (&over_axis A))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&over P *Col))
+      ((NOT (&over P))
+       (&spans_between (:Key Col) P))
+      ((NOT (&spans_between P))
+       (= Col C_in))))

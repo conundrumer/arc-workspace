@@ -1,0 +1,78 @@
+;; 4ff4c9da
+
+(RULE &blobs_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(DET &mark RarestColor)
+
+(RULE &touched
+  (input *P (:Col *Col_mark))
+  (&mark (:C Col_mark))
+  (dir8_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (input (:P Q) *Col))
+
+(RULE &covered
+  (input *Col)
+  (NOT (&mark (:C Col)))
+  (NOT (&touched Col)))
+
+(RULE &blobs_node
+  (input *P (:Col *Key))
+  (OR ((&mark (:C Key)))
+      ((&covered (:Col Key)))))
+
+(INIT &blobs Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&blobs_node (:Key *Ky) *P)
+         (&blobs_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&blobs_node (:Key Ky) (:P P2)))
+        ((&blobs_node (:Key Ky) P)
+         (= P2 P)))))
+
+(RULE &blobs_component
+  (&blobs.class (:a *Key *P) *Id))
+
+(INIT &bbox BoundingBox
+  (key ((&blobs_component *P ^Id))
+    (cell (P)
+      (&blobs_component *P Id))))
+
+(INIT &footprint Inclusion
+  (pattern ((:pattern Id) (:m P_inner))
+    (&blobs_component (:Key *Col) *P *Id)
+    (&mark (:C Col))
+    (&bbox.box (:key Id) *B)
+    (ALL ((&blobs_component (:Key *Colm) P (:Id *Idm))
+          (&bbox.box (:key (:Id Idm)) B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+  (observed ((:observed Id) (:m P_inner))
+    (&blobs_component (:Key *Col) *P *Id)
+    (&covered Col)
+    (&bbox.box (:key Id) *B)
+    (ALL ((&blobs_component (:Key *Colm) P (:Id *Idm))
+          (&bbox.box (:key (:Id Idm)) B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B) (:X P) (:X_rel *P_inner))))
+
+(RULE &copy_cell
+  (&footprint.equal (:observed *Id))
+  (&blobs_component *P Id))
+
+(RULE &output
+  (OR ((&copy_cell *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&copy_cell P)))))

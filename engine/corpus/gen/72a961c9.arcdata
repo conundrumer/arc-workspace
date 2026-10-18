@@ -1,0 +1,6 @@
+;; 72a961c9
+
+(param &bg Color (0))
+(param &dir Dir (DIR_T))
+(param &reach (Color number) (2 4) (8 3))
+(param &line3 Color (1))

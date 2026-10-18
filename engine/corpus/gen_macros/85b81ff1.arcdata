@@ -1,0 +1,7 @@
+;; 85b81ff1
+
+(param &bg Color (0))
+(param &least_dir Dir (DIR_L))
+(param &gap number (1))
+(param &tile_count number (5))
+(param &tile_size number (2))

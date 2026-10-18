@@ -1,0 +1,6 @@
+;; 770cc55f
+
+(param &bg Color (0))
+(param &sep Color (2))
+(param &fill Color (4))
+(param &axis Axis (AXIS_V))

@@ -1,0 +1,45 @@
+;; 6d75e8bb
+
+(DET &bg DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&ink *P)))
+
+(RULE &filled
+  (input *P *Col)
+  (&bg (:C Col))
+  (&bbox.box *B)
+  (inside (:A P) B))
+
+(ALTS $choice "what owns a box" $Whole
+  (ALT $Each
+    (INIT &comps Connectivity
+      (node (P)
+        (&ink *P))
+      (step ((:Delta S))
+        (diag_dir_elem *D)
+        (step_offset D (:V *S))))
+
+    (INIT &comp_box BoundingBox
+      (key ((&comps.component *P ^Id))
+        (cell (P)
+          (&comps.component *P Id))))
+
+    (RULE &filled
+      (input *P *Col)
+      (&bg (:C Col))
+      (&comp_box.box *B)
+      (inside (:A P) B))))
+
+(RULE &output
+  (OR ((&filled *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&filled P)))))

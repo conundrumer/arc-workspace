@@ -1,0 +1,214 @@
+;; 18419cfa
+
+(DET &cell
+  (ex_output *E *P *Col))
+
+(DET &frame UnchangedColor)
+
+(DET &closed_cell2
+  (&cell *E *P *Col)
+  (NOT (&frame (:C Col))))
+
+(DET &closed_flood_node2
+  (&cell *E *P *Col)
+  (NOT (&frame (:C Col))))
+
+(RULE &closed_flood_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &closed_flood2 Propagation
+  (key ((OR ((&closed_cell2 ^E *P)
+             (dir_elem *D)
+             (margin (:B P) D (:K 0))
+             (&closed_flood_node2 E P))
+            ((&closed_flood_node2 E P)
+             (&closed_flood_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *Q))
+             (&closed_flood_node2 E (:P Q)))))
+    (source ((:n P))
+      (&closed_cell2 E *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0))
+      (&closed_flood_node2 E P))
+    (edge ((:a P) (:b Q))
+      (&closed_flood_node2 E *P)
+      (&closed_flood_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *Q))
+      (&closed_flood_node2 E (:P Q)))))
+
+(DET &closed_node2
+  (&closed_cell2 *E *P)
+  (NOT (&closed_flood2.reached (:key E) (:n P))))
+
+(RULE &closed_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &closed2 Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&closed_node2 (:E *Ky) *P)
+         (&closed_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&closed_node2 (:E Ky) (:P P2)))
+        ((&closed_node2 (:E Ky) P)
+         (= P2 P)))))
+
+(DET &closed_component2
+  (&closed2.class (:a (:Key *E) *P) *Id))
+
+(INIT &bbox2 BoundingBox
+  (key ((&closed_component2 (:E ^K) *P ^Id))
+    (cell (P)
+      (&closed_component2 (:E K) *P Id))))
+
+(DET &inner_inside12
+  (&closed_component2 (:E *K) (:P *P_) *Id)
+  (&bbox2.box (:key K Id) (:B *B_))
+  (dir_elem (:D *D_m1))
+  (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+  (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+  (< K_m3 0))
+
+(RULE &closed_cell
+  (input *P *Col)
+  (NOT (&frame (:C Col))))
+
+(RULE &closed_flood_node
+  (input *P *Col)
+  (NOT (&frame (:C Col))))
+
+(INIT &closed_flood Propagation
+  (source ((:n P))
+    (&closed_cell *P)
+    (dir_elem *D)
+    (margin (:B P) D (:K 0))
+    (&closed_flood_node P))
+  (edge ((:a P) (:b Q))
+    (&closed_flood_node *P)
+    (&closed_flood_steps (:Delta *S))
+    (compose (:A P) (:B S) (:C *Q))
+    (&closed_flood_node (:P Q))))
+
+(RULE &closed_node
+  (&closed_cell *P)
+  (NOT (&closed_flood.reached (:n P))))
+
+(INIT &closed Quotient
+  (edge ((:a P) (:b P2))
+    (OR ((&closed_node *P)
+         (&closed_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&closed_node (:P P2)))
+        ((&closed_node P)
+         (= P2 P)))))
+
+(RULE &closed_component
+  (&closed.class (:a *P) *Id))
+
+(DET &ink RarestColor)
+
+(INIT &bbox BoundingBox
+  (key ((&closed_component *P ^Id))
+    (cell (P)
+      (&closed_component *P Id))))
+
+(DET &inner2
+  (&closed_component2 *E *P *Id)
+  (&bbox2.box (:key (:K E) Id) *B)
+  (NOT (&inner_inside12 (:P_ P) (:B_ B)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &inner
+  (&closed_component *P *Id)
+  (&bbox.box (:key Id) *B)
+  (ALL ((&closed_component P (:Id *Idm))
+        (&bbox.box (:key (:Id Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &ink_cell
+  (input *P *Col)
+  (&ink (:C Col))
+  (&inner *Id P *P_inner))
+
+(DET &ink_out
+  (ex_output *E *P *Col)
+  (&ink (:C Col))
+  (&inner2 E *Id P *P_inner))
+
+(INIT &inv Agreement
+  (key ((&ink_out ^E ^Id *P_inner))
+    (source ((:i P_inner))
+      (&ink_out E Id *P_inner))
+    (target ((:i P_inner))
+      (&ink_out E Id *P_inner))
+    (correspondence ((:m D) (:i P_inner) (:j Q))
+      (&ink_out E Id *P_inner)
+      (d4_elem *D)
+      (apply D (:P P_inner) (:P_out *Q)))))
+
+;; The group whose members are exactly the transforms every finished
+;; pattern is invariant under.
+(INIT &grp Inclusion
+  (pattern ((:pattern S) (:m D))
+    (sym_member *S *D))
+  (observed ((:m D))
+    (d4_elem *D)
+    (NOT (&inv.mismatch (:m D)))))
+
+(DET &sym
+  (&grp.equal (:pattern *S)))
+
+(RULE &flip
+  (&ink_cell *Id)
+  (&sym *S)
+  (sym_member S *D))
+
+(ALTS $choice "which mirrors apply" $Group
+  (ALT $OneSided
+    (RULE &one_sided
+      (&ink_cell *Id)
+      (dir_elem *D)
+      (ALL ((&ink_cell Id *P_inner)
+            (opposite D (:Opp *O_m1))
+            (margin (:B P_inner) D *K)
+            (margin (:B P_inner) (:D O_m1) (:K *K2)))
+           ((< K K2))))
+
+    (RULE &flip
+      (&one_sided *Id (:D *D2))
+      (axis_of (:D D2) *A)
+      (axis_inversion A (:T *D))))
+  (ALT $Doorway
+    (RULE &doorway
+      (&closed_component *P *Id)
+      (&frame (:C *Wall))
+      (opposite *D (:Opp *D2))
+      (axis_of D (:A *A2))
+      (perp (:A A2) (:A2 *A))
+      (step_offset D (:V *V_m1))
+      (compose (:A P) (:B V_m1) (:C *Q1))
+      (input (:P Q1) (:Col Wall))
+      (step_offset (:D D2) (:V *V_m2))
+      (compose (:A P) (:B V_m2) (:C *Q2))
+      (input (:P Q2) (:Col Wall)))
+
+    (RULE &flip
+      (&doorway *Id *A)
+      (axis_inversion A (:T *D)))))
+
+(RULE &paint
+  (&ink_cell *Id *P_inner)
+  (&flip Id *D)
+  (apply D (:P P_inner) (:P_out *P_inner2))
+  (&inner Id *P (:P_inner P_inner2)))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&paint P)))
+      ((&paint P)
+       (&ink (:C Col)))))

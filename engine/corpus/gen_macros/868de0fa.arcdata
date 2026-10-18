@@ -1,0 +1,5 @@
+;; 868de0fa
+
+(param &ink Color (1))
+(param &odd_fill Color (7))
+(param &even_fill Color (2))

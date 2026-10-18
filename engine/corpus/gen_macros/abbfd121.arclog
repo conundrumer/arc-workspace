@@ -1,0 +1,868 @@
+;; abbfd121
+
+(INPUT wallpaper "a pattern that repeats along both axes covers the whole grid; its period differs between inputs"
+
+  (RULE &cell
+    (input *P *Col))
+
+  ;; Each color's bounding box.
+  (INIT &color_box BoundingBox
+    (key ((&cell *P ^Col))
+      (cell (P)
+        (&cell *P Col))))
+
+  (RULE &color_gap_inside1
+    (&cell (:P *P_) (:Col *C))
+    (&color_box.box (:key *Col) (:B *B_))
+    (dir_elem (:D *D_m1))
+    (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+    (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+    (< K_m3 0))
+
+  (RULE &color_fill
+    (&color_box.box (:key *Col) *B)
+    (ALL ((&color_box.box (:key Col) (:B *Bm))
+          (&cell *P (:Col *C))
+          (!= C Col))
+         ((&color_gap_inside1 (:P_ P) (:B_ Bm)))))
+
+  (DET &occluder2
+    (&color_fill *E *B))
+
+  (DET &block_cell_inside12
+    (&cell (:E *Ky) (:P *P_))
+    (&occluder2 (:E Ky) (:B *B_))
+    (dir_elem (:D *D_m1))
+    (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+    (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+    (< K_m3 0))
+
+  (DET &block_cell2
+    (&occluder2 *E *B)
+    (&cell E *P)
+    (NOT (&block_cell_inside12 (:P_ P) (:B_ B))))
+
+  (DET &hidden2
+    (&block_cell2 *E *P))
+
+  (DET &visible2
+    (&cell *E *P *Col)
+    (NOT (&hidden2 E P)))
+
+  ;; The per-axis shortest periods of the visible cells.
+  (INIT &period2 Periods
+    (key ((&visible2 ^E *P *Col))
+      (cell (P (:v Col))
+        (&visible2 E *P *Col)))))
+
+(INPUT occluders "two or more solid axis-aligned rectangles cover parts of the wallpaper, each in its own color that the wallpaper does not use; they do not touch or overlap; an occluder is a color whose cells fill their bounding box"
+
+  (RULE &part_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (INIT &part Quotient
+    (edge ((:a (:Key Col) P) (:b (:Key Col) (:P P3)))
+      (OR ((input *P *Col)
+           (&part_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (input (:P P3) Col))
+          ((input P Col)
+           (= P3 P)))))
+
+  (RULE &part_component
+    (&part.class (:a *Key *P) *Id))
+
+  (INIT &part_box BoundingBox
+    (key ((&part_component *P ^Id))
+      (cell (P)
+        (&part_component *P Id)))))
+
+(INPUT unique-largest "exactly one occluder has the largest area"
+
+  (INIT &area2 Cardinality
+    (key ((&block_cell2 (:E ^Ky) ^B *P))
+      (member ((:m P))
+        (&block_cell2 (:E Ky) B *P))))
+
+  (DET &above2
+    (axis_elem (:A *X))
+    (&area2.size (:key (:Ky *E) (:B *A)) (:N *N1))
+    (&area2.size (:key (:Ky E) *B) (:N *N2))
+    (< N1 N2))
+
+  (DET &beaten2
+    (&above2 (:E *Ky) (:X *Axis) *A *B))
+
+  (DET &top2
+    (&occluder2 (:E *Ky) *B)
+    (axis_elem (:A *Axis))
+    (NOT (&beaten2 Ky Axis (:A B))))
+
+  (RULE &occluder
+    (&color_fill *B))
+
+  (RULE &block_cell
+    (&occluder *B)
+    (&cell *P)
+    (ALL ((&cell P)
+          (&occluder B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0))))
+
+  (INIT &area Cardinality
+    (key ((&block_cell ^B *P))
+      (member ((:m P))
+        (&block_cell B *P))))
+
+  (RULE &above
+    (axis_elem (:A *X))
+    (&area.size (:key (:B *A)) (:N *N1))
+    (&area.size (:key *B) (:N *N2))
+    (< N1 N2))
+
+  (RULE &beaten
+    (&above (:X *K) *A *B))
+
+  (RULE &top
+    (&occluder *B)
+    (axis_elem (:A *K))
+    (NOT (&beaten K (:A B))))
+
+  (INIT &sole Singleton
+    (key ((&top (:K ^Axis) *B))
+      (member ((:v B))
+        (&top (:K Axis) *B))))
+
+  (INIT &sole2 Singleton
+    (key ((&top2 ^Ky ^Axis *B))
+      (member ((:v B))
+        (&top2 Ky Axis *B)))))
+
+(OUTPUT select "the selected occluder is the one with the largest area"
+
+  (DET &item_split12
+    (&block_cell2 (:E *Ky) *B (:P *P_))
+    (axis_elem (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+    (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &item_split1
+    (&block_cell *B (:P *P_))
+    (axis_elem (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+    (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+  (DET &extent2
+    (&block_cell2 *E *B *P)
+    (axis_elem *A)
+    (relative (:Base B) (:X P) (:X_rel *R_m1))
+    (frame_extent (:P R_m1) A *N))
+
+  (RULE &extent
+    (&block_cell *B *P)
+    (axis_elem *A)
+    (relative (:Base B) (:X P) (:X_rel *R_m1))
+    (frame_extent (:P R_m1) A *N))
+
+  ;; The rows and columns a box spans.
+  (INIT &span Cardinality
+    (key ((&block_cell ^B *P)
+          (axis_elem *A)
+          (&item_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+      (member ((:m A L))
+        (&block_cell B *P)
+        (axis_elem *A)
+        (&item_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))))
+
+  ;; The rows and columns a box spans.
+  (INIT &span2 Cardinality
+    (key ((&block_cell2 (:E ^Ky) ^B *P)
+          (axis_elem *A)
+          (&item_split12 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+      (member ((:m A L))
+        (&block_cell2 (:E Ky) B *P)
+        (axis_elem *A)
+        (&item_split12 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))))
+
+  (INIT &sides Order
+    (key ((&extent ^B *N))
+      (member ((:t N))
+        (&extent B *N))
+      (score ((:t N) (:S N))
+        (&extent B *N))))
+
+  (INIT &sides2 Order
+    (key ((&extent2 (:E ^Ky) ^B *N))
+      (member ((:t N))
+        (&extent2 (:E Ky) B *N))
+      (score ((:t N) (:S N))
+        (&extent2 (:E Ky) B *N)))))
+
+(OUTPUT frame "the output has the height and width of the selected occluder")
+
+(OUTPUT recover "each output cell is the wallpaper as drawn at the matching input cell under the selected occluder, before the occluders were placed"
+  (APPROXIMATED "each output cell takes the color of the visible cells of its phase under the per-axis shortest periods that no two visible cells contradict; undefined where the phase has no visible cell")
+
+  (DET &elem_inside12
+    (&block_cell2 (:E *Ky) (:B *B_) (:P *P_))
+    (&top2 Ky (:Axis *X) (:B B_))
+    (dir_elem (:D *D_m1))
+    (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+    (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+    (< K_m3 0))
+
+  (DET &before_inside12
+    (&block_cell2 (:E *Ky) (:B *B_) (:P *P_))
+    (&top2 Ky (:Axis *X) (:B B_))
+    (dir_elem (:D *D_m1))
+    (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+    (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+    (< K_m3 0))
+
+  (DET &scan_order_cell_inside12
+    (&block_cell2 (:E *Ky) (:B *B_) (:P *P_))
+    (&top2 Ky (:Axis *X) (:B B_))
+    (dir_elem (:D *D_m1))
+    (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+    (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+    (< K_m3 0))
+
+  (DET &scan_order_cell2
+    (&top2 *Ky (:Axis *Key_rank_axis) *B)
+    (axis_elem (:A *Key_axis))
+    (&block_cell2 (:E Ky) B *P)
+    (NOT (&scan_order_cell_inside12 (:P_ P) (:B_ B)))
+    (corner_dir (:C *Corner) (:A *A_m1) (:D *D1_m2))
+    (perp (:A A_m1) (:A2 *A2_m3))
+    (corner_dir (:C Corner) (:A A2_m3) (:D *D2_m4))
+    (margin (:B P) (:D D1_m2) (:K *K1_m5))
+    (margin B (:D D1_m2) (:K K1_m5))
+    (margin (:B P) (:D D2_m4) (:K *K2_m6))
+    (margin B (:D D2_m4) (:K K2_m6)))
+
+  (DET &before_corner_anchor12
+    (&scan_order_cell2 *Ky (:Key_rank_axis *X) (:Corner *C_) (:Key_axis *A))
+    (&block_cell2 (:E Ky) (:B *B_) (:P *P_))
+    (&top2 Ky (:Axis X) (:B B_))
+    (corner_dir (:C C_) (:D *D_m1))
+    (margin (:B P_) (:D D_m1) (:K *K1_m2))
+    (margin (:B B_) (:D D_m1) (:K *K2_m3))
+    (!= K1_m2 K2_m3))
+
+  (DET &before_inside22
+    (&block_cell2 (:E *Ky) (:B *B2_) (:P *P2_))
+    (&top2 Ky (:Axis *X) (:B B2_))
+    (dir_elem (:D *D_m1))
+    (relative (:Base B2_) (:X P2_) (:X_rel *R_m2))
+    (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+    (< K_m3 0))
+
+  (DET &before_corner_anchor22
+    (&scan_order_cell2 *Ky (:Key_rank_axis *X) (:Corner *C_) (:Key_axis *A))
+    (&block_cell2 (:E Ky) (:B *B2_) (:P *P2_))
+    (&top2 Ky (:Axis X) (:B B2_))
+    (corner_dir (:C C_) (:D *D_m1))
+    (margin (:B P2_) (:D D_m1) (:K *K1_m2))
+    (margin (:B B2_) (:D D_m1) (:K *K2_m3))
+    (!= K1_m2 K2_m3))
+
+  (RULE &hidden
+    (&block_cell *P))
+
+  (RULE &visible
+    (&cell *P *Col)
+    (NOT (&hidden P)))
+
+  ;; The per-axis shortest periods of the visible cells.
+  (INIT &period Periods
+    (cell (P (:v Col))
+      (&visible *P *Col)))
+
+  (RULE &phase
+    (&cell *P)
+    (dir_elem *D)
+    (margin (:B P) D (:K *T))
+    (axis_of D *A)
+    (OR ((&period.fundamental_period A (:K *N))
+         (divide T (:Side N) (:Gap 0) (:Remainder *K)))
+        ((NOT (&period.fundamental_period A))
+         (= K T))))
+
+  (RULE &axis_color
+    (OR ((&visible *P *Col))
+        ((&hidden P)
+         (corner_dir (:C *Diag_m1) (:A *A_m2) (:D *D1))
+         (perp (:A A_m2) (:A2 *A2_m3))
+         (corner_dir (:C Diag_m1) (:A A2_m3) (:D *D2))
+         (&phase P (:D D1) (:K *K1))
+         (&phase P (:D D2) (:K *K2))
+         (&phase (:P *P2) (:D D1) (:K K1))
+         (&phase (:P P2) (:D D2) (:K K2))
+         (&visible (:P P2) Col))))
+
+  (RULE &color
+    (&axis_color *P *Col))
+
+  (RULE &scan_order_cell
+    (&top (:K *Key_rank_axis) *B)
+    (axis_elem (:A *Key_axis))
+    (&block_cell B *P)
+    (ALL ((&block_cell B P)
+          (&top (:K *Xm) B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (corner_dir (:C *Corner) (:A *A_m1) (:D *D1_m2))
+    (perp (:A A_m1) (:A2 *A2_m3))
+    (corner_dir (:C Corner) (:A A2_m3) (:D *D2_m4))
+    (margin (:B P) (:D D1_m2) (:K *K1_m5))
+    (margin B (:D D1_m2) (:K K1_m5))
+    (margin (:B P) (:D D2_m4) (:K *K2_m6))
+    (margin B (:D D2_m4) (:K K2_m6)))
+
+  ;; Each top occluder's first cell along a scan is its corner at the scan's
+  ;; corner.
+  (INIT &scan_order Order
+    (key ((OR ((&top (:K ^X) *B)
+               (axis_elem ^A)
+               (&block_cell B *P)
+               (ALL ((&block_cell B P)
+                     (&top (:K *Xm) B)
+                     (dir_elem (:D *D_m1))
+                     (relative (:Base B) (:X P) (:X_rel *R_m2))
+                     (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+                    ((>= K_m3 0)))
+               (corner_dir ^C (:A *A_m1) (:D *D1_m2))
+               (perp (:A A_m1) (:A2 *A2_m3))
+               (corner_dir C (:A A2_m3) (:D *D2_m4))
+               (margin (:B P) (:D D1_m2) (:K *K1_m5))
+               (margin B (:D D1_m2) (:K K1_m5))
+               (margin (:B P) (:D D2_m4) (:K *K2_m6))
+               (margin B (:D D2_m4) (:K K2_m6)))
+              ((&top (:K X) B)
+               (axis_elem A)
+               (&block_cell B P)
+               (ALL ((&block_cell B P)
+                     (&top (:K *Xm2) B)
+                     (dir_elem (:D *D_m12))
+                     (relative (:Base B) (:X P) (:X_rel *R_m22))
+                     (margin (:B R_m22) (:D D_m12) (:K *K_m32)))
+                    ((>= K_m32 0)))
+               (&top (:K X) (:B *B2))
+               (&block_cell (:B B2) (:P *P2))
+               (ALL ((&block_cell (:B B2) (:P P2))
+                     (&top (:K *Xmm) (:B B2))
+                     (dir_elem (:D *D_m1m))
+                     (relative (:Base B2) (:X P2) (:X_rel *R_m2m))
+                     (margin (:B R_m2m) (:D D_m1m) (:K *K_m3m)))
+                    ((>= K_m3m 0)))
+               (&scan_order_cell (:Key_rank_axis X) (:Corner C) (:Key_axis A))
+               (ALL ((&scan_order_cell (:Key_rank_axis *Xmmm) (:Corner C) (:Key_axis *Am))
+                     (&block_cell B P)
+                     (&top (:K Xmmm) B)
+                     (corner_dir C (:D *D_m1mm))
+                     (margin (:B P) (:D D_m1mm) (:K *K1_m2))
+                     (margin B (:D D_m1mm) (:K *K2_m3)))
+                    ((= K1_m2 K2_m3)))
+               (ALL ((&scan_order_cell (:Key_rank_axis *Xmmmm) (:Corner C) (:Key_axis *Amm))
+                     (&block_cell (:B B2) (:P P2))
+                     (&top (:K Xmmmm) (:B B2))
+                     (corner_dir C (:D *D_m1mmm))
+                     (margin (:B P2) (:D D_m1mmm) (:K *K1_m2m))
+                     (margin (:B B2) (:D D_m1mmm) (:K *K2_m3m)))
+                    ((= K1_m2m K2_m3m)))
+               (OR ((corner_dir C A *D)
+                    (dir_elem D)
+                    (margin (:B P) D (:K *K1_m1))
+                    (margin (:B P2) D (:K *K2_m2))
+                    (< K1_m1 K2_m2))
+                   ((corner_dir C A D)
+                    (perp A (:A2 A2_m3))
+                    (corner_dir C (:A A2_m3) (:D *D2))
+                    (margin (:B P) D (:K *K_m4))
+                    (margin (:B P2) D (:K K_m4))
+                    (dir_elem (:D D2))
+                    (margin (:B P) (:D D2) (:K K1_m5))
+                    (margin (:B P2) (:D D2) (:K K2_m6))
+                    (< K1_m5 K2_m6))))))
+      (member ((:t P))
+        (&top (:K X) *B)
+        (axis_elem A)
+        (&block_cell B *P)
+        (ALL ((&block_cell B P)
+              (&top (:K *Xm) B)
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (corner_dir C (:A *A_m1) (:D *D1_m2))
+        (perp (:A A_m1) (:A2 *A2_m3))
+        (corner_dir C (:A A2_m3) (:D *D2_m4))
+        (margin (:B P) (:D D1_m2) (:K *K1_m5))
+        (margin B (:D D1_m2) (:K K1_m5))
+        (margin (:B P) (:D D2_m4) (:K *K2_m6))
+        (margin B (:D D2_m4) (:K K2_m6)))
+      (before ((:a P) (:b P2))
+        (&top (:K X) *B)
+        (axis_elem A)
+        (&block_cell B *P)
+        (ALL ((&block_cell B P)
+              (&top (:K *Xm) B)
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (ALL ((&scan_order_cell (:Key_rank_axis *Xmm) (:Corner C) (:Key_axis *Am))
+              (&block_cell B P)
+              (&top (:K Xmm) B)
+              (corner_dir C (:D *D_m1m))
+              (margin (:B P) (:D D_m1m) (:K *K1_m2))
+              (margin B (:D D_m1m) (:K *K2_m3)))
+             ((= K1_m2 K2_m3)))
+        (&top (:K X) (:B *B2))
+        (&block_cell (:B B2) (:P *P2))
+        (ALL ((&block_cell (:B B2) (:P P2))
+              (&top (:K *Xmmm) (:B B2))
+              (dir_elem (:D *D_m1mm))
+              (relative (:Base B2) (:X P2) (:X_rel *R_m2m))
+              (margin (:B R_m2m) (:D D_m1mm) (:K *K_m3m)))
+             ((>= K_m3m 0)))
+        (ALL ((&scan_order_cell (:Key_rank_axis *Xmmmm) (:Corner C) (:Key_axis *Amm))
+              (&block_cell (:B B2) (:P P2))
+              (&top (:K Xmmmm) (:B B2))
+              (corner_dir C (:D *D_m1mmm))
+              (margin (:B P2) (:D D_m1mmm) (:K *K1_m2m))
+              (margin (:B B2) (:D D_m1mmm) (:K *K2_m3m)))
+             ((= K1_m2m K2_m3m)))
+        (&scan_order_cell (:Key_rank_axis X) (:Corner C) (:Key_axis A))
+        (OR ((corner_dir C A *D)
+             (dir_elem D)
+             (margin (:B P) D (:K *K1_m1))
+             (margin (:B P2) D (:K *K2_m2))
+             (< K1_m1 K2_m2))
+            ((corner_dir C A D)
+             (perp A (:A2 *A2_m3))
+             (corner_dir C (:A A2_m3) (:D *D2))
+             (margin (:B P) D (:K *K_m4))
+             (margin (:B P2) D (:K K_m4))
+             (dir_elem (:D D2))
+             (margin (:B P) (:D D2) (:K *K1_m5))
+             (margin (:B P2) (:D D2) (:K *K2_m6))
+             (< K1_m5 K2_m6))))))
+
+  ;; Each top occluder's first cell along a scan is its corner at the scan's
+  ;; corner.
+  (INIT &scan_order2 Order
+    (key ((OR ((&top2 ^Ky (:Axis ^X) *B)
+               (axis_elem ^A)
+               (&block_cell2 (:E Ky) B *P)
+               (NOT (&elem_inside12 (:P_ P) (:B_ B)))
+               (corner_dir ^C (:A *A_m1) (:D *D1_m2))
+               (perp (:A A_m1) (:A2 *A2_m3))
+               (corner_dir C (:A A2_m3) (:D *D2_m4))
+               (margin (:B P) (:D D1_m2) (:K *K1_m5))
+               (margin B (:D D1_m2) (:K K1_m5))
+               (margin (:B P) (:D D2_m4) (:K *K2_m6))
+               (margin B (:D D2_m4) (:K K2_m6)))
+              ((&top2 Ky (:Axis X) B)
+               (axis_elem A)
+               (&block_cell2 (:E Ky) B P)
+               (NOT (&before_inside12 (:P_ P) (:B_ B)))
+               (&top2 Ky (:Axis X) (:B *B2))
+               (&block_cell2 (:E Ky) (:B B2) (:P *P2))
+               (NOT (&before_inside22 (:P2_ P2) (:B2_ B2)))
+               (&scan_order_cell2 Ky (:Key_rank_axis X) (:Corner C) (:Key_axis A))
+               (NOT (&before_corner_anchor12 (:C_ C) (:P_ P) (:B_ B)))
+               (NOT (&before_corner_anchor22 (:C_ C) (:P2_ P2) (:B2_ B2)))
+               (OR ((corner_dir C A *D)
+                    (dir_elem D)
+                    (margin (:B P) D (:K *K1_m1))
+                    (margin (:B P2) D (:K *K2_m2))
+                    (< K1_m1 K2_m2))
+                   ((corner_dir C A D)
+                    (perp A (:A2 A2_m3))
+                    (corner_dir C (:A A2_m3) (:D *D2))
+                    (margin (:B P) D (:K *K_m4))
+                    (margin (:B P2) D (:K K_m4))
+                    (dir_elem (:D D2))
+                    (margin (:B P) (:D D2) (:K K1_m5))
+                    (margin (:B P2) (:D D2) (:K K2_m6))
+                    (< K1_m5 K2_m6))))))
+      (member ((:t P))
+        (&top2 Ky (:Axis X) *B)
+        (axis_elem A)
+        (&block_cell2 (:E Ky) B *P)
+        (NOT (&elem_inside12 (:P_ P) (:B_ B)))
+        (corner_dir C (:A *A_m1) (:D *D1_m2))
+        (perp (:A A_m1) (:A2 *A2_m3))
+        (corner_dir C (:A A2_m3) (:D *D2_m4))
+        (margin (:B P) (:D D1_m2) (:K *K1_m5))
+        (margin B (:D D1_m2) (:K K1_m5))
+        (margin (:B P) (:D D2_m4) (:K *K2_m6))
+        (margin B (:D D2_m4) (:K K2_m6)))
+      (before ((:a P) (:b P2))
+        (&top2 Ky (:Axis X) *B)
+        (axis_elem A)
+        (&block_cell2 (:E Ky) B *P)
+        (NOT (&before_inside12 (:P_ P) (:B_ B)))
+        (NOT (&before_corner_anchor12 (:C_ C) (:P_ P) (:B_ B)))
+        (&top2 Ky (:Axis X) (:B *B2))
+        (&block_cell2 (:E Ky) (:B B2) (:P *P2))
+        (NOT (&before_inside22 (:P2_ P2) (:B2_ B2)))
+        (NOT (&before_corner_anchor22 (:C_ C) (:P2_ P2) (:B2_ B2)))
+        (&scan_order_cell2 Ky (:Key_rank_axis X) (:Corner C) (:Key_axis A))
+        (OR ((corner_dir C A *D)
+             (dir_elem D)
+             (margin (:B P) D (:K *K1_m1))
+             (margin (:B P2) D (:K *K2_m2))
+             (< K1_m1 K2_m2))
+            ((corner_dir C A D)
+             (perp A (:A2 *A2_m3))
+             (corner_dir C (:A A2_m3) (:D *D2))
+             (margin (:B P) D (:K *K_m4))
+             (margin (:B P2) D (:K K_m4))
+             (dir_elem (:D D2))
+             (margin (:B P) (:D D2) (:K *K1_m5))
+             (margin (:B P2) (:D D2) (:K *K2_m6))
+             (< K1_m5 K2_m6))))))
+
+  (RULE &reads_axis
+    (axis_elem (:A *X)))
+
+  ;; The isometries of the axis-period colors, over the whole frame.
+  (INIT &wp Wallpaper
+    (transform (D)
+      (d4_elem *D))
+    (cell (P (:v Col))
+      (&axis_color *P *Col))
+    (grid (P)
+      (&cell *P))
+    (period (A K)
+      (&period.fundamental_period *A *K)))
+
+  (DET &framed
+    (&extent2 *E *B *A *N)
+    (perp A *A2)
+    (&extent2 E B (:A A2) (:N *N2))
+    (ex_output E (:P *Q))
+    (perp A (:A2 *A2_m1))
+    (frame_extent (:P Q) A N)
+    (frame_extent (:P Q) (:A A2_m1) (:N N2))))
+
+(ALTS $occluder "how the occluders are found" $ColorFill
+  (ALT $MinTwoCells
+    (INPUT occluders "an occluder is a color whose cells fill their bounding box and number at least two"
+      (RULE &occluder
+        (&color_fill *Col *B)
+        (input *P Col)
+        (input (:P *Q) Col)
+        (!= P Q))))
+  (ALT $ComponentRect
+    (INPUT occluders "an occluder is a 4-connected one-color component that fills its bounding box, with both sides at least &min_side"
+      ;; The least side of an occluder.
+      (DET &min_side TileCount)
+
+      (RULE &part_gap
+        (&part_box.box (:key *Id) *B)
+        (input *P)
+        (ALL ((&part_box.box (:key (:Id *Idm)) B)
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (NOT (&part_component P Id)))
+
+      (RULE &occluder
+        (&part_box.box (:key *Id) *B)
+        (NOT (&part_gap Id))
+        (&min_side (:N *K))
+        (ALL ((&part_box.box (:key Id) (:B *Bm))
+              (&part_component *P Id)
+              (axis_elem *A)
+              (relative (:Base Bm) (:X P) (:X_rel *R_m1))
+              (frame_extent (:P R_m1) A *N))
+             ((>= N K)))))))
+
+(ALTS $recovery "which maps carry colors to hidden cells beside the axis periods" $AxisPeriods
+  (ALT $LatticePeriod
+    (OUTPUT recover "a hidden cell also takes the colors that translations carry to it; a translation counts when it carries some visible cell onto a visible cell of its color, and no visible cell onto a visible cell of another color; undefined where a cell takes two colors"
+      (RULE &carried
+        (&visible *P *Col)
+        (&visible (:P *Q) Col)
+        (!= P Q)
+        (relative (:Base P) (:X Q) (:X_rel *X)))
+
+      (RULE &clash
+        (&carried *X)
+        (&visible *P (:Col *C1))
+        (compose (:A P) (:B X) (:C *Q))
+        (&visible (:P Q) (:Col *C2))
+        (!= C1 C2))
+
+      (RULE &map_link
+        (&carried *X)
+        (NOT (&clash X))
+        (&cell *P)
+        (compose (:A P) (:B X) (:C *Q))
+        (&hidden (:P Q)))
+
+      (RULE &color
+        (OR ((&axis_color *P *Col))
+            ((&map_link (:P *P2) (:Q P))
+             (&axis_color (:P P2) Col))))))
+  (ALT $IsometryOrbit
+    (OUTPUT recover "where both axes have a period, a hidden cell also takes the colors that maps and axis periods carry to it, where a map applies a D4 isometry and then a translation; a map counts when it carries some cell's axis-period color onto another cell of that color and no cell's axis-period color onto a cell with another color; undefined where a cell takes two colors"
+      (RULE &aperiodic
+        (&visible)
+        (axis_elem *A)
+        (NOT (&period.fundamental_period A)))
+
+      (RULE &map_link
+        (&wp.action *P *Q)
+        (&hidden (:P Q))
+        (NOT (&aperiodic)))
+
+      (RULE &color
+        (OR ((&axis_color *P *Col))
+            ((&map_link (:P *P2) (:Q P))
+             (&axis_color (:P P2) Col)))))))
+
+(ALTS $orbit "what a hidden cell gets when no visible cell reaches it" $NoSource
+  (ALT $HiddenFill
+    (OUTPUT fill "a hidden cell that no visible cell reaches takes &fill"
+      (DET &fill_contradicted_inside1
+        (&block_cell2 *E (:B *B_) (:P *P_))
+        (&sole2.value (:key (:Ky E)) (:v B_))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+        (< K_m3 0))
+
+      (DET &phase2
+        (&cell *E *P)
+        (dir_elem *D)
+        (margin (:B P) D (:K *T))
+        (axis_of D *A)
+        (OR ((&period2.fundamental_period (:key E) A (:K *N))
+             (divide T (:Side N) (:Gap 0) (:Remainder *K)))
+            ((NOT (&period2.fundamental_period (:key E) A))
+             (= K T))))
+
+      (DET &axis_color2
+        (OR ((&visible2 *E *P *Col))
+            ((&hidden2 E P)
+             (corner_dir (:C *Diag_m1) (:A *A_m2) (:D *D1))
+             (perp (:A A_m2) (:A2 *A2_m3))
+             (corner_dir (:C Diag_m1) (:A A2_m3) (:D *D2))
+             (&phase2 E P (:D D1) (:K *K1))
+             (&phase2 E P (:D D2) (:K *K2))
+             (&phase2 E (:P *P2) (:D D1) (:K K1))
+             (&phase2 E (:P P2) (:D D2) (:K K2))
+             (&visible2 E (:P P2) Col))))
+
+      (DET &color2
+        (&axis_color2 *E *P *Col))
+
+      (DET &palette
+        (OR ((ex_input *Col))
+            ((ex_output Col))))
+
+      (DET &fill_contradicted
+        (&sole2.value (:key (:Ky *E)) (:v *B))
+        (&block_cell2 E B *P)
+        (NOT (&color2 E P))
+        (NOT (&fill_contradicted_inside1 (:P_ P) (:B_ B)))
+        (relative (:Base B) (:X P) (:X_rel *P_inner))
+        (ex_output E (:P P_inner) (:Col *C))
+        (&palette *Col)
+        (!= Col C))
+
+      (DET_OR_RULE &fill "The pairs hold no hidden cell without a source, so every color stays open." DominantColor RarestColor
+        (&palette *Col)
+        (NOT (&fill_contradicted Col))))
+    (RULE &shade
+      (OR ((&cell *P)
+           (NOT (&color P))
+           (&fill *Col))
+          ((&color P Col))))))
+
+(ALTS $selection "which occluder gives the output" $Area
+  (ALT $Perimeter
+    (OUTPUT select "the selected occluder has the largest height plus width"
+      (DET &above2
+        (axis_elem (:A *X))
+        (&span2.size (:key (:Ky *E) (:B *A)) (:N *N1))
+        (&span2.size (:key (:Ky E) *B) (:N *N2))
+        (< N1 N2))
+
+      (RULE &above
+        (axis_elem (:A *X))
+        (&span.size (:key (:B *A)) (:N *N1))
+        (&span.size (:key *B) (:N *N2))
+        (< N1 N2))))
+  (ALT $AxisThenCross
+    (OUTPUT select "the selected occluder has the greatest extent along &primary_axis, then the greatest extent across it"
+      (DET &above2
+        (perp (:A *X) (:A2 *Y))
+        (&extent2 *E (:B *A) (:A X) (:N *N1))
+        (&extent2 E *B (:A X) (:N *N2))
+        (&extent2 E (:B A) (:A Y) (:N *M1))
+        (&extent2 E B (:A Y) (:N *M2))
+        (OR ((< N1 N2))
+            ((= N1 N2)
+             (< M1 M2))))
+
+      (RULE &above
+        (perp (:A *X) (:A2 *Y))
+        (&extent (:B *A) (:A X) (:N *N1))
+        (&extent *B (:A X) (:N *N2))
+        (&extent (:B A) (:A Y) (:N *M1))
+        (&extent B (:A Y) (:N *M2))
+        (OR ((< N1 N2))
+            ((= N1 N2)
+             (< M1 M2))))
+
+      (DET &axis_fits
+        (&sole2.value (:key (:Ky *E) (:Axis *X)) (:v *B))
+        (&framed E B))
+
+      (DET &axis_missed
+        (&axis_fits *X)
+        (ex_output *E)
+        (NOT (&axis_fits E X)))
+
+      (DET &primary_axis
+        (&axis_fits (:X *A))
+        (NOT (&axis_missed (:X A)))
+        (ONE))
+
+      (RULE &reads_axis
+        (&primary_axis (:A *X)))))
+  (ALT $LongestThenShortest
+    (OUTPUT select "the selected occluder has the longest side, then the longest short side"
+      (DET &above2
+        (axis_elem (:A *X))
+        (&sides2.maximal (:key (:Ky *E) (:B *A)) (:t *N1))
+        (&sides2.maximal (:key (:Ky E) *B) (:t *N2))
+        (&sides2.minimal (:key (:Ky E) (:B A)) (:t *M1))
+        (&sides2.minimal (:key (:Ky E) B) (:t *M2))
+        (OR ((< N1 N2))
+            ((= N1 N2)
+             (< M1 M2))))
+
+      (RULE &above
+        (axis_elem (:A *X))
+        (&sides.maximal (:key (:B *A)) (:t *N1))
+        (&sides.maximal (:key *B) (:t *N2))
+        (&sides.minimal (:key (:B A)) (:t *M1))
+        (&sides.minimal (:key B) (:t *M2))
+        (OR ((< N1 N2))
+            ((= N1 N2)
+             (< M1 M2)))))))
+
+(ALTS $tie "what happens when occluders tie at the top of the selection's order" $UniqueTop
+  (ALT $TieFirst
+    (OUTPUT tie-first "among the tied occluders, the one whose corner at the corner of &scan comes first along that scan order wins"
+      (DET &first_pick_inside12
+        (&scan_order2.minimal (:key *Ky *X *C *A) (:t *P_))
+        (&top2 Ky (:Axis X) (:B *B_))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+        (< K_m3 0))
+
+      (DET &first_pick_corner_anchor12
+        (&scan_order2.minimal (:key *Ky *X (:C *C_) *A) (:t *P_))
+        (&top2 Ky (:Axis X) (:B *B_))
+        (corner_dir (:C C_) (:D *D_m1))
+        (margin (:B P_) (:D D_m1) (:K *K1_m2))
+        (margin (:B B_) (:D D_m1) (:K *K2_m3))
+        (!= K1_m2 K2_m3))
+
+      (DET &first_pick2
+        (&scan_order2.minimal (:key *Ky (:X *Axis) *C *A) (:t *P))
+        (&top2 Ky Axis *B)
+        (NOT (&first_pick_inside12 (:P_ P) (:B_ B)))
+        (NOT (&first_pick_corner_anchor12 (:C_ C) (:P_ P) (:B_ B))))
+
+      (RULE &first_pick
+        (&scan_order.minimal (:key (:X *K) *C *A) (:t *P))
+        (&top K *B)
+        (ALL ((&scan_order.minimal (:key (:X *Xm) (:C *Cm) (:A *Am)) (:t P))
+              (&top (:K Xm) B)
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (ALL ((&scan_order.minimal (:key (:X *Xmm) C (:A *Amm)) (:t P))
+              (&top (:K Xmm) B)
+              (corner_dir C (:D *D_m1m))
+              (margin (:B P) (:D D_m1m) (:K *K1_m2))
+              (margin B (:D D_m1m) (:K *K2_m3)))
+             ((= K1_m2 K2_m3))))
+
+      (DET &scan_fits
+        (&first_pick2 (:Ky *E) *C *A *B)
+        (&framed E B))
+
+      (DET &scan_missed
+        (&scan_fits *C *A)
+        (&first_pick2 (:Ky *E) C A)
+        (ex_output E)
+        (NOT (&scan_fits E C A)))
+
+      (DET &scan
+        (&scan_fits *C *A)
+        (NOT (&scan_missed C A))
+        (ONE)))
+    (RULE &pick
+      (&reads_axis *X)
+      (&scan *C *A)
+      (&first_pick (:K X) C A *B))))
+
+(RULE &pick
+  (&reads_axis *X)
+  (&sole.value (:key (:Axis X)) (:v *B)))
+
+(RULE &unpicked
+  (&reads_axis *X)
+  (NOT (&pick X)))
+
+(RULE &shade
+  (&color *P *Col))
+
+(RULE &broken
+  (OR ((&unpicked))
+      ((&pick *B)
+       (&block_cell B *P)
+       (NOT (&shade P)))))
+
+(RULE &output
+  (&pick *B)
+  (NOT (&broken))
+  (&shade (:P *P2) *Col)
+  (ALL ((&shade (:P P2) (:Col *Colm))
+        (&pick B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P2) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P2) (:X_rel *P)))

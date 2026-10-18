@@ -1,0 +1,111 @@
+;; 73251a56
+
+(DET &hole ChangedColor)
+
+(DET &transform D4Domain)
+
+(RULE &intact
+  (input *P *Col)
+  (NOT (&hole (:C Col))))
+
+(RULE &hole2
+  (input *P *Col)
+  (&hole (:C Col)))
+
+(RULE &mirror
+  (input *P)
+  (&transform *D)
+  (apply D P (:P_out *Q)))
+
+(RULE &residual
+  (&hole2 *P)
+  (&mirror P *Q)
+  (&hole2 (:P Q)))
+
+(RULE &on_fix
+  (input *P)
+  (&mirror P (:Q P)))
+
+(RULE &fix_corner
+  (&on_fix *P)
+  (corner_dist P *Diag (:K 0)))
+
+(RULE &seek_blocked
+  (&intact *P))
+
+;; Each hole seeks toward a fix corner, halting at the first intact cell.
+(INIT &seek Ray
+  (source (P)
+    (&hole2 *P))
+  (node (P)
+    (input *P)
+    (NOT (&seek_blocked P)))
+  (dir ((:D Diag))
+    (&fix_corner *Diag)))
+
+(ALTS $choice "what a hole repaints from" $Slide
+  (ALT $Bg
+    (INIT &dominant_count Cardinality
+      (key ((&intact *P ^Col))
+        (member ((:m P))
+          (&intact *P Col))))
+
+    (RULE &fix_color
+      (&intact *P *Col)
+      (&on_fix P))
+
+    (INIT &dominant Order
+      (member ((:t Col))
+        (&dominant_count.size (:key *Col)))
+      (score ((:t Col) (:S N))
+        (&dominant_count.size (:key *Col) *N)))
+
+    (RULE &output
+      (OR ((&residual *P)
+           (IF ((&on_fix P))
+               ((&fix_color *Col))
+               ((&dominant.maximal (:t Col)))))
+          ((&intact P Col))
+          ;; A hole repaints from its mirror cell.
+          ((&hole2 P)
+           (&mirror P *Q)
+           (&intact (:P Q) Col)))))
+  (ALT $Label
+    (DET &differ
+      (ex_output *E *P *Col)
+      (ex_output E (:P *Q) (:Col *Col2))
+      (!= Col Col2))
+
+    (DET &same
+      (ex_output *P)
+      (ex_output (:P *Q))
+      (NOT (&differ P Q)))
+
+    (INIT &canon Quotient
+      (equivalent ((:a P) (:b Q))
+        (&same *P *Q)))
+
+    (DET &label
+      (&canon.class (:a *P) *Id))
+
+    (RULE &label_color
+      (&label *P *Id)
+      (&intact P *Col))
+
+    (RULE &output
+      (OR ((&hole2 *P)
+           (&label P *Id)
+           (&label_color Id *Col))
+          ((&intact P Col))))))
+
+(RULE &output
+  (OR ((&intact *P *Col))
+      ;; A hole repaints from its mirror cell.
+      ((&hole2 P)
+       (&mirror P *Q)
+       (&intact (:P Q) Col))
+      ((&residual P)
+       (&seek.end (:P *E) *D (:Origin P))
+       (neighbor (:P E) D (:Q *P2))
+       (input (:P P2))
+       (&intact (:P P2) Col))))

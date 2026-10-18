@@ -1,0 +1,250 @@
+;; a3325580
+
+(INPUT objects "a field of &bg holds one-color objects, each a connected group of cells, cells that touch at a corner included, and no two objects share a color"
+
+  (RULE &objs4_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg Col)))
+
+  (INIT &objs4 Quotient
+    (edge ((:a (:Key Col) P) (:b (:Key Col) (:P P3)))
+      (OR ((&ink *P *Col)
+           (&objs4_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&ink (:P P3) Col))
+          ((&ink P Col)
+           (= P3 P))))))
+
+(INPUT apart "the objects with the largest cell count occupy disjoint ranges along &layout_axis"
+
+  (DET &clash
+    (ex_output *E *P (:Col *C1))
+    (ex_output E (:P *Q) (:Col *C2))
+    (!= C1 C2)
+    (dir_elem *D)
+    (margin (:B P) D (:K *K_m1))
+    (margin (:B Q) D (:K K_m1)))
+
+  (DET &layout_axis
+    (dir_elem *D)
+    (NOT (&clash D))
+    (axis_of D *A)))
+
+(OUTPUT largest "the output keeps each object whose cell count equals the largest cell count in the input")
+
+(OUTPUT order "the kept objects are ordered from an end of &layout_axis by a key, the distance from that end to the object's nearest cell, and objects with the same key may take either order"
+
+  (RULE &objs8_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((diag_dir_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  (INIT &objs8 Quotient
+    (edge ((:a (:Key Col) P) (:b (:Key Col) (:P P3)))
+      (OR ((&ink *P *Col)
+           (&objs8_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&ink (:P P3) Col))
+          ((&ink P Col)
+           (= P3 P)))))
+
+  (RULE &objs8_component
+    (&objs8.class (:a *Key *P) *Id))
+
+  (RULE &cell
+    (&objs8_component *P *Id))
+
+  (INIT &size Cardinality
+    (key ((&cell ^Id *P))
+      (member ((:m P))
+        (&cell Id *P))))
+
+  (INIT &largest Order
+    (member ((:t N))
+      (&size.size *N))
+    (score ((:t N) (:S N))
+      (&size.size *N)))
+
+  (RULE &kept
+    (&size.size (:key *Id) *N)
+    (&largest.maximal (:t N)))
+
+  ;; A color's cells in one example's input.
+  (INIT &color_box BoundingBox
+    (key ((ex_input ^E *P ^Col)
+          (NOT (&bg Col)))
+      (cell (P)
+        (ex_input E *P Col)
+        (NOT (&bg Col)))))
+
+  (DET &ordering_end
+    (&layout_axis *A)
+    (axis_of *D A)
+    (ex_output *E (:P *P1) (:Col *Col1))
+    (margin (:B P1) D (:K *K1))
+    (ex_output E (:P *P2) (:Col *Col2))
+    (margin (:B P2) D (:K *K2))
+    (< K1 K2)
+    (&color_box.box (:key E (:Col Col1)) (:B *B1))
+    (margin (:B B1) D (:K *J1))
+    (&color_box.box (:key E (:Col Col2)) (:B *B2))
+    (margin (:B B2) D (:K *J2))
+    (< J1 J2))
+
+  (DET &lead_corner
+    (&ordering_end (:D *L))
+    (&layout_axis *A)
+    (corner_dir *C A (:D L))
+    (ONE))
+
+  (RULE &lead_end
+    (&lead_corner *C)
+    (&layout_axis *A)
+    (corner_dir C A (:D *L)))
+
+  (INIT &obox BoundingBox
+    (key ((&cell ^Id *P))
+      (cell (P)
+        (&cell Id *P))))
+
+  (RULE &view
+    (&lead_corner (:C *W)))
+
+  (INIT &order Order
+    (key ((OR ((&view (:W ^C))
+               (&kept *Id))
+              ((&lead_end C *L)
+               (&obox.box (:key (:Id *A)) (:B *B1))
+               (margin (:B B1) (:D L) (:K *K1))
+               (&obox.box (:key (:Id *B)) (:B *B2))
+               (margin (:B B2) (:D L) (:K *K2))
+               (< K1 K2))))
+      (member ((:t Id))
+        (&view (:W C))
+        (&kept *Id))
+      (before ((:a A) (:b B))
+        (&lead_end C *L)
+        (&obox.box (:key (:Id *A)) (:B *B1))
+        (margin (:B B1) (:D L) (:K *K1))
+        (&obox.box (:key (:Id *B)) (:B *B2))
+        (margin (:B B2) (:D L) (:K *K2))
+        (< K1 K2))))
+
+  ;; A unit's line nearest the scan edge.
+  (INIT &head BoundingBox
+    (key ((&lead_corner *C)
+          (&layout_axis *A)
+          (corner_dir C A (:D *D1_m1))
+          (perp A (:A2 *A2_m2))
+          (corner_dir C (:A A2_m2) (:D ^S))
+          (&obox.box (:key ^Id) *B)
+          (margin B (:D S) *K)
+          (&cell Id *P)
+          (margin (:B P) (:D S) K))
+      (cell (P)
+        (&lead_corner *C)
+        (&layout_axis *A)
+        (corner_dir C A (:D *D1_m1))
+        (perp A (:A2 *A2_m2))
+        (corner_dir C (:A A2_m2) (:D S))
+        (&obox.box (:key Id) *B)
+        (margin B (:D S) *K)
+        (&cell Id *P)
+        (margin (:B P) (:D S) K)))))
+
+(OUTPUT columns "the output has one line per kept object, laid out in that order from that end, each filled with that object's color")
+
+(OUTPUT height "each line is as long as the largest cell count"
+
+  (INIT &kept_count Cardinality
+    (member ((:m Id))
+      (&kept *Id)))
+
+  (INIT &chart Frame
+    (extent (A (:N K))
+      (OR ((&layout_axis *A)
+           (&kept_count.size (:N *K)))
+          ((&layout_axis (:A *A3))
+           (perp (:A A3) (:A2 A))
+           (&largest.maximal (:t K))))))
+
+  (RULE &line_of_split1
+    (&chart.cell (:P *P_))
+    (&layout_axis (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *P_line_))
+    (relative (:Base P_line_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &line_of
+    (&chart.cell *P)
+    (&layout_axis *A)
+    (&line_of_split1 (:P_ P) (:A_ A) (:P_line_ *P_line) (:X_m1_ *X_m1))))
+
+(ALTS $piece "what the cell count and the order are taken over" $Objects
+  (ALT $Objects
+    (ALTS $conn "which cells join one object" $Conn8
+      (ALT $Conn4
+        (INPUT objects "only cells that share a side join one object"
+          (RULE &objs4_component
+            (&objs4.class (:a *Key *P) *Id))
+          (RULE &cell
+            (&objs4_component *P *Id))))))
+  (ALT $ColorClass
+    (OUTPUT largest "each color's cells form one unit wherever they lie, and the colors with the largest total cell count are kept"
+      (INIT &classes Quotient
+        (equivalent ((:a P) (:b Q))
+          (&ink *P *Col)
+          (&ink (:P *Q) Col)))
+
+      (RULE &cell
+        (&classes.class (:a *P) *Id)))))
+
+(ALTS $rank "which distance to the end of &layout_axis orders the kept units" $NearEdge
+  (ALT $FirstScan
+    (OUTPUT order "the key is read over the unit's line nearest an edge across &layout_axis alone"
+      (INIT &order Order
+        (key ((&view (:W ^C)))
+          (before ((:a A) (:b B))
+            (&layout_axis (:A *Ax))
+            (corner_dir C (:A Ax) (:D *L))
+            (perp (:A Ax) (:A2 *A2_m1))
+            (corner_dir C (:A A2_m1) (:D *S))
+            (&head.box (:key (:Id *A) S) (:B *B1))
+            (margin (:B B1) (:D L) (:K *K1))
+            (&head.box (:key (:Id *B) S) (:B *B2))
+            (margin (:B B2) (:D L) (:K *K2))
+            (< K1 K2)))
+        (member ((:t Id))
+          (&kept *Id))))))
+
+;; A unit sits no nearer the lead edge than the count of units before it;
+;; seating them all leaves each the lines of its own tie.
+(RULE &ties
+  (&view (:W *Key))
+  (&lead_end (:C Key) *L)
+  (&line_of (:P_line *S))
+  (margin (:B S) (:D L) (:K *N))
+  (&order.rank (:key (:C Key)) (:t *X) *R)
+  (<= R N)
+  (ONE Key S)
+  (ONE Key X))
+
+;; Each line takes the color of the unit seated on it.
+(RULE &output
+  (&line_of *P *P_line)
+  (&ties (:Key *C) (:S P_line) (:X *Id))
+  (&cell Id (:P *Q))
+  (input (:P Q) *Col))

@@ -1,0 +1,39 @@
+;; aedd82e4
+
+(DET &bg UnchangedColor)
+
+(DET &mark AnyOutNewColor)
+
+(RULE &ink_at
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &grouped
+  (&ink_at *P)
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *P2))
+  (&ink_at (:P P2)))
+
+(RULE &isolated
+  (&ink_at *P)
+  (NOT (&grouped P)))
+
+(ALTS $choice "what the rest of the grid becomes" $Passthrough
+  (ALT $Repaint
+    (DET &ink SharedColor)
+
+    (RULE &output
+      (OR ((&isolated *P)
+           (&mark (:C *Col)))
+          ((&grouped P)
+           (&ink (:C Col)))
+          ((input P)
+           (NOT (&ink_at P))
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (OR ((&isolated *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&isolated P)))))

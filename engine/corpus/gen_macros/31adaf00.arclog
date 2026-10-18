@@ -1,0 +1,77 @@
+;; 31adaf00
+
+(DET &bg DominantColor)
+
+(DET &mark AnyOutNewColor)
+
+;; The smallest square drawn.
+(DET &min_side TileCount)
+
+(RULE &bg_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(INIT &span BoundingBox
+  (key ((&bg_cell ^P)
+        (&bg_cell (:P ^Q)))
+    (cell ((:P R))
+      (OR ((= *R P))
+          ((= R Q))))))
+
+(RULE &square
+  (&span.cell (:key (:P *K_p) (:Q *K_q)) *P)
+  (&span.box (:key (:P K_p) (:Q K_q)) *B)
+  (perp *A *A2)
+  (axis_elem A)
+  (relative (:Base B) (:X P) (:X_rel *R_m1))
+  (frame_extent (:P R_m1) A *N)
+  (axis_elem (:A A2))
+  (relative (:Base B) (:X P) (:X_rel *R_m2))
+  (frame_extent (:P R_m2) (:A A2) N)
+  (&min_side (:N *M))
+  (>= N M))
+
+(RULE &spoiled
+  (&square *B)
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (ALL ((input P (:Col *Colm))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(RULE &bg_square
+  (&square *B *N)
+  (NOT (&spoiled B)))
+
+(RULE &displaced
+  (&bg_square *B *N)
+  (&bg_square (:B *B2) (:N *N2))
+  (> N2 N)
+  (input *P)
+  (ALL ((&bg_square B (:N *Nm))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (ALL ((&bg_square (:B B2) (:N *N2m))
+        (dir_elem (:D *D_m1m))
+        (relative (:Base B2) (:X P) (:X_rel *R_m2m))
+        (margin (:B R_m2m) (:D D_m1m) (:K *K_m3m)))
+       ((>= K_m3m 0))))
+
+(RULE &painted
+  (&bg_square *B)
+  (NOT (&displaced B))
+  (input *P)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))

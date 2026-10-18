@@ -1,0 +1,13 @@
+;; 3d31c5b3
+
+(param &bg Color (0))
+(param &axis Axis (AXIS_V))
+(param &tiles number (4))
+(param &tile_size number (3))
+(param &prio (Position number)
+  (grid
+    (0)
+    (1)
+    (3)
+    (2)))
+(param &ink_rank (Color number) (5 0) (4 1) (8 2) (2 3))

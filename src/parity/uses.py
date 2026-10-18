@@ -1,7 +1,7 @@
 """Which converted solvers use each lib name, each proposer and each form
 keyword, so that
 a check of a change runs first the solvers the change's parts reach: a scan
-of the arclog files under `work/arclog/gen/`, written to `uses.json` beside
+of the arclog files under `engine/corpus/gen/`, written to `uses.json` beside
 the records (`parity.snapshot.parity_dir`)."""
 
 import json
@@ -32,8 +32,8 @@ string opens no comment and a `"` inside a comment opens no string."""
 
 
 def gen_dir() -> Path:
-    """`work/arclog/gen/` of the main worktree."""
-    return checkout.work() / "arclog" / "gen"
+    """`engine/corpus/gen/` of the checkout."""
+    return checkout.ROOT / "engine" / "corpus" / "gen"
 
 
 def signature_path() -> Path:
@@ -84,7 +84,7 @@ def used(text: str) -> set[str]:
 
 def uses() -> dict[str, list[str]]:
     """Each lib name, each proposer and each form keyword a file of
-    `work/arclog/gen/` names (`used`), with the stems of the files that
+    `engine/corpus/gen/` names (`used`), with the stems of the files that
     name it, both sorted."""
     out: dict[str, set[str]] = {}
     for path in sorted(gen_dir().glob("*.arclog")):

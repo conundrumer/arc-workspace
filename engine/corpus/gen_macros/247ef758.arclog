@@ -1,0 +1,265 @@
+;; 247ef758
+
+;; An empty cell, in the legend and in the frame alike.
+(DET &bg DominantColor)
+
+;; The side of the separator the legend sits on.
+(DET &legend_dir DirDomain)
+
+(RULE &item_split1
+  (input (:P *P_) *Col)
+  (axis_of *D (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+;; The colors on each line across the legend axis.
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (&legend_dir *D)
+        (axis_of D *A)
+        (&item_split1 (:P_ P) (:A_ A) (:L_ ^L) (:X_m1_ *X_m1)))
+    (member ((:v Col))
+      (input *P *Col)
+      (&legend_dir *D)
+      (axis_of D *A)
+      (&item_split1 (:P_ P) (:A_ A) (:L_ L) (:X_m1_ *X_m1)))))
+
+(RULE &cut_divider
+  (&line_color.value (:key *L) (:v *Col))
+  (NOT (&bg (:C Col)))
+  (&legend_dir *D)
+  (axis_of D *A))
+
+(RULE &cut_on_divider
+  (input *P)
+  (&cut_divider *A *L)
+  (axis_of *D A)
+  (margin (:B P) D (:K *K_m1))
+  (margin (:B L) D (:K K_m1)))
+
+;; The separator is the one line a single non-bg color holds.
+(INIT &cut_rank Order
+  (key ((OR ((&cut_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (dir_elem D)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&cut_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&cut_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (dir_elem D)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (dir_elem D)
+      (margin (:B P) D *K))))
+
+(RULE &cut_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&cut_on_divider P A))
+  (margin (:B P) D *K)
+  (&cut_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &cut_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&cut_part_idx *P D (:N *N1))
+  (&cut_part_idx P (:D D2) (:N *N2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K N1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+(RULE &cut_tile_of
+  (&cut_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&cut_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &frame
+  (&legend_dir *D)
+  (opposite D (:Opp *D2))
+  (&cut_part_idx *P (:D D2) (:N 0)))
+
+(INIT &fbox BoundingBox
+  (cell (P)
+    (&frame *P)))
+
+(RULE &border
+  (&frame *P)
+  (&fbox.box *B)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B P) *D (:K *K_m1))
+  (margin B D (:K K_m1)))
+
+(RULE &header_split1
+  (&border (:P *P_) *D)
+  (perp *A (:A2 *A2_))
+  (axis_of (:D *D_m1) (:A A2_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(INIT &bmode_count Cardinality
+  (key ((&border *P)
+        (input P ^Col))
+    (member ((:m P))
+      (&border *P)
+      (input P Col))))
+
+;; Turn from legend_dir to the end the legend list starts at.
+(DET &stack_sense SenseDomain)
+
+(RULE &legend
+  (&legend_dir *D)
+  (&cut_part_idx *P D (:N 0)))
+
+;; The border's own ground, against which a mark stands out.
+(INIT &bmode Order
+  (member ((:t Col))
+    (&bmode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bmode_count.size (:key *Col) *N)))
+
+(RULE &header
+  (&border *P *D)
+  (input P *Col)
+  (NOT (&bmode.maximal (:t Col)))
+  (axis_of D *A)
+  (perp A *A2)
+  (&header_split1 (:P_ P) (:A2_ A2) (:L_ *L) (:X_m1_ *X_m1)))
+
+(RULE &cross
+  (&header (:L *L1) (:A *A1) *Col)
+  (&header (:L *L2) (:A *A2) Col)
+  (perp (:A A1) A2)
+  (compose (:A L1) (:B L2) (:C *P)))
+
+(RULE &shape_cell
+  (&legend *P)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &sbox BoundingBox
+  (key ((&shape_cell ^Col *P))
+    (cell (P)
+      (&shape_cell Col *P))))
+
+(RULE &paint
+  (&legend (:P *C))
+  (&sbox.box (:key *Col) *B)
+  (ALL ((&sbox.box (:key (:Col *Colm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X C) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X C) (:X_rel *P_inner))
+  (ALL ((&sbox.box (:key (:Col *Colmm)) (:B *Bm))
+        (&legend (:P *Cm))
+        (relative (:Base Bm) (:X Cm) (:X_rel P_inner))
+        (opposite (:D *D_m1m) (:Opp *O_m2))
+        (margin (:B P_inner) (:D D_m1m) (:K *K1_m3))
+        (margin (:B P_inner) (:D O_m2) (:K *K2_m4)))
+       ((= K1_m3 K2_m4)))
+  (&shape_cell Col (:P *Q))
+  (relative (:Base C) (:X Q) (:X_rel *V))
+  (&cross Col (:P *X))
+  (compose (:A X) (:B V) (:C *P))
+  (&frame P)
+  (NOT (&border P)))
+
+(RULE &stack_dir
+  (&legend_dir (:D *D2))
+  (&stack_sense *S)
+  (turn S (:D D2) (:D2 *D)))
+
+;; The legend read as a list.
+(INIT &lex Order
+  (member ((:t P))
+    (&shape_cell *P))
+  (before ((:a P) (:b P2))
+    (&shape_cell *P)
+    (&shape_cell (:P *P2))
+    (&legend_dir *D)
+    (&stack_dir (:D *D_stack))
+    (corner_dir (:C *Diag) (:A *A_m1) D)
+    (perp (:A A_m1) (:A2 *A2_m2))
+    (corner_dir (:C Diag) (:A A2_m2) (:D D_stack))
+    (&stack_dir (:D *D_stack2))
+    (axis_of (:D D_stack2) *A)
+    (OR ((corner_dir (:C Diag) A (:D *D2))
+         (dir_elem (:D D2))
+         (margin (:B P) (:D D2) (:K *K1_m3))
+         (margin (:B P2) (:D D2) (:K *K2_m4))
+         (< K1_m3 K2_m4))
+        ((corner_dir (:C Diag) A (:D D2))
+         (perp A (:A2 *A2_m5))
+         (corner_dir (:C Diag) (:A A2_m5) (:D *D22))
+         (margin (:B P) (:D D2) (:K *K_m6))
+         (margin (:B P2) (:D D2) (:K K_m6))
+         (dir_elem (:D D22))
+         (margin (:B P) (:D D22) (:K *K1_m7))
+         (margin (:B P2) (:D D22) (:K *K2_m8))
+         (< K1_m7 K2_m8)))))
+
+(INIT &first Order
+  (key ((&shape_cell ^Col *P)
+        (&lex.rank (:t P) *R))
+    (member ((:t R))
+      (&shape_cell Col *P)
+      (&lex.rank (:t P) *R))
+    (score ((:t R) (:S R))
+      (&shape_cell Col *P)
+      (&lex.rank (:t P) *R))))
+
+(RULE &occludes
+  (&first.minimal (:key *Col) (:t *R1))
+  (&first.minimal (:key (:Col *Col2)) (:t *R2))
+  (< R1 R2))
+
+(RULE &hidden
+  (&paint *P *Col)
+  (&paint P (:Col *Col2))
+  (&occludes (:Col Col2) (:Col2 Col)))
+
+(RULE &erased
+  (&shape_cell *Col *P)
+  (&cross Col))
+
+(ALTS $choice "which shapes the legend loses" $Stamped
+  (ALT $Marked
+    (RULE &erased
+      (&shape_cell *Col *P)
+      (&header Col))))
+
+(RULE &output
+  (OR ((&paint *P *Col)
+       (NOT (&hidden P Col)))
+      ((&erased P)
+       (&bg (:C Col)))
+      ((input P Col)
+       (NOT (&erased P))
+       (NOT (&paint P)))))

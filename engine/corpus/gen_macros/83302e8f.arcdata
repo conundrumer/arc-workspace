@@ -1,0 +1,5 @@
+;; 83302e8f
+
+(param &bg Color (0))
+(param &sealed Color (3))
+(param &leaky Color (4))

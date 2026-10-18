@@ -1,0 +1,256 @@
+;; b7249182
+
+(INPUT two-dots "two single cells on a field of `background`, and nothing else.")
+
+(INPUT shared-line "the two dots are on one row or on one column.")
+
+(INPUT even-span "the run of cells from one dot to the other, both dots included, has an even length, so the run splits into two equal halves.")
+
+(INPUT long-span "each half holds at least `box-depth` cells.")
+
+(OUTPUT halves "the run from one dot to the other splits into two equal halves, and each half takes the color of the dot at its end.")
+
+(OUTPUT stem "a half's cells, from the dot toward the middle, are painted in its color, except for the last `box-depth` cells.")
+
+(OUTPUT crossbar "the next cell of the half after the stem is the center of a crossbar across the line, which reaches `bar-reach` cells to each side, in the half's color, where those cells are in the frame."
+
+  (RULE &cast_dir
+    (dir_elem *D))
+
+  (RULE &cast_node
+    (input *P))
+
+  (DET_OR_RULE &background DominantColor)
+
+  (RULE &dot
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &cast_source
+    (&dot *P))
+
+  (INIT &cast Distance
+    (key ((&cast_source (:P ^O))
+          (&cast_dir ^D))
+      (edge ((:a A2) (:b Q))
+        (OR ((&cast_source (:P O))
+             (&cast_dir D)
+             (axis_of D *A)
+             (sub_extent (:P O) A *K)
+             (dir8_opposite D (:D2 *O_m2))
+             (edge_inset (:D O_m2) K (:B *B1_m3))
+             (edge_inset D K (:B *I_m5))
+             (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+             (compose (:A O) (:B V_m1) (:C *A2))
+             (&cast_node (:P A2))
+             (step_offset D (:V *V_m6))
+             (compose (:A A2) (:B V_m6) (:C *Q))
+             (&cast_node (:P Q)))
+            ((&cast_source (:P O))
+             (&cast_dir D)
+             (step_offset D (:V *V_m12))
+             (compose (:A O) (:B V_m12) (:C Q))
+             (&cast_node (:P Q))
+             (= A2 O))
+            ((&cast_source (:P O))
+             (&cast_dir D)
+             (diag_dir_elem D)
+             (axis_elem (:A *A3))
+             (sub_extent (:P O) (:A A3) (:K *K2))
+             (dir8_opposite D (:D2 *O_m22))
+             (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+             (edge_inset D (:K K2) (:B *I_m52))
+             (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+             (compose (:A O) (:B V_m13) (:C A2))
+             (&cast_node (:P A2))
+             (step_offset D (:V *V_m62))
+             (compose (:A A2) (:B V_m62) (:C Q))
+             (&cast_node (:P Q)))))
+      (source ((:n O))
+        (&cast_source (:P O))
+        (&cast_dir D))))
+
+  (RULE &cast_ray
+    (&cast.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+  (RULE &across_dir
+    (dir_elem *D))
+
+  (RULE &across_node
+    (input *P))
+
+  ;; the cells of each half, at its middle end, that the box takes
+  (DET &box_depth SepThickness)
+
+  (RULE &partner
+    (&cast_ray (:P *B) *D (:Origin *A))
+    (dir_elem D)
+    (&dot (:P B))
+    (!= B A))
+
+  (RULE &half
+    (&partner *A *D *B)
+    (opposite D (:Opp *D2))
+    (&cast_ray *P D *K (:Origin A))
+    (&cast_ray P (:D D2) (:K *K2) (:Origin B))
+    (< K K2))
+
+  (RULE &past
+    (&half *A *D *P)
+    (step_offset D (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *Q))
+    (NOT (&half A D (:P Q))))
+
+  (RULE &center
+    (&past *A *D *Q)
+    (&box_depth (:G *N))
+    (&half A D (:P *C) *K)
+    (dir8_opposite D (:D2 *O_m2))
+    (edge_inset (:D O_m2) (:K N) (:B *B1_m3))
+    (edge_inset D (:K N) (:B *I_m5))
+    (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+    (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+    (compose (:A C) (:B V_m1) (:C Q)))
+
+  (RULE &across_source
+    (&center *A *D (:K *Kc))
+    (&half A D *P *K)
+    (>= K Kc))
+
+  (INIT &across Distance
+    (key ((&across_source (:P ^O))
+          (&across_dir ^D))
+      (edge ((:a A2) (:b Q))
+        (OR ((&across_source (:P O))
+             (&across_dir D)
+             (axis_of D *A)
+             (sub_extent (:P O) A *K)
+             (dir8_opposite D (:D2 *O_m2))
+             (edge_inset (:D O_m2) K (:B *B1_m3))
+             (edge_inset D K (:B *I_m5))
+             (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+             (compose (:A O) (:B V_m1) (:C *A2))
+             (&across_node (:P A2))
+             (step_offset D (:V *V_m6))
+             (compose (:A A2) (:B V_m6) (:C *Q))
+             (&across_node (:P Q)))
+            ((&across_source (:P O))
+             (&across_dir D)
+             (step_offset D (:V *V_m12))
+             (compose (:A O) (:B V_m12) (:C Q))
+             (&across_node (:P Q))
+             (= A2 O))
+            ((&across_source (:P O))
+             (&across_dir D)
+             (diag_dir_elem D)
+             (axis_elem (:A *A3))
+             (sub_extent (:P O) (:A A3) (:K *K2))
+             (dir8_opposite D (:D2 *O_m22))
+             (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+             (edge_inset D (:K K2) (:B *I_m52))
+             (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+             (compose (:A O) (:B V_m13) (:C A2))
+             (&across_node (:P A2))
+             (step_offset D (:V *V_m62))
+             (compose (:A A2) (:B V_m62) (:C Q))
+             (&across_node (:P Q)))))
+      (source ((:n O))
+        (&across_source (:P O))
+        (&across_dir D)))))
+
+(OUTPUT arms "the two ends of the crossbar extend toward the middle along the line, up to the half's last cell, in the half's color, where those cells are in the frame.")
+
+(OUTPUT keep "every other cell keeps its input color.")
+
+(ALTS $span "whether the two halves must meet" $Meet
+  (ALT $OddSpanGap
+    (INPUT even-span "each half is the floor of half the run, counted from its dot, so on a run of odd length the middle cell and the box's middle line across it stay unpainted. Undefined where the concept case is, other than on the run's parity.")
+    (RULE &void
+      (OR ((&partner *A *D)
+           (NOT (&center A D)))
+          ((NOT (&partner)))
+          ((&partner (:A *A2) *B)
+           (&dot (:P *C))
+           (!= C A2)
+           (!= C B))))
+    (ALT $EachPair
+      (RULE &void
+        (OR ((&dot (:P *A))
+             (NOT (&partner A)))
+            ((&partner (:A *A2) *B)
+             (&partner (:A A2) (:B *B2))
+             (!= B B2))
+            ((&partner (:A *A3) *D)
+             (NOT (&center (:A A3) D))))))))
+
+(ALTS $dots "how many dots the input holds" $Two
+  (ALT $EachPair
+    (INPUT two-dots "the cells that are not background come in pairs, each pair on one row or column, and no dot shares a row or column with a dot outside its pair. Each pair gets the bracket. Undefined where a dot shares its row and column with no other dot or with more than one, and where two brackets paint one cell in different colors.")
+    (RULE &void
+      (OR ((&dot (:P *A))
+           (NOT (&partner A)))
+          ((&partner (:A *A2) *B)
+           (&partner (:A A2) (:B *B2))
+           (!= B B2))
+          ((&partner (:A *A3) *D)
+           (NOT (&center (:A A3) D)))
+          ((&apart))))))
+
+(RULE &cast_end
+  (&cast_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&cast_ray (:P Q) D Origin)))
+
+(RULE &across_ray
+  (&across.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &across_end
+  (&across_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&across_ray (:P Q) D Origin)))
+
+;; the cells the crossbar reaches to each side of the line
+(DET &bar_reach SepThickness)
+
+(RULE &paint
+  (&dot (:P *A) *Col)
+  (&center A *D *C (:K *Kc))
+  (axis_of D (:A *A_m1))
+  (perp (:A A_m1) (:A2 *A2_m2))
+  (axis_of (:D *D2) (:A A2_m2))
+  (&bar_reach (:G *N))
+  (OR ((&half A D *P *K)
+       (< K Kc))
+      ((&across_ray P (:D D2) K (:Origin C))
+       (<= K N))
+      ((&half A D (:P *Q) K)
+       (> K Kc)
+       (&across_ray P (:D D2) (:K N) (:Origin Q)))))
+
+(RULE &apart
+  (&past *A *D *Q)
+  (&partner A D *B)
+  (opposite D (:Opp *D2))
+  (NOT (&half (:A B) (:D D2) (:P Q))))
+
+(RULE &void
+  (OR ((&partner *A *D)
+       (NOT (&center A D)))
+      ((&apart))
+      ((NOT (&partner)))
+      ((&partner (:A *A2) *B)
+       (&dot (:P *C))
+       (!= C A2)
+       (!= C B))))
+
+(RULE &output
+  (NOT (&void))
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

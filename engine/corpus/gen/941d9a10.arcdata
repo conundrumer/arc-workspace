@@ -1,0 +1,5 @@
+;; 941d9a10
+
+(param &sep Color (5))
+(param &corner_color (DiagDir Color) (DIAG_TL 1) (DIAG_BR 3))
+(param &center_color Color (2))

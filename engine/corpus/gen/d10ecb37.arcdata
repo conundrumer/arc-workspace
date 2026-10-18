@@ -1,0 +1,7 @@
+;; d10ecb37
+
+(param &diag DiagDir (DIAG_TL))
+(param &window Position (Frame
+  ((:A AXIS_V) (:N 2))
+  ((:A AXIS_H) (:N 2))))
+(param &tile_dim number (2))

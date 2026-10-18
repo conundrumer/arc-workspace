@@ -1,0 +1,9 @@
+;; 08573cc6
+
+(param &bg Color (0))
+(param &dot Color (1))
+(param &marker_corner DiagDir (DIAG_TL))
+(param &start_dir Dir (DIR_L))
+(param &sense Sense (SENSE_CC))
+(param &len0 number (2))
+(param &color_axis Axis (AXIS_H))

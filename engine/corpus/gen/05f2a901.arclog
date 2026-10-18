@@ -1,0 +1,105 @@
+;; 05f2a901
+
+(DET &bg DominantColor)
+
+(DET &mover ChangedColor)
+
+(DET &anchor RarestColor)
+
+(RULE &mover_cell
+  (input *P *Col)
+  (&mover (:C Col)))
+
+(RULE &anchor_cell
+  (input *P *Col)
+  (&anchor (:C Col)))
+
+;; The anchor lies toward one edge from the mover, on a shared line.
+(INIT &cast Ray
+  (source (P)
+    (&mover_cell *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &move_dir
+  (dir_elem *D)
+  (&cast.ray *P D)
+  (&anchor_cell P))
+
+(RULE &shape
+  (&mover_cell *P))
+
+(RULE &blocked
+  (&anchor_cell *P))
+
+(RULE &gravity_dir
+  (&move_dir *D))
+
+(RULE &cleared
+  (OR ((input *P *Col)
+       (NOT (&mover_cell P)))
+      ((&mover_cell P)
+       (&bg (:C Col)))))
+
+(ALTS $choice "The cases differ in what counts as contact" $Block
+  (ALT $Touch
+    ;; One step along the travel past a cell beside the anchor.
+    (RULE &blocked
+      (&anchor_cell (:P *P3))
+      (dir_elem *D)
+      (neighbor (:P P3) D (:Q *P1))
+      (&move_dir (:D *D_move))
+      (neighbor (:P P1) (:D D_move) (:Q *P))))
+  (ALT $Extent
+    (INIT &bbox BoundingBox
+      (key ((OR ((&mover_cell *P)
+                 (&mover (:C ^Col)))
+                ((&anchor_cell P)
+                 (&anchor (:C Col)))))
+        (cell (P)
+          (OR ((&mover_cell *P)
+               (&mover (:C Col)))
+              ((&anchor_cell P)
+               (&anchor (:C Col)))))))
+
+    (RULE &box_cell
+      (&bbox.box (:key *Col) *B)
+      (input *P)
+      (inside (:A P) B))
+
+    (RULE &shape
+      (&mover (:C *Col))
+      (&box_cell Col *P))
+
+    (RULE &blocked
+      (&anchor (:C *Col))
+      (&box_cell Col *P))))
+
+;; The footprint travels toward the anchor until it would cover a blocked cell.
+(INIT &gravity Distance
+  (source_distance (K)
+    (OR ((&shape *P)
+         (&gravity_dir *D)
+         (margin (:B P) D *K))
+        ((&shape (:P *P3))
+         (&gravity_dir (:D *D2))
+         (&blocked (:P *P2))
+         (gap (:D D2) (:P P3) (:Q P2) K)))))
+
+(RULE &landed
+  (&gravity.distance *K)
+  (&gravity_dir *D)
+  (jump_offset D K *V)
+  (&mover_cell (:P *P3))
+  (compose (:A P3) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&landed *P)
+       (&mover (:C *Col)))
+      ((&gravity.distance *K)
+       (&gravity_dir *D)
+       (jump_offset D K)
+       (&cleared P Col)
+       (NOT (&landed P)))))

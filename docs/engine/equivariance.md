@@ -1,0 +1,135 @@
+# Equivariance
+
+How the engine keeps every program equivariant by construction, at no cost at run time. It rests on the obligations below.
+
+## What it means for the engine
+
+- Equivariance is the property that [Invariance](../../docs/handbook/principles.md#invariance) defines, over ARC's symmetry group Γ. The handbook lines it rests on are [Orientation](../../docs/handbook/principles.md#orientation), [Color](../../docs/handbook/principles.md#color), [determination](../../docs/handbook/principles.md#models-and-tasks), [Fidelity](../../docs/handbook/encoding.md#fidelity), [Numbers](../../docs/handbook/encoding.md#numbers) and [Equivariant lib relations](../../docs/handbook/encoding.md#equivariant-lib-relations).
+- The engine needs the action of Γ on each column type. An element γ acts on a row column by column:
+
+| Type | Action of γ |
+| --- | --- |
+| Color | γ's color permutation |
+| Dir, DiagDir, Dir8 | the D4 action on directions, `apply_dir` and its kin |
+| Axis, DiagAxis, Axis4 | the swap that the action on directions induces |
+| Sense | a reflection reverses it, a rotation keeps it |
+| D4, C4 | conjugation, d ↦ g d g⁻¹, where g is γ's D4 part |
+| Sym | conjugation of the subgroup |
+| Box, Position, Offset | `apply` |
+| Ident | the bijection that γ induces on the content an Ident labels |
+| number, Example, Unit | none |
+
+- Example labels have one more symmetry: a reorder of the train pairs changes no stored value and no output, since a task file's order is an encoding, as Fidelity gives.
+
+## Why composition keeps it
+
+A program is equivariant when each of these conditions holds:
+
+- Each relation that the program reads from outside its clauses is equivariant. The grids are, by definition. The parameters are, since γ acts on the assignment. Each lib relation and component is, by the obligations below.
+- Each clause is made of joins, projections, unions, negations, and the tests `=` and `!=`. Each of these commutes with every bijection that acts on the columns one by one, so each is equivariant under the action above. `IF` and `ALL` compile to these, as [arclog](../../docs/arclog/arclog.md#conditional) gives.
+- An order test, `<`, `<=`, `>` or `>=`, stands only on a type that every γ fixes element by element and whose order is not an encoding. Of the column types, only `number` is such a type.
+- The only constant is `0`, and every γ fixes it: the number zero, and the zero box, which `apply` maps to itself. A constant of any other task type, such as `DIR_T` or a color, is moved by some γ.
+- An instance applies a component to relations of the program. A composition of equivariant functions is equivariant.
+- A chosen relation has the set of models that its constraints give, and no model is preferred. So γ maps the models on a task onto the models on the transformed task, and the output set, one grid per model, moves with the task.
+- A determination keeps every value at which the case solves every train pair. The hypothesis is equivariant, so the case solves T's train pairs at θ exactly when it solves γ·T's at γ·θ, and the kept values move with the task. Where a parameter keeps more than one value, the values are its open values under `(ONE)`, and an error without it. They are never a pick, as [`DET`](determination.md#det) gives.
+- A pose label of a `RIGID_DET` meets the type rule of [The RIGID_DET frame](#the-rigid_det-frame).
+
+So equivariance follows from the checker's rules and the lib's definitions, and no run checks it.
+
+## The obligations
+
+### The types refuse order, and programs hold no task-type literals
+
+- **Rule.** The type check refuses `<`, `<=`, `>` and `>=` on every type but `number`, as [Checker](reader.md#checker) gives. The grammar admits `0` as the one constant, as [Negation and constraints](../../docs/arclog/arclog.md#negation-and-constraints) gives.
+- **Enforced by:** the checker, in step 1 of the [build order](overview.md#build-order). The token mask runs the same checks.
+- **Cost:** one test per constraint atom when the program is checked. Nothing at run time.
+- **Corpus:** 479 order tests in 223 files of `gen/`, all on `number`. No clause body holds a constant of a task type.
+- **What the check needs:** the type of a label at a column of a component's type parameter. 10 of the 479 tests compare such labels, each bound to a number: 247ef758:186, 5d588b4d:92, 8abad3cf:76, 8dae5dfc:62, 9d9215db:148, abbfd121:494-506 and b457fec5:251. The checker takes the type through the instance's binding of the parameter.
+
+### Each lib element has no free choice, or its choice is a model
+
+- **Rule.** Each lib element is defined as a function of the rows of its inputs. Where an element's operation has more than one answer, it exports every answer, or the answers are the models of a chosen relation. No definition breaks a tie by an order of encodings: term ids, reading order, Example order or color numbers.
+- **Enforced by:** the admission test of [lib-spec.md](../../docs/lib-spec.md), which each new element passes, and the startup check of the orientation tables, as [Lib](evaluator.md#lib) gives. The tables hold no color, so their invariance under D4, with the action above, is their invariance under Γ.
+- **Cost:** nothing at run time. A review at each admission.
+- **Mechanical support:** the [lib comparison](verification.md#lib-comparison) also runs each of its small inputs in its eight D4 images and under one color permutation, and compares each element's rows with the image of its rows. So it finds a definitional choice that a review misses, such as the choices of `Canon` and `Wallpaper` below. It costs nine runs of each small input, in a command that no run calls.
+
+### Each native implementation matches its definition
+
+- **Rule.** Each native element gives the rows that its definition gives.
+- **Enforced by:** the [lib comparison](verification.md#lib-comparison), on small generated inputs.
+- **Cost:** the existing command, outside every run.
+- **Where the oracle departs:** the Souffle lib makes the free choices of the next section. At those elements the comparison expects the difference, and reports it as a fault of the Souffle lib, as the Principles requirement of [Requirements](overview.md#requirements) gives.
+
+## Free choices
+
+A survey of the lib, `programs/lib/` and `programs/proposers.dl` against `gen/`, found each element whose definition or present implementation makes a free choice, or reads an order of encodings.
+
+### Settled
+
+| Element | Choice | Readers in `gen/` | Resolution |
+| --- | --- | --- | --- |
+| Ident values: `Quotient.class`, `Connectivity.component`, `Enclosure.enclosed` | the number of an id; Souffle takes the least term id, `sets.dl:121`, `sets.dl:144`, `cells.dl:384` | 58, 318 and 44 files | An Ident is interned by the content it labels, as [Terms](reader.md#terms) gives, and only equality on it reaches an output. Equality is kept by every bijection. |
+| Periods, inside | one translation per magnitude, toward the bottom-right corner, `cells.dl:507-514` | 19 files | An engine device behind the interface. The outputs pair the cells both ways, so they do not show the corner. The native form need not copy it. |
+| `CoverForcing`, `PlacementPruning`, `TiebreakResolutions` | term-id order and reading order, `constraints.dl:12`, `:38-43`, `:121-126`, `:187-214`, `:261` | none; `ONE` in 32 files and `CHOOSE` in 18 replace them | Every model, as [Semantics](../../docs/arclog/constraints.md#semantics) gives. |
+| Order under ties, `Unfold` under a score tie | none: tied members share a rank, `minimal` holds each of them, and the walk forks | 22 files read `successor` or `cyclic_successor`; `Unfold` in 19 | No choice. |
+| `PairDims` coordinates, read by the proposers `Period`, the `Sep*` proposers and `TileD4` | rows and columns counted from the top and left edges, `proposers.dl:16-30` | 2, 59 and 18 files | The results do not depend on the edge: `Period` reads differences, the separator lines of an exact fit are symmetric, and a tile is a box. The arclog text holds no literal, so it enumerates the edge. |
+| `PanelCombine` | `c1` is the top or left panel, `proposers.dl:432-455` | 20 files | The proposer gives each panel's place as a Position in the arrangement's frame, as the records already hold it, such as `&combine_member` in 0520fde7.arcdata. |
+| `TileD4`'s `swaps` | a literal set, `proposers.dl:401` | 18 files | The set is closed under conjugation, so every γ fixes it. |
+| Division by side | the edge that the tiles start from, where the extent leaves a remainder | 122 files | Division takes equal parts alone; the present functor refuses a remainder, `lib_functors.cpp:95`. |
+| The order of the two attempts on a test input | which grid is the first | the Kaggle run | The score reads the attempts as a set, as [The output set](../../docs/arclog/constraints.md#the-output-set) gives. |
+
+### Quotient's `representative`
+
+`representative` holds one member per class ([lib-spec.md](../../docs/lib-spec.md#the-constructions), the Quotient row). Souffle picks the member of least term id, `sets.dl:151`. Where the class members are examples, that is the first example. 14 files read it:
+
+| File | Use | Does the pick reach an output | Members per class on the train pairs |
+| --- | --- | --- | --- |
+| 0d3d703e | one order of a swapped color pair | no: `&mapping` reads both orders | 4 classes of 2 |
+| 142ca369 | the representative marker of a `RIGID_DET` | through the `RIGID_DET` alone: the markers are copies up to D4 | 1 class of 7 |
+| 150deff5 | the representative piece of each color | the same | 2 classes, of 6 and 8 |
+| 21897d95 | the representative arrow of each center kind | the same | 2 classes, of at most 12 and 6 |
+| 269e22fb | the representative train output | the same | 1 class of 5 |
+| 3aa6fb7a | the representative piece | the same | 1 class of 5 |
+| 3d588dc9 | the representative key, by one of its shed cells | the same | 1 class of 4 |
+| 409aa875 | the representative of each class of congruent marks | the same, but the class tests the shape alone, so the apex and the aim are copies only under the claim | classes of at most 10 |
+| 4522001f | the train pair whose pictures the program stores | yes: `&box_anchor` (`DiagDirDomain`) is determined in the picked pair's frame, and the two train inputs are a half turn apart | 1 class of 2 |
+| 4c7dc4dd | a test that two cells share a class: two reads joined on the representative | no | 2 classes per marked panel, of 13 and 12 cells |
+| 4c177718 | the representative arrow | through the `RIGID_DET` alone | 1 class of 4 |
+| a2d730bd | the representative dot | the same | 1 class of at most 8 |
+| b15fca0b | one order of the two endpoints, on each input | no: the shortest walk's inner cells are the same from each end | 1 class of 2 |
+| b27ca6d3 | the representative footprint of each congruence class | no: the program compares the footprint under every D4 element | 1 class of 4 |
+
+Quotient exports `class` alone. Each use as a representative is a `RIGID_DET` with an `instance` clause over the class, which [Form](../../docs/arclog/rigid.md#form) defines as the replacement of the pick, so an assembly whose instances disagree has no value. 0d3d703e and 4c7dc4dd read `class`, b15fca0b reads both orders, and 4522001f stores its pictures as an assembly over the train pairs, with the anchor as a part.
+
+### The `RIGID_DET` frame
+
+Where the instances admit a common reading, each of its D4 images is one too, and the choice among them is the frame, as [Semantics](../../docs/arclog/rigid.md#semantics) gives. The engine takes one instance's reading, as [Implementation](../../docs/arclog/rigid.md#implementation) gives, and a type rule keeps every read from seeing that choice:
+
+- A `:Pose` column has the type Pose of its assembly.
+- A Pose label may stand at a `:Pose` column of the same assembly, at a column of a derived relation or of an instance's input, which then takes the type, in `=` and `!=`, and in `d4_elem`, whose column takes the type of its label, since every D4 element is a pose.
+- The lib relation `pose_difference(a, b, d)` gives the D4 element that takes the placement at pose a onto the placement at pose b. It is the one way from a Pose to a D4 value, and Γ moves it by conjugation, as the action above gives.
+- The checker refuses a Pose label at any other site. So `(d4_identity D)` and `(c4_elem D)` on a pose are type errors.
+
+The rule is the rule of [The pose](../../docs/arclog/rigid.md#the-pose). It costs one type check per site, and nothing at run time. In `gen/`, 9 files hold a `RIGID_DET`, and all 24 clauses that read one pass the rule. 3 of them, in 142ca369, 269e22fb and 3aa6fb7a, use `d4_elem`. No clause reads `.pose`.
+
+### Wallpaper's shift
+
+An isometry of a periodic set is a D4 element and a coset of shifts under the lattice. `symmetry` holds each shift of the coset under which some cell of the frame lands in the frame, and `action` holds each image under those shifts that lands in the frame, as the Wallpaper row of [Detectors](../../docs/lib-spec.md#detectors) gives. A coset is a set, so no member is chosen. The cost is at most the count of lattice translations inside the frame, per candidate.
+
+The Souffle form keeps the one member toward the bottom-right corner, `cells.dl:582-583`, which a reflection does not map onto the member it keeps. The lib comparison reports that difference as a fault of the Souffle lib. Two files of `gen/` read `action`, 0dfd9992 and abbfd121, each through a closure, and neither changes. No file reads `symmetry`.
+
+## Determinism
+
+- A relation is a set of rows. Each clause and each lib element is a function from sets of rows to a set of rows. With no free choice, each relation is a function of the program, the parameters and the grids.
+- So the thread count, the join order, the order in which the constraint module gives the models, and the order of the train pairs do not enter any row. No rule needs to sort.
+- An Ident is the one value in which an encoding shows. Its number depends on the order of interning, and a writer numbers Idents by their contents, as [Terms](reader.md#terms) gives, so the text is the same from run to run.
+- A writer gives a set in a fixed order of the encodings: the arcdata writer, the trace, and the two attempts on Kaggle. That order is the form of the file, and no relation reads it.
+
+## Known gaps
+
+| Gap | Where it shows |
+| --- | --- |
+| The action on a `RIGID_DET` part of type D4 or Sym: [Semantics](../../docs/arclog/rigid.md#semantics) leaves those types as they are, and Γ conjugates them | `rigid.md:85`; no part in `gen/` has such a column |
+| `.pose` where the assembly has a symmetry, so that an instance has several poses | the gap row of [determination.md](determination.md#known-gaps); no read of `.pose` in `gen/` |
+| A native proposer carries the second and third obligations, and which proposers are native is open | the gap row of [determination.md](determination.md#known-gaps) |
+| A claim text that names an orientation constant, which the program does not read | b457fec5:7, "the DIR_T edge"; b6f77b65:3, "the DIAG_TL corner" |

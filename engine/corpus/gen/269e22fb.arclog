@@ -1,0 +1,60 @@
+;; 269e22fb
+
+;; Every output is the whole chart, each one copy of it, in its own pose.
+;; Each of an output's two colors gives one class of cells.
+(INIT &class_id Quotient
+  (equivalent ((:a Col) (:b Col))
+    (ex_output *Col)))
+
+(DET &cell_class
+  (ex_output *E *P *Col)
+  (&class_id.class (:a Col) (:Id *K)))
+
+(RIGID_DET &chart
+  (&cell_class *E *P *K))
+
+;; The chart's canvas in each pose — the frame its cells are stated in.
+(INIT &canvas Frame
+  (key ((&chart.cell_class (:Pose ^D) *P)
+        (axis_elem *A)
+        (frame_extent P A *N))
+    (extent (A N)
+      (&chart.cell_class (:Pose D) *P)
+      (axis_elem *A)
+      (frame_extent P A *N))))
+
+(RULE &cell_class2
+  (&chart.cell_class *K))
+
+(RULE &render
+  (d4_elem *D)
+  (&cell_class2 *K)
+  (&cell_class2 (:K *K2))
+  (!= K K2)
+  (input *Col)
+  (input (:Col *Col2))
+  (!= Col Col2))
+
+(RULE &chart2
+  (&render *D *K (:Col *R_col) *K2 *Col2)
+  (&canvas.cell (:key D) *P)
+  (&chart.cell_class (:Pose D) P (:K *K3))
+  (OR ((= K3 K)
+       (= *Col R_col))
+      ((= K3 K2)
+       (= Col Col2))))
+
+;; Where the input lays onto the rendered chart, cell for cell.
+(INIT &occ Occurrences
+  (key ((OR ((&chart2 ^D ^K (:R_col ^Col) ^K2 ^Col2 *P (:Col *Col3)))
+            ((&render D K Col K2 Col2)
+             (input P (:Col Col3)))))
+    (cell (P (:v Col3))
+      (&chart2 D K (:R_col Col) K2 Col2 *P (:Col *Col3)))
+    (shape (P (:v Col3))
+      (&render D K Col K2 Col2)
+      (input *P (:Col *Col3)))))
+
+(RULE &output
+  (&occ.occurrence (:key (:D *R_d) (:K *R_k) (:Col *R_col) (:K2 *R_k2) (:Col2 *R_col2)))
+  (&chart2 (:D R_d) (:K R_k) R_col (:K2 R_k2) (:Col2 R_col2) *P *Col))

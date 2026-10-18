@@ -1,0 +1,439 @@
+;; ac6f9922
+
+(INPUT framed-lattice "every input is a field of the background color with a lattice of one other color on it; the background shows outside the lattice, at least along the grid edge"
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &commonest Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  (INIT &sole_commonest Singleton
+    (member ((:v Col))
+      (&commonest.maximal (:t *Col)))))
+
+(INPUT window-grid "the lattice encloses rectangular windows of the background color; the windows fall into rows that share their top and bottom rows of cells, and into columns that share their left and right columns of cells, so each window is at one row and one column of a full grid of windows; the lattice bars between windows can be wider than one cell, and differ in width"
+
+  (INIT &edge Singleton
+    (member ((:v Col))
+      (input *P *Col)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0))))
+
+  (RULE &bg
+    (&edge.value (:v *Col)))
+
+  (INIT &lattice_mode_count Cardinality
+    (key ((&bg (:Col *C))
+          (input *P ^Col)
+          (!= Col C))
+      (member ((:m P))
+        (&bg (:Col *C))
+        (input *P Col)
+        (!= Col C))))
+
+  ;; The lattice: the commonest color other than the background.
+  (INIT &lattice_mode Order
+    (member ((:t Col))
+      (&lattice_mode_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&lattice_mode_count.size (:key *Col) *N)))
+
+  (INIT &lattice Singleton
+    (member ((:v Col))
+      (&lattice_mode.maximal (:t *Col))))
+
+  (INIT &lattice_box BoundingBox
+    (cell (P)
+      (&lattice.value (:v *L))
+      (input *P (:Col L))))
+
+  (RULE &lattice_area
+    (&lattice_box.box (:B *Bx))
+    (input *P)
+    (ALL ((&lattice_box.box (:B Bx))
+          (dir_elem (:D *D_m1))
+          (relative (:Base Bx) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0))))
+
+  (RULE &broken_line_split1
+    (&lattice_area (:P *P_))
+    (axis_elem (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+    (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &broken_line
+    (&lattice_area *P)
+    (&lattice.value (:v *C))
+    (input P *Col)
+    (!= Col C)
+    (axis_elem *A)
+    (&broken_line_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+  (RULE &tiles_divider_split1
+    (&lattice_area (:P *P_))
+    (axis_elem (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+    (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &tiles_divider
+    (&lattice_area *P)
+    (axis_elem *A)
+    (&tiles_divider_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1))
+    (NOT (&broken_line A L)))
+
+  (RULE &tiles_on_divider
+    (&lattice_area *P)
+    (&tiles_divider *A *L)
+    (axis_of *D A)
+    (margin (:B P) D (:K *K_m1))
+    (margin (:B L) D (:K K_m1)))
+
+  (INIT &tiles_rank Order
+    (key ((OR ((&tiles_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((&lattice_area *P)
+               (dir_elem D)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&tiles_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&tiles_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((&lattice_area *P)
+             (dir_elem D)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (&lattice_area *P)
+        (dir_elem D)
+        (margin (:B P) D *K))))
+
+  (RULE &tiles_part_idx
+    (&lattice_area *P)
+    (axis_of *D *A)
+    (NOT (&tiles_on_divider P A))
+    (margin (:B P) D *K)
+    (&tiles_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &tiles_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&tiles_part_idx *P D (:N *N1))
+    (&tiles_part_idx P (:D D2) (:N *N2))
+    (opposite D (:Opp *O_m1))
+    (edge_inset D (:K N1) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+  (RULE &tiles_tile_of
+    (&tiles_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&tiles_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (INIT &tile_box BoundingBox
+    (key ((&tiles_tile_of *P (:P_tile ^T)))
+      (cell (P)
+        (&tiles_tile_of *P (:P_tile T))))))
+
+(INPUT one-mark "a window holds no mark or one mark: a solid rectangle of one color that is neither the background nor the lattice color, which touches no edge of the window; marks differ in size and shape, and two windows can hold marks of one color"
+
+  (RULE &closed_cell
+    (&lattice.value (:v *L))
+    (input *P *Col)
+    (!= Col L))
+
+  (RULE &closed_flood_node
+    (&lattice.value (:v *L))
+    (input *P *Col)
+    (!= Col L))
+
+  (RULE &closed_flood_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (INIT &closed_flood Propagation
+    (source ((:n P))
+      (&closed_cell *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0))
+      (&closed_flood_node P))
+    (edge ((:a P) (:b Q))
+      (&closed_flood_node *P)
+      (&closed_flood_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *Q))
+      (&closed_flood_node (:P Q))))
+
+  (RULE &closed_node
+    (&closed_cell *P)
+    (NOT (&closed_flood.reached (:n P))))
+
+  (RULE &closed_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (INIT &closed Quotient
+    (edge ((:a P) (:b P2))
+      (OR ((&closed_node *P)
+           (&closed_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P2))
+           (&closed_node (:P P2)))
+          ((&closed_node P)
+           (= P2 P)))))
+
+  (RULE &closed_component
+    (&closed.class (:a *P) *Id))
+
+  (INIT &region_box BoundingBox
+    (key ((&closed_component *P ^Id))
+      (cell (P)
+        (&closed_component *P Id))))
+
+  (RULE &window_cell
+    (&closed_component *P *Id)
+    (&region_box.box (:key Id) *B))
+
+  (RULE &unit_cell
+    (&window_cell *B *P))
+
+  (RULE &fill
+    (&unit_cell *B)
+    (&bg *Col))
+
+  ;; The colors of a unit that are neither its fill nor the lattice.
+  (INIT &mark Singleton
+    (key ((&fill (:B ^Bx) (:Col *F))
+          (&unit_cell (:B Bx) *P)
+          (input P *Col)
+          (!= Col F)
+          (&lattice.value (:v *L))
+          (!= Col L))
+      (member ((:v Col))
+        (&fill (:B Bx) (:Col *F))
+        (&unit_cell (:B Bx) *P)
+        (input P *Col)
+        (!= Col F)
+        (&lattice.value (:v *L))
+        (!= Col L)))))
+
+(OUTPUT window-picture "the output has one row per row of windows and one column per column of windows, in the order of the windows in the input"
+
+  (RULE &unit_line_split1
+    (&unit_cell (:B *Bx) (:P *P_))
+    (axis_elem (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+    (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &unit_line
+    (&unit_cell *B *P)
+    (axis_elem *A)
+    (&unit_line_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+  (RULE &equiv_split1
+    (&unit_line (:A *A_) (:B *Bx_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B Bx_) (:D D_m1) (:K *K1_m3))
+    (margin (:B Bx_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *E_))
+    (relative (:Base E_) (:X Bx_) (:X_rel *X_m1_)))
+
+  (RULE &equiv_split2
+    (&unit_line (:A *A_) (:B *Bx2_))
+    (&unit_line (:A A_) (:B *Bx))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B Bx2_) (:D D_m1) (:K *K1_m3))
+    (margin (:B Bx2_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *E_))
+    (relative (:Base E_) (:X Bx2_) (:X_rel *X_m2_)))
+
+  ;; The units that form one row or one column.
+  (INIT &same_band Quotient
+    (equivalent ((:a A (:B Bx)) (:b A (:B Bx2)))
+      (&unit_line *A (:B *Bx))
+      (&unit_line A (:B *Bx2))
+      (&equiv_split1 (:Bx_ Bx) (:A_ A) (:E_ *E) (:X_m1_ *X_m1))
+      (&equiv_split2 (:Bx2_ Bx2) (:A_ A) (:E_ E) (:X_m2_ *X_m2))))
+
+  (INIT &layout Order
+    (key ((&same_band.class (:a ^A))
+          (axis_of ^D A))
+      (member ((:t I))
+        (&same_band.class (:a A (:B *Bx)) (:Id *I))
+        (&unit_line A (:B Bx) *L))
+      (before ((:a I) (:b I2))
+        (&same_band.class (:a A (:B *Bx)) (:Id *I))
+        (&unit_line A (:B Bx) *L)
+        (&same_band.class (:a A (:B *Bx2)) (:Id *I2))
+        (&unit_line A (:B Bx2) (:L *L2))
+        (!= I I2)
+        (margin (:B L) D (:K *K1))
+        (margin (:B L2) D (:K *K2))
+        (< K1 K2)))))
+
+(OUTPUT mark-color "each output cell takes the color of the mark in its window, and the background color where the window holds no mark"
+
+  ;; The colors of a unit's cells beside the lattice.
+  (INIT &rim Singleton
+    (key ((&unit_cell (:B ^Bx) *P)
+          (input P *Col)
+          (&lattice.value (:v *L))
+          (dir_elem *D)
+          (step_offset D (:V *V_m1))
+          (compose (:A P) (:B V_m1) (:C *Q))
+          (input (:P Q) (:Col L)))
+      (member ((:v Col))
+        (&unit_cell (:B Bx) *P)
+        (input P *Col)
+        (&lattice.value (:v *L))
+        (dir_elem *D)
+        (step_offset D (:V *V_m1))
+        (compose (:A P) (:B V_m1) (:C *Q))
+        (input (:P Q) (:Col L))))))
+
+(ALTS $bg "how the background color is found" $EdgeColor
+  (ALT $CommonestBackground
+    (INPUT framed-lattice "the background is the commonest color of the input; undefined where two colors tie for commonest"
+      (RULE &bg
+        (&sole_commonest.value (:v *Col))))))
+
+(ALTS $unit "what one output cell stands for" $Window
+  (ALT $Window
+    (ALTS $region "which cells make up a window" $ClosedRegion
+      (ALT $BgRegionWindows
+        (INPUT window-grid "a window is a connected region of background cells closed off from the grid edge, and its marks are the non-lattice cells inside its bounding box"
+          (RULE &closed_cell
+            (&bg *Col)
+            (input *P Col))
+          (RULE &closed_flood_node
+            (&bg *Col)
+            (input *P Col))
+          (RULE &window_cell
+            (&region_box.box *B)
+            (&lattice.value (:v *L))
+            (input *P *Col)
+            (!= Col L)
+            (ALL ((input P (:Col *Colm))
+                  (&region_box.box B)
+                  (dir_elem (:D *D_m1))
+                  (relative (:Base B) (:X P) (:X_rel *R_m2))
+                  (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+                 ((>= K_m3 0)))))))
+    (ALTS $grouping "how windows group into rows and columns" $SameExtent
+      (ALT $WindowBands
+        (INPUT window-grid "windows whose row extents overlap merge into one band, and the same holds for columns")
+        (ALT $DividerTiles
+          (OUTPUT window-picture "the output has one row per row of tiles and one column per column of tiles; a tile takes its one color that is neither the background nor the lattice color, or the background; undefined where a tile holds two such colors"
+            (RULE &equiv_split3
+              (&unit_line (:A *A_) (:B *Bx_))
+              (axis_of (:D *D_m1) (:A A_))
+              (opposite (:D D_m1) (:Opp *O_m2))
+              (margin (:B Bx_) (:D D_m1) (:K *K1_m3))
+              (margin (:B Bx_) (:D O_m2) (:K *K2_m4))
+              (opposite (:D D_m1) (:Opp *O_m1))
+              (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+              (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+              (compose (:A B1_m2) (:B B2_m3) (:C *E_))
+              (relative (:Base E_) (:X Bx_) (:X_rel *X_m1_)))
+            (RULE &equiv_split4
+              (&unit_line (:A *A_) (:B *Bx2_))
+              (&unit_line (:A A_) (:B *Bx))
+              (axis_of (:D *D_m1) (:A A_))
+              (opposite (:D D_m1) (:Opp *O_m2))
+              (margin (:B Bx2_) (:D D_m1) (:K *K1_m3))
+              (margin (:B Bx2_) (:D O_m2) (:K *K2_m4))
+              (opposite (:D D_m1) (:Opp *O_m1))
+              (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+              (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+              (compose (:A B1_m2) (:B B2_m3) (:C *E_))
+              (relative (:Base E_) (:X Bx2_) (:X_rel *X_m2_)))
+            ;; The units that form one row or one column.
+            (INIT &same_band Quotient
+              (equivalent ((:a A (:B Bx)) (:b A (:B Bx2)))
+                (OR ((&unit_line *A (:B *Bx))
+                     (&unit_line A (:B *Bx2))
+                     (&equiv_split1 (:Bx_ Bx) (:A_ A) (:E_ *E) (:X_m1_ *X_m1))
+                     (&equiv_split2 (:Bx2_ Bx2) (:A_ A) (:E_ E) (:X_m2_ *X_m2)))
+                    ((&unit_line A (:B Bx))
+                     (&unit_line A (:B Bx2))
+                     (&equiv_split3 (:Bx_ Bx) (:A_ A) (:E_ *E2) (:X_m1_ *X_m12))
+                     (&equiv_split4 (:Bx2_ Bx2) (:A_ A) (:E_ E2) (:X_m2_ *X_m22)))))
+              (edge ((:a A (:B Bx)) (:b A (:B Bx2)))
+                (&unit_line *A (:B *Bx) *L)
+                (&unit_line A (:B *Bx2) L))))))))
+  (ALT $DividerTiles
+    (INPUT window-grid "the lattice's full lines cut its bounding box into tiles, one per place of the grid")
+    (OUTPUT window-picture "the output has one row per row of tiles and one column per column of tiles; a tile takes its one color that is neither the background nor the lattice color, or the background; undefined where a tile holds two such colors"
+      (RULE &unit_cell
+        (&tiles_tile_of *P (:P_tile *T))
+        (&tile_box.box (:key T) *B)))))
+
+(ALTS $empty "the color of an empty window's cell" $BackgroundEmpty
+  (ALT $WindowFill
+    (INPUT window-grid "a window may be filled with any non-lattice color")
+    (OUTPUT mark-color "an empty window gives its own fill, the one color its cells take where they touch the lattice; undefined where they take two"
+      (RULE &fill
+        (&rim.value (:key (:Bx *B)) (:v *Col))))))
+
+(RULE &layout_pos
+  (&layout.rank (:key (:A *Key) *A *D) (:t *M) (:R *R1))
+  (&layout.dual_rank (:key (:A Key) A D) (:t M) (:R *R2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K R1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K R2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_pos)))
+
+(RULE &output
+  (&fill (:B *Bx) (:Col *F))
+  (ALL ((&same_band.class (:a (:A *Am) (:B *Bxm)) (:Id *I1m))
+        (&same_band.class (:a (:A Am) (:B *Bx2)) (:Id *I2m))
+        (&unit_line (:A Am) (:B Bxm) *L)
+        (&unit_line (:A Am) (:B Bx2) L))
+       ((= I1m I2m)))
+  (OR ((&mark.value (:key Bx) (:v *Col)))
+      ((NOT (&mark.member (:key Bx)))
+       (= Col F)))
+  (&same_band.class (:a *A (:B Bx)) (:Id *I1))
+  (&layout_pos (:Key A) (:M I1) (:P_pos *P1))
+  (perp A *A2)
+  (&same_band.class (:a (:A A2) (:B Bx)) (:Id *I2))
+  (&layout_pos (:Key A2) (:M I2) (:P_pos *P2))
+  (compose (:A P1) (:B P2) (:C *P)))

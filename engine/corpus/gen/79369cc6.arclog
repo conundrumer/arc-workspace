@@ -1,0 +1,55 @@
+;; 79369cc6
+
+;; The color the stamp paints, and the color the stamp matches on.
+(DET &fill RarestColor)
+
+(DET &mark UnchangedColor)
+
+;; The template's box, bounding the fill cells.
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&fill (:C Col))))
+
+(RULE &image
+  (&bbox.box *B)
+  (input *P *Col)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner2))
+  (d4_elem *D)
+  (apply D (:P P_inner2) (:P_out *P_inner)))
+
+;; Each image's mark cells, sought among the grid's mark cells.
+(INIT &occ Occurrences
+  (key ((OR ((&image ^D *P_inner *Col)
+             (&mark (:C Col)))
+            ((d4_elem D)
+             (input *P Col)
+             (&mark (:C Col)))))
+    (cell (P)
+      (d4_elem D)
+      (input *P *Col)
+      (&mark (:C Col)))
+    (shape ((:P P_inner))
+      (&image D *P_inner *Col)
+      (&mark (:C Col)))))
+
+(RULE &fill_at
+  (&occ.occurrence (:key *D) (:P *M))
+  (&image D *P_inner *Col)
+  (&fill (:C Col))
+  (compose (:A M) (:B P_inner) (:C *P)))
+
+(RULE &blocked
+  (&fill_at *D *M *P)
+  (&occ.cell (:key D) P))
+
+(RULE &stamped
+  (&fill_at *D *M *P)
+  (NOT (&blocked D M)))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (IF ((&stamped P))
+      ((&fill (:C *Col)))
+      ((= Col Col_in))))

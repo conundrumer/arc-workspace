@@ -1,0 +1,5 @@
+;; 2de01db2
+
+(param &axis Axis (AXIS_H))
+(param &bg Color (0))
+(param &ink Color (4) (6) (8))

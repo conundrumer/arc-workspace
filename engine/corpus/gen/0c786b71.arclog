@@ -1,0 +1,87 @@
+;; 0c786b71
+
+(DET &tile_d4 TileD4)
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&tile_d4 (:Pt *P_tile)))
+  (inner ((:P P_intile))
+    (input (:P *P_in))
+    (&tile_d4 (:T *D))
+    (apply D (:P P_in) (:P_out *P_intile))))
+
+(DET &arr_pos Frame)
+
+(DET &anchor DiagDirDomain)
+
+(ALTS $choice "how each tile's content derives from the input" $Lookup
+  (ALT $Mirror
+    (RULE &mirror
+      (input *P)
+      (&arr_pos (:P *P_tile))
+      (&anchor (:D *Diag))
+      (corner_dir (:C Diag) *A *D)
+      (OR ((NOT (margin (:B P_tile) D (:K 0)))
+           (axis_inversion A (:T *F))
+           (apply (:D F) P (:P_out *P_img)))
+          ((margin (:B P_tile) D (:K 0))
+           (= P_img P))))
+
+    (INIT &output_tiling2 Tiling
+      (outer ((:P T))
+        (&mirror (:P_tile *T)))
+      (inner ((:P P_intile))
+        (&mirror (:P_img *P_intile))))
+
+    (RULE &output
+      (input (:P *P_in) *Col)
+      (perp (:A *A1) *A2)
+      (&mirror (:A A1) (:P_tile *T) (:P P_in) (:P_img *P1))
+      (&mirror (:A A2) (:P_tile T) (:P P1) (:P_img *P_intile))
+      (&output_tiling2.cell (:P_outer T) (:P_inner P_intile) *P)))
+  (ALT $Unfold
+    ;; The input reflected across a shared boundary on each axis, once per tile
+    ;; step away from the anchor tile along that axis.
+    (INIT &reflect Walk
+      (key ((OR ((input *P)
+                 (axis_elem ^A)
+                 (axis_inversion A (:T *F))
+                 (apply (:D F) P (:P_out *P_img)))
+                ((&arr_pos (:P *T))
+                 (&anchor (:D *Diag))
+                 (corner_dir (:C Diag) A *D)
+                 (margin (:B T) D *K))))
+        (successor ((:p P) (:p_next P_img))
+          (input *P)
+          (axis_elem A)
+          (axis_inversion A (:T *F))
+          (apply (:D F) P (:P_out *P_img)))
+        (steps ((:N K))
+          (&arr_pos (:P *T))
+          (&anchor (:D *Diag))
+          (corner_dir (:C Diag) A *D)
+          (margin (:B T) D *K))))
+
+    (INIT &output_tiling3 Tiling
+      (outer ((:P T))
+        (&arr_pos (:P *T)))
+      (inner ((:P P_intile))
+        (&reflect.walk (:p *P_intile))))
+
+    (RULE &output
+      (input (:P *P_in) *Col)
+      (&output_tiling3.cell (:P_outer *T) (:P_inner *P_intile) *P)
+      (&anchor (:D *Diag))
+      (perp (:A *A1) *A2)
+      (corner_dir (:C Diag) (:A A1) (:D *D1))
+      (margin (:B T) (:D D1) (:K *K1))
+      (corner_dir (:C Diag) (:A A2) (:D *D2))
+      (margin (:B T) (:D D2) (:K *K2))
+      (&reflect.walk (:key (:A A1)) (:p0 P_in) (:N K1) (:p *P1))
+      (&reflect.walk (:key (:A A2)) (:p0 P1) (:N K2) (:p P_intile)))))
+
+(RULE &output
+  (input (:P *P_in) *Col)
+  (&tile_d4 (:Pt *P_tile) (:T *D))
+  (apply D (:P P_in) (:P_out *P_intile))
+  (&output_tiling.cell (:P_outer P_tile) (:P_inner P_intile) *P))

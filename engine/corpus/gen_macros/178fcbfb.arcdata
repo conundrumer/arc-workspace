@@ -1,0 +1,5 @@
+;; 178fcbfb
+
+(param &bg Color (0))
+(param &line_axis (Color Axis) (1 AXIS_H) (3 AXIS_H) (2 AXIS_V))
+(param &top_axis Axis (AXIS_H))

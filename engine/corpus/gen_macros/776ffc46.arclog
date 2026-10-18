@@ -1,0 +1,92 @@
+;; 776ffc46
+
+(RULE &loose_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(DET &frame SharedColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&frame (:C Col))))
+
+;; The rectangles drawn in the frame color, and their insides.
+(INIT &drect Outlines
+  (node (P)
+    (input *P *Col)
+    (&frame (:C Col))))
+
+(RULE &rect_hole
+  (&drect.box *B)
+  (input *P)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((> K_m3 0))))
+
+;; The loose shapes: ink components outside every rectangle.
+(INIT &loose Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&ink *P)
+         (NOT (&rect_hole P))
+         (&loose_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ink (:P P3))
+         (NOT (&rect_hole (:P P3))))
+        ((&ink P)
+         (NOT (&rect_hole P))
+         (= P3 P)))))
+
+(RULE &loose_component
+  (&loose.class (:a *P) *Id))
+
+;; Each rectangle's reference shape, with its bounding box.
+(INIT &ref BoundingBox
+  (key ((&rect_hole ^B *P)
+        (&ink P))
+    (cell (P)
+      (&rect_hole B *P)
+      (&ink P))))
+
+(INIT &shape BoundingBox
+  (key ((&loose_component *P ^Id))
+    (cell (P)
+      (&loose_component *P Id))))
+
+;; A loose shape matches a reference when their box-relative cell sets agree.
+(INIT &same_shape Inclusion
+  (pattern ((:pattern B) (:m P_inner))
+    (&ref.cell (:key *B) *P)
+    (&ref.box (:key B) (:B *B_ref))
+    (ALL ((&ref.cell (:key (:B *Bm)) P)
+          (&ref.box (:key (:B Bm)) (:B B_ref))
+          (dir_elem (:D *D_m1))
+          (relative (:Base B_ref) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B_ref) (:X P) (:X_rel *P_inner)))
+  (observed ((:observed Id) (:m P_inner))
+    (&shape.cell (:key *Id) *P)
+    (&shape.box (:key Id) (:B *B_shape))
+    (ALL ((&shape.cell (:key (:Id *Idm)) P)
+          (&shape.box (:key (:Id Idm)) (:B B_shape))
+          (dir_elem (:D *D_m1))
+          (relative (:Base B_shape) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B_shape) (:X P) (:X_rel *P_inner))))
+
+(RULE &recolor
+  (&loose_component *P *Id)
+  (&same_shape.equal (:observed Id) (:pattern *B))
+  (&ref.cell (:key B) (:P *P_ref))
+  (&ink (:P P_ref) *Col))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&recolor P *Col))
+      ((NOT (&recolor P))
+       (= Col C_in))))

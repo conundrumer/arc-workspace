@@ -1,0 +1,102 @@
+;; 06df4c85
+
+(DET &bg SharedColor)
+
+(DET &gap DivisorRatio)
+
+(DET &tile_dim TileDim)
+
+(INIT &tile_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (side (A K)
+    (axis_elem *A)
+    (&tile_dim (:D *K)))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap (:K *G))))
+
+(RULE &tile
+  (&tile_division.tile (:P *P_grid) (:P_outer *P_tile)))
+
+(RULE &mark
+  (input (:P *P_grid) *Col)
+  (&tile P_grid *P_tile)
+  (NOT (&bg (:C Col))))
+
+(RULE &bet_axis
+  (&mark (:Col *Key))
+  (axis_elem *A))
+
+(INIT &bet Ray
+  (key ((OR ((&mark (:P_tile *T) ^Col))
+            ((&bet_axis (:Key Col) *A)
+             (axis4_of *D A))
+            ((&bet_axis (:Key Col))
+             (input *P))))
+    (source ((:P T))
+      (&mark (:P_tile *T) Col))
+    (node (P)
+      (&bet_axis (:Key Col))
+      (input *P))
+    (dir (D)
+      (&bet_axis (:Key Col) *A)
+      (axis4_of *D A))))
+
+(RULE &bet_between
+  (&mark (:Col *Key))
+  (&tile (:P_tile *P))
+  (&bet_axis Key *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&bet.ray (:key (:Col Key)) P D)
+  (&bet.ray (:key (:Col Key)) P (:D O)))
+
+(RULE &fill
+  (&bet_between (:Key *Col) (:P *P_tile))
+  (NOT (&mark P_tile Col)))
+
+(ALTS $choice "The cases claim what an intervening foreign mark does" $Over
+  (ALT $Around
+    (RULE &fill
+      (&bet_between (:Key *Col) (:P *P_tile))
+      (NOT (&mark P_tile))))
+  (ALT $Block
+    (RULE &bg_tile
+      (&tile *P_tile)
+      (NOT (&mark P_tile)))
+
+    (RULE &run_blocked
+      (&mark (:P_tile *P)))
+
+    ;; Each bg tile runs through bg tiles, halting at the first mark.
+    (INIT &run Ray
+      (source ((:P T))
+        (&bg_tile (:P_tile *T)))
+      (node (P)
+        (input *P)
+        (NOT (&run_blocked P)))
+      (dir (D)
+        (dir_elem *D)))
+
+    (RULE &reach
+      (&run.end (:P *E) *D (:Origin *P_tile))
+      (neighbor (:P E) D (:Q *T2))
+      (input (:P T2))
+      (dir_elem D)
+      (&mark (:P_tile T2) *Col))
+
+    (RULE &fill
+      (&reach *Col *D *P_tile)
+      (opposite D (:Opp *O))
+      (&reach Col (:D O) P_tile))))
+
+(RULE &covered
+  (&fill (:P_tile *T))
+  (&tile *P_grid (:P_tile T)))
+
+(RULE &output
+  (OR ((&fill (:P_tile *T) *Col)
+       (&tile (:P_grid *P) (:P_tile T)))
+      ((input P Col)
+       (NOT (&covered (:P_grid P))))))

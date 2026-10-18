@@ -1,0 +1,110 @@
+;; 5168d44c
+
+(DET &bg DominantColor)
+
+(DET &ring ColorDomain)
+
+(DET &dot UnchangedColor)
+
+(DET &corner DiagDirDomain)
+
+(RULE &dot_cell
+  (input *P *Col)
+  (&dot (:C Col)))
+
+(RULE &ring_cell
+  (input *P *Col)
+  (&ring (:C Col)))
+
+(INIT &closed Enclosure
+  (cell (P)
+    (input *P)
+    (NOT (&ring_cell P))))
+
+(RULE &center
+  (&closed.enclosed *P))
+
+(RULE &shape
+  (&ring_cell *P)
+  (&center (:P *C))
+  (relative (:Base C) (:X P) (:X_rel *V)))
+
+(RULE &move_dir
+  (&center (:P *C))
+  (&dot_cell *P)
+  (!= P C)
+  (axis_elem *A)
+  (same_line A (:P C) (:Q P))
+  (&corner (:D *Diag))
+  (corner_dir (:C Diag) A *D))
+
+(RULE &cast_blocked
+  (&dot_cell *P))
+
+(RULE &cast_dir
+  (&move_dir *D))
+
+(ALTS $choice "what fixes where the ring lands (coincide when the dots are two apart)" $Next
+  (ALT $Jump
+    (DET &step TileCount)
+
+    (RULE &target
+      (OR ((&center (:P *C))
+           (&move_dir *D)
+           (&step (:N *K))
+           (jump (:P C) D K (:Q *P)))
+          ((&cast.end (:P *E) (:D *D2))
+           (neighbor (:P E) (:D D2) (:Q P))
+           (input P))))
+
+    ;; $Next and $Fit both take the first cell ahead that halts the ring.
+    (INIT &cast Ray
+      (source (P)
+        (&center *P))
+      (node (P)
+        (&cast_dir)
+        (input *P))
+      (dir (D)
+        (&cast_dir *D))))
+  (ALT $Fit
+    (RULE &obstructed
+      (input *P)
+      (&shape *V)
+      (compose (:A P) (:B V) (:C *Q))
+      (&dot_cell (:P Q)))
+
+    ;; The travel halts where the ring covers no dot.
+    (RULE &cast_blocked
+      (input *P)
+      (NOT (&obstructed P)))))
+
+;; $Next and $Fit both take the first cell ahead that halts the ring.
+(INIT &cast Ray
+  (source (P)
+    (&center *P))
+  (node (P)
+    (&cast_dir)
+    (input *P)
+    (NOT (&cast_blocked P)))
+  (dir (D)
+    (&cast_dir *D)))
+
+(RULE &target
+  (&cast.end (:P *E) *D)
+  (neighbor (:P E) D (:Q *P))
+  (input P))
+
+(RULE &new_ring
+  (&target (:P *Q))
+  (&shape *V)
+  (compose (:A Q) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&dot_cell *P)
+       (&dot (:C *Col)))
+      ((&new_ring P)
+       (&ring (:C Col)))
+      ((input P)
+       (NOT (&dot_cell P))
+       (NOT (&new_ring P))
+       (&bg (:C Col)))))

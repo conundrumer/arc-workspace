@@ -1,0 +1,201 @@
+;; 2b83f449
+
+;; The way the dots travel between corridors.
+(DET &fall_dir DirDomain)
+
+(RULE &across_dir
+  (&fall_dir (:D *D0))
+  (axis_of (:D D0) (:A *A_m1))
+  (perp (:A A_m1) (:A2 *A2_m2))
+  (axis_of *D (:A A2_m2)))
+
+(RULE &run_dir
+  (&across_dir *D))
+
+(DET &bar ChangedColor)
+
+(RULE &bar_center
+  (input *P *Col)
+  (&bar (:C Col))
+  (&across_dir *D)
+  (opposite D (:Opp *D2))
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (input (:P Q) Col)
+  (step_offset (:D D2) (:V *V_m2))
+  (compose (:A P) (:B V_m2) (:C *Q2))
+  (input (:P Q2) Col))
+
+(RULE &post_cell
+  (OR ((&bar_center *P))
+      ((&bar_center (:P *Q))
+       (&fall_dir (:D *D0))
+       (axis_of (:D D0) *A)
+       (axis_of *D A)
+       (step_offset D (:V *V_m1))
+       (compose (:A Q) (:B V_m1) (:C P))
+       (input P))))
+
+(DET &wall UnchangedColor)
+
+(RULE &wall_cell
+  (input *P *Col)
+  (&wall (:C Col)))
+
+(RULE &open_cell
+  (input *P)
+  (NOT (&wall_cell P))
+  (NOT (&post_cell P)))
+
+(RULE &run_blocked
+  (input *P)
+  (NOT (&open_cell P)))
+
+(RULE &run_node
+  (input *P)
+  (NOT (&run_blocked P)))
+
+(RULE &run_source
+  (&open_cell *P))
+
+;; A run is a stretch of open cells along a corridor, bounded by posts and
+;; walls: each open cell casts along the corridor and halts at what bounds it.
+(INIT &run Distance
+  (key ((&run_source (:P ^O))
+        (&run_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&run_source (:P O))
+           (&run_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&run_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&run_node (:P Q)))
+          ((&run_source (:P O))
+           (&run_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&run_node (:P Q))
+           (= A2 O))
+          ((&run_source (:P O))
+           (&run_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&run_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&run_node (:P Q)))))
+    (source ((:n O))
+      (&run_source (:P O))
+      (&run_dir D))))
+
+(RULE &run_ray
+  (&run.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &run_end2
+  (&run_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&run_ray (:P Q) D Origin)))
+
+(DET &bg DominantColor)
+
+(DET &post AnyOutNewColor)
+
+(DET &dot RarestColor)
+
+;; A run ends where the corridor stops being open.
+(INIT &open_rim Boundary
+  (cell (P)
+    (&open_cell *P)))
+
+(RULE &run_end
+  (&across_dir *D)
+  (&open_rim.exposed *P D))
+
+(RULE &far_end
+  (&run_end *P *D)
+  (opposite D (:Opp *D2))
+  (&run_ray (:P *Q) (:D D2) (:Origin P))
+  (&open_cell (:P Q))
+  (&run_end (:P Q) (:D D2)))
+
+(RULE &drop
+  (&open_cell *P)
+  (&fall_dir *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *M))
+  (&open_cell (:P M))
+  (step_offset D (:V *V_m2))
+  (compose (:A M) (:B V_m2) (:C *P_land))
+  (&open_cell (:P P_land)))
+
+(RULE &dot2
+  (input (:P *Src) *Col)
+  (&dot (:C Col)))
+
+;; The run ends each dot arrives at: its own cell, and each drop on from
+;; there.
+(INIT &drops Propagation
+  (key ((&dot2 ^Src)))
+  (edge ((:a P) (:b P_land))
+    (&far_end *P *Q)
+    (&drop (:P Q) *P_land)))
+
+(RULE &post_side
+  (&open_cell *P)
+  (&across_dir *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&post_cell (:P Q)))
+
+(RULE &backed
+  (&run_end *P *D)
+  (NOT (&post_side P D)))
+
+(RULE &rest_at
+  (&drops.reached (:key *Src) (:n *P2))
+  (&far_end (:P P2) *Q)
+  (NOT (&drop (:P Q)))
+  (IF ((&backed (:P P2)))
+      ((= *P P2))
+      ((= P Q))))
+
+(INIT &pile Cardinality
+  (key ((&rest_at *Src (:P ^T)))
+    (member ((:m Src))
+      (&rest_at *Src (:P T)))))
+
+(RULE &settled
+  (&pile.size (:key *T) *N)
+  (&run_ray *P *K (:Origin T))
+  (&open_cell P)
+  (< K N))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&post_cell P)
+       (&post (:C *Col)))
+      ((NOT (&post_cell P))
+       (&wall_cell P)
+       (= Col C_in))
+      ((&open_cell P)
+       (&settled P)
+       (&dot (:C Col)))
+      ((&open_cell P)
+       (NOT (&settled P))
+       (&bg (:C Col)))))

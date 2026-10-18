@@ -1,0 +1,4 @@
+;; 342dd610
+
+(param &bg Color (8))
+(param &move (Color Dir number) (7 DIR_T 2) (9 DIR_B 2) (2 DIR_L 2) (1 DIR_R 1))

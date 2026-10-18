@@ -1,0 +1,178 @@
+;; 50846271
+
+(RULE &line_dir
+  (dir_elem *D))
+
+(RULE &line_node
+  (input *P))
+
+(RULE &line_source
+  (input *P))
+
+(INIT &line Distance
+  (key ((&line_source (:P ^O))
+        (&line_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&line_source (:P O))
+           (&line_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&line_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&line_node (:P Q)))
+          ((&line_source (:P O))
+           (&line_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&line_node (:P Q))
+           (= A2 O))
+          ((&line_source (:P O))
+           (&line_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&line_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&line_node (:P Q)))))
+    (source ((:n O))
+      (&line_source (:P O))
+      (&line_dir D))))
+
+(RULE &line_ray
+  (&line.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &line_end
+  (&line_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&line_ray (:P Q) D Origin)))
+
+(DET &mark RarestColor)
+
+(DET &fill AnyOutNewColor)
+
+(DET &bg UnchangedColor)
+
+(RULE &mark2
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(RULE &arm
+  (input *P)
+  (axis_elem *A)
+  (sub_extent P A *K))
+
+(RULE &plus
+  (&arm *K)
+  (&line_ray *P (:K *J) (:Origin *C))
+  (<= J K))
+
+(RULE &covers
+  (&plus *K *C (:P *M))
+  (&mark2 (:P M)))
+
+(RULE &off
+  (&plus *K *C *P)
+  (input P *Col)
+  (&bg (:C Col)))
+
+(RULE &place
+  (&covers *K *C)
+  (NOT (&off K C)))
+
+(ALTS $choice "which placements are the crosses, and where a plus may lie" $Backed
+  (ALT $Packed
+    (RULE &packing_item
+      (&place *K *C)
+      (&covers K C *M))
+
+    ;; The placements every exact cover of the marks holds, arm by arm.
+    (CHOOSE &packing
+      (for ((&packing_item ^K ^M))
+        (from (&packing_item K M *C)))
+      (never
+        (&packing_item *K *M *C)
+        (&packing_item K (:M *M2) (:C *C2))
+        (&packing_item K (:M M2) C)
+        (!= C C2)))
+
+    (RULE &cross
+      (&packing *K *C)))
+  (ALT $Free
+    (RULE &place
+      (&covers *K *C))
+
+    (INIT &shortest Order
+      (member ((:t K))
+        (&arm *K)
+        (NOT (&orphan K)))
+      (score ((:t K) (:S K))
+        (&arm *K)
+        (NOT (&orphan K))))
+
+    (RULE &span
+      (&shortest.minimal (:t *K)))))
+
+(RULE &rival
+  (&place *K *C)
+  (&covers K C *M)
+  (&place K (:C *C2))
+  (&covers K (:C C2) M)
+  (!= C C2))
+
+(RULE &unmatched
+  (&rival *K *C *C2)
+  (&covers K C *M)
+  (NOT (&covers K (:C C2) M)))
+
+(RULE &dominated
+  (&rival *K *C *C2)
+  (NOT (&unmatched K C C2))
+  (&unmatched K (:C C2) (:C2 C)))
+
+(RULE &cross
+  (&place *K *C)
+  (NOT (&dominated K C)))
+
+(INIT &owner Singleton
+  (key ((&cross ^K *C)
+        (&covers K C ^M))
+    (member ((:v C))
+      (&cross K *C)
+      (&covers K C M))))
+
+(RULE &orphan
+  (&arm *K)
+  (&mark2 (:P *M))
+  (NOT (&owner.value (:key K M))))
+
+(RULE &span
+  (&arm *K)
+  (NOT (&orphan K)))
+
+(RULE &completed
+  (&span *K)
+  (&cross K *C)
+  (&plus K C *P)
+  (NOT (&mark2 P)))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&span)
+       (NOT (&completed P)))
+      ((&completed P)
+       (&fill (:C Col)))))

@@ -1,0 +1,348 @@
+;; 8a6d367c
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *Col)
+  (NOT (&bg (:C Col))))
+
+;; The rectangles each color draws.
+(INIT &drect Outlines
+  (key ((&ink ^Col))
+    (node (P)
+      (input *P Col))))
+
+;; The frame: the rectangle that holds ink of another color.
+(RULE &frame
+  (&drect.box (:key *Col) *B)
+  (input *P (:Col *C))
+  (ALL ((input P (:Col *Cm))
+        (&drect.box (:key (:Col *Colm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((> K_m3 0)))
+  (&ink (:Col C))
+  (!= C Col))
+
+(ALTS $pa "how the frame is found" $Rect
+  (ALT $Enclose
+    (RULE &closed_flood_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (RULE &closed_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (RULE &closed_cell
+      (&ink (:Col *Key))
+      (input *P (:Col *C))
+      (!= C Key))
+
+    (RULE &closed_flood_node
+      (&ink (:Col *Key))
+      (input *P (:Col *C))
+      (!= C Key))
+
+    (INIT &closed_flood Propagation
+      (key ((OR ((&closed_cell (:Key ^Ky) *P)
+                 (dir_elem *D)
+                 (margin (:B P) D (:K 0))
+                 (&closed_flood_node (:Key Ky) P))
+                ((&closed_flood_node (:Key Ky) P)
+                 (&closed_flood_steps (:Delta *S))
+                 (compose (:A P) (:B S) (:C *Q))
+                 (&closed_flood_node (:Key Ky) (:P Q)))))
+        (source ((:n P))
+          (&closed_cell (:Key Ky) *P)
+          (dir_elem *D)
+          (margin (:B P) D (:K 0))
+          (&closed_flood_node (:Key Ky) P))
+        (edge ((:a P) (:b Q))
+          (&closed_flood_node (:Key Ky) *P)
+          (&closed_flood_steps (:Delta *S))
+          (compose (:A P) (:B S) (:C *Q))
+          (&closed_flood_node (:Key Ky) (:P Q)))))
+
+    (RULE &closed_node
+      (&closed_cell *Key *P)
+      (NOT (&closed_flood.reached (:key (:Ky Key)) (:n P))))
+
+    ;; Each ink color walls the rest of the grid off.
+    (INIT &closed Quotient
+      (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+        (OR ((&closed_node (:Key *Ky) *P)
+             (&closed_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P2))
+             (&closed_node (:Key Ky) (:P P2)))
+            ((&closed_node (:Key Ky) P)
+             (= P2 P)))))
+
+    (RULE &closed_component
+      (&closed.class (:a *Key *P) *Id))
+
+    (RULE &ring_wall
+      (&closed_component (:Key *Col) (:P *Q) *Id)
+      (dir8_elem *D)
+      (step_offset D (:V *V_m1))
+      (compose (:A Q) (:B V_m1) (:C *P))
+      (input P Col))
+
+    ;; The box the wall spans: it runs around the region, so the box holds it too.
+    (INIT &ring_box BoundingBox
+      (key ((&ring_wall ^Col ^Id *P))
+        (cell (P)
+          (&ring_wall Col Id *P))))
+
+    (RULE &frame_ring
+      (&closed_component (:Key *Col) *P *Id)
+      (input P (:Col *C))
+      (&ink (:Col C))
+      (!= C Col))
+
+    (RULE &frame
+      (&frame_ring *Col *Id)
+      (&ring_box.box (:key Col Id) *B))
+
+    (RULE &wall_cell
+      (&frame_ring (:Col *R_col) (:Id *R_id))
+      (&ring_wall (:Col R_col) (:Id R_id) *P))
+
+    (RULE &inside_cell
+      (&frame_ring *Col *Id)
+      (&closed_component (:Key Col) *P Id))))
+
+(ALTS $k "what a shape is" $Color
+  (ALT $Piece
+    (RULE &pieces_steps
+      (OR ((dir_elem *D)
+           (step_offset D (:V *Delta)))
+          ((diag_dir_elem (:D *D2))
+           (step_offset (:D D2) (:V Delta)))))
+
+    (INIT &pieces Quotient
+      (edge ((:a Col P) (:b Col (:P P3)))
+        (OR ((&outside *P *Col)
+             (&pieces_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P3))
+             (&outside (:P P3) Col))
+            ((&outside P Col)
+             (= P3 P)))))
+
+    (RULE &pieces_component
+      (&pieces.class (:a (:Col *Key) *P) *Id))
+
+    (RULE &shape_cell
+      (&pieces_component *P (:Id *S))))
+  (ALT $Object
+    (RULE &parts_steps
+      (OR ((dir_elem *D)
+           (step_offset D (:V *Delta)))
+          ((diag_dir_elem (:D *D2))
+           (step_offset (:D D2) (:V Delta)))))
+
+    (INIT &parts Quotient
+      (edge ((:a P) (:b P3))
+        (OR ((&outside *P)
+             (&parts_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P3))
+             (&outside (:P P3)))
+            ((&outside P)
+             (= P3 P)))))
+
+    (RULE &parts_component
+      (&parts.class (:a *P) *Id))
+
+    (RULE &shape_cell
+      (&parts_component *P (:Id *S)))))
+
+(RULE &covered
+  (&frame *B)
+  (input *P)
+  (ALL ((&frame B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(RULE &outside
+  (input *P *Col)
+  (&ink Col)
+  (NOT (&covered P)))
+
+(INIT &color_class Quotient
+  (equivalent ((:a P) (:b Q))
+    (&outside *P *Col)
+    (&outside (:P *Q) Col)))
+
+(RULE &shape_cell
+  (&color_class.class (:a *P) (:Id *S)))
+
+;; Each shape's pattern: its cells in its own box.
+(INIT &pattern BoundingBox
+  (key ((&shape_cell (:S ^Id) *P))
+    (cell (P)
+      (&shape_cell (:S Id) *P))))
+
+(RULE &blocks_dim
+  (&shape_cell (:S *Key) *P)
+  (&pattern.box (:key (:Id Key)) *B)
+  (axis_elem *A)
+  (relative (:Base B) (:X P) (:X_rel *R_m1))
+  (frame_extent (:P R_m1) A *N))
+
+(RULE &inside_cell
+  (&frame *B)
+  (input *P)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((> K_m3 0))))
+
+;; The frame's inside, in its own frame.
+(INIT &hole BoundingBox
+  (cell (P)
+    (&inside_cell *P)))
+
+(RULE &hole_view
+  (&inside_cell *P)
+  (&hole.box *B)
+  (ALL ((&inside_cell P)
+        (&hole.box B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &blocks_cell
+  (&blocks_dim *Key)
+  (&hole_view (:P_inner *P)))
+
+;; The frame's inside divided into a shape's pattern of blocks.
+(INIT &blocks_sides ExtentDivisions
+  (key ((&blocks_cell (:Key ^Id) *P))
+    (frame (P)
+      (&blocks_cell (:Key Id) *P))))
+
+(RULE &blocks_axis_split1
+  (&blocks_cell (:Key *Ky) (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+  (relative (:Base Pi_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &blocks_axis
+  (OR ((&blocks_cell *Key *P)
+       (&blocks_dim Key *A *N)
+       (&blocks_sides.division (:key (:Id Key)) A N *K (:G 0))
+       (axis_of *D A)
+       (opposite D (:Opp *O))
+       (margin (:B P) D (:K *T))
+       (margin (:B P) (:D O) (:K *T2))
+       (divide T (:Side K) (:Gap 0) (:Part *I) (:Remainder *R))
+       (divide (:T T2) (:Side K) (:Gap 0) (:Part *I2) (:Remainder *R2))
+       (opposite D (:Opp *O_m1))
+       (edge_inset D (:K I) (:B *B1_m2))
+       (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+       (compose (:A B1_m2) (:B B2_m3) (:C *P_outer))
+       (opposite D (:Opp *O_m4))
+       (edge_inset D (:K R) (:B *B1_m5))
+       (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+       (compose (:A B1_m5) (:B B2_m6) (:C *P_inner))
+       (frame_extent (:P P_inner) A (:N K)))
+      ((&blocks_cell Key P)
+       (&blocks_dim Key A (:N *N2))
+       (frame_extent P A (:N *K2))
+       (axis_of (:D *D2) A)
+       (opposite (:D D2) (:Opp *O2))
+       (margin (:B P) (:D D2) (:K *T3))
+       (margin (:B P) (:D O2) (:K *T22))
+       (divide (:T T3) (:Side K2) (:Gap 0) (:Part *I3) (:Remainder *R3))
+       (divide (:T T22) (:Side K2) (:Gap 0) (:Part *I22) (:Remainder *R22))
+       (opposite (:D D2) (:Opp *O_m12))
+       (edge_inset (:D D2) (:K I3) (:B *B1_m22))
+       (edge_inset (:D O_m12) (:K I22) (:B *B2_m32))
+       (compose (:A B1_m22) (:B B2_m32) (:C P_outer))
+       (opposite (:D D2) (:Opp *O_m42))
+       (edge_inset (:D D2) (:K R3) (:B *B1_m52))
+       (edge_inset (:D O_m42) (:K R22) (:B *B2_m62))
+       (compose (:A B1_m52) (:B B2_m62) (:C P_inner))
+       (frame_extent (:P P_inner) A (:N K2))
+       (frame_extent (:P P_outer) A (:N N2)))
+      ((&blocks_cell Key P)
+       (axis_elem A)
+       (NOT (&blocks_dim Key A))
+       (&blocks_axis_split1 (:P_ P) (:A_ A) (:Pi_ P_inner) (:X_m1_ *X_m1))
+       (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
+
+(RULE &blocks_tile
+  (&blocks_axis *Key *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+  (perp (:A A1) *A2)
+  (&blocks_axis Key P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+  (compose (:A Po1) (:B Po2) (:C *P_outer))
+  (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+(RULE &fill
+  (&inside_cell *P)
+  (input P *Col)
+  (&ink Col))
+
+(RULE &pattern_cell
+  (&shape_cell *S *P)
+  (&pattern.box (:key (:Id S)) *B)
+  (ALL ((&shape_cell (:S *Sm) P)
+        (&pattern.box (:key (:Id Sm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_tile)))
+
+(RULE &contradicted
+  (&fill (:P *P_grid))
+  (&hole_view (:P P_grid) *P_inner)
+  (&blocks_tile (:Key *S) (:P P_inner) (:P_outer *P_tile))
+  (NOT (&pattern_cell S P_tile)))
+
+(RULE &wall_cell
+  (&frame *B)
+  (input *P)
+  (ALL ((dir_elem (:D *D_m1m))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1m) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B P) (:D *D_m1) (:K *K_m2))
+  (margin B (:D D_m1) (:K K_m2)))
+
+(RULE &output
+  (OR ((&frame *B *Col)
+       (&wall_cell (:P *P_grid_in))
+       (ALL ((&wall_cell (:P P_grid_in))
+             (&frame B (:Col *Colm))
+             (dir_elem (:D *D_m1))
+             (relative (:Base B) (:X P_grid_in) (:X_rel *R_m2))
+             (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+            ((>= K_m3 0)))
+       (relative (:Base B) (:X P_grid_in) (:X_rel *P)))
+      ((&hole_view (:P *P_grid_in2) *P_inner)
+       (&frame (:B *B2))
+       (ALL ((&hole_view (:P P_grid_in2) (:P_inner *P_innerm))
+             (&frame (:B B2))
+             (dir_elem (:D *D_m12))
+             (relative (:Base B2) (:X P_grid_in2) (:X_rel *R_m22))
+             (margin (:B R_m22) (:D D_m12) (:K *K_m32)))
+            ((>= K_m32 0)))
+       (relative (:Base B2) (:X P_grid_in2) (:X_rel P))
+       (&blocks_tile (:Key *S_id) (:P P_inner) (:P_outer *P_tile))
+       (NOT (&contradicted (:S S_id)))
+       (IF ((&pattern_cell (:S S_id) P_tile))
+           ((&fill Col))
+           ((&bg (:C Col)))))))

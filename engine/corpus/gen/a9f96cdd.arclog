@@ -1,0 +1,41 @@
+;; a9f96cdd
+
+(DET &bg DominantColor)
+
+(DET &marker ChangedColor)
+
+(RULE &marker_at
+  (input *P *Col)
+  (&marker (:C Col)))
+
+(DET &template
+  (ex_output *E *P *Col)
+  (NOT (&bg (:C Col)))
+  (ex_input E (:P *M) (:Col *Cm))
+  (&marker (:C Cm))
+  (relative (:Base M) (:X P) (:X_rel *Off)))
+
+(DET &arm
+  (&template *Off *Col)
+  (diag_dir_elem *D)
+  (step_offset D (:V Off)))
+
+(RULE &halo
+  (&marker_at (:P *Q))
+  (&arm (:D *Diag) *Col)
+  (neighbor (:P Q) (:D Diag) (:Q *P))
+  (input P))
+
+(ALTS $choice "how the marker's halo is painted" $Arms
+  (ALT $Stamp
+    (RULE &halo
+      (&marker_at (:P *Q))
+      (&template *Off *Col)
+      (compose (:A Q) (:B Off) (:C *P))
+      (input P))))
+
+(RULE &output
+  (OR ((&halo *P *Col))
+      ((input P)
+       (NOT (&halo P))
+       (&bg (:C Col)))))

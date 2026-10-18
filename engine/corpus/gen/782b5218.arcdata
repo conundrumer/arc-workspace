@@ -1,0 +1,5 @@
+;; 782b5218
+
+(param &bg Color (0))
+(param &barrier Color (2))
+(param &fill_dir Dir (DIR_B))

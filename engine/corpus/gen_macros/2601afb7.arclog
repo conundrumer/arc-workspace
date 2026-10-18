@@ -1,0 +1,179 @@
+;; 2601afb7
+
+;; The direction colors travel; the bars are ordered along its axis, and their sizes travel the other way.
+(DET &color_dir DirDomain)
+
+(RULE &axis
+  (&color_dir *D)
+  (axis_of D *A))
+
+(RULE &bar_cell_split1
+  (input (:P *P_) *Col)
+  (&axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(INIT &bg_count_count Cardinality
+  (key ((ex_input *E *P ^Col))
+    (member ((:m E P))
+      (ex_input *E *P Col))))
+
+(INIT &bg_count Order
+  (member ((:t Col))
+    (&bg_count_count.size (:key *Col)))
+  (score ((:t Col) (:S Count))
+    (&bg_count_count.size (:key *Col) (:N *Count))))
+
+(DET &bg
+  (&bg_count.maximal (:t *Col)))
+
+(RULE &bar_cell
+  (input *P *Col)
+  (NOT (&bg Col))
+  (&axis *A)
+  (&bar_cell_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+(INIT &row Order
+  (key ((&axis ^A)
+        (axis_of ^D A))
+    (before ((:a L) (:b L2))
+      (&bar_cell *L)
+      (&bar_cell (:L *L2))
+      (!= L L2)
+      (margin (:B L) D (:K *K1))
+      (margin (:B L2) D (:K *K2))
+      (< K1 K2)))
+  (member ((:t L))
+    (&bar_cell *L)))
+
+(RULE &row_pos
+  (&row.rank (:key *A *D) (:t *M) (:R *R1))
+  (&row.dual_rank (:key A D) (:t M) (:R *R2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K R1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K R2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_pos)))
+
+(RULE &ink_split1
+  (&bar_cell (:L *L_next) (:P *P_src_))
+  (&axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_src_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_src_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P_src_) (:X_rel *Across_)))
+
+(RULE &idx
+  (&row_pos (:M *L) *P_pos)
+  (&color_dir *D)
+  (opposite D (:Opp *O))
+  (margin (:B P_pos) (:D O) *K))
+
+(INIT &cyc Order
+  (member ((:t N))
+    (&idx (:K *N)))
+  (score ((:t N) (:S N))
+    (&idx (:K *N))))
+
+(RULE &next_bar
+  (&idx *L (:K *N))
+  (&cyc.cyclic_successor (:a N) (:b *N2))
+  (&idx (:L *L2) (:K N2)))
+
+(RULE &ink
+  (&next_bar *L (:L2 *L_next))
+  (&bar_cell (:L L_next) (:P *P_src))
+  (&axis *A)
+  (&ink_split1 (:P_src_ P_src) (:A_ A) (:X_m1_ *X_m1) (:Across_ *Across))
+  (compose (:A L) (:B Across) (:C *P)))
+
+(ALTS $choice "what the bar ahead hands over" $Move
+  (ALT $Length
+    (DET &bar_split1
+      (ex_input *E (:P *P_) *Col)
+      (axis_of *D (:A *A_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+      (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+    (RULE &ink_split2
+      (input (:P *P_))
+      (&axis (:A *A_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+      (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+    (DET &bar
+      (ex_input *E *P *Col)
+      (NOT (&bg Col))
+      (&color_dir *D)
+      (axis_of D *A)
+      (&bar_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+    (DET &bar_on_edge
+      (&bar *E *L *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0)))
+
+    (DET &anchor_bad
+      (dir_elem *D)
+      (&bar *E *L)
+      (NOT (&bar_on_edge E L D)))
+
+    (DET &anchor_sense
+      (&color_dir *D)
+      (turn *S D (:D2 *D_anchor))
+      (NOT (&anchor_bad (:D D_anchor))))
+
+    (RULE &anchor
+      (&color_dir (:D *D3))
+      (&anchor_sense *S)
+      (turn S (:D D3) (:D2 *D)))
+
+    (INIT &bar_len Cardinality
+      (key ((&bar_cell ^L *P))
+        (member ((:m P))
+          (&bar_cell L *P))))
+
+    (RULE &ink
+      (&next_bar *L (:L2 *L_next))
+      (&bar_len.size (:key (:L L_next)) *N)
+      (input *P)
+      (&axis *A)
+      (&ink_split2 (:P_ P) (:A_ A) (:L_ L) (:X_m1_ *X_m1))
+      (&anchor *D)
+      (margin (:B P) D *K)
+      (< K N))))
+
+(RULE &output
+  ;; Each bar is painted the color of the bar behind it.
+  (OR ((&ink *L *P)
+       (&next_bar (:L *L_prev) (:L2 L))
+       (&bar_cell (:L L_prev) (:P *Q))
+       (input (:P Q) *Col))
+      ((input P)
+       (&bg Col)
+       (NOT (&ink P)))))

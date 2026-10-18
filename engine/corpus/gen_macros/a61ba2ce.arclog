@@ -1,0 +1,205 @@
+;; a61ba2ce
+
+(INPUT four-corners "on a field of &bg, four one-color 4-connected objects of distinct colors, each a &side×&side box with one corner cell missing"
+
+  (RULE &comp4_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &comp4 Quotient
+    (edge ((:a (:Key Col) P) (:b (:Key Col) (:P P3)))
+      (OR ((&ink *P *Col)
+           (&comp4_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&ink (:P P3) Col))
+          ((&ink P Col)
+           (= P3 P)))))
+
+  (RULE &comp4_component
+    (&comp4.class (:a *Key *P) *Id))
+
+  (RULE &blob_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &piece
+    (&comp4_component *P (:Id *Pc)))
+
+  (DET &side TileCount)
+
+  (INIT &blob Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((&ink *P)
+           (&blob_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&ink (:P P3)))
+          ((&ink P)
+           (= P3 P)))))
+
+  (INIT &piece_box BoundingBox
+    (key ((&piece (:Pc ^Id) *P))
+      (cell (P)
+        (&piece (:Pc Id) *P))))
+
+  (INIT &box_side Singleton
+    (member ((:v K))
+      (&piece_box.box (:key *Id) *B)
+      (&piece (:Pc Id) *P)
+      (axis_elem (:A *A_m1))
+      (relative (:Base B) (:X P) (:X_rel *R_m2))
+      (frame_extent (:P R_m2) (:A A_m1) (:N *K)))))
+
+(OUTPUT frame "the output is a 2×2 arrangement of the objects' boxes")
+
+(OUTPUT place-by-gap "each object's box goes, unchanged in orientation and color, to the output quadrant diagonally opposite its missing corner")
+
+(OUTPUT background "the missing cells are &bg"
+
+  (RULE &side2
+    (&piece)
+    (&side (:N *K)))
+
+  (RULE &other_hole
+    (&piece_box.box (:key (:Id *Pc)) *B)
+    (input *P)
+    (ALL ((&piece_box.box (:key (:Id *Pcm)) B)
+          (dir_elem (:D *D_m1m))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1m) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (NOT (&piece Pc P))
+    (diag_dir_elem *D)
+    (corner_dir (:C D) (:D *D_m1))
+    (margin (:B P) (:D D_m1) (:K *K1_m2))
+    (margin B (:D D_m1) (:K *K2_m3))
+    (!= K1_m2 K2_m3))
+
+  (RULE &gap
+    (&side2 *K)
+    (&piece_box.box (:key (:Id *Pc)) *B)
+    (corner_dir (:C *D) (:A *A_m1) (:D *D1_m2))
+    (perp (:A A_m1) (:A2 *A2_m3))
+    (corner_dir (:C D) (:A A2_m3) (:D *D2_m4))
+    (margin B (:D D1_m2) (:K *K1_m5))
+    (margin B (:D D2_m4) (:K *K2_m6))
+    (input *P)
+    (ALL ((&piece_box.box (:key (:Id *Idm)) B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (margin (:B P) (:D D1_m2) (:K K1_m5))
+    (margin (:B P) (:D D2_m4) (:K K2_m6))
+    (NOT (&piece Pc P))
+    (NOT (&other_hole Pc D))
+    (perp *A *A2)
+    (axis_elem A)
+    (relative (:Base B) (:X P) (:X_rel *R_m7))
+    (frame_extent (:P R_m7) A (:N K))
+    (axis_elem (:A A2))
+    (relative (:Base B) (:X P) (:X_rel *R_m8))
+    (frame_extent (:P R_m8) (:A A2) (:N K))))
+
+(ALTS $unit "what one piece is" $ColorComponent
+  (ALT $MulticolorObjects
+    (INPUT four-corners "the objects are 4-connected components of non-&bg cells of any colors, and each cell keeps its color; undefined where two objects touch along an edge"
+      (RULE &blob_component
+        (&blob.class (:a *P) *Id))
+
+      (RULE &piece
+        (&blob_component *P (:Id *Pc))))))
+
+(ALTS $place "which quadrant a missing corner sends its box to" $OppositeCorner
+  (ALT $StoredCornerMap
+    (OUTPUT place-by-gap "each object's box goes, unchanged, to the output quadrant that &corner_quadrant gives for its missing corner"
+      (INIT &in_box BoundingBox
+        (key ((ex_input ^E *P ^Col)
+              (NOT (&bg (:C Col))))
+          (cell (P)
+            (ex_input E *P Col)
+            (NOT (&bg (:C Col))))))
+
+      (DET &corner_quadrant_inside1
+        (ex_input *E (:P *P_))
+        (&in_box.box (:key E *Col) (:B *B_))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+        (< K_m3 0))
+
+      (INIT &out_box BoundingBox
+        (key ((ex_output ^E *P ^Col)
+              (NOT (&bg (:C Col))))
+          (cell (P)
+            (ex_output E *P Col)
+            (NOT (&bg (:C Col))))))
+
+      (DET &corner_quadrant
+        (&in_box.box (:key *E *Col) *B)
+        (ex_input E *P)
+        (NOT (&corner_quadrant_inside1 (:P_ P) (:B_ B)))
+        (corner_dir (:C *D) (:A *A_m1) (:D *D1_m2))
+        (perp (:A A_m1) (:A2 *A2_m3))
+        (corner_dir (:C D) (:A A2_m3) (:D *D2_m4))
+        (margin (:B P) (:D D1_m2) (:K *K1_m5))
+        (margin B (:D D1_m2) (:K K1_m5))
+        (margin (:B P) (:D D2_m4) (:K *K2_m6))
+        (margin B (:D D2_m4) (:K K2_m6))
+        (NOT (ex_input E P Col))
+        (&out_box.box (:key E Col) (:B *B_out))
+        (corner_dist (:P B_out) (:Diag *Q) (:K 0))))
+    (RULE &quadrant
+      (&gap (:Pc *Id) *D)
+      (&corner_quadrant D *Q))))
+
+(ALTS $size "where the side of the boxes comes from" $StoredSide
+  (ALT $SizeFromBox
+    (INPUT four-corners "each object is an s×s box with one corner cell missing, where s is the one side of every object's box; undefined where the sides differ"
+      (RULE &side2
+        (&box_side.value (:v *K))))))
+
+(RULE &out_corner_inset1
+  (diag_opposite (:D *Q) (:Opp *Q2_))
+  (&side2 (:K *K_))
+  (corner_dir (:C Q2_) (:A *A_m1) (:D *D1_m2))
+  (perp (:A A_m1) (:A2 *A2_m3))
+  (corner_dir (:C Q2_) (:A A2_m3) (:D *D2_m4))
+  (edge_inset (:D D1_m2) (:K K_) (:B *B1_m5))
+  (edge_inset (:D D2_m4) (:K K_) (:B *B2_m6))
+  (compose (:A B1_m5) (:B B2_m6) (:C *B_out_)))
+
+(RULE &misfit
+  (&side2)
+  (&piece (:Pc *Id))
+  (NOT (&gap (:Pc Id))))
+
+(RULE &quadrant
+  (&gap (:Pc *Id) *D)
+  (diag_opposite D (:Opp *Q)))
+
+(RULE &output
+  (&quadrant *Id *Q)
+  (NOT (&misfit))
+  (&side2 *K)
+  (diag_opposite (:D Q) (:Opp *Q2))
+  (&out_corner_inset1 (:Q2_ Q2) (:K_ K) (:B_out_ *B_out))
+  (&piece_box.box (:key Id) *B)
+  (input (:P *P_grid_in) (:Col *Col_in))
+  (ALL ((input (:P P_grid_in) (:Col *Col_inm))
+        (&piece_box.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P_grid_in) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P_grid_in) (:X_rel *P_inner))
+  (compose (:A B_out) (:B P_inner) (:C *P))
+  (OR ((NOT (&piece (:Pc Id) (:P P_grid_in)))
+       (&bg (:C *Col)))
+      ((&piece (:Pc Id) (:P P_grid_in))
+       (= Col Col_in))))

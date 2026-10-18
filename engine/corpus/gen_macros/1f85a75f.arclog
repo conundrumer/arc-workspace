@@ -1,0 +1,105 @@
+;; 1f85a75f
+
+(RULE &grp_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The color node sets are disjoint, so ids separate groups across colors.
+(INIT &grp Quotient
+  (edge ((:a (:Key Col) P) (:b (:Key Col) (:P P3)))
+    (OR ((&ink *P *Col)
+         (&grp_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ink (:P P3) Col))
+        ((&ink P Col)
+         (= P3 P)))))
+
+(RULE &grp_component
+  (&grp.class (:a *Key *P) *Id))
+
+(INIT &biggest_count Cardinality
+  (key ((&grp_component *P ^Id))
+    (member ((:m P))
+      (&grp_component *P Id))))
+
+(INIT &biggest Order
+  (member ((:t Id))
+    (&biggest_count.size (:key *Id)))
+  (score ((:t Id) (:S N))
+    (&biggest_count.size (:key *Id) *N)))
+
+(RULE &shape
+  (&biggest.maximal (:t *Id))
+  (&grp_component *P Id))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&shape *P)))
+
+(ALTS $l "find the shape" $Big
+  (ALT $Rare
+    (INIT &cell_count Cardinality
+      (key ((&ink *P ^Col))
+        (member ((:m P))
+          (&ink *P Col))))
+
+    ;; Both take every cell of the color scoring lowest.
+    (INIT &color_score Order
+      (member ((:t (:V Col) (:S N)))
+        (&cell_count.size (:key *Col) *N))
+      (score ((:t (:V Col) (:S N)) (:S N))
+        (&cell_count.size (:key *Col) *N)))
+
+    (RULE &shape
+      (&color_score.minimal (:t (:V *Col)))
+      (&ink *P Col)))
+  (ALT $Intact
+    (INIT &group_count Cardinality
+      (key ((&grp_component (:Key ^Col) *Id))
+        (member ((:m Id))
+          (&grp_component (:Key Col) *Id))))
+
+    ;; Both take every cell of the color scoring lowest.
+    (INIT &color_score Order
+      (member ((:t (:V Col) (:S N)))
+        (&group_count.size (:key *Col) *N))
+      (score ((:t (:V Col) (:S N)) (:S N))
+        (&group_count.size (:key *Col) *N)))
+
+    (RULE &shape
+      (&color_score.minimal (:t (:V *Col)))
+      (&ink *P Col))))
+
+(ALTS $r "fill the box" $Keep
+  (ALT $Crop
+    (RULE &output
+      (input (:P *P_grid) *Col)
+      (&bbox.box *B)
+      (ALL ((input (:P P_grid) (:Col *Colm))
+            (&bbox.box B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P_grid) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (relative (:Base B) (:X P_grid) (:X_rel *P)))))
+
+(RULE &output
+  (input (:P *P_grid))
+  (&bbox.box *B)
+  (ALL ((&bbox.box B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P_grid) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P_grid) (:X_rel *P))
+  (IF ((&shape (:P P_grid)))
+      ((input (:P P_grid) *Col))
+      ((&bg (:C Col)))))

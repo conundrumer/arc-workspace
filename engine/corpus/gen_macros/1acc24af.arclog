@@ -1,0 +1,215 @@
+;; 1acc24af
+
+(RULE &pieces_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &piece RarestColor)
+
+(INIT &pieces Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (&piece (:C Col))
+         (&pieces_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (&piece (:C Col2)))
+        ((input P (:Col *Col3))
+         (&piece (:C Col3))
+         (= P3 P)))))
+
+(RULE &pieces_component
+  (&pieces.class (:a *P) *Id))
+
+(RULE &flood_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(RULE &notches_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+;; The side the notches open toward — where the pieces lie.
+(DET &open_dir DirDomain)
+
+(DET &wall UnchangedColor)
+
+(RULE &wall2
+  (input *P *Col)
+  (&wall (:C Col)))
+
+;; $Slide — wall-free cells connected to the open edge.
+(INIT &flood Propagation
+  (source ((:n P))
+    (input *P)
+    (&open_dir *D)
+    (margin (:B P) D (:K 0))
+    (NOT (&wall2 P)))
+  (edge ((:a P) (:b P2))
+    (input *P)
+    (NOT (&wall2 P))
+    (&flood_steps (:Delta *S))
+    (compose (:A P) (:B S) (:C *P2))
+    (input (:P P2))
+    (NOT (&wall2 (:P P2)))))
+
+(RULE &access
+  (&flood.reached (:n *P)))
+
+;; A notch is where the reachable space reaches into the wall's own box.
+(INIT &wall_box BoundingBox
+  (cell (P)
+    (&wall2 *P)))
+
+(RULE &shadow_dir
+  (&open_dir (:D *D3))
+  (opposite (:D D3) (:Opp *D)))
+
+(RULE &shadow_node
+  (input *P))
+
+(RULE &shadow_source
+  (&wall2 *P))
+
+;; $Drop — cells the wall does not shadow, casting away from the open edge.
+(INIT &shadow Distance
+  (key ((&shadow_source (:P ^O))
+        (&shadow_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&shadow_source (:P O))
+           (&shadow_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&shadow_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&shadow_node (:P Q)))
+          ((&shadow_source (:P O))
+           (&shadow_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&shadow_node (:P Q))
+           (= A2 O))
+          ((&shadow_source (:P O))
+           (&shadow_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&shadow_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&shadow_node (:P Q)))))
+    (source ((:n O))
+      (&shadow_source (:P O))
+      (&shadow_dir D))))
+
+(RULE &shadow_ray
+  (&shadow.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &shadow_end
+  (&shadow_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&shadow_ray (:P Q) D Origin)))
+
+(DET &mark AnyOutNewColor)
+
+(RULE &piece_cell
+  (&pieces_component *P *Id))
+
+(RULE &turned
+  (&piece_cell *Id *P)
+  (c4_elem *D)
+  (apply D P (:P_out *Q)))
+
+(ALTS $a "the space a piece can reach" $Slide
+  (ALT $Drop
+    (RULE &access
+      (input *P)
+      (NOT (&shadow_ray P)))))
+
+(ALTS $g "how a piece may be turned" $Rot
+  (ALT $Flip
+    (RULE &turned
+      (&piece_cell *Id *P)
+      (d4_elem *D)
+      (apply D P (:P_out *Q)))))
+
+(RULE &notches_node
+  (&access *P)
+  (&wall_box.box *B)
+  (ALL ((&access P)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(INIT &notches Quotient
+  (edge ((:a P) (:b P2))
+    (OR ((&notches_node *P)
+         (&notches_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&notches_node (:P P2)))
+        ((&notches_node P)
+         (= P2 P)))))
+
+(RULE &notches_component
+  (&notches.class (:a *P) *Id))
+
+(RULE &notch
+  (&notches_component *P (:Id *N)))
+
+;; A placement seats one cell of the turned piece on a notch cell, and its
+;; shift carries the rest of the piece. A piece may reach past the notch it
+;; fills, so the plug test reads every placement, not the occurrences.
+(INIT &seat Occurrences
+  (key ((OR ((&turned ^Id ^D *Q))
+            ((&notch *P)
+             (&turned Id D))))
+    (cell (P)
+      (&notch *P)
+      (&turned Id D))
+    (shape ((:P Q))
+      (&turned Id D *Q))))
+
+(RULE &placed
+  (&seat.candidate (:key *Id *D) (:P *T))
+  (&turned Id D *Q)
+  (compose (:A Q) (:B T) (:C *P)))
+
+(RULE &uncovered
+  (&seat.candidate (:key *Id *D) (:P *T))
+  (&notch *N *P)
+  (NOT (&placed Id D T P)))
+
+(RULE &unreached
+  (&placed *Id *D *T *P)
+  (NOT (&access P)))
+
+(RULE &plugs
+  (&seat.candidate (:key *Id *D) (:P *T))
+  (&notch *N)
+  (NOT (&uncovered Id D T N))
+  (NOT (&unreached Id D T)))
+
+(RULE &marked
+  (&piece_cell *Id *P)
+  (&plugs Id))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (IF ((&marked P))
+      ((&mark (:C *Col)))
+      ((= Col Col_in))))

@@ -1,0 +1,100 @@
+;; 6855a6e4
+
+(RULE &rays_dir
+  (dir_elem *D))
+
+(DET &mirror UnchangedColor)
+
+(RULE &rays_blocked
+  (input *P *Col)
+  (&mirror (:C Col)))
+
+(RULE &rays_node
+  (input *P)
+  (NOT (&rays_blocked P)))
+
+(DET &mover ChangedColor)
+
+(RULE &mover_cell
+  (input *P *Col)
+  (&mover (:C Col)))
+
+(RULE &rays_source
+  (&mover_cell *P))
+
+;; Movers cast every way and halt on the first mirror cell.
+(INIT &rays Distance
+  (key ((&rays_source (:P ^O))
+        (&rays_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&rays_source (:P O))
+           (&rays_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&rays_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&rays_node (:P Q)))
+          ((&rays_source (:P O))
+           (&rays_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&rays_node (:P Q))
+           (= A2 O))
+          ((&rays_source (:P O))
+           (&rays_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&rays_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&rays_node (:P Q)))))
+    (source ((:n O))
+      (&rays_source (:P O))
+      (&rays_dir D))))
+
+(RULE &rays_ray
+  (&rays.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &rays_end
+  (&rays_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&rays_ray (:P Q) D Origin)))
+
+(DET &bg DominantColor)
+
+(RULE &image
+  (&rays_end (:P *E) *D (:Origin *P2))
+  (step_offset D (:V *V_m1))
+  (compose (:A E) (:B V_m1) (:C *B))
+  (input (:P B))
+  (axis_of D *A)
+  (axis_inversion A (:T *F))
+  (relative (:Base B) (:X P2) (:X_rel *V))
+  (apply (:D F) (:P V) (:P_out *V2))
+  (compose (:A B) (:B V2) (:C *P)))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&image P)
+       (&mover (:C *Col)))
+      ((NOT (&image P))
+       (&mover_cell P)
+       (&bg (:C Col)))
+      ((NOT (&image P))
+       (NOT (&mover_cell P))
+       (= Col Col_in))))

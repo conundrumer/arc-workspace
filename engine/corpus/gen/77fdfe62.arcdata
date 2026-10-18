@@ -1,0 +1,6 @@
+;; 77fdfe62
+
+(param &ink Color (8))
+(param &line Color (1))
+(param &margin number (2))
+(param &bg Color (0))

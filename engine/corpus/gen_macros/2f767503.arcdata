@@ -1,0 +1,6 @@
+;; 2f767503
+
+(param &bg Color (7))
+(param &speck Color (4))
+(param &eye Color (9))
+(param &lens Color (5))

@@ -1,0 +1,238 @@
+;; 90f3ed37
+
+(RULE &runs_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(RULE &fg
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The direction the shapes run in.
+(DET &grow_dir DirDomain)
+
+(RULE &grow_axis
+  (&grow_dir *D)
+  (axis_of D *A))
+
+(RULE &edge_split1
+  (&fg (:P *P_))
+  (&grow_axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P_) (:X_rel *L_)))
+
+(RULE &edge_split2
+  (&fg (:P *P_))
+  (&grow_axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P_) (:X_rel *L_)))
+
+(RULE &edge_split3
+  (&fg (:P *P2_))
+  (&grow_axis (:A *A2_))
+  (axis_of (:D *D_m1) (:A A2_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P2_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P2_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m2_))
+  (relative (:Base X_m2_) (:X P2_) (:X_rel *L2_)))
+
+(INIT &runs Quotient
+  (edge ((:a L) (:b P3))
+    (OR ((&fg *P)
+         (&grow_axis *A)
+         (&edge_split2 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:L_ *L))
+         (&runs_steps (:Delta *S))
+         (compose (:A L) (:B S) (:C *P3))
+         (&fg (:P *P2))
+         (&grow_axis (:A *A2))
+         (&edge_split3 (:P2_ P2) (:A2_ A2) (:X_m2_ *X_m2) (:L2_ P3)))
+        ((&fg (:P *P4))
+         (&grow_axis (:A *A3))
+         (&edge_split1 (:P_ P4) (:A_ A3) (:X_m1_ *X_m12) (:L_ L))
+         (= P3 L)))))
+
+(RULE &runs_component
+  (&runs.class (:a *P) *Id))
+
+(RULE &shape_split1
+  (&fg (:P *P_))
+  (&grow_axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P_) (:X_rel *L_)))
+
+;; The side, across the growth, that the shapes align on.
+(DET &align_sense SenseDomain)
+
+;; The color the completion is drawn in.
+(DET &mark AnyOutNewColor)
+
+(RULE &anchor_corner
+  (&grow_dir (:D *D2))
+  (opposite (:D D2) (:Opp *Back))
+  (&align_sense *S)
+  (turn S (:D D2) (:D2 *D_align))
+  (corner_dir (:C *D) (:A *A_m1) (:D Back))
+  (perp (:A A_m1) (:A2 *A2_m2))
+  (corner_dir (:C D) (:A A2_m2) (:D D_align)))
+
+(RULE &shape
+  (&fg *P)
+  (&grow_axis *A)
+  (&shape_split1 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:L_ *L))
+  (&runs_component (:P L) *Id))
+
+(ALTS $parse "What a shape is." $Lines
+  (ALT $Objects
+    (RULE &blobs_steps
+      (OR ((dir_elem *D)
+           (step_offset D (:V *Delta)))
+          ((diag_dir_elem (:D *D2))
+           (step_offset (:D D2) (:V Delta)))))
+
+    (INIT &blobs Quotient
+      (edge ((:a P) (:b P3))
+        (OR ((&fg *P)
+             (&blobs_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P3))
+             (&fg (:P P3)))
+            ((&fg P)
+             (= P3 P)))))
+
+    (RULE &blobs_component
+      (&blobs.class (:a *P) *Id))
+
+    (RULE &shape
+      (&blobs_component *P *Id))))
+
+(ALTS $select "Which shape is the full one." $Edge
+  (ALT $Furthest
+    (INIT &nearest Order
+      (member ((:t (:V Id) (:S K)))
+        (&shortfall *Id *K))
+      (score ((:t (:V Id) (:S K)) (:S K))
+        (&shortfall *Id *K)))
+
+    (RULE &template
+      (&nearest.minimal (:t (:V *Id))))))
+
+(ALTS $anchor "What a shape's anchor is read from." $Extent
+  (ALT $Ink
+    (INIT &corner_cell Order
+      (key ((&shape ^Id *P)
+            (&anchor_corner (:D *Diag))
+            (corner_dist P Diag *K))
+        (member ((:t (:V P) (:S K)))
+          (&shape Id *P)
+          (&anchor_corner (:D *Diag))
+          (corner_dist P Diag *K))
+        (score ((:t (:V P) (:S K)) (:S K))
+          (&shape Id *P)
+          (&anchor_corner (:D *Diag))
+          (corner_dist P Diag *K))))
+
+    (RULE &anchor
+      (&corner_cell.minimal (:key *Id) (:t (:V *P))))))
+
+(ALTS $place "How the full shape lands on a shape." $Corner
+  (ALT $Across
+    (RULE &seat_split1
+      (&shift *Id_full *Id (:V *V_))
+      (&grow_axis (:A *A_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B V_) (:D D_m1) (:K *K1_m3))
+      (margin (:B V_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+      (relative (:Base X_m1_) (:X V_) (:X_rel *V_across_)))
+
+    (RULE &seat
+      (&shift *Id_full *Id *V)
+      (&shape (:Id Id_full) (:P *P_full))
+      (&grow_axis *A)
+      (&seat_split1 (:V_ V) (:A_ A) (:X_m1_ *X_m1) (:V_across_ *V_across))
+      (compose (:A P_full) (:B V_across) (:C *P)))))
+
+(INIT &bb BoundingBox
+  (key ((&shape ^Id *P))
+    (cell (P)
+      (&shape Id *P))))
+
+(RULE &anchor
+  (&bb.box (:key *Id) *B)
+  (&anchor_corner (:D *Diag))
+  (input *P)
+  (ALL ((&bb.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (ALL ((&bb.box (:key (:Id *Idmm)) B)
+        (corner_dir (:C Diag) (:D *D_m1m))
+        (margin (:B P) (:D D_m1m) (:K *K1_m2))
+        (margin B (:D D_m1m) (:K *K2_m3)))
+       ((= K1_m2 K2_m3))))
+
+(RULE &shortfall
+  (&bb.box (:key *Id) *B)
+  (&grow_dir *D)
+  (margin B D *K))
+
+(RULE &template
+  (&shortfall *Id (:K 0)))
+
+(RULE &shift
+  (&template (:Id *Id_full))
+  (&anchor (:Id Id_full) (:P *A_full))
+  (&anchor *Id (:P *A))
+  (relative (:Base A_full) (:X A) (:X_rel *V)))
+
+(RULE &seat
+  (&shift *Id_full *Id *V)
+  (&shape (:Id Id_full) (:P *P_full))
+  (compose (:A P_full) (:B V) (:C *P)))
+
+(RULE &restored
+  (&seat *Id *P)
+  (input P)
+  (&bb.box (:key Id) *B)
+  (&grow_dir *D)
+  (dir_elem D)
+  (margin (:B P) D (:K *K1_m1))
+  (margin B D (:K *K2_m2))
+  (< K1_m1 K2_m2))
+
+(RULE &output
+  (OR ((&restored *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&restored P)))))

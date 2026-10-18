@@ -1,0 +1,74 @@
+;; e7dd8335
+
+(DET &bg DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(DET &dir DirDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&ink *P)))
+
+(RULE &framed
+  (&ink *P)
+  (&bbox.box *B)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(ALTS $choice "what owns a half" $Whole
+  (ALT $Each
+    (RULE &comps_steps
+      (OR ((dir_elem *D)
+           (step_offset D (:V *Delta)))
+          ((diag_dir_elem (:D *D2))
+           (step_offset (:D D2) (:V Delta)))))
+
+    (INIT &comps Quotient
+      (edge ((:a P) (:b P3))
+        (OR ((&ink *P)
+             (&comps_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P3))
+             (&ink (:P P3)))
+            ((&ink P)
+             (= P3 P)))))
+
+    (RULE &comps_component
+      (&comps.class (:a *P) *Id))
+
+    (INIT &comp_box BoundingBox
+      (key ((&comps_component *P ^Id))
+        (cell (P)
+          (&comps_component *P Id))))
+
+    (RULE &framed
+      (&comps_component *P *Id)
+      (&comp_box.box (:key Id) *B)
+      (ALL ((&comps_component P (:Id *Idm))
+            (&comp_box.box (:key (:Id Idm)) B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (relative (:Base B) (:X P) (:X_rel *P_inner)))))
+
+(RULE &half
+  (&framed *P *P_inner)
+  (&dir *D)
+  (opposite D (:Opp *O_m1))
+  (margin (:B P_inner) D *K)
+  (margin (:B P_inner) (:D O_m1) (:K *K2))
+  (< K K2))
+
+(RULE &output
+  (OR ((&half *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&half P)))))

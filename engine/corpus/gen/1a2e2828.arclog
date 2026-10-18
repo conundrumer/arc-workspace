@@ -1,0 +1,16 @@
+;; 1a2e2828
+
+(DET &out_pos Frame)
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Across ^P_across)))
+    (member ((:v Col))
+      (input *P *Col)
+      (axis_elem A)
+      (split P A (:Across P_across)))))
+
+(RULE &output
+  (&line_color.value (:v *Col))
+  (&out_pos *P))

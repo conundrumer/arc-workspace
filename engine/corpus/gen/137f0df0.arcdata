@@ -1,0 +1,5 @@
+;; 137f0df0
+
+(param &bg Color (0))
+(param &inside_paint Color (2))
+(param &outside_paint Color (1))

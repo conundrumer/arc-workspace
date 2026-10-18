@@ -1,0 +1,6 @@
+;; 46f33fce
+
+(param &bg Color (0))
+(param &scale number (2))
+(param &tile_count number (5))
+(param &tile_dim number (2))

@@ -1,0 +1,625 @@
+;; a416fc5b
+
+(INPUT panels "full lines of &separator cut the grid into a 3×3 array of 3×3 panels of &bg"
+
+  (RULE &item_split1
+    (input (:P *P_) *Col)
+    (axis_elem (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+    (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+  ;; The color of a line all of one color.
+  (INIT &line_color Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (&item_split1 (:P_ P) (:A_ A) (:L_ ^L) (:X_m1_ *X_m1)))
+      (member ((:v Col))
+        (input *P *Col)
+        (axis_elem A)
+        (&item_split1 (:P_ P) (:A_ A) (:L_ L) (:X_m1_ *X_m1)))))
+
+  (DET &separator UnchangedColor)
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (INIT &sep_color Singleton
+    (member ((:v Col))
+      (&line_color.value (:v *Col)))))
+
+(INPUT two-shapes "two panels hold the same shape in &shape_color; one of them is the center panel, and the other is one of the eight panels around it"
+
+  (RULE &cut_divider
+    (&line_color.value (:key *A *L) (:v *Col))
+    (&separator (:C Col)))
+
+  (RULE &geometry_choice)
+
+  (RULE &cut_on_divider
+    (input *P)
+    (&geometry_choice)
+    (&cut_divider *A *L)
+    (axis_of *D A)
+    (margin (:B P) D (:K *K_m1))
+    (margin (:B L) D (:K K_m1)))
+
+  (INIT &cut_rank Order
+    (key ((OR ((&cut_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (&geometry_choice)
+               (dir_elem D)
+               (margin (:B P) D (:K *K2)))))
+      (member ((:t K))
+        (&cut_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&cut_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (&geometry_choice)
+             (dir_elem D)
+             (margin (:B P) D K))))
+      (probe ((:t K2))
+        (input *P)
+        (&geometry_choice)
+        (dir_elem D)
+        (margin (:B P) D (:K *K2)))))
+
+  (RULE &cut_part_idx
+    (input *P)
+    (&geometry_choice)
+    (axis_of *D *A)
+    (NOT (&cut_on_divider P A))
+    (margin (:B P) D (:K *K2))
+    (&cut_rank.rank (:key D) (:t K2) (:R *N)))
+
+  (RULE &cut_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&cut_part_idx *P D (:N *N1))
+    (&cut_part_idx P (:D D2) (:N *N2))
+    (opposite D (:Opp *O_m1))
+    (edge_inset D (:K N1) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+  (RULE &cut_tile_of
+    (&cut_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&cut_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (DET_OR_RULE &shape_color RarestColor)
+
+  (INIT &tile_box BoundingBox
+    (key ((&cut_tile_of *P ^P_tile))
+      (cell (P)
+        (&cut_tile_of *P P_tile))))
+
+  (RULE &panel2
+    (&cut_tile_of *P *P_tile)
+    (&tile_box.box (:key P_tile) *B)
+    (ALL ((&cut_tile_of P (:P_tile *P_tilem))
+          (&tile_box.box (:key (:P_tile P_tilem)) B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+  (RULE &center
+    (&panel2 (:P_tile *C))
+    (ALL ((&panel2 (:P_tile C))
+          (opposite (:D *D_m1) (:Opp *O_m2))
+          (margin (:B C) (:D D_m1) (:K *K1_m3))
+          (margin (:B C) (:D O_m2) (:K *K2_m4)))
+         ((= K1_m3 K2_m4))))
+
+  (INIT &center_color Singleton
+    (member ((:v Col))
+      (&center *C)
+      (&panel2 *P (:P_tile C))
+      (input P *Col)
+      (NOT (&bg (:C Col))))))
+
+(INPUT rest-empty "every other panel holds no shape")
+
+(OUTPUT direction "d is the step from the center panel to the other shape panel, one of the eight places on the ring of panels around the center"
+
+  (RULE &ring
+    (&center *C)
+    (step_offset *D (:V *V_m1))
+    (compose (:A C) (:B V_m1) (:C *Q))
+    (&panel2 (:P_tile Q)))
+
+  (RULE &probe_place
+    (&panel2 *P_intile)
+    (OR ((relative (:Base 0) (:X P_intile) (:X_rel *R_m1))
+         (axis_of (:D *D1_m2) (:A *A1_m3))
+         (opposite (:D D1_m2) (:Opp *O1_m4))
+         (perp (:A A1_m3) (:A2 *A2_m5))
+         (axis_of (:D *D2_m6) (:A A2_m5))
+         (opposite (:D D2_m6) (:Opp *O2_m7))
+         (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+         (>= K1_m8 0)
+         (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+         (>= K2_m9 0)
+         (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+         (>= K3_m10 0)
+         (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+         (>= K4_m11 0)
+         (corner_dir *C (:A *A_m12) (:D *D1_m13))
+         (perp (:A A_m12) (:A2 *A2_m14))
+         (corner_dir C (:A A2_m14) (:D *D2_m15))
+         (margin (:B P_intile) (:D D1_m13) (:K *K1_m16))
+         (margin (:B 0) (:D D1_m13) (:K K1_m16))
+         (margin (:B P_intile) (:D D2_m15) (:K *K2_m17))
+         (margin (:B 0) (:D D2_m15) (:K K2_m17)))
+        ((dir_elem *D)
+         (step_offset D (:V *V_m18))
+         (compose (:A P_intile) (:B V_m18) (:C *P0))
+         (relative (:Base 0) (:X P0) (:X_rel *R_m19))
+         (axis_of (:D *D1_m20) (:A *A1_m21))
+         (opposite (:D D1_m20) (:Opp *O1_m22))
+         (perp (:A A1_m21) (:A2 *A2_m23))
+         (axis_of (:D *D2_m24) (:A A2_m23))
+         (opposite (:D D2_m24) (:Opp *O2_m25))
+         (margin (:B R_m19) (:D D1_m20) (:K *K1_m26))
+         (>= K1_m26 0)
+         (margin (:B R_m19) (:D O1_m22) (:K *K2_m27))
+         (>= K2_m27 0)
+         (margin (:B R_m19) (:D D2_m24) (:K *K3_m28))
+         (>= K3_m28 0)
+         (margin (:B R_m19) (:D O2_m25) (:K *K4_m29))
+         (>= K4_m29 0)
+         (corner_dir C (:A *A_m30) (:D *D1_m31))
+         (perp (:A A_m30) (:A2 *A2_m32))
+         (corner_dir C (:A A2_m32) (:D *D2_m33))
+         (margin (:B P0) (:D D1_m31) (:K *K1_m34))
+         (margin (:B 0) (:D D1_m31) (:K K1_m34))
+         (margin (:B P0) (:D D2_m33) (:K *K2_m35))
+         (margin (:B 0) (:D D2_m33) (:K K2_m35)))))
+
+  (RULE &shape_color2
+    (&geometry_choice)
+    (&shape_color (:C *Col)))
+
+  (RULE &shape_cell2
+    (&shape_color2 *Col)
+    (&panel2 *P (:P_tile *Q) *P_intile)
+    (input P Col))
+
+  (DET &concept)
+
+  (DET &pair
+    (ex_output *E))
+
+  (DET &panel
+    (&pair *E)
+    (&concept)
+    (&panel2 E *P *P_tile *P_intile))
+
+  (DET &shape_cell
+    (&panel *E *P (:P_tile *Q) *P_intile)
+    (ex_input E P *Col)
+    (&shape_color (:C Col)))
+
+  (DET &other
+    (&ring *E *Q *D)
+    (&concept)
+    (&shape_cell E Q))
+
+  (DET &probed
+    (&ring *E *Q)
+    (&concept)
+    (&shape_cell E Q *P_intile)
+    (&probe_place E P_intile *C))
+
+  (DET &corner_contradicted
+    (&other *E *Q)
+    (diag_dir_elem (:D *C))
+    (NOT (&probed E C Q)))
+
+  (DET &probe_corner
+    (diag_dir_elem *D)
+    (NOT (&corner_contradicted (:C D)))
+    (ONE))
+
+  (RULE &probed2
+    (&ring *Q)
+    (&shape_cell2 Q *P_intile)
+    (&probe_corner (:D *C))
+    (&probe_place P_intile C))
+
+  (DET &order_cell
+    (&probed *E *C (:Q *P))
+    (&probe_corner (:D C))
+    (axis_elem *A))
+
+  (INIT &order Order
+    (key ((&probed ^E (:C ^Dc) *Q)
+          (&probe_corner (:D Dc))
+          (axis_elem ^A))
+      (member ((:t Q))
+        (&probed E (:C Dc) *Q)
+        (&probe_corner (:D Dc))
+        (axis_elem A))
+      (before ((:a Q) (:b Q2))
+        (&probed E (:C Dc) *Q)
+        (&probe_corner (:D Dc))
+        (axis_elem A)
+        (&probed E (:C Dc) (:Q *Q2))
+        (&order_cell E (:C Dc) A)
+        (OR ((corner_dir (:C Dc) A *D)
+             (dir_elem D)
+             (margin (:B Q) D (:K *K1_m1))
+             (margin (:B Q2) D (:K *K2_m2))
+             (< K1_m1 K2_m2))
+            ((corner_dir (:C Dc) A D)
+             (perp A (:A2 *A2_m3))
+             (corner_dir (:C Dc) (:A A2_m3) (:D *D2))
+             (margin (:B Q) D (:K *K_m4))
+             (margin (:B Q2) D (:K K_m4))
+             (dir_elem (:D D2))
+             (margin (:B Q) (:D D2) (:K *K1_m5))
+             (margin (:B Q2) (:D D2) (:K *K2_m6))
+             (< K1_m5 K2_m6))))))
+
+  (DET &axis_contradicted
+    (&order.maximal (:key *E *A) (:t *Q))
+    (&other E (:Q *Q2))
+    (!= Q Q2))
+
+  (DET &order_axis
+    (axis_elem *A)
+    (NOT (&axis_contradicted A))
+    (ONE))
+
+  (RULE &probe_order_cell
+    (&probed2 *C (:Q *P))
+    (&order_axis *A))
+
+  (INIT &probe_order Order
+    (key ((&probed2 (:C ^Dc) *Q)
+          (&order_axis ^A))
+      (member ((:t Q))
+        (&probed2 (:C Dc) *Q)
+        (&order_axis A))
+      (before ((:a Q) (:b Q2))
+        (&probed2 (:C Dc) *Q)
+        (&order_axis A)
+        (&probed2 (:C Dc) (:Q *Q2))
+        (&probe_order_cell (:C Dc) A)
+        (OR ((corner_dir (:C Dc) A *D)
+             (dir_elem D)
+             (margin (:B Q) D (:K *K1_m1))
+             (margin (:B Q2) D (:K *K2_m2))
+             (< K1_m1 K2_m2))
+            ((corner_dir (:C Dc) A D)
+             (perp A (:A2 *A2_m3))
+             (corner_dir (:C Dc) (:A A2_m3) (:D *D2))
+             (margin (:B Q) D (:K *K_m4))
+             (margin (:B Q2) D (:K K_m4))
+             (dir_elem (:D D2))
+             (margin (:B Q) (:D D2) (:K *K1_m5))
+             (margin (:B Q2) (:D D2) (:K *K2_m6))
+             (< K1_m5 K2_m6)))))))
+
+(OUTPUT turn "two target panels sit on that ring, &turn steps from d in each sense"
+
+  (DET_OR_RULE &turn "The ring steps from d to each target." SepTileCount SepTileDim))
+
+(OUTPUT stamp "each target panel receives a copy of the center panel's shape, in the color &turn_color gives the sense of its turn"
+
+  (DET &changed
+    (&panel *E *P (:P_tile *T) *P_intile)
+    (ex_input E P (:Col *Col_in))
+    (ex_output E P *Col)
+    (!= Col Col_in))
+
+  (DET &turn_color
+    (OR ((&changed *E *T (:Col *C))
+         (&other E *D)
+         (&center E (:C *C2))
+         (&concept)
+         (c4_turn *S (:T *R))
+         (d4_elem (:D R))
+         (dir8_elem D)
+         (dir8_elem (:D *D_side))
+         (step_offset D (:V *S_m1))
+         (apply (:D R) (:P S_m1) (:P_out *S2_m2))
+         (step_offset (:D D_side) (:V S2_m2))
+         (dir_elem (:D D_side))
+         (margin (:B T) (:D D_side) (:K *K1_m3))
+         (margin (:B C2) (:D D_side) (:K *K2_m4))
+         (< K1_m3 K2_m4))
+        ((&changed (:E *E2) (:T *T2) (:Col C))
+         (&other (:E E2) (:D *D2))
+         (&center (:E E2) (:C *C22))
+         (&concept)
+         (c4_turn S (:T *R2))
+         (d4_elem (:D R2))
+         (dir8_elem (:D D2))
+         (dir8_elem (:D *D_side2))
+         (step_offset (:D D2) (:V *S_m12))
+         (apply (:D R2) (:P S_m12) (:P_out *S2_m22))
+         (step_offset (:D D_side2) (:V S2_m22))
+         (diag_dir_elem (:D D_side2))
+         (corner_dist (:P T2) (:Diag D_side2) (:K *K1_m32))
+         (corner_dist (:P C22) (:Diag D_side2) (:K *K2_m42))
+         (< K1_m32 K2_m42)))))
+
+(OUTPUT keep "every other cell keeps its input color"
+
+  (INIT &shape_panel Singleton
+    (member ((:v Q))
+      (&shape_cell2 *Q)
+      (NOT (&center (:C Q)))))
+
+  (RULE &other2
+    (&shape_panel.value (:v *Q))
+    (&ring Q)
+    (&center *C)
+    (&shape_cell2 (:Q C)))
+
+  (RULE &candidate
+    (&other2 *Q))
+
+  (RULE &ready
+    (&candidate *Q))
+
+  (RULE &copy
+    (&candidate *Q)
+    (&center *C)
+    (&shape_cell2 (:Q C) *P_intile))
+
+  ;; The ring's step in each sense: to the ring panel beside it on that sense's
+  ;; side of the line from the center through it.
+  (INIT &ring_walk Walk
+    (key ((OR ((&ring *Q *D)
+               (&center *C)
+               (dir_elem (:D *D2))
+               (step_offset (:D D2) (:V *V_m1))
+               (compose (:A Q) (:B V_m1) (:C *Q2))
+               (&ring (:Q Q2))
+               (c4_turn ^S (:T *R))
+               (d4_elem (:D R))
+               (dir8_elem D)
+               (dir8_elem (:D *D_side))
+               (step_offset D (:V *S_m2))
+               (apply (:D R) (:P S_m2) (:P_out *S2_m3))
+               (step_offset (:D D_side) (:V S2_m3))
+               (dir_elem (:D D_side))
+               (margin (:B Q2) (:D D_side) (:K *K1_m4))
+               (margin (:B C) (:D D_side) (:K *K2_m5))
+               (< K1_m4 K2_m5))
+              ((&ring Q D)
+               (&center C)
+               (dir_elem (:D D2))
+               (step_offset (:D D2) (:V V_m1))
+               (compose (:A Q) (:B V_m1) (:C Q2))
+               (&ring (:Q Q2))
+               (c4_turn S (:T R))
+               (d4_elem (:D R))
+               (dir8_elem D)
+               (dir8_elem (:D D_side))
+               (step_offset D (:V S_m2))
+               (apply (:D R) (:P S_m2) (:P_out S2_m3))
+               (step_offset (:D D_side) (:V S2_m3))
+               (diag_dir_elem (:D D_side))
+               (corner_dist (:P Q2) (:Diag D_side) (:K K1_m4))
+               (corner_dist (:P C) (:Diag D_side) (:K K2_m5))
+               (< K1_m4 K2_m5))
+              ((sense_elem S)
+               (&turn *N))))
+      (successor ((:p Q) (:p_next Q2))
+        (OR ((&ring *Q *D)
+             (&center *C)
+             (dir_elem (:D *D2))
+             (step_offset (:D D2) (:V *V_m1))
+             (compose (:A Q) (:B V_m1) (:C *Q2))
+             (&ring (:Q Q2))
+             (c4_turn S (:T *R))
+             (d4_elem (:D R))
+             (dir8_elem D)
+             (dir8_elem (:D *D_side))
+             (step_offset D (:V *S_m2))
+             (apply (:D R) (:P S_m2) (:P_out *S2_m3))
+             (step_offset (:D D_side) (:V S2_m3))
+             (dir_elem (:D D_side))
+             (margin (:B Q2) (:D D_side) (:K *K1_m4))
+             (margin (:B C) (:D D_side) (:K *K2_m5))
+             (< K1_m4 K2_m5))
+            ((&ring Q (:D *D3))
+             (&center (:C *C2))
+             (dir_elem (:D *D22))
+             (step_offset (:D D22) (:V *V_m12))
+             (compose (:A Q) (:B V_m12) (:C Q2))
+             (&ring (:Q Q2))
+             (c4_turn S (:T *R2))
+             (d4_elem (:D R2))
+             (dir8_elem (:D D3))
+             (dir8_elem (:D *D_side2))
+             (step_offset (:D D3) (:V *S_m22))
+             (apply (:D R2) (:P S_m22) (:P_out *S2_m32))
+             (step_offset (:D D_side2) (:V S2_m32))
+             (diag_dir_elem (:D D_side2))
+             (corner_dist (:P Q2) (:Diag D_side2) (:K *K1_m42))
+             (corner_dist (:P C2) (:Diag D_side2) (:K *K2_m52))
+             (< K1_m42 K2_m52))))
+      (steps (N)
+        (sense_elem S)
+        (&turn *N))))
+
+  (RULE &turn_geometry)
+
+  (RULE &target
+    (&turn_geometry)
+    (&candidate *Q)
+    (&turn *N)
+    (&ring_walk.walk (:key *S) (:p0 Q) N (:p *T))
+    (&turn_color S (:C *Col)))
+
+  (RULE &stamped
+    (&copy *Q *P_intile)
+    (&target Q *T *Col)
+    (&panel2 *P (:P_tile T) P_intile))
+
+  (RULE &drawn
+    (OR ((&stamped *Q *P *Col)
+         (&ready Q))
+        ((&ready Q)
+         (input P Col)
+         (NOT (&stamped Q P))))))
+
+(ALTS $geometry "how the panels are found" $Lines
+  (ALT $Lines
+    (ALTS $sep "where the separator color comes from" $StoredSeparator
+      (ALT $DeriveSeparator
+        (INPUT panels "full lines of the one color that fills whole lines cut the grid into a 3×3 array of 3×3 panels; undefined when no single color does"
+          (RULE &cut_divider
+            (&line_color.value (:key *A *L) (:v *Col))
+            (&sep_color.value (:v Col))))))
+    (ALTS $targets "which panels receive the copies" $Turn
+      (ALT $ManhattanTargets
+        (OUTPUT turn "the targets are the panels at taxicab distance &turn from the other shape panel, each colored by its side of the line through the center along d; undefined when a target lies on that line"
+          (RULE &manhattan
+            (&candidate *Q)
+            (&panel2 (:P_tile *T))
+            (relative (:Base Q) (:X T) (:X_rel *V))
+            (corner_dir (:C *Diag) (:A *A_m1) (:D *D1_m2))
+            (perp (:A A_m1) (:A2 *A2_m4))
+            (corner_dir (:C Diag) (:A A2_m4) (:D *D2_m3))
+            (margin (:B V) (:D D1_m2) (:K *K1))
+            (margin (:B V) (:D D2_m3) (:K *K2))
+            (>= K1 0)
+            (>= K2 0)
+            (corner_dist (:P V) Diag (:K *N))
+            (&turn N))
+          (RULE &target
+            (OR ((&manhattan *Q *T)
+                 (&ring Q *D)
+                 (&center *C)
+                 (c4_turn *S (:T *R))
+                 (d4_elem (:D R))
+                 (dir8_elem D)
+                 (dir8_elem (:D *D_side))
+                 (step_offset D (:V *S_m1))
+                 (apply (:D R) (:P S_m1) (:P_out *S2_m2))
+                 (step_offset (:D D_side) (:V S2_m2))
+                 (dir_elem (:D D_side))
+                 (margin (:B T) (:D D_side) (:K *K1_m3))
+                 (margin (:B C) (:D D_side) (:K *K2_m4))
+                 (< K1_m3 K2_m4)
+                 (&turn_color S (:C *Col)))
+                ((&manhattan Q T)
+                 (&ring Q (:D *D2))
+                 (&center (:C *C2))
+                 (c4_turn (:S *S2) (:T *R2))
+                 (d4_elem (:D R2))
+                 (dir8_elem (:D D2))
+                 (dir8_elem (:D *D_side2))
+                 (step_offset (:D D2) (:V *S_m12))
+                 (apply (:D R2) (:P S_m12) (:P_out *S2_m22))
+                 (step_offset (:D D_side2) (:V S2_m22))
+                 (diag_dir_elem (:D D_side2))
+                 (corner_dist (:P T) (:Diag D_side2) (:K *K1_m32))
+                 (corner_dist (:P C2) (:Diag D_side2) (:K *K2_m42))
+                 (< K1_m32 K2_m42)
+                 (&turn_color (:S S2) (:C Col)))))
+          (RULE &unsided
+            (&manhattan *Q *T)
+            (NOT (&target Q T)))
+          (RULE &ready
+            (&candidate *Q)
+            (NOT (&unsided Q)))))))
+  (ALT $FixedPanels
+    (INPUT panels "the lines &fixed_divider cut the grid into a 3×3 array of 3×3 panels of &bg, whatever their color"
+      (RULE &cut_cell
+        (input *P)
+        (&geometry_choice))
+
+      (DET &broken_line
+        (&pair *E)
+        (&line_color.plural E (:key *A *L)))
+
+      (DET &fixed_divider
+        (&pair *E)
+        (&line_color.value E (:key *A *L))
+        (NOT (&broken_line A L)))
+
+      (RULE &cut_divider
+        (&cut_cell)
+        (&fixed_divider *A *L)))))
+
+(ALTS $shape_color "where the shape color comes from" $StoredShapeColor
+  (ALT $DeriveShapeColor
+    (INPUT two-shapes "two panels hold the same shape in the one color of the center panel other than &bg; undefined when the center panel has no such color or several"
+      (RULE &shape_color2
+        (&center_color.value (:v *Col))))))
+
+(ALTS $stamp "what each copy holds" $CenterShape
+  (ALT $CopyOther
+    (OUTPUT stamp "each copy holds the shape of the other shape panel"
+      (RULE &copy
+        (&candidate *Q)
+        (&shape_cell2 Q *P_intile))))
+  (ALT $StoredShape
+    (OUTPUT stamp "each copy is the stored shape &stored_shape"
+      (DET &stored_shape
+        (&changed (:P_intile *P)))
+
+      (RULE &copy
+        (&candidate *Q)
+        (&stored_shape (:P *P_intile))))))
+
+(ALTS $detect "which panel is the other shape panel" $OnePanel
+  (ALT $CornerProbe
+    (INPUT two-shapes "the center panel is not read")
+    (OUTPUT direction "the other panel is the last ring panel, in the order from &probe_corner along &order_axis, whose cell at &probe_corner, or a cell beside it, holds the shape color; with no such panel, the ring panel toward &probe_corner"
+      (RULE &probe_other
+        (OR ((&probe_order.maximal (:key (:Dc *C) *A) (:t *Q)))
+            ((&shape_color2)
+             (&probe_corner (:D C))
+             (&order_axis A)
+             (&ring Q (:D C))
+             (NOT (&probed2 C)))))
+
+      (RULE &candidate
+        (&probe_other *Q)))
+    ;; One grid per probe corner and order axis.
+    (RULE &output
+      (&probe_other (:C *Dc) *A *Q)
+      (&drawn Q *P *Col))))
+
+(ALTS $combine "how a copy meets its target panel" $ShapeOnly
+  (ALT $ClearTarget
+    (OUTPUT stamp "each target panel is first reset to &bg"
+      (RULE &in_target
+        (&target *Q *T)
+        (&panel2 *P (:P_tile T)))
+
+      (RULE &drawn
+        (OR ((&stamped *Q *P *Col)
+             (&ready Q))
+            ((&ready Q)
+             (input P (:Col *Col_in))
+             (NOT (&stamped Q P))
+             (IF ((&in_target Q P))
+                 ((&bg (:C Col)))
+                 ((= Col Col_in)))))))))
+
+;; One grid, read at every probe corner and order axis.
+(RULE &output
+  (&other2 *Q)
+  (&drawn Q *P *Col))

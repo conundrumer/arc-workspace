@@ -1,0 +1,27 @@
+;; 84db8fc4
+
+(DET &bg ChangedColor)
+
+(DET &outside_fill AnyOutNewColor)
+
+(DET &enclosed_fill AnyOutNewColor)
+
+(RULE &bg_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(INIT &outside Flood
+  (node (P)
+    (&bg_cell *P))
+  (source (P)
+    (&bg_cell *P)
+    (dir_elem *D)
+    (margin (:B P) D (:K 0))))
+
+(RULE &output
+  (OR ((&bg_cell *P)
+       (IF ((&outside.reached P))
+           ((&outside_fill (:C *Col)))
+           ((&enclosed_fill (:C Col)))))
+      ((input P Col)
+       (NOT (&bg_cell P)))))

@@ -1,0 +1,149 @@
+;; 692cd3b6
+
+(DET &bg DominantColor)
+
+(RULE &boxes_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &boxes Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&boxes_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &boxes_component
+  (&boxes.class (:a *P) *Id))
+
+(RULE &shadow_cell
+  (&boxes_component (:Id *Key))
+  (input *P))
+
+(INIT &bbox BoundingBox
+  (key ((&boxes_component *P ^Id))
+    (cell (P)
+      (&boxes_component *P Id))))
+
+(RULE &covered
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (ALL ((&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(INIT &wall Boundary
+  (key ((&covered ^Id *P))
+    (cell (P)
+      (&covered Id *P))))
+
+(RULE &door
+  (&wall.exposed (:key *Id) *P *D)
+  (dir_elem D)
+  (input P *Col)
+  (&bg (:C Col)))
+
+(RULE &shadow_dir
+  (&door (:Id *Key) (:D *D2))
+  (opposite (:D D2) (:Opp *D)))
+
+(RULE &shadow_dir_ray
+  (&shadow_dir *Key *D))
+
+(RULE &shadow_node
+  (&shadow_dir *Key)
+  (input *P))
+
+(RULE &shadow_source
+  (&covered (:Id *Key) *P))
+
+;; The box's shadow: cast from its cells away from the door.
+(INIT &shadow Distance
+  (key ((&shadow_source (:Key ^Ky) (:P ^O))
+        (&shadow_dir_ray (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&shadow_source (:Key Ky) (:P O))
+           (&shadow_dir_ray (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&shadow_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&shadow_node (:Key Ky) (:P Q)))
+          ((&shadow_source (:Key Ky) (:P O))
+           (&shadow_dir_ray (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&shadow_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&shadow_source (:Key Ky) (:P O))
+           (&shadow_dir_ray (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&shadow_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&shadow_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&shadow_source (:Key Ky) (:P O))
+      (&shadow_dir_ray (:Key Ky) D))))
+
+(RULE &shadow_ray2
+  (&shadow.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &shadow_ray
+  (&shadow_ray2 *Key *P *D *K (:Origin *Src))
+  (&shadow_cell Key P))
+
+(RULE &shadow_end
+  (&shadow_ray2 *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&shadow_ray2 Key (:P Q) D Origin)))
+
+(DET &paint AnyOutNewColor)
+
+;; The rectangle the exits span.
+(INIT &span BoundingBox
+  (cell ((:P Q))
+    (&door *P *D)
+    (step_offset D (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *Q))))
+
+(RULE &painted
+  (OR ((&span.box *B)
+       (input *P *Col)
+       (ALL ((input P (:Col *Colm))
+             (dir_elem (:D *D_m1))
+             (relative (:Base B) (:X P) (:X_rel *R_m2))
+             (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+            ((>= K_m3 0)))
+       (&bg (:C Col))
+       (NOT (&shadow_ray P)))
+      ((&door P))))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&paint (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))

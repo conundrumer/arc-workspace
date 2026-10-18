@@ -1,0 +1,150 @@
+;; 7b0280bc
+
+(RULE &piece_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(INIT &ground_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The background is the commonest color.
+(INIT &ground Order
+  (member ((:t Col))
+    (&ground_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&ground_count.size (:key *Col) *N)))
+
+(RULE &piece_node
+  (input *P (:Col *Key))
+  (NOT (&ground.maximal (:t Key))))
+
+;; Each color's pieces. A wire runs diagonally, so pieces are 8-connected.
+(INIT &piece Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&piece_node (:Key *Ky) *P)
+         (&piece_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&piece_node (:Key Ky) (:P P2)))
+        ((&piece_node (:Key Ky) P)
+         (= P2 P)))))
+
+(RULE &piece_component
+  (&piece.class (:a *Key *P) *Id))
+
+(DET &wire_fill AnyOutNewColor)
+
+(DET &square_fill AnyOutNewColor)
+
+(RULE &piece_cell
+  (&piece_component *P *Id))
+
+(RULE &piece_color
+  (&piece_component (:Key *Col) *Id))
+
+(INIT &bbox BoundingBox
+  (key ((&piece_cell ^Id *P))
+    (cell (P)
+      (&piece_cell Id *P))))
+
+(RULE &square_box
+  (&bbox.box (:key *Id) *B)
+  (&piece_cell Id *P)
+  (axis_elem *A)
+  (relative (:Base B) (:X P) (:X_rel *R_m1))
+  (frame_extent (:P R_m1) A *N)
+  (perp A *A2)
+  (axis_elem (:A A2))
+  (relative (:Base B) (:X P) (:X_rel *R_m2))
+  (frame_extent (:P R_m2) (:A A2) N))
+
+(RULE &gap
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (ALL ((&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (NOT (&piece_cell Id P)))
+
+(RULE &square
+  (&square_box *Id)
+  (NOT (&gap Id)))
+
+(RULE &touch
+  (&piece_cell (:Id *A) *P)
+  (dir8_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&piece_cell (:Id *B) (:P Q))
+  (!= A B))
+
+(ALTS $choice "what makes a piece a square" $Filled
+  (ALT $Extents
+    (RULE &square
+      (&square_box *Id))))
+
+(RULE &wire_color
+  (&piece_color *Id *Col)
+  (NOT (&square Id)))
+
+(RULE &square_color
+  (&piece_color *Col)
+  (NOT (&wire_color Col)))
+
+(INIT &squares Cardinality
+  (key ((&square_color ^Col))
+    (member ((:m Id))
+      (&piece_color *Id Col))))
+
+(INIT &fewest Order
+  (member ((:t (:V Col) (:S N)))
+    (&squares.size (:key *Col) *N))
+  (score ((:t (:V Col) (:S N)) (:S N))
+    (&squares.size (:key *Col) *N)))
+
+(RULE &end_color
+  (&fewest.minimal (:t (:V *Col))))
+
+(RULE &end_piece
+  (&piece_color *Id *Col)
+  (&end_color Col))
+
+;; Hops over the touch graph from each end.
+(INIT &hops Distance
+  (key ((&end_piece (:Id ^E))))
+  (edge ((:a A) (:b B))
+    (&touch *A *B)))
+
+;; The route: traced from the other end back toward the seed along
+;; fewest-hop predecessors. Each end seeds the same route.
+(INIT &back Propagation
+  (key ((OR ((&end_piece (:Id ^E))
+             (&end_piece (:Id *E2))
+             (!= E E2))
+            ((&hops.predecessor (:key E) (:b *B) (:a *A)))))
+    (source ((:n E2))
+      (&end_piece (:Id E))
+      (&end_piece (:Id *E2))
+      (!= E E2))
+    (edge ((:a B) (:b A))
+      (&hops.predecessor (:b *B) (:a *A)))))
+
+(RULE &route_cell
+  (&back.reached (:n *Id))
+  (&piece_cell Id *P)
+  (&piece_color Id (:Col *C))
+  (OR ((&wire_color (:Col C))
+       (&wire_fill (:C *Col)))
+      ((&square_color (:Col C))
+       (NOT (&end_color (:Col C)))
+       (&square_fill (:C Col)))))
+
+(RULE &output
+  (OR ((&route_cell *P *Col))
+      ((input P Col)
+       (NOT (&route_cell P)))))

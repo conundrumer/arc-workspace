@@ -1,0 +1,7 @@
+;; 817e6c09
+
+(param &anchor Dir (DIR_R))
+(param &ink Color (2))
+(param &mark Color (8))
+(param &mark_run number (1))
+(param &keep_run number (1))

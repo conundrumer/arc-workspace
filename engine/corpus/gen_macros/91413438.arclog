@@ -1,0 +1,64 @@
+;; 91413438
+
+(DET &bg SharedColor)
+
+(INIT &side Cardinality
+  (member ((:m P))
+    (input *P *Col)
+    (&bg (:C Col))))
+
+(INIT &tiles Frame
+  (extent (A (:N S))
+    (axis_elem *A)
+    (&side.size (:N *S))))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&tiles.cell (:P *P_tile)))
+  (inner ((:P P_intile))
+    (input (:P *P_intile))))
+
+(DET &lex_corner DiagDirDomain)
+
+(DET &lex_axis AxisDomain)
+
+(INIT &copy_count Cardinality
+  (member ((:m P))
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &lex Order
+  (member ((:t P))
+    (&tiles.cell *P))
+  (before ((:a P) (:b P2))
+    (&tiles.cell *P)
+    (&tiles.cell (:P *P2))
+    (&lex_corner *D)
+    (&lex_axis *A)
+    (OR ((corner_dir (:C D) A (:D *D2))
+         (dir_elem (:D D2))
+         (margin (:B P) (:D D2) (:K *K1_m1))
+         (margin (:B P2) (:D D2) (:K *K2_m2))
+         (< K1_m1 K2_m2))
+        ((corner_dir (:C D) A (:D D2))
+         (perp A (:A2 *A2_m3))
+         (corner_dir (:C D) (:A A2_m3) (:D *D22))
+         (margin (:B P) (:D D2) (:K *K_m4))
+         (margin (:B P2) (:D D2) (:K K_m4))
+         (dir_elem (:D D22))
+         (margin (:B P) (:D D22) (:K *K1_m5))
+         (margin (:B P2) (:D D22) (:K *K2_m6))
+         (< K1_m5 K2_m6)))))
+
+(RULE &copy
+  (&lex.rank (:t *P_tile) *R)
+  (&copy_count.size *N)
+  (< R N))
+
+(RULE &output
+  (&output_tiling.cell (:P_outer *P_tile) (:P_inner *P_intile) *P)
+  (input (:P P_intile) (:Col *Col_in))
+  (OR ((NOT (&copy P_tile))
+       (&bg (:C *Col)))
+      ((&copy P_tile)
+       (= Col Col_in))))

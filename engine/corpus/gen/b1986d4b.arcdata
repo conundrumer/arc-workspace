@@ -1,0 +1,5 @@
+;; b1986d4b
+
+(param &corner DiagDir (DIAG_TL))
+(param &axis Axis (AXIS_H))
+(param &gap number (1))

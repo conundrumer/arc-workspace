@@ -1,0 +1,8 @@
+;; 71e489b6
+
+(param &ground Color (0))
+(param &halo Color (7))
+(param &square Position
+  (grid
+    (1 1)
+    (1 1)))

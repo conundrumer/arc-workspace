@@ -1,0 +1,42 @@
+;; 25094a63
+
+(DET &paint AnyOutNewColor)
+
+;; TODO no-det-plan: &shape: the plan gives no verdict
+(DET &shape)
+
+(RULE &footprint
+  (&shape (:P *S)))
+
+(ALTS $choice "what the footprint is" $Shape
+  (ALT $Side
+    (DET &side TileCount)
+
+    (INIT &square Frame
+      (extent (A (:N K))
+        (&side (:N *K))
+        (axis_elem *A)))
+
+    (RULE &footprint
+      (&square.cell (:P *S)))))
+
+(INIT &occ Occurrences
+  (key ((OR ((input *P ^Col))
+            ((&footprint *S)
+             (input Col))))
+    (cell (P)
+      (input *P Col))
+    (shape ((:P S))
+      (&footprint *S)
+      (input Col))))
+
+(RULE &covered
+  (&occ.occurrence (:P *M))
+  (&footprint *S)
+  (compose (:A M) (:B S) (:C *P)))
+
+(RULE &output
+  (OR ((&covered *P)
+       (&paint (:C *Col)))
+      ((input P Col)
+       (NOT (&covered P)))))

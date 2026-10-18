@@ -1,0 +1,173 @@
+;; 5961cc34
+
+(RULE &objects_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(RULE &node
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &objects Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&node *P)
+         (&objects_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&node (:P P3)))
+        ((&node P)
+         (= P3 P)))))
+
+(RULE &objects_component
+  (&objects.class (:a *P) *Id))
+
+(RULE &beam_dir
+  (dir_elem (:D *Key)))
+
+(RULE &beam_blocked
+  (dir_elem (:D *Key))
+  (&node *P))
+
+(RULE &beam_node
+  (dir_elem (:D *Key))
+  (input *P)
+  (NOT (&beam_blocked Key P)))
+
+;; The colors a port cell takes.
+(DET &port ChangedColor)
+
+(RULE &port_cell
+  (input *P *Col)
+  (&port (:C Col)))
+
+(RULE &port_dir
+  (&node (:P *Q))
+  (NOT (&port_cell (:P Q)))
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A Q) (:B V_m1) (:C *P))
+  (&port_cell P))
+
+(RULE &beam_source
+  (&port_dir *P (:D *Key)))
+
+;; Each port's beam runs over the field until it meets ink.
+(INIT &beam Distance
+  (key ((&beam_source (:Key ^Ky) (:P ^O))
+        (&beam_dir (:Key Ky)))
+    (edge ((:a A2) (:b Q))
+      (OR ((&beam_source (:Key Ky) (:P O))
+           (&beam_dir (:Key Ky))
+           (axis_of (:D Ky) *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite (:D Ky) (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset (:D Ky) K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&beam_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&beam_node (:Key Ky) (:P Q)))
+          ((&beam_source (:Key Ky) (:P O))
+           (&beam_dir (:Key Ky))
+           (step_offset (:D Ky) (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&beam_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&beam_source (:Key Ky) (:P O))
+           (&beam_dir (:Key Ky))
+           (diag_dir_elem (:D Ky))
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite (:D Ky) (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset (:D Ky) (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&beam_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&beam_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&beam_source (:Key Ky) (:P O))
+      (&beam_dir (:Key Ky)))))
+
+(RULE &beam_ray
+  (&beam.distance (:key (:Ky *Key) (:Ky *D) (:O *Origin)) (:n *P) *K))
+
+(RULE &beam_end
+  (&beam_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&beam_ray Key (:P Q) D Origin)))
+
+;; The color the current carries.
+(DET &lit UnchangedColor)
+
+(RULE &obj
+  (&objects_component *P *Id))
+
+(RULE &beam_cell
+  (dir_elem (:D *Key))
+  (input *P))
+
+(RULE &feeds
+  (&beam_end (:P *E) *D (:Origin *P_port))
+  (step_offset D (:V *V_m1))
+  (compose (:A E) (:B V_m1) (:C *P))
+  (input P)
+  (&obj (:P P_port) *Id)
+  (&obj P (:Id *Id2)))
+
+;; The live objects: the objects the current starts from, and those it
+;; reaches from them, carrying on down the beams.
+(INIT &live Propagation
+  (source ((:n Id))
+    (&obj *P *Id)
+    (input P *Col)
+    (&lit (:C Col)))
+  (edge ((:a Id) (:b Id2))
+    (&feeds *Id *Id2)))
+
+(ALTS $choice "which property singles out the source object; the pairs never separate them" $Lit
+  (ALT $Marked
+    ;; The color that marks the source object.
+    (DET &source RarestColor)
+
+    ;; The live objects: the objects the current starts from, and those it
+    ;; reaches from them, carrying on down the beams.
+    (INIT &live Propagation
+      (source ((:n Id))
+        (&obj *P *Id)
+        (input P *Col)
+        (&source (:C Col)))
+      (edge ((:a Id) (:b Id2))
+        (&feeds *Id *Id2))))
+  (ALT $Rim
+    ;; The live objects: the objects the current starts from, and those it
+    ;; reaches from them, carrying on down the beams.
+    (INIT &live Propagation
+      (source ((:n Id))
+        (&obj *P *Id)
+        (dir_elem *D)
+        (margin (:B P) D (:K 0)))
+      (edge ((:a Id) (:b Id2))
+        (&feeds *Id *Id2)))))
+
+(RULE &lit_cell
+  (&live.reached (:n *Id))
+  (&obj (:P *P_obj) Id)
+  (OR ((&beam_ray (:Key *Ky) *P (:Origin P_obj))
+       (&beam_cell (:Key Ky) P))
+      ((= P P_obj))))
+
+(RULE &output
+  (OR ((&lit_cell *P)
+       (&lit (:C *Col)))
+      ((input P)
+       (NOT (&lit_cell P))
+       (&bg (:C Col)))))

@@ -1,0 +1,18 @@
+;; bc1d5164
+
+(DET &bg DominantColor)
+
+(DET &frame Frame)
+
+(RULE &contribution
+  (input (:P *P_in) *Col)
+  (NOT (&bg (:C Col)))
+  (diag_dir_elem (:D *Diag))
+  (&frame (:P *P_out))
+  (same_corner (:D Diag) (:P1 P_in) (:P2 P_out)))
+
+(RULE &output
+  (OR ((&contribution (:P_out *P) *Col))
+      ((&frame P)
+       (NOT (&contribution (:P_out P)))
+       (&bg (:C Col)))))

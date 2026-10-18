@@ -1,0 +1,7 @@
+;; 0bb8deee
+
+(param &bg Color (0))
+(param &tile_box (Position Box)
+  (grid
+    ((0 3 0 3) (0 3 3 0))
+    ((3 0 0 3) (3 0 3 0))))

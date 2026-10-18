@@ -1,0 +1,5 @@
+;; d492a647
+
+(param &bg Color (0))
+(param &noise Color (5))
+(param &period number (2))

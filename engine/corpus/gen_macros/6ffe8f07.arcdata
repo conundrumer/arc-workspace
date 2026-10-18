@@ -1,0 +1,5 @@
+;; 6ffe8f07
+
+(param &source Color (8))
+(param &wall Color (1))
+(param &beam Color (4))

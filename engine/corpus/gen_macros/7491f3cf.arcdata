@@ -1,0 +1,22 @@
+;; 7491f3cf
+
+(param &mask_tile Position
+  (grid
+    (_ _ _ _ _ _)
+    (_ 1 _ _ _ _)
+    (_ _ _ _ _ _)))
+(param &top_tile Position
+  (grid
+    (_ _ _ _ _ _)
+    (_ _ 1 _ _ _)
+    (_ _ _ _ _ _)))
+(param &under_tile Position
+  (grid
+    (_ _ _ _ _ _)
+    (_ _ _ 1 _ _)
+    (_ _ _ _ _ _)))
+(param &out_tile Position
+  (grid
+    (_ _ _ _ _ _)
+    (_ _ _ _ 1 _)
+    (_ _ _ _ _ _)))

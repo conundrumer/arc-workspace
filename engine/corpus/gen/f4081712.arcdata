@@ -1,0 +1,5 @@
+;; f4081712
+
+(representative 67b4a34d)
+
+(param &mask Color (3))

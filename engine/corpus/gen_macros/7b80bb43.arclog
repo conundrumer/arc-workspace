@@ -1,0 +1,144 @@
+;; 7b80bb43
+
+(RULE &cast_dir
+  (dir_elem (:D *Key)))
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The pair's dominant color is the background.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &bg
+  (&bg_mode.maximal (:t *Col)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg Col)))
+
+(RULE &flanked
+  (&ink *P)
+  (opposite *D (:Opp *D_opp))
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&ink (:P Q))
+  (step_offset (:D D_opp) (:V *V_m2))
+  (compose (:A P) (:B V_m2) (:C *Q2))
+  (&ink (:P Q2)))
+
+(RULE &chain
+  (&ink *P)
+  (NOT (&flanked P))
+  (diag_dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&ink (:P Q))
+  (NOT (&flanked (:P Q))))
+
+(RULE &cast_node
+  (dir_elem (:D *Key))
+  (input *P)
+  (ALL ()
+       ((&chain P))))
+
+(RULE &straight
+  (&chain *P)
+  (opposite *D (:Opp *D_in))
+  (step_offset (:D D_in) (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&ink (:P Q)))
+
+(RULE &cast_source
+  (&straight *P (:D *Key)))
+
+(INIT &cast Distance
+  (key ((&cast_source (:Key ^Ky) (:P ^O))
+        (&cast_dir (:Key Ky)))
+    (edge ((:a A2) (:b Q))
+      (OR ((&cast_source (:Key Ky) (:P O))
+           (&cast_dir (:Key Ky))
+           (axis_of (:D Ky) *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite (:D Ky) (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset (:D Ky) K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&cast_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&cast_node (:Key Ky) (:P Q)))
+          ((&cast_source (:Key Ky) (:P O))
+           (&cast_dir (:Key Ky))
+           (step_offset (:D Ky) (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&cast_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&cast_source (:Key Ky) (:P O))
+           (&cast_dir (:Key Ky))
+           (diag_dir_elem (:D Ky))
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite (:D Ky) (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset (:D Ky) (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&cast_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&cast_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&cast_source (:Key Ky) (:P O))
+      (&cast_dir (:Key Ky)))))
+
+(RULE &cast_ray
+  (&cast.distance (:key (:Ky *Key) (:Ky *D) (:O *Origin)) (:n *P) *K))
+
+(RULE &cast_end
+  (&cast_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&cast_ray Key (:P Q) D Origin)))
+
+(RULE &cast_stop
+  (&cast_end *Key (:P *E) *D (:Origin *Src))
+  (step_offset D (:V *V_m1))
+  (compose (:A E) (:B V_m1) (:C *P))
+  (&cast_ray Key P D *K (:Origin Src)))
+
+(RULE &cast_cell
+  (dir_elem (:D *Key))
+  (input *P))
+
+(RULE &fill
+  (&cast_ray (:Key *D) *P *K (:Origin *Src))
+  (&cast_cell (:Key D) P)
+  (!= K 0)
+  (&cast_end (:Key D) (:P *E) (:D *D_2) (:Origin Src))
+  (step_offset (:D D_2) (:V *V_m1))
+  (compose (:A E) (:B V_m1) (:C *P_2))
+  (input (:P P_2))
+  (input (:P Src) *Col))
+
+(RULE &cleared
+  (&chain *P)
+  (NOT (&cast_stop (:Src P))))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&fill P *Col))
+      ((NOT (&fill P))
+       (&cleared P)
+       (&bg Col))
+      ((NOT (&fill P))
+       (NOT (&cleared P))
+       (= Col Col_in))))

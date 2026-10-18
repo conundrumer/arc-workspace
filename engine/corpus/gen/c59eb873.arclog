@@ -1,0 +1,13 @@
+;; c59eb873
+
+(DET &intile Frame)
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (input (:P *P_tile)))
+  (inner ((:P P_intile))
+    (&intile (:P *P_intile))))
+
+(RULE &output
+  (input (:P *P_tile) *Col)
+  (&output_tiling.cell (:P_outer P_tile) *P))

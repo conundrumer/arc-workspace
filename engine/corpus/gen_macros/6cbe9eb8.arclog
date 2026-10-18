@@ -1,0 +1,184 @@
+;; 6cbe9eb8
+
+(INIT &bbox BoundingBox
+  (key ((input *P ^Col))
+    (cell (P)
+      (input *P Col))))
+
+(RULE &on_edge_inside1
+  (input (:P *P_) *Col)
+  (&bbox.box (:key Col) (:B *B_))
+  (dir_elem (:D *D_m1))
+  (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+  (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+  (< K_m3 0))
+
+(DET &corner DiagDirDomain)
+
+(RULE &box_size
+  (&bbox.cell (:key *Col) *P)
+  (&bbox.box (:key Col) *B)
+  (axis_elem *A)
+  (relative (:Base B) (:X P) (:X_rel *R_m1))
+  (frame_extent (:P R_m1) A *N))
+
+(RULE &gap
+  (&bbox.box (:key *Col) *B)
+  (input *P)
+  (ALL ((&bbox.box (:key (:Col *Colm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (NOT (input P Col)))
+
+(RULE &block
+  (input *Col)
+  (NOT (&gap Col)))
+
+(RULE &on_edge
+  (input *P *Col)
+  (&bbox.box (:key Col) *B)
+  (NOT (&on_edge_inside1 (:P_ P) (:B_ B)))
+  (margin (:B P) (:D *D_m1) (:K *K_m2))
+  (margin B (:D D_m1) (:K K_m2)))
+
+(RULE &outline
+  (input *Col)
+  (NOT (&block Col))
+  (ALL ((input *P Col))
+       ((&on_edge Col P))))
+
+(RULE &shape
+  (OR ((&outline *Col))
+      ((&block Col))))
+
+;; Shapes from the largest inward: Col2 fits in Col.
+(INIT &nest Order
+  (member ((:t Col))
+    (&shape *Col))
+  (before ((:a Col) (:b Col2))
+    (&shape *Col)
+    (&shape (:Col *Col2))
+    (!= Col Col2)
+    (ALL ((&box_size Col *A *N)
+          (&box_size (:Col Col2) A (:N *N2)))
+         ((>= N N2)))))
+
+;; Each outline a shape nests in takes it one step in from that outline's
+;; rim; a block takes it no step in.
+(INIT &rims Cardinality
+  (key ((OR ((&shape ^Col))
+            ((&nest.before (:a *Col3) (:b Col))
+             (&outline (:Col Col3)))))
+    (member ((:m Col3))
+      (&nest.before (:a *Col3) (:b Col))
+      (&outline (:Col Col3)))
+    (domain ()
+      (&shape Col))))
+
+(RULE &obox_corner_inset1
+  (&corner (:D *Diag_))
+  (&rims.size (:key *Col) (:N *K_))
+  (corner_dir (:C Diag_) (:A *A_m1) (:D *D1_m2))
+  (perp (:A A_m1) (:A2 *A2_m3))
+  (corner_dir (:C Diag_) (:A A2_m3) (:D *D2_m4))
+  (edge_inset (:D D1_m2) (:K K_) (:B *B1_m5))
+  (edge_inset (:D D2_m4) (:K K_) (:B *B2_m6))
+  (compose (:A B1_m5) (:B B2_m6) (:C *B_in_)))
+
+(DET &bg ChangedColor)
+
+(INIT &frame Frame
+  (extent (A N)
+    (&nest.minimal (:t *Col))
+    (&box_size Col *A *N)))
+
+(RULE &obox
+  (&rims.size (:key *Col) (:N *K))
+  (&corner (:D *Diag))
+  (&obox_corner_inset1 (:Diag_ Diag) (:K_ K) (:B_in_ *B_in))
+  (&frame.cell (:P *Q))
+  (ALL ((&corner (:D *Diagm))
+        (&rims.size (:key (:Col *Colm)) (:N *Km))
+        (corner_dir (:C Diagm) (:A *A_m1) (:D *D1_m2))
+        (perp (:A A_m1) (:A2 *A2_m3))
+        (corner_dir (:C Diagm) (:A A2_m3) (:D *D2_m4))
+        (edge_inset (:D D1_m2) (:K Km) (:B *B1_m5))
+        (edge_inset (:D D2_m4) (:K Km) (:B *B2_m6))
+        (compose (:A B1_m5) (:B B2_m6) (:C B_in))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B_in) (:X Q) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (ALL ((&rims.size (:key (:Col *Colmm)) (:N *Kmm))
+        (corner_dir (:C Diag) (:A *A_m1m) (:D *D1_m2m))
+        (perp (:A A_m1m) (:A2 *A2_m3m))
+        (corner_dir (:C Diag) (:A A2_m3m) (:D *D2_m4m))
+        (edge_inset (:D D1_m2m) (:K Kmm) (:B *B1_m5m))
+        (edge_inset (:D D2_m4m) (:K Kmm) (:B *B2_m6m))
+        (compose (:A B1_m5m) (:B B2_m6m) (:C B_in))
+        (corner_dir (:C Diag) (:D *D_m1m))
+        (margin (:B Q) (:D D_m1m) (:K *K1_m2))
+        (margin (:B B_in) (:D D_m1m) (:K *K2_m3)))
+       ((= K1_m2 K2_m3)))
+  (input *P)
+  (&bbox.box (:key Col) (:B *B2))
+  (ALL ((&bbox.box (:key (:Col *Colmmm)) (:B B2))
+        (dir_elem (:D *D_m1mm))
+        (relative (:Base B2) (:X P) (:X_rel *R_m2m))
+        (margin (:B R_m2m) (:D D_m1mm) (:K *K_m3m)))
+       ((>= K_m3m 0)))
+  (ALL ((&bbox.box (:key (:Col *Colmmmm)) (:B B2))
+        (corner_dir (:C Diag) (:D *D_m1mmm))
+        (margin (:B P) (:D D_m1mmm) (:K *K1_m2m))
+        (margin (:B B2) (:D D_m1mmm) (:K *K2_m3m)))
+       ((= K1_m2m K2_m3m)))
+  (relative (:Base B2) (:X P) (:X_rel *P_inner))
+  (relative (:Base P_inner) (:X Q) (:X_rel *B)))
+
+(RULE &paint
+  (&obox *Col *B)
+  (&frame.cell *P)
+  (OR ((relative (:Base B) (:X P) (:X_rel *R_m1))
+       (axis_of (:D *D1_m2) (:A *A1_m3))
+       (opposite (:D D1_m2) (:Opp *O1_m4))
+       (perp (:A A1_m3) (:A2 *A2_m5))
+       (axis_of (:D *D2_m6) (:A A2_m5))
+       (opposite (:D D2_m6) (:Opp *O2_m7))
+       (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+       (>= K1_m8 0)
+       (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+       (>= K2_m9 0)
+       (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+       (>= K3_m10 0)
+       (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+       (>= K4_m11 0)
+       (margin (:B P) (:D *D_m12) (:K *K_m13))
+       (margin B (:D D_m12) (:K K_m13)))
+      ((&block Col)
+       (relative (:Base B) (:X P) (:X_rel *R_m14))
+       (axis_of (:D *D1_m15) (:A *A1_m16))
+       (opposite (:D D1_m15) (:Opp *O1_m17))
+       (perp (:A A1_m16) (:A2 *A2_m18))
+       (axis_of (:D *D2_m19) (:A A2_m18))
+       (opposite (:D D2_m19) (:Opp *O2_m20))
+       (margin (:B R_m14) (:D D1_m15) (:K *K1_m21))
+       (> K1_m21 0)
+       (margin (:B R_m14) (:D O1_m17) (:K *K2_m22))
+       (> K2_m22 0)
+       (margin (:B R_m14) (:D D2_m19) (:K *K3_m23))
+       (> K3_m23 0)
+       (margin (:B R_m14) (:D O2_m20) (:K *K4_m24))
+       (> K4_m24 0))))
+
+(RULE &covered
+  (&nest.before (:a *Col) (:b *Col2))
+  (&paint (:Col Col2) *P))
+
+(RULE &output
+  (OR ((&paint *Col *P)
+       (NOT (&covered Col P)))
+      ((&frame.cell P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))

@@ -1,0 +1,5 @@
+;; 05f2a901
+
+(param &bg Color (0))
+(param &mover Color (2))
+(param &anchor Color (8))

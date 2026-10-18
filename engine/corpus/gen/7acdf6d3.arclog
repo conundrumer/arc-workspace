@@ -1,0 +1,78 @@
+;; 7acdf6d3
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &comps Connectivity
+  (key ((&ink *P ^Col))
+    (node (P)
+      (&ink *P Col)))
+  (step ((:Delta S))
+    (diag_dir_elem *D)
+    (step_offset D (:V *S))))
+
+(RULE &container
+  (&comps.component (:key *Col) *Id))
+
+(DET &hollow_axis AxisDomain)
+
+(RULE &hollow_axis2
+  (&container (:Id *Key))
+  (&hollow_axis *A))
+
+;; The hollow: bg cells with the container on both sides along the axis.
+(INIT &hollow Ray
+  (key ((OR ((&comps.component *P ^Id))
+            ((&hollow_axis2 (:Key Id) *A)
+             (axis4_of *D A))
+            ((&hollow_axis2 (:Key Id))
+             (input P))))
+    (source (P)
+      (&comps.component *P Id))
+    (node (P)
+      (&hollow_axis2 (:Key Id))
+      (input *P))
+    (dir (D)
+      (&hollow_axis2 (:Key Id) *A)
+      (axis4_of *D A))))
+
+(RULE &hollow_between
+  (&container (:Id *Key))
+  (input *P *Col)
+  (&bg (:C Col))
+  (&hollow_axis2 Key *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&hollow.ray (:key (:Id Key)) P D)
+  (&hollow.ray (:key (:Id Key)) P (:D O)))
+
+(INIT &hollow_size Cardinality
+  (key ((&hollow_between (:Key ^Id) *P))
+    (member ((:m P))
+      (&hollow_between (:Key Id) *P))))
+
+(INIT &pieces Cardinality
+  (key ((&ink *P ^Col))
+    (member ((:m P))
+      (&ink *P Col))))
+
+(RULE &fit
+  (&hollow_size.size (:key *Id) *N)
+  (&pieces.size (:key *Col) N)
+  (&container Id (:Col *Col2))
+  (!= Col Col2))
+
+(RULE &move
+  (OR ((&fit *Id *Col)
+       (&hollow_between (:Key Id) *P))
+      ((&fit (:Col *Col2))
+       (input P (:Col Col2))
+       (&bg (:C Col)))))
+
+(RULE &output
+  (OR ((&move *P *Col))
+      ((input P Col)
+       (NOT (&move P)))))

@@ -1,0 +1,111 @@
+;; 3b4c2228
+
+(DET &out_diag DiagDirDomain)
+
+(DET &out_pos Frame)
+
+(RULE &diag_diagonal
+  (&out_pos *P)
+  (&out_diag *D)
+  (corner_dir (:C D) (:A *A_m1) (:D *D1_m2))
+  (perp (:A A_m1) (:A2 *A2_m4))
+  (corner_dir (:C D) (:A A2_m4) (:D *D2_m3))
+  (margin (:B P) (:D D1_m2) (:K *Ring))
+  (margin (:B P) (:D D2_m3) (:K Ring)))
+
+(RULE &comps_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &block_color VanishedColor)
+
+(RULE &on
+  (input *P *Col)
+  (&block_color (:C Col)))
+
+(INIT &comps Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&on *P)
+         (&comps_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&on (:P P3)))
+        ((&on P)
+         (= P3 P)))))
+
+(RULE &comps_component
+  (&comps.class (:a *P) *Id))
+
+(DET &block_shape Frame)
+
+(DET &mark AnyOutNewColor)
+
+(DET &bg DominantColor)
+
+(INIT &bbox BoundingBox
+  (key ((&comps_component *P ^Id))
+    (cell (P)
+      (&comps_component *P Id))))
+
+(INIT &same Inclusion
+  (pattern ((:m P))
+    (&block_shape *P))
+  (observed ((:observed O) (:m P_inner))
+    (&bbox.cell (:key (:Id *O)) *P)
+    (&bbox.box (:key (:Id O)) *B)
+    (ALL ((&bbox.cell (:key (:Id *Om)) P)
+          (&bbox.box (:key (:Id Om)) B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B) (:X P) (:X_rel *P_inner))))
+
+(RULE &block
+  (&same.equal (:observed *Id)))
+
+(INIT &blocks Cardinality
+  (member ((:m Id))
+    (&block *Id))
+  (domain ()
+    (input)))
+
+(RULE &total
+  (&blocks.size *N))
+
+(ALTS $detect "how the block shape's occurrences are found" $Object
+  (ALT $Placement
+    (INIT &occ Occurrences
+      (cell (P)
+        (&on *P))
+      (shape (P)
+        (&block_shape *P)))
+
+    (INIT &placements Cardinality
+      (member ((:m P))
+        (&occ.occurrence *P)))
+
+    (RULE &total
+      (&placements.size *N))))
+
+(ALTS $render "how the count renders" $Tally
+  (ALT $Lookup
+    (DET &lookup_grid
+      (&blocks.size *E *N)
+      (ex_output E *P *Col))
+
+    (RULE &output
+      (&total *N)
+      (&lookup_grid N *P *Col))))
+
+(RULE &marked
+  (&diag_diagonal *P (:Ring *K))
+  (&total *N)
+  (< K N))
+
+(RULE &output
+  (OR ((&marked *P)
+       (&mark (:C *Col)))
+      ((&out_pos P)
+       (&total)
+       (NOT (&marked P))
+       (&bg (:C Col)))))

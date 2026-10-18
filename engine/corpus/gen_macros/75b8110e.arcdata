@@ -1,0 +1,12 @@
+;; 75b8110e
+
+(representative ea9794b1)
+
+(param &bg Color (0))
+(param &tiles number (2))
+(param &tile_dim number (4))
+(param &prio (Position number)
+  (grid
+    (3 0)
+    (1 2)))
+(param &ink_rank (Color number) (5 0) (6 1) (9 2) (4 3))

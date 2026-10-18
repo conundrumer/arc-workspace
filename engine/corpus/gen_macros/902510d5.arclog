@@ -1,0 +1,123 @@
+;; 902510d5
+
+(RULE &objects_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &objects Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&ink *P)
+         (&objects_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ink (:P P3)))
+        ((&ink P)
+         (= P3 P)))))
+
+(RULE &objects_component
+  (&objects.class (:a *P) *Id))
+
+(RULE &pieces_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(INIT &pieces Quotient
+  (edge ((:a (:Key Col) P) (:b (:Key Col) (:P P3)))
+    (OR ((&ink *P *Col)
+         (&pieces_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ink (:P P3) Col))
+        ((&ink P Col)
+         (= P3 P)))))
+
+(RULE &pieces_component
+  (&pieces.class (:a *Key *P) *Id))
+
+(RULE &grouped
+  (&objects_component *P *Id))
+
+(RULE &marker
+  (&ink *P)
+  (corner_dist P (:Diag *D) (:K 0)))
+
+(ALTS $choice "What bounds a group of ink." $Object
+  (ALT $Piece
+    (RULE &grouped
+      (&pieces_component *P *Id)))
+  (ALT $Dominant
+    (INIT &dominant_count Cardinality
+      (key ((&ink *P ^Col))
+        (member ((:m P))
+          (&ink *P Col))))
+
+    (INIT &dominant Order
+      (member ((:t Col))
+        (&dominant_count.size (:key *Col)))
+      (score ((:t Col) (:S N))
+        (&dominant_count.size (:key *Col) *N)))
+
+    (RULE &grouped
+      (&pieces_component (:Key *Col) *P *Id)
+      (&dominant.maximal (:t Col)))))
+
+(INIT &biggest_count Cardinality
+  (key ((&grouped *P ^Id))
+    (member ((:m P))
+      (&grouped *P Id))))
+
+;; The shape: the largest group — the id that most cells carry.
+(INIT &biggest Order
+  (member ((:t Id))
+    (&biggest_count.size (:key *Id)))
+  (score ((:t Id) (:S N))
+    (&biggest_count.size (:key *Id) *N)))
+
+(RULE &shape
+  (&biggest.maximal (:t *Id))
+  (&grouped *P Id))
+
+(RULE &loose
+  (&ink *P *Col)
+  (NOT (&shape P))
+  (NOT (&marker P)))
+
+(INIT &fill_count Cardinality
+  (key ((&loose *P ^Col))
+    (member ((:m P))
+      (&loose *P Col))))
+
+(INIT &loose_count Cardinality
+  (member ((:m P))
+    (&loose *P)))
+
+(INIT &fill Order
+  (member ((:t Col))
+    (&fill_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&fill_count.size (:key *Col) *N)))
+
+(RULE &triangle
+  (input *P)
+  (&marker *D)
+  (corner_dist P (:Diag D) *K)
+  (&loose_count.size *N)
+  (< K N))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&triangle P)
+       (&fill.maximal (:t *Col)))
+      ((&shape P)
+       (= Col Col_in))
+      ((NOT (&shape P))
+       (NOT (&triangle P))
+       (&bg (:C Col)))))

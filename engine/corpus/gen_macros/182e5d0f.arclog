@@ -1,0 +1,70 @@
+;; 182e5d0f
+
+(RULE &cord_run_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(DET &wire ColorDomain)
+
+(DET &cap UnchangedColor)
+
+(DET &bead RarestColor)
+
+(RULE &plug
+  (input *P (:Col *Col_w))
+  (&wire (:C Col_w))
+  (opposite *D (:Opp *D2))
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (input (:P Q) (:Col *Col_c))
+  (&cap (:C Col_c))
+  (step_offset (:D D2) (:V *V_m2))
+  (compose (:A P) (:B V_m2) (:C *Q2))
+  (input (:P Q2) (:Col Col_c)))
+
+(RULE &cord
+  (input *P *Col)
+  (&wire (:C Col))
+  (NOT (&plug P)))
+
+(RULE &entry
+  (input (:P *P_seat) *Col)
+  (&bead (:C Col))
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P_seat) (:B V_m1) (:C *P_cord))
+  (&cord (:P P_cord)))
+
+;; The cords a bead travels.
+(INIT &cord_run Propagation
+  (source ((:n P))
+    (&entry (:P_cord *P))
+    (&cord P))
+  (edge ((:a P) (:b P2))
+    (&cord *P)
+    (&cord_run_steps (:Delta *S))
+    (compose (:A P) (:B S) (:C *P2))
+    (&cord (:P P2))))
+
+(RULE &consumed
+  (OR ((&cord_run.reached (:n *P)))
+      ((&entry (:P_seat P)))))
+
+(RULE &landing
+  (&plug (:P *P0))
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P0) (:B V_m1) (:C *P))
+  (&cord_run.reached (:n P)))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&landing P)
+       (&bead (:C *Col)))
+      ((&consumed P)
+       (NOT (&landing P))
+       (&bg (:C Col)))
+      ((NOT (&consumed P))
+       (= Col Col_in))))

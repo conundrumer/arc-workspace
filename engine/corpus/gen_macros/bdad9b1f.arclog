@@ -1,0 +1,111 @@
+;; bdad9b1f
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &line_split1
+  (&ink (:P *P1_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P1_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P1_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P1_) (:X_rel *Ac_)))
+
+(RULE &line
+  (&ink (:P *P1) *Col)
+  (&ink (:P *P2) Col)
+  (!= P1 P2)
+  (axis_elem *A)
+  (&line_split1 (:P1_ P1) (:A_ A) (:X_m1_ *X_m1) (:Ac_ *P_across))
+  (perp A (:A2 *A2_m2))
+  (axis_of (:D *D_m3) (:A A2_m2))
+  (margin (:B P1) (:D D_m3) (:K *K_m4))
+  (margin (:B P2) (:D D_m3) (:K K_m4)))
+
+(DET &cross AnyOutNewColor)
+
+(ALTS $choice "how each segment's extension axis is found. In this task each segment points along its color's role axis and seats on an edge along it, so the three agree." $Shape
+  (ALT $Edge
+    (RULE &line_split2
+      (&ink (:P *P_) *Col)
+      (axis_of *D (:A *A_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+      (relative (:Base X_m1_) (:X P_) (:X_rel *Ac_)))
+
+    (RULE &line
+      (&ink *P *Col)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0))
+      (axis_of D *A)
+      (&line_split2 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:Ac_ *P_across))))
+  (ALT $Role
+    (DET &role
+      (ex_input *E (:P *P1) *Col)
+      (NOT (&bg (:C Col)))
+      (ex_input E (:P *P2) Col)
+      (!= P1 P2)
+      (axis_elem *A)
+      (perp A (:A2 *A2_m1))
+      (axis_of (:D *D_m2) (:A A2_m1))
+      (margin (:B P1) (:D D_m2) (:K *K_m3))
+      (margin (:B P2) (:D D_m2) (:K K_m3)))
+
+    (RULE &line_split3
+      (input (:P *P_) *Col)
+      (&role Col (:A *A_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+      (relative (:Base X_m1_) (:X P_) (:X_rel *Ac_)))
+
+    (RULE &line
+      (input *P *Col)
+      (&role Col *A)
+      (&line_split3 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:Ac_ *P_across)))))
+
+(RULE &item_split1
+  (input (:P *P_))
+  (&line *Col (:A *A_) (:P_across *Ac_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P_) (:X_rel Ac_)))
+
+;; A cell covered by two line colors is a crossing, and carries neither.
+(INIT &on_line Singleton
+  (key ((input ^P))
+    (member ((:v Col))
+      (&line *Col *A (:P_across *Ac))
+      (&item_split1 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:Ac_ Ac)))))
+
+(RULE &output
+  (OR ((&on_line.plural (:key *P))
+       (&cross (:C *Col)))
+      ((&on_line.value (:key P) (:v Col)))
+      ((input P Col)
+       (NOT (&on_line.member (:key P))))))

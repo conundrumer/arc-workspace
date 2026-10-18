@@ -1,0 +1,33 @@
+;; 963f59bc
+
+(DET &bg DominantColor)
+
+(DET &shape SharedColor)
+
+(RULE &shape_cell
+  (input *P *Col)
+  (&shape (:C Col)))
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&shape (:C Col))))
+
+(RULE &anchor
+  (&mark (:P *P_mark) *Col)
+  (&shape_cell (:P *P_src))
+  (axis_inversion *A (:T *F))
+  (same_line A (:P P_mark) (:Q P_src)))
+
+(RULE &copy
+  (&anchor *P_mark *Col *F *P_src)
+  (&shape_cell (:P *P2))
+  (relative (:Base P_src) (:X P2) (:X_rel *V))
+  (apply (:D F) (:P V) (:P_out *V_img))
+  (compose (:A P_mark) (:B V_img) (:C *P))
+  (input P))
+
+(RULE &output
+  (OR ((&copy *P *Col))
+      ((input P Col)
+       (NOT (&copy P)))))

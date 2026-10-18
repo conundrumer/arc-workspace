@@ -1,0 +1,6 @@
+;; 668eec9a
+
+(param &bg Color (7))
+(param &order_dir Dir (DIR_T))
+(param &stack_dir Dir (DIR_B))
+(param &out_extent (Axis number) (AXIS_V 5) (AXIS_H 3))

@@ -1,0 +1,212 @@
+;; b775ac94
+
+(INPUT shapes "the cells that are not &background form separate objects. Each object is one shape of one color, its cells 8-connected, plus one to three single marker cells."
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT key-block "one cell of the shape, at a corner of the shape's bounding box, and the object's marker cells lie in one 2×2 block. That shape cell is the block's corner nearest the shape, and each marker fills one of the other three corners of the block.")
+
+(INPUT room "each copy fits in the grid and covers no other object")
+
+(OUTPUT keep "each input cell that is not &background stays in the output, and a copy cell that lands on one does not replace it")
+
+(OUTPUT mirror-copy "for each marker, the shape is copied into the marker's quadrant of the key block, in the marker's color. The copy is the shape's image under the reflection that takes the shape's key cell to the marker's cell: across the key block's vertical center line for a marker beside the key cell along a row, across its horizontal center line for a marker beside it along a column, and both together for the diagonal marker. Undefined where two copies of different colors meet, or where an object's markers lie in no key block.")
+
+(OUTPUT no-marker-no-copy "a corner of the key block with no marker gets no copy"
+
+  (RULE &objs_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((diag_dir_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  (INIT &objs Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((input *P *Col)
+           (NOT (&background (:C Col)))
+           (&objs_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (input (:P P3) (:Col *Col2))
+           (NOT (&background (:C Col2))))
+          ((input P (:Col *Col3))
+           (NOT (&background (:C Col3)))
+           (= P3 P)))))
+
+  (RULE &objs_component
+    (&objs.class (:a *P) *Id))
+
+  (INIT &shape_color_count Cardinality
+    (key ((&objs_component *P ^Id)
+          (input P ^Col))
+      (member ((:m P))
+        (&objs_component *P Id)
+        (input P Col))))
+
+  ;; The shape's color: the commonest color of its object.
+  (INIT &shape_color Order
+    (key ((&shape_color_count.size (:key ^Id *Col)))
+      (member ((:t Col))
+        (&shape_color_count.size (:key Id *Col)))
+      (score ((:t Col) (:S N))
+        (&shape_color_count.size (:key Id *Col) *N))))
+
+  (RULE &shape
+    (&objs_component *P *Id)
+    (input P *Col)
+    (&shape_color.maximal (:key Id) (:t Col)))
+
+  (INIT &shape_box BoundingBox
+    (key ((&shape ^Id *P))
+      (cell (P)
+        (&shape Id *P))))
+
+  (RULE &corner_cell
+    (&shape *Id *P)
+    (&shape_box.box (:key Id) *B)
+    (ALL ((&shape (:Id *Idm) P)
+          (&shape_box.box (:key (:Id Idm)) B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (corner_dir *C (:A *A_m1) (:D *D1_m2))
+    (perp (:A A_m1) (:A2 *A2_m3))
+    (corner_dir C (:A A2_m3) (:D *D2_m4))
+    (margin (:B P) (:D D1_m2) (:K *K1_m5))
+    (margin B (:D D1_m2) (:K K1_m5))
+    (margin (:B P) (:D D2_m4) (:K *K2_m6))
+    (margin B (:D D2_m4) (:K K2_m6)))
+
+  (INIT &block BoundingBox
+    (key ((&corner_cell ^Id *P ^C)
+          (step_offset (:D C) (:V *V_m1))
+          (compose (:A P) (:B V_m1) (:C *Q)))
+      (cell (P)
+        (OR ((&corner_cell Id *P C)
+             (step_offset (:D C) (:V *V_m1))
+             (compose (:A P) (:B V_m1) (:C *Q)))
+            ((&corner_cell Id (:P *P2) C)
+             (step_offset (:D C) (:V *V_m12))
+             (compose (:A P2) (:B V_m12) (:C P)))))))
+
+  (RULE &block_key
+    (&block.box (:key *Id *C) *B)
+    (&corner_cell Id *P C)
+    (ALL ((&corner_cell (:Id *Idm) P (:C *Cm))
+          (&block.box (:key (:Id Idm) (:C Cm)) B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (corner_dir (:C *K) (:A *A_m1) (:D *D1_m2))
+    (perp (:A A_m1) (:A2 *A2_m3))
+    (corner_dir (:C K) (:A A2_m3) (:D *D2_m4))
+    (margin (:B P) (:D D1_m2) (:K *K1_m5))
+    (margin B (:D D1_m2) (:K K1_m5))
+    (margin (:B P) (:D D2_m4) (:K *K2_m6))
+    (margin B (:D D2_m4) (:K K2_m6)))
+
+  (RULE &color_marker
+    (&objs_component *P *Id)
+    (input P *Col)
+    (NOT (&shape_color.maximal (:key Id) (:t Col))))
+
+  (RULE &key
+    (&block_key *Id *C *B *K)
+    (ALL ((&block.box (:key Id C) (:B *Bm))
+          (&color_marker Id (:P *M))
+          (dir_elem (:D *D_m1))
+          (relative (:Base Bm) (:X M) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0))))
+
+  (RULE &marker
+    (&color_marker *Id *P *Col))
+
+  (RULE &unread
+    (&marker *Id)
+    (NOT (&key Id)))
+
+  (RULE_OR_DET &quadrant_op "The reflection of the key block that takes its corner K to its corner M_corner: across one center line for corners on one side, across both for opposite corners."
+    (d4_elem (:D *Op))
+    (diag_dir_elem (:D *Key_corner))
+    (diag_dir_elem (:D *Marker_corner))
+    (step_offset (:D Key_corner) (:V *S_m1))
+    (apply (:D Op) (:P S_m1) (:P_out *S2_m2))
+    (step_offset (:D Marker_corner) (:V S2_m2))
+    (ALL ((dir_elem *D)
+          (dir_elem (:D *D2))
+          (step_offset D (:V *S_m1m))
+          (apply (:D Op) (:P S_m1m) (:P_out *S2_m2m))
+          (step_offset (:D D2) (:V S2_m2m))
+          (axis_of D *A))
+         ((axis_of (:D D2) A)))
+    (!= Key_corner Marker_corner))
+
+  (RULE &copy
+    (&key *Id *B *K)
+    (&marker Id (:P *M) *Col)
+    (ALL ((&marker (:Id *Idm) (:P M) (:Col *Colm))
+          (&key (:Id Idm) B (:K *Km))
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X M) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (&quadrant_op (:Key_corner K) (:Marker_corner *M_corner) *Op)
+    (ALL ((&quadrant_op (:Key_corner *Kmm) (:Marker_corner M_corner) (:Op *Opm))
+          (&marker (:Id *Idmm) (:P M) (:Col *Colmm))
+          (&key (:Id Idmm) B (:K Kmm))
+          (corner_dir (:C M_corner) (:D *D_m1m))
+          (margin (:B M) (:D D_m1m) (:K *K1_m2))
+          (margin B (:D D_m1m) (:K *K2_m3)))
+         ((= K1_m2 K2_m3)))
+    (&shape Id (:P *S))
+    (relative (:Base B) (:X S) (:X_rel *S_rel))
+    (apply (:D Op) (:P S_rel) (:P_out *T_rel))
+    (compose (:A B) (:B T_rel) (:C *P))))
+
+(ALTS $m "which cells of an object are its markers" $ColorMarkers
+  (ALT $BlockMarkers
+    (INPUT key-block "the key block is a 2×2 block that holds a cell of the object besides its corner nearest the shape, a shape cell at a corner of the shape's bounding box. The markers are the block's cells other than that shape cell. A cell of the object outside the block that is not of the shape's color stays and makes no copy."
+      (RULE &block_other
+        (&block_key *Id *C *B (:P *P2))
+        (&objs_component *P Id)
+        (!= P P2)
+        (ALL ((&objs_component P (:Id *Idm))
+              (&block_key (:Id Idm) (:C *Cm) B (:P *Pm))
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (input P *Col))
+
+      (RULE &key
+        (&block_key *Id *C *B *K)
+        (&block_other Id C))
+
+      (RULE &marker
+        (&block_other *Id *P *Col)))))
+
+(ALTS $o "what a copy cell does to an input cell of another object it lands on" $KeepObject
+  (ALT $CopyOver
+    (OUTPUT keep "a copy cell replaces the input cell it lands on")
+    (RULE &output
+      (OR ((input *P)
+           (&copy P *Col)
+           (NOT (&unread)))
+          ;; A cell no copy covers keeps its input color.
+          ((NOT (&unread))
+           (input P Col)
+           (NOT (&copy P)))))))
+
+(RULE &output
+  ;; A cell no copy covers keeps its input color.
+  (OR ((NOT (&unread))
+       (input *P *Col)
+       (NOT (&copy P)))
+      ((input P (:Col *Col_in))
+       (&copy P (:Col *Col_copy))
+       (NOT (&unread))
+       (IF ((&background (:C Col_in)))
+           ((= Col Col_copy))
+           ((= Col Col_in))))))

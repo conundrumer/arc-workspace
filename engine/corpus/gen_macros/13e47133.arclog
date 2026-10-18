@@ -1,0 +1,201 @@
+;; 13e47133
+
+(RULE &comps_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The two colors that cover the grid: the background, and the wall drawn on
+;; it.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &bg
+  (&bg_mode.maximal (:t *Col)))
+
+(INIT &wall_mode_count Cardinality
+  (key ((input *P ^Col)
+        (NOT (&bg Col)))
+    (member ((:m P))
+      (input *P Col)
+      (NOT (&bg Col)))))
+
+(INIT &wall_mode Order
+  (member ((:t Col))
+    (&wall_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&wall_mode_count.size (:key *Col) *N)))
+
+(RULE &wall
+  (&wall_mode.maximal (:t *Col)))
+
+(RULE &open
+  (input *P *Col)
+  (NOT (&wall Col)))
+
+(INIT &comps Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&open *P)
+         (&comps_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&open (:P P3)))
+        ((&open P)
+         (= P3 P)))))
+
+(RULE &comps_component
+  (&comps.class (:a *P) *Id))
+
+(RULE &rim_depth_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((dir8_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(RULE &sray_dir
+  (dir8_elem (:D *Key)))
+
+(RULE &sray_node
+  (dir8_elem (:D *Key))
+  (input *P))
+
+;; The boundary of the open set. The grid edge bounds a region like a wall.
+(INIT &rim Boundary
+  (cell (P)
+    (&open *P))
+  (dir (D)
+    (dir8_elem *D)))
+
+(RULE &sray_source
+  (dir8_opposite (:D *Key) *D2)
+  (&rim.exposed *P (:D D2)))
+
+;; A rim cell casts back over the cells that face the outside through it. The
+;; key is the cast direction, so each instance casts only its own way.
+(INIT &sray Distance
+  (key ((&sray_source (:Key ^Ky) (:P ^O))
+        (&sray_dir (:Key Ky)))
+    (edge ((:a A2) (:b Q))
+      (OR ((&sray_source (:Key Ky) (:P O))
+           (&sray_dir (:Key Ky))
+           (axis_of (:D Ky) *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite (:D Ky) (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset (:D Ky) K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&sray_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&sray_node (:Key Ky) (:P Q)))
+          ((&sray_source (:Key Ky) (:P O))
+           (&sray_dir (:Key Ky))
+           (step_offset (:D Ky) (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&sray_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&sray_source (:Key Ky) (:P O))
+           (&sray_dir (:Key Ky))
+           (diag_dir_elem (:D Ky))
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite (:D Ky) (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset (:D Ky) (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&sray_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&sray_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&sray_source (:Key Ky) (:P O))
+      (&sray_dir (:Key Ky)))))
+
+(RULE &sray_ray
+  (&sray.distance (:key (:Ky *Key) (:Ky *D) (:O *Origin)) (:n *P) *K))
+
+(RULE &sray_end
+  (&sray_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&sray_ray Key (:P Q) D Origin)))
+
+(INIT &rim_depth Distance
+  (edge ((:a P) (:b P2))
+    (&open *P)
+    (&rim_depth_steps (:Delta *S))
+    (compose (:A P) (:B S) (:C *P2))
+    (&open (:P P2)))
+  (source ((:n P))
+    (&rim.boundary *P)))
+
+(RULE &region
+  (&comps_component *P *Id))
+
+(RULE &depth
+  (&rim_depth.distance (:n *P) *K))
+
+(ALTS $choice "the depth metric a region uses" $Peel
+  (ALT $Sight
+    (RULE &sray_cell
+      (&open *P)
+      (dir8_elem (:D *Key)))
+
+    ;; A cell's sight depth: the fewest steps to a rim cell over the eight view
+    ;; lines — how many open cells remain before the ray exits.
+    (INIT &sight Order
+      (key ((&sray_ray (:Key *Ky) ^P *K)
+            (&sray_cell (:Key Ky) P))
+        (member ((:t K))
+          (&sray_ray (:Key *Ky) P *K)
+          (&sray_cell (:Key Ky) P))
+        (score ((:t K) (:S K))
+          (&sray_ray (:Key *Ky) P *K)
+          (&sray_cell (:Key Ky) P))))
+
+    (RULE &depth
+      (&sight.minimal (:key *P) (:t *K)))))
+
+(RULE &mark
+  (input (:P *M) *Col)
+  (NOT (&bg Col))
+  (&region (:P M) *Id)
+  (&depth (:P M) *K))
+
+(INIT &pal_len Cardinality
+  (key ((&region *P ^Id)
+        (&depth P *K)
+        (&mark Id (:K *K_mark))
+        (<= K K_mark))
+    (member ((:m K))
+      (&region *P Id)
+      (&depth P *K)
+      (&mark Id (:K *K_mark))
+      (<= K K_mark))))
+
+(RULE &output
+  ;; The walls keep their color.
+  (OR ((input *P *Col)
+       (&wall Col))
+      ;; A marked region fills with its palette, repeating over the depths.
+      ((&region P *Id)
+       (&depth P *K)
+       (&pal_len.size (:key Id) (:N *W))
+       (divide (:T K) (:Side W) (:Gap 0) (:Remainder *Idx))
+       (OR ((&mark Id (:K Idx) Col))
+           ((NOT (&mark Id (:K Idx)))
+            (&bg Col))))
+      ;; An unmarked region stays background.
+      ((&region P (:Id *Id2))
+       (&bg Col)
+       (NOT (&mark (:Id Id2))))))

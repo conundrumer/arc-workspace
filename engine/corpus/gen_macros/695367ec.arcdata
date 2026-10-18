@@ -1,0 +1,8 @@
+;; 695367ec
+
+(param &frame Position (Frame
+  ((:A AXIS_V) (:N 15))
+  ((:A AXIS_H) (:N 15))))
+(param &anchor DiagDir (DIAG_TL))
+(param &gap number (1))
+(param &bg Color (0))

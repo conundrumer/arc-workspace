@@ -1,0 +1,4 @@
+;; d631b094
+
+(param &bg Color (0))
+(param &bar_axis Axis (AXIS_H))

@@ -1,0 +1,107 @@
+;; 55783887
+
+(RULE &span_dir
+  (diag_axis_elem (:Da *Key))
+  (axis4_of *D (:A Key)))
+
+(RULE &span_node
+  (diag_axis_elem (:Da *Key))
+  (input *P))
+
+(DET &line_color SharedColor)
+
+(RULE &span_source
+  (diag_axis_elem (:Da *Key))
+  (input *P *Col)
+  (&line_color (:C Col)))
+
+;; The span the line marks of each diagonal axis delimit.
+(INIT &span Distance
+  (key ((&span_source (:Key ^Ky) (:P ^O))
+        (&span_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&span_source (:Key Ky) (:P O))
+           (&span_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&span_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&span_node (:Key Ky) (:P Q)))
+          ((&span_source (:Key Ky) (:P O))
+           (&span_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&span_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&span_source (:Key Ky) (:P O))
+           (&span_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&span_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&span_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&span_source (:Key Ky) (:P O))
+      (&span_dir (:Key Ky) D))))
+
+(RULE &span_ray
+  (&span.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &span_between
+  (diag_axis_elem (:Da *Key))
+  (input *P)
+  (axis4_of *D (:A Key))
+  (dir8_opposite D (:D2 *O))
+  (&span_ray Key P D)
+  (&span_ray Key P (:D O)))
+
+(RULE &span_end
+  (&span_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&span_ray Key (:P Q) D Origin)))
+
+(DET &cast_color UnchangedColor)
+
+(RULE &blank
+  (input *P *Col)
+  (NOT (&line_color (:C Col)))
+  (NOT (&cast_color (:C Col))))
+
+(RULE &emit
+  (input *P *Col)
+  (&cast_color (:C Col))
+  (&span_between (:Key *DA) P)
+  (diag_perp (:Da DA) (:Da2 *Da)))
+
+(RULE &paint
+  (OR ((&span_between *P)
+       (&blank P)
+       (&line_color (:C *Col)))
+      ((&emit (:P *Q) (:Da *DA))
+       (diag_perp (:Da DA) (:Da2 *A2_m1))
+       (diag_axis_of (:D *D_m2) (:Da A2_m1))
+       (corner_dist (:P Q) (:Diag D_m2) (:K *K_m3))
+       (&blank P)
+       (corner_dist P (:Diag D_m2) (:K K_m3))
+       (&cast_color (:C Col)))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

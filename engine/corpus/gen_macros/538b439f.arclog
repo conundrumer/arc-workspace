@@ -1,0 +1,207 @@
+;; 538b439f
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The field is the commonest color.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(RULE &parts_node
+  (input *P (:Col *Key))
+  (NOT (&field.maximal (:t Key))))
+
+(RULE &parts_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &parts Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&parts_node (:Key *Ky) *P)
+         (&parts_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&parts_node (:Key Ky) (:P P2)))
+        ((&parts_node (:Key Ky) P)
+         (= P2 P)))))
+
+(RULE &parts_component
+  (&parts.class (:a *Key *P) *Id))
+
+(INIT &bbox BoundingBox
+  (key ((&parts_component *P ^Id))
+    (cell (P)
+      (&parts_component *P Id))))
+
+(RULE &hole
+  (input *P)
+  (&bbox.box (:key *Id) *B)
+  (ALL ((&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (NOT (&parts_component P Id)))
+
+(RULE &item_split2
+  (&parts_component (:P *P_) *Id)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+;; The lines a component reaches across each axis.
+(INIT &reach Singleton
+  (key ((&parts_component *P ^Id)
+        (axis_elem ^A)
+        (&item_split2 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+    (member ((:v L))
+      (&parts_component *P Id)
+      (axis_elem A)
+      (&item_split2 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))))
+
+(RULE &thin
+  (&reach.value (:key *Id)))
+
+(RULE &rect
+  (&parts_component (:Key *Col) *P *Id)
+  (NOT (&hole Id))
+  (NOT (&thin Id)))
+
+(RULE &item_split1
+  (input (:P *P_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (&item_split1 (:P_ P) (:A_ A) (:L_ ^L) (:X_m1_ *X_m1)))
+    (member ((:v Col))
+      (input *P *Col)
+      (axis_elem A)
+      (&item_split1 (:P_ P) (:A_ A) (:L_ L) (:X_m1_ *X_m1)))))
+
+(RULE &divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (NOT (&field.maximal (:t Col))))
+
+(RULE &span_axis
+  (&rect (:Id *Key))
+  (&divider *A))
+
+(RULE &span_dir
+  (&span_axis *Key *A)
+  (axis4_of *D A))
+
+(RULE &span_node
+  (&span_axis *Key)
+  (input *P))
+
+(RULE &image
+  (&rect *Id (:P *P2) *Col)
+  (&divider *A *L)
+  (axis_inversion A (:T *F))
+  (relative (:Base L) (:X P2) (:X_rel *V))
+  (apply (:D F) (:P V) (:P_out *V_img))
+  (compose (:A L) (:B V_img) (:C *P))
+  (input P))
+
+(RULE &span_mark
+  (OR ((&rect (:Id *Key) *P))
+      ((&image (:Id Key) P))))
+
+(RULE &span_source
+  (&span_mark *Key *P))
+
+;; Each rectangle and its image bracket a span along the reflection's axis.
+(INIT &span Distance
+  (key ((&span_source (:Key ^Ky) (:P ^O))
+        (&span_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&span_source (:Key Ky) (:P O))
+           (&span_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&span_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&span_node (:Key Ky) (:P Q)))
+          ((&span_source (:Key Ky) (:P O))
+           (&span_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&span_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&span_source (:Key Ky) (:P O))
+           (&span_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&span_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&span_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&span_source (:Key Ky) (:P O))
+      (&span_dir (:Key Ky) D))))
+
+(RULE &span_ray
+  (&span.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &span_between
+  (&rect (:Id *Key))
+  (input *P)
+  (&span_axis Key *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&span_ray Key P D)
+  (&span_ray Key P (:D O)))
+
+(RULE &span_end
+  (&span_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&span_ray Key (:P Q) D Origin)))
+
+(RULE &paint
+  (&span_between (:Key *Id) *P)
+  (OR ((&image Id P *Col))
+      ((NOT (&rect Id P))
+       (NOT (&image Id P))
+       (&divider Col))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

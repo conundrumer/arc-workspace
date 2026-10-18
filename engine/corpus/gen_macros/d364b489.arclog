@@ -1,0 +1,71 @@
+;; d364b489
+
+(DET &blob_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &marker RarestColor)
+
+(DET &marker_at
+  (ex_input *E *P *Col)
+  (&marker (:C Col)))
+
+(DET &painted
+  (ex_output *E *P *Col)
+  (OR ((&marker_at E P))
+      ((ex_input E P (:Col *Col_in))
+       (!= Col_in Col))))
+
+;; A painted cell belongs to the marker in its 4-connected blob.
+(INIT &blob Quotient
+  (edge ((:a (:Key E) P) (:b (:Key E) (:P P3)))
+    (OR ((&painted *E *P)
+         (&blob_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&painted E (:P P3)))
+        ((&painted E P)
+         (= P3 P)))))
+
+(DET &blob_component
+  (&blob.class (:a *Key *P) *Id))
+
+(RULE &marker_at2
+  (input *P *Col)
+  (&marker (:C Col)))
+
+(DET &template
+  (&painted *E *P *Col)
+  (&blob_component (:Key E) P *Id)
+  (&blob_component (:Key E) (:P *M) Id)
+  (&marker_at E (:P M))
+  (relative (:Base M) (:X P) (:X_rel *Delta)))
+
+(DET &arm
+  (&template (:Delta *Off) *Col)
+  (dir_elem *D)
+  (step_offset D (:V Off)))
+
+(RULE &arm_halo
+  (&marker_at2 (:P *Q))
+  (&arm *D *Col)
+  (step_offset D (:V *V_m1))
+  (compose (:A Q) (:B V_m1) (:C *P))
+  (input P))
+
+(ALTS $choice "data-equivalent on this task" $Arms
+  (ALT $Stamp
+    (RULE &stamp_halo
+      (&marker_at2 (:P *Q))
+      (&template (:Delta *Off) *Col)
+      (compose (:A Q) (:B Off) (:C *P))
+      (input P))
+
+    (RULE &output
+      (OR ((&stamp_halo *P *Col))
+          ((input P Col)
+           (NOT (&stamp_halo P)))))))
+
+(RULE &output
+  (OR ((&arm_halo *P *Col))
+      ((input P Col)
+       (NOT (&arm_halo P)))))

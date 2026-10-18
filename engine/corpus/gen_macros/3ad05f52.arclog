@@ -1,0 +1,133 @@
+;; 3ad05f52
+
+(RULE &rooms_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &wall SharedColor)
+
+(RULE &wall_cell
+  (input *P *Col)
+  (&wall (:C Col)))
+
+(RULE &door
+  (input *P)
+  (NOT (&wall_cell P))
+  (opposite *D (:Opp *D_opp))
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&wall_cell (:P Q))
+  (step_offset (:D D_opp) (:V *V_m2))
+  (compose (:A P) (:B V_m2) (:C *Q_opp))
+  (&wall_cell (:P Q_opp)))
+
+;; The regions the walls close off. A doorway is cut out, so no region runs
+;; through one.
+(INIT &rooms Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P)
+         (NOT (&wall_cell P))
+         (NOT (&door P))
+         (&rooms_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3))
+         (NOT (&wall_cell (:P P3)))
+         (NOT (&door (:P P3))))
+        ((input P)
+         (NOT (&wall_cell P))
+         (NOT (&door P))
+         (= P3 P)))))
+
+(RULE &rooms_component
+  (&rooms.class (:a *P) *Id))
+
+(RULE &flood_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &widest_count Cardinality
+  (key ((&rooms_component *P ^Id))
+    (member ((:m P))
+      (&rooms_component *P Id))))
+
+(DET &bg DominantColor)
+
+(RULE &paint
+  (input *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&wall (:C Col))))
+
+;; The ground the buildings stand on: the region the most cells belong to.
+(INIT &widest Order
+  (member ((:t Id))
+    (&widest_count.size (:key *Id)))
+  (score ((:t Id) (:S N))
+    (&widest_count.size (:key *Id) *N)))
+
+(RULE &outside
+  (&rooms_component *P *Id)
+  (&widest.maximal (:t Id)))
+
+(RULE &outward_door
+  (&door *P)
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&outside (:P Q)))
+
+(INIT &span_box BoundingBox
+  (cell (P)
+    (&outward_door *P)))
+
+(RULE &crossing
+  (&span_box.box *B)
+  (&outside *P)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(ALTS $choice "the ground the outward doorways carry paint over" $Span
+  (ALT $Duct
+    (RULE &opposed
+      (&outward_door *P *D)
+      (&outward_door (:P *P2) (:D *D_opp))
+      (opposite D (:Opp D_opp))
+      (dir_elem D)
+      (margin (:B P2) D (:K *K1_m1))
+      (margin (:B P) D (:K *K2_m2))
+      (< K1_m1 K2_m2))
+
+    (INIT &duct_box BoundingBox
+      (key ((&opposed ^P ^P2))))
+
+    (RULE &crossing
+      (&duct_box.box *B)
+      (&outside *P)
+      (ALL ((dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0))))))
+
+(RULE &flood_node
+  (OR ((input *P)
+       (NOT (&wall_cell P))
+       (NOT (&outside P)))
+      ((&crossing P))))
+
+(INIT &flood Propagation
+  (source ((:n P))
+    (input *P *Col)
+    (&paint Col)
+    (&flood_node P))
+  (edge ((:a P) (:b Q))
+    (&flood_node *P)
+    (&flood_steps (:Delta *S))
+    (compose (:A P) (:B S) (:C *Q))
+    (&flood_node (:P Q))))
+
+(RULE &output
+  (input *P (:Col *Col2))
+  (IF ((&flood.reached (:n P)))
+      ((&paint *Col))
+      ((= Col Col2))))

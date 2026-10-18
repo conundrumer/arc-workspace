@@ -1,0 +1,42 @@
+;; 695367ec
+
+(DET &frame Frame)
+
+;; Corner the ruling grows from.
+(DET &anchor DiagDirDomain)
+
+;; Width of a separating line.
+(DET &gap Period)
+
+;; Background fill between the lines.
+(DET &bg AnyOutNewColor)
+
+(RULE &ink
+  (input *Col))
+
+(RULE &run
+  (axis_elem *A)
+  (input *P)
+  (frame_extent P A (:N *K)))
+
+(RULE &on_tile
+  (&frame *P)
+  (&anchor (:D *Diag))
+  (corner_dir (:C Diag) *A *D)
+  (&run A (:K *W))
+  (&gap (:K *G))
+  (margin (:B P) D (:K *T))
+  (divide T (:Side W) (:Gap G)))
+
+(RULE &ruled
+  (&frame *P)
+  (&anchor (:D *Diag))
+  (corner_dir (:C Diag) *D)
+  (NOT (&on_tile P D)))
+
+(RULE &output
+  (OR ((&ruled *P)
+       (&ink *Col))
+      ((&frame P)
+       (NOT (&ruled P))
+       (&bg (:C Col)))))

@@ -1,0 +1,207 @@
+;; 7c008303
+
+(DET &bg DominantColor)
+
+(RULE &item_split1
+  (input (:P *P_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (&item_split1 (:P_ P) (:A_ A) (:L_ ^L) (:X_m1_ *X_m1)))
+    (member ((:v Col))
+      (input *P *Col)
+      (axis_elem A)
+      (&item_split1 (:P_ P) (:A_ A) (:L_ L) (:X_m1_ *X_m1)))))
+
+;; Divider: a line of one non-bg color.
+(RULE &frame_divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (NOT (&bg (:C Col))))
+
+(RULE &frame_on_divider
+  (input *P)
+  (&frame_divider *A *L)
+  (axis_of *D A)
+  (margin (:B P) D (:K *K_m1))
+  (margin (:B L) D (:K K_m1)))
+
+(INIT &frame_rank Order
+  (key ((OR ((&frame_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (dir_elem D)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&frame_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&frame_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (dir_elem D)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (dir_elem D)
+      (margin (:B P) D *K))))
+
+(RULE &frame_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&frame_on_divider P A))
+  (margin (:B P) D *K)
+  (&frame_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &frame_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&frame_part_idx *P D (:N *N1))
+  (&frame_part_idx P (:D D2) (:N *N2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K N1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+(RULE &frame_tile_of
+  (&frame_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&frame_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+;; Each quadrant's box.
+(INIT &tile_box BoundingBox
+  (key ((&frame_tile_of *P ^P_tile))
+    (cell (P)
+      (&frame_tile_of *P P_tile))))
+
+(RULE &quadrant_cell
+  (&tile_box.cell (:key *P_tile) *P)
+  (input P *Col)
+  (&tile_box.box (:key P_tile) *B)
+  (ALL ((&tile_box.cell (:key (:P_tile *P_tilem)) P)
+        (&tile_box.box (:key (:P_tile P_tilem)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(RULE &filled
+  (&quadrant_cell *P_tile *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &tile_extent
+  (&tile_box.cell (:key *P_tile) *P)
+  (&tile_box.box (:key P_tile) *B)
+  (axis_elem *A)
+  (relative (:Base B) (:X P) (:X_rel *R_m1))
+  (frame_extent (:P R_m1) A *N))
+
+(RULE &role
+  (&filled (:P_tile *T_key))
+  (&filled (:P_tile *T_pat))
+  (&tile_extent (:P_tile T_key) *A (:N *N_key))
+  (&tile_extent (:P_tile T_pat) A (:N *N_pat))
+  (< N_key N_pat))
+
+;; The pattern divided into one block per key cell.
+(INIT &blocks_sides ExtentDivisions
+  (frame ((:P P_intile))
+    (&role *T_pat)
+    (&quadrant_cell (:P_tile T_pat) *P_intile)))
+
+(RULE &blocks_axis_split1
+  (&quadrant_cell (:P_tile *T_pat) (:P_intile *P_intile_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_intile_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_intile_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+  (relative (:Base Pi_) (:X P_intile_) (:X_rel *X_m1_)))
+
+(RULE &blocks_parts
+  (&role *T_key)
+  (&tile_extent (:P_tile T_key) *A *N))
+
+(RULE &blocks_axis
+  (OR ((&role *T_pat)
+       (&quadrant_cell (:P_tile T_pat) (:P_intile *P))
+       (&role *T_key)
+       (&tile_extent (:P_tile T_key) *A *N)
+       (&blocks_sides.division A N *K (:G 0))
+       (axis_of *D A)
+       (opposite D (:Opp *O))
+       (margin (:B P) D (:K *T))
+       (margin (:B P) (:D O) (:K *T2))
+       (divide T (:Side K) (:Gap 0) (:Part *I) (:Remainder *R))
+       (divide (:T T2) (:Side K) (:Gap 0) (:Part *I2) (:Remainder *R2))
+       (opposite D (:Opp *O_m1))
+       (edge_inset D (:K I) (:B *B1_m2))
+       (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+       (compose (:A B1_m2) (:B B2_m3) (:C *P_outer))
+       (opposite D (:Opp *O_m4))
+       (edge_inset D (:K R) (:B *B1_m5))
+       (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+       (compose (:A B1_m5) (:B B2_m6) (:C *P_inner))
+       (frame_extent (:P P_inner) A (:N K)))
+      ((&role (:T_pat *T_pat2))
+       (&quadrant_cell (:P_tile T_pat2) (:P_intile P))
+       (&role (:T_key *T_key2))
+       (&tile_extent (:P_tile T_key2) A (:N *N2))
+       (frame_extent P A (:N *K2))
+       (axis_of (:D *D2) A)
+       (opposite (:D D2) (:Opp *O2))
+       (margin (:B P) (:D D2) (:K *T3))
+       (margin (:B P) (:D O2) (:K *T22))
+       (divide (:T T3) (:Side K2) (:Gap 0) (:Part *I3) (:Remainder *R3))
+       (divide (:T T22) (:Side K2) (:Gap 0) (:Part *I22) (:Remainder *R22))
+       (opposite (:D D2) (:Opp *O_m12))
+       (edge_inset (:D D2) (:K I3) (:B *B1_m22))
+       (edge_inset (:D O_m12) (:K I22) (:B *B2_m32))
+       (compose (:A B1_m22) (:B B2_m32) (:C P_outer))
+       (opposite (:D D2) (:Opp *O_m42))
+       (edge_inset (:D D2) (:K R3) (:B *B1_m52))
+       (edge_inset (:D O_m42) (:K R22) (:B *B2_m62))
+       (compose (:A B1_m52) (:B B2_m62) (:C P_inner))
+       (frame_extent (:P P_inner) A (:N K2))
+       (frame_extent (:P P_outer) A (:N N2)))
+      ((&role (:T_pat *T_pat3))
+       (&quadrant_cell (:P_tile T_pat3) (:P_intile P))
+       (axis_elem A)
+       (NOT (&blocks_parts A))
+       (&blocks_axis_split1 (:P_intile_ P) (:A_ A) (:Pi_ P_inner) (:X_m1_ *X_m1))
+       (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
+
+(RULE &blocks_tile
+  (&blocks_axis *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+  (perp (:A A1) *A2)
+  (&blocks_axis P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+  (compose (:A Po1) (:B Po2) (:C *P_outer))
+  (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+(RULE &output
+  (&role *T_key *T_pat)
+  (&quadrant_cell (:P_tile T_pat) (:P_intile *P) (:Col *C))
+  (OR ((NOT (&bg C))
+       (&blocks_tile P (:P_outer *P_block))
+       (&quadrant_cell (:P_tile T_key) (:P_intile P_block) *Col))
+      ((&bg C)
+       (= Col C))))

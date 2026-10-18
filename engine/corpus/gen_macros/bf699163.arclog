@@ -1,0 +1,237 @@
+;; bf699163
+
+(INPUT background "a field of &background."
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT rings "several hollow squares of side 3, each one color, no two of the same color, none of &frame_color."
+
+  ;; The cells of each color other than the background.
+  (INIT &color_box BoundingBox
+    (key ((input *P (:Col ^C))
+          (NOT (&background C)))
+      (cell (P)
+        (input *P (:Col C))
+        (NOT (&background C)))))
+
+  (RULE &has_hole_interior1
+    (input (:P *P_))
+    (&color_box.box (:B *B_))
+    (dir_elem (:D *D_m1))
+    (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+    (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+    (<= K_m3 0))
+
+  (RULE &not_ring
+    (&color_box.box (:key *C) *B)
+    (OR ((input *P (:Col C))
+         (axis_elem *A)
+         (perp A *A2)
+         (axis_elem A)
+         (relative (:Base B) (:X P) (:X_rel *R_m1))
+         (frame_extent (:P R_m1) A *N)
+         (axis_elem (:A A2))
+         (relative (:Base B) (:X P) (:X_rel *R_m2))
+         (frame_extent (:P R_m2) (:A A2) (:N *N2))
+         (!= N N2))
+        ((input P (:Col C))
+         (relative (:Base B) (:X P) (:X_rel *R_m3))
+         (axis_of (:D *D1_m4) (:A *A1_m5))
+         (opposite (:D D1_m4) (:Opp *O1_m6))
+         (perp (:A A1_m5) (:A2 *A2_m7))
+         (axis_of (:D *D2_m8) (:A A2_m7))
+         (opposite (:D D2_m8) (:Opp *O2_m9))
+         (margin (:B R_m3) (:D D1_m4) (:K *K1_m10))
+         (> K1_m10 0)
+         (margin (:B R_m3) (:D O1_m6) (:K *K2_m11))
+         (> K2_m11 0)
+         (margin (:B R_m3) (:D D2_m8) (:K *K3_m12))
+         (> K3_m12 0)
+         (margin (:B R_m3) (:D O2_m9) (:K *K4_m13))
+         (> K4_m13 0))
+        ((input P)
+         (relative (:Base B) (:X P) (:X_rel *R_m14))
+         (axis_of (:D *D1_m15) (:A *A1_m16))
+         (opposite (:D D1_m15) (:Opp *O1_m17))
+         (perp (:A A1_m16) (:A2 *A2_m18))
+         (axis_of (:D *D2_m19) (:A A2_m18))
+         (opposite (:D D2_m19) (:Opp *O2_m20))
+         (margin (:B R_m14) (:D D1_m15) (:K *K1_m21))
+         (>= K1_m21 0)
+         (margin (:B R_m14) (:D O1_m17) (:K *K2_m22))
+         (>= K2_m22 0)
+         (margin (:B R_m14) (:D D2_m19) (:K *K3_m23))
+         (>= K3_m23 0)
+         (margin (:B R_m14) (:D O2_m20) (:K *K4_m24))
+         (>= K4_m24 0)
+         (margin (:B P) (:D *D_m25) (:K *K_m26))
+         (margin B (:D D_m25) (:K K_m26))
+         (NOT (input P (:Col C))))
+        ((ALL ((input (:P *Pmm)))
+              ((&has_hole_interior1 (:P_ Pmm) (:B_ B)))))))
+
+  ;; In every train input, the one color that forms no ring.
+  (INIT &frame Singleton
+    (member ((:v C))
+      (&not_ring *C)))
+
+  (DET &frame_color
+    (&frame.value (:v *C))))
+
+(INPUT dashed-frame "dashed straight lines of &frame_color that are sides of one axis-aligned rectangle; the sides that the grid holds meet at the rectangle's corners, the other sides lie past the grid edge, and each line has gaps."
+
+  (RULE &frame_col
+    (&frame_color *C))
+
+  (RULE &frame2
+    (&frame_col *C)
+    (input *P (:Col C)))
+
+  ;; The frame color: the one color that forms no ring.
+  (INIT &frame_by_shape Singleton
+    (member ((:v C))
+      (&not_ring *C)))
+
+  (INIT &frame_box BoundingBox
+    (cell (P)
+      (&frame2 *P))))
+
+(INPUT one-ring-inside "exactly one ring lies inside that rectangle, clear of its sides, and every other ring lies outside it."
+
+  (RULE &ring
+    (&color_box.box (:key *C))
+    (&frame_col)
+    (NOT (&frame_col C)))
+
+  (RULE &ring_cell
+    (&ring *C)
+    (input *P (:Col C)))
+
+  (RULE &line_cell
+    (&frame2 *P)
+    (axis_of *D *A)
+    (step_offset D (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *Q))
+    (&frame2 (:P Q)))
+
+  (RULE &inner_side
+    (&line_cell *P *A)
+    (perp A *A2)
+    (axis_of *D (:A A2))
+    (&frame2 (:P *G))
+    (dir_elem D)
+    (margin (:B G) D (:K *K1_m1))
+    (margin (:B P) D (:K *K2_m2))
+    (< K1_m1 K2_m2))
+
+  (RULE &outside
+    (&ring_cell *P *C)
+    (&inner_side (:P *L) *D)
+    (dir_elem D)
+    (margin (:B P) D (:K *K1_m1))
+    (margin (:B L) D (:K *K2_m2))
+    (>= K1_m1 K2_m2))
+
+  (RULE &selected
+    (&ring *C)
+    (NOT (&outside C)))
+
+  ;; The directions toward which a frame cell is in line with ring c, past its
+  ;; box.
+  (INIT &framed Cardinality
+    (key ((OR ((&ring ^C))
+              ((&ring_cell *P C)
+               (&color_box.box (:key C) *B)
+               (&frame2 (:P *G))
+               (axis_of *D *A)
+               (perp A (:A2 *A2_m1))
+               (axis_of (:D *D_m2) (:A A2_m1))
+               (margin (:B P) (:D D_m2) (:K *K_m3))
+               (margin (:B G) (:D D_m2) (:K K_m3))
+               (dir_elem D)
+               (margin (:B G) D (:K *K1_m4))
+               (margin B D (:K *K2_m5))
+               (< K1_m4 K2_m5))))
+      (member ((:m D))
+        (&ring_cell *P C)
+        (&color_box.box *B)
+        (&frame2 (:P *G))
+        (axis_of *D *A)
+        (perp A (:A2 *A2_m1))
+        (axis_of (:D *D_m2) (:A A2_m1))
+        (margin (:B P) (:D D_m2) (:K *K_m3))
+        (margin (:B G) (:D D_m2) (:K K_m3))
+        (dir_elem D)
+        (margin (:B G) D (:K *K1_m4))
+        (margin B D (:K *K2_m5))
+        (< K1_m4 K2_m5))
+      (domain ()
+        (&ring C))))
+
+  (INIT &most_framed Order
+    (member ((:t (:V C) (:S N)))
+      (&framed.size (:key *C) *N))
+    (score ((:t (:V C) (:S N)) (:S N))
+      (&framed.size (:key *C) *N))))
+
+(OUTPUT crop-enclosed-ring "the output is the bounding box of the ring inside the frame, copied from the input, its hole included.")
+
+(ALTS $sel "which ring the frame marks" $Enclosed
+  (ALT $FrameBbox
+    (INPUT dashed-frame "cells of &frame_color, in any arrangement")
+    (INPUT one-ring-inside "exactly one ring lies inside the bounding box of the frame-colored cells"
+      (RULE &selected
+        (&ring *C)
+        (&color_box.box (:key C) *B)
+        (&frame_box.box (:B *B2))
+        (ALL ((&color_box.box (:key (:C *Cm)) B)
+              (&frame_box.box (:B B2))
+              (dir_elem (:D *D_m1))
+              (relative (:Base B2) (:X B) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))))
+    (OUTPUT crop-enclosed-ring "the ring is the one inside the bounding box of the frame-colored cells; undefined where that box holds no ring or more than one"))
+  (ALT $MostFramedSides
+    (INPUT one-ring-inside "one ring has frame cells in line with it toward more of the four directions than any other ring"
+      (RULE &selected
+        (&most_framed.maximal (:t (:V *C)))))
+    (OUTPUT crop-enclosed-ring "the ring is the one with frame cells in line with it, past its box, toward the most of the four directions; undefined where two rings tie")))
+
+(ALTS $content "what the output draws for the selected ring" $Crop
+  (ALT $StoredShape
+    (OUTPUT crop-enclosed-ring "the output is &shape, a stored ring, drawn in the selected ring's color, with &background in its hole"
+      ;; The output's ring cells, in the output's frame.
+      ;; TODO no-det-plan: &shape: the plan gives no verdict
+      (DET &shape)
+
+      ;; The frame of the stored shape.
+      (INIT &shape_frame Frame
+        (extent (A N)
+          (&shape *P)
+          (axis_elem *A)
+          (frame_extent P A *N))))
+    (RULE &output
+      (&selected *C)
+      (&shape_frame.cell *P)
+      (OR ((NOT (&shape P))
+           (&background (:C *Col)))
+          ((&shape P)
+           (= Col C))))))
+
+(ALTS $frame "where the frame color comes from" $StoredFrameColor
+  (ALT $FrameColorByShape
+    (INPUT dashed-frame "the frame color is the one color other than &background whose cells do not form one hollow square; undefined where no color or more than one is such"
+      (RULE &frame_col
+        (&frame_by_shape.value (:v *C))))))
+
+(RULE &output
+  (&selected *C)
+  (&color_box.box (:key C) *B)
+  (input (:P *P2) *Col)
+  (ALL ((input (:P P2) (:Col *Colm))
+        (&color_box.box (:key (:C *Cm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P2) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P2) (:X_rel *P)))

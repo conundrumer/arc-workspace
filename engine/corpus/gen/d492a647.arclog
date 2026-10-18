@@ -1,0 +1,68 @@
+;; d492a647
+
+(DET &bg DominantColor)
+
+(DET &noise SharedColor)
+
+(DET &period TileCount)
+
+(RULE &seed
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&noise (:C Col))))
+
+;; Each axis's lines, walked outward from the seed's.
+(INIT &lines Ray
+  (key ((OR ((&seed *P)
+             (axis_elem ^A)
+             (split P A (:Along *L)))
+            ((axis_of *D A))))
+    (source ((:P L))
+      (&seed *P)
+      (axis_elem A)
+      (split P A (:Along *L)))
+    (node (P)
+      (axis_of *D A)
+      (input *P))
+    (dir (D)
+      (axis_of *D A))))
+
+(RULE &lines_cell
+  (input (:P *P2))
+  (axis_elem (:A *Key))
+  (split (:P P2) (:A Key) (:Along *P)))
+
+;; A whole number of jumps from the seed's line.
+(RULE &lattice_line
+  (&lines.ray (:key *A) (:P *L) *K)
+  (&lines_cell (:Key A) (:P L))
+  (&period (:N *W))
+  (divide (:T K) (:Side W) (:Gap 0) (:Remainder 0)))
+
+(ALTS $choice "two models of the lattice, tagged on out's Choice; coincide at period 2" $Period
+  (ALT $Parity
+    ;; An even count of lines from the seed's: a line lies midway.
+    (RULE &lattice_line
+      (&lines.ray (:key *A) (:P *M) *D *K)
+      (&lines_cell (:Key A) (:P M))
+      (jump (:P M) D K (:Q *L))
+      (&lines_cell (:Key A) (:P L)))))
+
+(RULE &lattice
+  (input *P)
+  (perp (:A *A1) *A2)
+  (split P (:A A1) (:Along *L1))
+  (&lattice_line (:A A1) (:L L1))
+  (split P (:A A2) (:Along *L2))
+  (&lattice_line (:A A2) (:L L2)))
+
+(RULE &painted
+  (&lattice *P)
+  (input P *Col)
+  (&bg (:C Col)))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&seed *Col))
+      ((input P Col)
+       (NOT (&painted P)))))

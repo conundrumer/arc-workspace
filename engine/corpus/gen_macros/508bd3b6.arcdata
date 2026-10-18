@@ -1,0 +1,6 @@
+;; 508bd3b6
+
+(param &bg Color (0))
+(param &mark Color (8))
+(param &wall Color (2))
+(param &paint Color (3))

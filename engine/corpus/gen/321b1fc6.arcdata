@@ -1,0 +1,4 @@
+;; 321b1fc6
+
+(param &bg Color (0))
+(param &blank Color (8))

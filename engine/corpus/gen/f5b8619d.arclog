@@ -1,0 +1,33 @@
+;; f5b8619d
+
+(DET &axis AxisDomain)
+
+(DET &bg DominantColor)
+
+(RULE &marked
+  (input *P *Col)
+  (&bg (:C Col))
+  (input (:P *Q) (:Col *M))
+  (NOT (&bg (:C M)))
+  (&axis *A)
+  (same_line A P Q))
+
+(DET &shade AnyOutNewColor)
+
+(RULE &repainted
+  (OR ((&marked *P)
+       (&shade (:C *Col)))
+      ((input P Col)
+       (NOT (&marked P)))))
+
+(DET &tile Frame)
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&tile (:P *P_tile)))
+  (inner ((:P P_in))
+    (&repainted (:P *P_in))))
+
+(RULE &output
+  (&repainted (:P *P_in) *Col)
+  (&output_tiling.cell (:P_inner P_in) *P))

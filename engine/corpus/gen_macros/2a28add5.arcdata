@@ -1,0 +1,6 @@
+;; 2a28add5
+
+(param &bg Color (7))
+(param &marker Color (6))
+(param &fill Color (8))
+(param &axis Axis (AXIS_H))

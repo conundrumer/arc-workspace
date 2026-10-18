@@ -1,0 +1,53 @@
+;; 551d5bf1
+
+(DET &outline RarestColor)
+
+(DET &ink AnyOutNewColor)
+
+(INIT &rects Connectivity
+  (node (P)
+    (input *P *Col)
+    (&outline (:C Col))))
+
+(INIT &bbox BoundingBox
+  (key ((&rects.component *P ^Id))
+    (cell (P)
+      (&rects.component *P Id))))
+
+;; A gap — a border cell the rectangle does not draw — casts away from the
+;; rectangle. The key is the side the gap breaks.
+(INIT &leak Ray
+  (key ((OR ((&bbox.box (:key *Id) *B)
+             (input *P)
+             (inside (:A P) B)
+             (same_dist ^D (:P1 P) (:P2 B))
+             (NOT (&bbox.cell (:key Id) P)))
+            ((dir_elem D))))
+    (source (P)
+      (&bbox.box (:key *Id) *B)
+      (input *P)
+      (inside (:A P) B)
+      (same_dist D (:P1 P) (:P2 B))
+      (NOT (&bbox.cell (:key Id) P)))
+    (node (P)
+      (dir_elem D)
+      (input *P))
+    (dir (D)
+      (dir_elem D))))
+
+(RULE &leak_cell
+  (dir_elem (:D *Key))
+  (input *P))
+
+(RULE &paint
+  (OR ((&bbox.box *B)
+       (input *P)
+       (interior (:A P) B))
+      ((&leak.ray (:key *D) P D)
+       (&leak_cell (:Key D) P))))
+
+(RULE &output
+  (input *P (:Col *Col0))
+  (IF ((&paint P))
+      ((&ink (:C *Col)))
+      ((= Col Col0))))

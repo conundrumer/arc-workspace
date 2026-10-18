@@ -1,0 +1,22 @@
+;; a740d043
+
+(DET &bg DominantColor)
+
+(DET &hole AnyOutNewColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&ink *P)))
+
+(RULE &output
+  (OR ((&ink (:P *P2) *Col))
+      ((input (:P P2) (:Col *C))
+       (&bg C)
+       (&hole (:C Col))))
+  (&bbox.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))

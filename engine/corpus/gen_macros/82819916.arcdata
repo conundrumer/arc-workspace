@@ -1,0 +1,4 @@
+;; 82819916
+
+(param &bg Color (0))
+(param &axis Axis (AXIS_H))

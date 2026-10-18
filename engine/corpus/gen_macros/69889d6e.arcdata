@@ -1,0 +1,7 @@
+;; 69889d6e
+
+(param &walker Color (2))
+(param &corner DiagDir (DIAG_TR))
+(param &first_axis Axis (AXIS_V))
+(param &wall Color (1))
+(param &bg Color (0))

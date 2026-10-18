@@ -1,0 +1,4 @@
+;; 184a9768
+
+(param &bg Color (0))
+(param &noise Color (5))

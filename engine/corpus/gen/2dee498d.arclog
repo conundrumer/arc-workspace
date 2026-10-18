@@ -1,0 +1,16 @@
+;; 2dee498d
+
+(DET &tile_axis AxisDomain)
+
+(DET &tile_count DivisorRatio)
+
+(INIT &output_division Division
+  (cell ((:P P_in))
+    (input (:P *P_in)))
+  (parts (A N)
+    (&tile_axis *A)
+    (&tile_count (:K *N))))
+
+(RULE &output
+  (input (:P *P_in) *Col)
+  (&output_division.tile (:P P_in) (:P_inner *P)))

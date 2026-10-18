@@ -1,0 +1,27 @@
+;; 00d62c1b
+
+(DET &bg DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(RULE &bg_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(INIT &outside Flood
+  (node (P)
+    (&bg_cell *P))
+  (source (P)
+    (&bg_cell *P)
+    (dir_elem *D)
+    (margin (:B P) D (:K 0))))
+
+(RULE &enclosed
+  (&bg_cell *P)
+  (NOT (&outside.reached P)))
+
+(RULE &output
+  (OR ((&enclosed *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&enclosed P)))))

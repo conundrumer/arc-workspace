@@ -1,0 +1,52 @@
+;; 21f83797
+
+(DET &bg DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(DET &line RarestColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &on_line
+  (input *P)
+  (&mark (:P *M))
+  (axis_elem *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B M) (:D D_m2) (:K K_m3)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&mark *P)))
+
+(RULE &spanned
+  (input *P)
+  (&bbox.box *B)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(ALTS $choice "what color the drawn lines take" $Ink
+  (ALT $Mark
+    (RULE &output
+      (OR ((&on_line *P *M)
+           (input (:P M) *Col))
+          ((input P)
+           (NOT (&on_line P))
+           (IF ((&spanned P))
+               ((&fill (:C Col)))
+               ((&bg (:C Col)))))))))
+
+(RULE &output
+  (OR ((input *P)
+       (NOT (&on_line P))
+       (IF ((&spanned P))
+           ((&fill (:C *Col)))
+           ((&bg (:C Col)))))
+      ((&on_line P)
+       (&line (:C Col)))))

@@ -1,0 +1,66 @@
+;; 3bd292e8
+
+(RULE &region_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &wall RarestColor)
+
+(INIT &region Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&wall (:C Col)))
+         (&region_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&wall (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&wall (:C Col3)))
+         (= P3 P)))))
+
+(RULE &region_component
+  (&region.class (:a *P) *Id))
+
+(DET &small_side AnyOutNewColor)
+
+(DET &other_side AnyOutNewColor)
+
+(RULE &across
+  (input *P *Col)
+  (&wall (:C Col))
+  (opposite *D (:Opp *D_opp))
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (step_offset (:D D_opp) (:V *V_m2))
+  (compose (:A P) (:B V_m2) (:C *Q_opp))
+  (&region_component (:P Q) (:Id *A))
+  (&region_component (:P Q_opp) (:Id *B))
+  (!= A B))
+
+(INIT &area Cardinality
+  (key ((&region_component *P (:Id ^A)))
+    (member ((:m P))
+      (&region_component *P (:Id A)))))
+
+(INIT &smallest Order
+  (member ((:t (:V A) (:S N)))
+    (&area.size (:key *A) *N))
+  (score ((:t (:V A) (:S N)) (:S N))
+    (&area.size (:key *A) *N)))
+
+;; The regions on the smallest region's side: those a walk of crossing pairs
+;; reaches from it, since two crossings return to the side started from.
+(INIT &same_side Propagation
+  (source ((:n B))
+    (&smallest.minimal (:t (:V *B))))
+  (edge ((:a A) (:b C))
+    (&across *A (:B *X))
+    (&across (:A X) (:B *C))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&wall (:C Col)))
+      ((&region_component P (:Id *A))
+       (IF ((&same_side.reached (:n A)))
+           ((&small_side (:C Col)))
+           ((&other_side (:C Col)))))))

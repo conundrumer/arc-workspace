@@ -1,0 +1,7 @@
+;; 1e32b0e9
+
+(param &bg Color (0))
+(param &gap number (1))
+(param &tile_count number (3))
+(param &tile_dim number (5))
+(param &corner DiagDir (DIAG_TL))

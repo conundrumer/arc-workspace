@@ -1,0 +1,4 @@
+;; 8dab14c2
+
+(param &bg Color (8))
+(param &shape Color (1))

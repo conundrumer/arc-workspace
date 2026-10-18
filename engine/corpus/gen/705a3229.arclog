@@ -1,0 +1,37 @@
+;; 705a3229
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &cast
+  (&mark *Col *P)
+  (dir_elem *D)
+  (dist_pair P D *K *K2)
+  (< K K2))
+
+(INIT &rays Ray
+  (key ((OR ((&mark ^Col *P))
+            ((&cast Col *D))))
+    (source (P)
+      (&mark Col *P))
+    (node (P)
+      (&cast Col *D)
+      (input *P))
+    (dir (D)
+      (&cast Col *D))))
+
+(RULE &rays_cell
+  (&mark (:Col *Key))
+  (input *P))
+
+(RULE &arm
+  (&rays.ray (:key *Col) *P)
+  (&rays_cell (:Key Col) P))
+
+(RULE &output
+  (OR ((&arm *P *Col))
+      ((input P Col)
+       (NOT (&arm P)))))

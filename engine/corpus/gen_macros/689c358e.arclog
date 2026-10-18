@@ -1,0 +1,93 @@
+;; 689c358e
+
+(DET &bg DominantColor)
+
+;; The color the far edge cell takes.
+(DET &far AnyOutNewColor)
+
+(RULE &cross_cell
+  (input *P (:Col *C))
+  (NOT (&bg C))
+  (relative (:Base 0) (:X P) (:X_rel *R_m1))
+  (axis_of (:D *D1_m2) (:A *A1_m3))
+  (opposite (:D D1_m2) (:Opp *O1_m4))
+  (perp (:A A1_m3) (:A2 *A2_m5))
+  (axis_of (:D *D2_m6) (:A A2_m5))
+  (opposite (:D D2_m6) (:Opp *O2_m7))
+  (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+  (> K1_m8 0)
+  (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+  (> K2_m9 0)
+  (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+  (> K3_m10 0)
+  (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+  (> K4_m11 0))
+
+(INIT &bbox BoundingBox
+  (key ((&cross_cell ^C *P))
+    (cell (P)
+      (&cross_cell C *P))))
+
+(INIT &rim Boundary
+  (key ((&cross_cell ^C *P))
+    (cell (P)
+      (&cross_cell C *P))))
+
+(RULE &center
+  (&cross_cell *C *P)
+  (NOT (&rim.boundary (:key C) P)))
+
+(RULE &points
+  (&bbox.cell (:key *C) *P)
+  (&bbox.box (:key C) *B)
+  (axis_elem *A)
+  (relative (:Base B) (:X P) (:X_rel *R_m1))
+  (frame_extent (:P R_m1) A (:N *N1))
+  (perp A *A2)
+  (axis_elem (:A A2))
+  (relative (:Base B) (:X P) (:X_rel *R_m2))
+  (frame_extent (:P R_m2) (:A A2) (:N *N2))
+  (> N1 N2)
+  (axis_of *D A)
+  (opposite D (:Opp *O_m3))
+  (margin B D (:K *K1))
+  (margin B (:D O_m3) (:K *K2))
+  (< K1 K2))
+
+(ALTS $choice "the side that takes the cross's color" $Nearer
+  (ALT $Pointer
+    (RULE &points
+      (&center *C *P)
+      (&bbox.box (:key C) *B)
+      (ALL ((&center (:C *Cm) P)
+            (&bbox.box (:key (:C Cm)) B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (relative (:Base B) (:X P) (:X_rel *P_inner))
+      (dir_elem *D)
+      (opposite D (:Opp *O_m1))
+      (margin (:B P_inner) D (:K *K1))
+      (margin (:B P_inner) (:D O_m1) (:K *K2))
+      (< K1 K2))))
+
+(RULE &mark
+  (&points *C *D)
+  (&center C (:P *P2))
+  (axis_of D *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P2) (:D D_m2) (:K *K_m3))
+  (input *P)
+  (margin (:B P) (:D D_m2) (:K K_m3))
+  (OR ((opposite D *Opp)
+       (margin (:B P) (:D Opp) (:K 0))
+       (&far (:C *Col)))
+      ((margin (:B P) D (:K 0))
+       (= Col C))))
+
+(RULE &output
+  (OR ((&mark *P *Col))
+      ((input P Col)
+       (NOT (&mark P)))))

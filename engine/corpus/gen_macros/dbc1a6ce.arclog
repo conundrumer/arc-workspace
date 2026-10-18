@@ -1,0 +1,83 @@
+;; dbc1a6ce
+
+(DET &bg DominantColor)
+
+(RULE &spans_dir
+  (axis_elem *A)
+  (axis4_of *D A))
+
+(RULE &spans_node
+  (input *P))
+
+(RULE &spans_source
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &spans Distance
+  (key ((&spans_source (:P ^O))
+        (&spans_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&spans_source (:P O))
+           (&spans_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&spans_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&spans_node (:P Q)))
+          ((&spans_source (:P O))
+           (&spans_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&spans_node (:P Q))
+           (= A2 O))
+          ((&spans_source (:P O))
+           (&spans_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&spans_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&spans_node (:P Q)))))
+    (source ((:n O))
+      (&spans_source (:P O))
+      (&spans_dir D))))
+
+(RULE &spans_ray
+  (&spans.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &spans_between
+  (input *P (:Col *Bg))
+  (&bg (:C Bg))
+  (axis_elem *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&spans_ray P D)
+  (&spans_ray P (:D O)))
+
+(RULE &spans_end
+  (&spans_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&spans_ray (:P Q) D Origin)))
+
+(DET &fill AnyOutNewColor)
+
+(RULE &output
+  (OR ((&spans_between *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&spans_between P)))))

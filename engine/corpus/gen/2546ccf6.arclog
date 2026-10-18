@@ -1,0 +1,133 @@
+;; 2546ccf6
+
+(DET &bg DominantColor)
+
+(INIT &line_color Singleton
+  (key ((axis_elem ^A)
+        (input *P *Col)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (axis_elem A)
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+(RULE &lattice_divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (NOT (&bg (:C Col))))
+
+(RULE &lattice_on_divider
+  (input *P)
+  (&lattice_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; A cut: a line of one drawn color, all the way across.
+(INIT &lattice_rank Order
+  (key ((OR ((&lattice_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (dir_elem D)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&lattice_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&lattice_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (dir_elem D)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (dir_elem D)
+      (margin (:B P) D *K))))
+
+(RULE &lattice_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&lattice_on_divider P A))
+  (margin (:B P) D *K)
+  (&lattice_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &lattice_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&lattice_part_idx *P D (:N *N1))
+  (&lattice_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &lattice_tile_of
+  (&lattice_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&lattice_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(INIT &tile_box BoundingBox
+  (key ((&lattice_tile_of *P ^P_tile))
+    (cell (P)
+      (&lattice_tile_of *P P_tile))))
+
+(RULE &tile_cell
+  (&tile_box.cell (:key *P_tile) *P)
+  (&tile_box.box (:key P_tile) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(RULE &tile_holds
+  (&lattice_tile_of *P *P_tile)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &block_dir
+  (OR ((corner_dir (:C *Diag) *D))
+      ((diag_dir_elem (:D Diag))
+       (= D Diag))))
+
+(RULE &block_tile
+  (&lattice_tile_of *P_tile)
+  (&block_dir *Diag *D)
+  (neighbor (:P P_tile) D (:Q *S))
+  (&tile_holds *Col (:P_tile S)))
+
+(RULE &gap
+  (&block_tile *Col *P_tile *Diag)
+  (NOT (&tile_holds Col P_tile))
+  (ALL ((&block_dir Diag *D))
+       ((&block_tile Col P_tile Diag D))))
+
+(RULE &flip
+  (&tile_cell *P_intile)
+  (axis_of *D *A)
+  (axis_inversion A (:T *F))
+  (apply (:D F) (:P P_intile) *P_out))
+
+(RULE &reflect
+  (OR ((&flip *D *P_intile *P_out))
+      ((diag_dirs D *D1 *D2)
+       (&flip (:D D1) P_intile (:P_out *P_mid))
+       (&flip (:D D2) (:P_intile P_mid) P_out))))
+
+(RULE &mirror
+  (&gap *Col *P_tile (:Diag *G))
+  (&block_tile Col P_tile (:Diag G) *D *S)
+  (&tile_cell (:P_tile S) (:P *P_src) *P_intile)
+  (&reflect D P_intile *P_out)
+  (&tile_cell P_tile (:P *P_dst) (:P_intile P_out)))
+
+(RULE &paint
+  (&mirror *Col *P_src (:P_dst *P))
+  (input (:P P_src) Col))
+
+(ALTS $choice "what crosses into the missing tile" $Shape
+  (ALT $Tile
+    (RULE &paint
+      (&mirror *P_src (:P_dst *P))
+      (input (:P P_src) *Col))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

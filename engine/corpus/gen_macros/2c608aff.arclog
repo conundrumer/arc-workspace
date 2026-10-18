@@ -1,0 +1,118 @@
+;; 2c608aff
+
+(INIT &bg_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The background is the commonest color; the rest is ink.
+(INIT &bg Order
+  (member ((:t Col))
+    (&bg_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg.maximal (:t Col))))
+
+(RULE &block
+  (&ink *P)
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&ink (:P Q)))
+
+(RULE &marker
+  (&ink *P *Col)
+  (NOT (&block P)))
+
+(RULE &span_axis
+  (&marker (:P *Key))
+  (axis_elem *A))
+
+(RULE &span_dir
+  (&span_axis *Key *A)
+  (axis4_of *D A))
+
+(RULE &span_node
+  (&span_axis *Key)
+  (input *P))
+
+(RULE &span_source
+  (&marker (:P *Key))
+  (OR ((&block *P))
+      ((= P Key))))
+
+;; The span the marker and the block delimit, folded along either cardinal
+;; axis; the block's own cells lie outside it.
+(INIT &span Distance
+  (key ((&span_source (:Key ^Ky) (:P ^O))
+        (&span_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&span_source (:Key Ky) (:P O))
+           (&span_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&span_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&span_node (:Key Ky) (:P Q)))
+          ((&span_source (:Key Ky) (:P O))
+           (&span_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&span_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&span_source (:Key Ky) (:P O))
+           (&span_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&span_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&span_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&span_source (:Key Ky) (:P O))
+      (&span_dir (:Key Ky) D))))
+
+(RULE &span_ray
+  (&span.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &span_between
+  (&marker (:P *Key))
+  (input *P)
+  (NOT (&block P))
+  (&span_axis Key *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&span_ray Key P D)
+  (&span_ray Key P (:D O)))
+
+(RULE &span_end
+  (&span_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&span_ray Key (:P Q) D Origin)))
+
+(RULE &paint
+  (&span_between (:Key *M) *P)
+  (&marker (:P M) *Col))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

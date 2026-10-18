@@ -1,0 +1,5 @@
+;; 20981f0e
+
+(param &bg Color (0))
+(param &dot Color (2))
+(param &slot Box ((1 1 1 1)))

@@ -1,0 +1,4 @@
+;; 5adee1b2
+
+(param &bg Color (0))
+(param &legend_dir Dir (DIR_L))

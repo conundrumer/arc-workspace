@@ -1,0 +1,60 @@
+;; 8eb1be9a
+
+(DET &axis AxisDomain)
+
+(RULE &band_row_split1
+  (input (:P *P_) *Col)
+  (&axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Al_))
+  (relative (:Base Al_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &out_split1
+  (input (:P *P_) *Col)
+  (&axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Al_))
+  (relative (:Base Al_) (:X P_) (:X_rel *X_m1_)))
+
+(DET &bg DominantColor)
+
+(RULE &band_row
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&axis *A)
+  (&band_row_split1 (:P_ P) (:A_ A) (:Al_ *Al) (:X_m1_ *X_m1)))
+
+(INIT &period Cardinality
+  (member ((:m Al))
+    (&band_row *Al)))
+
+;; Each cell takes the color of the band cell on its line at its place
+;; within the band's extent.
+(RULE &output
+  (input (:P *P2) *Col)
+  (&axis *A)
+  (&out_split1 (:P_ P2) (:A_ A) (:Al_ *Al) (:X_m1_ *X_m1))
+  (&band_row Al)
+  (input *P)
+  (perp A (:A2 *A2_m2))
+  (axis_of (:D *D_m3) (:A A2_m2))
+  (margin (:B P2) (:D D_m3) (:K *K_m4))
+  (margin (:B P) (:D D_m3) (:K K_m4))
+  (&period.size *N)
+  (axis_of *D A)
+  (margin (:B P2) D (:K *T))
+  (divide T (:Side N) (:Gap 0) (:Remainder *R))
+  (margin (:B P) D (:K *T2))
+  (divide (:T T2) (:Side N) (:Gap 0) (:Remainder R)))

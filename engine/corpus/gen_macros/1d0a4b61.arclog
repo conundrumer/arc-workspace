@@ -1,0 +1,34 @@
+;; 1d0a4b61
+
+(DET &hole ChangedColor)
+
+(RULE &intact
+  (input *P *Col)
+  (NOT (&hole (:C Col))))
+
+(INIT &si Periods
+  (cell (P (:v Col))
+    (&intact *P *Col)))
+
+(RULE &phase
+  (input *P)
+  (dir_elem *D)
+  (axis_of D *A)
+  (margin (:B P) D (:K *T))
+  (OR ((&si.fundamental_period A (:K *K2))
+       (divide T (:Side K2) (:Gap 0) (:Remainder *K)))
+      ((NOT (&si.fundamental_period A))
+       (= K T))))
+
+;; Each cell takes the color of an intact cell of its lattice orbit: one in
+;; phase with it on both axes.
+(RULE &output
+  (&intact (:P *P2) *Col)
+  (input *P)
+  (axis_of *D *A)
+  (perp A *A2)
+  (axis_of (:D *D2) (:A A2))
+  (&phase (:P P2) D (:K *Ph))
+  (&phase P D (:K Ph))
+  (&phase (:P P2) (:D D2) (:K *Ph2))
+  (&phase P (:D D2) (:K Ph2)))

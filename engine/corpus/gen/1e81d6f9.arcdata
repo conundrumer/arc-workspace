@@ -1,0 +1,6 @@
+;; 1e81d6f9
+
+(param &target_corner DiagDir (DIAG_TL))
+(param &target_offset number (1))
+(param &bg Color (0))
+(param &mask_color Color (5))

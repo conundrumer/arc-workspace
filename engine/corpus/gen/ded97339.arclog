@@ -1,0 +1,70 @@
+;; ded97339
+
+(DET &ink RarestColor)
+
+(INIT &ink_spans Ray
+  (source ((:P Q))
+    (input (:P *Q) (:Col *Ink))
+    (&ink (:C Ink)))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (axis_elem *A)
+    (axis4_of *D A)))
+
+(RULE &ink_spans_between
+  (input *P)
+  (axis_elem *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&ink_spans.ray P D)
+  (&ink_spans.ray P (:D O)))
+
+(ALTS $choice "which cells are marks" $Ink
+  (ALT $Self
+    (DET &bg DominantColor)
+
+    (RULE &self_spans_mark
+      (input *P (:Col *Key))
+      (NOT (&bg (:C Key))))
+
+    (RULE &self_spans_axis
+      (&self_spans_mark *Key)
+      (axis_elem *A))
+
+    (INIT &self_spans Ray
+      (key ((OR ((input (:P *Q) ^Col)
+                 (NOT (&bg (:C Col))))
+                ((&self_spans_axis (:Key Col) *A)
+                 (axis4_of *D A))
+                ((&self_spans_axis (:Key Col))
+                 (input *P))))
+        (source ((:P Q))
+          (input (:P *Q) Col)
+          (NOT (&bg (:C Col))))
+        (node (P)
+          (&self_spans_axis (:Key Col))
+          (input *P))
+        (dir (D)
+          (&self_spans_axis (:Key Col) *A)
+          (axis4_of *D A))))
+
+    (RULE &self_spans_between
+      (&self_spans_mark *Key)
+      (input *P)
+      (&self_spans_axis Key *A)
+      (axis4_of *D A)
+      (dir8_opposite D (:D2 *O))
+      (&self_spans.ray (:key (:Col Key)) P D)
+      (&self_spans.ray (:key (:Col Key)) P (:D O)))
+
+    (RULE &output
+      (OR ((&self_spans_between (:Key *Col) *P))
+          ((input P Col)
+           (NOT (&self_spans_between P)))))))
+
+(RULE &output
+  (OR ((&ink_spans_between *P)
+       (&ink (:C *Col)))
+      ((input P Col)
+       (NOT (&ink_spans_between P)))))

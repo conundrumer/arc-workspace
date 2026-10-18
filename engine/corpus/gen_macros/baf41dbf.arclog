@@ -1,0 +1,285 @@
+;; baf41dbf
+
+(INPUT frame "one rectangle outline of `frame_color` on a field of `background`, with zero or more full-span divider lines of `frame_color` across its inside; every other inside cell is `background`")
+
+(INPUT markers "single cells of `marker_color`, each outside the frame's box and beyond at least one of its sides")
+
+(OUTPUT side-moves-to-marker "each side of the frame that has a marker beyond it moves out to stand `marker_gap` cells short of the farthest such marker; a side with no marker beyond it stays")
+
+(OUTPUT outline-redrawn "the output draws the outline of the new box in `frame_color`, and the old outline's cells that are not on the new outline or on a divider become `background`")
+
+(OUTPUT dividers-stretch "each divider keeps its row or column and runs across the whole new box")
+
+(OUTPUT markers-stay "the markers and the rest of the grid are unchanged"
+
+  (DET &frame_color ColorDomain)
+
+  ;; The input frame's box.
+  (INIT &frame BoundingBox
+    (cell (P)
+      (input *P *Col)
+      (&frame_color (:C Col))))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input *E *P (:Col *C))
+    (&frame_color C)
+    (ex_output E P *Col)
+    (NOT (&frame_color (:C Col))))
+
+  (DET_OR_RULE &marker_color RarestColor
+    (ex_input *Col)
+    (NOT (&frame_color (:C Col)))
+    (NOT (&background Col)))
+
+  (RULE &mark
+    (input *P *Col)
+    (&marker_color Col)
+    (&frame.box *B)
+    (dir_elem (:D *D_m1))
+    (relative (:Base B) (:X P) (:X_rel *R_m2))
+    (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+    (< K_m3 0))
+
+  (RULE &state
+    (&frame.box *B))
+
+  (RULE &beyond
+    (&state *B)
+    (&mark *P)
+    (dir_elem *D)
+    (margin (:B P) D (:K *K1))
+    (margin B D (:K *K2))
+    (< K1 K2))
+
+  (RULE &puller
+    (&beyond *B *D *P))
+
+  ;; The background cells between a marker and the side it pulls.
+  (DET &marker_gap NumberDomain)
+
+  (RULE &pull
+    (&mark *P)
+    (opposite *D (:Opp *D_back))
+    (&marker_gap (:N *G))
+    (step_offset (:D D_back) (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *Q1))
+    (dir8_opposite (:D D_back) (:D2 *O_m3))
+    (edge_inset (:D O_m3) (:K G) (:B *B1_m4))
+    (edge_inset (:D D_back) (:K G) (:B *I_m6))
+    (relative (:Base I_m6) (:X 0) (:X_rel *B2_m5))
+    (compose (:A B1_m4) (:B B2_m5) (:C *V_m2))
+    (compose (:A Q1) (:B V_m2) (:C *Q))
+    (margin (:B Q) D *K))
+
+  (INIT &reach Order
+    (key ((&puller ^B ^D *P)
+          (&pull P D *K))
+      (member ((:t K))
+        (&puller B D *P)
+        (&pull P D *K))
+      (score ((:t K) (:S K))
+        (&puller B D *P)
+        (&pull P D *K))))
+
+  (RULE &margin
+    (OR ((&state (:B *St))
+         (dir_elem *D)
+         (margin (:B St) D *K)
+         (NOT (&puller (:B St) D)))
+        ((&reach.minimal (:key (:B St) D) (:t K)))))
+
+  (RULE &moved_axis
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&margin (:St *Key) D *K)
+    (&margin (:St Key) (:D D2) (:K *K2))
+    (opposite D (:Opp *O_m1))
+    (edge_inset D K (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *B)))
+
+  (RULE &moved
+    (&moved_axis *Key *A (:B *B1))
+    (perp A *A2)
+    (&moved_axis Key (:A A2) (:B *B2))
+    (compose (:A B1) (:B B2) (:C *B)))
+
+  (RULE &box
+    (&moved *B)))
+
+(ALTS $side "which sides of the frame a marker pulls" $Beyond
+  (ALT $InLineMarkers
+    (OUTPUT side-moves-to-marker "a marker pulls only the side it faces while it lies in line with the frame's span on the other axis, and the moves repeat until no side moves"
+      (RULE &side_margin
+        (OR ((&frame.box *B)
+             (dir_elem *D)
+             (margin B D *K))
+            ((&pull D K))))
+
+      (RULE &state
+        (&side_margin (:D *D1) (:K *K1))
+        (opposite (:D D1) (:Opp *D2))
+        (&side_margin (:D D2) (:K *K2))
+        (opposite (:D D1) (:Opp *O_m1))
+        (edge_inset (:D D1) (:K K1) (:B *B1_m2))
+        (edge_inset (:D O_m1) (:K K2) (:B *B2_m3))
+        (compose (:A B1_m2) (:B B2_m3) (:C *B1))
+        (axis_of (:D D1) (:A *A_m4))
+        (perp (:A A_m4) (:A2 *A2_m5))
+        (axis_of (:D *D3) (:A A2_m5))
+        (opposite (:D D3) (:Opp *D4))
+        (&side_margin (:D D3) (:K *K3))
+        (&side_margin (:D D4) (:K *K4))
+        (opposite (:D D3) (:Opp *O_m6))
+        (edge_inset (:D D3) (:K K3) (:B *B1_m7))
+        (edge_inset (:D O_m6) (:K K4) (:B *B2_m8))
+        (compose (:A B1_m7) (:B B2_m8) (:C *B2))
+        (compose (:A B1) (:B B2) (:C *B)))
+
+      (RULE &off_line
+        (axis_of *D (:A *A_m1))
+        (perp (:A A_m1) (:A2 *A2_m2))
+        (axis_of (:D *D2) (:A A2_m2))
+        (&beyond *B (:D D2) *P))
+
+      (RULE &puller
+        (&beyond *B *D *P)
+        (NOT (&off_line B D P)))
+
+      ;; The boxes the repeated moves reach from the input frame's box.
+      (INIT &walk Propagation
+        (source ((:n B))
+          (&frame.box *B))
+        (edge ((:a B) (:b B2))
+          (&moved (:Key *B) (:B *B2))))
+
+      ;; The reached box that no move changes.
+      (RULE &box
+        (&walk.reached (:n *B))
+        (&moved (:Key B) B)))))
+
+(ALTS $pick "which of the markers beyond one side sets that side" $Farthest
+  (ALT $NearestMarker
+    (OUTPUT side-moves-to-marker "the nearest marker beyond a side sets it"
+      (RULE &margin
+        (OR ((&reach.maximal (:key (:B *St) *D) (:t *K)))
+            ((&state (:B St))
+             (dir_elem D)
+             (margin (:B St) D K)
+             (NOT (&puller (:B St) D))))))))
+
+(ALTS $enc "what becomes of a marker that ends inside or on the new box" $MarkersStay
+  (ALT $EnclosedMarkersCleared
+    (OUTPUT markers-stay "a marker inside or on the new box becomes `background`, or `frame_color` where the outline or a divider runs")
+    (RULE &kept
+      (&box *B)
+      (&mark *P)
+      (dir_elem (:D *D_m1))
+      (relative (:Base B) (:X P) (:X_rel *R_m2))
+      (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+      (< K_m3 0))))
+
+(RULE &broken_split1
+  (input (:P *P_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &divider_split1
+  (input (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &broken
+  (&frame.box *B)
+  (input *P *Col)
+  (ALL ((input P (:Col *Colm))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (NOT (&frame_color (:C Col)))
+  (axis_elem *A)
+  (&broken_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+(RULE &divider
+  (&frame.box *B)
+  (input *P)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((> K_m3 0)))
+  (axis_elem *A)
+  (&divider_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1))
+  (NOT (&broken A L)))
+
+(RULE &drawn
+  (&box *B)
+  (input *P)
+  (ALL ((&box B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (OR ((relative (:Base B) (:X P) (:X_rel *R_m1))
+       (axis_of (:D *D1_m2) (:A *A1_m3))
+       (opposite (:D D1_m2) (:Opp *O1_m4))
+       (perp (:A A1_m3) (:A2 *A2_m5))
+       (axis_of (:D *D2_m6) (:A A2_m5))
+       (opposite (:D D2_m6) (:Opp *O2_m7))
+       (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+       (>= K1_m8 0)
+       (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+       (>= K2_m9 0)
+       (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+       (>= K3_m10 0)
+       (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+       (>= K4_m11 0)
+       (margin (:B P) (:D *D_m12) (:K *K_m13))
+       (margin B (:D D_m12) (:K K_m13)))
+      ((axis_elem *A)
+       (axis_of (:D *D_m15) A)
+       (opposite (:D D_m15) (:Opp *O_m16))
+       (margin (:B P) (:D D_m15) (:K *K1_m17))
+       (margin (:B P) (:D O_m16) (:K *K2_m18))
+       (opposite (:D D_m15) (:Opp *O_m19))
+       (edge_inset (:D D_m15) (:K K1_m17) (:B *B1_m20))
+       (edge_inset (:D O_m19) (:K K2_m18) (:B *B2_m21))
+       (compose (:A B1_m20) (:B B2_m21) (:C *L))
+       (relative (:Base L) (:X P) (:X_rel *Across_m14))
+       (&divider A L))))
+
+(RULE &kept
+  (&mark *P))
+
+(RULE &output
+  (OR ((&kept *P)
+       (input P *Col))
+      ((&drawn P)
+       (NOT (&kept P))
+       (&frame_color (:C Col)))
+      ((input P (:Col *C))
+       (NOT (&drawn P))
+       (NOT (&kept P))
+       (OR ((&frame_color C)
+            (&background Col))
+           ((&mark P)
+            (&background Col))
+           ((NOT (&frame_color C))
+            (NOT (&mark P))
+            (= Col C))))))

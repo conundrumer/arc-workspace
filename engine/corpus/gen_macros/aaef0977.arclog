@@ -1,0 +1,129 @@
+;; aaef0977
+
+(INPUT field "a field of the background color &bg."
+
+  (DET_OR_RULE &bg DominantColor))
+
+(INPUT seed "exactly one cell is not background; its color is on the cycle.")
+
+(OUTPUT diamond-rings "each cell's ring is its Manhattan distance to the seed cell."
+
+  (RULE &seed
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &taxicab
+    (input *P)
+    (&seed (:P *S))
+    (relative (:Base S) (:X P) (:X_rel *V))
+    (corner_dir (:C *Diag) (:A *A_m1) (:D *D1_m2))
+    (perp (:A A_m1) (:A2 *A2_m4))
+    (corner_dir (:C Diag) (:A A2_m4) (:D *D2_m3))
+    (margin (:B V) (:D D1_m2) (:K *K1))
+    (margin (:B V) (:D D2_m3) (:K *K2))
+    (>= K1 0)
+    (>= K2 0)
+    (corner_dist (:P V) Diag *K))
+
+  (RULE &scan_cell
+    (&seed *P)
+    (diag_dir_elem (:D *Corner))
+    (axis_elem (:A *Axis)))
+
+  ;; The seeds in each scan order: from a corner, along a primary axis.
+  (INIT &scan Order
+    (key ((&seed (:P *S))
+          (diag_dir_elem (:D ^C))
+          (axis_elem ^A))
+      (member ((:t S))
+        (&seed (:P *S))
+        (diag_dir_elem (:D C))
+        (axis_elem A))
+      (before ((:a S) (:b S2))
+        (&seed (:P *S))
+        (diag_dir_elem (:D C))
+        (axis_elem A)
+        (&seed (:P *S2))
+        (&scan_cell (:Corner C) (:Axis A))
+        (OR ((corner_dir C A *D)
+             (dir_elem D)
+             (margin (:B S) D (:K *K1_m1))
+             (margin (:B S2) D (:K *K2_m2))
+             (< K1_m1 K2_m2))
+            ((corner_dir C A D)
+             (perp A (:A2 *A2_m3))
+             (corner_dir C (:A A2_m3) (:D *D2))
+             (margin (:B S) D (:K *K_m4))
+             (margin (:B S2) D (:K K_m4))
+             (dir_elem (:D D2))
+             (margin (:B S) (:D D2) (:K *K1_m5))
+             (margin (:B S2) (:D D2) (:K *K2_m6))
+             (< K1_m5 K2_m6))))))
+
+  (INIT &nearest Order
+    (key ((&taxicab ^P *S *K))
+      (member ((:t (:V S) (:S K)))
+        (&taxicab P *S *K))
+      (score ((:t (:V S) (:S K)) (:S K))
+        (&taxicab P *S *K)))))
+
+(OUTPUT cycle-color "a cell at ring k takes the color k steps after the seed's color along &cycle_succ."
+
+  (DET &cycle_succ
+    (&taxicab *E *P *S *K)
+    (dir_elem *D)
+    (step_offset D (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *Q))
+    (&taxicab E (:P Q) S (:K *K2))
+    (> K2 K)
+    (ex_output E P (:Col *C))
+    (ex_output E (:P Q) (:Col *C_next))))
+
+(OUTPUT total "every cell is painted this way, and the output has the input's size."
+
+  (INIT &cycle Walk
+    (successor ((:p C) (:p_next C2))
+      (&cycle_succ *C (:C_next *C2)))
+    (steps ((:N K))
+      (&taxicab *K)))
+
+  (RULE &hue
+    (&taxicab *P *S *K)
+    (&seed (:P S) (:Col *C0))
+    (&cycle.walk (:p0 C0) (:N K) (:p *Col))))
+
+(ALTS $choice "how many seeds the input holds, and how a cell picks its seed" $OneSeed
+  (ALT $NearestSeed
+    (INPUT seed "one or more non-background cells, each a seed.")
+    (OUTPUT diamond-rings "each cell's ring is its Manhattan distance to the nearest seed, and the ring's colors start from that seed's color; undefined where two nearest seeds give different colors.")
+    (RULE &output
+      (&nearest.minimal (:key *P) (:t (:V *S)))
+      (&hue P S *Col)))
+  (ALT $LastSeed
+    (INPUT seed "one or more non-background cells, each a seed.")
+    (OUTPUT diamond-rings "each cell's ring is its Manhattan distance to the last seed in the scan order &scan_order, a corner and an axis."
+      (DET &scan_contradicted
+        (&scan.maximal *E (:key (:C *D) *A) (:t *S))
+        (&taxicab E *P S *K)
+        (&taxicab E (:P *Q) S K)
+        (ex_output E P (:Col *C))
+        (ex_output E (:P Q) (:Col *C2))
+        (!= C C2))
+
+      (DET &scan_kept
+        (&scan.maximal *E (:key (:C *D) *A) (:t *S))
+        (&seed E (:P S) *Col)
+        (ex_output E (:P S) Col))
+
+      (DET &scan_order
+        (&scan_kept *D *A)
+        (NOT (&scan_contradicted D A))
+        (ONE)))
+    ;; Each open scan order's last seed rings the grid.
+    (RULE &output
+      (&scan_order (:D *C) *A)
+      (&scan.maximal (:key C A) (:t *S))
+      (&hue *P S *Col))))
+
+(RULE &output
+  (&hue *P *Col))

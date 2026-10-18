@@ -1,0 +1,10 @@
+;; c48954c1
+
+(param &tile_d4 (Position D4)
+  (grid
+    (D4_HT D4_TB D4_HT)
+    (D4_LR D4_ID D4_LR)
+    (D4_HT D4_TB D4_HT)))
+(param &arr_pos Position (Frame
+  ((:A AXIS_V) (:N 3))
+  ((:A AXIS_H) (:N 3))))

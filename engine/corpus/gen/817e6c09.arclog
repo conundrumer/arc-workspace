@@ -1,0 +1,47 @@
+;; 817e6c09
+
+(DET &anchor DirDomain)
+
+(DET &ink RarestColor)
+
+(DET &mark AnyOutNewColor)
+
+;; alternation rhythm: run of marked, run of kept
+(DET &mark_run DivisorRatio)
+
+(DET &keep_run DivisorRatio)
+
+(INIT &blocks Connectivity
+  (node (P)
+    (input *P *Col)
+    (&ink (:C Col))))
+
+(INIT &bbox BoundingBox
+  (key ((&blocks.component *P ^Id))
+    (cell (P)
+      (&blocks.component *P Id))))
+
+(RULE &block_dist
+  (&anchor *D)
+  (&bbox.box (:key *Id) *B)
+  (margin B D *K))
+
+(INIT &seq Order
+  (member ((:t K))
+    (&block_dist *K))
+  (score ((:t K) (:S K))
+    (&block_dist *K)))
+
+(RULE &marked
+  (&blocks.component *P *Id)
+  (&block_dist Id *K)
+  (&seq.rank (:t K) *R)
+  (&mark_run (:K *Kr))
+  (&keep_run (:K *G))
+  (divide (:T R) (:Side Kr) (:Gap G)))
+
+(RULE &output
+  (OR ((&marked *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&marked P)))))

@@ -1,0 +1,77 @@
+;; 9a4bb226
+
+(INPUT blocks "the ink forms separate blocks, each a filled rectangle"
+
+  (RULE &blocks_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (DET &bg DominantColor)
+
+  (INIT &blocks Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((input *P *Col)
+           (NOT (&bg (:C Col)))
+           (&blocks_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (input (:P P3) (:Col *Col2))
+           (NOT (&bg (:C Col2))))
+          ((input P (:Col *Col3))
+           (NOT (&bg (:C Col3)))
+           (= P3 P)))))
+
+  (RULE &blocks_component
+    (&blocks.class (:a *P) *Id))
+
+  (INIT &bbox BoundingBox
+    (key ((&blocks_component *P ^Id))
+      (cell (P)
+        (&blocks_component *P Id)))))
+
+(INPUT counts "one block has three colors and every other block has two")
+
+(OUTPUT most "the output is the block with the most colors"
+
+  (INIT &colors Cardinality
+    (key ((&blocks_component *P ^Id)
+          (input P *Col))
+      (member ((:m Col))
+        (&blocks_component *P Id)
+        (input P *Col))))
+
+  (INIT &most Order
+    (member ((:t (:V Id) (:S N)))
+      (&colors.size (:key *Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&colors.size (:key *Id) *N))))
+
+(ALTS $choice "which block is picked" $Most
+  (ALT $Fixed
+    (OUTPUT most "the output is the block with the stored color count"
+      ;; How many colors the picked block has.
+      (DET &palette ConstOutDim))
+    (RULE &picked
+      (&colors.size (:key *Id) *N)
+      (&palette N)))
+  (ALT $Odd
+    (OUTPUT most "the output is the block whose color count no other block has")
+    (RULE &picked
+      (&colors.size (:key *Id))
+      (ALL ((&colors.size (:key Id) *N)
+            (&colors.size (:key (:Id *Id2)) N))
+           ((= Id Id2))))))
+
+(RULE &picked
+  (&most.maximal (:t (:V *Id))))
+
+(RULE &output
+  (&picked *Id)
+  (&bbox.box (:key Id) *B)
+  (input (:P *P2) *Col)
+  (ALL ((input (:P P2) (:Col *Colm))
+        (&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P2) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P2) (:X_rel *P)))

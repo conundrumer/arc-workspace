@@ -1,0 +1,37 @@
+;; 6d0160f0
+
+(DET &gap DivisorRatio)
+
+(DET &tile_dim SepTileCount)
+
+(INIT &tile_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (side (A K)
+    (axis_elem *A)
+    (&tile_dim (:N *K)))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap (:K *G))))
+
+(DET &bg DominantColor)
+
+(DET &marker RarestColor)
+
+(RULE &tile
+  (&tile_division.tile (:P *P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(RULE &marked
+  (input *P *Col)
+  (&marker (:C Col))
+  (&tile (:P_grid P) (:P_tile *P_src) (:P_intile *P_dst)))
+
+(RULE &output
+  (OR ((&tile (:P_grid *P) *P_tile *P_intile)
+       (OR ((&marked *P_src (:P_dst P_tile))
+            (&tile (:P_grid *P_in) (:P_tile P_src) P_intile)
+            (input (:P P_in) *Col))
+           ((NOT (&marked (:P_dst P_tile)))
+            (&bg (:C Col)))))
+      ((input P Col)
+       (NOT (&tile (:P_grid P))))))

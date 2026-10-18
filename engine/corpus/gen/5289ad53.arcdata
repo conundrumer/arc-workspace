@@ -1,0 +1,9 @@
+;; 5289ad53
+
+(param &color_rank (Color number) (3 0) (2 1))
+(param &fill Color (0))
+(param &dim (Axis number) (AXIS_V 2) (AXIS_H 3))
+(param &corner DiagDir (DIAG_TL))
+(param &order_axis Axis (AXIS_V))
+(param &run_axis Axis (AXIS_H))
+(param &line_axis Axis (AXIS_H))

@@ -1,0 +1,4 @@
+;; 8e301a54
+
+(param &bg Color (7))
+(param &move_dir Dir (DIR_B))

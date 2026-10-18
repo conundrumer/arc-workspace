@@ -1,0 +1,6 @@
+;; a3df8b1e
+
+(param &bg Color (0))
+(param &dir Dir (DIR_T))
+(param &axis Axis (AXIS_V))
+(param &ink Color (1))

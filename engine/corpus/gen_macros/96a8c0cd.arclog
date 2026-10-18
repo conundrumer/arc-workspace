@@ -1,0 +1,57 @@
+;; 96a8c0cd
+
+(DET &bg DominantColor)
+
+(DET &marker RarestColor)
+
+(RULE &marker2
+  (input *P *Col)
+  (&marker (:C Col)))
+
+(RULE &heading
+  (&marker2 *P)
+  (opposite *D (:Opp *D_edge))
+  (margin (:B P) (:D D_edge) (:K 0)))
+
+(DET &trail
+  (ex_output *E *P *Col)
+  (&marker (:C Col)))
+
+(DET &deflect
+  (&trail *E *P)
+  (&heading E *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (ex_input E (:P Q) (:Col *C_bar))
+  (NOT (&bg (:C C_bar)))
+  (turn *S D (:D2 *D_side))
+  (step_offset (:D D_side) (:V *V_m2))
+  (compose (:A Q) (:B V_m2) (:C *R))
+  (&trail E (:P R)))
+
+;; The walker's steps from the marker.
+(INIT &walk Propagation
+  (source ((:n P))
+    (&marker2 *P))
+  (edge ((:a P) (:b Q))
+    (input *P)
+    (&heading *D)
+    (step_offset D (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *Q_ahead))
+    (OR ((input (:P Q_ahead) (:Col *Col_bar))
+         (&deflect (:C_bar Col_bar) *S)
+         (turn S D (:D2 *D_side))
+         (step_offset (:D D_side) (:V *V_m2))
+         (compose (:A P) (:B V_m2) (:C *Q)))
+        ((= Q Q_ahead)))
+    (input (:P Q) *Col)
+    (&bg (:C Col))))
+
+(RULE &at
+  (&walk.reached (:n *P)))
+
+(RULE &output
+  (OR ((&at *P)
+       (&marker (:C *Col)))
+      ((input P Col)
+       (NOT (&at P)))))

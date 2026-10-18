@@ -1,0 +1,210 @@
+;; 2b9ef948
+
+(RULE &diag_dir
+  (diag_dir_elem *D))
+
+(RULE &diag_node
+  (input *P))
+
+(DET &path ChangedColor)
+
+(RULE &beside_trail
+  (input *P)
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (input (:P Q) *Col)
+  (&path (:C Col)))
+
+(DET &bg DominantColor)
+
+(DET &frame SharedColor)
+
+(RULE &free_color
+  (input *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&frame (:C Col)))
+  (NOT (&path (:C Col))))
+
+(RULE &core
+  (input *P *Col)
+  (&free_color Col)
+  (NOT (&beside_trail P)))
+
+(RULE &travel
+  (input *P *Col)
+  (&free_color Col)
+  (&beside_trail P)
+  (input (:P *Q) (:Col *Col2))
+  (&frame (:C Col2))
+  (&beside_trail (:P Q))
+  (relative (:Base P) (:X Q) (:X_rel *V)))
+
+(RULE &diag_source
+  (&core (:P *P3))
+  (&travel *V)
+  (compose (:A P3) (:B V) (:C *P)))
+
+;; The moved core casts a diagonal each way.
+(INIT &diag Distance
+  (key ((&diag_source (:P ^O))
+        (&diag_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&diag_source (:P O))
+           (&diag_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&diag_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&diag_node (:P Q)))
+          ((&diag_source (:P O))
+           (&diag_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&diag_node (:P Q))
+           (= A2 O))
+          ((&diag_source (:P O))
+           (&diag_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&diag_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&diag_node (:P Q)))))
+    (source ((:n O))
+      (&diag_source (:P O))
+      (&diag_dir D))))
+
+(RULE &diag_ray
+  (&diag.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &diag_end
+  (&diag_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&diag_ray (:P Q) D Origin)))
+
+(RULE &corner_ray_dir
+  (diag_dir_elem (:D *Key)))
+
+(RULE &corner_ray_node
+  (diag_dir_elem (:D *Key))
+  (input *P))
+
+(RULE &box
+  (input *P *Col)
+  (&frame (:C Col))
+  (NOT (&beside_trail P)))
+
+(RULE &moved_box
+  (&box (:P *P3))
+  (&travel *V)
+  (compose (:A P3) (:B V) (:C *P)))
+
+(INIT &bx BoundingBox
+  (cell (P)
+    (&moved_box *P)))
+
+(RULE &corner_ray_source
+  (&moved_box *P)
+  (&bx.box *B)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (corner_dir (:C *Key) (:A *A_m1) (:D *D1_m2))
+  (perp (:A A_m1) (:A2 *A2_m3))
+  (corner_dir (:C Key) (:A A2_m3) (:D *D2_m4))
+  (margin (:B P) (:D D1_m2) (:K *K1_m5))
+  (margin B (:D D1_m2) (:K K1_m5))
+  (margin (:B P) (:D D2_m4) (:K *K2_m6))
+  (margin B (:D D2_m4) (:K K2_m6)))
+
+;; Each corner of the moved box casts one ray, toward the corner's own side.
+(INIT &corner_ray Distance
+  (key ((&corner_ray_source (:Key ^Ky) (:P ^O))
+        (&corner_ray_dir (:Key Ky)))
+    (edge ((:a A2) (:b Q))
+      (OR ((&corner_ray_source (:Key Ky) (:P O))
+           (&corner_ray_dir (:Key Ky))
+           (axis_of (:D Ky) *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite (:D Ky) (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset (:D Ky) K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&corner_ray_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&corner_ray_node (:Key Ky) (:P Q)))
+          ((&corner_ray_source (:Key Ky) (:P O))
+           (&corner_ray_dir (:Key Ky))
+           (step_offset (:D Ky) (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&corner_ray_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&corner_ray_source (:Key Ky) (:P O))
+           (&corner_ray_dir (:Key Ky))
+           (diag_dir_elem (:D Ky))
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite (:D Ky) (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset (:D Ky) (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&corner_ray_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&corner_ray_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&corner_ray_source (:Key Ky) (:P O))
+      (&corner_ray_dir (:Key Ky)))))
+
+(RULE &corner_ray_ray
+  (&corner_ray.distance (:key (:Ky *Key) (:Ky *D) (:O *Origin)) (:n *P) *K))
+
+(RULE &corner_ray_end
+  (&corner_ray_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&corner_ray_ray Key (:P Q) D Origin)))
+
+(RULE &ink
+  (OR ((&moved_box *P))
+      ((&diag_ray P *K)
+       (!= K 0))))
+
+(ALTS $choice "what casts the diagonals" $Core
+  (ALT $Corner
+    (RULE &corner_ray_cell
+      (diag_dir_elem (:D *Key))
+      (input *P))
+
+    (RULE &ink
+      (OR ((&corner_ray_ray (:Key *Ky) *P)
+           (&corner_ray_cell (:Key Ky) P))
+          ((&moved_box P))))))
+
+(RULE &output
+  (input *P)
+  (IF ((&ink P))
+      ((&frame (:C *Col)))
+      ((&free_color Col))))

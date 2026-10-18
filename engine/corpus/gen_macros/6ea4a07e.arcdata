@@ -1,0 +1,4 @@
+;; 6ea4a07e
+
+(param &bg Color (0))
+(param &recolor (Color Color) (3 1) (5 4) (8 2))

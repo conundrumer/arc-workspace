@@ -1,0 +1,4 @@
+;; 465b7d93
+
+(param &bg Color (7))
+(param &frame Color (6))

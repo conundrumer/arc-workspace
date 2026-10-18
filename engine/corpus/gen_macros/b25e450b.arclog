@@ -1,0 +1,560 @@
+;; b25e450b
+
+(INPUT speckled-field "the background is a mix of the two field colors, 5 and 7, with no pattern in where each color falls")
+
+(INPUT edge-blocks "the cells of block_color form solid rectangles, each one touching exactly one edge of the grid and not reaching the opposite edge"
+
+  (DET &block_color ColorDomain)
+
+  (RULE &block_cell
+    (input *P *Col)
+    (&block_color (:C Col)))
+
+  (RULE &eight_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((diag_dir_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  (RULE &run_dir
+    (dir_elem *D))
+
+  (RULE &run_source
+    (&block_cell *P))
+
+  (RULE &run_dir_ray
+    (&run_dir *D))
+
+  (RULE &run_blocked
+    (input *P)
+    (NOT (&block_cell P)))
+
+  (RULE &run_node
+    (&run_dir)
+    (input *P)
+    (NOT (&run_blocked P)))
+
+  (INIT &eight Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((&block_cell *P)
+           (&eight_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&block_cell (:P P3)))
+          ((&block_cell P)
+           (= P3 P)))))
+
+  ;; The runs of block cells cast from each block cell along its line.
+  (INIT &run Distance
+    (key ((&run_source (:P ^O))
+          (&run_dir_ray ^D))
+      (edge ((:a A2) (:b Q))
+        (OR ((&run_source (:P O))
+             (&run_dir_ray D)
+             (axis_of D *A)
+             (sub_extent (:P O) A *K)
+             (dir8_opposite D (:D2 *O_m2))
+             (edge_inset (:D O_m2) K (:B *B1_m3))
+             (edge_inset D K (:B *I_m5))
+             (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+             (compose (:A O) (:B V_m1) (:C *A2))
+             (&run_node (:P A2))
+             (step_offset D (:V *V_m6))
+             (compose (:A A2) (:B V_m6) (:C *Q))
+             (&run_node (:P Q)))
+            ((&run_source (:P O))
+             (&run_dir_ray D)
+             (step_offset D (:V *V_m12))
+             (compose (:A O) (:B V_m12) (:C Q))
+             (&run_node (:P Q))
+             (= A2 O))
+            ((&run_source (:P O))
+             (&run_dir_ray D)
+             (diag_dir_elem D)
+             (axis_elem (:A *A3))
+             (sub_extent (:P O) (:A A3) (:K *K2))
+             (dir8_opposite D (:D2 *O_m22))
+             (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+             (edge_inset D (:K K2) (:B *I_m52))
+             (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+             (compose (:A O) (:B V_m13) (:C A2))
+             (&run_node (:P A2))
+             (step_offset D (:V *V_m62))
+             (compose (:A A2) (:B V_m62) (:C Q))
+             (&run_node (:P Q)))))
+      (source ((:n O))
+        (&run_source (:P O))
+        (&run_dir_ray D))))
+
+  (DET &kept
+    (ex_input *E *P *Col)
+    (ex_output E P Col))
+
+  (DET &lapse
+    (&kept *Col)
+    (ex_output *E)
+    (NOT (&kept E Col)))
+
+  (DET &field_color
+    (&kept *Col)
+    (NOT (&lapse Col))))
+
+(INPUT blocks-apart "no two blocks touch, not even at a corner")
+
+(OUTPUT cross-to-opposite "each block moves to the opposite edge on the axis normal to the edge it touches, and it keeps its place on the other axis"
+
+  (RULE &four_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (INIT &four Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((&block_cell *P)
+           (&four_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&block_cell (:P P3)))
+          ((&block_cell P)
+           (= P3 P)))))
+
+  (RULE &four_component
+    (&four.class (:a *P) *Id))
+
+  (RULE &piece
+    (&four_component *P (:Id *K)))
+
+  (INIT &box BoundingBox
+    (key ((&piece (:K ^Id) *P))
+      (cell (P)
+        (&piece (:K Id) *P))))
+
+  (INIT &nearest Order
+    (key ((&box.box (:key ^Id) *B)
+          (dir_elem *D)
+          (margin B D (:K *N)))
+      (member ((:t (:V D) (:S N)))
+        (&box.box *B)
+        (dir_elem *D)
+        (margin B D (:K *N)))
+      (score ((:t (:V D) (:S N)) (:S N))
+        (&box.box *B)
+        (dir_elem *D)
+        (margin B D (:K *N))))))
+
+(OUTPUT wipe-track "each cell in the band the block's rows (for a block on a side edge) or columns (for a block on the top or bottom edge) span, from edge to edge, takes trail_color")
+
+(OUTPUT block-on-top "a cell where a moved block lands takes block_color, also where it lies in the track of another block")
+
+(OUTPUT rest-kept "every other cell keeps its input color"
+
+  (RULE &run_full_dir
+    (&run_dir *D))
+
+  (RULE &run_full_node
+    (&run_dir)
+    (input *P))
+
+  (RULE &run_full_source
+    (&block_cell *P))
+
+  (INIT &run_full Distance
+    (key ((&run_full_source (:P ^O))
+          (&run_full_dir ^D))
+      (edge ((:a A2) (:b Q))
+        (OR ((&run_full_source (:P O))
+             (&run_full_dir D)
+             (axis_of D *A)
+             (sub_extent (:P O) A *K)
+             (dir8_opposite D (:D2 *O_m2))
+             (edge_inset (:D O_m2) K (:B *B1_m3))
+             (edge_inset D K (:B *I_m5))
+             (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+             (compose (:A O) (:B V_m1) (:C *A2))
+             (&run_full_node (:P A2))
+             (step_offset D (:V *V_m6))
+             (compose (:A A2) (:B V_m6) (:C *Q))
+             (&run_full_node (:P Q)))
+            ((&run_full_source (:P O))
+             (&run_full_dir D)
+             (step_offset D (:V *V_m12))
+             (compose (:A O) (:B V_m12) (:C Q))
+             (&run_full_node (:P Q))
+             (= A2 O))
+            ((&run_full_source (:P O))
+             (&run_full_dir D)
+             (diag_dir_elem D)
+             (axis_elem (:A *A3))
+             (sub_extent (:P O) (:A A3) (:K *K2))
+             (dir8_opposite D (:D2 *O_m22))
+             (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+             (edge_inset D (:K K2) (:B *I_m52))
+             (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+             (compose (:A O) (:B V_m13) (:C A2))
+             (&run_full_node (:P A2))
+             (step_offset D (:V *V_m62))
+             (compose (:A A2) (:B V_m62) (:C Q))
+             (&run_full_node (:P Q)))))
+      (source ((:n O))
+        (&run_full_source (:P O))
+        (&run_full_dir D))))
+
+  (RULE &run_full_ray
+    (&run_full.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+  (RULE &source
+    (&box.box (:key (:Id *K)) *B)
+    (dir_elem *D)
+    (margin B D (:K 0)))
+
+  (RULE &pair
+    (&source *K *D)
+    (&source K (:D *D2))
+    (!= D D2))
+
+  (RULE &lone
+    (&source *K *D)
+    (NOT (&pair K D)))
+
+  (RULE &heading
+    (&lone *K (:D *E))
+    (opposite (:D E) (:Opp *D))
+    (&box.box (:key (:Id K)) *B)
+    (margin B D (:K *N)))
+
+  (RULE &dest_part_split1
+    (&box.box (:key (:Id *K)) *B)
+    (&heading K *D *N)
+    (dir8_opposite D (:D2 *O_m3))
+    (edge_inset (:D O_m3) (:K N) (:B *B1_m4))
+    (edge_inset D (:K N) (:B *I_m6))
+    (relative (:Base I_m6) (:X 0) (:X_rel *B2_m5))
+    (compose (:A B1_m4) (:B B2_m5) (:C *V_m1))
+    (compose (:A B) (:B V_m1) (:C *B2_))
+    (axis_of D (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B B2_) (:D D_m1) (:K *K1_m3))
+    (margin (:B B2_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m7))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m8))
+    (edge_inset (:D O_m7) (:K K2_m4) (:B *B2_m9))
+    (compose (:A B1_m8) (:B B2_m9) (:C *B_axis_))
+    (relative (:Base B_axis_) (:X B2_) (:X_rel *X_m6_)))
+
+  (RULE &dest_part_split2
+    (&box.box (:key (:Id *K)) (:B *B_))
+    (axis_elem (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B B_) (:D D_m1) (:K *K1_m3))
+    (margin (:B B_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *B_axis_))
+    (relative (:Base B_axis_) (:X B_) (:X_rel *X_m1_)))
+
+  (RULE &track_split1
+    (&box.box (:key (:Id *K)) (:B *B_))
+    (axis_of *D (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B B_) (:D D_m1) (:K *K1_m3))
+    (margin (:B B_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+    (relative (:Base X_m1_) (:X B_) (:X_rel *Band_)))
+
+  (RULE &travels
+    (&heading *K *D)
+    (axis_of D *A))
+
+  (RULE &dest_part
+    (OR ((&heading *K *D *N)
+         (axis_of D *A)
+         (&box.box (:key (:Id K)) (:B *B3))
+         (dir8_opposite D (:D2 *O_m2))
+         (edge_inset (:D O_m2) (:K N) (:B *B1_m3))
+         (edge_inset D (:K N) (:B *I_m5))
+         (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+         (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+         (compose (:A B3) (:B V_m1) (:C *B2))
+         (&dest_part_split1 (:B2_ B2) (:A_ A) (:B_axis_ *B) (:X_m6_ *X_m6)))
+        ((&box.box (:key (:Id K)) (:B *B22))
+         (axis_elem A)
+         (NOT (&travels K A))
+         (&dest_part_split2 (:B_ B22) (:A_ A) (:B_axis_ B) (:X_m1_ *X_m1)))))
+
+  (RULE &move
+    (&dest_part *K *A (:B *B1))
+    (perp A *A2)
+    (&dest_part K (:A A2) (:B *B2))
+    (compose (:A B1) (:B B2) (:C *B_dest))
+    (&box.box (:key (:Id K)) *B)
+    (relative (:Base B) (:X B_dest) (:X_rel *V)))
+
+  (RULE &track
+    (&heading *K *D)
+    (&box.box (:key (:Id K)) *B)
+    (axis_of D *A)
+    (&track_split1 (:B_ B) (:A_ A) (:X_m1_ *X_m1) (:Band_ *Band))
+    (input *P)
+    (ALL ((&box.box (:key (:Id *Km)) (:B *Bm))
+          (axis_of (:D *Dm) (:A *Am))
+          (axis_of (:D *D_m2) (:A Am))
+          (opposite (:D D_m2) (:Opp *O_m3))
+          (margin (:B Bm) (:D D_m2) (:K *K1_m4))
+          (margin (:B Bm) (:D O_m3) (:K *K2_m5))
+          (opposite (:D D_m2) (:Opp *O_m6))
+          (edge_inset (:D D_m2) (:K K1_m4) (:B *B1_m7))
+          (edge_inset (:D O_m6) (:K K2_m5) (:B *B2_m8))
+          (compose (:A B1_m7) (:B B2_m8) (:C *Along_m1))
+          (relative (:Base Along_m1) (:X Bm) (:X_rel Band))
+          (dir_elem (:D *D_m1))
+          (relative (:Base Band) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0))))
+
+  (RULE &wiped
+    (&track *P))
+
+  (RULE &crowded
+    (&pair *K *D *D2)
+    (&source K (:D *D3))
+    (!= D3 D)
+    (!= D3 D2)))
+
+(ALTS $u "what moves" $Block
+  (ALT $Block
+    (ALTS $c "how block cells join" $FourConnected
+      (ALT $EightConnected
+        (INPUT edge-blocks "the 8-connected groups of block_color cells are the blocks; undefined where such a group touches two edges or none"
+          (RULE &eight_component
+            (&eight.class (:a *P) *Id))
+          (RULE &piece
+            (&eight_component *P (:Id *K))))
+        (INPUT blocks-apart "blocks that touch at a corner are one block")))
+    (ALTS $l "where the block's cells land" $Translate
+      (ALT $Mirror
+        (OUTPUT cross-to-opposite "the block lands at the opposite edge flipped along the axis of travel")
+        (RULE &landing
+          (&move *K *V)
+          (&box.box (:key (:Id K)) *B)
+          (&piece K *P)
+          (input P *Col)
+          (ALL ((&piece (:K *Km) P)
+                (&box.box (:key (:Id Km)) B)
+                (dir_elem (:D *D_m1))
+                (relative (:Base B) (:X P) (:X_rel *R_m2))
+                (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+               ((>= K_m3 0)))
+          (relative (:Base B) (:X P) (:X_rel *P_rel))
+          (perp *A *A2)
+          (IF ((&travels K A))
+              ((axis_inversion A (:T *F))
+               (apply (:D F) (:P P_rel) (:P_out *P_rel1)))
+              ((= P_rel1 P_rel)))
+          (IF ((&travels K (:A A2)))
+              ((axis_inversion (:A A2) (:T *F2))
+               (apply (:D F2) (:P P_rel1) (:P_out *P_rel2)))
+              ((= P_rel2 P_rel1)))
+          (compose (:A B) (:B P_rel2) (:C *P2))
+          (compose (:A P2) (:B V) (:C *Q)))))
+    (ALTS $k "where a block goes whose heading is read from two adjacent edges" $CornerUndefined
+      (ALT $Diagonal
+        (OUTPUT cross-to-opposite "a block whose heading is read from two adjacent edges moves away from both to the opposite corner, with a track along each axis"
+          (RULE &corner
+            (&pair *K *D *D2)
+            (axis_of D (:A *A_m1))
+            (perp (:A A_m1) (:A2 *A2_m2))
+            (axis_of (:D D2) (:A A2_m2))
+            (NOT (&crowded K)))
+          (RULE &heading
+            (OR ((&corner *K (:D *E))
+                 (opposite (:D E) (:Opp *D))
+                 (&box.box (:key (:Id K)) *B)
+                 (margin B D (:K *N)))
+                ((&lone K (:D *E2))
+                 (opposite (:D E2) (:Opp D))
+                 (&box.box (:key (:Id K)) (:B *B2))
+                 (margin (:B B2) D (:K N))))))
+        (RULE &settled
+          (OR ((&corner *K))
+              ((&lone K))))
+        (ALT $SpanStays
+          (RULE &settled
+            (OR ((&corner *K))
+                ((&span K))
+                ((&lone K)))))))
+    (ALTS $s "where a block goes whose heading is read from two opposite edges" $SpanUndefined
+      (ALT $SpanStays
+        (OUTPUT cross-to-opposite "a block whose heading is read from two opposite edges stays where it is, with no track"
+          (RULE &span
+            (&pair *K *D *D2)
+            (opposite D (:Opp D2))
+            (NOT (&crowded K))))
+        (RULE &settled
+          (OR ((&span *K))
+              ((&lone K)))))))
+  (ALT $PerLine
+    (INPUT edge-blocks "block cells lie in runs along rows and columns")
+    (OUTPUT cross-to-opposite "in each row and each column, a run of block cells that touches exactly one end of the line moves to the other end; other runs stay"
+      (RULE &run_ray
+        (&run.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+      (RULE &run_end
+        (&run_ray *P *D *K *Origin)
+        (step_offset D (:V *V_m1))
+        (compose (:A P) (:B V_m1) (:C *Q))
+        (NOT (&run_ray (:P Q) D Origin)))
+
+      (RULE &moving
+        (&run_end (:P *E_2) *D (:Origin *Src))
+        (step_offset D (:V *V_m1))
+        (compose (:A E_2) (:B V_m1) (:C *S))
+        (input (:P S))
+        (dir_elem D)
+        (opposite D (:Opp *E))
+        (margin (:B Src) (:D E) (:K 0))
+        (&run_ray (:P *Last) D (:Origin Src))
+        (step_offset D (:V *V_m2))
+        (compose (:A Last) (:B V_m2) (:C S))
+        (margin (:B Last) D (:K *N)))
+
+      (RULE &wiped
+        (&moving *Src *D)
+        (&run_full_ray *P D (:Origin Src))))
+    (OUTPUT wipe-track "each line in which a run moves takes trail_color")
+    (RULE &landed
+      (&moving *Src *D *N)
+      (&run_ray (:P *P2) D (:Origin Src))
+      (input (:P P2) *Col)
+      (dir8_opposite D (:D2 *O_m2))
+      (edge_inset (:D O_m2) (:K N) (:B *B1_m3))
+      (edge_inset D (:K N) (:B *I_m5))
+      (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+      (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+      (compose (:A P2) (:B V_m1) (:C *P)))
+
+    (RULE &output
+      (OR ((&landed *P *Col))
+          ((input P (:Col *Col_in))
+           (NOT (&landed P))
+           (IF ((&painted P))
+               ((&trail_color (:C Col)))
+               ((= Col Col_in))))))))
+
+(ALTS $h "what sets a block's axis and heading" $TouchedEdge
+  (ALT $AwayFromNearestEdge
+    (INPUT edge-blocks "each block has one nearest edge; undefined where a block has two")
+    (OUTPUT cross-to-opposite "each block moves to the edge opposite its nearest edge"
+      (RULE &source
+        (&nearest.minimal (:key (:Id *K)) (:t (:V *D)))))
+    (ALTS $e "which cells take trail_color" $Band
+      (ALT $SweptOnly
+        (OUTPUT wipe-track "only the cells of the band between the block's place and its landing take trail_color"
+          (RULE &track_split2
+            (&box.box (:key (:Id *K)) (:B *B_))
+            (axis_of *D (:A *A_))
+            (axis_of (:D *D_m1) (:A A_))
+            (opposite (:D D_m1) (:Opp *O_m2))
+            (margin (:B B_) (:D D_m1) (:K *K1_m3))
+            (margin (:B B_) (:D O_m2) (:K *K2_m4))
+            (opposite (:D D_m1) (:Opp *O_m1))
+            (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+            (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+            (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+            (relative (:Base X_m1_) (:X B_) (:X_rel *Band_)))
+          (RULE &track
+            (&heading *K *D)
+            (&box.box (:key (:Id K)) *B)
+            (axis_of D *A)
+            (&track_split2 (:B_ B) (:A_ A) (:X_m1_ *X_m1) (:Band_ *Band))
+            (opposite D (:Opp *E))
+            (margin B (:D E) (:K *M))
+            (edge_inset (:D E) (:K M) (:B *Ahead))
+            (input *P)
+            (ALL ((&box.box (:key (:Id *Km)) (:B *Bm))
+                  (axis_of (:D *Dm) (:A *Am))
+                  (axis_of (:D *D_m2) (:A Am))
+                  (opposite (:D D_m2) (:Opp *O_m3))
+                  (margin (:B Bm) (:D D_m2) (:K *K1_m4))
+                  (margin (:B Bm) (:D O_m3) (:K *K2_m5))
+                  (opposite (:D D_m2) (:Opp *O_m6))
+                  (edge_inset (:D D_m2) (:K K1_m4) (:B *B1_m7))
+                  (edge_inset (:D O_m6) (:K K2_m5) (:B *B2_m8))
+                  (compose (:A B1_m7) (:B B2_m8) (:C *Along_m1))
+                  (relative (:Base Along_m1) (:X Bm) (:X_rel Band))
+                  (dir_elem (:D *D_m1))
+                  (relative (:Base Band) (:X P) (:X_rel *R_m2))
+                  (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+                 ((>= K_m3 0)))
+            (ALL ((opposite (:D *Dmm) (:Opp *Em))
+                  (&box.box (:key (:Id *Kmm)) (:B *Bmm))
+                  (margin (:B Bmm) (:D Em) (:K *Mm))
+                  (edge_inset (:D Em) (:K Mm) (:B Ahead))
+                  (dir_elem (:D *D_m1m))
+                  (relative (:Base Ahead) (:X P) (:X_rel *R_m2m))
+                  (margin (:B R_m2m) (:D D_m1m) (:K *K_m3m)))
+                 ((>= K_m3m 0)))))))))
+
+(ALTS $b "which cells are block cells" $OfBlockColor
+  (ALT $OfBlockColor
+    (ALTS $t "what a track does to its cells" $PaintAll
+      (ALT $RecolorTrack
+        (OUTPUT wipe-track "in the track, the cells of a field color and the block cells take trail_color, and cells of other colors keep their color")
+        (RULE &painted
+          (&wiped *P)
+          (OR ((input P *Col)
+               (&field_color Col))
+              ((&block_cell P)))))))
+  (ALT $NonFieldColor
+    (INPUT edge-blocks "the cells of neither field color are the block cells"
+      (RULE &block_cell
+        (input *P *Col)
+        (NOT (&field_color Col))))
+    (OUTPUT block-on-top "each block cell lands in its own color; undefined where landings of two colors meet")))
+
+(RULE &run_full_end
+  (&run_full_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&run_full_ray (:P Q) D Origin)))
+
+(DET &trail_color ColorDomain)
+
+(RULE &landing
+  (&move *K *V)
+  (&piece K *P)
+  (input P *Col)
+  (compose (:A P) (:B V) (:C *Q)))
+
+(RULE &landed
+  (&landing (:Q *P) *Col))
+
+(RULE &settled
+  (&lone *K))
+
+(RULE &stuck
+  (&piece *K)
+  (NOT (&settled K)))
+
+(RULE &undefined
+  (&stuck))
+
+(RULE &painted
+  (&wiped *P))
+
+(RULE &output
+  (OR ((&landed *P *Col)
+       (NOT (&undefined)))
+      ((NOT (&undefined))
+       (input P (:Col *Col_in))
+       (NOT (&landed P))
+       (IF ((&painted P))
+           ((&trail_color (:C Col)))
+           ((= Col Col_in))))))

@@ -1,0 +1,159 @@
+;; ac0c2ac3
+
+(INPUT square-odd "the input is a square grid with an odd side, so it has one center cell, and its rings are the cells at each Chebyshev distance from that center")
+
+(INPUT one-mark-per-ring "on a field of &bg, each ring holds exactly one mark, a cell of another color, and no two marks share a color"
+
+  (DET_OR_RULE &bg DominantColor))
+
+(OUTPUT fill-ring "the output has the input's frame, and every cell of a ring takes the color of the mark that lies on that ring"
+
+  ;; the scan starts at this corner and runs along this axis first
+  ;; TODO no-det-plan: &scan_order: the plan gives no verdict
+  (DET &scan_order)
+
+  (RULE &mark
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  ;; P lies on ring K about center O: on the outline of the square that reaches
+  ;; K cells past O on every side.
+  (RULE &ring
+    (input (:P *O))
+    (centered (:P O))
+    (input *P)
+    (relative (:Base O) (:X P) (:X_rel *P_rel))
+    (dir_elem *D)
+    (margin (:B P_rel) D *K)
+    (uniform_outset K (:B *B_out))
+    (compose (:A O) (:B B_out) (:C *B))
+    (inside (:A P) B)
+    (same_dist (:P1 P) (:P2 B)))
+
+  (RULE &mark_ring
+    (&mark *P *Col)
+    (&ring P *K))
+
+  (RULE &marked
+    (&mark_ring *K))
+
+  (RULE &crowded
+    (&mark_ring *K *P)
+    (&mark_ring K (:P *Q))
+    (!= P Q))
+
+  (RULE &ring_color
+    (&mark_ring *K *Col)
+    (NOT (&crowded K)))
+
+  (RULE &scan_cell
+    (&mark_ring *K *P)
+    (&scan_order (:D *C) *A))
+
+  (INIT &scan Order
+    (key ((&mark_ring ^K *P)
+          (&scan_order (:D ^C) ^A))
+      (member ((:t P))
+        (&mark_ring K *P)
+        (&scan_order (:D C) A))
+      (before ((:a P) (:b P2))
+        (&mark_ring K *P)
+        (&scan_order (:D C) A)
+        (&mark_ring K (:P *P2))
+        (&scan_cell K C A)
+        (OR ((corner_dir C A *D)
+             (nearer D P (:Q P2)))
+            ((diag_dirs (:D C) A (:D1 D) *D2)
+             (same_dist D (:P1 P) P2)
+             (nearer (:D D2) P (:Q P2)))))))
+
+  ;; The last mark's color, kept where every open scan order agrees.
+  (INIT &last Singleton
+    (key ((&scan.maximal (:key ^K) (:t *P))
+          (&mark P *Col))
+      (member ((:v Col))
+        (&scan.maximal (:key K) (:t *P))
+        (&mark P *Col))))
+
+  ;; The marked rings, outermost first.
+  (INIT &nest Order
+    (member ((:t K))
+      (&marked *K))
+    (before ((:a K) (:b K2))
+      (&marked *K)
+      (&marked (:K *K2))
+      (> K K2))))
+
+(ALTS $rings "what a ring is" $CenterRings
+  (ALT $DepthRings
+    (INPUT square-odd "the grid may have any shape, and its rings are the cells at each distance from the nearest grid edge"
+      ;; P lies on ring K: on the outline of the frame inset by K on every side.
+      (RULE &ring
+        (input *P)
+        (dir_elem *D)
+        (margin (:B P) D *K)
+        (uniform_inset K *B)
+        (inside (:A P) B)
+        (same_dist (:P1 P) (:P2 B)))
+
+      ;; The marked rings, outermost first.
+      (INIT &nest Order
+        (member ((:t K))
+          (&marked *K))
+        (before ((:a K) (:b K2))
+          (&marked *K)
+          (&marked (:K *K2))
+          (< K K2))))))
+
+(ALTS $unmarked "what a ring with no mark gets" $NeedsMark
+  (ALT $EmptyBg
+    (OUTPUT empty-bg "a ring with no mark keeps &bg")
+    (RULE &draw
+      (&ring *P *K)
+      (OR ((&ring_color K *Col))
+          ((NOT (&marked K))
+           (&bg (:C Col))))))
+  (ALT $RankRings
+    (OUTPUT fill-ring "the output is a square with one ring per marked ring, and its rings, outermost first, take the colors of the marked rings, outermost first"
+      (RULE &canvas
+        (&nest.maximal (:t *K))
+        (&nest.rank (:t K) (:R *N))
+        (uniform_inset (:K N) (:B *C))
+        (&nest.rank (:R *K1))
+        (&nest.rank (:R *K2))
+        (axis_of (:D *D1) *A)
+        (perp A *A2)
+        (axis_of (:D *D2) (:A A2))
+        (jump (:P C) (:D D1) (:K K1) *Q)
+        (jump (:P Q) (:D D2) (:K K2) (:Q *P))))
+    (RULE &draw
+      (&canvas *P)
+      (&nest.rank (:t *K) (:R *J))
+      (uniform_inset (:K J) *B)
+      (inside (:A P) B)
+      (same_dist (:P1 P) (:P2 B))
+      (&ring_color K *Col))
+
+    (RULE &frame
+      (&canvas *P))))
+
+(ALTS $shared "what a ring with two marks gets" $OneMark
+  (ALT $ScanLast
+    (OUTPUT fill-ring "a ring takes the color of its mark that comes last in the scan from the corner of a &scan_order along its axis first. Undefined where the open scan orders pick marks of different colors."
+      (RULE &ring_color
+        (&last.value (:key *K) (:v *Col))))))
+
+(RULE &draw
+  (&ring *P *K)
+  (&ring_color K *Col))
+
+(RULE &frame
+  (&ring *P))
+
+(RULE &blank
+  (&frame *P)
+  (NOT (&draw P)))
+
+(RULE &output
+  (&draw *P *Col)
+  (NOT (&blank)))

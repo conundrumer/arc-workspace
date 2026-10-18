@@ -1,0 +1,5 @@
+;; 58e15b12
+
+(param &bg Color (0))
+(param &bar_axis Axis (AXIS_V))
+(param &overlap Color (6))

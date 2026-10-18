@@ -1,0 +1,63 @@
+;; 9110e3c5
+
+(DET &bg SharedColor)
+
+(RULE &ink_cell
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &common_count Cardinality
+  (key ((&ink_cell *P ^Col))
+    (member ((:m P))
+      (&ink_cell *P Col))))
+
+(INIT &common Order
+  (member ((:t Col))
+    (&common_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&common_count.size (:key *Col) *N)))
+
+(DET &glyph
+  (&common.maximal *E (:t *Key))
+  (ex_output E *P *Col))
+
+(ALTS $choice "what makes a color the ink" $Count
+  (ALT $Object
+    (RULE &comps_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    ;; Touching cells of one color.
+    (INIT &comps Quotient
+      (edge ((:a Col P) (:b Col (:P P3)))
+        (OR ((&ink_cell *P *Col)
+             (&comps_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P3))
+             (&ink_cell (:P P3) Col))
+            ((&ink_cell P Col)
+             (= P3 P)))))
+
+    (RULE &comps_component
+      (&comps.class (:a (:Col *Key) *P) *Id))
+
+    (INIT &comp_size Cardinality
+      (key ((&comps_component *P ^Id))
+        (member ((:m P))
+          (&comps_component *P Id))))
+
+    ;; Each color scored by the largest component it forms.
+    (INIT &biggest Order
+      (member ((:t (:V Col) (:S N)))
+        (&comps_component (:Key *Col) *Id)
+        (&comp_size.size (:key Id) *N))
+      (score ((:t (:V Col) (:S N)) (:S N))
+        (&comps_component (:Key *Col) *Id)
+        (&comp_size.size (:key Id) *N)))
+
+    (RULE &output
+      (&biggest.maximal (:t (:V *Key)))
+      (&glyph Key *P *Col))))
+
+(RULE &output
+  (&common.maximal (:t *Key))
+  (&glyph Key *P *Col))

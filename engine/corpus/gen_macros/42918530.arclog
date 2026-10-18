@@ -1,0 +1,155 @@
+;; 42918530
+
+(DET &bg DominantColor)
+
+(RULE &inked_line_split1
+  (input (:P *P_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &lattice_divider_split1
+  (input (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &lattice_divider
+  (input *P)
+  (axis_elem *A)
+  (&lattice_divider_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1))
+  (ALL ((input (:P *Pm) *Col)
+        (&inked_line_split1 (:P_ Pm) (:A_ A) (:L_ L) (:X_m1_ *X_m1m)))
+       ((&bg (:C Col)))))
+
+(RULE &lattice_on_divider
+  (input *P)
+  (&lattice_divider *A *L)
+  (axis_of *D A)
+  (margin (:B P) D (:K *K_m1))
+  (margin (:B L) D (:K K_m1)))
+
+(INIT &lattice_rank Order
+  (key ((OR ((&lattice_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (dir_elem D)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&lattice_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&lattice_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (dir_elem D)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (dir_elem D)
+      (margin (:B P) D *K))))
+
+(RULE &lattice_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&lattice_on_divider P A))
+  (margin (:B P) D *K)
+  (&lattice_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &lattice_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&lattice_part_idx *P D (:N *N1))
+  (&lattice_part_idx P (:D D2) (:N *N2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K N1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+(RULE &lattice_tile_of
+  (&lattice_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&lattice_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &box_of
+  (&lattice_tile_of *P (:P_tile *T)))
+
+(INIT &bbox BoundingBox
+  (key ((&box_of *P ^T))
+    (cell (P)
+      (&box_of *P T))))
+
+(RULE &box_view
+  (&box_of *P *T)
+  (&bbox.box (:key T) *B)
+  (ALL ((&box_of P (:T *Tm))
+        (&bbox.box (:key (:T Tm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(RULE &box_color
+  (&box_of *P *T)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &outline
+  (&box_view *P_intile)
+  (dir_elem *D)
+  (margin (:B P_intile) D (:K 0)))
+
+(RULE &ink
+  (&box_view *T *P *P_intile)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &design
+  (&ink *T *P_intile)
+  (NOT (&outline P_intile)))
+
+(RULE &group_design
+  (&box_color *T *Col)
+  (&design T *P_intile))
+
+(RULE &show
+  (OR ((&ink *T *P_intile))
+      ((&box_color T *Col)
+       (NOT (&design T))
+       (&group_design Col P_intile))))
+
+(ALTS $choice "which boxes of a group take the group's design" $Fill
+  (ALT $Merge
+    (RULE &show
+      (OR ((&box_color *T *Col)
+           (&group_design Col *P_intile))
+          ((&ink T P_intile))))))
+
+(RULE &output
+  (OR ((&box_view *T *P *P_intile)
+       (OR ((&show T P_intile)
+            (&box_color T *Col))
+           ((NOT (&show T P_intile))
+            (&bg (:C Col)))))
+      ((input P)
+       (NOT (&box_of P))
+       (&bg (:C Col)))))

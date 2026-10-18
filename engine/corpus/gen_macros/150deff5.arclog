@@ -1,0 +1,112 @@
+;; 150deff5
+
+(DET &regions_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &changed
+  (ex_output *E *P *Col)
+  (ex_input E P (:Col *C2))
+  (!= Col C2))
+
+(INIT &regions Quotient
+  (edge ((:a E (:Col C) P) (:b E (:Col C) (:P P3)))
+    (OR ((&changed *E *P (:Col *C))
+         (&regions_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&changed E (:P P3) (:Col C)))
+        ((&changed E P (:Col C))
+         (= P3 P)))))
+
+(DET &regions_component
+  (&regions.class (:a *E *Col *P) *Id))
+
+(DET &region_cell
+  (&regions_component *E *Col *P *Id))
+
+(INIT &size Cardinality
+  (key ((&region_cell ^E ^Col ^Id *P))
+    (member ((:m P))
+      (&region_cell E Col Id *P))))
+
+(INIT &small Order
+  (key ((&size.size (:key (:Col ^C)) *N))
+    (member ((:t N))
+      (&size.size (:key (:Col C)) *N))
+    (score ((:t N) (:S N))
+      (&size.size (:key (:Col C)) *N))))
+
+;; A color's smallest regions are lone pieces — a merged region holds at
+;; least two. Each lone piece is one copy of its color's chart, in its
+;; own pose.
+(INIT &bbox BoundingBox
+  (key ((&size.size (:key ^E (:Col ^C) ^Id) *N)
+        (&small.minimal (:key C) (:t N))
+        (&region_cell E (:Col C) Id *P))
+    (cell (P)
+      (&size.size (:key E (:Col C) Id) *N)
+      (&small.minimal (:key C) (:t N))
+      (&region_cell E (:Col C) Id *P))))
+
+(DET &piece_member_inside1
+  (&bbox.cell (:key *E *C (:Id *R)) (:P *P_))
+  (&bbox.box (:key E C (:Id R)) (:B *B_))
+  (dir_elem (:D *D_m1))
+  (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+  (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+  (< K_m3 0))
+
+(DET &bg DominantColor)
+
+;; Each piece's id, from the color it paints.
+(INIT &color_id Quotient
+  (equivalent ((:a C) (:b C))
+    (&changed (:Col *C))))
+
+(DET &member
+  (&bbox.cell (:key *E (:C *Col) (:Id *Region)) (:P *P2))
+  (&bbox.box (:key E (:C Col) (:Id Region)) *B)
+  (NOT (&piece_member_inside1 (:P_ P2) (:B_ B)))
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (&color_id.class (:a Col) *Id))
+
+;; The catalog: each piece's footprint, and the color it paints.
+(RIGID_DET &piece
+  (&member *E *Col *Region *Id *P))
+
+(INIT &occ Occurrences
+  (key ((OR ((&piece.member (:Pose ^D) ^Id (:P *S)))
+            ((&piece.member (:Pose D) Id)
+             (input *P *Col)
+             (NOT (&bg (:C Col))))))
+    (cell (P)
+      (&piece.member (:Pose D) Id)
+      (input *P *Col)
+      (NOT (&bg (:C Col))))
+    (shape ((:P S))
+      (&piece.member (:Pose D) Id (:P *S)))))
+
+(RULE &covers
+  (&occ.occurrence (:key (:Id *K_id) (:D *K_d)) (:P *B))
+  (&occ.shape (:key (:Id K_id) (:D K_d)) (:P *S))
+  (compose (:A B) (:B S) (:C *P)))
+
+(CHOOSE &forcing
+  (for ((&covers ^P))
+    (from (&covers *B P)))
+  (never
+    (&covers *B *P)
+    (&covers (:B *B2) (:P *P2))
+    (&covers B (:P P2))
+    (!= B B2)))
+
+(DET &piece_color
+  (&color_id.class (:a *Col) *Id))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&bg (:C Col)))
+      ((&forcing *B)
+       (&covers B P)
+       (&occ.occurrence (:key *Id) (:P B))
+       (&piece_color Id Col))))

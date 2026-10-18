@@ -1,0 +1,153 @@
+;; 3dc255db
+
+(DET &bg DominantColor)
+
+(INIT &comps Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col)))))
+  (step ((:Delta S))
+    (diag_dir_elem *D)
+    (step_offset D (:V *S))))
+
+(RULE &obj
+  (&comps.component *P *Id))
+
+(INIT &obj_size Cardinality
+  (key ((&obj ^Id *P))
+    (member ((:m P))
+      (&obj Id *P))))
+
+(RULE &holds
+  (&obj *Id *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&obj (:Id *B) (:P Q))
+  (&obj_size.size (:key Id) *N)
+  (&obj_size.size (:key (:Id B)) (:N *N2))
+  (< N N2))
+
+(RULE &wall
+  (&holds *B)
+  (&obj (:Id B) *P))
+
+(RULE &held
+  (&holds *B *Id)
+  (&obj Id *P))
+
+(RULE &held_color
+  (&held *B *P)
+  (input P *Col))
+
+(INIT &held_size Cardinality
+  (key ((&held ^B *P))
+    (member ((:m P))
+      (&held B *P))))
+
+(INIT &bbox BoundingBox
+  (key ((&wall ^B *P))
+    (cell (P)
+      (&wall B *P))))
+
+;; The cavity: what the held cells reach inside the box without crossing a wall.
+(INIT &cavity Flood
+  (key ((OR ((&bbox.box (:key ^B) (:B *B_hold))
+             (input *P)
+             (inside (:A P) (:B B_hold))
+             (NOT (&wall B P)))
+            ((&held B P))))
+    (node (P)
+      (&bbox.box (:B *B_hold))
+      (input *P)
+      (inside (:A P) (:B B_hold))
+      (NOT (&wall B P)))
+    (source (P)
+      (&held B *P))))
+
+;; The cavity runs out to that side of the bbox.
+(RULE &mouth
+  (&bbox.box (:key *B) (:B *B_hold))
+  (&cavity.reached (:key B) *P)
+  (inside (:A P) (:B B_hold))
+  (same_dist *D (:P1 P) (:P2 B_hold)))
+
+;; The wall cell nearest a side, where it stands alone there.
+(INIT &tip Singleton
+  (key ((&bbox.box (:key ^B) (:B *B_hold))
+        (&wall B *P)
+        (inside (:A P) (:B B_hold))
+        (same_dist ^D (:P1 P) (:P2 B_hold)))
+    (member ((:v P))
+      (&bbox.box (:key B) (:B *B_hold))
+      (&wall B *P)
+      (inside (:A P) (:B B_hold))
+      (same_dist D (:P1 P) (:P2 B_hold)))))
+
+(ALTS $choice "how the open side is read" $Pour
+  (ALT $Sight
+    (RULE &sight_dir
+      (&wall (:B *Key))
+      (dir_elem *D))
+
+    (INIT &sight Ray
+      (key ((OR ((&held ^B *P))
+                ((&sight_dir (:Key B) *D))
+                ((&sight_dir (:Key B))
+                 (input P)
+                 (NOT (&wall B P)))))
+        (source (P)
+          (&held B *P))
+        (node (P)
+          (&sight_dir (:Key B))
+          (input *P)
+          (NOT (&wall B P)))
+        (dir (D)
+          (&sight_dir (:Key B) *D))))
+
+    (RULE &sight_stop
+      (&sight.end (:key (:B *Key)) (:P *E) *D (:Origin *Src))
+      (neighbor (:P E) D (:Q *P))
+      (&sight.ray (:key (:B Key)) P D *K (:Origin Src)))
+
+    (RULE &mouth
+      (&wall *B)
+      (dir_elem *D)
+      (NOT (&sight_stop (:Key B) D)))))
+
+(RULE &spout
+  (&mouth *B (:D *D_open))
+  (opposite *D (:Opp D_open))
+  (&tip.value (:key B D) (:v *P)))
+
+(INIT &trail Ray
+  (key ((&spout ^B ^D))
+    (source (P)
+      (&spout B D *P))
+    (node (P)
+      (&spout B D)
+      (input *P))
+    (dir (D)
+      (&spout B D))))
+
+(RULE &trail_cell
+  (&spout *B *D)
+  (input *P))
+
+(RULE &paint
+  (&trail.ray (:key *B) *P *K)
+  (&trail_cell B P)
+  (!= K 0)
+  (&held_size.size (:key B) *N)
+  (<= K N)
+  (&held_color B *Col))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P (:Col *C_in))
+       (NOT (&paint P))
+       (OR ((&held P)
+            (&bg (:C Col)))
+           ((NOT (&held P))
+            (= Col C_in))))))

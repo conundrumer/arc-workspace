@@ -1,0 +1,4 @@
+;; 681b3aeb
+
+(param &bg Color (0))
+(param &side number (3))

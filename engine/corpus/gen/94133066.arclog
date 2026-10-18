@@ -1,0 +1,52 @@
+;; 94133066
+
+;; the panel's color
+(DET &field SharedColor)
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&field (:C Col))))
+
+(RULE &panel
+  (input *P *Col)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &outside
+  (input *P *Col)
+  (&bbox.box *B)
+  (NOT (inside (:A P) B)))
+
+(RULE &placed
+  (d4_elem *D)
+  (&panel *P_inner *Col)
+  (&outside (:P *P_grid_in) Col)
+  (apply D (:P P_inner) (:P_out *P_grid_out)))
+
+(RULE &broken
+  (&placed *D (:P_grid_out *P1) (:P_grid_in *Q1))
+  (&placed D (:P_grid_out *P2) (:P_grid_in *Q2))
+  (relative (:Base P1) (:X P2) (:X_rel *V))
+  (relative (:Base Q1) (:X Q2) (:X_rel *V2))
+  (!= V V2))
+
+(ALTS $choice "how much of the turned marks' arrangement the outside cells keep" $Congruent
+  (ALT $Ordered
+    (RULE &broken
+      (&placed *D (:P_grid_out *P1) (:P_grid_in *Q1))
+      (&placed D (:P_grid_out *P2) (:P_grid_in *Q2))
+      (dir_elem (:D *Dir))
+      (IF ((nearer (:D Dir) (:P P1) (:Q P2)))
+          ((NOT (nearer (:D Dir) (:P Q1) (:Q Q2))))
+          ((nearer (:D Dir) (:P Q1) (:Q Q2)))))))
+
+(RULE &pose
+  (d4_elem *D)
+  (NOT (&broken D)))
+
+(RULE &output
+  (&panel *P_inner *Col)
+  (&pose *D)
+  (apply D (:P P_inner) (:P_out *P)))

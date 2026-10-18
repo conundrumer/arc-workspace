@@ -1,0 +1,74 @@
+;; 070dd51e
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &bet_axis
+  (&mark (:Col *Key))
+  (axis_elem *A))
+
+(INIT &bet Ray
+  (key ((OR ((&mark ^Col *P))
+            ((&bet_axis (:Key Col) *A)
+             (axis4_of *D A))
+            ((&bet_axis (:Key Col))
+             (input P))))
+    (source (P)
+      (&mark Col *P))
+    (node (P)
+      (&bet_axis (:Key Col))
+      (input *P))
+    (dir (D)
+      (&bet_axis (:Key Col) *A)
+      (axis4_of *D A))))
+
+(RULE &bet_between
+  (&mark (:Col *Key))
+  (input *P)
+  (&bet_axis Key *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&bet.ray (:key (:Col Key)) P D)
+  (&bet.ray (:key (:Col Key)) P (:D O)))
+
+(DET &over_axis AxisDomain)
+
+(RULE &line_axis
+  (&mark *Col *P)
+  (&mark Col (:P *Q))
+  (!= P Q)
+  (axis_elem *A)
+  (same_line A P Q))
+
+(RULE &span
+  (&bet_between (:Key *Col) *P)
+  (&line_axis Col *A))
+
+(RULE &over_span
+  (&span *P *A)
+  (&over_axis A))
+
+(RULE &top_span
+  (OR ((&span *P *Col *A)
+       (&over_axis A))
+      ((&span P Col)
+       (NOT (&over_span P)))))
+
+(ALTS $choice "Cases split what a span may paint" $PaintAll
+  (ALT $PaintBg
+    (RULE &output
+      (OR ((input *P (:Col *Bg))
+           (&bg (:C Bg))
+           (OR ((&top_span P *Col))
+               ((NOT (&top_span P))
+                (= Col Bg))))
+          ((input P Col)
+           (NOT (&bg (:C Col))))))))
+
+(RULE &output
+  (OR ((&top_span *P *Col))
+      ((input P Col)
+       (NOT (&top_span P)))))

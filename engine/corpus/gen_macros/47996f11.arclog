@@ -1,0 +1,124 @@
+;; 47996f11
+
+(DET &noise ChangedColor)
+
+(RULE &clean
+  (input *P *Col)
+  (NOT (&noise (:C Col))))
+
+(DET &cand
+  (ex_output *P)
+  (axis_of *D *A)
+  (margin (:B P) D *K)
+  (dir8_opposite D (:D2 *O_m1))
+  (edge_inset (:D O_m1) K (:B *B1_m2))
+  (edge_inset D K (:B *I_m4))
+  (relative (:Base I_m4) (:X 0) (:X_rel *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *V)))
+
+(DET &mirrored
+  (ex_output *E *P)
+  (&cand *A *V)
+  (axis_inversion A (:T *D))
+  (apply D P (:P_out *P1))
+  (compose (:A V) (:B V) (:C *V_twice))
+  (compose (:A P1) (:B V_twice) (:C *Q)))
+
+(DET &mirror_mismatch
+  (&mirrored *E *A *V *P *Q)
+  (ex_output E P *Col)
+  (ex_output E (:P Q) (:Col *C2))
+  (!= C2 Col))
+
+(DET &axis_center
+  (&mirrored *E *A *V *Q)
+  (ex_output E (:P Q))
+  (NOT (&mirror_mismatch A V)))
+
+(DET &center
+  (perp (:A *A1) *A2)
+  (&axis_center (:A A1) (:V *V1))
+  (&axis_center (:A A2) (:V *V2))
+  (compose (:A V1) (:B V2) (:C *V)))
+
+(DET &inv_src
+  (&center (:V *V2))
+  (ex_output (:E *Key) (:P *P2) (:Col *V))
+  (relative (:Base V2) (:X P2) (:X_rel *P)))
+
+;; Self-symmetry of each restored grid, read in the center frame.
+(INIT &inv2 Agreement
+  (key ((OR ((&center *V)
+             (ex_output ^E *P *Col)
+             (relative (:Base V) (:X P) (:X_rel *P_inner)))
+            ((&inv_src (:Key E) (:P P_inner) (:V Col)))))
+    (source ((:i P_inner) (:v Col))
+      (&center *V)
+      (ex_output E *P *Col)
+      (relative (:Base V) (:X P) (:X_rel *P_inner)))
+    (target ((:i P_inner) (:v Col))
+      (&inv_src (:Key E) (:P *P_inner) (:V *Col)))
+    (correspondence ((:m D) (:i P_inner) (:j Q))
+      (&center *V)
+      (ex_output E *P *Col)
+      (relative (:Base V) (:X P) (:X_rel *P_inner))
+      (d4_elem *D)
+      (apply D (:P P_inner) (:P_out *Q)))))
+
+;; The transforms no example contradicts, named as a subgroup.
+(INIT &named Inclusion
+  (pattern ((:pattern S) (:m D))
+    (sym_member *S *D))
+  (observed ((:m D))
+    (d4_elem *D)
+    (NOT (&inv2.conflict (:m D)))))
+
+(DET &sym
+  (&named.equal (:pattern *S)))
+
+(RULE &transform
+  (&sym *S)
+  (sym_member S *D))
+
+(ALTS $choice "which transforms restore a corrupted cell — coincide here: the clean cells contradict no element of D4, so both cases apply the full group" $Stored
+  (ALT $Derived
+    (RULE &inv_src2
+      (&center (:V *V2))
+      (&clean (:P *P2) (:Col *V))
+      (relative (:Base V2) (:X P2) (:X_rel *P)))
+
+    ;; Self-symmetry of the clean cells, read in the center frame.
+    (INIT &inv Agreement
+      (source ((:i P_inner) (:v Col))
+        (&center *V)
+        (&clean *P *Col)
+        (relative (:Base V) (:X P) (:X_rel *P_inner)))
+      (target ((:i P_inner) (:v Col))
+        (&inv_src2 (:P *P_inner) (:V *Col)))
+      (correspondence ((:m D) (:i P_inner) (:j Q))
+        (&center *V)
+        (&clean *P *Col)
+        (relative (:Base V) (:X P) (:X_rel *P_inner))
+        (d4_elem *D)
+        (apply D (:P P_inner) (:P_out *Q))))
+
+    (RULE &transform
+      (&inv_src2)
+      (d4_elem *D)
+      (NOT (&inv.conflict (:m D))))))
+
+(RULE &counterpart
+  (&center *V)
+  (input *P)
+  (relative (:Base V) (:X P) (:X_rel *P_inner))
+  (&transform *D)
+  (apply D (:P P_inner) (:P_out *Q_inner))
+  (compose (:A V) (:B Q_inner) (:C *Q))
+  (input (:P Q)))
+
+(RULE &output
+  (OR ((&clean *P *Col))
+      ((input P (:Col *N))
+       (&noise (:C N))
+       (&counterpart P *Q)
+       (&clean (:P Q) Col))))

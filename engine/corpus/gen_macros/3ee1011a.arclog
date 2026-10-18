@@ -1,0 +1,104 @@
+;; 3ee1011a
+
+(RULE &rim_depth_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+;; Each bar: its color, and how many cells it covers.
+(INIT &bar Cardinality
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (member ((:m P))
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+;; The canvas: a square as wide as the longest bar.
+(INIT &longest Order
+  (member ((:t N))
+    (&bar.size *N))
+  (score ((:t N) (:S N))
+    (&bar.size *N)))
+
+(INIT &canvas Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&longest.maximal (:t *N))))
+
+;; The concentric frames, counted inward from the canvas border.
+(INIT &rim Boundary
+  (cell (P)
+    (&canvas.cell *P)))
+
+(INIT &rim_depth Distance
+  (edge ((:a P) (:b P2))
+    (&canvas.cell *P)
+    (&rim_depth_steps (:Delta *S))
+    (compose (:A P) (:B S) (:C *P2))
+    (&canvas.cell (:P P2)))
+  (source ((:n P))
+    (&rim.boundary *P)))
+
+(INIT &size_rank Order
+  (member ((:t N))
+    (&bar.size *N))
+  (score ((:t N) (:S N))
+    (&bar.size *N)))
+
+(ALTS $choice "which bar each frame's color comes from" $Rank
+  (ALT $Stamp
+    ;; The centered square left after peeling K frames.
+    (INIT &core BoundingBox
+      (key ((&rim_depth.distance ^K))
+        (cell (P)
+          (&rim_depth.distance (:n *P) (:K *K2))
+          (<= K K2))))
+
+    ;; The squares a cell sits in, by side.
+    (INIT &innermost Order
+      (key ((&core.cell (:key *K) ^P)
+            (&core.box (:key K) *B)
+            (axis_elem *A)
+            (perp A *A2)
+            (axis_elem A)
+            (relative (:Base B) (:X P) (:X_rel *R_m1))
+            (frame_extent (:P R_m1) A *N)
+            (axis_elem (:A A2))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (frame_extent (:P R_m2) (:A A2) N)
+            (&bar.size N))
+        (member ((:t N))
+          (&core.cell (:key *K) P)
+          (&core.box (:key K) *B)
+          (axis_elem *A)
+          (perp A *A2)
+          (axis_elem A)
+          (relative (:Base B) (:X P) (:X_rel *R_m1))
+          (frame_extent (:P R_m1) A *N)
+          (axis_elem (:A A2))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (frame_extent (:P R_m2) (:A A2) N)
+          (&bar.size N))
+        (score ((:t N) (:S N))
+          (&core.cell (:key *K) P)
+          (&core.box (:key K) *B)
+          (axis_elem *A)
+          (perp A *A2)
+          (axis_elem A)
+          (relative (:Base B) (:X P) (:X_rel *R_m1))
+          (frame_extent (:P R_m1) A *N)
+          (axis_elem (:A A2))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (frame_extent (:P R_m2) (:A A2) N)
+          (&bar.size N))))
+
+    ;; A cell takes the smallest square covering it.
+    (RULE &output
+      (&innermost.minimal (:key *P) (:t *N))
+      (&bar.size (:key *Col) N))))
+
+(RULE &output
+  (&rim_depth.distance (:n *P) *K)
+  (&bar.size (:key *Col) *N)
+  (&size_rank.dual_rank (:t N) (:R K)))

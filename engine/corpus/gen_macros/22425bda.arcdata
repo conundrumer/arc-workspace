@@ -1,0 +1,4 @@
+;; 22425bda
+
+(param &bg Color (7))
+(param &stack_dir Dir (DIR_L))

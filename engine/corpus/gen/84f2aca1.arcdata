@@ -1,0 +1,5 @@
+;; 84f2aca1
+
+(param &bg Color (0))
+(param &count_fill (number Color) (1 5) (2 7))
+(param &extent_fill (number number Color) (1 1 5) (1 2 7))

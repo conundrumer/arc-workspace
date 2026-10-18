@@ -1,0 +1,58 @@
+;; 69889d6e
+
+(DET &walker RarestColor)
+
+(DET &corner DiagDirDomain)
+
+(DET &first_axis AxisDomain)
+
+(DET &wall UnchangedColor)
+
+(RULE &blocked
+  (input *P *Col)
+  (&wall (:C Col)))
+
+(RULE &start
+  (input *P *Col)
+  (&walker (:C Col))
+  (&corner (:D *C))
+  (&first_axis *A)
+  (corner_dir C A *D)
+  (perp A (:A2 *A2_m2))
+  (corner_dir C (:A A2_m2) (:D *D2_m1)))
+
+(ALTS $choice "what blocks the walker" $Wall
+  (ALT $Solid
+    (DET &bg DominantColor)
+
+    (RULE &blocked
+      (input *P *Col)
+      (NOT (&bg (:C Col))))))
+
+;; One move from a pose: step into the open cell ahead, or turn in place
+;; before a blocked one, taking the corner's other direction next.
+(INIT &walk Propagation
+  (source ((:n (:P P0) (:D D0)))
+    (&start (:P *P0) (:D *D0)))
+  (edge ((:a P D) (:b (:P P2) (:D D2)))
+    (input *P)
+    (&corner (:D *C))
+    (corner_dir C (:A *A_m1) *D)
+    (perp (:A A_m1) (:A2 *A2_m2))
+    (corner_dir C (:A A2_m2) (:D *D2))
+    (step_offset D (:V *V_m3))
+    (compose (:A P) (:B V_m3) (:C *Q))
+    (input (:P Q))
+    (OR ((NOT (&blocked (:P Q)))
+         (= *P2 Q))
+        ((&blocked (:P Q))
+         (= P2 P)))))
+
+(RULE &visited
+  (&walk.reached (:n *P)))
+
+(RULE &output
+  (OR ((&visited *P)
+       (&walker (:C *Col)))
+      ((input P Col)
+       (NOT (&visited P)))))

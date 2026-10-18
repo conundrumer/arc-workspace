@@ -1,0 +1,86 @@
+;; 3490cc26
+
+(DET &bg DominantColor)
+
+(INIT &blocks Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &bb BoundingBox
+  (key ((&blocks.component *P ^Id))
+    (cell (P)
+      (&blocks.component *P Id))))
+
+(RULE &block
+  (&bb.box (:key *Id) *B)
+  (&blocks.component *P Id)
+  (input P *Col))
+
+(INIT &sight_full Ray
+  (source ((:P B))
+    (&block *B))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (dir_elem *D)))
+
+(DET &seed RarestColor)
+
+(DET &path AnyOutNewColor)
+
+(RULE &sight_blocked
+  (&block (:B *P)))
+
+;; Blocks look along their lines, and each block stops the look behind it.
+(INIT &sight Ray
+  (source ((:P B))
+    (&block *B))
+  (node (P)
+    (input *P)
+    (NOT (&sight_blocked P)))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &seed_block
+  (&block *B *Col)
+  (&seed (:C Col)))
+
+;; The chain stands at a block and steps to the nearest block it sees and
+;; does not hold, so a tie forks the walk. The partition it carries: the
+;; blocks it holds (taken) and the rest (untaken).
+(INIT &state Unfold
+  (start ((:t B))
+    (&seed_block *B))
+  (initial_taken ((:item B))
+    (&seed_block *B))
+  (initial_untaken ((:item B))
+    (&block *B)
+    (NOT (&seed_block B)))
+  (score ((:t B) (:item X) (:S K))
+    (&sight.end (:P *E) *D (:Origin *B))
+    (neighbor (:P E) D (:Q *X))
+    (&sight_full.ray (:P X) D *K (:Origin B)))
+  (step ((:t B) (:t2 X))
+    (&sight.end (:P *E) *D (:Origin *B))
+    (neighbor (:P E) D (:Q *X))
+    (input (:P X))
+    (&state.take (:t B) (:item X))))
+
+(INIT &span BoundingBox
+  (key ((&state.take (:t ^B) (:item ^B2)))
+    (cell ((:P B3))
+      (OR ((= *B3 B))
+          ((= B3 B2))))))
+
+(RULE &link_cell
+  (&span.box *B)
+  (input *P)
+  (inside (:A P) B)
+  (NOT (&blocks.node P)))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&link_cell P)))
+      ((&link_cell P)
+       (&path (:C Col)))))

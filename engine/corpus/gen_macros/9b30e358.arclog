@@ -1,0 +1,121 @@
+;; 9b30e358
+
+(INPUT ink "the commoner color is the background and the rest is the ink"
+
+  ;; the direction the unit repeats toward, and the edge the background is read from
+  (DET &dir DirDomain)
+
+  (INIT &edge_line Singleton
+    (member ((:v Col))
+      (&dir *D)
+      (input *P *Col)
+      (margin (:B P) D (:K 0)))))
+
+(INPUT block "the lines across &dir that hold ink are contiguous, and the last of them lies on the edge opposite &dir")
+
+(OUTPUT repeat "the lines within the ink's extent along &dir are one unit, and that unit repeats toward &dir until the edge, each copy one unit's extent from the last"
+
+  (INIT &palette_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &palette Order
+    (member ((:t Col))
+      (&palette_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&palette_count.size (:key *Col) *N)))
+
+  (RULE &bg
+    (&palette.maximal (:t *Col)))
+
+  ;; The ink's extent.
+  (INIT &ink_box BoundingBox
+    (cell (P)
+      (&bg)
+      (input *P *Col)
+      (NOT (&bg Col)))))
+
+(OUTPUT keep "every cell no copy covers keeps its color")
+
+(ALTS $scope "where the unit ends on the side away from &dir" $Ink
+  (ALT $Edge
+    (OUTPUT repeat "the lines from the ink's nearest line toward &dir to the edge opposite it are one unit, and that unit repeats toward &dir until the edge, each copy one unit's extent from the last")
+    ;; From the ink's nearest line toward &dir to the opposite edge.
+    (RULE &unit_box
+      (&dir *D)
+      (&ink_box.box (:B *B_ink))
+      (margin (:B B_ink) D *K)
+      (edge_inset D K *B))))
+
+(ALTS $spread "which way the unit repeats" $Toward
+  (ALT $Both
+    (OUTPUT repeat "the lines within the ink's extent along &axis are one unit, and that unit repeats along &axis in both directions, each copy one unit's extent from the last"
+      ;; the axis the unit repeats along
+      (DET &axis AxisDomain))
+    (RULE &step_dir
+      (&axis *A)
+      (axis_of *D A))))
+
+(ALTS $ground "how the background is read" $Majority
+  (ALT $EdgeLine
+    (INPUT ink "the line on the edge toward &dir is one color, the background, and the rest is the ink"
+      (RULE &bg
+        (&edge_line.value (:v *Col))))))
+
+(RULE &step_dir
+  (&dir *D))
+
+(RULE &case_axis
+  (&step_dir *D)
+  (axis_of D *A))
+
+(RULE &unit_box_split1
+  (&ink_box.box (:B *B_ink_))
+  (&case_axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B B_ink_) (:D D_m1) (:K *K1_m3))
+  (margin (:B B_ink_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *B_))
+  (relative (:Base B_) (:X B_ink_) (:X_rel *X_m1_)))
+
+;; The ink's extent along the axis.
+(RULE &unit_box
+  (&case_axis *A)
+  (&ink_box.box (:B *B_ink))
+  (&unit_box_split1 (:B_ink_ B_ink) (:A_ A) (:B_ *B) (:X_m1_ *X_m1)))
+
+(RULE &fill
+  (&unit_box *B)
+  (&step_dir *D)
+  (&case_axis *A)
+  (opposite D (:Opp *O))
+  (input *P)
+  (relative (:Base B) (:X P) (:X_rel *Q_rel))
+  (margin (:B Q_rel) (:D O) (:K *T))
+  (input (:P *P2) *Col)
+  (ALL ((input (:P P2) (:Col *Colm))
+        (&unit_box B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P2) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3m)))
+       ((>= K_m3m 0)))
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P2) (:D D_m2) (:K *K_m3))
+  (margin (:B P) (:D D_m2) (:K K_m3))
+  (axis_elem A)
+  (relative (:Base B) (:X P2) (:X_rel *R_m4))
+  (frame_extent (:P R_m4) A (:N *K))
+  (relative (:Base B) (:X P2) (:X_rel *P_rel))
+  (margin (:B P_rel) (:D O) (:K *R))
+  (divide T (:Side K) (:Gap 0) (:Remainder R)))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&fill P)))))

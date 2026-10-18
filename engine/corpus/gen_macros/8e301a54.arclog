@@ -1,0 +1,62 @@
+;; 8e301a54
+
+(DET &bg DominantColor)
+
+(DET &move_dir DirDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &hue_size Cardinality
+  (key ((&ink *P ^Col))
+    (member ((:m P))
+      (&ink *P Col))))
+
+(RULE &shape_cell
+  (&ink *P *Col)
+  (&hue_size.size (:key Col) *N))
+
+(ALTS $choice "what a shape is" $Hue
+  (ALT $Object
+    (RULE &objects_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (INIT &objects Quotient
+      (edge ((:a P) (:b P3))
+        (OR ((&ink *P)
+             (&objects_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P3))
+             (&ink (:P P3)))
+            ((&ink P)
+             (= P3 P)))))
+
+    (RULE &objects_component
+      (&objects.class (:a *P) *Id))
+
+    (INIT &object_size Cardinality
+      (key ((&objects_component *P ^Id))
+        (member ((:m P))
+          (&objects_component *P Id))))
+
+    (RULE &shape_cell
+      (&objects_component *P *Id)
+      (&object_size.size (:key Id) *N))))
+
+(RULE &landed
+  (&shape_cell (:P *P2) *N)
+  (&ink (:P P2) *Col)
+  (&move_dir *D)
+  (dir8_opposite D (:D2 *O_m2))
+  (edge_inset (:D O_m2) (:K N) (:B *B1_m3))
+  (edge_inset D (:K N) (:B *I_m5))
+  (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+  (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+  (compose (:A P2) (:B V_m1) (:C *P)))
+
+(RULE &output
+  (input *P)
+  (OR ((&landed P *Col))
+      ((NOT (&landed P))
+       (&bg (:C Col)))))

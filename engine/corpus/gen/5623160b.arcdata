@@ -1,0 +1,4 @@
+;; 5623160b
+
+(param &bg Color (7))
+(param &anchor Color (9))

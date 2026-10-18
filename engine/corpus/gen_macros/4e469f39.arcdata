@@ -1,0 +1,5 @@
+;; 4e469f39
+
+(param &bg Color (0))
+(param &fill Color (2))
+(param &open_dir Dir (DIR_T))

@@ -1,0 +1,201 @@
+;; 5e6bbc0b
+
+(DET &mark RarestColor)
+
+(RULE &mark_cell
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(RULE &fall
+  (dir_elem *D)
+  (&mark_cell *P)
+  (margin (:B P) D (:K 0)))
+
+(RULE &beam_dir
+  (&fall (:D *D2))
+  (opposite (:D D2) (:Opp *D)))
+
+(RULE &beam_dir_ray
+  (&beam_dir *D))
+
+(RULE &beam_node
+  (&beam_dir)
+  (input *P))
+
+(DET &block SharedColor)
+
+;; The mark covers a cell of the falling class, so its cell counts as one.
+(RULE &block_cell
+  (input *P *Col)
+  (OR ((&block (:C Col)))
+      ((&mark_cell P))))
+
+(RULE &fall_cells_dir
+  (&fall *D))
+
+(RULE &line_split1
+  (input (:P *P_))
+  (axis_of *D (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P_) (:X_rel *L_)))
+
+(RULE &line
+  (input *P)
+  (&fall *D)
+  (axis_of D *A)
+  (&line_split1 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:L_ *L)))
+
+(DET &cast AnyOutNewColor)
+
+(DET &fill DominantColor)
+
+(RULE &block_color
+  (&block (:C *Col)))
+
+(RULE &fill_color
+  (&fill (:C *Col)))
+
+(RULE &beam_cell
+  (input *P))
+
+(ALTS $choice "which cells fall" $Stored
+  (ALT $Parity
+    (DET &period TileCount)
+
+    (RULE &block_cell
+      (input *P)
+      (&mark_cell (:P *M))
+      (diag_dir_elem (:D *Dg))
+      (&period *N)
+      (corner_dist (:P M) (:Diag Dg) (:K *K_mark))
+      (divide (:T K_mark) (:Side N) (:Gap 0) (:Remainder *R))
+      (corner_dist P (:Diag Dg) *K)
+      (divide (:T K) (:Side N) (:Gap 0) (:Remainder R)))
+
+    (RULE &block_color
+      (&block_cell *P)
+      (NOT (&mark_cell P))
+      (input P *Col))
+
+    (RULE &fill_color
+      (input *P *Col)
+      (NOT (&block_cell P)))))
+
+;; Each cell of the falling class falls toward the edge and stacks on the
+;; cells ahead of it.
+(INIT &fall_cells Distance
+  (weight ((:a P2) (:b P) (:W K))
+    (&block_cell *P)
+    (&fall_cells_dir *D)
+    (&block_cell (:P *P2))
+    (!= P P2)
+    (gap D P (:Q P2) *K))
+  (source_distance ((:n P) K)
+    (&block_cell *P)
+    (&fall_cells_dir *D)
+    (margin (:B P) D *K)))
+
+(RULE &packed
+  (&fall_cells.distance (:n *P2) *K)
+  (&fall_cells_dir *D)
+  (dir8_opposite D (:D2 *O_m1))
+  (edge_inset (:D O_m1) K (:B *B1_m2))
+  (edge_inset D K (:B *I_m4))
+  (relative (:Base I_m4) (:X 0) (:X_rel *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *V))
+  (compose (:A P2) (:B V) (:C *P)))
+
+(INIT &block_rim Boundary
+  (cell (P)
+    (&packed *P)))
+
+(RULE &far_end
+  (&mark_cell (:P *M))
+  (&line (:P M) *L)
+  (&line *P L)
+  (&fall *D)
+  (opposite D (:Opp *D_out))
+  (&block_rim.exposed P (:D D_out)))
+
+(RULE &beam_source
+  (&far_end *P))
+
+(INIT &beam Distance
+  (key ((&beam_source (:P ^O))
+        (&beam_dir_ray ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&beam_source (:P O))
+           (&beam_dir_ray D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&beam_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&beam_node (:P Q)))
+          ((&beam_source (:P O))
+           (&beam_dir_ray D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&beam_node (:P Q))
+           (= A2 O))
+          ((&beam_source (:P O))
+           (&beam_dir_ray D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&beam_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&beam_node (:P Q)))))
+    (source ((:n O))
+      (&beam_source (:P O))
+      (&beam_dir_ray D))))
+
+(RULE &beam_ray
+  (&beam.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &beam_end
+  (&beam_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&beam_ray (:P Q) D Origin)))
+
+(RULE &cast_cell
+  (&beam_ray *P *K (:Origin *S))
+  (&beam_cell P)
+  (!= K 0)
+  (&fall *D)
+  (margin (:B S) D (:K *N))
+  (<= K N))
+
+(RULE &output
+  (input *P)
+  (OR ((&mark_cell P)
+       (&mark (:C *Col)))
+      ((&cast_cell P)
+       (&cast (:C Col)))
+      ((&packed P)
+       (NOT (&mark_cell P))
+       (&block_color Col))
+      ((&fill_color Col)
+       (NOT (&packed P))
+       (NOT (&cast_cell P)))))

@@ -1,0 +1,5 @@
+;; 103eff5b
+
+(param &bg Color (0))
+(param &shape_col Color (8))
+(param &turn_to_shape D4 (D4_CW))

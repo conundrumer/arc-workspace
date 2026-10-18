@@ -1,0 +1,5 @@
+;; 79cce52d
+
+(param &corner DiagDir (DIAG_TL))
+(param &marker_col Color (2))
+(param &marker_count number (1))

@@ -1,0 +1,49 @@
+;; 1c0d0a4b
+
+(DET &sep_w DivisorRatio)
+
+(DET &tile_w TileDim)
+
+(INIT &sep_division Division
+  (key ((axis_elem ^A))
+    (side (A K)
+      (&sep_w *K))
+    (gap (A G)
+      (&tile_w (:D *G))))
+  (cell (P)
+    (input *P)))
+
+(DET &bg DominantColor)
+
+(DET &paint AnyOutNewColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; On a lattice line: the seps divide as sep_w-wide tiles with tile_w gaps.
+(RULE &sep
+  (&sep_division.tile *P))
+
+(ALTS $choice "which cells belong to the separator lattice; data-equivalent on this task" $Period
+  (ALT $Blank
+    (RULE &ink_line
+      (&ink *P)
+      (axis_elem *A)
+      (split P A (:Across *P_across)))
+
+    (RULE &sep
+      (input *P)
+      (axis_elem *A)
+      (split P A (:Across *Ac))
+      (NOT (&ink_line A (:P_across Ac))))))
+
+(RULE &output
+  (OR ((&sep *P)
+       (&bg (:C *Col)))
+      ((&ink P)
+       (&bg (:C Col)))
+      ((input P (:Col *Col2))
+       (&bg (:C Col2))
+       (NOT (&sep P))
+       (&paint (:C Col)))))

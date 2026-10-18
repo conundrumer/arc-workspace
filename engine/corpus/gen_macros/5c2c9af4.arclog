@@ -1,0 +1,110 @@
+;; 5c2c9af4
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The marks' bounding box is the innermost outline: the outer dots sit at
+;; two of its corners, and the middle dot at its center.
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&mark *P)))
+
+(RULE &center
+  (&bbox.cell *P)
+  (&bbox.box *B)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (ALL ((&bbox.box (:B *Bm))
+        (&bbox.cell (:P *Pm))
+        (relative (:Base Bm) (:X Pm) (:X_rel P_inner))
+        (opposite (:D *D_m1m) (:Opp *O_m2))
+        (margin (:B P_inner) (:D D_m1m) (:K *K1_m3))
+        (margin (:B P_inner) (:D O_m2) (:K *K2_m4)))
+       ((= K1_m3 K2_m4))))
+
+(RULE &drawn_uniform_outset1
+  (&center (:P *C))
+  (input *P)
+  (relative (:Base C) (:X P) (:X_rel *V))
+  (dir_elem *D)
+  (margin (:B V) D (:K *K_))
+  (axis_of (:D *D1_m1) (:A *A1_m2))
+  (perp (:A A1_m2) (:A2 *A2_m3))
+  (axis_of (:D *D2_m4) (:A A2_m3))
+  (opposite (:D D1_m1) (:Opp *O_m7))
+  (edge_inset (:D D1_m1) (:K K_) (:B *B1_m8))
+  (edge_inset (:D O_m7) (:K K_) (:B *B2_m9))
+  (compose (:A B1_m8) (:B B2_m9) (:C *B1_m5))
+  (opposite (:D D2_m4) (:Opp *O_m10))
+  (edge_inset (:D D2_m4) (:K K_) (:B *B1_m11))
+  (edge_inset (:D O_m10) (:K K_) (:B *B2_m12))
+  (compose (:A B1_m11) (:B B2_m12) (:C *B2_m6))
+  (compose (:A B1_m5) (:B B2_m6) (:C *I_m1))
+  (relative (:Base I_m1) (:X 0) (:X_rel *B_out_)))
+
+(RULE &spacing
+  (&center *P)
+  (&bbox.box *B)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (dir_elem *D)
+  (margin (:B P_inner) D *K))
+
+(RULE &drawn
+  (input *P)
+  (&center (:P *C))
+  (relative (:Base C) (:X P) (:X_rel *V))
+  (dir_elem *D)
+  (margin (:B V) D *K)
+  (&spacing (:K *G))
+  (divide (:T K) (:Side G) (:Gap 0) (:Remainder 0))
+  (&drawn_uniform_outset1 (:K_ K) (:B_out_ *B_out))
+  (compose (:A C) (:B B_out) (:C *B))
+  (ALL ((&center (:P *Cm))
+        (relative (:Base Cm) (:X P) (:X_rel *Vm))
+        (dir_elem (:D *Dm))
+        (margin (:B Vm) (:D Dm) (:K *Km))
+        (axis_of (:D *D1_m2) (:A *A1_m3))
+        (perp (:A A1_m3) (:A2 *A2_m4))
+        (axis_of (:D *D2_m5) (:A A2_m4))
+        (opposite (:D D1_m2) (:Opp *O_m8))
+        (edge_inset (:D D1_m2) (:K Km) (:B *B1_m9))
+        (edge_inset (:D O_m8) (:K Km) (:B *B2_m10))
+        (compose (:A B1_m9) (:B B2_m10) (:C *B1_m6))
+        (opposite (:D D2_m5) (:Opp *O_m11))
+        (edge_inset (:D D2_m5) (:K Km) (:B *B1_m12))
+        (edge_inset (:D O_m11) (:K Km) (:B *B2_m13))
+        (compose (:A B1_m12) (:B B2_m13) (:C *B2_m7))
+        (compose (:A B1_m6) (:B B2_m7) (:C *I_m1))
+        (relative (:Base I_m1) (:X 0) (:X_rel *B_outm))
+        (compose (:A Cm) (:B B_outm) (:C B))
+        (dir_elem (:D *D_m1m))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1m) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B P) (:D *D_m1) (:K *K_m2))
+  (margin B (:D D_m1) (:K K_m2)))
+
+(ALTS $choice "what a cell off the outlines does" $Passthrough
+  (ALT $Repaint
+    (RULE &output
+      (OR ((&drawn *P)
+           (&mark *Col))
+          ((input P)
+           (NOT (&drawn P))
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (OR ((&drawn *P)
+       (&mark *Col))
+      ((input P Col)
+       (NOT (&drawn P)))))

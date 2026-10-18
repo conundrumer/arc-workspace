@@ -1,0 +1,5 @@
+;; 11dc524f
+
+(param &bg Color (7))
+(param &shape_color Color (2))
+(param &mirror_color Color (5))

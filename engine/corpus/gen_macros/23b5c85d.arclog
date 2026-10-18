@@ -1,0 +1,64 @@
+;; 23b5c85d
+
+(DET &bg SharedColor)
+
+(INIT &boxes BoundingBox
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &obj_cell
+  (input *P)
+  (&boxes.box (:key *Col) *B)
+  (ALL ((&boxes.box (:key (:Col *Colm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(ALTS $s "the object's cells" $Box
+  (ALT $Visible
+    (RULE &obj_cell
+      (&boxes.cell (:key *Col) *P))))
+
+(ALTS $r "fill the box" $Keep
+  (ALT $Crop
+    (RULE &output
+      (&sel.minimal (:t (:V *Col_win)))
+      (input (:P *P_grid) *Col)
+      (&boxes.box (:key (:Col Col_win)) *B)
+      (ALL ((input (:P P_grid) (:Col *Colm))
+            (&boxes.box (:key (:Col *Col_winm)) B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P_grid) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (relative (:Base B) (:X P_grid) (:X_rel *P)))))
+
+(INIT &size Cardinality
+  (key ((&obj_cell ^Col *P))
+    (member ((:m P))
+      (&obj_cell Col *P))))
+
+(INIT &sel Order
+  (member ((:t (:V Col) (:S N)))
+    (&size.size (:key *Col) *N))
+  (score ((:t (:V Col) (:S N)) (:S N))
+    (&size.size (:key *Col) *N)))
+
+(RULE &output
+  (&sel.minimal (:t (:V *Col_win)))
+  (input (:P *P_grid))
+  (&boxes.box (:key (:Col Col_win)) *B)
+  (ALL ((&boxes.box (:key (:Col *Col_winm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P_grid) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P_grid) (:X_rel *P))
+  (OR ((NOT (&obj_cell (:Col Col_win) (:P P_grid)))
+       (&bg (:C *Col)))
+      ((&obj_cell (:Col Col_win) (:P P_grid))
+       (= Col Col_win))))

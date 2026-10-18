@@ -1,0 +1,35 @@
+;; 09c534e7
+
+(DET &bg DominantColor)
+
+(DET &outline SharedColor)
+
+(RULE &ink
+  (input *P (:Col *C))
+  (NOT (&bg C)))
+
+(INIT &comp Connectivity
+  (node (P)
+    (&ink *P)))
+
+(INIT &border Boundary
+  (cell (P)
+    (&ink *P))
+  (dir (D)
+    (dir8_elem *D)))
+
+(RULE &seed
+  (&comp.component *P *Id)
+  (input P *Col)
+  (NOT (&outline (:C Col))))
+
+(RULE &fill
+  (&ink *P)
+  (NOT (&border.boundary P))
+  (&comp.component P *Id)
+  (&seed Id *Col))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&fill P)))))

@@ -1,0 +1,72 @@
+;; 72ca375d
+
+(RULE &pieces_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(DET &bg DominantColor)
+
+(INIT &pieces Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&pieces_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &pieces_component
+  (&pieces.class (:a *P) *Id))
+
+(DET &sym D4Domain)
+
+(INIT &bbox BoundingBox
+  (key ((&pieces_component *P ^Id))
+    (cell (P)
+      (&pieces_component *P Id))))
+
+(RULE &cropped
+  (&bbox.box (:key *Id) *B)
+  (input (:P *P_grid) *Col)
+  (ALL ((input (:P P_grid) (:Col *Colm))
+        (&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P_grid) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P_grid) (:X_rel *P_inner)))
+
+;; The crop's own symmetries.
+(INIT &inv Agreement
+  (key ((&cropped ^Id (:P_inner *P) *Col))
+    (source ((:i P) (:v Col))
+      (&cropped Id (:P_inner *P) *Col))
+    (target ((:i P) (:v Col))
+      (&cropped Id (:P_inner *P) *Col))
+    (correspondence ((:m D) (:i P) (:j Q))
+      (&cropped Id (:P_inner *P) *Col)
+      (d4_elem *D)
+      (apply D P (:P_out *Q)))))
+
+(RULE &chosen
+  (&sym *D)
+  (&cropped *Id)
+  (d4_elem D)
+  (NOT (&inv.mismatch (:key Id) (:m D))))
+
+(ALTS $choice "where the symmetry test comes from — data-equivalent on this task, since the crop that &sym fixes is the one crop with a symmetry" $Stored
+  (ALT $Any
+    (RULE &chosen
+      (&cropped *Id)
+      (d4_elem *D)
+      (NOT (d4_identity D))
+      (NOT (&inv.mismatch (:key Id) (:m D))))))
+
+(RULE &output
+  (&chosen *Id)
+  (&cropped Id (:P_inner *P) *Col))

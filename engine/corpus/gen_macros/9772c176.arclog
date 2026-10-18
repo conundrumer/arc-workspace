@@ -1,0 +1,192 @@
+;; 9772c176
+
+(RULE &obj_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(RULE &shape
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &obj Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&shape *P)
+         (&obj_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&shape (:P P3)))
+        ((&shape P)
+         (= P3 P)))))
+
+(RULE &obj_component
+  (&obj.class (:a *P) *Id))
+
+(RULE &member
+  (&obj_component *P *Id))
+
+(INIT &edge Boundary
+  (key ((&member ^Id *P))
+    (cell (P)
+      (&member Id *P))))
+
+(RULE &base
+  (dir_elem *D)
+  (&edge.exposed (:key *Id) *P D))
+
+;; the wedges' color
+(DET &cap AnyOutNewColor)
+
+(ALTS $choice "what the wedge's base holds" $Rim
+  (ALT $Extreme
+    (INIT &hull BoundingBox
+      (key ((&member ^Id *P))
+        (cell (P)
+          (&member Id *P))))
+
+    (RULE &base
+      (&member *Id *P)
+      (&hull.box (:key Id) *B)
+      (ALL ((&member (:Id *Idm) P)
+            (&hull.box (:key (:Id Idm)) B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (margin (:B P) *D (:K *K_m1))
+      (margin B D (:K K_m1))))
+  (ALT $Widest
+    (RULE &cell_split1
+      (&member *Id (:P *P_))
+      (perp *A (:A2 *A2_))
+      (axis_of (:D *D_m1) (:A A2_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+      (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+    ;; The object's lines along axis a, each keyed by its coordinate on the other axis.
+    (INIT &line BoundingBox
+      (key ((&member ^Id *P)
+            (axis_elem ^A)
+            (perp A *A2)
+            (&cell_split1 (:P_ P) (:A2_ A2) (:L_ ^L) (:X_m1_ *X_m1)))
+        (cell (P)
+          (&member Id *P)
+          (axis_elem A)
+          (perp A *A2)
+          (&cell_split1 (:P_ P) (:A2_ A2) (:L_ L) (:X_m1_ *X_m1)))))
+
+    (INIT &longest Order
+      (key ((&line.box (:key ^Id ^A *L) *B)
+            (&line.cell (:key Id A L) *P)
+            (axis_elem A)
+            (relative (:Base B) (:X P) (:X_rel *R_m1))
+            (frame_extent (:P R_m1) A *N))
+        (member ((:t (:V L) (:S N)))
+          (&line.box (:key Id A *L) *B)
+          (&line.cell (:key Id A L) *P)
+          (axis_elem A)
+          (relative (:Base B) (:X P) (:X_rel *R_m1))
+          (frame_extent (:P R_m1) A *N))
+        (score ((:t (:V L) (:S N)) (:S N))
+          (&line.box (:key Id A *L) *B)
+          (&line.cell (:key Id A L) *P)
+          (axis_elem A)
+          (relative (:Base B) (:X P) (:X_rel *R_m1))
+          (frame_extent (:P R_m1) A *N))))
+
+    (RULE &base
+      (axis_of *D *A)
+      (&longest.maximal (:key *Id A) (:t (:V *L)))
+      (&line.box (:key Id A L) *B)
+      (&member Id *P)
+      (ALL ((&member (:Id *Idm) P)
+            (&line.box (:key (:Id Idm) (:A *Am) (:L *Lm)) B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (margin (:B P) D (:K *K_m1))
+      (margin B D (:K K_m1)))))
+
+(RULE &spread_dir
+  (&base *Id (:D *Key_d))
+  (corner_dir (:C *D) (:D Key_d)))
+
+(RULE &spread_node
+  (&base *Id *D)
+  (corner_dir (:C *Dg) D)
+  (input *P))
+
+(RULE &spread_source
+  (&base *Id *D *P))
+
+;; A side's base cells cast the two diagonals that lead away from that side.
+(INIT &spread Distance
+  (key ((&spread_source (:Id ^Ky_id) (:D ^Ky_d) (:P ^O))
+        (&spread_dir (:Id Ky_id) (:Key_d Ky_d) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&spread_source (:Id Ky_id) (:D Ky_d) (:P O))
+           (&spread_dir (:Id Ky_id) (:Key_d Ky_d) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&spread_node (:Id Ky_id) (:D Ky_d) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&spread_node (:Id Ky_id) (:D Ky_d) (:P Q)))
+          ((&spread_source (:Id Ky_id) (:D Ky_d) (:P O))
+           (&spread_dir (:Id Ky_id) (:Key_d Ky_d) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&spread_node (:Id Ky_id) (:D Ky_d) (:P Q))
+           (= A2 O))
+          ((&spread_source (:Id Ky_id) (:D Ky_d) (:P O))
+           (&spread_dir (:Id Ky_id) (:Key_d Ky_d) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&spread_node (:Id Ky_id) (:D Ky_d) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&spread_node (:Id Ky_id) (:D Ky_d) (:P Q)))))
+    (source ((:n O))
+      (&spread_source (:Id Ky_id) (:D Ky_d) (:P O))
+      (&spread_dir (:Id Ky_id) (:Key_d Ky_d) D))))
+
+(RULE &spread_ray
+  (&spread.distance (:key (:Ky_id *Id) (:Ky_d *Key_d) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &spread_end
+  (&spread_ray *Id *Key_d *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&spread_ray Id Key_d (:P Q) D Origin)))
+
+(RULE &cap_cell
+  (&spread_ray *Id (:Key_d *D) *P (:D *Dg1))
+  (NOT (&shape P))
+  (&spread_ray Id (:Key_d D) P (:D *Dg2))
+  (!= Dg1 Dg2))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&cap_cell P)))
+      ((&cap_cell P)
+       (&cap (:C Col)))))

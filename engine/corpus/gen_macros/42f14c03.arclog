@@ -1,0 +1,164 @@
+;; 42f14c03
+
+(RULE &obj_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &bg_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &bg Order
+  (member ((:t Col))
+    (&bg_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_count.size (:key *Col) *N)))
+
+(RULE &obj_node
+  (input *P (:Col *Key))
+  (NOT (&bg.maximal (:t Key))))
+
+(INIT &obj Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&obj_node (:Key *Ky) *P)
+         (&obj_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&obj_node (:Key Ky) (:P P2)))
+        ((&obj_node (:Key Ky) P)
+         (= P2 P)))))
+
+(RULE &obj_component
+  (&obj.class (:a *Key *P) *Id))
+
+(RULE &holes_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(RULE &obj_cell
+  (&obj_component (:Key *Col) *P (:Id *O)))
+
+(INIT &bbox BoundingBox
+  (key ((&obj_cell ^O *P))
+    (cell (P)
+      (&obj_cell O *P))))
+
+(RULE &hole
+  (&bbox.box (:key *O) *B)
+  (input *P)
+  (ALL ((&bbox.box (:key (:O *Om)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (NOT (&obj_cell O P)))
+
+(INIT &holes Quotient
+  (edge ((:a (:Key O) P) (:b (:Key O) (:P P3)))
+    (OR ((&hole *O *P)
+         (&holes_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&hole O (:P P3)))
+        ((&hole O P)
+         (= P3 P)))))
+
+(RULE &holes_component
+  (&holes.class (:a *Key *P) *Id))
+
+(RULE &hole_cell
+  (&holes_component (:Key *O) *P *Id))
+
+(INIT &hole_box BoundingBox
+  (key ((&hole_cell ^O ^Id *P))
+    (cell (P)
+      (&hole_cell O Id *P))))
+
+(INIT &shape Inclusion
+  (pattern ((:pattern O) (:m P_inner))
+    (&obj_cell *O *P)
+    (&bbox.box (:key O) *B)
+    (ALL ((&obj_cell (:O *Om) P)
+          (&bbox.box (:key (:O Om)) B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+  (observed ((:observed (:O H_o) (:Id H_id)) (:m P_inner))
+    (&hole_cell (:O *H_o) (:Id *H_id) *P)
+    (&hole_box.box (:key (:O H_o) (:Id H_id)) *B)
+    (ALL ((&hole_cell (:O *Hm_o) (:Id *Hm_id) P)
+          (&hole_box.box (:key (:O Hm_o) (:Id Hm_id)) B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B) (:X P) (:X_rel *P_inner))))
+
+(RULE &fits
+  (&shape.equal (:observed (:O *H_o) *Id) (:pattern *O)))
+
+(ALTS $choice "A piece goes in a hole when" $Shape
+  (ALT $Dims
+    (RULE &fits
+      (input *P)
+      (&hole_box.box (:key (:O *H_o) *Id) (:B *B_h))
+      (&bbox.box (:key *O) (:B *B_o))
+      (axis_elem *A)
+      (relative (:Base B_h) (:X P) (:X_rel *R_m1))
+      (frame_extent (:P R_m1) A (:N *N1))
+      (axis_elem A)
+      (relative (:Base B_o) (:X P) (:X_rel *R_m2))
+      (frame_extent (:P R_m2) A (:N N1))
+      (perp A *A2)
+      (axis_elem (:A A2))
+      (relative (:Base B_h) (:X P) (:X_rel *R_m3))
+      (frame_extent (:P R_m3) (:A A2) (:N *N2))
+      (axis_elem (:A A2))
+      (relative (:Base B_o) (:X P) (:X_rel *R_m4))
+      (frame_extent (:P R_m4) (:A A2) (:N N2))))
+  (ALT $Size
+    (INIT &hole_size Cardinality
+      (key ((&hole_cell ^O ^Id *P))
+        (member ((:m P))
+          (&hole_cell O Id *P))))
+
+    (INIT &obj_size Cardinality
+      (key ((&obj_cell ^O *P))
+        (member ((:m P))
+          (&obj_cell O *P))))
+
+    (RULE &fits
+      (&hole_size.size (:key (:O *H_o) *Id) *N)
+      (&obj_size.size (:key *O) N))))
+
+(RULE &unfillable
+  (&hole_cell *O *Id)
+  (NOT (&fits (:H_o O) Id)))
+
+(RULE &frame
+  (&hole *O)
+  (NOT (&unfillable O)))
+
+(RULE &output
+  (&frame (:O *F))
+  (&bbox.box (:key (:O F)) *B)
+  (OR ((&obj_cell (:O F) *Col (:P *P2)))
+      ((&hole_cell (:O F) *Id (:P P2))
+       (&fits (:H_o F) Id *O)
+       (&obj_cell O Col)))
+  (relative (:Base B) (:X P2) (:X_rel *R_m1))
+  (axis_of (:D *D1_m2) (:A *A1_m3))
+  (opposite (:D D1_m2) (:Opp *O1_m4))
+  (perp (:A A1_m3) (:A2 *A2_m5))
+  (axis_of (:D *D2_m6) (:A A2_m5))
+  (opposite (:D D2_m6) (:Opp *O2_m7))
+  (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+  (>= K1_m8 0)
+  (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+  (>= K2_m9 0)
+  (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+  (>= K3_m10 0)
+  (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+  (>= K4_m11 0)
+  (relative (:Base B) (:X P2) (:X_rel *P)))

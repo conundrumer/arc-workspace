@@ -1,0 +1,5 @@
+;; 445eab21
+
+(param &bg Color (0))
+(param &out_dim number (2))
+(param &axis Axis (AXIS_H))

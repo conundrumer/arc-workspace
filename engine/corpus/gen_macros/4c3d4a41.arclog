@@ -1,0 +1,249 @@
+;; 4c3d4a41
+
+(DET &bg DominantColor)
+
+;; After the move the scene's ink is the container with its contents, so
+;; the ink's box is the container's outline.
+(INIT &ink_box BoundingBox
+  (key ((ex_output ^E *P *Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (ex_output E *P *Col)
+      (NOT (&bg (:C Col))))))
+
+(DET &cell_interior1
+  (ex_input *E (:P *P_))
+  (&ink_box.box (:key E) (:B *B_))
+  (dir_elem (:D *D_m1))
+  (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+  (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+  (<= K_m3 0))
+
+;; The direction the comb's teeth point.
+(DET &rise DirDomain)
+
+(DET &vanished
+  (ex_input *E *P *Col)
+  (NOT (&bg (:C Col)))
+  (&bg (:C *Bg))
+  (ex_output E P (:Col Bg)))
+
+;; Where the emptied cells recur in the output.
+(INIT &occ Occurrences
+  (key ((OR ((ex_output ^E *P *Col))
+            ((&vanished E P Col))))
+    (cell (P (:v Col))
+      (ex_output E *P *Col))
+    (shape (P (:v Col))
+      (&vanished E *P *Col))))
+
+(DET &refuted_shift
+  (&occ.candidate (:P *V))
+  (&vanished *E)
+  (NOT (&occ.occurrence (:key E) (:P V))))
+
+(DET &shift
+  (&occ.candidate (:P *V))
+  (NOT (&refuted_shift V)))
+
+;; The interior: the box of the cells strictly inside the outline.
+(INIT &interior_box BoundingBox
+  (key ((ex_input ^E *P)
+        (&ink_box.box (:key E) *B)
+        (NOT (&cell_interior1 (:P_ P) (:B_ B))))
+    (cell (P)
+      (ex_input E *P)
+      (&ink_box.box *B)
+      (NOT (&cell_interior1 (:P_ P) (:B_ B))))))
+
+(DET &box
+  (&interior_box.box *B))
+
+(RULE &within
+  (input *P)
+  (&box *B)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(RULE &stage
+  (input *P)
+  (&shift *V)
+  (compose (:A P) (:B V) (:C *Q))
+  (&within (:P Q)))
+
+(RULE &comb
+  (input (:P *P2) *Col)
+  (&stage (:P P2))
+  (NOT (&bg (:C Col)))
+  (&shift *V)
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &line_cell_split1
+  (input (:P *P_))
+  (axis_of *D (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P_) (:X_rel *L_)))
+
+(RULE &line_cell
+  (input *P)
+  (&rise *D)
+  (axis_of D *A)
+  (&line_cell_split1 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:L_ *L))
+  (margin (:B P) D *K))
+
+;; The comb's high end, per line: `low` is the least depth.
+(INIT &comb_end Order
+  (key ((&comb *P)
+        (&line_cell P ^L *K))
+    (member ((:t (:V P) (:S K)))
+      (&comb *P)
+      (&line_cell P L *K))
+    (score ((:t (:V P) (:S K)) (:S K))
+      (&comb *P)
+      (&line_cell P L *K))))
+
+(RULE &seat
+  (&comb_end.minimal (:key *L) (:t (:V *P_top)))
+  (&rise *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P_top) (:B V_m1) (:C *P)))
+
+(RULE &rise_ray_dir
+  (&seat (:L *Key))
+  (&rise *D))
+
+(RULE &rise_ray_dir_ray
+  (&rise_ray_dir *Key *D))
+
+(RULE &rise_ray_node
+  (&rise_ray_dir *Key)
+  (input *P))
+
+(RULE &rise_ray_source
+  (&seat (:L *Key) *P))
+
+;; The run of cells rising from the seat, indexed by the step that reaches it.
+;; Its domain stops at the interior, so what rises past that is lost.
+(INIT &rise_ray Distance
+  (key ((&rise_ray_source (:Key ^Ky) (:P ^O))
+        (&rise_ray_dir_ray (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&rise_ray_source (:Key Ky) (:P O))
+           (&rise_ray_dir_ray (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&rise_ray_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&rise_ray_node (:Key Ky) (:P Q)))
+          ((&rise_ray_source (:Key Ky) (:P O))
+           (&rise_ray_dir_ray (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&rise_ray_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&rise_ray_source (:Key Ky) (:P O))
+           (&rise_ray_dir_ray (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&rise_ray_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&rise_ray_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&rise_ray_source (:Key Ky) (:P O))
+      (&rise_ray_dir_ray (:Key Ky) D))))
+
+(RULE &rise_ray_ray
+  (&rise_ray.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &rise_ray_end
+  (&rise_ray_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&rise_ray_ray Key (:P Q) D Origin)))
+
+(RULE &rewritten
+  (OR ((&within *P))
+      ((&stage P))))
+
+(RULE &content
+  (input *P *Col)
+  (&within P)
+  (NOT (&bg (:C Col))))
+
+;; The contents' low end, per line: `high` is the greatest depth.
+(INIT &content_end Order
+  (key ((&content *P)
+        (&line_cell P ^L *K))
+    (member ((:t (:V P) (:S K)))
+      (&content *P)
+      (&line_cell P L *K))
+    (score ((:t (:V P) (:S K)) (:S K))
+      (&content *P)
+      (&line_cell P L *K))))
+
+(RULE &placed
+  (&content (:P *P2) *Col)
+  (&line_cell (:P P2) *L)
+  (&content_end.maximal (:key L) (:t (:V *P_bot)))
+  (&seat L (:P *P_seat))
+  (relative (:Base P_bot) (:X P_seat) (:X_rel *V))
+  (compose (:A P2) (:B V) (:C *P))
+  (&within P))
+
+(ALTS $choice "how a line's contents come to rest" $Rigid
+  (ALT $Stack
+    (RULE &rise_ray_cell
+      (&within *P)
+      (&line_cell P (:L *Key)))
+
+    ;; The contents ranked from their low end, per line.
+    (INIT &content_rank Order
+      (key ((&content *P)
+            (&line_cell P ^L *K))
+        (member ((:t K))
+          (&content *P)
+          (&line_cell P L *K))
+        (score ((:t K) (:S K))
+          (&content *P)
+          (&line_cell P L *K))))
+
+    (RULE &placed
+      (&content (:P *P2) *Col)
+      (&line_cell (:P P2) *L *K)
+      (&content_rank.dual_rank (:key L) (:t K) *R)
+      (&rise_ray_ray (:Key L) *P (:K R))
+      (&rise_ray_cell (:Key L) P))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&rewritten P)))
+      ((&comb P Col))
+      ((&placed P Col))
+      ((&rewritten P)
+       (NOT (&comb P))
+       (NOT (&placed P))
+       (&bg (:C Col)))))

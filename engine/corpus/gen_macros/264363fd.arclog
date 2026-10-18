@@ -1,0 +1,210 @@
+;; 264363fd
+
+(RULE &pieces_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &bg
+  (&bg_mode.maximal (:t *Col)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg Col)))
+
+(INIT &pieces Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&ink *P)
+         (&pieces_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ink (:P P3)))
+        ((&ink P)
+         (= P3 P)))))
+
+(RULE &pieces_component
+  (&pieces.class (:a *P) *Id))
+
+(RULE &piece
+  (&pieces_component *P *Id))
+
+(INIT &bbox BoundingBox
+  (key ((&piece ^Id *P))
+    (cell (P)
+      (&piece Id *P))))
+
+(RULE &ragged
+  (input *P)
+  (&bbox.box (:key *Id) *B)
+  (ALL ((&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (NOT (&piece Id P)))
+
+(RULE &rect_cell
+  (&piece *Id *P)
+  (NOT (&ragged Id))
+  (&ink P *Col))
+
+(INIT &hue_count Cardinality
+  (key ((&rect_cell ^Id *P ^Col))
+    (member ((:m P))
+      (&rect_cell Id *P Col))))
+
+(INIT &hue Order
+  (key ((&hue_count.size (:key ^Id *Col)))
+    (member ((:t Col))
+      (&hue_count.size (:key Id *Col)))
+    (score ((:t Col) (:S N))
+      (&hue_count.size (:key Id *Col) *N))))
+
+(RULE &marker
+  (&rect_cell *Id *P *Col)
+  (NOT (&hue.maximal (:key Id) (:t Col))))
+
+(RULE &tmpl
+  (&piece *Id *P)
+  (&ragged Id)
+  (&ink P *Col))
+
+(RULE &anchor
+  (&ragged *Id)
+  (input (:P *P_grid))
+  (&bbox.box (:key Id) *B)
+  (ALL ((&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P_grid) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P_grid) (:X_rel *P_inner))
+  (ALL ((&bbox.box (:key (:Id *Idmm)) (:B *Bm))
+        (input (:P *Pm))
+        (relative (:Base Bm) (:X Pm) (:X_rel P_inner))
+        (opposite (:D *D_m1m) (:Opp *O_m2))
+        (margin (:B P_inner) (:D D_m1m) (:K *K1_m3))
+        (margin (:B P_inner) (:D O_m2) (:K *K2_m4)))
+       ((= K1_m3 K2_m4))))
+
+(RULE &travel
+  (&marker (:P *M))
+  (&anchor (:P_grid *A))
+  (relative (:Base A) (:X M) (:X_rel *Delta)))
+
+(RULE &carried
+  (&marker *Id (:P *M))
+  (&travel M *Delta)
+  (&tmpl *P)
+  (compose (:A P) (:B Delta) (:C *P_out)))
+
+(INIT &rim Boundary
+  (cell (P)
+    (&tmpl *P)))
+
+;; The template carries on toward d.
+(INIT &attached Singleton
+  (key ((&tmpl ^P))
+    (member ((:v D))
+      (dir_elem *D)
+      (NOT (&rim.exposed P D)))))
+
+(RULE &tip
+  (&tmpl *P *Col)
+  (&attached.value (:key P) (:v *D_back))
+  (opposite *D (:Opp D_back)))
+
+(RULE &spike
+  (&carried *Id (:P *P2) (:P_out *P))
+  (&tip (:P P2) *D *Col))
+
+(RULE &spikes_dir
+  (&spike (:Id *Key) *D))
+
+(RULE &spikes_node
+  (&spike (:Id *Key) *D)
+  (input *P))
+
+(RULE &spikes_source
+  (&spike (:Id *Key) *P))
+
+(INIT &spikes Distance
+  (key ((&spikes_source (:Key ^Ky) (:P ^O))
+        (&spikes_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&spikes_source (:Key Ky) (:P O))
+           (&spikes_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&spikes_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&spikes_node (:Key Ky) (:P Q)))
+          ((&spikes_source (:Key Ky) (:P O))
+           (&spikes_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&spikes_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&spikes_source (:Key Ky) (:P O))
+           (&spikes_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&spikes_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&spikes_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&spikes_source (:Key Ky) (:P O))
+      (&spikes_dir (:Key Ky) D))))
+
+(RULE &spikes_ray
+  (&spikes.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &spikes_end
+  (&spikes_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&spikes_ray Key (:P Q) D Origin)))
+
+(RULE &spikes_cell
+  (&rect_cell (:Id *Key) *P))
+
+(RULE &paint
+  (OR ((&carried *Id (:P *P2) (:P_out *P))
+       (&tmpl (:P P2) *Col)
+       (&rect_cell Id P))
+      ((&spike (:Id *Id2) (:P *Src) *D Col)
+       (&spikes_ray (:Key Id2) P D *K (:Origin Src))
+       (&spikes_cell (:Key Id2) P)
+       (!= K 0))
+      ((&tmpl P)
+       (&bg Col))))
+
+(RULE &output
+  (input *P (:Col *C0))
+  (OR ((&paint P *Col))
+      ((NOT (&paint P))
+       (= Col C0))))

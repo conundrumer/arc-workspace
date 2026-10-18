@@ -1,0 +1,204 @@
+;; 98cf29f8
+
+(DET &bg DominantColor)
+
+(INIT &bbox BoundingBox
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &gap
+  (&bbox.box (:key *Col) *B)
+  (input *P)
+  (ALL ((&bbox.box (:key (:Col *Colm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (NOT (input P Col)))
+
+(RULE &anchor
+  (&bbox.cell (:key *Col) *P)
+  (NOT (&gap Col)))
+
+(RULE &lever
+  (&bbox.cell (:key *Col) *P)
+  (&gap Col))
+
+(RULE &move_dir
+  (&lever *P)
+  (&anchor (:P *Q))
+  (axis_of *D *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B Q) (:D D_m2) (:K K_m3))
+  (dir_elem D)
+  (margin (:B Q) D (:K *K1_m4))
+  (margin (:B P) D (:K *K2_m5))
+  (< K1_m4 K2_m5))
+
+(RULE &slide_dir
+  (&move_dir *D))
+
+(RULE &body_split1
+  (&lever (:P *P_))
+  (axis_of *D (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Along_))
+  (relative (:Base Along_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &broken_slab_split1
+  (&gap (:P *P_))
+  (axis_of *D (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Along_))
+  (relative (:Base Along_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &broken_slab
+  (&gap *P)
+  (&move_dir *D)
+  (axis_of D *A)
+  (&broken_slab_split1 (:P_ P) (:A_ A) (:Along_ *P_along) (:X_m1_ *X_m1)))
+
+(RULE &body
+  (&lever *P)
+  (&move_dir *D)
+  (axis_of D *A)
+  (&body_split1 (:P_ P) (:A_ A) (:Along_ *Along) (:X_m1_ *X_m1))
+  (NOT (&broken_slab (:P_along Along))))
+
+(RULE &shift
+  (input *P)
+  (&move_dir *D)
+  (axis_of D *A)
+  (sub_extent P A *K)
+  (dir8_opposite D (:D2 *O_m1))
+  (edge_inset (:D O_m1) K (:B *B1_m2))
+  (edge_inset D K (:B *I_m4))
+  (relative (:Base I_m4) (:X 0) (:X_rel *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Delta)))
+
+(RULE &covering
+  (&shift *Delta)
+  (&body *P)
+  (compose (:A P) (:B Delta) (:C *P2))
+  (&anchor (:P P2)))
+
+(RULE &slide_node
+  (OR ((&shift (:Delta *P))
+       (NOT (&covering (:Delta P))))
+      ((= P 0))))
+
+(RULE &slide_node_ray
+  (&slide_node *P))
+
+(RULE &slide_source
+  (&slide_node *P))
+
+;; The body stands where it is, and travels through the displacements that
+;; keep it clear of the anchor.
+(INIT &slide Distance
+  (key ((&slide_source (:P ^O))
+        (&slide_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&slide_source (:P O))
+           (&slide_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&slide_node_ray (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&slide_node_ray (:P Q)))
+          ((&slide_source (:P O))
+           (&slide_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&slide_node_ray (:P Q))
+           (= A2 O))
+          ((&slide_source (:P O))
+           (&slide_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&slide_node_ray (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&slide_node_ray (:P Q)))))
+    (source ((:n O))
+      (&slide_source (:P O))
+      (&slide_dir D))))
+
+(RULE &slide_ray
+  (&slide.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &slide_end
+  (&slide_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&slide_ray (:P Q) D Origin)))
+
+(RULE &travel
+  (&slide_end (:P *Delta) (:Origin 0)))
+
+(ALTS $choice "how far the body travels" $Abut
+  (ALT $Arm
+    ;; The arm: the lever beyond its body.
+    (INIT &arm BoundingBox
+      (cell (P)
+        (&lever *P)
+        (NOT (&body P))))
+
+    (RULE &travel
+      (&move_dir *D)
+      (axis_of D *A)
+      (&arm.box *B)
+      (&arm.cell *P)
+      (axis_elem A)
+      (relative (:Base B) (:X P) (:X_rel *R_m1))
+      (frame_extent (:P R_m1) A *N)
+      (dir8_opposite D (:D2 *O_m2))
+      (edge_inset (:D O_m2) (:K N) (:B *B1_m3))
+      (edge_inset D (:K N) (:B *I_m5))
+      (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+      (compose (:A B1_m3) (:B B2_m4) (:C *Delta)))))
+
+(RULE &placed
+  (&body (:P *P3))
+  (&lever (:P P3) *Col)
+  (&travel (:Delta *V))
+  (compose (:A P3) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&anchor *P *Col))
+      ((&placed P Col))
+      ((input P)
+       (NOT (&anchor P))
+       (NOT (&placed P))
+       (&bg (:C Col)))))

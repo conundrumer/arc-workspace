@@ -1,0 +1,92 @@
+;; 55059096
+
+(DET &bg DominantColor)
+
+(RULE &span_dir
+  (diag_axis_elem (:Da *A))
+  (axis4_of *D A))
+
+(RULE &span_node
+  (input *P))
+
+(RULE &mark_cell
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &exposed Boundary
+  (cell (P)
+    (&mark_cell *P)))
+
+(RULE &span_source
+  (&mark_cell *P)
+  (NOT (&exposed.boundary P)))
+
+;; Field cells with a plus center on each side along one diagonal.
+(INIT &span Distance
+  (key ((&span_source (:P ^O))
+        (&span_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&span_source (:P O))
+           (&span_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&span_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&span_node (:P Q)))
+          ((&span_source (:P O))
+           (&span_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&span_node (:P Q))
+           (= A2 O))
+          ((&span_source (:P O))
+           (&span_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&span_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&span_node (:P Q)))))
+    (source ((:n O))
+      (&span_source (:P O))
+      (&span_dir D))))
+
+(RULE &span_ray
+  (&span.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &span_between
+  (input *P *Col)
+  (&bg (:C Col))
+  (diag_axis_elem (:Da *A))
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&span_ray P D)
+  (&span_ray P (:D O)))
+
+(RULE &span_end
+  (&span_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&span_ray (:P Q) D Origin)))
+
+(DET &trail AnyOutNewColor)
+
+(RULE &output
+  (OR ((&span_between *P)
+       (&trail (:C *Col)))
+      ((input P Col)
+       (NOT (&span_between P)))))

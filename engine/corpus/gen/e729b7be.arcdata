@@ -1,0 +1,7 @@
+;; e729b7be
+
+(param &bg Color (7))
+(param &sym D4 (D4_ID) (D4_HT))
+(param &line Color (4))
+(param &marker Color (8))
+(param &transform D4 (D4_HT))

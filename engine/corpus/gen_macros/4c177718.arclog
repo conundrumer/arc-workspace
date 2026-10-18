@@ -1,0 +1,297 @@
+;; 4c177718
+
+(DET &divider VanishedColor)
+
+(RULE &item_split1
+  (input (:P *P_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (&item_split1 (:P_ P) (:A_ A) (:L_ ^L) (:X_m1_ *X_m1)))
+    (member ((:v Col))
+      (input *P *Col)
+      (axis_elem A)
+      (&item_split1 (:P_ P) (:A_ A) (:L_ L) (:X_m1_ *X_m1)))))
+
+(RULE &panels_divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (&divider (:C Col)))
+
+(RULE &panels_on_divider
+  (input *P)
+  (&panels_divider *A *L)
+  (axis_of *D A)
+  (margin (:B P) D (:K *K_m1))
+  (margin (:B L) D (:K K_m1)))
+
+;; The divider is a line its color runs all the way across.
+(INIT &panels_rank Order
+  (key ((OR ((&panels_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (dir_elem D)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&panels_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&panels_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (dir_elem D)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (dir_elem D)
+      (margin (:B P) D *K))))
+
+(RULE &panels_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&panels_on_divider P A))
+  (margin (:B P) D *K)
+  (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &panels_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&panels_part_idx *P D (:N *N1))
+  (&panels_part_idx P (:D D2) (:N *N2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K N1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+(RULE &panels_tile_of
+  (&panels_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&panels_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &arrow VanishedColor)
+
+(INIT &arrow_box BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&arrow (:C Col))))
+
+(INIT &bar_count Cardinality
+  (key ((&arrow_box.cell *P)
+        (&arrow_box.box *B)
+        (ALL ((dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (margin (:B P) ^D (:K *K_m1))
+        (margin B D (:K K_m1)))
+    (member ((:m P))
+      (&arrow_box.cell *P)
+      (&arrow_box.box *B)
+      (ALL ((dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (margin (:B P) D (:K *K_m1))
+      (margin B D (:K K_m1)))))
+
+(DET &bg DominantColor)
+
+(DET &anchor SharedColor)
+
+(RULE &legend_panel
+  (input *P *Col)
+  (&arrow (:C Col))
+  (&panels_tile_of P *P_tile))
+
+(RULE &legend
+  (&panels_tile_of *P *P_tile)
+  (&legend_panel P_tile))
+
+(RULE &scene
+  (&panels_tile_of *P *P_tile)
+  (NOT (&legend_panel P_tile)))
+
+(INIT &view BoundingBox
+  (cell (P)
+    (&scene *P)))
+
+(RULE &cell
+  (&scene *P)
+  (input P *Col)
+  (&view.box *B)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(INIT &bar Order
+  (member ((:t D))
+    (&bar_count.size (:key *D)))
+  (score ((:t D) (:S N))
+    (&bar_count.size (:key *D) *N)))
+
+(RULE &heading
+  (&bar.maximal (:t *D_bar))
+  (opposite (:D D_bar) (:Opp *D)))
+
+(RULE &payload
+  (&legend *P)
+  (input P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&anchor (:C Col)))
+  (NOT (&arrow (:C Col))))
+
+(INIT &pay_box BoundingBox
+  (cell (P)
+    (&payload *P)))
+
+(RULE &target
+  (&cell *P_intile *Col)
+  (&anchor (:C Col)))
+
+(ALTS $target "what the payload attaches to" $Colored
+  (ALT $Template
+    (RULE &template
+      (&legend *P)
+      (input P *Col)
+      (&anchor (:C Col)))
+
+    (INIT &occ Occurrences
+      (cell (P (:v Col))
+        (&scene *P)
+        (input P *Col))
+      (shape (P (:v Col))
+        (&template *P *Col)))
+
+    (RULE &target
+      (&occ.occurrence (:P *B_occ))
+      (&template (:P *S))
+      (compose (:A B_occ) (:B S) (:C *P))
+      (&scene P)
+      (&view.box *B)
+      (ALL ((dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (relative (:Base B) (:X P) (:X_rel *P_intile)))))
+
+(ALTS $aim "how the arrow names a direction" $Widest
+  (ALT $Glyph
+    ;; Each example's arrow is one copy of the chart, in its own pose.
+    (INIT &bbox BoundingBox
+      (key ((ex_input ^E *P *Col)
+            (&arrow (:C Col)))
+        (cell (P)
+          (ex_input E *P *Col)
+          (&arrow (:C Col)))))
+
+    (DET &chart_glyph_inside1
+      (&bbox.cell (:key *E) (:P *P_))
+      (&bbox.box (:key E) (:B *B_))
+      (dir_elem (:D *D_m1))
+      (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+      (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+      (< K_m3 0))
+
+    (DET &glyph
+      (&bbox.cell (:key *E) (:P *P2))
+      (&bbox.box (:key E) *B)
+      (NOT (&chart_glyph_inside1 (:P_ P2) (:B_ B)))
+      (relative (:Base B) (:X P2) (:X_rel *P)))
+
+    (DET &tip DirDomain)
+
+    (RIGID_DET &chart
+      (&glyph *E *P)
+      (&tip *D))
+
+    ;; The arrow's picture, read in its own box, against the chart in every pose.
+    (INIT &pose2 Inclusion
+      (pattern ((:pattern D) (:m P))
+        (&chart.glyph (:Pose *D) *P))
+      (observed ((:m P_inner))
+        (&arrow_box.cell *P)
+        (&arrow_box.box *B)
+        (ALL ((dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (relative (:Base B) (:X P) (:X_rel *P_inner))))
+
+    (RULE &heading
+      (&pose2.equal (:pattern *D2))
+      (&chart.tip (:Pose D2) *D))))
+
+(INIT &target_box BoundingBox
+  (cell ((:P P_intile))
+    (&target *P_intile)))
+
+(RULE &placement
+  (&heading *D)
+  (corner_dir (:C *Diag) (:A *A_m1) D)
+  (perp (:A A_m1) (:A2 *A2_m2))
+  (corner_dir (:C Diag) (:A A2_m2) (:D *D_x))
+  (opposite D (:Opp *D_back))
+  (corner_dir (:C *Diag_pay) (:A *A_m3) (:D D_back))
+  (perp (:A A_m3) (:A2 *A2_m4))
+  (corner_dir (:C Diag_pay) (:A A2_m4) (:D D_x))
+  (&target_box.box (:B *B_tgt))
+  (&cell (:P_intile *C))
+  (ALL ((corner_dir (:C Diag) (:A *A_m1m) (:D *Dm))
+        (perp (:A A_m1m) (:A2 *A2_m2m))
+        (corner_dir (:C Diag) (:A A2_m2m) (:D *D_xm))
+        (&target_box.box (:B B_tgt))
+        (corner_dir (:C Diag) (:D *D_m1))
+        (margin (:B C) (:D D_m1) (:K *K1_m2))
+        (margin (:B B_tgt) (:D D_m1) (:K *K2_m3)))
+       ((= K1_m2 K2_m3)))
+  (step_offset D (:V *V_m5))
+  (compose (:A C) (:B V_m5) (:C *S))
+  (&legend *P)
+  (&pay_box.box (:B *B_pay))
+  (ALL ((dir_elem (:D *D_m1m))
+        (relative (:Base B_pay) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1m) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (ALL ((corner_dir (:C Diag_pay) (:A *A_m1mm) (:D *D_backm))
+        (perp (:A A_m1mm) (:A2 *A2_m2mm))
+        (corner_dir (:C Diag_pay) (:A A2_m2mm) (:D *D_xmm))
+        (corner_dir (:C Diag_pay) (:D *D_m1mm))
+        (margin (:B P) (:D D_m1mm) (:K *K1_m2m))
+        (margin (:B B_pay) (:D D_m1mm) (:K *K2_m3m)))
+       ((= K1_m2m K2_m3m)))
+  (relative (:Base B_pay) (:X P) (:X_rel *P_inner))
+  (relative (:Base P_inner) (:X S) (:X_rel *V)))
+
+(RULE &stamp
+  (&placement *V)
+  (&payload *P *Col)
+  (&pay_box.box (:B *B_pay))
+  (ALL ((&payload P (:Col *Colm))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B_pay) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B_pay) (:X P) (:X_rel *P_inner))
+  (compose (:A P_inner) (:B V) (:C *P_intile))
+  (&cell P_intile))
+
+(RULE &output
+  (OR ((&stamp (:P_intile *P) *Col))
+      ((&cell (:P_intile P) Col)
+       (NOT (&stamp (:P_intile P))))))

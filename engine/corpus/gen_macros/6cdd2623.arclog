@@ -1,0 +1,135 @@
+;; 6cdd2623
+
+(RULE &mark_cast_dir
+  (axis_elem (:A *Key))
+  (axis4_of *D (:A Key)))
+
+(RULE &mark_cast_node
+  (axis_elem (:A *Key))
+  (input *P))
+
+(DET &bg DominantColor)
+
+(RULE &line_color
+  (input *Col)
+  (NOT (&bg (:C Col)))
+  (ALL ((input *P Col)
+        (relative (:Base 0) (:X P) (:X_rel *R_m1))
+        (axis_of (:D *D1_m2) (:A *A1_m3))
+        (opposite (:D D1_m2) (:Opp *O1_m4))
+        (perp (:A A1_m3) (:A2 *A2_m5))
+        (axis_of (:D *D2_m6) (:A A2_m5))
+        (opposite (:D D2_m6) (:Opp *O2_m7))
+        (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+        (> K1_m8 0)
+        (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+        (> K2_m9 0)
+        (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+        (> K3_m10 0)
+        (margin (:B R_m1) (:D O2_m7) (:K *K4_m11)))
+       ((<= K4_m11 0))))
+
+(RULE &mark_cast_cell
+  (axis_elem (:A *Key))
+  (input *P))
+
+(ALTS $s "which color draws the lines" $Border
+  (ALT $Rarest
+    ;; $Rarest — the fewest cells.
+    (INIT &tally Cardinality
+      (key ((input *P ^Col)
+            (NOT (&bg (:C Col))))
+        (member ((:m P))
+          (input *P Col)
+          (NOT (&bg (:C Col))))))
+
+    (INIT &rarest Order
+      (member ((:t (:V Col) (:S N)))
+        (&tally.size (:key *Col) *N))
+      (score ((:t (:V Col) (:S N)) (:S N))
+        (&tally.size (:key *Col) *N)))
+
+    (RULE &line_color
+      (&rarest.minimal (:t (:V *Col))))))
+
+(ALTS $d "what a mark draws" $Cast
+  (ALT $Span
+    (RULE &mark_cast_between
+      (axis_elem (:A *Key))
+      (input *P)
+      (axis4_of *D (:A Key))
+      (dir8_opposite D (:D2 *O))
+      (&mark_cast_ray Key P D)
+      (&mark_cast_ray Key P (:D O)))
+
+    (RULE &line
+      (&mark_cast_between *P))))
+
+(RULE &mark_cast_source
+  (input *P *Col)
+  (&line_color Col)
+  (margin (:B P) *D (:K 0))
+  (axis_of D (:A *Key)))
+
+(INIT &mark_cast Distance
+  (key ((&mark_cast_source (:Key ^Ky) (:P ^O))
+        (&mark_cast_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&mark_cast_source (:Key Ky) (:P O))
+           (&mark_cast_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&mark_cast_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&mark_cast_node (:Key Ky) (:P Q)))
+          ((&mark_cast_source (:Key Ky) (:P O))
+           (&mark_cast_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&mark_cast_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&mark_cast_source (:Key Ky) (:P O))
+           (&mark_cast_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&mark_cast_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&mark_cast_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&mark_cast_source (:Key Ky) (:P O))
+      (&mark_cast_dir (:Key Ky) D))))
+
+(RULE &mark_cast_ray
+  (&mark_cast.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &mark_cast_end
+  (&mark_cast_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&mark_cast_ray Key (:P Q) D Origin)))
+
+(RULE &line
+  (&mark_cast_ray *P)
+  (&mark_cast_cell P))
+
+(RULE &output
+  (OR ((&line *P)
+       (&line_color *Col))
+      ((input P)
+       (NOT (&line P))
+       (&bg (:C Col)))))

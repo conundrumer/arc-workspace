@@ -1,0 +1,68 @@
+;; 810b9b61
+
+(DET &recolor ChangedPairs)
+
+(RULE &ink
+  (input *P *Col)
+  (&recolor (:C_from Col)))
+
+(INIT &drect Outlines
+  (key ((&ink ^Col *P))
+    (node (P)
+      (&ink Col *P))))
+
+(RULE &painted
+  (&drect.box *B)
+  (input *P)
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B)))
+
+(INIT &objs Connectivity
+  (key ((&ink ^Col *P))
+    (node (P)
+      (&ink Col *P))))
+
+(RULE &obj
+  (&objs.component (:key *Col) *P *Id))
+
+(ALTS $choice "how a closed rectangle is recognized" $Rect
+  (ALT $Object
+    (INIT &bbox BoundingBox
+      (key ((&obj ^Col ^Id *P))
+        (cell (P)
+          (&obj Col Id *P))))
+
+    (RULE &painted
+      (&obj (:Col *K_col) (:Id *K_id) *P)
+      (&bbox.box (:key (:Col K_col) (:Id K_id)) *B)
+      (ALL ((&bbox.box (:key (:Col K_col) (:Id K_id)) (:B *Bm))
+            (input (:P *Pm))
+            (inside (:A Pm) (:B Bm))
+            (same_dist (:P1 Pm) (:P2 Bm)))
+           ((&obj (:Col K_col) (:Id K_id) (:P Pm))))
+      (input (:P *Q))
+      (interior (:A Q) B)))
+  (ALT $Enclose
+    ;; Each ink color walls the rest of the grid off.
+    (INIT &closed Enclosure
+      (key ((&recolor (:C_from ^Col)))
+        (cell (P)
+          (input *P)
+          (NOT (&ink Col P)))))
+
+    (RULE &wall
+      (&closed.enclosed (:key *Col) (:P *Q))
+      (dir_elem *D)
+      (neighbor (:P Q) D (:Q *P))
+      (&obj Col *Id P))
+
+    (RULE &painted
+      (&wall (:Col *K_col) (:Id *K_id))
+      (&obj (:Col K_col) (:Id K_id) *P))))
+
+(RULE &output
+  (OR ((&painted *P)
+       (input P (:Col *Col2))
+       (&recolor (:C_from Col2) (:C_to *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))

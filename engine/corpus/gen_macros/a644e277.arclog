@@ -1,0 +1,368 @@
+;; a644e277
+
+(INPUT lattice "rows and columns of a line color, one cell wide, cut the grid into a lattice of cells wider than one cell, on a background color, the commonest color other than the line color; a separator line is a line along which two neighboring cells hold the line color, and some separator line holds the line color along its whole length; every band between two neighboring separator lines has one width")
+
+(INPUT gap-crossings "exactly four crossings of a separator row and a separator column hold the background color in place of the line color, and they are the corners of an axis-aligned rectangle; every other cell of a separator line holds the line color")
+
+(OUTPUT crop-gap-rectangle "the output is the input cropped to that rectangle, its corner rows and columns included, and every cell inside is copied unchanged"
+
+  (RULE &item_split1
+    (input (:P *P_) *Col)
+    (axis_elem (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *P_line_))
+    (relative (:Base P_line_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &separator_split1
+    (input (:P *P_) *Col)
+    (perp (:A *A_) *A2)
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *P_line_))
+    (relative (:Base P_line_) (:X P_) (:X_rel *X_m1_)))
+
+  ;; The color of each line that holds one color along its whole length.
+  (INIT &uniform Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (&item_split1 (:P_ P) (:A_ A) (:P_line_ ^P_line) (:X_m1_ *X_m1)))
+      (member ((:v Col))
+        (input *P *Col)
+        (axis_elem A)
+        (&item_split1 (:P_ P) (:A_ A) (:P_line_ P_line) (:X_m1_ *X_m1)))))
+
+  (RULE &line_color
+    (&uniform.value (:v *Col)))
+
+  (RULE &separator
+    (&line_color *Col)
+    (input *P Col)
+    (&separator_split1 (:P_ P) (:A_ *A) (:P_line_ *P_line) (:X_m1_ *X_m1))
+    (perp A *A2)
+    (axis_of *D (:A A2))
+    (step_offset D (:V *V_m2))
+    (compose (:A P) (:B V_m2) (:C *Q))
+    (input (:P Q) Col))
+
+  (RULE &on_separator_split1
+    (input (:P *P_))
+    (&separator (:A *A_) (:P_line *P_line_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C P_line_))
+    (relative (:Base P_line_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &on_separator
+    (input *P)
+    (&on_separator_split1 (:P_ P) (:A_ *A) (:P_line_ *P_line) (:X_m1_ *X_m1))
+    (&separator A P_line))
+
+  (RULE &cell_split1
+    (&on_separator (:A *A_) (:P *P_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *P_line_))
+    (relative (:Base P_line_) (:X P_) (:X_rel *X_m1_)))
+
+  (INIT &bg_count Cardinality
+    (key ((input *P ^Col)
+          (NOT (&line_color Col)))
+      (member ((:m P))
+        (input *P Col)
+        (NOT (&line_color Col)))))
+
+  (RULE &crossing
+    (&on_separator *A *P)
+    (perp A *A2)
+    (&on_separator (:A A2) P))
+
+  (INIT &bg Order
+    (member ((:t Col))
+      (&bg_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&bg_count.size (:key *Col) *N)))
+
+  (RULE &gap_colored
+    (input *P *Col)
+    (&bg.maximal (:t Col)))
+
+  (RULE &gap
+    (&gap_colored *P)
+    (&crossing P))
+
+  (INIT &gap_box BoundingBox
+    (cell (P)
+      (&gap *P)))
+
+  (RULE &box_corner_cell
+    (&gap_box.box *B)
+    (input *P)
+    (ALL ((&gap_box.box B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (corner_dir (:C *Diag_m1) (:A *A_m2) (:D *D1_m3))
+    (perp (:A A_m2) (:A2 *A2_m4))
+    (corner_dir (:C Diag_m1) (:A A2_m4) (:D *D2_m5))
+    (margin (:B P) (:D D1_m3) (:K *K1_m6))
+    (margin B (:D D1_m3) (:K K1_m6))
+    (margin (:B P) (:D D2_m5) (:K *K2_m7))
+    (margin B (:D D2_m5) (:K K2_m7)))
+
+  (RULE &misplaced
+    (OR ((&gap *P)
+         (NOT (&box_corner_cell P)))
+        ((&gap_box.box *B)
+         (&box_corner_cell (:P *P2))
+         (ALL ((&box_corner_cell (:P P2))
+               (&gap_box.box B)
+               (dir_elem (:D *D_m1))
+               (relative (:Base B) (:X P2) (:X_rel *R_m2))
+               (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+              ((>= K_m3 0)))
+         (corner_dir (:C *D) (:A *A_m1) (:D *D1_m2))
+         (perp (:A A_m1) (:A2 *A2_m3))
+         (corner_dir (:C D) (:A A2_m3) (:D *D2_m4))
+         (margin (:B P2) (:D D1_m2) (:K *K1_m5))
+         (margin B (:D D1_m2) (:K K1_m5))
+         (margin (:B P2) (:D D2_m4) (:K *K2_m6))
+         (margin B (:D D2_m4) (:K K2_m6))
+         (OR ((NOT (&gap (:P P2))))
+             ((relative (:Base B) (:X P2) (:X_rel *R_m7))
+              (axis_of (:D *D1_m8) (:A *A1_m9))
+              (opposite (:D D1_m8) (:Opp *O1_m10))
+              (perp (:A A1_m9) (:A2 *A2_m11))
+              (axis_of (:D *D2_m12) (:A A2_m11))
+              (opposite (:D D2_m12) (:Opp *O2_m13))
+              (margin (:B R_m7) (:D D1_m8) (:K *K1_m14))
+              (>= K1_m14 0)
+              (margin (:B R_m7) (:D O1_m10) (:K *K2_m15))
+              (>= K2_m15 0)
+              (margin (:B R_m7) (:D D2_m12) (:K *K3_m16))
+              (>= K3_m16 0)
+              (margin (:B R_m7) (:D O2_m13) (:K *K4_m17))
+              (>= K4_m17 0)
+              (corner_dir (:C *D2) (:A *A_m18) (:D *D1_m19))
+              (perp (:A A_m18) (:A2 *A2_m20))
+              (corner_dir (:C D2) (:A A2_m20) (:D *D2_m21))
+              (margin (:B P2) (:D D1_m19) (:K *K1_m22))
+              (margin B (:D D1_m19) (:K K1_m22))
+              (margin (:B P2) (:D D2_m21) (:K *K2_m23))
+              (margin B (:D D2_m21) (:K K2_m23))
+              (!= D2 D))))))
+
+  (RULE &frame
+    (&gap_box.box *B)
+    (NOT (&misplaced)))
+
+  ;; The distance from edge D of a rectangle to each separator line of D's axis
+  ;; past it; the least is the first band's width plus one.
+  (INIT &first_band Order
+    (key ((&frame ^B)
+          (axis_of ^D *A)
+          (&on_separator A *P)
+          (ALL ((&on_separator (:A *Am) P)
+                (dir_elem (:D *D_m1))
+                (relative (:Base B) (:X P) (:X_rel *R_m2))
+                (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+               ((>= K_m3 0)))
+          (relative (:Base B) (:X P) (:X_rel *P_inner))
+          (margin (:B P_inner) D *K)
+          (> K 0))
+      (member ((:t K))
+        (&frame B)
+        (axis_of D *A)
+        (&on_separator A *P)
+        (ALL ((&on_separator (:A *Am) P)
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (relative (:Base B) (:X P) (:X_rel *P_inner))
+        (margin (:B P_inner) D *K)
+        (> K 0))
+      (score ((:t K) (:S K))
+        (&frame B)
+        (axis_of D *A)
+        (&on_separator A *P)
+        (ALL ((&on_separator (:A *Am) P)
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (relative (:Base B) (:X P) (:X_rel *P_inner))
+        (margin (:B P_inner) D *K)
+        (> K 0))))
+
+  (RULE &periodic
+    (&first_band.minimal (:key *B *D) (:t *N))
+    (input *P)
+    (ALL ((&first_band.minimal (:key B (:D *Dm)) (:t *Nm))
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B) (:X P) (:X_rel *P_inner))
+    (margin (:B P_inner) D *K)
+    (divide (:T K) (:Side N) (:Gap 0) (:Remainder 0)))
+
+  (INIT &broken BoundingBox
+    (key ((&gap *P)
+          (&on_separator ^A P)
+          (&cell_split1 (:P_ P) (:A_ A) (:P_line_ *P_line) (:X_m1_ *X_m1)))
+      (cell ((:P P_line))
+        (&gap *P)
+        (&on_separator A P)
+        (&cell_split1 (:P_ P) (:A_ A) (:P_line_ *P_line) (:X_m1_ *X_m1)))))
+
+  ;; The cell's color under each pair of edges, one per axis.
+  (INIT &banded Singleton
+    (key ((&frame ^B)
+          (input ^P (:Col *C))
+          (ALL ((input P (:Col *Cm))
+                (dir_elem (:D *D_m1))
+                (relative (:Base B) (:X P) (:X_rel *R_m2))
+                (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+               ((>= K_m3 0)))
+          (axis_of (:D *D1) (:A *A_m1))
+          (perp (:A A_m1) (:A2 *A2_m2))
+          (axis_of (:D *D2) (:A A2_m2))
+          (OR ((OR ((&periodic B (:D D1) P))
+                   ((&periodic B (:D D2) P)))
+               (&line_color *Col))
+              ((NOT (&periodic B (:D D1) P))
+               (NOT (&periodic B (:D D2) P))
+               (= Col C))))
+      (member ((:v Col))
+        (&frame B)
+        (input P (:Col *C))
+        (ALL ((input P (:Col *Cm))
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (axis_of (:D *D1) (:A *A_m1))
+        (perp (:A A_m1) (:A2 *A2_m2))
+        (axis_of (:D *D2) (:A A2_m2))
+        (OR ((OR ((&periodic B (:D D1) P))
+                 ((&periodic B (:D D2) P)))
+             (&line_color *Col))
+            ((NOT (&periodic B (:D D1) P))
+             (NOT (&periodic B (:D D2) P))
+             (= Col C)))))))
+
+(ALTS $gap "which color on a separator line marks a gap" $Background
+  (ALT $NonlineGap
+    (INPUT gap-crossings "a gap holds any color other than the line color; undefined when those gaps are not the four corners of a rectangle"
+      (RULE &gap_colored
+        (input *P *Col)
+        (NOT (&line_color Col))))))
+
+(ALTS $site "which separator cells can be gaps" $Crossing
+  (ALT $SeparatorCell
+    (INPUT gap-crossings "a gap is any separator cell in the gap color, at a crossing or not; undefined when those gaps are not the four corners of a rectangle"
+      (RULE &gap
+        (&gap_colored *P)
+        (&on_separator P)))))
+
+(ALTS $frame "how the gaps give the crop rectangle" $GapCorners
+  (ALT $GapBbox
+    (OUTPUT crop-gap-rectangle "the rectangle is the bounding box of the gaps, however many there are; undefined when there is none"
+      (RULE &frame
+        (&gap_box.box *B))))
+  (ALT $BrokenLines
+    (OUTPUT crop-gap-rectangle "the rectangle runs from the first to the last separator row, and from the first to the last separator column, that hold a gap; undefined when no separator row or no separator column does"
+      (RULE &frame
+        (&broken.box (:key *A) (:B *B1))
+        (perp A *A2)
+        (&broken.box (:key (:A A2)) (:B *B2))
+        (compose (:A B1) (:B B2) (:C *B))))))
+
+(ALTS $content "what fills the cropped rectangle" $Copy
+  (ALT $RedrawLattice
+    (OUTPUT crop-gap-rectangle "inside the rectangle, every separator cell is drawn in the line color and the four corners in the background color; the other cells are copied"
+      (RULE &frame_corner
+        (&frame *B)
+        (input *P)
+        (ALL ((dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (corner_dir (:C *Diag_m1) (:A *A_m2) (:D *D1_m3))
+        (perp (:A A_m2) (:A2 *A2_m4))
+        (corner_dir (:C Diag_m1) (:A A2_m4) (:D *D2_m5))
+        (margin (:B P) (:D D1_m3) (:K *K1_m6))
+        (margin B (:D D1_m3) (:K K1_m6))
+        (margin (:B P) (:D D2_m5) (:K *K2_m7))
+        (margin B (:D D2_m5) (:K K2_m7)))
+
+      (RULE &redrawn
+        (&frame *B)
+        (input *P (:Col *C))
+        (ALL ((input P (:Col *Cm))
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (IF ((&on_separator P))
+            ((&line_color *Col))
+            ((= Col C)))))
+    (RULE &output
+      (&frame *B)
+      (axis_of (:D *D1_m2) (:A *A1_m3))
+      (opposite (:D D1_m2) (:Opp *O1_m4))
+      (perp (:A A1_m3) (:A2 *A2_m5))
+      (axis_of (:D *D2_m6) (:A A2_m5))
+      (opposite (:D D2_m6) (:Opp *O2_m7))
+      (OR ((&frame_corner B (:P *P2))
+           (&bg.maximal (:t *Col)))
+          ((&redrawn B (:P P2) Col)
+           (NOT (&frame_corner B (:P P2)))))
+      (relative (:Base B) (:X P2) (:X_rel *R_m1))
+      (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+      (>= K1_m8 0)
+      (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+      (>= K2_m9 0)
+      (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+      (>= K3_m10 0)
+      (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+      (>= K4_m11 0)
+      (relative (:Base B) (:X P2) (:X_rel *P)))
+    (ALTS $bands "which cells a redrawn lattice draws as lines" $SeparatorLines
+      (ALT $FirstBand
+        (OUTPUT crop-gap-rectangle "on each axis, the lines drawn inside the rectangle fall at every multiple of the first band's width plus one, counted from a side of the rectangle; the first band runs from that side to the next separator line; undefined where the two sides of an axis draw different lines"
+          (RULE &redrawn
+            (&banded.value (:key *B *P) (:v *Col))))))))
+
+(RULE &output
+  (&frame *B)
+  (input (:P *P2) *Col)
+  (ALL ((input (:P P2) (:Col *Colm))
+        (&frame B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P2) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P2) (:X_rel *P)))

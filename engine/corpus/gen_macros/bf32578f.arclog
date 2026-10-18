@@ -1,0 +1,300 @@
+;; bf32578f
+
+(INPUT one-shape "the input holds one shape of one color on a field of bg"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &shape
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  ;; The shape's color.
+  (INIT &hue Singleton
+    (member ((:v Col))
+      (&shape *P)
+      (input P *Col))))
+
+(INPUT half-outline "the shape is an open curve whose two ends lie in its column nearest mirror-dir, so that it opens toward mirror-dir")
+
+(INPUT room "the grid has room for the shape's mirror image on its mirror-dir side")
+
+(OUTPUT mirror "the shape and its mirror image, across the line just past the shape's edge toward mirror-dir, form one closed outline")
+
+(OUTPUT fill-inside "each cell the closed outline encloses takes the shape's color, and every other cell, the outline included, is bg"
+
+  ;; the direction the shape opens toward, in which its mirror image lies
+  (DET &mirror_dir DirDomain)
+
+  (RULE &open_dir
+    (&mirror_dir *D))
+
+  (RULE &span_dir
+    (&open_dir)
+    (axis4_elem (:A *Key))
+    (axis4_of *D (:A Key)))
+
+  (RULE &span_node
+    (&open_dir)
+    (axis4_elem (:A *Key))
+    (input *P))
+
+  (INIT &shape_box BoundingBox
+    (cell (P)
+      (&shape *P)))
+
+  (RULE &image
+    (&open_dir *D)
+    (axis_of D *A)
+    (&shape *P)
+    (&shape_box.box *B)
+    (axis_elem A)
+    (relative (:Base B) (:X P) (:X_rel *R_m1))
+    (frame_extent (:P R_m1) A (:N *W))
+    (edge_inset D (:K W) (:B *I_m2))
+    (relative (:Base I_m2) (:X 0) (:X_rel *B_out))
+    (compose (:A B) (:B B_out) (:C *B2))
+    (ALL ((&shape_box.box (:B *Bm))
+          (&open_dir (:D *Dm))
+          (axis_of (:D Dm) (:A *Am))
+          (axis_elem (:A Am))
+          (relative (:Base Bm) (:X P) (:X_rel *R_m1m))
+          (frame_extent (:P R_m1m) (:A Am) (:N *Wm))
+          (edge_inset (:D Dm) (:K Wm) (:B *I_m2m))
+          (relative (:Base I_m2m) (:X 0) (:X_rel *B_outm))
+          (compose (:A Bm) (:B B_outm) (:C B2))
+          (dir_elem (:D *D_m1))
+          (relative (:Base B2) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B2) (:X P) (:X_rel *P_rel))
+    (axis_inversion A (:T *F))
+    (apply (:D F) (:P P_rel) (:P_out *Q_rel))
+    (compose (:A B2) (:B Q_rel) (:C *Q)))
+
+  (RULE &outline
+    (OR ((&open_dir)
+         (&shape *P))
+        ((&image (:Q P)))))
+
+  (RULE &span_source
+    (&outline *P)
+    (axis4_elem (:A *Key)))
+
+  (INIT &span Distance
+    (key ((&span_source (:Key ^Ky) (:P ^O))
+          (&span_dir (:Key Ky) ^D))
+      (edge ((:a A2) (:b Q))
+        (OR ((&span_source (:Key Ky) (:P O))
+             (&span_dir (:Key Ky) D)
+             (axis_of D *A)
+             (sub_extent (:P O) A *K)
+             (dir8_opposite D (:D2 *O_m2))
+             (edge_inset (:D O_m2) K (:B *B1_m3))
+             (edge_inset D K (:B *I_m5))
+             (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+             (compose (:A O) (:B V_m1) (:C *A2))
+             (&span_node (:Key Ky) (:P A2))
+             (step_offset D (:V *V_m6))
+             (compose (:A A2) (:B V_m6) (:C *Q))
+             (&span_node (:Key Ky) (:P Q)))
+            ((&span_source (:Key Ky) (:P O))
+             (&span_dir (:Key Ky) D)
+             (step_offset D (:V *V_m12))
+             (compose (:A O) (:B V_m12) (:C Q))
+             (&span_node (:Key Ky) (:P Q))
+             (= A2 O))
+            ((&span_source (:Key Ky) (:P O))
+             (&span_dir (:Key Ky) D)
+             (diag_dir_elem D)
+             (axis_elem (:A *A3))
+             (sub_extent (:P O) (:A A3) (:K *K2))
+             (dir8_opposite D (:D2 *O_m22))
+             (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+             (edge_inset D (:K K2) (:B *I_m52))
+             (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+             (compose (:A O) (:B V_m13) (:C A2))
+             (&span_node (:Key Ky) (:P A2))
+             (step_offset D (:V *V_m62))
+             (compose (:A A2) (:B V_m62) (:C Q))
+             (&span_node (:Key Ky) (:P Q)))))
+      (source ((:n O))
+        (&span_source (:Key Ky) (:P O))
+        (&span_dir (:Key Ky) D))))
+
+  (RULE &span_ray
+    (&span.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+  (RULE &span_between
+    (&open_dir)
+    (axis4_elem (:A *Key))
+    (input *P)
+    (axis4_of *D (:A Key))
+    (dir8_opposite D (:D2 *O))
+    (&span_ray Key P D)
+    (&span_ray Key P (:D O)))
+
+  (RULE &closed_flood_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &closed_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &closed_cell
+    (&open_dir)
+    (input *P)
+    (NOT (&outline P)))
+
+  (RULE &closed_flood_node
+    (&open_dir)
+    (input *P)
+    (NOT (&outline P)))
+
+  (INIT &closed_flood Propagation
+    (source ((:n P))
+      (&closed_cell *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0))
+      (&closed_flood_node P))
+    (edge ((:a P) (:b Q))
+      (&closed_flood_node *P)
+      (&closed_flood_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *Q))
+      (&closed_flood_node (:P Q))))
+
+  (RULE &closed_node
+    (&closed_cell *P)
+    (NOT (&closed_flood.reached (:n P))))
+
+  (INIT &closed Quotient
+    (edge ((:a P) (:b P2))
+      (OR ((&closed_node *P)
+           (&closed_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P2))
+           (&closed_node (:P P2)))
+          ((&closed_node P)
+           (= P2 P)))))
+
+  (RULE &closed_component
+    (&closed.class (:a *P) *Id))
+
+  (RULE &spanned
+    (&span_between (:Key *A) *P)
+    (NOT (&outline P)))
+
+  ;; The outline with the cells it encloses.
+  (INIT &solid Boundary
+    (cell (P)
+      (OR ((&outline *P))
+          ((&closed_component P))))))
+
+(ALTS $i "which cells of the closed outline's frame take the shape's color" $Enclosed
+  (ALT $SpanAlong
+    (OUTPUT fill-inside "each cell off the outline with outline cells on both sides along mirror-dir's axis takes the shape's color. Undefined where the concept is.")
+    (RULE &filled
+      (&open_dir *D)
+      (axis_of D *A)
+      (&spanned A *P)))
+  (ALT $SpanAcross
+    (OUTPUT fill-inside "each cell off the outline with outline cells on both sides along the axis across mirror-dir takes the shape's color. Undefined where the concept is.")
+    (RULE &filled
+      (&open_dir *D)
+      (axis_of D (:A *A0))
+      (perp (:A A0) (:A2 *A))
+      (&spanned A *P)))
+  (ALT $SpanBoth
+    (OUTPUT fill-inside "each cell off the outline with outline cells on both sides along each axis takes the shape's color. Undefined where the concept is.")
+    (RULE &filled
+      (&spanned *A *P)
+      (perp A *A2)
+      (&spanned (:A A2) P)))
+  (ALT $SpanEither
+    (OUTPUT fill-inside "each cell off the outline with outline cells on both sides along some axis takes the shape's color. Undefined where the concept is.")
+    (RULE &filled
+      (&spanned *A *P)
+      (axis_elem A)))
+  (ALT $ErodeFilled
+    (OUTPUT fill-inside "the outline with the cells it encloses, less that set's rim, takes the shape's color, so an outline cell with all four neighbors in the set takes it too. Undefined where the concept is.")
+    (RULE &filled
+      (&solid.cell *P)
+      (NOT (&solid.boundary P))))
+  (ALT $SpanAny
+    (OUTPUT fill-inside "each cell off the outline with outline cells on both sides along some row, column or diagonal takes the shape's color. Undefined where the concept is.")
+    (RULE &filled
+      (&spanned *P))))
+
+(ALTS $m "how the side the shape opens toward is found" $StoredDir
+  (ALT $MirrorDirFromEnds
+    (INPUT half-outline "the shape is an open curve with two ends, each a shape cell with one 8-neighbor in the shape, and mirror-dir is the one side of the shape's bounding box whose line holds both ends. Undefined where the shape has other than two ends, where no side or more than one side holds both, and where the concept is undefined at that direction."
+      (RULE &end
+        (&shape *P)
+        (step_offset (:D *D_m1) (:V *V_m2))
+        (compose (:A P) (:B V_m2) (:C *Q))
+        (&shape (:P Q))
+        (ALL ((step_offset (:D *D1) (:V *V_m1))
+              (compose (:A P) (:B V_m1) (:C *Q1))
+              (&shape (:P Q1))
+              (step_offset (:D *D2) (:V *V_m2m))
+              (compose (:A P) (:B V_m2m) (:C *Q2))
+              (&shape (:P Q2)))
+             ((= D1 D2))))
+
+      (RULE &end_side
+        (&shape_box.box *B)
+        (&end (:P *P1))
+        (&end (:P *P2))
+        (!= P1 P2)
+        (ALL ((dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P1) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (margin (:B P1) *D (:K *K_m1))
+        (margin B D (:K K_m1))
+        (ALL ((dir_elem (:D *D_m1m))
+              (relative (:Base B) (:X P2) (:X_rel *R_m2m))
+              (margin (:B R_m2m) (:D D_m1m) (:K *K_m3m)))
+             ((>= K_m3m 0)))
+        (margin (:B P2) D (:K *K_m2))
+        (margin B D (:K K_m2)))
+
+      (RULE &open_dir
+        (&end_side *D)
+        (ALL ((&end (:P *P1))
+              (&end (:P *P2))
+              (&end (:P *P3))
+              (!= P1 P2)
+              (!= P1 P3))
+             ((= P2 P3)))
+        (ALL ((&end_side (:D *D1))
+              (&end_side (:D *D2)))
+             ((= D1 D2)))))))
+
+(RULE &span_end
+  (&span_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&span_ray Key (:P Q) D Origin)))
+
+(RULE &spill
+  (&image *Q)
+  (NOT (input (:P Q))))
+
+(RULE &defined
+  (&open_dir)
+  (NOT (&spill))
+  (&hue.value))
+
+(RULE &filled
+  (&closed_component *P))
+
+(RULE &output
+  (OR ((&filled *P)
+       (&defined)
+       (&hue.value (:v *Col)))
+      ((&defined)
+       (input P)
+       (NOT (&filled P))
+       (&bg (:C Col)))))

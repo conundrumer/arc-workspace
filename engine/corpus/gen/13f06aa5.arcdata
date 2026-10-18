@@ -1,0 +1,4 @@
+;; 13f06aa5
+
+(param &spacing number (2))
+(param &corner_color Color (0))

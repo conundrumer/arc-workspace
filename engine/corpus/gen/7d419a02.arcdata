@@ -1,0 +1,7 @@
+;; 7d419a02
+
+(param &bg Color (0))
+(param &mark Color (6))
+(param &fill Color (4))
+(param &step number (2))
+(param &ink Color (8))

@@ -1,0 +1,4 @@
+;; 0a938d79
+
+(param &bg Color (0))
+(param &origin DiagDir (DIAG_TL))

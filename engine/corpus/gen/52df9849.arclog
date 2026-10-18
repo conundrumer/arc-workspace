@@ -1,0 +1,36 @@
+;; 52df9849
+
+(DET &bg DominantColor)
+
+(RULE &obj
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &reaches
+  (&obj (:P *Q) *Col)
+  (input *P)
+  (dir8_elem *D)
+  (NOT (nearer D P Q)))
+
+(RULE &sweep
+  (axis4_of *D *A)
+  (dir8_opposite D *D2)
+  (&reaches *Col D *P)
+  (&reaches Col (:D D2) P)
+  (&obj (:P *Q) Col)
+  (same_line A P Q))
+
+(RULE &unsupported
+  (&sweep *Col *A *P)
+  (input P (:Col *Bg))
+  (&bg (:C Bg)))
+
+(RULE &hidden
+  (&sweep *Col *A *P)
+  (NOT (&unsupported Col A))
+  (NOT (input P Col)))
+
+(RULE &output
+  (OR ((&hidden *P *Col))
+      ((input P Col)
+       (NOT (&hidden P)))))

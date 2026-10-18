@@ -1,0 +1,42 @@
+;; 253bf280
+
+(DET &bg DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(RULE &rays_dir
+  (dir_elem *D))
+
+(INIT &rays Ray
+  (source ((:P Q))
+    (input (:P *Q) *Col)
+    (NOT (&bg (:C Col))))
+  (node (P)
+    (&rays_dir)
+    (input *P))
+  (dir (D)
+    (&rays_dir *D)))
+
+(RULE &rays_cell
+  (input *P (:Col *Bg))
+  (&bg (:C Bg)))
+
+(ALTS $choice "what a stroke does to a mark it crosses" $Spare
+  (ALT $Paint
+    (RULE &rays_cell
+      (input *P))))
+
+(RULE &between
+  (opposite *D (:Opp *O))
+  (&rays.ray *P D *K)
+  (&rays_cell P)
+  (!= K 0)
+  (&rays.ray P (:D O) (:K *K2))
+  (&rays_cell P)
+  (!= K2 0))
+
+(RULE &output
+  (OR ((&between *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&between P)))))

@@ -1,0 +1,200 @@
+;; 67c52801
+
+(RULE &slots_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+;; The edge the ground row lies along.
+(DET &ground_dir DirDomain)
+
+(RULE &ground
+  (input *P)
+  (&ground_dir *D)
+  (margin (:B P) D (:K 0)))
+
+(RULE &marker
+  (input *P)
+  (&ground_dir *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *G))
+  (&ground (:P G)))
+
+;; A slot: a maximal run of bg in the marker row.
+(INIT &slots Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&marker *P)
+         (input P *Col)
+         (&bg (:C Col))
+         (&slots_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&marker (:P P3))
+         (input (:P P3) (:Col *Col2))
+         (&bg (:C Col2)))
+        ((&marker P)
+         (input P (:Col *Col3))
+         (&bg (:C Col3))
+         (= P3 P)))))
+
+(RULE &slots_component
+  (&slots.class (:a *P) *Id))
+
+(RULE &pieces_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(RULE &floor
+  (OR ((&ground *P))
+      ((&marker P))))
+
+(RULE &pieces_node
+  (input *P (:Col *Key))
+  (NOT (&bg (:C Key)))
+  (NOT (&floor P)))
+
+;; A piece: a colored block above the floor.
+(INIT &pieces Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&pieces_node (:Key *Ky) *P)
+         (&pieces_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&pieces_node (:Key Ky) (:P P2)))
+        ((&pieces_node (:Key Ky) P)
+         (= P2 P)))))
+
+(RULE &pieces_component
+  (&pieces.class (:a *Key *P) *Id))
+
+(RULE &rays_dir
+  (&ground_dir (:D *D2))
+  (opposite (:D D2) (:Opp *D)))
+
+(RULE &rays_node
+  (input *P))
+
+(RULE &rays_source
+  (&slots_component *P))
+
+;; The column above each slot cell.
+(INIT &rays Distance
+  (key ((&rays_source (:P ^O))
+        (&rays_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&rays_source (:P O))
+           (&rays_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&rays_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&rays_node (:P Q)))
+          ((&rays_source (:P O))
+           (&rays_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&rays_node (:P Q))
+           (= A2 O))
+          ((&rays_source (:P O))
+           (&rays_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&rays_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&rays_node (:P Q)))))
+    (source ((:n O))
+      (&rays_source (:P O))
+      (&rays_dir D))))
+
+(RULE &rays_ray
+  (&rays.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &rays_end
+  (&rays_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&rays_ray (:P Q) D Origin)))
+
+(INIT &slot_box BoundingBox
+  (key ((&slots_component *P (:Id ^Sl)))
+    (cell (P)
+      (&slots_component *P (:Id Sl)))))
+
+(INIT &piece_box BoundingBox
+  (key ((&pieces_component *P (:Id ^Pc)))
+    (cell (P)
+      (&pieces_component *P (:Id Pc)))))
+
+(RULE &fits
+  (&ground_dir *D)
+  (axis_of D (:A *A_v))
+  (perp (:A A_v) (:A2 *A))
+  (&slots_component *P (:Id *Sl))
+  (&slot_box.box (:key Sl) (:B *B_sl))
+  (axis_elem A)
+  (relative (:Base B_sl) (:X P) (:X_rel *R_m1))
+  (frame_extent (:P R_m1) A (:N *W))
+  (&piece_box.box (:key *Pc) (:B *B_pc))
+  (perp (:A *A2) (:A2 *A3))
+  (axis_elem (:A A2))
+  (relative (:Base B_pc) (:X P) (:X_rel *R_m2))
+  (frame_extent (:P R_m2) (:A A2) (:N W))
+  (axis_elem (:A A3))
+  (relative (:Base B_pc) (:X P) (:X_rel *R_m3))
+  (frame_extent (:P R_m3) (:A A3) (:N *H)))
+
+(RULE &forcing_item
+  (&fits *Pc *Sl)
+  (OR ((&slots_component *P (:Id Sl)))
+      ((&pieces_component P (:Id Pc)))))
+
+(CHOOSE &forcing
+  (for ((&forcing_item ^P))
+    (from (&forcing_item P *Pc *Sl)))
+  (never
+    (&forcing_item *P *Pc *Sl)
+    (&forcing_item (:P *P2) (:Pc *Pc2) (:Sl *Sl2))
+    (&forcing_item (:P P2) Pc Sl)
+    (OR ((!= Pc Pc2))
+        ((!= Sl Sl2)))))
+
+(RULE &stand
+  (&forcing *Pc *Sl)
+  (&fits Pc Sl *H))
+
+(ALTS $choice "what fixes a dropped piece's height" $Turn
+  (ALT $Fixed
+    (DET &height TileCount)
+
+    (RULE &stand
+      (&forcing *Pc *Sl)
+      (&height (:N *H)))))
+
+(RULE &filled
+  (&stand *Pc *Sl *H)
+  (&pieces_component (:Key *Col) (:Id Pc))
+  (&slots_component (:P *M) (:Id Sl))
+  (&rays_ray *P *K (:Origin M))
+  (< K H))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&filled P *Col))
+      ((NOT (&filled P))
+       (IF ((&floor P))
+           ((= Col C_in))
+           ((&bg (:C Col)))))))

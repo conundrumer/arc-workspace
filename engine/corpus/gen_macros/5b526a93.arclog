@@ -1,0 +1,146 @@
+;; 5b526a93
+
+(DET &obj_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &painted
+  (ex_input *E *P *Col)
+  (ex_output E P (:Col *Col2))
+  (!= Col Col2))
+
+(INIT &obj Quotient
+  (edge ((:a (:Key E) P) (:b (:Key E) (:P P3)))
+    (OR ((&painted *E *P)
+         (&obj_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&painted E (:P P3)))
+        ((&painted E P)
+         (= P3 P)))))
+
+(DET &obj_component
+  (&obj.class (:a *Key *P) *Id))
+
+(INIT &bbox BoundingBox
+  (key ((&obj_component (:Key ^E) *P ^Id))
+    (cell (P)
+      (&obj_component (:Key E) *P Id))))
+
+(DET &footprint_inside1
+  (&bbox.cell (:key *E *Id) (:P *P_))
+  (&bbox.box (:key E Id) (:B *B_))
+  (dir_elem (:D *D_m1))
+  (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+  (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+  (< K_m3 0))
+
+(RULE &square_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(INIT &square Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&square_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &square_component
+  (&square.class (:a *P) *Id))
+
+;; A square's placement — its box, as margins from the four edges — and the
+;; square's cells in that box's own frame.
+(INIT &bbox2 BoundingBox
+  (key ((&square_component *P ^Id))
+    (cell (P)
+      (&square_component *P Id))))
+
+(RULE &site_split1
+  (&bbox2.box (:B *B_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B B_) (:D D_m1) (:K *K1_m3))
+  (margin (:B B_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X B_) (:X_rel *X_m1_)))
+
+(RULE &site_split2
+  (&bbox2.box (:B *B2_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B B2_) (:D D_m1) (:K *K1_m3))
+  (margin (:B B2_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m2_))
+  (relative (:Base X_m2_) (:X B2_) (:X_rel *L2_)))
+
+(DET &fill AnyOutNewColor)
+
+(RULE &site
+  (&bbox2.box (:B *B3))
+  (&bbox2.box (:B *B2))
+  (axis_elem *A)
+  (&site_split1 (:B_ B3) (:A_ A) (:L_ *L) (:X_m1_ *X_m1))
+  (&site_split2 (:B2_ B2) (:A_ A) (:X_m2_ *X_m2) (:L2_ *L2))
+  (compose (:A L) (:B L2) (:C *B)))
+
+(DET &footprint
+  (&bbox.cell (:key *E *Id) (:P *P2))
+  (&bbox.box (:key E Id) *B)
+  (NOT (&footprint_inside1 (:P_ P2) (:B_ B)))
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(RULE &covered
+  (&site (:B *S))
+  (&footprint (:P *P_inner))
+  (compose (:A S) (:B P_inner) (:C *P)))
+
+(ALTS $choice "what a crossing carries" $Lookup
+  (ALT $Copy
+    (RULE &covered
+      (&site (:B *S))
+      (&bbox2.cell (:key *Id) (:P *Q))
+      (&bbox2.box (:key Id) *B)
+      (ALL ((&bbox2.cell (:key (:Id *Idm)) (:P Q))
+            (&bbox2.box (:key (:Id Idm)) B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X Q) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (relative (:Base B) (:X Q) (:X_rel *P_inner))
+      (compose (:A S) (:B P_inner) (:C *P))))
+  (ALT $Outline
+    (RULE &covered
+      (&site (:B *S))
+      (input *P)
+      (ALL ((dir_elem (:D *D_m1m))
+            (relative (:Base S) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1m) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (margin (:B P) (:D *D_m1) (:K *K_m2))
+      (margin (:B S) (:D D_m1) (:K K_m2)))))
+
+(RULE &stamp
+  (&covered *P)
+  (input P *Col)
+  (&bg (:C Col)))
+
+(RULE &output
+  (OR ((&stamp *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&stamp P)))))

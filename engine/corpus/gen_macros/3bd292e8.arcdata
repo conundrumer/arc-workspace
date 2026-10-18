@@ -1,0 +1,5 @@
+;; 3bd292e8
+
+(param &wall Color (2))
+(param &small_side Color (5))
+(param &other_side Color (3))

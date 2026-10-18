@@ -1,0 +1,44 @@
+;; 2a5f8217
+
+(DET &bg DominantColor)
+
+(DET &blank ChangedColor)
+
+(INIT &shapes Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &shape
+  (&shapes.component (:key *Col) *P *Id))
+
+(INIT &bbox BoundingBox
+  (key ((&shape ^Col ^Id *P))
+    (cell (P)
+      (&shape Col Id *P))))
+
+(RULE &footprint
+  (&shape *Col *Id *P)
+  (&bbox.box (:key Col Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+;; The blank shapes against a catalog of the other shapes' footprints.
+(INIT &same Inclusion
+  (pattern ((:pattern Col Id) (:m P_inner))
+    (&footprint *Col *Id *P_inner)
+    (NOT (&blank (:C Col))))
+  (observed ((:observed Col Id) (:m P_inner))
+    (&footprint *Col *Id *P_inner)
+    (&blank (:C Col))))
+
+(RULE &paint
+  (&shape (:Col *S_col) (:Id *S_id) *P)
+  (&same.equal (:observed (:Col S_col) (:Id S_id)) (:pattern *Col)))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

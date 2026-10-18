@@ -1,0 +1,75 @@
+;; 25d8a9c8
+
+(DET &axis AxisDomain)
+
+(DET &uniform_color AnyOutNewColor)
+
+(DET &non_uniform_color AnyOutNewColor)
+
+(RULE &cell_split
+  (input *P *Col)
+  (&axis *A)
+  (split P A (:Along *P_inner) (:Across *P_across)))
+
+;; $PairExist: the color a slice holds.
+(INIT &slice_color Singleton
+  (key ((&cell_split *Col ^P_across))
+    (member ((:v Col))
+      (&cell_split *Col P_across))))
+
+(DET &slice_out
+  (&cell_split *E *P *P_inner *P_across)
+  (ex_output E P *Col))
+
+(ALTS $detect "detect" $PairExist
+  (ALT $Count
+    ;; $Count: distinct-color count per slice.
+    (INIT &slice_palette Cardinality
+      (key ((&cell_split *Col ^P_across))
+        (member ((:m Col))
+          (&cell_split *Col P_across))))
+
+    (RULE &ncolors
+      (&slice_palette.size (:key *P_across) *N))
+
+    (DET &count_color
+      (&ncolors *E *P_across *N)
+      (&slice_out E P_across *Col))
+
+    (RULE &output
+      (&cell_split *P *P_across)
+      (&ncolors P_across *N)
+      (&count_color N *Col))
+    (ALT $SliceMap
+      (DET &count_template
+        (&ncolors *E *P_across *N)
+        (&slice_out E P_across *P_inner *Col))
+
+      (RULE &output
+        (&cell_split *P *P_inner *P_across)
+        (&ncolors P_across *N)
+        (&count_template N P_inner *Col)))))
+
+(ALTS $stage "stage" $PerCell
+  (ALT $SliceMap
+    (DET &non_uniform_template
+      (&slice_out *E *P_across (:P_inner *P) *Col)
+      (&slice_color.plural E (:key P_across)))
+
+    (DET &uniform_template
+      (&slice_out *E *P_across (:P_inner *P) *Col)
+      (NOT (&slice_color.plural E (:key P_across))))
+
+    (RULE &output
+      (&cell_split *P *P_inner *P_across)
+      (OR ((NOT (&slice_color.plural (:key P_across)))
+           (&uniform_template (:P P_inner) *Col))
+          ((&slice_color.plural (:key P_across))
+           (&non_uniform_template (:P P_inner) Col))))))
+
+(RULE &output
+  (&cell_split *P *P_across)
+  (OR ((NOT (&slice_color.plural (:key P_across)))
+       (&uniform_color (:C *Col)))
+      ((&slice_color.plural (:key P_across))
+       (&non_uniform_color (:C Col)))))

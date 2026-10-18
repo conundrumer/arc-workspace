@@ -1,0 +1,5 @@
+;; 97c75046
+
+(param &bg Color (7))
+(param &shape Color (0))
+(param &marker Color (5))

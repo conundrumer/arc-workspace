@@ -1,0 +1,4 @@
+;; 8e1813be
+
+(param &bg Color (0))
+(param &square Color (5))

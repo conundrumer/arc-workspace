@@ -1,0 +1,5 @@
+;; 762cd429
+
+(param &bg Color (0))
+(param &factor number (2))
+(param &grow Dir (DIR_R))

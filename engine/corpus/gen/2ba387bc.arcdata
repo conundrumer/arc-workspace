@@ -1,0 +1,6 @@
+;; 2ba387bc
+
+(param &bg Color (0))
+(param &hole_side Dir (DIR_L))
+(param &corner DiagDir (DIAG_TL))
+(param &tile_dim number (4))

@@ -1,0 +1,70 @@
+;; 0f63c0b9
+
+(DET &bg DominantColor)
+
+;; The marks spread along this Dir's axis and their lines run across it. A tie-winning reach travels toward tie_dir.
+(DET &tie_dir DirDomain)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &mark_line
+  (&mark (:P *P_mark))
+  (input *P)
+  (&tie_dir *D)
+  (axis_of D *A)
+  (perp A (:A2 *A_line))
+  (same_line (:A A_line) P (:Q P_mark)))
+
+(RULE &reach_dir
+  (&mark (:P *Key))
+  (&tie_dir (:D *D_tie))
+  (axis_of (:D D_tie) *A)
+  (axis_of *D A))
+
+;; Each line reaches across the marks' axis, one cell per step.
+(INIT &reach Ray
+  (key ((OR ((&mark_line ^P_mark *P))
+            ((&reach_dir (:Key P_mark) *D))
+            ((&reach_dir (:Key P_mark))
+             (input P))))
+    (source (P)
+      (&mark_line P_mark *P))
+    (node (P)
+      (&reach_dir (:Key P_mark))
+      (input *P))
+    (dir (D)
+      (&reach_dir (:Key P_mark) *D))))
+
+(RULE &reach_cell
+  (&mark (:P *Key))
+  (input *P))
+
+(RULE &beaten
+  (&reach.ray (:key *P_mark) *P *K)
+  (&reach_cell (:Key P_mark) P)
+  (&reach.ray (:key (:P_mark *M2)) P (:D *D2) (:K *K2))
+  (&reach_cell (:Key M2) P)
+  (!= M2 P_mark)
+  (OR ((< K2 K))
+      ((= K2 K)
+       (&tie_dir (:D D2)))))
+
+(RULE &territory
+  (&reach.ray (:key (:P_mark *M)) *P)
+  (&reach_cell (:Key M) P)
+  (NOT (&beaten P (:P_mark M)))
+  (&mark (:P M) *Col))
+
+(RULE &paint
+  (&territory *P *Col)
+  (OR ((dir_elem *D)
+       (margin (:B P) D (:K 0)))
+      ((&mark_line P))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))

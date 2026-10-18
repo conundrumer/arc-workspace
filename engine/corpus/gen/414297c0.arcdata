@@ -1,0 +1,4 @@
+;; 414297c0
+
+(param &bg Color (0))
+(param &ink Color (2))

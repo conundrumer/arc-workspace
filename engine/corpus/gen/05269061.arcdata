@@ -1,0 +1,5 @@
+;; 05269061
+
+(param &bg Color (0))
+(param &stripe_axis DiagAxis (DAXIS_AD))
+(param &period number (3))

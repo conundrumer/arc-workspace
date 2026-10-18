@@ -1,0 +1,4 @@
+;; a406ac07
+
+(param &header DiagDir (DIAG_BR))
+(param &bg Color (0))

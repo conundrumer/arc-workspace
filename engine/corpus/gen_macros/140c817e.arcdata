@@ -1,0 +1,5 @@
+;; 140c817e
+
+(param &line Color (1))
+(param &center Color (2))
+(param &corner Color (3))

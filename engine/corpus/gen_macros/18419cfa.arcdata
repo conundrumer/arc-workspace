@@ -1,0 +1,5 @@
+;; 18419cfa
+
+(param &frame Color (8))
+(param &ink Color (2))
+(param &sym Sym (SYM_BOX))

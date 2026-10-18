@@ -1,0 +1,4 @@
+;; 27a77e38
+
+(param &field_dir Dir (DIR_T))
+(param &ground Color (0) (5))

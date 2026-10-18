@@ -1,0 +1,71 @@
+;; 2c608aff
+
+(INIT &bg_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The background is the commonest color; the rest is ink.
+(INIT &bg Order
+  (member ((:t Col))
+    (&bg_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg.maximal (:t Col))))
+
+(RULE &block
+  (&ink *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&ink (:P Q)))
+
+(RULE &marker
+  (&ink *P *Col)
+  (NOT (&block P)))
+
+(RULE &span_axis
+  (&marker (:P *Key))
+  (axis_elem *A))
+
+;; The span the marker and the block delimit, folded along either cardinal
+;; axis; the block's own cells lie outside it.
+(INIT &span Ray
+  (key ((OR ((&marker (:P ^M))
+             (OR ((&block *P))
+                 ((= P M))))
+            ((&span_axis (:Key M) *A)
+             (axis4_of *D A))
+            ((&span_axis (:Key M))
+             (input P))))
+    (source (P)
+      (&marker (:P M))
+      (OR ((&block *P))
+          ((= P M))))
+    (node (P)
+      (&span_axis (:Key M))
+      (input *P))
+    (dir (D)
+      (&span_axis (:Key M) *A)
+      (axis4_of *D A))))
+
+(RULE &span_between
+  (&marker (:P *Key))
+  (input *P)
+  (NOT (&block P))
+  (&span_axis Key *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&span.ray (:key (:M Key)) P D)
+  (&span.ray (:key (:M Key)) P (:D O)))
+
+(RULE &paint
+  (&span_between (:Key *M) *P)
+  (&marker (:P M) *Col))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

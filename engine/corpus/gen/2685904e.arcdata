@@ -1,0 +1,6 @@
+;; 2685904e
+
+(param &base_dir Dir (DIR_B))
+(param &sep_dist number (3))
+(param &pattern_dist number (1))
+(param &bg Color (0))

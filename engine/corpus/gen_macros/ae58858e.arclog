@@ -1,0 +1,201 @@
+;; ae58858e
+
+(INPUT scattered-shapes "the grid holds shapes of one color &shape_color on a field of 0, each shape a 4-connected group of cells, and some shapes have fewer than &min_size cells while others have at least &min_size cells"
+
+  (RULE &color_shapes8_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((diag_dir_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  (DET &changed
+    (ex_input *E *P (:Col *C_in))
+    (ex_output E P *Col)
+    (!= Col C_in))
+
+  (DET_OR_RULE &shape_color RarestColor
+    (&changed *E *P)
+    (ex_input E P *Col))
+
+  ;; The fewest cells a shape has when it is recolored.
+  (DET &min_size NumberDomain)
+
+  (RULE &color_cell
+    (input *P *Col)
+    (&shape_color Col))
+
+  (RULE &shape_cell
+    (&color_cell *P))
+
+  (INIT &color_shapes8 Quotient
+    (edge ((:a (:Key Col) P) (:b (:Key Col) (:P P3)))
+      (OR ((input *P *Col)
+           (&color_shapes8_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (input (:P P3) Col))
+          ((input P Col)
+           (= P3 P))))))
+
+(OUTPUT recolor-large "each shape of at least &min_size cells takes the color &new_color in the output"
+
+  (RULE &color_shapes_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (INIT &color_shapes Quotient
+    (edge ((:a (:Key Col) P) (:b (:Key Col) (:P P3)))
+      (OR ((input *P *Col)
+           (&color_shapes_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (input (:P P3) Col))
+          ((input P Col)
+           (= P3 P)))))
+
+  (RULE &color_shapes_component
+    (&color_shapes.class (:a *Key *P) *Id))
+
+  (DET &new_color AnyOutNewColor)
+
+  (RULE &member
+    (&color_cell *P)
+    (&color_shapes_component P (:Id *X)))
+
+  (INIT &size Cardinality
+    (key ((&member (:X ^Id) *P))
+      (member ((:m P))
+        (&member (:X Id) *P)))))
+
+(OUTPUT keep-rest "every other cell keeps its input color")
+
+(ALTS $a "how the cells of a shape join" $Orthogonal
+  (ALT $Diagonal
+    (INPUT scattered-shapes "shape cells also join at a corner (8-adjacency)"
+      (RULE &color_shapes8_component
+        (&color_shapes8.class (:a *Key *P) *Id))
+
+      (RULE &member
+        (&color_cell *P)
+        (&color_shapes8_component P (:Id *X))))
+    (ALT $Foreground
+      (ALT $Multicolor
+        (INPUT scattered-shapes "the shapes are the 4-connected groups of the cells of any colors other than &bg"
+          (RULE &ink_shapes8_component
+            (&ink_shapes8.class (:a *P) *Id))
+
+          (RULE &member
+            (OR ((&color_cell *P)
+                 (&color_shapes8_component P (:Id *X)))
+                ((&ink_shapes8_component P (:Id X))))))))))
+
+(ALTS $s "which cells make up the shapes" $StoredColor
+  (ALT $Foreground
+    (INPUT scattered-shapes "the shapes are the same-color 4-connected groups of every color other than &bg"
+      (DET_OR_RULE &bg DominantColor)
+
+      (RULE &color_cell
+        (input *P *Col)
+        (NOT (&bg Col))))
+    (ALTS $m "whether one shape may hold several colors" $SameColor
+      (ALT $Multicolor
+        (INPUT scattered-shapes "the shapes are the 4-connected groups of the cells of any colors other than &bg"
+          (RULE &ink_shapes_steps
+            (dir_elem *D)
+            (step_offset D (:V *Delta)))
+          (RULE &ink_shapes8_steps
+            (OR ((dir_elem *D)
+                 (step_offset D (:V *Delta)))
+                ((diag_dir_elem (:D *D2))
+                 (step_offset (:D D2) (:V Delta)))))
+          (RULE &shape_cell
+            (OR ((input *P *Col)
+                 (NOT (&bg Col)))
+                ((&color_cell P))))
+          (INIT &ink_shapes Quotient
+            (edge ((:a P) (:b P3))
+              (OR ((&shape_cell *P)
+                   (&ink_shapes_steps (:Delta *S))
+                   (compose (:A P) (:B S) (:C *P3))
+                   (&shape_cell (:P P3)))
+                  ((&shape_cell P)
+                   (= P3 P)))))
+          (RULE &ink_shapes_component
+            (&ink_shapes.class (:a *P) *Id))
+          (RULE &member
+            (OR ((&color_cell *P)
+                 (&color_shapes_component P (:Id *X)))
+                ((&ink_shapes_component P (:Id X)))))
+          (INIT &ink_shapes8 Quotient
+            (edge ((:a P) (:b P3))
+              (OR ((&shape_cell *P)
+                   (&ink_shapes8_steps (:Delta *S))
+                   (compose (:A P) (:B S) (:C *P3))
+                   (&shape_cell (:P P3)))
+                  ((&shape_cell P)
+                   (= P3 P))))))))))
+
+(ALTS $t "what decides that a shape recolors" $Threshold
+  (ALT $SizeTable
+    (OUTPUT recolor-large "a shape whose cell count &size_recolor holds takes &new_color, and a shape whose cell count &size_keep holds keeps its colors; undefined on an input with a shape whose count neither holds"
+      (DET &shapes_steps
+        (dir_elem *D)
+        (step_offset D (:V *Delta)))
+
+      (DET &shapes_node
+        (ex_input (:E *Key) *P *Col)
+        (&shape_color Col)
+        (ex_output (:E Key) P))
+
+      (INIT &shapes Quotient
+        (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+          (OR ((&shapes_node (:Key *Ky) *P)
+               (&shapes_steps (:Delta *S))
+               (compose (:A P) (:B S) (:C *P2))
+               (&shapes_node (:Key Ky) (:P P2)))
+              ((&shapes_node (:Key Ky) P)
+               (= P2 P)))))
+
+      (DET &shapes_component
+        (&shapes.class (:a *Key *P) *Id))
+
+      (INIT &shape_size Cardinality
+        (key ((&shapes_component (:Key ^E) *P ^Id))
+          (member ((:m P))
+            (&shapes_component (:Key E) *P Id))))
+
+      (DET &recolored
+        (&shapes_component (:Key *E) *P *Id)
+        (&changed E P))
+
+      (DET &size_recolor
+        (&recolored (:E *X_e) (:Id *X_id))
+        (&shape_size.size (:key (:E X_e) (:Id X_id)) *N))
+
+      (DET &size_keep
+        (&shape_size.size (:key (:E *X_e) (:Id *X_id)) *N)
+        (NOT (&recolored (:E X_e) (:Id X_id)))))
+    (RULE &recolor
+      (&size.size (:key (:Id *X)) *N)
+      (&size_recolor N))
+
+    (RULE &keep
+      (&size.size (:key (:Id *X)) *N)
+      (&size_keep N))))
+
+(RULE &keep
+  (&size.size (:key (:Id *X)) *N)
+  (&min_size (:N *K))
+  (< N K))
+
+(RULE &recolor
+  (&size.size (:key (:Id *X)) *N)
+  (&min_size (:N *K))
+  (>= N K))
+
+(RULE &output
+  (OR ((&member (:X *Id) *P)
+       (OR ((&recolor (:X Id))
+            (&new_color (:C *Col)))
+           ((&keep (:X Id))
+            (input P Col))))
+      ((input P Col)
+       (NOT (&shape_cell P)))))

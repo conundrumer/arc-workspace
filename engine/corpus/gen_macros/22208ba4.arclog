@@ -1,0 +1,79 @@
+;; 22208ba4
+
+(RULE &blocks_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(RULE &blocks_node
+  (input *P (:Col *Key))
+  (NOT (&bg (:C Key))))
+
+(INIT &blocks Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&blocks_node (:Key *Ky) *P)
+         (&blocks_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&blocks_node (:Key Ky) (:P P2)))
+        ((&blocks_node (:Key Ky) P)
+         (= P2 P)))))
+
+(RULE &blocks_component
+  (&blocks.class (:a *Key *P) *Id))
+
+(RULE &corner_block
+  (&blocks_component (:Key *Col) *P *Id)
+  (corner_dist P *Diag (:K 0)))
+
+(INIT &bbox BoundingBox
+  (key ((&blocks_component *P ^Id))
+    (cell (P)
+      (&blocks_component *P Id))))
+
+(RULE &mover
+  (&corner_block *Id *Diag *Col)
+  (&corner_block (:Id *Id2) Col)
+  (!= Id Id2))
+
+(RULE &moved_cell
+  (&mover *Id *Diag)
+  (diag_opposite (:D Diag) (:Opp *Diag_in))
+  (&blocks_component (:Key *Col) (:P *P2) Id)
+  (&bbox.box (:key Id) *B)
+  (corner_dir (:C Diag_in) *A (:D *D1))
+  (perp A (:A2 *A2_m1))
+  (corner_dir (:C Diag_in) (:A A2_m1) (:D *D2))
+  (perp A *A2)
+  (axis_elem A)
+  (relative (:Base B) (:X P2) (:X_rel *R_m2))
+  (frame_extent (:P R_m2) A (:N *N1))
+  (axis_elem (:A A2))
+  (relative (:Base B) (:X P2) (:X_rel *R_m3))
+  (frame_extent (:P R_m3) (:A A2) (:N *N2))
+  (dir8_opposite (:D D1) (:D2 *O_m5))
+  (edge_inset (:D O_m5) (:K N1) (:B *B1_m6))
+  (edge_inset (:D D1) (:K N1) (:B *I_m8))
+  (relative (:Base I_m8) (:X 0) (:X_rel *B2_m7))
+  (compose (:A B1_m6) (:B B2_m7) (:C *V_m4))
+  (compose (:A P2) (:B V_m4) (:C *P_step))
+  (dir8_opposite (:D D2) (:D2 *O_m10))
+  (edge_inset (:D O_m10) (:K N2) (:B *B1_m11))
+  (edge_inset (:D D2) (:K N2) (:B *I_m13))
+  (relative (:Base I_m13) (:X 0) (:X_rel *B2_m12))
+  (compose (:A B1_m11) (:B B2_m12) (:C *V_m9))
+  (compose (:A P_step) (:B V_m9) (:C *P)))
+
+(RULE &vacated
+  (&mover *Id)
+  (&blocks_component *P Id))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&moved_cell P *Col))
+      ((NOT (&moved_cell P))
+       (&vacated P)
+       (&bg (:C Col)))
+      ((NOT (&moved_cell P))
+       (NOT (&vacated P))
+       (= Col Col_in))))

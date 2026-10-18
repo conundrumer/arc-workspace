@@ -1,0 +1,47 @@
+;; 3906de3d
+
+(DET &grav DirDomain)
+
+(DET &bg DominantColor)
+
+(DET &mover RarestColor)
+
+(RULE &mover2
+  (input *P *Col)
+  (&mover (:C Col)))
+
+;; Each mover cell travels toward the gravity edge and stops against the
+;; structure or against the movers already packed ahead of it.
+(INIT &pack Distance
+  (weight ((:a P2) (:b P) (:W K))
+    (&mover2 *P)
+    (&grav *D)
+    (&mover2 (:P *P2))
+    (!= P P2)
+    (gap D P (:Q P2) *K))
+  (source_distance ((:n P) K)
+    (OR ((&mover2 *P)
+         (&grav *D)
+         (margin (:B P) D *K))
+        ((&mover2 P)
+         (&grav (:D *D2))
+         (input (:P *P2) *Col)
+         (NOT (&bg (:C Col)))
+         (NOT (&mover (:C Col)))
+         (gap (:D D2) P (:Q P2) K)))))
+
+(RULE &landed
+  (&pack.distance (:n *P2) *K)
+  (&grav *D)
+  (jump_offset D K *V)
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&landed *P)
+       (&mover (:C *Col)))
+      ((input P Col)
+       (NOT (&mover2 P))
+       (NOT (&landed P)))
+      ((&mover2 P)
+       (NOT (&landed P))
+       (&bg (:C Col)))))

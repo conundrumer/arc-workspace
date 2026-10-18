@@ -1,0 +1,94 @@
+;; 278e5215
+
+;; The legend box edge the line row sits on.
+(DET &line_dir DirDomain)
+
+(RULE &across
+  (&line_dir *D)
+  (axis_of D (:A *A3))
+  (perp (:A A3) (:A2 *A)))
+
+(DET &bg DominantColor)
+
+(DET &stencil VanishedColor)
+
+(RULE &legend_cell
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&stencil (:C Col))))
+
+(INIT &legend_box BoundingBox
+  (cell (P)
+    (&legend_cell *P)))
+
+(RULE &legend_inner
+  (&legend_cell *P *Col)
+  (&legend_box.box *B)
+  (ALL ((&legend_cell P (:Col *Colm))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &column_color_split1
+  (&legend_inner (:P_inner *P_inner_) *Col)
+  (&across (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_inner_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_inner_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_col_))
+  (relative (:Base P_col_) (:X P_inner_) (:X_rel *X_m1_)))
+
+(RULE &stencil_cell
+  (input *P *Col)
+  (&stencil (:C Col)))
+
+(INIT &stencil_box BoundingBox
+  (cell (P)
+    (&stencil_cell *P)))
+
+(RULE &out_split1
+  (&stencil_box.box *B)
+  (input *P)
+  (relative (:Base B) (:X P) (:X_rel *P_inner_))
+  (&across (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_inner_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_inner_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_col_))
+  (relative (:Base P_col_) (:X P_inner_) (:X_rel *X_m1_)))
+
+(RULE &line_color
+  (&legend_inner *P_inner *Col)
+  (&line_dir *D)
+  (margin (:B P_inner) D (:K 0)))
+
+(RULE &column_color
+  (&legend_inner *P_inner *Col)
+  (&line_dir *D)
+  (NOT (margin (:B P_inner) D (:K 0)))
+  (&across *A)
+  (&column_color_split1 (:P_inner_ P_inner) (:A_ A) (:P_col_ *P_col) (:X_m1_ *X_m1)))
+
+(RULE &output
+  (input (:P *P2))
+  (&stencil_box.box *B)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P2) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (&across *A)
+  (&out_split1 (:P_inner_ P) (:A_ A) (:P_col_ *P_col) (:X_m1_ *X_m1))
+  (IF ((&stencil_cell (:P P2)))
+      ((&column_color P_col *Col))
+      ((&line_color Col))))

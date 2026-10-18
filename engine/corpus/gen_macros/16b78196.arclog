@@ -1,0 +1,239 @@
+;; 16b78196
+
+(RULE &objs_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(INIT &objs Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&objs_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &objs_component
+  (&objs.class (:a *P) *Id))
+
+(RULE &obj_cell
+  (&objs_component *P (:Id *O)))
+
+(RULE &elem_split1
+  (&obj_cell *O (:P *P_))
+  (axis_of *D (:A *A_stack_))
+  (axis_of (:D *D_m1) (:A A_stack_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P_) (:X_rel *L_)))
+
+(RULE &score_split1
+  (&obj_cell *O (:P *P_))
+  (axis_of *D (:A *A_stack_))
+  (axis_of (:D *D_m1) (:A A_stack_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P_) (:X_rel *L_)))
+
+(RULE &obj_color
+  (&obj_cell *O *P)
+  (input P *Col))
+
+(INIT &bbox BoundingBox
+  (key ((&obj_cell ^O *P))
+    (cell (P)
+      (&obj_cell O *P))))
+
+(RULE &bar
+  (&bbox.box (:key *O) (:B *B_obj))
+  (opposite *D (:Opp *O_m1))
+  (margin (:B B_obj) D (:K 0))
+  (margin (:B B_obj) (:D O_m1) (:K 0))
+  (axis_of D *A))
+
+(RULE &stack_dir
+  (&bar *A)
+  (perp A *A2)
+  (axis_of *D (:A A2)))
+
+(INIT &front Order
+  (key ((OR ((&obj_cell ^O *P)
+             (&stack_dir ^D)
+             (axis_of D (:A *A_stack))
+             (&elem_split1 (:P_ P) (:A_stack_ A_stack) (:X_m1_ *X_m1) (:L_ ^L))
+             (margin (:B P) D *K))
+            ((&obj_cell O P)
+             (&stack_dir D)
+             (axis_of D (:A A_stack))
+             (&score_split1 (:P_ P) (:A_stack_ A_stack) (:X_m1_ X_m1) (:L_ L))
+             (margin (:B P) D K))))
+    (member ((:t (:V P) (:S K)))
+      (&obj_cell O *P)
+      (&stack_dir D)
+      (axis_of D (:A *A_stack))
+      (&elem_split1 (:P_ P) (:A_stack_ A_stack) (:X_m1_ *X_m1) (:L_ L))
+      (margin (:B P) D *K))
+    (score ((:t (:V P) (:S K)) (:S K))
+      (&obj_cell O *P)
+      (&stack_dir D)
+      (axis_of D (:A *A_stack))
+      (&score_split1 (:P_ P) (:A_stack_ A_stack) (:X_m1_ *X_m1) (:L_ L))
+      (margin (:B P) D *K))))
+
+(RULE &face
+  (&front.minimal (:key *O *D) (:t (:V *P))))
+
+(RULE &seat_offset
+  (opposite *D (:Opp *Dn))
+  (&face *O (:D Dn) (:P *N))
+  (NOT (&bar O))
+  (&face (:O *Host) D *P)
+  (!= O Host)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (relative (:Base N) (:X Q) (:X_rel *R)))
+
+(RULE &rest
+  (OR ((&seat_offset *Host *O *D *R))
+      ((&seat_offset Host O D (:R *R3))
+       (axis_of D (:A *A_m1))
+       (perp (:A A_m1) (:A2 *A2_m2))
+       (axis_of (:D *D_slide) (:A A2_m2))
+       (step_offset (:D D_slide) (:V *V_m3))
+       (compose (:A R3) (:B V_m3) (:C R)))))
+
+(RULE &gap
+  (&rest *Host *O *D *R)
+  (opposite D (:Opp *Dn))
+  (&face O (:D Dn) (:P *N))
+  (compose (:A N) (:B R) (:C *Q3))
+  (step_offset (:D Dn) (:V *V_m1))
+  (compose (:A Q3) (:B V_m1) (:C *Q))
+  (NOT (&obj_cell (:O Host) (:P Q))))
+
+(RULE &catch
+  (&gap *Host *O *D *R (:Q *Q2))
+  (axis_of D (:A *A_stack))
+  (&face (:O Host) D (:P *P_f))
+  (perp (:A A_stack) (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P_f) (:D D_m2) (:K *K_m3))
+  (margin (:B Q2) (:D D_m2) (:K K_m3)))
+
+(RULE &sunk
+  (&rest *Host *O *D *R)
+  (&obj_cell O *P)
+  (compose (:A P) (:B R) (:C *Q))
+  (&obj_cell (:O Host) (:P Q)))
+
+(RULE &seat_flush
+  (&seat_offset *Host *O *D *R)
+  (NOT (&gap Host O D R))
+  (NOT (&sunk Host O D R)))
+
+(RULE &loose
+  (&seat_flush *Host *O *D *R)
+  (axis_of D (:A *A_m1))
+  (perp (:A A_m1) (:A2 *A2_m2))
+  (axis_of (:D *D_slide) (:A A2_m2))
+  (step_offset (:D D_slide) (:V *V_m3))
+  (compose (:A R) (:B V_m3) (:C *R2))
+  (NOT (&catch Host O D (:R R2)))
+  (NOT (&sunk Host O D (:R R2))))
+
+(RULE &seat
+  (&seat_flush *Host *O *D *R)
+  (NOT (&loose Host O D R)))
+
+(RULE &on_grid
+  (&obj_cell *O *P)
+  (input (:P *Q))
+  (relative (:Base P) (:X Q) (:X_rel *Delta))
+  (&bbox.box (:key O) (:B *B_obj))
+  (compose (:A B_obj) (:B Delta) (:C *B_placed))
+  (relative (:Base 0) (:X B_placed) (:X_rel *R_m1))
+  (axis_of (:D *D1_m2) (:A *A1_m3))
+  (opposite (:D D1_m2) (:Opp *O1_m4))
+  (perp (:A A1_m3) (:A2 *A2_m5))
+  (axis_of (:D *D2_m6) (:A A2_m5))
+  (opposite (:D D2_m6) (:Opp *O2_m7))
+  (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+  (>= K1_m8 0)
+  (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+  (>= K2_m9 0)
+  (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+  (>= K3_m10 0)
+  (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+  (>= K4_m11 0))
+
+(RULE &seat_step
+  (&on_grid (:O *H) (:Delta *D_host))
+  (&seat (:Host H) *O *R)
+  (compose (:A D_host) (:B R) (:C *Delta))
+  (&on_grid O Delta))
+
+;; The bar stays where it is; a piece reaches wherever it can seat on
+;; something already placed, so long as it lands on the grid.
+(INIT &reach Propagation
+  (source ((:n (:O B) Delta))
+    (&bar (:O *B))
+    (= *Delta 0))
+  (edge ((:a (:O H) (:Delta D_host)) (:b O Delta))
+    (&seat_step *H *D_host *O *Delta)))
+
+(RULE &placement
+  (&reach.reached (:n *O *Delta)))
+
+(RULE &place_cell
+  (&placement *O *Delta)
+  (&obj_cell O (:P *P2))
+  (compose (:A P2) (:B Delta) (:C *P)))
+
+;; The reach regrown with each placement held.
+(INIT &beside Propagation
+  (key ((&placement (:O ^O_h) (:Delta ^D_h)))
+    (edge ((:a (:O H) (:Delta D_host)) (:b O Delta))
+      (&seat_step *H *D_host *O *Delta)
+      (&placement (:O H) (:Delta D_host))
+      (&bar (:O *B))
+      (ALL ((&place_cell O Delta (:P *Q))
+            (&place_cell (:O B) (:Delta *D2) (:P Q)))
+           ((= O B)))
+      (ALL ((&place_cell O Delta (:P *Qm))
+            (&place_cell (:O O_h) (:Delta D_h) (:P Qm)))
+           ((= O O_h)))
+      (OR ((!= O O_h))
+          ((= Delta D_h)))))
+  (source ((:n (:O B) Delta))
+    (&bar (:O *B))
+    (= *Delta 0)))
+
+(RULE &kept
+  (&beside.reached (:key *O_h *D_h) (:n *O)))
+
+(RULE &filled
+  (&place_cell *O *Delta *P)
+  (ALL ((&obj_cell (:O *O2)))
+       ((&kept (:O_h O) (:D_h Delta) (:O O2))))
+  (&obj_color O *Col))
+
+(RULE &output
+  (OR ((&filled *P *Col))
+      ((input P)
+       (NOT (&filled P))
+       (&bg (:C Col)))))

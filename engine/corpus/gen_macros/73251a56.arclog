@@ -1,0 +1,165 @@
+;; 73251a56
+
+(DET &transform D4Domain)
+
+(RULE &mirror
+  (input *P)
+  (&transform *D)
+  (apply D P (:P_out *Q)))
+
+(RULE &on_fix
+  (input *P)
+  (&mirror P (:Q P)))
+
+(RULE &fix_corner
+  (&on_fix *P)
+  (corner_dist P *Diag (:K 0)))
+
+(RULE &seek_dir
+  (&fix_corner (:Diag *D)))
+
+(DET &hole ChangedColor)
+
+(RULE &intact
+  (input *P *Col)
+  (NOT (&hole (:C Col))))
+
+(RULE &seek_blocked
+  (&intact *P))
+
+(RULE &seek_node
+  (input *P)
+  (NOT (&seek_blocked P)))
+
+(RULE &hole2
+  (input *P *Col)
+  (&hole (:C Col)))
+
+(RULE &seek_source
+  (&hole2 *P))
+
+;; Each hole seeks toward a fix corner, halting at the first intact cell.
+(INIT &seek Distance
+  (key ((&seek_source (:P ^O))
+        (&seek_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&seek_source (:P O))
+           (&seek_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&seek_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&seek_node (:P Q)))
+          ((&seek_source (:P O))
+           (&seek_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&seek_node (:P Q))
+           (= A2 O))
+          ((&seek_source (:P O))
+           (&seek_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&seek_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&seek_node (:P Q)))))
+    (source ((:n O))
+      (&seek_source (:P O))
+      (&seek_dir D))))
+
+(RULE &seek_ray
+  (&seek.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &seek_end
+  (&seek_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&seek_ray (:P Q) D Origin)))
+
+(RULE &residual
+  (&hole2 *P)
+  (&mirror P *Q)
+  (&hole2 (:P Q)))
+
+(ALTS $choice "what a hole repaints from" $Slide
+  (ALT $Bg
+    (INIT &dominant_count Cardinality
+      (key ((&intact *P ^Col))
+        (member ((:m P))
+          (&intact *P Col))))
+
+    (RULE &fix_color
+      (&intact *P *Col)
+      (&on_fix P))
+
+    (INIT &dominant Order
+      (member ((:t Col))
+        (&dominant_count.size (:key *Col)))
+      (score ((:t Col) (:S N))
+        (&dominant_count.size (:key *Col) *N)))
+
+    (RULE &output
+      (OR ((&residual *P)
+           (IF ((&on_fix P))
+               ((&fix_color *Col))
+               ((&dominant.maximal (:t Col)))))
+          ((&intact P Col))
+          ;; A hole repaints from its mirror cell.
+          ((&hole2 P)
+           (&mirror P *Q)
+           (&intact (:P Q) Col)))))
+  (ALT $Label
+    (DET &differ
+      (ex_output *E *P *Col)
+      (ex_output E (:P *Q) (:Col *Col2))
+      (!= Col Col2))
+
+    (DET &same
+      (ex_output *P)
+      (ex_output (:P *Q))
+      (NOT (&differ P Q)))
+
+    (INIT &canon Quotient
+      (equivalent ((:a P) (:b Q))
+        (&same *P *Q)))
+
+    (DET &label
+      (&canon.class (:a *P) *Id))
+
+    (RULE &label_color
+      (&label *P *Id)
+      (&intact P *Col))
+
+    (RULE &output
+      (OR ((&hole2 *P)
+           (&label P *Id)
+           (&label_color Id *Col))
+          ((&intact P Col))))))
+
+(RULE &output
+  (OR ((&intact *P *Col))
+      ;; A hole repaints from its mirror cell.
+      ((&hole2 P)
+       (&mirror P *Q)
+       (&intact (:P Q) Col))
+      ((&residual P)
+       (&seek_end (:P *E) *D (:Origin P))
+       (step_offset D (:V *V_m1))
+       (compose (:A E) (:B V_m1) (:C *P2))
+       (input (:P P2))
+       (&intact (:P P2) Col))))

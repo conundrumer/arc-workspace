@@ -1,0 +1,5 @@
+;; 6ca952ad
+
+(param &bg Color (7))
+(param &grav Dir (DIR_B))
+(param &heavy number (4))

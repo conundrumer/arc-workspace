@@ -1,0 +1,5 @@
+;; 1b60fb0c
+
+(param &ink Color (1))
+(param &fill Color (2))
+(param &sym D4 (D4_CW))

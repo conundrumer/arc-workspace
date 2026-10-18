@@ -1,0 +1,320 @@
+;; 21897d95
+
+(DET &arrow_color VanishedColor)
+
+(DET &sweep_axis AxisDomain)
+
+;; The same-colored patches of the grid.
+(INIT &patch Connectivity
+  (key ((input *P ^Col))
+    (node (P)
+      (input *P Col))))
+
+(RULE &patch_cell
+  (&patch.component *P (:Id *K)))
+
+(INIT &pbox BoundingBox
+  (key ((&patch_cell ^K *P))
+    (cell (P)
+      (&patch_cell K *P))))
+
+;; A patch against the two arms of each corner of its box — the two box
+;; edges meeting there.
+(INIT &arms Inclusion
+  (pattern ((:pattern K Piv) (:m P))
+    (&pbox.box (:key *K) *B)
+    (input *P)
+    (inside (:A P) B)
+    (same_dist *D (:P1 P) (:P2 B))
+    (corner_dir (:C *Piv) D))
+  (observed ((:observed K) (:m P))
+    (&patch_cell *K *P)))
+
+(RULE &patch_corner
+  (&pbox.box (:key *K) *B)
+  (&patch_cell K *P)
+  (inside (:A P) B)
+  (same_corner *D (:P1 P) (:P2 B)))
+
+(RULE &bracket
+  (&arms.equal (:observed *K) (:pattern K *Piv))
+  (diag_opposite (:D Piv) (:Opp *M))
+  (NOT (&patch_corner K (:D M))))
+
+(RULE &marked
+  (input *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (input (:P Q) *Col)
+  (&arrow_color (:C Col)))
+
+(RULE &arrow2
+  (&marked (:P *P_center) *D)
+  (opposite D (:Opp *D_back))
+  (NOT (&marked (:P P_center) (:D D_back)))
+  (perp_dir D (:D2 *B))
+  (opposite (:D B) (:Opp *B2))
+  (&marked (:P P_center) (:D B))
+  (&marked (:P P_center) (:D B2)))
+
+(INIT &arrow_host Singleton
+  (key ((&arrow2 (:P_center ^P) *D)
+        (neighbor P D (:Q *S))
+        (perp_dir D (:D2 *B))
+        (neighbor (:P S) (:D B) *Q)
+        (input (:P Q) *Col))
+    (member ((:v Col))
+      (&arrow2 (:P_center P) *D)
+      (neighbor P D (:Q *S))
+      (perp_dir D (:D2 *B))
+      (neighbor (:P S) (:D B) *Q)
+      (input (:P Q) *Col))))
+
+(RULE &arrow_at
+  (&arrow2 *P_center *D))
+
+(RULE &arrow_cell
+  (&arrow2 *P_center)
+  (OR ((&marked (:P P_center) (:Q *P)))
+      ((= P P_center))))
+
+(INIT &bracket_host Singleton
+  (key ((&bracket ^K))
+    (member ((:v Col))
+      (&pbox.box *B)
+      (input *P *Col)
+      (inside (:A P) B)
+      (NOT (&patch_cell K P)))))
+
+(RULE &bracket_at
+  (&bracket *K))
+
+;; The arms lie on the pivot's two edges, a quarter turn apart; the grid
+;; turns the way they sweep, from the stored axis.
+(RULE &sense
+  (&bracket *Piv)
+  (&sweep_axis *A)
+  (diag_dirs (:D Piv) A (:D1 *D_from) (:D2 *D_to))
+  (turn *S (:D D_from) (:D2 D_to)))
+
+(ALTS $arrow "what an arrow is" $ATee
+  (ALT $AGlyph
+    (INIT &color_id Quotient
+      (equivalent ((:a Col) (:b Col))
+        (&arrow2 *E (:P_center *P))
+        (ex_input E P *Col)))
+
+    (DET &arrow_id
+      (&arrow2 *E (:P_center *P))
+      (ex_input E P *Col)
+      (&color_id.class (:a Col) *Id))
+
+    (INIT &abox BoundingBox
+      (key ((&arrow_id ^E (:P ^K)))
+        (cell (P)
+          (OR ((&marked E (:P K) (:Q *P)))
+              ((= P K))))))
+
+    (DET &center
+      (&arrow_id *E (:P *K) *Id)
+      (&abox.box (:key E K) *B)
+      (inside (:A K) B)
+      (relative (:Base B) (:X K) (:X_rel *P)))
+
+    (DET &glyph
+      (&arrow_id *E (:P *K) *Id)
+      (&abox.box (:key E K) *B)
+      (ex_input E (:P *Q) *Col)
+      (inside (:A Q) B)
+      (relative (:Base B) (:X Q) (:X_rel *P))
+      (OR ((&marked E (:P K) Q))
+          ((= Q K)
+           (&arrow_color (:C Col)))))
+
+    (DET &tip
+      (&arrow_id *E (:P *K) *Id)
+      (&arrow2 E (:P_center K) *D))
+
+    ;; The arrow charts: each one's picture, its center, and where it
+    ;; points. Chart 0's center is a hole that reads a payload; chart 1 is
+    ;; filled and passes its host's color.
+    (RIGID_DET &arrow
+      (&glyph *E *K *Id *P *Col)
+      (&center *E *K *Id *P)
+      (&tip *E *K *Id *D))
+
+    ;; The chart's frame, for reading its free cells — the box-complement of
+    ;; the ink.
+    (INIT &aframe Frame
+      (key ((&arrow.glyph (:Pose ^D) ^Id *P)
+            (axis_elem *A)
+            (frame_extent P A *N))
+        (extent (A N)
+          (&arrow.glyph (:Pose D) Id *P)
+          (axis_elem *A)
+          (frame_extent P A *N))))
+
+    (INIT &aocc Occurrences
+      (key ((OR ((&arrow.glyph (:Pose ^D) ^Id)
+                 (input *P *Col))
+                ((&arrow.glyph (:Pose D) Id P Col))))
+        (cell (P (:v Col))
+          (&arrow.glyph (:Pose D) Id)
+          (input *P *Col))
+        (shape (P (:v Col))
+          (&arrow.glyph (:Pose D) Id *P *Col))))
+
+    (RULE &placed_arrow
+      (&aocc.occurrence (:key *Id *D) (:P *A))
+      (&arrow.center (:Pose D) Id (:P *P_i))
+      (compose A (:B P_i) (:C *P_center))
+      (IF ((&arrow.glyph (:Pose D) Id (:P P_i)))
+          ()
+          ((input (:P P_center) *Col)
+           (NOT (&arrow_color (:C Col))))))
+
+    (INIT &arrow_host Singleton
+      (key ((&placed_arrow *Id *D *A (:P_center ^P))
+            (&aframe.cell (:key Id D) (:P *P_f))
+            (NOT (&arrow.glyph (:Pose D) Id (:P P_f)))
+            (&arrow.center (:Pose D) Id (:P *P_i))
+            (!= P_f P_i)
+            (compose A (:B P_f) (:C *Q))
+            (input (:P Q) *Col))
+        (member ((:v Col))
+          (&placed_arrow *Id *D *A (:P_center P))
+          (&aframe.cell (:key Id D) (:P *P_f))
+          (NOT (&arrow.glyph (:Pose D) Id (:P P_f)))
+          (&arrow.center (:Pose D) Id (:P *P_i))
+          (!= P_f P_i)
+          (compose A (:B P_f) (:C *Q))
+          (input (:P Q) *Col))))
+
+    (RULE &arrow_at
+      (&placed_arrow *Id (:D *D2) *P_center)
+      (&arrow.tip (:Pose D2) Id *D))
+
+    (RULE &arrow_cell
+      (&placed_arrow *Id *D *A *P_center)
+      (OR ((&arrow.glyph (:Pose D) Id (:P *P_g))
+           (compose A (:B P_g) (:C *P)))
+          ((= P P_center))))))
+
+(ALTS $bracket "what a bracket is" $BArms
+  (ALT $BGlyph
+    ;; TODO no-det-plan: &bracket_sense: the plan gives no verdict
+    (DET &bracket_sense)
+
+    (DET &bracket_pic
+      (&bracket *E *K)
+      (&pbox.box E (:key K) *B)
+      (&patch_cell E K (:P *Q))
+      (ex_input E (:P Q) *Col)
+      (inside (:A Q) B)
+      (relative (:Base B) (:X Q) (:X_rel *P)))
+
+    (DET &bcmp_pattern_member
+      (&bracket_pic *E *K *P *Col))
+
+    (INIT &bcmp Inclusion
+      (pattern ((:pattern (:E Pattern_e) (:K Pattern_k)) (:m (:P M_p) (:Col M_col)))
+        (&bcmp_pattern_member (:E *Pattern_e) (:K *Pattern_k) (:P *M_p) (:Col *M_col)))
+      (observed ((:observed (:E X_e) (:K X_k)) (:m (:P M_p) (:Col M_col)))
+        (&bcmp_pattern_member (:E *X_e) (:K *X_k) (:P *M_p) (:Col *M_col))))
+
+    (INIT &bpick Quotient
+      (equivalent ((:a (:E X_e) (:K X_k)) (:b (:E Y_e) (:K Y_k)))
+        (&bcmp.equal (:observed (:E *X_e) (:K *X_k)) (:pattern (:E *Y_e) (:K *Y_k)))))
+
+    (DET &bracket_glyph
+      (&bpick.class (:a *E *K) *Id)
+      (&bracket_pic E K *P *Col))
+
+    (INIT &bframe Frame
+      (key ((&bracket_glyph ^Id *P)
+            (axis_elem *A)
+            (frame_extent P A *N))
+        (extent (A N)
+          (&bracket_glyph Id *P)
+          (axis_elem *A)
+          (frame_extent P A *N))))
+
+    (INIT &bshape Inclusion
+      (pattern ((:pattern Id) (:m P Col))
+        (&bracket_glyph *Id *P *Col))
+      (observed ((:observed K) (:m (:P P_i) Col))
+        (&pbox.box (:key *K) *B)
+        (&patch_cell K (:P *Q))
+        (input (:P Q) *Col)
+        (inside (:A Q) B)
+        (relative (:Base B) (:X Q) (:X_rel *P_i))))
+
+    (INIT &bracket_host Singleton
+      (key ((&bshape.equal (:observed ^K) (:pattern *Id))
+            (&pbox.box (:key K) *B)
+            (&bframe.cell (:key Id) (:P *P_i))
+            (NOT (&bracket_glyph Id (:P P_i)))
+            (compose (:A B) (:B P_i) (:C *Q))
+            (input (:P Q) *Col))
+        (member ((:v Col))
+          (&bshape.equal (:observed K) (:pattern *Id))
+          (&pbox.box *B)
+          (&bframe.cell (:key Id) (:P *P_i))
+          (NOT (&bracket_glyph Id (:P P_i)))
+          (compose (:A B) (:B P_i) (:C *Q))
+          (input (:P Q) *Col))))
+
+    (RULE &bracket_at
+      (&bshape.equal (:observed *K)))
+
+    (RULE &sense
+      (&bshape.equal (:pattern *Id))
+      (&bracket_sense Id *S))))
+
+(RULE &covered
+  (OR ((&arrow_cell (:P_center *K) *P)
+       (&arrow_host.value (:key (:P K)) (:v *Col)))
+      ((&bracket_at (:K *K2))
+       (&bracket_host.value (:key (:K K2)) (:v Col))
+       (&patch_cell (:K K2) P))))
+
+(INIT &region Connectivity
+  (key ((input *P (:Col *C0))
+        (OR ((&covered P ^Col))
+            ((NOT (&covered P))
+             (= Col C0))))
+    (node (P)
+      (input *P (:Col *C0))
+      (OR ((&covered P Col))
+          ((NOT (&covered P))
+           (= Col C0))))))
+
+(RULE &region_of
+  (&region.component *P (:Id *K)))
+
+(RULE &paint
+  (&arrow_at (:P_center *K2) *D)
+  (input (:P K2) (:Col *C_mid))
+  (&arrow_host.value (:key (:P K2)) (:v *C_host))
+  (neighbor (:P K2) D (:Q *S))
+  (neighbor (:P S) D *Q)
+  (&region_of (:P Q) *K)
+  (OR ((NOT (&arrow_color (:C C_mid)))
+       (= *Col C_mid))
+      ((&arrow_color (:C C_mid))
+       (= Col C_host))))
+
+(RULE &region_out
+  (&region.component (:key (:Col *C0)) (:Id *K))
+  (OR ((&paint K *Col))
+      ((NOT (&paint K))
+       (= Col C0))))
+
+(RULE &output
+  (&region_of (:P *P2) (:K *R))
+  (&region_out (:K R) *Col)
+  (OR ((&sense *S)
+       (c4_turn S (:T *D))
+       (apply D (:P P2) (:P_out *P)))
+      ((NOT (&sense))
+       (= P P2))))

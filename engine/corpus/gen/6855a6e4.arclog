@@ -1,0 +1,46 @@
+;; 6855a6e4
+
+(DET &bg DominantColor)
+
+(DET &mirror UnchangedColor)
+
+(DET &mover ChangedColor)
+
+(RULE &mover_cell
+  (input *P *Col)
+  (&mover (:C Col)))
+
+(RULE &rays_blocked
+  (input *P *Col)
+  (&mirror (:C Col)))
+
+;; Movers cast every way and halt on the first mirror cell.
+(INIT &rays Ray
+  (source (P)
+    (&mover_cell *P))
+  (node (P)
+    (input *P)
+    (NOT (&rays_blocked P)))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &image
+  (&rays.end (:P *E) *D (:Origin *P2))
+  (neighbor (:P E) D (:Q *B))
+  (input (:P B))
+  (axis_of D *A)
+  (axis_inversion A (:T *F))
+  (relative (:Base B) (:X P2) (:X_rel *V))
+  (apply (:D F) (:P V) (:P_out *V2))
+  (compose (:A B) (:B V2) (:C *P)))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&image P)
+       (&mover (:C *Col)))
+      ((NOT (&image P))
+       (&mover_cell P)
+       (&bg (:C Col)))
+      ((NOT (&image P))
+       (NOT (&mover_cell P))
+       (= Col Col_in))))

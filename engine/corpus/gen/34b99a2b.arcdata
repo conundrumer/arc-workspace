@@ -1,0 +1,26 @@
+;; 34b99a2b
+
+(representative 3428a4f5)
+
+(param &frame_dim (Axis number) (AXIS_V 5) (AXIS_H 4))
+(param &tile_decompose (Position Position Position) (Division
+  ((:A AXIS_V) (:Count 1) (:Size 5) (:Gap 0))
+  ((:A AXIS_H) (:Count 2) (:Size 4) (:Gap 1))))
+(param &divide_axis Axis (AXIS_H))
+(param &divide_gap number (1))
+(param &divisor number (2))
+(param &combine (Ident Color Position Color)
+  (0 0 (grid
+    (0 0)))
+  (1 2 (grid
+    (0 5)))
+  (2 2 (grid
+    (8 0)))
+  (3 0 (grid
+    (8 5))))
+(param &frame Position (Frame
+  ((:A AXIS_V) (:N 5))
+  ((:A AXIS_H) (:N 4))))
+(param &bg Color (0))
+(param &out_fill Color (2))
+(param &fill_at number (1))

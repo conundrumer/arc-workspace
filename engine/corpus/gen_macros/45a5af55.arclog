@@ -1,0 +1,94 @@
+;; 45a5af55
+
+(RULE &core_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(RULE &peel_depth_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(RULE &line_col_split1
+  (input (:P *P_) *Col)
+  (axis_of (:D *D_in) (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_line_))
+  (relative (:Base P_line_) (:X P_) (:X_rel *X_m1_)))
+
+;; The input edge the innermost stripe sits on.
+(DET &inner_dir DirDomain)
+
+(RULE &line_col
+  (input *P *Col)
+  (&inner_dir (:D *D_in))
+  (axis_of (:D D_in) *A)
+  (&line_col_split1 (:P_ P) (:A_ A) (:P_line_ *P_line) (:X_m1_ *X_m1)))
+
+(RULE &inner_col
+  (&line_col *P_line *Col)
+  (&inner_dir (:D *D_in))
+  (margin (:B P_line) (:D D_in) (:K 0)))
+
+;; The innermost stripe: the run of inner-colored lines reaching the inner edge.
+(INIT &core Propagation
+  (source ((:n P_line))
+    (&line_col *P_line)
+    (&inner_dir (:D *D_in))
+    (margin (:B P_line) (:D D_in) (:K 0))
+    (&line_col P_line *Col)
+    (&inner_col Col))
+  (edge ((:a P_line) (:b P_line2))
+    (&line_col *P_line *Col)
+    (&inner_col Col)
+    (&core_steps (:Delta *S))
+    (compose (:A P_line) (:B S) (:C *P_line2))
+    (&line_col (:P_line P_line2) (:Col *Col2))
+    (&inner_col (:Col Col2))))
+
+;; Every other line paints one ring.
+(INIT &ring_tally Cardinality
+  (member ((:m P_line))
+    (&line_col *P_line)
+    (NOT (&core.reached (:n P_line))))
+  (domain ()))
+
+(RULE &side
+  (input *P)
+  (&inner_dir (:D *D_in))
+  (axis_of (:D D_in) *A)
+  (&ring_tally.size (:N *M))
+  (edge_inset (:D D_in) (:K M) (:B *Ins))
+  (compose (:A P) (:B Ins) (:C *P_wide))
+  (frame_extent (:P P_wide) A *N))
+
+(INIT &frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&side *N)))
+
+;; The frame peels into rings, one per depth.
+(INIT &peel Boundary
+  (cell (P)
+    (&frame.cell *P)))
+
+(INIT &peel_depth Distance
+  (edge ((:a P) (:b P2))
+    (&frame.cell *P)
+    (&peel_depth_steps (:Delta *S))
+    (compose (:A P) (:B S) (:C *P2))
+    (&frame.cell (:P P2)))
+  (source ((:n P))
+    (&peel.boundary *P)))
+
+(RULE &output
+  (&peel_depth.distance (:n *P) *K)
+  (&inner_dir (:D *D_in))
+  (opposite (:D D_in) (:Opp *D_out))
+  (&line_col *P_line *Col)
+  (margin (:B P_line) (:D D_out) K))

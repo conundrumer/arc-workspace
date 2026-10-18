@@ -1,0 +1,9 @@
+;; 604001fa
+
+(param &bg Color (0))
+(param &mark Color (7))
+(param &corner_color (DiagDir Color)
+  (DIAG_TL 3)
+  (DIAG_TR 8)
+  (DIAG_BL 4)
+  (DIAG_BR 6))

@@ -1,0 +1,134 @@
+;; 332f06d7
+
+(DET &bg UnchangedColor)
+
+(DET &piece ChangedColor)
+
+(DET &corridor ColorDomain)
+
+(RULE &piece_cell
+  (input *P *Col)
+  (&piece (:C Col)))
+
+(RULE &open
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The piece fits at a relative when its every cell lands in the corridor.
+(INIT &fits Occurrences
+  (cell (P)
+    (&open *P))
+  (shape (P)
+    (&piece_cell *P)))
+
+(RULE &slide_dir
+  (&fits.occurrence (:P *Delta))
+  (dir_elem *D))
+
+;; From each fitting placement, the piece slides toward each edge until it
+;; meets the background.
+(INIT &slide Distance
+  (key ((&slide_dir ^Delta ^D)
+        (&fits.occurrence (:P Delta))
+        (dir_elem D))
+    (source_distance (K)
+      (OR ((&piece_cell *P)
+           (compose (:A P) (:B Delta) (:C *P2))
+           (margin (:B P2) D *K))
+          ((&piece_cell (:P *P4))
+           (compose (:A P4) (:B Delta) (:C *P22))
+           (input (:P *P3) *Col)
+           (&bg (:C Col))
+           (gap D (:P P22) (:Q P3) K))))))
+
+(RULE &halt
+  (&slide.distance (:key *Delta *D) *K)
+  (&slide_dir Delta D)
+  (dir8_opposite D (:D2 *O_m1))
+  (edge_inset (:D O_m1) K (:B *B1_m2))
+  (edge_inset D K (:B *I_m4))
+  (relative (:Base I_m4) (:X 0) (:X_rel *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *V))
+  (!= V 0)
+  (compose (:A Delta) (:B V) (:C *Delta2)))
+
+;; The stops of the journey: the piece starts where it stands and slides on.
+(INIT &journey Propagation
+  (source ((:n N))
+    (= *N 0))
+  (edge ((:a Delta) (:b Delta2))
+    (&halt *Delta *Delta2)))
+
+(RULE &stop
+  (&journey.reached (:n *Delta)))
+
+(RULE &covered
+  (&stop *Delta)
+  (&piece_cell (:P *P3))
+  (compose (:A P3) (:B Delta) (:C *P)))
+
+;; A stop with one way on has the corridor ending at it: that one way is the
+;; way the piece came.
+(INIT &onward Singleton
+  (key ((&halt ^Delta *D))
+    (member ((:v D))
+      (&halt Delta *D))))
+
+(RULE &rest
+  (&stop *Delta)
+  (!= Delta 0)
+  (&onward.value (:key Delta)))
+
+(ALTS $choice "where the piece comes to rest" $Corridor
+  (ALT $Goal
+    (RULE &ahead_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (DET &marker RarestColor)
+
+    (RULE &ahead_node
+      (&stop (:Delta *Key))
+      (&open *P)
+      (NOT (&covered (:Delta Key) P)))
+
+    ;; What the marker still reaches with the piece standing at a stop.
+    (INIT &ahead Propagation
+      (key ((OR ((&stop ^Delta)
+                 (input *P *Col)
+                 (&marker (:C Col))
+                 (&ahead_node (:Key Delta) P))
+                ((&ahead_node (:Key Delta) P)
+                 (&ahead_steps (:Delta *S))
+                 (compose (:A P) (:B S) (:C *Q))
+                 (&ahead_node (:Key Delta) (:P Q)))))
+        (source ((:n P))
+          (&stop Delta)
+          (input *P *Col)
+          (&marker (:C Col))
+          (&ahead_node (:Key Delta) P))
+        (edge ((:a P) (:b Q))
+          (&ahead_node (:Key Delta) *P)
+          (&ahead_steps (:Delta *S))
+          (compose (:A P) (:B S) (:C *Q))
+          (&ahead_node (:Key Delta) (:P Q)))))
+
+    (RULE &rest
+      (&stop *Delta)
+      (ALL ((&covered (:Delta *Delta2) *P)
+            (&ahead.reached (:key Delta) (:n P)))
+           ((= Delta Delta2))))))
+
+(RULE &landed
+  (&rest *Delta)
+  (&covered Delta *P))
+
+(RULE &output
+  (OR ((&landed *P)
+       (&piece (:C *Col)))
+      ((&rest)
+       (OR ((&piece_cell P)
+            (&corridor (:C Col)))
+           ((input P Col)
+            (NOT (&piece_cell P))))
+       (NOT (&landed P)))))

@@ -1,0 +1,105 @@
+;; 6ffbe589
+
+(RULE &cluster_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D3))
+       (step_offset (:D D3) (:V Delta)))
+      ((dir8_elem (:D *D1))
+       (step_offset (:D D1) (:V *S1))
+       (dir8_elem (:D *D2))
+       (step_offset (:D D2) (:V *S2))
+       (compose (:A S1) (:B S2) (:C Delta)))))
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; Cells cluster across a gap of at most one cell: a cluster step is two
+;; steps in any directions.
+(INIT &cluster Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&ink *P)
+         (&cluster_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ink (:P P3)))
+        ((&ink P)
+         (= P3 P)))))
+
+(RULE &cluster_component
+  (&cluster.class (:a *P) *Id))
+
+;; The figure is the largest cluster.
+(INIT &size Cardinality
+  (key ((&cluster_component *P ^Id))
+    (member ((:m P))
+      (&cluster_component *P Id))))
+
+(INIT &largest Order
+  (member ((:t (:V Id) (:S N)))
+    (&size.size (:key *Id) *N))
+  (score ((:t (:V Id) (:S N)) (:S N))
+    (&size.size (:key *Id) *N)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&largest.maximal (:t (:V *Id)))
+    (&cluster_component *P Id)))
+
+(RULE &covered_inside1
+  (input (:P *P_))
+  (&bbox.box (:B *B_))
+  (dir_elem (:D *D_m1))
+  (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+  (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+  (< K_m3 0))
+
+(DET &sense SenseDomain)
+
+(RULE &cropped
+  (&bbox.box *B)
+  (input *P *Col)
+  (ALL ((input P (:Col *Colm))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+;; Quarter turns per figure color: its stray cells outside the box.
+(INIT &turns Cardinality
+  (key ((OR ((&ink *P ^Col)
+             (ALL ((&bbox.box *B))
+                  ((&covered_inside1 (:P_ P) (:B_ B)))))
+            ((&cropped Col)
+             (NOT (&bg (:C Col))))))
+    (member ((:m P))
+      (&ink *P Col)
+      (ALL ((&bbox.box *B))
+           ((&covered_inside1 (:P_ P) (:B_ B)))))
+    (domain ()
+      (&cropped Col)
+      (NOT (&bg (:C Col))))))
+
+;; The rotation: each crop cell steps one quarter turn about the center.
+(INIT &rot Walk
+  (successor ((:p P) (:p_next P2))
+    (&cropped (:P_inner *P))
+    (&sense *S)
+    (c4_turn S (:T *R))
+    (apply (:D R) P (:P_out *P2)))
+  (steps (N)
+    (&turns.size *N)))
+
+(RULE &landed
+  (&cropped (:P_inner *P0) *Col)
+  (&turns.size (:key Col) *N)
+  (&rot.walk (:p0 P0) N (:p *P)))
+
+(RULE &output
+  (OR ((&landed *P *Col))
+      ((&cropped (:P_inner P))
+       (NOT (&landed P))
+       (&bg (:C Col)))))

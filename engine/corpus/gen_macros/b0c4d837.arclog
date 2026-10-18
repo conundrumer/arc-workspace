@@ -1,0 +1,333 @@
+;; b0c4d837
+
+(INPUT cup "one cup drawn in &wall_color: two walls of equal height joined at their far ends from &open_dir by a floor, open toward &open_dir, with &background outside it"
+
+  (DET &wall_color VanishedColor)
+
+  ;; The side the cup opens toward.
+  (DET &open_dir DirDomain)
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT liquid "a solid block of &fluid_color fills the cup's inside from the floor up, across the full width between the walls, to some level below the top of the walls"
+
+  (DET_OR_RULE &fluid_color RarestColor))
+
+(OUTPUT count-empty-rows "the count is the number of rows inside the cup that hold no liquid: the rows from the row nearest &open_dir that holds &wall_color down to the nearest row that holds the liquid's color, that row left out"
+
+  (RULE &wall
+    (input *P *Col)
+    (&wall_color (:C Col)))
+
+  (INIT &cup BoundingBox
+    (cell (P)
+      (&wall *P)))
+
+  ;; The color of the cells directly above the floor between the walls.
+  (INIT &floor_top Singleton
+    (member ((:v Col))
+      (&cup.box *B)
+      (&open_dir (:D *U))
+      (input *P)
+      (ALL ((input P)
+            (&cup.box B)
+            (dir_elem (:D *D_m1m))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1m) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (margin (:B P) (:D *D_m1) (:K *K_m2))
+      (margin B (:D D_m1) (:K K_m2))
+      (step_offset (:D U) (:V *V_m3))
+      (compose (:A P) (:B V_m3) (:C *Q))
+      (ALL ((input (:P Q) (:Col *Colm))
+            (&cup.box B)
+            (dir_elem (:D *D_m1mm))
+            (relative (:Base B) (:X Q) (:X_rel *R_m2m))
+            (margin (:B R_m2m) (:D D_m1mm) (:K *K_m3m)))
+           ((> K_m3m 0)))
+      (input (:P Q) *Col)))
+
+  (RULE &uneven
+    (&wall *P)
+    (&cup.box *B)
+    (&open_dir (:D *U))
+    (axis_of (:D U) (:A *A_m1))
+    (perp (:A A_m1) (:A2 *A2_m2))
+    (axis_of (:D *S) (:A A2_m2))
+    (input (:P *Q) *Col)
+    (NOT (&wall_color (:C Col)))
+    (ALL ((input (:P Q) (:Col *Colm))
+          (&cup.box B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X Q) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3m)))
+         ((>= K_m3m 0)))
+    (margin (:B Q) (:D S) (:K *K_m3))
+    (margin B (:D S) (:K K_m3))
+    (margin (:B P) (:D U) (:K *K_m4))
+    (margin (:B Q) (:D U) (:K K_m4)))
+
+  (INIT &level BoundingBox
+    (cell (P)
+      (&wall *P)
+      (NOT (&uneven P)))))
+
+(OUTPUT output-frame "the output is the frame that the cells of &fill_order cover, all &background"
+
+  (DET &fill_order (ONE))
+
+  (RULE &rank
+    (&fill_order *V *P *R))
+
+  (INIT &cells Cardinality
+    (member ((:m P))
+      (&rank *P))))
+
+(OUTPUT lay-marks "the first count cells of the output, in &fill_order, take the liquid's color; every other cell stays &background"
+
+  (DET &out_dim ConstOutDim)
+
+  ;; The corner the walk starts from.
+  (DET &order_corner DiagDirDomain)
+
+  ;; The axis of the walk's first line.
+  (DET &line_axis AxisDomain)
+
+  (RULE &liquid
+    (input)
+    (&fluid_color (:C *Col)))
+
+  (INIT &fluid BoundingBox
+    (cell (P)
+      (&liquid *Col)
+      (input *P Col)))
+
+  (RULE &rim
+    (&cup.box *B))
+
+  (RULE &empty_rows
+    (&rim *B)
+    (&fluid.box (:B *B2))
+    (relative (:Base B) (:X B2) (:X_rel *B_rel))
+    (&open_dir (:D *U))
+    (margin (:B B_rel) (:D U) *K))
+
+  (RULE &side
+    (&out_dim *N))
+
+  (INIT &frame Frame
+    (extent (A N)
+      (&side *N)
+      (axis_elem *A)))
+
+  (RULE &axis
+    (&line_axis *A))
+
+  (RULE &corner
+    (&order_corner (:D *C)))
+
+  (RULE &heading
+    (&corner *C)
+    (&axis *A)
+    (corner_dir C A (:D *D1))
+    (perp A (:A2 *A2_m1))
+    (corner_dir C (:A A2_m1) (:D *D2))
+    (opposite (:D D1) (:Opp *H))
+    (opposite (:D D2) (:Opp *Adv)))
+
+  (INIT &ring Boundary
+    (cell (P)
+      (&frame.cell *P))))
+
+(ALTS $render "how the count becomes the output grid" $Laid
+  (ALT $Laid
+    (ALTS $order "the order of the frame's cells" $FillOrder
+      (ALT $SnakeOrder
+        (OUTPUT output-frame "the output is a &out_dim square frame, all &background"
+          (RULE &walk_rank
+            (&walk.distance (:n *P) (:K *R)))
+          (RULE &rank
+            (&walk_rank *P *R))
+          (INIT &value Quotient
+            (equivalent ()
+              (&walk_rank)))
+          (DET &fill_order
+            (&walk_rank *P *R)
+            (&value.class (:Id *V))
+            (ONE)))
+        (OUTPUT lay-marks "the first count cells of a walk that starts at &order_corner, runs along a line on &line_axis, and at the frame's edge steps one line on and runs back, take the liquid's color; undefined where the count exceeds the frame's cells"
+          (INIT &walk Distance
+            (edge ((:a P (:D H)) (:b (:P Q) (:D H2)))
+              (&frame.cell *P)
+              (dir_elem (:D *H))
+              (OR ((margin (:B P) (:D H) (:K 0))
+                   (&heading *Adv)
+                   (step_offset (:D Adv) (:V *V_m2))
+                   (compose (:A P) (:B V_m2) (:C *Q))
+                   (opposite (:D H) (:Opp *H2)))
+                  ((step_offset (:D H) (:V *V_m1))
+                   (compose (:A P) (:B V_m1) (:C Q))
+                   (= H2 H)))
+              (&frame.cell (:P Q)))
+            (source ((:n P (:D H)))
+              (&corner *C)
+              (&frame.cell *P)
+              (relative (:Base 0) (:X P) (:X_rel *R_m1))
+              (axis_of (:D *D1_m2) (:A *A1_m3))
+              (opposite (:D D1_m2) (:Opp *O1_m4))
+              (perp (:A A1_m3) (:A2 *A2_m5))
+              (axis_of (:D *D2_m6) (:A A2_m5))
+              (opposite (:D D2_m6) (:Opp *O2_m7))
+              (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+              (>= K1_m8 0)
+              (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+              (>= K2_m9 0)
+              (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+              (>= K3_m10 0)
+              (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+              (>= K4_m11 0)
+              (corner_dir C (:A *A_m12) (:D *D1_m13))
+              (perp (:A A_m12) (:A2 *A2_m14))
+              (corner_dir C (:A A2_m14) (:D *D2_m15))
+              (margin (:B P) (:D D1_m13) (:K *K1_m16))
+              (margin (:B 0) (:D D1_m13) (:K K1_m16))
+              (margin (:B P) (:D D2_m15) (:K *K2_m17))
+              (margin (:B 0) (:D D2_m15) (:K K2_m17))
+              (&heading *H)))))
+      (ALT $SpiralOrder
+        (OUTPUT output-frame "the output is a &out_dim square frame, all &background"
+          (RULE &walk_rank
+            (&walk.distance (:n *P) (:K *R)))
+          (RULE &rank
+            (&walk_rank *P *R))
+          (INIT &value Quotient
+            (equivalent ()
+              (&walk_rank)))
+          (DET &fill_order
+            (&walk_rank *P *R)
+            (&value.class (:Id *V))
+            (ONE)))
+        (OUTPUT lay-marks "the first count cells of a walk that starts at &order_corner, runs along a line on &line_axis, and turns inward where the frame's edge or a cell it has passed stops it, take the liquid's color; undefined where the count exceeds the frame's cells"
+          (RULE &ring_depth_steps
+            (dir_elem *D)
+            (step_offset D (:V *Delta)))
+          (INIT &ring_depth Distance
+            (edge ((:a P) (:b P2))
+              (&frame.cell *P)
+              (&ring_depth_steps (:Delta *S))
+              (compose (:A P) (:B S) (:C *P2))
+              (&frame.cell (:P P2)))
+            (source ((:n P))
+              (&ring.boundary *P)))
+          (RULE &ring_start
+            (&ring_depth.distance (:n *P) *K)
+            (&corner *C)
+            (corner_dir C (:A *A_m1) (:D *D1_m2))
+            (perp (:A A_m1) (:A2 *A2_m4))
+            (corner_dir C (:A A2_m4) (:D *D2_m3))
+            (margin (:B P) (:D D1_m2) K)
+            (margin (:B P) (:D D2_m3) K))
+          (RULE &spiral_open
+            (&ring_depth.distance (:n *P) *K)
+            (dir_elem *D)
+            (step_offset D (:V *V_m1))
+            (compose (:A P) (:B V_m1) (:C *Q))
+            (&ring_depth.distance (:n Q) (:K *K2))
+            (OR ((> K2 K))
+                ((= K2 K)
+                 (NOT (&ring_start (:P Q))))))
+          (INIT &walk Distance
+            (edge ((:a P (:D H)) (:b (:P Q) (:D H2)))
+              (dir_elem (:D *H))
+              (OR ((axis_of (:D H) (:A *A_m1))
+                   (perp (:A A_m1) (:A2 *A2_m2))
+                   (axis_of (:D *H2) (:A A2_m2))
+                   (&spiral_open *P (:D H2) *Q)
+                   (NOT (&spiral_open P (:D H))))
+                  ((&spiral_open P (:D H) Q)
+                   (= H2 H))))
+            (source ((:n P (:D H)))
+              (&corner *C)
+              (&frame.cell *P)
+              (relative (:Base 0) (:X P) (:X_rel *R_m1))
+              (axis_of (:D *D1_m2) (:A *A1_m3))
+              (opposite (:D D1_m2) (:Opp *O1_m4))
+              (perp (:A A1_m3) (:A2 *A2_m5))
+              (axis_of (:D *D2_m6) (:A A2_m5))
+              (opposite (:D D2_m6) (:Opp *O2_m7))
+              (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+              (>= K1_m8 0)
+              (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+              (>= K2_m9 0)
+              (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+              (>= K3_m10 0)
+              (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+              (>= K4_m11 0)
+              (corner_dir C (:A *A_m12) (:D *D1_m13))
+              (perp (:A A_m12) (:A2 *A2_m14))
+              (corner_dir C (:A A2_m14) (:D *D2_m15))
+              (margin (:B P) (:D D1_m13) (:K *K1_m16))
+              (margin (:B 0) (:D D1_m13) (:K K1_m16))
+              (margin (:B P) (:D D2_m15) (:K *K2_m17))
+              (margin (:B 0) (:D D2_m15) (:K K2_m17))
+              (&heading *H))))))
+    (ALTS $mark "the color of the marks" $LiquidMark
+      (ALT $MarkColor
+        ;; TODO alt-undefined: every &output clause reads a relation this alt leaves empty
+        (OUTPUT lay-marks "the marks take &mark_color"
+          (DET_OR_RULE &mark_color RarestColor))
+        (RULE &mark
+          (&liquid)
+          (&mark_color (:C *Col))))))
+  (ALT $CountTable
+    (OUTPUT output-frame "the output is the grid &count_table stores for the count; undefined on a count with no entry"
+      (DET &count_table
+        (ex_output *E *P *Col)
+        (&empty_rows E (:K *N))))
+    (OUTPUT lay-marks "the stored grid gives every cell's color")
+    (RULE &output
+      (&empty_rows *K)
+      (&count_table (:N K) *P *Col))))
+
+(ALTS $rim "the row the count starts from" $TopRim
+  (ALT $LowerRim
+    ;; TODO alt-undefined: every &output clause reads a relation this alt leaves empty
+    (OUTPUT count-empty-rows "the count starts from the row nearest &open_dir that holds &wall_color in both outer wall columns, the top of the shorter wall"
+      (RULE &rim
+        (&level.box *B)))))
+
+(ALTS $liquid "how the liquid is found" $StoredLiquid
+  (ALT $LiquidAnyColor
+    ;; TODO alt-undefined: every &output clause reads a relation this alt leaves empty
+    (INPUT liquid "a solid block of one color fills the cup's inside from the floor up, across the full width between the walls, to some level below the top of the walls")
+    (OUTPUT liquid-color "the liquid's color is the color of the cells directly above the floor between the walls; undefined where those cells differ in color"
+      (RULE &liquid
+        (&floor_top.value (:v *Col))))))
+
+(RULE &mark
+  (&liquid *Col))
+
+(RULE &output
+  (&empty_rows *K)
+  (&cells.size *N)
+  (<= K N)
+  (&rank *P *R)
+  (&mark (:Col *C))
+  (OR ((>= R K)
+       (&background (:C *Col)))
+      ((< R K)
+       (= Col C))))
+
+(DET &marked
+  (ex_output *E *P *Col)
+  (NOT (&background (:C Col))))
+
+;; The marked cells in the order the outputs show: p comes before q where
+;; an output marks p and not q.
+(INIT &shown Order
+  (member ((:t P))
+    (&marked *P))
+  (before ((:a P) (:b Q))
+    (&marked *E *P)
+    (&marked (:P *Q))
+    (NOT (&marked E (:P Q)))))

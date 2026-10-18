@@ -1,0 +1,199 @@
+;; 639f5a19
+
+(DET &objs_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &bg_count_count Cardinality
+  (key ((ex_input *E *P ^Col))
+    (member ((:m E P))
+      (ex_input *E *P Col))))
+
+(INIT &bg_count Order
+  (member ((:t Col))
+    (&bg_count_count.size (:key *Col)))
+  (score ((:t Col) (:S Count))
+    (&bg_count_count.size (:key *Col) (:N *Count))))
+
+(DET &bg
+  (&bg_count.maximal (:t *Col)))
+
+(DET &objs_node
+  (ex_output (:E *Key) *P *Col)
+  (NOT (&bg Col)))
+
+;; Each object is repainted in place, so each output's objects are its
+;; input's.
+(INIT &objs Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&objs_node (:Key *Ky) *P)
+         (&objs_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&objs_node (:Key Ky) (:P P2)))
+        ((&objs_node (:Key Ky) P)
+         (= P2 P)))))
+
+(DET &objs_component
+  (&objs.class (:a *Key *P) *Id))
+
+(INIT &bbox BoundingBox
+  (key ((&objs_component (:Key ^E) *P ^Id))
+    (cell (P)
+      (&objs_component (:Key E) *P Id))))
+
+(DET &corner_color_inside1
+  (&bbox.cell (:key *E *Id) (:P *P_))
+  (&bbox.box (:key E Id) (:B *B_))
+  (dir_elem (:D *D_m1))
+  (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+  (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+  (< K_m3 0))
+
+(DET &cell_inside1
+  (&bbox.cell (:key *E *Id) (:P *P_))
+  (&bbox.box (:key E Id) (:B *B_))
+  (dir_elem (:D *D_m1))
+  (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+  (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+  (< K_m3 0))
+
+(RULE &objs_steps2
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &objs2 Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg Col))
+         (&objs_steps2 (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:Col Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:Col Col3)))
+         (= P3 P)))))
+
+(RULE &objs_component2
+  (&objs2.class (:a *P) *Id))
+
+;; Each object's bounding box.
+(INIT &bbox2 BoundingBox
+  (key ((&objs_component2 *P ^Id))
+    (cell (P)
+      (&objs_component2 *P Id))))
+
+(RULE &box_cell
+  (&bbox2.cell (:key *Id) *P)
+  (&bbox2.box (:key Id) *B)
+  (ALL ((&bbox2.cell (:key (:Id *Idm)) P)
+        (&bbox2.box (:key (:Id Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &quad_nearer
+  (&box_cell (:Id *Key) (:P_inner *P))
+  (dir_elem *D)
+  (opposite D (:Opp *O_m1))
+  (margin (:B P) D *K)
+  (margin (:B P) (:D O_m1) (:K *K2))
+  (< K K2))
+
+(RULE &quad_quadrant
+  (corner_dir (:C *Diag) (:A *A_m1) (:D *D1))
+  (perp (:A A_m1) (:A2 *A2_m2))
+  (corner_dir (:C Diag) (:A A2_m2) (:D *D2))
+  (&quad_nearer *Key *P (:D D1))
+  (&quad_nearer Key P (:D D2)))
+
+(DET &corner_color
+  (&bbox.cell (:key *E *Id) *P)
+  (&bbox.box (:key E Id) *B)
+  (NOT (&corner_color_inside1 (:P_ P) (:B_ B)))
+  (corner_dir (:C *Diag) (:A *A_m1) (:D *D1_m2))
+  (perp (:A A_m1) (:A2 *A2_m3))
+  (corner_dir (:C Diag) (:A A2_m3) (:D *D2_m4))
+  (margin (:B P) (:D D1_m2) (:K *K1_m5))
+  (margin B (:D D1_m2) (:K K1_m5))
+  (margin (:B P) (:D D2_m4) (:K *K2_m6))
+  (margin B (:D D2_m4) (:K K2_m6))
+  (ex_output E P *Col))
+
+(DET &core_color
+  (&objs_component (:Key *E) *P)
+  (ex_output E P *Col)
+  (NOT (&corner_color Col)))
+
+;; The core, seen in its object's frame: its margin from that frame's
+;; edges is how deep the band runs.
+(INIT &core_box BoundingBox
+  (key ((&bbox.cell (:key ^E ^Id) *P)
+        (&bbox.box (:key E Id) *B)
+        (NOT (&cell_inside1 (:P_ P) (:B_ B)))
+        (relative (:Base B) (:X P) (:X_rel *P_inner))
+        (ex_output E P *Col)
+        (&core_color Col))
+    (cell ((:P P_inner))
+      (&bbox.cell *P)
+      (&bbox.box *B)
+      (NOT (&cell_inside1 (:P_ P) (:B_ B)))
+      (relative (:Base B) (:X P) (:X_rel *P_inner))
+      (ex_output E P *Col)
+      (&core_color Col))))
+
+(DET &band_depth
+  (&core_box.box *B)
+  (dir_elem *D)
+  (margin B D *K))
+
+;; Nearer some edge of its bounding box than the band is deep.
+(RULE &band_cell
+  (&box_cell *P *P_inner)
+  (dir_elem *D)
+  (margin (:B P_inner) D *K)
+  (&band_depth (:K *N))
+  (< K N))
+
+(ALTS $choice "how deep a cell lies" $Inset
+  (ALT $Erode
+    (RULE &rim_depth_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (INIT &rim Boundary
+      (key ((&objs_component2 *P ^Id))
+        (cell (P)
+          (&objs_component2 *P Id))))
+
+    (INIT &rim_depth Distance
+      (key ((OR ((&objs_component2 *P ^Id)
+                 (&rim_depth_steps (:Delta *S))
+                 (compose (:A P) (:B S) (:C *P2))
+                 (&objs_component2 (:P P2) Id))
+                ((&rim.boundary (:key Id) P))))
+        (edge ((:a P) (:b P2))
+          (&objs_component2 *P Id)
+          (&rim_depth_steps (:Delta *S))
+          (compose (:A P) (:B S) (:C *P2))
+          (&objs_component2 (:P P2) Id))
+        (source ((:n P))
+          (&rim.boundary *P))))
+
+    ;; Fewer steps inward from the object's outline than the band is deep.
+    (RULE &band_cell
+      (&rim_depth.distance (:n *P) *K)
+      (&band_depth (:K *N))
+      (< K N))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&bg Col))
+      ((&band_cell P)
+       (&box_cell *Id P *P_inner)
+       (&quad_quadrant (:Key Id) (:P P_inner) (:Diag *G))
+       (&corner_color (:Diag G) Col))
+      ((&objs_component2 P)
+       (NOT (&band_cell P))
+       (&core_color Col))))

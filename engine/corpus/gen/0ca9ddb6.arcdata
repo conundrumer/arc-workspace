@@ -1,0 +1,15 @@
+;; 0ca9ddb6
+
+(param &radius number (1))
+(param &arm_paint (Color Color) (1 7))
+(param &diag_paint (Color Color) (2 4))
+(param &paint (Color Color) (1 7) (2 4))
+(param &template (Color Offset)
+  (1 (grid
+    (_ 1 _)
+    (1 @_ 1)
+    (_ 1 _)))
+  (2 (grid
+    (1 _ 1)
+    (_ @_ _)
+    (1 _ 1))))

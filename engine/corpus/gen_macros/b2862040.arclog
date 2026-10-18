@@ -1,0 +1,332 @@
+;; b2862040
+
+(INPUT background-field "the grid is a field of background (9)")
+
+(INPUT shapes "on that field stand shapes, each a 4-connected set of shape_color cells"
+
+  (DET_OR_RULE &shape_color RarestColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (&shape_color (:C Col)))
+
+  (RULE &shapes8_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((diag_dir_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  (INIT &shapes8 Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((&ink *P)
+           (&shapes8_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&ink (:P P3)))
+          ((&ink P)
+           (= P3 P))))))
+
+(OUTPUT recolor-closed-shapes "each shape that by itself closes off a region from the frame edge, where a region escapes by 4-steps through cells outside the shape, takes closed_color on every one of its cells"
+
+  (RULE &shapes4_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (INIT &shapes4 Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((&ink *P)
+           (&shapes4_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&ink (:P P3)))
+          ((&ink P)
+           (= P3 P)))))
+
+  (RULE &shapes4_component
+    (&shapes4.class (:a *P) *Id))
+
+  (RULE &own_open8_steps
+    (step_offset (:V *Delta)))
+
+  (RULE &ink_open8_steps
+    (step_offset (:V *Delta)))
+
+  (RULE &own8_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((diag_dir_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  (RULE &ink8_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((diag_dir_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  (RULE &own4_flood_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &own4_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &shape
+    (&shapes4_component *P (:Id *W)))
+
+  (RULE &off_wall
+    (&shape *W)
+    (input *P)
+    (NOT (&shape W P)))
+
+  (RULE &own4_cell
+    (&off_wall (:W *Key) *P))
+
+  (INIT &own4_flood Propagation
+    (key ((OR ((&own4_cell (:Key ^O) *P)
+               (dir_elem *D)
+               (margin (:B P) D (:K 0))
+               (&off_wall (:W O) P))
+              ((&off_wall (:W O) P)
+               (&own4_flood_steps (:Delta *S))
+               (compose (:A P) (:B S) (:C *P2))
+               (&off_wall (:W O) (:P P2)))))
+      (source ((:n P))
+        (&own4_cell (:Key O) *P)
+        (dir_elem *D)
+        (margin (:B P) D (:K 0))
+        (&off_wall (:W O) P))
+      (edge ((:a P) (:b P2))
+        (&off_wall (:W O) *P)
+        (&own4_flood_steps (:Delta *S))
+        (compose (:A P) (:B S) (:C *P2))
+        (&off_wall (:W O) (:P P2)))))
+
+  (RULE &own4_node
+    (&own4_cell *Key *P)
+    (NOT (&own4_flood.reached (:key (:O Key)) (:n P))))
+
+  (INIT &own4 Quotient
+    (edge ((:a (:O Ky) P) (:b (:O Ky) (:P P2)))
+      (OR ((&own4_node (:Key *Ky) *P)
+           (&own4_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P2))
+           (&own4_node (:Key Ky) (:P P2)))
+          ((&own4_node (:Key Ky) P)
+           (= P2 P)))))
+
+  (RULE &own4_component
+    (&own4.class (:a (:O *Key) *P) *Id))
+
+  (RULE &ink4_flood_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &ink4_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &off_ink
+    (input *P)
+    (NOT (&ink P)))
+
+  (RULE &ink4_cell
+    (&off_ink *P))
+
+  (INIT &ink4_flood Propagation
+    (source ((:n P))
+      (&ink4_cell *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0))
+      (&off_ink P))
+    (edge ((:a P) (:b P2))
+      (&off_ink *P)
+      (&ink4_flood_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *P2))
+      (&off_ink (:P P2))))
+
+  (RULE &ink4_node
+    (&ink4_cell *P)
+    (NOT (&ink4_flood.reached (:n P))))
+
+  (RULE &hole_cell
+    (&own4_component (:Key *O) *P *Id))
+
+  (INIT &own_open8 Propagation
+    (key ((OR ((&off_wall (:W ^O) *P)
+               (dir_elem *D)
+               (margin (:B P) D (:K 0)))
+              ((&off_wall (:W O) P)
+               (&own_open8_steps (:Delta *S))
+               (compose (:A P) (:B S) (:C *P2))
+               (&off_wall (:W O) (:P P2)))))
+      (source ((:n P))
+        (&off_wall (:W O) *P)
+        (dir_elem *D)
+        (margin (:B P) D (:K 0)))
+      (edge ((:a P) (:b P2))
+        (&off_wall (:W O) *P)
+        (&own_open8_steps (:Delta *S))
+        (compose (:A P) (:B S) (:C *P2))
+        (&off_wall (:W O) (:P P2)))))
+
+  (RULE &own8_node
+    (&off_wall (:W *Key) *P)
+    (NOT (&own_open8.reached (:key (:O Key)) (:n P))))
+
+  (INIT &own8 Quotient
+    (edge ((:a (:O Ky) P) (:b (:O Ky) (:P P2)))
+      (OR ((&own8_node (:Key *Ky) *P)
+           (&own8_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P2))
+           (&own8_node (:Key Ky) (:P P2)))
+          ((&own8_node (:Key Ky) P)
+           (= P2 P)))))
+
+  (INIT &ink4 Quotient
+    (edge ((:a P) (:b P2))
+      (OR ((&ink4_node *P)
+           (&ink4_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P2))
+           (&ink4_node (:P P2)))
+          ((&ink4_node P)
+           (= P2 P)))))
+
+  (INIT &ink_open8 Propagation
+    (source ((:n P))
+      (&off_ink *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0)))
+    (edge ((:a P) (:b P2))
+      (&off_ink *P)
+      (&ink_open8_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *P2))
+      (&off_ink (:P P2))))
+
+  (RULE &ink8_node
+    (&off_ink *P)
+    (NOT (&ink_open8.reached (:n P))))
+
+  (INIT &ink8 Quotient
+    (edge ((:a P) (:b P2))
+      (OR ((&ink8_node *P)
+           (&ink8_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P2))
+           (&ink8_node (:P P2)))
+          ((&ink8_node P)
+           (= P2 P)))))
+
+  (INIT &holes Cardinality
+    (key ((OR ((&shape (:W ^O)))
+              ((&hole_cell O *Id))))
+      (member ((:m Id))
+        (&hole_cell O *Id))
+      (domain ()
+        (&shape (:W O)))))
+
+  (INIT &hole_size Cardinality
+    (key ((&hole_cell ^O ^Id *P))
+      (member ((:m P))
+        (&hole_cell O Id *P)))))
+
+(OUTPUT keep-rest "every other cell keeps its input color")
+
+(ALTS $conn "how shape cells join into one shape" $Shapes4
+  (ALT $Shapes8
+    (INPUT shapes "on that field stand shapes, each an 8-connected set of shape_color cells"
+      (RULE &shapes8_component
+        (&shapes8.class (:a *P) *Id))
+
+      (RULE &shape
+        (&shapes8_component *P (:Id *W))))))
+
+(ALTS $escape "the steps by which a region escapes to the frame edge" $Escape4
+  (ALT $DiagEscape
+    (OUTPUT recolor-closed-shapes "a region escapes by 8-steps, so a hole that meets the outside only at a corner is open"
+      (RULE &own8_component
+        (&own8.class (:a (:O *Key) *P) *Id))
+
+      (RULE &hole_cell
+        (&own8_component (:Key *O) *P *Id)))
+    (ALT $AllInk
+      (OUTPUT recolor-closed-shapes "the regions that all the ink together closes off are found, and every cell of a shape with a cell 4-adjacent to such a region takes closed_color"
+        (RULE &hole_cell
+          (&ink_holed (:W *O) *Id)
+          (&ink_hole *P Id))))))
+
+(ALTS $walls "what closes off a region" $OwnWalls
+  (ALT $AllInk
+    (OUTPUT recolor-closed-shapes "the regions that all the ink together closes off are found, and every cell of a shape with a cell 4-adjacent to such a region takes closed_color"
+      (RULE &ink4_component
+        (&ink4.class (:a *P) *Id))
+
+      (RULE &ink8_component
+        (&ink8.class (:a *P) *Id))
+
+      (RULE &ink_hole
+        (&ink4_component *P *Id))
+
+      (RULE &ink_holed
+        (&ink_hole *P *Id)
+        (dir_elem *D)
+        (step_offset D (:V *V_m1))
+        (compose (:A P) (:B V_m1) (:C *Q))
+        (&shape *W (:P Q)))
+
+      (RULE &hole_cell
+        (&ink_holed (:W *O) *Id)
+        (&ink_hole *P Id)))))
+
+(ALTS $ink "which cells the shapes are made of" $ShapeInk
+  (ALT $AnyInk
+    (INPUT shapes "on that field stand shapes, each a 4-connected set of cells that are not background, of any color"
+      (DET_OR_RULE &background DominantColor)
+
+      (RULE &ink
+        (input *P *Col)
+        (NOT (&background (:C Col)))))))
+
+(ALTS $cond "which shapes recolor" $AnyHole
+  (ALT $OneHole
+    (OUTPUT recolor-closed-shapes "a shape takes closed_color when the count of regions it closes off is hole_count"
+      (DET_OR_RULE &hole_count TileDim))
+    (RULE &closing
+      (&shape (:W *O) *P)
+      (&holes.size (:key O) *N)
+      (&hole_count N)))
+  (ALT $HoleCountTable
+    (OUTPUT recolor-closed-shapes "every cell of a shape takes the color count_color gives the count of regions the shape closes off; undefined on an input with a shape whose count has no color"
+      (DET &count_color
+        (&shape *E (:W *O) *P)
+        (&holes.size E (:key O) *N)
+        (ex_output E P (:Col *C))))
+    (RULE &recolored
+      (&shape *P))
+
+    (RULE &output
+      (OR ((&shape (:W *O) *P)
+           (&holes.size (:key O) *N)
+           (&count_color N (:C *Col)))
+          ((input P Col)
+           (NOT (&recolored P))))))
+  (ALT $MinHoleSize
+    (OUTPUT recolor-closed-shapes "a shape takes closed_color when it closes off a region of at least min_hole_size cells"
+      (DET_OR_RULE &min_hole_size TileDim))
+    (RULE &closing
+      (&shape (:W *O) *P)
+      (&hole_size.size (:key O) *N)
+      (&min_hole_size (:N *K))
+      (>= N K))))
+
+(DET &closed_color AnyOutNewColor)
+
+(RULE &closing
+  (&shape (:W *O) *P)
+  (&hole_cell O))
+
+(RULE &recolored
+  (&closing *P))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&recolored P)))
+      ((&closing P)
+       (&closed_color (:C Col)))))

@@ -1,0 +1,63 @@
+;; 60a26a3e
+
+(DET &bg DominantColor)
+
+(RULE &bg_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(DET &ring RarestColor)
+
+(RULE &ring_cell
+  (input *P *Col)
+  (&ring (:C Col)))
+
+(RULE &center
+  (&bg_cell *P)
+  (ALL ((dir_elem *D)
+        (neighbor P D *Q))
+       ((&ring_cell (:P Q)))))
+
+(RULE &link_axis
+  (axis_elem *A))
+
+(DET &line AnyOutNewColor)
+
+(ALTS $choice "what makes a bg cell a center" $Ringed
+  (ALT $Enclosed
+    (INIT &outside Flood
+      (node (P)
+        (&bg_cell *P))
+      (source (P)
+        (&bg_cell *P)
+        (dir_elem *D)
+        (margin (:B P) D (:K 0))))
+
+    (RULE &center
+      (&bg_cell *P)
+      (NOT (&outside.reached P)))))
+
+(INIT &link Ray
+  (source (P)
+    (&center *P))
+  (node (P)
+    (&link_axis)
+    (input *P))
+  (dir (D)
+    (&link_axis *A)
+    (axis4_of *D A)))
+
+(RULE &link_between
+  (&bg_cell *P)
+  (NOT (&center P))
+  (&link_axis *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&link.ray P D)
+  (&link.ray P (:D O)))
+
+(RULE &output
+  (OR ((&link_between *P)
+       (&line (:C *Col)))
+      ((input P Col)
+       (NOT (&link_between P)))))

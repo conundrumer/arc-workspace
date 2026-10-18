@@ -1,0 +1,12 @@
+;; eb281b96
+
+(param &tile_axis Axis (AXIS_V))
+(param &tile_gap number (-1))
+(param &tile (Position D4)
+  (grid
+    (D4_ID)
+    (D4_TB)
+    (D4_ID)
+    (D4_TB)))
+(param &tile_count number (4))
+(param &anchor Dir (DIR_T))

@@ -1,0 +1,171 @@
+;; 4a21e3da
+
+(DET &mark RarestColor)
+
+(RULE &marker
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(RULE &cut_dir
+  (&marker *P)
+  (dir_elem *D)
+  (margin (:B P) D (:K 0)))
+
+(RULE &cut_axis
+  (&cut_dir *D)
+  (axis_of D *A))
+
+(RULE &on_cut
+  (input *P)
+  (&marker (:P *M))
+  (&cut_axis *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B M) (:D D_m2) (:K K_m3)))
+
+(RULE &span_dir
+  (&cut_axis *A)
+  (axis4_of *D A))
+
+(RULE &span_node
+  (input *P))
+
+(DET &ink ColorDomain)
+
+(RULE &ink_cell
+  (input *P *Col)
+  (&ink (:C Col)))
+
+(RULE &cut_ink
+  (&ink_cell *P)
+  (&on_cut P))
+
+(RULE &span_mark
+  (OR ((&marker *P))
+      ((&cut_ink P))))
+
+(RULE &span_source
+  (&span_mark *P))
+
+;; The span from the marker to the farthest ink cell on the cut.
+(INIT &span Distance
+  (key ((&span_source (:P ^O))
+        (&span_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&span_source (:P O))
+           (&span_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&span_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&span_node (:P Q)))
+          ((&span_source (:P O))
+           (&span_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&span_node (:P Q))
+           (= A2 O))
+          ((&span_source (:P O))
+           (&span_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&span_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&span_node (:P Q)))))
+    (source ((:n O))
+      (&span_source (:P O))
+      (&span_dir D))))
+
+(RULE &span_ray
+  (&span.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &span_between
+  (&on_cut *P)
+  (&cut_axis *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&span_ray P D)
+  (&span_ray P (:D O)))
+
+(RULE &span_end
+  (&span_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&span_ray (:P Q) D Origin)))
+
+(DET &bg DominantColor)
+
+(RULE &side
+  (&ink_cell *P)
+  (&marker (:P *M))
+  (&cut_dir (:D *D_cut))
+  (axis_of (:D D_cut) (:A *A_m1))
+  (perp (:A A_m1) (:A2 *A2_m2))
+  (axis_of *D (:A A2_m2))
+  (dir_elem D)
+  (margin (:B P) D (:K *K1_m3))
+  (margin (:B M) D (:K *K2_m4))
+  (< K1_m3 K2_m4))
+
+;; Each side, viewed from its own bounding box.
+(INIT &side_box BoundingBox
+  (key ((&side *P ^D))
+    (cell (P)
+      (&side *P D))))
+
+(RULE &moved
+  (&side (:P *P2) *D)
+  (&side_box.box (:key D) *B)
+  (ALL ((&side (:P P2) (:D *Dm))
+        (&side_box.box (:key (:D Dm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P2) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P2) (:X_rel *P_inner))
+  (&cut_dir (:D *D_cut))
+  (corner_dir (:C *Diag) (:A *A_m1) (:D D_cut))
+  (perp (:A A_m1) (:A2 *A2_m2))
+  (corner_dir (:C Diag) (:A A2_m2) D)
+  (input *P)
+  (ALL ((corner_dir (:C Diag) (:A *A_m1m) (:D *D_cutm))
+        (perp (:A A_m1m) (:A2 *A2_m2m))
+        (corner_dir (:C Diag) (:A A2_m2m) (:D *Dmm))
+        (&side_box.box (:key (:D Dmm)) (:B *Bm))
+        (&side (:P *Pm) (:D Dmm))
+        (relative (:Base Bm) (:X Pm) (:X_rel P_inner))
+        (corner_dir (:C Diag) (:D *D_m1m))
+        (margin (:B P_inner) (:D D_m1m) (:K *K1_m2))
+        (margin (:B P) (:D D_m1m) (:K *K2_m3)))
+       ((= K1_m2 K2_m3))))
+
+(RULE &paint
+  (OR ((&cut_ink *P)
+       (&ink (:C *Col)))
+      ((&moved P)
+       (&ink (:C Col)))
+      ((&span_between P)
+       (NOT (&cut_ink P))
+       (&mark (:C Col)))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))

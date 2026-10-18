@@ -1,0 +1,176 @@
+;; 11dc524f
+
+(RULE &sight_dir
+  (dir_elem *D))
+
+(RULE &sight_node
+  (input *P))
+
+(DET &shape_color RarestColor)
+
+(RULE &sight_source
+  (input *P *Col)
+  (&shape_color (:C Col)))
+
+;; Line of sight: the direction from the shape to the block.
+(INIT &sight Distance
+  (key ((&sight_source (:P ^O))
+        (&sight_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&sight_source (:P O))
+           (&sight_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&sight_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&sight_node (:P Q)))
+          ((&sight_source (:P O))
+           (&sight_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&sight_node (:P Q))
+           (= A2 O))
+          ((&sight_source (:P O))
+           (&sight_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&sight_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&sight_node (:P Q)))))
+    (source ((:n O))
+      (&sight_source (:P O))
+      (&sight_dir D))))
+
+(RULE &sight_ray
+  (&sight.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &sight_end
+  (&sight_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&sight_ray (:P Q) D Origin)))
+
+(DET &bg DominantColor)
+
+(DET &mirror_color RarestColor)
+
+;; Each object's own bounding box.
+(INIT &bbox BoundingBox
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &sight_cell
+  (input *P *Col)
+  (&mirror_color (:C Col)))
+
+(RULE &move_dir
+  (dir_elem *D)
+  (&sight_ray *P D)
+  (&sight_cell P))
+
+;; The shape's box travels toward the block's box until the two meet.
+(INIT &gravity Distance
+  (source_distance (K)
+    (OR ((input *P)
+         (&shape_color (:C *Col))
+         (&bbox.box (:key Col) *B)
+         (ALL ((&bbox.box (:key (:Col *Colm)) B)
+               (dir_elem (:D *D_m1))
+               (relative (:Base B) (:X P) (:X_rel *R_m2))
+               (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+              ((>= K_m3 0)))
+         (&move_dir *D)
+         (margin (:B P) D *K))
+        ((input (:P *P3))
+         (&shape_color (:C *Col3))
+         (&bbox.box (:key (:Col Col3)) (:B *B3))
+         (ALL ((&bbox.box (:key (:Col *Colm2)) (:B B3))
+               (dir_elem (:D *D_m12))
+               (relative (:Base B3) (:X P3) (:X_rel *R_m22))
+               (margin (:B R_m22) (:D D_m12) (:K *K_m32)))
+              ((>= K_m32 0)))
+         (&move_dir (:D *D2))
+         (input (:P *P2))
+         (&mirror_color (:C *Col2))
+         (&bbox.box (:key (:Col Col2)) (:B *B2))
+         (ALL ((&bbox.box (:key (:Col *Col2m)) (:B B2))
+               (dir_elem (:D *D_m1m))
+               (relative (:Base B2) (:X P2) (:X_rel *R_m2m))
+               (margin (:B R_m2m) (:D D_m1m) (:K *K_m3m)))
+              ((>= K_m3m 0)))
+         (gap (:D D2) (:P P3) (:Q P2) K)))))
+
+(RULE &home
+  (&shape_color (:C *Col))
+  (&bbox.box (:key Col) (:B *B2))
+  (&gravity.distance *K)
+  (&move_dir *D)
+  (dir8_opposite D (:D2 *O_m1))
+  (edge_inset (:D O_m1) K (:B *B1_m2))
+  (edge_inset D K (:B *I_m4))
+  (relative (:Base I_m4) (:X 0) (:X_rel *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *V))
+  (compose (:A B2) (:B V) (:C *B)))
+
+(RULE &mirror
+  (&move_dir *D)
+  (axis_of D *A)
+  (&shape_color (:C *Col))
+  (&bbox.box (:key Col) (:B *B2))
+  (input *P)
+  (axis_elem A)
+  (relative (:Base B2) (:X P) (:X_rel *R_m1))
+  (frame_extent (:P R_m1) A *N)
+  (&home (:B *B_home))
+  (dir8_opposite D (:D2 *O_m3))
+  (edge_inset (:D O_m3) (:K N) (:B *B1_m4))
+  (edge_inset D (:K N) (:B *I_m6))
+  (relative (:Base I_m6) (:X 0) (:X_rel *B2_m5))
+  (compose (:A B1_m4) (:B B2_m5) (:C *V_m2))
+  (compose (:A B_home) (:B V_m2) (:C *B)))
+
+(RULE &paint
+  (&shape_color (:C *Col2))
+  (&bbox.cell (:key (:Col Col2)) (:P *P_cell))
+  (&bbox.box (:key (:Col Col2)) *B)
+  (ALL ((&bbox.cell (:key (:Col *Colm)) (:P P_cell))
+        (&bbox.box (:key (:Col Colm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P_cell) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P_cell) (:X_rel *P_inner))
+  (OR ((&move_dir *D)
+       (axis_of D *A)
+       (axis_inversion A (:T *F))
+       (apply (:D F) (:P P_inner) (:P_out *P_flip))
+       (&mirror (:B *B_mirror))
+       (compose (:A B_mirror) (:B P_flip) (:C *P))
+       (&mirror_color (:C *Col)))
+      ((&home (:B *B_home))
+       (compose (:A B_home) (:B P_inner) (:C P))
+       (= Col Col2))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))

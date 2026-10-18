@@ -1,0 +1,4 @@
+;; 551d5bf1
+
+(param &outline Color (1))
+(param &ink Color (8))

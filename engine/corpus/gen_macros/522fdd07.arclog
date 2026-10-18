@@ -1,0 +1,159 @@
+;; 522fdd07
+
+(RULE &comps_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(RULE &comps_node
+  (input *P (:Col *Key))
+  (NOT (&bg (:C Key))))
+
+;; One square per connected body of a single color.
+(INIT &comps Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&comps_node (:Key *Ky) *P)
+         (&comps_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&comps_node (:Key Ky) (:P P2)))
+        ((&comps_node (:Key Ky) P)
+         (= P2 P)))))
+
+(RULE &comps_component
+  (&comps.class (:a *Key *P) *Id))
+
+;; The extent a square that loses its last ring comes back at.
+(DET &bloom NumberDomain)
+
+(RULE &obj
+  (&comps_component (:Key *Col) *Id))
+
+(INIT &bbox BoundingBox
+  (key ((&comps_component *P ^Id))
+    (cell (P)
+      (&comps_component *P Id))))
+
+(RULE &center
+  (&bbox.cell (:key *Id) *P)
+  (&bbox.box (:key Id) *B)
+  (ALL ((&bbox.cell (:key (:Id *Idm)) P)
+        (&bbox.box (:key (:Id Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (ALL ((&bbox.box (:key (:Id *Idmm)) (:B *Bm))
+        (&bbox.cell (:key (:Id Idmm)) (:P *Pm))
+        (relative (:Base Bm) (:X Pm) (:X_rel P_inner))
+        (opposite (:D *D_m1m) (:Opp *O_m2))
+        (margin (:B P_inner) (:D D_m1m) (:K *K1_m3))
+        (margin (:B P_inner) (:D O_m2) (:K *K2_m4)))
+       ((= K1_m3 K2_m4))))
+
+(RULE &shrunk
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (ALL ((&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((> K_m3 0))))
+
+(ALTS $choice "Three models redraw a square" $Box
+  (ALT $Erode
+    (INIT &exposed Boundary
+      (key ((&comps_node (:Key ^Col) *P))
+        (cell (P)
+          (&comps_node (:Key Col) *P))))
+
+    (RULE &shrunk
+      (&comps_component (:Key *Col) *P *Id)
+      (NOT (&exposed.boundary (:key Col) P))))
+  (ALT $Lookup
+    (INIT &in_box BoundingBox
+      (key ((ex_input ^E *P ^Col)
+            (NOT (&bg (:C Col))))
+        (cell (P)
+          (ex_input E *P Col)
+          (NOT (&bg (:C Col))))))
+
+    (INIT &out_box BoundingBox
+      (key ((ex_output ^E *P ^Col)
+            (NOT (&bg (:C Col))))
+        (cell (P)
+          (ex_output E *P Col)
+          (NOT (&bg (:C Col))))))
+
+    (DET &next_extent
+      (&in_box.cell (:key (:E *Sq_e) (:Col *Sq_col)) *P)
+      (&in_box.box (:key (:E Sq_e) (:Col Sq_col)) *B)
+      (perp *A *A2)
+      (axis_elem A)
+      (relative (:Base B) (:X P) (:X_rel *R_m1))
+      (frame_extent (:P R_m1) A *N)
+      (axis_elem (:A A2))
+      (relative (:Base B) (:X P) (:X_rel *R_m2))
+      (frame_extent (:P R_m2) (:A A2) N)
+      (&out_box.cell (:key (:E Sq_e) (:Col Sq_col)) (:P *P2))
+      (&out_box.box (:key (:E Sq_e) (:Col Sq_col)) (:B *B2))
+      (axis_elem A)
+      (relative (:Base B2) (:X P2) (:X_rel *R_m3))
+      (frame_extent (:P R_m3) A (:N *N2))
+      (axis_elem (:A A2))
+      (relative (:Base B2) (:X P2) (:X_rel *R_m4))
+      (frame_extent (:P R_m4) (:A A2) (:N N2)))
+
+    (RULE &target_extent
+      (&bbox.cell (:key *Id) *P)
+      (&bbox.box (:key Id) *B)
+      (perp *A *A2)
+      (axis_elem A)
+      (relative (:Base B) (:X P) (:X_rel *R_m1))
+      (frame_extent (:P R_m1) A (:N *N3))
+      (axis_elem (:A A2))
+      (relative (:Base B) (:X P) (:X_rel *R_m2))
+      (frame_extent (:P R_m2) (:A A2) (:N N3))
+      (&next_extent (:N N3) (:N2 *N)))
+
+    (RULE &paint
+      (&placed *Id *P)
+      (&obj Id *Col))))
+
+(RULE &target_extent
+  (&obj *Id)
+  (NOT (&shrunk Id))
+  (&bloom *N))
+
+(INIT &target Frame
+  (key ((&target_extent ^Id *N)
+        (axis_elem *A))
+    (extent (A N)
+      (&target_extent Id *N)
+      (axis_elem *A))))
+
+(RULE &placed
+  (&target.cell (:key *Id) (:P *T_c))
+  (ALL ((&target.cell (:key (:Id *Idm)) (:P T_c))
+        (opposite (:D *D_m1) (:Opp *O_m2))
+        (margin (:B T_c) (:D D_m1) (:K *K1_m3))
+        (margin (:B T_c) (:D O_m2) (:K *K2_m4)))
+       ((= K1_m3 K2_m4)))
+  (&target.cell (:key Id) (:P *T))
+  (relative (:Base T_c) (:X T) (:X_rel *V))
+  (&center Id (:P *C))
+  (compose (:A C) (:B V) (:C *P))
+  (input P))
+
+(RULE &paint
+  (OR ((&shrunk *Id *P)
+       (&obj Id *Col))
+      ((&placed (:Id *Id2) P)
+       (&obj (:Id Id2) Col))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))

@@ -1,0 +1,264 @@
+;; 9ddd00f0
+
+(INPUT blocks "single background lines divide the grid into an arrangement of square blocks, and the arrangement holds as many blocks along an axis as a block holds cells"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (INIT &block Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg Col))))
+
+  (INIT &block_box BoundingBox
+    (key ((&block.component *P ^Id))
+      (cell (P)
+        (&block.component *P Id))))
+
+  (RULE &cut_cell
+    (input *P)))
+
+(INPUT ink "one color draws the blocks")
+
+(OUTPUT mark "every block is filled with ink but for one background cell — the cell whose place in the block is the block's place in the arrangement"
+
+  (DET_OR_RULE &gap "The background line between neighboring blocks." SepThickness)
+
+  (INIT &cell_division Division
+    (key ((input *P)
+          (sub_extent P (:K ^N)))
+      (cell (P)
+        (input *P)
+        (sub_extent P (:K N)))
+      (parts ((:A A2) N)
+        (axis_elem (:A *A2))
+        (input *P)
+        (sub_extent P (:K N)))
+      (gap ((:A A2) G)
+        (axis_elem (:A *A2))
+        (input *P)
+        (sub_extent P (:K N))
+        (&gap *G))))
+
+  (RULE &ink
+    (input *Col)
+    (NOT (&bg Col)))
+
+  ;; The one division whose block holds as many cells as the grid holds blocks.
+  (RULE &cell
+    (&cell_division.tile (:key *N) *P (:P_outer *P_tile) (:P_inner *P_intile))
+    (axis_elem *A)
+    (sub_extent P A (:K N))
+    (frame_extent (:P P_intile) A N))
+
+  (RULE &line_ink
+    (input *P *Col)
+    (NOT (&bg Col))
+    (axis_elem *A)
+    (split P A (:Along *L)))
+
+  (RULE &blank_line
+    (input *P)
+    (axis_elem *A)
+    (split P A (:Along *L))
+    (NOT (&line_ink A L)))
+
+  (RULE &paint
+    (OR ((&cell *P *P_tile *P_intile)
+         (OR ((!= P_tile P_intile)
+              (&ink *Col))
+             ((= P_tile P_intile)
+              (&bg Col))))
+        ((input P)
+         (NOT (&cell P))
+         (&bg Col)))))
+
+(ALTS $s "how the grid divides into blocks" $Frame
+  (ALT $Drawn
+    (INPUT blocks "single background lines divide the grid into an arrangement of square blocks, each of the extent a drawn block shows"
+      (INIT &cell_division2 Division
+        (key ((input *P)
+              (&block_box.box *B)
+              (box_extent B P (:N ^K)))
+          (cell (P)
+            (input *P)
+            (&block_box.box *B)
+            (box_extent B P (:N K)))
+          (side (A K)
+            (axis_elem *A)
+            (input *P)
+            (&block_box.box *B)
+            (box_extent B P (:N K)))
+          (gap (A G)
+            (axis_elem *A)
+            (input *P)
+            (&block_box.box *B)
+            (box_extent B P (:N K))
+            (&gap *G))))
+
+      ;; The division into blocks of a drawn block's extent.
+      (RULE &cell
+        (&cell_division2.tile *P (:P_outer *P_tile) (:P_inner *P_intile)))))
+  (ALT $Separator
+    (INPUT blocks "a background line that neighbors an inked line cuts the grid, and the cuts divide it into an arrangement of blocks"
+      (RULE &cut_divider
+        (&blank_line *A *L)
+        (axis_of *D A)
+        (neighbor (:P L) D (:Q *L2))
+        (&line_ink A (:L L2)))
+
+      (RULE &cut_on_divider
+        (&cut_cell *P)
+        (&cut_divider *A *L)
+        (axis_of *D A)
+        (same_dist D (:P1 P) (:P2 L)))
+
+      (INIT &cut_rank Order
+        (key ((OR ((&cut_divider *A *L)
+                   (axis_of ^D A)
+                   (margin (:B L) D *K))
+                  ((&cut_cell *P)
+                   (dir_elem D)
+                   (margin (:B P) D K))))
+          (member ((:t K))
+            (&cut_divider *A *L)
+            (axis_of D A)
+            (margin (:B L) D *K))
+          (score ((:t K) (:S K))
+            (OR ((&cut_divider *A *L)
+                 (axis_of D A)
+                 (margin (:B L) D *K))
+                ((&cut_cell *P)
+                 (dir_elem D)
+                 (margin (:B P) D K))))
+          (probe ((:t K))
+            (&cut_cell *P)
+            (dir_elem D)
+            (margin (:B P) D *K))))
+
+      (RULE &cut_part_idx
+        (&cut_cell *P)
+        (axis_of *D *A)
+        (NOT (&cut_on_divider P A))
+        (margin (:B P) D *K)
+        (&cut_rank.rank (:key D) (:t K) (:R *N)))
+
+      (RULE &cut_part_of
+        (axis_of *D *A)
+        (opposite D (:Opp *D2))
+        (&cut_part_idx *P D (:N *N1))
+        (&cut_part_idx P (:D D2) (:N *N2))
+        (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+      (RULE &cut_tile_of
+        (&cut_part_of *P *A (:P_part *P1))
+        (perp A *A2)
+        (&cut_part_of P (:A A2) (:P_part *P2))
+        (compose (:A P1) (:B P2) (:C *P_tile)))
+
+      (INIT &cut_box BoundingBox
+        (key ((&cut_tile_of *P ^P_tile))
+          (cell (P)
+            (&cut_tile_of *P P_tile))))
+
+      ;; The parts the cuts leave, each read in its own frame.
+      (RULE &cell
+        (&cut_tile_of *P *P_tile)
+        (&cut_box.box (:key P_tile) *B)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_intile)))))
+  (ALT $Mirror
+    (INPUT blocks "a background line whose mirror line is also background cuts the grid, and the cuts divide it into an arrangement of blocks"
+      (RULE &cut_divider
+        (&blank_line *A *L)
+        (axis_inversion A (:T *D))
+        (apply D (:P L) (:P_out *L2))
+        (&blank_line A (:L L2)))
+
+      (RULE &cut_on_divider
+        (&cut_cell *P)
+        (&cut_divider *A *L)
+        (axis_of *D A)
+        (same_dist D (:P1 P) (:P2 L)))
+
+      (INIT &cut_rank Order
+        (key ((OR ((&cut_divider *A *L)
+                   (axis_of ^D A)
+                   (margin (:B L) D *K))
+                  ((&cut_cell *P)
+                   (dir_elem D)
+                   (margin (:B P) D K))))
+          (member ((:t K))
+            (&cut_divider *A *L)
+            (axis_of D A)
+            (margin (:B L) D *K))
+          (score ((:t K) (:S K))
+            (OR ((&cut_divider *A *L)
+                 (axis_of D A)
+                 (margin (:B L) D *K))
+                ((&cut_cell *P)
+                 (dir_elem D)
+                 (margin (:B P) D K))))
+          (probe ((:t K))
+            (&cut_cell *P)
+            (dir_elem D)
+            (margin (:B P) D *K))))
+
+      (RULE &cut_part_idx
+        (&cut_cell *P)
+        (axis_of *D *A)
+        (NOT (&cut_on_divider P A))
+        (margin (:B P) D *K)
+        (&cut_rank.rank (:key D) (:t K) (:R *N)))
+
+      (RULE &cut_part_of
+        (axis_of *D *A)
+        (opposite D (:Opp *D2))
+        (&cut_part_idx *P D (:N *N1))
+        (&cut_part_idx P (:D D2) (:N *N2))
+        (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+      (RULE &cut_tile_of
+        (&cut_part_of *P *A (:P_part *P1))
+        (perp A *A2)
+        (&cut_part_of P (:A A2) (:P_part *P2))
+        (compose (:A P1) (:B P2) (:C *P_tile)))
+
+      (INIT &cut_box BoundingBox
+        (key ((&cut_tile_of *P ^P_tile))
+          (cell (P)
+            (&cut_tile_of *P P_tile))))
+
+      ;; The parts the cuts leave, each read in its own frame.
+      (RULE &cell
+        (&cut_tile_of *P *P_tile)
+        (&cut_box.box (:key P_tile) *B)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_intile))))))
+
+(ALTS $p "what the output does with the input's ink" $Redraw
+  (ALT $Complete
+    (OUTPUT mark "a block's background cells take ink but for the cell whose place in the block is the block's place in the arrangement, and every ink cell of the input keeps its color")
+    (RULE &output
+      (input *P (:Col *C))
+      (OR ((&bg (:Col C))
+           (&paint P *Col))
+          ((NOT (&bg (:Col C)))
+           (= Col C)))))
+  (ALT $Blank
+    (OUTPUT mark "a block that holds no ink is filled with ink but for the cell whose place in the block is the block's place in the arrangement, and every other cell keeps its input color"
+      (RULE &drawn
+        (&cell *P *P_tile)
+        (input P *Col)
+        (NOT (&bg Col)))
+
+      (RULE &blank
+        (&cell *P *P_tile)
+        (NOT (&drawn P_tile))))
+    (RULE &output
+      (input *P (:Col *C))
+      (IF ((&blank P))
+          ((&paint P *Col))
+          ((= Col C))))))
+
+(RULE &output
+  (&paint *P *Col))

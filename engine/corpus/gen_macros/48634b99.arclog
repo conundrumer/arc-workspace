@@ -1,0 +1,148 @@
+;; 48634b99
+
+(RULE &bars_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(RULE &bar_cell
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bars Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&bar_cell *P)
+         (&bars_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&bar_cell (:P P3)))
+        ((&bar_cell P)
+         (= P3 P)))))
+
+(RULE &bars_component
+  (&bars.class (:a *P) *Id))
+
+(DET &bar ColorDomain)
+
+(DET &mark ChangedColor)
+
+(DET &axis AxisDomain)
+
+(DET &step TileCount)
+
+(INIT &bbox BoundingBox
+  (key ((&bars_component *P ^Id))
+    (cell (P)
+      (&bars_component *P Id))))
+
+(RULE &bar_pos
+  (&bars_component *P *Id)
+  (&bbox.box (:key Id) *B)
+  (ALL ((&bars_component P (:Id *Idm))
+        (&bbox.box (:key (:Id Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &mark_cell
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(RULE &gauge
+  (&bars_component *P *Id)
+  (&mark_cell P))
+
+(RULE &fill_dir
+  (&gauge *Id)
+  (&bbox.box (:key Id) *B)
+  (&bars_component *P Id)
+  (ALL ((&bars_component P (:Id *Idm))
+        (&bbox.box (:key (:Id Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B P) *D (:K *K_m1))
+  (margin B D (:K K_m1))
+  (&mark_cell P)
+  (&axis *A)
+  (axis_of D A))
+
+(RULE &bar_idx
+  (&bar_pos *Id *P *P_inner)
+  (&fill_dir *D)
+  (margin (:B P_inner) D *K))
+
+;; $Step — the bar a gauge cell's within-bar position lands in once the bar
+;; is stretched by &step.
+(RULE &target
+  (&gauge (:Id *Id_g))
+  (&bar_pos (:Id Id_g) *P_inner)
+  (&axis *A)
+  (axis_of *D A)
+  (&step (:N *K))
+  (edge_inset D K (:B *B_step))
+  (compose (:A P_inner) (:B B_step) (:C *P_inner2))
+  (&bar_pos *Id (:P_inner P_inner2)))
+
+(RULE &fill_idx
+  (&gauge *Id)
+  (&bar_idx Id *P *K)
+  (OR ((&mark_cell P))
+      ((&fill_dir *D)
+       (step_offset D (:V *V_m1))
+       (compose (:A P) (:B V_m1) (:C *Q))
+       (&mark_cell (:P Q)))))
+
+(ALTS $t "which bar the gauge moves to" $Step
+  (ALT $Next
+    (RULE &bar_len
+      (&axis *A)
+      (&bars_component *P *Id)
+      (&bbox.box (:key Id) *B)
+      (axis_elem A)
+      (relative (:Base B) (:X P) (:X_rel *R_m1))
+      (frame_extent (:P R_m1) A *N))
+
+    (INIT &longer Order
+      (member ((:t (:V Id) (:S N)))
+        (&bar_len *Id *N)
+        (&gauge (:Id *Id_g))
+        (&bar_len (:Id Id_g) (:N *N_g))
+        (> N N_g))
+      (score ((:t (:V Id) (:S N)) (:S N))
+        (&bar_len *Id *N)
+        (&gauge (:Id *Id_g))
+        (&bar_len (:Id Id_g) (:N *N_g))
+        (> N N_g)))
+
+    (RULE &target
+      (&longer.minimal (:t (:V *Id))))))
+
+(ALTS $f "how far the fill reaches" $Grow
+  (ALT $Half
+    ;; $Half — nearer the fill's end than the far end.
+    (RULE &filled
+      (&target *Id)
+      (&bar_pos Id *P *P_inner)
+      (&fill_dir *D)
+      (opposite D (:Opp *O_m1))
+      (margin (:B P_inner) D *K)
+      (margin (:B P_inner) (:D O_m1) (:K *K2))
+      (< K K2))))
+
+(RULE &filled
+  (&target *Id)
+  (&bar_idx Id *P *K)
+  (&fill_idx K))
+
+(RULE &output
+  (OR ((&filled *P)
+       (&mark (:C *Col)))
+      ((input P)
+       (IF ((&bar_cell P))
+           ((NOT (&filled P))
+            (&bar (:C Col)))
+           ((&bg (:C Col)))))))

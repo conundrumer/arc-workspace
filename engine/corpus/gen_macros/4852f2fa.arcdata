@@ -1,0 +1,5 @@
+;; 4852f2fa
+
+(param &bg Color (0))
+(param &ink Color (8))
+(param &axis Axis (AXIS_H))

@@ -1,0 +1,88 @@
+;; 88a10436
+
+(DET &bg DominantColor)
+
+(DET &marker ChangedColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &marker2
+  (&ink *P *Col)
+  (&marker (:C Col)))
+
+(ALTS $m "which cells are the marker" $Color
+  (ALT $Lone
+    (RULE &touching
+      (&ink *P)
+      (dir_elem *D)
+      (step_offset D (:V *V_m1))
+      (compose (:A P) (:B V_m1) (:C *Q))
+      (&ink (:P Q)))
+
+    (RULE &marker2
+      (&ink *P)
+      (NOT (&touching P)))))
+
+(ALTS $c "what the copy carries" $Ink
+  (ALT $Box
+    (RULE &content
+      (&boxed *P)
+      (input P *Col))))
+
+(RULE &shape
+  (&ink *P)
+  (NOT (&marker2 P)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&shape *P)))
+
+(RULE &boxed
+  (input *P)
+  (&bbox.box *B)
+  (ALL ((&bbox.box B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(RULE &center
+  (&bbox.box *B)
+  (input *P)
+  (ALL ((&bbox.box B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (ALL ((&bbox.box (:B *Bm))
+        (input (:P *Ctrm))
+        (relative (:Base Bm) (:X Ctrm) (:X_rel P_inner))
+        (opposite (:D *D_m1m) (:Opp *O_m2))
+        (margin (:B P_inner) (:D D_m1m) (:K *K1_m3))
+        (margin (:B P_inner) (:D O_m2) (:K *K2_m4)))
+       ((= K1_m3 K2_m4))))
+
+(RULE &seated
+  (&center (:P *Ctr))
+  (&boxed *P)
+  (relative (:Base Ctr) (:X P) (:X_rel *V))
+  (&marker2 (:P *A))
+  (compose A (:B V) (:C *Q))
+  (input (:P Q)))
+
+(RULE &content
+  (&shape *P)
+  (&ink P *Col))
+
+(RULE &paint
+  (&content *P *Col)
+  (&seated P *Q))
+
+(RULE &output
+  (OR ((&paint (:Q *P) *Col))
+      ((input P Col)
+       (&center)
+       (NOT (&paint (:Q P))))))

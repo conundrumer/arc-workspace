@@ -1,0 +1,6 @@
+;; 6df30ad6
+
+(param &bg Color (0))
+(param &shape Color (5))
+
+(exclude ($Diamond $Most))

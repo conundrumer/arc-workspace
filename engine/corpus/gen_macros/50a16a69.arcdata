@@ -1,0 +1,3 @@
+;; 50a16a69
+
+(param &move_dir Dir (DIR_L))

@@ -1,0 +1,8 @@
+;; f5b8619d
+
+(param &bg Color (0))
+(param &shade Color (8))
+(param &axis Axis (AXIS_V))
+(param &tile Position (Frame
+  ((:A AXIS_V) (:N 2))
+  ((:A AXIS_H) (:N 2))))

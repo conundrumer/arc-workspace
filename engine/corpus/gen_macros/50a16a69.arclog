@@ -1,0 +1,57 @@
+;; 50a16a69
+
+(RULE &item_split1
+  (input (:P *P_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(DET &move_dir DirDomain)
+
+;; The filler color is the one that fills whole grid lines.
+(INIT &line Singleton
+  (key ((input *P *Col)
+        (axis_elem *A)
+        (&item_split1 (:P_ P) (:A_ A) (:L_ ^L) (:X_m1_ *X_m1)))
+    (member ((:v Col))
+      (input *P *Col)
+      (axis_elem *A)
+      (&item_split1 (:P_ P) (:A_ A) (:L_ L) (:X_m1_ *X_m1)))))
+
+(RULE &pattern
+  (input *P *Col)
+  (NOT (&line.value (:v Col))))
+
+(INIT &si Periods
+  (cell (P (:v Col))
+    (&pattern *P *Col)))
+
+(RULE &phase
+  (input *P)
+  (dir_elem *D)
+  (margin (:B P) D (:K *T))
+  (axis_of D *A)
+  (OR ((&si.fundamental_period A *K)
+       (divide T (:Side K) (:Gap 0) (:Remainder *J)))
+      ((NOT (&si.fundamental_period A))
+       (= J T))))
+
+(RULE &output
+  (axis_of (:D *D1) *A)
+  (perp A *A2)
+  (axis_of (:D *D2) (:A A2))
+  (&phase *P (:D D1) (:J *J1))
+  (&phase P (:D D2) (:J *J2))
+  (&phase (:P *Q) (:D D1) (:J J1))
+  (&phase (:P Q) (:D D2) (:J J2))
+  (&pattern (:P *R) *Col)
+  (&move_dir *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A R) (:B V_m1) (:C Q)))

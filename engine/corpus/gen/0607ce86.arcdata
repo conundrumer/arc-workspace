@@ -1,0 +1,6 @@
+;; 0607ce86
+
+(param &bg Color (0))
+(param &block_shape Position (Frame
+  ((:A AXIS_V) (:N 3))
+  ((:A AXIS_H) (:N 3))))

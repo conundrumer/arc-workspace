@@ -1,0 +1,167 @@
+;; 9385bd28
+
+(RULE &regions_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The field is the commonest color; the regions are what is drawn on it.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(INIT &regions Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&field.maximal (:t Col)))
+         (&regions_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&field.maximal (:t Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&field.maximal (:t Col3)))
+         (= P3 P)))))
+
+(RULE &regions_component
+  (&regions.class (:a *P) *Id))
+
+(RULE &pieces_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+;; the legend's head: of two entries, the one nearer this edge wins
+(DET &head_dir DirDomain)
+
+;; the quarter turn from the head to the legend's key side
+(DET &key_sense SenseDomain)
+
+(RULE &key_dir
+  (&head_dir (:D *D_head))
+  (&key_sense *S)
+  (turn S (:D D_head) (:D2 *D)))
+
+;; The legend is the one region that holds more than one color.
+(INIT &region_color Singleton
+  (key ((&regions_component *P ^Id)
+        (input P *Col))
+    (member ((:v Col))
+      (&regions_component *P Id)
+      (input P *Col))))
+
+(INIT &legend BoundingBox
+  (cell (P)
+    (&regions_component *P *Id)
+    (&region_color.plural (:key Id))))
+
+(RULE &entry
+  (&legend.box *B)
+  (&key_dir *D)
+  (opposite D (:Opp *D2))
+  (input (:P *E1) (:Col *C_key))
+  (ALL ((input (:P E1) (:Col *C_keym))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X E1) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3m)))
+       ((>= K_m3m 0)))
+  (margin (:B E1) D (:K *K_m1))
+  (margin B D (:K K_m1))
+  (input (:P *Q) (:Col *C_val))
+  (ALL ((input (:P Q) (:Col *C_valm))
+        (dir_elem (:D *D_m1m))
+        (relative (:Base B) (:X Q) (:X_rel *R_m2m))
+        (margin (:B R_m2m) (:D D_m1m) (:K *K_m3mm)))
+       ((>= K_m3mm 0)))
+  (margin (:B Q) (:D D2) (:K *K_m2))
+  (margin B (:D D2) (:K K_m2))
+  (&head_dir (:D *D_head))
+  (margin (:B E1) (:D D_head) (:K *K_m3))
+  (margin (:B Q) (:D D_head) (:K K_m3)))
+
+(RULE &in_legend_inside1
+  (input (:P *P_))
+  (&legend.box (:B *B_))
+  (dir_elem (:D *D_m1))
+  (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+  (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+  (< K_m3 0))
+
+(RULE &drawn
+  (&entry (:C_key *C))
+  (input *P (:Col C))
+  (ALL ((&legend.box *B))
+       ((&in_legend_inside1 (:P_ P) (:B_ B)))))
+
+(INIT &pieces Quotient
+  (edge ((:a (:Key C) P) (:b (:Key C) (:P P3)))
+    (OR ((&drawn *C *P)
+         (&pieces_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&drawn C (:P P3)))
+        ((&drawn C P)
+         (= P3 P)))))
+
+(RULE &pieces_component
+  (&pieces.class (:a *Key *P) *Id))
+
+(INIT &piece_box BoundingBox
+  (key ((&pieces_component *P ^Id))
+    (cell (P)
+      (&pieces_component *P Id))))
+
+(RULE &open_box
+  (&piece_box.box (:key *Id) *B)
+  (input *P)
+  (ALL ((&piece_box.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (NOT (&pieces_component P Id)))
+
+(RULE &mark
+  (&pieces_component (:Key *C) *P *Id)
+  (&open_box Id))
+
+;; The box an entry's pieces span.
+(INIT &span BoundingBox
+  (key ((&drawn ^C *P))
+    (cell (P)
+      (&drawn C *P))))
+
+(RULE &covered
+  (&entry *E1 (:C_key *C))
+  (&span.box (:key C) *B)
+  (input *P)
+  (ALL ((&span.box (:key (:C *Cm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(ALTS $choice "which pieces of a key color are marks" $Open
+  (ALT $Paired
+    (RULE &mark
+      (&pieces_component (:Key *C) *P *Id)
+      (&pieces_component (:Key C) (:Id *Id2))
+      (!= Id Id2))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&covered P)))
+      ((&covered P (:E1 *E))
+       (ALL ((&covered P (:E1 *E2))
+             (&head_dir *D)
+             (dir_elem D)
+             (margin (:B E2) D (:K *K1_m1))
+             (margin (:B E) D (:K *K2_m2)))
+            ((>= K1_m1 K2_m2)))
+       (&entry (:E1 E) *C_key *C_val)
+       (IF ((&mark (:C C_key) P))
+           ((= Col C_key))
+           ((= Col C_val))))))

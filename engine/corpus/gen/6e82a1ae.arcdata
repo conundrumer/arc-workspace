@@ -1,0 +1,6 @@
+;; 6e82a1ae
+
+(param &bg Color (0))
+(param &count_color (number Color) (2 3) (3 2) (4 1))
+(param &big_color (number Color) (0 1) (1 2) (2 3))
+(param &small_color (number Color) (0 3) (1 2) (2 1))

@@ -1,0 +1,134 @@
+;; 5b692c0f
+
+(RULE &objs_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(INIT &objs Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&objs_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &objs_component
+  (&objs.class (:a *P) *Id))
+
+;; The color the axis and the off-axis mark are drawn in.
+(DET &mark UnchangedColor)
+
+(RULE &obj
+  (&objs_component *P *Id))
+
+(RULE &obj_mark
+  (&obj *Id *P)
+  (input P *Col)
+  (&mark (:C Col)))
+
+(RULE &item_split1
+  (&obj_mark *Id (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P_) (:X_rel *L_)))
+
+(INIT &line_pick_count Cardinality
+  (key ((&obj_mark ^Id *P)
+        (axis_elem ^A)
+        (&item_split1 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:L_ ^L)))
+    (member ((:m P))
+      (&obj_mark Id *P)
+      (axis_elem A)
+      (&item_split1 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:L_ L)))))
+
+(INIT &bbox BoundingBox
+  (key ((&obj ^Id *P))
+    (cell (P)
+      (&obj Id *P))))
+
+(RULE &box_cell
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (ALL ((&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+;; The fold's line is the object's commonest mark line.
+(INIT &line_pick Order
+  (key ((&line_pick_count.size (:key ^Id (:A *M_a) (:L *M_l))))
+    (member ((:t (:A M_a) (:L M_l)))
+      (&line_pick_count.size (:key Id (:A *M_a) (:L *M_l))))
+    (score ((:t (:A M_a) (:L M_l)) (:S N))
+      (&line_pick_count.size (:key Id (:A *M_a) (:L *M_l)) *N))))
+
+(RULE &fold
+  (&line_pick.maximal (:key *Id) (:t (:A *A3) *L))
+  (perp (:A A3) (:A2 *A)))
+
+(RULE &side
+  (&box_cell *Id *P)
+  (&fold Id *A *L)
+  (axis_of *D A)
+  (dir_elem D)
+  (margin (:B P) D (:K *K1_m1))
+  (margin (:B L) D (:K *K2_m2))
+  (< K1_m1 K2_m2))
+
+(INIT &side_pick_count Cardinality
+  (key ((&side ^Id ^D *P)
+        (&obj_mark Id P))
+    (member ((:m P))
+      (&side Id D *P)
+      (&obj_mark Id P))))
+
+(RULE &mirror
+  (&box_cell *Id *P)
+  (&fold Id *A *L)
+  (axis_inversion A (:T *F))
+  (relative (:Base L) (:X P) (:X_rel *V))
+  (apply (:D F) (:P V) (:P_out *V2))
+  (compose (:A L) (:B V2) (:C *P_out))
+  (input (:P P_out)))
+
+(ALTS $choice "which side is the source" $Mark
+  (ALT $Count
+    (INIT &side_pick_count Cardinality
+      (key ((&side ^Id ^D *P)
+            (&obj Id P))
+        (member ((:m P))
+          (&side Id D *P)
+          (&obj Id P))))))
+
+;; The source side is the side holding most of the case's cells.
+(INIT &side_pick Order
+  (key ((&side_pick_count.size (:key ^Id *D)))
+    (member ((:t D))
+      (&side_pick_count.size (:key Id *D)))
+    (score ((:t D) (:S N))
+      (&side_pick_count.size (:key Id *D) *N))))
+
+(RULE &fill
+  (&side_pick.maximal (:key *Id) (:t *D))
+  (&side Id D (:P *Q))
+  (input (:P Q) *Col)
+  (&mirror Id (:P Q) (:P_out *P)))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&fill P)))))

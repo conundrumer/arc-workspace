@@ -1,0 +1,5 @@
+;; 2bcee788
+
+(param &bg Color (0))
+(param &ground Color (3))
+(param &marker Color (2))

@@ -1,0 +1,6 @@
+;; 9c56f360
+
+(param &bg Color (0))
+(param &mover Color (3))
+(param &dir Dir (DIR_L))
+(param &wall Color (8))

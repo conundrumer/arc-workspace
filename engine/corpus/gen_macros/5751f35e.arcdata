@@ -1,0 +1,4 @@
+;; 5751f35e
+
+(param &bg Color (0))
+(param &sym Sym (SYM_D4))

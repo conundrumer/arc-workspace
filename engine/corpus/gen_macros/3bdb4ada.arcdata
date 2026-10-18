@@ -1,0 +1,6 @@
+;; 3bdb4ada
+
+(param &bg Color (0))
+(param &dash_axis Axis (AXIS_H))
+(param &dash number (1))
+(param &gap number (1))

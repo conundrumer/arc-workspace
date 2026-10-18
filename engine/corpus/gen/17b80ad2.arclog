@@ -1,0 +1,68 @@
+;; 17b80ad2
+
+(DET &bg DominantColor)
+
+(DET &mark SharedColor)
+
+(DET &dir DirDomain)
+
+(RULE &marked
+  (input *P *Col)
+  (&mark (:C Col))
+  (&dir *D)
+  (margin (:B P) D (:K 0))
+  (axis_of D *A)
+  (split P A (:Across *P_across)))
+
+(ALTS $choice "data-equivalent here, since every mark sits on the bottom edge; diverges when marks sit on another edge" $Dir
+  (ALT $Edge
+    (RULE &marked
+      (input *P *Col)
+      (&mark (:C Col))
+      (dir_elem *D)
+      (margin (:B P) D (:K 0))
+      (axis_of D *A)
+      (split P A (:Across *P_across)))))
+
+(RULE &flow_blocked
+  (&marked (:D *Key))
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; Ink flows away from the mark edge through bg; ink occludes.
+(INIT &flow Ray
+  (key ((OR ((input *P *Col)
+             (NOT (&bg (:C Col)))
+             (&marked *P_across ^D)
+             (axis_of D *A)
+             (split P A (:Across P_across)))
+            ((&marked D)
+             (opposite D (:Opp *O)))))
+    (source (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col)))
+      (&marked *P_across D)
+      (axis_of D *A)
+      (split P A (:Across P_across)))
+    (node (P)
+      (&marked D)
+      (opposite D (:Opp *O))
+      (input *P)
+      (NOT (&flow_blocked (:Key D) P)))
+    (dir ((:D O))
+      (&marked D)
+      (opposite D (:Opp *O)))))
+
+(RULE &flow_cell
+  (&marked (:D *Key))
+  (input *P))
+
+(RULE &painted
+  (&flow.ray *P (:Origin *P_ink))
+  (&flow_cell P)
+  (input (:P P_ink) *Col))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))

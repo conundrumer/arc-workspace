@@ -1,0 +1,4 @@
+;; 4cd1b7b2
+
+(param &bg Color (0))
+(param &palette Color (1) (2) (3) (4))

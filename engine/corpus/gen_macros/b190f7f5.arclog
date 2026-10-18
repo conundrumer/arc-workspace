@@ -1,0 +1,293 @@
+;; b190f7f5
+
+(INPUT two-square-halves "the input is two n×n squares joined along its long side, with no divider between them; the axis of the join and the order of the two squares vary")
+
+(INPUT template-half "one square holds only `template_color` and `background` cells; this is the shape"
+
+  (RULE &half_division_axis_split1
+    (input (:P *P_))
+    (axis_elem (:A *A2_))
+    (axis_of (:D *D_m1) (:A A2_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+    (relative (:Base Pi_) (:X P_) (:X_rel *X_m3_)))
+
+  (RULE &half_division_side_held
+    (input *P)
+    (perp *A (:A2 *A2_m2))
+    (frame_extent P A (:N *N1_m1))
+    (frame_extent P (:A A2_m2) *N))
+
+  (RULE &half_division_axis
+    (OR ((input *P)
+         (perp (:A *Key_a) (:A2 *A2_m2))
+         (frame_extent P (:A Key_a) (:N *N1_m1))
+         (frame_extent P (:A A2_m2) *N)
+         (axis_elem *A)
+         (OR ((!= A Key_a))
+             ((NOT (&half_division_side_held (:A Key_a) N))))
+         (&half_division_axis_split1 (:P_ P) (:A2_ A) (:Pi_ *P_inner) (:X_m3_ *X_m3))
+         (relative (:Base P_inner) (:X P_inner) (:X_rel *P_outer)))
+        ((input P)
+         (perp (:A Key_a) (:A2 *A2_m22))
+         (frame_extent P (:A Key_a) (:N *N1_m12))
+         (frame_extent P (:A A2_m22) N)
+         (input (:P *P2))
+         (perp (:A Key_a) (:A2 *A2_m4))
+         (frame_extent (:P P2) (:A Key_a) (:N *N1_m3))
+         (frame_extent (:P P2) (:A A2_m4) N)
+         (axis_of *D (:A Key_a))
+         (opposite D (:Opp *O))
+         (margin (:B P) D (:K *T))
+         (margin (:B P) (:D O) (:K *T2))
+         (divide T (:Side N) (:Gap 0) (:Part *I) (:Remainder *R))
+         (divide (:T T2) (:Side N) (:Gap 0) (:Part *I2) (:Remainder *R2))
+         (opposite D (:Opp *O_m5))
+         (edge_inset D (:K I) (:B *B1_m6))
+         (edge_inset (:D O_m5) (:K I2) (:B *B2_m7))
+         (compose (:A B1_m6) (:B B2_m7) (:C P_outer))
+         (opposite D (:Opp *O_m8))
+         (edge_inset D (:K R) (:B *B1_m9))
+         (edge_inset (:D O_m8) (:K R2) (:B *B2_m10))
+         (compose (:A B1_m9) (:B B2_m10) (:C P_inner))
+         (frame_extent (:P P_inner) (:A Key_a) N)
+         (= A Key_a))))
+
+  (RULE &half_division_tile
+    (&half_division_axis (:Key_a *A) *N *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+    (perp (:A A1) *A2)
+    (&half_division_axis (:Key_a A) N P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+    (compose (:A Po1) (:B Po2) (:C *P_outer))
+    (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+  ;; Squares along an axis whose side is the extent across that axis.
+  (RULE &half
+    (&half_division_tile *P (:P_outer *P_half) *P_inner))
+
+  (DET &bg DominantColor)
+
+  (RULE &half_color
+    (&half *P *P_half)
+    (input P *Col)
+    (NOT (&bg (:C Col))))
+
+  ;; The color of a half whose non-background cells all have one color.
+  (INIT &sole_color Singleton
+    (key ((&half_color ^P_half *Col))
+      (member ((:v Col))
+        (&half_color P_half *Col))))
+
+  (INIT &colors Cardinality
+    (key ((OR ((&half ^P_half))
+              ((&half_color P_half *Col))))
+      (member ((:m Col))
+        (&half_color P_half *Col))
+      (domain ()
+        (&half P_half)))))
+
+(INPUT pattern-half "the other square holds no `template_color` cell; its non-`background` cells are the pattern")
+
+(OUTPUT output-size "the output is n²×n², an n×n grid of n×n blocks, one block per pattern cell"
+
+  (DET &template_color VanishedColor)
+
+  (RULE &off_template
+    (&half_color *P_half *Col)
+    (NOT (&template_color (:C Col))))
+
+  (RULE &shape_half
+    (&half *P *P_half)
+    (input P *Col)
+    (&template_color (:C Col))
+    (NOT (&off_template P_half)))
+
+  (RULE &shape_ink
+    (&shape_half *P_half)
+    (&half *P P_half *P_inner)
+    (input P *Col)
+    (NOT (&bg (:C Col)))))
+
+(OUTPUT stamp-shape "the block at pattern cell (I,J) takes, at each cell (i,j), the color of pattern cell (I,J) where the shape has `template_color` at (i,j) and pattern cell (I,J) is not `background`; every other cell is `background`")
+
+(ALTS $s "how the input divides into the two halves" $SquareHalves
+  (ALT $EqualHalves
+    (INPUT two-square-halves "the input is two equal n×m halves joined along its long side; undefined where the input is square or its long side is odd")
+    (OUTPUT output-size "the output is an n×m grid of n×m blocks, one block per pattern cell"
+      (RULE &half_division2_cell
+        (input *P)
+        (perp (:A *Key) (:A2 *A2_m1))
+        (frame_extent P (:A Key) (:N *N1))
+        (frame_extent P (:A A2_m1) (:N *N2))
+        (> N1 N2))
+
+      (INIT &half_division2_sides ExtentDivisions
+        (key ((&half_division2_cell (:Key ^Ky) *P))
+          (frame (P)
+            (&half_division2_cell (:Key Ky) *P))))
+
+      (RULE &half_division2_axis_split1
+        (&half_division2_cell (:Key *Ky) (:P *P_))
+        (axis_elem (:A *A_))
+        (axis_of (:D *D_m1) (:A A_))
+        (opposite (:D D_m1) (:Opp *O_m2))
+        (margin (:B P_) (:D D_m1) (:K *K1_m3))
+        (margin (:B P_) (:D O_m2) (:K *K2_m4))
+        (opposite (:D D_m1) (:Opp *O_m1))
+        (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+        (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+        (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+        (relative (:Base Pi_) (:X P_) (:X_rel *X_m1_)))
+
+      (DET &half_count TileCount)
+
+      (RULE &half_division2_axis
+        (OR ((&half_division2_cell *Key *P)
+             (axis_elem *A)
+             (OR ((!= A Key))
+                 ((ALL ((input (:P *Pmm))
+                        (perp (:A Key) (:A2 *A2_m1m))
+                        (frame_extent (:P Pmm) (:A Key) (:N *N1m))
+                        (frame_extent (:P Pmm) (:A A2_m1m) (:N *N2m))
+                        (&half_count (:N *Km)))
+                       ((<= N1m N2m)))))
+             (&half_division2_axis_split1 (:P_ P) (:A_ A) (:Pi_ *P_inner) (:X_m1_ *X_m1))
+             (relative (:Base P_inner) (:X P_inner) (:X_rel *P_outer)))
+            ((&half_division2_cell Key P)
+             (input (:P *P3))
+             (perp (:A Key) (:A2 *A2_m1))
+             (frame_extent (:P P3) (:A Key) (:N *N1))
+             (frame_extent (:P P3) (:A A2_m1) (:N *N2))
+             (> N1 N2)
+             (&half_count (:N *K))
+             (&half_division2_sides.division (:key (:Ky Key)) (:A Key) (:N K) (:K *K2) (:G 0))
+             (axis_of *D (:A Key))
+             (opposite D (:Opp *O))
+             (margin (:B P) D (:K *T))
+             (margin (:B P) (:D O) (:K *T2))
+             (divide T (:Side K2) (:Gap 0) (:Part *I) (:Remainder *R))
+             (divide (:T T2) (:Side K2) (:Gap 0) (:Part *I2) (:Remainder *R2))
+             (opposite D (:Opp *O_m2))
+             (edge_inset D (:K I) (:B *B1_m3))
+             (edge_inset (:D O_m2) (:K I2) (:B *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C P_outer))
+             (opposite D (:Opp *O_m5))
+             (edge_inset D (:K R) (:B *B1_m6))
+             (edge_inset (:D O_m5) (:K R2) (:B *B2_m7))
+             (compose (:A B1_m6) (:B B2_m7) (:C P_inner))
+             (frame_extent (:P P_inner) (:A Key) (:N K2))
+             (= A Key))
+            ((&half_division2_cell Key P)
+             (input (:P *P32))
+             (perp (:A Key) (:A2 *A2_m12))
+             (frame_extent (:P P32) (:A Key) (:N *N12))
+             (frame_extent (:P P32) (:A A2_m12) (:N *N22))
+             (> N12 N22)
+             (&half_count (:N *K3))
+             (frame_extent P (:A Key) (:N *K22))
+             (axis_of (:D *D2) (:A Key))
+             (opposite (:D D2) (:Opp *O2))
+             (margin (:B P) (:D D2) (:K *T3))
+             (margin (:B P) (:D O2) (:K *T22))
+             (divide (:T T3) (:Side K22) (:Gap 0) (:Part *I3) (:Remainder *R3))
+             (divide (:T T22) (:Side K22) (:Gap 0) (:Part *I22) (:Remainder *R22))
+             (opposite (:D D2) (:Opp *O_m22))
+             (edge_inset (:D D2) (:K I3) (:B *B1_m32))
+             (edge_inset (:D O_m22) (:K I22) (:B *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C P_outer))
+             (opposite (:D D2) (:Opp *O_m52))
+             (edge_inset (:D D2) (:K R3) (:B *B1_m62))
+             (edge_inset (:D O_m52) (:K R22) (:B *B2_m72))
+             (compose (:A B1_m62) (:B B2_m72) (:C P_inner))
+             (frame_extent (:P P_inner) (:A Key) (:N K22))
+             (frame_extent (:P P_outer) (:A Key) (:N K3))
+             (= A Key))))
+
+      (RULE &half_division2_tile
+        (&half_division2_axis *Key *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+        (perp (:A A1) *A2)
+        (&half_division2_axis Key P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+        (compose (:A Po1) (:B Po2) (:C *P_outer))
+        (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+      (RULE &half
+        (&half_division2_tile (:Key *A) *P (:P_outer *P_half) *P_inner)
+        (perp A (:A2 *A2_m1))
+        (frame_extent P A (:N *N1))
+        (frame_extent P (:A A2_m1) (:N *N2))
+        (> N1 N2)))))
+
+(ALTS $t "which half is the shape" $OnlyTemplateColor
+  (ALT $MonoTemplate
+    (INPUT template-half "the shape is the half whose non-`background` cells are of one color, and those cells are the shape; undefined where both halves, or neither, are of one color"
+      (RULE &shape_half
+        (&sole_color.value (:key *P_half)))))
+  (ALT $FewerColorsTemplate
+    (INPUT template-half "the shape is the half with fewer non-`background` colors, and its non-`background` cells are the shape; undefined where the two halves have equally many colors"
+      (RULE &shape_half
+        (&colors.size (:key *P_half) *N)
+        (&colors.size (:N *N2))
+        (< N N2)))))
+
+(ALTS $f "the frame of the shape that each block copies" $WholeHalf
+  (ALT $TemplateBbox
+    (OUTPUT output-size "the blocks have the size of the bounding box of the shape's cells, and the output is n blocks of that size on each axis; undefined where the shape has no cell"
+      (INIT &shape_box BoundingBox
+        (cell ((:P P_inner))
+          (&shape_ink *P_inner))))
+    (OUTPUT stamp-shape "a block copies the shape's bounding box in place of the whole square")
+    (RULE &block
+      (&shape_box.box *B)
+      (&shape_half *P_half)
+      (&half P_half *P_inner)
+      (ALL ((&half (:P_half *P_halfm) P_inner)
+            (&shape_box.box B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P_inner) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (relative (:Base B) (:X P_inner) (:X_rel *P_block)))
+
+    (RULE &block_ink
+      (&shape_box.box *B)
+      (&shape_ink *P_inner)
+      (ALL ((&shape_ink P_inner)
+            (&shape_box.box B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P_inner) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (relative (:Base B) (:X P_inner) (:X_rel *P_block)))))
+
+(RULE &block
+  (&shape_half *P_half)
+  (&half P_half (:P_inner *P_block)))
+
+(RULE &pattern
+  (&shape_half)
+  (&half *P *P_half *P_inner)
+  (NOT (&shape_half P_half))
+  (input P *Col))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&pattern (:P_inner *P_tile)))
+  (inner ((:P P_block))
+    (&block *P_block)))
+
+(RULE &block_ink
+  (&shape_ink (:P_inner *P_block)))
+
+;; Each output cell is a cell of a pattern cell's block.
+(RULE &output
+  (&pattern (:P_inner *P_tile) (:Col *C_pat))
+  (&block *P_block)
+  (&output_tiling.cell (:P_outer P_tile) (:P_inner P_block) *P)
+  (OR ((NOT (&block_ink P_block))
+       (&bg (:C *Col)))
+      ((&block_ink P_block)
+       (= Col C_pat))))

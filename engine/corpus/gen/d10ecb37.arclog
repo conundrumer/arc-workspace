@@ -1,0 +1,28 @@
+;; d10ecb37
+
+(DET &diag DiagDirDomain)
+
+(DET &window Frame)
+
+(ALTS $choice "how the corner block is located" $Corner
+  (ALT $Block
+    (DET &tile_dim ConstOutDim)
+
+    (INIT &output_division Division
+      (cell ((:P P_in))
+        (input (:P *P_in)))
+      (side (A K)
+        (axis_elem *A)
+        (&tile_dim (:N *K))))
+
+    (RULE &output
+      (input (:P *P_in) *Col)
+      (&output_division.tile (:P P_in) (:P_outer *P_tile) (:P_inner *P))
+      (&diag *D)
+      (same_corner D (:P1 P_tile) (:P2 0)))))
+
+(RULE &output
+  (input (:P *P_in) *Col)
+  (&window *P)
+  (&diag *D)
+  (same_corner D (:P1 P) (:P2 P_in)))

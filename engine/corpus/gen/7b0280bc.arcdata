@@ -1,0 +1,4 @@
+;; 7b0280bc
+
+(param &wire_fill Color (5))
+(param &square_fill Color (3))

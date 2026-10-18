@@ -1,0 +1,5 @@
+;; d13f3404
+
+(param &bg Color (0))
+(param &sweep DiagDir (DIAG_BR))
+(param &side number (6))

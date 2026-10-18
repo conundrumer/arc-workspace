@@ -1,0 +1,115 @@
+;; 3345333e
+
+(DET &bg DominantColor)
+
+;; The axis the mirror inverts.
+(DET &axis AxisDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The occluder is the color whose cells fill their bounding box; the figure
+;; is the other one.
+(INIT &color_box BoundingBox
+  (key ((&ink *P ^Col))
+    (cell (P)
+      (&ink *P Col))))
+
+(RULE &gap
+  (&color_box.box (:key *Col) *B)
+  (input *P)
+  (ALL ((&color_box.box (:key (:Col *Colm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (NOT (input P Col)))
+
+(RULE &occluder
+  (&ink *P *Col)
+  (NOT (&gap Col)))
+
+(RULE &figure
+  (&ink *P *Col)
+  (&gap Col))
+
+(RULE &damaged
+  (&figure *P)
+  (&occluder (:P *Q))
+  (&axis *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B Q) (:D D_m2) (:K K_m3)))
+
+;; The figure where it is whole.
+(INIT &whole BoundingBox
+  (cell (P)
+    (&figure *P)
+    (NOT (&damaged P))))
+
+(RULE &pair
+  (&figure *P)
+  (&figure (:P *Q))
+  (&axis *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B Q) (:D D_m2) (:K K_m3)))
+
+(INIT &pair_box BoundingBox
+  (key ((&pair ^P ^Q))))
+
+(RULE &cand
+  (&pair_box.box *B))
+
+(RULE &mirror_frame
+  (OR ((&whole.box *B))
+      ((&cand B))))
+
+(RULE &mirror
+  (&mirror_frame *B)
+  (input *P)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (&axis *A)
+  (axis_inversion A (:T *D))
+  (apply D (:P P_inner) (:P_out *Q_inner))
+  (compose (:A B) (:B Q_inner) (:C *Q))
+  (input (:P Q)))
+
+(RULE &frame
+  (&whole.box *B))
+
+(RULE &target
+  (input *P))
+
+(ALTS $choice "which frame the mirror repair acts in" $Complete
+  (ALT $Patch
+    (RULE &target
+      (&occluder *P)))
+  (ALT $Fitted
+    (RULE &upheld
+      (&mirror *B *P *Q)
+      (OR ((&figure (:P Q)))
+          ((&occluder (:P Q)))))
+
+    (RULE &frame
+      (&cand *B)
+      (ALL ((&figure *P))
+           ((&upheld B P))))))
+
+(RULE &paint
+  (&figure (:P *P2) *Col)
+  (&frame *B)
+  (&mirror B (:P P2) (:Q *P))
+  (&target P))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P (:Col *Col_in))
+       (NOT (&paint P))
+       (OR ((&occluder P)
+            (&bg (:C Col)))
+           ((NOT (&occluder P))
+            (= Col Col_in))))))

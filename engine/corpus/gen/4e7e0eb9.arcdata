@@ -1,0 +1,7 @@
+;; 4e7e0eb9
+
+(param &bg Color (0))
+(param &section number (9))
+(param &sep number (1))
+(param &margin number (1))
+(param &blank Color (1))

@@ -1,0 +1,4 @@
+;; 5b692c0f
+
+(param &bg Color (0))
+(param &mark Color (4))

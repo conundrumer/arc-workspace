@@ -1,0 +1,5 @@
+;; 25ff71a9
+
+(param &shift_dir Dir (DIR_B))
+(param &shift_k number (1))
+(param &bg Color (0))

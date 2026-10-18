@@ -1,0 +1,96 @@
+;; 7ee1c6ea
+
+(DET &bg SharedColor)
+
+(DET &frame SharedColor)
+
+(RULE &frame_cell
+  (input *P *Col)
+  (&frame (:C Col)))
+
+(INIT &fbox BoundingBox
+  (cell (P)
+    (&frame_cell *P)))
+
+(RULE &within
+  (input *P)
+  (&fbox.box *B)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((> K_m3 0))))
+
+(ALTS $i "which cells count as inside the outline" $Box
+  (ALT $Enclose
+    (RULE &closed_flood_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (RULE &closed_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (RULE &closed_cell
+      (input *P)
+      (NOT (&frame_cell P)))
+
+    (INIT &closed_flood Propagation
+      (source ((:n P))
+        (&closed_cell *P)
+        (dir_elem *D)
+        (margin (:B P) D (:K 0))
+        (input P)
+        (NOT (&frame_cell P)))
+      (edge ((:a P) (:b P2))
+        (input *P)
+        (NOT (&frame_cell P))
+        (&closed_flood_steps (:Delta *S))
+        (compose (:A P) (:B S) (:C *P2))
+        (input (:P P2))
+        (NOT (&frame_cell (:P P2)))))
+
+    (RULE &closed_node
+      (&closed_cell *P)
+      (NOT (&closed_flood.reached (:n P))))
+
+    (INIT &closed Quotient
+      (edge ((:a P) (:b P2))
+        (OR ((&closed_node *P)
+             (&closed_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P2))
+             (&closed_node (:P P2)))
+            ((&closed_node P)
+             (= P2 P)))))
+
+    (RULE &closed_component
+      (&closed.class (:a *P) *Id))
+
+    (RULE &within
+      (&closed_component *P))))
+
+(ALTS $pal "which two colors trade places" $Held
+  (ALT $Field
+    (RULE &ink
+      (input *Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&frame (:C Col))))))
+
+(RULE &ink
+  (&within *P)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &swap
+  (&ink *Col)
+  (&ink (:Col *Col2))
+  (!= Col Col2))
+
+(RULE &traded
+  (&within *P)
+  (input P (:Col *Col3))
+  (&swap (:Col Col3) (:Col2 *Col)))
+
+(RULE &output
+  (OR ((&traded *P *Col))
+      ((input P Col)
+       (NOT (&traded P)))))

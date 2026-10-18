@@ -1,0 +1,5 @@
+;; 3eda0437
+
+(param &bg Color (0))
+(param &paint Color (6))
+(param &block number (2))

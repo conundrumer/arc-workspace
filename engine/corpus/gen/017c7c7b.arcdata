@@ -1,0 +1,6 @@
+;; 017c7c7b
+
+(param &dir Dir (DIR_B))
+(param &extent number (9))
+(param &bg Color (0))
+(param &ink Color (2))

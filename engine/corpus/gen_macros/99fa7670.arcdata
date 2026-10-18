@@ -1,0 +1,5 @@
+;; 99fa7670
+
+(param &bg Color (0))
+(param &dir Dir (DIR_R))
+(param &sense Sense (SENSE_CW))

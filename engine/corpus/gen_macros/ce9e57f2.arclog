@@ -1,0 +1,56 @@
+;; ce9e57f2
+
+(RULE &cell_split1
+  (input (:P *P_) *Col)
+  (axis_of *D (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P_) (:X_rel *Ac_)))
+
+(DET &bar RarestColor)
+
+(DET &mark AnyOutNewColor)
+
+(DET &base DirDomain)
+
+;; Bars keyed by their line's across position.
+(INIT &bars BoundingBox
+  (key ((input *P *Col)
+        (&bar (:C Col))
+        (&base *D)
+        (axis_of D *A)
+        (&cell_split1 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:Ac_ ^Ac)))
+    (cell (P)
+      (input *P *Col)
+      (&bar (:C Col))
+      (&base *D)
+      (axis_of D *A)
+      (&cell_split1 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:Ac_ Ac)))))
+
+(RULE &marked
+  (&bars.cell (:key *Ac) *P)
+  (&bars.box (:key Ac) *B)
+  (ALL ((&bars.cell (:key (:Ac *Acm)) P)
+        (&bars.box (:key (:Ac Acm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (&base *D)
+  (opposite D (:Opp *O_m1))
+  (margin (:B P_inner) D *K)
+  (margin (:B P_inner) (:D O_m1) (:K *K2))
+  (< K K2))
+
+(RULE &output
+  (OR ((&marked *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&marked P)))))

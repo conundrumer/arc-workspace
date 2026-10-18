@@ -1,0 +1,21 @@
+;; e345f17b
+
+(representative fafffa47)
+
+(param &frame_dim number (4))
+(param &tile_decompose (Position Position Position) (Division
+  ((:A AXIS_V) (:Count 1) (:Size 4) (:Gap 0))
+  ((:A AXIS_H) (:Count 2) (:Size 4) (:Gap 0))))
+(param &divisor number (2))
+(param &divide_axis Axis (AXIS_H))
+(param &combine (Ident Color Position Color)
+  (0 4 (grid
+    (0 0)))
+  (1 0 (grid
+    (0 5)))
+  (2 0 (grid
+    (6 0)))
+  (3 0 (grid
+    (6 5))))
+(param &bg Color (0))
+(param &out_fill Color (4))

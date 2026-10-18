@@ -1,0 +1,4 @@
+;; 93c31fbe
+
+(param &bg Color (0))
+(param &content Color (1))

@@ -1,0 +1,10 @@
+;; 85fa5666
+
+(param &bg Color (0))
+(param &square Color (2))
+(param &turn D4 (D4_CW))
+(param &corner_from (DiagDir DiagDir)
+  (DIAG_TL DIAG_BL)
+  (DIAG_TR DIAG_TL)
+  (DIAG_BR DIAG_TR)
+  (DIAG_BL DIAG_BR))

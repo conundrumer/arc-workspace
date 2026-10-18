@@ -1,0 +1,4 @@
+;; 963e52fc
+
+(param &dir Dir (DIR_R))
+(param &scale number (2))

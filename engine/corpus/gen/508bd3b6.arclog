@@ -1,0 +1,73 @@
+;; 508bd3b6
+
+(DET &bg DominantColor)
+
+(DET &mark RarestColor)
+
+(DET &wall UnchangedColor)
+
+(DET &paint AnyOutNewColor)
+
+(RULE &mark_cell
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(RULE &aim
+  (&mark_cell *P)
+  (diag_dir_elem *D)
+  (neighbor P D *Q)
+  (&mark_cell (:P Q)))
+
+(RULE &side_wall
+  (input *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (input (:P Q) *Col)
+  (&wall (:C Col)))
+
+(RULE &deflect
+  (&side_wall *P *D))
+
+(ALTS $choice "which walls turn the beam" $Surface
+  (ALT $Side
+    ;; The wall covers the whole side toward d.
+    (RULE &deflect
+      (&side_wall *P *D)
+      (ALL ((input (:P *Pm) *Col)
+            (margin (:B Pm) D (:K 0)))
+           ((&wall (:C Col)))))))
+
+(RULE &leave_dir
+  (input *P)
+  (diag_dirs *D (:D1 *D_cmp))
+  (IF ((&deflect P (:D D_cmp)))
+      ((opposite (:D D_cmp) (:Opp *D_out)))
+      ((= D_out D_cmp))))
+
+(RULE &bounce
+  (&leave_dir *P *D (:D_out *D1))
+  (&leave_dir P D (:D_out *D2))
+  (diag_dirs (:D *D_out) D1 D2))
+
+;; The beam reaches p heading d: from a mark along the aim, it leaves each
+;; cell with the heading the walls there turn it to, into the open cell ahead.
+(INIT &beam Propagation
+  (source ((:n (:P P0) (:D D0)))
+    (&mark_cell (:P *P0))
+    (&aim (:D *D0)))
+  (edge ((:a P D) (:b (:P Q) (:D D_out)))
+    (&bounce *P *D *D_out)
+    (neighbor P (:D D_out) *Q)
+    (input (:P Q) (:Col *Bg))
+    (&bg (:C Bg))))
+
+(RULE &painted
+  (&beam.reached (:n *P))
+  (input P (:Col *Bg))
+  (&bg (:C Bg)))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&paint (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))

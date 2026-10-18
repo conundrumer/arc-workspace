@@ -1,0 +1,4 @@
+;; dce56571
+
+(param &bg Color (8))
+(param &axis Axis (AXIS_H))

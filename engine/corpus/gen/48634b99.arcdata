@@ -1,0 +1,7 @@
+;; 48634b99
+
+(param &bg Color (7))
+(param &bar Color (8))
+(param &mark Color (9))
+(param &axis Axis (AXIS_V))
+(param &step number (2))

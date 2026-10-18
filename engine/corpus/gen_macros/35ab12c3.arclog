@@ -1,0 +1,223 @@
+;; 35ab12c3
+
+(DET &bg DominantColor)
+
+(RULE &pt
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &sight_dir
+  (&pt (:Col *Key))
+  (dir8_elem *D))
+
+(RULE &sight_dir_ray
+  (&sight_dir *Key *D))
+
+(RULE &sight_node
+  (&sight_dir *Key)
+  (input *P)
+  (NOT (&pt (:Col Key) P)))
+
+(RULE &sight_source
+  (&pt (:Col *Key) *P))
+
+;; Each color's cells cast along the eight directions, and a same-color cell
+;; halts a cast: a stop is the caster's sight — the nearest same-color cell
+;; that way.
+(INIT &sight Distance
+  (key ((&sight_source (:Key ^Ky) (:P ^O))
+        (&sight_dir_ray (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&sight_source (:Key Ky) (:P O))
+           (&sight_dir_ray (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&sight_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&sight_node (:Key Ky) (:P Q)))
+          ((&sight_source (:Key Ky) (:P O))
+           (&sight_dir_ray (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&sight_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&sight_source (:Key Ky) (:P O))
+           (&sight_dir_ray (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&sight_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&sight_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&sight_source (:Key Ky) (:P O))
+      (&sight_dir_ray (:Key Ky) D))))
+
+(RULE &sight_ray
+  (&sight.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &sight_end
+  (&sight_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&sight_ray Key (:P Q) D Origin)))
+
+(RULE &sight_full_dir
+  (&sight_dir *Key *D))
+
+(RULE &sight_full_node
+  (&sight_dir *Key)
+  (input *P))
+
+(RULE &sight_full_source
+  (&pt (:Col *Key) *P))
+
+(INIT &sight_full Distance
+  (key ((&sight_full_source (:Key ^Ky) (:P ^O))
+        (&sight_full_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&sight_full_source (:Key Ky) (:P O))
+           (&sight_full_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&sight_full_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&sight_full_node (:Key Ky) (:P Q)))
+          ((&sight_full_source (:Key Ky) (:P O))
+           (&sight_full_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&sight_full_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&sight_full_source (:Key Ky) (:P O))
+           (&sight_full_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&sight_full_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&sight_full_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&sight_full_source (:Key Ky) (:P O))
+      (&sight_full_dir (:Key Ky) D))))
+
+(RULE &sight_full_ray
+  (&sight_full.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &sight_full_end
+  (&sight_full_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&sight_full_ray Key (:P Q) D Origin)))
+
+;; The one cell of a color that has just one — a lone mark. A color of two
+;; or more cells clashes, and outlines instead.
+(INIT &spread Singleton
+  (key ((&pt ^Col *P))
+    (member ((:v P))
+      (&pt Col *P))))
+
+(RULE &leans
+  (OR ((&sight_end (:P *E) *D (:Origin *P))
+       (step_offset D (:V *V_m1))
+       (compose (:A E) (:B V_m1) (:C *Q))
+       (input (:P Q))
+       (dir_elem (:D *H))
+       (margin (:B Q) (:D H) (:K *K1_m2))
+       (margin (:B P) (:D H) (:K *K2_m3))
+       (< K1_m2 K2_m3))
+      ((&sight_end (:P *E2) (:D *D2) (:Origin P))
+       (step_offset (:D D2) (:V *V_m12))
+       (compose (:A E2) (:B V_m12) (:C *Q2))
+       (input (:P Q2))
+       (diag_dir_elem (:D H))
+       (corner_dist (:P Q2) (:Diag H) (:K *K1_m22))
+       (corner_dist P (:Diag H) (:K *K2_m32))
+       (< K1_m22 K2_m32))))
+
+(RULE &straddled
+  (c4_turn (:T *R))
+  (d4_elem (:D R))
+  (dir8_elem *D)
+  (dir8_elem (:D *H))
+  (step_offset D (:V *S_m1))
+  (apply (:D R) (:P S_m1) (:P_out *S2_m2))
+  (step_offset (:D H) (:V S2_m2))
+  (dir8_opposite (:D H) (:D2 *H2))
+  (&leans *P H)
+  (&leans P (:H H2)))
+
+(RULE &edge
+  (&sight_end (:Key *Col) (:P *E) *D (:Origin *P))
+  (step_offset D (:V *V_m1))
+  (compose (:A E) (:B V_m1) (:C *P_2))
+  (&sight_full_ray (:Key Col) (:P P_2) D *K (:Origin P))
+  (NOT (&straddled P D)))
+
+(RULE &mark_shift
+  (&spread.value (:key *Col) (:v *M))
+  (&pt (:Col *Base) (:P *N))
+  (!= Base Col)
+  (dir8_elem *D)
+  (step_offset D *V)
+  (compose (:A N) (:B V) (:C M)))
+
+(ALTS $choice "which sights draw a line, which the pairs never separate" $Rays
+  (ALT $Joins
+    (RULE &edge
+      (&sight_end (:Key *Col) (:P *E) *D (:Origin *P))
+      (step_offset D (:V *V_m1))
+      (compose (:A E) (:B V_m1) (:C *Q))
+      (&sight_full_ray (:Key Col) (:P Q) D *K (:Origin P))
+      (NOT (&straddled P D))
+      (dir8_opposite D *D2)
+      (NOT (&straddled (:P Q) (:D D2))))))
+
+(RULE &shape
+  (OR ((&pt *Col *P))
+      ((&edge Col (:P *P2) *D *K)
+       (&sight_full_ray (:Key Col) P D (:K *K2) (:Origin P2))
+       (<= K2 K))))
+
+(RULE &shadow
+  (&mark_shift *Col *Base *V)
+  (&shape (:Col Base) (:P *P2))
+  (compose (:A P2) (:B V) (:C *P))
+  (input P)
+  (NOT (&shape P)))
+
+(RULE &output
+  (OR ((&shape *Col *P))
+      ((&shadow P Col))
+      ((input P)
+       (&bg (:C Col))
+       (NOT (&shape P))
+       (NOT (&shadow P)))))

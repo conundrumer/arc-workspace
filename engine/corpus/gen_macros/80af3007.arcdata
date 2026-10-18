@@ -1,0 +1,5 @@
+;; 80af3007
+
+(param &bg Color (0))
+(param &ink Color (5))
+(param &scale number (3))

@@ -99,7 +99,7 @@ def write_cited_tree(tmp_path, citation):
 
 
 @pytest.mark.parametrize(("citation", "rule"), [
-    ("work/engine/reader.md", "path-missing"),
+    ("docs/engine/reader.md", "path-missing"),
     ("docs/spec.md#no-such-heading", "citation-anchor"),
 ])
 def test_a_citation_in_the_engine_names_a_present_heading(tmp_path, citation, rule):
@@ -109,7 +109,7 @@ def test_a_citation_in_the_engine_names_a_present_heading(tmp_path, citation, ru
 
 
 @pytest.mark.parametrize(("citation", "rules"), [
-    ("work/engine/reader.md#terms", []),
+    ("docs/engine/reader.md#terms", []),
     ("docs/spec.md#no-such-heading", ["citation-anchor"]),
 ])
 def test_an_anchor_cited_outside_the_engine_names_a_heading(tmp_path, citation, rules):

@@ -1,0 +1,6 @@
+;; 56dc2b01
+
+(param &bg Color (0))
+(param &mover Color (3))
+(param &anchor Color (2))
+(param &back Color (8))

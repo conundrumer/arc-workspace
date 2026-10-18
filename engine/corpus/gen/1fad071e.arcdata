@@ -1,0 +1,12 @@
+;; 1fad071e
+
+(param &block_color Color (1))
+(param &block_shape Position (Frame
+  ((:A AXIS_V) (:N 2))
+  ((:A AXIS_H) (:N 2))))
+(param &bg Color (0))
+(param &bar_edge Dir (DIR_L))
+(param &out_pos Position (Frame
+  ((:A AXIS_V) (:N 1))
+  ((:A AXIS_H) (:N 5))))
+(param &mark Color (1))

@@ -1,0 +1,6 @@
+;; 88207623
+
+(param &bg Color (0))
+(param &line Color (2))
+(param &shape Color (4))
+(param &across_axis Axis (AXIS_H))

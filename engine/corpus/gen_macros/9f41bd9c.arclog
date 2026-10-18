@@ -1,0 +1,320 @@
+;; 9f41bd9c
+
+(INPUT ground "the ground fills the lines against one edge, and the sky fills the rest"
+
+  (DET &ground SharedColor)
+
+  (RULE &ground2
+    (input *P *Col)
+    (&ground (:C Col)))
+
+  (INIT &rim Boundary
+    (cell (P)
+      (&ground2 *P))))
+
+(INPUT comb "one comb of a single color stands in the sky, flush against a side edge, and its lowest line rests on the ground's surface")
+
+(INPUT teeth "the comb's top lines are solid across its span, and every line below them has a gap: those are the teeth")
+
+(OUTPUT cross "the comb crosses the sky and comes to rest flush against the opposite side edge, and the sky takes the cells it left")
+
+(OUTPUT drag "each comb line lags toward the side the comb came from by the count of teeth lines above it")
+
+(OUTPUT scrape "the leading tooth tip is the tip nearest the edge the comb crossed to, and on the ground's surface every cell behind it takes the scrape color"
+
+  (RULE &landing)
+
+  (DET_OR_RULE &comb RarestColor)
+
+  (RULE &comb2
+    (input *P *Col)
+    (&comb (:C Col)))
+
+  ;; the edge the ground lies against
+  (DET &ground_dir DirDomain)
+
+  (RULE &travel_axis
+    (&ground_dir *D)
+    (axis_of D (:A *A_g))
+    (perp (:A A_g) (:A2 *A)))
+
+  (RULE &crossing
+    (&comb2 *P)
+    (&travel_axis *A)
+    (axis_of (:D *D_from) A)
+    (margin (:B P) (:D D_from) (:K 0))
+    (opposite (:D D_from) (:Opp *D_to)))
+
+  (RULE &trail_dir
+    (&ground_dir (:D *D2))
+    (&crossing *D_from)
+    (corner_dir (:C *D) (:A *A_m1) (:D D2))
+    (perp (:A A_m1) (:A2 *A2_m2))
+    (corner_dir (:C D) (:A A2_m2) (:D D_from)))
+
+  (RULE &trail_dir_ray
+    (&landing)
+    (&trail_dir *D))
+
+  (RULE &trail_dir_ray2
+    (&trail_dir_ray *D))
+
+  (RULE &trail_blocked
+    (&landing)
+    (&ground2 *P))
+
+  (RULE &trail_node
+    (&trail_dir_ray)
+    (input *P)
+    (NOT (&trail_blocked P)))
+
+  (INIT &slide Distance
+    (source_distance (K)
+      (&comb2 *P)
+      (&crossing *D_to)
+      (margin (:B P) (:D D_to) *K)))
+
+  (RULE &slide_dir
+    (&crossing (:D_to *D)))
+
+  (RULE &crossed
+    (&comb2 *P)
+    (&slide.distance *K)
+    (&slide_dir *D)
+    (dir8_opposite D (:D2 *O_m1))
+    (edge_inset (:D O_m1) K (:B *B1_m2))
+    (edge_inset D K (:B *I_m4))
+    (relative (:Base I_m4) (:X 0) (:X_rel *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *V))
+    (compose (:A P) (:B V) (:C *P_far)))
+
+  (RULE &line_of_split1
+    (input (:P *P_))
+    (axis_of *D (:A *A_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+    (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &line_of
+    (input *P)
+    (&ground_dir *D)
+    (axis_of D *A)
+    (&line_of_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+  (RULE &comb_line
+    (&comb2 *P)
+    (&line_of P *L))
+
+  (INIT &cbox BoundingBox
+    (cell (P)
+      (&comb2 *P)))
+
+  (RULE &gapped_line
+    (&cbox.box *B)
+    (&line_of *P *L)
+    (ALL ((&line_of P (:L *Lm))
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (NOT (&comb2 P)))
+
+  (RULE &teeth_line
+    (&gapped_line *L))
+
+  ;; how far a comb line lags: the count of teeth lines above it
+  (INIT &lag Order
+    (member ((:t L))
+      (&comb_line *L))
+    (before ((:a L1) (:b L2))
+      (&teeth_line (:L *L1))
+      (&comb_line (:L *L2))
+      (&ground_dir *D)
+      (opposite D (:Opp *D_up))
+      (dir_elem (:D D_up))
+      (margin (:B L1) (:D D_up) (:K *K1_m1))
+      (margin (:B L2) (:D D_up) (:K *K2_m2))
+      (< K1_m1 K2_m2)))
+
+  (RULE &trail_source
+    (&crossed (:P *P2) (:P_far *P))
+    (&line_of (:P P2) *L)
+    (&teeth_line L)
+    (&lag.rank (:t L) (:R 0)))
+
+  ;; the streaks the landed first teeth line trails down to the ground
+  (INIT &trail Distance
+    (key ((&trail_source (:P ^O))
+          (&trail_dir_ray2 ^D))
+      (edge ((:a A2) (:b Q))
+        (OR ((&trail_source (:P O))
+             (&trail_dir_ray2 D)
+             (axis_of D *A)
+             (sub_extent (:P O) A *K)
+             (dir8_opposite D (:D2 *O_m2))
+             (edge_inset (:D O_m2) K (:B *B1_m3))
+             (edge_inset D K (:B *I_m5))
+             (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+             (compose (:A O) (:B V_m1) (:C *A2))
+             (&trail_node (:P A2))
+             (step_offset D (:V *V_m6))
+             (compose (:A A2) (:B V_m6) (:C *Q))
+             (&trail_node (:P Q)))
+            ((&trail_source (:P O))
+             (&trail_dir_ray2 D)
+             (step_offset D (:V *V_m12))
+             (compose (:A O) (:B V_m12) (:C Q))
+             (&trail_node (:P Q))
+             (= A2 O))
+            ((&trail_source (:P O))
+             (&trail_dir_ray2 D)
+             (diag_dir_elem D)
+             (axis_elem (:A *A3))
+             (sub_extent (:P O) (:A A3) (:K *K2))
+             (dir8_opposite D (:D2 *O_m22))
+             (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+             (edge_inset D (:K K2) (:B *I_m52))
+             (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+             (compose (:A O) (:B V_m13) (:C A2))
+             (&trail_node (:P A2))
+             (step_offset D (:V *V_m62))
+             (compose (:A A2) (:B V_m62) (:C Q))
+             (&trail_node (:P Q)))))
+      (source ((:n O))
+        (&trail_source (:P O))
+        (&trail_dir_ray2 D))))
+
+  (RULE &trail_ray
+    (&trail.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+  (RULE &moved
+    (&crossed (:P *P3) (:P_far *P1))
+    (&line_of (:P P3) *L)
+    (&lag.rank (:t L) (:R *K))
+    (&crossing *D_from)
+    (dir8_opposite (:D D_from) (:D2 *O_m2))
+    (edge_inset (:D O_m2) K (:B *B1_m3))
+    (edge_inset (:D D_from) K (:B *I_m5))
+    (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+    (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+    (compose (:A P1) (:B V_m1) (:C *P))
+    (input P)))
+
+(ALTS $cross "how the comb crosses to the far side" $Slide
+  (ALT $Mirror
+    (OUTPUT cross "the comb reflects across the grid's midline, which lands it against the opposite side edge with its teeth reversed"
+      (RULE &crossed
+        (&comb2 *P)
+        (&travel_axis *A)
+        (axis_inversion A (:T *F))
+        (apply (:D F) P (:P_out *P_far))))))
+
+(ALTS $head "what tells the comb's head from its teeth" $Solid
+  (ALT $Below
+    (INPUT teeth "the comb's head is the lines above its topmost gapped line, and every line from that one down is one of the teeth"
+      ;; a comb line at or below a gapped one
+      (RULE &teeth_line
+        (&comb_line *L)
+        (&gapped_line (:L *L0))
+        (&ground_dir *D)
+        (opposite D (:Opp *D_up))
+        (dir_elem (:D D_up))
+        (margin (:B L) (:D D_up) (:K *K1_m1))
+        (margin (:B L0) (:D D_up) (:K *K2_m2))
+        (>= K1_m1 K2_m2))))
+  (ALT $Fixed
+    (INPUT teeth "the comb's head is its top lines, as many as &head_lines counts, and every line below them is one of the teeth"
+      (DET &head_lines TileDim)
+
+      ;; a comb line the head does not reach down to
+      (RULE &teeth_line
+        (&comb2 *P)
+        (&line_of P *L)
+        (&cbox.box *B)
+        (ALL ((dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (relative (:Base B) (:X P) (:X_rel *P_rel))
+        (&ground_dir *D)
+        (opposite D (:Opp *D_up))
+        (margin (:B P_rel) (:D D_up) *K)
+        (&head_lines (:D *N))
+        (>= K N)))))
+
+(ALTS $drag "what the drag does below the first teeth line" $Lag
+  (ALT $Cast
+    (OUTPUT drag "the comb down to its first teeth line lands flush, and each cell of that line trails a streak toward the corner of the ground and the side the comb came from, down to the ground"
+      (RULE &moved
+        ;; the comb down to its first teeth line lands flush
+        (OR ((&crossed (:P *P2) (:P_far *P))
+             (&line_of (:P P2) *L)
+             (&lag.rank (:t L) (:R 0)))
+            ((&trail_ray P)))))))
+
+(ALTS $tip "what a tooth's tip is" $Ground
+  (ALT $Lowest
+    (OUTPUT scrape "the leading tip is the landed cell of the comb's lowest line nearest the edge the comb crossed to, and on the ground's surface every cell behind it takes the scrape color"
+      (RULE &bottom_line
+        (&comb_line *L)
+        (&cbox.box *B)
+        (&ground_dir *D)
+        (margin (:B L) D (:K *K_m1))
+        (margin B D (:K K_m1))))
+    (RULE &tip
+      (&moved *P)
+      (&line_of P *L)
+      (&bottom_line L))))
+
+(RULE &trail_end
+  (&trail_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&trail_ray (:P Q) D Origin)))
+
+(DET_OR_RULE &bg "the sky the comb stands in" DominantColor)
+
+(DET &scrape AnyOutNewColor)
+
+(RULE &surface
+  (&ground_dir *D)
+  (opposite D (:Opp *D_up))
+  (&rim.exposed *P (:D D_up)))
+
+(RULE &tip
+  (&moved *P)
+  (&ground_dir *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&ground2 (:P Q)))
+
+(RULE &scraped
+  (&surface *P)
+  (&tip (:P *Q))
+  (&crossing *D_to)
+  (dir_elem (:D D_to))
+  (margin (:B Q) (:D D_to) (:K *K1_m1))
+  (margin (:B P) (:D D_to) (:K *K2_m2))
+  (< K1_m1 K2_m2))
+
+(RULE &paint
+  (OR ((&moved *P)
+       (&comb (:C *Col)))
+      ((&scraped P)
+       (&scrape (:C Col)))
+      ((&comb2 P)
+       (NOT (&moved P))
+       (&bg (:C Col)))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

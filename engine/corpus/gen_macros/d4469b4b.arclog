@@ -1,0 +1,48 @@
+;; d4469b4b
+
+(DET &bg SharedColor)
+
+(DET &mark AnyOutNewColor)
+
+(DET &out_pos Frame)
+
+(DET &glyph
+  (ex_input *E (:Col *Key))
+  (NOT (&bg (:C Key)))
+  (ex_output E *P *Col))
+
+(DET &mismatch
+  (&glyph *Key *P)
+  (&glyph Key (:P *Q) *Col)
+  (NOT (&mark (:C Col)))
+  (axis_elem *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B Q) (:D D_m2) (:K K_m3)))
+
+(DET &center
+  (&glyph *Key *P)
+  (NOT (&mismatch Key P)))
+
+(RULE &cross_cell
+  (input (:Col *Key))
+  (&center Key (:P *Q))
+  (&out_pos *P)
+  (axis_elem *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B Q) (:D D_m2) (:K K_m3)))
+
+(ALTS $choice "table or rule render of the glyph; every glyph is a full row and column through one point, so both stand" $Cross
+  (ALT $Lookup
+    (RULE &output
+      (input (:Col *Key))
+      (&glyph Key *P *Col))))
+
+(RULE &output
+  (&out_pos *P)
+  (IF ((&cross_cell P))
+      ((&mark (:C *Col)))
+      ((&bg (:C Col)))))

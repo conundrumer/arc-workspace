@@ -1,0 +1,6 @@
+;; 332202d5
+
+(param &axis Axis (AXIS_V))
+(param &bg Color (7))
+(param &divider_color Color (8))
+(param &cross_color Color (1))

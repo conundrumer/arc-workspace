@@ -1,0 +1,36 @@
+;; 8e2edd66
+
+(INIT &out_cell_tiling Tiling
+  (outer ((:P P_tile))
+    (input (:P *P_tile)))
+  (inner ((:P P_intile))
+    (input (:P *P_intile))))
+
+(DET &bg SharedColor)
+
+(RULE &bg_cell
+  (input *P (:Col *C))
+  (&bg C))
+
+(INIT &ink_at_tiling Tiling
+  (outer ((:P P_tile))
+    (&bg_cell (:P *P_tile)))
+  (inner ((:P P_intile))
+    (&bg_cell (:P *P_intile))))
+
+(RULE &ink
+  (input *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &out_cell
+  (&out_cell_tiling.cell *P))
+
+(RULE &ink_at
+  (&ink_at_tiling.cell *P))
+
+(RULE &output
+  (OR ((&ink_at *P)
+       (&ink *Col))
+      ((&out_cell P)
+       (NOT (&ink_at P))
+       (&bg (:C Col)))))

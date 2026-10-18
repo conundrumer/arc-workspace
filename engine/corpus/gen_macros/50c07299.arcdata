@@ -1,0 +1,5 @@
+;; 50c07299
+
+(param &bg Color (7))
+(param &ink Color (2))
+(param &dir DiagDir (DIAG_TR))

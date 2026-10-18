@@ -1,0 +1,4 @@
+;; 19bb5feb
+
+(param &bg Color (0))
+(param &panel Color (8))

@@ -1,0 +1,174 @@
+;; d492a647
+
+(RULE &lines_dir
+  (axis_of *D (:A *Key)))
+
+(RULE &lines_node
+  (axis_of *D (:A *Key))
+  (input *P))
+
+(DET &bg DominantColor)
+
+(DET &noise SharedColor)
+
+(RULE &seed
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&noise (:C Col))))
+
+(RULE &lines_source_split1
+  (&seed (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &lines_source
+  (&seed (:P *P2))
+  (axis_elem (:A *Key))
+  (&lines_source_split1 (:P_ P2) (:A_ Key) (:L_ *P) (:X_m1_ *X_m1)))
+
+;; Each axis's lines, walked outward from the seed's.
+(INIT &lines Distance
+  (key ((&lines_source (:Key ^Ky) (:P ^O))
+        (&lines_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&lines_source (:Key Ky) (:P O))
+           (&lines_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&lines_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&lines_node (:Key Ky) (:P Q)))
+          ((&lines_source (:Key Ky) (:P O))
+           (&lines_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&lines_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&lines_source (:Key Ky) (:P O))
+           (&lines_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&lines_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&lines_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&lines_source (:Key Ky) (:P O))
+      (&lines_dir (:Key Ky) D))))
+
+(RULE &lines_ray
+  (&lines.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &lines_end
+  (&lines_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&lines_ray Key (:P Q) D Origin)))
+
+(RULE &lattice_split1
+  (input (:P *P_))
+  (perp (:A *A1_) *A2)
+  (axis_of (:D *D_m1) (:A A1_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L1_))
+  (relative (:Base L1_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &lattice_split2
+  (input (:P *P_))
+  (perp (:A *A1) (:A2 *A2_))
+  (axis_of (:D *D_m1) (:A A2_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L2_))
+  (relative (:Base L2_) (:X P_) (:X_rel *X_m2_)))
+
+(RULE &lines_cell_split1
+  (input (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(DET &period TileCount)
+
+(RULE &lines_cell
+  (input (:P *P2))
+  (axis_elem (:A *Key))
+  (&lines_cell_split1 (:P_ P2) (:A_ Key) (:L_ *P) (:X_m1_ *X_m1)))
+
+;; A whole number of jumps from the seed's line.
+(RULE &lattice_line
+  (&lines_ray (:Key *A) (:P *L) *K)
+  (&lines_cell (:Key A) (:P L))
+  (&period (:N *W))
+  (divide (:T K) (:Side W) (:Gap 0) (:Remainder 0)))
+
+(ALTS $choice "two models of the lattice, tagged on out's Choice; coincide at period 2" $Period
+  (ALT $Parity
+    ;; An even count of lines from the seed's: a line lies midway.
+    (RULE &lattice_line
+      (&lines_ray (:Key *A) (:P *M) *D *K)
+      (&lines_cell (:Key A) (:P M))
+      (dir8_opposite D (:D2 *O_m2))
+      (edge_inset (:D O_m2) K (:B *B1_m3))
+      (edge_inset D K (:B *I_m5))
+      (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+      (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+      (compose (:A M) (:B V_m1) (:C *L))
+      (&lines_cell (:Key A) (:P L)))))
+
+(RULE &lattice
+  (input *P)
+  (perp (:A *A1) *A2)
+  (&lattice_split1 (:P_ P) (:A1_ A1) (:L1_ *L1) (:X_m1_ *X_m1))
+  (&lattice_line (:A A1) (:L L1))
+  (&lattice_split2 (:P_ P) (:A2_ A2) (:L2_ *L2) (:X_m2_ *X_m2))
+  (&lattice_line (:A A2) (:L L2)))
+
+(RULE &painted
+  (&lattice *P)
+  (input P *Col)
+  (&bg (:C Col)))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&seed *Col))
+      ((input P Col)
+       (NOT (&painted P)))))

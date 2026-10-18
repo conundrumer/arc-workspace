@@ -1,0 +1,5 @@
+;; 2753e76c
+
+(param &bg Color (0))
+(param &corner DiagDir (DIAG_TR))
+(param &rank_axis Axis (AXIS_V))

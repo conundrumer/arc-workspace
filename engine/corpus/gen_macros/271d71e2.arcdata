@@ -1,0 +1,8 @@
+;; 271d71e2
+
+(param &bg Color (6))
+(param &frame Color (0))
+(param &marker Color (9))
+(param &empty Color (5))
+(param &filled Color (7))
+(param &sweep Sense (SENSE_CC))

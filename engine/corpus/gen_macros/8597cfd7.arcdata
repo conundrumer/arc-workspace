@@ -1,0 +1,5 @@
+;; 8597cfd7
+
+(param &sep Color (5))
+(param &side Dir (DIR_T))
+(param &out_dim number (2))

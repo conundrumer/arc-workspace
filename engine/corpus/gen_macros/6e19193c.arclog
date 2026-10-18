@@ -1,0 +1,127 @@
+;; 6e19193c
+
+(RULE &objs_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &objs Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&ink *P)
+         (&objs_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ink (:P P3)))
+        ((&ink P)
+         (= P3 P)))))
+
+(RULE &objs_component
+  (&objs.class (:a *P) *Id))
+
+(INIT &bbox BoundingBox
+  (key ((&objs_component *P ^Id))
+    (cell (P)
+      (&objs_component *P Id))))
+
+(RULE &tip
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (ALL ((&bbox.box (:key (:Id *Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (corner_dir (:C *D) (:A *A_m1) (:D *D1_m2))
+  (perp (:A A_m1) (:A2 *A2_m3))
+  (corner_dir (:C D) (:A A2_m3) (:D *D2_m4))
+  (margin (:B P) (:D D1_m2) (:K *K1_m5))
+  (margin B (:D D1_m2) (:K K1_m5))
+  (margin (:B P) (:D D2_m4) (:K *K2_m6))
+  (margin B (:D D2_m4) (:K K2_m6))
+  (NOT (&ink P)))
+
+(RULE &ray_dir
+  (&tip (:Id *Key) *D))
+
+(RULE &ray_node
+  (&tip (:Id *Key) *D)
+  (input *P))
+
+(RULE &ray_source
+  (&tip (:Id *Key) *P))
+
+(INIT &ray Distance
+  (key ((&ray_source (:Key ^Ky) (:P ^O))
+        (&ray_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&ray_source (:Key Ky) (:P O))
+           (&ray_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&ray_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&ray_node (:Key Ky) (:P Q)))
+          ((&ray_source (:Key Ky) (:P O))
+           (&ray_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&ray_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&ray_source (:Key Ky) (:P O))
+           (&ray_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&ray_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&ray_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&ray_source (:Key Ky) (:P O))
+      (&ray_dir (:Key Ky) D))))
+
+(RULE &ray_ray
+  (&ray.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &ray_end
+  (&ray_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&ray_ray Key (:P Q) D Origin)))
+
+(RULE &paint
+  (&objs_component *P *Id)
+  (input P *Col))
+
+(RULE &ray_cell
+  (&paint (:Id *Key))
+  (input *P))
+
+(RULE &trail
+  (&ray_ray (:Key *Id) *P *K)
+  (&ray_cell (:Key Id) P)
+  (!= K 0)
+  (&paint Id *Col))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&trail P *Col))
+      ((NOT (&trail P))
+       (= Col Col_in))))

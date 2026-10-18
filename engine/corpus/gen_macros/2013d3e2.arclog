@@ -1,0 +1,271 @@
+;; 2013d3e2
+
+(DET &bg DominantColor)
+
+(INIT &ex_box BoundingBox
+  (key ((ex_output ^E))
+    (cell (P)
+      (ex_input E *P *Col)
+      (NOT (&bg (:C Col))))))
+
+(DET &cell_inside1
+  (ex_input *E (:P *P_) *Col)
+  (&ex_box.box (:key E) (:B *B_))
+  (dir_elem (:D *D_m1))
+  (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+  (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+  (< K_m3 0))
+
+;; Each trained example's output, seated among its box cells: the
+;; placement is the box, in the box's frame, that the output fills.
+(INIT &seat Occurrences
+  (key ((OR ((ex_input ^E *P *Col)
+             (&ex_box.box (:key E) *B)
+             (NOT (&cell_inside1 (:P_ P) (:B_ B)))
+             (relative (:Base B) (:X P) (:X_rel *P_box)))
+            ((ex_output E (:P *Q) Col))))
+    (cell ((:P P_box) (:v Col))
+      (ex_input E *P *Col)
+      (&ex_box.box *B)
+      (NOT (&cell_inside1 (:P_ P) (:B_ B)))
+      (relative (:Base B) (:X P) (:X_rel *P_box)))
+    (shape ((:P Q) (:v Col))
+      (ex_output E (:P *Q) *Col))))
+
+(DET &half_at_division_cell
+  (&seat.occurrence (:key *E) (:P *M))
+  (ex_output E (:P *Q))
+  (compose (:A M) (:B Q) (:C *P))
+  (sub_extent P (:K *Key)))
+
+(INIT &half_at_division_sides ExtentDivisions
+  (key ((&half_at_division_cell (:Key ^Ky) *P))
+    (frame (P)
+      (&half_at_division_cell (:Key Ky) *P))))
+
+(DET &half_at_division_axis_split1
+  (&half_at_division_cell (:Key *Ky) (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+  (relative (:Base Pi_) (:X P_) (:X_rel *X_m1_)))
+
+(DET &half_at_division_parts_held
+  (axis_elem (:A *A2))
+  (&seat.occurrence (:key *E) (:P *M))
+  (ex_output E (:P *Q))
+  (compose (:A M) (:B Q) (:C *P_box))
+  (sub_extent (:P P_box) (:K *N)))
+
+(DET &half_at_division_axis
+  (OR ((&half_at_division_cell *Key *P)
+       (axis_elem *A)
+       (&seat.occurrence (:key *E) (:P *M))
+       (ex_output E (:P *Q))
+       (compose (:A M) (:B Q) (:C *P_box))
+       (sub_extent (:P P_box) (:K Key))
+       (&half_at_division_sides.division (:key (:Ky Key)) A (:N Key) *K (:G 0))
+       (axis_of *D A)
+       (opposite D (:Opp *O))
+       (margin (:B P) D (:K *T))
+       (margin (:B P) (:D O) (:K *T2))
+       (divide T (:Side K) (:Gap 0) (:Part *I) (:Remainder *R))
+       (divide (:T T2) (:Side K) (:Gap 0) (:Part *I2) (:Remainder *R2))
+       (opposite D (:Opp *O_m1))
+       (edge_inset D (:K I) (:B *B1_m2))
+       (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+       (compose (:A B1_m2) (:B B2_m3) (:C *P_outer))
+       (opposite D (:Opp *O_m4))
+       (edge_inset D (:K R) (:B *B1_m5))
+       (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+       (compose (:A B1_m5) (:B B2_m6) (:C *P_inner))
+       (frame_extent (:P P_inner) A (:N K)))
+      ((&half_at_division_cell Key P)
+       (axis_elem A)
+       (&seat.occurrence (:key (:E *E2)) (:P *M2))
+       (ex_output (:E E2) (:P *Q2))
+       (compose (:A M2) (:B Q2) (:C *P_box2))
+       (sub_extent (:P P_box2) (:K Key))
+       (frame_extent P A (:N *K2))
+       (axis_of (:D *D2) A)
+       (opposite (:D D2) (:Opp *O2))
+       (margin (:B P) (:D D2) (:K *T3))
+       (margin (:B P) (:D O2) (:K *T22))
+       (divide (:T T3) (:Side K2) (:Gap 0) (:Part *I3) (:Remainder *R3))
+       (divide (:T T22) (:Side K2) (:Gap 0) (:Part *I22) (:Remainder *R22))
+       (opposite (:D D2) (:Opp *O_m12))
+       (edge_inset (:D D2) (:K I3) (:B *B1_m22))
+       (edge_inset (:D O_m12) (:K I22) (:B *B2_m32))
+       (compose (:A B1_m22) (:B B2_m32) (:C P_outer))
+       (opposite (:D D2) (:Opp *O_m42))
+       (edge_inset (:D D2) (:K R3) (:B *B1_m52))
+       (edge_inset (:D O_m42) (:K R22) (:B *B2_m62))
+       (compose (:A B1_m52) (:B B2_m62) (:C P_inner))
+       (frame_extent (:P P_inner) A (:N K2))
+       (frame_extent (:P P_outer) A (:N Key)))
+      ((&half_at_division_cell Key P)
+       (axis_elem A)
+       (NOT (&half_at_division_parts_held (:N Key) (:A2 A)))
+       (&half_at_division_axis_split1 (:P_ P) (:A_ A) (:Pi_ P_inner) (:X_m1_ *X_m1))
+       (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
+
+(DET &half_at_division_tile
+  (&half_at_division_axis *Key *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+  (perp (:A A1) *A2)
+  (&half_at_division_axis Key P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+  (compose (:A Po1) (:B Po2) (:C *P_outer))
+  (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &box_cell
+  (input (:P *P_grid) *Col)
+  (&bbox.box *B)
+  (ALL ((input (:P P_grid) (:Col *Colm))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P_grid) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P_grid) (:X_rel *P_box)))
+
+(DET &half_at
+  (&seat.occurrence (:key *E) (:P *M))
+  (ex_output E (:P *Q))
+  (compose (:A M) (:B Q) (:C *P_box))
+  (&half_at_division_tile (:Key *N) (:P P_box) (:P_outer *P_tile) (:P_inner Q)))
+
+(DET &half_miss
+  (&half_at *N *P_tile)
+  (ex_output *E)
+  (NOT (&half_at E N P_tile)))
+
+(DET &out_tile_at
+  (&half_at *N *P_tile)
+  (NOT (&half_miss N P_tile)))
+
+(DET &divisor
+  (&out_tile_at *N))
+
+(INIT &output_division_sides ExtentDivisions
+  (frame ((:P P_box))
+    (&box_cell *P_box)))
+
+(RULE &output_division_axis_split1
+  (&box_cell (:P_box *P_box_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_box_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_box_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+  (relative (:Base Pi_) (:X P_box_) (:X_rel *X_m1_)))
+
+(RULE &output_division_parts
+  (axis_elem *A)
+  (&divisor *N))
+
+(RULE &output_division_axis
+  (OR ((&box_cell (:P_box *P))
+       (axis_elem *A)
+       (&divisor *N)
+       (&output_division_sides.division A N *K (:G 0))
+       (axis_of *D A)
+       (opposite D (:Opp *O))
+       (margin (:B P) D (:K *T))
+       (margin (:B P) (:D O) (:K *T2))
+       (divide T (:Side K) (:Gap 0) (:Part *I) (:Remainder *R))
+       (divide (:T T2) (:Side K) (:Gap 0) (:Part *I2) (:Remainder *R2))
+       (opposite D (:Opp *O_m1))
+       (edge_inset D (:K I) (:B *B1_m2))
+       (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+       (compose (:A B1_m2) (:B B2_m3) (:C *P_outer))
+       (opposite D (:Opp *O_m4))
+       (edge_inset D (:K R) (:B *B1_m5))
+       (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+       (compose (:A B1_m5) (:B B2_m6) (:C *P_inner))
+       (frame_extent (:P P_inner) A (:N K)))
+      ((&box_cell (:P_box P))
+       (axis_elem A)
+       (&divisor (:N *N2))
+       (frame_extent P A (:N *K2))
+       (axis_of (:D *D2) A)
+       (opposite (:D D2) (:Opp *O2))
+       (margin (:B P) (:D D2) (:K *T3))
+       (margin (:B P) (:D O2) (:K *T22))
+       (divide (:T T3) (:Side K2) (:Gap 0) (:Part *I3) (:Remainder *R3))
+       (divide (:T T22) (:Side K2) (:Gap 0) (:Part *I22) (:Remainder *R22))
+       (opposite (:D D2) (:Opp *O_m12))
+       (edge_inset (:D D2) (:K I3) (:B *B1_m22))
+       (edge_inset (:D O_m12) (:K I22) (:B *B2_m32))
+       (compose (:A B1_m22) (:B B2_m32) (:C P_outer))
+       (opposite (:D D2) (:Opp *O_m42))
+       (edge_inset (:D D2) (:K R3) (:B *B1_m52))
+       (edge_inset (:D O_m42) (:K R22) (:B *B2_m62))
+       (compose (:A B1_m52) (:B B2_m62) (:C P_inner))
+       (frame_extent (:P P_inner) A (:N K2))
+       (frame_extent (:P P_outer) A (:N N2)))
+      ((&box_cell (:P_box P))
+       (axis_elem A)
+       (NOT (&output_division_parts A))
+       (&output_division_axis_split1 (:P_box_ P) (:A_ A) (:Pi_ P_inner) (:X_m1_ *X_m1))
+       (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
+
+(RULE &output_division_tile
+  (&output_division_axis *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+  (perp (:A A1) *A2)
+  (&output_division_axis P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+  (compose (:A Po1) (:B Po2) (:C *P_outer))
+  (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+(DET &out_tile
+  (&out_tile_at *P_tile))
+
+(ALTS $choice "how the corner region is bounded" $Half
+  (ALT $Window
+    (DET &win_dim ConstOutDim)
+
+    (INIT &win Frame
+      (extent (A (:N K))
+        (&win_dim (:N *K))
+        (axis_elem *A)))
+
+    (DET &window_at
+      (&seat.occurrence (:key *E) (:P *M))
+      (diag_dir_elem *D)
+      (corner_dist (:P M) (:Diag D) (:K 0)))
+
+    (DET &corner_miss
+      (&window_at *D)
+      (ex_output *E)
+      (NOT (&window_at E D)))
+
+    (DET &corner
+      (&window_at *D)
+      (NOT (&corner_miss D)))
+
+    (RULE &output
+      (&box_cell *P_box *Col)
+      (&win.cell *P)
+      (&corner (:D *Diag))
+      (ALL ((&box_cell P_box (:Col *Colm))
+            (corner_dir (:C Diag) (:D *D_m1))
+            (margin (:B P_box) (:D D_m1) (:K *K1_m2))
+            (margin (:B P) (:D D_m1) (:K *K2_m3)))
+           ((= K1_m2 K2_m3))))))
+
+(RULE &output
+  (&box_cell *P_box *Col)
+  (&output_division_tile (:P P_box) (:P_outer *P_tile) (:P_inner *P))
+  (&out_tile P_tile))

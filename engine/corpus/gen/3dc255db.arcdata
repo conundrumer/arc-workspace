@@ -1,0 +1,3 @@
+;; 3dc255db
+
+(param &bg Color (0))

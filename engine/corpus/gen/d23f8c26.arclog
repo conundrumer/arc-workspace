@@ -1,0 +1,43 @@
+;; d23f8c26
+
+(DET &bg DominantColor)
+
+(DET &axis AxisDomain)
+
+(RULE &on_center
+  (input *P)
+  (&axis *A)
+  (axis_of *D A)
+  (dist_pair P D *K (:K2 K)))
+
+(ALTS $choice "data-equivalent on this task — odd widths, single middle gap" $Center
+  (ALT $Gap
+    (DET &divide_gap DivisorRatio)
+
+    (DET &divisor TileCount)
+
+    (INIT &tile_cell_division Division
+      (cell (P)
+        (input *P))
+      (parts (A N)
+        (&axis *A)
+        (&divisor *N))
+      (gap (A G)
+        (&axis *A)
+        (&divide_gap (:K *G))))
+
+    (RULE &tile_cell
+      (&tile_cell_division.tile *P))
+
+    (RULE &output
+      (OR ((input *P *Col)
+           (NOT (&tile_cell P)))
+          ((&tile_cell P)
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&on_center P))
+      ((input P)
+       (NOT (&on_center P))
+       (&bg (:C Col)))))

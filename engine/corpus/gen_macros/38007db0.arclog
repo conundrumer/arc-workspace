@@ -1,0 +1,204 @@
+;; 38007db0
+
+(RULE &item_split1
+  (input (:P *P_grid_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_grid_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_grid_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_grid_) (:X_rel *X_m1_)))
+
+(INIT &line_color Singleton
+  (key ((input (:P *P_grid) *Col)
+        (axis_elem ^A)
+        (&item_split1 (:P_grid_ P_grid) (:A_ A) (:L_ ^L) (:X_m1_ *X_m1)))
+    (member ((:v Col))
+      (input (:P *P_grid) *Col)
+      (axis_elem A)
+      (&item_split1 (:P_grid_ P_grid) (:A_ A) (:L_ L) (:X_m1_ *X_m1)))))
+
+(RULE &cut_divider
+  (&line_color.value (:key *A *L)))
+
+(RULE &cut_on_divider
+  (input *P)
+  (&cut_divider *A *L)
+  (axis_of *D A)
+  (margin (:B P) D (:K *K_m1))
+  (margin (:B L) D (:K K_m1)))
+
+;; The tiles the one-color lines cut out.
+(INIT &cut_rank Order
+  (key ((OR ((&cut_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input (:P *P_grid))
+             (dir_elem D)
+             (margin (:B P_grid) D K))))
+    (member ((:t K))
+      (&cut_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&cut_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input (:P *P_grid))
+           (dir_elem D)
+           (margin (:B P_grid) D K))))
+    (probe ((:t K))
+      (input (:P *P_grid))
+      (dir_elem D)
+      (margin (:B P_grid) D *K))))
+
+(RULE &cut_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&cut_on_divider P A))
+  (margin (:B P) D *K)
+  (&cut_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &cut_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&cut_part_idx *P D (:N *N1))
+  (&cut_part_idx P (:D D2) (:N *N2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K N1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+(RULE &cut_tile_of
+  (&cut_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&cut_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+;; A tile with the separator cells around it — the block the output shows.
+(INIT &block BoundingBox
+  (key ((&cut_tile_of (:P *Q) (:P_tile ^T))
+        (OR ((dir8_elem *D)
+             (step_offset D (:V *V_m1))
+             (compose (:A Q) (:B V_m1) (:C *P_grid))
+             (input (:P P_grid)))
+            ((= P_grid Q))))
+    (cell ((:P P_grid))
+      (&cut_tile_of (:P *Q) (:P_tile T))
+      (OR ((dir8_elem *D)
+           (step_offset D (:V *V_m1))
+           (compose (:A Q) (:B V_m1) (:C *P_grid))
+           (input (:P P_grid)))
+          ((= P_grid Q))))))
+
+(DET &stack_axis AxisDomain)
+
+(RULE &out_split1
+  (&block.cell (:key *T) (:P *P_grid_))
+  (&stack_axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_grid_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_grid_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_grid_along_))
+  (relative (:Base P_grid_along_) (:X P_grid_) (:X_rel *X_m1_)))
+
+(RULE &out_split2
+  (&block.box (:key *T) *B)
+  (&block.cell (:key T) (:P *P_grid))
+  (relative (:Base B) (:X P_grid) (:X_rel *P_inner_))
+  (&stack_axis (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_inner_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_inner_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m2_))
+  (relative (:Base X_m2_) (:X P_inner_) (:X_rel *P_inner_across_)))
+
+(RULE &tile
+  (&cut_tile_of (:P_tile *T)))
+
+;; A tile's content, in the tile's own frame.
+(INIT &tile_view BoundingBox
+  (key ((&cut_tile_of (:P *P_grid) (:P_tile ^T)))
+    (cell ((:P P_grid))
+      (&cut_tile_of (:P *P_grid) (:P_tile T)))))
+
+(RULE &tile_content
+  (&tile_view.cell (:key *T) (:P *P_grid))
+  (input (:P P_grid) *Col)
+  (&tile_view.box (:key T) *B)
+  (ALL ((&tile_view.cell (:key (:T *Tm)) (:P P_grid))
+        (&tile_view.box (:key (:T Tm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P_grid) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P_grid) (:X_rel *P_intile)))
+
+(INIT &same Inclusion
+  (pattern ((:pattern T) (:m P_intile Col))
+    (&tile_content *T *P_intile *Col))
+  (observed ((:observed T) (:m P_intile Col))
+    (&tile_content *T *P_intile *Col)))
+
+(RULE &odd
+  (&tile *T)
+  (ALL ((&same.equal (:observed T) (:pattern *T2))
+        (&stack_axis *A)
+        (perp A *A2)
+        (perp (:A A2) (:A2 *A2_m1))
+        (axis_of (:D *D_m2) (:A A2_m1))
+        (margin (:B T) (:D D_m2) (:K *K_m3))
+        (margin (:B T2) (:D D_m2) (:K K_m3)))
+       ((= T T2))))
+
+(ALTS $choice "which tile stands out" $BandUnique
+  (ALT $GridUnique
+    (RULE &odd
+      (&tile *T)
+      (ALL ((&same.equal (:observed T) (:pattern *T2)))
+           ((= T T2)))))
+  (ALT $GridDeviant
+    (INIT &norm_count Cardinality
+      (key ((&same.equal (:observed ^T) (:pattern *T2)))
+        (member ((:m T2))
+          (&same.equal (:observed T) (:pattern *T2)))))
+
+    ;; The grid's norm: the tiles in a largest class of equals.
+    (INIT &norm Order
+      (member ((:t T))
+        (&norm_count.size (:key *T)))
+      (score ((:t T) (:S N))
+        (&norm_count.size (:key *T) *N)))
+
+    (RULE &odd
+      (&tile *T)
+      (NOT (&norm.maximal (:t T))))))
+
+(RULE &output
+  (&odd *T)
+  (&block.cell (:key T) (:P *P_grid))
+  (input (:P P_grid) *Col)
+  (&block.box (:key T) *B)
+  (ALL ((&block.cell (:key (:T *Tm)) (:P P_grid))
+        (&block.box (:key (:T Tm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P_grid) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P_grid) (:X_rel *P_inner))
+  (&stack_axis *A)
+  (&out_split1 (:P_grid_ P_grid) (:A_ A) (:P_grid_along_ *P_grid_along) (:X_m1_ *X_m1))
+  (&out_split2 (:P_inner_ P_inner) (:A_ A) (:X_m2_ *X_m2) (:P_inner_across_ *P_inner_across))
+  (compose (:A P_grid_along) (:B P_inner_across) (:C *P)))

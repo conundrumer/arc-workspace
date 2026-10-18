@@ -1,0 +1,4 @@
+;; 9385bd28
+
+(param &head_dir Dir (DIR_T))
+(param &key_sense Sense (SENSE_CC))

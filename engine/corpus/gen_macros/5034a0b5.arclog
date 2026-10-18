@@ -1,0 +1,87 @@
+;; 5034a0b5
+
+(RULE &corner
+  (input *P)
+  (corner_dist P (:K 0)))
+
+(RULE &inner_cell
+  (input *P)
+  (relative (:Base 0) (:X P) (:X_rel *R_m1))
+  (axis_of (:D *D1_m2) (:A *A1_m3))
+  (opposite (:D D1_m2) (:Opp *O1_m4))
+  (perp (:A A1_m3) (:A2 *A2_m5))
+  (axis_of (:D *D2_m6) (:A A2_m5))
+  (opposite (:D D2_m6) (:Opp *O2_m7))
+  (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+  (> K1_m8 0)
+  (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+  (> K2_m9 0)
+  (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+  (> K3_m10 0)
+  (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+  (> K4_m11 0))
+
+(RULE &bg
+  (input *P *Col)
+  (&corner P))
+
+(RULE &side_color
+  (input *P *Col)
+  (dir_elem *D)
+  (margin (:B P) D (:K 0))
+  (NOT (&corner P)))
+
+(RULE &heading
+  (input *P *Col)
+  (&inner_cell P)
+  (&side_color *D Col))
+
+(RULE &faces_frame
+  (&heading *P *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&inner_cell (:P Q))))
+
+(RULE &blocked
+  (&faces_frame *P))
+
+(ALTS $choice "what takes the step" $Cell
+  (ALT $Object
+    (RULE &obj_steps
+      (OR ((dir_elem *D)
+           (step_offset D (:V *Delta)))
+          ((diag_dir_elem (:D *D2))
+           (step_offset (:D D2) (:V Delta)))))
+
+    (INIT &obj Quotient
+      (edge ((:a (:Key Col) P) (:b (:Key Col) (:P P3)))
+        (OR ((&heading *P *Col)
+             (&obj_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P3))
+             (&heading (:P P3) Col))
+            ((&heading P Col)
+             (= P3 P)))))
+
+    (RULE &obj_component
+      (&obj.class (:a *Key *P) *Id))
+
+    (RULE &blocked
+      (&obj_component (:Key *Ky) *P (:Id *I))
+      (&obj_component (:Key Ky) (:P *P2) (:Id I))
+      (&faces_frame (:P P2)))))
+
+(RULE &move
+  (&heading *P *D *Col)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&blocked P)))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&move (:Q P) *Col))
+      ((&move P)
+       (NOT (&move (:Q P)))
+       (&bg Col))
+      ((NOT (&move (:Q P)))
+       (NOT (&move P))
+       (= Col Col_in))))

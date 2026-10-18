@@ -1,0 +1,67 @@
+;; f45f5ca7
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &mark_edge
+  (&ink)
+  (dir_elem *D)
+  (ALL ((&ink *P))
+       ((margin (:B P) D (:K 0)))))
+
+(DET &dir
+  (&mark_edge *D))
+
+(RULE &edge
+  (&dir *D))
+
+(DET &color_dist
+  (&ink *E *P (:Col *C))
+  (&dir *D)
+  (ex_output E (:P *Q) (:Col C))
+  (margin (:B Q) D *K)
+  (axis_of D *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B Q) (:D D_m2) (:K K_m3)))
+
+(ALTS $e "edge" $Dir
+  (ALT $Edge
+    (RULE &edge
+      (&mark_edge *D))))
+
+(ALTS $m "move" $Jump
+  (ALT $Seat
+    (RULE &moved
+      (&ink (:P *P2) *Col)
+      (&edge *D)
+      (&color_dist (:C Col) *K)
+      (input *P)
+      (margin (:B P) D K)
+      (axis_of D *A)
+      (perp A (:A2 *A2_m1))
+      (axis_of (:D *D_m2) (:A A2_m1))
+      (margin (:B P2) (:D D_m2) (:K *K_m3))
+      (margin (:B P) (:D D_m2) (:K K_m3)))))
+
+(RULE &moved
+  (&ink (:P *P3) *Col)
+  (&edge *D)
+  (&color_dist (:C Col) *K)
+  (opposite D (:Opp *O))
+  (dir8_opposite (:D O) (:D2 *O_m2))
+  (edge_inset (:D O_m2) K (:B *B1_m3))
+  (edge_inset (:D O) K (:B *I_m5))
+  (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+  (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+  (compose (:A P3) (:B V_m1) (:C *P)))
+
+(RULE &output
+  (OR ((&moved *P *Col))
+      ((input P)
+       (NOT (&moved P))
+       (&bg (:C Col)))))

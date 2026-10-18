@@ -1,0 +1,5 @@
+;; 67c52801
+
+(param &bg Color (0))
+(param &ground_dir Dir (DIR_B))
+(param &height number (2))

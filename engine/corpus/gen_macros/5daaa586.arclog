@@ -1,0 +1,205 @@
+;; 5daaa586
+
+(RULE &divider_split1
+  (input (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(DET &bg DominantColor)
+
+(RULE &gapped_split1
+  (input (:P *P_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &gapped
+  (input *P *Col)
+  (&bg (:C Col))
+  (axis_elem *A)
+  (&gapped_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+(RULE &divider
+  (input *P)
+  (axis_elem *A)
+  (&divider_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1))
+  (NOT (&gapped A L)))
+
+(INIT &bound Order
+  (key ((&divider *A *L)
+        (axis_of ^D A)
+        (margin (:B L) D *K))
+    (member ((:t K))
+      (&divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (&divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))))
+
+(RULE &bound_box_axis
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&bound.minimal (:key D) (:t *K))
+  (&bound.minimal (:key (:D D2)) (:t *K2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D K (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *B)))
+
+(RULE &bound_box
+  (&bound_box_axis *A (:B *B1))
+  (perp A *A2)
+  (&bound_box_axis (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+(RULE &cast_dir
+  (dir_elem (:D *Key)))
+
+(RULE &cast_node
+  (dir_elem (:D *Key))
+  (input *P))
+
+(RULE &border
+  (&bound_box *B)
+  (input *P)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B P) *D (:K *K_m1))
+  (margin B D (:K K_m1)))
+
+(RULE &inner
+  (&bound_box *B)
+  (input *P)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((> K_m3 0))))
+
+(RULE &mark
+  (&inner *P)
+  (input P *Col)
+  (axis_of *D *A)
+  (&border (:P *Q) D)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B Q) (:D D_m2) (:K K_m3))
+  (input (:P Q) Col))
+
+(RULE &cast_cell
+  (dir_elem (:D *Key))
+  (&inner *P))
+
+(ALTS $choice "what a cell's run matches against" $EndMatch
+  (ALT $LineMatch
+    (RULE &crossing
+      (&border *P *D)
+      (axis_of D (:A *A_m1))
+      (perp (:A A_m1) (:A2 *A2_m2))
+      (axis_of (:D *D2) (:A A2_m2))
+      (&border P (:D D2)))
+
+    (INIT &side Singleton
+      (key ((&border *P ^D)
+            (NOT (&crossing P))
+            (input P *Col))
+        (member ((:v Col))
+          (&border *P D)
+          (NOT (&crossing P))
+          (input P *Col))))
+
+    (RULE &mark
+      (&inner *P)
+      (input P *Col)
+      (&side.value (:key *D) (:v Col)))))
+
+(RULE &cast_source
+  (&mark *P (:D *Key)))
+
+(INIT &cast Distance
+  (key ((&cast_source (:Key ^Ky) (:P ^O))
+        (&cast_dir (:Key Ky)))
+    (edge ((:a A2) (:b Q))
+      (OR ((&cast_source (:Key Ky) (:P O))
+           (&cast_dir (:Key Ky))
+           (axis_of (:D Ky) *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite (:D Ky) (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset (:D Ky) K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&cast_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&cast_node (:Key Ky) (:P Q)))
+          ((&cast_source (:Key Ky) (:P O))
+           (&cast_dir (:Key Ky))
+           (step_offset (:D Ky) (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&cast_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&cast_source (:Key Ky) (:P O))
+           (&cast_dir (:Key Ky))
+           (diag_dir_elem (:D Ky))
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite (:D Ky) (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset (:D Ky) (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&cast_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&cast_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&cast_source (:Key Ky) (:P O))
+      (&cast_dir (:Key Ky)))))
+
+(RULE &cast_ray
+  (&cast.distance (:key (:Ky *Key) (:Ky *D) (:O *Origin)) (:n *P) *K))
+
+(RULE &cast_end
+  (&cast_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&cast_ray Key (:P Q) D Origin)))
+
+(RULE &fill
+  (&cast_ray (:Key *D) *P D (:Origin *S))
+  (&cast_cell (:Key D) P)
+  (input (:P S) *Col))
+
+(RULE &output
+  (&bound_box *B)
+  (input (:P *P2))
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P2) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (OR ((&fill (:P P2) *Col))
+      ((NOT (&fill (:P P2)))
+       (input (:P P2) Col))))

@@ -1,0 +1,75 @@
+;; 6e82a1ae
+
+(RULE &objs_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(RULE &objs_node
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &objs Quotient
+  (edge ((:a P) (:b P2))
+    (OR ((&objs_node *P)
+         (&objs_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&objs_node (:P P2)))
+        ((&objs_node P)
+         (= P2 P)))))
+
+(RULE &objs_component
+  (&objs.class (:a *P) *Id))
+
+(INIT &size Cardinality
+  (key ((&objs_component *P (:Id ^O)))
+    (member ((:m P))
+      (&objs_component *P (:Id O)))))
+
+(RULE &cell_count
+  (&objs_component *P (:Id *O))
+  (&size.size (:key O) *N))
+
+(DET &count_color
+  (&cell_count *E *P *N)
+  (ex_output E P *Col))
+
+(ALTS $choice "what the color lookup is keyed by" $Count
+  (ALT $Rank
+    ;; The counts ranked among the grid's objects.
+    (INIT &size_rank Order
+      (member ((:t N))
+        (&cell_count *N))
+      (score ((:t N) (:S N))
+        (&cell_count *N)))
+
+    (DET &big_color
+      (&cell_count *E *P *N)
+      (&size_rank.dual_rank E (:t N) *R)
+      (ex_output E P *Col))
+
+    (RULE &output
+      (OR ((&cell_count *P *N)
+           (&size_rank.dual_rank (:t N) *R)
+           (&big_color R *Col))
+          ((input P Col)
+           (&bg (:C Col)))))
+    (ALTS $a "which end of the size order counts as rank 0" $Big
+      (ALT $Small
+        (DET &small_color
+          (&cell_count *E *P *N)
+          (&size_rank.rank E (:t N) *R)
+          (ex_output E P *Col))
+        (RULE &output
+          (OR ((&cell_count *P *N)
+               (&size_rank.rank (:t N) *R)
+               (&small_color R *Col))
+              ((input P Col)
+               (&bg (:C Col)))))))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&bg (:C Col)))
+      ((&cell_count P *N)
+       (&count_color N Col))))

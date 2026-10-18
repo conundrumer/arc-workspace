@@ -1,0 +1,5 @@
+;; 84db8fc4
+
+(param &bg Color (0))
+(param &outside_fill Color (2))
+(param &enclosed_fill Color (5))

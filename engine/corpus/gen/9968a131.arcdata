@@ -1,0 +1,6 @@
+;; 9968a131
+
+(param &bg Color (7))
+(param &shift_dir Dir (DIR_R))
+(param &shift_dist number (1))
+(param &anchor_sense Sense (SENSE_CC))

@@ -1,0 +1,124 @@
+;; 08573cc6
+
+(DET &bg DominantColor)
+
+(DET &dot RarestColor)
+
+(DET &start_dir DirDomain)
+
+(DET &sense SenseDomain)
+
+(DET &len0 TileCount)
+
+(RULE &seed
+  (input *P *Col)
+  (&dot (:C Col)))
+
+(RULE &marker
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&dot (:C Col))))
+
+(DET &marker_corner
+  (ex_input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&dot (:C Col)))
+  (corner_dist P (:Diag *D) (:K 0)))
+
+(RULE &corner_color
+  (&marker *P *Col)
+  (&marker_corner (:D *Diag))
+  (corner_dist P Diag (:K 0)))
+
+(RULE &other_color
+  (&marker *P *Col)
+  (&marker_corner (:D *Diag))
+  (corner_dir (:C Diag) *D)
+  (NOT (margin (:B P) D (:K 0))))
+
+;; The arms the walk reaches: from an arm that ends on the grid, the next arm
+;; turns and is one cell longer.
+;; The first arm leaves the dot.
+(INIT &spiral Propagation
+  (source ((:n P_end D Delta))
+    (&seed *P)
+    (&start_dir *D)
+    (&len0 *N)
+    (jump P D (:K N) (:Q *P_end))
+    (jump_offset D (:K N) (:V *Delta)))
+  (edge ((:a (:P_end P) D Delta) (:b (:P_end P_end2) (:D D2) (:Delta Delta2)))
+    (input *P)
+    (dir_elem *D)
+    (axis_of D *A)
+    (sub_extent P A (:K *N))
+    (jump_offset D (:K N) (:V *Delta))
+    (&sense *S)
+    (turn S D *D2)
+    (c4_turn S (:T *M))
+    (apply (:D M) (:P Delta) (:P_out *DeltaR))
+    (neighbor (:P DeltaR) (:D D2) (:Q *Delta2))
+    (compose (:A P) (:B Delta2) (:C *P_end2))))
+
+(RULE &arm
+  (&spiral.reached (:n *P_end *D *Delta))
+  (relative (:Base Delta) (:X P_end) (:X_rel *P_start)))
+
+(RULE &run_dir
+  (&arm (:P_start *Key) (:D *D2))
+  (opposite (:D D2) (:Opp *D)))
+
+;; An arm read back from its end, keyed by where it starts. An arm the grid
+;; edge cuts short ends off the grid, so a forward cast from the start has no
+;; end to stop at. A cast from off the frame still walks in, so the backward
+;; run reaches that arm's on-grid cells.
+(INIT &run Ray
+  (key ((OR ((&arm (:P_start ^P) *P_end))
+            ((&run_dir (:Key P) *D))
+            ((&run_dir (:Key P))
+             (input (:P *P2)))))
+    (source ((:P P_end))
+      (&arm (:P_start P) *P_end))
+    (node ((:P P2))
+      (&run_dir (:Key P))
+      (input (:P *P2)))
+    (dir (D)
+      (&run_dir (:Key P) *D))))
+
+(RULE &run_cell
+  (&arm (:P_start *Key))
+  (input *P))
+
+(RULE &arm_cell
+  (&arm (:P_start *P2) *D *P_end)
+  (opposite D (:Opp *O))
+  (&run.ray (:key (:P P2)) *P (:D O) *K (:Origin P_end))
+  (&run_cell (:Key P2) P)
+  (&run.ray (:key (:P P2)) (:P P2) (:D O) (:K *N) (:Origin P_end))
+  (&run_cell (:Key P2) (:P P2))
+  (< K N))
+
+(RULE &corner_axis
+  (&start_dir *D)
+  (axis_of D *A))
+
+(ALTS $choice "The cases differ on how the corner marker's axis is picked" $Start
+  (ALT $Stored
+    (DET &color_axis AxisDomain)
+
+    (RULE &corner_axis
+      (&color_axis *A))))
+
+(RULE &output
+  (OR ((&arm_cell *P *D)
+       (axis_of D *A)
+       (OR ((&corner_axis A)
+            (&corner_color *Col))
+           ((&corner_axis (:A *A2))
+            (perp A A2)
+            (&other_color Col))))
+      ((input P (:Col *Col2))
+       (OR ((NOT (&arm_cell P))
+            (NOT (&seed P))
+            (&bg (:C Col)))
+           ((&seed P)
+            (= Col Col2))))))

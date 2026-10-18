@@ -1,0 +1,80 @@
+;; 3eda0437
+
+(DET &bg SharedColor)
+
+(DET &paint AnyOutNewColor)
+
+(RULE &hole
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(INIT &span BoundingBox
+  (key ((&hole ^P)
+        (&hole (:P ^Q)))))
+
+(RULE &box
+  (&span.box *B))
+
+(RULE &hole_box
+  (&box *B)
+  (ALL ((input *P)
+        (inside (:A P) B))
+       ((&hole P))))
+
+(RULE &hole_cell
+  (&hole_box *B)
+  (&hole *P)
+  (inside (:A P) B))
+
+(RULE &region
+  (&hole_cell *B *P)
+  (diag_dir_elem *D)
+  (neighbor P D *Q)
+  (&hole_cell B (:P Q)))
+
+(INIT &size Cardinality
+  (key ((&region ^B))
+    (member ((:m P))
+      (&hole_cell B *P))))
+
+(RULE &score
+  (&size.size (:key *B) *N))
+
+(ALTS $choice "the score that ranks hole boxes" $Area
+  (ALT $Block
+    ;; The block's side.
+    (DET &block TileCount)
+
+    (RULE &square
+      (&block (:N *K))
+      (&hole_box *B)
+      (&span.box (:key *P) B)
+      (perp *A *A2)
+      (box_extent B P A (:N K))
+      (box_extent B P (:A A2) (:N K)))
+
+    ;; How many such squares a box holds.
+    (INIT &seat Cardinality
+      (key ((&hole_box ^B))
+        (member ((:m B_sq))
+          (&square (:B *B_sq))
+          (inside (:A B_sq) B))))
+
+    (RULE &score
+      (&seat.size (:key *B) *N))))
+
+(INIT &best Order
+  (member ((:t (:V B) (:S N)))
+    (&score *B *N))
+  (score ((:t (:V B) (:S N)) (:S N))
+    (&score *B *N)))
+
+(RULE &filled
+  (&best.maximal (:t (:V *B)))
+  (&hole_cell B *P))
+
+(RULE &output
+  (OR ((&filled *P)
+       (&paint (:C *Col)))
+      ((input P Col)
+       (NOT (&filled P)))))

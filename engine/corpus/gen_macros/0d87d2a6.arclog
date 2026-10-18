@@ -1,0 +1,134 @@
+;; 0d87d2a6
+
+(RULE &reach_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(RULE &mark_cast_dir
+  (axis_elem (:A *Key))
+  (axis4_of *D (:A Key)))
+
+(RULE &mark_cast_node
+  (axis_elem (:A *Key))
+  (input *P))
+
+(DET &mark RarestColor)
+
+(RULE &mark_cast_source
+  (input *P *Col)
+  (&mark (:C Col))
+  (margin (:B P) *D (:K 0))
+  (axis_of D (:A *Key)))
+
+;; Keyed by the axis of the edge the marker sits on.
+(INIT &mark_cast Distance
+  (key ((&mark_cast_source (:Key ^Ky) (:P ^O))
+        (&mark_cast_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&mark_cast_source (:Key Ky) (:P O))
+           (&mark_cast_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&mark_cast_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&mark_cast_node (:Key Ky) (:P Q)))
+          ((&mark_cast_source (:Key Ky) (:P O))
+           (&mark_cast_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&mark_cast_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&mark_cast_source (:Key Ky) (:P O))
+           (&mark_cast_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&mark_cast_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&mark_cast_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&mark_cast_source (:Key Ky) (:P O))
+      (&mark_cast_dir (:Key Ky) D))))
+
+(RULE &mark_cast_ray
+  (&mark_cast.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &mark_cast_end
+  (&mark_cast_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&mark_cast_ray Key (:P Q) D Origin)))
+
+(DET &body ColorDomain)
+
+(DET &paint RarestColor)
+
+(RULE &mark_cast_cell
+  (axis_elem (:A *Key))
+  (input *P))
+
+(RULE &line
+  (&mark_cast_ray (:Key *Ky) *P)
+  (&mark_cast_cell (:Key Ky) P))
+
+(ALTS $d "how a line is drawn" $Cast
+  (ALT $Span
+    (RULE &mark_cast_between
+      (axis_elem (:A *Key))
+      (input *P)
+      (axis4_of *D (:A Key))
+      (dir8_opposite D (:D2 *O))
+      (&mark_cast_ray Key P D)
+      (&mark_cast_ray Key P (:D O)))
+
+    (RULE &line
+      (&mark_cast_between *P))))
+
+(ALTS $s "which objects a line catches" $Graze
+  (ALT $Pierce
+    (RULE &reach_node
+      (input *P *Col)
+      (&body (:C Col)))))
+
+(RULE &reach_node
+  (OR ((input *P *Col)
+       (&body (:C Col)))
+      ;; The line is part of the region, so an object that touches it is caught too.
+      ((&line P))))
+
+;; The objects a line catches: the components that the line's cells select.
+;; $Pierce is the seed rule alone — a line cell that lands on an object selects
+;; it, and one that lands elsewhere selects nothing.
+(INIT &reach Propagation
+  (source ((:n P))
+    (&line *P)
+    (&reach_node P))
+  (edge ((:a P) (:b Q))
+    (&reach_node *P)
+    (&reach_steps (:Delta *S))
+    (compose (:A P) (:B S) (:C *Q))
+    (&reach_node (:P Q))))
+
+(RULE &painted
+  (OR ((&line *P))
+      ((&reach.reached (:n P)))))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&paint (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))

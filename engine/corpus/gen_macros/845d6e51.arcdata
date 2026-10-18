@@ -1,0 +1,6 @@
+;; 845d6e51
+
+(param &bg Color (0))
+(param &frame Color (5))
+(param &shape_sym Sym (SYM_D4))
+(param &query Color (3))

@@ -1,0 +1,147 @@
+;; 1c0d0a4b
+
+(RULE &sep_division_cell
+  (input *P)
+  (axis_elem (:A *Key)))
+
+(DET &sep_w DivisorRatio)
+
+(DET &tile_w TileDim)
+
+(RULE &sep_division_gap_held
+  (axis_elem *A)
+  (&tile_w (:D *G)))
+
+(RULE &sep_division_axis_split1
+  (&sep_division_cell (:Key *Ky) (:P *P_))
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+  (relative (:Base Pi_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &sep_division_side_held
+  (axis_elem *A)
+  (&sep_w *K))
+
+(RULE &sep_division_axis
+  (OR ((&sep_division_cell *Key *P)
+       (axis_elem *A)
+       (OR ((!= A Key))
+           ((NOT (&sep_division_side_held (:A Key)))))
+       (&sep_division_axis_split1 (:P_ P) (:A_ A) (:Pi_ *P_inner) (:X_m1_ *X_m1))
+       (relative (:Base P_inner) (:X P_inner) (:X_rel *P_outer)))
+      ((&sep_division_cell Key P)
+       (axis_elem (:A Key))
+       (&sep_w *K)
+       (&tile_w (:D *G))
+       (axis_of *D (:A Key))
+       (opposite D (:Opp *O))
+       (margin (:B P) D (:K *T))
+       (margin (:B P) (:D O) (:K *T2))
+       (divide T (:Side K) (:Gap G) (:Part *I) (:Remainder *R))
+       (divide (:T T2) (:Side K) (:Gap G) (:Part *I2) (:Remainder *R2))
+       (opposite D (:Opp *O_m1))
+       (edge_inset D (:K I) (:B *B1_m2))
+       (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+       (compose (:A B1_m2) (:B B2_m3) (:C P_outer))
+       (opposite D (:Opp *O_m4))
+       (edge_inset D (:K R) (:B *B1_m5))
+       (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+       (compose (:A B1_m5) (:B B2_m6) (:C P_inner))
+       (frame_extent (:P P_inner) (:A Key) (:N K))
+       (= A Key))
+      ((&sep_division_cell Key P)
+       (axis_elem (:A Key))
+       (&sep_w (:K *K2))
+       (OR ((!= Key Key))
+           ((NOT (&sep_division_gap_held (:A Key)))))
+       (axis_of (:D *D2) (:A Key))
+       (opposite (:D D2) (:Opp *O2))
+       (margin (:B P) (:D D2) (:K *T3))
+       (margin (:B P) (:D O2) (:K *T22))
+       (divide (:T T3) (:Side K2) (:Gap 0) (:Part *I3) (:Remainder *R3))
+       (divide (:T T22) (:Side K2) (:Gap 0) (:Part *I22) (:Remainder *R22))
+       (opposite (:D D2) (:Opp *O_m12))
+       (edge_inset (:D D2) (:K I3) (:B *B1_m22))
+       (edge_inset (:D O_m12) (:K I22) (:B *B2_m32))
+       (compose (:A B1_m22) (:B B2_m32) (:C P_outer))
+       (opposite (:D D2) (:Opp *O_m42))
+       (edge_inset (:D D2) (:K R3) (:B *B1_m52))
+       (edge_inset (:D O_m42) (:K R22) (:B *B2_m62))
+       (compose (:A B1_m52) (:B B2_m62) (:C P_inner))
+       (frame_extent (:P P_inner) (:A Key) (:N K2))
+       (= A Key))))
+
+(RULE &sep_division_tile
+  (&sep_division_axis *Key *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+  (perp (:A A1) *A2)
+  (&sep_division_axis Key P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+  (compose (:A Po1) (:B Po2) (:C *P_outer))
+  (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+(DET &bg DominantColor)
+
+(DET &paint AnyOutNewColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; On a lattice line: the seps divide as sep_w-wide tiles with tile_w gaps.
+(RULE &sep
+  (&sep_division_tile *P))
+
+(ALTS $choice "which cells belong to the separator lattice; data-equivalent on this task" $Period
+  (ALT $Blank
+    (RULE &ink_line_split1
+      (&ink (:P *P_))
+      (axis_elem (:A *A_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+      (relative (:Base X_m1_) (:X P_) (:X_rel *Ac_)))
+
+    (RULE &sep_split1
+      (input (:P *P_))
+      (axis_elem (:A *A_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+      (relative (:Base X_m1_) (:X P_) (:X_rel *Ac_)))
+
+    (RULE &ink_line
+      (&ink *P)
+      (axis_elem *A)
+      (&ink_line_split1 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:Ac_ *P_across)))
+
+    (RULE &sep
+      (input *P)
+      (axis_elem *A)
+      (&sep_split1 (:P_ P) (:A_ A) (:X_m1_ *X_m1) (:Ac_ *Ac))
+      (NOT (&ink_line A (:P_across Ac))))))
+
+(RULE &output
+  (OR ((&sep *P)
+       (&bg (:C *Col)))
+      ((&ink P)
+       (&bg (:C Col)))
+      ((input P (:Col *Col2))
+       (&bg (:C Col2))
+       (NOT (&sep P))
+       (&paint (:C Col)))))

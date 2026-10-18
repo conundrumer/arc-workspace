@@ -1,0 +1,66 @@
+;; 0b17323b
+
+(DET &mark_color RarestColor)
+
+(DET &new_color AnyOutNewColor)
+
+(DET &dir DiagDirDomain)
+
+(RULE &mark
+  (input *P *Col)
+  (&mark_color (:C Col)))
+
+(RULE &sep
+  (&mark *P)
+  (&mark (:P *P2))
+  (diag_dir_elem *D)
+  (axis_elem *A)
+  (sub_extent P A *K)
+  (dir8_opposite D (:D2 *O_m2))
+  (edge_inset (:D O_m2) K (:B *B1_m3))
+  (edge_inset D K (:B *I_m5))
+  (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+  (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+  (compose (:A P) (:B V_m1) (:C P2)))
+
+;; The marks are evenly spaced, so the closest pair gives the spacing.
+(INIT &spacing Order
+  (member ((:t K))
+    (&sep *K))
+  (score ((:t K) (:S K))
+    (&sep *K)))
+
+(RULE &walk_dir
+  (&dir *D))
+
+(ALTS $choice "which ends of the diagonal the sequence continues from" $Ray
+  (ALT $Line
+    ;; A mark pair gives both directions of its diagonal.
+    (RULE &walk_dir
+      (&sep *D))))
+
+(RULE &walk
+  (&mark (:P *P2))
+  (&walk_dir *D)
+  (&spacing.minimal (:t *K))
+  (input *P)
+  (relative (:Base P2) (:X P) (:X_rel *V))
+  (corner_dir (:C D) (:D *D_c))
+  (opposite (:D D_c) (:Opp *O))
+  (margin (:B V) (:D O) (:K *T))
+  (dir8_opposite D (:D2 *O_m1))
+  (edge_inset (:D O_m1) (:K T) (:B *B1_m2))
+  (edge_inset D (:K T) (:B *I_m4))
+  (relative (:Base I_m4) (:X 0) (:X_rel *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C V))
+  (divide T (:Side K) (:Gap 0) (:Remainder 0)))
+
+(RULE &added
+  (&walk *P)
+  (NOT (&mark P)))
+
+(RULE &output
+  (OR ((&added *P)
+       (&new_color (:C *Col)))
+      ((input P Col)
+       (NOT (&added P)))))

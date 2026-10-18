@@ -1,0 +1,40 @@
+;; 32597951
+
+(DET &marker RarestColor)
+
+(DET &to AnyOutNewColor)
+
+(DET &from SharedColor)
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&marker (:C Col))))
+
+(RULE &recolor
+  (input *P *Col)
+  (&from (:C Col))
+  (&bbox.box *B)
+  (ALL ((input P (:Col *Colm))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(ALTS $choice "which cells qualify" $From
+  (ALT $Ink
+    (RULE &recolor
+      (input *P *Col)
+      (NOT (&marker (:C Col)))
+      (&bbox.box *B)
+      (ALL ((input P (:Col *Colm))
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0))))))
+
+(RULE &output
+  (OR ((&recolor *P)
+       (&to (:C *Col)))
+      ((input P Col)
+       (NOT (&recolor P)))))

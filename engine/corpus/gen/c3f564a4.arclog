@@ -1,0 +1,37 @@
+;; c3f564a4
+
+(DET &noise ChangedColor)
+
+(RULE &clean
+  (input *P *Col)
+  (NOT (&noise (:C Col))))
+
+(INIT &si Periods
+  (cell (P (:v Col))
+    (&clean *P *Col)))
+
+(ALTS $choice "how a noise cell finds its clean counterpart" $Shift
+  (ALT $Diag
+    (DET &diag DiagAxisDomain)
+
+    (RULE &output
+      (OR ((input *P (:Col *N))
+           (&noise (:C N))
+           (&diag (:Da *DA))
+           (&clean (:P *Q) *Col)
+           (same_line (:A DA) P Q))
+          ;; Clean cells pass through under every case.
+          ((&clean P Col))))))
+
+(RULE &output
+  ;; Clean cells pass through under every case.
+  (OR ((&clean *P *Col))
+      ((input P (:Col *N))
+       (&noise (:C N))
+       (&clean (:P *P_2))
+       (frame_offset (:P P_2) *A *K (:V *Delta))
+       (ALL ((&clean (:P *Pm))
+             (frame_offset (:P Pm) A K))
+            ((&si.period A K)))
+       (compose (:A P) (:B Delta) (:C *P2))
+       (&clean (:P P2) Col))))

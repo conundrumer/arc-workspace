@@ -1,0 +1,154 @@
+;; 7c66cb00
+
+(RULE &shapes_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+;; The edge the shapes fall toward.
+(DET &gravity DirDomain)
+
+(RULE &line_end
+  (input *P)
+  (&gravity *D)
+  (axis_of D (:A *A_m1))
+  (perp (:A A_m1) (:A2 *A2_m2))
+  (axis_of (:D *E) (:A A2_m2))
+  (margin (:B P) (:D E) (:K 0)))
+
+(RULE &line_of_split1
+  (input (:P *P_))
+  (axis_of *D (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &line_of
+  (input *P)
+  (&gravity *D)
+  (axis_of D *A)
+  (&line_of_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+(INIT &core Singleton
+  (key ((input *P *Col)
+        (NOT (&line_end P))
+        (&line_of P ^L))
+    (member ((:v Col))
+      (input *P *Col)
+      (NOT (&line_end P))
+      (&line_of P L))))
+
+(INIT &ends Singleton
+  (key ((input *P *Col)
+        (&line_end P)
+        (&line_of P ^L))
+    (member ((:v Col))
+      (input *P *Col)
+      (&line_end P)
+      (&line_of P L))))
+
+(RULE &band_line
+  (&ends.value (:key *L) (:v *C_end))
+  (&core.value (:key L) (:v *C_fill))
+  (!= C_end C_fill))
+
+(RULE &band_cell
+  (&band_line *L *C_fill)
+  (&line_of *P L))
+
+(RULE &loose
+  (input *P *Col)
+  (NOT (&band_cell P)))
+
+(INIT &bg_mode_count Cardinality
+  (key ((&loose *P ^Col))
+    (member ((:m P))
+      (&loose *P Col))))
+
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &bg
+  (&bg_mode.maximal (:t *Col)))
+
+(RULE &shapes_node
+  (&loose *P (:Col *Key))
+  (NOT (&bg (:Col Key))))
+
+(INIT &shapes Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&shapes_node (:Key *Ky) *P)
+         (&shapes_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&shapes_node (:Key Ky) (:P P2)))
+        ((&shapes_node (:Key Ky) P)
+         (= P2 P)))))
+
+(RULE &shapes_component
+  (&shapes.class (:a *Key *P) *Id))
+
+(INIT &band_box BoundingBox
+  (key ((&band_cell ^C_fill *P))
+    (cell (P)
+      (&band_cell C_fill *P))))
+
+(RULE &shape
+  (&shapes_component (:Key *Col) *P *Id))
+
+(INIT &shape_box BoundingBox
+  (key ((&shape ^Id *P))
+    (cell (P)
+      (&shape Id *P))))
+
+(RULE &fall
+  (&gravity *D)
+  (&shape *Id *P *Col)
+  (&shape_box.box (:key Id) (:B *B_shape))
+  (ALL ((&shape (:Id *Idm) P (:Col *Colm))
+        (&shape_box.box (:key (:Id Idm)) (:B B_shape))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B_shape) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B P) D (:K *K_m1))
+  (margin (:B B_shape) D (:K K_m1))
+  (&band_cell (:C_fill Col) (:P *Q))
+  (&band_box.box (:key (:C_fill Col)) (:B *B_band))
+  (ALL ((&band_cell (:C_fill *Colmm) (:P Q))
+        (&band_box.box (:key (:C_fill Colmm)) (:B B_band))
+        (dir_elem (:D *D_m1m))
+        (relative (:Base B_band) (:X Q) (:X_rel *R_m2m))
+        (margin (:B R_m2m) (:D D_m1m) (:K *K_m3m)))
+       ((>= K_m3m 0)))
+  (margin (:B Q) D (:K *K_m2))
+  (margin (:B B_band) D (:K K_m2))
+  (axis_of D *A)
+  (perp A (:A2 *A2_m3))
+  (axis_of (:D *D_m4) (:A A2_m3))
+  (margin (:B P) (:D D_m4) (:K *K_m5))
+  (margin (:B Q) (:D D_m4) (:K K_m5))
+  (relative (:Base P) (:X Q) (:X_rel *Delta)))
+
+(RULE &landed
+  (&shape *Id (:P *P2) (:Col *Col2))
+  (&fall Id *Delta)
+  (compose (:A P2) (:B Delta) (:C *P))
+  (&band_cell (:C_fill Col2) P)
+  (&band_line (:C_end *Col) (:C_fill Col2)))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&landed P *Col))
+      ((NOT (&landed P))
+       (&band_cell P)
+       (= Col C_in))
+      ((NOT (&band_cell P))
+       (&bg Col))))

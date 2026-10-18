@@ -1,0 +1,4 @@
+;; 5c0a986e
+
+(param &bg Color (0))
+(param &heading (Color DiagDir) (1 DIAG_TL) (2 DIAG_BR))

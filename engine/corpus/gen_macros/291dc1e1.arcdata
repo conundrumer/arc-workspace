@@ -1,0 +1,7 @@
+;; 291dc1e1
+
+(param &bg Color (8))
+(param &mark Color (0))
+(param &stack_dir Dir (DIR_T))
+(param &rot D4 (D4_CC))
+(param &primary_col Color (2))

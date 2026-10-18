@@ -1,0 +1,160 @@
+;; 0a2355a6
+
+(RULE &objs_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(RULE &objs_node
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &objs Quotient
+  (edge ((:a P) (:b P2))
+    (OR ((&objs_node *P)
+         (&objs_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&objs_node (:P P2)))
+        ((&objs_node P)
+         (= P2 P)))))
+
+(RULE &objs_component
+  (&objs.class (:a *P) *Id))
+
+(RULE &off_ink_flood_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(RULE &off_ink_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(RULE &off_ink_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &off_ink_flood_node
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(INIT &off_ink_flood Propagation
+  (source ((:n P))
+    (&off_ink_cell *P)
+    (dir_elem *D)
+    (margin (:B P) D (:K 0))
+    (&off_ink_flood_node P))
+  (edge ((:a P) (:b Q))
+    (&off_ink_flood_node *P)
+    (&off_ink_flood_steps (:Delta *S))
+    (compose (:A P) (:B S) (:C *Q))
+    (&off_ink_flood_node (:P Q))))
+
+(RULE &off_ink_node
+  (&off_ink_cell *P)
+  (NOT (&off_ink_flood.reached (:n P))))
+
+;; The cells left when all ink is solid — the background.
+(INIT &off_ink Quotient
+  (edge ((:a P) (:b P2))
+    (OR ((&off_ink_node *P)
+         (&off_ink_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&off_ink_node (:P P2)))
+        ((&off_ink_node P)
+         (= P2 P)))))
+
+(RULE &off_ink_component
+  (&off_ink.class (:a *P) *Id))
+
+;; Each object's hole regions when all ink closes jointly.
+(INIT &joint_holes Cardinality
+  (key ((&off_ink_component *P *Id)
+        (dir_elem *D)
+        (step_offset D (:V *V_m1))
+        (compose (:A P) (:B V_m1) (:C *Q))
+        (&objs_component (:P Q) (:Id ^O)))
+    (member ((:m Id))
+      (&off_ink_component *P *Id)
+      (dir_elem *D)
+      (step_offset D (:V *V_m1))
+      (compose (:A P) (:B V_m1) (:C *Q))
+      (&objs_component (:P Q) (:Id O)))))
+
+(DET &joint_count_color
+  (&objs_component *E *P (:Id *O))
+  (&joint_holes.size E (:key O) *N)
+  (ex_output E P *Col))
+
+(ALTS $choice "what a hole is" $Joint
+  (ALT $Own
+    (RULE &off_obj_flood_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (RULE &off_obj_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (RULE &off_obj_cell
+      (input *P)
+      (&objs_component (:Id *Key))
+      (NOT (&objs_component P (:Id Key))))
+
+    (INIT &off_obj_flood Propagation
+      (key ((&objs_component (:Id ^O)))
+        (source ((:n P))
+          (&off_obj_cell (:Key O) *P)
+          (dir_elem *D)
+          (margin (:B P) D (:K 0))
+          (input P)
+          (NOT (&objs_component P (:Id O))))
+        (edge ((:a P) (:b P2))
+          (input *P)
+          (NOT (&objs_component P (:Id O)))
+          (&off_obj_flood_steps (:Delta *S))
+          (compose (:A P) (:B S) (:C *P2))
+          (input (:P P2))
+          (NOT (&objs_component (:P P2) (:Id O))))))
+
+    (RULE &off_obj_node
+      (&off_obj_cell *Key *P)
+      (NOT (&off_obj_flood.reached (:key (:O Key)) (:n P))))
+
+    ;; The cells left when only O is solid — other objects among them.
+    (INIT &off_obj Quotient
+      (edge ((:a (:O Ky) P) (:b (:O Ky) (:P P2)))
+        (OR ((&off_obj_node (:Key *Ky) *P)
+             (&off_obj_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P2))
+             (&off_obj_node (:Key Ky) (:P P2)))
+            ((&off_obj_node (:Key Ky) P)
+             (= P2 P)))))
+
+    (RULE &off_obj_component
+      (&off_obj.class (:a (:O *Key) *P) *Id))
+
+    ;; Each object's hole regions when it closes alone.
+    (INIT &own_holes Cardinality
+      (key ((&off_obj_component (:Key ^O) *Id))
+        (member ((:m Id))
+          (&off_obj_component (:Key O) *Id))))
+
+    (DET &own_count_color
+      (&objs_component *E *P (:Id *O))
+      (&own_holes.size E (:key O) *N)
+      (ex_output E P *Col))
+
+    (RULE &output
+      (OR ((&objs_component *P (:Id *O))
+           (&own_holes.size (:key O) *N)
+           (&own_count_color N *Col))
+          ((input P Col)
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&bg (:C Col)))
+      ((&objs_component P (:Id *O))
+       (&joint_holes.size (:key O) *N)
+       (&joint_count_color N Col))))

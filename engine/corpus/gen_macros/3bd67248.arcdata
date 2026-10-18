@@ -1,0 +1,8 @@
+;; 3bd67248
+
+(param &bg Color (0))
+(param &floor_color Color (4))
+(param &diag_color Color (2))
+(param &floor_dir Dir (DIR_B))
+(param &corner DiagDir (DIAG_BL))
+(param &sense Sense (SENSE_CW))

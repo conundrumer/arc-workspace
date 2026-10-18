@@ -1,0 +1,114 @@
+;; 5751f35e
+
+(RULE &peel_depth_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+;; What the damage leaves behind.
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The grid peels into concentric rings, one per depth.
+(INIT &peel Boundary
+  (cell (P)
+    (input *P)))
+
+(INIT &peel_depth Distance
+  (edge ((:a P) (:b P2))
+    (input *P)
+    (&peel_depth_steps (:Delta *S))
+    (compose (:A P) (:B S) (:C *P2))
+    (input (:P P2)))
+  (source ((:n P))
+    (&peel.boundary *P)))
+
+;; A color's box is the ring its shallowest cell sits on.
+(INIT &reach Order
+  (key ((&ink *P ^Col)
+        (&peel_depth.distance (:n P) *K))
+    (member ((:t K))
+      (&ink *P Col)
+      (&peel_depth.distance (:n P) *K))
+    (score ((:t K) (:S K))
+      (&ink *P Col)
+      (&peel_depth.distance (:n P) *K))))
+
+(RULE &layer_uniform_inset1
+  (&reach.minimal (:key *Col) (:t *K_))
+  (axis_of (:D *D1_m1) (:A *A1_m2))
+  (perp (:A A1_m2) (:A2 *A2_m3))
+  (axis_of (:D *D2_m4) (:A A2_m3))
+  (opposite (:D D1_m1) (:Opp *O_m1))
+  (edge_inset (:D D1_m1) (:K K_) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K_) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *B1_m5))
+  (opposite (:D D2_m4) (:Opp *O_m4))
+  (edge_inset (:D D2_m4) (:K K_) (:B *B1_m6))
+  (edge_inset (:D O_m4) (:K K_) (:B *B2_m7))
+  (compose (:A B1_m6) (:B B2_m7) (:C *B2_m6))
+  (compose (:A B1_m5) (:B B2_m6) (:C *B_)))
+
+(RULE &layer
+  (&reach.minimal (:key *Col) (:t *K))
+  (&layer_uniform_inset1 (:K_ K) (:B_ *B)))
+
+(RULE &shadowed_interior1
+  (&layer (:Col *Col2) (:B *B2_))
+  (&layer *Col (:B *B_))
+  (dir_elem (:D *D_m1))
+  (relative (:Base B_) (:X B2_) (:X_rel *R_m2))
+  (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+  (<= K_m3 0))
+
+(RULE &covered
+  (input *P)
+  (&layer *Col *B)
+  (ALL ((&layer (:Col *Colm) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0))))
+
+(ALTS $choice "how a damaged cell recovers its color" $Layers
+  (ALT $Rings
+    (INIT &ring_color Singleton
+      (key ((&ink *P *Col)
+            (&peel_depth.distance (:n P) ^K))
+        (member ((:v Col))
+          (&ink *P *Col)
+          (&peel_depth.distance (:n P) K))))
+
+    (RULE &output
+      (OR ((&peel_depth.distance (:n *P) *K)
+           (&ring_color.value (:key K) (:v *Col)))
+          ((&peel_depth.distance (:n P) (:K *K2))
+           (NOT (&ring_color.member (:key (:K K2))))
+           (&bg (:C Col))))))
+  (ALT $Symmetry
+    ;; The nest's symmetry group.
+    (DET &sym SymDomain)
+
+    (RULE &orbit_color
+      (input *P)
+      (&sym *S)
+      (sym_member S *D)
+      (apply D P (:P_out *Q))
+      (&ink (:P Q) *Col))
+
+    (RULE &output
+      (OR ((&orbit_color *P *Col))
+          ((input P Col)
+           (NOT (&orbit_color P)))))))
+
+(RULE &output
+  (OR ((&covered *P *Col)
+       (ALL ((&layer Col *B)
+             (&covered P (:Col *Col2))
+             (&layer (:Col Col2) (:B *B2)))
+            ((&shadowed_interior1 (:B2_ B2) (:B_ B)))))
+      ((input P)
+       (NOT (&covered P))
+       (&bg (:C Col)))))

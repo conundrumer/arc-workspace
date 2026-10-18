@@ -1,0 +1,45 @@
+;; 3aa6fb7a
+
+(DET &bg DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &empty
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &mark
+  (&empty *P)
+  (diag_dirs (:D *G) *D1 *D2)
+  (neighbor P (:D D1) (:Q *Q1))
+  (&ink (:P Q1))
+  (neighbor P (:D D2) (:Q *Q2))
+  (&ink (:P Q2))
+  (neighbor P (:D G) (:Q *Q3))
+  (&ink (:P Q3)))
+
+(ALTS $choice "what marks a cell" $Corner
+  (ALT $Box
+    (INIT &parts Connectivity
+      (node (P)
+        (&ink *P)))
+
+    (INIT &part_box BoundingBox
+      (key ((&parts.component *P ^Id))
+        (cell (P)
+          (&parts.component *P Id))))
+
+    (RULE &mark
+      (&empty *P)
+      (&part_box.box *B)
+      (inside (:A P) B))))
+
+(RULE &output
+  (OR ((&mark *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&mark P)))))

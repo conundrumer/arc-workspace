@@ -1,0 +1,7 @@
+;; a79310a0
+
+(param &ink Color (8))
+(param &mark Color (2))
+(param &bg Color (0))
+(param &shift_dir Dir (DIR_B))
+(param &shift_k number (1))

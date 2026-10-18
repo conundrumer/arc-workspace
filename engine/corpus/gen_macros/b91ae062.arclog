@@ -1,0 +1,142 @@
+;; b91ae062
+
+(INPUT colored-cells-on-background "every input holds a few cells of colors other than the background 0 on a field of the background, with at least one color other than the background")
+
+(OUTPUT scale-factor-is-color-count "k is the number of distinct colors other than the background in the input"
+
+  (DET_OR_RULE &background DominantColor)
+
+  (INIT &palette Cardinality
+    (member ((:m Col))
+      (input *Col)
+      (NOT (&background (:C Col))))))
+
+(OUTPUT scale-up "the output is the input scaled by k on both axes: each input cell becomes a k×k block of its color")
+
+(ALTS $choice "how k follows from the count" $Count
+  (ALT $ScaleTable
+    (OUTPUT scale-factor-is-color-count "k is the entry a stored table gives for the count; undefined on an input whose count has no entry"
+      (INIT &scale_by_count_division_sides ExtentDivisions
+        (key ((ex_output ^E (:P *P_out))
+              (axis_elem ^A))
+          (frame ((:P P_out))
+            (ex_output E (:P *P_out))
+            (axis_elem A))))
+
+      (DET &scale_by_count_division_axis_split1
+        (ex_output *E (:P *P_out_))
+        (axis_elem (:A *A2_))
+        (axis_of (:D *D_m1) (:A A2_))
+        (opposite (:D D_m1) (:Opp *O_m2))
+        (margin (:B P_out_) (:D D_m1) (:K *K1_m3))
+        (margin (:B P_out_) (:D O_m2) (:K *K2_m4))
+        (opposite (:D D_m1) (:Opp *O_m1))
+        (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+        (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+        (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+        (relative (:Base Pi_) (:X P_out_) (:X_rel *X_m1_)))
+
+      (DET &scale_by_count_division_parts_held
+        (ex_input *E (:P *P_in))
+        (axis_elem *A)
+        (frame_extent (:P P_in) A (:N *M)))
+
+      (DET &scale_by_count_division_axis
+        (OR ((ex_output *E *P)
+             (axis_elem (:A *Key_a))
+             (axis_elem *A)
+             (OR ((!= A Key_a))
+                 ((NOT (&scale_by_count_division_parts_held E (:A Key_a)))))
+             (&scale_by_count_division_axis_split1 (:P_out_ P) (:A2_ A) (:Pi_ *P_inner) (:X_m1_ *X_m1))
+             (relative (:Base P_inner) (:X P_inner) (:X_rel *P_outer)))
+            ((ex_output E P)
+             (axis_elem (:A Key_a))
+             (ex_input E (:P *P_in))
+             (frame_extent (:P P_in) (:A Key_a) (:N *M))
+             (&scale_by_count_division_sides.division (:key E (:A Key_a)) (:A Key_a) (:N M) *K (:G 0))
+             (axis_of *D (:A Key_a))
+             (opposite D (:Opp *O))
+             (margin (:B P) D (:K *T))
+             (margin (:B P) (:D O) (:K *T2))
+             (divide T (:Side K) (:Gap 0) (:Part *I) (:Remainder *R))
+             (divide (:T T2) (:Side K) (:Gap 0) (:Part *I2) (:Remainder *R2))
+             (opposite D (:Opp *O_m1))
+             (edge_inset D (:K I) (:B *B1_m2))
+             (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+             (compose (:A B1_m2) (:B B2_m3) (:C P_outer))
+             (opposite D (:Opp *O_m4))
+             (edge_inset D (:K R) (:B *B1_m5))
+             (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+             (compose (:A B1_m5) (:B B2_m6) (:C P_inner))
+             (frame_extent (:P P_inner) (:A Key_a) (:N K))
+             (= A Key_a))
+            ((ex_output E P)
+             (axis_elem (:A Key_a))
+             (ex_input E (:P *P_in2))
+             (frame_extent (:P P_in2) (:A Key_a) (:N *M2))
+             (frame_extent P (:A Key_a) (:N *K2))
+             (axis_of (:D *D2) (:A Key_a))
+             (opposite (:D D2) (:Opp *O2))
+             (margin (:B P) (:D D2) (:K *T3))
+             (margin (:B P) (:D O2) (:K *T22))
+             (divide (:T T3) (:Side K2) (:Gap 0) (:Part *I3) (:Remainder *R3))
+             (divide (:T T22) (:Side K2) (:Gap 0) (:Part *I22) (:Remainder *R22))
+             (opposite (:D D2) (:Opp *O_m12))
+             (edge_inset (:D D2) (:K I3) (:B *B1_m22))
+             (edge_inset (:D O_m12) (:K I22) (:B *B2_m32))
+             (compose (:A B1_m22) (:B B2_m32) (:C P_outer))
+             (opposite (:D D2) (:Opp *O_m42))
+             (edge_inset (:D D2) (:K R3) (:B *B1_m52))
+             (edge_inset (:D O_m42) (:K R22) (:B *B2_m62))
+             (compose (:A B1_m52) (:B B2_m62) (:C P_inner))
+             (frame_extent (:P P_inner) (:A Key_a) (:N K2))
+             (frame_extent (:P P_outer) (:A Key_a) (:N M2))
+             (= A Key_a))))
+
+      (DET &scale_by_count_division_tile
+        (&scale_by_count_division_axis *E (:Key_a *A) *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+        (perp (:A A1) *A2)
+        (&scale_by_count_division_axis E (:Key_a A) P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+        (compose (:A Po1) (:B Po2) (:C *P_outer))
+        (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+      (DET &scale_by_count_split1
+        (&scale_by_count_division_tile *E (:A *A_) (:P_inner *P_slab_))
+        (axis_of (:D *D_m1) (:A A_))
+        (opposite (:D D_m1) (:Opp *O_m2))
+        (margin (:B P_slab_) (:D D_m1) (:K *K1_m3))
+        (margin (:B P_slab_) (:D O_m2) (:K *K2_m4))
+        (opposite (:D D_m1) (:Opp *O_m1))
+        (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+        (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+        (compose (:A B1_m2) (:B B2_m3) (:C *P_inner_))
+        (relative (:Base P_inner_) (:X P_slab_) (:X_rel *X_m1_)))
+
+      (DET &scale_by_count
+        (&palette.size *E *N)
+        (&scale_by_count_division_tile E *A (:P_inner *P_slab))
+        (&scale_by_count_split1 (:P_slab_ P_slab) (:A_ A) (:P_inner_ *P_inner) (:X_m1_ *X_m1))
+        (frame_extent (:P P_inner) A (:N *K))))
+    ;; The k×k block each input cell becomes.
+    (INIT &block Frame
+      (extent (A (:N K))
+        (axis_elem *A)
+        (&palette.size *N)
+        (&scale_by_count N *K)))))
+
+;; The k×k block each input cell becomes.
+(INIT &block Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&palette.size *N)))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (input (:P *P_tile)))
+  (inner ((:P P_intile))
+    (&block.cell (:P *P_intile))))
+
+(RULE &output
+  (input (:P *P_tile) *Col)
+  (&block.cell (:P *P_intile))
+  (&output_tiling.cell (:P_outer P_tile) (:P_inner P_intile) *P))

@@ -1,0 +1,351 @@
+;; a251c730
+
+(INPUT striped-field "the grid is covered by a pattern of one-cell-wide stripes that repeats along one axis")
+
+(INPUT two-boxes "two rectangles sit on that field, and they do not overlap. Each rectangle is a one-cell-wide frame of one color around an interior filled with one background color, its commonest color.")
+
+(INPUT template-box "one box holds figures. Each figure is a group of non-background cells joined through edge and corner neighbors, in which exactly one cell, the anchor, has a color that occurs once in the figure. Figures with the same anchor color have the same shape and colors. Undefined when a figure has no such cell or more than one, or when two figures of one anchor color differ."
+
+  (RULE &part4_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &part8_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((diag_dir_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  ;; The rectangle outlines of one color.
+  (INIT &outline Outlines
+    (key ((input *P ^Col))
+      (node (P)
+        (input *P Col))))
+
+  (RULE &nested_inside1
+    (&outline.box (:B *B_))
+    (&outline.box (:B *B2_))
+    (dir_elem (:D *D_m1))
+    (relative (:Base B2_) (:X B_) (:X_rel *R_m2))
+    (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+    (< K_m3 0))
+
+  (RULE &box
+    (&outline.box *B)
+    (ALL ((&outline.box (:B *B2))
+          (!= B B2))
+         ((&nested_inside1 (:B_ B) (:B2_ B2)))))
+
+  (INIT &interior_mode_count Cardinality
+    (key ((&box ^B)
+          (input *P ^Col)
+          (ALL ((input P (:Col *Colm))
+                (dir_elem (:D *D_m1))
+                (relative (:Base B) (:X P) (:X_rel *R_m2))
+                (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+               ((> K_m3 0))))
+      (member ((:m P))
+        (&box B)
+        (input *P Col)
+        (ALL ((input P (:Col *Colm))
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((> K_m3 0))))))
+
+  ;; The interior's background: its commonest color.
+  (INIT &interior_mode Order
+    (key ((&interior_mode_count.size (:key ^B *Col)))
+      (member ((:t Col))
+        (&interior_mode_count.size (:key B *Col)))
+      (score ((:t Col) (:S N))
+        (&interior_mode_count.size (:key B *Col) *N))))
+
+  (RULE &ink
+    (&interior_mode_count.member (:key *B *Col) (:m *P))
+    (NOT (&interior_mode.maximal (:key B) (:t Col))))
+
+  (INIT &part8 Quotient
+    (edge ((:a (:Key B) P) (:b (:Key B) (:P P3)))
+      (OR ((&ink *B *P)
+           (&part8_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&ink B (:P P3)))
+          ((&ink B P)
+           (= P3 P)))))
+
+  (RULE &part8_component
+    (&part8.class (:a *Key *P) *Id))
+
+  (RULE &part
+    (&part8_component (:Key *B) *P *Id))
+
+  (RULE &multi
+    (&part *B *P *Id)
+    (&part B (:P *Q) Id)
+    (!= P Q))
+
+  ;; The box that holds the figures.
+  (INIT &template Singleton
+    (member ((:v B))
+      (&multi *B)))
+
+  (RULE &fig_cell
+    (&template.value (:v *B))
+    (&part B *P *Id)
+    (input P *Col))
+
+  ;; The anchor of each figure.
+  (INIT &anchor Singleton
+    (key ((&fig_cell ^Id *P *Col)
+          (ALL ((&fig_cell Id (:P *Pm) Col)
+                (&fig_cell Id (:P *Q) Col))
+               ((= Pm Q))))
+      (member ((:v P))
+        (&fig_cell Id *P *Col)
+        (ALL ((&fig_cell Id (:P *Pm) Col)
+              (&fig_cell Id (:P *Q) Col))
+             ((= Pm Q))))))
+
+  (RULE &fig_key
+    (&anchor.value (:key *Id) (:v *P))
+    (input P (:Col *K)))
+
+  (RULE &scan_cell
+    (diag_dir_elem *D)
+    (axis_elem (:A *Ax))
+    (&anchor.value (:key *Id) (:v *P))
+    (&fig_key Id *K))
+
+  ;; Each scan order over the anchors of one color's figures.
+  (INIT &scan2 Order
+    (key ((diag_dir_elem ^D)
+          (axis_elem (:A ^Ax))
+          (&anchor.value (:key *Id) (:v *P))
+          (&fig_key Id ^K))
+      (member ((:t P))
+        (diag_dir_elem D)
+        (axis_elem (:A Ax))
+        (&anchor.value (:key *Id) (:v *P))
+        (&fig_key Id K))
+      (before ((:a P) (:b P2))
+        (diag_dir_elem D)
+        (axis_elem (:A Ax))
+        (&anchor.value (:key *Id) (:v *P))
+        (&fig_key Id K)
+        (&anchor.value (:key (:Id *Id2)) (:v *P2))
+        (&fig_key (:Id Id2) K)
+        (&scan_cell D Ax K)
+        (OR ((corner_dir (:C D) (:A Ax) (:D *D2))
+             (dir_elem (:D D2))
+             (margin (:B P) (:D D2) (:K *K1_m1))
+             (margin (:B P2) (:D D2) (:K *K2_m2))
+             (< K1_m1 K2_m2))
+            ((corner_dir (:C D) (:A Ax) (:D D2))
+             (perp (:A Ax) (:A2 *A2_m3))
+             (corner_dir (:C D) (:A A2_m3) (:D *D22))
+             (margin (:B P) (:D D2) (:K *K_m4))
+             (margin (:B P2) (:D D2) (:K K_m4))
+             (dir_elem (:D D22))
+             (margin (:B P) (:D D22) (:K *K1_m5))
+             (margin (:B P2) (:D D22) (:K *K2_m6))
+             (< K1_m5 K2_m6))))))
+
+  (INIT &area Cardinality
+    (key ((&box ^B))
+      (member ((:m P))
+        (input *P)
+        (ALL ((dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0))))))
+
+  (INIT &larger Order
+    (member ((:t (:V B) (:S N)))
+      (&area.size (:key *B) *N))
+    (score ((:t (:V B) (:S N)) (:S N))
+      (&area.size (:key *B) *N)))
+
+  (INIT &part4 Quotient
+    (edge ((:a (:Key B) P) (:b (:Key B) (:P P3)))
+      (OR ((&ink *B *P)
+           (&part4_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&ink B (:P P3)))
+          ((&ink B P)
+           (= P3 P))))))
+
+(INPUT anchor-box "the other box holds only lone cells, and each lone cell has the anchor color of some figure in the template box.")
+
+(OUTPUT crop-anchor-box "the output is the anchor box, frame included, with its interior background kept.")
+
+(OUTPUT stamp-at-anchor "at each lone cell of the anchor box, the output stamps the figure whose anchor color is that cell's color, translated so that the figure's anchor lands on the lone cell. The stamp writes the figure's non-background cells onto the crop, the frame included, and drops those outside it. Undefined where two writes to one cell disagree, a lone cell counting as a write of its own color, and at a lone cell whose color is no figure's anchor color."
+
+  ;; The box the output crops.
+  (INIT &target Singleton
+    (member ((:v B))
+      (&template.value (:v *B_t))
+      (&box *B)
+      (!= B B_t)))
+
+  (RULE &lone
+    (&target.value (:v *B))
+    (&part B *P *Id)
+    (NOT (&multi B Id))
+    (input P *Col))
+
+  (RULE &site
+    (&lone *P (:Col *K)))
+
+  (RULE &fig_rel
+    (&anchor.value (:key *Id) (:v *P_a))
+    (&fig_cell Id *P *Col)
+    (relative (:Base P_a) (:X P) (:X_rel *V)))
+
+  (RULE &placed
+    (&site (:P *L) *K)
+    (&fig_key *Id K)
+    (&fig_rel Id *V *Col)
+    (compose (:A L) (:B V) (:C *P)))
+
+  (RULE &sheet
+    (&target.value (:v *B))
+    (input *P *Col)
+    (ALL ((input P (:Col *Colm))
+          (&target.value (:v B))
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (RULE &writable
+    (&sheet *P))
+
+  (RULE &paint
+    (&placed *Id *P *Col)
+    (&writable P))
+
+  (RULE &unmatched
+    (&lone (:Col *K))
+    (NOT (&fig_key K)))
+
+  ;; A figure with no anchor, or with more than one.
+  (RULE &defect
+    (&fig_cell *Id)
+    (NOT (&anchor.value (:key Id))))
+
+  (RULE &settled
+    (&template.value)
+    (NOT (&defect))
+    (NOT (&unmatched))))
+
+(ALTS $anchor "how a figure's anchor cell is found" $OnceColor
+  (ALT $AnchorBySharedColor
+    (INPUT template-box "the anchor colors are the non-background colors found in both box interiors. A figure is a group with exactly one anchor-colored cell, its anchor, and at least one other cell; other groups are skipped. Undefined when no figure results."
+      (RULE &shared
+        (&target.value (:v *B))
+        (&ink B *Col))
+
+      ;; The anchor of each figure.
+      (INIT &anchor Singleton
+        (key ((&fig_cell ^Id *P *Col)
+              (&shared Col)
+              (&fig_cell Id (:Col *Col2))
+              (NOT (&shared (:Col Col2))))
+          (member ((:v P))
+            (&fig_cell Id *P *Col)
+            (&shared Col)
+            (&fig_cell Id (:Col *Col2))
+            (NOT (&shared (:Col Col2))))))
+
+      ;; No figure results.
+      (RULE &defect
+        (&template.value)
+        (NOT (&fig_key))))))
+
+(ALTS $reach "which cells of the anchor box a stamp writes" $CropReach
+  (ALT $FillOnly
+    (OUTPUT stamp-at-anchor "a stamp writes only onto interior cells that hold the background color, so the frame and the lone cells keep their colors. Undefined where two stamps write different colors to one cell."
+      (RULE &writable
+        (&target.value (:v *B))
+        (input *P (:Col *Bg))
+        (ALL ((input P (:Col *Bgm))
+              (&target.value (:v B))
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((> K_m3 0)))
+        (&interior_mode.maximal (:key B) (:t Bg))))))
+
+(ALTS $unmatched "what a lone cell whose color is no figure's anchor color gets" $MatchRequired
+  (ALT $UnmatchedStays
+    (OUTPUT stamp-at-anchor "such a lone cell keeps its color and gets no stamp"
+      (RULE &settled
+        (&template.value)
+        (NOT (&defect))))))
+
+(ALTS $same "what figures of one anchor color that differ give" $ClashUndefined
+  (ALT $FirstWins
+    (INPUT template-box "figures with the same anchor color may differ. A lone cell takes the figure of its color whose anchor comes first in the scan order, from a corner along an axis. The output holds the grid of each open scan order."
+      ;; The scan order that picks among the figures of one anchor color: from a corner, along an axis. The pairs fix no order, so every order is open.
+      ;; TODO no-det-plan: &scan: the plan gives no verdict
+      (DET &scan (ONE))
+
+      (RULE &picked
+        (&scan2.minimal (:key *D *Ax) (:t *P))
+        (&anchor.value (:key *Id) (:v P)))
+
+      (RULE &scan_painted
+        (&picked *D *Ax *Id)
+        (&paint Id *P)))
+    ;; Each open scan gives a grid.
+    (RULE &output
+      (&settled)
+      (&scan *D *Ax)
+      (&sheet (:P *P2) (:P_inner *P) (:Col *C))
+      (OR ((&picked D Ax *Id)
+           (&paint Id (:P P2) *Col))
+          ((&site (:P P2) (:K Col)))
+          ((NOT (&scan_painted D Ax (:P P2)))
+           (= Col C))))))
+
+(ALTS $role "which box gives the figures and which box the output crops" $RoleByContent
+  (ALT $RoleBySize
+    (INPUT template-box "the box with the larger area holds the figures, and the other box is the anchor box, whose groups of more than one cell keep their colors. Undefined when the areas are equal."
+      ;; The box that holds the figures.
+      (INIT &template Singleton
+        (member ((:v B))
+          (&larger.maximal (:t (:V *B))))))
+    (ALTS $sites "which cells of the anchor box take a stamp, under RoleBySize" $LoneSites
+      (ALT $EveryAnchorColored
+        (OUTPUT stamp-at-anchor "every anchor box cell of a figure's anchor color takes a stamp, in a group of more than one cell too"
+          (RULE &site
+            (OR ((&target.value (:v *B))
+                 (&ink B *P (:Col *K))
+                 (&fig_key K))
+                ((&lone P (:Col K))))))))))
+
+(ALTS $adj "which neighbors join the cells of a group" $Conn8
+  (ALT $Conn4
+    (INPUT template-box "only edge neighbors join the cells of a group"
+      (RULE &part4_component
+        (&part4.class (:a *Key *P) *Id))
+
+      (RULE &part
+        (&part4_component (:Key *B) *P *Id)))))
+
+(RULE &clash
+  (&fig_key *Id *K)
+  (&fig_key (:Id *Id2) K)
+  (&fig_rel Id *V *Col)
+  (NOT (&fig_rel (:Id Id2) V Col)))
+
+(RULE &output
+  (&settled)
+  (NOT (&clash))
+  (&sheet (:P *P2) (:P_inner *P) (:Col *C))
+  (OR ((&paint (:P P2) *Col))
+      ((&site (:P P2) (:K Col)))
+      ((NOT (&paint (:P P2)))
+       (= Col C))))

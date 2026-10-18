@@ -1,0 +1,232 @@
+;; 8b9c3697
+
+(RULE &anchors_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The background: the commonest color.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &bg
+  (&bg_mode.maximal (:t *Col)))
+
+(DET &mover ChangedColor)
+
+;; An anchor: a component of what is neither background nor mover.
+(INIT &anchors Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg Col))
+         (NOT (&mover (:C Col)))
+         (&anchors_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:Col Col2)))
+         (NOT (&mover (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:Col Col3)))
+         (NOT (&mover (:C Col3)))
+         (= P3 P)))))
+
+(RULE &anchors_component
+  (&anchors.class (:a *P) *Id))
+
+(RULE &anchor
+  (&anchors_component *P *Id))
+
+(RULE &cavity_axis
+  (&anchor (:Id *Key))
+  (axis_elem *A))
+
+(RULE &cavity_dir
+  (&cavity_axis *Key *A)
+  (axis4_of *D A))
+
+(RULE &cavity_node
+  (&cavity_axis *Key)
+  (input *P))
+
+(RULE &cavity_source
+  (&anchor (:Id *Key) *P))
+
+;; Each anchor's cavity.
+(INIT &cavity Distance
+  (key ((&cavity_source (:Key ^Ky) (:P ^O))
+        (&cavity_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&cavity_source (:Key Ky) (:P O))
+           (&cavity_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&cavity_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&cavity_node (:Key Ky) (:P Q)))
+          ((&cavity_source (:Key Ky) (:P O))
+           (&cavity_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&cavity_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&cavity_source (:Key Ky) (:P O))
+           (&cavity_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&cavity_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&cavity_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&cavity_source (:Key Ky) (:P O))
+      (&cavity_dir (:Key Ky) D))))
+
+(RULE &cavity_ray
+  (&cavity.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &cavity_between
+  (&anchor (:Id *Key))
+  (input *P)
+  (&cavity_axis Key *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&cavity_ray Key P D)
+  (&cavity_ray Key P (:D O)))
+
+(RULE &movers_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &movers Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (&mover (:C Col))
+         (&movers_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (&mover (:C Col2)))
+        ((input P (:Col *Col3))
+         (&mover (:C Col3))
+         (= P3 P)))))
+
+(RULE &movers_component
+  (&movers.class (:a *P) *Id))
+
+(RULE &cavity_end
+  (&cavity_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&cavity_ray Key (:P Q) D Origin)))
+
+(DET &trail AnyOutNewColor)
+
+(RULE &mover2
+  (&movers_component *P *Id))
+
+;; Each mover slides toward each direction until it meets the frame edge or
+;; a cell that is neither background nor its own.
+(INIT &slide Distance
+  (key ((dir_elem ^D)
+        (&mover2 ^Id))
+    (source_distance (K)
+      (OR ((&mover2 Id *P)
+           (margin (:B P) D *K))
+          ((&mover2 Id (:P *P3))
+           (input (:P *P2) *Col)
+           (NOT (&bg Col))
+           (NOT (&mover2 Id (:P P2)))
+           (gap D (:P P3) (:Q P2) K))))))
+
+(RULE &slide_dir
+  (&mover2 *Id)
+  (dir_elem *D))
+
+(RULE &rest
+  (&slide.distance (:key *Id *D) *K)
+  (&slide_dir Id D)
+  (dir8_opposite D (:D2 *O_m1))
+  (edge_inset (:D O_m1) K (:B *B1_m2))
+  (edge_inset D K (:B *I_m4))
+  (relative (:Base I_m4) (:X 0) (:X_rel *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Delta))
+  (&mover2 Id (:P *P3))
+  (compose (:A P3) (:B Delta) (:C *P)))
+
+(RULE &docked
+  (&rest *Id *D *P)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *P2))
+  (&anchor (:Id *A) (:P P2)))
+
+(RULE &seated
+  (&docked *Id *D *A)
+  (ALL ((&rest Id D *P))
+       ((&cavity_between (:Key A) P))))
+
+(RULE &landed
+  (&seated *Id *D)
+  (&rest Id D *P))
+
+(RULE &trail2
+  (&seated *Id *D)
+  (&slide.distance (:key Id D) *K)
+  (&slide_dir Id D)
+  (dir8_opposite D (:D2 *O_m1))
+  (edge_inset (:D O_m1) K (:B *B1_m2))
+  (edge_inset D K (:B *I_m4))
+  (relative (:Base I_m4) (:X 0) (:X_rel *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *Delta))
+  (&mover2 Id (:P *P0))
+  (compose (:A P0) (:B Delta) (:C *P1))
+  (input *P)
+  (axis_of D *A)
+  (perp A (:A2 *A2_m5))
+  (axis_of (:D *D_m6) (:A A2_m5))
+  (margin (:B P0) (:D D_m6) (:K *K_m7))
+  (margin (:B P) (:D D_m6) (:K K_m7))
+  (OR ((= P P0))
+      ((dir_elem D)
+       (margin (:B P) D (:K *K1_m8))
+       (margin (:B P0) D (:K *K2_m9))
+       (< K1_m8 K2_m9)))
+  (dir_elem D)
+  (margin (:B P1) D (:K *K1_m10))
+  (margin (:B P) D (:K *K2_m11))
+  (< K1_m10 K2_m11)
+  (NOT (&landed P)))
+
+(RULE &cleared
+  (OR ((input *P *Col)
+       (NOT (&mover2 P)))
+      ((&mover2 P)
+       (&bg Col))))
+
+(RULE &output
+  (OR ((&landed *P)
+       (&mover (:C *Col)))
+      ((&trail2 P)
+       (&trail (:C Col)))
+      ((&cleared P Col)
+       (NOT (&landed P))
+       (NOT (&trail2 P)))))

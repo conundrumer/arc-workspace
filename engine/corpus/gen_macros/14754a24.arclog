@@ -1,0 +1,154 @@
+;; 14754a24
+
+(RULE &obj_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(DET &mark RarestColor)
+
+(RULE &mark_cell
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(INIT &obj Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&mark_cell *P)
+         (&obj_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&mark_cell (:P P3)))
+        ((&mark_cell P)
+         (= P3 P)))))
+
+(RULE &obj_component
+  (&obj.class (:a *P) *Id))
+
+(DET &fill SharedColor)
+
+(DET &paint AnyOutNewColor)
+
+(RULE &fill_cell
+  (input *P *Col)
+  (&fill (:C Col)))
+
+;; $Plus — the cell and its four cardinal neighbors.
+(RULE &footprint
+  (input (:P *P_place))
+  (OR ((dir_elem *D)
+       (step_offset D (:V *V_m1))
+       (compose (:A P_place) (:B V_m1) (:C *P))
+       (input P))
+      ((= P P_place))))
+
+(ALTS $fp "the footprint" $Plus
+  (ALT $Shape
+    (DET &inst_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (DET &inst_cell
+      (OR ((ex_input *E *P *Col)
+           (&mark (:C Col))
+           (ex_output E))
+          ((ex_input E P (:Col *C1))
+           (ex_output E P (:Col *C2))
+           (!= C1 C2))))
+
+    (INIT &inst Quotient
+      (edge ((:a (:Key E) P) (:b (:Key E) (:P P3)))
+        (OR ((&inst_cell *E *P)
+             (&inst_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P3))
+             (&inst_cell E (:P P3)))
+            ((&inst_cell E P)
+             (= P3 P)))))
+
+    (DET &inst_component
+      (&inst.class (:a *Key *P) *Id))
+
+    (INIT &bbox BoundingBox
+      (key ((&inst_component (:Key ^E) *P ^Id))
+        (cell (P)
+          (&inst_component (:Key E) *P Id))))
+
+    (DET &shape_inside1
+      (&bbox.cell (:key (:E *K_e) (:Id *K_id)) (:P *P_))
+      (&bbox.box (:key (:E K_e) (:Id K_id)) (:B *B_))
+      (dir_elem (:D *D_m1))
+      (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+      (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+      (< K_m3 0))
+
+    (DET &shape
+      (&bbox.cell (:key (:E *K_e) (:Id *K_id)) (:P *P2))
+      (&bbox.box (:key (:E K_e) (:Id K_id)) *B)
+      (NOT (&shape_inside1 (:P_ P2) (:B_ B)))
+      (relative (:Base B) (:X P2) (:X_rel *P))
+      (relative (:Base 0) (:X B) (:X_rel *R_m1))
+      (axis_of (:D *D1_m2) (:A *A1_m3))
+      (opposite (:D D1_m2) (:Opp *O1_m4))
+      (perp (:A A1_m3) (:A2 *A2_m5))
+      (axis_of (:D *D2_m6) (:A A2_m5))
+      (opposite (:D D2_m6) (:Opp *O2_m7))
+      (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+      (> K1_m8 0)
+      (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+      (> K2_m9 0)
+      (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+      (> K3_m10 0)
+      (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+      (> K4_m11 0))
+
+    ;; $Shape — the stored cells.
+    (RULE &footprint
+      (input *P)
+      (&shape (:P *S))
+      (relative (:Base S) (:X P) (:X_rel *P_place)))))
+
+(ALTS $a "which placements act" $Fragment
+  (ALT $Maximal
+    ;; Placements compared against each other: both sides are mark sets.
+    (INIT &maximal Inclusion
+      (pattern ((:pattern P) (:m Q))
+        (&cand_mark (:P_place *P) (:P *Q)))
+      (observed ((:observed P) (:m Q))
+        (&cand_mark (:P_place *P) (:P *Q))))
+
+    (RULE &dominated
+      (&maximal.superset (:observed *P2) (:pattern *P_place))
+      (NOT (&maximal.equal (:observed P2) (:pattern P_place))))
+
+    (RULE &placement
+      (&cand_mark *P_place)
+      (NOT (&dominated P_place)))))
+
+(RULE &blocked
+  (&footprint *P_place (:P *Q))
+  (NOT (&mark_cell (:P Q)))
+  (NOT (&fill_cell (:P Q))))
+
+(RULE &cand_mark
+  (&footprint *P_place *P)
+  (&mark_cell P)
+  (NOT (&blocked P_place)))
+
+(INIT &fragment Inclusion
+  (pattern ((:pattern Id) (:m P))
+    (&obj_component *P *Id))
+  (observed ((:observed P) (:m Q))
+    (&cand_mark (:P_place *P) (:P *Q))))
+
+(RULE &placement
+  (&fragment.equal (:observed *P_place)))
+
+(RULE &painted
+  (&placement (:P_place *P2))
+  (&footprint (:P_place P2) *P)
+  (&fill_cell P))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&paint (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))

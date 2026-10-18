@@ -1,0 +1,158 @@
+;; 7b3084d4
+
+(DET &bg DominantColor)
+
+;; The marker cell's color.
+(DET &marker RarestColor)
+
+;; The corner of the square the marker lands on.
+(DET &corner DiagDirDomain)
+
+;; The transforms a piece may take.
+(DET &group SymDomain)
+
+(RULE &content
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &joins
+  (&content *P (:Col *Col0))
+  (OR ((&marker (:C Col0))
+       (dir8_elem *D)
+       (step_offset D (:V *V_m1))
+       (compose (:A P) (:B V_m1) (:C *Q))
+       (&content (:P Q) *Col)
+       (NOT (&marker (:C Col))))
+      ((NOT (&marker (:C Col0)))
+       (= Col Col0))))
+
+;; The cells that join one color are one piece.
+(INIT &by_color Quotient
+  (equivalent ((:a P) (:b Q))
+    (&joins *P *Col)
+    (&joins (:P *Q) Col)))
+
+(RULE &piece_cell
+  (&by_color.class (:a *P) (:Id *O))
+  (&content P *Col))
+
+(INIT &area Cardinality
+  (member ((:m P))
+    (&content *P)))
+
+;; Candidate squares, by side.
+(INIT &square Frame
+  (key ((input *P)
+        (axis_elem *A)
+        (axis_elem (:A *A0))
+        (sub_extent P (:A A0) (:K ^N)))
+    (extent (A N)
+      (input *P)
+      (axis_elem *A)
+      (axis_elem (:A *A0))
+      (sub_extent P (:A A0) (:K N)))))
+
+(INIT &square_area Cardinality
+  (key ((&square.cell (:key ^N) *P))
+    (member ((:m P))
+      (&square.cell *P))))
+
+(RULE &side
+  (&square_area.size (:key *N) (:N *K))
+  (&area.size (:N K)))
+
+(ALTS $choice "what counts as one piece" $ByColor
+  (ALT $ByComponent
+    (RULE &by_comp_steps
+      (OR ((dir_elem *D)
+           (step_offset D (:V *Delta)))
+          ((diag_dir_elem (:D *D2))
+           (step_offset (:D D2) (:V Delta)))))
+
+    (INIT &by_comp Quotient
+      (edge ((:a P) (:b P3))
+        (OR ((&content *P)
+             (&by_comp_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P3))
+             (&content (:P P3)))
+            ((&content P)
+             (= P3 P)))))
+
+    (RULE &by_comp_component
+      (&by_comp.class (:a *P) *Id))
+
+    (RULE &piece_cell
+      (&by_comp_component *P (:Id *O))
+      (&content P *Col))))
+
+(INIT &bbox BoundingBox
+  (key ((&piece_cell ^O *P))
+    (cell (P)
+      (&piece_cell O *P))))
+
+(RULE &image
+  (&piece_cell *O *P *Col)
+  (&bbox.box (:key O) *B)
+  (ALL ((&piece_cell (:O *Om) P (:Col *Colm))
+        (&bbox.box (:key (:O Om)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner2))
+  (&group (:S *G))
+  (sym_member (:S G) *D)
+  (apply D (:P P_inner2) (:P_out *P_inner)))
+
+;; Where each pose fits in the square.
+(INIT &occ Occurrences
+  (key ((OR ((&image ^O ^D *P_inner))
+            ((&image O D)
+             (&side *N)
+             (&square.cell (:key N) *P))))
+    (cell (P)
+      (&image O D)
+      (&side *N)
+      (&square.cell (:key N) *P))
+    (shape ((:P P_inner))
+      (&image O D *P_inner))))
+
+(RULE &covers
+  (&occ.occurrence (:key *O *D) (:P *B))
+  (&image O D *P_inner *Col)
+  (compose (:A B) (:B P_inner) (:C *P)))
+
+(RULE &anchor
+  (&piece_cell *O *Col)
+  (&marker (:C Col)))
+
+(RULE &placement
+  (&occ.occurrence (:key *O *D) (:P *B))
+  (OR ((NOT (&anchor O)))
+      ((&covers O D B *P *Col)
+       (&marker (:C Col))
+       (&corner (:D *Dg))
+       (corner_dist P (:Diag Dg) (:K 0)))))
+
+(RULE &unplaced
+  (&piece_cell *O)
+  (NOT (&placement O)))
+
+;; Every joint placement survives the pruning, and the survivors agree where
+;; the packing is unique.
+(CHOOSE &pruning
+  (for ((&placement ^O))
+    (from (&placement O *D *B)))
+  (never
+    (&placement (:O *Pc_o) (:D *Pc_d) (:B *Pc_b))
+    (&placement (:O *Pc2_o) (:D *Pc2_d) (:B *Pc2_b))
+    (OR ((!= Pc_b Pc2_b))
+        ((!= Pc_d Pc2_d))
+        ((!= Pc_o Pc2_o)))
+    (&covers (:O Pc_o) (:D Pc_d) (:B Pc_b) *P)
+    (&covers (:O Pc2_o) (:D Pc2_d) (:B Pc2_b) P)))
+
+(RULE &output
+  (&pruning (:O *Pc_o) (:D *Pc_d) (:B *Pc_b))
+  (NOT (&unplaced))
+  (&covers (:O Pc_o) (:D Pc_d) (:B Pc_b) *P *Col))

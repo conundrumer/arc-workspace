@@ -1,0 +1,152 @@
+;; 1efba499
+
+(DET &bg DominantColor)
+
+(INIT &dom_count Cardinality
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (member ((:m P))
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &dom Order
+  (member ((:t Col))
+    (&dom_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&dom_count.size (:key *Col) *N)))
+
+(RULE &wall_col
+  (&dom.maximal (:t *Col)))
+
+(RULE &wall
+  (input *P *Col)
+  (&wall_col Col))
+
+(INIT &wbox BoundingBox
+  (cell (P)
+    (&wall *P)))
+
+(RULE &cross_axis
+  (&wall *P)
+  (&wbox.box *B)
+  (perp *A *A2)
+  (axis_elem A)
+  (relative (:Base B) (:X P) (:X_rel *R_m1))
+  (frame_extent (:P R_m1) A (:N *N1))
+  (axis_elem (:A A2))
+  (relative (:Base B) (:X P) (:X_rel *R_m2))
+  (frame_extent (:P R_m2) (:A A2) (:N *N2))
+  (< N1 N2))
+
+(RULE &cross_dir
+  (&cross_axis *A)
+  (axis_of *D A))
+
+(RULE &reach_dir
+  (&cross_dir *D))
+
+(RULE &reach_node
+  (input *P))
+
+(RULE &reach_source
+  (&wall *P))
+
+(INIT &reach Distance
+  (key ((&reach_source (:P ^O))
+        (&reach_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&reach_source (:P O))
+           (&reach_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&reach_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&reach_node (:P Q)))
+          ((&reach_source (:P O))
+           (&reach_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&reach_node (:P Q))
+           (= A2 O))
+          ((&reach_source (:P O))
+           (&reach_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&reach_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&reach_node (:P Q)))))
+    (source ((:n O))
+      (&reach_source (:P O))
+      (&reach_dir D))))
+
+(RULE &reach_ray
+  (&reach.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &reach_end
+  (&reach_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&reach_ray (:P Q) D Origin)))
+
+(RULE &beyond
+  (&cross_dir *D)
+  (&reach_ray *P D))
+
+(RULE &touch
+  (input *P)
+  (&cross_dir *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&wall (:P Q))
+  (NOT (&beyond P D)))
+
+(RULE &loose
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&wall_col Col)))
+
+(RULE &crossing
+  (&loose *P *Col)
+  (&beyond P *D)
+  (opposite D (:Opp *D2))
+  (&loose (:P *P2))
+  (&beyond (:P P2) (:D D2))
+  (&cross_axis *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B P2) (:D D_m2) (:K K_m3)))
+
+(RULE &ink
+  (OR ((&wall *P)
+       (&wall_col *Col))
+      ((&crossing (:P *P2) Col *D)
+       (&cross_axis *A)
+       (perp A (:A2 *A2_m1))
+       (axis_of (:D *D_m2) (:A A2_m1))
+       (margin (:B P2) (:D D_m2) (:K *K_m3))
+       (&touch P D)
+       (margin (:B P) (:D D_m2) (:K K_m3)))
+      ((&loose P Col)
+       (NOT (&crossing P)))))
+
+(RULE &output
+  (OR ((&ink *P *Col))
+      ((input P)
+       (NOT (&ink P))
+       (&bg (:C Col)))))

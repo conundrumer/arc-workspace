@@ -1,0 +1,9 @@
+;; 6773b310
+
+(param &marker Color (6))
+(param &mark Color (1))
+(param &bg Color (0))
+(param &divide_gap number (1))
+(param &divisor number (3))
+(param &tile_size number (3))
+(param &pair_count number (2))

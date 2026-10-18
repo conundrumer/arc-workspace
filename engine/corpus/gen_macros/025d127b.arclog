@@ -1,0 +1,139 @@
+;; 025d127b
+
+(RULE &shapes_steps
+  (OR ((dir_elem *D)
+       (step_offset D (:V *Delta)))
+      ((diag_dir_elem (:D *D2))
+       (step_offset (:D D2) (:V Delta)))))
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &shapes Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&ink *P)
+         (&shapes_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ink (:P P3)))
+        ((&ink P)
+         (= P3 P)))))
+
+(RULE &shapes_component
+  (&shapes.class (:a *P) *Id))
+
+(DET &dir DirDomain)
+
+(RULE &pile_dir
+  (&dir (:D *D3))
+  (opposite (:D D3) (:Opp *D)))
+
+(RULE &pile_blocked
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &pile_node
+  (input *P)
+  (NOT (&pile_blocked P)))
+
+(INIT &shape_box BoundingBox
+  (key ((&shapes_component *P ^Id))
+    (cell (P)
+      (&shapes_component *P Id))))
+
+(RULE &pile_source
+  (&shapes_component *P *Id)
+  (&shape_box.box (:key Id) *B)
+  (&dir *D)
+  (ALL ((&shapes_component P (:Id *Idm))
+        (&shape_box.box (:key (:Id Idm)) B)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B P) D (:K *K_m1))
+  (margin B D (:K K_m1)))
+
+;; A cell is stuck when the unbroken run of ink ahead of it reaches its
+;; shape's leading edge: a cast back from each leading-edge cell through ink.
+;; A landing site adjacent to its source is in the source's own shape, so
+;; the pile-up needs no shape key.
+(INIT &pile Distance
+  (key ((&pile_source (:P ^O))
+        (&pile_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&pile_source (:P O))
+           (&pile_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&pile_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&pile_node (:P Q)))
+          ((&pile_source (:P O))
+           (&pile_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&pile_node (:P Q))
+           (= A2 O))
+          ((&pile_source (:P O))
+           (&pile_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&pile_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&pile_node (:P Q)))))
+    (source ((:n O))
+      (&pile_source (:P O))
+      (&pile_dir D))))
+
+(RULE &pile_ray
+  (&pile.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &pile_end
+  (&pile_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&pile_ray (:P Q) D Origin)))
+
+(RULE &target
+  (&ink *P)
+  (&dir *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *P2)))
+
+(RULE &pile_cell
+  (&ink *P))
+
+(RULE &stuck
+  (&pile_ray *P)
+  (&pile_cell P))
+
+(RULE &slid
+  (OR ((&ink *P *Col)
+       (&stuck P))
+      ((&ink (:P *P3) Col)
+       (NOT (&stuck (:P P3)))
+       (&target (:P P3) (:P2 P)))))
+
+(RULE &output
+  (OR ((&slid *P *Col))
+      ((input P)
+       (&bg (:C Col))
+       (NOT (&slid P)))))

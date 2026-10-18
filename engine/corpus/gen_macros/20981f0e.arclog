@@ -1,0 +1,287 @@
+;; 20981f0e
+
+(DET &dot RarestColor)
+
+(RULE &lattice_divider_split1
+  (input (:P *P_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(RULE &lattice_divider
+  (input *P *Col)
+  (&dot (:C Col))
+  (axis_elem *A)
+  (&lattice_divider_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+(RULE &lattice_on_divider
+  (input *P)
+  (&lattice_divider *A *L)
+  (axis_of *D A)
+  (margin (:B P) D (:K *K_m1))
+  (margin (:B L) D (:K K_m1)))
+
+(INIT &lattice_rank Order
+  (key ((OR ((&lattice_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (dir_elem D)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&lattice_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&lattice_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (dir_elem D)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (dir_elem D)
+      (margin (:B P) D *K))))
+
+(RULE &lattice_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&lattice_on_divider P A))
+  (margin (:B P) D *K)
+  (&lattice_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &lattice_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&lattice_part_idx *P D (:N *N1))
+  (&lattice_part_idx P (:D D2) (:N *N2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K N1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+(RULE &lattice_tile_of
+  (&lattice_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&lattice_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &bg DominantColor)
+
+(RULE &piece
+  (&lattice_tile_of *P *P_tile)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The box of each tile.
+(INIT &tile_box BoundingBox
+  (key ((&lattice_tile_of *P ^P_tile))
+    (cell (P)
+      (&lattice_tile_of *P P_tile))))
+
+;; The piece's box, in the frame of its tile.
+(INIT &piece_box BoundingBox
+  (key ((&piece ^P_tile *P)
+        (&tile_box.box (:key P_tile) *B)
+        (ALL ((&piece (:P_tile *P_tilem) P)
+              (&tile_box.box (:key (:P_tile P_tilem)) B)
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (relative (:Base B) (:X P) (:X_rel *P_intile)))
+    (cell ((:P P_intile))
+      (&piece P_tile *P)
+      (&tile_box.box *B)
+      (ALL ((&piece (:P_tile *P_tilem) P)
+            (&tile_box.box (:key (:P_tile P_tilem)) B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (relative (:Base B) (:X P) (:X_rel *P_intile)))))
+
+(RULE &landing
+  (&piece *P_tile *P)
+  (&tile_box.cell (:key P_tile) (:P *Q))
+  (relative (:Base P) (:X Q) (:X_rel *Delta))
+  (&piece_box.box (:key P_tile) (:B *B0))
+  (compose (:A B0) (:B Delta) (:C *B))
+  (relative (:Base 0) (:X B) (:X_rel *R_m1))
+  (axis_of (:D *D1_m2) (:A *A1_m3))
+  (opposite (:D D1_m2) (:Opp *O1_m4))
+  (perp (:A A1_m3) (:A2 *A2_m5))
+  (axis_of (:D *D2_m6) (:A A2_m5))
+  (opposite (:D D2_m6) (:Opp *O2_m7))
+  (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+  (>= K1_m8 0)
+  (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+  (>= K2_m9 0)
+  (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+  (>= K3_m10 0)
+  (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+  (>= K4_m11 0))
+
+(RULE &place
+  (&landing *P_tile *Delta *B)
+  (ALL ((&landing (:P_tile *P_tilem) (:Delta *Deltam) B)
+        (opposite (:D *D_m1) (:Opp *O_m2))
+        (margin B (:D D_m1) (:K *K1_m3))
+        (margin B (:D O_m2) (:K *K2_m4)))
+       ((= K1_m3 K2_m4))))
+
+(ALTS $choice "where within its tile the piece lands" $Center
+  (ALT $Slot
+    (DET &ex_lattice_cell
+      (ex_input (:E *Key) *P)
+      (ex_output (:E Key)))
+
+    (DET &ex_lattice_divider_split1
+      (ex_input *E (:P *P_) *Col)
+      (axis_elem (:A *A_))
+      (axis_of (:D *D_m1) (:A A_))
+      (opposite (:D D_m1) (:Opp *O_m2))
+      (margin (:B P_) (:D D_m1) (:K *K1_m3))
+      (margin (:B P_) (:D O_m2) (:K *K2_m4))
+      (opposite (:D D_m1) (:Opp *O_m1))
+      (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+      (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+    (DET &ex_lattice_divider
+      (ex_input (:E *Key) *P *Col)
+      (&dot (:C Col))
+      (ex_output (:E Key))
+      (axis_elem *A)
+      (&ex_lattice_divider_split1 (:P_ P) (:A_ A) (:L_ *L) (:X_m1_ *X_m1)))
+
+    (DET &ex_lattice_on_divider
+      (&ex_lattice_cell *Key *P)
+      (&ex_lattice_divider Key *A *L)
+      (axis_of *D A)
+      (margin (:B P) D (:K *K_m1))
+      (margin (:B L) D (:K K_m1)))
+
+    (INIT &ex_lattice_rank Order
+      (key ((OR ((&ex_lattice_divider (:Key ^Ky) *A *L)
+                 (axis_of ^D A)
+                 (margin (:B L) D *K))
+                ((&ex_lattice_cell (:Key Ky) *P)
+                 (dir_elem D)
+                 (margin (:B P) D K))))
+        (member ((:t K))
+          (&ex_lattice_divider (:Key Ky) *A *L)
+          (axis_of D A)
+          (margin (:B L) D *K))
+        (score ((:t K) (:S K))
+          (OR ((&ex_lattice_divider (:Key Ky) *A *L)
+               (axis_of D A)
+               (margin (:B L) D *K))
+              ((&ex_lattice_cell (:Key Ky) *P)
+               (dir_elem D)
+               (margin (:B P) D K))))
+        (probe ((:t K))
+          (&ex_lattice_cell (:Key Ky) *P)
+          (dir_elem D)
+          (margin (:B P) D *K))))
+
+    (DET &ex_lattice_part_idx
+      (&ex_lattice_cell *Key *P)
+      (axis_of *D *A)
+      (NOT (&ex_lattice_on_divider Key P A))
+      (margin (:B P) D *K)
+      (&ex_lattice_rank.rank (:key (:Ky Key) D) (:t K) (:R *N)))
+
+    (DET &ex_lattice_part_of
+      (axis_of *D *A)
+      (opposite D (:Opp *D2))
+      (&ex_lattice_part_idx *Key *P D (:N *N1))
+      (&ex_lattice_part_idx Key P (:D D2) (:N *N2))
+      (opposite D (:Opp *O_m1))
+      (edge_inset D (:K N1) (:B *B1_m2))
+      (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+      (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+    (DET &ex_lattice_tile_of
+      (&ex_lattice_part_of *Key *P *A (:P_part *P1))
+      (perp A *A2)
+      (&ex_lattice_part_of Key P (:A A2) (:P_part *P2))
+      (compose (:A P1) (:B P2) (:C *P_tile)))
+
+    (INIT &ex_tile_box BoundingBox
+      (key ((&ex_lattice_tile_of (:Key ^E) *P ^P_tile))
+        (cell (P)
+          (&ex_lattice_tile_of (:Key E) *P P_tile))))
+
+    (DET &cell_inside1
+      (&ex_lattice_tile_of (:Key *E) (:P *P_) *P_tile)
+      (&ex_tile_box.box (:key E P_tile) (:B *B_))
+      (dir_elem (:D *D_m1))
+      (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+      (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+      (< K_m3 0))
+
+    ;; The moved piece's box in each output tile, in the frame of its tile.
+    (INIT &landed_box BoundingBox
+      (key ((&ex_lattice_tile_of (:Key ^E) *P ^P_tile)
+            (ex_output E P *Col)
+            (NOT (&bg (:C Col)))
+            (&ex_tile_box.box (:key E P_tile) *B)
+            (NOT (&cell_inside1 (:P_ P) (:B_ B)))
+            (relative (:Base B) (:X P) (:X_rel *P_intile)))
+        (cell ((:P P_intile))
+          (&ex_lattice_tile_of (:Key E) *P P_tile)
+          (ex_output E P *Col)
+          (NOT (&bg (:C Col)))
+          (&ex_tile_box.box *B)
+          (NOT (&cell_inside1 (:P_ P) (:B_ B)))
+          (relative (:Base B) (:X P) (:X_rel *P_intile)))))
+
+    (DET &slot
+      (&landed_box.box *B))
+
+    (RULE &place
+      (&landing *P_tile *Delta *B)
+      (&slot B)))
+  (ALT $Clear
+    (RULE &clear_step
+      (&piece_box.box (:key *P_tile) *B)
+      (axis_of *D *A)
+      (opposite D (:Opp *D2))
+      (OR ((margin B D (:K 0))
+           (step_offset (:D D2) (:V *Delta)))
+          ((opposite D (:Opp *O_m1))
+           (margin B D *K)
+           (margin B (:D O_m1) (:K *K2))
+           (!= K 0)
+           (!= K2 0)
+           (= Delta 0))))
+
+    (RULE &place
+      (&clear_step *P_tile *A (:Delta *Delta1))
+      (perp A *A2)
+      (&clear_step P_tile (:A A2) (:Delta *Delta2))
+      (compose (:A Delta1) (:B Delta2) (:C *Delta)))))
+
+(RULE &moved
+  (&piece *P_tile (:P *P2) *Col)
+  (&place P_tile *Delta)
+  (compose (:A P2) (:B Delta) (:C *P)))
+
+(RULE &output
+  (OR ((&moved *P *Col))
+      ((input P (:Col *Col_in))
+       (NOT (&moved P))
+       (OR ((NOT (&dot (:C Col_in)))
+            (&bg (:C Col)))
+           ((&dot (:C Col_in))
+            (= Col Col_in))))))

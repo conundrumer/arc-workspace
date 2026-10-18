@@ -1,0 +1,4 @@
+;; 195c6913
+
+(param &read_dir Dir (DIR_R))
+(param &turn_sense Sense (SENSE_CC))

@@ -1,0 +1,97 @@
+;; 72a961c9
+
+(DET &bg DominantColor)
+
+(DET &dir DirDomain)
+
+(DET &line3 SharedColor)
+
+(RULE &cell
+  (input *P *Col))
+
+(DET &line2
+  (ex_input *E)
+  (&line3 (:C *Col)))
+
+(DET &mark2
+  (&cell *E *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&line2 E Col)))
+
+(RULE &line
+  (&line3 (:C *Col)))
+
+(RULE &rays_dir
+  (&cell)
+  (&dir *D))
+
+(INIT &rays2 Ray
+  (key ((OR ((&mark2 ^E *P))
+            ((&rays_dir E *D))
+            ((&rays_dir E)
+             (&cell E P))))
+    (source (P)
+      (&mark2 E *P))
+    (node (P)
+      (&rays_dir E)
+      (&cell E *P))
+    (dir (D)
+      (&rays_dir E *D))))
+
+(RULE &rays_cell
+  (&cell *P))
+
+(DET &reach
+  (&rays2.ray (:key *E) *P *K (:Origin *M))
+  (&rays_cell E P)
+  (!= K 0)
+  (&mark2 E (:P M) *Col)
+  (ex_output E P Col))
+
+(ALTS $choice "The cases differ on where the line's color comes from" $Stored
+  (ALT $Dominant
+    (INIT &tally_count Cardinality
+      (key ((input *P ^Col)
+            (NOT (&bg (:C Col))))
+        (member ((:m P))
+          (input *P Col)
+          (NOT (&bg (:C Col))))))
+
+    (INIT &tally Order
+      (member ((:t Col))
+        (&tally_count.size (:key *Col)))
+      (score ((:t Col) (:S N))
+        (&tally_count.size (:key *Col) *N)))
+
+    (RULE &line
+      (&tally.maximal (:t *Col)))))
+
+(RULE &mark
+  (&cell *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&line Col)))
+
+(INIT &rays Ray
+  (source (P)
+    (&mark *P))
+  (node (P)
+    (&rays_dir)
+    (&cell *P))
+  (dir (D)
+    (&rays_dir *D)))
+
+(RULE &paint
+  (&rays.ray *P *K (:Origin *M))
+  (&rays_cell P)
+  (!= K 0)
+  (&mark (:P M) (:Col *Col_m))
+  (&reach (:Col Col_m) (:K *R))
+  (OR ((< K R)
+       (&line *Col))
+      ((= K R)
+       (= Col Col_m))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

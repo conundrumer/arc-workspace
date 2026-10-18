@@ -1,0 +1,34 @@
+;; 28bf18c6
+
+(DET &bg DominantColor)
+
+(INIT &shape_box BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(DET &axis AxisDomain)
+
+(DET &copies DimDiff)
+
+(INIT &strip Frame
+  (key ((&axis ^A))
+    (extent (A N)
+      (&copies (:D *N)))))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_copy))
+    (&strip.cell (:P *P_copy)))
+  (inner ((:P P_intile))
+    (input *P)
+    (&shape_box.box *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_intile))))
+
+(RULE &output
+  (input (:P *P2) *Col)
+  (&shape_box.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P_intile))
+  (&strip.cell (:P *P_copy))
+  (&output_tiling.cell (:P_outer P_copy) (:P_inner P_intile) *P))

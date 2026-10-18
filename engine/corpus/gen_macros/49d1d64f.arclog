@@ -1,0 +1,63 @@
+;; 49d1d64f
+
+;; Seat each train input among its output's cells, color for color.
+(INIT &occ Occurrences
+  (key ((OR ((ex_input ^E (:P *P_in) *Col))
+            ((ex_output E (:P *P_out) Col))))
+    (cell ((:P P_out) (:v Col))
+      (ex_output E (:P *P_out) *Col))
+    (shape ((:P P_in) (:v Col))
+      (ex_input E (:P *P_in) *Col))))
+
+(DET &broken
+  (&occ.occurrence *P)
+  (ex_output *E)
+  (NOT (&occ.occurrence (:key E) P)))
+
+(DET &ring_width
+  (&occ.occurrence (:P *Delta))
+  (NOT (&broken (:P Delta)))
+  (dir_elem *D)
+  (margin (:B Delta) D *K))
+
+(RULE &seat_delta_uniform_inset1
+  (&ring_width (:K *K_))
+  (axis_of (:D *D1_m1) (:A *A1_m2))
+  (perp (:A A1_m2) (:A2 *A2_m3))
+  (axis_of (:D *D2_m4) (:A A2_m3))
+  (opposite (:D D1_m1) (:Opp *O_m1))
+  (edge_inset (:D D1_m1) (:K K_) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K_) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *B1_m5))
+  (opposite (:D D2_m4) (:Opp *O_m4))
+  (edge_inset (:D D2_m4) (:K K_) (:B *B1_m6))
+  (edge_inset (:D O_m4) (:K K_) (:B *B2_m7))
+  (compose (:A B1_m6) (:B B2_m7) (:C *B2_m6))
+  (compose (:A B1_m5) (:B B2_m6) (:C *P_)))
+
+(RULE &seat_delta
+  (&ring_width *K)
+  (&seat_delta_uniform_inset1 (:K_ K) (:P_ *P)))
+
+(DET &bg ColorDomain)
+
+(RULE &seated
+  (input (:P *P_in))
+  (&seat_delta (:P *Delta))
+  (compose (:A P_in) (:B Delta) (:C *P_out)))
+
+(RULE &output
+  (input (:P *P_in) (:Col *Col_in))
+  (&seated P_in (:P_out *P_seat))
+  (OR ((diag_dir_elem (:D *Diag))
+       (corner_dist (:P P_in) Diag (:K 0))
+       (step_offset (:D Diag) (:V *V_m2))
+       (compose (:A P_seat) (:B V_m2) (:C *P))
+       (&bg (:C *Col)))
+      ((= P P_seat)
+       (= Col Col_in))
+      ((dir_elem *D)
+       (margin (:B P_in) D (:K 0))
+       (step_offset D (:V *V_m1))
+       (compose (:A P_seat) (:B V_m1) (:C P))
+       (= Col Col_in))))

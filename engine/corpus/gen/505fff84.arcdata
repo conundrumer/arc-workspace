@@ -1,0 +1,5 @@
+;; 505fff84
+
+(param &axis Axis (AXIS_H))
+(param &marker Color (1) (8))
+(param &side (Dir Color) (DIR_L 1) (DIR_R 8))

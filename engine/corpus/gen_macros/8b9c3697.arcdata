@@ -1,0 +1,4 @@
+;; 8b9c3697
+
+(param &mover Color (2))
+(param &trail Color (0))

@@ -1,0 +1,5 @@
+;; ce039d91
+
+(param &mark Color (5))
+(param &fill Color (1))
+(param &sym D4 (D4_LR))

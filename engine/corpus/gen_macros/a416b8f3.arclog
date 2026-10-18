@@ -1,0 +1,16 @@
+;; a416b8f3
+
+(DET &tile Frame)
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&tile (:P *P_tile)))
+  (inner ((:P P_in))
+    (input (:P *P_in))))
+
+(DET &tile_axis AxisDomain)
+
+(RULE &output
+  (input (:P *P_in) *Col)
+  (&output_tiling.cell (:P_inner P_in) *P)
+  (&tile_axis))

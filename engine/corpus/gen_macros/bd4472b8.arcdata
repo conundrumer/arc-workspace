@@ -1,0 +1,6 @@
+;; bd4472b8
+
+(param &header_dir Dir (DIR_T))
+(param &body_start number (2))
+(param &copies number (2))
+(param &diag DiagAxis (DAXIS_DG))

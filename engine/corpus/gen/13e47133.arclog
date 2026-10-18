@@ -1,0 +1,133 @@
+;; 13e47133
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The two colors that cover the grid: the background, and the wall drawn on
+;; it.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &bg
+  (&bg_mode.maximal (:t *Col)))
+
+(INIT &wall_mode_count Cardinality
+  (key ((input *P ^Col)
+        (NOT (&bg Col)))
+    (member ((:m P))
+      (input *P Col)
+      (NOT (&bg Col)))))
+
+(INIT &wall_mode Order
+  (member ((:t Col))
+    (&wall_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&wall_mode_count.size (:key *Col) *N)))
+
+(RULE &wall
+  (&wall_mode.maximal (:t *Col)))
+
+(RULE &open
+  (input *P *Col)
+  (NOT (&wall Col)))
+
+;; The boundary of the open set. The grid edge bounds a region like a wall.
+(INIT &rim Boundary
+  (cell (P)
+    (&open *P))
+  (dir (D)
+    (dir8_elem *D)))
+
+(INIT &rim_depth CellDistance
+  (node (P)
+    (&open *P))
+  (source (P)
+    (&rim.boundary *P))
+  (step ((:Delta S))
+    (dir8_elem *D)
+    (step_offset D (:V *S))))
+
+(INIT &comps Connectivity
+  (node (P)
+    (&open *P)))
+
+(RULE &region
+  (&comps.component *P *Id))
+
+(RULE &depth
+  (&rim_depth.distance *P *K))
+
+(ALTS $choice "the depth metric a region uses" $Peel
+  (ALT $Sight
+    ;; A rim cell casts back over the cells that face the outside through it. The
+    ;; key is the cast direction, so each instance casts only its own way.
+    (INIT &sray Ray
+      (key ((OR ((dir8_opposite ^D *D2)
+                 (&rim.exposed *P (:D D2)))
+                ((dir8_elem D))))
+        (source (P)
+          (dir8_opposite D *D2)
+          (&rim.exposed *P (:D D2)))
+        (node (P)
+          (dir8_elem D)
+          (input *P))
+        (dir (D)
+          (dir8_elem D))))
+
+    (RULE &sray_cell
+      (&open *P)
+      (dir8_elem (:D *Key)))
+
+    ;; A cell's sight depth: the fewest steps to a rim cell over the eight view
+    ;; lines — how many open cells remain before the ray exits.
+    (INIT &sight Order
+      (key ((&sray.ray (:key (:D *Ky)) ^P *K)
+            (&sray_cell (:Key Ky) P))
+        (member ((:t K))
+          (&sray.ray (:key (:D *Ky)) P *K)
+          (&sray_cell (:Key Ky) P))
+        (score ((:t K) (:S K))
+          (&sray.ray (:key (:D *Ky)) P *K)
+          (&sray_cell (:Key Ky) P))))
+
+    (RULE &depth
+      (&sight.minimal (:key *P) (:t *K)))))
+
+(RULE &mark
+  (input (:P *M) *Col)
+  (NOT (&bg Col))
+  (&region (:P M) *Id)
+  (&depth (:P M) *K))
+
+(INIT &pal_len Cardinality
+  (key ((&region *P ^Id)
+        (&depth P *K)
+        (&mark Id (:K *K_mark))
+        (<= K K_mark))
+    (member ((:m K))
+      (&region *P Id)
+      (&depth P *K)
+      (&mark Id (:K *K_mark))
+      (<= K K_mark))))
+
+(RULE &output
+  ;; The walls keep their color.
+  (OR ((input *P *Col)
+       (&wall Col))
+      ;; A marked region fills with its palette, repeating over the depths.
+      ((&region P *Id)
+       (&depth P *K)
+       (&pal_len.size (:key Id) (:N *W))
+       (divide (:T K) (:Side W) (:Gap 0) (:Remainder *Idx))
+       (OR ((&mark Id (:K Idx) Col))
+           ((NOT (&mark Id (:K Idx)))
+            (&bg Col))))
+      ;; An unmarked region stays background.
+      ((&region P (:Id *Id2))
+       (&bg Col)
+       (NOT (&mark (:Id Id2))))))

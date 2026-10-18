@@ -1,0 +1,4 @@
+;; 5ad4f10b
+
+(param &bg Color (0))
+(param &dim number (3))

@@ -1,0 +1,42 @@
+;; 423a55dc
+
+(DET &bg DominantColor)
+
+(DET &anchor DirDomain)
+
+(DET &sense SenseDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&ink *P)))
+
+(RULE &sheared
+  (&ink *P)
+  (&bbox.box *B)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (&anchor (:D *D_anc))
+  (margin (:B P_inner) (:D D_anc) *K)
+  (&sense *S)
+  (turn S (:D D_anc) (:D2 *D_sh))
+  (dir8_opposite (:D D_sh) (:D2 *O_m2))
+  (edge_inset (:D O_m2) K (:B *B1_m3))
+  (edge_inset (:D D_sh) K (:B *I_m5))
+  (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+  (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+  (compose (:A P) (:B V_m1) (:C *P2))
+  (input (:P P2)))
+
+(RULE &output
+  (OR ((&sheared (:P *P3) (:P2 *P))
+       (&ink (:P P3) *Col))
+      ((input P)
+       (&bg (:C Col))
+       (NOT (&sheared (:P2 P))))))

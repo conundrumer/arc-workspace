@@ -1,0 +1,21 @@
+;; 3d588dc9
+
+(param &bg Color (7))
+(param &face Color (6))
+(param &face_axis Axis (AXIS_H))
+(param &key.block Position
+  (grid
+    (_ _ _)
+    (_ _ _)
+    (1 1 1)
+    (1 1 1)
+    (1 1 1)
+    (1 1 1)))
+(param &key.stem Position
+  (grid
+    (_ 1 _)
+    (_ 1 _)
+    (_ _ _)
+    (_ _ _)
+    (_ _ _)
+    (_ _ _)))

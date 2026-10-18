@@ -1,0 +1,133 @@
+;; 264363fd
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &bg
+  (&bg_mode.maximal (:t *Col)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg Col)))
+
+(INIT &pieces Connectivity
+  (node (P)
+    (&ink *P)))
+
+(RULE &piece
+  (&pieces.component *P *Id))
+
+(INIT &bbox BoundingBox
+  (key ((&piece ^Id *P))
+    (cell (P)
+      (&piece Id *P))))
+
+(RULE &ragged
+  (input *P)
+  (&bbox.box (:key *Id) *B)
+  (inside (:A P) B)
+  (NOT (&piece Id P)))
+
+(RULE &rect_cell
+  (&piece *Id *P)
+  (NOT (&ragged Id))
+  (&ink P *Col))
+
+(INIT &hue_count Cardinality
+  (key ((&rect_cell ^Id *P ^Col))
+    (member ((:m P))
+      (&rect_cell Id *P Col))))
+
+(RULE &tmpl
+  (&piece *Id *P)
+  (&ragged Id)
+  (&ink P *Col))
+
+(RULE &anchor
+  (&ragged *Id)
+  (input (:P *P_grid))
+  (&bbox.box (:key Id) *B)
+  (inside (:A P_grid) B)
+  (relative (:Base B) (:X P_grid) (:X_rel *P_inner))
+  (centered (:P P_inner)))
+
+(INIT &rim Boundary
+  (cell (P)
+    (&tmpl *P)))
+
+;; The template carries on toward d.
+(INIT &attached Singleton
+  (key ((&tmpl ^P))
+    (member ((:v D))
+      (dir_elem *D)
+      (NOT (&rim.exposed P D)))))
+
+(RULE &tip
+  (&tmpl *P *Col)
+  (&attached.value (:key P) (:v *D_back))
+  (opposite *D (:Opp D_back)))
+
+(INIT &hue Order
+  (key ((&hue_count.size (:key ^Id *Col)))
+    (member ((:t Col))
+      (&hue_count.size (:key Id *Col)))
+    (score ((:t Col) (:S N))
+      (&hue_count.size (:key Id *Col) *N))))
+
+(RULE &marker
+  (&rect_cell *Id *P *Col)
+  (NOT (&hue.maximal (:key Id) (:t Col))))
+
+(RULE &travel
+  (&marker (:P *M))
+  (&anchor (:P_grid *A))
+  (relative (:Base A) (:X M) (:X_rel *Delta)))
+
+(RULE &carried
+  (&marker *Id (:P *M))
+  (&travel M *Delta)
+  (&tmpl *P)
+  (compose (:A P) (:B Delta) (:C *P_out)))
+
+(RULE &spike
+  (&carried *Id (:P *P2) (:P_out *P))
+  (&tip (:P P2) *D *Col))
+
+(INIT &spikes Ray
+  (key ((OR ((&spike ^Id *P))
+            ((&spike Id *D))))
+    (source (P)
+      (&spike Id *P))
+    (node (P)
+      (&spike Id *D)
+      (input *P))
+    (dir (D)
+      (&spike Id *D))))
+
+(RULE &spikes_cell
+  (&rect_cell (:Id *Key) *P))
+
+(RULE &paint
+  (OR ((&carried *Id (:P *P2) (:P_out *P))
+       (&tmpl (:P P2) *Col)
+       (&rect_cell Id P))
+      ((&spike (:Id *Id2) (:P *Src) *D Col)
+       (&spikes.ray (:key (:Id Id2)) P D *K (:Origin Src))
+       (&spikes_cell (:Key Id2) P)
+       (!= K 0))
+      ((&tmpl P)
+       (&bg Col))))
+
+(RULE &output
+  (input *P (:Col *C0))
+  (OR ((&paint P *Col))
+      ((NOT (&paint P))
+       (= Col C0))))

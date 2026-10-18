@@ -1,0 +1,325 @@
+;; 1190bc91
+
+(RULE &obj_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(INIT &obj Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&obj_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &obj_component
+  (&obj.class (:a *P) *Id))
+
+(RULE &area_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(RULE &obj_node
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &exposed Boundary
+  (cell (P)
+    (&obj_node *P)))
+
+(RULE &seq
+  (&obj_component *P *Id)
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *P2))
+  (&obj_component (:P P2) Id)
+  (&obj_component (:P *P_far) Id)
+  (margin (:B P_far) D (:K 0))
+  (&obj_component (:P *Anchor) Id)
+  (opposite D (:Opp *D_back))
+  (&exposed.exposed (:P Anchor) (:D D_back)))
+
+(RULE &walk_cell
+  (&obj_component *P *Id)
+  (&seq Id))
+
+(RULE &walk_dir
+  (&seq *D))
+
+(RULE &walk_node
+  (input *P))
+
+(RULE &walk_source
+  (&seq (:Anchor *P)))
+
+;; Sequence cells indexed by their distance from the anchor.
+(INIT &walk Distance
+  (key ((&walk_source (:P ^O))
+        (&walk_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&walk_source (:P O))
+           (&walk_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&walk_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&walk_node (:P Q)))
+          ((&walk_source (:P O))
+           (&walk_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&walk_node (:P Q))
+           (= A2 O))
+          ((&walk_source (:P O))
+           (&walk_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&walk_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&walk_node (:P Q)))))
+    (source ((:n O))
+      (&walk_source (:P O))
+      (&walk_dir D))))
+
+(RULE &walk_ray
+  (&walk.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &seq_idx
+  (&walk_ray *P *K)
+  (&walk_cell P))
+
+(RULE &arm_cell
+  (&seq_idx (:K *Key))
+  (input *P))
+
+(RULE &arm_dir
+  (&seq_idx (:K *Key))
+  (diag_dir_elem *D))
+
+(RULE &arm_full_dir
+  (&arm_dir *Key *D))
+
+(RULE &arm_full_node
+  (&arm_dir *Key)
+  (input *P))
+
+(RULE &arm_full_source
+  (&seq_idx *P (:K *Key)))
+
+(INIT &arm_full Distance
+  (key ((&arm_full_source (:Key ^Ky) (:P ^O))
+        (&arm_full_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&arm_full_source (:Key Ky) (:P O))
+           (&arm_full_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&arm_full_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&arm_full_node (:Key Ky) (:P Q)))
+          ((&arm_full_source (:Key Ky) (:P O))
+           (&arm_full_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&arm_full_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&arm_full_source (:Key Ky) (:P O))
+           (&arm_full_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&arm_full_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&arm_full_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&arm_full_source (:Key Ky) (:P O))
+      (&arm_full_dir (:Key Ky) D))))
+
+(RULE &arm_full_ray
+  (&arm_full.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &cross
+  (&seq (:Anchor *A))
+  (&seq_idx (:P A) *K)
+  (&arm_full_ray (:Key K) *P)
+  (&arm_cell (:Key K) P))
+
+(RULE &area_node
+  (input *P)
+  (NOT (&cross P)))
+
+(RULE &walk_end
+  (&walk_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&walk_ray (:P Q) D Origin)))
+
+(RULE &arm_dir_ray
+  (&arm_dir *Key *D))
+
+(RULE &arm_node
+  (&arm_dir *Key)
+  (input *P)
+  (ALL ((&arm_full_ray (:Key *J) P)
+        (&arm_cell (:Key J) P))
+       ((>= J Key))))
+
+(RULE &arm_source
+  (&seq_idx *P (:K *Key)))
+
+(INIT &arm Distance
+  (key ((&arm_source (:Key ^Ky) (:P ^O))
+        (&arm_dir_ray (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&arm_source (:Key Ky) (:P O))
+           (&arm_dir_ray (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&arm_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&arm_node (:Key Ky) (:P Q)))
+          ((&arm_source (:Key Ky) (:P O))
+           (&arm_dir_ray (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&arm_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&arm_source (:Key Ky) (:P O))
+           (&arm_dir_ray (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&arm_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&arm_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&arm_source (:Key Ky) (:P O))
+      (&arm_dir_ray (:Key Ky) D))))
+
+(RULE &arm_ray
+  (&arm.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &arm_end
+  (&arm_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&arm_ray Key (:P Q) D Origin)))
+
+(RULE &arm_full_end
+  (&arm_full_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&arm_full_ray Key (:P Q) D Origin)))
+
+(RULE &marker
+  (input *P *Col)
+  (&obj_component P *Id)
+  (NOT (&seq Id)))
+
+;; Where the lit rays overlap, the nearest sequence cell wins. A ray reaches
+;; its blocking cell and stops there.
+(INIT &nearest Order
+  (key ((OR ((&arm_ray (:Key *K) ^P)
+             (&arm_cell (:Key K) P))
+            ((&arm_end (:Key K) (:P *E) *D)
+             (step_offset D (:V *V_m1))
+             (compose (:A E) (:B V_m1) (:C P))
+             (input P))))
+    (member ((:t K))
+      (OR ((&arm_ray (:Key *K) P)
+           (&arm_cell (:Key K) P))
+          ((&arm_end (:Key K) (:P *E) *D)
+           (step_offset D (:V *V_m1))
+           (compose (:A E) (:B V_m1) (:C P))
+           (input P))))
+    (score ((:t K) (:S K))
+      (OR ((&arm_ray (:Key *K) P)
+           (&arm_cell (:Key K) P))
+          ((&arm_end (:Key K) (:P *E) *D)
+           (step_offset D (:V *V_m1))
+           (compose (:A E) (:B V_m1) (:C P))
+           (input P))))))
+
+(RULE &paint
+  (&nearest.minimal (:key *P) (:t *K)))
+
+(ALTS $choice "how the unlit cells take a marker color" $Sector
+  (ALT $Flood
+    (RULE &area_node
+      (input *P)
+      (NOT (&paint P)))))
+
+(INIT &area Quotient
+  (edge ((:a P) (:b P2))
+    (OR ((&area_node *P)
+         (&area_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&area_node (:P P2)))
+        ((&area_node P)
+         (= P2 P)))))
+
+(RULE &area_component
+  (&area.class (:a *P) *Id))
+
+(RULE &fill
+  (&marker *P *Col)
+  (&area_component P *Id))
+
+(RULE &output
+  (OR ((&paint *P *K)
+       (&seq_idx (:P *P_seq) K)
+       (input (:P P_seq) *Col))
+      ((&area_component P *Id)
+       (NOT (&paint P))
+       (OR ((&fill Id Col))
+           ((NOT (&fill Id))
+            (&bg (:C Col)))))))

@@ -1,0 +1,267 @@
+;; c7f57c3e
+
+(INPUT plain-background "one color fills every cell that no figure covers")
+
+(INPUT figures "each figure is one 8-connected group of non-background cells")
+
+(INPUT scaled-copies-of-one-body "the frame-color cells of every figure are one shape, at an integer scale per figure, with one orientation, and every figure's cells are blocks of that scale"
+
+  (RULE &figs_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((diag_dir_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &commonest Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  (RULE &bg
+    (&commonest.maximal (:t *Col)))
+
+  (INIT &figs Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((input *P *Col)
+           (NOT (&bg Col))
+           (&figs_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (input (:P P3) (:Col *Col2))
+           (NOT (&bg (:Col Col2))))
+          ((input P (:Col *Col3))
+           (NOT (&bg (:Col Col3)))
+           (= P3 P)))))
+
+  (RULE &figs_component
+    (&figs.class (:a *P) *Id))
+
+  (INIT &fig_box BoundingBox
+    (key ((&figs_component *P (:Id ^O)))
+      (cell (P)
+        (&figs_component *P (:Id O)))))
+
+  (RULE &fig_frame
+    (&fig_box.box (:key *O) *B)
+    (input (:P *P_grid))
+    (ALL ((&fig_box.box (:key (:O *Om)) B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P_grid) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B) (:X P_grid) (:X_rel *P_inner)))
+
+  (RULE &tiling_axis_split1
+    (&fig_frame (:P_inner *P_inner2_))
+    (axis_elem (:A *A3_))
+    (axis_of (:D *D_m1) (:A A3_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_inner2_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_inner2_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+    (relative (:Base Pi_) (:X P_inner2_) (:X_rel *X_m1_)))
+
+  (RULE &tiling_side_held
+    (&fig_frame *O *P_inner)
+    (axis_elem (:A *A2))
+    (sub_extent (:P P_inner) (:A A2) *K)
+    (axis_elem *A))
+
+  (RULE &tiling_axis
+    (OR ((&fig_frame *O (:P_inner *P_inner4))
+         (axis_elem (:A *A2))
+         (sub_extent (:P P_inner4) (:A A2) *K)
+         (axis_elem (:A *A4))
+         (&fig_frame (:P_inner *P))
+         (&fig_frame O (:P_inner *P_inner3))
+         (axis_elem (:A *A22))
+         (sub_extent (:P P_inner3) (:A A22) K)
+         (axis_elem *A)
+         (axis_of *D A)
+         (opposite D (:Opp *O2))
+         (margin (:B P) D (:K *T))
+         (margin (:B P) (:D O2) (:K *T2))
+         (divide T (:Side K) (:Gap 0) (:Part *I) (:Remainder *R))
+         (divide (:T T2) (:Side K) (:Gap 0) (:Part *I2) (:Remainder *R2))
+         (opposite D (:Opp *O_m1))
+         (edge_inset D (:K I) (:B *B1_m2))
+         (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+         (compose (:A B1_m2) (:B B2_m3) (:C *P_outer))
+         (opposite D (:Opp *O_m4))
+         (edge_inset D (:K R) (:B *B1_m5))
+         (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+         (compose (:A B1_m5) (:B B2_m6) (:C *P_inner))
+         (frame_extent (:P P_inner) A (:N K)))
+        ((&fig_frame O (:P_inner *P_inner32))
+         (axis_elem (:A *A23))
+         (sub_extent (:P P_inner32) (:A A23) K)
+         (axis_elem (:A *A42))
+         (&fig_frame (:P_inner P))
+         (axis_elem A)
+         (NOT (&tiling_side_held O K A))
+         (&tiling_axis_split1 (:P_inner2_ P) (:A3_ A) (:Pi_ P_inner) (:X_m1_ *X_m1))
+         (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
+
+  (RULE &tiling_tile
+    (&tiling_axis *O *K *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+    (perp (:A A1) *A2)
+    (&tiling_axis O K P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+    (compose (:A Po1) (:B Po2) (:C *P_outer))
+    (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+  (RULE &fig_tile
+    (&fig_frame *O *P_grid *P_inner)
+    (&tiling_tile O *K (:P P_inner) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+  ;; The figure's scale: the largest size at which its cells are blocks.
+  (INIT &block Order
+    (key ((&fig_tile ^O *K)
+          (ALL ((&fig_tile O K (:P_grid *P) *P_tile)
+                (&fig_tile O K (:P_grid *Q) P_tile)
+                (input P *Col))
+               ((input (:P Q) Col))))
+      (member ((:t K))
+        (&fig_tile O *K)
+        (ALL ((&fig_tile O K (:P_grid *P) *P_tile)
+              (&fig_tile O K (:P_grid *Q) P_tile)
+              (input P *Col))
+             ((input (:P Q) Col))))
+      (score ((:t K) (:S K))
+        (&fig_tile O *K)
+        (ALL ((&fig_tile O K (:P_grid *P) *P_tile)
+              (&fig_tile O K (:P_grid *Q) P_tile)
+              (input P *Col))
+             ((input (:P Q) Col))))))
+
+  (RULE &block_color
+    (&block.maximal (:key *O) (:t *K))
+    (&fig_tile O K (:P_grid *P) *P_tile)
+    (input P *Col))
+
+  (INIT &col_box BoundingBox
+    (key ((&block_color ^O *P_tile ^Col))
+      (cell ((:P P_tile))
+        (&block_color O *P_tile Col)))))
+
+(INPUT two-decorations "a figure's cells of other colors than frame-color, put in the frame of its body and its scale, form one of exactly two patterns, and each pattern occurs on at least one figure")
+
+(OUTPUT swap-decorations "each figure keeps its frame-color body, loses its own decoration, and takes the other decoration, scaled to its own scale and placed at the same position relative to its body"
+
+  (DET &lost
+    (ex_input *E *P *Col)
+    (ex_output E)
+    (NOT (ex_output E P Col)))
+
+  (DET &frame_color
+    (ex_input *E *Col)
+    (ex_output E)
+    (NOT (&lost Col)))
+
+  (RULE &frame_col
+    (&frame_color *Col))
+
+  (INIT &body_box BoundingBox
+    (key ((&block_color ^O *P_tile *Col)
+          (&frame_col Col))
+      (cell ((:P P_tile))
+        (&block_color O *P_tile *Col)
+        (&frame_col Col)))))
+
+(OUTPUT rest-unchanged "every other cell keeps its input color")
+
+(ALTS $choice "what gives the body's colors" $StoredFrame
+  (ALT $FrameColorsByShape
+    (INPUT scaled-copies-of-one-body "the body is every color that every figure carries in one shape up to the figure's scale; undefined where the bodies those colors give differ between figures"
+      (RULE &col_shape
+        (&block_color *O *P_tile *Col)
+        (&col_box.box (:key O Col) *B)
+        (ALL ((&block_color (:O *Om) P_tile (:Col *Colm))
+              (&col_box.box (:key (:O Om) (:Col Colm)) B)
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P_tile) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (relative (:Base B) (:X P_tile) (:X_rel *P_rel)))
+
+      (RULE &frame_col
+        (&block_color *Col)
+        (NOT (&bg Col))
+        (ALL ((&block.maximal (:key *O)))
+             ((&block_color O Col)))
+        (ALL ((&col_shape (:O *Om) Col (:P_rel *P))
+              (&col_box.box (:key (:O *O2) Col)))
+             ((&col_shape (:O O2) Col (:P_rel P))))))))
+
+(RULE &body_rel
+  (&block_color *O *P_tile *Col)
+  (&body_box.box (:key O) *B)
+  (relative (:Base B) (:X P_tile) (:X_rel *P_rel)))
+
+(RULE &decoration
+  (&body_rel *O *P_rel *Col)
+  (NOT (&bg Col))
+  (NOT (&frame_col Col)))
+
+(RULE &lacks
+  (&decoration *O (:P_rel *P) *Col)
+  (&body_box.box (:key (:O *O2)))
+  (NOT (&decoration (:O O2) (:P_rel P) Col)))
+
+(RULE &takes
+  (OR ((&lacks *O *O2))
+      ((&lacks (:O O2) (:O2 O))))
+  (&decoration (:O O2) *P_rel *Col))
+
+(INIT &paint_tiling Tiling
+  (outer ((:P P_tile))
+    (&takes *O *P_rel)
+    (&body_box.box (:key O) *B)
+    (compose (:A B) (:B P_rel) (:C *P_tile)))
+  (inner ((:P P_intile))
+    (&block.maximal (:key *O) (:t *K))
+    (&fig_tile O K *P_intile)))
+
+(RULE &body
+  (&body_rel *O *P_rel *Col)
+  (&frame_col Col))
+
+(RULE &body_mismatch
+  (&body *O (:P_rel *P))
+  (&body_box.box (:key (:O *O2)))
+  (NOT (&body (:O O2) (:P_rel P))))
+
+(RULE &paint
+  (&takes *O *P_rel *Col)
+  (&body_box.box (:key O) *B)
+  (compose (:A B) (:B P_rel) (:C *P_tile))
+  (&block.maximal (:key O) (:t *K))
+  (&fig_tile O K *P_intile)
+  (&paint_tiling.cell (:P_outer P_tile) (:P_inner P_intile) (:P *P_fig))
+  (&fig_box.box (:key O) (:B *B_fig))
+  (compose (:A B_fig) (:B P_fig) (:C *P))
+  (input P))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ;; A cell outside every figure, or a body cell, keeps its color while the
+      ;; bodies agree.
+      ((NOT (&body_mismatch))
+       (input P Col)
+       (NOT (&paint P))
+       (OR ((NOT (&figs_component P)))
+           ((&frame_col Col))))
+      ;; A cell of the figure's own decoration clears, once the figure takes another.
+      ((&figs_component P (:Id *O))
+       (input P (:Col *C_in))
+       (&takes O)
+       (NOT (&frame_col (:Col C_in)))
+       (NOT (&paint P))
+       (&bg Col))))

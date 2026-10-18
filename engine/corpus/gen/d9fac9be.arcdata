@@ -1,0 +1,7 @@
+;; d9fac9be
+
+(param &bg Color (0))
+(param &out_pos Position (Frame
+  ((:A AXIS_V) (:N 1))
+  ((:A AXIS_H) (:N 1))))
+(param &dim number (3))

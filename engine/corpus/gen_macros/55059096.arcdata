@@ -1,0 +1,4 @@
+;; 55059096
+
+(param &bg Color (0))
+(param &trail Color (2))

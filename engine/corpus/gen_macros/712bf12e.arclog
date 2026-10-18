@@ -1,0 +1,65 @@
+;; 712bf12e
+
+(DET &bg DominantColor)
+
+(DET &mark RarestColor)
+
+(DET &sense SenseDomain)
+
+(DET &dir DirDomain)
+
+;; The walks of each case: from each marker cell, steps away from its edge.
+(INIT &walk Propagation
+  (source ((:n P D))
+    (input *P *Col)
+    (&mark (:C Col))
+    (&dir *D))
+  (edge ((:a P D) (:b (:P P2) D))
+    (input *P)
+    (dir_elem *D)
+    (opposite D (:Opp *W))
+    (step_offset (:D W) (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *P_a))
+    (OR ((input (:P P_a) (:Col *Blk))
+         (NOT (&bg (:C Blk)))
+         (&sense (:S *Sn))
+         (turn (:S Sn) (:D W) (:D2 *SD))
+         (step_offset (:D SD) (:V *V_m2))
+         (compose (:A P) (:B V_m2) (:C *P2)))
+        ((= P2 P_a)))
+    (input (:P P2) (:Col *Bg))
+    (&bg (:C Bg))))
+
+(ALTS $choice "two models of the marker edge" $Dir
+  (ALT $Edge
+    ;; The walks of each case: from each marker cell, steps away from its edge.
+    (INIT &walk Propagation
+      (source ((:n P D))
+        (input *P *Col)
+        (&mark (:C Col))
+        (dir_elem *D)
+        (margin (:B P) D (:K 0)))
+      (edge ((:a P D) (:b (:P P2) D))
+        (input *P)
+        (dir_elem *D)
+        (opposite D (:Opp *W))
+        (step_offset (:D W) (:V *V_m1))
+        (compose (:A P) (:B V_m1) (:C *P_a))
+        (OR ((input (:P P_a) (:Col *Blk))
+             (NOT (&bg (:C Blk)))
+             (&sense (:S *Sn))
+             (turn (:S Sn) (:D W) (:D2 *SD))
+             (step_offset (:D SD) (:V *V_m2))
+             (compose (:A P) (:B V_m2) (:C *P2)))
+            ((= P2 P_a)))
+        (input (:P P2) (:Col *Bg))
+        (&bg (:C Bg))))))
+
+(RULE &line
+  (&walk.reached (:n *P)))
+
+(RULE &output
+  (OR ((&line *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&line P)))))

@@ -1,0 +1,5 @@
+;; 34cfa167
+
+(param &block_color Color (1))
+(param &arm_corner DiagDir (DIAG_BR))
+(param &period number (4))

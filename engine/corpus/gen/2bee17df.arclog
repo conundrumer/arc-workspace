@@ -1,0 +1,55 @@
+;; 2bee17df
+
+(DET &open DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(RULE &open_cell
+  (input *P *Col)
+  (&open (:C Col)))
+
+(RULE &line_of
+  (input *P)
+  (axis_elem *A)
+  (split P A (:Along *L)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&open_cell *P)))
+
+(RULE &boxed_line
+  (&bbox.box *B)
+  (&line_of *P *L)
+  (inside (:A P) B))
+
+(RULE &painted
+  (&boxed_line *P *L)
+  (ALL ((&boxed_line (:P *Pm) L))
+       ((&open_cell (:P Pm)))))
+
+(ALTS $choice "what makes a line qualify" $Clear
+  (ALT $Widest
+    (INIT &widest_count Cardinality
+      (key ((&open_cell *P)
+            (&line_of P ^A ^L))
+        (member ((:m P))
+          (&open_cell *P)
+          (&line_of P A L))))
+
+    (INIT &widest Order
+      (key ((&widest_count.size (:key ^A *L)))
+        (member ((:t L))
+          (&widest_count.size (:key A *L)))
+        (score ((:t L) (:S N))
+          (&widest_count.size (:key A *L) *N))))
+
+    (RULE &painted
+      (&open_cell *P)
+      (&line_of P *A *L)
+      (&widest.maximal (:key A) (:t L)))))
+
+(RULE &output
+  (input *P (:Col *Col2))
+  (IF ((&painted P))
+      ((&fill (:C *Col)))
+      ((= Col Col2))))

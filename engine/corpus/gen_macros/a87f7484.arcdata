@@ -1,0 +1,4 @@
+;; a87f7484
+
+(param &bg Color (0))
+(param &tile_dim number (3))

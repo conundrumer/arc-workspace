@@ -1,0 +1,88 @@
+;; af902bf9
+
+(DET &bg DominantColor)
+
+(RULE &empty
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(DET &marker RarestColor)
+
+(RULE &mark
+  (input *P *Col)
+  (&marker (:C Col)))
+
+(RULE &quad_mark
+  (&empty *P)
+  (&mark (:P *Q))
+  (corner_dir (:C *Diag) (:A *A_m1) (:D *D1))
+  (perp (:A A_m1) (:A2 *A2_m2))
+  (corner_dir (:C Diag) (:A A2_m2) (:D *D2))
+  (dir_elem (:D D1))
+  (margin (:B Q) (:D D1) (:K *K1_m3))
+  (margin (:B P) (:D D1) (:K *K2_m4))
+  (< K1_m3 K2_m4)
+  (dir_elem (:D D2))
+  (margin (:B Q) (:D D2) (:K *K1_m5))
+  (margin (:B P) (:D D2) (:K *K2_m6))
+  (< K1_m5 K2_m6))
+
+(RULE &opp_pair
+  (&quad_mark *P *Diag (:Q *A))
+  (diag_opposite (:D Diag) (:Opp *Dg2))
+  (&quad_mark P (:Diag Dg2) (:Q *D)))
+
+(RULE &open_pair_split1
+  (&opp_pair (:A *A_) *D)
+  (axis_elem (:A *Ax_))
+  (axis_of (:D *D_m1) (:A Ax_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B A_) (:D D_m1) (:K *K1_m3))
+  (margin (:B A_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *A1_))
+  (relative (:Base A1_) (:X A_) (:X_rel *X_m1_)))
+
+(RULE &open_pair_split2
+  (&opp_pair *A (:D *D_))
+  (axis_elem (:A *Ax_))
+  (axis_of (:D *D_m1) (:A Ax_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B D_) (:D D_m1) (:K *K1_m3))
+  (margin (:B D_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m2_))
+  (relative (:Base X_m2_) (:X D_) (:X_rel *D1_)))
+
+(DET &fill AnyOutNewColor)
+
+(RULE &rect_interior
+  (&opp_pair *P *A *D)
+  (ALL ((axis_elem (:A *Ax))
+        (&open_pair_split1 (:A_ A) (:Ax_ Ax) (:A1_ *A1) (:X_m1_ *X_m1))
+        (&open_pair_split2 (:D_ D) (:Ax_ Ax) (:X_m2_ *X_m2) (:D1_ *D1))
+        (compose (:A A1) (:B D1) (:C *Q)))
+       ((&mark (:P Q)))))
+
+(ALTS $choice "what delimits an interior cell" $Rect
+  (ALT $Quad
+    (RULE &quad_interior
+      (&empty *P)
+      (ALL ((diag_dir_elem (:D *Diag)))
+           ((&quad_mark P Diag))))
+
+    (RULE &output
+      (OR ((&quad_interior *P)
+           (&fill (:C *Col)))
+          ((input P Col)
+           (NOT (&quad_interior P)))))))
+
+(RULE &output
+  (OR ((&rect_interior *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&rect_interior P)))))

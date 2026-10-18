@@ -1,0 +1,7 @@
+;; 456873bc
+
+(param &bg Color (0))
+(param &ink Color (2))
+(param &mark Color (8))
+(param &gap number (1))
+(param &cover Color (3))

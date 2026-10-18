@@ -1,0 +1,202 @@
+;; 8d510a79
+
+(DET &bg DominantColor)
+
+(RULE &item_split1
+  (input (:P *P_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (&item_split1 (:P_ P) (:A_ A) (:L_ ^L) (:X_m1_ *X_m1)))
+    (member ((:v Col))
+      (input *P *Col)
+      (axis_elem A)
+      (&item_split1 (:P_ P) (:A_ A) (:L_ L) (:X_m1_ *X_m1)))))
+
+;; Divider: a line of one non-bg color.
+(RULE &frame_divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (NOT (&bg (:C Col))))
+
+(RULE &frame_on_divider
+  (input *P)
+  (&frame_divider *A *L)
+  (axis_of *D A)
+  (margin (:B P) D (:K *K_m1))
+  (margin (:B L) D (:K K_m1)))
+
+(INIT &frame_rank Order
+  (key ((OR ((&frame_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (dir_elem D)
+             (margin (:B P) D (:K *K2)))))
+    (member ((:t K))
+      (&frame_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&frame_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (dir_elem D)
+           (margin (:B P) D K))))
+    (probe ((:t K2))
+      (input *P)
+      (dir_elem D)
+      (margin (:B P) D (:K *K2)))))
+
+(RULE &frame_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&frame_on_divider P A))
+  (margin (:B P) D (:K *K2))
+  (&frame_rank.rank (:key D) (:t K2) (:R *N)))
+
+(RULE &frame_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&frame_part_idx *P D (:N *N1))
+  (&frame_part_idx P (:D D2) (:N *N2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K N1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K N2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_part)))
+
+(RULE &frame_tile_of
+  (&frame_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&frame_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &away UnchangedColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&frame_on_divider P)))
+
+(RULE &side
+  (&frame_part_idx *P *D *N)
+  (!= N 0))
+
+(DET &toward RarestColor)
+
+(RULE &casts
+  (&mark *P *Col)
+  (&side P (:D *D_side))
+  (OR ((&away (:C Col))
+       (opposite (:D D_side) (:Opp *D)))
+      ((&toward (:C Col))
+       (= D D_side))))
+
+(ALTS $choice "how a mark's cast direction is found" $Relative
+  (ALT $Table
+    (DET &cast_dir
+      (&mark *E *P *Col)
+      (&side E P (:D *Side))
+      (ex_output E (:P *Q) Col)
+      (relative (:Base P) (:X Q) (:X_rel *V))
+      (dir_elem *D)
+      (step_offset D V))
+
+    (RULE &casts
+      (&mark *P *Col)
+      (&side P (:D *D_side))
+      (&cast_dir Col (:Side D_side) *D))))
+
+(RULE &cast_dir2
+  (&casts (:D *Key)))
+
+(RULE &cast_blocked
+  (&casts (:D *Key))
+  (&frame_on_divider *P))
+
+(RULE &cast_node
+  (&casts (:D *Key))
+  (input *P)
+  (NOT (&cast_blocked Key P)))
+
+(RULE &cast_source
+  (&casts *P (:D *Key)))
+
+;; Each mark casts through bg; the divider blocks.
+(INIT &cast Distance
+  (key ((&cast_source (:Key ^Ky) (:P ^O))
+        (&cast_dir2 (:Key Ky)))
+    (edge ((:a A2) (:b Q))
+      (OR ((&cast_source (:Key Ky) (:P O))
+           (&cast_dir2 (:Key Ky))
+           (axis_of (:D Ky) *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite (:D Ky) (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset (:D Ky) K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&cast_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&cast_node (:Key Ky) (:P Q)))
+          ((&cast_source (:Key Ky) (:P O))
+           (&cast_dir2 (:Key Ky))
+           (step_offset (:D Ky) (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&cast_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&cast_source (:Key Ky) (:P O))
+           (&cast_dir2 (:Key Ky))
+           (diag_dir_elem (:D Ky))
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite (:D Ky) (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset (:D Ky) (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&cast_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&cast_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&cast_source (:Key Ky) (:P O))
+      (&cast_dir2 (:Key Ky)))))
+
+(RULE &cast_ray
+  (&cast.distance (:key (:Ky *Key) (:Ky *D) (:O *Origin)) (:n *P) *K))
+
+(RULE &cast_end
+  (&cast_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&cast_ray Key (:P Q) D Origin)))
+
+(RULE &cast_cell
+  (&casts (:D *Key))
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &painted
+  (&cast_ray *P (:Origin *Src))
+  (&cast_cell P)
+  (&mark (:P Src) *Col))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))

@@ -1,0 +1,133 @@
+;; 62ab2642
+
+(DET &region_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg
+  (ex_input *E *P *Col)
+  (ex_output E P (:Col *Col2))
+  (!= Col2 Col))
+
+(DET &region_node
+  (ex_input (:E *Key) *P *Col)
+  (&bg Col))
+
+(INIT &region3 Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&region_node (:Key *Ky) *P)
+         (&region_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&region_node (:Key Ky) (:P P2)))
+        ((&region_node (:Key Ky) P)
+         (= P2 P)))))
+
+(DET &region_component
+  (&region3.class (:a *Key *P) *Id))
+
+(RULE &orth_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(RULE &blank
+  (input *P *Col)
+  (&bg Col))
+
+(INIT &orth Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&blank *P)
+         (&orth_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&blank (:P P3)))
+        ((&blank P)
+         (= P3 P)))))
+
+(RULE &orth_component
+  (&orth.class (:a *P) *Id))
+
+(RULE &region
+  (&orth_component *P *Id))
+
+(DET &region2
+  (&region_component (:Key *E) *P *Id))
+
+(INIT &size2 Cardinality
+  (key ((&region2 (:E ^Ky) *P ^Id))
+    (member ((:m P))
+      (&region2 (:E Ky) *P Id))))
+
+(INIT &extreme2 Order
+  (key ((&size2.size (:key (:Ky ^E) *Id) *N))
+    (member ((:t (:V Id) (:S N)))
+      (&size2.size (:key (:Ky E) *Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&size2.size (:key (:Ky E) *Id) *N))))
+
+(DET &biggest2
+  (&extreme2.maximal (:key *E) (:t (:V *Id)))
+  (&region2 E *P Id))
+
+(DET &smallest2
+  (&extreme2.minimal (:key *E) (:t (:V *Id)))
+  (&region2 E *P Id))
+
+(DET &big_paint
+  (&biggest2 *E *P)
+  (ex_output E P *Col))
+
+(DET &small_paint
+  (&smallest2 *E *P)
+  (ex_output E P *Col))
+
+(ALTS $choice "what joins two blank cells into one region" $Orth
+  (ALT $Diag
+    (RULE &diag_steps
+      (OR ((dir_elem *D)
+           (step_offset D (:V *Delta)))
+          ((diag_dir_elem (:D *D2))
+           (step_offset (:D D2) (:V Delta)))))
+
+    (INIT &diag Quotient
+      (edge ((:a P) (:b P3))
+        (OR ((&blank *P)
+             (&diag_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P3))
+             (&blank (:P P3)))
+            ((&blank P)
+             (= P3 P)))))
+
+    (RULE &diag_component
+      (&diag.class (:a *P) *Id))
+
+    (RULE &region
+      (&diag_component *P *Id))))
+
+(INIT &size Cardinality
+  (key ((&region *P ^Id))
+    (member ((:m P))
+      (&region *P Id))))
+
+(INIT &extreme Order
+  (member ((:t (:V Id) (:S N)))
+    (&size.size (:key *Id) *N))
+  (score ((:t (:V Id) (:S N)) (:S N))
+    (&size.size (:key *Id) *N)))
+
+(RULE &biggest
+  (&extreme.maximal (:t (:V *Id)))
+  (&region *P Id))
+
+(RULE &smallest
+  (&extreme.minimal (:t (:V *Id)))
+  (&region *P Id))
+
+(RULE &paint
+  (OR ((&biggest *P)
+       (&big_paint *Col))
+      ((&smallest P)
+       (&small_paint Col))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))

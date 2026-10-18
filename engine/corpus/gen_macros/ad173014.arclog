@@ -1,0 +1,262 @@
+;; ad173014
+
+(INPUT loop "a closed rectangular loop of line_color (1), one cell wide, on a field of background (0)")
+
+(INPUT boxes-on-loop "three or more boxes, each a square outline of frame_color (2), that the loop passes through; no two boxes touch")
+
+(INPUT one-shape-per-box "each box's interior holds one shape of a single color on background, and the shapes of different boxes have different colors"
+
+  (DET &frame_color UnchangedColor)
+
+  (INIT &outlines Outlines
+    (node (P)
+      (input *P *Col)
+      (&frame_color (:C Col))))
+
+  (DET_OR_RULE &background DominantColor)
+
+  (RULE &shape
+    (&outlines.box *B)
+    (input *P *Col)
+    (ALL ((input P (:Col *Colm))
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((> K_m3 0)))
+    (NOT (&background (:C Col))))
+
+  (INIT &shape_color Singleton
+    (key ((&shape ^B *P)
+          (input P *Col))
+      (member ((:v Col))
+        (&shape B *P)
+        (input P *Col)))))
+
+(OUTPUT color-turn "each shape keeps its cells and takes the color of the shape in the box that comes next along the loop in sense"
+
+  (RULE &segments_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (DET &line_color UnchangedColor)
+
+  (RULE &frame
+    (&outlines.box *B)
+    (input *P)
+    (ALL ((dir_elem (:D *D_m1m))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1m) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (margin (:B P) (:D *D_m1) (:K *K_m2))
+    (margin B (:D D_m1) (:K K_m2)))
+
+  (RULE &member
+    (&outlines.box *B))
+
+  (RULE &track
+    ;; The loop runs on through a box that is not a member.
+    (OR ((input *P *Col)
+         (&line_color (:C Col)))
+        ((&frame *B P)
+         (NOT (&member B)))))
+
+  ;; The runs of track between member boxes.
+  (INIT &segments Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((&track *P)
+           (&segments_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&track (:P P3)))
+          ((&track P)
+           (= P3 P)))))
+
+  (RULE &segments_component
+    (&segments.class (:a *P) *Id))
+
+  (RULE &closed_flood_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &closed_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &boxed_inside1
+    (input (:P *P_))
+    (&outlines.box (:B *B_))
+    (dir_elem (:D *D_m1))
+    (relative (:Base B_) (:X P_) (:X_rel *R_m2))
+    (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+    (< K_m3 0))
+
+  (RULE &closed_cell
+    (input *P *Col)
+    (NOT (&line_color (:C Col)))
+    (ALL ((&outlines.box *B))
+         ((&boxed_inside1 (:P_ P) (:B_ B)))))
+
+  (INIT &closed_flood Propagation
+    (source ((:n P))
+      (&closed_cell *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0))
+      (input P *Col)
+      (NOT (&line_color (:C Col)))
+      (ALL ((&outlines.box *B))
+           ((&boxed_inside1 (:P_ P) (:B_ B)))))
+    (edge ((:a P) (:b P2))
+      (input *P *Col)
+      (NOT (&line_color (:C Col)))
+      (ALL ((&outlines.box *B))
+           ((&boxed_inside1 (:P_ P) (:B_ B))))
+      (&closed_flood_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *P2))
+      (input (:P P2) (:Col *Col2))
+      (NOT (&line_color (:C Col2)))
+      (ALL ((&outlines.box (:B *Bm)))
+           ((&boxed_inside1 (:P_ P2) (:B_ Bm))))))
+
+  (RULE &closed_node
+    (&closed_cell *P)
+    (NOT (&closed_flood.reached (:n P))))
+
+  ;; The regions the loop and the boxes close off from the grid edge.
+  (INIT &closed Quotient
+    (edge ((:a P) (:b P2))
+      (OR ((&closed_node *P)
+           (&closed_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P2))
+           (&closed_node (:P P2)))
+          ((&closed_node P)
+           (= P2 P)))))
+
+  (RULE &closed_component
+    (&closed.class (:a *P) *Id))
+
+  ;; The direction around the loop in which a box finds the box whose color it takes.
+  (DET &sense SenseDomain)
+
+  (DET &step DivisorRatio)
+
+  (RULE &touch
+    (&segments_component *P (:Id *S))
+    (dir_elem *D)
+    (step_offset D (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *Q))
+    (&frame *B (:P Q))
+    (&member B))
+
+  (RULE &enclosed
+    (&closed_component *P))
+
+  (RULE &outside
+    (&closed_cell *P)
+    (NOT (&closed_component P)))
+
+  (RULE &inward
+    (&touch *P)
+    (opposite *D (:Opp *D_out))
+    (OR ((step_offset D (:V *V_m1))
+         (compose (:A P) (:B V_m1) (:C *R))
+         (&enclosed (:P R)))
+        ((step_offset (:D D_out) (:V *V_m2))
+         (compose (:A P) (:B V_m2) (:C R))
+         (&outside (:P R)))))
+
+  (RULE &next
+    (&sense (:S *Sn))
+    (&touch *S (:B *A) *P *D)
+    (turn (:S Sn) (:D *D_in) (:D2 D))
+    (&inward P (:D D_in))
+    (&touch S *B (:P *P2) (:D *D2))
+    (turn (:S Sn) (:D D2) (:D2 *D2_in))
+    (&inward (:P P2) (:D D2_in)))
+
+  (INIT &line_box BoundingBox
+    (cell (P)
+      (input *P *Col)
+      (&line_color (:C Col))))
+
+  (INIT &cycle Walk
+    (successor ((:p A) (:p_next B))
+      (&next *A *B))
+    (steps (N)
+      (&next)
+      (&step (:K *N)))))
+
+(OUTPUT rest-kept "every other cell keeps its input color")
+
+(ALTS $o "how the boxes are ordered into the cycle" $LoopWalk
+  (ALT $BboxRingOrder
+    (OUTPUT color-turn "the boxes follow one another in sense around the ring of the bounding box of the line_color cells, in place of along the loop; undefined where a box has no cell on that ring"
+      (RULE &enclosed
+        (&line_box.box *B)
+        (input *P)
+        (ALL ((dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((> K_m3 0))))
+
+      (RULE &outside
+        (&line_box.box *B)
+        (input *P)
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+        (< K_m3 0))
+
+      (RULE &in_member
+        (&member *B)
+        (input *P)
+        (ALL ((&member B)
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0))))
+
+      ;; A ring cell outside every member box.
+      (RULE &track
+        (&line_box.box *B)
+        (input *P)
+        (ALL ((dir_elem (:D *D_m1m))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1m) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (margin (:B P) (:D *D_m1) (:K *K_m2))
+        (margin B (:D D_m1) (:K K_m2))
+        (NOT (&in_member P))))))
+
+(ALTS $s "how far along the cycle the source box is" $NextBox
+  (ALT $StepCount
+    (OUTPUT color-turn "each shape takes the color of the shape in the box that lies step boxes on along the loop in sense")
+    (RULE &source
+      (&cycle.walk (:p0 *A) *N (:p *B))
+      (&step (:K N)))))
+
+(ALTS $m "whether a box with no shape is a member of the cycle" $EveryBoxMember
+  (ALT $EveryBoxMember
+    (ALTS $hand "what a member box with no shape hands on" $HandsNothing
+      (ALT $EmptyBoxErases
+        (OUTPUT color-turn "a box with no shape hands on background, so the shape that takes its color is erased")
+        (RULE &handed
+          (OR ((&outlines.box *B)
+               (NOT (&shape B))
+               (&background (:C *Col)))
+              ((&shape_color.value (:key B) (:v Col))))))))
+  (ALT $SkipEmptyBoxes
+    (OUTPUT color-turn "a box with no shape is not a member of the cycle, and it stays empty"
+      (RULE &member
+        (&shape *B)))))
+
+(RULE &handed
+  (&shape_color.value (:key *B) (:v *Col)))
+
+(RULE &source
+  (&next *A *B))
+
+(RULE &output
+  (OR ((&source *A *B)
+       (&shape (:B A) *P)
+       (&handed B *Col))
+      ((input P Col)
+       (NOT (&shape P)))))

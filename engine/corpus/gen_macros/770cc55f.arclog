@@ -1,0 +1,116 @@
+;; 770cc55f
+
+(DET &axis AxisDomain)
+
+(DET &bg DominantColor)
+
+(RULE &bar
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&axis *A)
+  (axis_of *D A)
+  (margin (:B P) D (:K 0)))
+
+(INIT &bar_size Cardinality
+  (key ((&bar ^D *P))
+    (member ((:m P))
+      (&bar D *P))))
+
+(INIT &longer Order
+  (member ((:t (:V D) (:S N)))
+    (&bar_size.size (:key *D) *N))
+  (score ((:t (:V D) (:S N)) (:S N))
+    (&bar_size.size (:key *D) *N)))
+
+(RULE &flow_dir
+  (&longer.maximal (:t (:V *D2)))
+  (opposite (:D D2) (:Opp *D)))
+
+(DET &sep RarestColor)
+
+(RULE &flow_blocked
+  (input *P *Col)
+  (&sep (:C Col)))
+
+(RULE &flow_node
+  (input *P)
+  (NOT (&flow_blocked P)))
+
+(RULE &flow_source
+  (&longer.maximal (:t (:V *D)))
+  (&bar D *P)
+  (opposite D (:Opp *D2))
+  (&bar (:D D2) (:P *Q))
+  (&axis *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B Q) (:D D_m2) (:K K_m3)))
+
+(INIT &flow Distance
+  (key ((&flow_source (:P ^O))
+        (&flow_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&flow_source (:P O))
+           (&flow_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&flow_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&flow_node (:P Q)))
+          ((&flow_source (:P O))
+           (&flow_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&flow_node (:P Q))
+           (= A2 O))
+          ((&flow_source (:P O))
+           (&flow_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&flow_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&flow_node (:P Q)))))
+    (source ((:n O))
+      (&flow_source (:P O))
+      (&flow_dir D))))
+
+(RULE &flow_ray
+  (&flow.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &flow_end
+  (&flow_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&flow_ray (:P Q) D Origin)))
+
+(DET &fill AnyOutNewColor)
+
+(RULE &flow_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &filled
+  (&flow_ray *P)
+  (&flow_cell P))
+
+(RULE &output
+  (OR ((&filled *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&filled P)))))

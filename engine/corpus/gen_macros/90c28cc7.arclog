@@ -1,0 +1,98 @@
+;; 90c28cc7
+
+(DET &bg DominantColor)
+
+(INIT &region_box BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+;; The bounding box, read in its own frame, with the bg cells inside it.
+(RULE &region
+  (input (:P *P2) *Col)
+  (&region_box.box *B)
+  (ALL ((input (:P P2) (:Col *Colm))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P2) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(ALTS $choice "What the layout's region is." $Box
+  (ALT $Cells
+    (RULE &region
+      (input *P *Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &line_cell_split1
+  (&region (:P *P_) *Col)
+  (axis_elem (:A *A_))
+  (axis_of (:D *D_m1) (:A A_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+  (relative (:Base L_) (:X P_) (:X_rel *X_)))
+
+(RULE &line_cell
+  (&region *P *Col)
+  (axis_elem *A)
+  (&line_cell_split1 (:P_ P) (:A_ A) (:L_ *P_line) (:X_ *P_across)))
+
+(RULE &line
+  (&line_cell *A *P_line))
+
+(RULE &differ
+  (&line_cell *A *P_line (:P_across *X) *Col)
+  (&line_cell A (:P_line *P_line2) (:P_across X) (:Col *Col2))
+  (!= Col Col2))
+
+(RULE &uncut
+  (&line *A (:P_line *L))
+  (&line A (:P_line *L2))
+  (axis_of *D A)
+  (step_offset D (:V *V_m1))
+  (compose (:A L) (:B V_m1) (:C L2))
+  (NOT (&differ A (:P_line L) (:P_line2 L2))))
+
+;; A band is a run of lines that no boundary cuts.
+(INIT &bands Quotient
+  (edge ((:a A (:P_line L)) (:b A P_line))
+    (OR ((&uncut *A *L (:L2 *P_line)))
+        ((&line A (:P_line L))
+         (= P_line L)))))
+
+;; One output line per band. Band line sets are disjoint runs, as OrderFrame
+;; assumes.
+(INIT &layout Order
+  (key ((axis_elem ^A)
+        (axis_of ^D A))
+    (member ((:t Bd))
+      (&bands.class (:a A (:P_line *L)) (:Id *Bd)))
+    (before ((:a Bd) (:b Bd2))
+      (&bands.class (:a A (:P_line *L)) (:Id *Bd))
+      (&bands.class (:a A (:P_line *L2)) (:Id *Bd2))
+      (!= Bd Bd2)
+      (margin (:B L) D (:K *K1))
+      (margin (:B L2) D (:K *K2))
+      (< K1 K2))))
+
+(RULE &layout_pos
+  (&layout.rank (:key (:A *Key) *A *D) (:t *M) (:R *R1))
+  (&layout.dual_rank (:key (:A Key) A D) (:t M) (:R *R2))
+  (opposite D (:Opp *O_m1))
+  (edge_inset D (:K R1) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K R2) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_pos)))
+
+(RULE &output
+  (&line_cell *A (:P_line *L) (:P_across *L2) *Col)
+  (perp A *A2)
+  (&bands.class (:a A (:P_line L)) (:Id *Bd))
+  (&bands.class (:a (:A A2) (:P_line L2)) (:Id *Bd2))
+  (&layout_pos (:Key A) (:M Bd) (:P_pos *P_line))
+  (&layout_pos (:Key A2) (:M Bd2) (:P_pos *P_line2))
+  (compose (:A P_line) (:B P_line2) (:C *P)))

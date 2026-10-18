@@ -31,7 +31,7 @@ def parser() -> argparse.ArgumentParser:
         "is given."))
     sub.add_parser("uses", help=mctx(
         "Write each lib name, each proposer and each form keyword that a file of "
-        "`work/arclog/gen/` uses, with the stems of the files that use it, to "
+        "`engine/corpus/gen/` uses, with the stems of the files that use it, to "
         "`.cache/parity/uses.json` of the main worktree, and print its path."))
     again = sub.add_parser("rerun", help=mctx(
         "Run one case of a solver again on one pair with every relation written out, and "

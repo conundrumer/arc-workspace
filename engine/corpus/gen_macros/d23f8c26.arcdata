@@ -1,0 +1,6 @@
+;; d23f8c26
+
+(param &bg Color (0))
+(param &axis Axis (AXIS_H))
+(param &divisor number (2))
+(param &divide_gap number (1))

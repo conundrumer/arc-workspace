@@ -1,0 +1,107 @@
+;; 35ab12c3
+
+(DET &bg DominantColor)
+
+(RULE &pt
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &sight_dir
+  (&pt (:Col *Key))
+  (dir8_elem *D))
+
+(INIT &sight_full Ray
+  (key ((OR ((&pt ^Col *P))
+            ((&sight_dir (:Key Col) *D))
+            ((&sight_dir (:Key Col))
+             (input P))))
+    (source (P)
+      (&pt Col *P))
+    (node (P)
+      (&sight_dir (:Key Col))
+      (input *P))
+    (dir (D)
+      (&sight_dir (:Key Col) *D))))
+
+;; The one cell of a color that has just one — a lone mark. A color of two
+;; or more cells clashes, and outlines instead.
+(INIT &spread Singleton
+  (key ((&pt ^Col *P))
+    (member ((:v P))
+      (&pt Col *P))))
+
+;; Each color's cells cast along the eight directions, and a same-color cell
+;; halts a cast: a stop is the caster's sight — the nearest same-color cell
+;; that way.
+(INIT &sight Ray
+  (key ((OR ((&pt ^Col *P))
+            ((&sight_dir (:Key Col) *D))
+            ((&sight_dir (:Key Col))
+             (input P)
+             (NOT (&pt Col P)))))
+    (source (P)
+      (&pt Col *P))
+    (node (P)
+      (&sight_dir (:Key Col))
+      (input *P)
+      (NOT (&pt Col P)))
+    (dir (D)
+      (&sight_dir (:Key Col) *D))))
+
+(RULE &leans
+  (&sight.end (:P *E) *D (:Origin *P))
+  (neighbor (:P E) D *Q)
+  (input (:P Q))
+  (nearer (:D *H) (:P Q) (:Q P)))
+
+(RULE &straddled
+  (c4_turn (:T *R))
+  (apply_dir8 (:D R) (:Dir *D) (:Dir_out *H))
+  (dir8_opposite (:D H) (:D2 *H2))
+  (&leans *P H)
+  (&leans P (:H H2)))
+
+(RULE &edge
+  (&sight.end (:key *Col) (:P *E) *D (:Origin *P))
+  (neighbor (:P E) D (:Q *P_2))
+  (&sight_full.ray (:key Col) (:P P_2) D *K (:Origin P))
+  (NOT (&straddled P D)))
+
+(RULE &mark_shift
+  (&spread.value (:key *Col) (:v *M))
+  (&pt (:Col *Base) (:P *N))
+  (!= Base Col)
+  (dir8_elem *D)
+  (step_offset D *V)
+  (compose (:A N) (:B V) (:C M)))
+
+(ALTS $choice "which sights draw a line, which the pairs never separate" $Rays
+  (ALT $Joins
+    (RULE &edge
+      (&sight.end (:key *Col) (:P *E) *D (:Origin *P))
+      (neighbor (:P E) D *Q)
+      (&sight_full.ray (:key Col) (:P Q) D *K (:Origin P))
+      (NOT (&straddled P D))
+      (dir8_opposite D *D2)
+      (NOT (&straddled (:P Q) (:D D2))))))
+
+(RULE &shape
+  (OR ((&pt *Col *P))
+      ((&edge Col (:P *P2) *D *K)
+       (&sight_full.ray (:key Col) P D (:K *K2) (:Origin P2))
+       (<= K2 K))))
+
+(RULE &shadow
+  (&mark_shift *Col *Base *V)
+  (&shape (:Col Base) (:P *P2))
+  (compose (:A P2) (:B V) (:C *P))
+  (input P)
+  (NOT (&shape P)))
+
+(RULE &output
+  (OR ((&shape *Col *P))
+      ((&shadow P Col))
+      ((input P)
+       (&bg (:C Col))
+       (NOT (&shape P))
+       (NOT (&shadow P)))))

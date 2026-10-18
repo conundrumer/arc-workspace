@@ -1,0 +1,5 @@
+;; 494ef9d7
+
+(param &bg Color (0))
+(param &attract (Ident Color) (0 4) (0 7) (1 1) (1 8))
+(param &pull_dir Dir (DIR_L))

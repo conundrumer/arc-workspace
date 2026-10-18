@@ -1,0 +1,5 @@
+;; 79fb03f4
+
+(param &bg Color (0))
+(param &flow Color (1))
+(param &flow_dir Dir (DIR_R))

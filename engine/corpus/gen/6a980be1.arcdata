@@ -1,0 +1,5 @@
+;; 6a980be1
+
+(param &bg Color (0))
+(param &line Color (3))
+(param &pattern Color (2))

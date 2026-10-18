@@ -1,0 +1,10 @@
+;; e98196ab
+
+(param &bg Color (0))
+(param &tile_dim (Axis number) (AXIS_V 5) (AXIS_H 11))
+(param &tile_decompose (Position Position Position) (Division
+  ((:A AXIS_V) (:Count 2) (:Size 5) (:Gap 1))
+  ((:A AXIS_H) (:Count 1) (:Size 11) (:Gap 0))))
+(param &divisor number (2))
+(param &divide_axis Axis (AXIS_V))
+(param &divide_gap number (1))

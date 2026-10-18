@@ -1,0 +1,94 @@
+;; 2faf500b
+
+(RULE &shapes_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(INIT &shapes Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&shapes_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &shapes_component
+  (&shapes.class (:a *P) *Id))
+
+(DET &mark ChangedColor)
+
+(RULE &shape
+  (&shapes_component *P *Id))
+
+(RULE &mark_cell
+  (&shape *Id *P)
+  (input P *Col)
+  (&mark (:C Col)))
+
+(RULE &cut_cell
+  (&shape *Id *P)
+  (&mark_cell Id (:P *M))
+  (axis_elem *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P) (:D D_m2) (:K *K_m3))
+  (margin (:B M) (:D D_m2) (:K K_m3)))
+
+(RULE &cut_axis
+  (&shape *Id)
+  (axis_elem *A)
+  (ALL ((&shape Id *P))
+       ((&cut_cell Id A P))))
+
+(RULE &moved
+  (&cut_axis *Id *A)
+  (&cut_cell Id A (:P *P2) *M)
+  (input (:P P2) *Col)
+  (NOT (&mark (:C Col)))
+  (axis_of *D A)
+  (dir_elem D)
+  (margin (:B P2) D (:K *K1_m1))
+  (margin (:B M) D (:K *K2_m2))
+  (< K1_m1 K2_m2)
+  (step_offset D (:V *V_m3))
+  (compose (:A P2) (:B V_m3) (:C *P)))
+
+(ALTS $choice "where the cut runs" $Marks
+  (ALT $Midline
+    (INIT &bbox BoundingBox
+      (key ((&shape ^Id *P))
+        (cell (P)
+          (&shape Id *P))))
+
+    (RULE &moved
+      (&shape *Id (:P *P2))
+      (&bbox.box (:key Id) *B)
+      (ALL ((&shape (:Id *Idm) (:P P2))
+            (&bbox.box (:key (:Id Idm)) B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P2) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (relative (:Base B) (:X P2) (:X_rel *P_inner))
+      (input (:P P2) *Col)
+      (NOT (&mark (:C Col)))
+      (&cut_axis Id *A)
+      (axis_of *D A)
+      (opposite D (:Opp *O_m1))
+      (margin (:B P_inner) D *K)
+      (margin (:B P_inner) (:D O_m1) (:K *K_far))
+      (< K K_far)
+      (step_offset D (:V *V_m2))
+      (compose (:A P2) (:B V_m2) (:C *P)))))
+
+(RULE &output
+  (input *P)
+  (OR ((&moved P *Col))
+      ((NOT (&moved P))
+       (&bg (:C Col)))))

@@ -1,0 +1,124 @@
+;; bc93ec48
+
+(INPUT background-field "the grid is a field of background, with one-color shapes on it")
+
+(OUTPUT corner-shape "the shape of a corner is the 4-connected one-color component of non-background cells that holds the corner cell; a corner whose cell is background has no shape"
+
+  (DET_OR_RULE &background DominantColor)
+
+  (INIT &conn8 Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col)))))
+    (step ((:Delta S))
+      (diag_dir_elem *D)
+      (step_offset D (:V *S)))))
+
+(OUTPUT next-corner "each corner's shape is copied to the next corner in the sense direction, translated with no turn or flip, so that its bounding box touches that corner's two edges")
+
+(OUTPUT overlay "the copies are drawn over the input; each cell no copy covers keeps its input color, the cells of the shape that moved away included"
+
+  (DET &sense SenseDomain)
+
+  (INIT &conn4 Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col))))))
+
+  (RULE &shape
+    (&conn4.component (:key *Col) *P (:Id *X)))
+
+  (RULE &held
+    (&shape *X *P)
+    (diag_dir_elem (:D *C))
+    (inside (:A P) (:B 0))
+    (same_corner (:D C) (:P1 P) (:P2 0)))
+
+  (INIT &shape_box BoundingBox
+    (key ((&shape ^X *P))
+      (cell (P)
+        (&shape X *P))))
+
+  (RULE &target
+    (&sense *S)
+    (c4_turn S (:T *R))
+    (apply_diag_dir (:D R) (:Dir *C) (:Dir_out *C2)))
+
+  (RULE &copy
+    (&held *C *X)
+    (&target C *C2)
+    (&shape X *P *Col)
+    (&shape_box.box (:key X) *B)
+    (diag_dist (:P B) (:Diag C2) *A *K1 *K2)
+    (diag_dirs (:D C2) A *D1 *D2)
+    (jump P (:D D1) (:K K1) (:Q *Q1))
+    (jump (:P Q1) (:D D2) (:K K2) *Q)))
+
+(ALTS $shape "which cells make up one shape" $Conn4
+  (ALT $Conn8
+    (OUTPUT corner-shape "the shape is the 8-connected one-color component"
+      (RULE &shape
+        (&conn8.component (:key *Col) *P (:Id *X))))))
+
+(ALTS $pick "which shape a corner holds" $CornerCell
+  (ALT $EdgePair
+    (OUTPUT corner-shape "the shape of a corner is the shape that reaches both of the corner's edges; undefined where two shapes do"
+      (RULE &held
+        (&shape *X (:P *P1))
+        (&shape X (:P *P2))
+        (diag_dirs (:D *C) *D1 *D2)
+        (margin (:B P1) (:D D1) (:K 0))
+        (margin (:B P2) (:D D2) (:K 0))))))
+
+(ALTS $clash "the color of a cell that copies of different colors cover" $Unresolved
+  (ALT $Precedence
+    (OUTPUT precedence "where copies of different colors cover one cell, the copy from the corner ranked first in precedence is drawn on top"
+      ;; Each order v of the corners, as the rank of each corner in it.
+      ;; TODO no-det-plan: &precedence: the plan gives no verdict
+      (DET &precedence (ONE))
+
+      (RULE &covered
+        (&copy (:C *C2) *Q)
+        (&precedence *V (:C C2) (:R *R2))
+        (&precedence V *C *R)
+        (< R2 R)))
+    (RULE &paint
+      (&copy *C *Q *Col)
+      (&precedence *V C)
+      (NOT (&covered V C Q)))))
+
+(ALTS $step "how the target corner of each corner is encoded" $SenseStep
+  (ALT $CornerD4
+    (OUTPUT next-corner "each corner's shape is copied to the corner that the stored D4 element corner_d4 takes that corner to"
+      (DET &corner_d4 D4Domain)
+
+      (RULE &target
+        (&corner_d4 (:D *G))
+        (apply_diag_dir (:D G) (:Dir *C) (:Dir_out *C2)))))
+  (ALT $CornerMap
+    (OUTPUT next-corner "each corner's shape is copied to the corner that the stored map corner_target gives"
+      ;; the corner each corner's shape moves to
+      ;; TODO no-det-plan: &corner_target: the plan gives no verdict
+      (DET &corner_target)
+
+      (RULE &target
+        (&corner_target *C *C2)))))
+
+(RULE &ambiguous
+  (&held *C (:X *X1))
+  (&held C (:X *X2))
+  (!= X1 X2))
+
+(RULE &paint
+  (&copy *Q *Col))
+
+(RULE &output
+  (OR ((&paint (:Q *P) *Col)
+       (NOT (&ambiguous)))
+      ((NOT (&ambiguous))
+       (input P Col)
+       (NOT (&paint (:Q P))))))

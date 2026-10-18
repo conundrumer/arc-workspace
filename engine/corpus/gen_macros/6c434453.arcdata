@@ -1,0 +1,15 @@
+;; 6c434453
+
+(param &src (Position Color)
+  (grid
+    (1 1 1)
+    (1 0 1)
+    (1 1 1)))
+(param &dst (Position Color)
+  (grid
+    (0 2 0)
+    (2 2 2)
+    (0 2 0)))
+(param &bg Color (0))
+(param &ink Color (1))
+(param &fill Color (2))

@@ -1,0 +1,4 @@
+;; 64a7c07e
+
+(param &bg Color (0))
+(param &move_dir Dir (DIR_R))

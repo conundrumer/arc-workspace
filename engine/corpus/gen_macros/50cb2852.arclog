@@ -1,0 +1,54 @@
+;; 50cb2852
+
+(RULE &comps_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &comps Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((&ink *P)
+         (&comps_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (&ink (:P P3)))
+        ((&ink P)
+         (= P3 P)))))
+
+(RULE &comps_component
+  (&comps.class (:a *P) *Id))
+
+(DET &fill AnyOutNewColor)
+
+(INIT &bbox BoundingBox
+  (key ((&comps_component *P ^Id))
+    (cell (P)
+      (&comps_component *P Id))))
+
+(RULE &inner_cell
+  (&bbox.box *B)
+  (input *P)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((> K_m3 0))))
+
+(ALTS $choice "how the interior is picked" $Box
+  (ALT $Erode
+    (INIT &exposed Boundary
+      (cell (P)
+        (&ink *P)))
+
+    (RULE &inner_cell
+      (&ink *P)
+      (NOT (&exposed.boundary P)))))
+
+(RULE &output
+  (OR ((&inner_cell *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&inner_cell P)))))

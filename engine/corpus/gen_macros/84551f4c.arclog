@@ -1,0 +1,142 @@
+;; 84551f4c
+
+;; The edge the bars stand on.
+(DET &ground DirDomain)
+
+(RULE &up
+  (&ground (:D *G))
+  (opposite (:D G) (:Opp *D)))
+
+(RULE &rise_dir
+  (&up *D))
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &rise_node
+  (&ink *P))
+
+(RULE &rise_source
+  (&ink *P))
+
+;; The run of ink rising from each base.
+(INIT &rise Distance
+  (key ((&rise_source (:P ^O))
+        (&rise_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&rise_source (:P O))
+           (&rise_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&rise_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&rise_node (:P Q)))
+          ((&rise_source (:P O))
+           (&rise_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&rise_node (:P Q))
+           (= A2 O))
+          ((&rise_source (:P O))
+           (&rise_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&rise_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&rise_node (:P Q)))))
+    (source ((:n O))
+      (&rise_source (:P O))
+      (&rise_dir D))))
+
+(RULE &rise_ray
+  (&rise.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &rise_end
+  (&rise_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&rise_ray (:P Q) D Origin)))
+
+;; The color whose bars topple on their own.
+(DET &pusher RarestColor)
+
+;; The sense a bar turns in when it topples.
+(DET &topple SenseDomain)
+
+(RULE &fall
+  (&up (:D *U))
+  (&topple *S)
+  (turn S (:D U) (:D2 *D)))
+
+(RULE &base
+  (&ink *P)
+  (&ground (:D *G))
+  (margin (:B P) (:D G) (:K 0)))
+
+(RULE &bar_cell
+  (&base (:P *P_base))
+  (OR ((&rise_ray *P (:K *N) (:Origin P_base))
+       (> N 0))
+      ((= P P_base))))
+
+(RULE &fallen
+  (&bar_cell *P_base (:P *P2))
+  (input (:P P2) *Col)
+  (&topple *S)
+  (c4_turn S (:T *R4))
+  (relative (:Base P_base) (:X P2) (:X_rel *V))
+  (apply (:D R4) (:P V) (:P_out *V2))
+  (compose (:A P_base) (:B V2) (:C *P)))
+
+;; The bars that topple: the pusher's bars, then each standing bar that a
+;; toppled bar's landed cell touches in the fall direction.
+(INIT &chain Propagation
+  (source ((:n P_base))
+    (&base (:P *P_base))
+    (input (:P P_base) *Col)
+    (&pusher (:C Col)))
+  (edge ((:a P_base) (:b P_base2))
+    (&fallen *P_base *P)
+    (&fall *D)
+    (step_offset D (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *Q))
+    (&bar_cell (:P_base *P_base2) (:P Q))))
+
+(RULE &toppled
+  (&chain.reached (:n *P_base)))
+
+(RULE &landed
+  (&toppled *P_base)
+  (&fallen P_base *P *Col))
+
+(RULE &cleared
+  (&toppled *P_base)
+  (&bar_cell P_base *P))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&landed P *Col))
+      ((NOT (&landed P))
+       (&cleared P)
+       (&bg (:C Col)))
+      ((NOT (&landed P))
+       (NOT (&cleared P))
+       (= Col Col_in))))

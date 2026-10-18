@@ -1,0 +1,476 @@
+;; 2ccd9fef
+
+(INPUT panel-strip "the input is a row or a column of equal panels laid end to end with no divider, and every panel shows one frame drawing.")
+
+(INPUT blank-panel "one panel shows the frame alone. It is the panel of fewest colors, in the split into equal panels under which that panel leaves the fewest cells of the other panels unexplained, and it lies at one end of the strip.")
+
+(INPUT stages "every other panel holds a stage: figures, each a 4-connected group of the cells that differ from the frame.")
+
+(OUTPUT stage-order "the stages run along the strip toward the blank panel, which holds the stage after the last one.")
+
+(OUTPUT track "a figure continues the figure of the next stage that shares a cell with it, and its step is the change of its box's margins from one stage to the next, the same at every stage, and none across the growth axis, the axis across the strip.")
+
+(OUTPUT next-stage "each stage with the stage after it is a demonstration. The rules of the catalog that every demonstration confirms each draw the stage after the last one in the blank panel, over the frame."
+
+  (RULE &figure_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (INIT &cand_tile_division_sides ExtentDivisions
+    (key ((input *P)
+          (sub_extent P ^A (:K ^N)))
+      (frame (P)
+        (input *P)
+        (sub_extent P A (:K N)))))
+
+  (RULE &cand_tile_division_axis_split1
+    (input (:P *P_))
+    (axis_elem (:A *A2_))
+    (axis_of (:D *D_m1) (:A A2_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *Pi_))
+    (relative (:Base Pi_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &cand_tile_division_parts_held
+    (input *P)
+    (sub_extent P *A (:K *N)))
+
+  (RULE &cand_tile_division_axis
+    (OR ((input *P)
+         (sub_extent P (:A *Key_a) (:K *N))
+         (axis_elem *A)
+         (OR ((!= A Key_a))
+             ((NOT (&cand_tile_division_parts_held (:A Key_a) N))))
+         (&cand_tile_division_axis_split1 (:P_ P) (:A2_ A) (:Pi_ *P_inner) (:X_m1_ *X_m1))
+         (relative (:Base P_inner) (:X P_inner) (:X_rel *P_outer)))
+        ((input P)
+         (sub_extent P (:A Key_a) (:K N))
+         (input (:P *P2))
+         (sub_extent (:P P2) (:A Key_a) (:K N))
+         (&cand_tile_division_sides.division (:key (:A Key_a) N) (:A Key_a) N *K (:G 0))
+         (axis_of *D (:A Key_a))
+         (opposite D (:Opp *O))
+         (margin (:B P) D (:K *T))
+         (margin (:B P) (:D O) (:K *T2))
+         (divide T (:Side K) (:Gap 0) (:Part *I) (:Remainder *R))
+         (divide (:T T2) (:Side K) (:Gap 0) (:Part *I2) (:Remainder *R2))
+         (opposite D (:Opp *O_m1))
+         (edge_inset D (:K I) (:B *B1_m2))
+         (edge_inset (:D O_m1) (:K I2) (:B *B2_m3))
+         (compose (:A B1_m2) (:B B2_m3) (:C P_outer))
+         (opposite D (:Opp *O_m4))
+         (edge_inset D (:K R) (:B *B1_m5))
+         (edge_inset (:D O_m4) (:K R2) (:B *B2_m6))
+         (compose (:A B1_m5) (:B B2_m6) (:C P_inner))
+         (frame_extent (:P P_inner) (:A Key_a) (:N K))
+         (= A Key_a))
+        ((input P)
+         (sub_extent P (:A Key_a) (:K N))
+         (input (:P *P22))
+         (sub_extent (:P P22) (:A Key_a) (:K N))
+         (frame_extent P (:A Key_a) (:N *K2))
+         (axis_of (:D *D2) (:A Key_a))
+         (opposite (:D D2) (:Opp *O2))
+         (margin (:B P) (:D D2) (:K *T3))
+         (margin (:B P) (:D O2) (:K *T22))
+         (divide (:T T3) (:Side K2) (:Gap 0) (:Part *I3) (:Remainder *R3))
+         (divide (:T T22) (:Side K2) (:Gap 0) (:Part *I22) (:Remainder *R22))
+         (opposite (:D D2) (:Opp *O_m12))
+         (edge_inset (:D D2) (:K I3) (:B *B1_m22))
+         (edge_inset (:D O_m12) (:K I22) (:B *B2_m32))
+         (compose (:A B1_m22) (:B B2_m32) (:C P_outer))
+         (opposite (:D D2) (:Opp *O_m42))
+         (edge_inset (:D D2) (:K R3) (:B *B1_m52))
+         (edge_inset (:D O_m42) (:K R22) (:B *B2_m62))
+         (compose (:A B1_m52) (:B B2_m62) (:C P_inner))
+         (frame_extent (:P P_inner) (:A Key_a) (:N K2))
+         (frame_extent (:P P_outer) (:A Key_a) N)
+         (= A Key_a))))
+
+  (RULE &cand_tile_division_tile
+    (&cand_tile_division_axis (:Key_a *A) *N *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
+    (perp (:A A1) *A2)
+    (&cand_tile_division_axis (:Key_a A) N P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
+    (compose (:A Po1) (:B Po2) (:C *P_outer))
+    (compose (:A Pi1) (:B Pi2) (:C *P_inner)))
+
+  (RULE &cand_tile
+    (&cand_tile_division_tile *A *N *P (:P_outer *Pan) (:P_inner *P_intile)))
+
+  ;; The colors a candidate's panel holds.
+  (INIT &palette Cardinality
+    (key ((&cand_tile ^A ^N *P ^Pan)
+          (input P *Col))
+      (member ((:m Col))
+        (&cand_tile A N *P Pan)
+        (input P *Col))))
+
+  ;; The candidate's frame: its plainest panel.
+  (INIT &plainest Order
+    (key ((&palette.size (:key ^A ^N *Pan) (:N *S)))
+      (member ((:t (:V Pan) S))
+        (&palette.size (:key A N *Pan) (:N *S)))
+      (score ((:t (:V Pan) S) S)
+        (&palette.size (:key A N *Pan) (:N *S)))))
+
+  (RULE &cand_tpl_pan
+    (&plainest.minimal (:key *A *N) (:t (:V *Pan))))
+
+  (RULE &cand_tpl
+    (&cand_tile *A *N *P *Pan *P_intile)
+    (input P *Col)
+    (&cand_tpl_pan A N Pan))
+
+  (INIT &miss Cardinality
+    (key ((OR ((&cand_tile ^A ^N *P *P_intile)
+               (input P *Col)
+               (&cand_tpl A N P_intile (:Col *Col2))
+               (!= Col Col2))
+              ((&cand_tile A N (:Pan *P_tile))
+               (&cand_tpl_pan A N *Pan)
+               (!= P_tile Pan))))
+      (member ((:m P))
+        (&cand_tile A N *P *P_intile)
+        (input P *Col)
+        (&cand_tpl A N P_intile (:Col *Col2))
+        (!= Col Col2))
+      (domain ()
+        (&cand_tile A N (:Pan *P_tile))
+        (&cand_tpl_pan A N *Pan)
+        (!= P_tile Pan))))
+
+  ;; The split its frame explains best.
+  (INIT &fewest Order
+    (member ((:t A N S))
+      (&miss.size (:key *A *N) (:N *S)))
+    (score ((:t A N S) S)
+      (&miss.size (:key *A *N) (:N *S))))
+
+  (RULE &tpl_layout
+    (&fewest.minimal (:t *A *N)))
+
+  (RULE &tile
+    (&tpl_layout *A *N)
+    (&cand_tile A N *P (:Pan *P_tile) *P_intile))
+
+  (RULE &tpl_pan
+    (&tpl_layout *A *N)
+    (&cand_tpl_pan A N *Pan))
+
+  (RULE &stage_panel
+    (&tile (:P_tile *Pan))
+    (NOT (&tpl_pan Pan)))
+
+  (RULE &stage_cell
+    (&stage_panel *Pan)
+    (&tile *P (:P_tile Pan) *P_intile)
+    (input P *Col))
+
+  (RULE &tpl
+    (&tpl_layout *A *N)
+    (&cand_tpl A N *P_intile *Col))
+
+  (RULE &content
+    (&stage_cell *Pan (:P_intile *P) *Col)
+    (&tpl (:P_intile P) (:Col *Col2))
+    (!= Col Col2))
+
+  (INIT &figure Quotient
+    (edge ((:a (:Key Pan) P) (:b (:Key Pan) (:P P3)))
+      (OR ((&content *Pan *P)
+           (&figure_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&content Pan (:P P3)))
+          ((&content Pan P)
+           (= P3 P)))))
+
+  (RULE &figure_component
+    (&figure.class (:a *Key *P) *Id))
+
+  (RULE &time_dir
+    (&tpl_layout *A)
+    (axis_of *D A)
+    (&tpl_pan *Pan)
+    (margin (:B Pan) D (:K 0)))
+
+  (RULE &growth_axis
+    (&tpl_layout *A)
+    (perp A (:A2 *G)))
+
+  (RULE &succ_stage
+    (&stage_panel *Pan)
+    (&time_dir *D)
+    (step_offset D (:V *V_m1))
+    (compose (:A Pan) (:B V_m1) (:C *Pan2))
+    (&stage_panel (:Pan Pan2)))
+
+  (RULE &fig_cell
+    (&figure_component (:Key *Pan) *P (:Id *F))
+    (&content Pan P *Col))
+
+  (INIT &fbox BoundingBox
+    (key ((&figure_component (:Key ^Pan) *P (:Id ^F)))
+      (cell (P)
+        (&figure_component (:Key Pan) *P (:Id F)))))
+
+  (RULE &succ_fig
+    (&succ_stage *Pan *Pan2)
+    (&figure_component (:Key Pan) *P (:Id *F))
+    (&figure_component (:Key Pan2) P (:Id *F2)))
+
+  (RULE &lineage_source
+    (&figure_component (:Key *Pan) (:Id *F))
+    (NOT (&succ_stage (:Pan2 Pan))))
+
+  ;; Each figure of the first stage followed from stage to stage.
+  (INIT &lineage Propagation
+    (key ((&lineage_source ^Pan ^F)))
+    (edge ((:a (:Pan Pan3) (:F F3)) (:b (:Pan Pan2) (:F F2)))
+      (&succ_fig (:Pan *Pan3) (:F *F3) *Pan2 *F2)))
+
+  ;; The figure's step over the stages.
+  (INIT &step Singleton
+    (key ((&lineage.reached (:key ^Pan ^F) (:n (:Pan *Pan3) (:F *F3)))
+          (&succ_fig (:Pan Pan3) (:F F3) *Pan2 *F2)
+          (&fbox.box (:key (:Pan Pan3) (:F F3)) *B)
+          (&fbox.box (:key (:Pan Pan2) (:F F2)) (:B *B2))
+          (relative (:Base B) (:X B2) (:X_rel *V)))
+      (member ((:v V))
+        (&lineage.reached (:n (:Pan *Pan3) (:F *F3)))
+        (&succ_fig (:Pan Pan3) (:F F3) *Pan2 *F2)
+        (&fbox.box (:key (:Pan Pan3) (:F F3)) *B)
+        (&fbox.box (:key (:Pan Pan2) (:F F2)) (:B *B2))
+        (relative (:Base B) (:X B2) (:X_rel *V)))))
+
+  (RULE &fig_box
+    (&lineage.reached (:key (:Pan *Root_pan) (:F *Root_f)) (:n *Pan *F))
+    (&step.value (:key (:Pan Root_pan) (:F Root_f)) (:v *V))
+    (&growth_axis *G)
+    (axis_of (:D *D_m2) (:A G))
+    (opposite (:D D_m2) (:Opp *O_m3))
+    (margin (:B V) (:D D_m2) (:K *K1_m4))
+    (margin (:B V) (:D O_m3) (:K *K2_m5))
+    (opposite (:D D_m2) (:Opp *O_m6))
+    (edge_inset (:D D_m2) (:K K1_m4) (:B *B1_m7))
+    (edge_inset (:D O_m6) (:K K2_m5) (:B *B2_m8))
+    (compose (:A B1_m7) (:B B2_m8) (:C *Along_m1))
+    (relative (:Base Along_m1) (:X V) (:X_rel 0))
+    (&fbox.box (:key Pan F) *B)
+    (compose (:A B) (:B V) (:C *B2)))
+
+  (RULE &outward
+    (&fig_box *Pan *F *V)
+    (&growth_axis *G)
+    (axis_of *D (:A G))
+    (margin (:B V) D (:K *M))
+    (< M 0))
+
+  (RULE &end_shift
+    (&fig_box *Pan *F *B *B2)
+    (&growth_axis *G)
+    (corner_dir (:C *Dg) (:A G) *D)
+    (&tpl (:P_intile *P))
+    (ALL ((&fig_box (:Pan *Panm) (:F *Fm) B (:B2 *B2m))
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (ALL ((corner_dir (:C Dg) (:A *Gm) (:D *Dm))
+          (&fig_box (:Pan *Panmm) (:F *Fmm) B (:B2 *B2mm))
+          (corner_dir (:C Dg) (:D *D_m1m))
+          (margin (:B P) (:D D_m1m) (:K *K1_m2))
+          (margin B (:D D_m1m) (:K *K2_m3)))
+         ((= K1_m2 K2_m3)))
+    (&tpl (:P_intile *Q))
+    (ALL ((&fig_box (:Pan *Panmmm) (:F *Fmmm) (:B *Bm) B2)
+          (dir_elem (:D *D_m1mm))
+          (relative (:Base B2) (:X Q) (:X_rel *R_m2m))
+          (margin (:B R_m2m) (:D D_m1mm) (:K *K_m3m)))
+         ((>= K_m3m 0)))
+    (ALL ((corner_dir (:C Dg) (:A *Gmm) (:D *Dmm))
+          (&fig_box (:Pan *Panmmmm) (:F *Fmmmm) (:B *Bmm) B2)
+          (corner_dir (:C Dg) (:D *D_m1mmm))
+          (margin (:B Q) (:D D_m1mmm) (:K *K1_m2m))
+          (margin (:B B2) (:D D_m1mmm) (:K *K2_m3m)))
+         ((= K1_m2m K2_m3m)))
+    (relative (:Base P) (:X Q) (:X_rel *T)))
+
+  (RULE &travel
+    (&end_shift *Pan *F *D *T)
+    (OR ((&fig_cell Pan F *P *Col)
+         (compose (:A P) (:B T) (:C *Q)))
+        ((&fig_box Pan F *B *B2)
+         (compose (:A B) (:B T) (:C *B_t))
+         (&tpl (:P_intile Q))
+         (relative (:Base B2) (:X Q) (:X_rel *R_m1))
+         (axis_of (:D *D1_m2) (:A *A1_m3))
+         (opposite (:D D1_m2) (:Opp *O1_m4))
+         (perp (:A A1_m3) (:A2 *A2_m5))
+         (axis_of (:D *D2_m6) (:A A2_m5))
+         (opposite (:D D2_m6) (:Opp *O2_m7))
+         (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+         (>= K1_m8 0)
+         (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+         (>= K2_m9 0)
+         (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+         (>= K3_m10 0)
+         (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+         (>= K4_m11 0)
+         (dir_elem (:D *D_m12))
+         (relative (:Base B_t) (:X Q) (:X_rel *R_m13))
+         (margin (:B R_m13) (:D D_m12) (:K *K_m14))
+         (< K_m14 0)
+         (opposite D (:Opp *D2))
+         (&growth_axis *G)
+         (&tpl (:P_intile *E))
+         (relative (:Base B_t) (:X E) (:X_rel *R_m15))
+         (axis_of (:D *D1_m16) (:A *A1_m17))
+         (opposite (:D D1_m16) (:Opp *O1_m18))
+         (perp (:A A1_m17) (:A2 *A2_m19))
+         (axis_of (:D *D2_m20) (:A A2_m19))
+         (opposite (:D D2_m20) (:Opp *O2_m21))
+         (margin (:B R_m15) (:D D1_m16) (:K *K1_m22))
+         (>= K1_m22 0)
+         (margin (:B R_m15) (:D O1_m18) (:K *K2_m23))
+         (>= K2_m23 0)
+         (margin (:B R_m15) (:D D2_m20) (:K *K3_m24))
+         (>= K3_m24 0)
+         (margin (:B R_m15) (:D O2_m21) (:K *K4_m25))
+         (>= K4_m25 0)
+         (margin (:B E) (:D D2) (:K *K_m26))
+         (margin (:B B_t) (:D D2) (:K K_m26))
+         (perp (:A G) (:A2 *A2_m27))
+         (axis_of (:D *D_m28) (:A A2_m27))
+         (margin (:B Q) (:D D_m28) (:K *K_m29))
+         (margin (:B E) (:D D_m28) (:K K_m29))
+         (relative (:Base T) (:X E) (:X_rel P))
+         (&fig_cell Pan F P Col))))
+
+  ;; What a color turns into over a step, read where consecutive stages both
+  ;; hold a figure. A color the steps disagree about keeps itself.
+  (INIT &stage_turn Singleton
+    (key ((&succ_stage *Pan *Pan2)
+          (&content Pan *P ^Col)
+          (&content (:Pan Pan2) P (:Col *Col2)))
+      (member ((:v Col2))
+        (&succ_stage *Pan *Pan2)
+        (&content Pan *P Col)
+        (&content (:Pan Pan2) P (:Col *Col2)))))
+
+  (RULE &recolor
+    (OR ((&stage_turn.value (:key *Col) (:v *Col2)))
+        ((&content Col)
+         (NOT (&stage_turn.value (:key Col)))
+         (= Col2 Col))))
+
+  ;; A color of one stage, as another stage shows it: turned once per step
+  ;; between them.
+  (INIT &phase Propagation
+    (key ((&content (:Pan ^J) (:Col ^C))))
+    (edge ((:a (:Pan K1) (:Col C1)) (:b (:Pan K) (:Col C2)))
+      (OR ((&succ_stage (:Pan *K1) (:Pan2 *K))
+           (&recolor (:Col *C1) (:Col2 *C2)))
+          ((&succ_stage (:Pan K) (:Pan2 K1))
+           (&recolor (:Col C2) (:Col2 C1))))))
+
+  ;; The color the stages other than the one after pan show at a cell, turned
+  ;; to the stage after pan.
+  (INIT &recall Singleton
+    (key ((&content (:Pan *J) (:P ^Q) (:Col *C))
+          (&stage_panel ^Pan)
+          (NOT (&succ_stage Pan (:Pan2 J)))
+          (&phase.reached (:key J C) (:n Pan (:Col *C1)))
+          (&recolor (:Col C1) *Col2))
+      (member ((:v Col2))
+        (&content (:Pan *J) (:P Q) (:Col *C))
+        (&stage_panel Pan)
+        (NOT (&succ_stage Pan (:Pan2 J)))
+        (&phase.reached (:key J C) (:n Pan (:Col *C1)))
+        (&recolor (:Col C1) *Col2))))
+
+  ;; A stage and the stage after it.
+  (DEMONSTRATED &catalog
+    (value ((:o Pan) (:i P_intile) (:v Col))
+      (&stage_cell *Pan *P_intile *Col))
+    (demonstration ((:o Pan) (:o2 Pan2))
+      (&succ_stage *Pan *Pan2))
+    (DEMO_RULE $Stretch "Each figure travels with one end while its other end runs out ahead, and the lines it gains repeat the line at the leading end."
+      (RULE &rule_paint
+        (&travel *Pan *F *D (:Q *P) *Col)
+        (opposite D (:Opp *D2))
+        (&outward Pan F (:D D2)))
+
+      (RULE &prediction
+        (&rule_paint *Pan)
+        (OR ((&rule_paint Pan (:P *P_intile) *Col))
+            ((&tpl P_intile Col)
+             (NOT (&rule_paint Pan (:P P_intile)))))))
+    (DEMO_RULE $Push "Each figure travels with the end that runs out, and the lines it gains behind repeat the line at the trailing end."
+      (RULE &rule_paint
+        (&travel *Pan *F *D (:Q *P) *Col)
+        (&outward Pan F D)
+        (opposite D (:Opp *D2))
+        (NOT (&outward Pan F (:D D2))))
+
+      (RULE &prediction
+        (&rule_paint *Pan)
+        (OR ((&rule_paint Pan (:P *P_intile) *Col))
+            ((&tpl P_intile Col)
+             (NOT (&rule_paint Pan (:P P_intile)))))))
+    (DEMO_RULE $Stay "Each figure keeps its place while its colors turn. A cell it gains takes the color the other stages show there, turned to the stage, and a cell no other stage shows repeats the cell one step of its end back."
+      (RULE &gained
+        (&fig_box *Pan *F *B *B2)
+        (&tpl (:P_intile *Q))
+        (ALL ((&fig_box (:Pan *Panm) (:F *Fm) (:B *Bm) B2)
+              (dir_elem (:D *D_m1m))
+              (relative (:Base B2) (:X Q) (:X_rel *R_m2m))
+              (margin (:B R_m2m) (:D D_m1m) (:K *K_m3m)))
+             ((>= K_m3m 0)))
+        (dir_elem (:D *D_m1))
+        (relative (:Base B) (:X Q) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+        (< K_m3 0))
+
+      (RULE &rule_paint
+        (&fig_box *Pan *F *B)
+        (OR ((&fig_cell Pan F *P (:Col *Col0))
+             (&recolor (:Col Col0) (:Col2 *Col)))
+            ((&gained Pan F (:Q P))
+             (&recall.value (:key Pan (:Q P)) (:v Col)))
+            ((&gained Pan F (:Q P))
+             (NOT (&recall.value (:key Pan (:Q P))))
+             (&outward Pan F *D)
+             (&end_shift Pan F D *T)
+             (relative (:Base T) (:X P) (:X_rel *P2))
+             (relative (:Base B) (:X P2) (:X_rel *R_m1))
+             (axis_of (:D *D1_m2) (:A *A1_m3))
+             (opposite (:D D1_m2) (:Opp *O1_m4))
+             (perp (:A A1_m3) (:A2 *A2_m5))
+             (axis_of (:D *D2_m6) (:A A2_m5))
+             (opposite (:D D2_m6) (:Opp *O2_m7))
+             (margin (:B R_m1) (:D D1_m2) (:K *K1_m8))
+             (>= K1_m8 0)
+             (margin (:B R_m1) (:D O1_m4) (:K *K2_m9))
+             (>= K2_m9 0)
+             (margin (:B R_m1) (:D D2_m6) (:K *K3_m10))
+             (>= K3_m10 0)
+             (margin (:B R_m1) (:D O2_m7) (:K *K4_m11))
+             (>= K4_m11 0)
+             (&fig_cell Pan F (:P P2) (:Col Col0))
+             (&recolor (:Col Col0) (:Col2 Col)))))
+
+      (RULE &prediction
+        (&rule_paint *Pan)
+        (OR ((&rule_paint Pan (:P *P_intile) *Col))
+            ((&tpl P_intile Col)
+             (NOT (&rule_paint Pan (:P P_intile)))))))))
+
+(RULE &output
+  (&succ_stage (:Pan2 *Pan))
+  (NOT (&succ_stage Pan))
+  (&catalog (:o Pan) (:i *P) (:v *Col)))

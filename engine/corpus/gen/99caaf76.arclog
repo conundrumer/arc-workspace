@@ -1,0 +1,74 @@
+;; 99caaf76
+
+(DET &bg DominantColor)
+
+(INIT &comps Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+  (step ((:Delta S))
+    (diag_dir_elem *D)
+    (step_offset D (:V *S))))
+
+(RULE &arrow
+  (&comps.component *P *Id))
+
+(INIT &edge Boundary
+  (key ((&arrow ^Id *P))
+    (cell (P)
+      (&arrow Id *P))))
+
+(RULE &center
+  (&arrow *Id *P)
+  (NOT (&edge.boundary (:key Id) P)))
+
+(RULE &arm
+  (&center *Id (:P *C))
+  (dir_elem *D)
+  (neighbor (:P C) D (:Q *P)))
+
+(RULE &fletching
+  (&arrow *Id *P)
+  (NOT (&center Id P))
+  (NOT (&arm Id P)))
+
+;; the flight: the arrow travels away from its fletching until its leading arm
+;; comes to rest on the grid edge
+(INIT &flight Distance
+  (key ((&fletching ^Id))
+    (source_distance (K)
+      (&arrow Id *P)
+      (dir_elem *D)
+      (ALL ((&fletching Id (:P *Pm))
+            (&center Id (:P *C)))
+           ((nearer D (:P C) (:Q Pm))))
+      (margin (:B P) D *K))))
+
+(RULE &flight_dir
+  (&fletching (:Id *Key))
+  (dir_elem *D)
+  (ALL ((&fletching (:Id Key) *P)
+        (&center (:Id Key) (:P *C)))
+       ((nearer D (:P C) (:Q P)))))
+
+(RULE &turned
+  (OR ((&arm *Id *D *P)
+       (opposite D (:Opp *D2))
+       (&arm Id (:D D2) (:P *P_src))
+       (input (:P P_src) *Col))
+      ((&arrow Id P)
+       (NOT (&arm Id P))
+       (input P Col))))
+
+(RULE &landing
+  (&turned *Id (:P *P2) *Col)
+  (&flight.distance (:key Id) *K)
+  (&flight_dir (:Key Id) *D)
+  (jump_offset D K *V)
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&landing *P *Col))
+      ((input P)
+       (NOT (&landing P))
+       (&bg (:C Col)))))

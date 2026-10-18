@@ -1,0 +1,99 @@
+;; 0a938d79
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &on_axis_edge
+  (&mark *P)
+  (dir_elem *D)
+  (axis_of D *A)
+  (margin (:B P) D (:K 0)))
+
+(RULE &step_axis
+  (axis_elem (:A *A3))
+  (ALL ((&mark *P))
+       ((&on_axis_edge P (:A A3))))
+  (perp (:A A3) (:A2 *A)))
+
+(RULE &cell_line_split1
+  (input (:P *P_))
+  (&step_axis (:A *A2_))
+  (axis_of (:D *D_m1) (:A A2_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *P_line_))
+  (relative (:Base P_line_) (:X P_) (:X_rel *X_m1_)))
+
+(DET &origin DiagDirDomain)
+
+(RULE &cell_line
+  (input *P)
+  (&step_axis (:A *A2))
+  (&cell_line_split1 (:P_ P) (:A2_ A2) (:P_line_ *P_line) (:X_m1_ *X_m1)))
+
+(RULE &ahead
+  (&cell_line (:P_line *P))
+  (&cell_line (:P_line *Q))
+  (&step_axis (:A *A2))
+  (axis_of *D (:A A2))
+  (relative (:Base P) (:X Q) (:X_rel *V))
+  (opposite D (:Opp *O))
+  (margin (:B V) (:D O) *K)
+  (>= K 0))
+
+(RULE &mark_line
+  (&mark (:P *P2) *Col)
+  (&cell_line (:P P2) (:P_line *P)))
+
+(RULE &lead
+  (&mark_line *P)
+  (&mark_line (:P *Q))
+  (&origin (:D *Dg))
+  (&step_axis (:A *A2))
+  (corner_dir (:C Dg) (:A A2) *D)
+  (dir_elem D)
+  (margin (:B P) D (:K *K1_m1))
+  (margin (:B Q) D (:K *K2_m2))
+  (< K1_m1 K2_m2))
+
+(ALTS $choice "which mark leads" $Corner
+  (ALT $Margin
+    (RULE &lead
+      (&mark_line *P)
+      (&mark_line (:P *Q))
+      (&step_axis (:A *A2))
+      (dir_elem *D)
+      (axis_of D (:A A2))
+      (margin (:B P) D *K)
+      (opposite D (:Opp *O_m1))
+      (margin (:B Q) D (:K *K2))
+      (margin (:B Q) (:D O_m1) (:K *K2_opp))
+      (< K K2)
+      (< K K2_opp))))
+
+(RULE &step
+  (&lead *P)
+  (&mark_line (:P *Q))
+  (!= Q P)
+  (&ahead P *D Q *K)
+  (> K 0))
+
+(RULE &line
+  (&mark_line (:P *M) *Col)
+  (&step *D *K)
+  (&ahead (:P M) D (:Q *P) (:K *T))
+  (divide T (:Side K) (:Gap K) (:Remainder 0)))
+
+(RULE &output
+  (OR ((&cell_line *P *P_line)
+       (&line (:P P_line) *Col))
+      ((&cell_line P (:P_line *P_line2))
+       (NOT (&line (:P P_line2)))
+       (&bg (:C Col)))))

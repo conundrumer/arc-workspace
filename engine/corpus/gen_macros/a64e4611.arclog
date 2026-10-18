@@ -1,0 +1,1038 @@
+;; a64e4611
+
+(INPUT noise-field "the grid is &background with cells of one other color scattered over it"
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT band "one empty rectangle, all &background, is larger in area than every other empty rectangle. It reaches at least one grid edge."
+
+  (RULE &blank
+    (input *P *Col)
+    (&background (:C Col)))
+
+  (RULE &open_run_dir
+    (&blank)
+    (dir_elem *D))
+
+  (RULE &open_run_node
+    (&blank *P))
+
+  (RULE &open_run_source
+    (&blank *P))
+
+  ;; The runs of blank cells.
+  (INIT &open_run Distance
+    (key ((&open_run_source (:P ^O))
+          (&open_run_dir ^D))
+      (edge ((:a A2) (:b Q))
+        (OR ((&open_run_source (:P O))
+             (&open_run_dir D)
+             (axis_of D *A)
+             (sub_extent (:P O) A *K)
+             (dir8_opposite D (:D2 *O_m2))
+             (edge_inset (:D O_m2) K (:B *B1_m3))
+             (edge_inset D K (:B *I_m5))
+             (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+             (compose (:A O) (:B V_m1) (:C *A2))
+             (&open_run_node (:P A2))
+             (step_offset D (:V *V_m6))
+             (compose (:A A2) (:B V_m6) (:C *Q))
+             (&open_run_node (:P Q)))
+            ((&open_run_source (:P O))
+             (&open_run_dir D)
+             (step_offset D (:V *V_m12))
+             (compose (:A O) (:B V_m12) (:C Q))
+             (&open_run_node (:P Q))
+             (= A2 O))
+            ((&open_run_source (:P O))
+             (&open_run_dir D)
+             (diag_dir_elem D)
+             (axis_elem (:A *A3))
+             (sub_extent (:P O) (:A A3) (:K *K2))
+             (dir8_opposite D (:D2 *O_m22))
+             (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+             (edge_inset D (:K K2) (:B *I_m52))
+             (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+             (compose (:A O) (:B V_m13) (:C A2))
+             (&open_run_node (:P A2))
+             (step_offset D (:V *V_m62))
+             (compose (:A A2) (:B V_m62) (:C Q))
+             (&open_run_node (:P Q)))))
+      (source ((:n O))
+        (&open_run_source (:P O))
+        (&open_run_dir D))))
+
+  (RULE &open_run_ray
+    (&open_run.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+  (RULE &open_run_end
+    (&open_run_ray *P *D *K *Origin)
+    (step_offset D (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *Q))
+    (NOT (&open_run_ray (:P Q) D Origin)))
+
+  (RULE &base_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &stretch_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &empty_line_split1
+    (input (:P *P_))
+    (perp *A (:A2 *A2_))
+    (axis_of (:D *D_m1) (:A A2_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+    (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &inked_line_split1
+    (&ink (:P *P_))
+    (perp *A (:A2 *A2_))
+    (axis_of (:D *D_m1) (:A A2_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *L_))
+    (relative (:Base L_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &inked_line
+    (&ink *P)
+    (perp *A *A2)
+    (&inked_line_split1 (:P_ P) (:A2_ A2) (:L_ *L) (:X_m1_ *X_m1)))
+
+  (RULE &empty_line
+    (input *P)
+    (perp *A *A2)
+    (&empty_line_split1 (:P_ P) (:A2_ A2) (:L_ *L) (:X_m1_ *X_m1))
+    (NOT (&inked_line A L)))
+
+  ;; The span across A from the first empty line to the last.
+  (INIT &span BoundingBox
+    (key ((&empty_line (:A ^L) *P))
+      (cell (P)
+        (&empty_line (:A L) *P))))
+
+  (RULE &middle
+    (&span.box (:key (:L *A)) (:B *S))
+    (input *P)
+    (ALL ((&span.box (:key (:L *Am)) (:B S))
+          (dir_elem (:D *D_m1))
+          (relative (:Base S) (:X P) (:X_rel *R_m2m))
+          (margin (:B R_m2m) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base S) (:X P) (:X_rel *P_rel))
+    (perp A *A2)
+    (axis_of *D (:A A2))
+    (opposite D (:Opp *O))
+    (margin (:B P_rel) D (:K *N))
+    (OR ((margin (:B P_rel) (:D O) (:K N)))
+        ((step_offset D (:V *V_m1))
+         (compose (:A P) (:B V_m1) (:C *Q))
+         (relative (:Base S) (:X Q) (:X_rel *R_m2))
+         (axis_of (:D *D1_m3) (:A *A1_m4))
+         (opposite (:D D1_m3) (:Opp *O1_m5))
+         (perp (:A A1_m4) (:A2 *A2_m6))
+         (axis_of (:D *D2_m7) (:A A2_m6))
+         (opposite (:D D2_m7) (:Opp *O2_m8))
+         (margin (:B R_m2) (:D D1_m3) (:K *K1_m9))
+         (>= K1_m9 0)
+         (margin (:B R_m2) (:D O1_m5) (:K *K2_m10))
+         (>= K2_m10 0)
+         (margin (:B R_m2) (:D D2_m7) (:K *K3_m11))
+         (>= K3_m11 0)
+         (margin (:B R_m2) (:D O2_m8) (:K *K4_m12))
+         (>= K4_m12 0)
+         (relative (:Base S) (:X Q) (:X_rel *Q_rel))
+         (margin (:B Q_rel) (:D O) (:K N)))))
+
+  (RULE &broken_split1
+    (&middle (:A *A_) (:P *P_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *R_))
+    (relative (:Base R_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &broken
+    (&middle *A *P)
+    (&ink P)
+    (&broken_split1 (:P_ P) (:A_ A) (:R_ *R) (:X_m1_ *X_m1)))
+
+  (RULE &mid_split1
+    (&middle (:A *A_) (:P *P_))
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *R_))
+    (relative (:Base R_) (:X P_) (:X_rel *X_m1_)))
+
+  (RULE &mid
+    (&middle *A *P)
+    (&mid_split1 (:P_ P) (:A_ A) (:R_ *R) (:X_m1_ *X_m1))
+    (NOT (&broken A R)))
+
+  ;; The fewest lines that share a run width for that width to bound the band. The pairs leave it open.
+  ;; TODO no-det-plan: &quorum: the plan gives no verdict
+  (DET &quorum (ONE))
+
+  (RULE &mid_end
+    (&mid *A *R *P)
+    (perp A *A2)
+    (axis_of *D (:A A2))
+    (&open_run_end (:P *E1) D (:Origin P)))
+
+  (INIT &run_width Cardinality
+    (key ((&mid ^A ^R *P)
+          (OR ((perp A *A2)
+               (axis_of *D (:A A2))
+               (&open_run_ray (:P *Q) D (:K *N) (:Origin P))
+               (> N 0))
+              ((= Q P))))
+      (member ((:m Q))
+        (&mid A R *P)
+        (OR ((perp A *A2)
+             (axis_of *D (:A A2))
+             (&open_run_ray (:P *Q) D (:K *N) (:Origin P))
+             (> N 0))
+            ((= Q P))))))
+
+  (INIT &width_count Cardinality
+    (key ((&run_width.size (:key (:A ^L) *R) (:N ^W)))
+      (member ((:m R))
+        (&run_width.size (:key (:A L) *R) (:N W)))))
+
+  ;; The narrowest width that the quorum of lines shares.
+  (INIT &shared Order
+    (key ((&width_count.size (:key (:L ^A) *W) *N)
+          (&quorum (:N ^Q))
+          (>= N Q))
+      (member ((:t W))
+        (&width_count.size (:key (:L A) *W) *N)
+        (&quorum (:N Q))
+        (>= N Q))
+      (score ((:t W) (:S W))
+        (&width_count.size (:key (:L A) *W) *N)
+        (&quorum (:N Q))
+        (>= N Q))))
+
+  (RULE &wide_run
+    (OR ((&run_width.size (:key *A *R) (:N *W))
+         (&shared.minimal (:key A *Q) (:t *W0))
+         (>= W W0))
+        ((&run_width.size (:key A R))
+         (&quorum (:N Q))
+         (NOT (&shared.minimal (:key A Q))))))
+
+  ;; The cross-section: the intersection of the wide runs.
+  (INIT &cut Order
+    (key ((&wide_run (:A ^L) ^Q *R)
+          (&mid_end (:A L) R ^D (:E1 *E))
+          (margin (:B E) D (:K *N)))
+      (member ((:t N))
+        (&wide_run (:A L) Q *R)
+        (&mid_end (:A L) R D (:E1 *E))
+        (margin (:B E) D (:K *N)))
+      (score ((:t N) (:S N))
+        (&wide_run (:A L) Q *R)
+        (&mid_end (:A L) R D (:E1 *E))
+        (margin (:B E) D (:K *N)))))
+
+  (RULE &short_run
+    (&mid_end *A *R *D (:E1 *E))
+    (&cut.maximal (:key (:L A) *Q D) (:t *N))
+    (margin (:B E) D (:K *N2))
+    (> N2 N))
+
+  (INIT &stretch Quotient
+    (edge ((:a A Q P) (:b A Q (:P P3)))
+      (OR ((&mid *A *R *P)
+           (&quorum (:N *Q))
+           (NOT (&short_run A Q R))
+           (&stretch_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&mid A (:R *R2) (:P P3))
+           (NOT (&short_run A Q (:R R2))))
+          ((&mid A (:R *R3) P)
+           (&quorum (:N Q))
+           (NOT (&short_run A Q (:R R3)))
+           (= P3 P)))))
+
+  (RULE &stretch_component
+    (&stretch.class (:a *A *Q *P) *Id))
+
+  (RULE &reach
+    (&open_run_end (:P *E) *D (:Origin *P))
+    (dir_elem D)
+    (margin (:B E) D *K))
+
+  ;; The empty rectangle on P's line across D that reaches as far toward D as
+  ;; P's run: the cells of the line whose runs reach at least that far, joined
+  ;; to P along the line.
+  (INIT &base Propagation
+    (key ((OR ((&reach ^D ^P)
+               (&reach D P *K)
+               (margin (:B P) D (:K *K_m1))
+               (margin (:B P) D (:K K_m1))
+               (&reach D P (:K *K2))
+               (<= K2 K))
+              ((&reach D P K)
+               (margin (:B P) D (:K K_m1))
+               (&reach D (:P *Q) (:K K2))
+               (margin (:B Q) D (:K K_m1))
+               (<= K2 K)
+               (&base_steps (:Delta *S))
+               (compose (:A Q) (:B S) (:C *Q2))
+               (&reach D P (:K *K3))
+               (margin (:B P) D (:K *K_m2))
+               (margin (:B Q2) D (:K K_m2))
+               (&reach D (:P Q2) (:K *K22))
+               (<= K22 K3))))
+      (source ((:n P))
+        (&reach D P)
+        (&reach D P *K)
+        (margin (:B P) D (:K *K_m1))
+        (margin (:B P) D (:K K_m1))
+        (&reach D P (:K *K2))
+        (<= K2 K))
+      (edge ((:a Q) (:b Q2))
+        (&reach D P *K)
+        (margin (:B P) D (:K *K_m1))
+        (&reach D (:P *Q) (:K *K2))
+        (margin (:B Q) D (:K K_m1))
+        (<= K2 K)
+        (&base_steps (:Delta *S))
+        (compose (:A Q) (:B S) (:C *Q2))
+        (&reach D P (:K *K3))
+        (margin (:B P) D (:K *K_m2))
+        (margin (:B Q2) D (:K K_m2))
+        (&reach D (:P Q2) (:K *K22))
+        (<= K22 K3))))
+
+  ;; The rectangle's box: its base run and the end of P's run.
+  (INIT &hull BoundingBox
+    (key ((OR ((&base.reached (:key ^D ^P) (:n *Q)))
+              ((&open_run_end (:P *E) D (:Origin P))
+               (dir_elem D))))
+      (cell ((:P Q))
+        (OR ((&base.reached (:n *Q)))
+            ((&open_run_end (:P Q) D (:Origin P))
+             (dir_elem D))))))
+
+  (INIT &area Cardinality
+    (key ((&hull.box ^B))
+      (member ((:m P))
+        (&blank *P)
+        (ALL ((dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0))))))
+
+  (RULE &item_split1
+    (&stretch_component (:A *A_) *Q (:P *P_) *Id)
+    (axis_of (:D *D_m1) (:A A_))
+    (opposite (:D D_m1) (:Opp *O_m2))
+    (margin (:B P_) (:D D_m1) (:K *K1_m3))
+    (margin (:B P_) (:D O_m2) (:K *K2_m4))
+    (opposite (:D D_m1) (:Opp *O_m1))
+    (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *R_))
+    (relative (:Base R_) (:X P_) (:X_rel *X_m1_)))
+
+  (INIT &short_side Order
+    (key ((&hull.box (:key *P) ^B)
+          (axis_elem (:A *A_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (frame_extent (:P R_m2) (:A A_m1) *N))
+      (member ((:t N))
+        (&hull.box (:key *P) B)
+        (axis_elem (:A *A_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (frame_extent (:P R_m2) (:A A_m1) *N))
+      (score ((:t N) (:S N))
+        (&hull.box (:key *P) B)
+        (axis_elem (:A *A_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (frame_extent (:P R_m2) (:A A_m1) *N))))
+
+  (INIT &by_side Order
+    (member ((:t (:V B) (:S N)))
+      (&short_side.minimal (:key *B) (:t *N)))
+    (score ((:t (:V B) (:S N)) (:S N))
+      (&short_side.minimal (:key *B) (:t *N))))
+
+  (INIT &side_area Order
+    (member ((:t (:V B) (:S N)))
+      (&by_side.maximal (:t (:V *B)))
+      (&area.size (:key B) *N))
+    (score ((:t (:V B) (:S N)) (:S N))
+      (&by_side.maximal (:t (:V *B)))
+      (&area.size (:key B) *N)))
+
+  (INIT &stretch_len Cardinality
+    (key ((&stretch_component ^A ^Q *P ^Id)
+          (&item_split1 (:P_ P) (:A_ A) (:R_ *R) (:X_m1_ *X_m1)))
+      (member ((:m R))
+        (&stretch_component A Q *P Id)
+        (&item_split1 (:P_ P) (:A_ A) (:R_ *R) (:X_m1_ *X_m1)))))
+
+  (INIT &longest Order
+    (key ((&stretch_len.size (:key ^A ^Q *Id) *N))
+      (member ((:t (:V Id) (:S N)))
+        (&stretch_len.size (:key A Q *Id) *N))
+      (score ((:t (:V Id) (:S N)) (:S N))
+        (&stretch_len.size (:key A Q *Id) *N))))
+
+  (INIT &stretch_box BoundingBox
+    (key ((&stretch_component (:A ^T_a) (:Q ^T_q) *P ^Id))
+      (cell (P)
+        (&stretch_component (:A T_a) (:Q T_q) *P Id)))))
+
+(INPUT channels "straight empty channels, each at least three cells wide, run from the band to a grid edge")
+
+(OUTPUT band-fill "the band's cells become &fill, except a margin &margin cells wide along each side of the band that is not on the grid edge"
+
+  (DET &margin DivisorRatio)
+
+  (DET &fill AnyOutNewColor))
+
+(OUTPUT channel-fill "a cell becomes &fill when no cell within &margin of it on either axis is off &background, and a straight line of such cells runs from it to a grid edge in one direction and to a &fill cell of the band in the other. The line stops at the band's &fill cells."
+
+  (RULE &arm_group_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &edge_cell
+    (input (:P *E1))
+    (dir_elem *D)
+    (margin (:B E1) D (:K 0)))
+
+  (RULE &open_line
+    (&edge_cell *D *E1)
+    (opposite D (:Opp *D2))
+    (OR ((&open_run_ray *P (:D D2) (:K *N_2) (:Origin E1))
+         (> N_2 0)
+         (margin (:B P) D *K))
+        ((&open_run_end (:P *F) (:D D2) (:Origin E1))
+         (step_offset (:D D2) (:V *V_m1))
+         (compose (:A F) (:B V_m1) (:C *N))
+         (input (:P N))
+         (margin (:B N) D K))))
+
+  (INIT &arm_group Quotient
+    (edge ((:a D K (:P E)) (:b D K P))
+      (OR ((&open_line *D *K (:E1 *E))
+           (&arm_group_steps (:Delta *S))
+           (compose (:A E) (:B S) (:C *P))
+           (&open_line D K (:E1 P)))
+          ((&open_line D K (:E1 E))
+           (= P E)))))
+
+  (RULE &arm_group_component
+    (&arm_group.class (:a *D *K *P) *Id))
+
+  (INIT &group_box BoundingBox
+    (key ((&arm_group_component ^D ^K (:P *E) ^Id))
+      (cell ((:P E))
+        (&arm_group_component D K (:P *E) Id))))
+
+  (RULE &group_end
+    (&arm_group_component *D *K (:P *E1) *Id)
+    (&group_box.box (:key D K Id) *B)
+    (axis_of D (:A *A_m1))
+    (perp (:A A_m1) (:A2 *A2_m2))
+    (axis_of (:D *D_p) (:A A2_m2))
+    (ALL ((&arm_group_component (:D *Dm) (:K *Km) (:P E1) (:Id *Idm))
+          (&group_box.box (:key (:D Dm) (:K Km) (:Id Idm)) B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X E1) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B) (:X E1) (:X_rel *E_rel))
+    (margin (:B E_rel) (:D D_p) (:K *K_p))
+    (&margin (:K *M))
+    (< K_p M))
+
+  (RULE &arm_line
+    (&arm_group_component *D *K (:P *E_mid) *Id)
+    (NOT (&group_end D K Id (:E1 E_mid)))
+    (&arm_group_component D K (:P *E1) Id)
+    (ALL ((&group_end (:D *G_d) (:K *G_k) (:Id *G_id) E1 *D_p)
+          (&group_box.box (:key (:D G_d) (:K G_k) (:Id G_id)) *B))
+         ((margin B (:D D_p) (:K 0)))))
+
+  (INIT &arm_span BoundingBox
+    (key ((&arm_line ^D ^K ^Id (:E1 *E)))
+      (cell ((:P E))
+        (&arm_line D K Id (:E1 *E)))))
+
+  (RULE &line_end
+    (&arm_group_component *D *K (:P *E) *Id)
+    (opposite D (:Opp *D2))
+    (&open_run_end (:P *F) (:D D2) (:Origin E))
+    (margin (:B F) D (:K *N)))
+
+  ;; How far from the edge every line of the group stays blank.
+  (INIT &arm_depth Order
+    (key ((&line_end ^D ^K ^Id *N))
+      (member ((:t N))
+        (&line_end D K Id *N))
+      (score ((:t N) (:S N))
+        (&line_end D K Id *N))))
+
+  (RULE &rect_far
+    (&arm_depth.minimal (:key *D (:K *G_k) *Id) (:t *N_d))
+    (&line_end D (:K G_k) Id *F (:N N_d))
+    (opposite D (:Opp *D2))
+    (OR ((NOT (margin (:B F) (:D D2) (:K 0)))
+         (&margin (:K *M))
+         (dir8_opposite D (:D2 *O_m2))
+         (edge_inset (:D O_m2) (:K M) (:B *B1_m3))
+         (edge_inset D (:K M) (:B *I_m5))
+         (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+         (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+         (compose (:A F) (:B V_m1) (:C *F2)))
+        ((margin (:B F) (:D D2) (:K 0))
+         (= F2 F)))
+    (margin (:B F2) (:D D2) *K))
+
+  (RULE &arm_reach
+    ;; The margin past any line across the group's side, as the far side of a
+    ;; piece's green lies the margin past the piece's far line.
+    (OR ((&arm_span.box (:key *D *K *Id))
+         (opposite D (:Opp *D2))
+         (axis_of D (:A *A_m1))
+         (perp (:A A_m1) (:A2 *A2_m2))
+         (axis_of (:D *D_p) (:A A2_m2))
+         (&edge_cell (:D D_p) (:E1 *E))
+         (&margin (:K *M))
+         (dir8_opposite D (:D2 *O_m4))
+         (edge_inset (:D O_m4) (:K M) (:B *B1_m5))
+         (edge_inset D (:K M) (:B *I_m7))
+         (relative (:Base I_m7) (:X 0) (:X_rel *B2_m6))
+         (compose (:A B1_m5) (:B B2_m6) (:C *V_m3))
+         (compose (:A E) (:B V_m3) (:C *E2))
+         (margin (:B E2) (:D D2) (:K *N)))
+        ((&rect_far D (:G_k K) Id (:K N)))))
+
+  (RULE &arm_edge
+    (OR ((&arm_reach (:D *Key_d) (:K *Key_k) *Id *N)
+         (&arm_span.box (:key (:D Key_d) (:K Key_k) Id) (:B *B_s))
+         (OR ((axis_of (:D Key_d) (:A *A_m1))
+              (perp (:A A_m1) (:A2 *A2_m2))
+              (axis_of *D (:A A2_m2)))
+             ((= D Key_d)))
+         (margin (:B B_s) D *K))
+        ((&arm_reach (:D Key_d) (:K Key_k) Id N)
+         (opposite (:D Key_d) (:Opp D))
+         (= K N))))
+
+  (RULE &arm_axis
+    (axis_of (:D *D3) *A)
+    (opposite (:D D3) (:Opp *D2))
+    (&arm_edge (:Key_d *D) (:Key_k *K) *Id *N (:D D3) (:K *K1))
+    (&arm_edge (:Key_d D) (:Key_k K) Id N (:D D2) (:K *K2))
+    (opposite (:D D3) (:Opp *O_m1))
+    (edge_inset (:D D3) (:K K1) (:B *B1_m2))
+    (edge_inset (:D O_m1) (:K K2) (:B *B2_m3))
+    (compose (:A B1_m2) (:B B2_m3) (:C *B)))
+
+  (RULE &arm
+    (&arm_axis *D *K *Id *N *A (:B *B1))
+    (perp A *A2)
+    (&arm_axis D K Id N (:A A2) (:B *B2))
+    (compose (:A B1) (:B B2) (:C *B)))
+
+  (RULE &channel_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (INIT &by_area Order
+    (member ((:t (:V B) (:S N)))
+      (&area.size (:key *B) *N))
+    (score ((:t (:V B) (:S N)) (:S N))
+      (&area.size (:key *B) *N)))
+
+  (RULE &band_box
+    (&by_area.maximal (:t (:V *B)))
+    (ALL ((&by_area.maximal (:t (:V *B1)))
+          (&by_area.maximal (:t (:V *B2))))
+         ((= B1 B2))))
+
+  (RULE &shape
+    (OR ((&band_box *B))
+        ((&arm B))))
+
+  (RULE &across
+    (&shape *B)
+    (dir_elem *D))
+
+  (RULE &kept_side
+    (&band_box *B)
+    (dir_elem *D)
+    (NOT (margin B D (:K 0))))
+
+  (RULE &band_rim
+    (&kept_side *B *D)
+    (input *P)
+    (ALL ((&kept_side B (:D *Dm))
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (margin (:B P_rel) D *K)
+    (&margin (:K *M))
+    (< K M))
+
+  (RULE &band_green
+    (&band_box *B)
+    (input *P)
+    (ALL ((&band_box B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (NOT (&band_rim B P)))
+
+  (RULE &lit
+    (&band_green))
+
+  (RULE &lane_run_dir
+    (&lit)
+    (dir_elem *D))
+
+  (RULE &crowded_inside1
+    (&ink (:P *Q_))
+    (input *P)
+    (&margin (:K *M))
+    (axis_of (:D *D1_m2) (:A *A1_m3))
+    (perp (:A A1_m3) (:A2 *A2_m4))
+    (axis_of (:D *D2_m5) (:A A2_m4))
+    (opposite (:D D1_m2) (:Opp *O_m8))
+    (edge_inset (:D D1_m2) (:K M) (:B *B1_m9))
+    (edge_inset (:D O_m8) (:K M) (:B *B2_m10))
+    (compose (:A B1_m9) (:B B2_m10) (:C *B1_m6))
+    (opposite (:D D2_m5) (:Opp *O_m11))
+    (edge_inset (:D D2_m5) (:K M) (:B *B1_m12))
+    (edge_inset (:D O_m11) (:K M) (:B *B2_m13))
+    (compose (:A B1_m12) (:B B2_m13) (:C *B2_m7))
+    (compose (:A B1_m6) (:B B2_m7) (:C *I_m1))
+    (relative (:Base I_m1) (:X 0) (:X_rel *O))
+    (compose (:A P) (:B O) (:C *B_))
+    (dir_elem (:D *D_m1))
+    (relative (:Base B_) (:X Q_) (:X_rel *R_m2))
+    (margin (:B R_m2) (:D D_m1) (:K *K_m3))
+    (< K_m3 0))
+
+  (RULE &crowded_uniform_outset1
+    (&margin (:K *M_))
+    (axis_of (:D *D1_m1) (:A *A1_m2))
+    (perp (:A A1_m2) (:A2 *A2_m3))
+    (axis_of (:D *D2_m4) (:A A2_m3))
+    (opposite (:D D1_m1) (:Opp *O_m7))
+    (edge_inset (:D D1_m1) (:K M_) (:B *B1_m8))
+    (edge_inset (:D O_m7) (:K M_) (:B *B2_m9))
+    (compose (:A B1_m8) (:B B2_m9) (:C *B1_m5))
+    (opposite (:D D2_m4) (:Opp *O_m10))
+    (edge_inset (:D D2_m4) (:K M_) (:B *B1_m11))
+    (edge_inset (:D O_m10) (:K M_) (:B *B2_m12))
+    (compose (:A B1_m11) (:B B2_m12) (:C *B2_m6))
+    (compose (:A B1_m5) (:B B2_m6) (:C *I_m1))
+    (relative (:Base I_m1) (:X 0) (:X_rel *O_)))
+
+  (RULE &lane_run_node
+    (&lit)
+    (input *P)
+    (ALL ((&ink (:P *Q))
+          (&margin (:K *M))
+          (&crowded_uniform_outset1 (:M_ M) (:O_ *O))
+          (compose (:A P) (:B O) (:C *B)))
+         ((&crowded_inside1 (:Q_ Q) (:B_ B))))
+    (NOT (&band_green P)))
+
+  (RULE &lane_run_node_ray
+    (&lane_run_node *P))
+
+  (RULE &lane_run_source
+    (&lane_run_node *P))
+
+  ;; The runs of clear cells outside the band's green.
+  (INIT &lane_run Distance
+    (key ((&lane_run_source (:P ^O))
+          (&lane_run_dir ^D))
+      (edge ((:a A2) (:b Q))
+        (OR ((&lane_run_source (:P O))
+             (&lane_run_dir D)
+             (axis_of D *A)
+             (sub_extent (:P O) A *K)
+             (dir8_opposite D (:D2 *O_m2))
+             (edge_inset (:D O_m2) K (:B *B1_m3))
+             (edge_inset D K (:B *I_m5))
+             (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+             (compose (:A O) (:B V_m1) (:C *A2))
+             (&lane_run_node_ray (:P A2))
+             (step_offset D (:V *V_m6))
+             (compose (:A A2) (:B V_m6) (:C *Q))
+             (&lane_run_node_ray (:P Q)))
+            ((&lane_run_source (:P O))
+             (&lane_run_dir D)
+             (step_offset D (:V *V_m12))
+             (compose (:A O) (:B V_m12) (:C Q))
+             (&lane_run_node_ray (:P Q))
+             (= A2 O))
+            ((&lane_run_source (:P O))
+             (&lane_run_dir D)
+             (diag_dir_elem D)
+             (axis_elem (:A *A3))
+             (sub_extent (:P O) (:A A3) (:K *K2))
+             (dir8_opposite D (:D2 *O_m22))
+             (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+             (edge_inset D (:K K2) (:B *I_m52))
+             (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+             (compose (:A O) (:B V_m13) (:C A2))
+             (&lane_run_node_ray (:P A2))
+             (step_offset D (:V *V_m62))
+             (compose (:A A2) (:B V_m62) (:C Q))
+             (&lane_run_node_ray (:P Q)))))
+      (source ((:n O))
+        (&lane_run_source (:P O))
+        (&lane_run_dir D))))
+
+  (RULE &lane_run_ray
+    (&lane_run.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+  (RULE &lane_run_end
+    (&lane_run_ray *P *D *K *Origin)
+    (step_offset D (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *Q))
+    (NOT (&lane_run_ray (:P Q) D Origin)))
+
+  (RULE &lane
+    (&lane_run_end (:P *E) *D (:Origin *P))
+    (margin (:B E) D (:K 0))
+    (opposite D (:Opp *D2))
+    (&lane_run_end (:P *F) (:D D2) (:Origin P))
+    (step_offset (:D D2) (:V *V_m1))
+    (compose (:A F) (:B V_m1) (:C *G))
+    (&band_green *B (:P G))
+    (&across B D))
+
+  (RULE &channel_lane
+    (&lane *D *P))
+
+  ;; Lanes toward one edge whose edge cells touch form one channel.
+  (INIT &channel Quotient
+    (edge ((:a D (:P E)) (:b D P))
+      (OR ((&channel_lane *D (:P *E))
+           (margin (:B E) D (:K 0))
+           (&channel_steps (:Delta *S))
+           (compose (:A E) (:B S) (:C *P))
+           (&channel_lane D P)
+           (margin (:B P) D (:K 0)))
+          ((&channel_lane D (:P E))
+           (margin (:B E) D (:K 0))
+           (= P E)))))
+
+  (RULE &channel_component
+    (&channel.class (:a (:D *Key) *P) *Id))
+
+  (RULE &long_axis
+    (&shape *B)
+    (input *P)
+    (corner_dist P (:K 0))
+    (axis_elem *A)
+    (relative (:Base B) (:X P) (:X_rel *R_m1))
+    (frame_extent (:P R_m1) A *N)
+    (perp A *A2)
+    (axis_elem (:A A2))
+    (relative (:Base B) (:X P) (:X_rel *R_m2))
+    (frame_extent (:P R_m2) (:A A2) (:N *N2))
+    (> N N2))
+
+  (RULE &turns
+    (dir_elem *D)
+    (dir_elem (:D *D_q)))
+
+  ;; The lanes that lanes leave from: a cell whose line runs to edge D lies on
+  ;; a lane toward D when the cell behind it lies on a lane it may leave, or on
+  ;; a lane toward D.
+  (INIT &chain_lane Propagation
+    (source ((:n D P))
+      (&lane *D *P))
+    (edge ((:a (:D D_q) (:P Q)) (:b D P))
+      (&lane_run_end (:P *E) *D (:Origin *P))
+      (margin (:B E) D (:K 0))
+      (opposite D (:Opp *D2))
+      (step_offset (:D D2) (:V *V_m1))
+      (compose (:A P) (:B V_m1) (:C *Q))
+      (&lane_run_node (:P Q))
+      (OR ((&turns D *D_q))
+          ((= D_q D)))))
+
+  (RULE &cross
+    (OR ((&channel_component (:Key *D) *P *Id))
+        ((&channel_component (:Key D) (:P *E) Id)
+         (axis_of D (:A *A_m1))
+         (perp (:A A_m1) (:A2 *A2_m2))
+         (axis_of (:D *D_p) (:A A2_m2))
+         (step_offset (:D D_p) (:V *V_m3))
+         (compose (:A E) (:B V_m3) (:C P))
+         (input P))))
+
+  (RULE &cross_end
+    (&cross *D *Id (:P *Q))
+    (opposite D (:Opp *D2))
+    (&open_run_end (:P *F) (:D D2) (:Origin Q))
+    (margin (:B F) D (:K *N)))
+
+  ;; How far from the edge every line of the cross-section stays blank.
+  (INIT &depth Order
+    (key ((&cross_end ^D ^Id *N))
+      (member ((:t N))
+        (&cross_end D Id *N))
+      (score ((:t N) (:S N))
+        (&cross_end D Id *N))))
+
+  (INIT &chan_box BoundingBox
+    (key ((OR ((&cross ^D ^Id (:P *Q)))
+              ((&depth.minimal (:key D Id) (:t *N))
+               (&cross_end D Id *F N))))
+      (cell ((:P Q))
+        (OR ((&cross D Id (:P *Q)))
+            ((&depth.minimal (:t *N))
+             (&cross_end D Id (:F Q) N))))))
+
+  (RULE &arm_off
+    (&shape *B)
+    (margin B *D *K)
+    (NOT (margin B D (:K 0)))
+    (&across B D)
+    (&arm_span.box (:key D K *Id)))
+
+  ;; Through the far side of the piece's green.
+  (RULE &arm_far
+    (&arm_off *B *D *K *Id)
+    (opposite D (:Opp *D2))
+    (&margin (:K *M))
+    (dir8_opposite D (:D2 *O_m2))
+    (edge_inset (:D O_m2) (:K M) (:B *B1_m3))
+    (edge_inset D (:K M) (:B *I_m5))
+    (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+    (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+    (compose (:A B) (:B V_m1) (:C *B2))
+    (margin (:B B2) (:D D2) (:K *N)))
+
+  (RULE &track
+    (&band_box *B))
+
+  ;; The boxes reached from the band, each box sending off its arm.
+  (INIT &chain Propagation
+    (key ((&track (:B ^B0))))
+    (edge ((:a B) (:b B_arm))
+      (&arm_far *B (:D *G_d) (:K *G_k) (:Id *G_id) *N)
+      (&arm (:D G_d) (:K G_k) (:Id G_id) N (:B *B_arm))))
+
+  (RULE &needs_axis)
+
+  (RULE &unaligned
+    (&band_box *B)
+    (NOT (&long_axis B))
+    (&needs_axis)))
+
+(OUTPUT green "every large empty region of the field becomes &fill, except a margin &margin cells wide next to a cell off &background. No margin is kept at the grid edge."
+  (APPROXIMATED "the band and its channels become &fill, as band-fill and channel-fill state"))
+
+(OUTPUT keep "every other cell keeps its input color")
+
+(ALTS $bands "which empty rectangle is the band" $LargestArea
+  (ALT $WidestBand
+    (INPUT band "the band is the empty rectangle with the longest short side, and a tie goes to the larger area. Undefined on a remaining tie."
+      (RULE &band_box
+        (&side_area.maximal (:t (:V *B)))
+        (ALL ((&side_area.maximal (:t (:V *B1)))
+              (&side_area.maximal (:t (:V *B2))))
+             ((= B1 B2))))))
+  (ALT $TiedBands
+    (INPUT band "every empty rectangle of the largest area is a band"
+      (RULE &band_box
+        (&by_area.maximal (:t (:V *B))))))
+  (ALT $EmptyLineBands
+    (INPUT band "each axis with a line of &background cells across the whole grid has a band. On each line across that axis, take the run of &background cells through the middle of the span of those empty lines. The band's cross-section is the intersection of the runs at least as wide as the narrowest width that &quorum lines share, and its extent is each longest stretch of lines whose run spans that cross-section. With no empty line there is no band, and the output is the input."
+      (RULE &line_box_edge
+        (OR ((&longest.maximal (:key *A *Q) (:t (:V *Id)))
+             (&stretch_box.box (:key (:T_a A) (:T_q Q) Id) *B)
+             (axis_of *D A)
+             (margin B D *K))
+            ((&longest.maximal (:key A Q) (:t (:V Id)))
+             (perp A *A2)
+             (axis_of D (:A A2))
+             (&cut.maximal (:key (:L A) Q D) (:t K)))))
+
+      (RULE &line_box_axis
+        (axis_of *D *A)
+        (opposite D (:Opp *D2))
+        (&line_box_edge (:A *Key_a) *Q *Id D (:K *K1))
+        (&line_box_edge (:A Key_a) Q Id (:D D2) (:K *K2))
+        (opposite D (:Opp *O_m1))
+        (edge_inset D (:K K1) (:B *B1_m2))
+        (edge_inset (:D O_m1) (:K K2) (:B *B2_m3))
+        (compose (:A B1_m2) (:B B2_m3) (:C *B)))
+
+      (RULE &line_box
+        (&line_box_axis (:Key_a *A) *Q *Id (:A *A3) (:B *B1))
+        (perp (:A A3) *A2)
+        (&line_box_axis (:Key_a A) Q Id (:A A2) (:B *B2))
+        (compose (:A B1) (:B B2) (:C *B)))
+
+      (RULE &band_box
+        (&line_box *Q *B)))
+    (RULE &framed
+      (OR ()
+          ((&band_box))))))
+
+(ALTS $anchor "what a channel runs to" $BandAnchor
+  (ALT $ChannelChain
+    (OUTPUT channel-fill "a channel may also run to a channel's &fill cell, and it continues past a channel it crosses"
+      (RULE &channel_lane
+        (&chain_lane.reached (:n *D *P)))
+
+      (RULE &piece
+        (&band_box (:B *B0))
+        (&track (:B B0))
+        (&chain.reached (:key B0) (:n *B))))
+    (ALT $SideEmpty
+      (OUTPUT channel-fill "on each side of the band off the grid edge, a line across that side is an arm line when every cell between the grid edge and the band's side is &background. A run of arm lines with a line past the margin at each end is an arm. The arm's lines, less the margin at each end off the grid edge, become &fill from the grid edge through the far side of the band's &fill cells, over cells of any color."
+        (RULE &piece
+          (OR ((&band_box (:B *B0))
+               (&track (:B B0))
+               (&chain.reached (:key B0) (:n *B)))
+              ((&band_box B))))))))
+
+(ALTS $extent "where a channel's green ends" $StopAtBand
+  (ALT $ChannelRect
+    (OUTPUT channel-fill "a channel is a run of touching lines toward one edge. It covers the rectangle of its lines and one line on each side, from the grid edge on while every cell is &background, less the margin at each side off the grid edge."
+      (RULE &chan_rim
+        (&chan_box.box (:key *D *Id) *B)
+        (input *P)
+        (dir_elem (:D *D2))
+        (NOT (margin B (:D D2) (:K 0)))
+        (ALL ((&chan_box.box (:key (:D *Cm_d) (:Id *Cm_id)) B)
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))
+        (relative (:Base B) (:X P) (:X_rel *P_rel))
+        (margin (:B P_rel) (:D D2) *K)
+        (&margin (:K *M))
+        (< K M))
+
+      (RULE &arm_far
+        (&arm_off *B *D *K *Id)
+        (&rect_far D (:G_k K) Id (:K *N))))
+    (RULE &channel_green
+      (&chan_box.box (:key *D *Id) *B)
+      (input *P)
+      (ALL ((&chan_box.box (:key (:D *Dm) (:Id *Idm)) B)
+            (dir_elem (:D *D_m1))
+            (relative (:Base B) (:X P) (:X_rel *R_m2))
+            (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+           ((>= K_m3 0)))
+      (NOT (&chan_rim D Id P)))))
+
+(ALTS $heading "the directions a channel may leave its band in" $AnyHeading
+  (ALT $PerpendicularChannels
+    (OUTPUT channel-fill "a channel leaves only across the long axis of the piece it runs to. Undefined on a square band."
+      (RULE &across
+        (&long_axis *B *A)
+        (perp A *A2)
+        (axis_of *D (:A A2)))
+
+      (RULE &turns
+        (axis_of *D *A)
+        (axis_of (:D *D_q) (:A *A2))
+        (perp A A2)))
+    (RULE &unready
+      (OR ((NOT (&framed)))
+          ((&unaligned))))))
+
+(ALTS $line "what makes a channel" $ClearLine
+  (ALT $SideEmpty
+    (OUTPUT channel-fill "on each side of the band off the grid edge, a line across that side is an arm line when every cell between the grid edge and the band's side is &background. A run of arm lines with a line past the margin at each end is an arm. The arm's lines, less the margin at each end off the grid edge, become &fill from the grid edge through the far side of the band's &fill cells, over cells of any color."
+      (RULE &piece
+        (&band_box *B))
+
+      (RULE &arm_cell
+        (&piece *B)
+        (&arm_far B (:D *G_d) (:K *G_k) (:Id *G_id) *N)
+        (&arm (:D G_d) (:K G_k) (:Id G_id) N (:B *B_arm))
+        (input *P)
+        (ALL ((&arm (:D *Gm_d) (:K *Gm_k) (:Id *Gm_id) (:N *Nm) (:B B_arm))
+              (dir_elem (:D *D_m1))
+              (relative (:Base B_arm) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((>= K_m3 0)))))
+    (RULE &green
+      (OR ((&arm_cell *P))
+          ((&band_green P))))))
+
+(ALTS $edge "the band's margin on the grid edge" $OpenEdge
+  (ALT $BandEdgeMargin
+    (OUTPUT band-fill "the margin is also kept along each long side of the band on the grid edge. Undefined on a square band."
+      (RULE &kept_side
+        (OR ((&band_box *B)
+             (&long_axis B *A)
+             (perp A *A2)
+             (axis_of *D (:A A2)))
+            ((&band_box B)
+             (dir_elem D)
+             (NOT (margin B D (:K 0)))))))
+    (RULE &unready
+      (OR ((NOT (&framed)))
+          ((&unaligned))))))
+
+(RULE &channel_green
+  (&channel_lane *P))
+
+(RULE &green
+  (OR ((&band_green *P))
+      ((&channel_green P))))
+
+(RULE &framed
+  (&band_box))
+
+(RULE &unready
+  (NOT (&framed)))
+
+(RULE &output
+  (NOT (&unready))
+  (input *P (:Col *Col_in))
+  (IF ((&green P))
+      ((&fill (:C *Col)))
+      ((= Col Col_in))))

@@ -1,0 +1,149 @@
+;; 0becf7df
+
+(DET &mapping
+  (ex_input *E *P (:Col *C1))
+  (ex_output E P (:Col *C2))
+  (!= C1 C2))
+
+(DET &key_cell
+  (ex_input *E *P *Col)
+  (ex_output E P Col)
+  (&mapping E (:C1 Col)))
+
+(DET &corner
+  (&key_cell *P)
+  (corner_dist P (:Diag *D) (:K 0)))
+
+;; Distances from the corner's edges that key cells take, per axis.
+(INIT &key_dist Cardinality
+  (key ((&key_cell *P)
+        (&corner (:D *Diag))
+        (corner_dir (:C Diag) ^A (:D *D1_m2))
+        (perp A (:A2 *A2_m4))
+        (corner_dir (:C Diag) (:A A2_m4) (:D *D2_m3))
+        (margin (:B P) (:D D1_m2) *K)
+        (margin (:B P) (:D D2_m3) (:K *K2_m1)))
+    (member ((:m K))
+      (&key_cell *P)
+      (&corner (:D *Diag))
+      (corner_dir (:C Diag) A (:D *D1_m2))
+      (perp A (:A2 *A2_m4))
+      (corner_dir (:C Diag) (:A A2_m4) (:D *D2_m3))
+      (margin (:B P) (:D D1_m2) *K)
+      (margin (:B P) (:D D2_m3) (:K *K2_m1)))))
+
+(DET &key_dim
+  (&key_dist.size (:key *A) *N))
+
+(RULE &key_cell2
+  (input *P)
+  (&corner (:D *Diag))
+  (corner_dir (:C Diag) *A (:D *D1_m1))
+  (perp A (:A2 *A2_m3))
+  (corner_dir (:C Diag) (:A A2_m3) (:D *D2_m2))
+  (margin (:B P) (:D D1_m1) (:K *K1))
+  (margin (:B P) (:D D2_m2) (:K *K2))
+  (&key_dim A (:N *N1))
+  (< K1 N1)
+  (perp A *A2)
+  (&key_dim (:A A2) (:N *N2))
+  (< K2 N2))
+
+(DET &grid_partner
+  (&key_cell *E (:P *P1))
+  (ex_input E (:P P1) (:Col *C1))
+  (&key_cell E (:P *P2))
+  (ex_input E (:P P2) (:Col *C2))
+  (&mapping E C1 C2))
+
+(DET &axis
+  (&grid_partner *P1 *P2)
+  (axis_elem *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P1) (:D D_m2) (:K *K_m3))
+  (margin (:B P2) (:D D_m2) (:K K_m3)))
+
+;; Two key cells on one line along the pair axis pair up, in both orders.
+(RULE &mapping2
+  (&key_cell2 (:P *P1))
+  (input (:P P1) (:Col *C1))
+  (&key_cell2 (:P *P2))
+  (input (:P P2) (:Col *C2))
+  (!= P1 P2)
+  (&axis *A)
+  (perp A (:A2 *A2_m1))
+  (axis_of (:D *D_m2) (:A A2_m1))
+  (margin (:B P1) (:D D_m2) (:K *K_m3))
+  (margin (:B P2) (:D D_m2) (:K K_m3)))
+
+(ALTS $choice "how the key's cells pair up" $Line
+  (ALT $Map
+    (INIT &frame Frame
+      (extent (A N)
+        (&key_dim *A *N)))
+
+    (DET &key_pos_corner_anchor1
+      (&corner (:D *Diag_))
+      (&key_cell (:P *P_grid_))
+      (&frame.cell (:P *P_key_))
+      (corner_dir (:C Diag_) (:D *D_m1))
+      (margin (:B P_grid_) (:D D_m1) (:K *K1_m2))
+      (margin (:B P_key_) (:D D_m1) (:K *K2_m3))
+      (!= K1_m2 K2_m3))
+
+    (DET &key_pos
+      (&key_cell (:P *P_grid))
+      (&corner (:D *Diag))
+      (&frame.cell (:P *P_key))
+      (NOT (&key_pos_corner_anchor1 (:Diag_ Diag) (:P_grid_ P_grid) (:P_key_ P_key))))
+
+    (DET &partner
+      (&grid_partner (:P1 *P_grid1) (:P2 *P_grid2))
+      (&key_pos (:P_grid P_grid1) (:P_key *P1))
+      (&key_pos (:P_grid P_grid2) (:P_key *P2)))
+
+    (INIT &ident Quotient
+      (equivalent ((:a P1) (:b P1))
+        (&partner *P1)))
+
+    (DET &dst
+      (&partner *P1 (:P2 *P))
+      (&ident.class (:a P1) *Id))
+
+    (DET &src
+      (&partner (:P1 *P))
+      (&ident.class (:a P) *Id))
+
+    (RULE &pair
+      (&src (:P *P1) *Id)
+      (&dst (:P *P2) Id))
+
+    ;; The stored pairing, anchored at the key's corner.
+    (RULE &mapping2
+      (&corner (:D *Diag))
+      (&pair (:P1 *I1) (:P2 *I2))
+      (input (:P *P1) (:Col *C1))
+      (ALL ((input (:P P1) (:Col *C1m))
+            (&pair (:P1 I1) (:P2 *I2m))
+            (corner_dir (:C Diag) (:D *D_m1))
+            (margin (:B P1) (:D D_m1) (:K *K1_m2))
+            (margin (:B I1) (:D D_m1) (:K *K2_m3)))
+           ((= K1_m2 K2_m3)))
+      (input (:P *P2) (:Col *C2))
+      (ALL ((input (:P P2) (:Col *C2m))
+            (&pair (:P1 *I1m) (:P2 I2))
+            (corner_dir (:C Diag) (:D *D_m1m))
+            (margin (:B P2) (:D D_m1m) (:K *K1_m2m))
+            (margin (:B I2) (:D D_m1m) (:K *K2_m3m)))
+           ((= K1_m2m K2_m3m))))))
+
+(RULE &output
+  (input *P (:Col *Col2))
+  (OR ((NOT (&key_cell2 P))
+       (&mapping2 (:C1 Col2) (:C2 *Col)))
+      ((&key_cell2 P)
+       (= Col Col2))
+      ((NOT (&key_cell2 P))
+       (NOT (&mapping2 (:C1 Col2)))
+       (= Col Col2))))

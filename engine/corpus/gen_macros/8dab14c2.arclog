@@ -1,0 +1,141 @@
+;; 8dab14c2
+
+(RULE &cross_dir
+  (dir_elem *D))
+
+(DET &shape RarestColor)
+
+(RULE &shape_cell
+  (input *P *Col)
+  (&shape (:C Col)))
+
+(DET &bg DominantColor)
+
+;; The shape's edge cells, with the direction they face.
+(INIT &edge Boundary
+  (cell (P)
+    (&shape_cell *P)))
+
+(RULE &dent
+  (input *P *Col)
+  (&bg (:C Col))
+  (dir_elem (:D *Opening))
+  (step_offset (:D Opening) (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *O))
+  (NOT (&shape_cell (:P O)))
+  (opposite (:D Opening) (:Opp *D_in))
+  (step_offset (:D D_in) (:V *V_m2))
+  (compose (:A P) (:B V_m2) (:C *B))
+  (&shape_cell (:P B))
+  (axis_of (:D Opening) (:A *A_m3))
+  (perp (:A A_m3) (:A2 *A2_m4))
+  (axis_of (:D *D1) (:A A2_m4))
+  (opposite (:D D1) (:Opp *D2))
+  (step_offset (:D D1) (:V *V_m5))
+  (compose (:A P) (:B V_m5) (:C *F1))
+  (&edge.exposed (:P F1) (:D Opening))
+  (step_offset (:D D2) (:V *V_m6))
+  (compose (:A P) (:B V_m6) (:C *F2))
+  (&edge.exposed (:P F2) (:D Opening)))
+
+(RULE &filled
+  (OR ((&shape_cell *P))
+      ((&dent P))))
+
+;; A bump touches the filled shape in one direction only: its root.
+(INIT &attach Singleton
+  (key ((&shape_cell ^P))
+    (member ((:v D))
+      (dir_elem *D)
+      (step_offset D (:V *V_m1))
+      (compose (:A P) (:B V_m1) (:C *Q))
+      (&filled (:P Q)))))
+
+(RULE &bump
+  (&attach.value (:key *P) (:v *Root)))
+
+(RULE &cross_node
+  (&filled *P)
+  (NOT (&bump P)))
+
+(RULE &cross_source
+  (&filled *P)
+  (NOT (&bump P)))
+
+;; An anomaly crosses the clean shape along its line, from where it enters
+;; the shape to the far edge.
+(INIT &cross Distance
+  (key ((&cross_source (:P ^O))
+        (&cross_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&cross_source (:P O))
+           (&cross_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&cross_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&cross_node (:P Q)))
+          ((&cross_source (:P O))
+           (&cross_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&cross_node (:P Q))
+           (= A2 O))
+          ((&cross_source (:P O))
+           (&cross_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&cross_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&cross_node (:P Q)))))
+    (source ((:n O))
+      (&cross_source (:P O))
+      (&cross_dir D))))
+
+(RULE &cross_ray
+  (&cross.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &cross_end
+  (&cross_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&cross_ray (:P Q) D Origin)))
+
+(RULE &taken
+  (&bump (:P *P2) (:Root *D))
+  (step_offset D (:V *V_m1))
+  (compose (:A P2) (:B V_m1) (:C *R))
+  (&cross_end *P D (:Origin R)))
+
+(RULE &added
+  (&dent (:P *P2) (:Opening *D_open))
+  (opposite (:D D_open) (:Opp *D))
+  (&cross_end (:P *Q) D (:Origin P2))
+  (step_offset D (:V *V_m1))
+  (compose (:A Q) (:B V_m1) (:C *P))
+  (input P))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&taken P)
+       (&bg (:C *Col)))
+      ((&added P)
+       (&shape (:C Col)))
+      ((NOT (&taken P))
+       (NOT (&added P))
+       (= Col C_in))))

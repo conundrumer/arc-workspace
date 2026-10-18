@@ -1,0 +1,145 @@
+;; 83302e8f
+
+(DET &bg ChangedColor)
+
+(INIT &line_color_count Cardinality
+  (key ((input *P ^Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:m P))
+      (input *P Col)
+      (axis_elem A)
+      (split P A (:Along L)))))
+
+;; A wall line is mostly one non-bg color.
+(INIT &line_color Order
+  (key ((&line_color_count.size (:key ^A ^L *Col)))
+    (member ((:t Col))
+      (&line_color_count.size (:key A L *Col)))
+    (score ((:t Col) (:S N))
+      (&line_color_count.size (:key A L *Col) *N))))
+
+(RULE &lattice_divider
+  (&line_color.maximal (:key *A *L) (:t *Col))
+  (NOT (&bg (:C Col))))
+
+(RULE &lattice_on_divider
+  (input *P)
+  (&lattice_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(DET &sealed AnyOutNewColor)
+
+(DET &leaky AnyOutNewColor)
+
+(RULE &gap
+  (&lattice_on_divider *P)
+  (input P *Col)
+  (&bg (:C Col)))
+
+(INIT &region Flood
+  (node (P)
+    (input *P *Col)
+    (&bg (:C Col)))
+  (source (P)
+    (&gap *P)))
+
+(ALTS $choice "which bg cells are leaky" $Flood
+  (ALT $Tile
+    (INIT &lattice_rank Order
+      (key ((OR ((&lattice_divider *A *L)
+                 (axis_of ^D A)
+                 (margin (:B L) D *K))
+                ((input *P)
+                 (dir_elem D)
+                 (margin (:B P) D K))))
+        (member ((:t K))
+          (&lattice_divider *A *L)
+          (axis_of D A)
+          (margin (:B L) D *K))
+        (score ((:t K) (:S K))
+          (OR ((&lattice_divider *A *L)
+               (axis_of D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (dir_elem D)
+               (margin (:B P) D K))))
+        (probe ((:t K))
+          (input *P)
+          (dir_elem D)
+          (margin (:B P) D *K))))
+
+    (RULE &lattice_part_idx
+      (input *P)
+      (axis_of *D *A)
+      (NOT (&lattice_on_divider P A))
+      (margin (:B P) D *K)
+      (&lattice_rank.rank (:key D) (:t K) (:R *N)))
+
+    (RULE &lattice_part_of
+      (axis_of *D *A)
+      (opposite D (:Opp *D2))
+      (&lattice_part_idx *P D (:N *N1))
+      (&lattice_part_idx P (:D D2) (:N *N2))
+      (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+    (RULE &lattice_tile_of
+      (&lattice_part_of *P *A (:P_part *P1))
+      (perp A *A2)
+      (&lattice_part_of P (:A A2) (:P_part *P2))
+      (compose (:A P1) (:B P2) (:C *P_tile)))
+
+    (RULE &leaky_tile
+      (&lattice_tile_of *P *P_tile)
+      (dir_elem *D)
+      (neighbor P D *Q)
+      (&gap (:P Q)))
+
+    (RULE &output
+      (OR ((input *P (:Col *C0))
+           (&bg (:C C0))
+           (OR ((&gap P)
+                (&leaky (:C *Col)))
+               ((&lattice_tile_of P *P_tile)
+                (IF ((&leaky_tile P_tile))
+                    ((&leaky (:C Col)))
+                    ((&sealed (:C Col)))))))
+          ;; Walls stay.
+          ((input P Col)
+           (NOT (&bg (:C Col)))))))
+  (ALT $Solid
+    (INIT &region_label Connectivity
+      (node (P)
+        (input *P *Col)
+        (&bg (:C Col))))
+
+    (INIT &bbox BoundingBox
+      (key ((&region_label.component *P ^Id))
+        (cell (P)
+          (&region_label.component *P Id))))
+
+    (RULE &irregular
+      (&bbox.box (:key *Id) *B)
+      (input *P)
+      (inside (:A P) B)
+      (NOT (&region_label.component P Id)))
+
+    (RULE &output
+      (OR ((&region_label.component *P *Id)
+           (IF ((&irregular Id))
+               ((&leaky (:C *Col)))
+               ((&sealed (:C Col)))))
+          ;; Walls stay.
+          ((input P Col)
+           (NOT (&bg (:C Col))))))))
+
+(RULE &output
+  ;; Walls stay.
+  (OR ((input *P *Col)
+       (NOT (&bg (:C Col))))
+      ((input P (:Col *C0))
+       (&bg (:C C0))
+       (IF ((&region.reached P))
+           ((&leaky (:C Col)))
+           ((&sealed (:C Col)))))))

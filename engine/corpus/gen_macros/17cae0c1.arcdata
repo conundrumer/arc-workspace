@@ -1,0 +1,26 @@
+;; 17cae0c1
+
+(param &bg Color (0))
+(param &tile_axis Axis (AXIS_H))
+(param &glyph_member (Ident Position)
+  (0 (grid
+    (1 1 1)
+    (1 _ 1)
+    (1 1 1)))
+  (1 (grid
+    (_ _ _)
+    (_ 1 _)
+    (_ _ _)))
+  (2 (grid
+    (_ _ 1)
+    (_ 1 _)
+    (1 _ _)))
+  (3 (grid
+    (1 1 1)
+    (_ _ _)
+    (_ _ _)))
+  (4 (grid
+    (_ _ _)
+    (_ _ _)
+    (1 1 1))))
+(param &glyph_color (Ident Color) (0 3) (1 4) (2 9) (3 6) (4 1))

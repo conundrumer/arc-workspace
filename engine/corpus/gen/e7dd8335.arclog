@@ -1,0 +1,53 @@
+;; e7dd8335
+
+(DET &bg DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(DET &dir DirDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&ink *P)))
+
+(RULE &framed
+  (&ink *P)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(ALTS $choice "what owns a half" $Whole
+  (ALT $Each
+    (INIT &comps Connectivity
+      (node (P)
+        (&ink *P))
+      (step ((:Delta S))
+        (diag_dir_elem *D)
+        (step_offset D (:V *S))))
+
+    (INIT &comp_box BoundingBox
+      (key ((&comps.component *P ^Id))
+        (cell (P)
+          (&comps.component *P Id))))
+
+    (RULE &framed
+      (&comps.component *P *Id)
+      (&comp_box.box (:key Id) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner)))))
+
+(RULE &half
+  (&framed *P *P_inner)
+  (&dir *D)
+  (dist_pair (:P P_inner) D *K *K2)
+  (< K K2))
+
+(RULE &output
+  (OR ((&half *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&half P)))))

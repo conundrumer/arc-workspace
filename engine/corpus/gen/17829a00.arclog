@@ -1,0 +1,68 @@
+;; 17829a00
+
+(DET &bg DominantColor)
+
+;; The axis the borders cap at both ends.
+(DET &axis AxisDomain)
+
+(RULE &border_cell
+  (&axis *A)
+  (axis_of *D A)
+  (input *P)
+  (margin (:B P) D (:K 0)))
+
+(RULE &inner_cell
+  (input *P)
+  (NOT (&border_cell P)))
+
+(INIT &obj Connectivity
+  (key ((&inner_cell *P)
+        (input P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (&inner_cell *P)
+      (input P Col)
+      (NOT (&bg (:C Col)))))
+  (step ((:Delta S))
+    (diag_dir_elem *D)
+    (step_offset D (:V *S))))
+
+(RULE &move_dir
+  (&obj.component (:key *Col) *Id)
+  (&border_cell *D *P)
+  (input P Col))
+
+;; Each object travels until it meets its border.
+(INIT &gravity Distance
+  (key ((OR ((&obj.component *P ^Id)
+             (&move_dir Id *D)
+             (margin (:B P) D *K))
+            ((&obj.component P Id)
+             (&move_dir Id D)
+             (&move_dir Id (:D *D2))
+             (&border_cell (:D D2) (:P *P2))
+             (gap D P (:Q P2) K))))
+    (source_distance (K)
+      (OR ((&obj.component *P Id)
+           (&move_dir Id *D)
+           (margin (:B P) D *K))
+          ((&obj.component (:P *P3) Id)
+           (&move_dir Id (:D *D3))
+           (&move_dir Id (:D *D2))
+           (&border_cell (:D D2) (:P *P2))
+           (gap (:D D3) (:P P3) (:Q P2) K))))))
+
+(RULE &landed
+  (&gravity.distance (:key *Id) *K)
+  (&move_dir Id *D)
+  (jump_offset D K *V)
+  (&obj.component (:key *Col) (:P *P3) Id)
+  (compose (:A P3) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&border_cell *P)
+       (input P *Col))
+      ((&landed P Col))
+      ((&inner_cell P)
+       (NOT (&landed P))
+       (&bg (:C Col)))))

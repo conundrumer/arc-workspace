@@ -1,0 +1,52 @@
+;; c3f564a4
+
+(DET &noise ChangedColor)
+
+(RULE &clean
+  (input *P *Col)
+  (NOT (&noise (:C Col))))
+
+(INIT &si Periods
+  (cell (P (:v Col))
+    (&clean *P *Col)))
+
+(ALTS $choice "how a noise cell finds its clean counterpart" $Shift
+  (ALT $Diag
+    (DET &diag DiagAxisDomain)
+
+    (RULE &output
+      (OR ((input *P (:Col *N))
+           (&noise (:C N))
+           (&diag (:Da *DA))
+           (diag_perp (:Da DA) (:Da2 *A2_m1))
+           (diag_axis_of (:D *D_m2) (:Da A2_m1))
+           (corner_dist P (:Diag D_m2) (:K *K_m3))
+           (&clean (:P *Q) *Col)
+           (corner_dist (:P Q) (:Diag D_m2) (:K K_m3)))
+          ;; Clean cells pass through under every case.
+          ((&clean P Col))))))
+
+(RULE &output
+  ;; Clean cells pass through under every case.
+  (OR ((&clean *P *Col))
+      ((input P (:Col *N))
+       (&noise (:C N))
+       (&clean (:P *P_2))
+       (axis_of (:D *D_m1) *A)
+       (sub_extent (:P P_2) A *K)
+       (dir8_opposite (:D D_m1) (:D2 *O_m2))
+       (edge_inset (:D O_m2) K (:B *B1_m3))
+       (edge_inset (:D D_m1) K (:B *I_m5))
+       (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+       (compose (:A B1_m3) (:B B2_m4) (:C *Delta))
+       (ALL ((&clean (:P *Pm))
+             (axis_of (:D *D_m2) A)
+             (sub_extent (:P Pm) A K)
+             (dir8_opposite (:D D_m2) (:D2 *O_m3))
+             (edge_inset (:D O_m3) K (:B *B1_m4))
+             (edge_inset (:D D_m2) K (:B *I_m6))
+             (relative (:Base I_m6) (:X 0) (:X_rel *B2_m5))
+             (compose (:A B1_m4) (:B B2_m5) (:C *V_m1)))
+            ((&si.period A K)))
+       (compose (:A P) (:B Delta) (:C *P2))
+       (&clean (:P P2) Col))))

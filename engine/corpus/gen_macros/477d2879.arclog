@@ -1,0 +1,95 @@
+;; 477d2879
+
+(RULE &part_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+;; The open ground the lines cut.
+(DET &bg DominantColor)
+
+;; The cutting lines.
+(DET &line ChangedColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&line (:C Col))))
+
+(RULE &part_node
+  (input *P (:Col *Key))
+  (NOT (&mark P)))
+
+;; The parts a mark names: connected runs of line, and connected areas of open
+;; ground.
+(INIT &part Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&part_node (:Key *Ky) *P)
+         (&part_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&part_node (:Key Ky) (:P P2)))
+        ((&part_node (:Key Ky) P)
+         (= P2 P)))))
+
+(RULE &part_component
+  (&part.class (:a *Key *P) *Id))
+
+(RULE &touches
+  (&mark *P)
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&part_component (:Key *K) (:P Q) (:Id *R)))
+
+(RULE &line_cell
+  (input *P *Col)
+  (&line (:C Col)))
+
+(RULE &line_nbr
+  (input *P)
+  (dir_elem *D)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (&line_cell (:P Q)))
+
+;; The line goes on through a cell with more than one line neighbor; at every
+;; other cell it ends.
+(INIT &run Singleton
+  (key ((&line_cell ^P))
+    (member ((:v Q))
+      (&line_nbr P *Q))))
+
+(RULE &run_nbr
+  (&mark *P)
+  (&line_nbr P *Q)
+  (&run.plural (:key (:P Q))))
+
+(RULE &on_line
+  (&mark *P)
+  (&line_nbr P)
+  (NOT (&run_nbr P)))
+
+(RULE &paint
+  (&mark *P *Col)
+  (&touches P *K *R)
+  (IF ((&on_line P))
+      ((&line (:C K)))
+      ((&bg (:C K)))))
+
+(ALTS $choice "which marks name lines" $Line
+  (ALT $Cover
+    (CHOOSE &pruning
+      (for ((&touches ^P))
+        (from (&touches P *K)))
+      (never
+        (&touches *P *K *R)
+        (&touches (:P *P2) K R)))
+
+    (RULE &paint
+      (&pruning *P *K)
+      (&touches P K *R)
+      (&mark P *Col))))
+
+(RULE &output
+  (OR ((&mark *P *Col))
+      ((&part_component P (:Id *R))
+       (&paint R Col))))

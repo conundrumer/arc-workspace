@@ -1,0 +1,41 @@
+;; 3de23699
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bbox BoundingBox
+  (key ((&ink *P ^Col))
+    (cell (P)
+      (&ink *P Col))))
+
+(RULE &hole
+  (&bbox.box (:key *Col) *B)
+  (input *P)
+  (interior (:A P) B))
+
+(RULE &mark
+  (&ink *Col)
+  (&ink (:Col *Col2))
+  (!= Col Col2)
+  (ALL ((&ink *P (:Col Col2)))
+       ((&hole Col P))))
+
+;; The box the output crops to.
+(INIT &hole_bbox BoundingBox
+  (cell (P)
+    (&mark *Col)
+    (&hole Col *P)))
+
+(RULE &output
+  (&mark (:Col *Col2))
+  (&hole (:Col Col2) (:P *P2))
+  (&hole_bbox.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (OR ((NOT (&ink (:P P2)))
+       (&bg (:C *Col)))
+      ((&ink (:P P2))
+       (= Col Col2))))

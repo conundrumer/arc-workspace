@@ -1,0 +1,6 @@
+;; 33b52de3
+
+(param &bg Color (0))
+(param &tile_col Color (5))
+(param &tile_dim number (3))
+(param &gap number (1))

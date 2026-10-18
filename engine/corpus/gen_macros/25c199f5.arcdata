@@ -1,0 +1,8 @@
+;; 25c199f5
+
+(param &bg Color (7))
+(param &divide_gap number (1))
+(param &order_corner DiagDir (DIAG_BL))
+(param &order_axis Axis (AXIS_H))
+(param &divisor number (3))
+(param &panel_size number (5))

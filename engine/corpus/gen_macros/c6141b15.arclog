@@ -1,0 +1,276 @@
+;; c6141b15
+
+(INPUT background "a field of &bg"
+
+  (INIT &field_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each input.
+  (INIT &field Order
+    (key ((&field_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&field_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&field_count.size (:key E *Col) *N))))
+
+  (DET &uneven
+    (&field.maximal (:t *Col))
+    (ex_input *E)
+    (NOT (&field.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&field.maximal (:t *C))
+    (NOT (&uneven (:Col C)))))
+
+(INPUT one-line "one straight run of cells of one color along a row, a column, or a diagonal, at least two cells long")
+
+(INPUT shape-copies "two or more identical copies of one shape in a second color, each one 8-connected object whose bounding box has odd extents, so that it has a center cell")
+
+(INPUT aligned-centers "each two shape centers lie on one row, column, or diagonal")
+
+(INPUT apart "the line and the copies are separate objects that do not touch, even at a corner")
+
+(OUTPUT stamps-at-line-ends "a copy of the shape, in the shape's color, sits with its center on each of the line's two end cells, drawn over any joining line")
+
+(OUTPUT lines-join-centers "a straight run of the line's color joins each two shape centers, along the row, column, or diagonal they share, end cells included")
+
+(OUTPUT rest-background "every other cell is &bg; the input line and copies do not stay"
+
+  (RULE &sight_cell
+    (input *P))
+
+  (RULE &sight_dir
+    (dir8_elem *D))
+
+  (RULE &sight_dir_ray
+    (&sight_dir *D))
+
+  (RULE &sight_node
+    (&sight_dir)
+    (input *P))
+
+  (RULE &objs_node
+    (input *P (:Col *Key))
+    (NOT (&bg (:C Key))))
+
+  (RULE &objs_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((diag_dir_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  ;; The objects of each color.
+  (INIT &objs Quotient
+    (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+      (OR ((&objs_node (:Key *Ky) *P)
+           (&objs_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P2))
+           (&objs_node (:Key Ky) (:P P2)))
+          ((&objs_node (:Key Ky) P)
+           (= P2 P)))))
+
+  (RULE &objs_component
+    (&objs.class (:a *Key *P) *Id))
+
+  (INIT &box BoundingBox
+    (key ((&objs_component *P ^Id))
+      (cell (P)
+        (&objs_component *P Id))))
+
+  (RULE &multi
+    (&objs_component (:Key *Col) (:Id *Id1))
+    (&objs_component (:Key Col) (:Id *Id2))
+    (!= Id1 Id2))
+
+  (RULE &copy_obj
+    (&objs_component (:Key *Col) *Id)
+    (&multi Col))
+
+  (RULE &center
+    (&copy_obj *Id)
+    (&box.box (:key Id) *B)
+    (input *P)
+    (ALL ((&box.box (:key (:Id *Idm)) B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (ALL ((&box.box (:key (:Id *Idmm)) (:B *Bm))
+          (input (:P *Pm))
+          (relative (:Base Bm) (:X Pm) (:X_rel P_rel))
+          (opposite (:D *D_m1m) (:Opp *O_m2))
+          (margin (:B P_rel) (:D D_m1m) (:K *K1_m3))
+          (margin (:B P_rel) (:D O_m2) (:K *K2_m4)))
+         ((= K1_m3 K2_m4))))
+
+  (RULE &sight_source
+    (&center *P))
+
+  (INIT &sight Distance
+    (key ((&sight_source (:P ^O))
+          (&sight_dir_ray ^D))
+      (edge ((:a A2) (:b Q))
+        (OR ((&sight_source (:P O))
+             (&sight_dir_ray D)
+             (axis_of D *A)
+             (sub_extent (:P O) A *K)
+             (dir8_opposite D (:D2 *O_m2))
+             (edge_inset (:D O_m2) K (:B *B1_m3))
+             (edge_inset D K (:B *I_m5))
+             (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+             (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+             (compose (:A O) (:B V_m1) (:C *A2))
+             (&sight_node (:P A2))
+             (step_offset D (:V *V_m6))
+             (compose (:A A2) (:B V_m6) (:C *Q))
+             (&sight_node (:P Q)))
+            ((&sight_source (:P O))
+             (&sight_dir_ray D)
+             (step_offset D (:V *V_m12))
+             (compose (:A O) (:B V_m12) (:C Q))
+             (&sight_node (:P Q))
+             (= A2 O))
+            ((&sight_source (:P O))
+             (&sight_dir_ray D)
+             (diag_dir_elem D)
+             (axis_elem (:A *A3))
+             (sub_extent (:P O) (:A A3) (:K *K2))
+             (dir8_opposite D (:D2 *O_m22))
+             (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+             (edge_inset D (:K K2) (:B *I_m52))
+             (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+             (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+             (compose (:A O) (:B V_m13) (:C A2))
+             (&sight_node (:P A2))
+             (step_offset D (:V *V_m62))
+             (compose (:A A2) (:B V_m62) (:C Q))
+             (&sight_node (:P Q)))))
+      (source ((:n O))
+        (&sight_source (:P O))
+        (&sight_dir_ray D))))
+
+  (RULE &sight_ray2
+    (&sight.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+  (RULE &sight_ray
+    (&sight_ray2 *P *D *K (:Origin *Src))
+    (&sight_cell P))
+
+  ;; The object taken as the line.
+  (INIT &line_obj Singleton
+    (member ((:v Id))
+      (&objs_component (:Key *Col) *Id)
+      (NOT (&multi Col))))
+
+  ;; The color of the copies.
+  (INIT &shape_color Singleton
+    (member ((:v Col))
+      (&copy_obj *Id)
+      (&objs_component (:Key *Col) Id)))
+
+  (RULE &line
+    (&line_obj.value (:v *Id))
+    (&objs_component (:Key *Col) *P Id))
+
+  (RULE &line_end
+    (&line *P)
+    (step_offset *D (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *Q))
+    (&line (:P Q))
+    (dir8_opposite D (:D2 *D_back))
+    (step_offset (:D D_back) (:V *V_m2))
+    (compose (:A P) (:B V_m2) (:C *R))
+    (NOT (&line (:P R))))
+
+  (RULE &stamp
+    (&line_end (:P *E))
+    (&center *Id (:P *C))
+    (&objs_component (:P *S) Id)
+    (relative (:Base C) (:X S) (:X_rel *V))
+    (compose (:A E) (:B V) (:C *P)))
+
+  (RULE &join
+    (&sight_ray2 *P *D (:Origin *C1))
+    (&sight_cell P)
+    (dir8_opposite D (:D2 *D_back))
+    (&sight_ray2 P (:D D_back) (:Origin *C2))
+    (&sight_cell P)
+    (!= C1 C2))
+
+  (RULE &parsed
+    (&line_obj.value)
+    (&shape_color.value))
+
+  (RULE &unaligned
+    (&center (:P *C1))
+    (&center (:P *C2))
+    (!= C1 C2)
+    (NOT (&sight_ray (:P C2) (:Src C1))))
+
+  (RULE &ready
+    (&parsed)
+    (NOT (&unaligned))))
+
+(ALTS $l "which object is the line and which are the copies" $OneObjectColor
+  (ALT $LineByStraightness
+    (INPUT one-line "the line is the one object that is a straight run of two or more cells; undefined where no object or more than one object is such a run"
+      ;; The object taken as the line.
+      (INIT &line_obj Singleton
+        (member ((:v Id))
+          (&objs_component (:Key *Col) *P *Id)
+          (&objs_component (:Key Col) (:P *Q) Id)
+          (!= P Q)
+          (axis4_elem *A)
+          (ALL ((&objs_component (:Key *Colm) (:P *Pm) Id)
+                (step_offset *D (:V *V_m1))
+                (compose (:A Pm) (:B V_m1) (:C *Qm))
+                (&objs_component (:Key Colm) (:P Qm) Id))
+               ((axis4_of D A)))))
+
+      (RULE &copy_obj
+        (&objs_component *Id)
+        (NOT (&line_obj.value (:v Id)))))
+    (INPUT shape-copies "the copies are the objects of the other color, one or more")))
+
+(ALTS $j "which two centers a line joins" $JoinAll
+  (ALT $JoinAligned
+    (INPUT aligned-centers "two centers may share no row, column, or diagonal")
+    (OUTPUT lines-join-centers "a line joins each two centers that share a row, column, or diagonal, and no other two"
+      (RULE &ready
+        (&parsed)))))
+
+(ALTS $o "which is drawn on top where a stamp meets a joining line" $StampsOverLines
+  (ALT $LinesOverStamps
+    (OUTPUT stamps-at-line-ends "the joining lines are drawn over the stamps")
+    (RULE &output
+      (&ready)
+      (input *P)
+      (OR ((&join P)
+           (&line *Col))
+          ((&stamp P)
+           (NOT (&join P))
+           (&shape_color.value (:v Col)))
+          ((NOT (&join P))
+           (NOT (&stamp P))
+           (&bg (:C Col)))))))
+
+(RULE &sight_end
+  (&sight_ray2 *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&sight_ray2 (:P Q) D Origin)))
+
+(RULE &output
+  (&ready)
+  (input *P)
+  (OR ((&stamp P)
+       (&shape_color.value (:v *Col)))
+      ((&join P)
+       (NOT (&stamp P))
+       (&line Col))
+      ((NOT (&stamp P))
+       (NOT (&join P))
+       (&bg (:C Col)))))

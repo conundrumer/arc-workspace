@@ -1,0 +1,179 @@
+;; 516b51b7
+
+(DET &rim_depth_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(RULE &rim_depth_steps2
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg UnchangedColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &rim Boundary
+  (cell (P)
+    (&ink *P)))
+
+(INIT &rim_depth2 Distance
+  (edge ((:a P) (:b P2))
+    (&ink *P)
+    (&rim_depth_steps2 (:Delta *S))
+    (compose (:A P) (:B S) (:C *P2))
+    (&ink (:P P2)))
+  (source ((:n P))
+    (&rim.boundary *P)))
+
+(INIT &rim2 Boundary
+  (key ((ex_input ^E *P *Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (ex_input E *P *Col)
+      (NOT (&bg (:C Col))))))
+
+(DET &rim_depth_node
+  (ex_input (:E *Key) *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &rim_depth Distance
+  (key ((OR ((&rim_depth_node (:Key ^Ky) *P)
+             (&rim_depth_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *Q))
+             (&rim_depth_node (:Key Ky) (:P Q)))
+            ((&rim2.boundary (:key (:E Ky)) P))))
+    (edge ((:a P) (:b Q))
+      (&rim_depth_node (:Key Ky) *P)
+      (&rim_depth_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *Q))
+      (&rim_depth_node (:Key Ky) (:P Q)))
+    (source ((:n P))
+      (&rim2.boundary (:key (:E Ky)) *P))))
+
+(RULE &depth
+  (&rim_depth2.distance (:n *P) *K))
+
+(DET &ring_at
+  (&rim_depth.distance (:key (:Ky *E)) (:n *P) *K)
+  (!= K 0)
+  (ex_output E P *Col))
+
+;; The colors carried at each phase of a candidate repeat length.
+(INIT &phase_color Singleton
+  (key ((&ring_at (:K ^W))
+        (&ring_at *K *Col)
+        (divide (:T K) (:Side W) (:Gap 0) (:Remainder ^R)))
+    (member ((:v Col))
+      (&ring_at (:K W))
+      (&ring_at *K *Col)
+      (divide (:T K) (:Side W) (:Gap 0) (:Remainder R)))))
+
+(DET &mismatch
+  (&phase_color.plural (:key *W)))
+
+;; The shortest repeat the depths allow.
+(INIT &repeat Order
+  (member ((:t W))
+    (&ring_at (:K *W))
+    (NOT (&mismatch W)))
+  (score ((:t W) (:S W))
+    (&ring_at (:K *W))
+    (NOT (&mismatch W))))
+
+(DET &ring
+  (&ring_at (:K *K2) *Col)
+  (&repeat.minimal (:t *W))
+  (divide (:T K2) (:Side W) (:Gap 0) (:Remainder *K)))
+
+;; The length of &ring's repeat.
+(INIT &period Cardinality
+  (member ((:m K))
+    (&ring *K))
+  (domain ()))
+
+(ALTS $m "how deep a cell lies (the two metrics agree on this task, since every object is a solid rectangle; a ragged object would split them)" $Peel
+  (ALT $Box
+    (RULE &objs_steps
+      (dir_elem *D)
+      (step_offset D (:V *Delta)))
+
+    (INIT &objs Quotient
+      (edge ((:a P) (:b P3))
+        (OR ((&ink *P)
+             (&objs_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P3))
+             (&ink (:P P3)))
+            ((&ink P)
+             (= P3 P)))))
+
+    (RULE &objs_component
+      (&objs.class (:a *P) *Id))
+
+    (INIT &bbox BoundingBox
+      (key ((&objs_component *P ^Id))
+        (cell (P)
+          (&objs_component *P Id))))
+
+    ;; Depth in the box: the least distance to a box edge.
+    (INIT &box_depth Order
+      (key ((&objs_component ^P *Id)
+            (&bbox.box (:key Id) *B)
+            (ALL ((&objs_component P (:Id *Idm))
+                  (&bbox.box (:key (:Id Idm)) B)
+                  (dir_elem (:D *D_m1))
+                  (relative (:Base B) (:X P) (:X_rel *R_m2))
+                  (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+                 ((>= K_m3 0)))
+            (relative (:Base B) (:X P) (:X_rel *P_inner))
+            (dir_elem *D)
+            (margin (:B P_inner) D *K))
+        (member ((:t K))
+          (&objs_component P *Id)
+          (&bbox.box (:key Id) *B)
+          (ALL ((&objs_component P (:Id *Idm))
+                (&bbox.box (:key (:Id Idm)) B)
+                (dir_elem (:D *D_m1))
+                (relative (:Base B) (:X P) (:X_rel *R_m2))
+                (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+               ((>= K_m3 0)))
+          (relative (:Base B) (:X P) (:X_rel *P_inner))
+          (dir_elem *D)
+          (margin (:B P_inner) D *K))
+        (score ((:t K) (:S K))
+          (&objs_component P *Id)
+          (&bbox.box (:key Id) *B)
+          (ALL ((&objs_component P (:Id *Idm))
+                (&bbox.box (:key (:Id Idm)) B)
+                (dir_elem (:D *D_m1))
+                (relative (:Base B) (:X P) (:X_rel *R_m2))
+                (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+               ((>= K_m3 0)))
+          (relative (:Base B) (:X P) (:X_rel *P_inner))
+          (dir_elem *D)
+          (margin (:B P_inner) D *K))))
+
+    (RULE &depth
+      (&box_depth.minimal (:key *P) (:t *K)))))
+
+(ALTS $p "the color at a depth" $Cycle
+  (ALT $Table
+    (RULE &output
+      (OR ((&depth *P *K)
+           (&ring_at K *Col))
+          ;; The background and every object's outline keep their color.
+          ((input P Col)
+           (OR ((NOT (&ink P)))
+               ((&depth P (:K 0)))))))))
+
+(RULE &output
+  ;; The background and every object's outline keep their color.
+  (OR ((input *P *Col)
+       (OR ((NOT (&ink P)))
+           ((&depth P (:K 0)))))
+      ((&depth P *K)
+       (!= K 0)
+       (&period.size (:N *W))
+       (divide (:T K) (:Side W) (:Gap 0) (:Remainder *Idx))
+       (&ring (:K Idx) Col))))

@@ -1,0 +1,4 @@
+;; 253bf280
+
+(param &bg Color (0))
+(param &fill Color (3))

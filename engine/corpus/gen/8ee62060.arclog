@@ -1,0 +1,93 @@
+;; 8ee62060
+
+(DET &block_size TileDim)
+
+(INIT &output_division Division
+  (cell ((:P P_in))
+    (input (:P *P_in)))
+  (side (A K)
+    (axis_elem *A)
+    (&block_size (:D *K))))
+
+(INIT &block_division Division
+  (cell ((:P P_grid))
+    (ex_input *E (:P *P_grid))
+    (ex_output E))
+  (side (A K)
+    (axis_elem *A)
+    (&block_size (:D *K))))
+
+(INIT &block_division2 Division
+  (cell ((:P P_grid))
+    (ex_input *E (:P *P_grid))
+    (ex_output E))
+  (side (A K)
+    (axis_elem *A)
+    (&block_size (:D *K))))
+
+(INIT &block_src_division Division
+  (cell ((:P P_grid))
+    (ex_input *E (:P *P_grid))
+    (ex_output E))
+  (side (A K)
+    (axis_elem *A)
+    (&block_size (:D *K))))
+
+(DET &block_src
+  (ex_input *E (:P *P_grid) (:Col *V))
+  (ex_output E)
+  (&block_src_division.tile (:P P_grid) (:P_outer *P) (:P_inner *P_local)))
+
+;; At each within-block offset, each train input's block-grid, matched
+;; against itself.
+(INIT &block Agreement
+  (key ((OR ((ex_input ^E (:P *P_grid) *Col)
+             (ex_output E)
+             (&block_division.tile (:P P_grid) (:P_outer *P_block) (:P_inner ^P_local))
+             (d4_elem *D)
+             (apply D (:P P_block) (:P_out *Q)))
+            ((ex_input E (:P P_grid) Col)
+             (ex_output E)
+             (&block_division2.tile (:P P_grid) (:P_outer P_block) (:P_inner P_local)))
+            ((&block_src E P_local (:P P_block) (:V Col)))))
+    (source ((:i P_block) (:v Col))
+      (ex_input E (:P *P_grid) *Col)
+      (ex_output E)
+      (&block_division2.tile (:P P_grid) (:P_outer *P_block) (:P_inner P_local)))
+    (target ((:i P_block) (:v Col))
+      (&block_src E P_local (:P *P_block) (:V *Col)))
+    (correspondence ((:m D) (:i P_block) (:j Q))
+      (ex_input E (:P *P_grid) *Col)
+      (ex_output E)
+      (&block_division.tile (:P P_grid) (:P_outer *P_block) (:P_inner P_local))
+      (d4_elem *D)
+      (apply D (:P P_block) (:P_out *Q)))))
+
+(DET &moved
+  (&block.mismatch (:key *E) (:m *D)))
+
+(DET &kept
+  (ex_input *E)
+  (ex_output E)
+  (d4_elem *D)
+  (NOT (&moved E D)))
+
+(DET &block_d4
+  (d4_elem *D)
+  (NOT (&kept D))
+  (ONE))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_block_out))
+    (&output_division.tile (:P_outer *P_block_in))
+    (&block_d4 *D)
+    (apply D (:P P_block_in) (:P_out *P_block_out)))
+  (inner ((:P P_local))
+    (&output_division.tile (:P_inner *P_local))))
+
+(RULE &output
+  (input (:P *P_in) *Col)
+  (&output_division.tile (:P P_in) (:P_outer *P_block_in) (:P_inner *P_local))
+  (&block_d4 *D)
+  (apply D (:P P_block_in) (:P_out *P_block_out))
+  (&output_tiling.cell (:P_outer P_block_out) (:P_inner P_local) *P))

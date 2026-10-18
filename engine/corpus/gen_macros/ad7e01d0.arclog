@@ -1,0 +1,26 @@
+;; ad7e01d0
+
+(INIT &cell_tiling Tiling
+  (outer ((:P P_tile))
+    (input (:P *P_tile)))
+  (inner ((:P P_intile))
+    (input (:P *P_intile))))
+
+(DET &bg ColorDomain)
+
+(DET &stamp SharedColor)
+
+(RULE &cell
+  (&cell_tiling.cell (:P_outer *P_tile) (:P_inner *P_intile) (:P *P_grid)))
+
+(RULE &active
+  (input *P *Col)
+  (&stamp (:C Col)))
+
+(RULE &output
+  (OR ((&cell (:P_grid *P) *P_tile *P_intile)
+       (&active (:P P_tile))
+       (input (:P P_intile) *Col))
+      ((&cell (:P_grid P) (:P_tile *P_tile2))
+       (NOT (&active (:P P_tile2)))
+       (&bg (:C Col)))))

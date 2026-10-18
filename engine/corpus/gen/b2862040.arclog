@@ -1,0 +1,197 @@
+;; b2862040
+
+(INPUT background-field "the grid is a field of background (9)")
+
+(INPUT shapes "on that field stand shapes, each a 4-connected set of shape_color cells"
+
+  (DET_OR_RULE &shape_color RarestColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (&shape_color (:C Col)))
+
+  (INIT &shapes8 Connectivity
+    (node (P)
+      (&ink *P))
+    (step ((:Delta S))
+      (diag_dir_elem *D)
+      (step_offset D (:V *S)))))
+
+(OUTPUT recolor-closed-shapes "each shape that by itself closes off a region from the frame edge, where a region escapes by 4-steps through cells outside the shape, takes closed_color on every one of its cells"
+
+  (INIT &shapes4 Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (RULE &shape
+    (&shapes4.component *P (:Id *W)))
+
+  (RULE &off_wall
+    (&shape *W)
+    (input *P)
+    (NOT (&shape W P)))
+
+  (INIT &own4 Enclosure
+    (key ((&off_wall (:W ^O) *P))
+      (cell (P)
+        (&off_wall (:W O) *P))))
+
+  (RULE &hole_cell
+    (&own4.enclosed (:key *O) *P *Id))
+
+  (INIT &own_open8 Flood
+    (key ((&off_wall (:W ^O) *P))
+      (node (P)
+        (&off_wall (:W O) *P))
+      (source (P)
+        (&off_wall (:W O) *P)
+        (dir_elem *D)
+        (margin (:B P) D (:K 0))))
+    (step ((:Delta V))
+      (step_offset *V)))
+
+  (INIT &own8 Connectivity
+    (key ((&off_wall (:W ^O) *P)
+          (NOT (&own_open8.reached (:key O) P)))
+      (node (P)
+        (&off_wall (:W O) *P)
+        (NOT (&own_open8.reached P))))
+    (step ((:Delta S))
+      (diag_dir_elem *D)
+      (step_offset D (:V *S))))
+
+  (RULE &off_ink
+    (input *P)
+    (NOT (&ink P)))
+
+  (INIT &ink4 Enclosure
+    (cell (P)
+      (&off_ink *P)))
+
+  (INIT &ink_open8 Flood
+    (node (P)
+      (&off_ink *P))
+    (source (P)
+      (&off_ink *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0)))
+    (step ((:Delta V))
+      (step_offset *V)))
+
+  (INIT &ink8 Connectivity
+    (node (P)
+      (&off_ink *P)
+      (NOT (&ink_open8.reached P)))
+    (step ((:Delta S))
+      (diag_dir_elem *D)
+      (step_offset D (:V *S))))
+
+  (INIT &holes Cardinality
+    (key ((OR ((&shape (:W ^O)))
+              ((&hole_cell O *Id))))
+      (member ((:m Id))
+        (&hole_cell O *Id))
+      (domain ()
+        (&shape (:W O)))))
+
+  (INIT &hole_size Cardinality
+    (key ((&hole_cell ^O ^Id *P))
+      (member ((:m P))
+        (&hole_cell O Id *P)))))
+
+(OUTPUT keep-rest "every other cell keeps its input color")
+
+(ALTS $conn "how shape cells join into one shape" $Shapes4
+  (ALT $Shapes8
+    (INPUT shapes "on that field stand shapes, each an 8-connected set of shape_color cells"
+      (RULE &shape
+        (&shapes8.component *P (:Id *W))))))
+
+(ALTS $escape "the steps by which a region escapes to the frame edge" $Escape4
+  (ALT $DiagEscape
+    (OUTPUT recolor-closed-shapes "a region escapes by 8-steps, so a hole that meets the outside only at a corner is open"
+      (RULE &hole_cell
+        (&own8.component (:key *O) *P *Id))
+
+      (RULE &ink_hole
+        (&ink8.component *P *Id)))
+    (ALT $AllInk
+      (OUTPUT recolor-closed-shapes "the regions that all the ink together closes off are found, and every cell of a shape with a cell 4-adjacent to such a region takes closed_color"
+        (RULE &ink_hole
+          (&ink8.component *P *Id))
+
+        (RULE &hole_cell
+          (&ink_holed (:W *O) *Id)
+          (&ink_hole *P Id))))))
+
+(ALTS $walls "what closes off a region" $OwnWalls
+  (ALT $AllInk
+    (OUTPUT recolor-closed-shapes "the regions that all the ink together closes off are found, and every cell of a shape with a cell 4-adjacent to such a region takes closed_color"
+      (RULE &ink_hole
+        (&ink4.enclosed *P *Id))
+
+      (RULE &ink_holed
+        (&ink_hole *P *Id)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&shape *W (:P Q)))
+
+      (RULE &hole_cell
+        (&ink_holed (:W *O) *Id)
+        (&ink_hole *P Id)))))
+
+(ALTS $ink "which cells the shapes are made of" $ShapeInk
+  (ALT $AnyInk
+    (INPUT shapes "on that field stand shapes, each a 4-connected set of cells that are not background, of any color"
+      (DET_OR_RULE &background DominantColor)
+
+      (RULE &ink
+        (input *P *Col)
+        (NOT (&background (:C Col)))))))
+
+(ALTS $cond "which shapes recolor" $AnyHole
+  (ALT $OneHole
+    (OUTPUT recolor-closed-shapes "a shape takes closed_color when the count of regions it closes off is hole_count"
+      (DET_OR_RULE &hole_count TileDim))
+    (RULE &closing
+      (&shape (:W *O) *P)
+      (&holes.size (:key O) *N)
+      (&hole_count N)))
+  (ALT $HoleCountTable
+    (OUTPUT recolor-closed-shapes "every cell of a shape takes the color count_color gives the count of regions the shape closes off; undefined on an input with a shape whose count has no color"
+      (DET &count_color
+        (&shape *E (:W *O) *P)
+        (&holes.size E (:key O) *N)
+        (ex_output E P (:Col *C))))
+    (RULE &recolored
+      (&shape *P))
+
+    (RULE &output
+      (OR ((&shape (:W *O) *P)
+           (&holes.size (:key O) *N)
+           (&count_color N (:C *Col)))
+          ((input P Col)
+           (NOT (&recolored P))))))
+  (ALT $MinHoleSize
+    (OUTPUT recolor-closed-shapes "a shape takes closed_color when it closes off a region of at least min_hole_size cells"
+      (DET_OR_RULE &min_hole_size TileDim))
+    (RULE &closing
+      (&shape (:W *O) *P)
+      (&hole_size.size (:key O) *N)
+      (&min_hole_size (:N *K))
+      (>= N K))))
+
+(DET &closed_color AnyOutNewColor)
+
+(RULE &closing
+  (&shape (:W *O) *P)
+  (&hole_cell O))
+
+(RULE &recolored
+  (&closing *P))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&recolored P)))
+      ((&closing P)
+       (&closed_color (:C Col)))))

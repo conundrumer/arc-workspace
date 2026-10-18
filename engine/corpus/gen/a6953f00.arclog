@@ -1,0 +1,20 @@
+;; a6953f00
+
+;; The grid edge whose corners the crop anchors at.
+(DET &crop_side DirDomain)
+
+(RULE &crop_corner
+  (&crop_side (:D *D2))
+  (corner_dir (:C *D) (:D D2)))
+
+(DET &frame Frame)
+
+(RULE &corner
+  (&crop_corner *D)
+  (ONE))
+
+(RULE &output
+  (input (:P *P_grid_in) *Col)
+  (&frame *P)
+  (&corner *D)
+  (same_corner D (:P1 P) (:P2 P_grid_in)))

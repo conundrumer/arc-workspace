@@ -1,0 +1,20 @@
+;; 56ff96f3
+
+(DET &bg DominantColor)
+
+(INIT &bbox BoundingBox
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &spanned
+  (&bbox.box (:key *Col) *B)
+  (input *P)
+  (inside (:A P) B))
+
+(RULE &output
+  (OR ((&spanned *P *Col))
+      ((input P Col)
+       (NOT (&spanned P)))))

@@ -1,0 +1,65 @@
+;; 9c56f360
+
+(DET &bg DominantColor)
+
+(DET &mover RarestColor)
+
+(DET &dir DirDomain)
+
+(DET &wall UnchangedColor)
+
+(RULE &mover2
+  (input *P *Col)
+  (&mover (:C Col)))
+
+(RULE &pack_blocked
+  (input *P *Col)
+  (&wall (:C Col)))
+
+(RULE &pack_dir
+  (&dir *D))
+
+(ALTS $choice "what blocks the pack" $Wall
+  (ALT $Solid
+    (RULE &pack_blocked
+      (input *P *Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&mover (:C Col))))))
+
+;; Each mover cell travels toward the dir edge and stops against what blocks
+;; the pack or against the movers already packed ahead of it.
+(INIT &pack Distance
+  (weight ((:a P2) (:b P) (:W K))
+    (&mover2 *P)
+    (&pack_dir *D)
+    (&mover2 (:P *P2))
+    (!= P P2)
+    (gap D P (:Q P2) *K))
+  (source_distance ((:n P) K)
+    (OR ((&mover2 *P)
+         (&pack_dir *D)
+         (margin (:B P) D *K))
+        ((&mover2 P)
+         (&pack_dir (:D *D2))
+         (&pack_blocked (:P *Q))
+         (gap (:D D2) P Q K)))))
+
+(RULE &moved
+  (&pack.distance (:n *P3) *K)
+  (&pack_dir *D)
+  (dir8_opposite D (:D2 *O_m1))
+  (edge_inset (:D O_m1) K (:B *B1_m2))
+  (edge_inset D K (:B *I_m4))
+  (relative (:Base I_m4) (:X 0) (:X_rel *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *V))
+  (compose (:A P3) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&mover (:C *Col))
+       (&moved *P))
+      ((&bg (:C Col))
+       (&mover2 P)
+       (NOT (&moved P)))
+      ((input P Col)
+       (NOT (&mover2 P))
+       (NOT (&moved P)))))

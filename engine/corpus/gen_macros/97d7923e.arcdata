@@ -1,0 +1,4 @@
+;; 97d7923e
+
+(param &bg Color (0))
+(param &head_dir Dir (DIR_T))

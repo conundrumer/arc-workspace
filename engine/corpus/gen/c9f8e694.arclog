@@ -1,0 +1,32 @@
+;; c9f8e694
+
+(DET &targets ChangedColor)
+
+(DET &axis AxisDomain)
+
+(DET &anchor DirDomain)
+
+(RULE &cell_slice
+  (input *P *Col)
+  (&axis *A)
+  (split P A (:Across *P_across)))
+
+(RULE &slice_repl
+  (&cell_slice *P *Col *P_across)
+  (&anchor *D)
+  (margin (:B P) D (:K 0)))
+
+(ALTS $choice "what supplies the slice's replacement color" $Anchor
+  (ALT $Unique
+    (DET &bg SharedColor)
+
+    (RULE &slice_repl
+      (&cell_slice *Col *P_across)
+      (NOT (&targets (:C Col)))
+      (NOT (&bg (:C Col))))))
+
+(RULE &output
+  (&cell_slice *P (:Col *Col2) *P_across)
+  (IF ((&targets (:C Col2)))
+      ((&slice_repl P_across *Col))
+      ((= Col Col2))))

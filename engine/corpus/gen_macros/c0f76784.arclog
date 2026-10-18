@@ -1,0 +1,387 @@
+;; c0f76784
+
+(INPUT square-outlines "the input holds several one-cell-thick square outlines of color 5 on a field of &background, each enclosing a square hole of &background cells"
+
+  (DET &changed
+    (ex_input *E *P *Col)
+    (ex_output E P (:Col *Col2))
+    (!= Col Col2))
+
+  (DET_OR_RULE &background DominantColor
+    (&changed (:Col *C))))
+
+(INPUT outlines-apart "no two outlines touch, even at a corner")
+
+(INPUT hole-sizes-keyed "the side of each hole is a key of &fill_by_side"
+
+  ;; TODO no-det-plan: &fill_by_side: the plan gives no verdict
+  (DET &fill_by_side))
+
+(OUTPUT fill-hole-by-side "each cell of an outline's hole takes the color that &fill_by_side gives for that hole's side length"
+
+  (RULE &flood8_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((dir8_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  (RULE &obj4_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &closed8_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((diag_dir_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  (RULE &obj8_steps
+    (OR ((dir_elem *D)
+         (step_offset D (:V *Delta)))
+        ((diag_dir_elem (:D *D2))
+         (step_offset (:D D2) (:V Delta)))))
+
+  (DET_OR_RULE &frame_color RarestColor
+    (&changed *E *P)
+    (dir_elem *D)
+    (step_offset D (:V *V_m1))
+    (compose (:A P) (:B V_m1) (:C *Q))
+    (ex_input E (:P Q) (:Col *C))
+    (ex_output E (:P Q) (:Col C)))
+
+  (INIT &obj8 Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((input *P *Col)
+           (&frame_color (:C Col))
+           (&obj8_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (input (:P P3) (:Col *Col2))
+           (&frame_color (:C Col2)))
+          ((input P (:Col *Col3))
+           (&frame_color (:C Col3))
+           (= P3 P)))))
+
+  (RULE &obj8_component
+    (&obj8.class (:a *P) *Id))
+
+  (RULE &closed4_flood_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &closed4_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &blank
+    (input *P *Col)
+    (&background (:C Col)))
+
+  (RULE &closed4_cell
+    (&blank *P))
+
+  (INIT &closed4_flood Propagation
+    (source ((:n P))
+      (&closed4_cell *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0))
+      (&blank P))
+    (edge ((:a P) (:b P2))
+      (&blank *P)
+      (&closed4_flood_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *P2))
+      (&blank (:P P2))))
+
+  (RULE &closed4_node
+    (&closed4_cell *P)
+    (NOT (&closed4_flood.reached (:n P))))
+
+  (INIT &closed4 Quotient
+    (edge ((:a P) (:b P2))
+      (OR ((&closed4_node *P)
+           (&closed4_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P2))
+           (&closed4_node (:P P2)))
+          ((&closed4_node P)
+           (= P2 P)))))
+
+  (RULE &closed4_component
+    (&closed4.class (:a *P) *Id))
+
+  (RULE &walled_flood_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &walled_steps
+    (dir_elem *D)
+    (step_offset D (:V *Delta)))
+
+  (RULE &walled_cell
+    (input *P *Col)
+    (NOT (&frame_color (:C Col))))
+
+  (INIT &walled_flood Propagation
+    (source ((:n P))
+      (&walled_cell *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0))
+      (input P *Col)
+      (NOT (&frame_color (:C Col))))
+    (edge ((:a P) (:b P2))
+      (input *P *Col)
+      (NOT (&frame_color (:C Col)))
+      (&walled_flood_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *P2))
+      (input (:P P2) (:Col *Col2))
+      (NOT (&frame_color (:C Col2)))))
+
+  (RULE &walled_node
+    (&walled_cell *P)
+    (NOT (&walled_flood.reached (:n P))))
+
+  (RULE &hole_cell
+    (&closed4_component *P *Id))
+
+  (INIT &hole_box BoundingBox
+    (key ((&hole_cell ^Id *P))
+      (cell (P)
+        (&hole_cell Id *P))))
+
+  (RULE &gap
+    (&hole_box.box (:key *Id) *B)
+    (input *P)
+    (ALL ((&hole_box.box (:key (:Id *Idm)) B)
+          (dir_elem (:D *D_m1))
+          (relative (:Base B) (:X P) (:X_rel *R_m2))
+          (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+         ((>= K_m3 0)))
+    (NOT (&hole_cell Id P)))
+
+  (RULE &hole_extent
+    (&hole_box.box (:key *Id) *B)
+    (&hole_cell Id *P)
+    (axis_elem *A)
+    (axis_elem A)
+    (relative (:Base B) (:X P) (:X_rel *R_m1))
+    (frame_extent (:P R_m1) A *N))
+
+  (RULE &hole_length
+    (&hole_extent *Id *A *N)
+    (perp A *A2)
+    (&hole_extent Id (:A A2) N)
+    (NOT (&gap Id)))
+
+  ;; The blank cells an 8-step walk through blank cells reaches from the edge.
+  (INIT &flood8 Propagation
+    (source ((:n P))
+      (&blank *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0)))
+    (edge ((:a P) (:b P2))
+      (&blank *P)
+      (&flood8_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *P2))
+      (&blank (:P P2))))
+
+  (INIT &closed8 Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((&blank *P)
+           (NOT (&flood8.reached (:n P)))
+           (&closed8_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (&blank (:P P3))
+           (NOT (&flood8.reached (:n P3))))
+          ((&blank P)
+           (NOT (&flood8.reached (:n P)))
+           (= P3 P)))))
+
+  (INIT &walled Quotient
+    (edge ((:a P) (:b P2))
+      (OR ((&walled_node *P)
+           (&walled_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P2))
+           (&walled_node (:P P2)))
+          ((&walled_node P)
+           (= P2 P)))))
+
+  (RULE &obj_cell
+    (&obj8_component *P *Id))
+
+  (INIT &obj4 Quotient
+    (edge ((:a P) (:b P3))
+      (OR ((input *P *Col)
+           (&frame_color (:C Col))
+           (&obj4_steps (:Delta *S))
+           (compose (:A P) (:B S) (:C *P3))
+           (input (:P P3) (:Col *Col2))
+           (&frame_color (:C Col2)))
+          ((input P (:Col *Col3))
+           (&frame_color (:C Col3))
+           (= P3 P)))))
+
+  (INIT &obj_box BoundingBox
+    (key ((&obj_cell ^Id *P))
+      (cell (P)
+        (&obj_cell Id *P))))
+
+  (RULE &measure
+    (&hole_length *Id *N))
+
+  (INIT &hole_size Cardinality
+    (key ((&hole_cell ^Id *P))
+      (member ((:m P))
+        (&hole_cell Id *P))))
+
+  (INIT &obj_size Cardinality
+    (key ((&obj_cell (:Id ^O) *P))
+      (member ((:m P))
+        (&obj_cell (:Id O) *P))))
+
+  (INIT &size_rank Order
+    (member ((:t N))
+      (&measure *N))
+    (score ((:t N) (:S N))
+      (&measure *N))))
+
+(OUTPUT rest-kept "every other cell keeps its input color")
+
+(ALTS $measure "what of a hole keys the fill table" $HoleSide
+  (ALT $KeyByArea
+    (INPUT hole-sizes-keyed "the cell count of each hole is a key of &fill_by_area")
+    (OUTPUT fill-hole-by-side "each cell of a hole takes the color that &fill_by_area gives for the hole's cell count; undefined where that count is no key"
+      ;; TODO no-det-plan: &fill_by_area: the plan gives no verdict
+      (DET &fill_by_area)
+
+      (RULE &measure
+        (&hole_size.size (:key *Id) *N)))
+    (RULE &keyed
+      (&hole_size.size (:key *Id) *N)
+      (&fill_by_area N (:C *Col))))
+  (ALT $KeyByAxisExtent
+    (INPUT hole-sizes-keyed "the extent of each hole along &axis is a key of &fill_by_side")
+    (OUTPUT fill-hole-by-side "each cell of a hole takes the color that &fill_by_side gives for the hole's extent along &axis; undefined where that extent is no key"
+      ;; TODO no-det-plan: &axis: the plan gives no verdict
+      (DET &axis (ONE))
+
+      (RULE &hole_length
+        (&axis *A)
+        (&hole_extent *Id A *N))))
+  (ALT $KeyByMinSide
+    (INPUT hole-sizes-keyed "the shorter side of each hole's bounding box is a key of &fill_by_side")
+    (OUTPUT fill-hole-by-side "each cell of a hole takes the color that &fill_by_side gives for the shorter side of the hole's bounding box; undefined where it is no key"
+      (RULE &hole_length
+        (&hole_extent *Id *A *N)
+        (perp A *A2)
+        (&hole_extent Id (:A A2) (:N *N2))
+        (<= N N2))))
+  (ALT $KeyByMaxSide
+    (INPUT hole-sizes-keyed "the longer side of each hole's bounding box is a key of &fill_by_side")
+    (OUTPUT fill-hole-by-side "each cell of a hole takes the color that &fill_by_side gives for the longer side of the hole's bounding box; undefined where it is no key"
+      (RULE &hole_length
+        (&hole_extent *Id *A *N)
+        (perp A *A2)
+        (&hole_extent Id (:A A2) (:N *N2))
+        (>= N N2))))
+  (ALT $KeyByOutlineSide
+    (INPUT hole-sizes-keyed "the side of each outline object is a key of &fill_by_outline_side")
+    (OUTPUT fill-hole-by-side "each cell of a hole takes the color that &fill_by_outline_side gives for the side of the &frame_color object that borders the hole; undefined where that object's bounding box is not square, or its side is no key"
+      ;; TODO no-det-plan: &fill_by_outline_side: the plan gives no verdict
+      (DET &fill_by_outline_side)
+
+      (RULE &border
+        (&hole_cell *Id *P)
+        (dir_elem *D)
+        (step_offset D (:V *V_m1))
+        (compose (:A P) (:B V_m1) (:C *Q))
+        (&obj_cell (:Id *O) (:P Q)))
+
+      (RULE &obj_side
+        (&obj_box.box (:key (:Id *O)) *B)
+        (&obj_cell (:Id O) *P)
+        (perp (:A *Ax) (:A2 *Ax2))
+        (axis_elem (:A Ax))
+        (relative (:Base B) (:X P) (:X_rel *R_m1))
+        (frame_extent (:P R_m1) (:A Ax) *N)
+        (axis_elem (:A Ax2))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (frame_extent (:P R_m2) (:A Ax2) N))
+
+      (RULE &measure
+        (&border *Id *O)
+        (&obj_side O *N)))
+    (RULE &keyed
+      (&border *Id *O)
+      (&obj_side O *N)
+      (&fill_by_outline_side N (:C *Col)))
+    (ALTS $m "which measure of the outline object bordering a hole keys the fill table" $OutlineSide
+      (ALT $KeyByOutlineCount
+        (OUTPUT fill-hole-by-side "the cell count of that object keys &fill_by_outline_count; undefined where the count is no key"
+          ;; TODO no-det-plan: &fill_by_outline_count: the plan gives no verdict
+          (DET &fill_by_outline_count)
+          (RULE &measure
+            (OR ((&border *Id *O)
+                 (&obj_size.size (:key O) *N))
+                ((&hole_length Id N)))))
+        (RULE &keyed
+          (OR ((&border *Id *O)
+               (&obj_size.size (:key O) *N)
+               (&fill_by_outline_count N (:C *Col)))
+              ((&hole_length Id (:N *N2))
+               (&fill_by_side (:N N2) (:C Col)))))))
+    (ALTS $adj "which frame-color cells join one outline object" $OutlineAdj8
+      (ALT $OutlineAdj4
+        (OUTPUT fill-hole-by-side "the outline objects are the 4-adjacent components of &frame_color"
+          (RULE &obj4_component
+            (&obj4.class (:a *P) *Id))
+          (RULE &obj_cell
+            (&obj4_component *P *Id)))))))
+
+(ALTS $key "what the fill table is keyed by" $MeasureKey
+  (ALT $RankBySize
+    (OUTPUT fill-hole-by-side "each cell of a hole takes the color that &fill_by_rank gives for the dense rank, largest first, of the hole's measure among the measures of every hole; undefined where some hole has no measure or a rank is no key"
+      ;; the dense rank of a hole's measure, largest first -> fill color
+      ;; TODO no-det-plan: &fill_by_rank: the plan gives no verdict
+      (DET &fill_by_rank))
+    (RULE &fill
+      (&measure *Id *N)
+      (&size_rank.dual_rank (:t N) (:R *K))
+      (&fill_by_rank K (:C *Col)))))
+
+(ALTS $region "which cells form a hole" $Enclose4
+  (ALT $Enclose8
+    (OUTPUT fill-hole-by-side "a hole is the &background cells that no walk through &background, stepping to the 8 neighbors, reaches from the grid edge"
+      (RULE &closed8_component
+        (&closed8.class (:a *P) *Id))
+
+      (RULE &hole_cell
+        (&closed8_component *P *Id))))
+  (ALT $WallsOfFrameColor
+    (OUTPUT fill-hole-by-side "a hole is the &background cells of a region that no walk through cells other than &frame_color reaches from the grid edge"
+      (RULE &walled_component
+        (&walled.class (:a *P) *Id))
+
+      (RULE &hole_cell
+        (&walled_component *P *Id)
+        (&blank P))))
+  (ALT $FillBboxInterior
+    (OUTPUT fill-hole-by-side "a hole is the &background cells inside the bounding box of a &frame_color object, one cell in from its edge"
+      (RULE &hole_cell
+        (&obj_box.box (:key *Id) *B)
+        (&blank *P)
+        (ALL ((&obj_box.box (:key (:Id *Idm)) B)
+              (dir_elem (:D *D_m1))
+              (relative (:Base B) (:X P) (:X_rel *R_m2))
+              (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+             ((> K_m3 0)))))))
+
+(RULE &keyed
+  (&hole_length *Id *N)
+  (&fill_by_side N (:C *Col)))
+
+(RULE &fill
+  (&keyed *Id *Col))
+
+(RULE &output
+  (OR ((&fill *Id *Col)
+       (&hole_cell Id *P))
+      ((input P Col)
+       (NOT (&hole_cell P)))))

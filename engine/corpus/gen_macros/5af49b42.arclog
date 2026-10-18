@@ -1,0 +1,67 @@
+;; 5af49b42
+
+(RULE &objects_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &bg DominantColor)
+
+(INIT &objects Quotient
+  (edge ((:a P) (:b P3))
+    (OR ((input *P *Col)
+         (NOT (&bg (:C Col)))
+         (&objects_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P3))
+         (input (:P P3) (:Col *Col2))
+         (NOT (&bg (:C Col2))))
+        ((input P (:Col *Col3))
+         (NOT (&bg (:C Col3)))
+         (= P3 P)))))
+
+(RULE &objects_component
+  (&objects.class (:a *P) *Id))
+
+(RULE &piece
+  (&objects_component *P *Id)
+  (input P *Col))
+
+(RULE &multi_cell
+  (&piece *Id *P)
+  (&piece Id (:P *Q))
+  (!= P Q))
+
+(RULE &bar
+  (&piece *Id *P *Col)
+  (&multi_cell Id))
+
+(ALTS $choice "what makes a piece a bar rather than a mark" $Object
+  (ALT $Edge
+    (RULE &on_edge
+      (&piece *Id *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0)))
+
+    (RULE &bar
+      (&piece *Id *P *Col)
+      (&on_edge Id))))
+
+(RULE &mark
+  (&piece *Id *P *Col)
+  (NOT (&bar Id)))
+
+(RULE &shift
+  (&mark *P *Col)
+  (&bar *Id (:P *Q) Col)
+  (relative (:Base Q) (:X P) (:X_rel *V)))
+
+(RULE &stamp
+  (&bar *Id (:P *P3) *Col)
+  (&shift Id *V)
+  (compose (:A P3) (:B V) (:C *P))
+  (input P))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&stamp P *Col))
+      ((NOT (&stamp P))
+       (= Col Col_in))))

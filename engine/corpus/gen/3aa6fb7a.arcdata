@@ -1,0 +1,4 @@
+;; 3aa6fb7a
+
+(param &bg Color (0))
+(param &fill Color (1))

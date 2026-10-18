@@ -1,0 +1,121 @@
+;; 782b5218
+
+(RULE &cleared_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &fill_dir DirDomain)
+
+(RULE &flow_dir
+  (&fill_dir *D))
+
+(RULE &flow_node
+  (input *P))
+
+(DET &barrier RarestColor)
+
+(RULE &barrier_cell
+  (input *P *Col)
+  (&barrier (:C Col)))
+
+(RULE &flow_source
+  (&barrier_cell *P))
+
+(INIT &flow Distance
+  (key ((&flow_source (:P ^O))
+        (&flow_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&flow_source (:P O))
+           (&flow_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&flow_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&flow_node (:P Q)))
+          ((&flow_source (:P O))
+           (&flow_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&flow_node (:P Q))
+           (= A2 O))
+          ((&flow_source (:P O))
+           (&flow_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&flow_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&flow_node (:P Q)))))
+    (source ((:n O))
+      (&flow_source (:P O))
+      (&flow_dir D))))
+
+(RULE &flow_ray
+  (&flow.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &flow_end
+  (&flow_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&flow_ray (:P Q) D Origin)))
+
+(DET &bg SharedColor)
+
+(RULE &clear_dir
+  (&fill_dir (:D *F))
+  (opposite (:D F) (:Opp *D)))
+
+(RULE &field_cell
+  (input *P)
+  (NOT (&barrier_cell P)))
+
+(RULE &fill_color
+  (input *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&barrier (:C Col))))
+
+(INIT &cleared Propagation
+  (source ((:n P))
+    (&field_cell *P)
+    (&clear_dir *D)
+    (margin (:B P) D (:K 0)))
+  (edge ((:a P) (:b P2))
+    (&field_cell *P)
+    (&cleared_steps (:Delta *S))
+    (compose (:A P) (:B S) (:C *P2))
+    (&field_cell (:P P2))))
+
+(RULE &fill_cell
+  (&field_cell *P)
+  (NOT (&cleared.reached (:n P))))
+
+(ALTS $choice "which cells are the fill side" $Region
+  (ALT $Cast
+    (RULE &fill_cell
+      (&flow_ray *P)
+      (&field_cell P))))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&field_cell P)
+       (&fill_cell P)
+       (&fill_color *Col))
+      ((&barrier_cell P)
+       (= Col C_in))
+      ((&field_cell P)
+       (NOT (&fill_cell P))
+       (&bg (:C Col)))))

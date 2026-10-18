@@ -1,0 +1,120 @@
+;; 758abdf0
+
+(RULE &runs_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+;; The color an edge line holds throughout.
+(INIT &edge Singleton
+  (key ((dir_elem ^D))
+    (member ((:v Col))
+      (input *P *Col)
+      (margin (:B P) D (:K 0)))))
+
+(DET &wall UnchangedColor)
+
+(RULE &away
+  (&edge.value (:key (:D *D2)) (:v *Col))
+  (&wall (:C Col))
+  (opposite (:D D2) (:Opp *D)))
+
+(DET &mark RarestColor)
+
+(RULE &runs_node_split1
+  (input (:P *P_) *Col)
+  (axis_of (:D *A) (:A *Ax_))
+  (axis_of (:D *D_m1) (:A Ax_))
+  (opposite (:D D_m1) (:Opp *O_m2))
+  (margin (:B P_) (:D D_m1) (:K *K1_m3))
+  (margin (:B P_) (:D O_m2) (:K *K2_m4))
+  (opposite (:D D_m1) (:Opp *O_m1))
+  (edge_inset (:D D_m1) (:K K1_m3) (:B *B1_m2))
+  (edge_inset (:D O_m1) (:K K2_m4) (:B *B2_m3))
+  (compose (:A B1_m2) (:B B2_m3) (:C *X_m1_))
+  (relative (:Base X_m1_) (:X P_) (:X_rel *L_)))
+
+(RULE &runs_node
+  (input *P *Col)
+  (&mark (:C Col))
+  (&away (:D *A))
+  (axis_of (:D A) (:A *Ax))
+  (&runs_node_split1 (:P_ P) (:Ax_ Ax) (:X_m1_ *X_m1) (:L_ *Key)))
+
+;; Runs of marks along the away axis. Components within one line: the
+;; perpendicular steps connect nothing.
+(INIT &runs Quotient
+  (edge ((:a (:Key Ky) P) (:b (:Key Ky) (:P P2)))
+    (OR ((&runs_node (:Key *Ky) *P)
+         (&runs_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&runs_node (:Key Ky) (:P P2)))
+        ((&runs_node (:Key Ky) P)
+         (= P2 P)))))
+
+(RULE &runs_component
+  (&runs.class (:a *Key *P) *Id))
+
+(DET &bg DominantColor)
+
+;; The run length at which a run leaves.
+(DET &full TileDim)
+
+(RULE &run
+  (&runs_component *P *Id))
+
+(INIT &len Cardinality
+  (key ((&run ^Id *P))
+    (member ((:m P))
+      (&run Id *P))))
+
+(RULE &landing_cell
+  (&run (:Id *Key) *P)
+  (&len.size (:key (:Id Key)) *N)
+  (&full (:D N)))
+
+;; A full run slides away from the wall until it lands against the far edge.
+(INIT &landing Distance
+  (key ((&landing_cell (:Key ^Id)))
+    (source_distance (K)
+      (&run Id *P)
+      (&len.size *N)
+      (&full (:D N))
+      (&away (:D *A))
+      (margin (:B P) (:D A) *K))))
+
+(RULE &landing_dir
+  (&landing_cell *Key)
+  (&away *D))
+
+(RULE &placed
+  (OR ((&len.size (:key *Id) *N)
+       (&full (:D *F))
+       (< N F)
+       (&run Id (:P *P2))
+       (&away (:D *A))
+       (step_offset (:D A) (:V *V_m1))
+       (compose (:A P2) (:B V_m1) (:C *P))
+       (&mark (:C *Col)))
+      ((&landing_cell (:Key *Id2) (:P *P22))
+       (&landing.distance (:key (:Id Id2)) *K)
+       (&landing_dir (:Key Id2) *D)
+       (dir8_opposite D (:D2 *O_m1))
+       (edge_inset (:D O_m1) K (:B *B1_m2))
+       (edge_inset D K (:B *I_m4))
+       (relative (:Base I_m4) (:X 0) (:X_rel *B2_m3))
+       (compose (:A B1_m2) (:B B2_m3) (:C *V))
+       (compose (:A P22) (:B V) (:C P))
+       (&wall (:C Col)))))
+
+(RULE &vacated
+  (&landing_cell *P))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&placed P *Col))
+      ((NOT (&placed P))
+       (&vacated P)
+       (&bg (:C Col)))
+      ((NOT (&placed P))
+       (NOT (&vacated P))
+       (= Col Col_in))))

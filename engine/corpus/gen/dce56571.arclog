@@ -1,0 +1,54 @@
+;; dce56571
+
+(DET &bg DominantColor)
+
+(DET &axis AxisDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &ink_count Cardinality
+  (member ((:m P))
+    (&ink *P)))
+
+(RULE &center_line
+  (input *P)
+  (&axis *A)
+  (perp A *A2)
+  (axis_of (:D *D2) (:A A2))
+  (dist_pair P (:D D2) (:K *Kc) (:K2 Kc))
+  (axis_of *D A)
+  (dist_pair P D *K *K2)
+  (<= K K2))
+
+;; Centrality order over the line's cells, from the center outward.
+(INIT &centrality Order
+  (member ((:t P))
+    (&center_line *P))
+  (before ((:a Q) (:b P))
+    (&center_line (:P *Q) (:K *Kq))
+    (&center_line *P *K)
+    (> Kq K)))
+
+(RULE &band_cell
+  (&ink_count.size *N)
+  (&centrality.rank (:t *P) (:R *M))
+  (< M N))
+
+(INIT &band_size Cardinality
+  (member ((:m P))
+    (&band_cell *P)))
+
+(RULE &line_cell
+  (&band_cell *P)
+  (&band_size.size *N)
+  (&ink_count.size N))
+
+(RULE &output
+  (OR ((&line_cell *P)
+       (&ink *Col))
+      ((input P)
+       (&line_cell)
+       (NOT (&line_cell P))
+       (&bg (:C Col)))))

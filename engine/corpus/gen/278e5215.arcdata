@@ -1,0 +1,5 @@
+;; 278e5215
+
+(param &bg Color (0))
+(param &stencil Color (5))
+(param &line_dir Dir (DIR_B))

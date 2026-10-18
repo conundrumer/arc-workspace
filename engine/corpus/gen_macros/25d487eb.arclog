@@ -1,0 +1,131 @@
+;; 25d487eb
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&ink *P)))
+
+(INIT &body_count Cardinality
+  (key ((&ink *P ^Col))
+    (member ((:m P))
+      (&ink *P Col))))
+
+(INIT &body Order
+  (member ((:t Col))
+    (&body_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&body_count.size (:key *Col) *N)))
+
+(RULE &mark
+  (&ink *P *Col)
+  (NOT (&body.maximal (:t Col))))
+
+(RULE &cast_dir
+  (&mark *P)
+  (&bbox.box *B)
+  (ALL ((dir_elem (:D *D_m1))
+        (relative (:Base B) (:X P) (:X_rel *R_m2))
+        (margin (:B R_m2) (:D D_m1) (:K *K_m3)))
+       ((>= K_m3 0)))
+  (margin (:B P) (:D *D_base) (:K *K_m1))
+  (margin B (:D D_base) (:K K_m1))
+  (opposite (:D D_base) (:Opp *D)))
+
+(RULE &rays_source
+  (&mark *P))
+
+(RULE &rays_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(ALTS $choice "the cast direction" $Away
+  (ALT $Open
+    (INIT &margins Order
+      (member ((:t (:V D) (:S K)))
+        (&bbox.box *B)
+        (dir_elem *D)
+        (margin B D *K))
+      (score ((:t (:V D) (:S K)) (:S K))
+        (&bbox.box *B)
+        (dir_elem *D)
+        (margin B D *K)))
+
+    (RULE &cast_dir
+      (&margins.maximal (:t (:V *D))))))
+
+(RULE &rays_dir
+  (&cast_dir *D))
+
+(RULE &rays_node
+  (&cast_dir *D)
+  (input *P))
+
+;; The cast reports background cells only, so the arrowhead's own cells pass
+;; under the ray.
+(INIT &rays Distance
+  (key ((&rays_source (:P ^O))
+        (&rays_dir ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&rays_source (:P O))
+           (&rays_dir D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&rays_node (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&rays_node (:P Q)))
+          ((&rays_source (:P O))
+           (&rays_dir D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&rays_node (:P Q))
+           (= A2 O))
+          ((&rays_source (:P O))
+           (&rays_dir D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&rays_node (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&rays_node (:P Q)))))
+    (source ((:n O))
+      (&rays_source (:P O))
+      (&rays_dir D))))
+
+(RULE &rays_ray
+  (&rays.distance (:key *D (:O *Origin)) (:n *P) *K))
+
+(RULE &rays_end
+  (&rays_ray *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&rays_ray (:P Q) D Origin)))
+
+(RULE &beam
+  (&rays_ray *P (:Origin *Src))
+  (&rays_cell P)
+  (&mark (:P Src) *Col))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&beam P *Col))
+      ((NOT (&beam P))
+       (= Col Col_in))))

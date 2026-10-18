@@ -1,0 +1,297 @@
+;; 95755ff2
+
+(DET &closed_flood_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &closed_steps
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(DET &changed
+  (ex_input *E *P *Col)
+  (ex_output E P (:Col *Col2))
+  (!= Col Col2))
+
+(DET &bg
+  (&changed *E *P)
+  (ex_input E P (:Col *C)))
+
+(DET &cand
+  (ex_input (:Col *C))
+  (NOT (&bg C)))
+
+(DET &closed_cell
+  (ex_input *E *P (:Col *Col_cell))
+  (&cand *C)
+  (!= Col_cell C))
+
+(INIT &closed_flood Propagation
+  (key ((OR ((&closed_cell ^E (:C ^Col) *P)
+             (dir_elem *D)
+             (margin (:B P) D (:K 0))
+             (ex_input E P (:Col *Col_cell))
+             (&cand (:C Col))
+             (!= Col_cell Col))
+            ((ex_input E P (:Col Col_cell))
+             (&cand (:C Col))
+             (!= Col_cell Col)
+             (&closed_flood_steps (:Delta *S))
+             (compose (:A P) (:B S) (:C *P2))
+             (ex_input E (:P P2) (:Col *Col_cell2))
+             (!= Col_cell2 Col))))
+    (source ((:n P))
+      (&closed_cell E (:C Col) *P)
+      (dir_elem *D)
+      (margin (:B P) D (:K 0))
+      (ex_input E P (:Col *Col_cell))
+      (&cand (:C Col))
+      (!= Col_cell Col))
+    (edge ((:a P) (:b P2))
+      (ex_input E *P (:Col *Col_cell))
+      (&cand (:C Col))
+      (!= Col_cell Col)
+      (&closed_flood_steps (:Delta *S))
+      (compose (:A P) (:B S) (:C *P2))
+      (ex_input E (:P P2) (:Col *Col_cell2))
+      (!= Col_cell2 Col))))
+
+(DET &closed_node
+  (&closed_cell *E *C *P)
+  (NOT (&closed_flood.reached (:key E (:Col C)) (:n P))))
+
+;; Each candidate read as the wall: what its cells close off.
+(INIT &closed Quotient
+  (edge ((:a (:E Ky_e) (:C Ky_c) P) (:b (:E Ky_e) (:C Ky_c) (:P P2)))
+    (OR ((&closed_node (:E *Ky_e) (:C *Ky_c) *P)
+         (&closed_steps (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&closed_node (:E Ky_e) (:C Ky_c) (:P P2)))
+        ((&closed_node (:E Ky_e) (:C Ky_c) P)
+         (= P2 P)))))
+
+(DET &closed_component
+  (&closed.class (:a *E *C *P) *Id))
+
+(RULE &cast_dir
+  (dir_elem (:D *Key)))
+
+(DET &open
+  (&cand *C)
+  (ex_input *E)
+  (NOT (&closed_component E C)))
+
+(DET &wall
+  (&cand *C)
+  (NOT (&open C)))
+
+(RULE &closed_cell2
+  (input *P *Col)
+  (NOT (&wall (:C Col))))
+
+(RULE &closed_flood_steps2
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &closed_flood2 Propagation
+  (source ((:n P))
+    (&closed_cell2 *P)
+    (dir_elem *D)
+    (margin (:B P) D (:K 0))
+    (input P *Col)
+    (NOT (&wall (:C Col))))
+  (edge ((:a P) (:b P2))
+    (input *P *Col)
+    (NOT (&wall (:C Col)))
+    (&closed_flood_steps2 (:Delta *S))
+    (compose (:A P) (:B S) (:C *P2))
+    (input (:P P2) (:Col *Col2))
+    (NOT (&wall (:C Col2)))))
+
+(RULE &closed_node2
+  (&closed_cell2 *P)
+  (NOT (&closed_flood2.reached (:n P))))
+
+(RULE &closed_steps2
+  (dir_elem *D)
+  (step_offset D (:V *Delta)))
+
+(INIT &closed2 Quotient
+  (edge ((:a P) (:b P2))
+    (OR ((&closed_node2 *P)
+         (&closed_steps2 (:Delta *S))
+         (compose (:A P) (:B S) (:C *P2))
+         (&closed_node2 (:P P2)))
+        ((&closed_node2 P)
+         (= P2 P)))))
+
+(RULE &closed_component2
+  (&closed2.class (:a *P) *Id))
+
+(RULE &cast_cell
+  (dir_elem (:D *Key))
+  (&closed_component2 *P))
+
+(RULE &source
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&wall (:C Col)))
+  (opposite *D (:Opp *D_border))
+  (margin (:B P) (:D D_border) (:K 0)))
+
+(RULE &cast_source
+  (&source *P (:D *Key)))
+
+(RULE &span_dir
+  (axis_elem (:A *Key))
+  (axis4_of *D (:A Key)))
+
+(RULE &span_node
+  (axis_elem (:A *Key))
+  (input *P))
+
+(RULE &span_source
+  (input *P *Col)
+  (&wall (:C Col))
+  (axis_elem (:A *Key)))
+
+(INIT &span Distance
+  (key ((&span_source (:Key ^Ky) (:P ^O))
+        (&span_dir (:Key Ky) ^D))
+    (edge ((:a A2) (:b Q))
+      (OR ((&span_source (:Key Ky) (:P O))
+           (&span_dir (:Key Ky) D)
+           (axis_of D *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite D (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset D K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&span_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&span_node (:Key Ky) (:P Q)))
+          ((&span_source (:Key Ky) (:P O))
+           (&span_dir (:Key Ky) D)
+           (step_offset D (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&span_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&span_source (:Key Ky) (:P O))
+           (&span_dir (:Key Ky) D)
+           (diag_dir_elem D)
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite D (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset D (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&span_node (:Key Ky) (:P A2))
+           (step_offset D (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&span_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&span_source (:Key Ky) (:P O))
+      (&span_dir (:Key Ky) D))))
+
+(RULE &span_ray
+  (&span.distance (:key (:Ky *Key) *D (:O *Origin)) (:n *P) *K))
+
+(RULE &span_end
+  (&span_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&span_ray Key (:P Q) D Origin)))
+
+(ALTS $choice "which cells of a line lie inside the curve" $Enclose
+  (ALT $Span
+    (RULE &span_between
+      (input *P *Col)
+      (NOT (&wall (:C Col)))
+      (axis_elem (:A *Key))
+      (axis4_of *D (:A Key))
+      (dir8_opposite D (:D2 *O))
+      (&span_ray Key P D)
+      (&span_ray Key P (:D O)))
+
+    (RULE &cast_cell
+      (axis_of (:D *Key) *A)
+      (&span_between (:Key A) *P))))
+
+(RULE &cast_blocked
+  (&cast_cell *Key *P)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &cast_node
+  (dir_elem (:D *Key))
+  (input *P)
+  (NOT (&cast_blocked Key P)))
+
+;; Each instance casts one way over the inside cells of its reading. An
+;; inside cell that already carries content stops the cast.
+(INIT &cast Distance
+  (key ((&cast_source (:Key ^Ky) (:P ^O))
+        (&cast_dir (:Key Ky)))
+    (edge ((:a A2) (:b Q))
+      (OR ((&cast_source (:Key Ky) (:P O))
+           (&cast_dir (:Key Ky))
+           (axis_of (:D Ky) *A)
+           (sub_extent (:P O) A *K)
+           (dir8_opposite (:D Ky) (:D2 *O_m2))
+           (edge_inset (:D O_m2) K (:B *B1_m3))
+           (edge_inset (:D Ky) K (:B *I_m5))
+           (relative (:Base I_m5) (:X 0) (:X_rel *B2_m4))
+           (compose (:A B1_m3) (:B B2_m4) (:C *V_m1))
+           (compose (:A O) (:B V_m1) (:C *A2))
+           (&cast_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m6))
+           (compose (:A A2) (:B V_m6) (:C *Q))
+           (&cast_node (:Key Ky) (:P Q)))
+          ((&cast_source (:Key Ky) (:P O))
+           (&cast_dir (:Key Ky))
+           (step_offset (:D Ky) (:V *V_m12))
+           (compose (:A O) (:B V_m12) (:C Q))
+           (&cast_node (:Key Ky) (:P Q))
+           (= A2 O))
+          ((&cast_source (:Key Ky) (:P O))
+           (&cast_dir (:Key Ky))
+           (diag_dir_elem (:D Ky))
+           (axis_elem (:A *A3))
+           (sub_extent (:P O) (:A A3) (:K *K2))
+           (dir8_opposite (:D Ky) (:D2 *O_m22))
+           (edge_inset (:D O_m22) (:K K2) (:B *B1_m32))
+           (edge_inset (:D Ky) (:K K2) (:B *I_m52))
+           (relative (:Base I_m52) (:X 0) (:X_rel *B2_m42))
+           (compose (:A B1_m32) (:B B2_m42) (:C *V_m13))
+           (compose (:A O) (:B V_m13) (:C A2))
+           (&cast_node (:Key Ky) (:P A2))
+           (step_offset (:D Ky) (:V *V_m62))
+           (compose (:A A2) (:B V_m62) (:C Q))
+           (&cast_node (:Key Ky) (:P Q)))))
+    (source ((:n O))
+      (&cast_source (:Key Ky) (:P O))
+      (&cast_dir (:Key Ky)))))
+
+(RULE &cast_ray
+  (&cast.distance (:key (:Ky *Key) (:Ky *D) (:O *Origin)) (:n *P) *K))
+
+(RULE &cast_end
+  (&cast_ray *Key *P *D *K *Origin)
+  (step_offset D (:V *V_m1))
+  (compose (:A P) (:B V_m1) (:C *Q))
+  (NOT (&cast_ray Key (:P Q) D Origin)))
+
+(RULE &painted
+  (&cast_ray (:Key *D) *P (:Origin *P_src))
+  (&cast_cell (:Key D) P)
+  (&source (:P P_src) D *Col))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))

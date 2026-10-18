@@ -1,0 +1,5 @@
+;; 1caeab9d
+
+(param &bg Color (0))
+(param &anchor Color (1))
+(param &align_dir Dir (DIR_T))
