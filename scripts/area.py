@@ -15,7 +15,7 @@ from handbook.paths import scripts_importable
 scripts_importable()
 
 from ticket_paths import scope_paths, ticket_text  # noqa: E402
-from ticketing.references import names  # noqa: E402
+from ticketing.references import refers, word_forms  # noqa: E402
 from ticket_reads import read_tickets  # noqa: E402
 from transcript_snapshots import Refused, print_refused  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
@@ -54,10 +54,11 @@ def open_changes(tickets: dict[str, Ticket], paths: list[str], root: Path) -> li
 
 
 def recent(tickets: dict[str, Ticket], paths: list[str], since: float) -> list[Ticket]:
+    forms = [(p, word_forms(p)) for p in paths]
     return [t for t in tickets.values()
             if (t.filed >= since or any(line.status is Status.CLOSED and line.time >= since
                                         for line in t.log))
-            and (text := ticket_text(t)) is not None and any(names(text, p) for p in paths)]
+            and (text := ticket_text(t)) is not None and any(refers(text, p, f) for p, f in forms)]
 
 
 def area(paths: list[str]) -> str:
