@@ -220,16 +220,22 @@ class Merge(Enum):
     leaves the change unmerged; merged, where `master` otherwise holds a
     commit made at or after the call with the message it gives, whatever
     its exit status; and otherwise, by the forms of its output that
-    script gives (`merge_outcomes.ran`, `merge_outcomes.conflict_paths`), never
-    ran, as where the harness denied the call, refused for a conflict in
-    its rebase, or refused otherwise. A call whose output holds a line of
-    that script and not its footer (`merge_outcomes.ended`) was stopped,
-    and has no outcome."""
+    script gives, never ran, where the output holds no line of that
+    script (`merge_outcomes.ran`), as where the harness denied the call.
+    A call whose output holds a line of that script and not its footer
+    (`merge_outcomes.ended`) was stopped, and has no outcome. A call that
+    ended was refused for a conflict in its rebase where its output gives
+    the paths that conflict (`merge_outcomes.conflict_paths`), refused
+    otherwise where its output holds a refusal line
+    (`merge_outcomes.refused`), and failed otherwise, as where it ended on
+    a `failed:` line of that script or on a traceback, whatever form its
+    output takes."""
     LEFT_EDITS = "left edits"
     MERGED = "merged"
     NOT_RUN = "not run"
     CONFLICT = "conflict"
     REFUSED = "refused"
+    FAILED = "failed"
 
 
 @dataclass(frozen=True)

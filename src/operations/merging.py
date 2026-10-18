@@ -16,6 +16,10 @@ script's own forms and by `master` (`state.Merge`,
 - a call that never ran, as where the harness denied it, hands the change
   to the coordinator (`HANDED_OFF`), with a note that gives the call, the
   first line of its result and the worktree;
+- a call that ran and ended with no refusal line, as one that ends on a
+  `failed:` line of the script or on a traceback, hands the change to the
+  coordinator, with a note that gives the call, the line of its output
+  that gives why it ended (`FAILED`) and the worktree;
 - a conflict in the rebase leaves the change in its worktree, put by the
   script onto `master` with the paths that conflict as git's 3-way merge
   leaves them: the command writes those paths on the ticket in a line whose
@@ -67,6 +71,7 @@ from pathlib import Path
 
 from controlled_markdown import form, mctx
 from controlled_markdown.nodes import Rule, finding_lines
+from engine.duration import FOOTER_RE
 from operations import briefs, messages
 from operations.change_agents import of_change, settled
 from operations.change_budget import TIME_NOTE, TIME_OPENING, left_draft, taken
@@ -94,6 +99,10 @@ stderr."""
 
 REFUSED = PREFIX + "refused: "
 """The opening of the line of a refusal."""
+
+FAILED_LINE = PREFIX + "failed: "
+"""The opening of the line of a run the script ended on a failure of its
+own."""
 
 REFUSED_TREE = mctx("; the refused commit's tree is {tree}")
 """The end of a refusal of a change after its rebase: the tree of the
@@ -145,6 +154,14 @@ HANDED_OFF_OPENING = HANDED_OFF.split("{", 1)[0]
 
 NOT_RUN = mctx("did not run: {first}")
 """The outcome a `HANDED_OFF` note gives of a merge call that did not run."""
+
+FAILED = mctx("failed: {why}")
+"""The outcome a `HANDED_OFF` note gives of a merge call that ran and
+ended with no refusal line, `why` its line that gives why (`failed_why`)."""
+
+NO_TEXT = "no result text"
+"""What a `HANDED_OFF` note gives in place of a line of a call's output
+where the output has none."""
 
 RERUN_CONFLICT = mctx("{rerun}: the rebase conflicts in {paths}; the old worktree is {worktree} "
                       "on branch {branch}")
@@ -332,7 +349,9 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
         case Merge.NOT_RUN:
             first = (last.result or "").strip().splitlines()
             return hand_off(state, t, command, w, NOT_RUN.format(
-                first=first[0] if first else "no result text"))
+                first=first[0] if first else NO_TEXT))
+        case Merge.FAILED:
+            return hand_off(state, t, command, w, FAILED.format(why=failed_why(last.result or "")))
         case Merge.CONFLICT if NOT_PUT.search(last.result or "") is not None:
             refusal = next(ln for ln in (last.result or "").splitlines()
                            if NOT_PUT.search(ln) is not None)
@@ -424,10 +443,27 @@ def refused_tree(output: str) -> str | None:
     return None if m is None else m["tree"]
 
 
+def refusal_line(output: str) -> str | None:
+    """The first line of `output`, what a merge call printed, that opens
+    with `REFUSED`, or None where no line does."""
+    return next((ln for ln in output.splitlines() if ln.startswith(REFUSED)), None)
+
+
+def failed_why(output: str) -> str:
+    """The line of `output`, a merge call's that ended with no refusal
+    line, that gives why it ended: its first line that opens with
+    `FAILED_LINE`, else its last line once the footer is taken out, else
+    `NO_TEXT`."""
+    lines = output.splitlines()
+    rest = FOOTER_RE.sub("", output).strip().splitlines()
+    return next((ln for ln in lines if ln.startswith(FAILED_LINE)),
+                rest[-1] if rest else NO_TEXT)
+
+
 def documents_failed(output: str) -> bool:
     """Whether the refusal line of `output` gives a check of the documents
     as failed."""
-    line = next((ln for ln in output.splitlines() if ln.startswith(REFUSED)), "")
+    line = refusal_line(output) or ""
     m = re.match(form(REFUSED + CHECK_FAILED, {"s": r"(?P<s>[^`]*)"}), line)
     return m is not None and m["s"] in {check_name(argv) for argv in DOCUMENT_CHECKS}
 

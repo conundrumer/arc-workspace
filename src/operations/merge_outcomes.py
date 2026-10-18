@@ -1,13 +1,13 @@
 """What a call of `scripts/merge_change.py` printed, as the reads of an
 operator's merge calls take it: the texts of the script that those reads
-match, and whether the call ran, ended, refused a change for a conflict,
-or left a worktree for changes made after its change's commit."""
+match, and whether the call ran, ended, refused a change, and whether
+for a conflict, or left a worktree for changes made after its change's commit."""
 
 import re
 
 from controlled_markdown import form, mctx
 from engine.duration import FOOTER_RE
-from operations.merging import PREFIX, REFUSED, split_paths
+from operations.merging import PREFIX, REFUSED, refusal_line, split_paths
 from operations.worktrees import BASE
 
 CONFLICT = mctx("rebasing {branch} onto {onto} conflicts in {paths}; {outcome}")
@@ -25,6 +25,12 @@ def ended(output: str) -> bool:
     """Whether `output`, what a call of the script printed, holds the
     script's footer, which a run that was stopped does not."""
     return any(m[0].startswith(PREFIX) for m in FOOTER_RE.finditer(output))
+
+
+def refused(output: str) -> bool:
+    """Whether `output`, what a call of the script printed, holds a
+    refusal line (`merging.refusal_line`)."""
+    return refusal_line(output) is not None
 
 
 STAYS = mctx("{master} is fast-forwarded, and {why}, so {worktree} and {branch} stay")

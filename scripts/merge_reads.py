@@ -10,7 +10,7 @@ from state_reads import DERIVED, Kept, state_cache
 from wait_bound import bound_denied
 
 from controlled_markdown import mctx
-from operations.merge_outcomes import conflict_paths, ended, left_edits, ran
+from operations.merge_outcomes import conflict_paths, ended, left_edits, ran, refused
 from operations.merging import MERGE_SCRIPT, merge_messages
 from operations.state import Merge, Tool
 
@@ -31,11 +31,9 @@ def merge_outcome(aid: str, command: str, time: float, result: str | None, error
     Otherwise it merged where `master` holds, by `subjects`, the
     time of the latest commit of `master` with each subject, a commit made
     at or after the call with the message of each change it merges,
-    whatever its exit status, as through a pipe. Otherwise a call whose
-    output holds a line of the script and not its footer
-    (`merge_outcomes.ended`), a run that was stopped, as where the step
-    journal ended it, has no outcome, so the merge call is given again;
-    and otherwise the output's own forms give what it did. A call whose quoting cannot be
+    whatever its exit status, as through a pipe. Otherwise the forms of
+    its output give what it did, as `Merge` gives, and a stopped call has
+    no outcome, so the merge call is given again. A call whose quoting cannot be
     read has no outcome, and an `undecided` line names it."""
     if MERGE_SCRIPT not in command or result is None:
         return None
@@ -61,7 +59,9 @@ def merge_outcome(aid: str, command: str, time: float, result: str | None, error
         return Merge.NOT_RUN
     if not ended(result):
         return None
-    return Merge.REFUSED if conflict_paths(result) is None else Merge.CONFLICT
+    if conflict_paths(result) is not None:
+        return Merge.CONFLICT
+    return Merge.REFUSED if refused(result) else Merge.FAILED
 
 
 @state_cache(DERIVED, kept=Kept.DISK)
