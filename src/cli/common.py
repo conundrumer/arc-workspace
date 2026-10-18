@@ -316,7 +316,8 @@ packages' code and the Souffle sources every solver includes."""
 def stamped_paths(root: Path) -> set[str]:
     """The path, from `root`, of each file under `root` that a pattern of
     `SOURCES` matches."""
-    return {p.relative_to(root).as_posix() for pattern in SOURCES for p in root.glob(pattern)}
+    return {p.relative_to(root).as_posix()
+            for p in checkout.matched(root, SOURCES)}
 
 
 def stamp() -> str:

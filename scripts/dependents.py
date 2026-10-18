@@ -26,7 +26,7 @@ A file that does not parse has an edge to every file."""
 
 import ast
 import fnmatch
-from collections.abc import Iterable, Iterator, Set
+from collections.abc import Callable, Iterable, Iterator, Set
 from enum import Enum
 from pathlib import Path, PurePosixPath
 
@@ -90,7 +90,7 @@ class Graph:
         for path in self.files:
             for to in self.edges(path, reach):
                 back.setdefault(to, set()).add(path)
-        return set(reached(back, self.touched)) & self.files
+        return set(reached(lambda p: back.get(p, ()), self.touched)) & self.files
 
     def parse(self, path: str) -> ast.Module | None:
         if path not in self.parsed:
@@ -237,15 +237,16 @@ def conftests(path: str) -> set[str]:
     return {str(parent / "conftest.py") for parent in PurePosixPath(path).parents}
 
 
-def reached(back: dict[str, set[str]], start: Set[str]) -> Iterator[str]:
-    """Each path from which a path of edges leads to one of `start`, `back`
-    giving the paths with an edge to each, `start` among them."""
+def reached(edges: Callable[[str], Iterable[str]],
+            start: Set[str]) -> Iterator[str]:
+    """Each path that a path of `edges` leads to from one of `start`, `start`
+    among them, `edges` giving the paths one path has an edge to."""
     seen = set(start)
     todo = list(start)
     while todo:
         path = todo.pop()
         yield path
-        for source in back.get(path, ()):
-            if source not in seen:
-                seen.add(source)
-                todo.append(source)
+        for to in edges(path):
+            if to not in seen:
+                seen.add(to)
+                todo.append(to)

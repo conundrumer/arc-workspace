@@ -343,8 +343,16 @@ def sources_digest(patterns: Sequence[str]) -> str:
     """The sha256 of each file under `ROOT` that one of the glob `patterns`
     gives, with its path, in hex: the same for two checkouts with the same
     such files."""
-    return files_digest({path: path.read_bytes() for pattern in patterns
-                         for path in sorted(ROOT.glob(pattern))})
+    return files_digest({path: path.read_bytes()
+                         for path in matched(ROOT, patterns)})
+
+
+def matched(root: Path, patterns: Sequence[str]) -> list[Path]:
+    """Each file under `root` that a glob pattern of `patterns` gives, the
+    files of each pattern sorted, in the order of `patterns`, each file
+    once."""
+    return list(dict.fromkeys(path for pattern in patterns
+                              for path in sorted(root.glob(pattern))))
 
 
 def files_digest(files: dict[Path, bytes]) -> str:

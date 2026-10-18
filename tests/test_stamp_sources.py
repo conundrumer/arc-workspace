@@ -18,11 +18,7 @@ PACKAGES = "src/"
 def test_sources_hold_the_import_closure() -> None:
     stamped = stamped_paths(checkout.ROOT)
     graph = dependents.Graph(checkout.ROOT, ())
-    todo = [p for p in stamped if p.endswith(dependents.PYTHON_SUFFIX)]
-    reached = set(todo)
-    while todo:
-        for to in graph.edges(todo.pop(), dependents.Reach.IMPORTS):
-            if to not in reached:
-                reached.add(to)
-                todo.append(to)
+    reached = set(dependents.reached(
+        lambda p: graph.edges(p, dependents.Reach.IMPORTS),
+        {p for p in stamped if p.endswith(dependents.PYTHON_SUFFIX)}))
     assert sorted(p for p in reached - stamped if p.startswith(PACKAGES)) == []
