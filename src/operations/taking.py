@@ -11,7 +11,10 @@ While an `Op scope: own.` line stands, or no `Op scope:` line came
 under `Op scope: all.`, only those of `held_work`, so the work already held
 reaches its end, those of `allowed`, the tickets an `Op allow:` or an
 `Op expedite:` line gives, and those of `own_work`, the session's line of
-work, and each other change waits for an `Op scope: all.` line. While an
+work, and each other change waits for an `Op scope: all.` line. A ticket
+whose title refers to a file that line changed is of it only once a
+ticket analyst judges that the line needs it (`follow_ups`, `judging`).
+While an
 `Op pause.` line stands (`directives.paused`), it takes only those of
 `held_work` and of `allowed`, and each other change waits for an
 `Op resume.` line. Past the usage pace (`pacing`), the changes of
@@ -111,8 +114,15 @@ def admits(state: State) -> Callable[[str], bool]:
     or any where no script defines `takes`; of those, one of `held_work`
     or of `allowed` always, and any other only while the usage pace
     admits one (`Computed.pace`) and `scope_admits` admits it."""
+    return gate(state, scope_admits(state))
+
+
+def gate(state: State, clear: Callable[[str], bool]) -> Callable[[str], bool]:
+    """Whether the operator may launch work on a ticket that `clear`
+    admits: one `passing` passes, of `held_work` or of `allowed` always,
+    and any other only while the usage pace admits one (`Computed.pace`)
+    and `clear` admits it."""
     passes, held = passing(state)
-    clear = scope_admits(state)
     paced = pacing.admits(state.computed.pace, state.now)
     return lambda n: passes(n) and (held(n) or (paced and clear(n)))
 
@@ -180,30 +190,74 @@ FOLLOWS = frozenset({Kind.CHANGE, Kind.QUESTION, Kind.VALIDATION})
 request."""
 
 
+OWN = mctx("own: {judgment}")
+"""The note of the line a ticket analyst logs on a ticket of `follow_ups`
+that it judges the session's line of work needs, for `judgment`."""
+
+NOT_OWN = mctx("not own: {judgment}")
+"""The note of the line a ticket analyst logs on a ticket of `follow_ups`
+that it judges the session's line of work does not need, for
+`judgment`."""
+
+OWN_LINE = re.compile(form(OWN, {"judgment": r".+"}))
+NOT_OWN_LINE = re.compile(form(NOT_OWN, {"judgment": r".+"}))
+
+
+def own_step(state: State) -> Callable[[Ticket], list[str]]:
+    """The step of `own_work` from a ticket: to each ticket of its `links`
+    and to each ticket of `filed_for` of a kind of `FOLLOWS`."""
+    below = filed_for(state)
+    return lambda t: [*links(t), *(f.number for f in below.get(t.number, ()) if f.kind in FOLLOWS)]
+
+
+@memoized
+def line_of_work(state: State) -> set[str]:
+    """Each `request` and `change` of `State.mine` whose filer is the
+    coordinator, and each ticket a chain of steps of `own_step` reaches
+    from one."""
+    return closure(state, {n for n, t in state.tracker.tickets.items()
+                           if state.mine(t) and t.filer == COORDINATOR
+                           and t.kind in (Kind.REQUEST, Kind.CHANGE)}, own_step(state))
+
+
+def judged(state: State, pattern: re.Pattern[str]) -> set[str]:
+    """The tickets a line of whose log has a note that `pattern` matches."""
+    return {n for n, t in state.tracker.tickets.items()
+            if any(pattern.fullmatch(ln.note) for ln in t.log)}
+
+
 @memoized
 def own_work(state: State) -> set[str]:
-    """The session's line of work: each `request` and `change` of
-    `State.mine` whose filer is the coordinator, and each ticket a chain of
-    steps reaches from one, a step from a ticket to each ticket of its
-    `links` and to each ticket of `filed_for` of a kind of `FOLLOWS`; and
-    each ticket outside `tickets/closed/` whose title refers, as
-    `references.referring` judges it, to a file of `touched` of that line
-    of work, with each ticket a chain of those steps reaches from it. A
-    ticket its title admits, and each ticket reached from it, adds no
-    files."""
-    tickets = state.tracker.tickets
-    below = filed_for(state)
+    """The session's line of work: the tickets of `line_of_work`, and each
+    ticket whose log holds a line of the form `OWN`, with each ticket a
+    chain of steps of `own_step` reaches from one."""
+    return closure(state, line_of_work(state) | judged(state, OWN_LINE),
+                   own_step(state)) & state.tracker.tickets.keys()
 
-    def step(t: Ticket) -> list[str]:
-        return [*links(t), *(f.number for f in below.get(t.number, ()) if f.kind in FOLLOWS)]
 
-    line = closure(state, {n for n, t in tickets.items()
-                           if state.mine(t) and t.filer == COORDINATOR
-                           and t.kind in (Kind.REQUEST, Kind.CHANGE)}, step)
-    pattern = referring(touched(state, line))
-    return closure(state, line | {n for n, t in tickets.items()
-                                  if t.status is not Status.CLOSED and pattern.search(t.title)},
-                   step) & tickets.keys()
+@memoized
+def follow_ups(state: State) -> set[str]:
+    """The tickets a ticket analyst judges for the session's line of work:
+    each ticket outside `tickets/closed/` and outside `own_work` whose title
+    refers, as `references.referring` judges it, to a file of `touched` of
+    `line_of_work`, and whose log holds no line of the form `OWN` or
+    `NOT_OWN`."""
+    pattern = referring(touched(state, line_of_work(state)))
+    out = {n for n, t in state.tracker.tickets.items()
+           if t.status is not Status.CLOSED and pattern.search(t.title)}
+    return out - own_work(state) - judged(state, NOT_OWN_LINE)
+
+
+def judging(state: State) -> Callable[[str], bool]:
+    """Whether the operator may launch a ticket analyst to judge a ticket
+    of `follow_ups`: while `directives.own_scope` holds and no `Op pause.`
+    line stands, a ticket of `follow_ups` that `gate` passes with
+    `follow_ups` as the tickets it admits."""
+    if not own_scope(state) or paused(state):
+        return lambda _: False
+    pending = follow_ups(state)
+    passes = gate(state, pending.__contains__)
+    return lambda n: n in pending and passes(n)
 
 
 def touched(state: State, numbers: set[str]) -> frozenset[str]:

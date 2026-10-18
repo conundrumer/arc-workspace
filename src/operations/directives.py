@@ -19,7 +19,9 @@ prefix `Op`, the word of its kind and a colon, past a list marker:
 - `Op scope: own.`, under which no operator of the session settles an open
   ticket or takes a change outside the work held, the tickets an
   `Op allow:` or an `Op expedite:` line gives and the session's line of
-  work (`taking.own_work`), and `Op scope: all.`, which ends that limit,
+  work (`taking.own_work`), other than the launch of a ticket analyst that
+  judges whether that line needs a ticket whose title refers to a file
+  the line changed (`taking.judging`), and `Op scope: all.`, which ends that limit,
   the last such line standing, and `Op scope: own.` where none came
   (`own_scope`);
 - `Op pause.`, after which no operator of the session settles an open

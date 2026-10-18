@@ -81,7 +81,7 @@
 
 ### A ticket analyst's brief
 - A ticket analyst's brief gives one of these:
-    - The tickets under `tickets/open/` to settle.
+    - The tickets under `tickets/open/` to settle, some of which it may give to settle only where the session's line of work needs them.
     - The process assessment.
 - With the tickets a solver pass filed, it gives the review of that pass's transcript, where one was made.
 - With a `request` that the coordinator filed on `op send`, it gives that request's transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it.
@@ -123,9 +123,9 @@
     - `Op merge: <number>`: a `change` under `tickets/blocked/`, which the user's ruling has the operator merge.
     - `Op tickets are open.`
     - `Op allow: <number>, ...`: tickets of any session, and from each of them, and so on down each chain: each ticket a link, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, leads to from it, and, from a ticket that is not a `change`, each `change` whose Motivation gives its number. The operators of the session settle and take each of them under `Op scope: own.` and `Op pause.` too, with no priority over other work.
-    - `Op scope: own.`, which also holds where no `Op scope:` line came: the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than what `Op pause.` admits and the session's line of work:
+    - `Op scope: own.`, which also holds where no `Op scope:` line came: the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than what `Op pause.` admits, the session's line of work, and the judgment by a ticket analyst of the tickets of the second sub-item:
         - The requests and changes the session's coordinator filed, and from each of them, and so on down each chain: each ticket a link leads to from it, each `change` whose Motivation gives its number, and each question or validation filed on it.
-        - Each ticket outside `tickets/closed/` whose title refers to a file that the commit that merged a `change` of the item above changed, or to a file of a commit that a coordinator's line in the log of a `request` of the item above gives, and from each such ticket the tickets that the steps of the item above lead to.
+        - Each ticket outside `tickets/closed/` whose title refers to a file that the commit that merged a `change` of the item above changed, or to a file of a commit that a coordinator's line in the log of a `request` of the item above gives, that a ticket analyst judged the session's line of work needs, as the line `own: <judgment>` in its log shows, and from each such ticket the tickets that the steps of the item above lead to. A ticket analyst judges each such ticket whose log holds neither an `own:` line nor a `not own:` line.
     - `Op scope: all.`: ends the limit of `Op scope: own.`.
     - `Op pause.`: the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than the tickets and changes an `Op allow:` or an `Op expedite:` line gives, and the work an operator of the session took and each `change` that work waits on, which they finish.
     - `Op resume.`: ends `Op pause.`.

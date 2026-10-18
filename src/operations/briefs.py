@@ -345,6 +345,8 @@ def after_merge(number: str, items: str, head: str) -> str:
 
 REVIEW_DRAFTS = mctx("Review the drafts {numbers}.")
 SETTLE = mctx("Settle the tickets under `tickets/open/` {numbers}.")
+JUDGE = mctx("Of these, settle each of {numbers} only where you judge that the session's line of "
+             "work needs it.")
 REVISE = mctx("Revise each draft `change` ticket {numbers}, whose log holds findings or "
               "suggestions.")
 PASS_SETTLE = mctx("Settle the tickets under `tickets/open/` {numbers}, which the solver pass on "
@@ -368,8 +370,12 @@ def ticket_review(numbers: list[str], operator: str) -> str:
                       LAUNCHER.format(operator=operator)])
 
 
-def settle(numbers: list[str], operator: str) -> str:
+def settle(numbers: list[str], judged: list[str], operator: str) -> str:
+    """The brief of a ticket analyst that settles the tickets `numbers`,
+    each of `judged` only where it judges that the session's line of work
+    needs it."""
     return "\n".join([SETTLE.format(numbers=item_list(numbers)),
+                      *([JUDGE.format(numbers=item_list(judged))] if judged else []),
                       LAUNCHER.format(operator=operator)])
 
 

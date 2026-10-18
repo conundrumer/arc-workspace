@@ -7,7 +7,10 @@ the command launches a ticket analyst with it, leaving out each ticket on a
 task whose solver pipeline has yet to launch its own ticket analyst, which
 `passes` gives that ticket. While an `Op scope: own.` line stands, or no
 `Op scope:` line came (`directives.own_scope`), it launches one only with
-the tickets of `taking.allowed` and of `taking.own_work`, and while an `Op pause.` line
+the tickets of `taking.allowed` and of `taking.own_work`, and with those
+of `taking.follow_ups` that `taking.judging` gives, whose brief has the
+analyst settle each only where it judges that the session's line of work
+needs it; and while an `Op pause.` line
 stands (`directives.paused`), only with those of `taking.allowed`. A ticket
 goes to no second analyst while one runs on it, nor again once one
 returned, until the coordinator writes a line in its log after that analyst's launch, as where it records a decision of the
@@ -16,7 +19,10 @@ user or the user's later words on it, or the ticket moves from
 ticket analyst that runs on the ticket gets the coordinator's line by
 message, and then counts as given it. A ticket other than a `change` that
 stands under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/` with such a line after the line that moved it there
-moves back to `tickets/open/` first.
+moves back to `tickets/open/` first. An analyst that no longer runs
+and was launched before a ticket's last line of the form `taking.NOT_OWN`
+counts as given that ticket no longer once `taking.scope_admits` admits
+it.
 
 The coordinator gets from a ticket analyst's reply only what goes to the
 user. Where that reply ends with the part for the coordinator
@@ -79,11 +85,17 @@ GIVEN = (Purpose.TRIAGE, Purpose.PASS)
 
 def given(state: State, number: str) -> bool:
     """An analyst launched before the event that freed `number`, and not
-    sent that event's line, judged the ticket as it stood before it."""
+    sent that event's line, judged the ticket as it stood before it. An
+    analyst that no longer runs and was launched before the last line of
+    the form `taking.NOT_OWN` on it is not counted where
+    `taking.scope_admits` admits it."""
     t = state.tracker.tickets[number]
     event = freed(t.log, t.kind, t.filed)
     line = event.line
-    return any(number in nums and (
+    judged = max((ln.time for ln in t.log if taking.NOT_OWN_LINE.fullmatch(ln.note)), default=None)
+    if judged is not None and not taking.scope_admits(state)(number):
+        judged = None
+    return any(number in nums and (judged is None or a.pending or a.launched > judged) and (
         a.pending or a.launched > event.time or (
             a.agent_id is not None and line is not None
             and sent(state, a.agent_id, messages.later_line(number, line.time, line.note))))
@@ -137,17 +149,25 @@ def unsettled_open(state: State) -> list[str]:
 
 
 def selected(state: State) -> list[str]:
+    """The tickets of `unsettled_open` that `taking.admits` and
+    `taking.scope_admits` admit, and those `taking.judging` gives."""
     admitted = taking.admits(state)
     clear = taking.scope_admits(state)
-    return [n for n in unsettled_open(state) if admitted(n) and clear(n)]
+    judge = taking.judging(state)
+    return [n for n in unsettled_open(state) if (admitted(n) and clear(n)) or judge(n)]
 
 
 def settle(state: State) -> Step | None:
+    """The launch of a ticket analyst on the tickets of `selected`, which
+    settles those `taking.scope_admits` does not admit only where it judges
+    that the session's line of work needs them."""
     numbers = selected(state)
     if not numbers:
         return None
+    clear = taking.scope_admits(state)
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.TRIAGE, joined(numbers)),
-                  briefs.settle(numbers, state.me), items=len(numbers),
+                  briefs.settle(numbers, [n for n in numbers if not clear(n)], state.me),
+                  items=len(numbers),
                   occasion=str(max(state.tracker.tickets[n].last_time for n in numbers)))
 
 

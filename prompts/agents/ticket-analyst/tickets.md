@@ -2,9 +2,11 @@
 * comment: when editing this doc
     - The ticket analyst receives this document from the step command as it enters the settling of its tickets, once it has read its brief.
     - Acts, each with its section:
+        - Judging whether the session's line of work needs a ticket your brief has you settle only where it does: [Settling tickets](#settling-tickets).
         - Finding a ticket's duplicates, checking its evidence, and judging a `request`'s earlier `change` or merged commit, or its `validation` ticket, a solver pass's ticket and `refactor` tickets: [Settling tickets](#settling-tickets).
 
 # Settling tickets
+- For each ticket your brief has you settle only where the session's line of work needs it, judge whether a change of that line made what the ticket records wrong or worse, or a ticket of that line waits on it. Where it does, log `own: <judgment>` on it with no transition, and settle it. Otherwise log `not own: <judgment>` on it with no transition, and leave it untaken.
 - Find a ticket's duplicates under `tickets/` by their evidence, and a `request`'s by the tickets that ask for the same change.
 - Check a ticket's evidence against the current tree. A `request`'s evidence is its Goal, its spans and its Grounds, in the transcript brief your brief gives, or else in the output of `uv run python scripts/spans.py brief <number>`, and, where a message of the user in a span answers a message of the coordinator, the first message of the coordinator that gives what it answers, wherever it lies before that span's end.
     - While you work on a `request`, read no entry of its session's transcript after the end of its last span.

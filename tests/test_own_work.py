@@ -1,11 +1,13 @@
 """The operators' scope is the session's line of work where no `Op scope:`
 line came or the last one gives `own`: the coordinator's requests and
 changes, the changes filed for them, the questions on those changes, and
-the tickets whose title refers to a file of the commit that merged such a
-change or of a commit a request's log gives, with the changes filed for
-those tickets, whose files admit no further ticket; a title refers to a
-file under the one pattern where it gives the file's path, or a form of
-the path that holds a `.` or a `/` with no `/` and no `.` before it."""
+the tickets whose log holds a line that judges the line of work needs
+them, with the changes filed for those tickets. The tickets whose title
+refers to a file of the commit that merged such a change or of a commit a
+request's log gives are the ones a ticket analyst judges, and their files
+admit no further ticket; a title refers to a file under the one pattern
+where it gives the file's path, or a form of the path that holds a `.` or
+a `/` with no `/` and no `.` before it."""
 
 from pathlib import Path
 
@@ -54,9 +56,9 @@ def test_the_scope_is_own_unless_the_last_scope_line_gives_all(
     assert own_scope(state(tmp_path, messages=messages)) is own
 
 
-def test_own_work_follows_the_line_of_work_and_the_paths_it_touched(tmp_path: Path) -> None:
+def test_own_work_follows_the_line_of_work_and_its_judged_tickets(tmp_path: Path) -> None:
     from operations.state import Commit
-    from operations.taking import own_work
+    from operations.taking import follow_ups, own_work
     tickets = tmp_path / "tickets"
     given = [
         ticket(tickets, "9-1_change_x-need_coordinator", "request", "x: a need"),
@@ -65,7 +67,8 @@ def test_own_work_follows_the_line_of_work_and_the_paths_it_touched(tmp_path: Pa
         ticket(tickets, "9-3_change_9-2_code-editor", "question", "`taking.py`: which?"),
         ticket(tickets, "9-4_change_9-2_operator", "performance", "9-2: over budget"),
         ticket(tickets, "9-5_agent_a0000000000000001_code-reviewer", "bug",
-               "`src/operations/taking.py`: wrong"),
+               "`src/operations/taking.py`: wrong",
+               more="2026-10-17T04:00:00Z open [ticket-analyst]: own: 9-2 made it wrong\n"),
         ticket(tickets, "9-6_agent_a0000000000000002_code-reviewer", "bug", "an agent's run: slow"),
         ticket(tickets, "9-7_change_y-hotfix_coordinator", "request", "y: a hotfix",
                more=f"2026-10-17T03:00:00Z open [coordinator]: merged at {HASH[:8]}; settles 9-7\n"),
@@ -79,8 +82,35 @@ def test_own_work_follows_the_line_of_work_and_the_paths_it_touched(tmp_path: Pa
     commits = [Commit(HASH, 0.0, frozenset(), "y", False, frozenset({"scripts/hotfixed.py"})),
                Commit(MERGE, 0.0, frozenset(), "x: the fix", False,
                       frozenset({"src/operations/taking.py"}))]
-    assert own_work(state(tmp_path, given, commits)) == {
-        "9-1", "9-2", "9-3", "9-5", "9-7", "9-8", "9-9"}
+    s = state(tmp_path, given, commits)
+    assert own_work(s) == {"9-1", "9-2", "9-3", "9-5", "9-7", "9-9"}
+    assert follow_ups(s) == {"9-8"}
+
+
+def test_a_follow_up_goes_to_an_analyst_under_own_scope_until_judged_not_own(
+        tmp_path: Path) -> None:
+    from dataclasses import replace
+    from operations.pacing import Until
+    from operations.state import Commit, Computed, Message
+    from operations.triage import selected
+    tickets = tmp_path / "tickets"
+    given = [
+        ticket(tickets, "9-1_change_x-fix_coordinator", "change", "x: the fix"),
+        ticket(tickets, "9-2_agent_a0000000000000001_code-reviewer", "bug",
+               "`src/operations/taking.py`: wrong"),
+        ticket(tickets, "9-3_agent_a0000000000000002_code-reviewer", "bug",
+               "`src/operations/taking.py`: slow",
+               more="2026-10-17T04:00:00Z open [ticket-analyst]: not own: no change of the line\n"),
+        ticket(tickets, "9-4_agent_a0000000000000003_code-reviewer", "bug", "`README.md`: stale"),
+    ]
+    commits = [Commit(MERGE, 0.0, frozenset(), "x: the fix", False,
+                      frozenset({"src/operations/taking.py"}))]
+    computed = Computed(to_settle=("9-2", "9-3", "9-4"), pace=Until(0.0))
+    own = replace(state(tmp_path, given, commits), computed=computed)
+    assert selected(own) == ["9-2"]
+    every = replace(state(tmp_path, given, commits,
+                          [Message("op", 1.0, None, "Op scope: all.")]), computed=computed)
+    assert selected(every) == ["9-2", "9-3", "9-4"]
 
 
 TITLES = ["`src/operations/taking.py`: wrong", "operations.taking: wrong", "taking.py is slow",

@@ -7,7 +7,7 @@
 - This part applies where your brief gives tickets under `tickets/open/` to settle: [Settling tickets](prompts/agents/ticket-analyst/tickets.md).
 
 ## Take the tickets
-- Take each ticket your brief gives to settle, as [Tracking](prompts/agents/ticket-analyst.md#tracking) gives.
+- Take each ticket your brief gives to settle, other than one you leave untaken as [Settling tickets](prompts/agents/ticket-analyst/tickets.md#settling-tickets) gives, as [Tracking](prompts/agents/ticket-analyst.md#tracking) gives.
 
 ## Find the duplicates
 - Find each one's duplicates, as [Settling tickets](prompts/agents/ticket-analyst/tickets.md#settling-tickets) gives.
