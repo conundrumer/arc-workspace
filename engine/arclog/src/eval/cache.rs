@@ -2,13 +2,8 @@
 //! the entry reads, the lookup and the store, the ids of relations by
 //! their rows, and eviction by least recent use under a share of the
 //! session's byte bound.
-//!
-//! [`lookup`] finds nothing and [`store`] stores nothing until the result
-//! cache's stage writes them, so no result depends on the cache before
-//! then.
 
-#![allow(unused_variables, dead_code)]
-
+use super::pool::InFlight;
 use super::RelationValue;
 use crate::relations::Relation;
 use crate::resolver::ResolvedContent;
@@ -29,17 +24,42 @@ pub struct EntryRequest<'a> {
 
 /// The value cached for `request` in `session`, if any.
 pub fn lookup(session: &TaskSession, request: &EntryRequest<'_>) -> Option<RelationValue> {
-    None
+    let found = |relations: &[&Relation]| -> Option<Box<[RelationId]>> {
+        relations.iter().map(|relation| session.results.find_id(relation)).collect()
+    };
+    let key = ResultKey {
+        clause: request.clause.clone(),
+        reads: found(request.reads)?,
+        example: request.example,
+        parameters: found(request.parameters)?,
+    };
+    session.results.get(&key)
 }
 
 /// Caches `value` for `request` in `session`, where its stop, if it holds
 /// one, is stored, and evicts the entries least recently used while the
 /// cache's bytes exceed its share of the session's byte bound.
-pub fn store(session: &TaskSession, request: &EntryRequest<'_>, value: &RelationValue) {}
+pub fn store(session: &TaskSession, request: &EntryRequest<'_>, value: &RelationValue) {
+    if let RelationValue::Stopped(stop) = value {
+        if !stop.bound.is_stored() {
+            return;
+        }
+    }
+    session.results.insert(key(session, request), value.clone());
+    session.results.evict(cache_bytes_bound(session));
+}
 
 /// The key of `request`, each relation it reads by its id.
 pub fn key(session: &TaskSession, request: &EntryRequest<'_>) -> ResultKey {
-    todo!()
+    let ids = |relations: &[&Relation]| -> Box<[RelationId]> {
+        relations.iter().map(|relation| relation_id(session, relation)).collect()
+    };
+    ResultKey {
+        clause: request.clause.clone(),
+        reads: ids(request.reads),
+        example: request.example,
+        parameters: ids(request.parameters),
+    }
 }
 
 /// The id of `relation` in `session`, interned by its rows: the hash
@@ -47,11 +67,18 @@ pub fn key(session: &TaskSession, request: &EntryRequest<'_>) -> ResultKey {
 /// hashes match are compared by their rows, so two relations share an id
 /// only where they hold the same rows.
 pub fn relation_id(session: &TaskSession, relation: &Relation) -> RelationId {
-    todo!()
+    session.results.relation_id(relation)
 }
 
-/// The share of the session's byte bound that the result cache may hold.
-/// A relation's bytes count once, however many entries read it.
+/// The share of the session's byte bound that the result cache may hold:
+/// half of it, a provisional share. A relation's bytes count once, however
+/// many entries read it.
 pub fn cache_bytes_bound(session: &TaskSession) -> usize {
-    todo!()
+    session.bound.bytes / 2
+}
+
+/// The entries that the pool's threads compute, for a thread that asks for
+/// one of them to wait on.
+pub fn in_flight(session: &TaskSession) -> &InFlight<ResultKey, RelationValue> {
+    session.results.in_flight()
 }

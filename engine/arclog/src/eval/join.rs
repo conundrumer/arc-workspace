@@ -32,7 +32,6 @@ const BATCH: u64 = 1024;
 #[derive(Debug)]
 pub struct Budget<'a> {
     limits: &'a Limits,
-    #[allow(dead_code, reason = "the check of the session's byte bound reads it")]
     session: &'a TaskSession,
     work: u64,
     rows: u64,
@@ -50,7 +49,7 @@ impl<'a> Budget<'a> {
     }
 
     /// Counts a batch of `bindings` tried, and checks the caps, the
-    /// deadline and the cancellation.
+    /// session's byte bound, the deadline and the cancellation.
     pub fn charge_work(&mut self, bindings: u64) -> Result<(), ReachedBound> {
         self.work += bindings;
         let caps = self.limits.caps;
@@ -60,6 +59,7 @@ impl<'a> Budget<'a> {
         if self.rows > caps.rows {
             return Err(ReachedBound::Rows { cap: caps.rows });
         }
+        self.session.within_bound().map_err(ReachedBound::SessionBytes)?;
         if self.limits.deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline) {
             return Err(ReachedBound::Deadline);
         }
