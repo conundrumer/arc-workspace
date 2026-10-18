@@ -388,7 +388,7 @@ def test_a_call_whose_command_starts_within_the_bound_is_denied(
     for cmd, tool in [(command("PreToolUse", "Bash|Monitor"), "Bash"),
                       (command("PreToolUse", "Agent", "context_bound_hook"), "Agent"),
                       (command("PreToolUse", "^(?!(Bash|Monitor|Agent)$).*",
-                               "reader_update_hook"), "Read")]:
+                               "reader_update_hook"), "Edit")]:
         delivered(main).touch()
         out = json.loads(run(cmd, call(main, tool, {})))["hookSpecificOutput"]
         assert out["permissionDecision"] == "deny", tool
@@ -429,7 +429,7 @@ def test_pre_tool_use_form_on_other_tools(tmp_path: Path) -> None:
     read = command("PreToolUse", "^(?!(Bash|Monitor|Agent)$).*", "reader_update_hook")
     record(main, "main").parent.mkdir(parents=True)
     record(main, "main").write_text(both(BEFORE))
-    hook = call(main, "Read", {"file_path": str(checkout.ROOT / "CLAUDE.md")})
+    hook = call(main, "Edit", {"file_path": str(checkout.ROOT / "CLAUDE.md")})
     out = json.loads(run(read, hook))["hookSpecificOutput"]
     assert out["permissionDecision"] == "deny"
     assert f"context --update {BEFORE} {BEFORE} coordinator`" in out["additionalContext"]
@@ -457,3 +457,23 @@ def test_the_latest_created_transcript_of_the_type_is_the_prediction(tmp_path: P
     earlier_launch(main, current())
     first.write_text(first.read_text())
     assert started_with(subagent_start(main, OPERATOR_ID)) == f"Your agent id is {OPERATOR_ID}."
+
+
+def test_a_call_that_changes_nothing_runs_with_its_update(tmp_path: Path) -> None:
+    """A `Read` call runs with its update and records the delivery; within
+    the bound of that delivery a `Grep` call runs, and a `Bash` call is
+    denied."""
+    main = session(tmp_path)
+    other = command("PreToolUse", "^(?!(Bash|Monitor|Agent)$).*", "reader_update_hook")
+    record(main, "main").parent.mkdir(parents=True)
+    record(main, "main").write_text(both(BEFORE))
+    hook = call(main, "Read", {"file_path": str(checkout.ROOT / "CLAUDE.md")})
+    out = json.loads(run(other, hook))["hookSpecificOutput"]
+    assert "permissionDecision" not in out
+    assert f"context --update {BEFORE} {BEFORE} coordinator`" in out["additionalContext"]
+    assert record(main, "main").read_text() == both(head())
+    aged(delivered(main), -60)
+    assert run(other, call(main, "Grep", {"pattern": "x"})) == ""
+    out = json.loads(run(command("PreToolUse", "Bash|Monitor"),
+                         call(main, "Bash", {"command": "ls"})))["hookSpecificOutput"]
+    assert out["permissionDecision"] == "deny"

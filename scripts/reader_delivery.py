@@ -49,7 +49,12 @@ PreToolUse, where that file is younger than
 `DELIVERY_BOUND` at the time the hook's command started, as Claude Code
 fired it (`hook_entry.hook_started`), before its check, the update denies the call, with
 `_same_message_denial`, which holds no text, before any other step; where
-it is older, the update removes it and goes on as above."""
+it is older, the update removes it and goes on as above.
+
+At PreToolUse, the update denies the call it gives a diff at, so that the
+caller makes it again by the updated documents. A call of a tool of
+`UNCHANGING_TOOLS` gives the same result by either version of the
+documents, so it runs with its update, and no delivery denies it."""
 
 import fcntl
 import os
@@ -81,6 +86,9 @@ CALL_EVENTS = {HookEvent.PRE_TOOL_USE, HookEvent.POST_TOOL_USE,
 DELIVERED = ".delivered"
 """The suffix that `delivery_path` adds to the name of the record, which
 `scripts/reader_update_hook.sh` adds as well."""
+
+UNCHANGING_TOOLS = frozenset({"Read", "Grep", "Glob"})
+"""The `tool_name` of each tool whose call changes no state."""
 
 DELIVERY_BOUND = 0.5
 """In seconds. Of 23,547 first calls of a new message after a call's result,
@@ -126,10 +134,13 @@ def _denial(text: str, where: str) -> Update:
         "your documents, as that context leaves them, still give it.").format(where=where))
 
 
-def _update(text: str | None) -> Update | None:
+def _update(text: str | None, denies: bool) -> Update | None:
+    """The update `text`, with a denial of its call where `denies`."""
     from controlled_markdown import mctx
 
-    return None if text is None else _denial(text, mctx("this call"))
+    if text is None:
+        return None
+    return _denial(text, mctx("this call")) if denies else Update(text, None)
 
 
 def _same_message_denial() -> Update:
@@ -162,6 +173,8 @@ def reader_update(hook: dict[str, Any]) -> Iterator[Update | None]:
     `HookEvent`, and a record that `read_record` does not read, are
     faults."""
     event = HookEvent(hook["hook_event_name"])
+    denies = (event is HookEvent.PRE_TOOL_USE
+              and hook["tool_name"] not in UNCHANGING_TOOLS)
     delivered = delivery_path(hook)
     try:
         f = record_path(hook).open("r+")
@@ -171,7 +184,7 @@ def reader_update(hook: dict[str, Any]) -> Iterator[Update | None]:
     with f:
         fcntl.flock(f, fcntl.LOCK_EX)
         given: Update | None
-        if event is HookEvent.PRE_TOOL_USE and _delivered_lately(delivered):
+        if event is HookEvent.PRE_TOOL_USE and _delivered_lately(delivered) and denies:
             given = _same_message_denial()
             yield given
         else:
@@ -182,7 +195,7 @@ def reader_update(hook: dict[str, Any]) -> Iterator[Update | None]:
                 return
             call = reader_call(hook)
             given = None if call is None else _update(
-                _record_update(hook, record, tree, after, call))
+                _record_update(hook, record, tree, after, call), denies)
             yield given
             write_record(f, ReadRecord(after, after))
         if given is not None and event in CALL_EVENTS:

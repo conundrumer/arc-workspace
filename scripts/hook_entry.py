@@ -13,7 +13,8 @@ None (`reader_delivery.reader_update`). Claude Code reads one output of a
 hook, and puts its `additionalContext` in the caller's context whether or
 not the output denies the call, so the entry prints one output that holds
 both parts. Claude Code puts that text in the caller's context after the
-call has run, so a call that gets an update is denied, with the update's
+call has run, so a call whose update gives a reason
+(`reader_delivery.reader_update` gives which) is denied, with the update's
 reason after the check's, and the caller makes it again by its updated
 documents.
 
@@ -60,10 +61,11 @@ def hook_started() -> float:
 
 class Update(NamedTuple):
     """The text the caller of a hook gets in its context, empty where it gets
-    none, and the reason a PreToolUse hook denies its call for it."""
+    none, and the reason a PreToolUse hook denies its call for it, or None
+    where the call runs with the text."""
 
     text: str
-    reason: str
+    reason: str | None
 
 CHECK_FAILED = "allowed: the check failed"
 """The failure text of a PreToolUse or a SubagentStop hook, whose call or
@@ -111,7 +113,8 @@ def run_subagent_stop(hook: str, check: Callable[[Hook], str | None]) -> int:
 def _give(reason: str | None, update: Update | None) -> None:
     out: dict[str, str] = {}
     if update is not None:
-        reason = update.reason if reason is None else f"{reason}\n{update.reason}"
+        if update.reason is not None:
+            reason = update.reason if reason is None else f"{reason}\n{update.reason}"
         if update.text:
             out["additionalContext"] = update.text
     if reason is not None:
