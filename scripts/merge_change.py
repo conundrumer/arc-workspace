@@ -31,7 +31,7 @@ they will merge:
 
     uv run python -m controlled_markdown check     always
     uv run python scripts/context.py --write       always
-    uv run python scripts/gate.py --outputs-only --affected <base> <out>
+    uv run python scripts/gate.py --affected <base> <out>
                                                    always
     uv run pyright [<file> ...]                    where a change touches
     uv run pytest -q [<file> ...]                  a path whose content
@@ -69,10 +69,11 @@ and goes on where it fails. It then fast-forwards `master` in the main tree
 to the top of the stack, and runs in the main tree
 `uv run python scripts/context.py --write`,
 `uv run python scripts/document_pass.py` and
-`uv run python scripts/gate.py --adopt-record <out>`, with `<out>` the
+`uv run python scripts/gate.py --adopt <out>`, with `<out>` the
 directory of the gate that checked the stack, so that a record the gate
-wrote stands as the dependency record of the new `master`. It then removes
-each worktree and its branch.
+wrote stands as the dependency record of the new `master`, the gate's counts
+of instructions are adopted, and a ticket is filed on each `SLOW` line, as the
+gate's `--help` gives. It then removes each worktree and its branch.
 
 `document_pass.py` reads the size of each document against its
 budget on the new `master`. Where some document stands past its budget
@@ -169,8 +170,7 @@ merge lock with what its holder merges, on stderr. As each submodule
 setup, commit, rebase, check, command in the main tree and removal of a
 worktree ends, it writes the step's step line (`engine.duration.STEP`),
 which says how long the step took, on stderr. Each line a check writes on
-stderr reaches its stderr as the check writes it, so a wait of the gate
-for the heavy commands' lock shows while it lasts.
+stderr reaches its stderr as the check writes it.
 
 Exit status: 0 when every change is merged, 1 on a refusal of any change or
 a failed step, 2 when the call itself is malformed.
@@ -267,8 +267,7 @@ def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
     """Run in `tree` the checks of changes from the commit `base` that touch
     `touched`, or refuse; the gate's out-dir."""
     gate_out = tempfile.mkdtemp(prefix="merge-change-gate-")
-    gate = Check(("uv", "run", "python", "scripts/gate.py", "--outputs-only", "--affected",
-                  base, gate_out))
+    gate = Check(("uv", "run", "python", "scripts/gate.py", "--affected", base, gate_out))
     run_checks(tree, [*map(Check, DOCUMENT_CHECKS), gate, *code_checks(tree, main, base, touched)])
     return Path(gate_out)
 
@@ -656,8 +655,8 @@ def run_step(main: Path, argv: Sequence[str]) -> subprocess.CompletedProcess[str
 def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
     """Make the tree of the old `master` for the readers' updates,
     fast-forward `master` to the top of `changes`, write the context in
-    the main tree, file a whole-document pass where one is due, adopt the
-    dependency record the gate wrote into `gate_out`, and remove each change's worktree and branch."""
+    the main tree, file a whole-document pass where one is due, adopt what
+    the gate wrote into `gate_out`, and remove each change's worktree and branch."""
     replaced = refuse_main_touched(main, {c.worktree: c.touched for c in changes})
     done = run_step(main, TREE_KEEP)
     if done.returncode != 0:
@@ -678,7 +677,7 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
                      f"rebased in {changes[-1].worktree}:\n{said(done)}")
 
     for argv in (CONTEXT_WRITE, DOCUMENT_PASS,
-                 ("scripts/gate.py", "--adopt-record", str(gate_out))):
+                 ("scripts/gate.py", "--adopt", str(gate_out))):
         shown = " ".join(argv)
         done = run_step(main, argv)
         if done.returncode != 0:

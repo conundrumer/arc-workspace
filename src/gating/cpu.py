@@ -1,14 +1,10 @@
-"""The CPU that processes outside the gate's process tree use over an
-interval, from two samples of the machine's and the tree's CPU."""
+"""The machine's busy CPU time, from samples of its CPU tick
+counters."""
 
 import ctypes
 import os
 import sys
-import time
-from dataclasses import dataclass
 from pathlib import Path
-
-import script_calls
 
 _TICKS = 2 ** 32
 """The modulus of the CPU tick counters, which on darwin are 32-bit and
@@ -45,37 +41,3 @@ def busy_seconds(start: tuple[int, ...], end: tuple[int, ...]) -> float:
     from the `busy_ticks` sample `start` to the later one `end`."""
     ticks = sum((b - a) % _TICKS for a, b in zip(start, end, strict=True))
     return ticks / os.sysconf("SC_CLK_TCK")
-
-
-@dataclass(frozen=True)
-class CpuSample:
-    """The machine's busy CPU ticks, the gate tree's CPU seconds, and the
-    monotonic clock, at one moment."""
-    busy: tuple[int, ...]
-    tree: float
-    at: float
-
-    @classmethod
-    def now(cls) -> "CpuSample":
-        return cls(busy_ticks(), script_calls.cpu_seconds(), time.monotonic())
-
-    def outside(self, end: "CpuSample") -> "OutsideCpu":
-        """The CPU that processes outside the gate's process tree used from
-        this sample to `end`, where the gate has waited for each child it
-        started since this sample."""
-        return OutsideCpu(busy_seconds(self.busy, end.busy) - (end.tree - self.tree), end.at - self.at)
-
-
-@dataclass(frozen=True)
-class OutsideCpu:
-    """The CPU seconds processes outside the gate's process tree used over
-    an interval, and the interval's seconds."""
-    cpu: float
-    interval: float
-
-    @property
-    def cores(self) -> float:
-        return self.cpu / self.interval
-
-    def __str__(self) -> str:
-        return f"outside-cpu={self.cpu:.1f}s ({self.cores:.1f} cores on average)"

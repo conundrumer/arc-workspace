@@ -38,8 +38,7 @@ LIST_EVENTS = frozenset({"os.listdir", "os.scandir"})
 PY_SUFFIXES = frozenset({".py", ".pyc"})
 """The suffixes of the files a command depends on through the lines it
 runs alone. A command also reads Python files' bytes, to import them and
-to key the run cache, and the warm pass shows that the cache changes no
-output."""
+to key the run cache."""
 
 
 @dataclass(frozen=True)

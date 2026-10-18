@@ -21,6 +21,16 @@ WINDOW_SECONDS = 7 * 24 * 3600
 """How long the record keeps a day file, and the window of earlier calls
 the check judges recent calls against."""
 
+CPU_RATIO = 2
+"""The factor by which a figure of the work of a call or a command grows
+past its usual one (`grew`)."""
+CPU_MARGIN = 1.0
+"""The margin in CPU seconds by which a call's CPU time grows past its
+usual one."""
+INSTRUCTIONS_MARGIN = 10 ** 10
+"""The margin in instructions retired by which a gate command's count
+grows past its accepted one."""
+
 DAY_FORM = "%Y-%m-%d"
 SUFFIX = ".jsonl"
 
@@ -67,6 +77,12 @@ def start(tree: str, script: str, args: list[str]) -> None:
     if name and all(c in _NAME for c in name):
         now = time.time()
         _started = (day_file(os.path.join(tree, RECORDS), now), key(name, args), now, time.monotonic())
+
+
+def grew(figure: float, usual: float, margin: float) -> bool:
+    """Whether `figure` grew past `usual`: it is at least `CPU_RATIO` times
+    `usual` plus `margin`."""
+    return figure >= CPU_RATIO * usual + margin
 
 
 def cpu_seconds() -> float:

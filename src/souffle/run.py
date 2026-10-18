@@ -25,6 +25,7 @@ from functools import cache
 from pathlib import Path
 from typing import IO
 
+import instructions
 from engine.engine import (
     CompileError,
     CpuLimit,
@@ -452,7 +453,9 @@ def _measured(argv: list[str], wall: float, cwd: Path
     negative for the signal that ended it, its stdout, its stderr and the
     CPU seconds `os.wait4` gives it, user and system; None where it was
     still writing at `wall` seconds and was killed. The process is reaped
-    here alone, so the kill reaches no other process that took its id."""
+    here alone, so the kill reaches no other process that took its id.
+    Where this process counts instructions for the gate, the process's
+    count is added to its children's before the reap (`instructions`)."""
     proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True, cwd=cwd)
     assert proc.stdout is not None and proc.stderr is not None
@@ -471,6 +474,9 @@ def _measured(argv: list[str], wall: float, cwd: Path
     killed = any(t.is_alive() for t in readers)
     if killed:
         proc.kill()
+    if instructions.counting():
+        instructions.exited(proc.pid, block=True)
+        instructions.reaped(proc.pid)
     _pid, status, usage = os.wait4(proc.pid, 0)
     proc.returncode = os.waitstatus_to_exitcode(status)
     for t in readers:

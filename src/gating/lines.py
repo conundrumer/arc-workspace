@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+import script_calls
+
 
 class LineKind(StrEnum):
     """The kinds of line the last line counts."""
@@ -12,18 +14,8 @@ class LineKind(StrEnum):
     DIFF = "DIFF"
     """An output file that differs."""
     SLOW = "SLOW"
-    """A time over the accepted one, where the outside CPU is at most one
-    core."""
-    LOADED = "LOADED"
-    """A time over the accepted one, where the outside CPU is over one
-    core."""
-    NOTIME = "NOTIME"
-    """A time with no accepted time it is compared with, as
+    """A count of instructions grown past the accepted one, as
     `scripts/gate.py --help` gives."""
-
-
-TIME_KINDS = frozenset({LineKind.SLOW, LineKind.LOADED, LineKind.NOTIME})
-"""The kinds of line that judge a time."""
 
 
 @dataclass(frozen=True)
@@ -37,6 +29,15 @@ class Line:
 
     def __str__(self) -> str:
         return f"{self.kind} {self.cmd} {self.stem} {self.rest}"
+
+
+def slow(cmd: str, stem: str, count: int, accepted: int) -> Line | None:
+    """The `SLOW` line of the command `cmd` on `stem`, whose count of
+    instructions `count` compares with the accepted one `accepted`, or None
+    where it did not grow past it."""
+    if not script_calls.grew(count, accepted, script_calls.INSTRUCTIONS_MARGIN):
+        return None
+    return Line(LineKind.SLOW, cmd, stem, f"instructions={count} accepted={accepted}")
 
 
 def same(a: Path, b: Path) -> bool:

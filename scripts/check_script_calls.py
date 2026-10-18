@@ -30,8 +30,6 @@ from tree_reads import main_tree  # noqa: E402
 
 DAY = 24 * 3600
 FREQUENT = 20
-CPU_RATIO = 2
-CPU_MARGIN = 1.0
 MB = 1024 * 1024
 PEAK_RATIO = 2
 PEAK_MARGIN = 256 * MB
@@ -49,7 +47,8 @@ HELP = mctx("""
     - The command files a `performance` ticket on a judged key where the median CPU seconds of its recent calls exceeds {cpu_ratio} times the 25th percentile of its earlier calls by at least {cpu_margin:.0f} s, or the largest peak memory of its recent calls exceeds {peak_ratio} times the median peak memory of its earlier calls by at least {peak_margin} MB.
         - It files none on a key where a ticket outside `tickets/closed/` has the same text before the first `: ` of its title as the ticket it would file.
     - It deletes the record of each day more than {days} days old, and prints the path of each ticket it filed, or `no ticket filed`.
-    """).format(frequent=FREQUENT, days=script_calls.WINDOW_SECONDS // DAY, cpu_ratio=CPU_RATIO, cpu_margin=CPU_MARGIN,
+    """).format(frequent=FREQUENT, days=script_calls.WINDOW_SECONDS // DAY, cpu_ratio=script_calls.CPU_RATIO,
+            cpu_margin=script_calls.CPU_MARGIN,
             peak_ratio=PEAK_RATIO, peak_margin=PEAK_MARGIN // MB)
 
 NONE_FILED = mctx("no ticket filed")
@@ -83,7 +82,7 @@ def judged(key: str, recent: list[Call], earlier: list[Call]) -> str | None:
     cpu = statistics.median(c.cpu for c in recent)
     usual_peak = statistics.median(c.peak for c in earlier)
     peak = max(c.peak for c in recent)
-    if cpu >= CPU_RATIO * usual_cpu + CPU_MARGIN:
+    if script_calls.grew(cpu, usual_cpu, script_calls.CPU_MARGIN):
         name = mctx("{subject}: its calls take {n:.1f} times their usual CPU time").format(
             subject=subject_of(key), n=ratio(cpu, usual_cpu))
         impact_text = mctx("Each call of `scripts/{key}` takes more of the machine than its usual calls "
