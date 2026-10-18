@@ -645,15 +645,16 @@ impl Reader {
         let (name, place) = self.symbol(list.items.first(), "an atom's relation", list.place)?;
         let relation = self.relation_ref(name, place)?;
         record.token(place);
-        let sites = self.sites(&list.items[1..], path, scope, record);
+        let sites = self.sites(&list.items[1..], path, scope, record, false);
         Ok(Atom { relation, sites })
     }
 
-    fn sites(&mut self, exprs: &[SExpr], path: &NodePath, scope: &LabelScope, record: &mut Record) -> Arc<[Site]> {
+    /// The sites of `exprs`, an input's head sites where `head_site` holds.
+    fn sites(&mut self, exprs: &[SExpr], path: &NodePath, scope: &LabelScope, record: &mut Record, head_site: bool) -> Arc<[Site]> {
         let mut sites = Vec::new();
         for expr in exprs {
             let index = sites.len() as u32;
-            if let Some((site, elided)) = self.optional(|r| r.site(expr, &path.child(index), scope)) {
+            if let Some((site, elided)) = self.optional(|r| r.site(expr, &path.child(index), scope, head_site)) {
                 if elided {
                     record.elided.push(index);
                 }
@@ -664,11 +665,11 @@ impl Reader {
     }
 
     /// A site, and whether the file writes it as the bare label.
-    fn site(&mut self, expr: &SExpr, path: &NodePath, scope: &LabelScope) -> R<(Site, bool)> {
+    fn site(&mut self, expr: &SExpr, path: &NodePath, scope: &LabelScope, head_site: bool) -> R<(Site, bool)> {
         let mut record = Record::new(Some(expr.place()));
         let (site, elided) = match expr {
             SExpr::Symbol { text, place } => {
-                let label = self.label(text, *place, scope)?;
+                let label = self.site_label(text, *place, scope, head_site)?;
                 if label == LabelUse::Zero {
                     return self.refuse("`0` stands at a site only after the column's name", *place);
                 }
@@ -689,7 +690,7 @@ impl Reader {
                 for item in &list.items[1..] {
                     match item {
                         SExpr::Symbol { text, place } => {
-                            let label = self.label(text, *place, scope)?;
+                            let label = self.site_label(text, *place, scope, head_site)?;
                             args.push(match label {
                                 LabelUse::Zero => SiteArg::Label(label),
                                 _ if named => SiteArg::NamedLabel { name: label_name(text), label },
@@ -699,7 +700,7 @@ impl Reader {
                         }
                         _ => {
                             let index = args.len() as u32;
-                            if let Some((field, _)) = self.optional(|r| r.site(item, &path.child(index), scope)) {
+                            if let Some((field, _)) = self.optional(|r| r.site(item, &path.child(index), scope, head_site)) {
                                 args.push(SiteArg::Field(field));
                             }
                         }
@@ -716,6 +717,18 @@ impl Reader {
         Ok((site, elided))
     }
 
+    /// The label of a site, which at an input's head site joins a label
+    /// the body or the key makes (`docs/arclog/arclog.md#instance`).
+    fn site_label(&mut self, text: &str, place: SourcePlace, scope: &LabelScope, head_site: bool) -> R<LabelUse> {
+        let label = self.label(text, place, scope)?;
+        match label {
+            LabelUse::Fresh(_) if head_site => self.refuse("a head site carries no `*`: the body or the key makes its label", place),
+            LabelUse::Zero if head_site => self.refuse("a head site holds no `0`: the body makes its label with `(= *X 0)`", place),
+            LabelUse::Key(_) if head_site => self.refuse("a head site carries no `^`: the body or the key makes its label", place),
+            _ => Ok(label),
+        }
+    }
+
     fn input(&mut self, expr: &SExpr, path: &NodePath, scope: &LabelScope) -> R<Node<InstanceInput>> {
         let list = self.list(expr, "an input")?;
         let mut record = Record::new(Some(list.place));
@@ -728,7 +741,7 @@ impl Reader {
         let Some(head_expr) = list.items.get(1) else { return self.refuse("an input holds its head sites", list.place) };
         let head = self.list(head_expr, "an input's head")?;
         record.token(head.open);
-        let sites = self.sites(head.items, path, scope, &mut record);
+        let sites = self.sites(head.items, path, scope, &mut record, true);
         record.token(head.close);
         let body = self.conjuncts(&list.items[2..], &path.child(sites.len() as u32), scope, Record::new(None), None);
         record.token(list.close);
