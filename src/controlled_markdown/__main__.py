@@ -22,7 +22,14 @@ path, `<path>:<name>` for a definition in a Python file or `<path>#<slug>`
 for a section of a document, whose lines the diff from the commit `base` to
 the working tree changes, or that names nothing, one line `<path>:<line>: <target>: <text>`, with
 the text of the statement the attribute describes, and exits 0; with no
-path, it reads the set `check` reads. A path that names a directory
+path, it reads the set `check` reads. Run with the copy of this module in a
+linked worktree, `xrefs` runs the main tree's copy under the main tree's
+project, in the same directory and with the same arguments, and exits with
+its status, or exits 2 where the main tree holds no such module. With no
+path, in a linked worktree, it reads the main tree's copy of each document
+of the set `check` reads in the main tree, and the worktree's copy of each
+document of the worktree's set that the worktree's diff from `base` adds or
+changes. `check`, `fmt` and `render` run the copy they are called with. A path that names a directory
 stands for every `.md` file under it, and a path that names no file or directory is reported on one
 line, with exit status 2. `-h` or `--help`, given as any argument, prints the
 usage and exits 0. A name in a message is relative to the current directory.
@@ -86,6 +93,60 @@ def configured(start: Path | None = None) -> list[str]:
 def repo_root(start: Path | None = None) -> Path:
     """The folder the config sits in, which a link's target stands from."""
     return _table(start)[0]
+
+
+def main_tree(start: Path) -> Path:
+    """The main tree of the git repository that holds `start`: the parent of
+    its common git directory."""
+    common = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        cwd=start, capture_output=True, text=True, check=True).stdout.strip()
+    return Path(common).parent.resolve()
+
+
+def run_in_main(args: list[str], package: Path) -> int | None:
+    """Runs the main tree's copy of this package with `args`, where `package`,
+    the folder of the running copy, is another one, and returns its exit
+    status; None where `package` is the main tree's copy. The environment
+    drops `VIRTUAL_ENV`, so the run takes the main tree's own environment."""
+    main = main_tree(package)
+    copy = main / "src" / "controlled_markdown"
+    if package.resolve() == copy.resolve():
+        return None
+    if not (copy / "__main__.py").is_file():
+        print(f"{main}: the main tree has no `src/controlled_markdown`", file=sys.stderr)
+        return 2
+    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+    return subprocess.run(["uv", "run", "--project", str(main), "python", "-m",
+                           "controlled_markdown", *args], env=env).returncode
+
+
+def changed_files(root: Path, base: str) -> set[str]:
+    """Each file the diff from the commit `base` to the working tree at
+    `root` adds or changes, and each untracked file git does not ignore, by
+    its path from `root`."""
+    def listed(*argv: str) -> list[str]:
+        return subprocess.run(["git", *argv], cwd=root, capture_output=True,
+                              text=True, check=True).stdout.split("\0")
+    return {name for name in [*listed("diff", "--name-only", "-z", base),
+                              *listed("ls-files", "--others", "--exclude-standard", "-z")]
+            if name and (root / name).is_file()}
+
+
+def xrefs_documents(root: Path, base: str) -> list[Path]:
+    """The documents `xrefs` reads with no path: the set `check` reads, in a
+    linked worktree at `root` the main tree's copies, apart from the
+    worktree's copy of each document of its own set that its diff from
+    `base` adds or changes."""
+    main = main_tree(root)
+    if main == root.resolve():
+        return collect(configured(root))
+    changed = changed_files(root, base)
+    ours = {p.resolve().relative_to(root.resolve()).as_posix()
+            for p in collect(configured(root))} & changed
+    theirs = [p for p in collect(configured(main))
+              if p.resolve().relative_to(main).as_posix() not in changed]
+    return theirs + [root / name for name in sorted(ours)]
 
 
 # Where a program's prose can stand.
@@ -283,6 +344,10 @@ def main(argv: list[str]) -> int:
              f"       {argv[0]} render <path> [paths...]\n"
              f"       {argv[0]} xrefs <base> [paths...]\n"
              f"an xref target: <path>, <path>:<name> or <path>#<slug>")
+    if argv[1:2] == ["xrefs"]:
+        status = run_in_main(argv[1:], Path(__file__).parent)
+        if status is not None:
+            return status
     if {"-h", "--help"} & set(argv[1:]):
         print(usage)
         return 0
@@ -296,19 +361,20 @@ def main(argv: list[str]) -> int:
             print(usage, file=sys.stderr)
             return 2
         base, names = names[0], names[1:]
-    if not names:
-        names = [] if command == "render" else configured()
-    if not names:
+    whole = not names
+    if whole and (command == "render" or not configured()):
         print(usage, file=sys.stderr)
         return 2
+    if whole and command != "xrefs":
+        names = configured()
     try:
-        paths = collect(names)
+        paths = (xrefs_documents(repo_root(), base) if whole and command == "xrefs"
+                 else collect(names))
     except FileNotFoundError as err:
         print(f"{err.filename}: {err.strerror}", file=sys.stderr)
         return 2
     try:
         if command == "check":
-            whole = not argv[2:]
             off = check(paths, whole)
             if whole:
                 root = repo_root()

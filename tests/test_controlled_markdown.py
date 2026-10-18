@@ -27,6 +27,7 @@ from controlled_markdown import (
     touched,
     write,
 )
+from controlled_markdown.__main__ import run_in_main, xrefs_documents
 
 CASES = sorted((Path(__file__).parent / "controlled_markdown_cases").glob("*.md"))
 EXPECT_RE = re.compile(r"^\+ expect: (ok|error (\S+))\s*$")
@@ -195,3 +196,49 @@ def test_touched_lists_a_line_whose_section_a_hunk_changes(tmp_path):
         ("Section.", "docs/guide.md#making-a-change"),
         ("Subsection.", "docs/guide.md#detail"),
         ("Gone.", "docs/guide.md#absent")]
+
+
+def _linked(tmp_path: Path) -> tuple[Path, Path]:
+    """A main tree with one commit, and a linked worktree of it."""
+    main, linked = tmp_path / "main", tmp_path / "linked"
+    main.mkdir()
+    _git(main, "init", "-q")
+    (main / "pyproject.toml").write_text('[tool.controlled_markdown]\npaths = ["docs"]\n')
+    (main / "docs").mkdir()
+    for name in ("kept", "ours"):
+        (main / "docs" / f"{name}.md").write_text(f"- {name}.\n")
+    _git(main, "add", "-A")
+    _git(main, "commit", "-qm", "base")
+    _git(main, "worktree", "add", "-q", "--detach", str(linked))
+    return main.resolve(), linked.resolve()
+
+
+def test_xrefs_in_a_linked_worktree_reads_the_main_copy_of_each_document_it_leaves(tmp_path):
+    main, linked = _linked(tmp_path)
+    base = _git(linked, "rev-parse", "HEAD").strip()
+    (main / "docs" / "kept.md").write_text("- kept, on master.\n")
+    (linked / "docs" / "ours.md").write_text("- ours, changed.\n")
+    (linked / "docs" / "added.md").write_text("- added.\n")
+    assert xrefs_documents(linked, base) == [
+        main / "docs" / "kept.md", linked / "docs" / "added.md", linked / "docs" / "ours.md"]
+
+
+def test_xrefs_in_a_linked_worktree_reads_the_main_copy_of_a_document_its_diff_deletes(tmp_path):
+    main, linked = _linked(tmp_path)
+    base = _git(linked, "rev-parse", "HEAD").strip()
+    (linked / "docs" / "ours.md").unlink()
+    assert xrefs_documents(linked, base) == [main / "docs" / "kept.md", main / "docs" / "ours.md"]
+
+
+def test_xrefs_in_the_main_tree_reads_its_own_documents(tmp_path):
+    main, _ = _linked(tmp_path)
+    base = _git(main, "rev-parse", "HEAD").strip()
+    assert xrefs_documents(main, base) == [main / "docs" / "kept.md", main / "docs" / "ours.md"]
+
+
+def test_xrefs_refuses_where_the_main_tree_has_no_module(tmp_path, capsys):
+    _, linked = _linked(tmp_path)
+    package = linked / "src" / "controlled_markdown"
+    package.mkdir(parents=True)
+    assert run_in_main(["xrefs", "HEAD"], package) == 2
+    assert "the main tree has no `src/controlled_markdown`" in capsys.readouterr().err
