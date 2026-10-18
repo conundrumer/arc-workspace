@@ -79,6 +79,13 @@ its tries. Where the lock is not free at once, it prints one `skipped:` line
 that says it skips timing, runs no command, writes no accepted time, keeps
 no commit in `timed.json`, leaves `loaded.json` as it stands, and exits 0.
 
+A run that runs commands holds the gate lock of the worktree it runs in
+(`engine.rwlock.GATE`) from before its first command to its end, whatever
+its options, so no two gate runs of one worktree run at once. A run that
+finds the lock held says so on stderr, with what the holder wrote, and
+waits. A run that starts under an inherited hold of the heavy commands'
+lock does not wait: it says so on stderr and exits 1.
+
 `--outputs-only` runs the cold pass alone, and compares its outputs alone:
 it prints `DIFF` lines, and no `SLOW`, `LOADED` or `NOTIME` line, and writes no
 times to `new/`. An `--outputs-only` run shares the machine with the other
@@ -187,16 +194,18 @@ regression keeps the faster times. `--accept` and `--outputs-only` are not given
 
 Exit status: without `--accept`, 1 when the last line counts a line of any
 kind, and 0 otherwise; with `--accept`, 0 once the accepted times and
-outputs are written.
+outputs are written; 1 where the run cannot wait for the gate lock.
 """
 
 
 import argparse
+import shlex
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 from controlled_markdown import mctx
+from engine import rwlock
 from engine.duration import footer
 from gating.commands import ACCEPTED, COMMANDS, GateCommand, keys_of, stems_listing
 from gating.cpu import CpuSample
@@ -279,6 +288,18 @@ def run_gate(argv: Sequence[str]) -> int:
     if a.record_deps and not head_clean():
         ap.error(mctx("--record-deps records the lines of HEAD, and the checkout changes "
                       "a tracked file against it"))
+    try:
+        with rwlock.mutex_held(rwlock.GATE, rwlock.gate_lock_dir(),
+                               f"scripts/gate.py {shlex.join(argv)}"):
+            return judged(ap, a)
+    except rwlock.GateHeld as held:
+        print(held, file=sys.stderr, flush=True)
+        return 1
+
+
+def judged(ap: argparse.ArgumentParser, a: argparse.Namespace) -> int:
+    """The run of the commands that the parsed arguments `a` of `ap` give;
+    its exit status."""
     timed = not a.outputs_only
     accepted = a.accepted.resolve()
     cmds = [COMMANDS[c] for c in a.cmds] or list(COMMANDS.values())

@@ -33,15 +33,18 @@ waits for its parent. A process that starts under a shared hold and asks
 for the exclusive one is a fault (`NestedWriter`), since its parent's hold
 is one it would wait for.
 
-Beside it stands the merge lock, `MERGE_FILE` in the same directory, which
-`scripts/merge_change.py` holds exclusively through `flock`, so that one
-merge at a time moves `master`. Its holder writes into the file what it
-merges, and a merge that has to wait says on stderr, once, that it waits
-and what the holder wrote, where the holder has written it yet. A process
-that starts under a hold of the heavy commands' lock does not wait for the
-merge lock, for the reason it takes no heavy hold of its own: where another
-merge holds it, the process stops (`MergeHeld`). The kernel releases that
-hold too when its holder ends."""
+Beside it stand two mutexes (`Mutex`), each a file held exclusively
+through `flock`. The merge lock, `MERGE_FILE` in the same directory, is held
+by `scripts/merge_change.py`, so that one merge at a time moves `master`.
+The gate lock, `GATE_FILE` in the git directory of one worktree
+(`gate_lock_dir`), is held by `scripts/gate.py`, so that one gate run at a
+time runs in that worktree. A holder writes into the file what it does, and
+a process that has to wait says on stderr, once, that it waits and what the
+holder wrote, where the holder has written it yet. A process that starts
+under a hold of the heavy commands' lock waits for neither mutex, for the
+reason it takes no heavy hold of its own: where another process holds it,
+the process stops (`MergeHeld`, `GateHeld`). The kernel releases these
+holds too when their holder ends."""
 
 import contextlib
 import fcntl
@@ -49,6 +52,7 @@ import os
 import sys
 import threading
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import IO
@@ -59,6 +63,7 @@ from engine import checkout
 LOCK_FILE = "arc-heavy.lock"
 PENDING_FILE = "arc-heavy.pending"
 MERGE_FILE = "arc-merge.lock"
+GATE_FILE = "arc-gate.lock"
 
 HOLD_ENV = "ARC_HEAVY_HOLD"
 """The environment variable that names the hold a process runs under."""
@@ -74,6 +79,10 @@ class NestedWriter(Exception):
 
 
 class MergeHeld(Exception):
+    pass
+
+
+class GateHeld(Exception):
     pass
 
 
@@ -221,13 +230,37 @@ MERGE_WAIT = mctx("Another merge holds {path}, so this merge waits until it is d
 MERGE_HOLDER = mctx("The holder wrote: {holder}")
 MERGE_HELD = mctx("Another merge holds {path}, and this merge cannot wait for it, "
                   "since it runs under an inherited hold of the heavy commands' lock.")
+GATE_WAIT = mctx("Another gate run of this worktree holds {path}, so this run waits until "
+                 "it is done.")
+GATE_HELD = mctx("Another gate run of this worktree holds {path}, and this run cannot wait "
+                 "for it, since it runs under an inherited hold of the heavy commands' lock.")
+
+
+@dataclass(frozen=True)
+class Mutex:
+    """A lock one process holds at a time: its file's name, the line a wait
+    says, and the text and the fault of a process that cannot wait."""
+    file: str
+    wait: str
+    held: str
+    refused: type[Exception]
+
+
+MERGE = Mutex(MERGE_FILE, MERGE_WAIT, MERGE_HELD, MergeHeld)
+GATE = Mutex(GATE_FILE, GATE_WAIT, GATE_HELD, GateHeld)
+
+
+def gate_lock_dir() -> Path:
+    """The directory the gate lock of this checkout stands in: the
+    checkout's own git directory, which no other worktree shares."""
+    return Path(checkout.git_out(checkout.ROOT, "rev-parse", "--absolute-git-dir").strip())
 
 
 @contextlib.contextmanager
-def merge_lock(directory: Path, holder: str) -> Iterator[None]:
-    """The merge lock whose file stands in `directory`, held exclusively,
-    with `holder` written into the file while it lasts."""
-    path = directory / MERGE_FILE
+def mutex_held(mutex: Mutex, directory: Path, holder: str) -> Iterator[None]:
+    """`mutex`, whose file stands in `directory`, held exclusively, with
+    `holder` written into the file while it lasts."""
+    path = directory / mutex.file
 
     def wait(text: str) -> str:
         written = path.read_text().strip()
@@ -235,13 +268,19 @@ def merge_lock(directory: Path, holder: str) -> Iterator[None]:
 
     with open(path, "a") as fh:
         if inherited() is None:
-            _take(fh, fcntl.LOCK_EX, Notice(), lambda: wait(MERGE_WAIT.format(path=path)))
+            _take(fh, fcntl.LOCK_EX, Notice(), lambda: wait(mutex.wait.format(path=path)))
         else:
             try:
                 fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
-                raise MergeHeld(wait(MERGE_HELD.format(path=path))) from None
+                raise mutex.refused(wait(mutex.held.format(path=path))) from None
         fh.truncate(0)
         fh.write(holder + "\n")
         fh.flush()
         yield
+
+
+def merge_lock(directory: Path, holder: str) -> contextlib.AbstractContextManager[None]:
+    """The merge lock whose file stands in `directory`, held as `mutex_held`
+    gives."""
+    return mutex_held(MERGE, directory, holder)
