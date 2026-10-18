@@ -235,3 +235,43 @@ fn an_instance_keyed_on_a_chosen_column_that_holds_an_example_is_task_wide() {
     ));
     assert!(form_sides(&program, 2).iter().all(|side| *side == Side::TaskWide));
 }
+
+#[test]
+fn an_instance_keyed_on_a_column_whose_binding_head_projects_an_example_label_is_task_wide() {
+    let programs = [
+        "(INIT &classes Quotient\n\
+           (edge ((:a E P) (:b E (:P Q)))\n\
+             (ex_input *E *P *Col)\n\
+             (ex_input E (:P *Q) Col)))\n\
+         (INIT &obj Connectivity\n\
+           (key ((&classes.class (:a (:E ^K) *P)))\n\
+             (node (P)\n\
+               (&classes.class (:a (:E K) *P))\n\
+               (&bg *P *Col))))\n",
+        "(INIT &ord Order\n\
+           (member ((:t E))\n\
+             (ex_input *E *P *Col)))\n\
+         (INIT &obj Connectivity\n\
+           (key ((&ord.rank (:t ^K) *R))\n\
+             (node (P)\n\
+               (&ord.rank (:t K) *R)\n\
+               (&bg *P *Col))))\n",
+        "(DEMONSTRATED &catalog\n\
+           (value ((:o E P) (:v Col))\n\
+             (ex_input *E *P *Col))\n\
+           (demonstration ((:o E P) (:o2 E P2))\n\
+             (ex_input *E *P *Col)\n\
+             (ex_input E *P2 Col))\n\
+           (DEMO_RULE $Same\n\
+             (RULE &prediction (&bg *P *Col))))\n\
+         (INIT &obj Connectivity\n\
+           (key ((&catalog (:o (:E ^K) *P)))\n\
+             (node (P)\n\
+               (&catalog (:o (:E K) *P))\n\
+               (&bg *P *Col))))\n",
+    ];
+    for forms in programs {
+        let program = resolved(&format!("{PER_INPUT_BACKGROUND}{forms}"));
+        assert!(form_sides(&program, 2).iter().all(|side| *side == Side::TaskWide), "{forms}");
+    }
+}

@@ -1020,7 +1020,7 @@ mod columns {
 
     /// The fields of the record that the head site `site` projects onto
     /// its column's type parameter, or `None` where it projects one label.
-    fn projection(site: &Site) -> Option<Box<[ColumnName]>> {
+    pub(super) fn projection(site: &Site) -> Option<Box<[ColumnName]>> {
         match &site.value.args[..] {
             [SiteArg::Label(_) | SiteArg::NamedLabel { .. }] => None,
             args => Some(
@@ -1044,13 +1044,6 @@ mod columns {
     /// [`crate::registry::binding_sites`] gives. A parameter that the map
     /// leaves out takes one column.
     pub(super) struct Bindings(StableHashMap<TypeParameter, Box<[ColumnName]>>);
-
-    /// The type parameter that the key clause of `instance` binds, where
-    /// it binds one.
-    pub(super) fn key_parameter<'a>(instance: &'a Instance, component: &'a Component) -> Option<&'a TypeParameter> {
-        let sites = binding_sites(instance, &component.inputs);
-        sites.into_iter().find(|sites| matches!(sites.binding, ParameterSite::Key(_))).map(|sites| sites.parameter)
-    }
 
     pub(super) fn bindings(instance: &Instance, component: &Component) -> Bindings {
         let records = binding_sites(instance, &component.inputs).into_iter().filter_map(|sites| {
@@ -1084,9 +1077,14 @@ mod columns {
     /// those the `value` head names, `docs/arclog/arclog.md#demonstrated`.
     pub(super) fn demonstrated_columns(form: &Demonstrated) -> Columns {
         let key = key_slot(form.key.as_ref().map(|key| &key.value().key));
-        let value = crate::program::written_inputs(form.key.as_ref(), &form.inputs).find(|input| *input.name.0 == *VALUE);
-        let heads = value.into_iter().flat_map(|input| input.head.iter()).map(|site| Slot::of(&site.column, projection(site).as_deref()));
+        let heads = demonstrated_value(form).into_iter().flat_map(|input| input.head.iter()).map(|site| Slot::of(&site.column, projection(site).as_deref()));
         Columns(std::iter::once(key).chain(heads).collect())
+    }
+
+    /// The `value` input of a `DEMONSTRATED` form, whose head names the
+    /// relation's columns after the key's.
+    pub(super) fn demonstrated_value(form: &Demonstrated) -> Option<&crate::program::InstanceInput> {
+        crate::program::written_inputs(form.key.as_ref(), &form.inputs).find(|input| *input.name.0 == *VALUE)
     }
 
     /// The path after the form's name of the output of a `RIGID_DET` form
@@ -1506,13 +1504,13 @@ mod build {
     use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity, WithDiagnostics};
     use crate::hash::{StableHashMap, StableHashSet};
     use crate::program::canonical::{canonical_labeling, prediction, relation_of, AsWritten, CanonicalWriter, LabelScope, NameWriter, SearchBudget};
-    use crate::program::path::{node_at, NodePath, NodeRef};
+    use crate::program::path::{child_index, node_at, NodePath, NodeRef};
     use crate::program::{
         Atom, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, FactRelation, Form, Instance, InstanceName, NameScope,
         Negated, Node, OutputName, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationRef,
     };
-    use crate::program::{Demonstrated, LabelId, RigidDet};
-    use crate::registry::{ColumnType, Component, Registry};
+    use crate::program::{Demonstrated, InstanceInput, LabelId, RigidDet, Site};
+    use crate::registry::{binding_sites, ColumnType, Component, ParameterSite, Registry};
     use crate::relations::ColumnGroup;
     use crate::types::{each_site_label, use_label};
 
@@ -2398,9 +2396,11 @@ mod build {
         /// at a site that holds an Example, as [`Sides::bound_examples`]
         /// gives; those the concept program gives a relation that a form
         /// resolving there derives; those [`Sides::choose_examples`] gives
-        /// of a chosen relation; and the fields that
-        /// [`Sides::key_examples`] gives of the key record of an instance
-        /// output, of a `DEMONSTRATED` relation and of a `RIGID_DET` output.
+        /// of a chosen relation; those [`Sides::instance_examples`] gives of
+        /// an instance output; the fields that [`Sides::key_examples`] gives
+        /// of the key record of a `DEMONSTRATED` relation and of a
+        /// `RIGID_DET` output; and those [`Sides::head_examples`] gives of
+        /// each column of a `DEMONSTRATED` relation after the key.
         fn examples(&mut self, node: usize) -> Arc<[ExamplePath]> {
             if let Some(found) = self.examples.get(&node) {
                 return found.clone();
@@ -2417,8 +2417,21 @@ mod build {
                     let form = builder.forms[node].first().expect("a form of each chosen relation").clone();
                     found.extend(self.choose_examples(&form));
                 }
-                DependencyKind::Demonstrated(_) | DependencyKind::RigidAssembly(_) => {
-                    let form = builder.forms[node].first().expect("a form of each node of a keyed form").clone();
+                DependencyKind::Demonstrated(_) => {
+                    let form = builder.forms[node].first().expect("a form of each node of a `DEMONSTRATED` form").clone();
+                    found.extend(self.key_examples(&form).into_iter().map(|field| Box::from([columns::key(), field])));
+                    let Some(NodeRef::Demonstrated(demonstrated)) = node_at(program, &form) else {
+                        unreachable!("the form of a `DEMONSTRATED` relation is a `DEMONSTRATED` form")
+                    };
+                    if let Some(value) = columns::demonstrated_value(demonstrated) {
+                        for site in value.head.iter() {
+                            let paths = self.head_examples(&form, value, site);
+                            found.extend(paths.into_iter().map(|path| prefixed(&site.column, path)));
+                        }
+                    }
+                }
+                DependencyKind::RigidAssembly(_) => {
+                    let form = builder.forms[node].first().expect("a form of each node of a `RIGID_DET` form").clone();
                     found.extend(self.key_examples(&form).into_iter().map(|field| Box::from([columns::key(), field])));
                 }
                 _ => {
@@ -2469,18 +2482,58 @@ mod build {
 
         /// The columns of the output `output` of the instance `instance` in
         /// `scope`, or of each of its outputs where `output` is `None`, that
-        /// hold an Example: each field of a column of the key's type
-        /// parameter whose label [`Sides::key_examples`] gives.
+        /// hold an Example: below each column of a type parameter, the paths
+        /// that [`Sides::binding_examples`] gives of the parameter's binding.
         fn instance_examples(&mut self, scope: &NameScope, instance: &InstanceName, output: Option<&PortName>) -> Vec<ExamplePath> {
             let builder = self.builder;
             let Some(nodes) = builder.instances.get(&(scope.clone(), instance.clone())) else { return Vec::new() };
             let Some(form) = nodes.outputs.first().and_then(|(_, node)| builder.forms[node.0 as usize].first()) else { return Vec::new() };
-            let Some(NodeRef::Instance(written)) = node_at(NodeRef::Program(builder.case.value()), form) else { return Vec::new() };
-            let Some(parameter) = columns::key_parameter(written, nodes.component) else { return Vec::new() };
-            let fields = self.key_examples(&form.clone());
-            let ports = nodes.component.outputs.iter().filter(|port| output.is_none_or(|output| port.name == *output));
-            let keyed = ports.flat_map(|port| port.columns.iter()).filter(|column| column.ty == ColumnType::Parameter(parameter.clone()));
-            keyed.flat_map(|column| fields.iter().map(move |field| Box::from([column.name.clone(), field.clone()]))).collect()
+            let form = form.clone();
+            let Some(NodeRef::Instance(written)) = node_at(NodeRef::Program(builder.case.value()), &form) else { return Vec::new() };
+            let mut found = Vec::new();
+            for sites in binding_sites(written, &nodes.component.inputs) {
+                let paths = self.binding_examples(&form, sites.binding);
+                let ports = nodes.component.outputs.iter().filter(|port| output.is_none_or(|output| port.name == *output));
+                let bound = ports.flat_map(|port| port.columns.iter()).filter(|column| column.ty == ColumnType::Parameter(sites.parameter.clone()));
+                for column in bound {
+                    found.extend(paths.iter().map(|path| prefixed(&column.name, path.clone())));
+                }
+            }
+            found
+        }
+
+        /// The paths below a column of the type parameter that `binding` of
+        /// the `INIT` form at `form` binds that hold an Example: each field
+        /// of the key that [`Sides::key_examples`] gives, where the key
+        /// clause binds it, and those [`Sides::head_examples`] gives, where
+        /// a head site binds it.
+        fn binding_examples(&mut self, form: &NodePath, binding: ParameterSite<'_>) -> Vec<ExamplePath> {
+            match binding {
+                ParameterSite::Key(_) => self.key_examples(form).into_iter().map(|field| Box::from([field])).collect(),
+                ParameterSite::Head { input, site } => self.head_examples(form, input, site),
+            }
+        }
+
+        /// The paths below the column of the head site `site` of the input
+        /// `input` of the form at `form` that hold an Example, by the
+        /// labels that the input's body binds at a site that holds one, as
+        /// [`Sides::bound_examples`] gives: the whole column, where the
+        /// site projects one such label, and each field whose label is one,
+        /// where it projects a record, `docs/arclog/arclog.md#instance`.
+        fn head_examples(&mut self, form: &NodePath, input: &InstanceInput, site: &Site) -> Vec<ExamplePath> {
+            let program = NodeRef::Program(self.builder.case.value());
+            let bound = self.bound_examples(form, &input_body(program, form, input));
+            let whole = columns::projection(site).is_none();
+            let mut found = Vec::new();
+            each_site_label(site, &mut Vec::new(), &mut |use_, path| {
+                if use_label(use_).is_some_and(|label| bound.contains(&label)) {
+                    let path: ExamplePath = if whole { Box::from([]) } else { path[1..].into() };
+                    if !found.contains(&path) {
+                        found.push(path);
+                    }
+                }
+            });
+            found
         }
 
         /// The fields of the key of the `INIT`, `DEMONSTRATED` or
@@ -2541,6 +2594,26 @@ mod build {
             }
             labels
         }
+    }
+
+    /// `path` below the column `column`.
+    fn prefixed(column: &ColumnName, path: ExamplePath) -> ExamplePath {
+        std::iter::once(column.clone()).chain(path).collect()
+    }
+
+    /// The path of the body of `input`, an input of the form at `form`
+    /// below `program`, written after the form's key clause or inside it.
+    fn input_body(program: NodeRef<'_>, form: &NodePath, input: &InstanceInput) -> NodePath {
+        let child = NodeRef::InstanceInput(input);
+        let at = |path: &NodePath| node_at(program, path).expect("the path of a form of the case or of its key clause");
+        let path = match child_index(at(form), child) {
+            Some(index) => form.child(index),
+            None => {
+                let key = form.child(0);
+                key.child(child_index(at(&key), child).expect("an input of the form, after its key clause or inside it"))
+            }
+        };
+        path.child(u32::try_from(input.head.len()).expect("a head of fewer than 2^32 sites"))
     }
 
     /// `columns` in the order of their labels' positions in `labeling`.
