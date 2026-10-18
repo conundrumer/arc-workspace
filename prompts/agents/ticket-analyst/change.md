@@ -34,6 +34,7 @@
 ## Checking a draft
 - Check a draft by each check of [Checks](prompts/agents/ticket-reviewer/review.md#checks) on these, and fix each fault a check shows:
     - `depends-on`.
+    - The draft's claims, cut and checked as [A draft's outcome](prompts/agents/notes/launching.md#a-drafts-outcome) gives.
     - The order of instructions that edit the same part of a file.
     - The outcome of [Process notes](prompts/agents/notes/process.md) in the Motivation, and the Scope's coverage of each line of those notes the change makes untrue.
     - The `Design` of a `change` to code or to the agent-facing documents, with the Scope covering each file it gives.

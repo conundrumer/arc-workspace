@@ -8,15 +8,16 @@
 # Reviewing a draft
 - In a draft's review, check the whole draft against the tree and this session's state as they are now, by [Checks](#checks).
     * comment: With "Review each draft" in its context and a brief that gave the revised parts, ticket reviewer a031cd2826cb3df6e checked mainly those parts of draft 2-525 and moved it to `tickets/open/` while three findings stood on lines of the draft as first filed: the Intent of ticket 2-530.
+- Report nothing on a draft's wording where the operator would act on the draft the same way under other words.
+- Read the operator's procedures in the docstrings of [operate.py](scripts/operate.py) and of the modules under [operations](src/operations), which the docstring of [__init__.py](src/operations/__init__.py) indexes, and its loop and its use of overrides with `uv run python scripts/context.py context agent operator`. Read the documents of each agent the draft has the operator launch or message with `uv run python scripts/context.py context agent <name>`.
+- Take the state from `uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID`, `git log master`, the tickets under `tickets/`, and the operators' transcripts, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` says how to read.
+- A finding quotes the draft's line and gives what you checked it against, with what that showed.
 - Give as a suggestion each resolution you see one level above the draft's, one that meets the need of the draft's Motivation at a place where it also covers the cases the draft's mechanism leaves, or that removes the need for a mechanism the draft adds or keeps. A ticket analyst takes or leaves it.
     - Suggest no patch to the draft's own mechanism.
     - Example: a revision of draft 2-736 had each ticket analyst write the `For the coordinator` heading only where it gives an item, and kept the operator sending whatever part it reads. The suggestion one level above it: the operator, which reads every analyst's part, sends nothing where the part gives no item, whatever an analyst writes.
         * comment: Ticket reviewer af471549f475ff481 moved that revision of draft 2-736 (2026-10-08T01:32:00Z revised, 01:33:07Z reviewed) to `tickets/open/` with no such suggestion, and the coordinator moved it back at 02:27:36Z after the user flagged the operator's side in session dc433af1-cf87-408d-ab9d-9a1ede6b1b2a at 2026-10-08T02:27:22: the log of ticket 2-736 and the Intent of ticket 2-766.
 
 ## Checks
-- Report nothing on a draft's wording where the operator would act on the draft the same way under other words.
-- Read the operator's procedures in the docstrings of [operate.py](scripts/operate.py) and of the modules under [operations](src/operations), which the docstring of [__init__.py](src/operations/__init__.py) indexes, and its loop and its use of overrides with `uv run python scripts/context.py context agent operator`. Read the documents of each agent the draft has the operator launch or message with `uv run python scripts/context.py context agent <name>`.
-- Take the state from `uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID`, `git log master`, the tickets under `tickets/`, and the operators' transcripts, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` says how to read.
 - Check each of these:
     - A `change` ticket's `depends-on` gives the tickets [Change tickets](prompts/agents/notes/tickets.md#change-tickets) has its filer give there, and the `change` waits for no other ticket but, where it stands under `tickets/waiting/`, the `change` it waits on.
     - Instructions of the draft that edit the same part of a file, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a part, are ordered.
@@ -39,4 +40,3 @@
     - A `Design` estimates what each part costs and gains against the goal of [The user's goals](prompts/agents/ticket-reviewer.md#the-users-goals) that its Intent serves, on each model an agent the design acts on runs on from the merge, where the model changes the estimate. No Intent item costs more than it gains by those estimates, and no part is kept whose estimated gain does not exceed its estimated cost. An estimate is a finding only where a figure the tree or the session gives shows it off by enough to turn that comparison.
     - No case that the readers of a line that sets a design meet, in the current state or among the cases the draft gives, makes that line wrong.
         * comment: Ticket reviewer a283a71c0cf18c9ba passed the design line "the one its session or its launch started at" of draft 2-527, which a compaction makes wrong, as a line the check on current-state claims does not reach and the draft's open list of failure cases covers: the Intent of ticket 2-530.
-- A finding quotes the draft's line and gives what you checked it against, with what that showed.

@@ -4,7 +4,7 @@
     - Acts, each with its section: each step of its work, under the item of that step.
 
 # Judge what the editors leave
-- This part applies where your brief gives findings or items an editor left, or places a code editor's report gives as standing: [An editor's findings](prompts/agents/decision-analyst/findings.md).
+- This part applies where your brief gives findings or items an editor left, places a code editor's report gives as standing, or `question` tickets filed on the change: [An editor's findings](prompts/agents/decision-analyst/findings.md).
 
 ## Judge each finding
 - Judge each finding, item and place your brief gives, decide each question it raises, and send each editor your judgments on its part, as [Findings an editor leaves](prompts/agents/notes/changes.md#findings-an-editor-leaves) and [An editor's findings](prompts/agents/decision-analyst/findings.md#an-editors-findings) give.

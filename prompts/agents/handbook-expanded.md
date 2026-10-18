@@ -65,6 +65,5 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/commands.md#denied-calls
 * inline: notes/commands.md#final-report
 
-- Your final reply is your report. It opens with `done` where every item is done, and with `blocked` where each item not done is stopped by a tool or a document you find no way around, with the concrete case. It then gives each item of your brief, and of each request a later message adds, as done or as unfinished with its reason.
-- A handbook line that gives what the pass does gives what your work does, and your report gives, after its items, each thing a handbook line puts in the review.
+- Your final reply opens with `done` where every item is done, and with `blocked` where each item not done is stopped by a tool or a document you find no way around, with the concrete case. It then gives each item of your brief, and of each request a later message adds, as done or as unfinished with its reason.
 * inline: notes/launching.md#an-editors-report-on-a-change

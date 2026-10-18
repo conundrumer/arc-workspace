@@ -229,7 +229,7 @@ def editor(editor: EditorPart | DocEditor, number: str, worktree: Path, scratch:
     return "\n".join(lines + settled_lines(settled))
 
 
-BEFORE = mctx("An editor of your role that another session launched, {agent}, worked in this "
+BEFORE = mctx("An editor of your agent type that another session launched, {agent}, worked in this "
               "worktree before you, with the scratch directory {scratch}.")
 
 
