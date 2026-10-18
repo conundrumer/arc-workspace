@@ -352,7 +352,7 @@
         (_ 1 _)
         (1 @_ 1)
         (_ 1 _)))))
-    (outputs (reached (key Key) (P Position))))
+    (outputs (reached (key Ky) (P P))))
   (INIT &propagation Propagation
     (source ((:key Ky) (:n P))
       (self.source (:key *Ky) *P)
@@ -362,7 +362,7 @@
       (self.step *Delta)
       (compose (:A P) (:B Delta) (:C *Q))
       (self.node (:key Ky) (:P Q))))
-  (output reached (Ky P)
+  (output reached
     (&propagation.reached (:key *Ky) (:n *P))))
 (macro CellDistance
   (component CellDistance construction (type-parameters Key)
@@ -372,8 +372,8 @@
         (_ 1 _)
         (1 @_ 1)
         (_ 1 _)))))
-    (outputs (distance (key Key) (P Position) (K number))
-      (predecessor (key Key) (Q Position) (P Position))))
+    (outputs (distance (key Ky) (P P) (K K))
+      (predecessor (key Ky) (Q Q) (P P))))
   (INIT &distance Distance
     (source ((:key Ky) (:n P))
       (self.source (:key *Ky) *P))
@@ -382,9 +382,9 @@
       (self.step *Delta)
       (compose (:A P) (:B Delta) (:C *Q))
       (self.node (:key Ky) (:P Q))))
-  (output distance (Ky P K)
+  (output distance
     (&distance.distance (:key *Ky) (:n *P) *K))
-  (output predecessor (Ky Q P)
+  (output predecessor
     (&distance.predecessor (:key *Ky) (:b *Q) (:a *P))))
 (macro Connectivity
   (component Connectivity construction (type-parameters Key)
@@ -393,9 +393,9 @@
         (_ 1 _)
         (1 @_ 1)
         (_ 1 _)))))
-    (outputs (component (key Key) (P Position) (Id Ident))
-      (connected (key Key) (P Position) (Q Position))
-      (adjacent (key Key) (P Position) (Q Position))))
+    (outputs (component (key Ky) (P P) (Id Id))
+      (connected (key Ky) (P P) (Q Q))
+      (adjacent (key Ky) (P P) (Q Q))))
   (INIT &quotient Quotient
     (edge ((:a Ky P) (:b Ky (:P Q)))
       (OR ((self.node (:key *Ky) *P) (= *Q P))
@@ -405,20 +405,20 @@
     (self.step *Delta)
     (compose (:A P) (:B Delta) (:C *Q))
     (self.node (:key Ky) (:P Q)))
-  (output component (Ky P Id)
+  (output component
     (&quotient.class (:a *Ky *P) *Id))
-  (output connected (Ky P Q)
+  (output connected
     (&quotient.class (:a *Ky *P) *Id)
     (&quotient.class (:a Ky (:P *Q)) Id))
-  (output adjacent (Ky P Q)
+  (output adjacent
     (&adjacent_node *Ky *P *Q)))
 (macro Ray
   (component Ray construction (type-parameters Key)
     (inputs (source (key Key) (P Position))
       (node (key Key) (P Position))
       (dir (key Key) (D Dir8)))
-    (outputs (ray (key Key) (P Position) (D Dir8) (K number) (Origin Position))
-      (end (key Key) (P Position) (D Dir8) (K number) (Origin Position))))
+    (outputs (ray (key Ky) (P P) (D D) (K K) (Origin Origin))
+      (end (key Ky) (P P) (D D) (K K) (Origin Origin))))
   (INIT &distance Distance
     (key ((self.source (:key ^Ky) (:P ^Origin)) (self.dir (:key Ky) ^D))
       (source ((:n Origin)))
@@ -427,9 +427,9 @@
           ((OR ((axis_of D *A)) ((diag_dir_elem D) (axis_elem A))) (sub_extent (:P Origin) A *K) (jump (:P Origin) D K (:Q P)) (self.node (:key Ky) P)))
         (neighbor P D *Q)
         (self.node (:key Ky) (:P Q)))))
-  (output ray (Ky P D K Origin)
+  (output ray
     (&distance.distance (:key *Ky *D *Origin) (:n *P) *K))
-  (output end (Ky P D K Origin)
+  (output end
     (&distance.distance (:key *Ky *D *Origin) (:n *P) *K)
     (neighbor P D *Q)
     (NOT (&distance.distance (:key Ky D Origin) (:n Q)))))

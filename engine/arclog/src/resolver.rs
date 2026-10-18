@@ -26,10 +26,10 @@ pub enum MacroExpansion {
     /// sites outside a part of the expansion, and the types of its sites in that
     /// part is empty, that part holds nothing: a part is the body that takes the
     /// atom's place, a branch of an `OR`, or a list of an `IF`, wherever it
-    /// stands in that body. A relation macro's column types and modes are
-    /// its definition's, as [`crate::registry::macro_column_types`] gives
-    /// them, so a program that passes the checks under `Keep` passes them
-    /// under `Expand`.
+    /// stands in that body. Each macro's column types are its definition's,
+    /// a relation macro's columns and modes and a cell instance's outputs,
+    /// as [`crate::registry::macro_column_types`] gives them, so a program
+    /// that passes the checks under `Keep` passes them under `Expand`.
     Expand,
 }
 
