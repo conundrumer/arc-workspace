@@ -33,6 +33,7 @@ from operations.directives import (Directive, allow_named, named, NUMBER, number
                                    paused, session_lines)
 from operations.final_reply import live_holder
 from operations.log_commands import log
+from operations.merging import merge_commit
 from operations.pacing import Pace
 from operations.state import State, Ticket, memoized
 from operations.steps import Bash, Step, Undecided
@@ -179,10 +180,10 @@ def own_work(state: State) -> set[str]:
     steps reaches from one, a step from a ticket to each ticket of its
     `links` and to each ticket of `filed_for` of a kind of `FOLLOWS`; and
     each ticket outside `tickets/closed/` whose title refers, as
-    `references.referring` judges it, to a path of `touched` of that line
+    `references.referring` judges it, to a file of `touched` of that line
     of work, with each ticket a chain of those steps reaches from it. A
     ticket its title admits, and each ticket reached from it, adds no
-    paths."""
+    files."""
     tickets = state.tracker.tickets
     below = filed_for(state)
 
@@ -199,8 +200,8 @@ def own_work(state: State) -> set[str]:
 
 
 def touched(state: State, numbers: set[str]) -> frozenset[str]:
-    """The paths the tickets `numbers` touch: of a `change`, the paths of
-    its Scope; of a `request`, the files of each commit of `GitRead.commits`
+    """The files the tickets `numbers` edited: of a `change`, the files of
+    its `merging.merge_commit`, none where it has none; of a `request`, the files of each commit of `GitRead.commits`
     whose hash a word of `COMMIT_WORD` in a log line of the coordinator
     gives, as the line that gives a hotfix's commit once it is on
     `master`."""
@@ -210,7 +211,8 @@ def touched(state: State, numbers: set[str]) -> frozenset[str]:
         if t is None:
             continue
         if t.kind is Kind.CHANGE:
-            out |= t.scope
+            commit = merge_commit(state, t)
+            out |= commit.files if commit is not None else frozenset()
         elif t.kind is Kind.REQUEST:
             words = {w for ln in t.log if ln.agent == COORDINATOR for w in COMMIT_WORD.findall(ln.note)}
             out.update(f for c in state.git.commits if any(c.hash.startswith(w) for w in words)

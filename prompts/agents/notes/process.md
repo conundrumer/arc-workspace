@@ -168,6 +168,7 @@
 - Outcomes:
     - Work with no step, or with a holder that is gone, reaches an agent that acts on it.
     - Each ticket has one live holder at most.
+    - The operators take the work the user's `Op` lines admit, and hold back the work those lines hold back.
 - Owner: the operator's command, and the coordinator past it.
 - Takes from: the tracker and the transcripts. Gives to: the coordinator.
 - How it can fail: work that is slow and not stuck is escalated: the trigger is the absence of a step, and not time alone.

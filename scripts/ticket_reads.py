@@ -8,7 +8,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from ticket_files import listed_tickets, ticket_files, ticket_name
-from ticket_form import FRONT, front_fields, given_paths, list_items, section, section_head, title
+from ticket_form import FRONT, front_fields, list_items, section, section_head, title
 from state_reads import DERIVED, Kept, state_cache
 from ticket_log import (CLOSED_BY_LINE, DUPLICATE_OF_LINE, WAIT, Wait, held_log, holder_of,
                         line_time, log_lines, resolution_of, waited, waited_change)
@@ -21,7 +21,7 @@ from ticketing.text import SECTIONS
 from ticketing.vocabulary import TICKET_NUMBER, Domain, Kind, Status
 
 
-_, MOTIVATION, SCOPE, _ = SECTIONS[Kind.CHANGE]
+_, MOTIVATION, _, _ = SECTIONS[Kind.CHANGE]
 
 CITED_NUMBER = re.compile(rf"(?<![\w.:-]){TICKET_NUMBER.pattern}(?![\w:-]|\.\d)")
 """A ticket number in a ticket's prose, apart from the parts of a date, a
@@ -70,8 +70,7 @@ def held_ticket(path: Path) -> Ticket:
 
 def ticket_of(path: Path, text: str, found: list[re.Match[str]]) -> Ticket:
     """The ticket of the file at `path`, whose text is `text`, with the log
-    lines `found`. The paths of its Scope are read against the tree that
-    holds the tracker."""
+    lines `found`."""
     name = ticket_name(path)
     head = re.match(FRONT, text)
     if head is None:
@@ -87,7 +86,6 @@ def ticket_of(path: Path, text: str, found: list[re.Match[str]]) -> Ticket:
         title=title(path, text),
         depends_on=tuple(list_items(fields["depends-on"])) if "depends-on" in fields else (),
         motivation=motivation(text),
-        scope=given_paths(text, SCOPE, path.parents[2]),
         editors=editors_field(fields),
         after_merge=fields.get("after-merge"), mechanical="mechanical" in fields,
         log=lines,

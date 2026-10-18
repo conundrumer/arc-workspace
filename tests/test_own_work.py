@@ -1,10 +1,11 @@
 """The operators' scope is the session's line of work where no `Op scope:`
 line came or the last one gives `own`: the coordinator's requests and
 changes, the changes filed for them, the questions on those changes, and
-the tickets whose title refers to a path such a change's Scope gives or
-a file of a commit a request's log gives, with the changes filed for
-those tickets, whose paths admit no further ticket; a title refers to a
-file's path under the one pattern as `names` judges it."""
+the tickets whose title refers to a file of the commit that merged such a
+change or of a commit a request's log gives, with the changes filed for
+those tickets, whose files admit no further ticket; a title refers to a
+file under the one pattern where it gives the file's path, or a form of
+the path that holds a `.` or a `/` with no `/` and no `.` before it."""
 
 from pathlib import Path
 
@@ -13,6 +14,7 @@ import pytest
 from tests.conftest import script
 
 HASH = "abcdef12" + "0" * 32
+MERGE = "1234abcd" + "0" * 32
 LOG = "## Log\n2026-10-17T02:14:06Z open [{agent}]: filed\n{more}"
 
 
@@ -74,29 +76,61 @@ def test_own_work_follows_the_line_of_work_and_the_paths_it_touched(tmp_path: Pa
         ticket(tickets, "9-10_agent_a0000000000000003_code-reviewer", "bug",
                "`scripts/further.py`: wrong"),
     ]
-    commits = [Commit(HASH, 0.0, frozenset(), "y", False, frozenset({"scripts/hotfixed.py"}))]
+    commits = [Commit(HASH, 0.0, frozenset(), "y", False, frozenset({"scripts/hotfixed.py"})),
+               Commit(MERGE, 0.0, frozenset(), "x: the fix", False,
+                      frozenset({"src/operations/taking.py"}))]
     assert own_work(state(tmp_path, given, commits)) == {
         "9-1", "9-2", "9-3", "9-5", "9-7", "9-8", "9-9"}
 
 
 TITLES = ["`src/operations/taking.py`: wrong", "operations.taking: wrong", "taking.py is slow",
           "pretaking.py", "the tests are slow", "`tests/test_own_work.py`: flaky",
-          "`README.md`: stale", "README.mdx", "dependents: x", "`scripts/dependents.py`: x"]
+          "`README.md`: stale", "README.mdx", "dependents.py: x", "`scripts/dependents.py`: x",
+          "scripts.dependents: x"]
 PATHS = ["src/operations/taking.py", "README.md", "scripts/dependents.py",
          "src/operations/__init__.py"]
 
 
 @pytest.mark.parametrize("title", TITLES)
-def test_the_pattern_judges_a_file_path_as_names_does(title: str) -> None:
+def test_the_pattern_judges_as_names_does_a_title_with_no_form_after_a_slash_or_dot(
+        title: str) -> None:
     from ticketing.references import names, referring
     for path in PATHS:
         assert (referring([path]).search(title) is not None) is names(title, path)
     assert (referring(PATHS).search(title) is not None) is any(names(title, p) for p in PATHS)
 
 
-def test_a_directory_is_referred_to_by_a_path_under_it() -> None:
+def test_a_bare_module_name_refers_to_no_file() -> None:
+    from ticketing.references import names, referring
+    title = "scripts/bottlenecks.py, `--help`: \"wait\" and \"wait span\" name two different spans"
+    assert names(title, "scripts/spans.py")
+    assert referring(["scripts/spans.py"]).search(title) is None
+
+
+@pytest.mark.parametrize(("title", "path", "refers"), [
+    ("`src/cli/run.py`: wrong", "src/gating/run.py", False),
+    ("`src/parity/__init__.py`: wrong", "src/gating/__init__.py", False),
+    ("run.py: wrong", "src/gating/run.py", True),
+    ("`src/gating/run.py`: wrong", "src/gating/run.py", True),
+    ("`src/gating/__init__.py`: wrong", "src/gating/__init__.py", True),
+])
+def test_a_form_after_a_slash_or_dot_is_another_file(title: str, path: str, refers: bool) -> None:
     from ticketing.references import referring
-    pattern = referring(["tests/"])
-    assert pattern.search("`tests/test_own_work.py`: flaky") is not None
-    assert pattern.search("the tests are slow") is None
-    assert pattern.search("`src/tests/x.py`: y") is None
+    assert (referring([path]).search(title) is not None) is refers
+
+
+def test_a_change_touches_the_files_its_merging_commit_changed(tmp_path: Path) -> None:
+    from operations.state import Commit
+    from operations.taking import touched
+    tickets = tmp_path / "tickets"
+    given = [
+        ticket(tickets, "9-1_change_x-fix_ticket-analyst", "change", "x: the fix",
+               "## Scope\n- `src/operations/taking.py`\n\n"),
+        ticket(tickets, "9-2_change_x-other_ticket-analyst", "change", "x: unmerged",
+               "## Scope\n- `src/operations/state.py`\n\n"),
+    ]
+    commits = [Commit(MERGE, 0.0, frozenset(), "x: the fix", False,
+                      frozenset({"src/ticketing/references.py"}))]
+    s = state(tmp_path, given, commits)
+    assert touched(s, {"9-1"}) == {"src/ticketing/references.py"}
+    assert touched(s, {"9-2"}) == frozenset()

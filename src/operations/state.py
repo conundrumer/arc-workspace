@@ -65,10 +65,8 @@ class Ticket:
     """A ticket of the tracker. `editors` is None where a `change` gives no
     `editors` field, `mechanical` is whether a `change` gives the
     `mechanical` field, `motivation` holds the ticket numbers its
-    `## Motivation` section gives, `scope` the paths its `## Scope`
-    section gives, as `ticket_form.given_paths` reads them, none where it
-    has no such section, and `holder` is the holder `file_ticket.py log
-    --help-all` defines."""
+    `## Motivation` section gives, and `holder` is the holder
+    `file_ticket.py log --help-all` defines."""
     number: str
     order: tuple[int, int]
     session: int | None
@@ -81,7 +79,6 @@ class Ticket:
     title: str
     depends_on: tuple[str, ...]
     motivation: tuple[str, ...]
-    scope: frozenset[str]
     editors: tuple[Role, ...] | None
     after_merge: str | None
     mechanical: bool

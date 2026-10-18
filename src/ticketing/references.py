@@ -1,7 +1,7 @@
 """Whether a text, such as a ticket's title, refers to a path of the
-checkout: for one path, as `names` judges it, and for many paths at once,
+checkout: for one path, as `names` judges it, and for many files at once,
 as the one pattern `referring` builds matches. Both read the forms
-`word_forms` gives a path, so the two judge a file's path alike."""
+`word_forms` gives a path."""
 
 import re
 from collections.abc import Iterable
@@ -18,9 +18,10 @@ AFTER = r"(?![\w-])"
 """The bounds of a whole word: no word character and no `-` on either
 side, so that a `/` or a `.` may stand there."""
 
-PATH_BEFORE = r"(?<![\w./-])"
-"""What may not stand before a path that a text gives: any character of a
-path, so that the path is not the end of a longer one."""
+FORM_BEFORE = r"(?<![\w./-])"
+"""What may not stand before a form that `referring` matches: a word
+character, a `-`, or a `/` or a `.`, after which the form is the end of
+another file's path or module name."""
 
 NOTHING = re.compile(r"(?!)")
 
@@ -69,25 +70,18 @@ def whole_word(text: str, word: str) -> bool:
 
 
 def referring(paths: Iterable[str]) -> re.Pattern[str]:
-    """One pattern that a text matches where it refers to one of `paths`:
-    to a file's path as `names` judges it, and to a directory's path,
-    one that ends with a `/`, where the text gives a path under that
-    directory. A pattern of no paths matches no text."""
-    whole: set[str] = set()
-    words: set[str] = set()
-    dirs: set[str] = set()
-    for p in paths:
-        if p.endswith("/"):
-            dirs.add(p)
-            continue
-        if "/" in p:
-            whole.add(p)
-        words.update(word_forms(p))
+    """One pattern that a text matches where it gives one of the files
+    `paths` whole, or a form of `word_forms` of one that holds a `.` or a
+    `/`, bounded after as a whole word and before by `FORM_BEFORE`. A form
+    with no `.` and no `/`, such as a script's bare module name, is a word
+    common in prose and matches nothing. A pattern of no paths matches no
+    text."""
+    files = list(paths)
+    whole = {p for p in files if "/" in p}
+    words = {f for p in files for f in word_forms(p) if "." in f or "/" in f}
     parts = [re.escape(w) for w in sorted(whole)]
     if words:
-        parts.append(BEFORE + alternation(words) + AFTER)
-    if dirs:
-        parts.append(PATH_BEFORE + alternation(dirs) + r"[\w.-]")
+        parts.append(FORM_BEFORE + alternation(words) + AFTER)
     return re.compile("|".join(parts)) if parts else NOTHING
 
 
