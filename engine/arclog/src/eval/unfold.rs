@@ -13,10 +13,10 @@
 #![allow(unused_variables, dead_code)]
 
 use super::join::Budget;
-use super::{Evaluation, Outcome, RelationValue, Stop};
+use super::{Evaluation, FormBodies, Outcome, RelationValue, Stop};
 use crate::program::path::NodePath;
 use crate::relations::{Row, RowSet};
-use crate::terms::TermId;
+use crate::terms::{Example, TermId};
 use crate::types::GraphRelation;
 
 /// A state of an `Unfold` walk, on one key: its cursor and its three sets
@@ -63,11 +63,14 @@ pub fn distinct_outputs(graph: &StateGraph, limit: usize) -> Vec<RowSet> {
 
 /// The values of `output`, an output of the `Unfold` instance at `form`:
 /// one per distinct output of its walks, at most `limit`, so one value
-/// where no `score` ties.
+/// where no `score` ties, on `example`, or task-wide where it is `None`,
+/// with the instance's bodies evaluated through `bodies`.
 pub fn evaluate_unfold(
     evaluation: &Evaluation<'_>,
+    bodies: &FormBodies<'_>,
     form: &NodePath,
     output: &GraphRelation,
+    example: Option<Example>,
     limit: usize,
     budget: &mut Budget<'_>,
 ) -> Outcome<Vec<RelationValue>> {

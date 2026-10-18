@@ -334,13 +334,15 @@ impl<'e, 'a> Driver<'e, 'a> {
         match &program.graph.nodes[relation.node.0 as usize].kind {
             DependencyKind::Clause(_) | DependencyKind::InstanceInput { .. } => self.clauses(relation.node, example),
             DependencyKind::Parameter(name) => self.parameter(relation, name),
-            DependencyKind::InstanceOutput { .. } => instance::evaluate_instance(evaluation, form, relation, &mut budget()),
+            DependencyKind::InstanceOutput { .. } => {
+                instance::evaluate_instance(evaluation, &self.bodies(), form, relation, example, &mut budget())
+            }
             DependencyKind::RigidAssembly(_) => {
                 let output = relation.output.as_ref().and_then(|path| path.first()).expect("an output of the assembly");
-                rigid::evaluate_assembly(evaluation, form, output, &mut budget())
+                rigid::evaluate_assembly(evaluation, &self.bodies(), form, output, example, &mut budget())
             }
             DependencyKind::RecursiveInstance(_) => {
-                let values = unfold::evaluate_unfold(evaluation, form, relation, 2, &mut budget())?;
+                let values = unfold::evaluate_unfold(evaluation, &self.bodies(), form, relation, example, 2, &mut budget())?;
                 match <[RelationValue; 1]>::try_from(values) {
                     Ok([value]) => Ok(value),
                     Err(_) => Err(RunFault {
@@ -366,7 +368,8 @@ impl<'e, 'a> Driver<'e, 'a> {
         let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
         let value = evaluation.parameters.get(name).ok_or_else(|| fault("no stored record gives the parameter's rows".into()))?;
         if let ParamValue::Derivation { .. } = value {
-            return instance::evaluate_det_construction(evaluation, form, &mut Budget::new(evaluation.limits, evaluation.session));
+            let mut budget = Budget::new(evaluation.limits, evaluation.session);
+            return instance::evaluate_det_construction(evaluation, form, value, &mut budget);
         }
         let types = evaluation.program.types.columns(relation).ok_or_else(|| fault("the parameter's columns have no types".into()))?;
         let mut table = evaluation.session.intern.write().expect("an intern table that no panic poisoned");
@@ -397,10 +400,9 @@ impl<'e, 'a> Driver<'e, 'a> {
         let evaluation = self.evaluation;
         let clause = ir::compile_clause(evaluation.program, form)
             .map_err(|fault| RunFault { message: format!("the body does not compile: {fault:?}").into(), form: form.clone() })?;
-        let scope = if example.is_some() { ExampleScope::PerExample } else { ExampleScope::TaskWide };
         let mut reads = Vec::new();
         let mut parameters = Vec::new();
-        let inputs = match self.inputs(&clause, scope, example, &mut reads, &mut parameters)? {
+        let inputs = match self.inputs(&clause, scope_at(example), example, &mut reads, &mut parameters)? {
             Ok(inputs) => inputs,
             Err(value) => return Ok(value),
         };
@@ -411,14 +413,26 @@ impl<'e, 'a> Driver<'e, 'a> {
         if let Some(value) = cache::lookup(evaluation.session, &request) {
             return Ok(value);
         }
-        let order = plan::variable_order(&clause, &join::sizes(&inputs));
-        let mut budget = Budget::new(evaluation.limits, evaluation.session);
-        let value = match join::join(&clause, &order, &inputs, evaluation.registry, &mut budget) {
-            Ok(relation) => RelationValue::Rows(Arc::new(relation)),
-            Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
-        };
+        let value = self.join(form, &clause, &inputs);
         cache::store(evaluation.session, &request, &value);
         Ok(value)
+    }
+
+    /// The relation of `clause`, a clause of the form at `form`, by generic
+    /// join over `inputs`, or the stop of the join at a bound.
+    fn join(&self, form: &NodePath, clause: &ClauseIr, inputs: &JoinInputs) -> RelationValue {
+        let evaluation = self.evaluation;
+        let order = plan::variable_order(clause, &join::sizes(inputs));
+        let mut budget = Budget::new(evaluation.limits, evaluation.session);
+        match join::join(clause, &order, inputs, evaluation.registry, &mut budget) {
+            Ok(relation) => RelationValue::Rows(Arc::new(relation)),
+            Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
+        }
+    }
+
+    /// The way into this driver of the forms over lib components.
+    fn bodies<'d>(&'d self) -> FormBodies<'d> {
+        FormBodies { driver: self }
     }
 
     /// What each node of `clause` reads, in a clause of `scope` on
@@ -539,6 +553,34 @@ impl<'e, 'a> Driver<'e, 'a> {
         }
         Ok(Some(first))
     }
+}
+
+/// The way into the driver of a form over a lib component, such as an
+/// `INIT` form: the relation of a clause compiled from the form's bodies,
+/// with the reads of each body evaluated as the driver evaluates a
+/// clause's.
+pub struct FormBodies<'d> {
+    driver: &'d Driver<'d, 'd>,
+}
+
+impl FormBodies<'_> {
+    /// The relation of `clause`, compiled from bodies of the form at `form`,
+    /// on `example`, or task-wide where `example` is `None`: its rows, or
+    /// the value of a read of it that is `undefined` or stopped, or the stop
+    /// of its join.
+    pub fn relation(&self, form: &NodePath, clause: &ClauseIr, example: Option<Example>) -> Outcome<RelationValue> {
+        let driver = self.driver;
+        match driver.inputs(clause, scope_at(example), example, &mut Vec::new(), &mut Vec::new())? {
+            Ok(inputs) => Ok(driver.join(form, clause, &inputs)),
+            Err(value) => Ok(value),
+        }
+    }
+}
+
+/// The scope of a clause evaluated on `example`, or task-wide where it is
+/// `None`.
+fn scope_at(example: Option<Example>) -> ExampleScope {
+    if example.is_some() { ExampleScope::PerExample } else { ExampleScope::TaskWide }
 }
 
 /// The relation that a clause derives or a parameter stores as `name` in

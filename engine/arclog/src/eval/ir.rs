@@ -371,9 +371,49 @@ fn form_body<'p>(program: &'p CheckedProgram, clause: &NodePath) -> (&'p Body, N
 /// with those labels.
 pub fn compile_conjuncts(program: &CheckedProgram, clause: &NodePath, kept: &[u32]) -> Result<ClauseIr, CompileFault> {
     let (body, body_path, columns) = form_body(program, clause);
-    let scope = scope_of(program, clause);
+    let conjuncts = kept.iter().map(|&index| (&body.conjuncts[index as usize], body_path.child(index))).collect();
+    compile_grounded(program, clause, conjuncts, &columns)
+}
+
+/// The IR of the bodies `bodies` of the `INIT` form at `instance`, each with
+/// its path, as one clause whose relation's columns are the labels
+/// `columns`, in their order: the key body alone, whose columns are the
+/// key's labels, or a keyed input's body joined with the key body, whose
+/// columns are the key's labels and then the input's. A label of `columns`
+/// that no body holds is no column of the relation. Where the bodies leave
+/// a label ungrounded, this refuses them with those labels, as
+/// [`compile_conjuncts`] does.
+pub fn compile_instance_body(
+    program: &CheckedProgram,
+    instance: &NodePath,
+    bodies: &[(&Body, NodePath)],
+    columns: &[LabelId],
+) -> Result<ClauseIr, CompileFault> {
+    let conjuncts = bodies
+        .iter()
+        .flat_map(|(body, path)| body.conjuncts.iter().zip(0u32..).map(|(conjunct, index)| (conjunct, path.child(index))))
+        .collect();
+    compile_grounded(program, instance, conjuncts, columns)
+}
+
+/// The types of the labels of the scope that holds the labels of the form
+/// at `form`.
+pub fn label_types<'p>(program: &'p CheckedProgram, form: &NodePath) -> &'p FormTypes {
+    form_types(program, &scope_of(program, form))
+}
+
+/// The IR of `conjuncts`, each with its path, of the form at `form`, whose
+/// relation's columns are those of `columns` that the conjuncts hold.
+/// Refuses the conjuncts where they leave a label ungrounded.
+fn compile_grounded(
+    program: &CheckedProgram,
+    form: &NodePath,
+    conjuncts: Vec<(&Conjunct, NodePath)>,
+    columns: &[LabelId],
+) -> Result<ClauseIr, CompileFault> {
+    let scope = scope_of(program, form);
     let types = form_types(program, &scope);
-    let subset = Body { conjuncts: kept.iter().map(|&index| body.conjuncts[index as usize].clone()).collect() };
+    let subset = Body { conjuncts: conjuncts.iter().map(|(conjunct, _)| (*conjunct).clone()).collect() };
     let registry = Registry::get();
     let grounded = crate::grounding::grounded_labels(
         &subset,
@@ -389,10 +429,10 @@ pub fn compile_conjuncts(program: &CheckedProgram, clause: &NodePath, kept: &[u3
         return Err(CompileFault::Ungrounded { labels: ungrounded.into() });
     }
     let mut builder = IrBuilder::new(program, scope);
-    for &index in kept {
-        builder.conjunct(&body.conjuncts[index as usize], &body_path.child(index))?;
+    for (conjunct, path) in &conjuncts {
+        builder.conjunct(conjunct, path)?;
     }
-    let columns = columns.into_iter().filter(|label| held.contains(label)).map(|label| builder.variable(label)).collect();
+    let columns = columns.iter().copied().filter(|label| held.contains(label)).map(|label| builder.variable(label)).collect();
     Ok(builder.finish(columns))
 }
 
