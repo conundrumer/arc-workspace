@@ -9,13 +9,13 @@
 
 use crate::hash::{StableHashMap, StableHashSet};
 use crate::layout::Layout;
-use crate::program::path::{NodePath, NodeRef};
+use crate::program::path::{child_index, NodePath, NodeRef};
 use crate::program::canonical::relation_of;
 use crate::write::relation_ref;
 use std::sync::Arc;
 
 use crate::program::{
-    Alt, AltItem, Alts, AltsName, Arcdata, Body, Clause, ClauseKeyword, Form, InstanceName, Node,
+    Alt, AltItem, Alts, AltsName, Arcdata, Body, Clause, ClauseKeyword, DemoRule, Demonstrated, Form, InstanceName, Node,
     OutputOwner, OutputStep, Program, ProgramRelation, RelationRef, RigidDetName,
 };
 
@@ -76,8 +76,9 @@ pub struct Case {
     pub name: CaseName,
     pub program: Node<Program>,
     /// The file and the path there of each top-level form of the program,
-    /// by its path. A node below a form stands at the same path below the
-    /// form's path in the file.
+    /// and of each form of a `DEMO_RULE` form that an alt's form stands in,
+    /// by its path. A node below such a form stands at the same path below
+    /// the form's path in the file.
     origins: StableHashMap<NodePath, (FileOwner, NodePath)>,
     concept_determinations: Box<[NodePath]>,
 }
@@ -98,10 +99,14 @@ impl Case {
     ///
     /// Panics where `path` names no node of the case program.
     pub fn file_path(&self, path: &NodePath) -> (FileOwner, NodePath) {
-        let Some((first, rest)) = path.0.split_first() else {
+        if path.0.is_empty() {
             return (FileOwner::Solver, NodePath::default());
-        };
-        let (owner, form) = self.origins.get(&NodePath(Box::new([*first]))).expect("a path of the case program");
+        }
+        let deepest = (1..=path.0.len()).rev().find_map(|depth| {
+            let (form, rest) = path.0.split_at(depth);
+            self.origins.get(&NodePath(form.into())).map(|origin| (origin, rest))
+        });
+        let ((owner, form), rest) = deepest.expect("a path of the case program");
         (*owner, form.join(&NodePath(rest.into())))
     }
 }
@@ -224,13 +229,16 @@ impl Solver {
         let mut forms = Vec::new();
         let mut origins = StableHashMap::default();
         let mut concept_determinations = Vec::new();
-        for p in taken {
+        for taken in taken {
+            let p = taken.placed;
             let path = NodePath(Box::new([PathStep(forms.len() as u32)]));
             if p.depth == 0 && is_det(&p.form) && !other_readings.contains(&p.step) {
                 concept_determinations.push(path.clone());
             }
+            let (form, below) = taken.form();
+            origins.extend(below.into_iter().map(|(at, origin)| (path.join(&at), origin)));
             origins.insert(path, (p.owner, p.path.clone()));
-            forms.push(p.form.clone());
+            forms.push(form);
         }
         Ok(Case {
             name,
@@ -245,14 +253,30 @@ impl Solver {
     /// program's name scope, which a name that no block of a case derives
     /// resolves among, as [`crate::resolver::resolve`] takes them. A name that a
     /// `DEMO_RULE` form declares is resolved within that form alone, as
-    /// [`crate::program::NameScope`] gives, so the set leaves it out.
+    /// [`crate::program::NameScope`] gives, so the set leaves it out. An
+    /// alt's form that derives such a name stands in that `DEMO_RULE` form in
+    /// each case that takes the alt, so the set leaves out its name too,
+    /// unless a form of the concept program outside its `DEMO_RULE` forms
+    /// derives it.
     pub fn derived_relations(&self) -> StableHashSet<ProgramRelation> {
         let mut derived = StableHashSet::default();
         let mut owners = StableHashSet::default();
         let mut outputs = Vec::new();
         let claims = self.representative_claims().map(|(_, form)| form);
-        for form in self.program.value().forms.iter().chain(claims) {
-            each_form(form, &mut |form| match derives(form) {
+        let forms: Vec<&Form> = self.program.value().forms.iter().chain(claims).collect();
+        let mut concept = StableHashSet::default();
+        let mut in_rules = StableHashSet::default();
+        for form in &forms {
+            each_form(form, false, &mut |form, in_alt| {
+                if !in_alt {
+                    concept.extend(derives(form));
+                    in_rules.extend(rule_forms(form).filter_map(derives));
+                }
+            });
+        }
+        let in_rules_only: StableHashSet<Derives> = in_rules.difference(&concept).cloned().collect();
+        for form in forms {
+            each_form(form, false, &mut |form, _| match derives(form).filter(|key| !in_rules_only.contains(key)) {
                 Some(Derives::Relation(relation)) => {
                     derived.insert(relation);
                 }
@@ -484,13 +508,16 @@ fn readings(line: &Clause) -> Vec<(AltsName, Reading)> {
 /// reading a `RULE`. Each reading keeps the line's `ONE` marks and its
 /// columns. The line's body is one reading's, as
 /// `docs/arclog/arclog.md#the-alts-form` gives, and the other reading holds
-/// no body.
+/// no body. The derived reading by a proposer other than the line's first
+/// holds the line's first proposer, which names the relation's columns, then
+/// its own, whose columns map onto them by position.
 fn read_as(line: &Clause, reading: Reading) -> Clause {
     let (keyword, proposers, owns_body) = match reading {
         Reading::Stored => (ClauseKeyword::Det, line.proposers.clone(), line.keyword == ClauseKeyword::DetOrRule),
         Reading::Derived(proposer) => {
             let proposers = match proposer {
-                Some(index) => Arc::from([line.proposers[index].clone()]),
+                Some(0) => Arc::from([line.proposers[0].clone()]),
+                Some(index) => Arc::from([line.proposers[0].clone(), line.proposers[index].clone()]),
                 None => line.proposers.clone(),
             };
             (ClauseKeyword::Rule, proposers, line.keyword == ClauseKeyword::RuleOrDet)
@@ -529,8 +556,10 @@ fn is_det(form: &Form) -> bool {
 /// The forms of a case, from the forms its walk reaches: for each thing
 /// derived, the forms of the deepest blocks that derive it, at the place of
 /// the concept program's first form that derives it. A parameter that
-/// several blocks determine keeps each block's `DET`.
-fn rederived(placed: &[Placed]) -> Vec<&Placed> {
+/// several blocks determine keeps each block's `DET`. The place of a thing
+/// that a `DEMO_RULE` form of the concept program derives is in each such
+/// form, at its first form that derives it, as [`Taken::in_rules`] gives.
+fn rederived(placed: &[Placed]) -> Vec<Taken<'_>> {
     let keys: Vec<Derives> = placed.iter().map(|p| derives(&p.form).expect("a reached form derives")).collect();
     let mut deepest: StableHashMap<&Derives, (u32, bool)> = StableHashMap::default();
     for (p, key) in placed.iter().zip(&keys) {
@@ -549,43 +578,110 @@ fn rederived(placed: &[Placed]) -> Vec<&Placed> {
             p.depth == depth || (all_det && is_det(&p.form))
         })
         .collect();
+    let rederived_in = |rules: &StableHashSet<Derives>| -> Vec<&Placed> {
+        (0..placed.len()).filter(|index| placed[*index].depth > 0 && keep[*index] && rules.contains(&keys[*index])).map(|index| &placed[index]).collect()
+    };
+    let mut in_rules = StableHashSet::default();
     let mut taken = Vec::new();
     let mut emitted = vec![false; placed.len()];
     let mut placed_keys = StableHashSet::default();
     for (index, p) in placed.iter().enumerate().filter(|(_, p)| p.depth == 0) {
         let key = &keys[index];
         if keep[index] {
-            taken.push(p);
+            let rules: StableHashSet<Derives> = rule_forms(&p.form).filter_map(derives).collect();
+            taken.push(Taken { placed: p, in_rules: rederived_in(&rules) });
+            in_rules.extend(rules);
             emitted[index] = true;
         }
         if deepest[key].0 > 0 && placed_keys.insert(key) {
             for other in 0..placed.len() {
                 if !emitted[other] && placed[other].depth > 0 && keep[other] && keys[other] == *key {
-                    taken.push(&placed[other]);
+                    taken.push(Taken { placed: &placed[other], in_rules: Vec::new() });
                     emitted[other] = true;
                 }
             }
         }
     }
-    taken.extend((0..placed.len()).filter(|index| !emitted[*index] && keep[*index]).map(|index| &placed[index]));
+    let rest = (0..placed.len()).filter(|index| !emitted[*index] && keep[*index] && !in_rules.contains(&keys[*index]));
+    taken.extend(rest.map(|index| Taken { placed: &placed[index], in_rules: Vec::new() }));
     taken
 }
 
+/// A form of a case: a form its walk reaches, with the forms of the alts
+/// that stand in its `DEMO_RULE` forms where it is a `DEMONSTRATED` form of
+/// the concept program.
+struct Taken<'p> {
+    placed: &'p Placed,
+    /// The forms of the deepest blocks that derive a thing that a
+    /// `DEMO_RULE` form of the form derives, in the order of the walk. In
+    /// each such `DEMO_RULE` form, they take the place of its first form that
+    /// derives that thing, and its other forms that derive it are left out.
+    in_rules: Vec<&'p Placed>,
+}
+
+impl Taken<'_> {
+    /// The form, with the forms of `in_rules` in its `DEMO_RULE` forms, and
+    /// the file and the path there of each form of each `DEMO_RULE` form that
+    /// they change, by its path below the form.
+    fn form(&self) -> (Form, Vec<(NodePath, (FileOwner, NodePath))>) {
+        let demonstrated = match &self.placed.form {
+            Form::Demonstrated(demonstrated) if !self.in_rules.is_empty() => demonstrated.value(),
+            form => return (form.clone(), Vec::new()),
+        };
+        let mut origins = Vec::new();
+        let rules = demonstrated.rules.iter().map(|rule| {
+            let step = child_index(NodeRef::Demonstrated(demonstrated), NodeRef::DemoRule(rule.value()))
+                .expect("a `DEMO_RULE` form is a child of its `DEMONSTRATED` form");
+            let mut forms: Vec<(Form, (FileOwner, NodePath))> = Vec::new();
+            let mut placed_keys = StableHashSet::default();
+            for (at, form) in rule.value().forms.iter().enumerate() {
+                let key = derives(form);
+                let alts: Vec<&Placed> = self.in_rules.iter().copied().filter(|p| key.is_some() && derives(&p.form) == key).collect();
+                if alts.is_empty() {
+                    forms.push((form.clone(), (self.placed.owner, self.placed.path.child(step).child(at as u32))));
+                } else if placed_keys.insert(key) {
+                    forms.extend(alts.into_iter().map(|p| (p.form.clone(), (p.owner, p.path.clone()))));
+                }
+            }
+            if placed_keys.is_empty() {
+                return rule.clone();
+            }
+            let rule_path = NodePath(Box::new([PathStep(step)]));
+            origins.extend(forms.iter().enumerate().map(|(at, (_, origin))| (rule_path.child(at as u32), origin.clone())));
+            let forms = forms.into_iter().map(|(form, _)| form).collect();
+            Node::new(DemoRule { forms, ..rule.value().clone() })
+        });
+        let rules = rules.collect();
+        (Form::Demonstrated(Node::new(Demonstrated { rules, ..demonstrated.clone() })), origins)
+    }
+}
+
+/// The forms of the `DEMO_RULE` forms of `form`, where it is a
+/// `DEMONSTRATED` form.
+fn rule_forms(form: &Form) -> impl Iterator<Item = &Form> {
+    let demonstrated = match form {
+        Form::Demonstrated(demonstrated) => Some(demonstrated.value()),
+        _ => None,
+    };
+    demonstrated.into_iter().flat_map(|d| d.rules.iter().flat_map(|rule| rule.value().forms.iter()))
+}
+
 /// Calls `f` on each form below `form`, `form` included, outside the
-/// `DEMO_RULE` forms, whose names are their own.
-fn each_form<'a>(form: &'a Form, f: &mut dyn FnMut(&'a Form)) {
-    f(form);
+/// `DEMO_RULE` forms, whose names are their own, with whether the form
+/// stands in an `ALT` block.
+fn each_form<'a>(form: &'a Form, in_alt: bool, f: &mut dyn FnMut(&'a Form, bool)) {
+    f(form, in_alt);
     match form {
-        Form::Claim(claim) => claim.value().forms.iter().for_each(|form| each_form(form, f)),
+        Form::Claim(claim) => claim.value().forms.iter().for_each(|form| each_form(form, in_alt, f)),
         Form::Alts(alts) => alts.value().alts.iter().for_each(|alt| each_alt_form(alt.value(), f)),
         _ => {}
     }
 }
 
-fn each_alt_form<'a>(alt: &'a Alt, f: &mut dyn FnMut(&'a Form)) {
+fn each_alt_form<'a>(alt: &'a Alt, f: &mut dyn FnMut(&'a Form, bool)) {
     for item in alt.items.iter() {
         match item {
-            AltItem::Form(form) => each_form(form, f),
+            AltItem::Form(form) => each_form(form, true, f),
             AltItem::Alt(nested) => each_alt_form(nested.value(), f),
         }
     }
