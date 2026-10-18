@@ -44,18 +44,31 @@ def turn_marks(back: Iterable[Entry]) -> Iterator[tuple[Entry, bool, bool]]:
     parses none of the entries before."""
     nxt: Entry | None = None
     for e in back:
-        start = is_prompt(e) and nxt is not None and nxt.get("type") == "assistant"
-        end = False
-        if e.get("type") == "assistant" and not blocks(e, "tool_use"):
-            stop = (e.get("message") or {}).get("stop_reason")
-            end = stop in ("end_turn", "stop_sequence") or (nxt is not None and is_prompt(nxt))
-        if e.get("toolEndsTurn"):
-            end = True
-        if is_interrupt_note(e) and (nxt is None or nxt.get("type") != "assistant"):
-            end = True
-        yield e, start, end
-        if is_turn_entry(e) or is_prompt(e):
+        yield e, *marks(e, nxt)
+        if is_message(e):
             nxt = e
+
+
+def marks(entry: Entry, nxt: Entry | None) -> tuple[bool, bool]:
+    """Whether `entry` starts a turn and whether it ends one, as `turns`
+    gives them, where `nxt` is the next message entry after it
+    (`is_message`), or None where none follows."""
+    start = is_prompt(entry) and nxt is not None and nxt.get("type") == "assistant"
+    end = False
+    if entry.get("type") == "assistant" and not blocks(entry, "tool_use"):
+        stop = (entry.get("message") or {}).get("stop_reason")
+        end = stop in ("end_turn", "stop_sequence") or (nxt is not None and is_prompt(nxt))
+    if entry.get("toolEndsTurn"):
+        end = True
+    if is_interrupt_note(entry) and (nxt is None or nxt.get("type") != "assistant"):
+        end = True
+    return start, end
+
+
+def is_message(entry: Entry) -> bool:
+    """Whether `entry` is a message entry, whose type `turns` reads at the
+    entries before it: an entry of a turn or a prompt."""
+    return is_turn_entry(entry) or is_prompt(entry)
 
 
 def run_back(path: Path) -> Iterator[Entry]:
@@ -86,10 +99,11 @@ def turn_ended(entries: Sequence[Entry]) -> bool:
     return idle
 
 
+@state_cache(DERIVED, kept=Kept.DISK)
 def turn_end(path: Path) -> float | None:
     """The time of the last timestamped entry of the run at `path` that
     ends a turn (`turns`), as `profile_runs.py --help runs` gives when a
-    turn ended."""
+    turn ended, with only the lines from it to the end parsed."""
     return next((epoch(e["timestamp"]) for e, _, end in turn_marks(run_back(path))
                  if end and e.get("timestamp")), None)
 

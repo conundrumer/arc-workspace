@@ -160,11 +160,33 @@ class OperatorLines:
         return out
 
 
+@dataclass(frozen=True)
+class CallMade:
+    """A `Call` as `operator_read` made it from a use, with the values it was
+    made from (`given`), the last of them whether the operator's last merge
+    call of the use's command was denied before it, the `undecided` lines
+    its making gave, and whether that last denied call is the use's own
+    after it."""
+    given: tuple[object, ...]
+    call: Call
+    lines: tuple[str, ...]
+    denied: bool
+
+
+_calls_made: dict[tuple[str, Path, str], tuple[OperatorLines, frozenset[tuple[str, float]],
+                                                dict[str, CallMade]]] = {}
+"""The calls `operator_read` last made for each operator, by the id of
+their use, with the state of the fold and the commits they were made
+from."""
+
+
 @state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
 def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
                   commits: frozenset[tuple[str, float]], calls_read: bool) -> OperatorRead:
     """`read_operator`, with `subjects` as the pairs `commits` gives, those
-    of `merge_subjects`, and `calls` as `calls_read`."""
+    of `merge_subjects`, and `calls` as `calls_read`. The `Call` of a use is
+    made anew only where a value it is made from changed since the last
+    read on the same fold."""
     subjects = dict(commits)
     agents: list[Agent] = []
     calls: list[Call] = []
@@ -177,6 +199,9 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
     messages = read.messages(aid, children_of(path, aid), undecided)
     uses = dict(read.uses)
     results, moved, tasks = read.results, read.moved, read.tasks
+    held = _calls_made.get((aid, path, parent))
+    before = held[2] if held is not None and held[0] is read and held[1] == commits else {}
+    made: dict[str, CallMade] = {}
     denied: set[str] = set()
     for call, (t, inp, tool) in uses.items():
         if not calls_read:
@@ -188,9 +213,24 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
             text, error = background_output(aid, call, *moved[call], tasks, undecided)
         inp, text = unfiled_call(aid, tool, inp, text, undecided)
         uses[call] = (t, inp, tool)
-        merge = merge_outcome(aid, str(inp.get("command", "")) if tool == Tool.BASH else "",
-                              t, text, error, subjects, denied, undecided)
-        calls.append(Call(aid, t, tool, inp, text, error, merge, call_conflicts(merge, text)))
+        command = str(inp.get("command", "")) if tool == Tool.BASH else ""
+        given = (t, tool, inp, text, error, command in denied)
+        m = before.get(call)
+        if m is None or m.given != given:
+            lines: list[str] = []
+            merge = merge_outcome(aid, command, t, text, error, subjects, denied, lines)
+            m = CallMade(given, Call(aid, t, tool, inp, text, error, merge,
+                                     call_conflicts(merge, text)),
+                         tuple(lines), command in denied)
+        elif m.denied:
+            denied.add(command)
+        else:
+            denied.discard(command)
+        made[call] = m
+        undecided.extend(m.lines)
+        calls.append(m.call)
+    if calls_read:
+        _calls_made[aid, path, parent] = read, commits, made
     if not any(tool == Tool.AGENT and described(str(inp.get("description", "")))
                for _, inp, tool in uses.values()):
         return OperatorRead(AgentsRead((), {}, {}), tuple(calls), tuple(messages), {})

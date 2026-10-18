@@ -10,6 +10,7 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -59,9 +60,8 @@ NOTE = ("<task-notification>\n<task-id>b1</task-id>\n<tool-use-id>t2</tool-use-i
         "<status>completed</status>\n</task-notification>")
 
 
-@pytest.fixture
-def run(tmp_path: Path):
-    entries = [
+def entries() -> list[dict]:
+    return [
         user(0, "brief"),
         assistant(5, bash("t1", "G=scripts/gate.py; uptime; time uv run python $G out")),
         user(15, answer("t1")),
@@ -79,8 +79,12 @@ def run(tmp_path: Path):
         user(200, "a question"),
         assistant(210, {"type": "text", "text": "an answer"}, stop="end_turn"),
     ]
+
+
+@pytest.fixture
+def run(tmp_path: Path):
     path = tmp_path / "s.jsonl"
-    write_jsonl(path, entries)
+    write_jsonl(path, entries())
     return profile_runs.profile(path, [])
 
 
@@ -107,6 +111,41 @@ def told(aid: str, tid: str, note: str = "") -> str:
 
 
 A1, A2, A3, A4, A5 = (f"a{n:016x}" for n in (1, 2, 3, 4, 5))
+
+
+def test_kept_profile(tmp_path: Path) -> None:
+    """The profile a fold keeps across a transcript's growth and rewrite is
+    the profile of the whole transcript, also where the end of a call in
+    the background, which its output file gives, falls in an idle gap the
+    fold passed before that end was known."""
+    out = tmp_path / "out.txt"
+    out.write_text("")
+    ended = transcript_entries.epoch(at(60))
+    os.utime(out, (ended, ended))
+    lines = entries()
+    lines[5:5] = [assistant(21, bash("t5", "sleep 1000", run_in_background=True)),
+                  user(22, [{"type": "tool_result", "tool_use_id": "t5",
+                               "content": f"Output is being written to: {out}"}],
+                       {"backgroundTaskId": "b5"})]
+    path = tmp_path / "s.jsonl"
+    path.write_text("")
+
+    def same_as_whole(n: int) -> None:
+        whole = tmp_path / f"{n}.jsonl"
+        whole.write_bytes(path.read_bytes())
+        transcripts.new_state()
+        kept = profile_runs.profile(path, [])
+        assert kept == replace(profile_runs.profile(whole, []), label=kept.label, path=path), n
+
+    for n, e in enumerate(lines):
+        with path.open("a") as fh:
+            fh.write(json.dumps(e) + "\n")
+        same_as_whole(n)
+    write_jsonl(path, [user(0, "another brief"), *lines[1:]])
+    same_as_whole(len(lines))
+    groups = profile_runs.profile(path, []).groups
+    assert groups[Part.WAITS, "bg poll"].ran == 60 - 22
+    assert groups[Part.WAITS, "bg poll"].time == 22 - 21 + (60 - 23) / 2
 
 
 def test_pending(tmp_path: Path) -> None:

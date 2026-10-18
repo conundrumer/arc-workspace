@@ -60,18 +60,36 @@ def background_ends(found: dict[str, Background],
     """When each call of `found` ended, as `profile_runs.py --help runs`
     gives it, from the notifications among `entries`, or None where it still runs
     or whether it runs is unknown."""
-    entries_list = list(entries)
     told: dict[str, float] = {}
-    for e in entries_list:
-        if e.get("type") != "assistant" and e.get("timestamp"):
-            t = epoch(e["timestamp"])
-            for ident in notified(e):
-                told[ident] = min(t, told.get(ident, t))
-    last = max((epoch(e["timestamp"]) for e in entries_list if e.get("timestamp")),
-               default=0.0)
-    ends: dict[str, float | None] = {
-        call: min((told[i] for i in b.ids if i in told), default=None)
-        for call, b in found.items()}
+    last = 0.0
+    for e in entries:
+        note_told(told, e)
+        if e.get("timestamp"):
+            last = max(last, epoch(e["timestamp"]))
+    return ends_from(found, told, last)
+
+
+def note_told(told: dict[str, float], entry: Entry) -> None:
+    """Add to `told`, the time of the first notification of each id, the
+    notifications of `entry`."""
+    if entry.get("type") != "assistant" and entry.get("timestamp"):
+        t = epoch(entry["timestamp"])
+        for ident in notified(entry):
+            told[ident] = min(t, told.get(ident, t))
+
+
+def told_end(b: Background, told: dict[str, float]) -> float | None:
+    """The time of the first notification of the call `b` that `told`
+    gives, or None where it gives none."""
+    return min((told[i] for i in b.ids if i in told), default=None)
+
+
+def ends_from(found: dict[str, Background], told: dict[str, float],
+              last: float) -> dict[str, float | None]:
+    """`background_ends` of `found` where `told` gives the time of the
+    first notification of each id and `last` the time of the run's last
+    timestamped entry, or 0 where none has one."""
+    ends: dict[str, float | None] = {call: told_end(b, told) for call, b in found.items()}
     outputs = {call: b.output for call, b in found.items()
                if ends[call] is None and b.output is not None}
     for f in outputs.values():

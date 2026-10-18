@@ -5,8 +5,11 @@ import math
 from collections.abc import Mapping
 from pathlib import Path
 
-from run_reads import blocks, run_entries
+from run_reads import blocks
 from state_reads import DERIVED, Kept, state_cache
+from transcript_entries import fold
+from transcript_snapshots import Entry
+from transcripts import chain
 from wait_bound import bound_denied
 
 from controlled_markdown import mctx
@@ -64,13 +67,20 @@ def merge_outcome(aid: str, command: str, time: float, result: str | None, error
     return Merge.REFUSED if refused(result) else Merge.FAILED
 
 
+def merge_step(subjects: set[str], _path: Path, _line: int, entry: Entry) -> None:
+    """Add to `subjects` the commit messages the merge calls of `entry`
+    give."""
+    if entry.get("type") != "assistant":
+        return
+    for b in blocks(entry, "tool_use"):
+        command = str((b.get("input") or {}).get("command", ""))
+        if b.get("name") == Tool.BASH and MERGE_SCRIPT in command:
+            subjects.update(merge_messages(command) or ())
+
+
 @state_cache(DERIVED, kept=Kept.DISK)
 def merge_subjects(path: Path) -> frozenset[str]:
     """The commit messages the merge calls of the run at `path` give
     (`operations.merging.merge_messages`), the subjects `merge_outcome`
     looks up."""
-    return frozenset(m for e in run_entries(path, naming={MERGE_SCRIPT})
-                     if e.get("type") == "assistant" for b in blocks(e, "tool_use")
-                     if b.get("name") == Tool.BASH
-                     and MERGE_SCRIPT in (command := str((b.get("input") or {}).get("command", "")))
-                     for m in merge_messages(command) or ())
+    return frozenset(fold(merge_step, set, path, chain(path), frozenset({MERGE_SCRIPT})))

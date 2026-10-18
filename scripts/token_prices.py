@@ -4,7 +4,7 @@
 - A request is the entries of one message id, and an entry with no message id makes the cost unknown. Its usage is, for each count, the most any of its entries gives, where an entry gives its top-level counts, or the sum over its `iterations` where that sum is larger.
 """
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, fields
 from typing import Any
 
@@ -143,11 +143,20 @@ def priced_requests(entries: Iterable[dict[str, Any]],
                     undecided: list[str]) -> dict[str, list[dict[str, Any]]] | None:
     """The groups `grouped` gives, or None where an entry has no message id,
     with an `undecided` line for it."""
-    groups = grouped(entries)
+    return priced_groups(grouped(entries), undecided)
+
+
+def priced_groups[G](groups: dict[str | None, G], undecided: list[str]) -> dict[str, G] | None:
+    """`priced_requests` of the groups `grouped` gives."""
     if None in groups:
         unknown(undecided, mctx("no message id"))
         return None
     return {k: v for k, v in groups.items() if k is not None}
+
+
+type Pricing = Callable[[list[dict[str, Any]], list[str], str | None], float | None]
+"""A price of a request's entries, with its `undecided` lines, at a model
+or at the request's own, as `request_cost` gives it."""
 
 
 def run_cost(entries: Iterable[dict[str, Any]], undecided: list[str],
@@ -155,10 +164,17 @@ def run_cost(entries: Iterable[dict[str, Any]], undecided: list[str],
     """The token cost in dollars of the requests `priced_requests` gives,
     each as `request_cost` prices it, or None where a request that used
     tokens has no price, with an `undecided` line for it."""
-    groups = priced_requests(entries, undecided)
-    if groups is None:
+    return groups_cost(grouped(entries), undecided, at)
+
+
+def groups_cost(groups: dict[str | None, list[dict[str, Any]]], undecided: list[str],
+                at: str | None = None, price: Pricing | None = None) -> float | None:
+    """`run_cost` of the groups `grouped` gives, each priced by `price`, or
+    by `request_cost` where none is given."""
+    priced = priced_groups(groups, undecided)
+    if priced is None:
         return None
-    costs = [request_cost(group, undecided, at) for group in groups.values()]
+    costs = [(price or request_cost)(group, undecided, at) for group in priced.values()]
     return None if None in costs else sum(c for c in costs if c is not None)
 
 
