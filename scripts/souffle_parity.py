@@ -10,33 +10,29 @@ A sentence a tool prints stands in an `mctx` call where the tool prints it.
 import argparse
 import sys
 from collections.abc import Mapping
-from pathlib import Path
 
-# This script's directory, first on the path, would make `parity` this
-# script in place of the package of `src/parity/`.
-sys.path = [p for p in sys.path if Path(p or ".").resolve() != Path(__file__).resolve().parent]
-
-from cli.common import all_stems, engine  # noqa: E402
-from controlled_markdown import mctx  # noqa: E402
-from parity import rerun, snapshot, uses  # noqa: E402
+from cli.common import all_stems, engine
+from controlled_markdown import mctx
+from parity import rerun, snapshot, uses
 
 
 def parser() -> argparse.ArgumentParser:
     top = argparse.ArgumentParser(
-        prog="parity.py",
+        prog="souffle_parity.py",
         description=mctx("The stored Souffle outcomes of the solvers, by arclog names."))
     sub = top.add_subparsers(dest="cmd", required=True)
     snap = sub.add_parser("snapshot", help=mctx(
         "Write the record of each solver whose stored record is not fresh, to "
         "`.cache/parity/<stem>.json` of the main worktree, and print the path of each "
-        "record written."))
+        "record written; then the stem of each solver that has no record written because a run "
+        "of it was stopped at its wall limit, under a line that says so."))
     snap.add_argument("stems", nargs="*", help=mctx(
         "The solvers, each by its stem; every solver under `programs/solvers/` where none "
         "is given."))
     sub.add_parser("uses", help=mctx(
-        "Write each lib name and each form keyword that a file of `work/arclog/gen/` reads, "
-        "with the stems of the files that read it, to `.cache/parity/uses.json` of the "
-        "main worktree, and print its path."))
+        "Write each lib name, each proposer and each form keyword that a file of "
+        "`work/arclog/gen/` uses, with the stems of the files that use it, to "
+        "`.cache/parity/uses.json` of the main worktree, and print its path."))
     again = sub.add_parser("rerun", help=mctx(
         "Run one case of a solver again on one pair with every relation written out, and "
         "print the rows of each relation under its arclog name. It writes no file."))
@@ -49,8 +45,14 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str]) -> int:
     args = parser().parse_args(argv)
     if args.cmd == "snapshot":
-        for path in snapshot.write_all(args.stems or all_stems()):
+        written = snapshot.write_all(args.stems or all_stems())
+        for path in written.paths:
             print(path)
+        if written.stopped:
+            print(mctx("Each of these solvers has no record written, since a run of it "
+                       "was stopped at its wall limit:"))
+            for stem in written.stopped:
+                print(stem)
         return 0
     if args.cmd == "uses":
         print(uses.write_all())
