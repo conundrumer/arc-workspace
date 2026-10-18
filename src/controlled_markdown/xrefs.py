@@ -290,8 +290,9 @@ def _text_at(root: Path, base: str, path: str) -> str | None:
 def touched(documents: list[Node], root: Path, base: str) -> list[Touch]:
     """Each node and target of an `xref` whose lines (`span`) differ
     between the commit `base` and the working tree, in document and line
-    order. A target that no longer resolves counts as touched, and so does
-    one that resolved at nothing at `base`."""
+    order. A target that names nothing counts as one value of its lines, so
+    a target that resolves on one side alone counts as touched, and one
+    that resolves on neither side does not."""
     out: list[Touch] = []
     for document in documents:
         for x in xrefs(document):
@@ -300,6 +301,7 @@ def touched(documents: list[Node], root: Path, base: str) -> list[Touch]:
                 file = root / path
                 now = _defined_text(file.read_text(), target) if file.is_file() else None
                 before = _text_at(root, base, path)
-                if now is None or before is None or _defined_text(before, target) != now:
+                then = _defined_text(before, target) if before is not None else None
+                if then != now:
                     out.append(Touch(x.node, target))
     return out

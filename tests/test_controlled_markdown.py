@@ -194,8 +194,21 @@ def test_touched_lists_a_line_whose_section_a_hunk_changes(tmp_path):
                      "- Gone.\n    + xref: docs/guide.md#absent\n", "doc.md")
     assert [(t.node.text, t.target) for t in touched([document], tmp_path, base)] == [
         ("Section.", "docs/guide.md#making-a-change"),
-        ("Subsection.", "docs/guide.md#detail"),
-        ("Gone.", "docs/guide.md#absent")]
+        ("Subsection.", "docs/guide.md#detail")]
+
+
+def test_touched_lists_a_removed_target_and_no_target_absent_on_both_sides(tmp_path):
+    _tree(tmp_path)
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "base")
+    base = _git(tmp_path, "rev-parse", "HEAD").strip()
+    path = tmp_path / "scripts" / "tool.py"
+    path.write_text(MODULE.replace("def run():\n    return 1\n", ""))
+    document = parse("- Removed.\n    + xref: scripts/tool.py:run\n"
+                     "- Never.\n    + xref: scripts/tool.py:absent\n"
+                     "- No file.\n    + xref: scripts/none.py:absent\n", "doc.md")
+    assert [(t.node.text, t.target) for t in touched([document], tmp_path, base)] == [
+        ("Removed.", "scripts/tool.py:run")]
 
 
 def _linked(tmp_path: Path) -> tuple[Path, Path]:

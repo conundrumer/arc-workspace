@@ -20,7 +20,7 @@ ordinary Markdown, with its includes resolved from the files they name, and it
 takes its paths as given. `xrefs` prints, for each `xref` target, a file's
 path, `<path>:<name>` for a definition in a Python file or `<path>#<slug>`
 for a section of a document, whose lines the diff from the commit `base` to
-the working tree changes, or that names nothing, one line `<path>:<line>: <target>: <text>`, with
+the working tree changes, an absent definition counting as one value, one line `<path>:<line>: <target>: <text>`, with
 the text of the statement the attribute describes, and exits 0; with no
 path, it reads the set `check` reads. Run with the copy of this module in a
 linked worktree, `xrefs` runs the main tree's copy under the main tree's
