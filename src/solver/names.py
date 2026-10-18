@@ -17,7 +17,9 @@ from solver.annotations import (
     CaseMarker,
     DeriveLine,
     MarkerPart,
+    NamedVerdict,
     StoreLine,
+    Verdict,
     VerdictWord,
     WitnessLine,
     pieces,
@@ -311,6 +313,52 @@ def verdict_lines(solver: Solver, id: str) -> tuple[VerdictLine, ...]:
               if isinstance(b, DeriveBranch | StoreBranch)
               and b.line is not None and branch_text(b) == id]
     return tuple(sorted(lines, key=lambda line: line.line))
+
+
+@dataclass(frozen=True)
+class LinesDiffer:
+    """The `@witness` lines of one id that give another plausibility or
+    verdict than its first line, in file order."""
+
+    first: WitnessLine
+    differing: tuple[WitnessLine, ...]
+
+
+def witness_verdict(solver: Solver, id: str) -> WitnessLine | LinesDiffer | None:
+    """The plausibility and verdict of the `@witness` lines of the id `id`
+    (`verdict_lines`), as the first of them, where every line gives them;
+    the lines that differ where some do not; None where no `@witness` line
+    has the id. Two verdicts agree where they are one verdict word, or names
+    that denote the same branches (`denote`), in any order of their parts. A
+    name `denote` gives a fault for agrees only with a name of the same
+    text."""
+    lines = [w for w in verdict_lines(solver, id) if isinstance(w, WitnessLine)]
+    if not lines:
+        return None
+    first, *rest = lines
+    differing = tuple(
+        w for w in rest
+        if w.plausibility != first.plausibility
+        or _verdict_key(solver, w.verdict) != _verdict_key(solver, first.verdict))
+    return LinesDiffer(first, differing) if differing else first
+
+
+type _VerdictKey = (Verdict
+                    | tuple[bool, frozenset[ConstructorBranch],
+                            frozenset[Branch], frozenset[StoreBranch]])
+
+
+def _verdict_key(solver: Solver, verdict: Verdict) -> _VerdictKey:
+    """What two verdicts that agree (`witness_verdict`) share: the word, the
+    branches a name denotes as sets, or the verdict itself where it is a
+    word or a name that denotes none."""
+    if not isinstance(verdict, NamedVerdict):
+        return verdict
+    d = denote(solver, verdict.text)
+    if isinstance(d, NameFault):
+        return verdict
+    return (d.concept, frozenset(d.constructors), frozenset(d.branches),
+            frozenset(d.derived))
 
 
 def name(solver: Solver, case: Case | Base) -> str:

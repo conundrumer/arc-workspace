@@ -95,11 +95,13 @@ from solver.model import (
     other_branches,
 )
 from solver.names import (
+    LinesDiffer,
     cases_of,
     denote,
     denoted_cases,
     model_of,
     names_in,
+    witness_verdict,
 )
 from solver.outcome import Outcome, is_result
 from solver.problems import (
@@ -458,15 +460,33 @@ def _merged_witnesses(solver: Solver) -> list[WitnessLine]:
     return out
 
 
+def text_differs(first: WitnessLine, line: WitnessLine) -> Finding:
+    """The finding at the `@witness` line `line` whose plausibility or
+    verdict differs from those of `first`, the first line of its id."""
+    return Finding(Kind.ANNOTATION, AtLine(line.line),
+                   WitnessTextDiffers(line.id, first.line, first.plausibility,
+                                      first.verdict))
+
+
 def _differing_witness_text(solver: Solver) -> list[Finding]:
     """A finding at each `@witness` line whose plausibility or verdict
-    differs from those of the first line of its id."""
-    return [Finding(Kind.ANNOTATION, AtLine(w.line),
-                    WitnessTextDiffers(w.id, first.line, first.plausibility,
-                                       first.verdict))
-            for first, *rest in _lines_by_id(solver) for w in rest
-            if (w.plausibility, w.verdict)
-            != (first.plausibility, first.verdict)]
+    differs from those of the first line of its id
+    (`solver.names.witness_verdict`). Where the id is an entry of the task's
+    witness file, a line of the same plausibility where one of the two
+    verdicts is `other` is no finding: `load` gives the fault
+    `VERDICTS_DISAGREE` for that id."""
+    file = solver.witness_file
+    out: list[Finding] = []
+    for id in dict.fromkeys(w.id for w in solver.annotations.witnesses):
+        got = witness_verdict(solver, id)
+        if not isinstance(got, LinesDiffer):
+            continue
+        first = got.first
+        faulted = file is not None and file.entry(id) is not None
+        out += [text_differs(first, w) for w in got.differing
+                if not (faulted and w.plausibility == first.plausibility
+                        and VerdictWord.OTHER in (w.verdict, first.verdict))]
+    return out
 
 
 def _header_claims(solver: Solver, runs: Runs) -> tuple[Claim, ...] | Fault:
@@ -501,8 +521,9 @@ def _header_claims(solver: Solver, runs: Runs) -> tuple[Claim, ...] | Fault:
         "**verdict**: the annotator's judgment of the output that the "
         "generator would pair with the witness.")
 def check_witness_lines(solver: Solver, runs: Runs) -> list[Finding]:
-    """Each `@witness` line gives the plausibility and verdict of the first
-    line of its id, which `_merged_witnesses` keeps.
+    """Each `@witness` line gives a plausibility and a verdict that agree
+    with those of the first line of its id (`_differing_witness_text`),
+    which `_merged_witnesses` keeps.
     The `@witness` lines and the witness file agree: each line's id is an
     entry of the file; the `@reassigned` lines of a witness name the
     parameters its `assign` changes; each `@relaxed` line of a `@witness`,

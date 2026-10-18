@@ -18,6 +18,7 @@ from checker.payloads.witness import VerdictOutputUnknown
 from checker.render import finding_lines
 from checker.render.built import takes_branch, undefined_text
 from checker.runs import witness_file_role
+from checker.witness import text_differs
 from cli.common import LIMITS, engine
 from engine import Engine, Grid, RunFailure, checkout
 from engine.program import as_grid
@@ -27,7 +28,7 @@ from solver.annotations import WitnessLine, verdict_text
 from solver.cases import cases
 from solver.load import load
 from solver.model import Case
-from solver.names import denote, model_of
+from solver.names import LinesDiffer, denote, model_of, witness_verdict
 from solver.problems import Fault, InSolver, NameFault, WitnessFileRole
 from solver.solve import assignment, outcomes
 from solver.outcome import Grids
@@ -261,20 +262,22 @@ def _judged(run: Loaded, id: str) -> Slot | None:
     """The output the annotator judged the generator to give on the entry
     `id`, `run` being the solver the witness file belongs to: the entry's
     bare grid where its verdict is `other`, else the output of the case
-    its `@witness` line's verdict denotes (`checker.judged.verdict_case`),
-    run on the entry's input, every resolution of it; why that
-    output is not known, where a verdict is recorded
-    or the solver does not parse; None where no line gives the entry a
-    verdict."""
+    its `@witness` lines' verdict denotes (`solver.names.witness_verdict`,
+    `checker.judged.verdict_case`), run on the entry's input, every
+    resolution of it; why that output is not known, where a verdict is
+    recorded, the lines of the id disagree, or the solver does not parse;
+    None where no line gives the entry a verdict."""
     entry = _entry(run, id)
     if isinstance(entry.output, RejectedOutput):
         return Output((entry.output.grid,))
     if isinstance(run.cases, Fault):
         return NoGrid(NoGridKind.FAILED,
                       run_failure_text(run.solver, run.cases))
-    line = {w.id: w for w in run.solver.annotations.witnesses}.get(id)
+    line = witness_verdict(run.solver, id)
     if line is None:
         return None
+    if isinstance(line, LinesDiffer):
+        return NoGrid(NoGridKind.UNKNOWN, _differing_text(run.solver, line))
     if not isinstance(run.cases, tuple):
         return NoGrid(NoGridKind.FAILED,
                       run_failure_text(run.solver, run.cases))
@@ -298,6 +301,14 @@ def _unknown_text(solver: Solver, line: WitnessLine,
         case AnyCase() | NoCase():
             return f"the verdict `{verdict_text(line.verdict)}` names no " \
                 "one output"
+
+
+def _differing_text(solver: Solver, lines: LinesDiffer) -> str:
+    """Why the `@witness` lines `lines` of one id give no one output: the
+    checker's finding at each line that differs from the first."""
+    return "\n".join(
+        text for w in lines.differing
+        for text in finding_lines(solver, text_differs(lines.first, w)))
 
 
 def _entry(run: Loaded, id: str) -> Entry:
