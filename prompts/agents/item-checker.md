@@ -20,9 +20,9 @@ tools: Read, Grep, Glob, Bash, Write, SendMessage, TaskStop
 * inline: notes/launching.md#a-part-a-brief-leaves-out
 * inline: notes/launching.md#an-item-checkers-brief
 - Check each item of each editor whose latest report your brief gives against what that report gives for it, and against the worktree. Send each such item that is not shown to hold, or that its editor's latest report does not give as done or as unfinished, to the editor whose part it is, and each code editor's report that has no `Reuse` section to that editor, and give each in your message as kept.
-    - An editor's items are the Intent items of the change's ticket that fall in the part your brief gives for that editor, or, where the change has no ticket, the items of the transcript brief your brief gives, with the items of each later request as the editor's report gives them. `uv run python scripts/file_ticket.py show <number> Intent Scope` prints a ticket's items.
+    - An editor's items are the Intent items of the change's ticket that fall in the part your brief gives for that editor, or, where the change has no ticket, what [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives as standing for items, within that part, with the items of each later request as the editor's report gives them. `uv run python scripts/file_ticket.py show <number> Intent Scope` prints a ticket's items.
     * inline: notes/launching.md#an-editors-report-on-a-change
-    - Where your brief gives the check after the change's review round cap, check only each edit that a decision in the ticket analysts' reports your brief gives has an editor make, in place of the items.
+    - Where your brief gives the check after the change's review round cap, check only each edit that a decision in the decision analysts' reports your brief gives has an editor make, in place of the items.
     - Run none of the checks that [merge_change.py](scripts/merge_change.py) runs on a change as it merges. For an item such a check shows, the output the report gives for that check is what shows it.
 - Read the diff of each accepted gate output your brief gives, and file each difference there that the change's items do not ask for as a `bug` ticket, with `change` as `<domain>` and the number of the change's ticket as `<subject>`, which does not block the change, as [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) gives.
 - Read each diff of the change, for an item or for an accepted gate output, against the change's merge base with `master`, as `git -C <worktree> diff --merge-base master` prints it, with `-- <path>` after it for one path.
@@ -37,7 +37,7 @@ tools: Read, Grep, Glob, Bash, Write, SendMessage, TaskStop
         * comment: Item checker f820059d, past its cost budget on change 9-890, gave Intent items 1 to 3 under `Left for a decision` as held back for the cost budget, while it gave each as shown to hold, and each budget hit of 9-890 went to `tickets/draft/` (11-526).
 - At the end of your reply, under a `## Left for a decision` heading, give a list item for each one you hold back, with the agent id of each editor it would go to and the reason the report gives or why it fails, and after that list nothing but the line your brief has you end your reply with, where it gives one. Where it would have no list item, give the item `none` under it.
     * comment: Item checker a997c1f0100e44129, past its cost budget on change 6-1196, gave its held-back items under `Left for a decision` with no `## `, and the change merged with them unchecked (6-1397). The merge commands read a reply that has no `## Left for a decision` heading with `none` alone under it as holding something back.
-- In your reply, give each item of your brief as done or as unfinished with its reason.
+- In your reply, give each item you check and each edit you check with its outcome.
 
 ## Commands
 * inline: notes/commands.md#commands
