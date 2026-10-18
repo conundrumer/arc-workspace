@@ -173,12 +173,14 @@ def add(into: dict[str, float], calls: Sequence[str], d: float) -> None:
 class Gap:
     """The time between two entries of a run: its start and end, the calls
     pending and those in the background at its start, whether the run is
-    idle, and, once shared, its `Shares`."""
+    idle, the number of prompts before it, and, once shared, its
+    `Shares`."""
     start: float
     end: float
     pending: tuple[str, ...]
     running: tuple[str, ...]
     idle: bool
+    prompts: int
     shares: Shares | None = None
 
     def share(self, into: Shares, end_of: Callable[[str], float | None],
@@ -208,15 +210,16 @@ class Gap:
 
 @dataclass
 class Prompt:
-    """A prompt after a run's brief: the index of its entry, its time, the
-    entry, and the idle time and waits shared before it, with the gaps held
-    then, whose shares it adds."""
+    """A prompt after a run's brief: its number among the run's prompts,
+    the index of its entry, its time, the entry, and the idle time and
+    waits shared before it, to which a read adds the shares of the gaps
+    held then (`ProfileLoop.late`)."""
+    number: int
     index: int
     time: float
     entry: Entry
     idle: float
     waits: float
-    held: tuple["Gap", ...]
 
 
 type Line = str | CallTime | Prompt
@@ -231,7 +234,11 @@ class ProfileLoop:
     entry before the last message entry (`agent_turns.is_message`), with the
     entries from that one on (`tail`), whose turn marks the next message
     entry gives. `label` names the run in an `undecided` line, and
-    `messaged` is whether the run has a parent whose messages it reads."""
+    `messaged` is whether the run has a parent whose messages it reads.
+    `late` gives, by a prompt's number, the change at that prompt in the
+    idle time and waits of the gaps that were held at a prompt and shared
+    after it: each such gap adds its share at the first prompt it was held
+    at and takes it away at the first prompt after its share."""
     label: str
     messaged: bool
     count: int = 0
@@ -254,6 +261,7 @@ class ProfileLoop:
     told: dict[str, float] = field(default_factory=dict)
     shares: Shares = field(default_factory=Shares)
     held: list[Gap] = field(default_factory=list)
+    late: dict[int, tuple[float, float]] = field(default_factory=dict)
     changed: bool = False
     said: str | None = None
     cwd: str | None = None
@@ -320,13 +328,14 @@ class ProfileLoop:
             return
         t = epoch(e["timestamp"])
         if self.prev is not None and t > self.prev:
-            self.gap(Gap(self.prev, t, tuple(self.pending), tuple(self.running), self.idle))
+            self.gap(Gap(self.prev, t, tuple(self.pending), tuple(self.running), self.idle,
+                         len(self.prompts)))
         self.prev = t if self.prev is None else max(t, self.prev)
         self.first = t if self.first is None else self.first
         etype = e.get("type")
         if (self.messaged and self.briefed is not None and i > self.briefed
                 and is_prompt(e)):
-            p = Prompt(i, t, e, self.shares.idle, self.shares.waits, tuple(self.held))
+            p = Prompt(len(self.prompts), i, t, e, self.shares.idle, self.shares.waits)
             self.prompts.append(p)
             self.lines.append(p)
         if etype == "assistant":
@@ -344,17 +353,30 @@ class ProfileLoop:
         else:
             self.idle = self.idle and etype != "assistant" and not start
 
+    def decided(self, g: Gap) -> bool:
+        """Whether the entries read so far give each value the share of the
+        gap `g` turns on. With no call pending, that share turns on the end
+        of each call in the background where the run is idle. With calls
+        pending, where an Agent call is among those calls or those in the
+        background, it turns on the part of each pending call, and, where
+        each of those parts is `Part.WAITS` and no pending call is an Agent
+        call, on the end of each Agent call in the background."""
+        open_ = {c for c in g.running if self.end_of(c) is None}
+        if not g.pending:
+            return not (g.idle and open_)
+        if not self.agents & {*g.pending, *g.running}:
+            return True
+        parts = [self.part_of(c) for c in g.pending]
+        if None in parts:
+            return False
+        if any(x is not Part.WAITS for x in parts) or self.agents & set(g.pending):
+            return True
+        return not self.agents & open_
+
     def gap(self, g: Gap) -> None:
         """Share the gap `g`, or hold it where its share turns on a value no
-        entry has given yet: the end of a call in the background, where the
-        run is idle with no call pending or that call launched an agent, or
-        the part of a pending call, where the run waits on an agent."""
-        open_ = [c for c in g.running if self.end_of(c) is None]
-        waits_turn = (bool(g.pending) or g.idle) and bool(
-            self.agents & {*g.pending, *g.running}) and (
-            any(self.part_of(c) is None for c in g.pending)
-            or not self.agents & set(g.pending) and any(c in self.agents for c in open_))
-        if (open_ and g.idle and not g.pending) or waits_turn:
+        entry has given yet (`decided`)."""
+        if not self.decided(g):
             self.held.append(g)
             for c in g.running:
                 if (x := self.end_of(c)) is not None and x < g.end:
@@ -365,13 +387,14 @@ class ProfileLoop:
 
     def share_held(self) -> None:
         """Share each held gap whose values the entries read so far give,
-        and hold it no longer."""
+        and hold it no longer, noting its share in `late`."""
         for g in self.held:
-            if all(self.end_of(c) is not None for c in g.running) and all(
-                    self.part_of(c) is not None for c in g.pending):
+            if self.decided(g):
                 g.shares = Shares()
                 g.share(g.shares, self.end_of, self.part_of, self.agents)
                 self.shares.merge(g.shares)
+                note_late(self.late, g.prompts, g.shares, 1.0)
+                note_late(self.late, len(self.prompts), g.shares, -1.0)
         self.held = [g for g in self.held if g.shares is None]
 
     def call(self, b: dict[str, Any], t: float) -> None:
@@ -438,6 +461,13 @@ class ProfileLoop:
         return held[1]
 
 
+def note_late(late: dict[int, tuple[float, float]], at: int, s: Shares, sign: float) -> None:
+    """Add to `late` at the prompt number `at` the idle time and waits of
+    `s`, times `sign`."""
+    idle, waits = late.get(at, (0.0, 0.0))
+    late[at] = idle + sign * s.idle, waits + sign * s.waits
+
+
 def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Run:
     """Its token cost is priced at the model `price_at` where one is given."""
     agent_type, description = run_type(path)
@@ -456,13 +486,18 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
     def part_of(call: str) -> Part:
         return loop.calls[call].read_part()
 
-    held: dict[int, Shares] = {}
+    held: list[Shares] = []
+    late = dict(loop.late)
     for g in loop.held:
-        held[id(g)] = Shares()
-        g.share(held[id(g)], ends.__getitem__, part_of, loop.agents)
-
-    def shared(g: Gap) -> Shares:
-        return g.shares or held[id(g)]
+        held.append(Shares())
+        g.share(held[-1], ends.__getitem__, part_of, loop.agents)
+        note_late(late, g.prompts, held[-1], 1.0)
+    added: list[tuple[float, float]] = []
+    idle_sum = waits_sum = 0.0
+    for n in range(len(loop.prompts)):
+        idle, waits = late.get(n, (0.0, 0.0))
+        idle_sum, waits_sum = idle_sum + idle, waits_sum + waits
+        added.append((idle_sum, waits_sum))
 
     calls = {tid: c.call or classify(c.block, c.result, c.launched,
                                      launched_type(c.block.get("input") or {}, c.result, session)
@@ -482,8 +517,8 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
                                       "unknown").format(run=label, call=line.block.get("id")))
         else:
             assert parent is not None
-            idle = line.idle + sum(shared(g).idle for g in line.held)
-            waits = line.waits + sum(shared(g).waits for g in line.held)
+            idle = line.idle + added[line.number][0]
+            waits = line.waits + added[line.number][1]
             who = sender(line.entry, parent, children, sessions)
             text = message_text(line.entry)
             if who is Sender.PARENT:
@@ -493,7 +528,7 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
                 others.append(Message(line.index, line.time, text, idle, waits))
             elif who is Sender.UNKNOWN:
                 unknown.append(text)
-    shares = [loop.shares, *held.values()]
+    shares = [loop.shares, *held]
     parts = dict.fromkeys(Part, 0.0)
     parts[Part.MODEL] = sum(s.model for s in shares)
     parts[Part.IDLE] = sum(s.idle for s in shares)
