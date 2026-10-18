@@ -289,7 +289,498 @@ pub fn resolve(
     macros: MacroExpansion,
 ) -> WithDiagnostics<ResolvedProgram> {
     match macros {
-        MacroExpansion::Keep | MacroExpansion::Expand => build::resolve(case, concept, derived, registry),
+        MacroExpansion::Keep => build::resolve(case, concept, derived, registry),
+        MacroExpansion::Expand => build::resolve(&expand::program(case, registry), concept, derived, registry),
+    }
+}
+
+/// The program that [`MacroExpansion::Expand`] gives: each atom of a
+/// relation macro, in a body of any form, in the place of the macro's
+/// definition, and each atom of a macro that definition reads in the place
+/// of that macro's. Each form keeps its path. A cell-instance site keeps
+/// its `INIT` form.
+///
+/// The labels of a definition that no column of the atom's sites gives
+/// take labels new to the form, one per atom. A positive atom gives the
+/// conjuncts of its definition, and a negated atom a `NOT` of them. A part
+/// that holds nothing is an `OR` of no branch where it stands for a list,
+/// and is left out where it is a branch of an `OR`.
+mod expand {
+    use std::sync::Arc;
+
+    use crate::hash::StableHashMap;
+    use crate::program::path::NodeRef;
+    use crate::program::{
+        AltItem, Alt, Alts, Atom, Body, Choose, Claim, Clause, Conjunct, Constraint, ConstraintLabel, ConstraintOp,
+        DemoRule, Demonstrated, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelId, LabelUse, Negated, Node,
+        Operand, Program, RelationRef, RigidDet, Site, SiteArg, SiteValue,
+    };
+    use crate::registry::{AlgebraRelation, Column, ColumnType, LibEntry, Macro, Proposer, Registry};
+    use crate::types::{each_conjunct, each_site_label, label_type, use_label, LabelFault, Meet, ValueType};
+
+    pub(super) fn program(case: &Node<Program>, registry: &Registry) -> Node<Program> {
+        Node::new(Program { forms: case.value().forms.iter().map(|form| top_form(form, registry)).collect() })
+    }
+
+    /// `form` expanded, with the labels new to it counted from past the
+    /// greatest label of the whole form, which holds each label scope of
+    /// its forms.
+    fn top_form(form: &Form, registry: &Registry) -> Form {
+        let mut expander = Expander { registry, next: greatest_label(NodeRef::from(form)).map_or(0, |label| label + 1) };
+        expander.form(form)
+    }
+
+    fn greatest_label(node: NodeRef<'_>) -> Option<u32> {
+        let own = match node {
+            NodeRef::Label(use_) => use_label(*use_).map(|label| label.0),
+            NodeRef::Conjunct(Conjunct::Constraint(constraint)) => constraint_labels(constraint).map(|label| label.0).max(),
+            _ => None,
+        };
+        node.children().into_iter().filter_map(greatest_label).chain(own).max()
+    }
+
+    fn constraint_labels(constraint: &Constraint) -> impl Iterator<Item = LabelId> {
+        let second = match constraint.second {
+            Operand::Label(label) => Some(label.label),
+            Operand::Zero => None,
+        };
+        std::iter::once(constraint.first.label).chain(second)
+    }
+
+    /// The `OR` of no branch, which holds nothing.
+    fn nothing() -> Conjunct {
+        Conjunct::Or(Arc::from([]))
+    }
+
+    fn body_node(conjuncts: Vec<Conjunct>) -> Node<Body> {
+        Node::new(Body { conjuncts: conjuncts.into() })
+    }
+
+    /// The `NOT` of the conjunction of `conjuncts`.
+    fn negation(conjuncts: Vec<Conjunct>) -> Conjunct {
+        match <[Conjunct; 1]>::try_from(conjuncts) {
+            Ok([Conjunct::Atom(atom)]) => Conjunct::Not(Negated::Atom(atom)),
+            Ok([form @ (Conjunct::Or(_) | Conjunct::If { .. } | Conjunct::All { .. } | Conjunct::Not(_))]) => {
+                Conjunct::Not(Negated::Form(Arc::new(form)))
+            }
+            Ok([constraint]) => Conjunct::Not(Negated::Form(Arc::new(Conjunct::Or(Arc::from([body_node(vec![constraint])]))))),
+            Err(conjuncts) if conjuncts.is_empty() => nothing(),
+            Err(conjuncts) => Conjunct::Not(Negated::Form(Arc::new(Conjunct::Or(Arc::from([body_node(conjuncts)]))))),
+        }
+    }
+
+    /// What a label of a definition stands for in its expansion.
+    #[derive(Clone, Copy)]
+    enum Renamed {
+        /// The label at the atom's site on the label's column.
+        Site(LabelUse),
+        /// A label new to the form.
+        Local(LabelId),
+    }
+
+    impl Renamed {
+        fn label_use(self, use_: LabelUse) -> LabelUse {
+            match (self, use_) {
+                (_, LabelUse::Zero) | (Renamed::Site(LabelUse::Zero), _) => LabelUse::Zero,
+                (Renamed::Local(label), LabelUse::Fresh(_)) => LabelUse::Fresh(label),
+                (Renamed::Local(label), LabelUse::Join(_)) => LabelUse::Join(label),
+                (Renamed::Local(label), LabelUse::Key(_)) => LabelUse::Key(label),
+                (Renamed::Site(site), LabelUse::Join(_)) => LabelUse::Join(use_label(site).expect("a site label other than `0`")),
+                (Renamed::Site(site), LabelUse::Fresh(_) | LabelUse::Key(_)) => site,
+            }
+        }
+
+        /// The constraint's operand, or `None` for `0`.
+        fn constraint_label(self, label: ConstraintLabel) -> Option<ConstraintLabel> {
+            match self {
+                Renamed::Local(local) => Some(ConstraintLabel { label: local, fresh: label.fresh }),
+                Renamed::Site(LabelUse::Fresh(site)) => Some(ConstraintLabel { label: site, fresh: label.fresh }),
+                Renamed::Site(LabelUse::Join(site) | LabelUse::Key(site)) => Some(ConstraintLabel { label: site, fresh: false }),
+                Renamed::Site(LabelUse::Zero) => None,
+            }
+        }
+    }
+
+    /// The operator of a constraint with its two operands swapped.
+    fn mirrored(op: ConstraintOp) -> ConstraintOp {
+        match op {
+            ConstraintOp::Eq | ConstraintOp::Ne => op,
+            ConstraintOp::Lt => ConstraintOp::Gt,
+            ConstraintOp::Le => ConstraintOp::Ge,
+            ConstraintOp::Gt => ConstraintOp::Lt,
+            ConstraintOp::Ge => ConstraintOp::Le,
+        }
+    }
+
+    /// Whether `0 op 0` holds.
+    fn holds_at_zero(op: ConstraintOp) -> bool {
+        matches!(op, ConstraintOp::Eq | ConstraintOp::Le | ConstraintOp::Ge)
+    }
+
+    struct Expander<'r> {
+        registry: &'r Registry,
+        /// The next label new to the form.
+        next: u32,
+    }
+
+    impl<'r> Expander<'r> {
+        fn form(&mut self, form: &Form) -> Form {
+            match form {
+                Form::Claim(claim) => {
+                    let claim = claim.value();
+                    Form::Claim(Node::new(Claim { forms: claim.forms.iter().map(|form| self.form(form)).collect(), ..claim.clone() }))
+                }
+                Form::Clause(clause) => {
+                    let clause = clause.value();
+                    Form::Clause(Node::new(Clause { body: self.top(&clause.body), ..clause.clone() }))
+                }
+                Form::Instance(instance) => Form::Instance(Node::new(self.instance(instance.value()))),
+                Form::Choose(choose) => {
+                    let choose = choose.value();
+                    Form::Choose(Node::new(Choose {
+                        rows: choose.rows.as_ref().map(|rows| self.key_body(rows)),
+                        from: self.top(&choose.from),
+                        never: choose.never.iter().map(|never| self.top(never)).collect(),
+                        ..choose.clone()
+                    }))
+                }
+                Form::RigidDet(rigid) => {
+                    let rigid = rigid.value();
+                    Form::RigidDet(Node::new(RigidDet {
+                        key: rigid.key.as_ref().map(|key| self.key_body(key)),
+                        instance: rigid.instance.as_ref().map(|instance| self.key_body(instance)),
+                        ..rigid.clone()
+                    }))
+                }
+                Form::Demonstrated(demonstrated) => {
+                    let demonstrated = demonstrated.value();
+                    let mut rules = Vec::new();
+                    for rule in demonstrated.rules.iter() {
+                        let rule = rule.value();
+                        rules.push(Node::new(DemoRule { forms: rule.forms.iter().map(|form| self.form(form)).collect(), ..rule.clone() }));
+                    }
+                    Form::Demonstrated(Node::new(Demonstrated {
+                        key: demonstrated.key.as_ref().map(|key| Node::new(self.key_clause(key.value()))),
+                        inputs: self.inputs(&demonstrated.inputs),
+                        rules: rules.into(),
+                        ..demonstrated.clone()
+                    }))
+                }
+                Form::Alts(alts) => {
+                    let alts = alts.value();
+                    Form::Alts(Node::new(Alts { alts: alts.alts.iter().map(|alt| self.alt(alt)).collect(), ..alts.clone() }))
+                }
+            }
+        }
+
+        fn alt(&mut self, alt: &Node<Alt>) -> Node<Alt> {
+            let alt = alt.value();
+            let items = alt.items.iter().map(|item| match item {
+                AltItem::Form(form) => AltItem::Form(self.form(form)),
+                AltItem::Alt(nested) => AltItem::Alt(self.alt(nested)),
+            });
+            Node::new(Alt { items: items.collect(), ..alt.clone() })
+        }
+
+        fn instance(&mut self, instance: &Instance) -> Instance {
+            Instance {
+                key: instance.key.as_ref().map(|key| Node::new(self.key_clause(key.value()))),
+                inputs: self.inputs(&instance.inputs),
+                ..instance.clone()
+            }
+        }
+
+        fn key_clause(&mut self, clause: &KeyClause) -> KeyClause {
+            KeyClause { key: self.key_body(&clause.key), inputs: self.inputs(&clause.inputs) }
+        }
+
+        fn key_body(&mut self, key: &KeyBody) -> KeyBody {
+            KeyBody { body: self.top(&key.body), columns: key.columns.clone() }
+        }
+
+        fn inputs(&mut self, inputs: &[Node<InstanceInput>]) -> Arc<[Node<InstanceInput>]> {
+            inputs
+                .iter()
+                .map(|input| {
+                    let input = input.value();
+                    Node::new(InstanceInput { body: self.top(&input.body), ..input.clone() })
+                })
+                .collect()
+        }
+
+        fn top(&mut self, body: &Node<Body>) -> Node<Body> {
+            self.nested(body, &[])
+        }
+
+        /// `body` expanded, where `around` holds the conjuncts that stand
+        /// beside it in its form.
+        fn nested(&mut self, body: &Node<Body>, around: &[Conjunct]) -> Node<Body> {
+            if !self.reads_macro(body.value()) {
+                return body.clone();
+            }
+            body_node(self.conjuncts(&body.value().conjuncts, around))
+        }
+
+        fn reads_macro(&self, body: &Body) -> bool {
+            let mut reads = false;
+            each_conjunct(body, &mut |conjunct| {
+                if let Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) = conjunct {
+                    reads |= self.relation_macro(atom.value()).is_some();
+                }
+            });
+            reads
+        }
+
+        fn conjuncts(&mut self, conjuncts: &[Conjunct], outer: &[Conjunct]) -> Vec<Conjunct> {
+            let mut done: Vec<Conjunct> = Vec::new();
+            for (index, conjunct) in conjuncts.iter().enumerate() {
+                let around: Vec<Conjunct> = outer.iter().chain(&done).chain(&conjuncts[index + 1..]).cloned().collect();
+                let expanded = self.conjunct(conjunct, &around);
+                done.extend(expanded);
+            }
+            done
+        }
+
+        fn conjunct(&mut self, conjunct: &Conjunct, around: &[Conjunct]) -> Vec<Conjunct> {
+            match conjunct {
+                Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
+                    let positive = matches!(conjunct, Conjunct::Atom(_));
+                    match self.expansion(atom.value(), around) {
+                        None => vec![conjunct.clone()],
+                        Some(Some(expanded)) if positive => expanded,
+                        Some(Some(expanded)) => vec![negation(expanded)],
+                        Some(None) if positive => vec![nothing()],
+                        Some(None) => Vec::new(),
+                    }
+                }
+                Conjunct::Not(Negated::Form(form)) => {
+                    let inner = self.conjunct(form, around);
+                    vec![negation(inner)]
+                }
+                Conjunct::Or(branches) => vec![Conjunct::Or(branches.iter().map(|branch| self.nested(branch, around)).collect())],
+                Conjunct::If { test, then, otherwise } => {
+                    let test = self.nested(test, around);
+                    let with_test: Vec<Conjunct> = around.iter().chain(test.value().conjuncts.iter()).cloned().collect();
+                    let then = self.nested(then, &with_test);
+                    let otherwise = self.nested(otherwise, around);
+                    vec![Conjunct::If { test, then, otherwise }]
+                }
+                Conjunct::All { domain, body } => {
+                    let domain = self.nested(domain, around);
+                    let with_domain: Vec<Conjunct> = around.iter().chain(domain.value().conjuncts.iter()).cloned().collect();
+                    let body = self.nested(body, &with_domain);
+                    vec![Conjunct::All { domain, body }]
+                }
+                Conjunct::Constraint(_) => vec![conjunct.clone()],
+            }
+        }
+
+        /// The declaration, the column labels and the definition of the
+        /// relation macro that `atom` reads.
+        fn relation_macro(&self, atom: &Atom) -> Option<(&'r AlgebraRelation, &'r [LabelId], &'r Node<Body>)> {
+            let RelationRef::Lib(name) = &atom.relation else { return None };
+            match self.registry.entry(name)? {
+                LibEntry::Macro(Macro::Relation { relation, labels, definition }) => Some((relation, labels, definition)),
+                _ => None,
+            }
+        }
+
+        /// The conjuncts that stand in the place of `atom` where it reads a
+        /// relation macro, `Some(None)` where they hold nothing, and `None`
+        /// where `atom` reads no relation macro.
+        fn expansion(&mut self, atom: &Atom, around: &[Conjunct]) -> Option<Option<Vec<Conjunct>>> {
+            let (relation, labels, definition) = self.relation_macro(atom)?;
+            let renamed = self.renaming(atom, &relation.columns, labels, definition.value());
+            let substituted = renamed_conjuncts(&definition.value().conjuncts, &renamed);
+            let expanded = self.conjuncts(&substituted, around);
+            Some(Parts { registry: self.registry }.part(expanded, around))
+        }
+
+        /// What each label of `definition` stands for at `atom`: the label
+        /// at the atom's site on its column, or, for a column with no site
+        /// and for each other label, a label new to the form.
+        fn renaming(&mut self, atom: &Atom, columns: &[Column], labels: &[LabelId], definition: &Body) -> StableHashMap<LabelId, Renamed> {
+            let mut renamed = StableHashMap::default();
+            for (column, label) in columns.iter().zip(labels) {
+                let site = atom.sites.iter().find(|site| site.column == column.name);
+                if let Some(use_) = site.and_then(|site| site.value.args.first()).and_then(SiteArg::label) {
+                    renamed.insert(*label, Renamed::Site(use_));
+                }
+            }
+            for label in labels_of(definition) {
+                if !renamed.contains_key(&label) {
+                    renamed.insert(label, Renamed::Local(LabelId(self.next)));
+                    self.next += 1;
+                }
+            }
+            renamed
+        }
+    }
+
+    /// Each label of `body`, in the order of its first site or constraint.
+    fn labels_of(body: &Body) -> Vec<LabelId> {
+        let mut labels: Vec<LabelId> = Vec::new();
+        let mut add = |label: LabelId| {
+            if !labels.contains(&label) {
+                labels.push(label);
+            }
+        };
+        each_conjunct(body, &mut |conjunct| match conjunct {
+            Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
+                for site in atom.value().sites.iter() {
+                    each_site_label(site, &mut Vec::new(), &mut |use_, _| use_label(use_).into_iter().for_each(&mut add));
+                }
+            }
+            Conjunct::Constraint(constraint) => constraint_labels(constraint).for_each(&mut add),
+            _ => {}
+        });
+        labels
+    }
+
+    fn renamed_conjuncts(conjuncts: &[Conjunct], renamed: &StableHashMap<LabelId, Renamed>) -> Vec<Conjunct> {
+        conjuncts.iter().filter_map(|conjunct| renamed_conjunct(conjunct, renamed)).collect()
+    }
+
+    fn renamed_body(body: &Node<Body>, renamed: &StableHashMap<LabelId, Renamed>) -> Node<Body> {
+        body_node(renamed_conjuncts(&body.value().conjuncts, renamed))
+    }
+
+    /// `conjunct` with its labels renamed, or `None` for a constraint of
+    /// two `0` operands that holds.
+    fn renamed_conjunct(conjunct: &Conjunct, renamed: &StableHashMap<LabelId, Renamed>) -> Option<Conjunct> {
+        let atom = |atom: &Node<Atom>| {
+            let atom = atom.value();
+            Node::new(Atom { relation: atom.relation.clone(), sites: atom.sites.iter().map(|site| renamed_site(site, renamed)).collect() })
+        };
+        Some(match conjunct {
+            Conjunct::Atom(found) => Conjunct::Atom(atom(found)),
+            Conjunct::Not(Negated::Atom(found)) => Conjunct::Not(Negated::Atom(atom(found))),
+            Conjunct::Not(Negated::Form(form)) => negation(renamed_conjunct(form, renamed).into_iter().collect()),
+            Conjunct::Constraint(constraint) => return renamed_constraint(constraint, renamed),
+            Conjunct::Or(branches) => Conjunct::Or(branches.iter().map(|branch| renamed_body(branch, renamed)).collect()),
+            Conjunct::If { test, then, otherwise } => Conjunct::If {
+                test: renamed_body(test, renamed),
+                then: renamed_body(then, renamed),
+                otherwise: renamed_body(otherwise, renamed),
+            },
+            Conjunct::All { domain, body } => Conjunct::All { domain: renamed_body(domain, renamed), body: renamed_body(body, renamed) },
+        })
+    }
+
+    fn renamed_constraint(constraint: &Constraint, renamed: &StableHashMap<LabelId, Renamed>) -> Option<Conjunct> {
+        let label = |label: ConstraintLabel| renamed[&label.label].constraint_label(label);
+        let second = match constraint.second {
+            Operand::Label(second) => label(second),
+            Operand::Zero => None,
+        };
+        let (op, first, second) = match (label(constraint.first), second) {
+            (Some(first), second) => (constraint.op, first, second),
+            (None, Some(second)) => (mirrored(constraint.op), second, None),
+            (None, None) => return (!holds_at_zero(constraint.op)).then(nothing),
+        };
+        let second = second.map_or(Operand::Zero, Operand::Label);
+        Some(Conjunct::Constraint(Constraint { op, first, second }))
+    }
+
+    fn renamed_site(site: &Site, renamed: &StableHashMap<LabelId, Renamed>) -> Site {
+        let rename = |use_: LabelUse| match use_label(use_) {
+            Some(label) => renamed[&label].label_use(use_),
+            None => use_,
+        };
+        let args = site.value.args.iter().map(|arg| match arg {
+            SiteArg::Label(use_) => SiteArg::Label(rename(*use_)),
+            SiteArg::NamedLabel { name, label } => SiteArg::NamedLabel { name: name.clone(), label: rename(*label) },
+            SiteArg::Field(field) => SiteArg::Field(renamed_site(field, renamed)),
+        });
+        Site { column: site.column.clone(), value: SiteValue { args: args.collect() } }
+    }
+
+    /// The test of each part of an expansion against the sites outside it.
+    struct Parts<'r> {
+        registry: &'r Registry,
+    }
+
+    impl Parts<'_> {
+        /// `part` with each part inside it that holds nothing taken out, or
+        /// `None` where `part` holds nothing, given the conjuncts `context`
+        /// beside it.
+        fn part(&self, part: Vec<Conjunct>, context: &[Conjunct]) -> Option<Vec<Conjunct>> {
+            if self.holds_nothing(&part, context) {
+                return None;
+            }
+            Some(self.within(&part, context))
+        }
+
+        /// `part` with each part inside it that holds nothing taken out.
+        fn within(&self, part: &[Conjunct], context: &[Conjunct]) -> Vec<Conjunct> {
+            (0..part.len())
+                .map(|index| {
+                    let around: Vec<Conjunct> =
+                        context.iter().chain(&part[..index]).chain(&part[index + 1..]).cloned().collect();
+                    self.conjunct(&part[index], &around)
+                })
+                .collect()
+        }
+
+        fn list(&self, list: &Node<Body>, around: &[Conjunct]) -> Node<Body> {
+            body_node(self.part(list.value().conjuncts.to_vec(), around).unwrap_or_else(|| vec![nothing()]))
+        }
+
+        fn conjunct(&self, conjunct: &Conjunct, around: &[Conjunct]) -> Conjunct {
+            match conjunct {
+                Conjunct::Or(branches) => Conjunct::Or(
+                    branches.iter().filter_map(|branch| self.part(branch.value().conjuncts.to_vec(), around).map(body_node)).collect(),
+                ),
+                Conjunct::If { test, then, otherwise } => {
+                    let with_test: Vec<Conjunct> = around.iter().chain(test.value().conjuncts.iter()).cloned().collect();
+                    Conjunct::If { test: self.list(test, around), then: self.list(then, &with_test), otherwise: self.list(otherwise, around) }
+                }
+                Conjunct::All { domain, body } => {
+                    let with_domain: Vec<Conjunct> = around.iter().chain(domain.value().conjuncts.iter()).cloned().collect();
+                    Conjunct::All {
+                        domain: body_node(self.within(&domain.value().conjuncts, around)),
+                        body: body_node(self.within(&body.value().conjuncts, &with_domain)),
+                    }
+                }
+                Conjunct::Not(Negated::Form(form)) => Conjunct::Not(Negated::Form(Arc::new(self.conjunct(form, around)))),
+                Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)) | Conjunct::Constraint(_) => conjunct.clone(),
+            }
+        }
+
+        /// Whether a label of `part` has sites in `part` whose types meet
+        /// the type of its sites in `context` in the empty type.
+        fn holds_nothing(&self, part: &[Conjunct], context: &[Conjunct]) -> bool {
+            let inside = Body { conjuncts: part.into() };
+            let outside = Body { conjuncts: context.into() };
+            let site_type = |atom: &Atom, path: &[crate::program::ColumnName]| self.site_type(atom, path);
+            labels_of(&inside).into_iter().any(|label| match label_type(&inside, label, &site_type) {
+                Err(LabelFault::EmptyMeet(..)) => true,
+                Ok(Some(ty)) => matches!(label_type(&outside, label, &site_type), Ok(Some(other)) if ty.meet(&other) == Meet::Empty),
+                Err(LabelFault::NoJoin(..)) | Ok(None) => false,
+            })
+        }
+
+        /// The type of the column at `path` of a fact, a lib relation, a
+        /// relation macro or a native proposer that `atom` reads, where
+        /// `path` is one column of a fixed type.
+        fn site_type(&self, atom: &Atom, path: &[crate::program::ColumnName]) -> Option<ValueType> {
+            let [column] = path else { return None };
+            let columns: &[Column] = match &atom.relation {
+                RelationRef::Fact(fact) => self.registry.fact_columns(*fact),
+                RelationRef::Lib(name) => match self.registry.entry(name)? {
+                    LibEntry::Relation(relation) | LibEntry::Macro(Macro::Relation { relation, .. }) => &relation.columns,
+                    LibEntry::Proposer(Proposer::Native { columns }) => columns,
+                    LibEntry::Proposer(Proposer::Arclog { .. }) | LibEntry::Component(_) | LibEntry::Macro(Macro::CellInstance { .. }) => {
+                        return None
+                    }
+                },
+                RelationRef::Declared(_) | RelationRef::Output(_) | RelationRef::DefinedPort(_) => return None,
+            };
+            match &columns.iter().find(|found| found.name == *column)?.ty {
+                ColumnType::Fixed(ty) | ColumnType::PoseOr(ty) => Some(ty.clone()),
+                ColumnType::Pose | ColumnType::SharedPose | ColumnType::Parameter(_) => None,
+            }
+        }
     }
 }
 
