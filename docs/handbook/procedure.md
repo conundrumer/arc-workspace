@@ -44,6 +44,7 @@
 1. Read the task whole with `cat data/tasks/<task_id>.json`, with no other command piped or chained to it; a script you write may load the file.
     * comment:
         - The command and the rule on piping and chaining are here as well as under Every pass because the Analyze render does not include Every pass.
+            + xref: docs/handbook/procedure.md#every-pass, prompts/agents/analyze.md
     - A pair's `alt` of kind `rule` is a second candidate, and of kind `tiebreak` a tiebreak.
 2. Write the concept to `work/task/<task_id>/concept.md`, in this form:
     ```
@@ -211,6 +212,7 @@
     - Write the `@witness` lines of the header and the branches, with each plausibility and verdict as the Analyze report gives it, `@relaxed` for the scene claim it breaks, which rules out `ordinary`, and `@reassigned` for each parameter that the assignment it stands at changes.
         + xref: src/checker/lint/form/witnesses.py:check_witness, src/checker/witness.py:check_witness_lines, src/solver/annotations.py:WitnessLine
         * comment: The clause "which rules out `ordinary`" restates the plausibility definition, and a64e4611 Create needed it.
+            + xref: docs/handbook/principles.md#witnesses
     - A witness of the concept case stands under the branch its verdict denotes, and with verdict `other` under an `@approximated:` line of the rule whose approximation disagrees on it.
         + xref: src/checker/lint/form/witnesses.py:check_witness
     - On a branch's witness with no `@reassigned` line, on which no open values disagree and no approximation disagrees with its rule, an `other` verdict identifies a problem with the concept case, and so does a verdict denoting that branch at `ordinary` plausibility; the concept case is fixed to give the judged output, the verdict becomes `concept`, and the fix goes in the review as a departure.
@@ -260,6 +262,7 @@
     - No reader of the concept could take the value the fact stores: the fact leaves that relation.
     - Some input, at some assignment of the other parameters, shows the fact's removal changing the output of a witnessed case: build the witness that shows it, with `--assign` when it needs one.
         * comment: "of a witnessed case" restates the solver file's line that every check runs the witnessed cases alone. The Create pass on ad38a9d0 built witnesses on which each removal changed only a case that is not witnessed, so the audit kept every finding, as ticket 10-88 records.
+            + xref: docs/handbook/solver-file.md#cases
     - Otherwise the fact stays.
 
 ### Simplify
@@ -291,6 +294,7 @@
 - Read the Analyze files `work/task/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`, the latest report, which is the highest-numbered `work/task/<task_id>/refine-<n>.md` when one exists and `create.md` otherwise, the solver, and the witness file.
     * comment:
         - The Analyze files are listed here as well as in Write because the Refine render does not include Write.
+            + xref: docs/handbook/procedure.md#write, prompts/agents/refine.md
 - Run these in this order.
 - **Overrides.** An override in your brief decides an item of that report. Apply each override, and quote it in the report where you apply it. Then run again each operation from [Develop](#develop) through [Witness](#witness) that applying the overrides touches.
     + xref: docs/handbook/procedure.md#develop, docs/handbook/procedure.md#witness

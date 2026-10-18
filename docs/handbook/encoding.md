@@ -1,6 +1,7 @@
 + budget: 7200
 * comment: when editing this doc
     - The notes at the head of [Principles](docs/handbook/principles.md) apply.
+        + xref: docs/handbook/principles.md
 
 # Encoding
 - What holds for the program that encodes a model.
@@ -18,7 +19,9 @@
     - It does not cover the tests performed inside that encoding.
 - **component**: a comp declared in a module under `programs/lib/`.
 - **construction**: a component whose outputs give another form of its inputs.
+    + xref: src/checker/lint/form/witnesses.py:_constructions
 - **equivariant lib relation**: a lib relation whose output changes under each D4 element exactly as its input does.
+    + xref: programs/lib/orientation.dl, docs/handbook/principles.md#invariance
 
 ## Fidelity
 - The program states the task's concept without depending on how the task file or grid encodes it.
@@ -26,6 +29,7 @@
 
 ### ARC types
 - The program works in the task's own types: colors and orientation types.
+    + xref: docs/handbook/principles.md#orientation
 
 ### Numbers
 - **Grounding.** Every number in a solver counts concrete things the task has.
@@ -41,10 +45,11 @@
 
 ### Component instances
 - In the program, an instance of a component that is not a construction implements a claim and asserts that the task has that claim.
-    + xref: src/checker/lint/form/witnesses.py:check_claim
+    + xref: src/checker/lint/form/witnesses.py:check_claim, docs/handbook/principles.md#the-concept
     - When the task has no such claim, the program expresses the needed step with lib relations or a local clause.
     - That instance may leave any other outputs unused.
 - An instance of a construction asserts nothing about the task.
+    + xref: src/checker/lint/form/witnesses.py:_constructions
 
 ### Indirection
 
@@ -77,13 +82,16 @@
                 + gloss
                 - No stored correspondence is needed.
     - Storing an orientation as an `Axis`, `Sense`, or `Sym` requires conversion to the `D4` used by the clause.
+        + xref: programs/lib/orientation.dl
         - 8ee62060
             - The parameter stores the D4 elements that fit.
                 + gloss
                 - The program applies them directly to block positions.
 - Conversion is justified when its two sides differ in content.
     - A sparse set differs in content from its `Ordinal` ranking.
+        + xref: programs/lib/orders.dl
     - A cell set differs in content from its `Canon` class id when the program treats the class as a single thing.
+        + xref: programs/lib/sets.dl
 
 ### Performance
 - The principled form is the right form regardless of performance.
@@ -91,7 +99,9 @@
 
 ## Equivariant lib relations
 - An equivariant lib relation preserves the model's equivariance when its inputs derive from parameters, through an atom's arguments or a component instance's `@input` relations.
+    + xref: docs/handbook/principles.md#invariance, src/solver/annotations.py:_INPUT_MARK
 - A non-equivariant one introduces a hidden orientation into an otherwise symmetric program.
+    + xref: docs/handbook/encoding.md#structures-and-the-lib
     - Mapping within a tile by distance modulo a period creates a hidden orientation.
         - It is observable unless the extent less one is a multiple of the period.
     - An explicit anchor parameter or an equivariant encoding removes that hidden orientation.
@@ -109,9 +119,12 @@
             - Both cases use one connected-component instance for marker areas. The instance reuses the shared sequence and rays, and each case supplies a different set of area cells.
                 + gloss
     3. The precedent for the structure.
+        + xref: docs/handbook/encoding.md#structures-and-the-lib
         - 2dee498d
             - The input contains three identical panels along a stored axis. The setup divides them with `divide_slab` from that axis and a stored panel count, and one panel is the output.
+                + xref: programs/lib/box.dl
                 + gloss
         - f25ffba3
             - The input contains a data slab along the axis of a stored direction. One case divides the input with `divide_slab` from that axis and a stored panel count, as 2dee498d does, and another case divides it from a stored panel size.
+                + xref: programs/lib/box.dl
                 + gloss
