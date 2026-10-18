@@ -245,7 +245,7 @@ Box is the carrier, Z⁴ as the four margins (t, b, l, r), an abelian group unde
 
 - A composition whose only inputs are the domain its constructions take, the cell set with the cardinal steps by default, gets a name in the lib. A members construction gets a cell instance this way, since every site would supply only the cells and the step.
 - The cell instance takes the geometric name where one exists, and otherwise the construction's name qualified by its domain.
-- The pairs: Quotient and Connectivity, Propagation and Flood, Walk and Ray, Distance and CellDistance, `divide` and Division.
+- The pairs: Quotient and Connectivity, Propagation and Flood, Distance and CellDistance, Distance and Ray, `divide` and Division.
 - Enclosure is two cell instances composed, Flood then Connectivity, over the cell set alone, so it is a construction of its own.
 
 ### The constructions
