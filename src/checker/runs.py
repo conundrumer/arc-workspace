@@ -1,5 +1,6 @@
 """The runs a check reads."""
 
+import threading
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import cached_property
@@ -86,6 +87,26 @@ class Judged:
     shown: tuple[Case, ...]
 
 
+type OutcomeKey = tuple[Grid, Assignment, Case]
+"""An outcome's input, its assignment and its case."""
+
+type _Plan = dict[tuple[Case, ...], list[tuple[Grid, Assignment]]]
+"""Runs to make: each batch of cases, with the inputs it runs on
+together."""
+
+
+class Claims:
+    """The outcomes some thread's runs are making now, shared by the
+    `Runs` that share their outcomes, so that threads that read those
+    runs at once make each outcome once."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        """Held while a thread plans its runs, and while one ends."""
+        self.making: dict[OutcomeKey, threading.Event] = {}
+        """Each outcome being made, with the event set once its runs end."""
+
+
 def witness_file_role(given: object | None) -> WitnessFileRole:
     """`given` is the witness file the command names, None where it names
     none."""
@@ -117,7 +138,8 @@ class Runs:
         self.kept = kept
         self.given = given
         self._view: tuple[Case, ...] | None = None
-        self._outcomes: dict[tuple[Grid, Assignment, Case], Outcome] = {}
+        self._outcomes: dict[OutcomeKey, Outcome] = {}
+        self._claims = Claims()
         self._alone: dict[object, Runs] = {}
         self._lined: ByIdentity[Solver, Runs] = ByIdentity()
         self._profiles: dict[tuple[TaskSection, ...],
@@ -252,14 +274,21 @@ class Runs:
         (`case_groups`) that holds a case these runs lack on some input run
         on the inputs where a case is lacking, and held
         (`solver.pair_runs.RunOn`)."""
-        missing = [(g, a) for g, a in inputs
-                   if any((g, a, c) not in self._outcomes for c in every)]
-        for batch in self.batches(every):
-            run = set(holding(case_groups(self.solver, batch), lambda c: any(
-                (g, a, c) not in self._outcomes for g, a in missing)))
-            lacking = [c for c in batch if c in run]
-            if lacking:
-                self._hold(self.solver, lacking, missing)
+        def plan(lacks: Callable[[OutcomeKey], bool]) -> _Plan:
+            missing = [(g, a) for g, a in inputs
+                       if any(lacks((g, a, c)) for c in every)]
+            planned: _Plan = {}
+            for batch in self.batches(every):
+                run = set(holding(case_groups(self.solver, batch),
+                                  lambda c: any(lacks((g, a, c))
+                                                for g, a in missing)))
+                lacking = [c for c in batch if c in run]
+                if lacking:
+                    planned[tuple(lacking)] = missing
+            return planned
+
+        self._make(self.solver, plan,
+                   [(g, a, c) for g, a in inputs for c in every])
         return self.outcomes_at(every, inputs)
 
     @cached_property
@@ -374,6 +403,37 @@ class Runs:
         return [{c: self.grid_outcome(g, a, c) for c in cases}
                 for g, a in inputs]
 
+    def _make(self, solver: Solver,
+              plan: Callable[[Callable[[OutcomeKey], bool]], _Plan],
+              wanted: Iterable[OutcomeKey]) -> None:
+        """Make the runs `plan` gives under `solver` and hold their
+        outcomes (`_hold`), then wait for each of `wanted` that another
+        thread is making. `plan` is given which outcomes are lacking:
+        those neither held nor being made (`Claims`)."""
+        claims = self._claims
+        mine = threading.Event()
+        with claims.lock:
+            planned = plan(lambda k: k not in self._outcomes
+                           and k not in claims.making)
+            made = [(g, a, c) for batch, at in planned.items()
+                    for g, a in at for c in batch]
+            for k in made:
+                claims.making.setdefault(k, mine)
+            others = {e for k in wanted
+                      if (e := claims.making.get(k)) is not None
+                      and e is not mine}
+        try:
+            for batch, at in planned.items():
+                self._hold(solver, batch, at)
+        finally:
+            with claims.lock:
+                for k in made:
+                    if claims.making.get(k) is mine:
+                        del claims.making[k]
+            mine.set()
+        for e in others:
+            e.wait()
+
     def _hold(self, solver: Solver, batch: Sequence[Case],
               inputs: Sequence[tuple[Grid, Assignment]]) -> None:
         """Run `batch` together on each input under `solver`
@@ -420,33 +480,43 @@ class Runs:
         so that its stored runs serve where another command made them;
         with every witnessed case on another input; any other case on its
         own."""
+        keys = [(g, a, c) for g, a in inputs for c in wanted]
+        if all(k in self._outcomes for k in keys):
+            return
         every = self.solver_cases
         on_recorded = every if isinstance(every, tuple) else ()
         recorded_set = frozenset(on_recorded)
-        batches: dict[tuple[Case, ...], list[tuple[Grid, Assignment]]] = {}
-        for g, a in dict.fromkeys(inputs):
-            missing = [c for c in dict.fromkeys(wanted)
-                       if (g, a, c) not in self._outcomes]
-            if not missing:
-                continue
-            recorded = (g, a) in self._recorded
-            if recorded:
-                pool, members = on_recorded, recorded_set
-            else:
-                judged = self.cases
-                pool = judged if isinstance(judged, tuple) else ()
-                members = frozenset(pool)
-            parts = [missing]
-            if any(c in members for c in missing):
-                lacking = [c for c in pool if (g, a, c) not in self._outcomes]
-                parts = [*(self.batches(lacking) if recorded
-                           else [lacking]),
-                         [c for c in missing if c not in members]]
-            for part in parts:
-                if part:
-                    batches.setdefault(tuple(part), []).append((g, a))
-        for batch, at in batches.items():
-            self._hold(solver, batch, at)
+        recorded_inputs = self._recorded
+        # The judged cases, which can take runs, are read where an input
+        # needs them, and before the plan, which runs under a lock.
+        judged = self.cases if any(
+            (g, a) not in recorded_inputs and (g, a, c) not in self._outcomes
+            for g, a, c in keys) else ()
+        on_other = judged if isinstance(judged, tuple) else ()
+        other_set = frozenset(on_other)
+
+        def plan(lacks: Callable[[OutcomeKey], bool]) -> _Plan:
+            batches: _Plan = {}
+            for g, a in dict.fromkeys(inputs):
+                missing = [c for c in dict.fromkeys(wanted)
+                           if lacks((g, a, c))]
+                if not missing:
+                    continue
+                recorded = (g, a) in recorded_inputs
+                pool, members = (on_recorded, recorded_set) if recorded \
+                    else (on_other, other_set)
+                parts = [missing]
+                if any(c in members for c in missing):
+                    lacking = [c for c in pool if lacks((g, a, c))]
+                    parts = [*(self.batches(lacking) if recorded
+                               else [lacking]),
+                             [c for c in missing if c not in members]]
+                for part in parts:
+                    if part:
+                        batches.setdefault(tuple(part), []).append((g, a))
+            return batches
+
+        self._make(solver, plan, keys)
 
     def _shares(self, solver: Solver) -> bool:
         """Whether a case gives under `solver` what it gives under the
@@ -531,6 +601,7 @@ class Runs:
         got = Runs(self.engine, solver, self.limits, kept=kept,
                    given=self.given)
         got._outcomes = self._outcomes
+        got._claims = self._claims
         got._assignments = self._assignments
         return got
 

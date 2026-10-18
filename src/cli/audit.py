@@ -4,6 +4,7 @@ and its witness file disagree, and the branches of its stored values."""
 import sys
 import time
 from collections.abc import Callable, Collection, Iterable, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 from checker import Finding, Kind, Runs, fault_findings
@@ -429,9 +430,10 @@ def cmd_audit(arg: str, witness_file: str | None = None) -> int:
     cases, the derive and store findings, the stored facts no input
     exercises (`checker.open_values.check_open_values`), and the
     relabelings of the stored parameters no output observes
-    (`checker.relabeling.check_relabelings`), each section
-    printed when it completes with the seconds it took on its header
-    line; the pass line and the exit code follow those checks. It writes no witness."""
+    (`checker.relabeling.check_relabelings`), computed at once and
+    printed in that order, each with the seconds from the start of the
+    checks to its end on its header line; the pass line and the exit code
+    follow those checks. It writes no witness."""
     eng = engine()
     solver = command_solver(arg, eng)
     if solver is None:
@@ -444,16 +446,17 @@ def cmd_audit(arg: str, witness_file: str | None = None) -> int:
     if not compiles(eng, solver):
         return 1
     runs = Runs(eng, solver, LIMITS)
+    began = time.monotonic()
     first = [True]
 
-    def section[T](name: Section, compute: Callable[[], T],
+    def section[T](name: Section, started: Future[tuple[T, float]],
                    lines: Callable[[T], list[str]]) -> T:
-        """Compute one section, then print its header with the seconds it
-        took and its lines."""
-        began = time.monotonic()
-        got = compute()
+        """Wait for one section, then print its header with the seconds
+        from the start of the checks to the end of the section, and its
+        lines."""
+        got, ended = started.result()
         body = lines(got)
-        head = commands.audit_section(name, time.monotonic() - began)
+        head = commands.audit_section(name, ended - began)
         print("\n".join(([] if first[0] else [""]) + [head, *body]),
               flush=True)
         first[0] = False
@@ -463,8 +466,6 @@ def cmd_audit(arg: str, witness_file: str | None = None) -> int:
         report = _witness_report(eng, solver, None, False, runs)
         assert isinstance(report, tuple)
         return report
-
-    _lines, found = section(Section.WITNESS, witness_part, lambda r: r[0])
 
     def unjustified() -> list[Finding] | RunFailure:
         """The dropped cases that fail no case condition, from the runs
@@ -480,21 +481,35 @@ def cmd_audit(arg: str, witness_file: str | None = None) -> int:
             return render(solver, Section.DROPPED_CASES, got)
         return failure_lines(solver, got)
 
-    every = section(Section.DROPPED_CASES, unjustified, dropped_lines)
-    dropped = every if isinstance(every, list) else []
-    derive = section(
-        Section.DERIVE, lambda: check_two_parameterizations(solver, runs),
-        lambda fs: commands.indented(solver, Section.DERIVE, fs))
-    store = section(
-        Section.STORE, lambda: check_stored_or_derived(solver, runs)
-        + check_color_structure_stored(solver, runs),
-        lambda fs: commands.indented(solver, Section.STORE, fs))
-    unexercised = section(
-        Section.OPEN_VALUES, lambda: check_open_values(solver, runs),
-        lambda fs: commands.indented(solver, Section.OPEN_VALUES, fs))
-    unobserved = section(
-        Section.RELABELINGS, lambda: check_relabelings(solver, runs),
-        lambda fs: commands.indented(solver, Section.RELABELINGS, fs))
+    # The sections read the judged cases: computed before the sections
+    # start, they are computed once, in place of once per section.
+    _ = runs.judged
+    with ThreadPoolExecutor() as pool:
+        def start[T](compute: Callable[[], T]) -> Future[tuple[T, float]]:
+            return pool.submit(lambda: (compute(), time.monotonic()))
+
+        witnessed = start(witness_part)
+        restored = start(unjustified)
+        derived = start(lambda: check_two_parameterizations(solver, runs))
+        stored = start(lambda: check_stored_or_derived(solver, runs)
+                       + check_color_structure_stored(solver, runs))
+        opened = start(lambda: check_open_values(solver, runs))
+        relabeled = start(lambda: check_relabelings(solver, runs))
+        _lines, found = section(Section.WITNESS, witnessed, lambda r: r[0])
+        every = section(Section.DROPPED_CASES, restored, dropped_lines)
+        dropped = every if isinstance(every, list) else []
+        derive = section(
+            Section.DERIVE, derived,
+            lambda fs: commands.indented(solver, Section.DERIVE, fs))
+        store = section(
+            Section.STORE, stored,
+            lambda fs: commands.indented(solver, Section.STORE, fs))
+        unexercised = section(
+            Section.OPEN_VALUES, opened,
+            lambda fs: commands.indented(solver, Section.OPEN_VALUES, fs))
+        unobserved = section(
+            Section.RELABELINGS, relabeled,
+            lambda fs: commands.indented(solver, Section.RELABELINGS, fs))
     return 1 if not isinstance(every, list) \
         else exit_code([*found, *dropped, *derive, *store, *unexercised,
                         *unobserved])
