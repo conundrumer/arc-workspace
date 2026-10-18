@@ -97,6 +97,12 @@ def list_items(value: str) -> list[str]:
     return [part.strip() for part in value.split(",")]
 
 
+def depends_on(fields: dict[str, str]) -> list[str]:
+    """The items of the `depends-on` field of a ticket's front matter
+    `fields`, none where it has no such field."""
+    return list_items(fields["depends-on"]) if "depends-on" in fields else []
+
+
 def editor_names() -> set[str]:
     return {str(r) for r in EDITORS}
 

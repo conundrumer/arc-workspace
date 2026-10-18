@@ -8,7 +8,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from ticket_files import listed_tickets, ticket_files, ticket_name
-from ticket_form import FRONT, front_fields, list_items, section, section_head, title
+from ticket_form import FRONT, depends_on, front_fields, list_items, section, section_head, title
 from state_reads import DERIVED, Kept, state_cache
 from ticket_log import (CLOSED_BY_LINE, DUPLICATE_OF_LINE, WAIT, Wait, held_log, holder_of,
                         line_time, log_lines, resolution_of, waited, waited_change)
@@ -84,7 +84,7 @@ def ticket_of(path: Path, text: str, found: list[re.Match[str]]) -> Ticket:
         status=Status(path.parent.name), kind=Kind(head["kind"]), domain=Domain(name.domain),
         subject=name.subject, filer=name.agent, filed=lines[0].time,
         title=title(path, text),
-        depends_on=tuple(list_items(fields["depends-on"])) if "depends-on" in fields else (),
+        depends_on=tuple(depends_on(fields)),
         motivation=motivation(text),
         editors=editors_field(fields),
         after_merge=fields.get("after-merge"), mechanical="mechanical" in fields,

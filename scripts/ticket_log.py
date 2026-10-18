@@ -11,11 +11,12 @@ from pathlib import Path
 from controlled_markdown import mctx
 from engine.memo import write_whole
 from ticket_files import FIELD, TicketName, ticket_files, ticket_name, ticket_path, ticket_status
-from ticket_form import (HEADING, LOG, TITLE_MARK, VALIDATES, section, section_head, ticket_kind,
-                         title, without_section)
+from ticket_form import (FRONT, HEADING, LOG, TITLE_MARK, VALIDATES, depends_on, front_fields, section,
+                         section_head, ticket_kind, title, without_section)
 from ticket_numbers import TICKET_NUMBER, TicketNumber, matched_number, reserve, ticket_number, write_new
 from ticket_vocabulary import ticked
 from operations.roles import AGENT_ID as AGENT_ID_FORM
+from ticketing.links import link_targets
 from ticketing.text import VALIDATION, heading
 from ticketing.times import stamp_time, utc_stamp
 from ticketing.vocabulary import WAIT_STATUSES, Domain, Kind, Note, Resolution, Status, Verdict, Wait, note_opening
@@ -234,6 +235,54 @@ def check_take(text: str, agent_id: str) -> None:
             holder=f"`{held}`" if held else "no agent"))
 
 
+def links(path: Path, text: str, wait: TicketNumber | None) -> list[TicketNumber]:
+    """The tickets a link leads to from the ticket at `path`, whose text is
+    `text`, and which waits on the change `wait` where it stands under
+    `waiting`: `link_targets` of its `depends-on` and `wait`."""
+    head = re.match(FRONT, text)
+    if head is None:
+        raise Refused(mctx("{path} has no front matter").format(path=path))
+    fields = dict(front_fields(head))
+    return link_targets(map(ticket_number, depends_on(fields)), wait)
+
+
+def check_cycle(tickets: Path, path: Path, number: TicketNumber, status: Status, source: Status,
+                note: str | None, text: str) -> None:
+    """Refuses a line into `status` from `source` with `note` that leaves
+    the ticket `number`, at `path`, whose text is `text`, on a cycle of links among
+    the tickets outside `tickets/closed/`, with the tickets of the
+    shortest such cycle in order. A line into `closed`, or into `draft`
+    from another status, is not refused."""
+    if status is Status.CLOSED or (status is Status.DRAFT and source is not Status.DRAFT):
+        return
+    wait = None
+    if status is Status.WAITING:
+        line_wait = WAIT.match(note or "")
+        wait = waited_change(line_wait) if line_wait else waits_on(text)
+    before: dict[TicketNumber, TicketNumber] = {}
+    todo = [(number, n) for n in links(path, text, wait)]
+    while todo:
+        later: list[tuple[TicketNumber, TicketNumber]] = []
+        for start, n in todo:
+            if n in before:
+                continue
+            before[n] = start
+            if n == number:
+                cycle = [number, start]
+                while cycle[-1] != number:
+                    cycle.append(before[cycle[-1]])
+                raise Refused(mctx("the line leaves ticket `{n}` on a cycle of links: {cycle}").format(
+                    n=number, cycle=" -> ".join(map(str, reversed(cycle)))))
+            next_path = ticket_path(tickets, n)
+            linked = ticket_status(next_path)
+            if linked is Status.CLOSED:
+                continue
+            next_text = held_log(next_path)[0]
+            next_wait = waits_on(next_text) if linked is Status.WAITING else None
+            later += [(n, m) for m in links(next_path, next_text, next_wait)]
+        todo = later
+
+
 def status_of(word: str) -> Status:
     try:
         return Status(word)
@@ -264,6 +313,7 @@ def check_log(tickets: Path, path: Path, number: TicketNumber, status: Status, a
         raise Refused(mctx("`{log}` is not the last section of {path}").format(log=LOG, path=path))
     if not moves and status is Status.ASSIGNED and agent_id:
         check_take(text, agent_id)
+    check_cycle(tickets, path, number, status, source, note, text)
 
 
 def write_log(tickets: Path, path: Path, number: TicketNumber, status: Status, agent: str,

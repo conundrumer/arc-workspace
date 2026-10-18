@@ -39,6 +39,7 @@ from operations.state import State, Ticket, memoized
 from operations.steps import Bash, Step, Undecided
 from operations.tracker import closed, exits, final_run, wait_line
 from ticketing.exits import Exit
+from ticketing.links import link_targets
 from ticketing.references import referring
 from ticketing.vocabulary import COORDINATOR, Domain, Kind, Status
 
@@ -80,7 +81,7 @@ def closure(state: State, start: set[str], step: Callable[[Ticket], list[str]]) 
 def links(t: Ticket) -> list[str]:
     line = wait_line(t)
     on = line.on_change if line is not None else None
-    return [*t.depends_on, *([on] if on is not None else [])]
+    return link_targets(t.depends_on, on)
 
 
 def served(state: State, start: set[str]) -> set[str]:
