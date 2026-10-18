@@ -11,15 +11,16 @@ use crate::hash::StableHashMap;
 use crate::program::canonical::{canonical_labeling, form_scope, AsWritten, CanonicalOrder, LabelScope, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
-    Atom, Body, ColumnName, Conjunct, DemoRule, Constraint, ConstraintOp, DeclaredName, Form, Instance, InstanceInput, InstanceName,
-    LabelId, NameScope, Negated, Node, Operand, OutputOwner, OutputStep, PortName, ProgramRelation, RelationColumn,
-    RelationName, RelationRef, RigidDetName, Site, SiteArg,
+    Atom, Body, ColumnName, Conjunct, DemoRule, Constraint, ConstraintOp, Form, Instance, InstanceInput, LabelId, NameScope,
+    Negated, Node, Operand, OutputOwner, OutputStep, PortName, ProgramRelation, RelationColumn, RelationRef, Site, SiteArg,
 };
-use crate::registry::{Column, ColumnType, Component, LibEntry, Macro, Proposer, Registry, TypeParameter};
+use crate::program::written_inputs;
+use crate::registry::{binding_sites, Column, ColumnType, Component, ParameterSite, Registry, TypeParameter};
+use crate::resolver::columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Side, Signature};
 use crate::types::{
-    each_conjunct, each_site_label, label_fault_message, label_type, scope_list, use_label, AssemblyId, FieldName, FormTypes,
-    KeyRow, LabelFault, ProgramTypes, ValueType,
+    each_conjunct, each_site_label, label_fault_message, label_type, scope_list, use_label, AssemblyId, FormRelation, FormTypes,
+    GraphRelation, KeyRow, LabelFault, ProgramTypes, ValueType,
 };
 
 /// [`CheckId::Types`].
@@ -62,7 +63,12 @@ pub fn infer_form(input: &CheckInput<'_>, order: &CanonicalOrder) -> (CheckResul
     for source in inferred_scopes(order) {
         let form = inference.infer(&input.path.join(&source)).expect(SCOPE_FORM);
         found.extend(refusals(&form, order, &source));
-        scopes.push((order.canonical_path(&source), scope_types(&form, order, &source)));
+        let relations = scope_forms_within(input.form, &source).into_iter().flat_map(|(at, form)| {
+            let relations = inference.form_relations(&input.path.join(&at), form);
+            let canonical = order.canonical_path(&at);
+            relations.into_iter().map(move |(output, columns)| (FormRelation { form: canonical.clone(), output }, columns))
+        });
+        scopes.push((order.canonical_path(&source), scope_types(&form, order, &source, relations.collect::<Vec<_>>())));
     }
     if let (Form::Clause(clause), Some(form)) = (input.form, inference.infer(input.path)) {
         found.extend(inference.column_refusals(&form, clause.value(), input.path, order));
@@ -121,14 +127,32 @@ fn refusals(form: &FormInference<'_>, order: &CanonicalOrder, scope: &NodePath) 
 
 /// The types of the labels of `form`, the scope whose form stands at
 /// `scope`, a source path relative to the form whose canonical order is
-/// `order`, each label at its canonical position in that scope.
-fn scope_types(form: &FormInference<'_>, order: &CanonicalOrder, scope: &NodePath) -> FormTypes {
+/// `order`, each label at its canonical position in that scope, with the
+/// column types of `relations`.
+fn scope_types(
+    form: &FormInference<'_>,
+    order: &CanonicalOrder,
+    scope: &NodePath,
+    relations: impl IntoIterator<Item = (FormRelation, Box<[ValueType]>)>,
+) -> FormTypes {
     let position = |label: LabelId| LabelId(order.canonical_label(scope, label));
     let types = form.labels.iter().filter_map(|(label, ty)| match ty {
         Ok(Some(ty)) => Some((position(*label), map_labels(ty, &position))),
         Ok(None) | Err(_) => None,
     });
-    types.collect()
+    FormTypes::new(types, relations)
+}
+
+/// Each form that stands in the label scope at `scope`, a source path
+/// relative to `form`, with its path relative to `form`: the scope's own
+/// form, or each form of a `DEMO_RULE` that stands in the rule's scope.
+fn scope_forms_within<'f>(form: &'f Form, scope: &NodePath) -> Vec<(NodePath, &'f Form)> {
+    if let Some(found) = form_within(form, scope) {
+        return vec![(scope.clone(), found)];
+    }
+    let rule = rule_within(form, scope).expect(SCOPE_FORM);
+    let shared = rule.forms.iter().zip(0u32..).filter(|(found, _)| shares_rule_scope(found));
+    shared.map(|(found, index)| (scope.child(index), found)).collect()
 }
 
 /// The [`ProgramTypes`] of `program`: for each form of `forms`, at its path,
@@ -136,21 +160,110 @@ fn scope_types(form: &FormInference<'_>, order: &CanonicalOrder, scope: &NodePat
 /// joined to the form's path, each label mapped from its canonical position
 /// to its own label through the form's order, and the type of each column
 /// of each relation.
+///
+/// A relation that clauses or a `CHOOSE` form give takes at each column, at
+/// the position in its node's rows that
+/// [`ResolvedProgram::label_position`] gives, the join of the types its
+/// forms give the labels at that column, each label typed in its form's
+/// label scope or, where the form shares a `DEMO_RULE`'s, in the rule's,
+/// and a Pose type names its key row by the positions of the key's
+/// columns. A relation whose columns a form's
+/// declaration fixes takes the types that [`FormTypes::relations`] gives
+/// it, in the order of the resolver's columns of it. A relation a column of
+/// which no form types, and a fact relation, get no column types.
 pub fn program_types(
-    _program: &ResolvedProgram,
+    program: &ResolvedProgram,
     _clauses: &SolverClauses,
     forms: &[(NodePath, Arc<ScopeTypes>, CanonicalOrder)],
 ) -> ProgramTypes {
     let mut types = ProgramTypes::default();
+    let mut fixed: StableHashMap<(NodePath, Arc<[OutputStep]>), &[ValueType]> = StableHashMap::default();
     for (path, scopes, order) in forms {
         for (canonical, form_types) in scopes.iter() {
             let source = order.source_path(canonical);
             let own = |position: LabelId| order.source_label(&source, position.0);
             let labels = form_types.labels().map(|(label, ty)| (own(label), map_labels(ty, &own)));
-            types.insert_form(path.join(&source), Arc::new(labels.collect()));
+            types.insert_form(path.join(&source), Arc::new(FormTypes::new(labels, [])));
+            for (relation, columns) in form_types.relations() {
+                fixed.insert((path.join(&order.source_path(&relation.form)), relation.output.clone()), columns);
+            }
         }
     }
+    let mut columns = Vec::new();
+    for index in 0..program.graph.nodes.len() as u32 {
+        let node = GraphNodeIndex(index);
+        let form = program.form_of(node);
+        let output = |port: &PortName| fixed.get(&(form.clone(), Arc::from([OutputStep::Port(port.clone())]))).copied();
+        match &program.graph.nodes[index as usize].kind {
+            DependencyKind::Fact(_) => {}
+            DependencyKind::Clause(_) | DependencyKind::Parameter(_) | DependencyKind::Chosen(_) => {
+                columns.extend(given_columns(program, &types, &fixed, node).map(|found| (GraphRelation { node, output: None }, found)));
+            }
+            DependencyKind::InstanceInput { input: port, .. } | DependencyKind::InstanceOutput { output: port, .. } => {
+                columns.extend(output(port).map(|found| (GraphRelation { node, output: None }, found.into())));
+            }
+            DependencyKind::Demonstrated(_) => {
+                let own = fixed.get(&(form.clone(), Arc::from([])));
+                columns.extend(own.map(|found| (GraphRelation { node, output: None }, (*found).into())));
+            }
+            DependencyKind::RecursiveInstance(_) | DependencyKind::RigidAssembly(_) => {
+                let outputs = fixed.iter().filter(|((at, output), _)| at == form && !output.is_empty());
+                columns.extend(outputs.map(|((_, output), found)| (GraphRelation { node, output: Some(output.clone()) }, (*found).into())));
+            }
+        }
+    }
+    for (relation, found) in columns {
+        types.insert_columns(relation, found);
+    }
     types
+}
+
+/// The types of the columns of `node`, a relation that clauses or a
+/// `CHOOSE` form give, from the [`ProgramTypes::form`] of `types` and the
+/// relations `fixed` holds, as [`program_types`] gives them, or `None`
+/// where a form of the node gives a column no type or two forms give types
+/// with no join.
+fn given_columns(
+    program: &ResolvedProgram,
+    types: &ProgramTypes,
+    fixed: &StableHashMap<(NodePath, Arc<[OutputStep]>), &[ValueType]>,
+    node: GraphNodeIndex,
+) -> Option<Box<[ValueType]>> {
+    let mut joined: Option<Vec<ValueType>> = None;
+    for form in program.forms_of(node) {
+        let columns: Vec<ValueType> = match fixed.get(&(form.clone(), Arc::from([]))) {
+            Some(found) => found.to_vec(),
+            None => {
+                let at = crate::program::path::node_at(NodeRef::Program(program.program.value()), form)?;
+                let rule_scope = match &program.graph.nodes[node.0 as usize].scope {
+                    NameScope::DemoRule(rule) => types.form(rule),
+                    NameScope::Program => None,
+                };
+                let labels = types.form(form).or(rule_scope)?;
+                let position = |label: LabelId| program.label_position(form, label).map(|position| position.0);
+                let mut slots: Vec<Option<ValueType>> = Vec::new();
+                for column in columns::form_columns(at) {
+                    let Some(index) = position(column.label) else { continue };
+                    let index = usize::from(index);
+                    let key_row = |key: &[LabelId]| Some(KeyRow::Columns(key.iter().map(|label| position(*label)).collect::<Option<_>>()?));
+                    let ty = try_map_key_rows(labels.label(column.label)?, &key_row)?;
+                    slots.resize(slots.len().max(index + 1), None);
+                    slots[index] = Some(ty);
+                }
+                let mut out = Vec::new();
+                for slot in slots {
+                    flatten(slot?, &mut out);
+                }
+                out
+            }
+        };
+        joined = Some(match joined {
+            None => columns,
+            Some(prev) if prev.len() == columns.len() => prev.iter().zip(&columns).map(|(a, b)| a.join(b)).collect::<Option<_>>()?,
+            Some(_) => return None,
+        });
+    }
+    joined.map(Vec::into_boxed_slice)
 }
 
 /// The signatures of the clauses that the type check of `form`, a
@@ -174,21 +287,11 @@ pub fn type_clause_signatures<'a>(form: &Form, order: &CanonicalOrder, clauses: 
         add(clause.value());
     }
     for source in inferred_scopes(order) {
-        let scope_clauses: Vec<&crate::program::Clause> = match form_within(form, &source) {
-            Some(Form::Clause(clause)) => vec![clause.value()],
-            Some(_) => Vec::new(),
-            None => {
-                let rule = rule_within(form, &source).expect(SCOPE_FORM);
-                let shared = rule.forms.iter().filter(|found| shares_rule_scope(found));
-                shared.filter_map(|found| match found {
-                    Form::Clause(clause) => Some(clause.value()),
-                    _ => None,
-                }).collect()
-            }
-        };
-        for clause in scope_clauses {
-            if !zero_typed_heads(clause).is_empty() {
-                add(clause);
+        for (_, found) in scope_forms_within(form, &source) {
+            if let Form::Clause(clause) = found {
+                if !zero_typed_heads(clause.value()).is_empty() {
+                    add(clause.value());
+                }
             }
         }
     }
@@ -239,28 +342,41 @@ fn map_labels(ty: &ValueType, map: &dyn Fn(LabelId) -> LabelId) -> ValueType {
 /// `ty` with each label of a key row mapped by `map`, or `None` where
 /// `map` gives no label for one.
 fn try_map_labels(ty: &ValueType, map: &dyn Fn(LabelId) -> Option<LabelId>) -> Option<ValueType> {
+    try_map_key_rows(ty, &|labels| Some(KeyRow::Labels(labels.iter().map(|label| map(*label)).collect::<Option<_>>()?)))
+}
+
+/// `ty` with each key row of labels replaced by the one `map` gives for
+/// its labels, or `None` where `map` gives none.
+fn try_map_key_rows(ty: &ValueType, map: &dyn Fn(&[LabelId]) -> Option<KeyRow>) -> Option<ValueType> {
     Some(match ty {
-        ValueType::Pose(AssemblyId { name, canonical_form, key: KeyRow::Labels(labels) }) => ValueType::Pose(AssemblyId {
-            name: name.clone(),
-            canonical_form: canonical_form.clone(),
-            key: KeyRow::Labels(labels.iter().map(|label| map(*label)).collect::<Option<_>>()?),
-        }),
+        ValueType::Pose(AssemblyId { name, canonical_form, key: KeyRow::Labels(labels) }) => {
+            ValueType::Pose(AssemblyId { name: name.clone(), canonical_form: canonical_form.clone(), key: map(labels)? })
+        }
         ValueType::Record(fields) => {
-            ValueType::Record(fields.iter().map(|(name, ty)| Some((name.clone(), try_map_labels(ty, map)?))).collect::<Option<_>>()?)
+            ValueType::Record(fields.iter().map(|(name, ty)| Some((name.clone(), try_map_key_rows(ty, map)?))).collect::<Option<_>>()?)
         }
         ty => ty.clone(),
     })
 }
 
-/// The column of a lifted read that holds the example,
-/// `docs/arclog/arclog.md#program`.
-const EXAMPLE: &str = "E";
-/// The column of a `RIGID_DET` output that holds the pose,
-/// `docs/arclog/rigid.md#semantics`.
-const POSE: &str = "Pose";
+/// The types of the columns that a value of type `ty` takes, in their
+/// order: a record's fields, each a column of its own, or `ty`.
+fn flatten(ty: ValueType, out: &mut Vec<ValueType>) {
+    match ty {
+        ValueType::Record(fields) => fields.into_vec().into_iter().for_each(|(_, field)| flatten(field, out)),
+        ty => out.push(ty),
+    }
+}
 
-fn written(name: &str) -> ColumnName {
-    ColumnName::Written(name.into())
+/// The types of the columns of a relation whose columns are `names`, in
+/// their order, each name's type as `column` gives it and a record's fields
+/// each a column of its own, or `None` where `column` gives a name no type.
+fn relation_columns<'n>(names: impl IntoIterator<Item = &'n ColumnName>, column: &dyn Fn(&ColumnName) -> Option<ValueType>) -> Option<Box<[ValueType]>> {
+    let mut out = Vec::new();
+    for name in names {
+        flatten(column(name)?, &mut out);
+    }
+    Some(out.into())
 }
 
 /// The type at `rest` of a value of type `ty`: a record's field for each
@@ -268,10 +384,7 @@ fn written(name: &str) -> ColumnName {
 /// name after a column of a type parameter bound to one label's type.
 fn project(ty: &ValueType, rest: &[ColumnName]) -> Option<ValueType> {
     match (ty, rest) {
-        (ValueType::Record(fields), [field, rest @ ..]) => {
-            let name = FieldName::of(field)?;
-            project(&fields.iter().find(|(found, _)| *found == name)?.1, rest)
-        }
+        (ValueType::Record(fields), [field, rest @ ..]) => project(&fields.iter().find(|(found, _)| found == field)?.1, rest),
         (ty, _) => Some(ty.clone()),
     }
 }
@@ -304,22 +417,7 @@ fn declared_type(columns: &[Column], path: &[ColumnName], pose_or: PoseOr) -> Op
     column_type(&columns.iter().find(|column| column.name == *first)?.ty, rest, &StableHashMap::default(), pose_or)
 }
 
-/// The declared columns of the lib relation or the native proposer `name`.
-fn lib_columns<'r>(registry: &'r Registry, name: &crate::registry::LibName) -> Option<&'r [Column]> {
-    match registry.entry(name)? {
-        LibEntry::Relation(relation) | LibEntry::Macro(Macro::Relation { relation, .. }) => Some(&relation.columns),
-        LibEntry::Proposer(Proposer::Native { columns }) => Some(columns),
-        LibEntry::Proposer(Proposer::Arclog { .. }) | LibEntry::Component(_) => None,
-    }
-}
-
-/// The component an `INIT` form names.
-pub(super) fn component<'r>(registry: &'r Registry, name: &crate::registry::LibName) -> Option<&'r Component> {
-    match registry.entry(name)? {
-        LibEntry::Component(component) => Some(component),
-        LibEntry::Relation(_) | LibEntry::Proposer(_) | LibEntry::Macro(Macro::Relation { .. }) => None,
-    }
-}
+pub(super) use columns::component;
 
 /// The side of the form at `form` of `program`, the side of the first node
 /// of the dependency graph that the form gives, or `None` where it gives
@@ -428,8 +526,8 @@ fn site_value_type(site: &Site, label: &dyn Fn(LabelId) -> Option<ValueType>) ->
         [SiteArg::Label(use_) | SiteArg::NamedLabel { label: use_, .. }] => label(use_label(*use_)?),
         args => {
             let field = |arg: &SiteArg| match arg {
-                SiteArg::NamedLabel { name, label: use_ } => Some((FieldName::of(name)?, label(use_label(*use_)?)?)),
-                SiteArg::Field(field) => Some((FieldName::of(&field.column)?, site_value_type(field, label)?)),
+                SiteArg::NamedLabel { name, label: use_ } => Some((name.clone(), label(use_label(*use_)?)?)),
+                SiteArg::Field(field) => Some((field.column.clone(), site_value_type(field, label)?)),
                 SiteArg::Label(_) => None,
             };
             Some(ValueType::Record(args.iter().map(field).collect::<Option<_>>()?))
@@ -456,15 +554,6 @@ fn column_label(atom: &Atom, column: &ColumnName) -> Option<LabelId> {
         [arg] => arg.label().and_then(use_label),
         _ => None,
     }
-}
-
-/// The inputs an `INIT` or a `DEMONSTRATED` form writes: the keyed inputs,
-/// then the others.
-fn written_inputs<'f>(
-    key: Option<&'f Node<crate::program::KeyClause>>,
-    inputs: &'f [Node<InstanceInput>],
-) -> impl Iterator<Item = &'f InstanceInput> {
-    key.into_iter().flat_map(|key| key.value().inputs.iter()).chain(inputs.iter()).map(|input| input.value())
 }
 
 /// The labels of a form's own scope, with the list each label's sites stand
@@ -864,19 +953,11 @@ impl<'a> Inference<'a> {
         }
         let at = reading.path.join(reading.walk.atoms.get(&(atom as *const Atom))?);
         match self.program.resolution(&at)? {
-            Resolution::Lib(name) => declared_type(lib_columns(self.registry, name)?, path, reading.pose_or),
-            Resolution::Node(node) if path == [written(EXAMPLE)] && self.lifts(reading.path, *node) => Some(ValueType::Example),
+            Resolution::Lib(name) => declared_type(columns::lib_typed_columns(self.registry, name)?, path, reading.pose_or),
+            Resolution::Node(_) if path == [columns::example()] && self.program.reads_lifted(&at) => Some(ValueType::Example),
             Resolution::Node(node) => self.node_type(*node, atom, path, reading.pose_or),
             Resolution::Undefined(_) | Resolution::Unresolved => None,
         }
-    }
-
-    /// Whether the form at `form` reads the relation of `node` in its lifted
-    /// form (`docs/arclog/arclog.md#program`).
-    fn lifts(&self, form: &NodePath, node: GraphNodeIndex) -> bool {
-        let task_wide = form_side(self.program, form) == Some(Side::TaskWide);
-        let fact = matches!(self.program.graph.nodes[node.0 as usize].kind, DependencyKind::Fact(_));
-        task_wide && !fact && self.program.side(node) == Side::PerInput
     }
 
     /// Whether a site of `atom`, a site of a form read under `reading`, on
@@ -893,7 +974,7 @@ impl<'a> Inference<'a> {
         let Some(at) = reading.walk.atoms.get(&(atom as *const Atom)) else { return false };
         match self.program.resolution(&reading.path.join(at)) {
             Some(Resolution::Lib(name)) => {
-                let column = path.first().and_then(|first| lib_columns(self.registry, name)?.iter().find(|column| column.name == *first));
+                let column = path.first().and_then(|first| columns::lib_typed_columns(self.registry, name)?.iter().find(|column| column.name == *first));
                 column.is_some_and(|column| matches!(column.ty, ColumnType::Pose | ColumnType::SharedPose | ColumnType::PoseOr(_)))
             }
             Some(Resolution::Node(node)) => matches!(
@@ -917,7 +998,7 @@ impl<'a> Inference<'a> {
     pub fn shares_pose(&self, reading: SiteReading<'_, 'a>, atom: &Atom, path: &[ColumnName]) -> bool {
         let Some(at) = reading.walk.atoms.get(&(atom as *const Atom)) else { return false };
         let Some(Resolution::Lib(name)) = self.program.resolution(&reading.path.join(at)) else { return false };
-        let column = path.first().and_then(|first| lib_columns(self.registry, name)?.iter().find(|column| column.name == *first));
+        let column = path.first().and_then(|first| columns::lib_typed_columns(self.registry, name)?.iter().find(|column| column.name == *first));
         column.is_some_and(|column| column.ty == ColumnType::SharedPose)
     }
 
@@ -934,12 +1015,11 @@ impl<'a> Inference<'a> {
             }
             DependencyKind::Chosen(name) => match form_at(self.program.program.value(), form_path)? {
                 Form::Choose(choose) => {
-                    let choose = choose.value();
-                    let columns = choose.rows.iter().flat_map(|rows| rows.columns.iter()).chain(choose.candidate_columns.iter());
+                    let columns: Vec<&RelationColumn> = columns::form_columns(NodeRef::Choose(choose.value())).collect();
                     let (first, rest) = path.split_first()?;
-                    let column = columns.clone().find(|column| column.name == *first)?;
+                    let column = columns.iter().find(|column| column.name == *first)?;
                     let ty = project(&self.infer(form_path)?.label_under(column.label, pose_or)?, rest)?;
-                    try_map_labels(&ty, &|label| reader(&columns.clone().find(|column| column.label == label)?.name))
+                    try_map_labels(&ty, &|label| reader(&columns.iter().find(|column| column.label == label)?.name))
                 }
                 _ => {
                     let relation = ProgramRelation::Declared(name.clone());
@@ -954,7 +1034,14 @@ impl<'a> Inference<'a> {
                 },
                 _ => None,
             },
-            DependencyKind::RigidAssembly(_) => self.rigid_output(form_path, atom, path),
+            DependencyKind::RigidAssembly(_) => {
+                let RelationRef::Output(output) = &atom.relation else { return None };
+                let key = columns::key();
+                let key_row = |key_columns: &[RelationColumn]| {
+                    Some(KeyRow::Labels(key_columns.iter().map(|column| field_label(atom, &key, &column.name)).collect::<Option<_>>()?))
+                };
+                self.rigid_output(form_path, &output.path, path, &key_row)
+            }
             DependencyKind::Demonstrated(_) => self.demonstrated_column(form_path, path),
             DependencyKind::InstanceInput { .. } => None,
         }
@@ -1013,7 +1100,7 @@ impl<'a> Inference<'a> {
             return Some(ClauseColumns::Own(&clause.columns));
         }
         if let Some(proposer) = clause.proposers.first() {
-            let columns = match lib_columns(self.registry, proposer) {
+            let columns = match columns::lib_typed_columns(self.registry, proposer) {
                 Some(columns) => columns,
                 None => &self.registry.derivation(proposer)?.columns,
             };
@@ -1094,48 +1181,103 @@ impl<'a> Inference<'a> {
         }
     }
 
+    /// The type of each column of each relation that the form `form` at `at`
+    /// gives whose columns its declaration fixes, by the path after the
+    /// form's name of the output, the empty path for the form's own
+    /// relation, in the order of the resolver's columns of it: a clause's
+    /// with no columns of its own, each input that an `INIT` form writes and
+    /// each output, each output of a `RIGID_DET` form, and a `DEMONSTRATED`
+    /// form's. A relation a column of which takes no type has no entry.
+    fn form_relations(&self, at: &NodePath, form: &'a Form) -> Vec<(Arc<[OutputStep]>, Box<[ValueType]>)> {
+        let mut relations: Vec<(Arc<[OutputStep]>, Option<Box<[ValueType]>>)> = Vec::new();
+        match form {
+            Form::Clause(clause) if clause.value().columns.is_empty() => {
+                let clause = clause.value();
+                let mut nodes = (0..self.program.graph.nodes.len() as u32).map(GraphNodeIndex);
+                let node = nodes.find(|node| self.program.forms_of(*node).contains(at)).expect("the resolver gives each clause a node");
+                let scope = &self.program.graph.nodes[node.0 as usize].scope;
+                let names = self.clause_column_names(clause, scope);
+                let column = |name: &ColumnName| self.clause_column(at, clause, scope, std::slice::from_ref(name), &|_| None, PoseOr::Given);
+                if !names.is_empty() {
+                    relations.push((Arc::from([]), relation_columns(&names, &column)));
+                }
+            }
+            Form::Instance(_) => {
+                let Some(inference) = self.infer(at) else { return Vec::new() };
+                let (Some(component), Some(Form::Instance(instance))) = (inference.component, inference.form) else { return Vec::new() };
+                let written: Vec<&PortName> = written_inputs(instance.value().key.as_ref(), &instance.value().inputs).map(|input| &input.name).collect();
+                let inputs = component.inputs.iter().map(|input| &input.port).filter(|port| written.contains(&&port.name));
+                let outputs = component.outputs.iter();
+                let mut ports: Vec<&crate::registry::Port> = outputs.collect();
+                ports.extend(inputs.filter(|port| !component.outputs.iter().any(|output| output.name == port.name)));
+                for port in ports {
+                    let column = |name: &ColumnName| port_column(&inference, port, std::slice::from_ref(name));
+                    relations.push((Arc::from([OutputStep::Port(port.name.clone())]), relation_columns(port.columns.iter().map(|column| &column.name), &column)));
+                }
+            }
+            Form::RigidDet(rigid) => {
+                let key_row = |key: &[RelationColumn]| Some(KeyRow::Columns((0..key.len() as u16).collect()));
+                for (output, names) in columns::rigid_outputs(rigid.value()) {
+                    let column = |name: &ColumnName| self.rigid_output(at, &output, std::slice::from_ref(name), &key_row);
+                    let types = relation_columns(names.names(), &column);
+                    relations.push((output, types));
+                }
+            }
+            Form::Demonstrated(demonstrated) => {
+                let names = columns::demonstrated_columns(demonstrated.value());
+                let column = |name: &ColumnName| self.demonstrated_column(at, std::slice::from_ref(name));
+                relations.push((Arc::from([]), relation_columns(names.names(), &column)));
+            }
+            Form::Clause(_) | Form::Choose(_) | Form::Claim(_) | Form::Alts(_) => {}
+        }
+        relations.into_iter().filter_map(|(output, columns)| Some((output, columns?))).collect()
+    }
+
     /// The type of the column at `path` of the output `port` of the `INIT`
     /// form at `at`, its parameters bound as the form binds them. A type
     /// that names labels of the form's scope gives none.
     fn instance_output(&self, at: &NodePath, port: &PortName, path: &[ColumnName]) -> Option<ValueType> {
         let inference = self.infer(at)?;
-        let (first, rest) = path.split_first()?;
         let output = inference.component?.outputs.iter().find(|output| output.name == *port)?;
-        let column = output.columns.iter().find(|column| column.name == *first)?;
-        let ty = column_type(&column.ty, rest, &inference.bindings, PoseOr::Open)?;
-        try_map_labels(&ty, &|_| None)
+        port_column(&inference, output, path)
     }
 
-    /// The type of the column at `path` of the output of the `RIGID_DET` form
-    /// at `at` that `atom` reads (`docs/arclog/rigid.md#semantics`). The Pose
-    /// type names the labels `atom` gives at the key's columns.
-    fn rigid_output(&self, at: &NodePath, atom: &Atom, path: &[ColumnName]) -> Option<ValueType> {
+    /// The type of the column at `path` of the output `output`, the path
+    /// after the form's name, of the `RIGID_DET` form at `at`
+    /// (`docs/arclog/rigid.md#semantics`). The Pose type of a keyed form names
+    /// its key row as `key_row` gives it from the key's columns.
+    fn rigid_output(
+        &self,
+        at: &NodePath,
+        output: &[OutputStep],
+        path: &[ColumnName],
+        key_row: &dyn Fn(&[RelationColumn]) -> Option<KeyRow>,
+    ) -> Option<ValueType> {
         let inference = self.infer(at)?;
         let Some(form @ Form::RigidDet(rigid)) = inference.form else { return None };
         let rigid_value = rigid.value();
-        let RelationRef::Output(output) = &atom.relation else { return None };
         let (first, rest) = path.split_first()?;
         let local = |ty: ValueType| try_map_labels(&ty, &|_| None);
-        let key = written(crate::read::spelling::KEY);
+        let key = columns::key();
         if *first == key {
             let Some(key_body) = &rigid_value.key else { return project(&ValueType::Unit, rest) };
-            let field = |column: &RelationColumn| Some((FieldName::of(&column.name)?, inference.label(column.label)?));
+            let field = |column: &RelationColumn| Some((column.name.clone(), inference.label(column.label)?));
             let record = ValueType::Record(key_body.columns.iter().map(field).collect::<Option<_>>()?);
             return local(project(&record, rest)?);
         }
-        if *first == written(POSE) {
+        if *first == columns::pose() {
             let key_row = match &rigid_value.key {
                 None => KeyRow::Unkeyed,
-                Some(key_body) => KeyRow::Labels(key_body.columns.iter().map(|column| field_label(atom, &key, &column.name)).collect::<Option<_>>()?),
+                Some(key_body) => key_row(&key_body.columns)?,
             };
             let canonical_form = super::canonical_form(form);
             return Some(ValueType::Pose(AssemblyId { name: rigid_value.name.clone(), canonical_form, key: key_row }));
         }
-        if let [OutputStep::Pose] = &output.path[..] {
+        if let [OutputStep::Pose] = output {
             let column = rigid_value.instance.iter().flat_map(|instance| instance.columns.iter()).find(|column| column.name == *first)?;
             return local(project(&inference.label(column.label)?, rest)?);
         }
-        let part = rigid_value.parts.iter().find(|part| part_steps(&part.value().relation).as_deref() == Some(&output.path[..]))?;
+        let part = rigid_value.parts.iter().find(|part| columns::part_steps(&part.value().relation).as_deref() == Some(output))?;
         local(self.site_type(inference.reading(PoseOr::Given), part.value(), path)?)
     }
 
@@ -1147,20 +1289,31 @@ impl<'a> Inference<'a> {
         let demonstrated = demonstrated.value();
         let (first, rest) = path.split_first()?;
         let label = |label: LabelId| inference.label(label);
-        let ty = if *first == written(crate::read::spelling::KEY) {
+        let ty = if *first == columns::key() {
             match &demonstrated.key {
                 None => ValueType::Unit,
                 Some(key) => {
-                    let field = |column: &RelationColumn| Some((FieldName::of(&column.name)?, label(column.label)?));
+                    let field = |column: &RelationColumn| Some((column.name.clone(), label(column.label)?));
                     ValueType::Record(key.value().key.columns.iter().map(field).collect::<Option<_>>()?)
                 }
             }
         } else {
-            let value = written_inputs(demonstrated.key.as_ref(), &demonstrated.inputs).find(|input| &*input.name.0 == "value")?;
+            let value = columns::demonstrated_value(demonstrated)?;
             site_value_type(value.head.iter().find(|site| site.column == *first)?, &label)?
         };
         try_map_labels(&project(&ty, rest)?, &|_| None)
     }
+}
+
+/// The type of the column at `path` of `port`, a port of the component of
+/// the `INIT` form whose inference is `inference`, its parameters bound as
+/// the form binds them. A type that names labels of the form's scope gives
+/// none.
+fn port_column(inference: &FormInference<'_>, port: &crate::registry::Port, path: &[ColumnName]) -> Option<ValueType> {
+    let (first, rest) = path.split_first()?;
+    let column = port.columns.iter().find(|column| column.name == *first)?;
+    let ty = column_type(&column.ty, rest, &inference.bindings, PoseOr::Open)?;
+    try_map_labels(&ty, &|_| None)
 }
 
 /// Where a clause takes the columns of its relation from, as
@@ -1200,56 +1353,30 @@ fn typed(types: &[(LabelId, Result<Option<ValueType>, LabelFault>)], label: Labe
     }
 }
 
-/// The path after a `RIGID_DET` form's name of the output for the part
-/// that reads `relation`: `&marker.glyph` for a part that reads `&glyph`,
-/// `&marker.bbox.box` for one that reads `&bbox.box`.
-fn part_steps(relation: &RelationRef) -> Option<Vec<OutputStep>> {
-    let (owner, rest): (&DeclaredName, &[OutputStep]) = match relation {
-        RelationRef::Declared(RelationName(name)) => (name, &[]),
-        RelationRef::Output(output) => match &output.of {
-            OutputOwner::Instance(InstanceName(name)) | OutputOwner::RigidDet(RigidDetName(name)) => (name, &output.path[..]),
-        },
-        RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) => return None,
-    };
-    Some(std::iter::once(OutputStep::Part(owner.clone())).chain(rest.iter().cloned()).collect())
-}
-
 /// The type each parameter of `component` takes by `instance`'s binding
-/// (`docs/arclog/arclog.md#instance`), with `label` giving the type of each
-/// label of the instance.
+/// (`docs/arclog/arclog.md#instance`), at the places that [`binding_sites`]
+/// gives, with `label` giving the type of each label of the instance.
 fn bind(instance: &Instance, component: &Component, label: &dyn Fn(LabelId) -> Option<ValueType>) -> StableHashMap<TypeParameter, ValueType> {
-    let key = written(crate::read::spelling::KEY);
+    let sites = binding_sites(instance, &component.inputs);
+    let mut bindings = StableHashMap::default();
+    for sites in &sites {
+        let ty = match sites.binding {
+            ParameterSite::Key(key) => {
+                let field = |column: &RelationColumn| Some((column.name.clone(), label(column.label)?));
+                key.key.columns.iter().map(field).collect::<Option<_>>().map(ValueType::Record)
+            }
+            ParameterSite::Head { site, .. } => site_value_type(site, label),
+        };
+        if let Some(ty) = ty {
+            bindings.insert(sites.parameter.clone(), ty);
+        }
+    }
     let key_parameter = component.inputs.iter().flat_map(|input| input.port.columns.iter()).find_map(|column| match &column.ty {
-        ColumnType::Parameter(parameter) if column.name == key => Some(parameter.clone()),
+        ColumnType::Parameter(parameter) if column.name == columns::key() => Some(parameter),
         _ => None,
     });
-    let mut bound: Vec<TypeParameter> = Vec::new();
-    let mut bindings = StableHashMap::default();
-    if let (Some(parameter), Some(key_clause)) = (&key_parameter, &instance.key) {
-        let field = |column: &RelationColumn| Some((FieldName::of(&column.name)?, label(column.label)?));
-        if let Some(fields) = key_clause.value().key.columns.iter().map(field).collect::<Option<_>>() {
-            bindings.insert(parameter.clone(), ValueType::Record(fields));
-        }
-        bound.push(parameter.clone());
-    }
-    for input in written_inputs(instance.key.as_ref(), &instance.inputs) {
-        let Some(port) = component.inputs.iter().find(|port| port.port.name == input.name) else { continue };
-        for site in input.head.iter() {
-            let Some(column) = port.port.columns.iter().find(|column| column.name == site.column) else { continue };
-            let ColumnType::Parameter(parameter) = &column.ty else { continue };
-            if bound.contains(parameter) {
-                continue;
-            }
-            bound.push(parameter.clone());
-            if let Some(ty) = site_value_type(site, label) {
-                bindings.insert(parameter.clone(), ty);
-            }
-        }
-    }
-    if let (Some(parameter), None) = (key_parameter, &instance.key) {
-        if !bound.contains(&parameter) {
-            bindings.insert(parameter, ValueType::Unit);
-        }
+    if let Some(parameter) = key_parameter.filter(|parameter| sites.iter().all(|sites| sites.parameter != *parameter)) {
+        bindings.insert(parameter.clone(), ValueType::Unit);
     }
     bindings
 }

@@ -5,12 +5,12 @@
 
 use std::sync::Arc;
 
-use super::super::columns::{self, Columns, Place};
+use super::super::columns::{self, form_columns, row_columns, Columns, Place};
 use super::super::names::{combined, Own, Writer};
 use super::Builder;
 use crate::program::canonical::{canonical_labeling, AsWritten, CanonicalWriter, LabelScope, NameWriter, SearchBudget};
 use crate::program::path::{node_at, NodeRef};
-use crate::program::{Choose, Clause, ColumnName, NameScope, OutputName, OutputOwner, OutputStep, ProgramRelation, RelationColumn, RelationRef};
+use crate::program::{Choose, Clause, ColumnName, NameScope, OutputName, OutputOwner, OutputStep, ProgramRelation, RelationRef};
 use crate::resolver::{DependencyKind, DependencyNode};
 
 impl Builder<'_> {
@@ -115,16 +115,6 @@ impl Builder<'_> {
     }
 }
 
-/// The columns that `form` gives the rows of its node: a clause's, or a
-/// `CHOOSE` form's row columns and then its candidate's.
-fn form_columns<'f>(form: NodeRef<'f>) -> Box<dyn Iterator<Item = &'f RelationColumn> + 'f> {
-    match form {
-        NodeRef::Clause(clause) => Box::new(clause.columns.iter()),
-        NodeRef::Choose(choose) => Box::new(row_columns(choose).chain(choose.candidate_columns.iter())),
-        _ => Box::new(std::iter::empty()),
-    }
-}
-
 /// The tag of each kind of node in its content.
 fn kind_tag(kind: &DependencyKind) -> u8 {
     match kind {
@@ -156,10 +146,4 @@ fn choose_columns(choose: &Choose, writer: &Writer<'_>) -> Columns {
     let rows = row_columns(choose).map(|column| column.name.clone());
     let candidate = ordered(&choose.candidate_columns, &labeling);
     Columns::of_names(rows.chain(candidate.names().cloned()))
-}
-
-/// The row columns of a chosen relation, in the order of the `for`
-/// clause, which come before the candidate's.
-fn row_columns(choose: &Choose) -> impl Iterator<Item = &RelationColumn> + '_ {
-    choose.rows.iter().flat_map(|rows| rows.columns.iter())
 }

@@ -63,10 +63,11 @@ pub enum ValueType {
     Sense,
     /// The Pose type of one `RIGID_DET` assembly.
     Pose(AssemblyId),
-    /// A record bound to a type parameter (`docs/arclog/arclog.md#instance`).
-    /// The engine has no record values, so each field takes a column of its
-    /// own.
-    Record(Box<[(FieldName, ValueType)]>),
+    /// A record bound to a type parameter (`docs/arclog/arclog.md#instance`),
+    /// each field by the column name of its site or of its key column: the
+    /// name written, or, in a decoded program, the slot. The engine has no
+    /// record values, so each field takes a column of its own.
+    Record(Box<[(crate::program::ColumnName, ValueType)]>),
 }
 
 /// The name of a record's field (`docs/arclog/arclog.md#sites`).
@@ -455,12 +456,43 @@ pub fn each_conjunct(body: &crate::program::Body, visit: &mut dyn FnMut(&crate::
 /// the cases that share a form share its types. In the check cache a label
 /// is its canonical position in its scope, as `LabelId(position)`, and a key
 /// row's labels are the same. [`ProgramTypes`] holds the scope's own labels.
+///
+/// In the check cache it holds as well the type of each column of each
+/// relation that a form of the scope gives whose columns the form's
+/// declaration fixes, each by its [`FormRelation`]. Those types name no
+/// label, and a Pose type among them names its key row by
+/// [`KeyRow::Columns`].
 #[derive(Clone, Debug, Default)]
 pub struct FormTypes {
     labels: crate::hash::StableHashMap<crate::program::LabelId, ValueType>,
+    relations: crate::hash::StableHashMap<FormRelation, Box<[ValueType]>>,
+}
+
+/// A relation that a form gives: the form's canonical path relative to the
+/// top-level form whose scopes the check cache keeps, and the path after the form's name of the output,
+/// such as `.value` of an instance or `&glyph` of a `RIGID_DET` form, or the
+/// empty path for the form's own relation.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct FormRelation {
+    pub form: crate::program::path::NodePath,
+    pub output: std::sync::Arc<[crate::program::OutputStep]>,
 }
 
 impl FormTypes {
+    /// The types of `labels`, and the column types of `relations`.
+    pub(crate) fn new(
+        labels: impl IntoIterator<Item = (crate::program::LabelId, ValueType)>,
+        relations: impl IntoIterator<Item = (FormRelation, Box<[ValueType]>)>,
+    ) -> Self {
+        FormTypes { labels: labels.into_iter().collect(), relations: relations.into_iter().collect() }
+    }
+
+    /// Each relation whose columns the declaration of a form of the scope
+    /// fixes, with the type of each of its columns.
+    pub fn relations(&self) -> impl Iterator<Item = (&FormRelation, &[ValueType])> + '_ {
+        self.relations.iter().map(|(relation, columns)| (relation, &columns[..]))
+    }
+
     /// The type of `label`, or `None` where the form has no such label.
     pub fn label(&self, label: crate::program::LabelId) -> Option<&ValueType> {
         self.labels.get(&label)
@@ -469,12 +501,6 @@ impl FormTypes {
     /// Each label with its type.
     pub fn labels(&self) -> impl Iterator<Item = (crate::program::LabelId, &ValueType)> + '_ {
         self.labels.iter().map(|(label, ty)| (*label, ty))
-    }
-}
-
-impl FromIterator<(crate::program::LabelId, ValueType)> for FormTypes {
-    fn from_iter<I: IntoIterator<Item = (crate::program::LabelId, ValueType)>>(labels: I) -> Self {
-        FormTypes { labels: labels.into_iter().collect() }
     }
 }
 
@@ -518,9 +544,15 @@ impl ProgramTypes {
     }
 
     /// The type of each column of `relation`, one per column, a record's
-    /// fields each a column of its own.
+    /// fields each a column of its own, or `None` for a fact relation and
+    /// where the type check gives a column of the relation no type.
     pub fn columns(&self, relation: &GraphRelation) -> Option<&[ValueType]> {
         self.columns.get(relation).map(|columns| &columns[..])
+    }
+
+    /// Sets the type of each column of `relation`.
+    pub(crate) fn insert_columns(&mut self, relation: GraphRelation, columns: Box<[ValueType]>) {
+        self.columns.insert(relation, columns);
     }
 
     /// Whether `relation` has an Example column, as the checker decides it

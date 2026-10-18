@@ -91,6 +91,8 @@ struct Builder<'a> {
     label_positions: StableHashMap<(NodePath, LabelId), ColumnPosition>,
     groups: StableHashMap<NodePath, ColumnGroup>,
     proposer_columns: StableHashMap<(NodePath, usize), Box<[ColumnName]>>,
+    /// The path of each read that its form reads in its lifted form.
+    lifted: StableHashSet<NodePath>,
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -125,6 +127,7 @@ pub(super) fn resolve(
         label_positions: StableHashMap::default(),
         groups: StableHashMap::default(),
         proposer_columns: StableHashMap::default(),
+        lifted: StableHashSet::default(),
         diagnostics: Vec::new(),
     };
     for fact in [FactRelation::Input, FactRelation::ExInput, FactRelation::ExOutput] {
@@ -544,6 +547,7 @@ impl<'a> Builder<'a> {
             let mut columns = self.names.columns(scope, &atom.relation).cloned();
             if self.lifts(form, &self.resolutions[path]) {
                 columns = columns.map(|found| found.lifted());
+                self.lifted.insert(path.clone());
             }
             if let Some(columns) = &columns {
                 for (index, site) in atom.sites.iter().enumerate() {
@@ -672,7 +676,7 @@ impl<'a> Builder<'a> {
             nodes: self.nodes.into(),
             reads: self.reads.into_iter().map(|reads| reads.into_iter().map(GraphNodeIndex).collect()).collect(),
         };
-        let forms = self.forms.into_iter().map(|forms| forms.into_iter().next().unwrap_or_default()).collect();
+        let forms = self.forms.into_iter().map(Box::from).collect();
         WithDiagnostics {
             value: ResolvedProgram {
                 program: self.case.clone(),
@@ -686,6 +690,7 @@ impl<'a> Builder<'a> {
                 label_positions: self.label_positions,
                 groups: self.groups,
                 proposer_columns: self.proposer_columns,
+                lifted: self.lifted,
                 names: self.names,
             },
             diagnostics: self.diagnostics,

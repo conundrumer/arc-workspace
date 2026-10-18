@@ -174,8 +174,8 @@ impl ResolvedContent {
 pub struct ResolvedProgram {
     pub program: Node<Program>,
     pub graph: DependencyGraph,
-    /// The path of the form of each node of the graph, by its index.
-    forms: Box<[NodePath]>,
+    /// The paths of the forms of each node of the graph, by its index.
+    forms: Box<[Box<[NodePath]>]>,
     /// The side of each node of the graph, by its index.
     sides: Box<[Side]>,
     /// The columns of each node of the graph that hold an Example, by its
@@ -187,6 +187,8 @@ pub struct ResolvedProgram {
     label_positions: crate::hash::StableHashMap<(NodePath, LabelId), ColumnPosition>,
     groups: crate::hash::StableHashMap<NodePath, crate::relations::ColumnGroup>,
     proposer_columns: crate::hash::StableHashMap<(NodePath, usize), Box<[ColumnName]>>,
+    /// The path of each read that its form reads in its lifted form.
+    lifted: crate::hash::StableHashSet<NodePath>,
     names: names::Names,
 }
 
@@ -250,9 +252,24 @@ impl ResolvedProgram {
     }
 
     /// The path of the form that gives `node` of the graph, so that the cycle
-    /// check reports each form on a cycle.
+    /// check reports each form on a cycle: the first of
+    /// [`ResolvedProgram::forms_of`], or the empty path for a fact.
     pub fn form_of(&self, node: GraphNodeIndex) -> &NodePath {
+        static PROGRAM: std::sync::LazyLock<NodePath> = std::sync::LazyLock::new(NodePath::default);
+        self.forms_of(node).first().unwrap_or(&PROGRAM)
+    }
+
+    /// The paths of the forms that give `node` of the graph, in the order
+    /// the resolver declares them: none for a fact, several for a relation
+    /// that several clauses derive.
+    pub fn forms_of(&self, node: GraphNodeIndex) -> &[NodePath] {
         &self.forms[node.0 as usize]
+    }
+
+    /// Whether the form that holds the read at `read` reads its relation in
+    /// its lifted form, as [`Side`] gives it.
+    pub fn reads_lifted(&self, read: &NodePath) -> bool {
+        self.lifted.contains(read)
     }
 
     /// The resolved content of the node at `path`, or `None` where `path`
@@ -321,7 +338,7 @@ fn demo_rules<'d>(
     demonstrated.rules.iter().enumerate().map(move |(index, rule)| (path.child(before + index as u32), rule.value()))
 }
 
-mod columns;
+pub(crate) mod columns;
 
 mod names;
 

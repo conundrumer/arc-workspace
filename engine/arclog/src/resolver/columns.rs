@@ -4,9 +4,10 @@ use std::sync::Arc;
 
 use super::ColumnPosition;
 use crate::hash::StableHashMap;
+use crate::program::path::NodeRef;
 use crate::program::{
-    ColumnName, DeclaredName, Demonstrated, Instance, InstanceName, KeyBody, OutputOwner, OutputStep,
-    RelationName, RelationRef, RigidDet, RigidDetName, Site, SiteArg,
+    Choose, ColumnName, DeclaredName, Demonstrated, Instance, InstanceName, KeyBody, OutputOwner, OutputStep,
+    RelationColumn, RelationName, RelationRef, RigidDet, RigidDetName, Site, SiteArg,
 };
 use crate::registry::{binding_sites, Column, ColumnType, Component, LibEntry, LibName, Macro, ParameterSite, Port, Proposer, Registry, TypeParameter};
 use crate::relations::{ColumnGroup, ColumnIndex};
@@ -27,13 +28,18 @@ fn written(name: &str) -> ColumnName {
 }
 
 /// The name of the key column of a keyed form's relation.
-pub(super) fn key() -> ColumnName {
+pub(crate) fn key() -> ColumnName {
     written(KEY)
 }
 
 /// The name of the Example column of a lifted read.
-pub(super) fn example() -> ColumnName {
+pub(crate) fn example() -> ColumnName {
     written(EXAMPLE)
+}
+
+/// The name of the column of a `RIGID_DET` output that holds the pose.
+pub(crate) fn pose() -> ColumnName {
+    written(POSE)
 }
 
 /// One column of a relation as a site names it: a column of one row
@@ -80,14 +86,14 @@ pub(super) enum Place {
 
 /// The columns of a relation, in the order of its rows.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
-pub(super) struct Columns(pub(super) Box<[Slot]>);
+pub(crate) struct Columns(pub(super) Box<[Slot]>);
 
 impl Columns {
     pub(super) fn of_names(names: impl IntoIterator<Item = ColumnName>) -> Columns {
         Columns(names.into_iter().map(Slot::Column).collect())
     }
 
-    pub(super) fn names(&self) -> impl Iterator<Item = &ColumnName> + '_ {
+    pub(crate) fn names(&self) -> impl Iterator<Item = &ColumnName> + '_ {
         self.0.iter().map(Slot::name)
     }
 
@@ -169,21 +175,27 @@ pub(super) fn examples(columns: &[Column]) -> impl Iterator<Item = ColumnName> +
 /// The declared columns, with their types, of the fact, the lib
 /// relation, the relation macro or the native proposer that `relation`
 /// names.
-pub(super) fn typed_columns<'r>(registry: &'r Registry, relation: &RelationRef) -> Option<&'r [Column]> {
+pub(crate) fn typed_columns<'r>(registry: &'r Registry, relation: &RelationRef) -> Option<&'r [Column]> {
     match relation {
         RelationRef::Fact(fact) => Some(registry.fact_columns(*fact)),
-        RelationRef::Lib(name) => match registry.entry(name)? {
-            LibEntry::Relation(relation) | LibEntry::Macro(Macro::Relation { relation, .. }) => Some(&relation.columns),
-            LibEntry::Proposer(Proposer::Native { columns }) => Some(columns),
-            LibEntry::Proposer(Proposer::Arclog { .. }) | LibEntry::Component(_) => None,
-        },
+        RelationRef::Lib(name) => lib_typed_columns(registry, name),
         RelationRef::Declared(_) | RelationRef::Output(_) | RelationRef::DefinedPort(_) => None,
+    }
+}
+
+/// The declared columns, with their types, of the lib relation, the
+/// relation macro or the native proposer `name`.
+pub(crate) fn lib_typed_columns<'r>(registry: &'r Registry, name: &LibName) -> Option<&'r [Column]> {
+    match registry.entry(name)? {
+        LibEntry::Relation(relation) | LibEntry::Macro(Macro::Relation { relation, .. }) => Some(&relation.columns),
+        LibEntry::Proposer(Proposer::Native { columns }) => Some(columns),
+        LibEntry::Proposer(Proposer::Arclog { .. }) | LibEntry::Component(_) => None,
     }
 }
 
 /// The columns of a proposer or a fixed derivation that a `DET` names,
 /// in the proposer's order.
-pub(super) fn proposer_columns(registry: &Registry, name: &LibName) -> Option<Box<[ColumnName]>> {
+pub(crate) fn proposer_columns(registry: &Registry, name: &LibName) -> Option<Box<[ColumnName]>> {
     match registry.entry(name) {
         Some(LibEntry::Proposer(Proposer::Native { columns })) => Some(columns.iter().map(|c| c.name.clone()).collect()),
         Some(LibEntry::Proposer(Proposer::Arclog { columns, .. })) => Some(columns.clone()),
@@ -199,7 +211,7 @@ pub(super) fn is_proposer(registry: &Registry, name: &LibName) -> bool {
 
 /// The component an `INIT` form names: a construction, a detector or a
 /// task-structure component.
-pub(super) fn component<'r>(registry: &'r Registry, name: &LibName) -> Option<&'r Component> {
+pub(crate) fn component<'r>(registry: &'r Registry, name: &LibName) -> Option<&'r Component> {
     match registry.entry(name)? {
         LibEntry::Component(component) => Some(component),
         LibEntry::Relation(_) | LibEntry::Proposer(_) | LibEntry::Macro(Macro::Relation { .. }) => None,
@@ -263,7 +275,7 @@ fn key_slot(key: Option<&KeyBody>) -> Slot {
 
 /// The columns of a `DEMONSTRATED` form's relation,
 /// `docs/arclog/arclog.md#demonstrated`.
-pub(super) fn demonstrated_columns(form: &Demonstrated) -> Columns {
+pub(crate) fn demonstrated_columns(form: &Demonstrated) -> Columns {
     let key = key_slot(form.key.as_ref().map(|key| &key.value().key));
     let heads = demonstrated_value(form).into_iter().flat_map(|input| input.head.iter()).map(|site| Slot::of(&site.column, projection(site).as_deref()));
     Columns(std::iter::once(key).chain(heads).collect())
@@ -271,14 +283,14 @@ pub(super) fn demonstrated_columns(form: &Demonstrated) -> Columns {
 
 /// The `value` input of a `DEMONSTRATED` form, whose head names the
 /// relation's columns after the key's.
-pub(super) fn demonstrated_value(form: &Demonstrated) -> Option<&crate::program::InstanceInput> {
+pub(crate) fn demonstrated_value(form: &Demonstrated) -> Option<&crate::program::InstanceInput> {
     crate::program::written_inputs(form.key.as_ref(), &form.inputs).find(|input| *input.name.0 == *VALUE)
 }
 
 /// The path after the form's name of the output of a `RIGID_DET` form
 /// for the part that reads `relation`: `&marker.glyph` for a part that
 /// reads `&glyph`, `&marker.bbox.box` for one that reads `&bbox.box`.
-fn part_steps(relation: &RelationRef) -> Option<Vec<OutputStep>> {
+pub(crate) fn part_steps(relation: &RelationRef) -> Option<Vec<OutputStep>> {
     let (owner, rest): (&DeclaredName, &[OutputStep]) = match relation {
         RelationRef::Declared(RelationName(name)) => (name, &[]),
         RelationRef::Output(output) => match &output.of {
@@ -292,9 +304,9 @@ fn part_steps(relation: &RelationRef) -> Option<Vec<OutputStep>> {
 /// Each output of a `RIGID_DET` form, by its path after the form's name, with
 /// its columns, as `docs/arclog/rigid.md#semantics` gives. A form with no key
 /// clause has one `key` column, as an instance with no key clause has.
-pub(super) fn rigid_outputs(form: &RigidDet) -> Vec<(Arc<[OutputStep]>, Columns)> {
+pub(crate) fn rigid_outputs(form: &RigidDet) -> Vec<(Arc<[OutputStep]>, Columns)> {
     let key = key_slot(form.key.as_ref());
-    let pose = Slot::Column(written(POSE));
+    let pose = Slot::Column(self::pose());
     let mut outputs: Vec<(Arc<[OutputStep]>, Columns)> = form
         .parts
         .iter()
@@ -308,4 +320,20 @@ pub(super) fn rigid_outputs(form: &RigidDet) -> Vec<(Arc<[OutputStep]>, Columns)
     let instance = form.instance.iter().flat_map(|instance| instance.columns.iter()).map(|column| Slot::Column(column.name.clone()));
     outputs.push((Arc::from([OutputStep::Pose]), Columns(std::iter::once(key).chain(instance).chain([pose]).collect())));
     outputs
+}
+
+/// The columns that `form` gives the rows of its node: a clause's, or a
+/// `CHOOSE` form's row columns and then its candidate's.
+pub(crate) fn form_columns<'f>(form: NodeRef<'f>) -> Box<dyn Iterator<Item = &'f RelationColumn> + 'f> {
+    match form {
+        NodeRef::Clause(clause) => Box::new(clause.columns.iter()),
+        NodeRef::Choose(choose) => Box::new(row_columns(choose).chain(choose.candidate_columns.iter())),
+        _ => Box::new(std::iter::empty()),
+    }
+}
+
+/// The row columns of a chosen relation, in the order of the `for`
+/// clause, which come before the candidate's.
+pub(super) fn row_columns(choose: &Choose) -> impl Iterator<Item = &RelationColumn> + '_ {
+    choose.rows.iter().flat_map(|rows| rows.columns.iter())
 }
