@@ -44,6 +44,7 @@ LOG_RULES = mctx("""
     - A ticket that waits on the change and that another call moves first, the command skips.
     - The command moves those tickets in the order of their file names.
         - Where the move of one is refused for another reason, the command moves the others, prints the path of each ticket it moved, and then refuses, with the change's path and the path of each ticket it did not move, with the reason.
+    - The command refuses, and neither moves nor writes, where the line moves a `{request}` that holds a `{validation}` section into `{waiting}` from another status, and the sweep refuses the check that section gives, as `{invocation} sweep --help-all` gives, and gives the sweep's reason.
     - The command refuses, and neither moves nor writes, where `{log}` is not the file's last section or the note spans more than one line.
     - The command refuses, and neither moves nor writes, where the line leaves the ticket on a cycle of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) defines a link, among the tickets outside `tickets/{closed}/`, and gives the tickets of the shortest such cycle in order, unless the line moves the ticket into `{closed}`, or into `draft` from another status.
     """)

@@ -23,6 +23,7 @@ from ticketing.vocabulary import WAIT_STATUSES, Domain, Kind, Note, Resolution, 
 from file_reads import file_text, stat_of
 from state_reads import state_cache
 from transcript_snapshots import Refused
+from validation_checks import check_of
 
 AGENT_ID = re.compile(AGENT_ID_FORM)
 
@@ -387,9 +388,25 @@ def close_of(path: Path, status: Status, source: Status, note: str | None) -> Cl
         return None
     if kind is Kind.VALIDATION:
         return Close.DEFERS
-    if kind is Kind.REQUEST and section_head(text, VALIDATION) is not None:
+    if gives_validation(text):
         return Close.FILES_VALIDATION
     return None
+
+
+def gives_validation(text: str) -> bool:
+    """Whether the ticket with text `text` is a `request` that holds a
+    `Validation` section."""
+    return ticket_kind(text) is Kind.REQUEST and section_head(text, VALIDATION) is not None
+
+
+def check_validation(path: Path, status: Status, source: Status) -> None:
+    """Refuses a line into `waiting` from another status on a `request` at
+    `path` whose `Validation` section `validation_checks.check_of` refuses,
+    with its reason."""
+    if status is Status.WAITING and source is not Status.WAITING:
+        text = read_ticket(path)
+        if gives_validation(text):
+            check_of(path, text)
 
 
 def check_moves(tickets: Path, number: TicketNumber, status: Status, agent: str,
@@ -406,6 +423,7 @@ def check_moves(tickets: Path, number: TicketNumber, status: Status, agent: str,
     if close is Close.FILES_VALIDATION and number.session is None:
         raise Refused(mctx("request `{number}` has a bare number, so its `validation` ticket "
                            "has no session to take its number from").format(number=number))
+    check_validation(path, status, source)
     check_log(tickets, path, number, status, agent, source, agent_id, note)
     return path, close, status
 
