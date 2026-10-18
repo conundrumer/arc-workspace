@@ -1,6 +1,6 @@
-"""The lines of a transcript that hold a word (`transcript_entries.named_lines`),
-held across the growth of the transcript: a held index that misses the
-lines added since gives too few entries, with no failure."""
+"""The reads of a transcript (`transcript_entries`), held across its growth
+and its rewrites in place: a held read that misses a change gives a stale
+result, with no failure."""
 
 import json
 import sys
@@ -133,3 +133,68 @@ def test_fold_naming_after_rewrite(tmp_path: Path) -> None:
     assert named() == ["ZZTOP20 " + "x" * 1000]
     add(path, "ZZTOP again")
     assert named() == ["ZZTOP20 " + "x" * 1000, "ZZTOP again"]
+
+
+def line_of(text: str) -> str:
+    return json.dumps({"type": "user", "message": {"content": text}})
+
+
+def padded(texts: list[str], size: int) -> str:
+    """The lines of `texts`, the last one padded with `x` so that they take
+    `size` characters, newlines between them included."""
+    bare = "\n".join(line_of(text) for text in texts)
+    return "\n".join(line_of(text) for text in [*texts[:-1], texts[-1] + "x" * (size - len(bare))])
+
+
+def whole_read(path: Path, naming: set[str] | None) -> list[dict[str, Any]]:
+    return [json.loads(line) for line in path.read_bytes().splitlines()
+            if naming is None or any(w.encode() in line for w in naming)]
+
+
+def rewritten(path: Path, first: int, count: int, texts: list[str]) -> None:
+    """Write over lines `first` to `first + count` of the transcript at
+    `path`, in place, the lines of `texts` at the same length."""
+    lines = path.read_text().split("\n")
+    old = "\n".join(lines[first:first + count])
+    lines[first:first + count] = [padded(texts, len(old))]
+    text = "\n".join(lines)
+    assert len(text) == len(path.read_text())
+    with path.open("r+") as fh:
+        fh.write(text)
+
+
+@pytest.mark.parametrize(("count", "texts"), [(1, ["ZZTOP20"]), (1, ["ZZTOP20a", "ZZTOP20b"]),
+                                              (2, ["ZZTOP2021"])])
+def test_reads_after_rewrite(tmp_path: Path, count: int, texts: list[str]) -> None:
+    """Each read gives what a whole read gives after a rewrite in place, of
+    the same length, before the end of the transcript, also one that
+    changes the count of its lines."""
+    path = tmp_path / "t.jsonl"
+    add(path, *(f"line {n:02} " + "x" * 1000 for n in range(40)))
+
+    def reads() -> list[object]:
+        out: list[object] = []
+        for naming in (None, {"ZZTOP"}):
+            state_reads.new_state()
+            out.append(transcript_entries.read_entries(path, naming))
+            state_reads.new_state()
+            out.append([e for _, e in transcript_entries.numbered_entries(path, naming)])
+            state_reads.new_state()
+            out.append(transcript_entries.fold(
+                add_entry, list[dict[str, Any]], (path, naming is None), [path],
+                None if naming is None else frozenset(naming)))
+        state_reads.new_state()
+        out.append(len(transcript_entries.entries_naming(path, frozenset({"ZZTOP"}))))
+        return out
+
+    def expected() -> list[object]:
+        named = whole_read(path, {"ZZTOP"})
+        return [*[whole_read(path, None)] * 3, *[named] * 3, len(named)]
+    assert reads() == expected()
+    rewritten(path, 20, count, texts)
+    assert reads() == expected()
+
+
+def add_entry(out: list[dict[str, Any]], _path: Path, _line: int, entry: dict[str, Any]) -> None:
+    out.append(entry)
+

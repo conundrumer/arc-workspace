@@ -7,7 +7,6 @@ entry: each read parses the lines it reads anew, so its entries are held
 by its caller alone."""
 
 import bisect
-import hashlib
 import json
 from array import array
 from dataclasses import dataclass
@@ -18,7 +17,7 @@ import zlib
 from collections.abc import Callable, Hashable, Iterable, Iterator, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from file_reads import stat_of
 from state_reads import DERIVED, state_cache
@@ -71,8 +70,8 @@ class Snapshot:
     and a line, or the text a word is first searched for in, is read again
     from its file (`read_at`). A transcript is added to at its end, so the
     bytes a snapshot covers stand while its file is the one it read; a read
-    again of a file that is not, or whose bytes at either end of the
-    snapshot's whole lines (`edges`) changed, is refused.
+    again of a file that is not, or whose whole lines no longer give their
+    CRC-32 (`crc`), is refused.
 
     At the first word asked of it of the form of an agent id, one search
     indexes every substring of that form, overlapping ones too, by the
@@ -92,9 +91,8 @@ class Snapshot:
         self.starts = line_starts(text, 0, array("q"))
         self.found: dict[str, frozenset[int]] = {}
         self.agent_ids: dict[str, tuple[int, ...]] | None = None
-        self.edges = edges(text, self.settled_end())
+        self.crc = self.whole_crc(text)
         self.generation = object()
-        self.digests: dict[int, int] = {0: 0}
 
     @property
     def count(self) -> int:
@@ -129,10 +127,15 @@ class Snapshot:
     def text(self) -> bytes:
         """The bytes it covers, read again from its file."""
         text = read_at(self, 0, self.size)
-        if len(text) != self.size or edges(text, self.settled_end()) != self.edges:
+        if len(text) != self.size or self.whole_crc(text) != self.crc:
             raise Refused(mctx("the transcript {path} changed other than at its end while "
                                "it was read").format(path=self.path))
         return text
+
+    def whole_crc(self, text: bytes) -> int:
+        """The CRC-32 of the bytes of `text`, the bytes it covers, up to the
+        end of its whole lines."""
+        return zlib.crc32(memoryview(text)[:self.settled_end()])
 
     def settled(self) -> int:
         """The number of its whole lines, those a newline ends."""
@@ -183,22 +186,6 @@ class Snapshot:
             index.setdefault(aid, {})[self.line_of(base + k)] = None
         return {aid.decode(): tuple(found) for aid, found in index.items()}
 
-    def offset(self, i: int) -> int:
-        """The offset of the `i`-th line, or past its last line, its size."""
-        return self.starts[i] if i < self.count else self.size
-
-    def digest(self, end: int) -> int:
-        """The CRC-32 of its bytes before `end`, read again from its file,
-        `SPAN` bytes at a time, going on from the longest prefix whose CRC it
-        already holds."""
-        if end not in self.digests:
-            at = max(k for k in self.digests if k <= end)
-            crc = self.digests[at]
-            for k in range(at, end, SPAN):
-                crc = zlib.crc32(read_at(self, k, min(SPAN, end - k)), crc)
-            self.digests[end] = crc
-        return self.digests[end]
-
     def entry(self, i: int) -> list[Entry]:
         return parse(self.line(i))
 
@@ -211,7 +198,6 @@ class Snapshot:
         out = Snapshot.__new__(Snapshot)
         out.path, out.file, out.size = self.path, self.file, offset + len(more)
         out.generation = self.generation
-        out.digests = {0: 0}
         out.closed = more.endswith(b"\n") or not more
         out.breaks_cr = False
         out.starts = line_starts(more, offset, self.starts[:whole])
@@ -220,10 +206,7 @@ class Snapshot:
                      for w, lines in self.found.items()}
         out.agent_ids = (None if self.agent_ids is None
                          else self.agent_ids_on(self.agent_ids, out, more))
-        end = out.settled_end()
-        head = read_at(out, 0, min(CHECKED, end))
-        tail_at = max(len(head), end - CHECKED)
-        out.edges = Edges.of(head, read_at(out, tail_at, end - tail_at))
+        out.crc = zlib.crc32(more[:out.settled_end() - offset], self.crc)
         return out
 
     def agent_ids_on(self, index: dict[str, tuple[int, ...]], out: "Snapshot",
@@ -239,8 +222,8 @@ class Snapshot:
 
 
 SPAN = 1 << 22
-"""How many bytes `Snapshot.lines` and `Snapshot.digest` read at most in
-one read."""
+"""How many bytes `Snapshot.lines` and `prefix_crc` read at most in one
+read."""
 
 
 def unbroken(line: bytes) -> bytes:
@@ -291,38 +274,12 @@ _read: dict[Path, Snapshot] = {}
 """The last snapshot of each transcript, which a later read of a
 transcript that grew goes on from."""
 
-CHECKED = 4096
-"""How many bytes at each end of the whole lines of a transcript's last
-snapshot a later read compares, to find a file that was written anew
-rather than added to."""
-
 OPEN = 64
 """How many transcript files `read_at` holds open."""
 
 _open: dict[Path, tuple[int, tuple[int, int]]] = {}
 """The descriptor of each transcript file `read_at` holds open, with the
 device and inode of its file, the one it opened last at the end."""
-
-
-@dataclass(frozen=True)
-class Edges:
-    """The bytes at either end of a snapshot's whole lines, as their sizes
-    and a digest of them, as a call holds those of every transcript it
-    reads."""
-    head: int
-    tail: int
-    digest: bytes
-
-    @staticmethod
-    def of(head: bytes, tail: bytes) -> "Edges":
-        return Edges(len(head), len(tail), hashlib.blake2b(head + b"\n" + tail).digest())
-
-
-def edges(text: bytes, end: int) -> Edges:
-    """The first `CHECKED` bytes of `text` up to `end`, and the last
-    `CHECKED` bytes up to `end` after those."""
-    head = text[:min(CHECKED, end)]
-    return Edges.of(head, text[max(len(head), end - CHECKED):end])
 
 
 def read_at(snap: Snapshot, offset: int, length: int) -> bytes:
@@ -346,8 +303,10 @@ def read_at(snap: Snapshot, offset: int, length: int) -> bytes:
 def snapshot(path: Path) -> Snapshot:
     """The transcript at `path` as it stands at the state this process is
     in (`state_cache`). A transcript is added to at its end, so where the
-    file is the one of its last snapshot and its bytes there still stand,
-    only the bytes after that snapshot's whole lines are read."""
+    file is the one of its last snapshot and the bytes of that snapshot's
+    whole lines still give their CRC-32, it goes on from that snapshot:
+    none of those lines is parsed or searched again. Otherwise it is read
+    whole, as a new `generation`."""
     with path.open("rb") as fh:
         st = os.fstat(fh.fileno())
         file = st.st_dev, st.st_ino
@@ -355,18 +314,24 @@ def snapshot(path: Path) -> Snapshot:
         snap = None
         if before is not None and before.file == file and not before.breaks_cr:
             offset = before.settled_end()
-            if st.st_size >= offset:
-                head = fh.read(before.edges.head)
-                fh.seek(offset - before.edges.tail)
-                if Edges.of(head, fh.read(before.edges.tail)) == before.edges:
-                    more = fh.read()
-                    if b"\r" not in more:
-                        snap = before.extended(more)
+            if st.st_size >= offset and prefix_crc(fh, offset) == before.crc:
+                more = fh.read()
+                if b"\r" not in more:
+                    snap = before.extended(more)
         if snap is None:
             fh.seek(0)
             snap = Snapshot(path, file, fh.read())
     _read[path] = snap
     return snap
+
+
+def prefix_crc(fh: BinaryIO, end: int) -> int:
+    """The CRC-32 of the bytes of `fh` from where it stands up to `end`, an
+    offset, read `SPAN` bytes at a time."""
+    crc = 0
+    for k in range(fh.tell(), end, SPAN):
+        crc = zlib.crc32(fh.read(min(SPAN, end - k)), crc)
+    return crc
 
 
 def read_entries(path: Path, naming: Iterable[str] | None = None) -> list[Entry]:
@@ -414,13 +379,12 @@ def named_lines(snap: Snapshot, own: range, naming: frozenset[str]) -> list[int]
 class Folded:
     """Where a fold stood in a transcript when it was kept: the `generation`
     of the snapshot it read, the first of the run's own lines then
-    (`own_range`), the line it stopped before, each line before it a whole
-    line, and the `digest` of the bytes before that line."""
+    (`own_range`), and the line it stopped before, each line before it a
+    whole line."""
     path: Path
     generation: object
     own: int
     done: int
-    digest: int
 
 
 type Step[S] = Callable[[S, Path, int, Entry], None]
@@ -440,22 +404,13 @@ def fold[S](step: Step[S], start: Callable[[], S], run: Hashable, paths: Sequenc
     stand at the state this process is in. A later call with the same
     `step` and `run` parses only the lines added since, where `goes_on`
     holds, and otherwise starts the fold again, as for a transcript
-    written anew or cut. A transcript whose bytes before where the last
-    such fold stopped changed is read whole again (`renewed`). A fold
-    whose step fails is not kept. A state over a line that is not whole
-    is given and not kept. The caller changes none of the state it gets,
-    and holds none of it past its read, as a later fold adds to it."""
+    written anew, cut, or changed before its end. A fold whose step
+    fails is not kept. A state over a line that is not whole is given and
+    not kept. The caller changes none of the state it gets, and holds
+    none of it past its read, as a later fold adds to it."""
     key = step, run
     held = _folds.pop(key, None)
-    marks = held[1] if held is not None else ()
-    now: list[tuple[Path, Snapshot, range]] = []
-    for j, p in enumerate(paths):
-        snapshot(p)
-        snap = _read[p]
-        if (j < len(marks) and marks[j].path == p and marks[j].generation is snap.generation
-                and snap.digest(snap.offset(marks[j].done)) != marks[j].digest):
-            snap = renewed(p)
-        now.append((p, snap, own_range(p)))
+    now = [(p, snapshot(p), own_range(p)) for p in paths]
     if held is not None and goes_on(held[1], now):
         state, marks = held[0], held[1]
     else:
@@ -465,8 +420,7 @@ def fold[S](step: Step[S], start: Callable[[], S], run: Hashable, paths: Sequenc
         done = marks[j].done if j < len(marks) else own.start
         whole = max(own.start, min(own.stop, snap.settled()))
         fold_lines(state, step, p, snap, range(done, whole), naming)
-        kept.append(Folded(p, snap.generation, own.start, whole,
-                           snap.digest(snap.offset(whole))))
+        kept.append(Folded(p, snap.generation, own.start, whole))
     _folds[key] = state, tuple(kept)
     if not any(parse(line) for _, snap, own in now
                for line in snap.lines(selected_lines(snap, range(max(own.start, snap.settled()),
@@ -476,17 +430,6 @@ def fold[S](step: Step[S], start: Callable[[], S], run: Hashable, paths: Sequenc
     for p, snap, own in now:
         fold_lines(state, step, p, snap, own, naming)
     return state
-
-
-def renewed(path: Path) -> Snapshot:
-    """The transcript at `path` read whole, with the lines that hold each
-    word found anew, as the last snapshot of it, which `numbered_entries`,
-    `line_entries` and a later `snapshot` go on from."""
-    with path.open("rb") as fh:
-        st = os.fstat(fh.fileno())
-        snap = Snapshot(path, (st.st_dev, st.st_ino), fh.read())
-    _read[path] = snap
-    return snap
 
 
 def goes_on(marks: tuple[Folded, ...], now: list[tuple[Path, Snapshot, range]]) -> bool:
