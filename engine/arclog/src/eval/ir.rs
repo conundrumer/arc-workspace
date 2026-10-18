@@ -9,15 +9,18 @@
 //! content. [`crate::eval::filters`] compiles `NOT`, `ALL`, `IF` and `OR`
 //! through [`IrBuilder`].
 
-#![allow(unused_variables, dead_code)]
-
 use crate::check::CheckedProgram;
-use crate::program::path::NodePath;
-use crate::program::{Body, ConstraintOp, FactRelation, LabelId, ProgramRelation};
-use crate::registry::LibName;
+use crate::hash::StableHashSet;
+use crate::program::canonical::{CanonicalOrder, SearchBudget};
+use crate::program::path::{node_at, NodePath, NodeRef};
+use crate::program::{
+    Atom, Body, Conjunct, ConstraintOp, FactRelation, LabelId, LabelUse, ProgramRelation, RelationRef, Site, SiteArg,
+};
+use crate::registry::{LibEntry, LibName, Macro, Mode, Registry};
 use crate::relations::ColumnIndex;
+use crate::resolver::{DependencyKind, Resolution};
 use crate::terms::TermId;
-use crate::types::{GraphRelation, ValueType};
+use crate::types::{FormTypes, GraphRelation, ValueType};
 
 /// A variable of a clause: the canonical position of its label in the
 /// body, an index into [`ClauseIr::variables`].
@@ -159,6 +162,8 @@ pub struct IrBuilder<'a> {
     /// The path of the form whose body is compiled, whose label types the
     /// variables take.
     pub form: NodePath,
+    /// The canonical order of the top-level form that holds `form`.
+    order: CanonicalOrder,
     variables: Vec<VariableInfo>,
     nodes: Vec<IrNode>,
 }
@@ -166,12 +171,25 @@ pub struct IrBuilder<'a> {
 impl<'a> IrBuilder<'a> {
     /// A builder over the body of the form at `form` of `program`.
     pub fn new(program: &'a CheckedProgram, form: NodePath) -> Self {
-        IrBuilder { program, form, variables: Vec::new(), nodes: Vec::new() }
+        let (first, scope) = form.0.split_first().expect("the path of a form of the program");
+        let top = &program.program.program.value().forms[first.0 as usize];
+        let order = CanonicalOrder::of(top, &mut SearchBudget::new());
+        let scope = NodePath(scope.into());
+        let types = form_types(program, &form);
+        let labels = order.label_scopes().into_iter().find(|(path, _)| *path == scope).map(|(_, labels)| labels.to_vec());
+        let mut variables = vec![None; labels.as_ref().map_or(0, Vec::len)];
+        for (label, position) in labels.into_iter().flatten() {
+            let ty = types.label(label).expect("a type for each label of a checked form").clone();
+            variables[position as usize] = Some(VariableInfo { ty });
+        }
+        let variables = variables.into_iter().map(|info| info.expect("a label at each canonical position")).collect();
+        IrBuilder { program, form, order, variables, nodes: Vec::new() }
     }
 
-    /// The variable of `label`, given on first use.
+    /// The variable of `label`: its canonical position in the form's scope.
     pub fn variable(&mut self, label: LabelId) -> Variable {
-        todo!()
+        let scope = NodePath(self.form.0[1..].into());
+        Variable(u16::try_from(self.order.canonical_label(&scope, label)).expect("fewer than 2^16 labels in a scope"))
     }
 
     /// Adds `node` to the clause.
@@ -183,18 +201,206 @@ impl<'a> IrBuilder<'a> {
     /// and its comparisons here, and each `NOT`, `ALL`, `IF` and `OR`
     /// through [`crate::eval::filters`].
     pub fn body(&mut self, body: &Body, path: &NodePath) -> Result<(), CompileFault> {
-        todo!()
+        for (conjunct, index) in body.conjuncts.iter().zip(0u32..) {
+            self.conjunct(conjunct, &path.child(index))?;
+        }
+        Ok(())
+    }
+
+    /// Compiles one conjunct at `path`.
+    fn conjunct(&mut self, conjunct: &Conjunct, path: &NodePath) -> Result<(), CompileFault> {
+        match conjunct {
+            Conjunct::Atom(atom) => {
+                let node = self.atom(atom.value(), path);
+                self.push(node);
+            }
+            Conjunct::Constraint(constraint) => {
+                let first = self.variable(constraint.first.label);
+                let second = match constraint.second {
+                    crate::program::Operand::Label(label) => Operand::Variable(self.variable(label.label)),
+                    crate::program::Operand::Zero => Operand::Zero,
+                };
+                self.push(IrNode::Comparison(Comparison { op: constraint.op, first, second, binds_first: constraint.first.fresh }));
+            }
+            Conjunct::Not(negated) => super::filters::compile_not(self, negated, path)?,
+            Conjunct::All { domain, body } => super::filters::compile_all(self, domain, body, path)?,
+            Conjunct::If { test, then, otherwise } => super::filters::compile_if(self, test, then, otherwise, path)?,
+            Conjunct::Or(branches) => super::filters::compile_or(self, branches, path)?,
+        }
+        Ok(())
+    }
+
+    /// The node of the positive atom at `path`, by what its relation
+    /// resolves to.
+    fn atom(&mut self, atom: &Atom, path: &NodePath) -> IrNode {
+        let mut arguments = Vec::new();
+        for (site, index) in atom.sites.iter().zip(0u32..) {
+            self.site(site, &path.child(index), &mut arguments);
+        }
+        let arguments = Arguments(arguments.into());
+        if let RelationRef::Fact(fact) = &atom.relation {
+            return IrNode::Atom(RelationAtom { source: AtomSource::Fact(*fact), arguments });
+        }
+        let resolved = self.program.program.resolution(path).expect("a resolution of each atom of a checked form");
+        let source = match resolved {
+            Resolution::Node(node) => {
+                let kind = &self.program.program.graph.nodes[node.0 as usize].kind;
+                let output = match (&atom.relation, kind) {
+                    (RelationRef::Output(name), DependencyKind::RigidAssembly(_) | DependencyKind::RecursiveInstance(_)) => {
+                        Some(name.path.clone())
+                    }
+                    _ => None,
+                };
+                AtomSource::Relation(GraphRelation { node: *node, output })
+            }
+            Resolution::Lib(name) => return IrNode::Lib(LibAtom { relation: name.clone(), arguments }),
+            Resolution::Undefined(relation) => AtomSource::Undefined(relation.clone()),
+            Resolution::Unresolved => unreachable!("a checked form resolves each name it reads"),
+        };
+        IrNode::Atom(RelationAtom { source, arguments })
+    }
+
+    /// Adds to `arguments` the column and the argument of each label of the
+    /// site at `path`: the site's own column, or, at a record's column
+    /// group, the column of each field.
+    fn site(&mut self, site: &Site, path: &NodePath, arguments: &mut Vec<(ColumnIndex, Argument)>) {
+        let resolved = &self.program.program;
+        let position = |path: &NodePath| {
+            let found = resolved.column_position(path).expect("a column position of each site of a checked form");
+            ColumnIndex(found.0)
+        };
+        if let Some(own) = resolved.column_position(path) {
+            for arg in site.value.args.iter() {
+                let label = arg.label().expect("a label at a site on one column");
+                arguments.push((ColumnIndex(own.0), self.argument(label)));
+            }
+            return;
+        }
+        for (arg, index) in site.value.args.iter().zip(0u32..) {
+            let label = match arg {
+                SiteArg::NamedLabel { label, .. } => *label,
+                SiteArg::Field(field) => {
+                    let [SiteArg::Label(label)] = &field.value.args[..] else {
+                        panic!("a field site of one label")
+                    };
+                    *label
+                }
+                SiteArg::Label(_) => panic!("a site on a record names each of its fields"),
+            };
+            arguments.push((position(&path.child(index)), self.argument(label)));
+        }
+    }
+
+    /// What `label` stands for at a site: its variable, or `0`'s term.
+    fn argument(&mut self, label: LabelUse) -> Argument {
+        match label {
+            LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label) => Argument::Variable(self.variable(label)),
+            LabelUse::Zero => Argument::Term(TermId::from_encoding(0)),
+        }
     }
 
     /// The clause, whose relation holds `columns`.
     pub fn finish(self, columns: Box<[Variable]>) -> ClauseIr {
-        todo!()
+        ClauseIr { variables: self.variables.into(), nodes: self.nodes.into(), columns }
     }
+}
+
+/// The types of the labels of the scope at `form`.
+fn form_types<'p>(program: &'p CheckedProgram, form: &NodePath) -> &'p FormTypes {
+    program.types.form(form).expect("the label types of each scope of a checked program")
+}
+
+/// The modes of the relation `atom` reads: an algebra relation's or a
+/// relation macro's, and none for every other relation.
+fn atom_modes<'r>(registry: &'r Registry, atom: &Atom) -> &'r [Mode] {
+    let RelationRef::Lib(name) = &atom.relation else { return &[] };
+    match registry.entry(name) {
+        Some(LibEntry::Relation(relation)) | Some(LibEntry::Macro(Macro::Relation { relation, .. })) => &relation.modes,
+        _ => &[],
+    }
+}
+
+/// The path of the form whose label scope holds the labels of the form at
+/// `path`: the top-level form, or the form of a claim, an `ALT` or a
+/// `DEMO_RULE` that holds it.
+fn scope_of(program: &CheckedProgram, path: &NodePath) -> NodePath {
+    let root = NodeRef::Program(program.program.program.value());
+    let mut scope = NodePath(path.0[..1].into());
+    for depth in 1..path.0.len() {
+        let parent = node_at(root, &NodePath(path.0[..depth].into())).expect("a path of the program");
+        if matches!(parent, NodeRef::Claim(_) | NodeRef::Alt(_) | NodeRef::DemoRule(_)) {
+            scope = NodePath(path.0[..=depth].into());
+        }
+    }
+    scope
+}
+
+/// The body and the columns of the form at `clause`, with the path of the
+/// body: a clause's body and the labels of its node's columns, in the order
+/// of the node's columns, a label of no column of the node projected away,
+/// or an instance input's body and the labels of its head sites, in their
+/// order.
+fn form_body<'p>(program: &'p CheckedProgram, clause: &NodePath) -> (&'p Body, NodePath, Vec<LabelId>) {
+    let root = NodeRef::Program(program.program.program.value());
+    match node_at(root, clause).expect("the path of a form of the program") {
+        NodeRef::Clause(form) => {
+            let mut columns: Vec<(u16, LabelId)> = form
+                .columns
+                .iter()
+                .filter_map(|column| Some((program.program.label_position(clause, column.label)?.0, column.label)))
+                .collect();
+            columns.sort_by_key(|(position, _)| *position);
+            (form.body.value(), clause.child(0), columns.into_iter().map(|(_, label)| label).collect())
+        }
+        NodeRef::InstanceInput(input) => {
+            let mut labels = Vec::new();
+            for site in input.head.iter() {
+                crate::types::each_site_label(site, &mut Vec::new(), &mut |use_, _| labels.extend(crate::types::use_label(use_)));
+            }
+            (input.body.value(), clause.child(input.head.len() as u32), labels)
+        }
+        _ => panic!("a clause or an instance input"),
+    }
+}
+
+/// The IR of the conjuncts at `kept`, indexes into the body of the form at
+/// `clause`, as [`compile_clause`] gives a whole body. The relation's
+/// columns are the form's columns whose labels the kept conjuncts hold.
+/// Where the kept conjuncts leave a label ungrounded, as
+/// [`crate::grounding::grounded_labels`] gives grounding, this refuses them
+/// with those labels.
+pub fn compile_conjuncts(program: &CheckedProgram, clause: &NodePath, kept: &[u32]) -> Result<ClauseIr, CompileFault> {
+    let (body, body_path, columns) = form_body(program, clause);
+    let scope = scope_of(program, clause);
+    let types = form_types(program, &scope);
+    let subset = Body { conjuncts: kept.iter().map(|&index| body.conjuncts[index as usize].clone()).collect() };
+    let registry = Registry::get();
+    let grounded = crate::grounding::grounded_labels(
+        &subset,
+        &StableHashSet::default(),
+        &StableHashSet::default(),
+        &|atom| atom_modes(registry, atom),
+        &|label| types.label(label).cloned(),
+    );
+    let held = crate::grounding::body_labels(&subset);
+    let mut ungrounded: Vec<LabelId> = held.iter().copied().filter(|label| !grounded.contains(label)).collect();
+    if !ungrounded.is_empty() {
+        ungrounded.sort_by_key(|label| label.0);
+        return Err(CompileFault::Ungrounded { labels: ungrounded.into() });
+    }
+    let mut builder = IrBuilder::new(program, scope);
+    for &index in kept {
+        builder.conjunct(&body.conjuncts[index as usize], &body_path.child(index))?;
+    }
+    let columns = columns.into_iter().filter(|label| held.contains(label)).map(|label| builder.variable(label)).collect();
+    Ok(builder.finish(columns))
 }
 
 /// The IR of the clause at `clause`, a form of `program`: the clause's body,
 /// or the body of an instance's input. The relation's columns are the
 /// labels the form keeps, in the order of its relation's columns.
 pub fn compile_clause(program: &CheckedProgram, clause: &NodePath) -> Result<ClauseIr, CompileFault> {
-    todo!()
+    let (body, _, _) = form_body(program, clause);
+    let kept: Vec<u32> = (0..body.conjuncts.len() as u32).collect();
+    compile_conjuncts(program, clause, &kept)
 }
