@@ -303,7 +303,8 @@ def assign_arg(written: str | None
 # The stamp
 
 SOURCES = ["src/engine/**/*.py", "src/souffle/**/*.py", "src/solver/**/*.py",
-           "src/checker/**/*.py", "src/cli/**/*.py", "programs/lib.dl",
+           "src/checker/**/*.py", "src/cli/**/*.py", "src/arc/**/*.py",
+           "programs/lib.dl",
            "programs/lib/*.dl", "programs/proposers.dl",
            (FUNCTOR_DIR / FUNCTOR_SOURCE).relative_to(
                checkout.ROOT).as_posix()]
