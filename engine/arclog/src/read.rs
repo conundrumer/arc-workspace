@@ -9,7 +9,7 @@
 
 mod arcdata;
 mod arclog;
-mod columns;
+pub(crate) mod columns;
 mod labels;
 mod sexpr;
 pub(crate) mod spelling;

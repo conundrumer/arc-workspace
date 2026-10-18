@@ -110,7 +110,7 @@ pub(super) fn bound_variables(node: &IrNode) -> Vec<Variable> {
             std::iter::once(comparison.first).chain(second).collect()
         }
         IrNode::Or(union) => union.exported.to_vec(),
-        IrNode::Not(_) | IrNode::Counterexample(_) | IrNode::If(_) => Vec::new(),
+        IrNode::Not(_) | IrNode::Counterexample(_) => Vec::new(),
     }
 }
 

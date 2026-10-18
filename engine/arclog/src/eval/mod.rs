@@ -316,7 +316,6 @@ impl<'e, 'a> Driver<'e, 'a> {
                     continue;
                 }
                 IrNode::Not(filter) | IrNode::Counterexample(filter) => vec![&*filter.body],
-                IrNode::If(conditional) => vec![&*conditional.test.body, &*conditional.then, &*conditional.otherwise],
                 IrNode::Or(union) => union.branches.iter().collect(),
             };
             let mut nested = Vec::with_capacity(bodies.len());

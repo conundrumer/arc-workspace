@@ -90,8 +90,8 @@ pub enum NodeInput {
     Unread,
     /// The relation of an atom.
     Relation(Arc<Relation>),
-    /// The inputs of the node's own clauses: a filter's body, an `IF`'s
-    /// test, then and else, or an `OR`'s branches, in the node's order.
+    /// The inputs of the node's own clauses: a filter's body, or a union's
+    /// branches, in the node's order.
     Clauses(Box<[JoinInputs]>),
 }
 
@@ -105,6 +105,26 @@ pub fn join(
     registry: &crate::registry::Registry,
     budget: &mut Budget<'_>,
 ) -> Result<Relation, ReachedBound> {
+    join_at(clause, order, inputs, registry, &[], budget)
+}
+
+/// The relation of `clause` as [`join`] gives it, at the values `bound`
+/// gives some of its variables before the search: the join of the rest of
+/// `order`.
+///
+/// Once every variable left in the order is a variable that no column
+/// holds, the first binding that passes ends the search over them, and the
+/// search visits their values in their order as terms. At a variable of
+/// type Ident, whose order as terms is the order of interning, the search
+/// tries every value, so the work it counts does not depend on that order.
+pub fn join_at(
+    clause: &ClauseIr,
+    order: &VariableOrder,
+    inputs: &JoinInputs,
+    registry: &crate::registry::Registry,
+    bound: &[(Variable, TermId)],
+    budget: &mut Budget<'_>,
+) -> Result<Relation, ReachedBound> {
     let components = components(clause);
     let mut parts = Vec::new();
     for component in &components {
@@ -113,8 +133,13 @@ pub fn join(
             .map(|i| ColumnIndex(i as u16))
             .collect();
         let projected: Vec<Variable> = columns.iter().map(|c| clause.columns[usize::from(c.0)]).collect();
-        let order: Vec<Variable> = order.0.iter().copied().filter(|v| component.variables.contains(v)).collect();
-        let rows = Search::new(clause, &component.nodes, order, inputs, registry).run(&projected, budget)?;
+        let order: Vec<Variable> = order
+            .0
+            .iter()
+            .copied()
+            .filter(|v| component.variables.contains(v) && bound.iter().all(|(b, _)| b != v))
+            .collect();
+        let rows = Search::new(clause, &component.nodes, order, bound, inputs, registry).run(&projected, budget)?;
         if !columns.is_empty() || rows.is_empty() {
             parts.push(RelationPart { columns: columns.into(), rows });
         }
@@ -172,12 +197,12 @@ struct Component {
     nodes: Vec<usize>,
 }
 
-/// The variables a node joins in its clause: those it binds, and the outer
-/// variables of a filter.
+/// The variables a node joins in its clause: those it binds, the outer
+/// variables of a filter, and the columns of a union's branches.
 fn node_variables(node: &IrNode) -> Vec<Variable> {
     match node {
         IrNode::Not(filter) | IrNode::Counterexample(filter) => filter.outer.to_vec(),
-        IrNode::If(conditional) => conditional.test.outer.to_vec(),
+        IrNode::Or(union) => union.branches.iter().flat_map(|branch| branch.columns.iter().copied()).collect(),
         _ => bound_variables(node),
     }
 }
@@ -242,12 +267,31 @@ struct Search<'c> {
     libs: Vec<Vec<usize>>,
     /// The variable order of each filter's body, by its node.
     filter_orders: StableHashMap<usize, VariableOrder>,
+    /// The variable order of each branch of a union, by its node and the
+    /// branch's index.
+    branch_orders: StableHashMap<(usize, usize), VariableOrder>,
+    /// The nodes of the unions.
+    unions: Vec<usize>,
     binding: Vec<Option<TermId>>,
     tried: u64,
+    /// The rank from which no variable left in the order is projected,
+    /// where the early stop of [`join_at`] begins.
+    stop_from: usize,
 }
 
 impl<'c> Search<'c> {
-    fn new(clause: &'c ClauseIr, nodes: &[usize], order: Vec<Variable>, inputs: &'c JoinInputs, registry: &'c Registry) -> Self {
+    fn new(
+        clause: &'c ClauseIr,
+        nodes: &[usize],
+        order: Vec<Variable>,
+        bound: &[(Variable, TermId)],
+        inputs: &'c JoinInputs,
+        registry: &'c Registry,
+    ) -> Self {
+        let mut binding = vec![None; clause.variables.len()];
+        for &(variable, value) in bound {
+            binding[usize::from(variable.0)] = Some(value);
+        }
         let mut rank = vec![usize::MAX; clause.variables.len()];
         for (r, v) in order.iter().enumerate() {
             rank[usize::from(v.0)] = r;
@@ -256,13 +300,28 @@ impl<'c> Search<'c> {
         let mut checks = vec![Vec::new(); order.len() + 1];
         let mut libs = vec![Vec::new(); clause.variables.len()];
         let mut filter_orders = StableHashMap::default();
+        let mut branch_orders = StableHashMap::default();
+        let mut unions = Vec::new();
         for &node in nodes {
             let held = node_variables(&clause.nodes[node]);
-            let last = held.iter().map(|v| rank[usize::from(v.0)]).max().unwrap_or(order.len());
+            let last = held
+                .iter()
+                .filter(|v| binding[usize::from(v.0)].is_none())
+                .map(|v| rank[usize::from(v.0)])
+                .max()
+                .unwrap_or(order.len());
             match &clause.nodes[node] {
                 IrNode::Atom(atom) => {
                     let NodeInput::Relation(relation) = &inputs.0[node] else { panic!("the relation of each atom") };
-                    let mut columns: Vec<(ColumnIndex, Argument)> = atom.arguments.0.to_vec();
+                    let mut columns: Vec<(ColumnIndex, Argument)> = atom
+                        .arguments
+                        .0
+                        .iter()
+                        .map(|&(column, argument)| match argument {
+                            Argument::Variable(v) => (column, binding[usize::from(v.0)].map_or(argument, Argument::Term)),
+                            Argument::Term(_) => (column, argument),
+                        })
+                        .collect();
                     columns.sort_by_key(|(column, argument)| match argument {
                         Argument::Term(_) => (0, column.0 as usize),
                         Argument::Variable(v) => (1 + rank[usize::from(v.0)], column.0 as usize),
@@ -281,10 +340,19 @@ impl<'c> Search<'c> {
                     filter_orders.insert(node, variable_order(&filter.body, &sizes(&bodies[0])));
                     checks[last].push(node);
                 }
-                IrNode::Comparison(_) | IrNode::If(_) | IrNode::Or(_) => checks[last].push(node),
+                IrNode::Or(union) => {
+                    let NodeInput::Clauses(bodies) = &inputs.0[node] else { panic!("the inputs of each branch") };
+                    for (branch, (body, inputs)) in union.branches.iter().zip(bodies.iter()).enumerate() {
+                        branch_orders.insert((node, branch), variable_order(body, &sizes(inputs)));
+                    }
+                    unions.push(node);
+                    checks[last].push(node);
+                }
+                IrNode::Comparison(_) => checks[last].push(node),
             }
         }
-        Search { clause, registry, inputs, order, atoms, checks, libs, filter_orders, binding: vec![None; clause.variables.len()], tried: 0 }
+        let stop_from = order.len() - order.iter().rev().take_while(|v| !clause.columns.contains(v)).count();
+        Search { clause, registry, inputs, order, atoms, checks, libs, filter_orders, branch_orders, unions, binding, tried: 0, stop_from }
     }
 
     /// The rows of `projected` over each binding that passes every node.
@@ -312,6 +380,8 @@ impl<'c> Search<'c> {
         Ok(rows)
     }
 
+    /// Searches the variables of the order from `rank` on, and gives whether
+    /// a binding passed.
     fn step<'t>(
         &mut self,
         rank: usize,
@@ -320,13 +390,13 @@ impl<'c> Search<'c> {
         projected: &[Variable],
         rows: &mut RowSet,
         budget: &mut Budget<'_>,
-    ) -> Result<(), ReachedBound> {
+    ) -> Result<bool, ReachedBound> {
         let Some(&variable) = self.order.get(rank) else {
             let row: Row = projected.iter().map(|v| self.binding[usize::from(v.0)].expect("a bound column")).collect();
             if rows.insert(row) {
                 budget.charge_rows(1)?;
             }
-            return Ok(());
+            return Ok(true);
         };
         let at = |atom: &AtomTrie, depth: usize| matches!(atom.levels.get(depth), Some(Argument::Variable(v)) if *v == variable);
         let sources: Vec<usize> = (0..atoms.len()).filter(|&a| at(&atoms[a], cursors[a].1)).collect();
@@ -336,11 +406,20 @@ impl<'c> Search<'c> {
             cursors[smallest].0.entries().map(|(value, _)| value).collect()
         } else if let Some(values) = self.lib_values(variable)? {
             values
+        } else if let Some(values) = self.union_values(variable, budget)? {
+            values
         } else {
             let ty = &self.clause.variables[usize::from(variable.0)].ty;
             assert!(orientation_domain(ty).is_some(), "a variable of the order that a node of the clause binds");
             domain(self.registry, ty)
         };
+        let early = rank >= self.stop_from;
+        let mut candidates = candidates;
+        if early {
+            candidates.sort_by_key(|value| value.encoding());
+        }
+        let stops = early && self.clause.variables[usize::from(variable.0)].ty != ValueType::Ident;
+        let mut passed = false;
         for value in candidates {
             self.tried += 1;
             if self.tried % BATCH == 0 {
@@ -358,14 +437,17 @@ impl<'c> Search<'c> {
             }
             self.binding[usize::from(variable.0)] = Some(value);
             if held && self.passes(rank, budget)? {
-                self.step(rank + 1, atoms, cursors, projected, rows, budget)?;
+                passed |= self.step(rank + 1, atoms, cursors, projected, rows, budget)?;
             }
             self.binding[usize::from(variable.0)] = None;
             for (a, cursor) in saved {
                 cursors[a] = cursor;
             }
+            if passed && stops {
+                break;
+            }
         }
-        Ok(())
+        Ok(passed)
     }
 
     /// The value an `=` gives `variable` from a bound variable or `0`.
@@ -413,6 +495,51 @@ impl<'c> Search<'c> {
         Ok(None)
     }
 
+    /// The values that the first union that exports `variable` gives it,
+    /// each branch joined at the bound values of its columns, or `None`
+    /// where no union exports it.
+    fn union_values(&self, variable: Variable, budget: &mut Budget<'_>) -> Result<Option<Vec<TermId>>, ReachedBound> {
+        let found = self.unions.iter().find_map(|&node| match &self.clause.nodes[node] {
+            IrNode::Or(union) if union.exported.contains(&variable) => Some((node, union)),
+            _ => None,
+        });
+        let Some((node, union)) = found else { return Ok(None) };
+        let mut values = Vec::new();
+        for (index, branch) in union.branches.iter().enumerate() {
+            for column in branch.columns.iter() {
+                assert!(
+                    union.exported.contains(column) || self.binding[usize::from(column.0)].is_some(),
+                    "a union binds its exports once the variables it reads from its clause are bound"
+                );
+            }
+            let at = branch.columns.iter().position(|column| *column == variable).expect("each branch holds each export");
+            each_row(&self.branch(node, index, branch, budget)?, &mut |row| values.push(row[at]));
+        }
+        values.sort_by_key(|value| value.encoding());
+        values.dedup();
+        Ok(Some(values))
+    }
+
+    /// Whether a branch of `union`, the union of the node at `node`, holds
+    /// at the bound values of its columns.
+    fn union_holds(&self, node: usize, union: &super::ir::Union, budget: &mut Budget<'_>) -> Result<bool, ReachedBound> {
+        for (index, branch) in union.branches.iter().enumerate() {
+            if !self.branch(node, index, branch, budget)?.is_empty() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// The relation of `branch`, the branch at `index` of the union of the
+    /// node at `node`, at the bound values of its columns.
+    fn branch(&self, node: usize, index: usize, branch: &ClauseIr, budget: &mut Budget<'_>) -> Result<Relation, ReachedBound> {
+        let NodeInput::Clauses(bodies) = &self.inputs.0[node] else { unreachable!("the inputs of a union's branches") };
+        let bound: Vec<(Variable, TermId)> =
+            branch.columns.iter().filter_map(|&column| Some((column, self.binding[usize::from(column.0)]?))).collect();
+        join_at(branch, &self.branch_orders[&(node, index)], &bodies[index], self.registry, &bound, budget)
+    }
+
     /// Calls `emit` on each row of the lib atom at `node` that agrees with
     /// the atom's terms and bound variables.
     fn evaluate_lib(&self, node: usize, emit: &mut dyn FnMut(&[TermId])) -> Result<(), ReachedBound> {
@@ -445,7 +572,7 @@ impl<'c> Search<'c> {
                     found
                 }
                 IrNode::Not(filter) | IrNode::Counterexample(filter) => !self.probe(node, filter, budget)?,
-                IrNode::If(_) | IrNode::Or(_) => todo!(),
+                IrNode::Or(union) => self.union_holds(node, union, budget)?,
                 IrNode::Atom(_) => unreachable!("an atom is joined, not checked"),
             };
             if !holds {

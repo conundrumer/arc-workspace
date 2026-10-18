@@ -104,17 +104,11 @@ pub struct Filter {
     pub body: Box<ClauseIr>,
 }
 
-/// An `IF`: its test, its then and its else, each a clause over the outer
-/// variables, as `docs/arclog/arclog.md#conditional` gives.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct Conditional {
-    pub test: Filter,
-    pub then: Box<ClauseIr>,
-    pub otherwise: Box<ClauseIr>,
-}
-
-/// An `OR`: its branches, each a clause, and the variables it exports to
-/// the enclosing clause, which every branch binds.
+/// An `OR`, or an `IF` as the two clauses of
+/// `docs/arclog/arclog.md#conditional`: its branches, each a clause, and the
+/// variables it exports to the enclosing clause, which every branch binds.
+/// A branch's columns are the variables it shares with the enclosing
+/// clause, those it exports included.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Union {
     pub exported: Box<[Variable]>,
@@ -133,7 +127,6 @@ pub enum IrNode {
     /// (`docs/arclog/arclog.md#universal`): the binding passes where the
     /// filter, a member of the domain that fails the body, holds no binding.
     Counterexample(Filter),
-    If(Conditional),
     Or(Union),
 }
 
@@ -208,7 +201,7 @@ impl<'a> IrBuilder<'a> {
     }
 
     /// Compiles one conjunct at `path`.
-    fn conjunct(&mut self, conjunct: &Conjunct, path: &NodePath) -> Result<(), CompileFault> {
+    pub(super) fn conjunct(&mut self, conjunct: &Conjunct, path: &NodePath) -> Result<(), CompileFault> {
         match conjunct {
             Conjunct::Atom(atom) => {
                 let node = self.atom(atom.value(), path);
@@ -312,7 +305,7 @@ fn form_types<'p>(program: &'p CheckedProgram, form: &NodePath) -> &'p FormTypes
 
 /// The modes of the relation `atom` reads: an algebra relation's or a
 /// relation macro's, and none for every other relation.
-fn atom_modes<'r>(registry: &'r Registry, atom: &Atom) -> &'r [Mode] {
+pub(super) fn atom_modes<'r>(registry: &'r Registry, atom: &Atom) -> &'r [Mode] {
     let RelationRef::Lib(name) = &atom.relation else { return &[] };
     match registry.entry(name) {
         Some(LibEntry::Relation(relation)) | Some(LibEntry::Macro(Macro::Relation { relation, .. })) => &relation.modes,

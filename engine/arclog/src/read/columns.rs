@@ -46,7 +46,7 @@ pub(super) fn made_labels(body: &Body) -> Vec<LabelId> {
 
 
 /// The labels `first` keeps that each of `later` names.
-fn exports(first: &Body, later: &[&Body], out: &mut Vec<LabelId>) {
+pub(crate) fn exports(first: &Body, later: &[&Body], out: &mut Vec<LabelId>) {
     let named: Vec<_> = later.iter().map(|b| body_labels(b)).collect();
     for label in made_labels(first) {
         if named.iter().all(|set| set.contains(&label)) {
