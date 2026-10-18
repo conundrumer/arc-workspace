@@ -65,10 +65,19 @@
 //!   `<port>`, as [`crate::program::RelationRef::DefinedPort`] holds it.
 //!   A `RULE` form is a local relation, written as a solver's `RULE` clause
 //!   (`docs/arclog/arclog.md#program`), which the macro's expansion makes
-//!   into a clause of the solver: its body may read the `INIT`'s outputs,
-//!   and the output bodies, the `INIT`'s input bodies and the other `RULE`
-//!   forms read it as `(&<rule> <sites>)`. Each site of the cell instance
-//!   has its own expansion, and a name that the macro's `INIT` or a `RULE`
+//!   into a clause of the solver with the kind of the site
+//!   (`docs/arclog/arclog.md#instance`): a `RULE` clause where the site is
+//!   per input, and a `DET` clause where the site is per example or pools
+//!   over the examples. That clause has the columns the form gives, so it
+//!   has an Example column only where the site's key holds an Example
+//!   label. At a site keyed by an Example label, the form reads the site's
+//!   `self.<port>` inputs at that key, so the rows of one example do not
+//!   mix with those of another. At a site that pools over the examples, a
+//!   row of the form holds where it holds at some example. The form's
+//!   body may read the `INIT`'s outputs, and the output bodies, the
+//!   `INIT`'s input bodies and the other `RULE` forms read it as
+//!   `(&<rule> <sites>)`. Each site of the cell instance has its own
+//!   expansion, and a name that the macro's `INIT` or a `RULE`
 //!   form declares stands for its declaration within that expansion alone,
 //!   as a name that a `DEMO_RULE` form declares does
 //!   ([`crate::program::NameScope`]).
