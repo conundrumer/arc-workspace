@@ -29,7 +29,7 @@
 - `scratch` is work after which nothing under version control has changed, nothing has left the session, and nothing later depends on it. Do it with no readback, no ticket and no brief. Where that work would change a tracked file or send something out of the session, read back a route before that step.
 - `direct`: file the change's `request`, write its brief, and run the change as [Running a change](#running-a-change) gives.
     + xref: prompts/agents/notes/requests.md#running-a-change
-- `op send`: file the `request` and, where no operator launcher of yours runs, launch a ticket analyst on it, with its transcript brief, and tell an operator so once the analyst replies.
+- `op send`: file the `request` and launch a ticket analyst on it, with its transcript brief, and tell an operator so once the analyst replies.
 - `hotfix`: file the change's `request`, write its brief, and, as [Running a change](#running-a-change) gives, launch at once on a worktree the editors it needs, each with that brief, and merge the change.
     + xref: prompts/agents/notes/requests.md#running-a-change
 - `expedite <number>`: write nothing, send an operator `Op expedite: <number>`, and tell the user the tickets outside `tickets/closed/` that line gives, as [An operator's brief](prompts/agents/notes/launching.md#an-operators-brief) gives that line.
