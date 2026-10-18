@@ -99,7 +99,8 @@ from operations.change_budget import TAKEN
 from operations.constants import AGAIN_SECONDS, COORDINATOR
 from operations.journal import retired
 from operations.change_agents import (change_editors, editors_in, elsewhere_on, latest_editors,
-                                      launched_on, of_change, Reported, reported, settled,
+                                      launched_on, of_change, Reported, reported, reported_at,
+                                      settled,
                                       unstaffed, with_before, with_elsewhere)
 from operations.change_holds import Hold, left_hold, open_questions, questions_given, questions_hold
 from operations.change_fragments import drafter_ids, fragments_step
@@ -115,7 +116,8 @@ from operations.state import Agent, Report, State, Ticket, last_reported
 from operations.filing import editor_scratch
 from operations.final_reply import live_holder
 from operations.handled import answered, held_aside, repeated, sent, unmoved
-from operations.steps import (Bash, Launch, Send, Step, Undecided, agent_ids, key, retirement_key,
+from operations.steps import (Bash, Launch, Poll, Send, Step, Undecided, agent_ids, key,
+                             retirement_key,
                              served)
 from operations.log_commands import AGENT
 from operations.taking import RELEASED_LINE, take
@@ -290,11 +292,23 @@ def editor_step(state: State, editor: str,
     there, the line that has it write that file; where the change is past
     its cost budget (`change_overrun.over_budget`), the line that says the
     operator takes its next step; where an editor role of the change has
-    no agent in its worktree or another editor there is pending, the line
-    that says the operator launches the checks; where that step is none
-    and a check `editor` launched is pending, the line that has it wait on
-    that check; and otherwise the line that has it give its final
-    reply."""
+    no agent in its worktree or another editor there ended with no report
+    since its launch or its last resume, the line that says the operator
+    launches the checks; where that step is none and a check `editor`
+    launched is pending, the line that has it wait on that check; and
+    otherwise the line that has it give its final reply.
+    Where a check another editor there launched is pending, or another
+    editor there is pending, it gives `steps.Poll`, on which `editor` runs
+    the command again, unless, in the second case, that editor and each
+    other pending one there has reported (`change_agents.reported_at`) and
+    the report of `editor` is the latest of theirs, or of the latest the
+    one of the first agent id in sort order: then `editor` takes the step
+    as though they had ended, each with the text `written` gives of its
+    report file as its report at its `Agent.reviewing`, or gives
+    `steps.Poll` where one has no such text.
+    The report of `editor` is at its `Agent.reviewing`, or at `State.now`
+    where that is None, so each later call of a run of its calls of the
+    command keeps the time of the first."""
     mine = [a for a in state.transcripts.agents
             if a.agent_id == editor and a.role in LAUNCHING_EDITORS]
     if not mine:
@@ -318,16 +332,37 @@ def editor_step(state: State, editor: str,
     if text is None:
         return mctx("Your report file {path} does not exist: write your report to it, then run "
                     "this command again.").format(path=path)
-    report = Report(state.now, text, path)
-    agents = [replace(a, waits=None, reports=(*a.reports, report)) if a.agent_id == editor else a
+    at = mine[-1].reviewing if mine[-1].reviewing is not None else state.now
+    agents = [as_ended(a, at, text, path) if a.agent_id == editor else a
               for a in of_change(state, t)]
     if over_budget(state, t, w, agents) is not False:
         return mctx("Change {number} is past its cost budget, so the operator takes its next "
                     "step: give your final reply.").format(number=t.number)
     here = editors_in(agents, w)
-    if unstaffed(editors, here) or any(a.pending for a in here):
+    if unstaffed(editors, here) or any(a.unreported for a in latest_editors(here)):
         return mctx("Another editor of change {number} has not reported, so the operator "
                     "launches the change's checks: give your final reply.").format(number=t.number)
+    others = [a for a in here if a.pending]
+    peers = {a.agent_id for a in here} - {editor}
+    if any(a.pending and a.operator in peers for a in agents):
+        return Poll()
+    if others:
+        other_ids = agent_ids(others)
+        if isinstance(other_ids, Undecided):
+            return other_ids
+        times = [(-at, editor)]
+        ended: dict[str, Agent] = {}
+        for a, i in zip(others, other_ids, strict=True):
+            since = reported_at(a)
+            other_text = None if a.report_file is None else written(a.report_file)
+            if since is None or a.report_file is None or other_text is None:
+                return Poll()
+            times.append((-since, i))
+            ended[i] = as_ended(a, since, other_text, a.report_file)
+        if min(times) != (-at, editor):
+            return Poll()
+        agents = [ended.get(a.agent_id or "", a) for a in agents]
+        here = editors_in(agents, w)
     step = reported_step(state, t, w, editors, here, agents, editor)
     if isinstance(step, Launch) and step.role in CHECKS:
         return step
@@ -340,6 +375,13 @@ def editor_step(state: State, editor: str,
                     "final reply, run this command again.").format(agents=", ".join(ids))
     return mctx("No check of change {number} is due from you: give your final reply.").format(
         number=t.number)
+
+
+def as_ended(a: Agent, at: float, text: str, path: Path) -> Agent:
+    """The editor `a` read as ended with the report `text` of its report
+    file `path` at `at`, as `editor_step` reads an editor that has
+    reported."""
+    return replace(a, waits=None, reports=(*a.reports, Report(at, text, path)))
 
 
 def editor_unreported(t: Ticket, latest: list[Agent]) -> Undecided | None:

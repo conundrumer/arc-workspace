@@ -1,7 +1,8 @@
 """The loop of `operate.py next`, `relay` and `review`: it reads the
 state, as `state_assembly` assembles it, and prints the next step of the
 operator's procedures, which the package `operations` computes, within
-the block and the guards that `operate.py --help next` gives."""
+the block and the guards that `operate.py --help next` gives (`waited`),
+which `review` waits within too."""
 
 import fcntl
 import math
@@ -133,34 +134,44 @@ def block(me: str, action: Action,
     the end of the turn of `relay`."""
     if not served(me, action):
         return 0
+    (steps, scratch), accepted = waited(me, step_at, lambda out: not isinstance(out[0][0], Poll))
+    head = steps[0]
+    if isinstance(head, EndTurn) and accepted:
+        head = Poll()
+        steps = (head,)
+    if action is Action.NEXT:
+        step_journal.give(scratch, [s for s in steps if isinstance(s, CALLS)], me, time.time())
+        if isinstance(head, EndTurn) and head.hold is not None and head.hold.wait is not None:
+            step_journal.give_failed(scratch, head.hold.launch, me, time.time(),
+                                     listing_line(head.hold.launch))
+    if len(steps) > 1:
+        print(batch_line(steps, me, action))
+    elif isinstance(head, CALLS):
+        print(key_line(head, me, action))
+    for step in steps:
+        print_step(prepared(step, scratch), scratch, me)
+    return 0
+
+
+def waited[T](me: str, out_at: Callable[[float], T], ready: Callable[[T], bool]) -> tuple[T, bool]:
+    """The first output `out_at` gives, read again each `POLL_SECONDS`
+    with the deadline `BLOCK_SECONDS` from the call, that `ready` holds
+    for, or the last one read where that deadline would pass before the
+    next read or a message reached `me` since the last delivery to it,
+    with whether such a message reached it. The call is the one of `me`
+    that runs (`single_instance`), and its watchdog (`arm_watchdog`) is
+    disarmed at its return."""
     single_instance(me)
     arm_watchdog(me)
     deadline = time.monotonic() + BLOCK_SECONDS
     path = find(me)
     since = last_delivered(path)
     while True:
-        steps, scratch = step_at(deadline)
-        head = steps[0]
-        if isinstance(head, EndTurn) and accepted_after(path, since, []):
-            head = Poll()
-            steps = (head,)
-        if (not isinstance(head, Poll) or time.monotonic() + POLL_SECONDS > deadline
-                or accepted_after(path, since, [])):
+        out = out_at(deadline)
+        accepted = accepted_after(path, since, [])
+        if ready(out) or accepted or time.monotonic() + POLL_SECONDS > deadline:
             signal.alarm(0)
-            if action is Action.NEXT:
-                step_journal.give(scratch, [s for s in steps if isinstance(s, CALLS)], me,
-                                  time.time())
-                if (isinstance(head, EndTurn) and head.hold is not None
-                        and head.hold.wait is not None):
-                    step_journal.give_failed(scratch, head.hold.launch, me, time.time(),
-                                             listing_line(head.hold.launch))
-            if len(steps) > 1:
-                print(batch_line(steps, me, action))
-            elif isinstance(head, CALLS):
-                print(key_line(head, me, action))
-            for step in steps:
-                print_step(prepared(step, scratch), scratch, me)
-            return 0
+            return out, accepted
         time.sleep(POLL_SECONDS)
 
 

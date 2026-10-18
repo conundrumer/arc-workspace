@@ -138,6 +138,16 @@ class Settled:
     ruled: tuple[Ruled, ...]
 
 
+def reported_at(a: Agent) -> float | None:
+    """The time from which the editor `a` has reported, as
+    `changes.editor_step` reads it: for one that waits,
+    `Agent.reviewing`, and for one that no longer waits, the time of its
+    last report, or None where it has not reported."""
+    if a.pending:
+        return a.reviewing
+    return None if (r := a.last_report) is None else r.time
+
+
 def reported(agents: list[Agent]) -> tuple[Reported, ...]:
     return tuple(Reported(a.agent_id, r) for a in agents
                  if a.agent_id is not None and (r := a.last_report) is not None)

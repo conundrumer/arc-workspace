@@ -186,7 +186,11 @@ class Agent:
     (`own`), so that no read of it sees the text that block quotes.
     `launched` is the time of its launch, and `since` the time of that
     launch or of the last call of any agent of the session that resumed
-    it."""
+    it. `reviewing`, for an editor of `roles.LAUNCHING_EDITORS` that
+    waits, is the time of the first of its calls of `operate.py review`
+    since its last other tool call, where its last tool call is such a
+    call, with or without its result, and None otherwise: its transcript
+    holds a call before the call runs, so a call that still runs counts."""
     agent_id: str | None
     operator: str
     role: Role
@@ -198,6 +202,7 @@ class Agent:
     reports: tuple[Report, ...]
     notifies: bool
     report_file: Path | None = None
+    reviewing: float | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "brief", own(self.brief))

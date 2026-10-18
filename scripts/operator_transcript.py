@@ -12,7 +12,7 @@ from typing import Any
 from agent_launches import children_of, launched
 from agent_resumes import resumes, sent_to
 from agents_pending import turn_signs
-from agent_turns import latest_time
+from agent_turns import latest_time, run_back
 from agent_reports import ENDED, Sign, last_sign
 from controlled_markdown import mctx
 from merge_reads import merge_outcome, merge_subjects
@@ -31,11 +31,11 @@ from transcript_entries import epoch, fold
 from transcript_snapshots import Entry
 
 from operations.merge_outcomes import call_conflicts
-from operations.roles import PASSES, Role, described
+from operations.roles import LAUNCHING_EDITORS, PASSES, Role, described
 from operations.state import (
     Agent, Call, Message, PassReport, Report, Tool, Waits,
 )
-from operations.command_words import is_next
+from operations.command_words import Action, is_next
 from operations.printing import unfenced
 
 
@@ -253,7 +253,9 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
         a = Agent(launch.agent, aid, d.role, d.subject, prompt,
                   use[0], launch.since, waits(signed, launch.pending), reports,
                   notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)),
-                  report_file=brief_report_file(prompt))
+                  report_file=brief_report_file(prompt),
+                  reviewing=reviewing_since(launch.path, launch.agent)
+                  if d.role in LAUNCHING_EDITORS and launch.pending else None)
         if d.role in MESSAGING and launch.path and launch.agent is not None:
             messaged[launch.agent] = sent_to(launch.path)
         if (signed is not None and signed[0] is Sign.LIMITED and launch.agent is not None
@@ -267,6 +269,25 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
             passes[launch.agent] = pass_read(d.subject, d.role, use[0], main)
     return OperatorRead(AgentsRead(tuple(agents), messaged, limited), tuple(calls),
                         tuple(messages), passes)
+
+
+def reviewing_since(path: Path | None, agent: str | None) -> float | None:
+    """`Agent.reviewing` of the editor `agent` whose transcript is at
+    `path`, read last first up to its last tool call that is no call of
+    `operate.py review` for it, or None where its transcript or its agent
+    id is not known."""
+    if path is None or agent is None:
+        return None
+    first: float | None = None
+    for e in run_back(path):
+        if e.get("type") != "assistant":
+            continue
+        for b in reversed(blocks(e, "tool_use")):
+            command = str((b.get("input") or {}).get("command", ""))
+            if b.get("name") != Tool.BASH or not is_next(command, agent, Action.REVIEW):
+                return first
+            first = epoch(e["timestamp"])
+    return first
 
 
 def ran_since(path: Path | None, at: float) -> bool:

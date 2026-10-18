@@ -2,6 +2,7 @@
 editor or a doc editor, as `--help review` gives it."""
 
 import sys
+from pathlib import Path
 
 from handbook.paths import console_importable, scripts_importable
 
@@ -22,29 +23,35 @@ from filed_texts import written_report  # noqa: E402
 
 from operations import changes  # noqa: E402
 from operations.roles import LAUNCHING_EDITORS, Role  # noqa: E402
-from operations.steps import Launch, Undecided  # noqa: E402
-from operate_loop import prepared, print_step  # noqa: E402
+from operations.steps import Launch, Poll, Step, Undecided  # noqa: E402
+from operate_loop import prepared, print_step, waited  # noqa: E402
 
 
 def review(editor: str) -> int:
-    """Print the step `changes.editor_step` gives the editor `editor`."""
+    """Print the step `changes.editor_step` gives the editor `editor`,
+    read again within `operate_loop.waited` while it is `steps.Poll`."""
     path = find(editor)
     parent = parent_id(path)
     kind = parent_type(path)
     if kind != Role.OPERATOR.agent_type:
         print(changes.NO_OPERATOR.format(agent=editor))
         return 0
-    state, _ = read_state(parent, change_filed(parent, editor))
-    step = changes.editor_step(state, editor, written_report)
+    filed = change_filed(parent, editor)
+
+    def step_at(_deadline: float) -> tuple[Step | str, Path]:
+        state, _ = read_state(parent, filed)
+        return changes.editor_step(state, editor, written_report), state.scratch
+
+    (step, scratch), _ = waited(editor, step_at, lambda out: not isinstance(out[0], Poll))
     if isinstance(step, str):
         print(step)
         return 0
     if isinstance(step, Undecided):
         print(f"operate: {step.text}", file=sys.stderr)
         return 1
-    if not isinstance(step, Launch):
+    if not isinstance(step, (Launch, Poll)):
         raise TypeError(f"review step {step!r} is no launch")
-    print_step(prepared(step, state.scratch), state.scratch, editor)
+    print_step(prepared(step, scratch), scratch, editor)
     return 0
 
 
