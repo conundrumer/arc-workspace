@@ -214,6 +214,76 @@ pub fn node_at<'a>(root: NodeRef<'a>, path: &NodePath) -> Option<NodeRef<'a>> {
     path.0.iter().try_fold(root, |node, step| node.children().get(step.0 as usize).copied())
 }
 
+/// A node kind a path walks: its children, as the tables of the module
+/// comment give them, and the address of the value it borrows.
+pub(crate) trait PathNode: Copy {
+    fn children(self) -> Vec<Self>;
+    fn address(self) -> *const ();
+}
+
+/// The address of `value`.
+fn address_of<T>(value: &T) -> *const () {
+    (value as *const T).cast()
+}
+
+/// The index of `child` among the children of `parent`: the child of its
+/// variant at its address, or `None` where the children of `parent` do not
+/// hold it.
+pub(crate) fn child_index<N: PathNode>(parent: N, child: N) -> Option<u32> {
+    let same = |node: &N| std::mem::discriminant(node) == std::mem::discriminant(&child) && node.address() == child.address();
+    parent.children().iter().position(same).map(|index| index as u32)
+}
+
+impl PathNode for NodeRef<'_> {
+    fn children(self) -> Vec<Self> {
+        NodeRef::children(self)
+    }
+
+    fn address(self) -> *const () {
+        match self {
+            NodeRef::Program(node) => address_of(node),
+            NodeRef::Claim(node) => address_of(node),
+            NodeRef::Clause(node) => address_of(node),
+            NodeRef::Instance(node) => address_of(node),
+            NodeRef::KeyClause(node) => address_of(node),
+            NodeRef::InstanceInput(node) => address_of(node),
+            NodeRef::Choose(node) => address_of(node),
+            NodeRef::RigidDet(node) => address_of(node),
+            NodeRef::Demonstrated(node) => address_of(node),
+            NodeRef::DemoRule(node) => address_of(node),
+            NodeRef::Alts(node) => address_of(node),
+            NodeRef::Alt(node) => address_of(node),
+            NodeRef::Body(node) => address_of(node),
+            NodeRef::Conjunct(node) => address_of(node),
+            NodeRef::Atom(node) => address_of(node),
+            NodeRef::Site(node) => address_of(node),
+            NodeRef::Label(node) => address_of(node),
+        }
+    }
+}
+
+impl PathNode for DataNodeRef<'_> {
+    fn children(self) -> Vec<Self> {
+        DataNodeRef::children(self)
+    }
+
+    fn address(self) -> *const () {
+        match self {
+            DataNodeRef::Arcdata(node) => address_of(node),
+            DataNodeRef::Representative(node) => address_of(node),
+            DataNodeRef::Param(node) => address_of(node),
+            DataNodeRef::Exclude(node) => address_of(node),
+            DataNodeRef::WitnessRecord(node) => address_of(node),
+            DataNodeRef::AltRecord(node) => address_of(node),
+            DataNodeRef::Witness(node) => address_of(node),
+            DataNodeRef::Relaxed(node) => address_of(node),
+            DataNodeRef::Assign(node) => address_of(node),
+            DataNodeRef::Grid(node) => address_of(node),
+            DataNodeRef::WitnessOutput(node) => address_of(node),
+        }
+    }
+}
+
 /// A node of an arcdata file, borrowed: any node an arcdata path can name.
 #[derive(Clone, Copy, Debug)]
 pub enum DataNodeRef<'a> {

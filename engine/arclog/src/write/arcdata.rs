@@ -8,35 +8,13 @@ use crate::program::path::{DataNodeRef, NodePath};
 use crate::program::*;
 use crate::read::spelling::{self as sp, spelling};
 
-use super::arclog::{address_of, child_path, program_relation, quoted, Out, PathNode, Tokens};
+use super::arclog::{child_path, program_relation, quoted, Out, Tokens};
 
 const FILE: SourceFile = SourceFile::Arcdata;
 
 struct Writer<'l> {
     layout: &'l Layout,
     out: Out<'l>,
-}
-
-impl PathNode for DataNodeRef<'_> {
-    fn children(self) -> Vec<Self> {
-        DataNodeRef::children(self)
-    }
-
-    fn address(self) -> *const () {
-        match self {
-            DataNodeRef::Arcdata(node) => address_of(node),
-            DataNodeRef::Representative(node) => address_of(node),
-            DataNodeRef::Param(node) => address_of(node),
-            DataNodeRef::Exclude(node) => address_of(node),
-            DataNodeRef::WitnessRecord(node) => address_of(node),
-            DataNodeRef::AltRecord(node) => address_of(node),
-            DataNodeRef::Witness(node) => address_of(node),
-            DataNodeRef::Relaxed(node) => address_of(node),
-            DataNodeRef::Assign(node) => address_of(node),
-            DataNodeRef::Grid(node) => address_of(node),
-            DataNodeRef::WitnessOutput(node) => address_of(node),
-        }
-    }
 }
 
 /// The text of `value`, as the file writes it.

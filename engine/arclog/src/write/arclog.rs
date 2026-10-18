@@ -5,9 +5,8 @@
 //! module `write` writes its tokens, spaces and comments.
 
 use crate::layout::{Comment, Layout, NodeLayout, SourceFile, SourcePlace};
-use std::mem::discriminant;
 
-use crate::program::path::{NodePath, NodeRef};
+use crate::program::path::{child_index, NodePath, NodeRef, PathNode};
 use crate::program::*;
 use crate::read::spelling::{self as sp, spelling};
 
@@ -125,62 +124,18 @@ impl<'l> Tokens<'l> {
     }
 }
 
-/// A node kind a path walks: its children, as the path table of
-/// [`crate::program::path`] gives them, and the address of the value it
-/// borrows.
-pub(super) trait PathNode: Copy {
-    fn children(self) -> Vec<Self>;
-    fn address(self) -> *const ();
-}
-
-/// The address of `value`.
-pub(super) fn address_of<T>(value: &T) -> *const () {
-    (value as *const T).cast()
-}
-
 /// The path of `child` below `parent`, the node at `path`: the index of
-/// `child` among the children of `parent`, the entry of its variant and its
-/// address.
+/// `child` among the children of `parent`, as
+/// [`crate::program::path::child_index`] gives it.
 ///
 /// # Panics
 ///
 /// Where the children of `parent` do not hold `child`, a fault of the path
 /// table or of the writer.
 pub(super) fn child_path<N: PathNode>(path: &NodePath, parent: N, child: N) -> NodePath {
-    let index = parent
-        .children()
-        .into_iter()
-        .position(|node| discriminant(&node) == discriminant(&child) && node.address() == child.address())
+    let index = child_index(parent, child)
         .unwrap_or_else(|| panic!("the children of the node at {path:?} do not hold a node the writer writes in it"));
-    path.child(index as u32)
-}
-
-impl PathNode for NodeRef<'_> {
-    fn children(self) -> Vec<Self> {
-        NodeRef::children(self)
-    }
-
-    fn address(self) -> *const () {
-        match self {
-            NodeRef::Program(node) => address_of(node),
-            NodeRef::Claim(node) => address_of(node),
-            NodeRef::Clause(node) => address_of(node),
-            NodeRef::Instance(node) => address_of(node),
-            NodeRef::KeyClause(node) => address_of(node),
-            NodeRef::InstanceInput(node) => address_of(node),
-            NodeRef::Choose(node) => address_of(node),
-            NodeRef::RigidDet(node) => address_of(node),
-            NodeRef::Demonstrated(node) => address_of(node),
-            NodeRef::DemoRule(node) => address_of(node),
-            NodeRef::Alts(node) => address_of(node),
-            NodeRef::Alt(node) => address_of(node),
-            NodeRef::Body(node) => address_of(node),
-            NodeRef::Conjunct(node) => address_of(node),
-            NodeRef::Atom(node) => address_of(node),
-            NodeRef::Site(node) => address_of(node),
-            NodeRef::Label(node) => address_of(node),
-        }
-    }
+    path.child(index)
 }
 
 /// The labels of one scope by their names.

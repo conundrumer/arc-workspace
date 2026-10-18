@@ -24,7 +24,7 @@
 mod form;
 mod graph;
 
-use super::path::{NodePath, PathStep};
+use super::path::{child_index, NodePath, NodeRef, PathStep};
 use super::*;
 use crate::hash::StableHashMap;
 use form::*;
@@ -199,8 +199,8 @@ fn by_position(labels: &Labels) -> Box<[(LabelId, u32)]> {
 }
 
 /// The state of one write: the labels of the scope being written, the
-/// search budget, the name writer, the source path of the node being
-/// written, relative to the form, and, for [`CanonicalOrder`], the orders
+/// search budget, the name writer, and, for [`CanonicalOrder`], the source
+/// path of the node being written, relative to the form, and the orders
 /// recorded.
 struct Context<'a> {
     labels: Labels,
@@ -224,11 +224,31 @@ impl<'a> Context<'a> {
         out.int(self.position(label));
     }
 
-    /// Runs `write` on the child at `index` of the node being written.
-    fn child<R>(&mut self, index: usize, write: impl FnOnce(&mut Self) -> R) -> R {
-        self.path.push(PathStep(index as u32));
+    /// Runs `write` on `child`, a child of `parent`, the node being
+    /// written, at the step of its index among the children of `parent`.
+    ///
+    /// # Panics
+    ///
+    /// Where the write records a [`CanonicalOrder`] and the children of
+    /// `parent` do not hold `child`, a fault of the path table or of the
+    /// form writer.
+    fn child<'n, R>(&mut self, parent: NodeRef<'n>, child: NodeRef<'n>, write: impl FnOnce(&mut Self) -> R) -> R {
+        let step = || child_index(parent, child).expect("the children of the node being written hold each child the form writer writes");
+        self.at_step(step, write)
+    }
+
+    /// Runs `write` on the child at the step `step` gives. The path is read
+    /// only to record a [`CanonicalOrder`], so `step` runs only in a write
+    /// that records one.
+    fn at_step<R>(&mut self, step: impl FnOnce() -> u32, write: impl FnOnce(&mut Self) -> R) -> R {
+        let recording = self.order.is_some();
+        if recording {
+            self.path.push(PathStep(step()));
+        }
         let result = write(self);
-        self.path.pop();
+        if recording {
+            self.path.pop();
+        }
         result
     }
 
@@ -240,7 +260,7 @@ impl<'a> Context<'a> {
             .enumerate()
             .map(|(index, member)| {
                 let mut own = CanonicalWriter::default();
-                self.child(index, |cx| write(cx, &mut own, member));
+                self.at_step(|| index as u32, |cx| write(cx, &mut own, member));
                 (own.bytes, index as u32)
             })
             .collect();

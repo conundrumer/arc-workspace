@@ -5,6 +5,7 @@
 use std::hash::Hasher;
 
 use super::*;
+use crate::program::path::NodeRef;
 use crate::hash::{StableHash, StableHasher};
 
 
@@ -392,19 +393,19 @@ pub(super) fn form_with(cx: &mut Context, out: &mut CanonicalWriter, form: &Form
 
 /// Writes the forms of a program, a claim or an `ALT`, each a scope of its
 /// own.
-pub(super) fn forms_root(cx: &mut Context, out: &mut CanonicalWriter, forms: &[Form]) {
+pub(super) fn forms_root(cx: &mut Context, out: &mut CanonicalWriter, parent: NodeRef, forms: &[Form]) {
     out.len(forms.len());
-    for (index, form) in forms.iter().enumerate() {
-        cx.child(index, |cx| form_root(cx, out, form));
+    for form in forms.iter() {
+        cx.child(parent, NodeRef::from(form), |cx| form_root(cx, out, form));
     }
 }
 
 pub(super) fn demonstrated_key(cx: &mut Context, out: &mut CanonicalWriter, demonstrated: &Demonstrated) {
-    out.option(demonstrated.key.as_ref(), |out, key| cx.child(0, |cx| key.value().write_form(cx, out)));
-    let first = usize::from(demonstrated.key.is_some());
+    let parent = NodeRef::Demonstrated(demonstrated);
+    out.option(demonstrated.key.as_ref(), |out, key| cx.child(parent, NodeRef::KeyClause(key.value()), |cx| key.value().write_form(cx, out)));
     out.len(demonstrated.inputs.len());
-    for (index, input) in demonstrated.inputs.iter().enumerate() {
-        cx.child(first + index, |cx| input.value().write_form(cx, out));
+    for input in demonstrated.inputs.iter() {
+        cx.child(parent, NodeRef::InstanceInput(input.value()), |cx| input.value().write_form(cx, out));
     }
 }
 
@@ -463,11 +464,11 @@ pub(super) fn site(cx: &Context, out: &mut CanonicalWriter, site_: &Site, prefix
     }
 }
 
-/// Writes a key body, whose body is the child at `index` of the node being
+/// Writes a key body, whose body is a child of `parent`, the node being
 /// written.
-pub(super) fn key_body(cx: &mut Context, out: &mut CanonicalWriter, key: &KeyBody, index: usize) {
+pub(super) fn key_body(cx: &mut Context, out: &mut CanonicalWriter, parent: NodeRef, key: &KeyBody) {
     out.tag(Tag::KeyBody);
-    cx.child(index, |cx| key.body.value().write_form(cx, out));
+    cx.child(parent, NodeRef::Body(key.body.value()), |cx| key.body.value().write_form(cx, out));
     cx.columns(out, &key.columns, |out, name| out.column(name));
 }
 
@@ -638,11 +639,10 @@ impl WriteForm for Demonstrated {
         out.tag(Tag::Demonstrated);
         out.declared(&self.name.0);
         demonstrated_key(cx, out, self);
-        let first = usize::from(self.key.is_some()) + self.inputs.len();
         out.len(self.rules.len());
-        for (index, rule) in self.rules.iter().enumerate() {
+        for rule in self.rules.iter() {
             let rule = rule.value();
-            cx.child(first + index, |cx| cx.in_scope(LabelScope::DemoRule(rule), |cx| rule.write_form(cx, out)));
+            cx.child(NodeRef::Demonstrated(self), NodeRef::DemoRule(rule), |cx| cx.in_scope(LabelScope::DemoRule(rule), |cx| rule.write_form(cx, out)));
         }
     }
 }
@@ -650,7 +650,7 @@ impl WriteForm for Demonstrated {
 impl WriteForm for Program {
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
         out.tag(Tag::Program);
-        forms_root(cx, out, &self.forms);
+        forms_root(cx, out, NodeRef::Program(self), &self.forms);
     }
 }
 
@@ -661,7 +661,7 @@ impl WriteForm for Claim {
         out.text(&self.slug.0);
         out.text(&self.text.0);
         out.option(self.approximated.as_ref(), |out, text| out.text(&text.0));
-        forms_root(cx, out, &self.forms);
+        forms_root(cx, out, NodeRef::Claim(self), &self.forms);
     }
 }
 
@@ -680,7 +680,7 @@ impl WriteForm for Clause {
         for proposer in self.proposers.iter() {
             cx.names.write_name(&RelationRef::Lib(proposer.clone()), out);
         }
-        cx.child(0, |cx| self.body.value().write_form(cx, out));
+        cx.child(NodeRef::Clause(self), NodeRef::Body(self.body.value()), |cx| self.body.value().write_form(cx, out));
         out.len(self.ones.len());
         for one in self.ones.iter() {
             out.len(one.key.len());
@@ -716,7 +716,7 @@ pub(super) fn write_conjunct(cx: &mut Context, out: &mut CanonicalWriter, conjun
         }
         Conjunct::Not(Negated::Form(form)) => {
             out.tag(Tag::NotForm);
-            cx.child(0, |cx| write_conjunct(cx, out, form));
+            cx.child(NodeRef::Conjunct(conjunct), NodeRef::Conjunct(form), |cx| write_conjunct(cx, out, form));
         }
         Conjunct::Constraint(constraint) => {
             out.tag(Tag::Constraint);
@@ -736,14 +736,14 @@ pub(super) fn write_conjunct(cx: &mut Context, out: &mut CanonicalWriter, conjun
         }
         Conjunct::If { test, then, otherwise } => {
             out.tag(Tag::If);
-            for (index, part) in [test, then, otherwise].into_iter().enumerate() {
-                cx.child(index, |cx| part.value().write_form(cx, out));
+            for part in [test, then, otherwise] {
+                cx.child(NodeRef::Conjunct(conjunct), NodeRef::Body(part.value()), |cx| part.value().write_form(cx, out));
             }
         }
         Conjunct::All { domain, body } => {
             out.tag(Tag::All);
-            for (index, part) in [domain, body].into_iter().enumerate() {
-                cx.child(index, |cx| part.value().write_form(cx, out));
+            for part in [domain, body] {
+                cx.child(NodeRef::Conjunct(conjunct), NodeRef::Body(part.value()), |cx| part.value().write_form(cx, out));
             }
         }
     }
@@ -773,11 +773,11 @@ impl WriteForm for Instance {
         out.tag(Tag::Instance);
         out.declared(&self.name.0);
         cx.names.write_name(&RelationRef::Lib(self.component.clone()), out);
-        out.option(self.key.as_ref(), |out, key| cx.child(0, |cx| key.value().write_form(cx, out)));
-        let first = usize::from(self.key.is_some());
+        let parent = NodeRef::Instance(self);
+        out.option(self.key.as_ref(), |out, key| cx.child(parent, NodeRef::KeyClause(key.value()), |cx| key.value().write_form(cx, out)));
         out.len(self.inputs.len());
-        for (index, input) in self.inputs.iter().enumerate() {
-            cx.child(first + index, |cx| input.value().write_form(cx, out));
+        for input in self.inputs.iter() {
+            cx.child(parent, NodeRef::InstanceInput(input.value()), |cx| input.value().write_form(cx, out));
         }
     }
 }
@@ -789,10 +789,11 @@ impl WriteForm for KeyClause {
 
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
         out.tag(Tag::KeyClause);
-        key_body(cx, out, &self.key, 0);
+        let parent = NodeRef::KeyClause(self);
+        key_body(cx, out, parent, &self.key);
         out.len(self.inputs.len());
-        for (index, input) in self.inputs.iter().enumerate() {
-            cx.child(1 + index, |cx| input.value().write_form(cx, out));
+        for input in self.inputs.iter() {
+            cx.child(parent, NodeRef::InstanceInput(input.value()), |cx| input.value().write_form(cx, out));
         }
     }
 }
@@ -809,7 +810,7 @@ impl WriteForm for InstanceInput {
         for head in self.head.iter() {
             site(cx, out, head, &[], &|out, path| out.column_path(path));
         }
-        cx.child(self.head.len(), |cx| self.body.value().write_form(cx, out));
+        cx.child(NodeRef::InstanceInput(self), NodeRef::Body(self.body.value()), |cx| self.body.value().write_form(cx, out));
     }
 }
 
@@ -821,16 +822,16 @@ impl WriteForm for Choose {
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
         out.tag(Tag::Choose);
         out.declared(&self.name.0);
-        out.option(self.rows.as_ref(), |out, rows| key_body(cx, out, rows, 0));
+        let parent = NodeRef::Choose(self);
+        out.option(self.rows.as_ref(), |out, rows| key_body(cx, out, parent, rows));
         let relation = RelationRef::Declared(self.name.clone());
         let names = cx.names;
         cx.columns(out, &self.candidate_columns, |out, name| names.write_column(&relation, std::slice::from_ref(name), out));
-        let first = usize::from(self.rows.is_some());
-        cx.child(first, |cx| self.from.value().write_form(cx, out));
+        cx.child(parent, NodeRef::Body(self.from.value()), |cx| self.from.value().write_form(cx, out));
         out.flag(self.from_inside_for);
         out.len(self.never.len());
-        for (index, never) in self.never.iter().enumerate() {
-            cx.child(first + 1 + index, |cx| never.value().write_form(cx, out));
+        for never in self.never.iter() {
+            cx.child(parent, NodeRef::Body(never.value()), |cx| never.value().write_form(cx, out));
         }
     }
 }
@@ -843,12 +844,12 @@ impl WriteForm for RigidDet {
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
         out.tag(Tag::RigidDet);
         out.declared(&self.name.0);
-        out.option(self.key.as_ref(), |out, key| key_body(cx, out, key, 0));
-        let instance_index = usize::from(self.key.is_some());
-        out.option(self.instance.as_ref(), |out, instance| key_body(cx, out, instance, instance_index));
+        let parent = NodeRef::RigidDet(self);
+        out.option(self.key.as_ref(), |out, key| key_body(cx, out, parent, key));
+        out.option(self.instance.as_ref(), |out, instance| key_body(cx, out, parent, instance));
         out.len(self.parts.len());
         for part in self.parts.iter() {
-            part.value().write_form(cx, out);
+            cx.child(parent, NodeRef::Atom(part.value()), |cx| part.value().write_form(cx, out));
         }
     }
 }
@@ -866,8 +867,8 @@ impl WriteForm for DemoRule {
         cx.columns(out, &self.fields, |out, name| names.write_column(&prediction, std::slice::from_ref(name), out));
         out.option(self.text.as_ref(), |out, text| out.text(&text.0));
         out.len(self.forms.len());
-        for (index, form) in self.forms.iter().enumerate() {
-            cx.child(index, |cx| match form {
+        for form in self.forms.iter() {
+            cx.child(NodeRef::DemoRule(self), NodeRef::from(form), |cx| match form {
                 Form::Clause(_) | Form::Instance(_) | Form::Choose(_) | Form::RigidDet(_) => form_with(cx, out, form, None),
                 Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) => form_root(cx, out, form),
             });
@@ -882,8 +883,8 @@ impl WriteForm for Alts {
         out.text(&self.gloss.0);
         out.text(&self.concept.0);
         out.len(self.alts.len());
-        for (index, alt) in self.alts.iter().enumerate() {
-            cx.child(index, |cx| alt.value().write_form(cx, out));
+        for alt in self.alts.iter() {
+            cx.child(NodeRef::Alts(self), NodeRef::Alt(alt.value()), |cx| alt.value().write_form(cx, out));
         }
     }
 }
@@ -893,8 +894,8 @@ impl WriteForm for Alt {
         out.tag(Tag::Alt);
         out.text(&self.name.0);
         out.len(self.items.len());
-        for (index, item) in self.items.iter().enumerate() {
-            cx.child(index, |cx| match item {
+        for item in self.items.iter() {
+            cx.child(NodeRef::Alt(self), NodeRef::from(item), |cx| match item {
                 AltItem::Form(form) => {
                     out.tag(Tag::AltForm);
                     form_root(cx, out, form);
