@@ -5,13 +5,15 @@
 use std::sync::Arc;
 
 use super::{is_key, ConstructionContext, GroupInputs};
+use crate::check::instance_inputs::inputs_at;
 use crate::eval::join::{self, Budget};
 use crate::eval::{ir, Evaluation, FormBodies, Outcome, RelationValue, RunFault, Stop};
 use crate::hash::StableHashMap;
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Body, ColumnName, Instance, InstanceInput, LabelId, OutputStep, PortName, Site, SiteArg};
+use crate::program::{Body, ColumnName, Instance, InstanceInput, LabelId, OutputStep, PortName, Site};
 use crate::registry::{Column, ColumnType, Component, ComponentKind, InputPort, LibEntry, TypeParameter};
 use crate::relations::{Row, RowSet};
+use crate::resolver::columns::projection;
 use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::terms::{Constant, Example, Term, TermId};
 use crate::types::{each_site_label, use_label, FormTypes, GraphRelation, ValueType};
@@ -182,12 +184,7 @@ impl<'p> InstanceShape<'p> {
         let key = instance.key.as_ref().map(|key| key.value());
         let key_body = key.map(|key| (key.key.body.value(), form.child(0).child(0)));
         let key_columns = key.map_or_else(Vec::new, |key| key.key.columns.iter().map(|column| (column.name.clone(), column.label)).collect());
-        let mut written = Vec::new();
-        if let Some(key) = key {
-            written.extend(key.inputs.iter().zip(1u32..).map(|(input, index)| (form.child(0).child(index), true, input.value())));
-        }
-        let first = u32::from(key.is_some());
-        written.extend(instance.inputs.iter().zip(first..).map(|(input, index)| (form.child(index), false, input.value())));
+        let written = inputs_at(instance).into_iter().map(|(path, keyed, input)| (form.join(&path), keyed, input)).collect();
         let mut bindings = StableHashMap::default();
         for sites in crate::registry::binding_sites(instance, &component.inputs) {
             let binding = match sites.binding {
@@ -196,9 +193,7 @@ impl<'p> InstanceShape<'p> {
                     (Some(fields), key_columns.iter().map(|(_, label)| *label).collect())
                 }
                 crate::registry::ParameterSite::Head { site, .. } => {
-                    let labels = site_labels(site);
-                    let fields = record_fields(site).then(|| labels.iter().map(|(path, _)| path.last().expect("a field's path").clone()).collect());
-                    (fields, labels.into_iter().map(|(_, label)| label).collect())
+                    (projection(site), site_labels(site).into_iter().map(|(_, label)| label).collect())
                 }
             };
             bindings.insert(sites.parameter, binding);
@@ -359,12 +354,6 @@ fn site_labels(site: &Site) -> Vec<(Vec<ColumnName>, LabelId)> {
     let mut labels = Vec::new();
     each_site_label(site, &mut Vec::new(), &mut |use_, path| labels.extend(use_label(use_).map(|label| (path.to_vec(), label))));
     labels
-}
-
-/// Whether the head site `site` projects a record onto its column's type
-/// parameter, and not one label (`docs/arclog/arclog.md#instance`).
-fn record_fields(site: &Site) -> bool {
-    !matches!(&site.value.args[..], [SiteArg::Label(_) | SiteArg::NamedLabel { .. }])
 }
 
 /// The rows of `value`, of `arity` columns, or the value where it holds no

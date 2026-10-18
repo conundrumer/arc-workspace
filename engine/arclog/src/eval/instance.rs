@@ -21,7 +21,7 @@ use super::{Evaluation, Outcome, ReachedBound, RelationValue, RunFault, Stop};
 use crate::hash::StableHashMap;
 use crate::program::path::NodePath;
 use crate::program::ParamValue;
-use crate::registry::{Column, InputPort, LibEntry, LibName};
+use crate::registry::{Column, ComponentKind, InputPort, LibEntry, LibName};
 use crate::relations::RowSet;
 use crate::session::TaskSession;
 use crate::terms::TermId;

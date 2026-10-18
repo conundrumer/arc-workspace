@@ -123,7 +123,7 @@ fn group_fault<'a>(
 /// Each input that `instance` writes, with its path relative to the
 /// instance and whether it stands in the key clause, the keyed inputs
 /// first, each group in the order it is written.
-pub(super) fn inputs_at(instance: &Instance) -> Vec<(NodePath, bool, &InstanceInput)> {
+pub(crate) fn inputs_at(instance: &Instance) -> Vec<(NodePath, bool, &InstanceInput)> {
     let mut out = Vec::new();
     let mut first = 0;
     if let Some(key) = &instance.key {

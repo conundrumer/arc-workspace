@@ -227,7 +227,7 @@ pub(crate) fn component<'r>(registry: &'r Registry, name: &LibName) -> Option<&'
 
 /// The fields of the record that the head site `site` projects onto
 /// its column's type parameter, or `None` where it projects one label.
-pub(super) fn projection(site: &Site) -> Option<Box<[ColumnName]>> {
+pub(crate) fn projection(site: &Site) -> Option<Box<[ColumnName]>> {
     match &site.value.args[..] {
         [SiteArg::Label(_) | SiteArg::NamedLabel { .. }] => None,
         args => Some(
