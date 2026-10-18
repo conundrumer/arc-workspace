@@ -112,8 +112,7 @@ class Graph:
         if tree is None:
             return self.paths
         if path not in self.imported:
-            names = module_names(path)
-            module = names[0] if names else PurePosixPath(path).stem
+            module = module_of(path)
             self.imported[path] = {p for statement in imports_in(tree)
                                    for name in named_modules(module, Path(path), statement)
                                    for p in self.modules(name, path)}
@@ -123,30 +122,37 @@ class Graph:
 
     def run_edges(self, tree: ast.Module, path: str) -> set[str]:
         out: set[str] = set(conftests(path) & self.paths)
+        for _, found in self.loads(tree, path):
+            out |= found
+        return out
+
+    def loads(self, tree: ast.Module, path: str) -> Iterator[tuple[int, set[str]]]:
+        """Each load of code by a path or a name in the parsed file `tree` at
+        `path`, other than the `conftest.py` files pytest loads: its line, and
+        the paths it can load."""
         assigned = module_assignments(tree)
         skipped: set[int] = set()
-        texts: list[tuple[int, str]] = []
+        texts: list[tuple[ast.Constant, str]] = []
         for node in ast.walk(tree):
             match node:
                 case ast.Expr(value=ast.Constant() as doc):
                     skipped.add(id(doc))
                 case ast.Constant(value=str(text)):
-                    texts.append((id(node), text))
+                    texts.append((node, text))
                 case ast.Call(func=ast.Attribute(value=value, attr=method),
                               args=[ast.Constant(value=str(pattern)) as arg, *_]) \
                         if method in GLOBS:
                     scope = directory_of(value, path, assigned)
                     if scope is not None:
                         skipped.add(id(arg))
-                        out |= self.listed(scope, GLOBS[method], pattern)
+                        yield node.lineno, self.listed(scope, GLOBS[method], pattern)
                 case ast.Attribute(value=ast.Name(id=package), attr="__path__"):
-                    out |= {p for name, paths in self.by_name.items()
-                            if name == package or name.startswith(package + ".")
-                            for p in paths}
-        for at, text in texts:
-            if at not in skipped:
-                out |= self.named_by(text)
-        return out
+                    yield node.lineno, {p for name, paths in self.by_name.items()
+                                        if name == package or name.startswith(package + ".")
+                                        for p in paths}
+        for constant, text in texts:
+            if id(constant) not in skipped:
+                yield constant.lineno, self.named_by(text)
 
     def listed(self, scope: Scope, recursive: bool, pattern: str) -> set[str]:
         """The paths a glob of `pattern` in the directory `scope` gives, the
@@ -177,6 +183,13 @@ class Graph:
                       if any(p == t or p.endswith("/" + t) or fnmatch.fnmatchcase(p, t)
                              or fnmatch.fnmatchcase(p, "*/" + t) for t in patterns)}
         return found
+
+
+def module_of(path: str) -> str:
+    """The name of the module the file at `path` stands for, against which
+    its relative imports resolve."""
+    names = module_names(path)
+    return names[0] if names else PurePosixPath(path).stem
 
 
 def module_assignments(tree: ast.Module) -> dict[str, ast.expr]:
