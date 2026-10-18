@@ -27,7 +27,8 @@ from file_reads import file_text, is_file
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import chain
 from entry_reads import line_entries
-from transcript_entries import epoch, fold
+from transcript_entries import epoch
+from transcript_folds import fold
 from transcript_snapshots import Entry
 
 from operations.merge_outcomes import call_conflicts

@@ -13,6 +13,7 @@ from operator_reads import resumed_at
 from run_reads import (bash_ids, bash_spans, repeated_runs, result_texts, run_entries,
                        same_since)
 from transcript_entries import epoch
+from transcript_snapshots import Entry
 
 from controlled_markdown import mctx
 from operations import monitor
@@ -74,8 +75,12 @@ def stalled_at(listed: Listed, listing: list[Listed], undecided: list[str]) -> f
            for e in run_entries(listed.path)):
         return None
     answered = [t for p in parent_transcripts(listed.path)
-                if (t := last_time(p, lambda e: e.get("type") == "assistant")) is not None]
+                if (t := last_time(p, is_assistant)) is not None]
     return end if any(t > end for t in answered) else None
+
+
+def is_assistant(entry: Entry) -> bool:
+    return entry.get("type") == "assistant"
 
 
 def bash_calls(listed: Listed) -> tuple[list[tuple[str, str, float]], dict[str, str]]:

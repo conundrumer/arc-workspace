@@ -7,7 +7,7 @@ from pathlib import Path
 
 from run_reads import blocks
 from state_reads import DERIVED, Kept, state_cache
-from transcript_entries import fold
+from transcript_folds import fold
 from transcript_snapshots import Entry
 from transcripts import chain
 from wait_bound import bound_denied

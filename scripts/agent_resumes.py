@@ -14,10 +14,11 @@ from run_reads import (blocks, parent_label, results_by_call, run_entries,
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import chain
 from entry_reads import read_entries
-from transcript_entries import epoch, fold
+from transcript_entries import epoch
+from transcript_folds import fold
 from transcript_snapshots import Entry
 from agent_deliveries import Delivery, delivery
-from session_changes import changed_with
+from session_changes import agents_facts
 
 
 def pin_id(result: dict[str, Any]) -> str | None:
@@ -139,13 +140,15 @@ def resumes_since(path: Path, agents: frozenset[str], since: float,
     """`session_resumes`, held so that a read derived from it sees a new
     transcript of the sessions only where it resumed one of `agents`."""
     own = set(chain(path))
-    out: dict[str, float] = {}
-    for p, found in changed_with(run_sessions(path), since, transcript_resumes):
-        if p in own:
-            continue
-        for aid, t in picked(found, agents, undecided, before).items():
-            note_latest(out, aid, t)
-    return out
+    return picked([at.fact for at in agents_facts(run_sessions(path), since, transcript_resumes,
+                                                  send_agents, agents) if at.path not in own],
+                  agents, undecided, before)
+
+
+def send_agents(send: Send) -> tuple[str, ...]:
+    """The agent id `send` resumed and the `pin` id of its result, those it
+    gives."""
+    return tuple(v for v in (send.agent, send.pin) if v)
 
 
 def sent_to(path: Path) -> frozenset[str]:

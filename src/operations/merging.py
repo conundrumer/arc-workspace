@@ -67,6 +67,7 @@ the change (`change_holds.open_questions`), then the change's own ticket."""
 import re
 import shlex
 from collections.abc import Iterable, Sequence
+from functools import cache
 from pathlib import Path
 
 from controlled_markdown import form, mctx
@@ -81,7 +82,7 @@ from operations.reports import splits, unread_split
 from operations.roles import Role
 from operations.constants import COORDINATOR
 from operations.state import Agent, Call, Commit, LogLine, Merge, State, Ticket, Tool
-from operations.command_words import simple_commands
+from operations.command_words import command_words
 from operations.handled import ask_again, decided_by, sent, unmoved
 from operations.steps import Bash, Launch, Send, Step, labeled
 from operations.log_commands import log
@@ -233,18 +234,21 @@ def merge_command(t: Ticket, w: Path) -> str:
     return shlex.join(["uv", "run", "python", MERGE_SCRIPT, str(w), MESSAGE, t.title])
 
 
-def merge_words(command: str) -> list[str] | None:
+@cache
+def merge_words(command: str) -> tuple[str, ...] | None:
     """The words of the call of `merge_change.py` that the Bash command
     `command` runs, from the script's word on, none where it runs none, or
-    None where the shell's quoting in `command` is unbalanced."""
-    found = simple_commands(command)
+    None where the shell's quoting in `command` is unbalanced, found once
+    for each command: the state gives each operator's commands at each
+    read."""
+    found = command_words(command)
     if not found:
         return None
     for words in found:
         at = next((i for i, w in enumerate(words) if w.endswith(MERGE_SCRIPT)), None)
         if at is not None:
             return words[at:]
-    return []
+    return ()
 
 
 def merge_messages(command: str) -> list[str] | None:

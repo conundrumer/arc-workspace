@@ -12,7 +12,7 @@ from transcript_entries import epoch, named_lines, own_range
 from transcript_snapshots import Entry, parse, snapshot
 from agent_launches import Launch, launched
 from agent_resumes import note_latest
-from session_changes import with_facts
+from session_changes import agents_facts
 
 from operations.roles import AGENT_ID
 
@@ -74,40 +74,14 @@ def signs_since(sessions: tuple[Path, ...], since: float,
                 agents: frozenset[str]) -> list[SignEntry]:
     """`session_signs`, held so that a read derived from it sees a new
     transcript only where it names one of `agents`. Each session's entries
-    come from its `sign_index`, in the order of its transcripts and of
-    their entries."""
-    out: list[SignEntry] = []
-    for session in sessions:
-        index = sign_index(session)
-        named = {(at.transcript, at.entry): at.sign for v in agents
-                 for at in index.get(v, ()) if at.written >= since}
-        out += [named[k] for k in sorted(named)]
-    return out
+    come from the index of `session_changes.facts_by_agent`, in the order
+    of its transcripts and of their entries."""
+    return [at.fact for at in agents_facts(sessions, since, sign_entries, sign_agents, agents)]
 
 
-@dataclass(frozen=True)
-class SignAt:
-    """A `SignEntry` of a transcript of a session, with the place of that
-    transcript among the session's transcripts (`with_facts`), its own
-    place among that transcript's `sign_entries`, and the time of that
-    transcript's last write."""
-    transcript: int
-    entry: int
-    written: float
-    sign: SignEntry
-
-
-@state_cache(DERIVED)
-def sign_index(session: Path) -> dict[str, tuple[SignAt, ...]]:
-    """Each `SignEntry` of the transcripts of `session`, by each id it
-    notifies or gives a sign of, so that a read of the entries that name a
-    few agents reads only those entries."""
-    out: dict[str, list[SignAt]] = {}
-    for k, (_, written, found) in enumerate(with_facts(session, sign_entries)):
-        for j, e in enumerate(found):
-            for v in dict.fromkeys((*e.notified, *(v for v, _ in e.signs))):
-                out.setdefault(v, []).append(SignAt(k, j, written, e))
-    return {v: tuple(at) for v, at in out.items()}
+def sign_agents(entry: SignEntry) -> tuple[str, ...]:
+    """The ids `entry` notifies or gives a sign of."""
+    return (*entry.notified, *(v for v, _ in entry.signs))
 
 
 SIGN_WORDS = frozenset({"<task-notification>", "<agent-message from="})

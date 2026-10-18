@@ -1,7 +1,7 @@
 """The profile of where an agent run's wall time goes, from its Claude
 Code transcripts, as `profile_runs.py --help runs` gives it.
 
-A profile is a fold over the run's entries (`transcript_entries.fold`), so
+A profile is a fold over the run's entries (`transcript_folds.fold`), so
 a later read in the process parses only the entries added since. The fold
 holds only what the entries give, and what turns on a value no entry has
 given yet, a call's result or the end of a call in the background, is held
@@ -27,7 +27,8 @@ from run_records import Call, Group, Key, Message, Part, Run, Span
 from senders import Sender, sender
 from token_prices import grouped, groups_cost, request_cost, request_input
 from transcripts import agent_id, chain, is_subagent
-from transcript_entries import epoch, fold
+from transcript_entries import epoch
+from transcript_folds import fold
 from transcript_snapshots import Entry
 
 WAIT_TOOLS = ("Monitor", "TaskOutput")

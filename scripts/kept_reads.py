@@ -1,7 +1,9 @@
 """The store of the `state_cache` reads kept on disk across processes, in
 the file `STORE_NAME` gives under `.cache/` of the main worktree: for each read
 and its arguments, its result, its `undecided` lines, and the trace of the
-reads it rests on, which `state_reads` checks before the result stands.
+reads it rests on, which `state_reads` checks before the result stands. The
+folds of `transcript_folds` are kept in it as well, each as a read of the
+module of its step.
 
 A record of a read stands only while the code the read's module can run
 is the code that wrote it: the files of that module's import closure
@@ -14,14 +16,16 @@ lock it takes across processes, so no reader sees a record half written; a
 reader can see some of a call's records before the rest."""
 
 import ast
+import copyreg
 import hashlib
+import io
 import importlib.util
 import pickle
 import sqlite3
 import sys
 import time
 from collections.abc import Iterable
-from pathlib import Path
+from pathlib import Path, PosixPath, WindowsPath
 from typing import Any
 
 from engine import checkout
@@ -52,6 +56,37 @@ CREATE TABLE IF NOT EXISTS imports (file TEXT PRIMARY KEY, names BLOB, written R
 UNREADABLE = (pickle.UnpicklingError, EOFError, AttributeError, ImportError,
               IndexError, TypeError, ValueError)
 """What `pickle.loads` raises on a record it cannot read."""
+
+
+_paths: dict[str, Path] = {}
+"""The one `Path` of each text that the records this process read give."""
+
+
+def held_path(text: str) -> Path:
+    """The one `Path` of `text` among the records this process reads, so
+    that a path a record gives is the very object of the same path each
+    other record gives, and a lookup by it compares no text."""
+    found = _paths.get(text)
+    if found is None:
+        found = _paths[text] = Path(text)
+    return found
+
+
+def reduce_path(path: Path) -> tuple[Any, tuple[str]]:
+    return held_path, (str(path),)
+
+
+PICKLED = {**copyreg.dispatch_table, PosixPath: reduce_path, WindowsPath: reduce_path}
+"""How a record pickles: each path as `held_path` of its text."""
+
+
+def pickled(record: object) -> bytes:
+    """`record` pickled, each path in it as `held_path` gives it again."""
+    out = io.BytesIO()
+    pickler = pickle.Pickler(out, pickle.HIGHEST_PROTOCOL)
+    pickler.dispatch_table = PICKLED
+    pickler.dump(record)
+    return out.getvalue()
 
 
 class StoreFile:
@@ -162,7 +197,7 @@ class Store(StoreFile):
         """Hold `record` for the next write, where it pickles, and give
         whether it does."""
         try:
-            data = pickle.dumps(record, pickle.HIGHEST_PROTOCOL)
+            data = pickled(record)
         except (pickle.PicklingError, TypeError, AttributeError, RecursionError):
             self.new.pop((read, key), None)
             return False
@@ -212,7 +247,8 @@ def mark_used(db: sqlite3.Connection, code: str, now: float, keep: float) -> Non
 
 
 def module_of(read: str) -> str:
-    """The module of `read`, a `state_reads.ReadInfo.name`."""
+    """The module of `read`, a `state_reads.ReadInfo.name` or the name of a
+    fold of `transcript_folds`."""
     return read.split(":", 1)[0]
 
 
