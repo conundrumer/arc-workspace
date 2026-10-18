@@ -137,7 +137,9 @@ as `<out>/gate/`, and a time the command prints is dropped.
 
 `<out-dir>/gate/new/` holds the judged commands' outputs and counts,
 `<out-dir>/gate/times.txt` every command's count, and
-`<out-dir>/gate/log.txt` the lines printed above the last line.
+`<out-dir>/gate/log.txt` the lines printed above the last line. The
+`--help` of `scripts/merge_change.py` says where a merge's gate writes its
+out-dir.
 
 The accepted counts depend on the machine, so every worktree of the
 repository reads them from one file: `accepted-instructions.json` under

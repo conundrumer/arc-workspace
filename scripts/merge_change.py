@@ -55,7 +55,14 @@ the script name a check that takes files by its command and the number of
 its files. The gate's dependency record decides which of its commands a
 change affects, so the gate runs on every change, with `<base>` the
 `master` commit the stack is rebased onto. It writes into a new
-temporary directory, which a failing gate names. Its `--help` says which
+directory under `$TMPDIR`, whose name is `merge-change-gate-`, then the
+first 8 hex digits of each commit after `<base>` up to the top of the stack,
+newest first, each followed by `-`, for at most the 24 newest commits,
+then a random part. So `ls -dt "$TMPDIR"/merge-change-gate-*<hash>*`, with
+`<hash>` what `git rev-parse --short=8 <commit>` prints, lists the
+directories of the gates that checked `<commit>`, newest first, for a gate
+that passes as for one that fails. The merge's `running` line of the gate
+names its directory too. The gate's `--help` says which
 commands `--affected` runs and how the gate's times are judged.
 
 The top of the stack holds every change committed, so where the gate runs
@@ -263,10 +270,20 @@ def set_up_submodules(worktree: Path, main: Path) -> None:
         raise Refused(str(exc)) from exc
 
 
+GATE_PREFIX = "merge-change-gate-"
+
+NAMED_COMMITS = 24
+"""The most commits the name of the gate's out-dir gives, which the module
+docstring states: the newest, so that the name stays under the file
+system's 255 bytes."""
+
+
 def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
     """Run in `tree` the checks of changes from the commit `base` that touch
-    `touched`, or refuse; the gate's out-dir."""
-    gate_out = tempfile.mkdtemp(prefix="merge-change-gate-")
+    `touched`, or refuse; the gate's out-dir, named as the module docstring
+    gives."""
+    commits = checkout.git_out(tree, "rev-list", f"--max-count={NAMED_COMMITS}", f"{base}..HEAD").split()
+    gate_out = tempfile.mkdtemp(prefix=GATE_PREFIX + "".join(f"{c[:8]}-" for c in commits))
     gate = Check(("uv", "run", "python", "scripts/gate.py", "--affected", base, gate_out))
     run_checks(tree, [*map(Check, DOCUMENT_CHECKS), gate, *code_checks(tree, main, base, touched)])
     return Path(gate_out)

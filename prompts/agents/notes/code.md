@@ -57,7 +57,7 @@
 - Judge each defect place on whether it is a defect, and, where it is one, on whether it stands, by the lines on its kind.
 
 ## review-tickets
-- Leave out a place that an earlier `refactor` or `question` ticket cites, where that ticket is not closed `fixed`.
+- Leave out a place that an earlier `refactor` or `question` ticket cites, where that ticket is not closed `fixed`. `uv run python scripts/file_ticket.py citing`, called once with the paths of all your places, lists the tickets that cite each.
 - File each defect as a ticket of kind `refactor`, and each place that poses a question as a ticket of kind `question`, with `commit` as `<domain>`, and as `<subject>` the hash `git rev-parse --short <commit>` prints, with this review's commit as `<commit>`.
     - Cite each place as below.
         * inline: #place-tickets

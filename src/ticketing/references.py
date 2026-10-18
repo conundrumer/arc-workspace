@@ -59,10 +59,16 @@ def word_forms(name: str) -> list[str]:
 
 
 def names(text: str, name: str) -> bool:
-    """Whether `text` refers to `name`, as `CLOSED_ON_HELP` in `file_ticket.py`
-    gives it: it holds `name` where `name` holds a `/`, or a form of
-    `word_forms` as a whole word."""
-    return ("/" in name and name in text) or any(whole_word(text, f) for f in word_forms(name))
+    """Whether `text` refers to `name`, as `CLOSED_ON_HELP` in
+    `ticket_citations.py` gives it: it holds `name` where `name` holds a
+    `/`, or a form of `word_forms` as a whole word."""
+    return refers(text, name, word_forms(name))
+
+
+def refers(text: str, name: str, forms: Iterable[str]) -> bool:
+    """`names` of `text` and `name`, with `forms` the `word_forms` of
+    `name`, for a caller that judges many texts against one name."""
+    return ("/" in name and name in text) or any(whole_word(text, f) for f in forms)
 
 
 def whole_word(text: str, word: str) -> bool:

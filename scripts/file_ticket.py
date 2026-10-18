@@ -26,14 +26,14 @@ from handbook.paths import scripts_importable
 
 scripts_importable()
 
-from ticket_files import (FIELD, NAME_FORM, TicketName, listed_tickets, ticket_name,  # noqa: E402
-                          ticket_path, ticket_status)
+from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path, ticket_status  # noqa: E402
 from ticket_paths import SCOPE, section_paths  # noqa: E402
-from ticketing.references import names  # noqa: E402
+from ticket_citations import (CITING_HELP, CLOSED_ON_HELP, EMPTY,  # noqa: E402
+                              citing_command, closed_on_command)
 from tree_reads import main_tree  # noqa: E402
 from ticket_form import (DESIGN, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402
                          RETIRED, VALIDATES, checked_kind, front, section, sections_example, ticket_kind,
-                         title, title_line)
+                         title_line)
 from ticket_log import (AGENT_ID, CLOSED_BY, DUPLICATE_OF, SESSION_ID, UNBLOCKED_BY, VALIDATED,  # noqa: E402
                         WAITS_ON_NEXT, Wait, log_lines, log_moves, logged, read_ticket, resolution_of)
 from ticket_log_command import LOG_HELP, LOG_RULES, log_args, log_command  # noqa: E402
@@ -234,16 +234,6 @@ EDITORS_RULES = mctx("""
         - The change's agent-running time still counts from its take.
     - The command refuses, and writes nothing, where no change closed `{fixed}` before the call has a known spend, and prints an `undecided` line on stderr.
     """)
-
-EMPTY = mctx("the list is empty")
-
-CLOSED_ON_HELP = mctx("""
-    - `<name>` is a word or a path from the root of the tree, as the title of a ticket gives it.
-    - The command prints, for each ticket under `tickets/{closed}/` whose title refers to a `<name>`, or a path that a `<name>` that is a path had before, as `git log --follow --name-only` gives it on `master`, its number and title, and under them its last log line, in the order of numbers, or `{empty}` where no title refers to one.
-    - A title refers to a path, which holds a `/`, where it holds the path, the path's file name as a whole word, or, for a `.py` file other than a package's `__init__.py`, each dotted name it can be imported by, as a whole word, such as `operations.plan` for `src/operations/plan.py`. It refers to any other `<name>` where it holds it as a whole word.
-    """)
-
-NAMES = mctx("names: {names}")
 
 GROUND_HELP = mctx("""
     - `<path>:<first>-<last>` is a file from the root of the tree, and the first and the last line of a span of it, from 1.
@@ -549,19 +539,14 @@ def sweep_command(*runs: str) -> str:
     return "\n".join(map(str, moved)) if moved else NONE_MOVED
 
 
-def closed_on_command(*targets: str) -> str:
-    """Each closed ticket whose title refers to one of `targets`, as
-    `CLOSED_ON_HELP` gives it."""
-    if not targets:
-        raise ArgumentsRefused(mctx("the call gives no name"))
-    main = main_tree()
-    known = set(targets) | {line for n in targets for line in checkout.git_out(
-        main, "log", "--follow", "--name-only", "--format=", "master", "--", n).splitlines() if line}
-    tickets = main_tickets()
-    paths = sorted(listed_tickets(tickets, Status.CLOSED), key=lambda p: ticket_name(p).number.order)
-    rows = [f"{ticket_name(p).number} {title(p, text)}\n    {log_lines(text)[-1].group()}"
-            for p in paths if (text := read_ticket(p)) and any(names(title(p, text), n) for n in known)]
-    return "\n".join([NAMES.format(names=", ".join(sorted(known))), *(rows or [EMPTY])])
+def named(command: Callable[[Sequence[str]], str]) -> Callable[..., str]:
+    """`command` as the act of a subcommand that takes one or more names,
+    which refuses a call that gives none."""
+    def act(*given: str) -> str:
+        if not given:
+            raise ArgumentsRefused(mctx("the call gives no name"))
+        return command(given)
+    return act
 
 
 def master_hash(main: Path) -> str:
@@ -660,7 +645,10 @@ SUBCOMMANDS = {
     "await-close": Subcommand(mctx("ends once a ticket closes, and prints how it closed"),
                               " <number> [<number> ...]", AWAIT_CLOSE_HELP, "", None, await_close_command, False),
     "closed-on": Subcommand(mctx("prints the closed tickets whose title refers to a target, with how each closed"),
-                            " <name> [<name> ...]", CLOSED_ON_HELP, "", None, closed_on_command, False),
+                            " <name> [<name> ...]", CLOSED_ON_HELP, "", None, named(closed_on_command), False),
+    "citing": Subcommand(mctx("prints, for each name, the tickets of any status whose title refers to it, "
+                              "with the status, the kind and the last log line of each"),
+                         " <name> [<name> ...]", CITING_HELP, "", None, named(citing_command), False),
     "ground": Subcommand(mctx("prints the `Grounds` line of a span of a file or of a command"),
                          " <path>:<first>-<last> | --command <command>", GROUND_HELP, "", None,
                          ground_command, False),
