@@ -38,7 +38,7 @@ TITLE = mctx("handbook: a whole-document pass on each document past its budget")
 """The title of every pass, by which the lookup finds one."""
 
 INTENT = mctx("""
-    - Make a whole-document pass on each of these documents, which stand past their budget: {documents}.
+    - Make a [Whole-document pass](prompts/agents/doc-editor/whole-document.md#whole-document-pass) on each of these documents: {documents}.
 """)
 
 PASS_DESIGN = mctx("""
