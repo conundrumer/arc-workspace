@@ -585,25 +585,39 @@ def cap_reply(reviewer: Agent | None, judged: float) -> tuple[str, Report] | Non
     return (reviewer.agent_id, r) if r is not None and r.time > judged else None
 
 
-def step(state: State) -> Step | None:
+def step(state: State,
+         idle: Callable[[State, Ticket, Step | None], Step | None]) -> Step | None:
     """The next step of the changes: a message to an agent on a change no
-    longer held, a take, then a step of each change the operator
-    holds, other than a step an operator already made or handled
-    (`repeated`), where `no_step` gives none in its place. Where each step
-    is such a step, the step is that of the message or the take, so the
-    procedure waits on it."""
+    longer held, a take, then the step of each change the operator
+    holds (`due_step`), or, where it has none, the step `idle` gives for
+    it, other than a step an operator already made or handled
+    (`repeated`). Where each step is such a step, the step is that of the
+    message or the take, so the procedure waits on it."""
     before = [s for s in (give_up(state), take(state)) if s is not None]
     for s in before:
         if not repeated(s, state):
             return s
     for t in held(state):
-        if (s := next_step(state, t)) is None:
-            continue
-        if not repeated(s, state):
-            return s
-        if (other := no_step(state, t, s)) is not None and not repeated(other, state):
+        s = next_step(state, t)
+        if (due := due_step(state, t, s)) is not None:
+            return due
+        if (other := idle(state, t, s)) is not None and not repeated(other, state):
             return other
     return before[0] if before else None
+
+
+def due_step(state: State, t: Ticket, s: Step | None) -> Step | None:
+    """The step of the change `t` the operator holds, whose `next_step`
+    is `s`: `s`, or, where `repeated` passes it over, the one `no_step`
+    gives in its place, where `repeated` does not pass that over. None
+    otherwise."""
+    if s is None:
+        return None
+    if not repeated(s, state):
+        return s
+    if (other := no_step(state, t, s)) is not None and not repeated(other, state):
+        return other
+    return None
 
 
 def no_step(state: State, t: Ticket, s: Step) -> Step | None:

@@ -14,8 +14,9 @@ reply for the coordinator; the monitor's steps (`monitor`); the release
 of tickets; the move back to `tickets/open/` of the tickets the coordinator wrote on
 under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/`; the coordinator's later
 lines to the ticket analysts that run on their tickets; the ticket
-analysts on open tickets; the review of drafts; the changes; the move
-to `tickets/draft/` of the changes that a ticket holds up
+analysts on open tickets; the review of drafts; the changes, and for a
+held change with no step, the step `idle_changes` gives where it is
+idle; the move to `tickets/draft/` of the changes that a ticket holds up
 (`ticket_stall.stall`), so that the take of a change comes before the
 move of the changes that wait on it; the solver pipelines; the cost audit, the code
 review, the standing doc review, the gate and the process assessment
@@ -45,8 +46,9 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from controlled_markdown import mctx
-from operations import (after_profile, alerts, batches, changes, concept_faults, decisions, drafts, limit_resume, lineage, merging,
-                        monitor, passes, reviews, runs, ticket_stall, triage, taking, unbatched)
+from operations import (after_profile, alerts, batches, changes, concept_faults, decisions, drafts,
+                        idle_changes, limit_resume, lineage, merging, monitor, passes, reviews, runs,
+                        ticket_stall, triage, taking, unbatched)
 from operations.directives import (
     lines,
     passed,
@@ -256,6 +258,12 @@ def unread_lines(state: State) -> Step | None:
     return next((s for s in found if not repeated(s, state)), None)
 
 
+def held_changes(state: State) -> Step | None:
+    """`changes.step`, with the step on an idle held change
+    (`idle_changes.step`)."""
+    return changes.step(state, idle_changes.step)
+
+
 def pipelines(state: State) -> Step | None:
     return passes.step(state)[0]
 
@@ -265,7 +273,7 @@ EARLY: tuple[Callable[[State], Step | None], ...] = (
     triage.unfinished)
 LATE: tuple[Callable[[State], Step | None], ...] = (
     taking.release, triage.reopen, triage.later_lines, triage.settle, drafts.step,
-    changes.step, ticket_stall.stall,
+    held_changes, ticket_stall.stall,
     pipelines, batches.audit, *reviews.PROCEDURES, batches.standing_review,
     batches.overdue_review, batches.gate,
     batches.assessment, after_profile.validation, after_profile.script_check, batches.step,

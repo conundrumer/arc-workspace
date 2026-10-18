@@ -44,7 +44,9 @@ ticket is recorded the same way, in one `bug` ticket of its own kind
 (`waits.paths`) of each change that waits on it (`waiting_paths`). The
 message on a change whose paths hold a ticket that does not move goes to
 the coordinator as `scripts/operate.py --help alerts` gives it
-(`stuck_waits`). A kind's ticket and its lines are on an agent, or, for
+(`stuck_waits`). An idle held change (`idle_changes`) is recorded the
+same way, in one `bug` ticket of its own kind (`idle`). A kind's ticket
+and its lines are on an agent, or, for
 that kind, on a ticket."""
 
 import re
@@ -152,6 +154,7 @@ class BugKind(Enum):
     LATE_RESUME = "late resume"
     STUCK = "stuck"
     TICKET_STALL = "ticket stall"
+    IDLE = "idle"
 
 
 TICKETS = {
@@ -175,6 +178,11 @@ TICKETS = {
              "for `STUCK_SECONDS`"),
         mctx("The ticket made no progress for `STUCK_SECONDS` while a step of an operator "
              "was due on it, and then a message on the ticket went to the coordinator.")),
+    BugKind.IDLE: (
+        mctx("the steps of a held change: the operator's command gave it no step, with no agent "
+             "at work on it, and it waits on no clock, coordinator or usage limit"),
+        mctx("The change stood with no agent and no step, and then a message on it went to "
+             "the coordinator.")),
 }
 """The title and the `Impact` of the `bug` ticket of each kind that files one,
 by which the operator also finds that kind's ticket in the tracker."""
@@ -319,6 +327,12 @@ def ticket_stall_text(state: State, t: Ticket, since: float) -> str:
                       *agents])
 
 
+FIND_STEP = mctx("Find the step it waits for, from its log and the last reports of its agents, "
+                 "then have the agent whose work that step is make it.")
+"""The line of the message to the coordinator on a stalled ticket or an
+idle change that gives the coordinator its step."""
+
+
 def ticket_stalls(state: State) -> Step | None:
     """The first step on a ticket of `ticket_stall.stalled`: the message that
     gives the coordinator `ticket_stall_text`, once after its last
@@ -328,9 +342,8 @@ def ticket_stalls(state: State) -> Step | None:
     for n, since in sorted(stalls.items()):
         t = state.tracker.tickets[n]
         text = ticket_stall_text(state, t, since)
-        sent = Send(COORDINATOR, text + "\n" + waiting_paths(state, n, stalls) + mctx(
-            "Find the step it waits for, from its log and the last reports of its agents, then "
-            "have the agent whose work that step is make it."), f"ticket stall {n}", since)
+        sent = Send(COORDINATOR, text + "\n" + waiting_paths(state, n, stalls) + FIND_STEP,
+                    f"ticket stall {n}", since)
         if not repeated(sent, state):
             return sent
         s = ticket_step(state, BugKind.TICKET_STALL, Domain.TICKET, n, since,
