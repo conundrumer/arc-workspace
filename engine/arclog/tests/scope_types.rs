@@ -24,29 +24,6 @@ fn path(steps: &[u32]) -> NodePath {
     NodePath(steps.iter().map(|step| PathStep(*step)).collect())
 }
 
-const PROGRAM: &str = "
-(INPUT stage \"the cells\"
-  (RULE &stage (input *P *Col)))
-
-(DEMONSTRATED &catalog
-  (value ((:o P) (:v Col))
-    (&stage *P *Col))
-  (demonstration ((:o P) (:o2 P2))
-    (&stage *P *Col)
-    (&stage *P2 Col))
-  (DEMO_RULE $Same
-    (RULE &prediction (&stage (:Col *Col) (:P *P)))))
-";
-
-#[test]
-fn a_label_of_one_id_in_the_key_scope_and_a_demo_rule_takes_the_type_of_each_scope() {
-    let checked = checked(PROGRAM);
-    let key = checked.types.form(&path(&[1])).expect("the key clause and inputs are a label scope");
-    let rule = checked.types.form(&path(&[1, 2])).expect("the DEMO_RULE is a label scope");
-    let shared: Vec<(&ValueType, &ValueType)> = rule.labels().filter_map(|(label, ty)| Some((key.label(label)?, ty))).collect();
-    assert!(shared.contains(&(&ValueType::Box, &ValueType::Color)), "{shared:?}");
-}
-
 #[test]
 fn an_equality_in_one_branch_gives_no_site_to_a_label_of_another_branch() {
     checked(

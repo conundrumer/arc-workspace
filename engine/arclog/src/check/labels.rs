@@ -1,6 +1,13 @@
 //! The check of the labels that `=` makes and that an `OR` or an `IF` exports.
 
-use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult};
+use super::grounding::{each_head_use, each_use, form_bodies, list_of, parts_of, FormBody};
+use super::types::result;
+use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
+use crate::hash::StableHashSet;
+use crate::program::canonical::{CanonicalOrder, SearchBudget};
+use crate::program::path::{NodePath, NodeRef};
+use crate::program::{Body, Conjunct, LabelId, LabelUse, Negated};
+use crate::read::columns::exports;
 
 /// [`CheckId::MadeAndExportedLabels`].
 pub struct MadeAndExportedLabelsCheck;
@@ -10,11 +17,112 @@ impl Check for MadeAndExportedLabelsCheck {
         CheckId::MadeAndExportedLabels
     }
 
-    fn check(&self, _input: &CheckInput<'_>) -> CheckResult {
-        CheckResult::Pass
+    /// Refuses, in each body of the form:
+    ///
+    /// - a label that a site or a `=` reads outside each list that keeps it,
+    ///   as `crate::read::columns::exports` gives the labels a list keeps,
+    ///   and outside the labels its context gives the body: a label local
+    ///   to an `OR` branch, an `IF` or an `ALL`, read outside it. A later
+    ///   branch of an `OR` may name a label of the first branch, and an
+    ///   `IF`'s else a label of its then;
+    /// - a label made at a site of a `NOT` atom, where every site joins
+    ///   (`docs/arclog/arclog.md#negation-and-constraints`);
+    /// - a `^` label that the key body's own list does not keep, so that no
+    ///   atom at the key body's top level binds the key's column.
+    fn check(&self, input: &CheckInput<'_>) -> CheckResult {
+        let mut refused: Vec<(&'static str, NodePath)> = Vec::new();
+        for form_body in form_bodies(input.form) {
+            refusals(&form_body, &mut refused);
+        }
+        if refused.is_empty() {
+            return CheckResult::Pass;
+        }
+        let order = CanonicalOrder::of(input.form, &mut SearchBudget::new());
+        result(refused.into_iter().map(|(message, at)| Refusal { message: message.into(), at: order.canonical_path(&at) }).collect())
     }
 
     fn check_prefix(&self, _prefix: &Prefix<'_>) -> PrefixResult {
         PrefixResult::Undecided
     }
+}
+
+/// The labels the list `body` keeps, each that a site or a `=` of its own
+/// list makes and each that an `OR` or an `IF` of it exports.
+fn kept(body: &Body) -> Vec<LabelId> {
+    let mut out = Vec::new();
+    exports(body, &[], &mut out);
+    out
+}
+
+/// Pushes onto `refused` each refusal of `form_body`.
+fn refusals(form_body: &FormBody<'_>, refused: &mut Vec<(&'static str, NodePath)>) {
+    let top = kept(form_body.body);
+    let visible: StableHashSet<LabelId> = form_body.given.iter().chain(&form_body.columns).chain(&form_body.fields).chain(&top).copied().collect();
+    list(&list_of(form_body.body, &form_body.at), &visible, refused);
+    each_use(NodeRef::Body(form_body.body), &form_body.at, &mut |at, use_| {
+        if let LabelUse::Key(label) = use_ {
+            if !top.contains(&label) {
+                refused.push(("the key label is local to a form of the key body, so no atom at the key body's top level binds it", at.clone()));
+            }
+        }
+    });
+    if let Some((input, at)) = &form_body.head {
+        each_head_use(input, at, &mut |at, use_| {
+            if let LabelUse::Join(label) = use_ {
+                read(&visible, label, at, refused);
+            }
+        });
+    }
+}
+
+/// Pushes onto `refused` each read in `list` of a label that `visible`
+/// does not hold, and each label made at a site of a `NOT` atom, and so for
+/// the parts of each form of `list`, each part with the labels it keeps.
+fn list(list: &[(NodePath, &Conjunct)], visible: &StableHashSet<LabelId>, refused: &mut Vec<(&'static str, NodePath)>) {
+    for (at, conjunct) in list {
+        match conjunct {
+            Conjunct::Atom(_) | Conjunct::Constraint(_) => each_use(NodeRef::Conjunct(conjunct), at, &mut |at, use_| {
+                if let LabelUse::Join(label) = use_ {
+                    read(visible, label, at, refused);
+                }
+            }),
+            Conjunct::Not(Negated::Atom(_)) => each_use(NodeRef::Conjunct(conjunct), at, &mut |at, use_| match use_ {
+                LabelUse::Fresh(_) | LabelUse::Key(_) => refused.push(("a site of a `NOT` atom makes the label, where every site of the atom joins", at.clone())),
+                LabelUse::Join(label) => read(visible, label, at, refused),
+                LabelUse::Zero => {}
+            }),
+            Conjunct::Not(Negated::Form(_)) | Conjunct::All { .. } => parts(conjunct, at, visible, &[], refused),
+            Conjunct::Or(branches) => parts(conjunct, at, visible, &kept(branches[0].value()), refused),
+            Conjunct::If { then, .. } => parts(conjunct, at, visible, &kept(then.value()), refused),
+        }
+    }
+}
+
+/// Pushes onto `refused` a refusal of the read of `label` at `at` where
+/// `visible` does not hold it.
+fn read(visible: &StableHashSet<LabelId>, label: LabelId, at: &NodePath, refused: &mut Vec<(&'static str, NodePath)>) {
+    if !visible.contains(&label) {
+        refused.push(("the label is read outside each list that keeps it", at.clone()));
+    }
+}
+
+/// Pushes onto `refused` the refusals of each part of `conjunct`, a form
+/// at `at`, each part read with `visible`, `named` and the labels the part
+/// keeps. `named` holds the labels of an `OR`'s first branch or of an
+/// `IF`'s then, which a later branch or the else may name, as
+/// `docs/arclog/arclog.md#disjunction` gives.
+fn parts(conjunct: &Conjunct, at: &NodePath, visible: &StableHashSet<LabelId>, named: &[LabelId], refused: &mut Vec<(&'static str, NodePath)>) {
+    for part in parts_of(conjunct, at) {
+        let mut inner = visible.clone();
+        inner.extend(named.iter().copied());
+        part_kept(&part, &mut inner);
+        list(&part, &inner, refused);
+    }
+}
+
+/// Adds to `visible` the labels that the conjuncts of `part` keep, as one
+/// list.
+fn part_kept(part: &[(NodePath, &Conjunct)], visible: &mut StableHashSet<LabelId>) {
+    let body = Body { conjuncts: part.iter().map(|(_, conjunct)| (*conjunct).clone()).collect() };
+    visible.extend(kept(&body));
 }

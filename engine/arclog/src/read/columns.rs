@@ -29,7 +29,7 @@ pub(super) fn made_labels(body: &Body) -> Vec<LabelId> {
     for conjunct in body.conjuncts.iter() {
         match conjunct {
             Conjunct::Atom(_) | Conjunct::Constraint(_) => site_label_uses(conjunct, &mut |use_| {
-                if let LabelUse::Fresh(label) = use_ {
+                if let LabelUse::Fresh(label) | LabelUse::Key(label) = use_ {
                     push_new(&mut out, label);
                 }
             }),
