@@ -171,6 +171,9 @@ pub(super) struct Reader {
     /// Whether a read `(self.<port> ...)` stands, as in a definition of the
     /// registry file.
     defined_ports: bool,
+    /// Whether the reader reads the body of a key clause, where a `^`
+    /// label stands (`docs/arclog/arclog.md#instance`).
+    in_key_body: bool,
     pub(super) diagnostics: Vec<Diagnostic>,
     nodes: Vec<(NodePath, NodeLayout)>,
 }
@@ -186,7 +189,7 @@ impl Reader {
 
     /// A reader whose read `&x.y` names the outputs of `owners`.
     pub(super) fn with_owners(owners: Owners, defined_ports: bool) -> Self {
-        Reader { owners, defined_ports, diagnostics: Vec::new(), nodes: Vec::new() }
+        Reader { owners, defined_ports, in_key_body: false, diagnostics: Vec::new(), nodes: Vec::new() }
     }
 
     /// The layout of the nodes read, as nodes of `file`.
@@ -318,6 +321,9 @@ impl Reader {
         if let Some(name) = text.strip_prefix(sp::KEY_MARK) {
             if !is_name(name) {
                 return self.refuse(format!("`{text}` is not a label"), place);
+            }
+            if !self.in_key_body {
+                return self.refuse("a `^` label stands only in a key clause's body", place);
             }
             return Ok(LabelUse::Key(scope.made(place)));
         }
@@ -724,7 +730,6 @@ impl Reader {
         match label {
             LabelUse::Fresh(_) if head_site => self.refuse("a head site carries no `*`: the body or the key makes its label", place),
             LabelUse::Zero if head_site => self.refuse("a head site holds no `0`: the body makes its label with `(= *X 0)`", place),
-            LabelUse::Key(_) if head_site => self.refuse("a head site carries no `^`: the body or the key makes its label", place),
             _ => Ok(label),
         }
     }
@@ -750,7 +755,10 @@ impl Reader {
     }
 
     fn key_body(&mut self, expr: Option<&SExpr>, path: &NodePath, scope: &LabelScope, at: SourcePlace) -> R<KeyBody> {
-        let body = self.body_list(expr, path, scope, at)?;
+        let outer = std::mem::replace(&mut self.in_key_body, true);
+        let body = self.body_list(expr, path, scope, at);
+        self.in_key_body = outer;
+        let body = body?;
         let columns = relation_columns(&key_labels(body.value()), scope);
         Ok(KeyBody { body, columns })
     }
