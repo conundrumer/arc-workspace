@@ -6,13 +6,13 @@ sessions `SessionsRead.adopted` gives, as `State.mine` gives them. Which session
 is the main one, `file_ticket.py main --help` states; which sessions are
 idle, `idle_sessions.read_sessions` gives.
 
-While an `Op pause.` line stands (`directives.paused`), the operator takes,
-of the changes it would take with no pause, only those of `held_work`, so
-the work already held reaches its end, those of `through_pause`, the
-tickets an `Op allow:` or an `Op expedite:` line gives, and those of
+While an `Op scope: own.` line stands (`directives.own_scope`), the operator
+takes, of the changes it would take under `Op scope: all.`, only those of
+`held_work`, so the work already held reaches its end, those of `allowed`,
+the tickets an `Op allow:` or an `Op expedite:` line gives, and those of
 `filed_work`, the work the session's coordinator filed, and each other change
-waits for an `Op resume.` line. Past the usage pace (`pacing`), the changes
-of `held_work` and of `through_pause` are taken, and each other one waits
+waits for an `Op scope: all.` line. Past the usage pace (`pacing`), the changes
+of `held_work` and of `allowed` are taken, and each other one waits
 until the pace admits it.
 
 A change that waits for a ticket that holds it up moves to
@@ -26,7 +26,7 @@ from collections.abc import Callable
 from controlled_markdown import form, mctx
 from operations import pacing, rank
 from operations.change_budget import TAKE_NOTE, budget_fields
-from operations.directives import (Directive, allow_named, named, NUMBER, numbers, numbers_in, paused,
+from operations.directives import (Directive, allow_named, named, NUMBER, numbers, numbers_in, own_scope,
                                    session_lines)
 from operations.final_reply import live_holder
 from operations.log_commands import log
@@ -88,30 +88,30 @@ def admits(state: State) -> Callable[[str], bool]:
     """Whether the operator may admit an open ticket: one the `takes` of
     the run scripts admit (`Computed.admitted`), or one of `expedited`,
     or any where no script defines `takes`; of those, one of `held_work`
-    or of `through_pause` always, and any other only while the usage pace
-    admits one (`Computed.pace`) and, where an `Op pause.` line stands,
+    or of `allowed` always, and any other only while the usage pace
+    admits one (`Computed.pace`) and, where an `Op scope: own.` line stands,
     only one of `filed_work`."""
     passes, held = passing(state)
-    clear = past_pause(state)
+    clear = scope_admits(state)
     paced = pacing.admits(state.computed.pace, state.now)
     return lambda n: passes(n) and (held(n) or (paced and clear(n)))
 
 
-def past_pause(state: State) -> Callable[[str], bool]:
-    """Whether a ticket passes a pause: one of `through_pause` or of
-    `filed_work`, or any while no `Op pause.` line stands."""
-    if not paused(state):
+def scope_admits(state: State) -> Callable[[str], bool]:
+    """Whether the `Op scope:` lines admit a ticket: one of `allowed` or of
+    `filed_work`, or any while no `Op scope: own.` line stands."""
+    if not own_scope(state):
         return lambda _: True
-    return (through_pause(state) | filed_work(state)).__contains__
+    return (allowed(state) | filed_work(state)).__contains__
 
 
 def passing(state: State) -> tuple[Callable[[str], bool], Callable[[str], bool]]:
     """Whether the `takes` of the run scripts admit a ticket, with those of
     `expedited`, every ticket where no script defines `takes`, and whether
-    it is one of `held_work` or of `through_pause`."""
+    it is one of `held_work` or of `allowed`."""
     admitted = state.computed.admitted()
     runs = None if admitted is None else set(admitted) | expedited(state)
-    held = held_work(state) | through_pause(state)
+    held = held_work(state) | allowed(state)
     return (lambda n: runs is None or n in runs), held.__contains__
 
 
@@ -122,7 +122,7 @@ def pace_held(state: State, numbers: list[str]) -> Pace | None:
     if pacing.admits(pace, state.now):
         return None
     passes, held = passing(state)
-    clear = past_pause(state)
+    clear = scope_admits(state)
     return pace if any(passes(n) and clear(n) and not held(n) for n in numbers) else None
 
 
@@ -140,8 +140,9 @@ def held_work(state: State) -> set[str]:
                            or (t.kind is Kind.INTERFERENCE and t.status is not Status.CLOSED)})
 
 
-def through_pause(state: State) -> set[str]:
-    """The tickets that pass a pause: each ticket a chain of links reaches
+def allowed(state: State) -> set[str]:
+    """The tickets `Op scope: own.` admits past the work the session's
+    coordinator filed: each ticket a chain of links reaches
     from a ticket of `directives.allow_named`, and those of `expedited`."""
     return reached(state, allow_named(state)) | expedited(state)
 
@@ -261,7 +262,7 @@ def blocked_since(t: Ticket) -> float:
 def batch(state: State) -> list[Ticket]:
     """The changes of `takeable` that one step of `take` takes, as `take`
     gives them."""
-    free = pacing.admits(state.computed.pace, state.now) and not paused(state)
+    free = pacing.admits(state.computed.pace, state.now) and not own_scope(state)
     first = lead(state)
     out: list[Ticket] = []
     paced = False
@@ -277,7 +278,7 @@ def batch(state: State) -> list[Ticket]:
 def take(state: State) -> Step | None:
     """The take of each change of `takeable`, in its order, up to the first
     whose budget `Computed.budgets` does not give. Where the usage pace does
-    not admit a ticket, or an `Op pause.` line stands, a step takes, of the
+    not admit a ticket, or an `Op scope: own.` line stands, a step takes, of the
     changes neither of `lead` nor `taken_before`, only the first, so that
     the pace is read again before each further take."""
     commands: list[str] = []

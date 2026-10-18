@@ -12,7 +12,7 @@
 - The statements on the user's requests for work and on the tickets the coordinator files and tracks, that the coordinator reads at the triggers its document gives.
 
 ## Routes
-- A user's message may open or end with a route directive: `direct`, `op send`, `hotfix`, `expedite <number>`, `op pause`, `op resume`, `op file`, `op draft`, `scratch`, or `re <number>`, a follow-up on that `request`.
+- A user's message may open or end with a route directive: `direct`, `op send`, `hotfix`, `expedite <number>`, `op scope: own`, `op scope: all`, `op file`, `op draft`, `scratch`, or `re <number>`, a follow-up on that `request`.
 - Where a user's message that asks for work gives no route directive, infer its route, the `request` a follow-up concerns, and the span, and infer `hotfix` for a small edit with low risk.
     * comment: The user's words, session 129de8fc-2a0d-4d4d-b950-3a0194c762e2, 2026-10-17T15:51:41Z, on a one-line TODO comment inferred `send`: "man. it's just a one line comment. dont burn tokens on it"; session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-17T15:53:22Z: "i asked to add a TODO comment and it inferred route `direct`". Ticket 11-70.
 - On a route other than `scratch`, write, read back each write and each route you infer, then act: in the same turn on a route the user states, and on an inferred one at the user's next message, unless that message changes or cancels it.
@@ -29,7 +29,7 @@
 - `op send`: file the `request` and, in that turn, tell an operator that tickets are open where an operator launcher of yours runs, and otherwise launch a ticket analyst on it, with its transcript brief, and tell an operator so once the analyst replies.
 - `hotfix`: file the change's `request`, write its brief, and, as [Running a change](#running-a-change) gives, launch at once on a worktree the editors it needs, each with that brief, and merge the change.
 - `expedite <number>`: write nothing, send an operator `Op expedite: <number>`, and tell the user the tickets outside `tickets/closed/` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from it.
-- `op pause` and `op resume`: write nothing, and send an operator `Op pause.` or `Op resume.`.
+- `op scope: own` and `op scope: all`: write nothing, and send an operator `Op scope: own.` or `Op scope: all.`.
 - Run a change yourself only on `direct` and `hotfix`.
 
 ## Running a change

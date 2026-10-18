@@ -5,9 +5,9 @@ The operator takes each `request` and `bug` from its first ticket analyst
 on: once a ticket stands in the list `file_ticket.py to-settle` prints,
 the command launches a ticket analyst with it, leaving out each ticket on a
 task whose solver pipeline has yet to launch its own ticket analyst, which
-`passes` gives that ticket. While an `Op pause.` line stands
-(`directives.paused`), it launches one only with the tickets of
-`taking.through_pause` and of `taking.filed_work`. A ticket goes to no second analyst while one
+`passes` gives that ticket. While an `Op scope: own.` line stands
+(`directives.own_scope`), it launches one only with the tickets of
+`taking.allowed` and of `taking.filed_work`. A ticket goes to no second analyst while one
 runs on it, nor again once one returned, until the coordinator writes a line
 in its log after that analyst's launch, as where it records a decision of the
 user or the user's later words on it, or the ticket moves from
@@ -137,7 +137,7 @@ def unsettled_open(state: State) -> list[str]:
 
 def selected(state: State) -> list[str]:
     admitted = taking.admits(state)
-    clear = taking.past_pause(state)
+    clear = taking.scope_admits(state)
     return [n for n in unsettled_open(state) if admitted(n) and clear(n)]
 
 

@@ -7,16 +7,16 @@ prefix `Op`, the word of its kind and a colon, past a list marker:
 - `Op run: <path>`, a run script, as `runs` gives it;
 - `Op drafts to review: <number>, ...`;
 - `Op expedite: <number>, ...`, for every operator of the session;
-- `Op allow: <number>, ...`, the tickets that pass a pause for every operator
-  of the session, and the changes a chain of links reaches from them;
+- `Op allow: <number>, ...`, the tickets that `Op scope: own.` admits for every
+  operator of the session, and the changes a chain of links reaches from them;
 - `Op merged: <number>, ...`, the changes the coordinator gives as merged;
 - `Op merge: <number>`, a change under `tickets/blocked/` whose merge that line rules;
-- `Op tickets are open.`, which ends no pause;
-- `Op pause.`, after which no operator of the session settles an open
+- `Op tickets are open.`, which leaves the scope as it is;
+- `Op scope: own.`, after which no operator of the session settles an open
   ticket or takes a change outside the work held, the tickets an
   `Op allow:` or an `Op expedite:` line gives and the work the session's
-  coordinator filed (`paused`), and
-  `Op resume.`, which ends that pause;
+  coordinator filed, and `Op scope: all.`, which ends that limit, the last
+  such line standing (`own_scope`);
 - `Op pace: <preset> [<argument> ...]` or `Op pace: <path>`, the usage pace
   for every operator of the session (`pace`), as `pacing` gives it;
 - the rulings, `Op decision:` and `Op override:` lines in the forms that
@@ -72,6 +72,13 @@ class Decision(StrEnum):
 OP = "Op "
 
 
+class Scope(StrEnum):
+    """The tickets an `Op scope:` line has the operators take: their own
+    work, as `taking.scope_admits` gives it, or every open ticket."""
+    OWN = "own"
+    ALL = "all"
+
+
 class Directive(StrEnum):
     SOLVE = "Op solve"
     RUN = "Op run"
@@ -81,8 +88,7 @@ class Directive(StrEnum):
     MERGED = "Op merged"
     MERGE = "Op merge"
     OPEN = "Op tickets are open"
-    PAUSE = "Op pause"
-    RESUME = "Op resume"
+    SCOPE = "Op scope"
     PACE = "Op pace"
     OVERRIDE = "Op override"
     DECISION = "Op decision"
@@ -98,6 +104,7 @@ GIVE_AGAIN_WORDS = "give again"
 GIVE_AGAIN = re.compile(rf"{GIVE_AGAIN_WORDS} (?P<key>{STEP_KEY.pattern})")
 OVERRIDE = re.compile(rf"(?P<task>{TASK_ID})\s+(?P<role>{'|'.join(PASSES)})\s+(?P<text>\S.*)")
 DECISION = re.compile(rf"(?P<key>{STEP_KEY.pattern})\s+(?P<choice>[a-z]+)")
+SCOPE = re.compile(rf"(?P<scope>{'|'.join(Scope)})\.")
 
 LINE = re.compile(rf"^\s*(?:{LIST_MARKER}\s+)?(?P<kind>[A-Z][a-z ]+?)(?::\s*(?P<rest>.*?)|\.)\s*$")
 NUMBER = re.compile(r"\b(?:\d+-)?\d+\b")
@@ -239,11 +246,21 @@ def rulings(state: State) -> list[Line]:
                   + step_decisions(state), key=lambda ln: ln.message.time)
 
 
-def paused(state: State) -> bool:
-    """The pause stands for every operator of the session, one that takes
-    over from an ended operator included."""
-    last = [ln.kind for ln in session_lines(state) if ln.kind in (Directive.PAUSE, Directive.RESUME)]
-    return bool(last) and last[-1] is Directive.PAUSE
+def line_scope(rest: str) -> Scope | None:
+    """The scope an `Op scope:` line's text after the colon gives, or None
+    where it is in no form `SCOPE` reads."""
+    m = SCOPE.fullmatch(rest)
+    return None if m is None else Scope(m["scope"])
+
+
+def own_scope(state: State) -> bool:
+    """Whether the last `Op scope:` line in a form `line_scope` reads, to any
+    operator of the session, gives `own`. The result holds for every
+    operator of the session, one that takes over from an ended operator
+    included."""
+    given = [s for ln in session_lines(state) if ln.kind is Directive.SCOPE
+             if (s := line_scope(ln.rest)) is not None]
+    return bool(given) and given[-1] is Scope.OWN
 
 
 def pace(state: State) -> Preset | Path | None:
@@ -345,8 +362,9 @@ def pipelines(given: list[Line]) -> list[Pipeline]:
 
 
 def unread(state: State) -> list[Line]:
-    """The coordinator's lines in no form the command reads, rulings and
-    `Op pace:` lines in no fixed form among them."""
+    """The coordinator's lines in no form the command reads, rulings,
+    `Op pace:` and `Op scope:` lines in no fixed form among them."""
     return [ln for ln in lines(state)
             if ln.kind is None or ln.kind in RULINGS and ruling_form(ln) is None
-            or ln.kind is Directive.PACE and line_pace(ln.rest, state.main_tree) is None]
+            or ln.kind is Directive.PACE and line_pace(ln.rest, state.main_tree) is None
+            or ln.kind is Directive.SCOPE and line_scope(ln.rest) is None]

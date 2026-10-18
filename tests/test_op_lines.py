@@ -5,10 +5,10 @@ coordinator's lines to the `Op` forms."""
 def test_bare_line_reads_only_before_the_first_op_line() -> None:
     from operations.directives import Directive, cutoff, parsed
     from operations.state import Message
-    messages = [Message("op", 1.0, None, "Pause."), Message("op", 2.0, None, "Op resume."),
-                Message("op", 3.0, None, "Pause.")]
+    messages = [Message("op", 1.0, None, "Scope: own."), Message("op", 2.0, None, "Op scope: all."),
+                Message("op", 3.0, None, "Scope: own.")]
     kinds = [ln.kind for ln in parsed(messages, cutoff(messages))]
-    assert kinds == [Directive.PAUSE, Directive.RESUME, None]
+    assert kinds == [Directive.SCOPE, Directive.SCOPE, None]
 
 
 def test_held_step_keys_are_those_of_its_text_before_the_ruling() -> None:
