@@ -5,3 +5,8 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The evaluator's thread pool: work stealing over independent entries, whose
+# threads run other tasks while they wait on an entry another thread computes.
+rayon = "1.12.0"
+# The reader of a task file of `data/tasks/`, which is JSON.
+serde_json = "1.0.154"

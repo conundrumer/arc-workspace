@@ -7,7 +7,9 @@
 
 #![allow(unused_variables, dead_code)]
 
-use crate::relations::Relation;
+use std::sync::RwLock;
+
+use crate::eval::RelationValue;
 use crate::terms::InternTable;
 
 /// The key of a result-cache entry: the resolved clause IR, the identity of
@@ -39,27 +41,36 @@ pub struct ResultKey {
 pub struct RelationId(u32);
 
 /// The memo table of evaluated relations, keyed by content, bounded by bytes.
+/// Several threads read and write it at once through a shared reference.
+/// An entry holds a relation, `undefined`, or a stop whose
+/// [`crate::eval::ReachedBound::is_stored`] holds, and never a partial
+/// relation.
 #[derive(Debug, Default)]
 pub struct ResultCache {
-    entries: crate::hash::StableHashMap<ResultKey, std::sync::Arc<Relation>>,
+    entries: RwLock<crate::hash::StableHashMap<ResultKey, RelationValue>>,
 }
 
 impl ResultCache {
-    /// The relation cached under `key`, if any.
-    pub fn get(&self, key: &ResultKey) -> Option<std::sync::Arc<Relation>> {
+    /// The value cached under `key`, if any.
+    pub fn get(&self, key: &ResultKey) -> Option<RelationValue> {
         todo!()
     }
 
-    /// Caches `relation` under `key`.
-    pub fn insert(&mut self, key: ResultKey, relation: std::sync::Arc<Relation>) {
+    /// Caches `value` under `key`. A stop that is not stored is a fault of
+    /// the caller, so this panics on one.
+    pub fn insert(&self, key: ResultKey, value: RelationValue) {
         todo!()
     }
 }
 
 /// The engine's state for one task: its result cache and its intern table.
+/// The evaluations of the pool's threads share one session through a
+/// shared reference: the intern table stands behind a read-write lock,
+/// since interning writes it and reading a content reads it, and the
+/// result cache synchronizes its own entries.
 #[derive(Debug)]
 pub struct TaskSession {
-    pub intern: InternTable,
+    pub intern: RwLock<InternTable>,
     pub results: ResultCache,
     /// The bound on the session's bytes, which the intern table's bytes
     /// count toward.
@@ -83,7 +94,7 @@ pub struct ReachedSessionBound {
 impl TaskSession {
     /// A session with an empty intern table and an empty result cache.
     pub fn new(bound: SessionBound) -> Self {
-        TaskSession { intern: InternTable::default(), results: ResultCache::default(), bound }
+        TaskSession { intern: RwLock::default(), results: ResultCache::default(), bound }
     }
 
     /// Whether the session's bytes, the intern table's and the result

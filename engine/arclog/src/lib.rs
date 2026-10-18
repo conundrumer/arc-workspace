@@ -1,5 +1,6 @@
 //! The core crate of the arclog engine: the interfaces and shared parts of
-//! step 1 of the engine's build order, Reader and checker.
+//! step 1 of the engine's build order, Reader and checker, and of step 2,
+//! Evaluator and lib.
 //!
 //! The crate is unrelated to the Python package `engine` under
 //! `src/engine/`.
@@ -7,8 +8,10 @@
 //! # Files by the stage that writes their bodies
 //!
 //! Each public item here has its final signature, and each body is
-//! `todo!()`. Each later stage of step 1 writes the bodies of its own files,
-//! and edits no file of another stage:
+//! `todo!()` until its stage writes it. Each later stage writes the bodies
+//! of its own files, and edits no file of another stage.
+//!
+//! ## Step 1
 //!
 //! - representations: [`hash`], [`terms`], [`session`], [`relations`]
 //! - reader and writer: [`layout`], [`read`], [`write`](mod@write),
@@ -27,12 +30,42 @@
 //! step 1, its threads included, and a stage that needs a module at the top
 //! of the crate or a crate dependency reports it to the coordinator.
 //!
+//! ## Step 2
+//!
+//! Each change of step 2 writes the bodies of its own files, and edits a
+//! file of another change only at the lines its ticket's Scope gives:
+//!
+//! - 9-1037, the driver and the joins: [`eval`] (its `mod.rs`),
+//!   [`eval::ir`], [`eval::plan`], [`eval::join`], [`eval::examples`],
+//!   [`eval::output`], [`task`], and the subcommand `compare` of
+//!   `arclog-cli`
+//! - 9-1038, the filters: [`eval::filters`]
+//! - 9-1039, the result cache: [`eval::cache`], and the bodies of
+//!   [`session`]
+//! - 9-1040, the algebra: [`algebra`] and its submodules
+//! - 9-1041, the lib comparison: the subcommand `lib-compare` of
+//!   `arclog-cli`
+//! - 9-1042, instances: [`eval::instance`]
+//! - 9-1043, `RIGID_DET`: [`eval::rigid`]
+//! - 9-1044 to 9-1049, the constructions: one file of
+//!   `arclog-constructions` each, as that crate's module comment gives
+//! - 9-1050, `Unfold`: [`eval::unfold`]
+//! - 9-1051, parallelism and determinism: [`eval::pool`], the values of
+//!   [`eval::Caps::PROVISIONAL`], and the subcommands `determinism` and
+//!   `speed` of `arclog-cli`
+//!
+//! No change of step 2 edits this file. A change that needs a crate this
+//! step's `Cargo.toml` files do not give adds it to its own crate's
+//! `Cargo.toml`, with its reason, and to `engine/Cargo.lock`.
+//!
 //! A module whose functions take arguments holds
 //! `#![allow(unused_variables, dead_code)]` until its stage writes the bodies, since a
 //! `todo!()` body reads none of its arguments.
 
+pub mod algebra;
 pub mod check;
 pub mod diagnostic;
+pub mod eval;
 pub mod grounding;
 pub mod harness;
 pub mod hash;
@@ -44,6 +77,7 @@ pub mod relations;
 pub mod resolver;
 pub mod session;
 pub mod solver;
+pub mod task;
 pub mod terms;
 pub mod types;
 pub mod write;

@@ -1,6 +1,33 @@
 //! The arclog engine's binary for the dev loop and the refine passes, with
 //! no Python in the path.
+//!
+//! The first argument names a subcommand, and each subcommand stands in a
+//! file of its own, which reads the arguments after its name.
 
-fn main() {
-    todo!()
+mod compare;
+mod determinism;
+mod lib_compare;
+mod speed;
+
+use std::process::ExitCode;
+
+/// Each subcommand, by the name the first argument gives it.
+const SUBCOMMANDS: [(&str, fn(&[String]) -> ExitCode); 4] = [
+    ("compare", compare::run),
+    ("lib-compare", lib_compare::run),
+    ("determinism", determinism::run),
+    ("speed", speed::run),
+];
+
+fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let run = args.first().and_then(|name| SUBCOMMANDS.iter().find(|(n, _)| n == name)).map(|(_, run)| run);
+    match run {
+        Some(run) => run(&args[1..]),
+        None => {
+            let names: Vec<&str> = SUBCOMMANDS.iter().map(|(name, _)| *name).collect();
+            eprintln!("usage: arclog-cli <{}> [<argument> ...]", names.join("|"));
+            ExitCode::from(2)
+        }
+    }
 }

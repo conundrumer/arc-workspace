@@ -5,6 +5,8 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-# The binary runs the core crate's reader, resolver and checker over solver
-# files.
+# The binary runs the core crate's reader, resolver, checker and evaluator
+# over solver files.
 arclog = { path = "../arclog" }
+# The reader of the snapshot of the Souffle outcomes, whose files are JSON.
+serde_json = "1.0.154"
