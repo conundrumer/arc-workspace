@@ -474,6 +474,8 @@ pub struct GraphRelation {
 pub struct ProgramTypes {
     forms: crate::hash::StableHashMap<crate::program::path::NodePath, std::sync::Arc<FormTypes>>,
     columns: crate::hash::StableHashMap<GraphRelation, Box<[ValueType]>>,
+    /// The nodes whose relations have an Example column.
+    example_nodes: crate::hash::StableHashSet<crate::resolver::GraphNodeIndex>,
 }
 
 impl ProgramTypes {
@@ -492,5 +494,16 @@ impl ProgramTypes {
     /// fields each a column of its own.
     pub fn columns(&self, relation: &GraphRelation) -> Option<&[ValueType]> {
         self.columns.get(relation).map(|columns| &columns[..])
+    }
+
+    /// Whether `relation` has an Example column, as the checker decides it
+    /// by [`crate::check::reads::example_relations`].
+    pub fn has_example_column(&self, relation: &GraphRelation) -> bool {
+        self.example_nodes.contains(&relation.node)
+    }
+
+    /// Sets the nodes whose relations have an Example column.
+    pub(crate) fn set_example_nodes(&mut self, nodes: crate::hash::StableHashSet<crate::resolver::GraphNodeIndex>) {
+        self.example_nodes = nodes;
     }
 }

@@ -235,11 +235,19 @@ fn lib_columns<'r>(registry: &'r Registry, name: &crate::registry::LibName) -> O
 }
 
 /// The component an `INIT` form names.
-fn component<'r>(registry: &'r Registry, name: &crate::registry::LibName) -> Option<&'r Component> {
+pub(super) fn component<'r>(registry: &'r Registry, name: &crate::registry::LibName) -> Option<&'r Component> {
     match registry.entry(name)? {
         LibEntry::Component(component) | LibEntry::Macro(Macro::CellInstance { component, .. }) => Some(component),
         LibEntry::Relation(_) | LibEntry::Proposer(_) | LibEntry::Macro(Macro::Relation { .. }) => None,
     }
+}
+
+/// The side of the form at `form` of `program`, the side of the first node
+/// of the dependency graph that the form gives, or `None` where it gives
+/// none.
+pub(super) fn form_side(program: &ResolvedProgram, form: &NodePath) -> Option<Side> {
+    let mut nodes = (0..program.graph.nodes.len() as u32).map(GraphNodeIndex);
+    nodes.find(|found| program.form_of(*found) == form).map(|found| program.side(found))
 }
 
 /// The form at `path` of `program`: a top-level form, a form of a claim,
@@ -676,9 +684,7 @@ impl<'a> Inference<'a> {
     /// the relation is a per-input relation other than a fact relation
     /// (`docs/arclog/arclog.md#program`).
     fn lifts(&self, form: &NodePath, node: GraphNodeIndex) -> bool {
-        let nodes = (0..self.program.graph.nodes.len() as u32).map(GraphNodeIndex);
-        let mut sides = nodes.filter(|found| self.program.form_of(*found) == form).map(|found| self.program.side(found));
-        let task_wide = sides.next().is_some_and(|side| side == Side::TaskWide);
+        let task_wide = form_side(self.program, form) == Some(Side::TaskWide);
         let fact = matches!(self.program.graph.nodes[node.0 as usize].kind, DependencyKind::Fact(_));
         task_wide && !fact && self.program.side(node) == Side::PerInput
     }
