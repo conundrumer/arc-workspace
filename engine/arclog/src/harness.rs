@@ -59,11 +59,17 @@ pub fn corpus_solvers(dir: &Path) -> Result<Vec<CorpusSolver>, CorpusError> {
 
 /// The solver of `task_id` read from its two files in `dir`, each solver a
 /// `representative` line names read the same way. `None` where a file does
-/// not read.
+/// not read, or where a diagnostic of the read has
+/// [`crate::diagnostic::Severity::Error`]. So a solver whose
+/// `representative` line names a solver whose read is refused is `None`
+/// too, by the scope diagnostic of [`crate::read::read_solver`].
 pub fn read_corpus_solver(dir: &Path, task_id: &str) -> Option<std::sync::Arc<crate::solver::Solver>> {
     let arclog = std::fs::read_to_string(dir.join(format!("{task_id}.arclog"))).ok()?;
     let arcdata = std::fs::read_to_string(dir.join(format!("{task_id}.arcdata"))).ok()?;
     let read = crate::read::read_solver(task_id, &arclog, &arcdata, &|id| read_corpus_solver(dir, id)).ok()?;
+    if read.diagnostics.iter().any(|d| d.severity == crate::diagnostic::Severity::Error) {
+        return None;
+    }
     Some(std::sync::Arc::new(read.value))
 }
 

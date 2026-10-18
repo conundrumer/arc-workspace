@@ -63,9 +63,12 @@ pub enum Edit {
 pub enum EditError {
     /// A path of the edit names no node of the edit's kind.
     Path { path: NodePath },
-    /// The program the edit gives holds at `path`, a site on a column of a
-    /// type parameter, a bare label that breaks the naming conditions of
-    /// [`Node::apply`].
+    /// The program the edit gives holds at `path` a bare label that breaks
+    /// the naming conditions of [`Node::apply`]: a
+    /// [`super::SiteArg::Label`] other than `0` at a site on a column of a
+    /// type parameter, a [`super::SiteArg::NamedLabel`] at a site on a
+    /// fixed-type column or on a field, or a `NamedLabel` whose name is not
+    /// the one name of its label over its scope.
     BareLabel { path: NodePath },
 }
 
@@ -89,12 +92,14 @@ impl Node<Program> {
     /// with `(:key ...)` left out. Each [`super::SiteValue`] of the program
     /// `apply` gives holds an argument.
     ///
-    /// At each site on a column of a type parameter, the program `apply`
-    /// gives holds each bare label other than `0` as a
-    /// [`super::SiteArg::NamedLabel`], and each label of a scope has one
-    /// name over its `NamedLabel` arguments. Each site of such a label, read
-    /// by the join rule of `engine/arclog/src/read/labels.rs`, takes that
-    /// label under that name. So two labels of one scope take one name only
+    /// The program `apply` gives holds each bare label other than `0` as a
+    /// [`super::SiteArg::NamedLabel`] at each site on a column of a type
+    /// parameter, and as a [`super::SiteArg::Label`] at each other site, a
+    /// site on a fixed-type column or on a field, as the doc of
+    /// [`super::SiteArg`] gives the two variants. Each label of a scope has
+    /// one name over its `NamedLabel` arguments. Each site of such a label,
+    /// read by the join rule of `engine/arclog/src/read/labels.rs`, takes
+    /// that label under that name. So two labels of one scope take one name only
     /// where that rule keeps them apart, as two locals of sibling `OR`
     /// branches. An edit whose result breaks this gives
     /// [`EditError::BareLabel`] at the site, and a path that names no node of
