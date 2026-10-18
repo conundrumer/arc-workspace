@@ -1,7 +1,8 @@
 //! The reader of the proposers file, `engine/lib/proposers.arclog`, which
 //! gives each proposer written in arclog its clause.
 
-use super::reader::{headed, BodyInFile, FileReader, PROPOSER};
+use super::reader::{BodyInFile, FileReader};
+use super::spellings::{headed, PROPOSER};
 use crate::read::LabelNames;
 use super::*;
 

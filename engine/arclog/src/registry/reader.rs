@@ -1,80 +1,10 @@
 //! The reader of the two lib files, which reads each form into the
 //! registry's records and gives a diagnostic at the form of each fault: the
-//! spellings of the forms, the records of a read form, the reader's state
-//! and its helpers, the completeness check of the accessors and the assembly
-//! of the registry.
+//! records of a read form, the reader's state and its helpers, the
+//! completeness check of the accessors and the assembly of the registry.
 
 use super::*;
-
-// The words of the registry file's forms.
-pub(super) const RELATION: &str = "relation";
-pub(super) const COMPONENT: &str = "component";
-pub(super) const PROPOSER: &str = "proposer";
-pub(super) const DERIVATION: &str = "derivation";
-pub(super) const CONSTANTS: &str = "constants";
-pub(super) const FACT: &str = "fact";
-pub(super) const MACRO: &str = "macro";
-pub(super) const COLUMNS: &str = "columns";
-pub(super) const MODES: &str = "modes";
-pub(super) const FIELDS: &str = "fields";
-pub(super) const TYPE_PARAMETERS: &str = "type-parameters";
-pub(super) const INPUTS: &str = "inputs";
-pub(super) const OUTPUTS: &str = "outputs";
-pub(super) const DEFAULT: &str = "default";
-pub(super) const READS_OUTPUTS: &str = "reads-outputs";
-pub(super) const NATIVE: &str = "native";
-pub(super) const ARCLOG: &str = "arclog";
-pub(super) const POSE: &str = "Pose";
-pub(super) const SHARED_POSE: &str = "shared-pose";
-pub(super) const POSE_OR: &str = "pose-or";
-pub(super) const C4: &str = "C4";
-
-pub(super) const COMPONENT_KINDS: &[(ComponentKind, &str)] = &[
-    (ComponentKind::Construction, "construction"),
-    (ComponentKind::Detector, "detector"),
-    (ComponentKind::TaskStructure, "task-structure"),
-];
-
-/// The orientation type whose constants a column of `name` holds, where
-/// `name` is one: `C4` is a part of `D4`, and `Dir8` and `Axis4` are unions.
-pub(super) fn orientation_type(name: TypeName) -> Option<OrientationType> {
-    match name {
-        TypeName::Dir => Some(OrientationType::Dir),
-        TypeName::DiagDir => Some(OrientationType::DiagDir),
-        TypeName::Axis => Some(OrientationType::Axis),
-        TypeName::DiagAxis => Some(OrientationType::DiagAxis),
-        TypeName::D4 => Some(OrientationType::D4),
-        TypeName::Sym => Some(OrientationType::Sym),
-        TypeName::Sense => Some(OrientationType::Sense),
-        TypeName::Number
-        | TypeName::Color
-        | TypeName::Example
-        | TypeName::Unit
-        | TypeName::Box
-        | TypeName::Position
-        | TypeName::Offset
-        | TypeName::Ident
-        | TypeName::C4
-        | TypeName::Dir8
-        | TypeName::Axis4 => None,
-    }
-}
-
-/// The items of `expr` after its head, where it is a list headed by `head`.
-pub(super) fn headed<'e>(expr: &'e SExpr, head: &str) -> Option<&'e [SExpr]> {
-    match expr {
-        SExpr::List { items, .. } => match items.split_first() {
-            Some((SExpr::Symbol { text, .. }, rest)) if &**text == head => Some(rest),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-/// The place of the start of `file`, where a fault of no one form stands.
-pub(super) fn file_start(file: SourceFile) -> SourcePlace {
-    SourcePlace { file, start: 0, end: 0, line: 1, column: 1 }
-}
+use super::spellings::*;
 
 /// A relation macro as its form writes it, before its declaration.
 pub(super) struct WrittenMacro {

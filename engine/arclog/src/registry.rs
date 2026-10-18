@@ -21,13 +21,15 @@
 //!   type's, that must be grounded for the relation to ground the others; a
 //!   relation over a finite domain has no `modes` form, and no mode is empty.
 //! - `(component <name> <construction|detector|task-structure> (type-parameters <t> ...)
-//!   (inputs (<input> (<column> <type>) ... [(default <rows>)] [reads-outputs]) ...)
+//!   (inputs (<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [explicit]) ...)
 //!   (outputs (<output> (<column> <type>) ...) ...))`: a construction, a
 //!   detector or a task-structure component, its inputs in the order the component declares them. An
 //!   input's `default` writes its rows as a `param` form writes them after
 //!   its types (`docs/arclog/arcdata.md#params`). An input marked
 //!   `reads-outputs` reads the instance's outputs, as `Unfold`'s `step`,
-//!   `skip` and `take` do. An output may share its name with an input of
+//!   `skip` and `take` do. An input marked `explicit`, which writes no
+//!   `default`, holds no row where the instance writes no clause for it,
+//!   and the engine does not fill it from the key, as Order's `probe`. An output may share its name with an input of
 //!   the same form, as `Unfold`'s `take` does: an instance's output of that
 //!   name, where the instance writes no clause for it, reads the input's
 //!   relation.
@@ -69,7 +71,7 @@
 //!
 //! # The modules
 //!
-//! The reader of the two files, the reader of the registry file's other
+//! The reader of the two files, the spellings of the registry file's forms, the reader of the registry file's other
 //! forms, the reader of its macro form, the reader of the proposers file's clauses, the check of the reads of their bodies, the derivation of the
 //! macros' column types, the declaration of the macros from it, and the rule by which an `INIT` form binds its
 //! component's type parameters each stand in a module of their own. The derivations take the forms as the reader gives them, and
@@ -196,6 +198,10 @@ pub struct InputPort {
     /// `skip` and `take` do, through atoms whose every variable another atom
     /// of the clause grounds.
     pub reads_outputs: bool,
+    /// Whether the input, which then has no default, holds no row where
+    /// the instance writes no clause for it, so that the engine does not
+    /// fill it from the key, as Order's `probe`.
+    pub explicit: bool,
 }
 
 /// The default rows of an input, as the file writes them, read by
@@ -424,6 +430,7 @@ mod macro_forms;
 mod proposer_clauses;
 mod reader;
 mod reads;
+mod spellings;
 
 pub(crate) use bindings::{binding_sites, key_parameter, ParameterSite};
 pub use column_types::{macro_column_types, MacroDeclarations, RelationMacro};

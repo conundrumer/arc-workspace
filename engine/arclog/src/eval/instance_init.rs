@@ -300,7 +300,8 @@ impl<'p> InstanceShape<'p> {
     }
 
     /// The rows of `input`, which the form does not write, at each of
-    /// `groups`: its default rows at each, or the rows the key fills, or no
+    /// `groups`: its default rows at each, or no row where the input is
+    /// marked [`InputPort::explicit`], or the rows the key fills, or no
     /// row.
     fn unwritten(
         &self,
@@ -315,6 +316,9 @@ impl<'p> InstanceShape<'p> {
             for row in default.rows(types, evaluation.registry, &mut table).map_err(|error| format!("the default rows of input `{}` do not read: {error:?}", input.port.name.0))? {
                 rows.insert(row);
             }
+            return Ok(vec![rows; groups.len()]);
+        }
+        if input.explicit {
             return Ok(vec![rows; groups.len()]);
         }
         let Some(filled) = self.key_filled(input, types)? else { return Ok(vec![rows; groups.len()]) };

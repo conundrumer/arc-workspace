@@ -3,6 +3,7 @@
 //! `fact`, with the columns and the types they write.
 
 use super::reader::*;
+use super::spellings::*;
 use super::*;
 
 impl FileReader {
@@ -158,19 +159,20 @@ impl FileReader {
         Some(Port { name, columns: columns?.into() })
     }
 
-    /// An input, `(<input> (<column> <type>) ... [(default <rows>)] [reads-outputs])`.
+    /// An input, `(<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [explicit])`.
     fn input(&mut self, expr: &SExpr, parameters: &[TypeParameter]) -> Option<InputPort> {
         let SExpr::List { items, place, .. } = expr else {
             return self.refuse("an input is a list of its name and its columns", expr.place());
         };
         let name = PortName(self.symbol(items.first(), "the input's name", *place)?.into());
         let mut rest = &items[1..];
-        let reads_outputs = matches!(rest.last(), Some(SExpr::Symbol { text, .. }) if &**text == READS_OUTPUTS);
-        if reads_outputs {
-            rest = &rest[..rest.len() - 1];
-        }
+        let explicit = take_mark(&mut rest, EXPLICIT);
+        let reads_outputs = take_mark(&mut rest, READS_OUTPUTS);
         let default_rows = rest.last().and_then(|last| headed(last, DEFAULT));
         if default_rows.is_some() {
+            if explicit {
+                return self.refuse("an input with default rows takes no `explicit` mark", *place);
+            }
             rest = &rest[..rest.len() - 1];
         }
         let mut columns = Vec::new();
@@ -184,7 +186,7 @@ impl FileReader {
             Some(rows) => Some(DefaultRows { written: self.read(read_param_value(rows, &written))? }),
             None => None,
         };
-        Some(InputPort { port: Port { name, columns: columns.into() }, default, reads_outputs })
+        Some(InputPort { port: Port { name, columns: columns.into() }, default, reads_outputs, explicit })
     }
 
     /// `(proposer <name> native (columns ...))` or
@@ -299,4 +301,14 @@ impl FileReader {
         }
         Some(())
     }
+}
+
+/// Whether the last of `items` is the symbol `mark`, which it then drops
+/// from `items`.
+fn take_mark(items: &mut &[SExpr], mark: &str) -> bool {
+    let marked = matches!(items.last(), Some(SExpr::Symbol { text, .. }) if &**text == mark);
+    if marked {
+        *items = &items[..items.len() - 1];
+    }
+    marked
 }

@@ -2,7 +2,8 @@
 //! `(macro <name> (columns ...) <body>)`, with the labels of its body that
 //! its columns stand for.
 
-use super::reader::{headed, BodyInFile, FileReader, WrittenMacro, LabelColumns, COLUMNS};
+use super::reader::{BodyInFile, FileReader, WrittenMacro, LabelColumns};
+use super::spellings::{headed, COLUMNS};
 use super::*;
 
 impl FileReader {
