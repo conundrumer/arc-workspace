@@ -3,10 +3,13 @@
     uv run python -m controlled_markdown check [paths...]   # report what is off
     uv run python -m controlled_markdown fmt [paths...]     # rewrite in canonical form
     uv run python -m controlled_markdown render <path> [paths...]
+    uv run python -m controlled_markdown xrefs <base> [paths...]
 
 `check` reports each file that fails to parse or is not in canonical form,
-and each line whose own words hold a form of `carry` of a document, of an
-`mctx` fragment, of a lib doc comment, or of a docstring or a comment of a
+each target of an `xref` attribute that names no definition, each script,
+module or path a backticked span names that the tree does not hold
+(`controlled_markdown.xrefs`), and each line whose own words hold a form
+of `carry` of a document, of an `mctx` fragment, of a lib doc comment, or of a docstring or a comment of a
 Python file outside `tools/console/`, and exits 1 when any does. A run
 given no path also counts, over the whole set, the sites each partial is
 inlined at. `fmt` rewrites each file in canonical form and prints the ones
@@ -14,8 +17,12 @@ it changed. With no path, both read the set under
 `[tool.controlled_markdown]` in `pyproject.toml`, so the command that guards the
 documents is one word wherever it is written. `render` prints the first path as
 ordinary Markdown, with its includes resolved from the files they name, and it
-takes its paths as given. A path that names a directory stands for every `.md`
-file under it, and a path that names no file or directory is reported on one
+takes its paths as given. `xrefs` prints, for each `xref` target whose
+definition the diff from the commit `base` to the working tree changes, or
+that names no definition, one line `<path>:<line>: <target>: <text>`, with
+the text of the statement the attribute describes, and exits 0; with no
+path, it reads the set `check` reads. A path that names a directory
+stands for every `.md` file under it, and a path that names no file or directory is reported on one
 line, with exit status 2. `-h` or `--help`, given as any argument, prints the
 usage and exits 0. A name in a message is relative to the current directory.
 """
@@ -45,8 +52,10 @@ from . import (
     check_partial_sites,
     check_paths,
     check_quotes,
+    check_xrefs,
     parse,
     render,
+    touched,
     write,
 )
 
@@ -215,6 +224,9 @@ def check(paths: list[Path], whole: bool = True) -> int:
                 off += 1
             check_blocks(document)
             check_links(document, path, root)
+            for err in check_xrefs(document, root):
+                print(err)
+                off += 1
             # The registry claims the ids, so a repeat is reported here.
             Registry(Path.cwd()).add(name, document, name)
         except ControlledMarkdownError as err:
@@ -257,16 +269,31 @@ def show(paths: list[Path]) -> int:
     return 0
 
 
+def show_touched(base: str, paths: list[Path]) -> int:
+    """Each line whose `xref` target the diff from `base` changes."""
+    documents = [parse(path.read_text(), shown(path)) for path in paths]
+    for touch in touched(documents, repo_root(), base):
+        print(f"{touch.node.source}:{touch.node.line}: {touch.target}: {touch.node.text}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     usage = (f"usage: {argv[0]} check|fmt [paths...]\n"
-             f"       {argv[0]} render <path> [paths...]")
+             f"       {argv[0]} render <path> [paths...]\n"
+             f"       {argv[0]} xrefs <base> [paths...]")
     if {"-h", "--help"} & set(argv[1:]):
         print(usage)
         return 0
     command, names = (argv[1] if argv[1:] else ""), argv[2:]
-    if command not in ("check", "fmt", "render"):
+    if command not in ("check", "fmt", "render", "xrefs"):
         print(usage, file=sys.stderr)
         return 2
+    base = ""
+    if command == "xrefs":
+        if not names:
+            print(usage, file=sys.stderr)
+            return 2
+        base, names = names[0], names[1:]
     if not names:
         names = [] if command == "render" else configured()
     if not names:
@@ -293,6 +320,8 @@ def main(argv: list[str]) -> int:
             return 0
         if command == "fmt":
             return fmt(paths)
+        if command == "xrefs":
+            return show_touched(base, paths)
         return show(paths)
     except ControlledMarkdownError as err:
         print(err, file=sys.stderr)

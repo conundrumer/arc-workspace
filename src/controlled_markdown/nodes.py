@@ -68,6 +68,7 @@ class Rule(StrEnum):
     VARIABLE_BLOCK = "variable-block"
     VARIABLE_MISSING = "variable-missing"
     VARIABLE_UNUSED = "variable-unused"
+    XREF_MISSING = "xref-missing"
 
 
 def finding_lines(rules: tuple[Rule, ...]) -> re.Pattern[str]:

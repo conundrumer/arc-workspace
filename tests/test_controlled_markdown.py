@@ -7,6 +7,7 @@ expectation in its first line under any front matter, `+ expect: ok` or
 """
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -18,10 +19,12 @@ from controlled_markdown import (
     carry_errors,
     check_links,
     check_order,
+    check_xrefs,
     parse,
     render,
     round_trips,
     split_front,
+    touched,
     write,
 )
 
@@ -79,3 +82,78 @@ def _render_case(path):
     document = registry.load(path)
     check_links(document, path)
     render(document, registry)
+
+
+MODULE = """import enum
+
+
+class Filer(enum.Enum):
+    ONE = "one"
+
+
+@enum.unique
+class Other(enum.Enum):
+    TWO = "two"
+
+
+def run():
+    return 1
+"""
+
+
+def _tree(root: Path) -> None:
+    _git(root, "init", "-q")
+    (root / ".gitignore").write_text("tests/scratch/\n")
+    (root / "scripts").mkdir()
+    (root / "scripts" / "tool.py").write_text(MODULE)
+    (root / "src" / "pkg").mkdir(parents=True)
+    (root / "src" / "pkg" / "__init__.py").write_text("")
+
+
+def _rules(text: str, root: Path) -> list[str]:
+    return [err.rule for err in check_xrefs(parse(text, "doc.md"), root)]
+
+
+@pytest.mark.parametrize("line", [
+    "- Run it.\n    + xref: scripts/tool.py:Filer.TWO",
+    "- Run it.\n    + xref: scripts/tool.py:nothing",
+    "- Run `uv run python scripts/absent.py go`.",
+    "- Run `uv run python -m absent`.",
+    "- Read `src/absent.py`.",
+])
+def test_check_xrefs_refuses_what_the_tree_lacks(tmp_path, line):
+    _tree(tmp_path)
+    assert _rules(line, tmp_path) == ["xref-missing"]
+
+
+@pytest.mark.parametrize("line", [
+    "- Run it.\n    + xref: scripts/tool.py, scripts/tool.py:Filer.ONE, "
+    "scripts/tool.py:run, scripts/tool.py:Other",
+    "- Run `uv run python scripts/tool.py go --flag` and `uv run python -m pkg`.",
+    "- Read `src/pkg/`, `scripts/*.py` and `src/<name>.py`.",
+    "- Run `uv run python -c 'import absent'`.",
+    "- Write under `tests/scratch/`.",
+])
+def test_check_xrefs_passes_what_resolves(tmp_path, line):
+    _tree(tmp_path)
+    assert _rules(line, tmp_path) == []
+
+
+def _git(root: Path, *argv: str) -> str:
+    return subprocess.run(["git", *argv], cwd=root, check=True, capture_output=True,
+                          text=True, env={"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                          "GIT_COMMITTER_NAME": "t",
+                                          "GIT_COMMITTER_EMAIL": "t@t"}).stdout
+
+
+def test_touched_lists_a_line_whose_definition_a_hunk_changes(tmp_path):
+    _tree(tmp_path)
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "base")
+    base = _git(tmp_path, "rev-parse", "HEAD").strip()
+    path = tmp_path / "scripts" / "tool.py"
+    path.write_text(MODULE.replace("return 1", "return 2"))
+    document = parse("- Changed.\n    + xref: scripts/tool.py:run\n"
+                     "- Kept.\n    + xref: scripts/tool.py:Filer.ONE\n", "doc.md")
+    assert [(t.node.text, t.target) for t in touched([document], tmp_path, base)] == [
+        ("Changed.", "scripts/tool.py:run")]

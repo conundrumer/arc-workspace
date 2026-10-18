@@ -99,6 +99,8 @@
         * comment: The user's words, session `6dfaef3b`, 2026-10-02T04:45:16Z: "don't write that something always or never holds unless you know it does. [the common words to watch out for]".
 - Write a statement in the imperative mood where it tells its reader to do something or sets a rule on an act its reader does, and every other statement in the indicative mood.
 - A reference to a document or a section is a link, as [Links](src/controlled_markdown/writing.md#links) gives it.
+- A line that depends on a definition in code declares it, as [Cross-references](src/controlled_markdown/writing.md#cross-references) gives it.
+    * comment: The user's words, session 2384db39, 2026-10-18T14:41:46Z: "I think more generally there is dependencies between doc and code. In code it's mechanically checked. In docs, No."; 15:12:01Z: "You gave an overfitted example"; 15:11:45Z: "General". Ticket 11-1368.
 - A bare path stands in code that compares it, and nowhere else.
 - A document tells no agent to write a file named `report.md`.
     * comment: The user's words, session `631a6654`, 2026-09-23T22:50:48Z: "nothing shall be named report.md", after the harness blocked a write to that name.

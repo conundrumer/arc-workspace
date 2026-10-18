@@ -39,12 +39,21 @@ class WithoutLists:
     rendering: Path
 
 
-type Measured = Path | WithoutLists
-"""What a size measures: the text of a file, `doc` or its rendering, or a
-rendering without its lists."""
+@dataclass(frozen=True)
+class WithoutAttributes:
+    """A document's text without its attribute lines, which no render
+    shows, and which is not the text its file holds."""
+
+    doc: Path
+
+
+type Measured = Path | WithoutLists | WithoutAttributes
+"""What a size measures: the text of a file, `doc` or its rendering, a
+rendering without its lists, or a document without its attribute lines."""
 
 
 WITHOUT_LISTS = mctx("{path} without the lists its render computes")
+WITHOUT_ATTRIBUTES = mctx("{path} without its attribute lines")
 
 
 def measured_text(measured: Measured,
@@ -54,6 +63,8 @@ def measured_text(measured: Measured,
     match measured:
         case WithoutLists(rendering=path):
             return WITHOUT_LISTS.format(path=shown(path))
+        case WithoutAttributes(doc=path):
+            return WITHOUT_ATTRIBUTES.format(path=shown(path))
         case Path():
             return shown(measured)
 

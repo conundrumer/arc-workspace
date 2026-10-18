@@ -8,19 +8,22 @@ source bounds the coordinator's rendering, and a `<name>-next.md` that an
 agent reads after its prompt bounds that rendering with no list its render
 computes (`handbook.listings`): a list grows with the files it lists, and
 that growth is intended. Each other document, an entry document that
-renders the lib among them, bounds its own text: the lib grows with each
-declaration solver work adds, and that growth is intended."""
+renders the lib among them, bounds its own text without its attribute
+lines, which no render shows: the lib grows with each declaration solver
+work adds, and that growth is intended."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 
+import controlled_markdown as nm
 from engine import checkout
 from handbook.agent_documents import AGENT_DIR, agent_doc, agent_document
 from handbook.agents import (agent_names, agent_renderings, next_file,
                              next_name, next_readers, next_unlisted_text)
-from handbook.budget import Measured, Size, WithoutLists, size
+from handbook.budget import (Measured, Size, WithoutAttributes, WithoutLists,
+                             size)
 from handbook.context import DOCS_DIR
 from handbook.coordinator_document import (COORDINATOR_DOC,
                                            coordinator_rendering)
@@ -59,10 +62,20 @@ def rendered_texts() -> dict[Path, Bounded]:
     return texts
 
 
+def without_attributes(doc: Path) -> str:
+    """The text of `doc` without its `+ name: value` lines."""
+    text = doc.read_text()
+    nodes = list(nm._walk(nm.parse(text, str(doc))))
+    dropped = ({n.line for n in nodes if n.kind == nm.ATTRIBUTE}
+               - {n.line for n in nodes if n.star})
+    return "".join(line for num, line in enumerate(text.splitlines(keepends=True), start=1)
+                   if num not in dropped)
+
+
 def sizes() -> list[Size]:
     """The size of the text each document bounds, against its budget."""
     rendered = rendered_texts()
     return [size(doc, r.text, r.measured)
             if (r := rendered.get(doc)) is not None
-            else size(doc, doc.read_text())
+            else size(doc, without_attributes(doc), WithoutAttributes(doc))
             for doc in budgeted_docs()]

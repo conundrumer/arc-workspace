@@ -27,8 +27,9 @@ The package holds Controlled Markdown as a whole: `nodes` holds the node
 tree, `parser` the parser, `formatter` the formatter, `registry` the
 registry, `directives` the directives a render acts on, `prose` the checks
 of prose in code, `document_set` the checks of a document set with the
-links a node's text holds, `renderers` the renderers, and `round_trip` the
-formatter's round trip. This module gives every name of the package.
+links a node's text holds, `renderers` the renderers, `round_trip` the
+formatter's round trip, and `xrefs` the references from a document to
+code. This module gives every name of the package.
 `nodes`, `parser`, `formatter`, `registry` and `directives` import from
 the modules that hold what they use; each other module imports from this
 module, which gives their names once those five are imported.
@@ -157,3 +158,14 @@ from controlled_markdown.renderers import render_linked as render_linked
 from controlled_markdown.renderers import section_document as section_document
 from controlled_markdown.renderers import variables as variables
 from controlled_markdown.round_trip import round_trips as round_trips
+from controlled_markdown.xrefs import (
+    XREF as XREF,
+    Xref as Xref,
+    xrefs as xrefs,
+    span as span,
+    CodeReference as CodeReference,
+    references as references,
+    check_xrefs as check_xrefs,
+    Touch as Touch,
+    touched as touched,
+)

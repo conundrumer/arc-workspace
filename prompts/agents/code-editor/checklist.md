@@ -27,6 +27,11 @@
 # Review your diff
 - Read your diff for each kind of place [Your diff](prompts/agents/code-editor.md#your-diff) gives, other than many ideas in one place, and fix each defect place that does not stand.
 
+# Judge the document lines your diff touches
+* comment: The user's words, session 2384db39, 2026-10-18T15:14:04Z, "File", and 14:41:46Z: "I think more generally there is dependencies between doc and code. In code it's mechanically checked. In docs, No." Ticket 11-1368.
+- Run `uv run python -m controlled_markdown xrefs $(git merge-base master HEAD)`, and judge each line it prints against the code your diff leaves. Edit a line that no longer holds where your brief gives that document, and otherwise give it in your report as unfinished.
+    + xref: src/controlled_markdown/__main__.py:main
+
 # Compare with the before side
 - This part applies where your brief asks for a comparison with what the tree before the change gives, the before side: [The before side](prompts/agents/code-editor/before-side.md).
 

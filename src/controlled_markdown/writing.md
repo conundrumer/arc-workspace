@@ -37,6 +37,25 @@
 - A target with a scheme, such as `https:`, is an external address, and the check passes it over.
 - A link written inside a backtick span is text.
 
+## Cross-references
+
+* comment: The user's words, session 2384db39: 2026-10-18T14:41:46Z, "I think more generally there is dependencies between doc and code. In code it's mechanically checked. In docs, No."; 15:12:01Z, "You gave an overfitted example". Ticket 11-1368.
+- A line that depends on a definition in code declares it in an `xref` attribute nested under the line, as [Attributes](#attributes) gives an attribute.
+    ```
+    - File a ticket of the kind the filer gives.
+        + xref: scripts/ticket_vocabulary.py:Filer.TICKET_ANALYST
+    ```
+- The value is one target or a list of targets separated by commas.
+- A target is a path from the repo root, which names a file, or, for a Python file, the path, a `:` and the dotted name of a definition in it.
+    - The definition is a module-level `def`, `class`, `type` alias, assignment or annotated assignment, or such a name in the body of a class the name before it gives, as an enum member.
+        + xref: src/controlled_markdown/xrefs.py:span
+- The check reports a target whose file or definition is absent.
+    + xref: src/controlled_markdown/xrefs.py:check_xrefs
+- The check also reports, with no attribute, a backticked command that runs a script or module the tree lacks (`uv run python <path>`, `uv run python -m <module>`), and a token of a backticked span that is a path under `scripts/`, `src/`, `programs/`, `tests/`, `tools/`, `docs/` or `prompts/` that the tree lacks, and not a path that git ignores, since no worktree holds one. It resolves no subcommand or flag of a command: a line that depends on one declares the definition of its parser.
+    + xref: src/controlled_markdown/xrefs.py:references, src/controlled_markdown/xrefs.py:check_xrefs
+- `uv run python -m controlled_markdown xrefs <base>` prints, for each declared target whose definition has changed in the working tree since the commit `<base>`, or names no definition, the line `<path>:<line>: <target>: <the line's text>`. Judge each such line against the code as it now stands.
+    + xref: src/controlled_markdown/__main__.py:main, src/controlled_markdown/xrefs.py:touched
+
 ## Prose in code
 + rules on prose in code
 
