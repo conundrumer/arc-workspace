@@ -100,15 +100,29 @@ def listed_tickets(tickets: Path, status: Status) -> list[Path]:
 
 def ticket_path(tickets: Path, number: TicketNumber) -> Path:
     """The path of the ticket `number`, which the help of `file_ticket.py
-    path` defines."""
+    path` defines.
+
+    The status directories are read one at a time, so a move of the ticket
+    between two of those reads shows it at two paths or at none. Where a
+    read finds not one file, a second read follows it, and only that second
+    read can refuse."""
     pattern = joined_name((str(number), "*"), glob.escape)
-    return only_ticket(tickets, number, sorted(p for d in statuses(tickets) for p in d.glob(pattern)))
+
+    def found() -> list[Path]:
+        return sorted(p for d in statuses(tickets) for p in d.glob(pattern))
+
+    first = found()
+    return only_ticket(tickets, number, first if len(first) == 1 else found())
 
 
 def listed_ticket_path(tickets: Path, number: TicketNumber) -> Path:
     """`ticket_path`, from the listings of the status directories this
-    state holds (`numbered_files`)."""
-    return only_ticket(tickets, number, list(numbered_files(tickets).get(str(number), ())))
+    state holds (`numbered_files`). Where those listings give not one file,
+    as a move during the state's read can make them give, the path is
+    `ticket_path`'s, from a read outside this state: that read is made only
+    where these listings would refuse, and takes no part in a stamp."""
+    listed = numbered_files(tickets).get(str(number), ())
+    return listed[0] if len(listed) == 1 else ticket_path(tickets, number)
 
 
 @state_cache(DERIVED)
