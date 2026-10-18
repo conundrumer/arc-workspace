@@ -1,5 +1,5 @@
-"""The spend of a change by role, recorded under `tickets/spends/` once its
-runs have stopped, and the budget of a change taken over the changes like
+"""The spend of a change by role, recorded under `tickets/spends/` once it
+is settled, and the budget of a change taken over the changes like
 it."""
 
 import json
@@ -7,6 +7,7 @@ import re
 import statistics
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+from enum import Enum
 from pathlib import Path
 
 from agent_launches import runs_under
@@ -42,9 +43,20 @@ def union_seconds(spans: list[tuple[float, float]]) -> float:
 
 SPENDS = "spends"
 """The directory under `tickets/` that holds, for each change closed
-`fixed` whose runs have all stopped, its spend as `change_spend` read it,
-one JSON file per ticket number. It is no status directory, so no reader
-of tickets takes a record for a ticket."""
+`fixed` whose spend `change_spend` settled, one JSON file per ticket
+number: the spend as `change_spend` read it, or JSON `null` where it has
+no known spend. It is no status directory, so no reader of tickets takes
+a record for a ticket."""
+
+
+class Unknown(Enum):
+    """The record of a change whose spend no later read can make known."""
+    SPEND = "unknown"
+
+
+type Recorded = Spend | Unknown | None
+"""What the file under `SPENDS` of a change records: its spend, no known
+spend, or, as None, no file."""
 
 
 def owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | None:
@@ -52,7 +64,8 @@ def owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | Non
     with the agent type it counts under, or None where a run has no
     transcript or no agent type. Each transcript counts once, under the
     agent type of the nearest run of `runs` at or above it, so a run of
-    `runs` launched under another keeps its own type.
+    `runs` launched under another keeps its own type. A refused read of a
+    transcript raises `Refused`.
     `pending` gives each run that is still running with the agent type its
     launch gives. Such a run, and each run under it, is read from the agent
     index this state holds (`held_find`) alone: one whose transcript that
@@ -62,10 +75,7 @@ def owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | Non
     held: set[Path] = set()
     trees: list[tuple[str, list[Path]]] = []
     for run in runs:
-        try:
-            top = held_find(run)
-        except Refused:
-            return None
+        top = held_find(run)
         launch = pending.get(run)
         if top is None:
             if launch is None:
@@ -121,8 +131,12 @@ def priced(owner: dict[Path, str], undecided: list[str]) -> Spend | None:
 
 def spend(runs: list[str], pending: Mapping[str, str], undecided: list[str]) -> Spend | None:
     """The spend of the runs `runs` and of the runs under them, those that
-    `pending` gives still running, as `owners` and `priced` give it."""
-    owner = owners(runs, pending)
+    `pending` gives still running, as `owners` and `priced` give it, or
+    None where a read is refused."""
+    try:
+        owner = owners(runs, pending)
+    except Refused:
+        return None
     return None if owner is None else priced(owner, undecided)
 
 
@@ -139,25 +153,44 @@ def stopped(path: Path) -> bool:
 
 def change_spend(path: Path, undecided: list[str]) -> Spend | None:
     """The spend of the `change` at `path`, closed `fixed`: that of the
-    runs its closing line gives, or None where that line gives no run or
-    `spend` gives none. A spend is recorded under `SPENDS` only once each
-    run it read has stopped, since the spend of a run that goes on still grows."""
+    runs its last `fixed` closing line gives, or None where that line gives
+    no run or `spend` gives none.
+    A record under `SPENDS` is written for a change whose log holds a
+    `fixed` closing line, once its spend is settled: its spend once `priced`
+    gives one with no `undecided` line and each run it read has stopped,
+    since the spend of a run that goes on still grows; and no known spend
+    where that line gives no run or `owners` gives None. A run counts as
+    stopped where `stopped` holds or its transcripts hold no entry timed
+    after that line. A refused read writes no record."""
     found = recorded_spend(path)
     if found is not None:
-        return found
+        return None if found is Unknown.SPEND else found
     record = spend_record(path)
     closing = [m for m in held_ticket_log(path)[1] if m["status"] == Status.CLOSED
                and resolution_of(m["note"]) is Resolution.FIXED]
-    runs = (closing[-1]["note"] or "").split()[3:] if closing else []
-    owner = owners(runs, {}) if runs else None
-    if owner is None:
+    if not closing:
         return None
+    runs = (closing[-1]["note"] or "").split()[3:]
+    try:
+        owner = owners(runs, {}) if runs else None
+    except Refused:
+        return None
+    if owner is None:
+        write_record(record, None)
+        return None
+    closed_at = line_time(closing[-1])
     lines = len(undecided)
     s = priced(owner, undecided)
-    if s is not None and len(undecided) == lines and all(stopped(p) for p in owner):
-        record.parent.mkdir(exist_ok=True)
-        write_whole(record, (json.dumps(asdict(s), sort_keys=True) + "\n").encode())
+    if s is not None and len(undecided) == lines and all(
+            stopped(p) or (last_time(p) or 0.0) <= closed_at for p in owner):
+        write_record(record, asdict(s))
     return s
+
+
+def write_record(record: Path, value: object) -> None:
+    """Write `value` as JSON to the file `record` under `SPENDS`."""
+    record.parent.mkdir(exist_ok=True)
+    write_whole(record, (json.dumps(value, sort_keys=True) + "\n").encode())
 
 
 def spend_record(path: Path) -> Path:
@@ -165,11 +198,13 @@ def spend_record(path: Path) -> Path:
     return path.parent.parent / SPENDS / f"{ticket_name(path).number}.json"
 
 
-def recorded_spend(path: Path) -> Spend | None:
-    """The spend the file under `SPENDS` of the change at `path` records,
-    or None where there is none."""
+def recorded_spend(path: Path) -> Recorded:
+    """What the file under `SPENDS` of the change at `path` records."""
     record = spend_record(path)
-    return Spend(**json.loads(file_text(record))) if stat_read(record) is not None else None
+    if stat_read(record) is None:
+        return None
+    value = json.loads(file_text(record))
+    return Unknown.SPEND if value is None else Spend(**value)
 
 
 @dataclass(frozen=True)
@@ -195,10 +230,10 @@ def closed_changes(tickets: Path) -> tuple[Closed, ...]:
 
 @state_cache(DERIVED)
 def closed_spends(tickets: Path) -> tuple[tuple[Closed, tuple[Role, ...] | None,
-                                               Spend | None], ...]:
+                                               Recorded], ...]:
     """Each change of `closed_changes`, with its `editors` field and its
     `recorded_spend`, so that a read of the changes like a change reads
-    again only the spends that no file records."""
+    again only the changes that no file records."""
     return tuple((c, editors_field(front(c.text)), recorded_spend(c.path))
                  for c in closed_changes(tickets))
 
@@ -232,8 +267,8 @@ def like_changes(tickets: Path, editors: frozenset[Role], before: float,
     for c, editors_of, recorded in closed_spends(tickets):
         if c.at >= before:
             continue
-        s = recorded if recorded is not None else change_spend(c.path, undecided)
-        if s is not None:
+        s = change_spend(c.path, undecided) if recorded is None else recorded
+        if isinstance(s, Spend):
             every.append((editors_of, s))
     like = [s for e, s in every if e is not None and frozenset(e) == editors]
     return like if len(like) >= FEWEST_LIKE else [s for _, s in every]
