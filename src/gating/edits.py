@@ -165,8 +165,7 @@ def inert_dl(old: str, new_lines: Sequence[str], hunk: "Hunk") -> bool:
     nothing a Souffle run reads and moves no line: whether its old and new
     sides have the same count and each of their lines is blank or a `//`
     comment that holds no `DL_BLOCK` mark, since such a line may open or
-    close a block comment around other lines. A command that reads the comment text of a Souffle file is
-    affected all the same (`gating.affects.COMMENT_READERS`)."""
+    close a block comment around other lines."""
     lines = old.splitlines(keepends=True)
     old_lines = lines[hunk.old_start - 1:hunk.old_start - 1 + hunk.old_count]
     return hunk.old_count == hunk.new_count and all(
