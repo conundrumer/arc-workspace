@@ -33,10 +33,14 @@ text of its failure (`failed`).
 A ticket file the read of the tracker left out (`TrackerRead.unread`) is a step
 the command cannot place, one for each content the file has
 (`unread_steps`), once its last write is `WRITE_SECONDS` old, so that a
-file read while an agent writes it goes to no analyst. The step goes
+file read while an agent writes it goes to no analyst. A step on a content
+of the file goes to no analyst either while an analyst launched on a step
+on an earlier content of that file runs. The step goes
 to the operators that act on the session of the ticket number the
 file's name gives (`Unread.session`, `State.acts_on`), and where that
 name gives no session, to the operators of every session."""
+
+from pathlib import Path
 
 from controlled_markdown import mctx
 from operations import briefs, messages
@@ -63,11 +67,19 @@ def unread_steps(state: State) -> list[Undecided]:
     """The step on each ticket file the read of the tracker left out, other
     than one an agent may still write, and other than one whose file name
     gives a session the operators do not act on (`State.acts_on`)."""
-    return [Undecided(mctx("the ticket file {path} does not read as the operator reads a ticket, "
-                           "so every procedure passes over its ticket: {why} (its content's "
-                           "digest: {digest})").format(path=u.path, why=u.why, digest=u.digest))
+    return [Undecided(mctx("{subject} does not read as the operator reads a ticket, so every "
+                           "procedure passes over its ticket: {why} (its content's digest: "
+                           "{digest})").format(subject=unread_subject(u.path), why=u.why,
+                                               digest=u.digest),
+                      subject=unread_subject(u.path))
             for u in sorted(state.tracker.unread, key=lambda u: u.path)
             if not writing(state, u) and (u.session is None or state.acts_on(u.session))]
+
+
+def unread_subject(path: Path) -> str:
+    """The subject of the step of `unread_steps` on the file `path`, the
+    same at each content of the file (`steps.Undecided`)."""
+    return mctx("the ticket file {path}").format(path=path)
 
 
 def unread_files(state: State) -> Step | None:

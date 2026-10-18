@@ -21,6 +21,14 @@ def decided_by(state: State, step: Undecided) -> list[Agent]:
     return [a for a, purpose, keys in state.analysts() if purpose is Purpose.STEP and keys == [k]]
 
 
+def on_subject(state: State, step: Undecided) -> bool:
+    """Whether a ticket analyst launched on a step of the `subject` of
+    `step` runs: one whose brief gives that subject."""
+    return step.subject is not None and any(
+        a.pending and step.subject in a.brief
+        for a, purpose, _ in state.analysts() if purpose is Purpose.STEP)
+
+
 def held_aside(state: State, step: Step) -> bool:
     """Whether `State.aside`, the set of the keys of the steps `order.batch`
     set aside, holds `step`."""
@@ -32,15 +40,16 @@ def repeated(step: Step, state: State) -> bool:
     gives as done (`done`), a launch or a Bash step the journal holds back
     (`journal.due`), a message an operator already sent, or an
     undecided step that an operator already handled: a ticket analyst was
-    launched on it, or an operator gave it to the coordinator, as
+    launched on it, or on a step of its subject and runs (`on_subject`), or
+    an operator gave it to the coordinator, as
     `steps.UNDECIDED` and its `what`, or in a message that holds each of its
     `given`. Its procedure then waits on the answer."""
     if held_aside(state, step):
         return True
     match step:
         case Undecided(what, given):
-            return bool(decided_by(state, step)) or sent(state, COORDINATOR,
-                                                       f"{UNDECIDED} {what}") or (
+            return bool(decided_by(state, step)) or on_subject(state, step) or sent(
+                state, COORDINATOR, f"{UNDECIDED} {what}") or (
                 bool(given) and any(all(g in e.text for g in given)
                                     for e in sends_to(state, COORDINATOR)))
         case Send():

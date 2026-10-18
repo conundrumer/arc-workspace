@@ -155,13 +155,18 @@ class Undecided:
     that rules a step `held` made, and `former_ruling` that sentence in
     the bare form (`former`); both stay out of the step's key and of
     `what`, so a change of the sentence's wording changes neither the key
-    nor the decision key."""
+    nor the decision key. `subject` is the part of `what` that is the
+    same in each step on the same ticket file or on the same analyst's
+    replies. While a ticket analyst launched on a step of that `subject`
+    runs, the step's procedure waits on that analyst (`handled.repeated`).
+    It stays out of the step's key and its equality."""
     what: str
     given: tuple[str, ...] = field(default=(), repr=False)
     reread: bool = field(default=False, repr=False, compare=False)
     change: str | None = field(default=None, repr=False, compare=False)
     ruling: str = field(default="", repr=False)
     former_ruling: str = field(default="", repr=False, compare=False)
+    subject: str | None = field(default=None, repr=False, compare=False)
 
     @property
     def text(self) -> str:

@@ -208,7 +208,19 @@ def main_wanted(state: State) -> Step | None:
 
 
 def for_coordinator_key(agent: str, time: float) -> str:
-    return f"ticket analyst {agent}, reply at {time:.0f}"
+    return f"{replies_of(agent)} {time:.0f}"
+
+
+def replies_of(agent: str) -> str:
+    """The part of `for_coordinator_key` that names the ticket analyst
+    `agent`, the same at each of its replies."""
+    return f"ticket analyst {agent}, reply at"
+
+
+def part_of(key: str) -> str:
+    """The opening of the step of `unfinished` on the reply `key`, or,
+    with `replies_of`, on any reply of its analyst."""
+    return mctx("the part for the coordinator of {key}").format(key=key)
 
 
 def replied(state: State) -> list[tuple[Agent, Purpose, list[str], str]]:
@@ -244,17 +256,22 @@ def unfinished(state: State) -> Step | None:
     ticket analyst's reply for the coordinator, with its items that open
     with a label with no colon after it, other than those of an analyst on
     a held step, which go to the final reply (`told`), and the
-    `unfinished:` items of an analyst on what a change's editors leave."""
+    `unfinished:` items of an analyst on what a change's editors leave. Its
+    subject is the analyst, so the step on a later reply waits while an
+    analyst on the step of an earlier one runs (`steps.Undecided`). It
+    passes over an analyst with no agent id, of which `replied` gives
+    none, so that the type checker reads the agent id as known."""
     for a, purpose, _, key in replied(state):
-        if purpose is Purpose.STEP or items_of(a, list(Label)) is None:
+        if a.agent_id is None or purpose is Purpose.STEP or items_of(a, list(Label)) is None:
             continue
         open_items = None if purpose is Purpose.CHANGE else items_of(a, [Label.UNFINISHED])
         items = [*([open_items] if open_items else []), *mislabeled(a)]
         if not items:
             continue
         text = "\n".join(items)
-        s = Undecided(mctx("the part for the coordinator of {key} leaves these items:").format(
-            key=key) + "\n" + text, (key, *(ln.strip() for ln in text.splitlines() if ln.strip())))
+        s = Undecided(mctx("{part} leaves these items:").format(part=part_of(key)) + "\n" + text,
+                      (key, *(ln.strip() for ln in text.splitlines() if ln.strip())),
+                      subject=part_of(replies_of(a.agent_id)))
         if not repeated(s, state):
             return s
     return None

@@ -1,8 +1,10 @@
 """The review of draft `change` tickets: ticket reviewers on the drafts
 ready for one, and a ticket analyst on the drafts whose log holds findings
 or suggestions. The findings and suggestions it reads are the log lines a
-ticket reviewer wrote whose note opens with `finding` or `suggestion`; a
-line of an analyst or the coordinator that opens so is none.
+ticket reviewer wrote whose note opens with `finding` or `suggestion`, and
+a coordinator's line whose note opens with `finding`, also where the
+coordinator gives the draft to review after it; a line of an analyst that
+opens so is none.
 
 The drafts given to the operator are the `change` tickets under
 `tickets/draft/` that `State.mine` gives, those the coordinator names, those a
@@ -171,6 +173,13 @@ def operator_finding(t: Ticket, since: float) -> LogLine | None:
                          or STALLED.match(note) is not None)
 
 
+def coordinator_found(t: Ticket, since: float) -> bool:
+    """Whether a line of the coordinator's in `t`'s log after `since` has
+    a note that opens with `finding`."""
+    return any(ln.time >= since and ln.agent == COORDINATOR and ln.note.startswith(Note.FINDING)
+               for ln in t.log)
+
+
 def overrun(state: State, t: Ticket) -> tuple[str, str, str | None] | None:
     """The number of `t`, the line of `overrun_line` since `findings_start`,
     and what the last item checker launched on `t` before that line leaves
@@ -297,13 +306,13 @@ def draft_step(state: State, t: Ticket) -> Step | Joined | None:
         return None
     since = findings_start(t)
     found = review_lines_after(t, since, Note.FINDING)
-    overran = operator_finding(t, since) is not None
+    stated = operator_finding(t, since) is not None or coordinator_found(t, since)
     suggested = review_lines_after(t, since, Note.SUGGESTION)
     last_i = last_index(t, FILED_OR_REVISED)
-    if found or suggested or overran:
+    if found or suggested or stated:
         analyst_done = [a for a in agents if a.role is Role.TICKET_ANALYST
                         and a.launched > t.log[-1].time]
-        writer = resumable(state, t) if not (found or overran) else None
+        writer = resumable(state, t) if not (found or stated) else None
         if writer is not None and writer.agent_id is not None:
             message = briefs.weigh_suggestions(t.number, list(dict.fromkeys(suggested)),
                                                at_cap(t))

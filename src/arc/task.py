@@ -31,11 +31,12 @@ LIST_SECTION: Literal["pair"] = "pair"
 
 # The keys of a pair's JSON form, in the order `pair_json` writes them.
 # `INDEX` holds the pair's index in its section, which a reader takes
-# unread; `PAIR_KEYS` are the keys it reads, and `ALT_KEYS` the keys of
-# its alt.
+# unread; `PAIR_KEYS` are the keys it reads, `JSON_KEYS` all of them,
+# and `ALT_KEYS` the keys of its alt.
 INDEX = "index"
 INPUT, OUTPUT, ALT = "input", "output", "alt"
 PAIR_KEYS = (INPUT, OUTPUT, ALT)
+JSON_KEYS = (INDEX, *PAIR_KEYS)
 KIND, GRID = "kind", "grid"
 ALT_KEYS = (KIND, GRID)
 
@@ -159,7 +160,7 @@ def _alt_kind(where: str, value: object) -> AltKind:
 def read_pair(section: PairSection, index: int, data: object) -> Example | Probe:
     """The pair at `index` of `section`, from its JSON form: an `Example`,
     or a `Probe` where it holds no output. Raises `PairFormError` where the
-    pair holds a key outside `PAIR_KEYS` and `INDEX`, holds no input, holds
+    pair holds a key outside `JSON_KEYS`, holds no input, holds
     an alt and no output, holds an alt that is not an object of `ALT_KEYS`
     whose kind is an `AltKind`
     ([Alt outputs](docs/handbook/solver-file.md#alt-outputs)), or holds an
@@ -169,10 +170,10 @@ def read_pair(section: PairSection, index: int, data: object) -> Example | Probe
         raise PairFormError(mctx("{where} is no JSON object").format(
             where=where))
     for key in data:
-        if key not in PAIR_KEYS and key != INDEX:
+        if key not in JSON_KEYS:
             raise PairFormError(mctx(
                 "{where}: `{key}` is no key of a pair; a pair holds {keys}")
-                .format(where=where, key=key, keys=spelled(PAIR_KEYS)))
+                .format(where=where, key=key, keys=spelled(JSON_KEYS)))
     if INPUT not in data:
         raise PairFormError(mctx("{where} holds no `input`").format(
             where=where))
