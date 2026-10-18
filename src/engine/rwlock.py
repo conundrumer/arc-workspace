@@ -2,12 +2,10 @@
 every session on the machine share. A `run_dl.py` command, a pytest run
 and each command of a gate run hold it shared (`held`, `taken`), and run
 alongside each other. The lock is a file in the common git directory,
-`LOCK_FILE`, held shared through `flock`. The kernel releases a hold when
-its process ends, however it ends, so a holder that crashes or is killed
-leaves no hold behind, and the file itself means nothing.
+`LOCK_FILE`, held shared through `flock`.
 
-A holder names its hold in `HOLD_ENV`, which every process it starts
-inherits, and a gate run names each command's hold in that command's
+A holder sets `HOLD_ENV` to the value of its `Hold`, and every process it
+starts inherits that variable; a gate run sets it in each command's
 environment. A process that starts under a hold runs under it and takes no
 hold of its own.
 
@@ -17,12 +15,15 @@ by `scripts/merge_change.py`, so that one merge at a time moves `master`.
 The gate lock, `GATE_FILE` in the git directory of one worktree
 (`gate_lock_dir`), is held by `scripts/gate.py`, so that one gate run at a
 time runs in that worktree. A holder writes into the file what it does, and
-a process that has to wait says on stderr, once, that it waits and what the
+a process that has to wait says on stderr that it waits and what the
 holder wrote, where the holder has written it yet. A process that starts
 under a hold of the heavy commands' lock waits for neither mutex, since the
 holder it would wait for can be the process it runs under: where another
-process holds it, the process stops (`MergeHeld`, `GateHeld`). The kernel
-releases these holds too when their holder ends."""
+process holds it, the process stops (`MergeHeld`, `GateHeld`).
+
+The kernel releases each hold, of the lock and of each mutex, when its
+holder ends, however it ends, so a holder that crashes or is killed leaves
+no hold behind."""
 
 import contextlib
 import fcntl
@@ -43,7 +44,8 @@ MERGE_FILE = "arc-merge.lock"
 GATE_FILE = "arc-gate.lock"
 
 HOLD_ENV = "ARC_HEAVY_HOLD"
-"""The environment variable that names the hold a process runs under."""
+"""The environment variable set to the value of the `Hold` a process runs
+under."""
 
 
 class Hold(StrEnum):
@@ -60,7 +62,7 @@ class GateHeld(Exception):
 
 def inherited() -> Hold | None:
     """The hold the process started under, or None where it started under
-    none. A value of `HOLD_ENV` that names no hold is a fault."""
+    none. A value of `HOLD_ENV` that is no value of `Hold` is a fault."""
     raw = os.environ.get(HOLD_ENV)
     return None if raw is None else Hold(raw)
 
@@ -109,8 +111,8 @@ def taken(hold: Hold) -> Iterator[Hold]:
 
 @contextlib.contextmanager
 def held(hold: Hold) -> Iterator[None]:
-    """`hold` on the repository's lock, named in `HOLD_ENV` while it lasts,
-    or the hold the process started under."""
+    """`hold` on the repository's lock, with `HOLD_ENV` set to its value
+    while it lasts, or the hold the process started under."""
     started = inherited()
     with taken(hold) as under:
         if started is not None:

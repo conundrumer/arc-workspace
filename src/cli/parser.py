@@ -133,7 +133,9 @@ def parser() -> argparse.ArgumentParser:
                 - When the case of a branch's model or of a `--case` name is no witnessed case, the witnessed cases that take its branches and differ from the concept case at the fewest choice points are printed in its place.
                 - When no witnessed case takes the branches of a `--case` name, the command prints `` {refusal} `` and nothing else.
             - Cases that emit the same output are listed together above that output: on one line, joined by `, ` and ending in `:`, or, when that line would pass {width} characters, one per indented line and then a line of `:`.
-            - After them come `<case>: emits nothing` for each case that emits no grid, and `<case>: undefined` for each case that takes a `@derive` or `@store` branch and emits none.
+            - After them, each case that emits no grid is listed on one line:
+                - `<case>: emits nothing` for a case whose reason is `NoOutput`, and for a case that gives no reason and takes no `@derive` or `@store` branch.
+                - `<case>: undefined` for each other case that emits no grid, which includes a case whose reason is `NoDerivedValue` and a case that gives no reason and takes such a branch.
             - After those comes the count line, `{count}`: the count of the witnessed cases, of the solver's cases, and of the distinct grids the witnessed cases emit.
             - After the count line comes `no case takes $<Ctor>` for each constructor of `Choice`, at any depth, that no case of the solver takes.
             """).format(width=GROUP_WIDTH,
@@ -319,10 +321,11 @@ def parser() -> argparse.ArgumentParser:
                   "each a branch, with each witness it builds, which it "
                   "writes into the task's witness file"),
         # The first item says at which assignment the witness stands, which
-        # principles.md, Witnesses, states: without it, refine pass b2862040
-        # (ticket 10-292) read a witness at a changed parameter as wrong and
-        # rebuilt it by hand, and a later run (ticket 6-963) grepped src,
-        # scripts, docs and prompts for what "the stored value there" means.
+        # docs/handbook/principles.md#witnesses states: without it, refine
+        # pass b2862040 (ticket 10-292) read a witness at a changed parameter
+        # as wrong and rebuilt it by hand, and a later run (ticket 6-963)
+        # grepped src, scripts, docs and prompts for what "the stored value
+        # there" means.
         description=mctx("""
             - Each built-in derivation of a stored parameter, a proposer of [proposers.dl](programs/proposers.dl), for which some case of the solver that takes its branch fits the task, with the witness that separates the cases that take the branch from the cases that take the stored value there and the same branches elsewhere, at the assignment that changes the fewest parameters at which they differ.
             - A derivation is listed with no witness in each of these cases:
@@ -339,9 +342,10 @@ def parser() -> argparse.ArgumentParser:
                   "input, with each witness it builds, which it writes into "
                   "the task's witness file"),
         # The first item says at which assignment the witness stands, which
-        # principles.md, Witnesses, states. The user's words, session
-        # 7fd429fb, 2026-10-13T02:58:03Z: "that should use clarification, but
-        # like improving the wording, not like adding new lines."
+        # docs/handbook/principles.md#witnesses states. The user's words,
+        # session 7fd429fb, 2026-10-13T02:58:03Z: "that should use
+        # clarification, but like improving the wording, not like adding new
+        # lines."
         description=mctx("""
             - Each program relation between `in` and `out`, and each one a `@store` line names that the derivation of `out` reads, whose value over a subset of its columns is the same on every input of the task, with the witness that separates the cases that take its `<rel>=stored` branch from the cases that take the derived value there and the same branches elsewhere, at the assignment that changes the fewest parameters at which they differ.
             - The command writes each witness it builds into the task's witness file, as `record` writes one, with the `@store` line standing, and keeps a witness the file already holds for the branch.

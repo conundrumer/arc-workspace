@@ -50,7 +50,7 @@ class Kind(StrEnum):
     kind (`ProblemKind`) as a member of its own, so that
     `Kind(problem.kind)` is a fault's finding kind."""
 
-    # Witness kinds (procedure.md, under "Witness").
+    # Witness kinds (docs/handbook/procedure.md#witness).
     DRIFT = "drift"
     UNLISTED = "unlisted"
     ANNOTATION = "annotation"
@@ -72,22 +72,25 @@ class Kind(StrEnum):
     `FAILING`."""
     DROP_UNJUSTIFIED = "drop-unjustified"
     """A case `impl_choice` drops that fails no case condition
-    (procedure.md, under "Reconcile")."""
+    (docs/handbook/procedure.md#reconcile)."""
     CONCEPT_UNENUMERATED = "concept-unenumerated"
     """The concept case is not among the cases `impl_choice` enumerates
-    (solver-file.md, under "Cases")."""
+    (docs/handbook/solver-file.md#cases)."""
     TASK_ASSIGN = "task-assign"
 
-    # Lint: the payload's category says which (solver-file.md, under "Program").
+    # Lint: the payload's category says which
+    # (docs/handbook/solver-file.md#program).
     # `checker.lint.view.lint` makes a lint finding a `HINT` where its
     # category is in `solver.category.HINTS`, else a `LINT`.
     LINT = "lint"
     HINT = "hint"
 
-    # `@derive` and `@store` kinds (solver-file.md, under "Params" and "Program").
+    # `@derive` and `@store` kinds (docs/handbook/solver-file.md#params and
+    # docs/handbook/solver-file.md#program).
     IDLE_BRANCH_IGNORE = "idle-ignore"
     """An `@ignore: derive|store <name>` line that excludes no case
-    (solver-file.md, under "Params" and "Program")."""
+    (docs/handbook/solver-file.md#params and
+    docs/handbook/solver-file.md#program)."""
     MISSING_BRANCH_LINE = "missing-branch-line"
     DUPLICATE_BRANCH_LINE = "duplicate-branch-line"
     BRANCH_ENTRY = "branch-entry"
@@ -111,10 +114,10 @@ class Kind(StrEnum):
     STORE_ROW_CAP = "store-row-cap"
     DETERMINATION_DIFF = "determination-diff"
     """A determined parameter whose determination differs from its stored
-    value (solver-file.md, under "Determination")."""
+    value (docs/handbook/solver-file.md#determination)."""
     DETERMINATION_OF_DERIVED = "determination-of-derived"
     """A `Determine` relation that mirrors a relation `Params` derives
-    (solver-file.md, under "Determination")."""
+    (docs/handbook/solver-file.md#determination)."""
     NO_TASK = "no-task"
     """A check that runs over the task's examples, on a solver whose task
     has no task file."""

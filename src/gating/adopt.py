@@ -66,7 +66,7 @@ def adopt_counts(out: Path) -> Adoption | None:
     path = out.resolve() / "gate" / RUN_COUNTS
     to = count_file(ACCEPTED)
     if not path.exists():
-        print(mctx("instructions: no {path} stands, so the accepted counts at {to} stay as "
+        print(mctx("instructions: no {path} exists, so the accepted counts at {to} stay as "
                    "they are").format(path=path, to=to))
         return None
     counts, grown = adopted(read_counts(to), read_counts(path))

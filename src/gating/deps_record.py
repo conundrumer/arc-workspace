@@ -118,7 +118,7 @@ def adopt_record(out: Path) -> int:
     its commit is `HEAD`."""
     path = out.resolve() / "gate" / RECORD_OUT
     if not path.exists():
-        print(mctx("record: no {path} stands, so the dependency record at {deps} stays as "
+        print(mctx("record: no {path} exists, so the dependency record at {deps} stays as "
                    "it is").format(path=path, deps=deps_file()))
         return 0
     record = Record.read(path)

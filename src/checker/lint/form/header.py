@@ -47,8 +47,8 @@ INDUCE: Annotated[str,
 
 
 def doc_keywords(written: str) -> dict[str, list[str]]:
-    """The keywords of keywords.md, in doc order, per `##` section: the
-    leading code span of each bullet."""
+    """The keywords of docs/handbook/keywords.md, in doc order, per `##`
+    section: the leading code span of each bullet."""
     out: dict[str, list[str]] = {}
     section: list[str] = []
     for line in written.splitlines():
