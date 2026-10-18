@@ -28,14 +28,14 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::ExitCode;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use arclog::diagnostic::{Diagnostic, Location};
 use arclog::harness::{run_over_corpus, CorpusSolver, LintReport, SolverResult};
+use arclog::harness::read_corpus_solver;
 use arclog::layout::{Layout, SourceFile};
 use arclog::program::path::{DataNodeRef, NodePath, NodeRef};
 use arclog::read::read_solver;
-use arclog::solver::Solver;
 use arclog::write::{write_arcdata, write_arclog};
 
 fn describe(diagnostic: &Diagnostic) -> String {
@@ -65,15 +65,6 @@ fn first_difference(text: &str, written: &str) -> String {
         }
     }
     unreachable!("two texts that differ differ at a line")
-}
-
-/// The solver of `task_id` read from its two files in `dir`, where both
-/// read.
-fn read_from(dir: &Path, task_id: &str) -> Option<Arc<Solver>> {
-    let arclog = std::fs::read_to_string(dir.join(format!("{task_id}.arclog"))).ok()?;
-    let arcdata = std::fs::read_to_string(dir.join(format!("{task_id}.arcdata"))).ok()?;
-    let read = read_solver(task_id, &arclog, &arcdata, &|id| read_from(dir, id)).ok()?;
-    Some(Arc::new(read.value))
 }
 
 /// The file `diagnostic` of a reader stands in: a reader's diagnostic stands
@@ -133,7 +124,7 @@ fn round_trip(dir: &Path, solver: &CorpusSolver, report: &LintReport, read_with_
         (Ok(arclog), Ok(arcdata)) => (arclog, arcdata),
         (a, b) => return SolverResult::Fail([a.err(), b.err()].into_iter().flatten().collect()),
     };
-    let (read, diagnostics) = match read_solver(&solver.task_id, &arclog_text, &arcdata_text, &|id| read_from(dir, id)) {
+    let (read, diagnostics) = match read_solver(&solver.task_id, &arclog_text, &arcdata_text, &|id| read_corpus_solver(dir, id)) {
         Ok(read) => (Some(read.value), read.diagnostics),
         Err(diagnostics) => (None, diagnostics),
     };

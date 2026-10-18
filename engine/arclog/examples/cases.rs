@@ -16,21 +16,10 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::Arc;
 
-use arclog::harness::{run_over_corpus, CorpusSolver, SolverResult};
+use arclog::harness::{read_corpus_solver, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::program::path::{node_at, NodePath, NodeRef, PathStep};
-use arclog::read::read_solver;
 use arclog::solver::{Exclusion, FileOwner, Solver};
-
-/// The solver of `task_id` read from its two files in `dir`, where both
-/// read.
-fn read_from(dir: &Path, task_id: &str) -> Option<Arc<Solver>> {
-    let arclog = std::fs::read_to_string(dir.join(format!("{task_id}.arclog"))).ok()?;
-    let arcdata = std::fs::read_to_string(dir.join(format!("{task_id}.arcdata"))).ok()?;
-    let read = read_solver(task_id, &arclog, &arcdata, &|id| read_from(dir, id)).ok()?;
-    Some(Arc::new(read.value))
-}
 
 /// A line for each fault of the cases of `solver`.
 fn faults(solver: &Solver) -> Vec<String> {
@@ -51,7 +40,7 @@ fn faults(solver: &Solver) -> Vec<String> {
 }
 
 fn check(dir: &Path, solver: &CorpusSolver) -> SolverResult {
-    let Some(read) = read_from(dir, &solver.task_id) else {
+    let Some(read) = read_corpus_solver(dir, &solver.task_id) else {
         return SolverResult::Fail(vec!["the solver's files do not read".to_owned()]);
     };
     match catch_unwind(AssertUnwindSafe(|| faults(&read))) {

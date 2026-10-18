@@ -57,6 +57,16 @@ pub fn corpus_solvers(dir: &Path) -> Result<Vec<CorpusSolver>, CorpusError> {
         .collect())
 }
 
+/// The solver of `task_id` read from its two files in `dir`, each solver a
+/// `representative` line names read the same way. `None` where a file does
+/// not read.
+pub fn read_corpus_solver(dir: &Path, task_id: &str) -> Option<std::sync::Arc<crate::solver::Solver>> {
+    let arclog = std::fs::read_to_string(dir.join(format!("{task_id}.arclog"))).ok()?;
+    let arcdata = std::fs::read_to_string(dir.join(format!("{task_id}.arcdata"))).ok()?;
+    let read = crate::read::read_solver(task_id, &arclog, &arcdata, &|id| read_corpus_solver(dir, id)).ok()?;
+    Some(std::sync::Arc::new(read.value))
+}
+
 /// The outcome of a check on one solver.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum SolverResult {
