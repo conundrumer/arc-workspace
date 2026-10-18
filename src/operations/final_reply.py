@@ -3,14 +3,17 @@
 gives, whether that text ends the operator for
 its context (`for_context`) or hands its lines to the operator launched
 after it (`hands_over`) or to one operator by name (`hands_to`), the calls that sent its text to its parent
-(`final_sends`), whether a holder of a change is live (`live_holder`),
+(`final_sends`), whether an operator has ended (`ended`), which of two
+operators carries on the lines one hands the other (`takes_up`), whether a holder
+of a change is live (`live_holder`), the operators launched before and
+after one (`split_at`),
 the operator whose final reply carries what
 reached an earlier one (`carrier`), and the lines the reply nests.
-`live_holder` and `carrier` read the calls of
+`ended_at`, `takes_up` and `carrier` read the calls of
 `next` by `handled.next_call`."""
 
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 
 from controlled_markdown import form, mctx
 from operations.constants import COORDINATOR
@@ -80,28 +83,64 @@ def final_sends_in(calls: Iterable[Call], operator: str, to: str) -> list[Call]:
             and sent_final_text(c) is not None]
 
 
+def split_at(operators: Sequence[str], me: str) -> tuple[Sequence[str], Sequence[str]]:
+    """The operators of `operators` launched before `me` and those launched
+    after it. Raises `ValueError` where `me` is not among `operators`."""
+    mine = operators.index(me)
+    return operators[:mine], operators[mine + 1:]
+
+
+def ended(state: State, operator: str) -> bool:
+    """Whether `operator` has `ended_at` now."""
+    return ended_at(state.transcripts.calls, operator, state.parents[operator], float("inf"))
+
+
+def ended_at(calls: Iterable[Call], operator: str, to: str, at: float) -> bool:
+    """Whether, of `calls` made before `at`, `operator` has sent its parent
+    `to` its final reply and made only calls of `next` and SubagentHandback
+    since; a SubagentHandback call ends the run and counts as no work. The
+    final send is itself a SendMessage call, so only the calls after it
+    are read."""
+    calls = [c for c in calls if c.operator == operator and c.time < at]
+    sends = final_sends_in(calls, operator, to)
+    if not sends:
+        return False
+    last = sends[-1].time
+    return all(next_call(c, operator) or c.tool == Tool.SUBAGENT_HANDBACK
+               for c in calls if c.time > last)
+
+
+def takes_up(calls: Sequence[Call], parents: Mapping[str, str], earlier: str,
+             later: str) -> bool:
+    """Whether `later` takes up the lines that the last final send of the
+    operator `earlier`, launched before it, hands it (`hands_to`, or
+    `hands_over` in a row). Of the two, the one whose call of `next`
+    after that send came first carries those lines on: `earlier` only
+    where its call came first and `later` had `ended_at` that call."""
+    sent = final_sends_in(calls, earlier, parents[earlier])[-1].time
+    first_earlier = first_next(calls, earlier, sent)
+    first_later = first_next(calls, later, sent)
+    if first_earlier is None or (first_later is not None and first_later < first_earlier):
+        return True
+    return not ended_at(calls, later, parents[later], first_earlier)
+
+
+def first_next(calls: Iterable[Call], operator: str, after: float) -> float | None:
+    """The time of the first call of `next` by `operator` after `after`, or
+    None where it made none."""
+    return min((c.time for c in calls if c.time > after and next_call(c, operator)),
+               default=None)
+
+
 def live_holder(state: State, holder: str) -> bool:
     """Whether `holder` holds its changes live: it stands in
     `open_holders`, and it is not an operator launched before `me` that
-    has sent its final reply and made only calls of `next` and
-    SubagentHandback since; a SubagentHandback call ends the run and counts
-    as no work. The
-    final send is itself a SendMessage call, so only the calls after it
-    are read. An earlier operator whose step is in flight when `me`
+    has `ended`. An earlier operator whose step is in flight when `me`
     starts has made no final send yet, and holds its changes until its
     next call of `next` ends it."""
     if holder not in state.open_holders:
         return False
-    if (holder not in state.operators or state.me not in state.operators
-            or state.operators.index(holder) >= state.operators.index(state.me)):
-        return True
-    sends = final_sends(state, holder)
-    if not sends:
-        return True
-    last = sends[-1].time
-    return not all(next_call(c, holder) or c.tool == Tool.SUBAGENT_HANDBACK
-                   for c in state.transcripts.calls
-                   if c.operator == holder and c.time > last)
+    return holder not in split_at(state.operators, state.me)[0] or not ended(state, holder)
 
 
 @memoized

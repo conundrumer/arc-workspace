@@ -8,7 +8,7 @@ from collections.abc import Callable, Iterable
 from controlled_markdown import mctx
 from operations import changes, decisions, drafts, passes, runs, taking, triage
 from operations.directives import NUMBER, TASK, Directive, Line, Pipeline, lines
-from operations.final_reply import ending_step, final_text, nested
+from operations.final_reply import ending_step, final_sends, final_text, first_line, nested
 from operations.handled import repeated, sends_to
 from operations.journal import BOUND
 from operations.roles import Role
@@ -21,13 +21,18 @@ from ticketing.vocabulary import Status
 def ending(state: State, text: str) -> Step:
     """The operator's final reply, whose text is `text`: the message that
     sends its parent (`State.parents`) `text`, where the journal gives no
-    such message of the operator's done whose step was given after the
-    last message that reached it, then the reply."""
+    message of the operator's done that sends a final reply with the first
+    line of `text`, whose step was given after the last message that
+    reached it and after the last final send of each operator of
+    `State.taken_up`, then the reply."""
     parent = state.parents[state.me]
-    since = max((m.time for m in state.received), default=0.0)
+    since = max([*(m.time for m in state.received),
+                 *(sends[-1].time for o in state.taken_up if (sends := final_sends(state, o)))],
+                default=0.0)
     return ending_step(parent, text, since, any(
         e.operator == state.me and e.close is not None and e.given > since
-        and final_text(e.text) is not None for e in sends_to(state, parent)))
+        and (sent := final_text(e.text)) is not None and first_line(sent) == first_line(text)
+        for e in sends_to(state, parent)))
 
 
 def pipeline_state(o: passes.Outcome | None) -> str | None:

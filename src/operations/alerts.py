@@ -158,8 +158,8 @@ TICKETS = {
     BugKind.LATE_RESUME: (
         mctx("the end of an operator's run: a message or a notification resumed it after a "
              "later operator of the session started"),
-        mctx("The resumed operator spent a run on its context, with the session's work in "
-             "the hands of a later operator.")),
+        mctx("The resumed operator ran on its old context after a later operator of the "
+             "session had started on a fresh one.")),
     BugKind.STUCK: (
         mctx("the wait on an agent's work: the agent showed no sign of progress for "
              "`STUCK_SECONDS`"),

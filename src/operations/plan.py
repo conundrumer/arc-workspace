@@ -1,10 +1,13 @@
 """The operator's next step, in the order `order` gives, and its waits.
 
 One operator carries the session's work at a time: an operator for which a
-later one of the session runs ends at once, and the later one carries on
-from the state, so two operators never act on one ticket. The coordinator's
-lines, and the other agents' messages other than the alerts `alerts` acts
-on for the operator that carries the work on, give steps only to the
+later one of the session runs, and has not ended (`final_reply.ended`)
+or takes up its lines (`taken_up`), ends at once, and the later one
+carries on from the state, so two operators never act on one ticket. Of
+an operator whose final reply hands its lines to a later one and that
+later one, one alone carries those lines on (`final_reply.takes_up`).
+The coordinator's lines, and the other agents' messages other than the
+alerts `alerts` acts on for the operator that carries the work on, give steps only to the
 operator they reached or to one that takes them up (`taken_up`);
 an `Op decision:` line that rules a held step holds for every operator
 (`directives`), and the items for the coordinator of a ticket analyst's
@@ -45,7 +48,9 @@ from operations.state import Call, State
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Status
 from operations.journal import backing_off
-from operations.final_reply import FOR_CONTEXT, FOR_LATER, final_sends_in, hands_over, hands_to, live_holder, sent_final_text
+from operations.final_reply import (FOR_CONTEXT, FOR_LATER, ended, final_sends_in, hands_over,
+                                    hands_to, live_holder, sent_final_text, split_at,
+                                    takes_up)
 from operations.standing import ending, final, holding, reply_lines
 from operations.order import EARLY, LATE, first, lacked, listing_wait, monitor_step
 from operations.steps import EndTurn, ListingHold, Poll, Step
@@ -63,8 +68,7 @@ def elsewhere(state: State) -> list[str]:
 def earlier_open(state: State) -> list[str]:
     """The operators of `State.open_operators` launched before `me`, in
     the order of their launch."""
-    mine = state.operators.index(state.me) if state.me in state.operators else 0
-    return [o for o in state.operators[:mine] if o in state.open_operators]
+    return [o for o in split_at(state.operators, state.me)[0] if o in state.open_operators]
 
 
 def unknown_line(line: str) -> str:
@@ -78,8 +82,10 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
     steps read. Each reply gives, after its lines, each line
     `monitor.undecided` gives."""
     unknown = [unknown_line(line) for line in dict.fromkeys(monitor.undecided(watch))]
-    mine = state.operators.index(state.me) if state.me in state.operators else -1
-    later = [o for o in state.operators[mine + 1:] if o in state.open_operators]
+    later = [o for o in split_at(state.operators, state.me)[1] if o in state.open_operators
+             and (not ended(state, o) or state.me in taken_up(o, state.operators,
+                                                             state.transcripts.calls,
+                                                             state.parents))]
     if later:
         return ending(state,
                       FOR_LATER.format(operator=later[-1])
@@ -120,17 +126,20 @@ def taken_up(me: str, operators: Sequence[str], calls: Sequence[Call],
     place of the one before it: those launched right before `me`, in a row,
     each of whose last final send hands its lines over (`hands_over`), each
     whose last final send hands its lines to `me` by name (`hands_to`), and
-    those each of these takes up, whose lines its reply gives."""
-    mine = operators.index(me) if me in operators else 0
-    texts = {o: sent_final_text(sends[-1]) or "" for o in operators[:mine]
+    those each of these takes up, whose lines its reply gives; of these,
+    only those whose lines the operator they hand them to takes up
+    (`takes_up`), and not those that carry them on themselves."""
+    before = split_at(operators, me)[0]
+    texts = {o: sent_final_text(sends[-1]) or "" for o in before
              if (sends := final_sends_in(calls, o, parents[o]))}
     ups: dict[str, frozenset[str]] = {}
-    for i, op in enumerate([*operators[:mine], me]):
+    for i, op in enumerate([*before, me]):
         row: list[str] = []
         for o in reversed(operators[:i]):
-            if o not in texts or not hands_over(texts[o]):
+            if o not in texts or not hands_over(texts[o]) or not takes_up(calls, parents, o, op):
                 break
             row.append(o)
-        named = [o for o in operators[:i] if o in texts and hands_to(texts[o], op)]
+        named = [o for o in operators[:i]
+                 if o in texts and hands_to(texts[o], op) and takes_up(calls, parents, o, op)]
         ups[op] = frozenset({*row, *named}.union(*(ups[o] for o in [*row, *named])))
     return ups[me]
