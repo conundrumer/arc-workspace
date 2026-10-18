@@ -175,7 +175,7 @@
 - Solver work other than a pass, or than the fix of a solver after an `interference` ticket on its task closes, is a change, which an editor makes as it makes any other, whether or not a `change` ticket gives it. Where one does, its brief has the form [A change's brief](#a-changes-brief) gives.
 
 ## Findings that block a change
-- A finding of a review of a built change before its merge blocks the change only where it is a defect in what an item of the change asks for, an edit that applies an item wrongly, or a defect that an edit made to fix an earlier finding of the change, or, in a design review, code the diff adds that writes a rule a second time, that no item of the change needs, that is larger than the cases it serves need, or that adds to a defect an open `refactor` ticket records.
+- A finding of a review of a built change before its merge blocks the change only where it is a defect in what an item of the change asks for, an edit that applies an item wrongly, or a defect that an edit made to fix an earlier finding of the change, or, in a design review, code the diff adds that writes a rule a second time, that no item of the change needs and that nothing but a test or an example calls, that is larger than the cases it serves need, or that adds to a defect an open `refactor` ticket records.
 - File each other finding as a ticket, in the form your documents give a ticket, and have no editor fix it: that ticket does not block the change.
 
 ## Passes on a task
