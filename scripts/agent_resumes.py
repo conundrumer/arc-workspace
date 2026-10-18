@@ -13,7 +13,7 @@ from run_reads import (blocks, parent_label, results_by_call, run_entries,
                        run_sessions)
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import chain
-from transcript_entries import Entry, epoch, read_entries
+from transcript_entries import Entry, epoch, fold, read_entries
 from agent_deliveries import Delivery, delivery
 from session_changes import changed_with
 
@@ -146,6 +146,12 @@ def resumes_since(path: Path, agents: frozenset[str], since: float,
 
 def sent_to(path: Path) -> frozenset[str]:
     """The agent ids the SendMessage calls of the run at `path` went to."""
-    return frozenset(str(b["input"]["to"]) for e in run_entries(path, naming={"SendMessage"})
-                     if e.get("type") == "assistant" for b in blocks(e, "tool_use")
-                     if b.get("name") == "SendMessage" and (b.get("input") or {}).get("to"))
+    return frozenset(fold(add_sent, set[str], path, chain(path), frozenset({"SendMessage"})))
+
+
+def add_sent(to: set[str], _path: Path, _line: int, e: Entry) -> None:
+    """Add to `to` the agent ids the SendMessage calls of the entry `e`
+    went to."""
+    if e.get("type") == "assistant":
+        to.update(str(b["input"]["to"]) for b in blocks(e, "tool_use")
+                  if b.get("name") == "SendMessage" and (b.get("input") or {}).get("to"))

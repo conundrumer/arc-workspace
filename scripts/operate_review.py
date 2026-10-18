@@ -8,7 +8,7 @@ from handbook.paths import console_importable, scripts_importable
 console_importable()
 scripts_importable()
 
-from operator_reads import read_operator  # noqa: E402
+from operator_transcript import read_operator  # noqa: E402
 from state_assembly import read_state  # noqa: E402
 from agent_reports import parent_type  # noqa: E402
 from run_reads import parent_id  # noqa: E402

@@ -1,8 +1,10 @@
 """Read the entries of a Claude Code transcript, each read held for one
 state of the process (`state_cache`): the snapshot of its lines, the
-lines that hold a word, the lines that are its run's own, and its
-`.meta.json` file. No held read holds a parsed entry: each read parses
-the lines it reads anew, so its entries are held by its caller alone."""
+lines that hold a word, the lines that are its run's own, its
+`.meta.json` file, and the folds over the entries of transcripts that go
+on from where the last fold stopped (`fold`). No held read holds a parsed
+entry: each read parses the lines it reads anew, so its entries are held
+by its caller alone."""
 
 import bisect
 import hashlib
@@ -12,7 +14,8 @@ from dataclasses import dataclass
 import os
 import re
 import sys
-from collections.abc import Iterable, Iterator
+import zlib
+from collections.abc import Callable, Hashable, Iterable, Iterator, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -76,7 +79,9 @@ class Snapshot:
     lines that hold it.
 
     A snapshot read on from an earlier one (`extended`) keeps what that one
-    found in its whole lines."""
+    found in its whole lines, and its `generation`, which a snapshot read
+    whole takes anew: the snapshots of one generation agree on the whole
+    lines of each."""
 
     def __init__(self, path: Path, file: tuple[int, int], text: bytes) -> None:
         self.path = path
@@ -88,6 +93,8 @@ class Snapshot:
         self.found: dict[str, frozenset[int]] = {}
         self.agent_ids: dict[str, tuple[int, ...]] | None = None
         self.edges = edges(text, self.settled_end())
+        self.generation = object()
+        self.digests: dict[int, int] = {0: 0}
 
     @property
     def count(self) -> int:
@@ -176,6 +183,22 @@ class Snapshot:
             index.setdefault(aid, {})[self.line_of(base + k)] = None
         return {aid.decode(): tuple(found) for aid, found in index.items()}
 
+    def offset(self, i: int) -> int:
+        """The offset of the `i`-th line, or past its last line, its size."""
+        return self.starts[i] if i < self.count else self.size
+
+    def digest(self, end: int) -> int:
+        """The CRC-32 of its bytes before `end`, read again from its file,
+        `SPAN` bytes at a time, going on from the longest prefix whose CRC it
+        already holds."""
+        if end not in self.digests:
+            at = max(k for k in self.digests if k <= end)
+            crc = self.digests[at]
+            for k in range(at, end, SPAN):
+                crc = zlib.crc32(read_at(self, k, min(SPAN, end - k)), crc)
+            self.digests[end] = crc
+        return self.digests[end]
+
     def entry(self, i: int) -> list[Entry]:
         return parse(self.line(i))
 
@@ -187,6 +210,8 @@ class Snapshot:
         offset = self.settled_end()
         out = Snapshot.__new__(Snapshot)
         out.path, out.file, out.size = self.path, self.file, offset + len(more)
+        out.generation = self.generation
+        out.digests = {0: 0}
         out.closed = more.endswith(b"\n") or not more
         out.breaks_cr = False
         out.starts = line_starts(more, offset, self.starts[:whole])
@@ -214,7 +239,7 @@ class Snapshot:
 
 
 SPAN = 1 << 22
-"""How many bytes of consecutive lines `Snapshot.lines` reads at most in
+"""How many bytes `Snapshot.lines` and `Snapshot.digest` read at most in
 one read."""
 
 
@@ -366,7 +391,7 @@ def numbered_entries(path: Path, naming: Iterable[str] | None = None
 
 def line_entries(path: Path, i: int) -> list[Entry]:
     """The entries of line `i` of the snapshot of the transcript at `path`
-    that `numbered_entries` read at this state."""
+    that `numbered_entries` or `fold` read at this state."""
     return _read[path].entry(i)
 
 
@@ -376,15 +401,129 @@ def entries_naming(path: Path, naming: frozenset[str] | None) -> list[int]:
     derived from it sees a change of the transcript only where those lines
     change: a transcript is added to at its end, so a line keeps its bytes
     while its index stands here."""
-    if naming is None:
-        return list(own_range(path))
-    return named_lines(snapshot(path), own_range(path), naming)
+    return selected_lines(snapshot(path), own_range(path), naming)
 
 
 def named_lines(snap: Snapshot, own: range, naming: frozenset[str]) -> list[int]:
     """The lines of `snap` within `own` that hold a word of `naming`, in
     their order."""
     return sorted(i for i in snap.holding(naming) if i in own)
+
+
+@dataclass(frozen=True)
+class Folded:
+    """Where a fold stood in a transcript when it was kept: the `generation`
+    of the snapshot it read, the first of the run's own lines then
+    (`own_range`), the line it stopped before, each line before it a whole
+    line, and the `digest` of the bytes before that line."""
+    path: Path
+    generation: object
+    own: int
+    done: int
+    digest: int
+
+
+type Step[S] = Callable[[S, Path, int, Entry], None]
+"""A fold's step: it adds to the state an entry, with its transcript and
+the index of its line."""
+
+_folds: dict[Hashable, tuple[Any, tuple[Folded, ...]]] = {}
+"""The state of each fold kept by its step and run, with where it stood in
+each transcript it read."""
+
+
+def fold[S](step: Step[S], start: Callable[[], S], run: Hashable, paths: Sequence[Path],
+            naming: frozenset[str] | None = None) -> S:
+    """The state `step` gives from `start()` over each entry of the run's
+    own lines of each transcript of `paths`, in their order, or with
+    `naming` each entry `read_entries` gives with it, as the transcripts
+    stand at the state this process is in. A later call with the same
+    `step` and `run` parses only the lines added since, where `goes_on`
+    holds, and otherwise starts the fold again, as for a transcript
+    written anew or cut. A transcript whose bytes before where the last
+    such fold stopped changed is read whole again (`renewed`). A fold
+    whose step fails is not kept. A state over a line that is not whole
+    is given and not kept. The caller changes none of the state it gets,
+    and holds none of it past its read, as a later fold adds to it."""
+    key = step, run
+    held = _folds.pop(key, None)
+    marks = held[1] if held is not None else ()
+    now: list[tuple[Path, Snapshot, range]] = []
+    for j, p in enumerate(paths):
+        snapshot(p)
+        snap = _read[p]
+        if (j < len(marks) and marks[j].path == p and marks[j].generation is snap.generation
+                and snap.digest(snap.offset(marks[j].done)) != marks[j].digest):
+            snap = renewed(p)
+        now.append((p, snap, own_range(p)))
+    if held is not None and goes_on(held[1], now):
+        state, marks = held[0], held[1]
+    else:
+        state, marks = start(), ()
+    kept: list[Folded] = []
+    for j, (p, snap, own) in enumerate(now):
+        done = marks[j].done if j < len(marks) else own.start
+        whole = max(own.start, min(own.stop, snap.settled()))
+        fold_lines(state, step, p, snap, range(done, whole), naming)
+        kept.append(Folded(p, snap.generation, own.start, whole,
+                           snap.digest(snap.offset(whole))))
+    _folds[key] = state, tuple(kept)
+    if not any(parse(line) for _, snap, own in now
+               for line in snap.lines(selected_lines(snap, range(max(own.start, snap.settled()),
+                                                         own.stop), naming))):
+        return state
+    state = start()
+    for p, snap, own in now:
+        fold_lines(state, step, p, snap, own, naming)
+    return state
+
+
+def renewed(path: Path) -> Snapshot:
+    """The transcript at `path` read whole, with the lines that hold each
+    word found anew, as the last snapshot of it, which `numbered_entries`,
+    `line_entries` and a later `snapshot` go on from."""
+    with path.open("rb") as fh:
+        st = os.fstat(fh.fileno())
+        snap = Snapshot(path, (st.st_dev, st.st_ino), fh.read())
+    _read[path] = snap
+    return snap
+
+
+def goes_on(marks: tuple[Folded, ...], now: list[tuple[Path, Snapshot, range]]) -> bool:
+    """Whether a fold that stood at `marks` goes on over the transcripts
+    `now` gives, each with its snapshot and own lines: each transcript of
+    `marks` is the one at its place in `now`, of the same snapshot
+    `generation` and first own line, and only the last of them has lines
+    past where the fold stopped."""
+    if len(marks) > len(now):
+        return False
+    for j, m in enumerate(marks):
+        p, snap, own = now[j]
+        if (m.path != p or m.generation is not snap.generation or m.own != own.start
+                or m.done > own.stop):
+            return False
+        if j < len(marks) - 1 and m.done != own.stop:
+            return False
+    return True
+
+
+def fold_lines[S](state: S, step: Step[S], path: Path, snap: Snapshot, lines: range,
+                  naming: frozenset[str] | None) -> None:
+    """Fold into `state` the entries of `lines` of `snap`, the snapshot of
+    the transcript at `path`, or with `naming` of those lines that hold one
+    of its words."""
+    found = selected_lines(snap, lines, naming)
+    for i, line in zip(found, snap.lines(found)):
+        for e in parse(line):
+            step(state, path, i, e)
+
+
+def selected_lines(snap: Snapshot, lines: range, naming: frozenset[str] | None) -> list[int]:
+    """`lines` of `snap`, or with `naming` those of them that hold one of
+    its words."""
+    if not lines or naming is None:
+        return list(lines)
+    return named_lines(snap, lines, naming)
 
 
 def entries_forward(path: Path) -> Iterator[Entry]:

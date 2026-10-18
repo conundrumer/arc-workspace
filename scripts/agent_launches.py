@@ -5,7 +5,7 @@ launches of a run with the time each was last resumed, and the agents a
 run launched or resumed."""
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +16,7 @@ from run_reads import (blocks, in_background, meta_parent, notified, parent_labe
                        results_by_call, run_sessions, session_agents)
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import agent_id, chain, find
-from transcript_entries import Entry, epoch, line_entries, numbered_entries
+from transcript_entries import Entry, epoch, fold, line_entries
 from agent_resumes import note_latest, resumes, session_resumes
 
 
@@ -138,6 +138,44 @@ class Launch:
         return self.done is None or self.since > self.done
 
 
+@dataclass
+class LaunchLines:
+    """What `launches` reads of a run's entries that have a time: each
+    Agent call with its time, the line of each entry that gives a call's
+    result, the time each call was answered, the calls whose result is an
+    error, the time of each id a notification gives, and the lines of the
+    entries to which `report_ids` gives each id. Of the entries that give
+    a result or that `report_ids` names only their lines are kept, so that
+    no call holds the entries of a long transcript parsed at once."""
+    calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    results: dict[str, tuple[Path, int]] = field(default_factory=dict)
+    answered: dict[str | None, float] = field(default_factory=dict)
+    failed: set[str] = field(default_factory=set)
+    told: dict[str, float] = field(default_factory=dict)
+    naming: dict[str, list[tuple[Path, int]]] = field(default_factory=dict)
+
+    def step(self, p: Path, i: int, e: Entry) -> None:
+        """Add the entry `e` of line `i` of the transcript at `p`."""
+        if not e.get("timestamp"):
+            return
+        kind = e.get("type")
+        if kind == "assistant":
+            for b in blocks(e, "tool_use"):
+                if b.get("name") in AGENT_TOOLS:
+                    self.calls.append((e["timestamp"], b))
+            return
+        if kind == "user":
+            for b in blocks(e, "tool_result"):
+                self.answered[b.get("tool_use_id")] = epoch(e["timestamp"])
+                if b.get("is_error"):
+                    self.failed.add(b.get("tool_use_id", ""))
+            self.results.update(dict.fromkeys(results_by_call([e]), (p, i)))
+        for v in notified(e):
+            self.told[v] = epoch(e["timestamp"])
+        for v in report_ids(e):
+            self.naming.setdefault(v, []).append((p, i))
+
+
 @state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
 def launches(path: Path, undecided: list[str]) -> list[Launch]:
     """The agents the run at `path` launched, in the order of their launch.
@@ -146,54 +184,26 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
     background. An Agent call whose result is an error launched no agent,
     unless a transcript gives it as its launch or its result gives an
     `agentId`."""
-    # Each entry is parsed in one pass and dropped, and of the entries that
-    # give a result or that `report_ids` names only their lines are kept,
-    # so that no call holds the entries of a long transcript parsed at once.
-    calls: list[tuple[str, dict[str, Any]]] = []
-    results: dict[str, tuple[Path, int]] = {}
-    answered: dict[str | None, float] = {}
-    failed: set[str] = set()
-    told: dict[str, float] = {}
-    naming: dict[str, list[tuple[Path, int]]] = {}
-    for p in chain(path):
-        for i, e in numbered_entries(p):
-            if not e.get("timestamp"):
-                continue
-            kind = e.get("type")
-            if kind == "assistant":
-                for b in blocks(e, "tool_use"):
-                    if b.get("name") in AGENT_TOOLS:
-                        calls.append((e["timestamp"], b))
-                continue
-            if kind == "user":
-                for b in blocks(e, "tool_result"):
-                    answered[b.get("tool_use_id")] = epoch(e["timestamp"])
-                    if b.get("is_error"):
-                        failed.add(b.get("tool_use_id", ""))
-                results.update(dict.fromkeys(results_by_call([e]), (p, i)))
-            for v in notified(e):
-                told[v] = epoch(e["timestamp"])
-            for v in report_ids(e):
-                naming.setdefault(v, []).append((p, i))
+    read = fold(LaunchLines.step, LaunchLines, path, chain(path))
     out: list[Launch] = []
-    for at, b in calls:
+    for at, b in read.calls:
         tid = b.get("id", "")
-        given = (results_by_call(line_entries(*results[tid])).get(tid) if tid in results
-                 else None)
+        given = (results_by_call(line_entries(*read.results[tid])).get(tid)
+                 if tid in read.results else None)
         background = given is not None and in_background(given, undecided, tid)
         result = given or {}
         child = launched_by(path, tid)
-        if tid in failed and child is None and "agentId" not in result:
+        if tid in read.failed and child is None and "agentId" not in result:
             continue
-        signs = [told.get(tid), told.get(result.get("agentId", "")),
-                 None if background else answered.get(tid)]
+        signs = [read.told.get(tid), read.told.get(result.get("agentId", "")),
+                 None if background else read.answered.get(tid)]
         done = max((t for t in signs if t is not None), default=None)
         aid = agent_id(child) if child else result.get("agentId")
         if child is None and done is None and given is not None:
             undecided.append(mctx("{run}: no transcript gives call {call} as "
                                   "its launch").format(run=path.stem, call=tid))
         named = dict.fromkeys(line for v in (tid, *([aid] if aid else []))
-                              for line in naming.get(v, []))
+                              for line in read.naming.get(v, []))
         out.append(Launch(aid, child, epoch(at), done, tid,
                           agent_entries((n for p, i in named for n in line_entries(p, i)),
                                         aid, tid)))

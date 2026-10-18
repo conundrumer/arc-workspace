@@ -5,7 +5,8 @@ that doc editors launched."""
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from operator_reads import AgentsRead, ended_by, ended_elsewhere, kept, read_operator
+from operator_reads import AgentsRead, ended_by, ended_elsewhere, kept
+from operator_transcript import read_operator
 from transcripts import find
 from transcript_entries import Refused
 

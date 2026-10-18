@@ -22,11 +22,10 @@ from monitor_reads import late_resumes
 from open_agents import running_agents, work_open
 from operator_reads import (
     AgentsRead,
-    OperatorRead,
     operator_runs,
     joined,
-    read_operator,
 )
+from operator_transcript import OperatorRead, read_operator
 from relay_reads import session_id
 from run_reads import context_size, parent_id
 from run_scripts import pace_reads, read_runs

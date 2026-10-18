@@ -1,0 +1,263 @@
+"""The read of the transcript of one operator (`read_operator`): its
+calls, with the outcome of each, the messages that reached it, each read
+in place of the filed line that gives it, and the agents it launched, with
+their reports, the agents each doc reviewer sent a message, and the
+reports of its solver passes."""
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
+from pathlib import Path
+from typing import Any
+
+from agent_launches import children_of, launched
+from agent_resumes import resumes, sent_to
+from agents_pending import turn_signs
+from agent_reports import ENDED, Sign, last_sign
+from controlled_markdown import mctx
+from merge_reads import merge_outcome, merge_subjects
+from filed_texts import brief_report_file, unfiled
+from operator_reads import (MESSAGE_FROM, AgentsRead, agent_listing, ended_with, filed_report,
+                            from_parent, pass_read, reply_to)
+from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, blocks, is_prompt,
+                       notifications, output_file, parent_id, run_sessions, tool_results)
+from run_reads import Status as TaskStatus
+from senders import Origin, Sender, origin, sender
+from file_reads import file_text, is_file
+from state_reads import DERIVED, Kept, state_cache
+from transcripts import chain
+from transcript_entries import Entry, epoch, fold, line_entries
+
+from operations.merge_outcomes import conflict_paths
+from operations.roles import PASSES, Role, described
+from operations.state import (
+    Agent, Call, Merge, Message, PassReport, Report, Tool, Waits,
+)
+from operations.command_words import is_next
+from operations.printing import unfenced
+
+
+FILED_FIELDS: dict[str, str] = {Tool.AGENT: "prompt", Tool.SEND_MESSAGE: "message"}
+"""The field of each tool's input that may give a file the command wrote."""
+
+
+def unfiled_call(aid: str, tool: str, inp: dict[str, Any], result: str | None,
+                 undecided: list[str]) -> tuple[dict[str, Any], str | None]:
+    """The input and the result of a call of the operator `aid`, with each
+    file the command wrote, that the field `FILED_FIELDS` gives or the
+    result of a call of `next` gives, read in place of the line that gives
+    it (`filed_texts.unfiled`), and that field read without the fence
+    lines an operator passed with it (`operations.printing.unfenced`)."""
+    where = mctx("{run}: a call of {tool}").format(run=aid, tool=tool)
+    if (name := FILED_FIELDS.get(tool)) is not None:
+        inp = {**inp, name: unfiled(unfenced(str(inp.get(name, ""))), where, undecided)}
+    elif tool == Tool.BASH and result is not None and is_next(str(inp.get("command", "")), aid):
+        result = unfiled(result, where, undecided)
+    return inp, result
+
+
+MESSAGING = frozenset({Role.DOC_REVIEWER, Role.ITEM_CHECKER})
+"""The roles whose `TranscriptsRead.messaged` the command reads."""
+
+
+@dataclass(frozen=True)
+class OperatorRead:
+    """What the transcript of one operator gives: its launches, its calls,
+    the messages that reached it, `passes`, for each solver pass it
+    launched with an agent id, the read of its report
+    (`TranscriptsRead.pass_reports`), and `listing`, as `agent_listing`
+    gives it."""
+    launched: AgentsRead
+    calls: tuple[Call, ...]
+    messages: tuple[Message, ...]
+    passes: Mapping[str, PassReport]
+    listing: frozenset[str] | None = None
+
+    @property
+    def agents(self) -> tuple[Agent, ...]:
+        return self.launched.agents
+
+
+def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
+                  subjects: Mapping[str, float], calls: bool = True) -> OperatorRead:
+    """What the transcript at `path` of the operator `aid` gives. A message
+    from the operator's parent, the coordinator or the operator launcher
+    that launched it, or from the coordinator where the parent is an
+    operator launcher, is read as a message of the coordinator's.
+
+    Where `calls` is False, a read taken only for the agents the operator
+    launched, whose calls no step reads, no call's outcome is read: the read gives no `Call`, and no
+    `undecided` line of such a read, and reads of each `Agent` call only
+    the filed text of its `prompt`, which the agent it gives takes as its
+    brief."""
+    merged = merge_subjects(path)
+    return replace(operator_read(aid, path, main, undecided,
+                                 frozenset((m, t) for m, t in subjects.items() if m in merged),
+                                 calls),
+                   listing=agent_listing(path))
+
+
+@dataclass
+class OperatorLines:
+    """What `operator_read` reads of an operator's entries, for an operator
+    whose parent is `parent` and whose run spans `sessions`: each call with
+    its time, input and tool, the text of each call's result and whether
+    it is an error, the task and output file of each call the harness ran
+    or moved to the background, the status each notification gives each
+    id, and each prompt that has a time, by its line, with its time,
+    whether it is from the operator's parent, and whether it is from the
+    coordinator. A prompt's text is read at each read, as the files it
+    gives may change."""
+    parent: str
+    sessions: list[Path]
+    uses: dict[str, tuple[float, dict[str, Any], str]] = field(default_factory=dict)
+    results: dict[str, tuple[str | None, bool]] = field(default_factory=dict)
+    moved: dict[str, tuple[str, Path | None]] = field(default_factory=dict)
+    tasks: dict[str, TaskStatus | None] = field(default_factory=dict)
+    prompts: list[tuple[Path, int, float, bool, bool]] = field(default_factory=list)
+
+    def step(self, p: Path, i: int, e: Entry) -> None:
+        """Add the entry `e` of line `i` of the transcript at `p`. The first
+        prompt is the operator's brief, from its parent."""
+        stamp = e.get("timestamp")
+        if e.get("type") == "assistant" and stamp:
+            for b in blocks(e, "tool_use"):
+                self.uses[b.get("id", "")] = (epoch(stamp), b.get("input") or {},
+                                              b.get("name", ""))
+        elif e.get("type") == "user":
+            result = e.get("toolUseResult")
+            for call, b, text in tool_results(e):
+                self.results[call] = (text, bool(b.get("is_error")))
+                if isinstance(result, dict) and result.get(BACKGROUND_TASK):
+                    self.moved[call] = (str(result[BACKGROUND_TASK]), output_file(b))
+        if e.get("type") != "assistant":
+            for n in notifications(e):
+                for v in n.ids:
+                    self.tasks[v] = n.status
+        if stamp and is_prompt(e):
+            direct = origin(e)[1] is Origin.COORDINATOR
+            briefed = not self.prompts or direct or sender(
+                e, self.parent, frozenset(), self.sessions) is Sender.PARENT
+            self.prompts.append((p, i, epoch(stamp), briefed, direct))
+
+    def messages(self, aid: str, children: frozenset[str],
+                 undecided: list[str]) -> list[Message]:
+        """The messages that reached the operator `aid` that launched
+        `children`, in their order: each prompt from its parent or the
+        coordinator, and each message of an agent other than `children`."""
+        out: list[Message] = []
+        where = MESSAGE_FROM.format(run=aid)
+        for p, i, t, briefed, direct in self.prompts:
+            for e in line_entries(p, i):
+                if briefed:
+                    out.append(Message(aid, t, None, from_parent(
+                        aid, e, MAIN if direct else self.parent, undecided)))
+                else:
+                    out += [Message(aid, t, s, unfiled(unfenced(text), f"{where} {s}", undecided))
+                            for s, text in agent_messages(e) if s not in children]
+        return out
+
+
+@state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
+def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
+                  commits: frozenset[tuple[str, float]], calls_read: bool) -> OperatorRead:
+    """`read_operator`, with `subjects` as the pairs `commits` gives, those
+    of `merge_subjects`, and `calls` as `calls_read`."""
+    subjects = dict(commits)
+    agents: list[Agent] = []
+    calls: list[Call] = []
+    passes: dict[str, PassReport] = {}
+    messaged: dict[str, frozenset[str]] = {}
+    limited: dict[str, float] = {}
+    parent = parent_id(path)
+    read = fold(OperatorLines.step, lambda: OperatorLines(parent, run_sessions(path)),
+                (aid, path, parent), chain(path))
+    messages = read.messages(aid, children_of(path, aid), undecided)
+    uses = dict(read.uses)
+    results, moved, tasks = read.results, read.moved, read.tasks
+    denied: set[str] = set()
+    for call, (t, inp, tool) in uses.items():
+        if not calls_read:
+            if tool == Tool.AGENT:
+                uses[call] = (t, unfiled_call(aid, tool, inp, None, undecided)[0], tool)
+            continue
+        text, error = results.get(call, (None, False))
+        if call in moved:
+            text, error = background_output(aid, call, *moved[call], tasks, undecided)
+        inp, text = unfiled_call(aid, tool, inp, text, undecided)
+        uses[call] = (t, inp, tool)
+        merge = merge_outcome(aid, str(inp.get("command", "")) if tool == Tool.BASH else "",
+                              t, text, error, subjects, denied, undecided)
+        conflicts = conflict_paths(text or "") if merge is Merge.CONFLICT else None
+        calls.append(Call(aid, t, tool, inp, text, error, merge, conflicts or ()))
+    if not any(tool == Tool.AGENT and described(str(inp.get("description", "")))
+               for _, inp, tool in uses.values()):
+        return OperatorRead(AgentsRead((), {}, {}), tuple(calls), tuple(messages), {})
+    found = launched(path, undecided)
+    signs = turn_signs(path, [launch for launch in found if launch.pending])
+    own = resumes(path, undecided)
+    for launch in found:
+        use = uses.get(launch.call)
+        if use is None:
+            continue
+        d = described(str(use[1].get("description", "")))
+        if d is None:
+            continue
+        reports = tuple(Report(r.time, r.text, r.file) for r in launch.reports(0.0, undecided))
+        signed = (signs.get(launch.agent or "") if launch.pending else
+                  last_sign(launch.entries, launch.since, {launch.agent or "", launch.call}))
+        prompt = str(use[1].get("prompt", ""))
+        a = Agent(launch.agent, aid, d.role, d.subject, prompt,
+                  use[0], waits(signed, launch.pending), reports,
+                  notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)),
+                  report_file=brief_report_file(prompt))
+        if d.role in MESSAGING and launch.path and launch.agent is not None:
+            messaged[launch.agent] = sent_to(launch.path)
+        if signed is not None and signed[0] is Sign.LIMITED and launch.agent is not None:
+            limited[launch.agent] = signed[1]
+        if not a.pending and launch.agent:
+            a = ended_with(a, None if any(r.time > launch.since for r in reports)
+                           else reply_to(a, launch.since, undecided))
+        a = filed_report(a)
+        agents.append(a)
+        if d.role in PASSES and launch.agent:
+            passes[launch.agent] = pass_read(d.subject, d.role, use[0], main)
+    return OperatorRead(AgentsRead(tuple(agents), messaged, limited), tuple(calls),
+                        tuple(messages), passes)
+
+
+def waits(signed: tuple[Sign, float] | None, pending: bool) -> Waits | None:
+    """`Agent.waits` of a launch whose latest sign is the first of
+    `signed`, where `pending` gives whether the launch's result has not
+    reached its operator."""
+    match signed:
+        case (Sign.STILL_RUNNING, _):
+            return Waits.STILL_RUNNING
+        case (Sign.LIMITED, _):
+            return Waits.LIMITED
+        case (sign, _) if sign in ENDED:
+            return None
+        case _:
+            return Waits.AT_WORK if pending else None
+
+
+def background_output(aid: str, call: str, task: str, output: Path | None,
+                      tasks: dict[str, TaskStatus | None],
+                      undecided: list[str]) -> tuple[str | None, bool]:
+    """The result of the Bash call `call`, which the harness ran or moved
+    to the background as task `task`, writing to `output`: None while no
+    notification of the task reached the operator, and otherwise the
+    output, as an error where the notification's status is not
+    `completed`. An output whose file is gone, or named by no result, and
+    a notification whose status is of no known form, are unknown: the call
+    stays pending, and an `undecided` line names it."""
+    if task not in tasks:
+        return None, False
+    status = tasks[task]
+    if status is None or output is None or not is_file(output):
+        undecided.append(mctx("{run}: the outcome of call {call}, which ran in the background "
+                              "as task {task}, is unknown: {why}").format(
+            run=aid, call=call, task=task,
+            why=mctx("its notification's status is of no known form") if status is None
+            else mctx("its output file is unknown or gone")))
+        return None, False
+    return file_text(output, "replace"), status is not TaskStatus.COMPLETED
