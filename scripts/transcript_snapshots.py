@@ -24,6 +24,14 @@ from operations.roles import AGENT_ID as AGENT_ID_FORM
 
 type Entry = dict[str, Any]
 
+LINE = "i"
+"""The type code of `Lines`: a line's index as a machine integer of 4
+bytes."""
+
+type Lines = array[int]
+"""The lines of a transcript, by their indices, in order, as a call holds
+those of each word it asks about in each transcript it reads."""
+
 
 class Refused(Exception):
     """A call the command does not run, with the reason."""
@@ -102,8 +110,8 @@ class Snapshot:
             last = chunk
         self.closed = last.endswith(b"\n") or not last
         self.crc = cut_crc(last, self.size - len(last), self.settled_end(), self.crc)
-        self.found: dict[str, frozenset[int]] = {}
-        self.agent_ids: dict[str, tuple[int, ...]] | None = None
+        self.found: dict[str, Lines] = {}
+        self.agent_ids: dict[str, Lines] | None = None
         self.generation = object()
 
     def covers(self, st: FileStat) -> bool:
@@ -176,11 +184,11 @@ class Snapshot:
         new = [w for w in words - ids if w not in self.found]
         index = bool(ids) and self.agent_ids is None
         if new or index:
-            found: dict[str, frozenset[int]] = {w: frozenset() for w in new}
-            agent_ids: dict[str, tuple[int, ...]] = {}
+            found: dict[str, Lines] = {w: array(LINE) for w in new}
+            agent_ids: dict[str, Lines] = {}
             for base, chunk in self.chunks():
                 for w in new:
-                    found[w] |= self.lines_holding(chunk, base, w.encode())
+                    found[w] += self.lines_holding(chunk, base, w.encode())
                 if index:
                     joined(agent_ids, self.index_agent_ids(chunk, base))
             self.found.update(found)
@@ -190,28 +198,27 @@ class Snapshot:
         return frozenset[int]().union(*(indexed.get(w, ()) for w in ids),
                                       *(self.found[w] for w in words - ids))
 
-    def lines_holding(self, chunk: bytes, base: int, w: bytes) -> frozenset[int]:
+    def lines_holding(self, chunk: bytes, base: int, w: bytes) -> Lines:
         """The lines of `chunk`, the bytes of its file from offset `base`, a
-        line's, that hold `w`, a word with no line break in it."""
+        line's, that hold `w`, a word with no line break in it, in order."""
         if not w or b"\n" in w or b"\r" in w:
             raise ValueError(f"{w!r} is no word a line holds")
-        out: set[int] = set()
+        out = array(LINE)
         k = chunk.find(w)
         while k >= 0:
             i = self.line_of(base + k)
-            out.add(i)
+            out.append(i)
             k = chunk.find(w, self.end(i) - base)
-        return frozenset(out)
+        return out
 
-    def index_agent_ids(self, chunk: bytes, base: int) -> dict[str, tuple[int, ...]]:
+    def index_agent_ids(self, chunk: bytes, base: int) -> dict[str, Lines]:
         """Each substring of the form of an agent id in `chunk`, the bytes of
         its file from offset `base`, a line's, by the lines that hold it, in
-        order. The lines are a tuple, a quarter of the size of a set of
-        one, as a call holds the index of every transcript it reads."""
+        order."""
         index: dict[bytes, dict[int, None]] = {}
         for aid, k in agent_ids_in(chunk, 0):
             index.setdefault(aid, {})[self.line_of(base + k)] = None
-        return {aid.decode(): tuple(found) for aid, found in index.items()}
+        return {aid.decode(): array(LINE, found) for aid, found in index.items()}
 
     def entry(self, i: int) -> list[Entry]:
         return parse(self.line(i))
@@ -230,30 +237,34 @@ class Snapshot:
         out.closed = more.endswith(b"\n") or not more
         out.breaks_cr = False
         out.starts = line_starts(more, offset, self.starts[:whole])
-        out.found = {w: frozenset(i for i in lines if i < whole)
-                     | out.lines_holding(more, offset, w.encode())
+        out.found = {w: before(lines, whole) + out.lines_holding(more, offset, w.encode())
                      for w, lines in self.found.items()}
         out.agent_ids = (None if self.agent_ids is None
                          else self.agent_ids_on(self.agent_ids, out, more))
         out.crc = cut_crc(more, offset, out.settled_end(), self.crc)
         return out
 
-    def agent_ids_on(self, index: dict[str, tuple[int, ...]], out: "Snapshot",
-                     more: bytes) -> dict[str, tuple[int, ...]]:
+    def agent_ids_on(self, index: dict[str, Lines], out: "Snapshot",
+                     more: bytes) -> dict[str, Lines]:
         """The index of agent ids of `out`, this snapshot's whole lines
         followed by `more`, with `index`, this one's, kept for those lines."""
         whole = self.settled()
-        kept = {aid: tuple(i for i in lines if i < whole) if whole < self.count else lines
+        kept = {aid: before(lines, whole) if whole < self.count else lines
                 for aid, lines in index.items()}
         joined(kept, out.index_agent_ids(more, self.settled_end()))
         return {aid: lines for aid, lines in kept.items() if lines}
 
 
-def joined(index: dict[str, tuple[int, ...]], more: dict[str, tuple[int, ...]]) -> None:
+def joined(index: dict[str, Lines], more: dict[str, Lines]) -> None:
     """Adds to `index`, the lines that hold each agent id, those `more`
     gives, lines after each of `index`."""
     for aid, lines in more.items():
-        index[aid] = index.get(aid, ()) + lines
+        index[aid] = index[aid] + lines if aid in index else lines
+
+
+def before(lines: Lines, end: int) -> Lines:
+    """The lines of `lines` before the line `end`."""
+    return lines[:bisect.bisect_left(lines, end)]
 
 
 SPAN = 1 << 18
