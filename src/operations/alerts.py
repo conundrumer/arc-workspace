@@ -38,7 +38,8 @@ and the agent is recorded the same way, in one `bug` ticket of its own
 kind (`stuck`).
 
 A message on each ticket of `ticket_stall.stalled` goes to the coordinator once
-per stall, with its log since its last progress and its agents, and the
+per stall, with its agents and its log since the later of its last progress
+and the time from which a step has been due on it, and the
 ticket is recorded the same way, in one `bug` ticket of its own kind
 (`ticket stall`), by `ticket_stalls`, with the paths of links
 (`waits.paths`) of each change that waits on it (`waiting_paths`). The
@@ -335,9 +336,9 @@ idle change that gives the coordinator its step."""
 
 def ticket_stalls(state: State) -> Step | None:
     """The first step on a ticket of `ticket_stall.stalled`: the message that
-    gives the coordinator `ticket_stall_text`, once after its last
-    progress, then the step `ticket_step` gives from that time. The message gives
-    `waiting_paths` on it."""
+    gives the coordinator `ticket_stall_text`, once after the time
+    `ticket_stall.stalled` gives for it, then the step `ticket_step`
+    gives from that time. The message gives `waiting_paths` on it."""
     stalls = ticket_stall.stalled(state)
     for n, since in sorted(stalls.items()):
         t = state.tracker.tickets[n]

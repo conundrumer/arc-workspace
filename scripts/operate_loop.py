@@ -24,10 +24,10 @@ from context_bound_hook import ACTIONS
 from controlled_markdown import mctx
 from relay_reads import session_id
 from run_reads import agent_type
-from state_assembly import read_state
+from state_assembly import read_state, write_due_since
 from transcripts import find
 
-from operations import briefs, order, plan
+from operations import briefs, order, plan, ticket_stall
 from operations.command_words import Action
 from operations.constants import BLOCK_SECONDS, LIMIT_SECONDS
 from operations.filing import filed, with_report
@@ -202,19 +202,22 @@ def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
     before it launches an analyst on a step marked `reread`. A Bash step
     the command runs itself, and it reads the state once each Bash run of
     the session's journal ended (`ran`), so that the read holds that run's
-    moves; where a run has not ended by `deadline`, the step is the
-    wait."""
+    moves. After each read, it writes the session's record of the times
+    from which a step has been due (`ticket_stall.due_times`) for the next
+    read. Where a run has not ended by `deadline`, the step is the wait."""
     here = tree_reads.scratch(session_id())
     while True:
         if not ran(here, deadline):
             return (Poll(),), here
         state, watch = read_state(me)
+        write_due_since(here, ticket_stall.due_times(state))
         step = plan.next_step(state, watch)
         if isinstance(step, Bash):
             step_journal.start_run(here, step, me, state.main_tree, time.time())
             continue
         if isinstance(step, Launch) and step.reread:
             state, watch = read_state(me)
+            write_due_since(here, ticket_stall.due_times(state))
             step = plan.next_step(state, watch)
         if isinstance(step, Launch):
             return order.batch(state, watch, step), here

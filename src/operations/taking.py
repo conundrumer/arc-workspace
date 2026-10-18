@@ -344,20 +344,31 @@ def batch(state: State) -> list[Ticket]:
     return out
 
 
+def reach(state: State) -> list[Ticket]:
+    """The changes of `batch` that one step of `take` acts on: each before
+    the first whose budget `Computed.budgets` does not give, or, where the
+    first of `batch` has no budget, that change alone."""
+    out: list[Ticket] = []
+    for t in batch(state):
+        if t.number not in state.computed.budgets:
+            return out or [t]
+        out.append(t)
+    return out
+
+
 def take(state: State) -> Step | None:
     """The take of each change of `takeable`, in its order, up to the first
-    whose budget `Computed.budgets` does not give. Where the usage pace does
+    whose budget `Computed.budgets` does not give (`reach`), or, where the
+    first has no budget, `Undecided` on it. Where the usage pace does
     not admit a ticket, or an `Op pause.` line stands, a step takes, of the changes neither of `lead` nor `taken_before`, only the first, so that
     the pace is read again before each further take."""
     commands: list[str] = []
     taken: list[str] = []
-    for t in batch(state):
+    for t in reach(state):
         b = state.computed.budgets.get(t.number)
         if b is None:
-            if not commands:
-                return Undecided(mctx("the budget of change {number} is unknown").format(
-                    number=t.number))
-            break
+            return Undecided(mctx("the budget of change {number} is unknown").format(
+                number=t.number))
         note = TAKE_NOTE.format(**budget_fields(b))
         commands.append(log(t.number, Status.ASSIGNED, Status.OPEN, note, state.me))
         taken.append(t.number)

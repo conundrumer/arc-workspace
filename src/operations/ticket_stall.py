@@ -2,21 +2,29 @@
 that waits on a ticket that holds it up.
 
 A ticket of `taking.purview` is stalled (`stalled`) where an operator's step
-is due on it and it has made no progress for `STUCK_SECONDS`, whatever the
-cause that held it. A step is due on it by an exit of `tracker.exits` that
-an operator's step makes, read by the function that step selects its work
-by (`selection`); a ticket whose only exits are steps of no operator, or
-that such a function leaves out, waits by design and is not due. A ticket
+is due on it (`due`) and `STUCK_SECONDS` have passed since the later of its
+last progress and the time from which a step has been due on it
+(`due_times`), whatever the cause that held it. A step is due on it by an
+exit of `tracker.exits` that an operator's step makes, read by the
+function that step selects its work by (`selection`); a ticket whose only
+exits are steps of no operator, or that such a function leaves out, waits
+by design and is not due. A ticket
 that a live holder outside the session's own agent runs holds waits on
 that holder's work, a step of no operator, which the operators'
 transcripts do not show and which that holder's own session watches, and
 is not due. Its progress is a line of its log other than a
 take or a release, the first take after such progress, the launch of an
 agent of it, a report of such an agent, and, for a change, its merge onto
-`master` and the last close of each ticket of its `depends-on`, before
-which it waits on that ticket and is not due; an agent of it that is
-pending and not quiet is progress too, and a ticket with one is not
-stalled.
+`master`; an agent of it that is pending and not quiet is progress too,
+and a ticket with one is not stalled.
+
+The time from which a step has been due on a ticket is the time of the
+first read of the state, by an operator of the session for a step, of
+those since which each such read found the step due on it, as
+`State.due_since` records it. A read that finds a ticket of its
+`taking.purview` not due drops that time, and keeps the times of tickets
+outside it; a ticket that `State.due_since` does not hold is due
+from the read at hand.
 
 A change that waits for a ticket that holds it up (`holding`), one under
 `tickets/blocked/` or one that is stalled, moves to `tickets/draft/` with
@@ -33,9 +41,9 @@ from operations.constants import stuck_reached
 from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.roles import AGENT_ID
-from operations.state import Agent, State, Ticket
+from operations.state import Agent, State, Ticket, memoized
 from operations.steps import Bash, Step
-from operations.tracker import closed, exits
+from operations.tracker import exits
 from ticketing.exits import Exit
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Kind, Status
@@ -56,7 +64,7 @@ def selection(state: State, e: Exit) -> set[str]:
             return {n for n, t in state.tracker.tickets.items()
                     if t.status is Status.ASSIGNED and not held_outside_session(state, t)}
         case Exit.TAKE:
-            return {t.number for t in taking.batch(state)}
+            return {t.number for t in taking.reach(state)}
         case Exit.TICKET_REVIEW:
             return drafts.due(state)
         case Exit.TICKET_ANALYST:
@@ -78,12 +86,9 @@ def progress(state: State, t: Ticket) -> float | None:
     agents = agents_of(state, t.number)
     if any(a.pending and a.agent_id not in state.transcripts.quiet for a in agents):
         return None
-    change = t.kind is Kind.CHANGE
-    merge = merging.merge_commit(state, t) if change else None
+    merge = merging.merge_commit(state, t) if t.kind is Kind.CHANGE else None
     last: float = max([t.filed,
                        *([merge.time] if merge is not None else []),
-                       *(taking.status_since(state.tracker.tickets[d])
-                         for d in (t.depends_on if change else ()) if closed(state, d)),
                        *(ln.time for ln in t.log
                          if TAKEN.fullmatch(ln.note) is None and taking.RELEASED_LINE.fullmatch(ln.note) is None),
                        *(a.launched for a in agents),
@@ -92,22 +97,46 @@ def progress(state: State, t: Ticket) -> float | None:
                  if ln.time > last and TAKEN.fullmatch(ln.note) is not None), last)
 
 
-def stalled(state: State) -> dict[str, float]:
-    """The stalled tickets, with the time of their last progress: an
-    operator's step is due on each."""
+@memoized
+def due(state: State) -> frozenset[str]:
+    """The tickets of `taking.purview` on which an operator's step is due."""
     selections: dict[Exit, set[str]] = {}
-    out: dict[str, float] = {}
+    out: set[str] = set()
     for n in sorted(taking.purview(state)):
         t = state.tracker.tickets.get(n)
         if t is None:
             continue
-        due = False
         for e in sorted(exits(state, t).by):
             if e not in selections:
                 selections[e] = selection(state, e)
-            due = due or n in selections[e]
-        if due and (last := progress(state, t)) is not None and stuck_reached(last, state.now):
-            out[n] = last
+            if n in selections[e]:
+                out.add(n)
+                break
+    return frozenset(out)
+
+
+def due_times(state: State) -> dict[str, float]:
+    """The record of the times from which a step has been due, after the
+    read that gave `state`: for each ticket of `due`, its time in
+    `State.due_since`, or `state.now` where that holds none; and the
+    entries of `State.due_since` for tickets outside `taking.purview`, as
+    they are."""
+    purview = taking.purview(state)
+    return {**{n: s for n, s in state.due_since.items() if n not in purview},
+            **{n: state.due_since.get(n, state.now) for n in sorted(due(state))}}
+
+
+def stalled(state: State) -> dict[str, float]:
+    """The stalled tickets, each with the later of the time of its last
+    progress and the time from which a step has been due on it: an
+    operator's step is due on each."""
+    since = due_times(state)
+    out: dict[str, float] = {}
+    for n in sorted(due(state)):
+        if (last := progress(state, state.tracker.tickets[n])) is not None:
+            start = max(last, since[n])
+            if stuck_reached(start, state.now):
+                out[n] = start
     return out
 
 

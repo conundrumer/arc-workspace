@@ -767,7 +767,10 @@ class State:
     and is empty in each state the read gives. `journal` is the session's
     step journal (`journal`). `listing` holds the agent types the agent
     listing of `me` holds, or is None where its transcript gives none
-    (`agent_listings.agent_listing`)."""
+    (`agent_listings.agent_listing`). `due_since` holds, for each ticket,
+    the time from which an operator's step has been due on it, as the
+    session's record of those times gives it (`ticket_stall.due_times`),
+    and is empty where that record is missing or unreadable."""
     me: str
     now: float
     session: str
@@ -793,6 +796,7 @@ class State:
     parents: Mapping[str, str] = field(default_factory=dict)
     computed: Computed = field(default_factory=lambda: Computed())
     aside: frozenset[str] = frozenset()
+    due_since: Mapping[str, float] = field(default_factory=dict)
 
     @cached_property
     def memo(self) -> dict[tuple[Any, ...], Any]:

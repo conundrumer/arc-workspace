@@ -1,9 +1,15 @@
 """The assembly of the state the operator's procedures read, from the reads
 of the ticket tracker, of git and the main worktree, and of the
 transcripts of the session's operators, and of the state the monitor's
-steps read (`monitor_reads`)."""
+steps read (`monitor_reads`); and the session's record of the times from
+which an operator's step has been due on each ticket (`State.due_since`),
+a JSON object in the session's scratchpad (`DUE_SINCE`), read by
+`read_state` and written by `write_due_since`."""
 
 import atexit
+import json
+import math
+import os
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
@@ -30,7 +36,7 @@ from relay_reads import session_id
 from run_reads import context_size, parent_id
 from run_scripts import pace_reads, read_runs
 from state_reads import new_state
-from ticket_numbers import session_index, ticket_number
+from ticket_numbers import session_index, staged, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
 from transcripts import find
@@ -70,6 +76,10 @@ from operator_state import (EndsRead, ends_read, not_given, stuck_read, undecide
 STARTED = time.time()
 """The start of the process: a step given to `me` before it, with no call
 of it made, is one `me` ran `next` again before it made."""
+
+DUE_SINCE = "due-since.json"
+"""The name of the file, in the session's scratchpad, that holds
+`State.due_since`."""
 
 DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.CONSOLE, ReaderName.SURVEY,
                         ReaderName.WORKFLOW})
@@ -140,7 +150,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         readers=readers_read(),
         limit_lifted=lifted,
         sessions=sessions(tickets_dir, index, session, now, sessions_running),
-        journal=journal, listing=ops.listing)
+        journal=journal, listing=ops.listing, due_since=due_since_read(scratch(session)))
     state = replace(state, journal=state.journal.since(given_again(state)))
     state = with_quiet_holders(state, holders.found, listing, running_work)
     computed_lines: list[str] = []
@@ -148,6 +158,27 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     watching.extend(not_given(computed_lines, given_lines(runs.runs, me, list(ops.calls))))
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(ends.stalled),
                                undecided=tuple(watching))
+
+
+def due_since_read(here: Path) -> dict[str, float]:
+    """`State.due_since` as the file `DUE_SINCE` under `here` gives it, or
+    empty where that file is missing or holds no JSON object of finite
+    numbers."""
+    try:
+        record = json.loads((here / DUE_SINCE).read_text())
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(record, dict) or not all(
+            isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+            for v in record.values()):
+        return {}
+    return {n: float(v) for n, v in record.items()}
+
+
+def write_due_since(here: Path, times: Mapping[str, float]) -> None:
+    """Replaces the file `DUE_SINCE` under `here` with `times`, at once."""
+    with staged(here, json.dumps(dict(sorted(times.items())))) as tmp:
+        os.replace(tmp, here / DUE_SINCE)
 
 
 @dataclass(frozen=True)
