@@ -70,6 +70,16 @@ pub enum CheckId {
     /// adds no type. The check refuses the label where no type is above
     /// those types.
     ///
+    /// The check refuses a clause that gives a column of its relation a
+    /// type with no join, as [`crate::types::ValueType::join`] gives it,
+    /// with the types that the relation's other clauses in
+    /// [`SolverClauses`] give that column, each typed in the case program it
+    /// stands in, and its [`CheckCacheKey`] holds those clauses' signatures.
+    /// The refusal stands at the clause's label at that column, or at the
+    /// clause where it holds no columns, as a `DET` that names a proposer
+    /// and has no body. A column that the clause's label takes from the
+    /// rule on `(= *X 0)` above is that rule's.
+    ///
     /// Under [`crate::resolver::MacroExpansion::Expand`], where the meet of a
     /// label's type, from the label's sites outside a part of the expansion,
     /// and the types of its sites in that part is empty, that part holds
@@ -389,9 +399,10 @@ pub fn check_cycles(graph: &DependencyGraph, program: &ResolvedProgram) -> Check
 /// key of canonical parts does ([`crate::program`]).
 /// The signatures stand in a fixed order: those of the names the form
 /// reads, in the order of each name's first read in the form's canonical
-/// order, then, where a label's type comes from other clauses of a
-/// relation, as [`CheckId::Types`] gives, those clauses' signatures, in the
-/// order [`SolverClauses`] gives. The key of [`CheckId::Cycles`], which
+/// order, then, for a clause form, the signatures of the clauses of its
+/// relation that [`CheckId::Types`] reads, as
+/// [`types::type_clause_signatures`] gives, in the order [`SolverClauses`]
+/// gives. The key of [`CheckId::Cycles`], which
 /// reads no form, holds the form of the program's dependency graph with the
 /// path of each node's form, and no signature.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

@@ -54,7 +54,13 @@ pub fn infer_form(input: &CheckInput<'_>, order: &CanonicalOrder) -> (CheckResul
     let cases = CaseInferences::new(input.scope.clauses, input.scope.registry);
     let inference = Inference::new(input.scope.program, &cases);
     let result = match inference.infer(input.path) {
-        Some(form) => result(refusals(&form, order)),
+        Some(form) => {
+            let mut found = refusals(&form, order);
+            if let Form::Clause(clause) = input.form {
+                found.extend(inference.column_refusals(&form, clause.value(), input.path, order));
+            }
+            result(found)
+        }
         None => CheckResult::Pass,
     };
     let scopes = order.label_scopes().into_iter().map(|(source, _)| {
@@ -133,13 +139,12 @@ pub fn program_types(
     types
 }
 
-/// The signatures of the clauses that a label's type of `form` comes from,
-/// as [`CheckId::Types`] gives, in the order [`SolverClauses`] gives.
+/// The signatures of the clauses of the relation of `form`, a clause, that
+/// its check reads, as [`CheckId::Types`] gives, in the order
+/// [`SolverClauses`] gives.
 pub fn type_clause_signatures<'a>(form: &Form, clauses: &'a SolverClauses) -> impl Iterator<Item = &'a Signature> {
     let entries = match form {
-        Form::Clause(clause) if !zero_typed_heads(clause.value()).is_empty() => {
-            clauses.of_relation(&FileScope::Program, &clause.value().derives)
-        }
+        Form::Clause(clause) => clauses.of_relation(&FileScope::Program, &clause.value().derives),
         _ => &[],
     };
     entries.iter().map(|entry| &entry.signature)
@@ -919,14 +924,15 @@ impl<'a> Inference<'a> {
         join_types(clauses.filter_map(|(at, clause)| self.clause_column(at, clause, scope, path, target, pose_or)))
     }
 
-    /// The type of the label at `column` of `clause`, the clause at `path`,
-    /// that only `(= *X 0)` gives a type: the join of the types that the
-    /// other clauses of its relation in [`SolverClauses`] give that column,
-    /// each in the case program it was found in, or the fault of two types
-    /// with no join. A Pose type's key row names the labels of `clause`.
+    /// The join of the types that the other clauses of the relation of
+    /// `clause`, the clause at `path`, in [`SolverClauses`] give its
+    /// `column`, each in the case program it was found in, or the fault of
+    /// two types with no join. A clause whose label at that column only
+    /// `(= *X 0)` gives a type adds no type. A Pose type's key row names
+    /// the labels of `clause`.
     fn other_clauses_type(&self, clause: &crate::program::Clause, path: &NodePath, column: &ColumnName) -> Result<Option<ValueType>, LabelFault> {
         let own = super::clause_signature(self.program, path);
-        let target = |column: &ColumnName| clause.columns.iter().find(|found| found.name == *column).map(|found| found.label);
+        let target = |column: &ColumnName| head_label(clause, column);
         let entries = self.cases.clauses.of_relation(&FileScope::Program, &clause.derives).iter();
         let types = entries.filter(|entry| entry.signature != own).filter_map(|entry| {
             let inference = self.cases.of(entry);
@@ -943,9 +949,74 @@ impl<'a> Inference<'a> {
         join_types(types)
     }
 
+    /// Where `clause`, a clause of `scope`, takes the columns of its
+    /// relation from: its own columns, its first proposer's declared
+    /// columns, or the instance output it stands for.
+    fn clause_columns<'c>(&'c self, clause: &'c crate::program::Clause, scope: &NameScope) -> Option<ClauseColumns<'c>> {
+        if !clause.columns.is_empty() {
+            return Some(ClauseColumns::Own(&clause.columns));
+        }
+        if let Some(proposer) = clause.proposers.first() {
+            let columns = match lib_columns(self.registry, proposer) {
+                Some(columns) => columns,
+                None => &self.registry.derivation(proposer)?.columns,
+            };
+            return Some(ClauseColumns::Declared(columns));
+        }
+        let ProgramRelation::Output(output) = &clause.derives else { return None };
+        let (OutputOwner::Instance(name), [OutputStep::Port(port)]) = (&output.of, &output.path[..]) else { return None };
+        let forms = scope_forms(self.program.program.value(), scope);
+        let instance = forms.into_iter().find(|(_, form)| matches!(form, Form::Instance(instance) if instance.value().name == *name))?;
+        Some(ClauseColumns::InstanceOutput(instance.0, port))
+    }
+
+    /// The names of the columns of the relation of `clause`, a clause of
+    /// `scope`, as the clause gives them.
+    fn clause_column_names(&self, clause: &crate::program::Clause, scope: &NameScope) -> Vec<ColumnName> {
+        match self.clause_columns(clause, scope) {
+            None => Vec::new(),
+            Some(ClauseColumns::Own(columns)) => columns.iter().map(|column| column.name.clone()).collect(),
+            Some(ClauseColumns::Declared(columns)) => columns.iter().map(|column| column.name.clone()).collect(),
+            Some(ClauseColumns::InstanceOutput(instance, port)) => {
+                let Some(component) = self.infer(&instance).and_then(|inference| inference.component) else { return Vec::new() };
+                let output = component.outputs.iter().find(|output| output.name == *port);
+                output.map(|output| output.columns.iter().map(|column| column.name.clone()).collect()).unwrap_or_default()
+            }
+        }
+    }
+
+    /// The refusals of `clause`, the top-level clause at `path` whose
+    /// inference is `form`, a form whose canonical order is `order`, at each
+    /// column of its relation to which it gives a type with no join with
+    /// the types that the relation's other clauses give that column, as
+    /// [`CheckId::Types`] gives. Each stands at the first use of the
+    /// clause's label at that column, or at the clause where it holds no
+    /// columns.
+    fn column_refusals(&self, form: &FormInference<'_>, clause: &crate::program::Clause, path: &NodePath, order: &CanonicalOrder) -> Vec<Refusal> {
+        let target = |column: &ColumnName| head_label(clause, column);
+        let mut refusals = Vec::new();
+        for name in self.clause_column_names(clause, &NameScope::Program) {
+            let label = target(&name);
+            if label.is_some_and(|label| form.zero_typed.contains(&label)) {
+                continue;
+            }
+            let column = std::slice::from_ref(&name);
+            let Some(own) = self.clause_column(path, clause, &NameScope::Program, column, &target, PoseOr::Given) else { continue };
+            match self.other_clauses_type(clause, path, &name) {
+                Ok(None) => continue,
+                Ok(Some(others)) if own.join(&others).is_some() => continue,
+                Ok(Some(_)) | Err(_) => {}
+            }
+            let message = format!("the clause gives the column {name:?} of its relation the type {own:?}, which has no join with the types that the relation's other clauses give it");
+            let at = label.map_or_else(NodePath::default, |label| order.canonical_path(form.walk.first_use(label)));
+            refusals.push(Refusal { message: message.into(), at });
+        }
+        refusals
+    }
+
     /// The type that the clause at `at` gives the column at `path` of its
-    /// relation under `pose_or`: its column's label's, its first proposer's
-    /// column's, or the column's of the instance output it stands for.
+    /// relation under `pose_or`, from the columns [`Self::clause_columns`]
+    /// gives.
     fn clause_column(
         &self,
         at: &NodePath,
@@ -956,23 +1027,15 @@ impl<'a> Inference<'a> {
         pose_or: PoseOr,
     ) -> Option<ValueType> {
         let (first, rest) = path.split_first()?;
-        if !clause.columns.is_empty() {
-            let column = clause.columns.iter().find(|column| column.name == *first)?;
-            let ty = project(&self.infer(at)?.label_under(column.label, pose_or)?, rest)?;
-            return try_map_labels(&ty, &|label| target(&clause.columns.iter().find(|column| column.label == label)?.name));
+        match self.clause_columns(clause, scope)? {
+            ClauseColumns::Own(columns) => {
+                let column = columns.iter().find(|column| column.name == *first)?;
+                let ty = project(&self.infer(at)?.label_under(column.label, pose_or)?, rest)?;
+                try_map_labels(&ty, &|label| target(&columns.iter().find(|column| column.label == label)?.name))
+            }
+            ClauseColumns::Declared(columns) => declared_type(columns, path, pose_or),
+            ClauseColumns::InstanceOutput(instance, port) => self.instance_output(&instance, port, path),
         }
-        if let Some(proposer) = clause.proposers.first() {
-            let columns = match lib_columns(self.registry, proposer) {
-                Some(columns) => columns,
-                None => &self.registry.derivation(proposer)?.columns,
-            };
-            return declared_type(columns, path, pose_or);
-        }
-        let ProgramRelation::Output(output) = &clause.derives else { return None };
-        let (OutputOwner::Instance(name), [OutputStep::Port(port)]) = (&output.of, &output.path[..]) else { return None };
-        let forms = scope_forms(self.program.program.value(), scope);
-        let instance = forms.iter().find(|(_, form)| matches!(form, Form::Instance(instance) if instance.value().name == *name))?;
-        self.instance_output(&instance.0, port, path)
     }
 
     /// The type of the column at `path` of the output `port` of the `INIT`
@@ -1044,6 +1107,23 @@ impl<'a> Inference<'a> {
         };
         try_map_labels(&project(&ty, rest)?, &|_| None)
     }
+}
+
+/// Where a clause takes the columns of its relation from, as
+/// [`Inference::clause_columns`] gives it.
+enum ClauseColumns<'c> {
+    /// The clause's own columns.
+    Own(&'c [RelationColumn]),
+    /// The declared columns of the clause's first proposer.
+    Declared(&'c [Column]),
+    /// The output `port` of the `INIT` form at the path.
+    InstanceOutput(NodePath, &'c PortName),
+}
+
+/// The label of `clause` at its `column`, where the clause holds that
+/// column.
+fn head_label(clause: &crate::program::Clause, column: &ColumnName) -> Option<LabelId> {
+    clause.columns.iter().find(|found| found.name == *column).map(|found| found.label)
 }
 
 /// The join of `types`, or the fault of the first two with no join.

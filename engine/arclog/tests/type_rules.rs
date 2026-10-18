@@ -1,14 +1,16 @@
-//! The order rule of the type check and the pose rule each refuse a file
-//! that breaks them.
+//! The order rule of the type check, its rule on the join of a relation's
+//! column types, and the pose rule each refuse a file that breaks them.
 
 use arclog::check::{check_program, CheckCache, CheckId, SolverClauses};
-use arclog::diagnostic::DiagnosticKind;
+use arclog::diagnostic::{DiagnosticKind, Location};
+use arclog::program::path::{NodePath, PathStep};
 use arclog::read::read_solver;
 use arclog::registry::Registry;
 use arclog::resolver::{resolve, MacroExpansion};
 
-/// The checks that refuse the program of `arclog`.
-fn refusing_checks(arclog: &str) -> Vec<CheckId> {
+/// The checks that refuse the program of `arclog`, each with where it
+/// refuses it.
+fn refusals(arclog: &str) -> Vec<(CheckId, Location)> {
     let solver = read_solver("rules", arclog, "", &|_| None).expect("the file reads").value;
     let registry = Registry::get();
     let program = resolve(&solver.concept_case().program, None, &solver.derived_relations(), registry, MacroExpansion::Keep).value;
@@ -18,11 +20,31 @@ fn refusing_checks(arclog: &str) -> Vec<CheckId> {
         Err(diagnostics) => diagnostics
             .into_iter()
             .filter_map(|diagnostic| match diagnostic.kind {
-                DiagnosticKind::Check(check) => Some(check),
+                DiagnosticKind::Check(check) => Some((check, diagnostic.location)),
                 _ => None,
             })
             .collect(),
     }
+}
+
+/// The checks that refuse the program of `arclog`.
+fn refusing_checks(arclog: &str) -> Vec<CheckId> {
+    refusals(arclog).into_iter().map(|(check, _)| check).collect()
+}
+
+/// The paths of the top-level forms at which the type check refuses the
+/// program of `arclog`.
+fn type_refused_forms(arclog: &str) -> Vec<u32> {
+    let mut forms: Vec<u32> = refusals(arclog)
+        .into_iter()
+        .filter(|(check, _)| *check == CheckId::Types)
+        .map(|(_, location)| match location {
+            Location::Path(path) => path.0[0].0,
+            Location::Places(places) => panic!("a refusal of a program with no file stands at a path, not at {places:?}"),
+        })
+        .collect();
+    forms.dedup();
+    forms
 }
 
 #[test]
@@ -54,4 +76,85 @@ fn a_pose_at_a_site_of_a_d4_column_is_refused() {
 ",
     );
     assert!(checks.contains(&CheckId::PoseRule), "{checks:?}");
+}
+
+#[test]
+fn a_column_that_a_color_and_a_number_give_is_refused_at_each_clause() {
+    let forms = type_refused_forms(
+        "
+(RULE &cell
+  (input *P *Col))
+
+(RULE &mixed
+  (&cell (:Col *X)))
+
+(RULE &mixed
+  (&cell (:P *Q))
+  (frame_extent (:P Q) (:A *A) (:N *X)))
+
+(RULE &use
+  (&mixed *X)
+  (< X X))
+",
+    );
+    assert_eq!(forms, vec![1, 2]);
+}
+
+#[test]
+fn a_column_that_two_assemblies_give_poses_is_refused_at_each_clause() {
+    let forms = type_refused_forms(
+        "
+(RULE &cell
+  (input *P *Col))
+
+(RIGID_DET &piece
+  (&cell *P))
+
+(RIGID_DET &other
+  (&cell *P))
+
+(RULE &poses
+  (&piece.cell (:Pose *D) (:P *P)))
+
+(RULE &poses
+  (&other.cell (:Pose *D) (:P *P)))
+
+(RULE &fixed
+  (&poses *D)
+  (d4_identity D))
+",
+    );
+    assert_eq!(forms, vec![3, 4]);
+}
+
+#[test]
+fn a_det_with_a_proposer_and_no_body_is_refused_at_its_own_path() {
+    let refused = refusals(
+        "
+(RULE &cell
+  (input *P *Col))
+
+(DET &bg ColorDomain)
+
+(RULE &bg
+  (&cell (:P *Q))
+  (frame_extent (:P Q) (:A *A) (:N *C)))
+",
+    );
+    let det = Location::Path(NodePath(Box::new([PathStep(1)])));
+    assert!(refused.contains(&(CheckId::Types, det)), "{refused:?}");
+}
+
+#[test]
+fn a_column_whose_types_have_a_join_passes() {
+    let checks = refusing_checks(
+        "
+(RULE &way
+  (dir_elem *D))
+
+(RULE &way
+  (diag_dir_elem *D))
+",
+    );
+    assert_eq!(checks, Vec::new());
 }
