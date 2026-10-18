@@ -25,6 +25,7 @@ use crate::program::path::NodePath;
 use crate::program::{Arcdata, Form, Node, Program};
 use crate::solver::Solver;
 
+pub(crate) use self::arclog::head_of;
 use self::arclog::{Owners, Reader, Record};
 use self::labels::LabelScope;
 
@@ -99,13 +100,22 @@ pub type LabelNames = Box<[(Box<str>, crate::program::LabelId)]>;
 /// The body that the s-expressions `exprs` write, as the atoms of a clause,
 /// and the names of its labels: the one reader of a body that stands inside
 /// a form of the registry file, such as the definition of a lib name by
-/// other lib names, in the format [`crate::registry`] gives.
+/// other lib names, in the format [`crate::registry`] gives. Where `exprs`
+/// write an output body or a `RULE` form of a cell instance, `init` is the
+/// instance's `INIT` form, and a read `&x.y` may name an output of it.
 ///
 /// Fails where an s-expression of `exprs` matches no node kind of its
 /// format, with a diagnostic of the grammar at each such s-expression.
-pub fn read_body(exprs: &[SExpr]) -> Result<(Node<crate::program::Body>, LabelNames), Vec<Diagnostic>> {
+pub fn read_body(
+    exprs: &[SExpr],
+    init: Option<&SExpr>,
+) -> Result<(Node<crate::program::Body>, LabelNames), Vec<Diagnostic>> {
     let scope = LabelScope::new(exprs, &|_| false);
-    let mut reader = Reader::new(exprs, true);
+    let mut owners = Owners::default();
+    for expr in exprs.iter().chain(init) {
+        owners.collect(expr);
+    }
+    let mut reader = Reader::with_owners(owners, true);
     let body = reader.body(exprs, &scope);
     if reader.diagnostics.is_empty() { Ok((body, scope.names_in_order())) } else { Err(reader.diagnostics) }
 }

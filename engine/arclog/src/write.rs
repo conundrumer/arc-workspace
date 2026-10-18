@@ -9,6 +9,8 @@
 mod arcdata;
 mod arclog;
 
+pub(crate) use arclog::relation_ref;
+
 use crate::layout::Layout;
 use crate::program::{Arcdata, Node, Program};
 use crate::registry::Registry;

@@ -65,7 +65,25 @@ pub enum TypeName {
 impl TypeName {
     /// The type the name stands for, `Box` for `Position` and `Offset`.
     pub fn value_type(self) -> crate::types::ValueType {
-        todo!()
+        use crate::types::ValueType;
+        match self {
+            TypeName::Number => ValueType::Number,
+            TypeName::Color => ValueType::Color,
+            TypeName::Example => ValueType::Example,
+            TypeName::Unit => ValueType::Unit,
+            TypeName::Box | TypeName::Position | TypeName::Offset => ValueType::Box,
+            TypeName::Ident => ValueType::Ident,
+            TypeName::C4 => ValueType::C4,
+            TypeName::D4 => ValueType::D4,
+            TypeName::Dir => ValueType::Dir,
+            TypeName::DiagDir => ValueType::DiagDir,
+            TypeName::Dir8 => ValueType::Dir8,
+            TypeName::Axis => ValueType::Axis,
+            TypeName::DiagAxis => ValueType::DiagAxis,
+            TypeName::Axis4 => ValueType::Axis4,
+            TypeName::Sym => ValueType::Sym,
+            TypeName::Sense => ValueType::Sense,
+        }
     }
 }
 

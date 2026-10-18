@@ -237,7 +237,8 @@ pub(super) fn program_relation(relation: &ProgramRelation) -> String {
     }
 }
 
-fn relation_ref(relation: &RelationRef) -> String {
+/// The name of `relation` as a file writes it.
+pub(crate) fn relation_ref(relation: &RelationRef) -> String {
     match relation {
         RelationRef::Fact(fact) => spelling(sp::FACT_RELATIONS, fact).to_owned(),
         RelationRef::Lib(crate::registry::LibName(name)) => name.to_string(),

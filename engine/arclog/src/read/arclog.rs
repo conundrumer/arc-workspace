@@ -34,7 +34,7 @@ pub(super) struct Owners {
 }
 
 impl Owners {
-    fn collect(&mut self, expr: &SExpr) {
+    pub(super) fn collect(&mut self, expr: &SExpr) {
         let SExpr::List { items, .. } = expr else { return };
         if let [SExpr::Symbol { text: head, .. }, SExpr::Symbol { text: name, .. }, ..] = &items[..] {
             match &**head {
@@ -132,7 +132,7 @@ pub(super) struct List<'e> {
 }
 
 /// The head symbol of `expr`, where it is a list headed by a symbol.
-pub(super) fn head_of(expr: &SExpr) -> Option<&str> {
+pub(crate) fn head_of(expr: &SExpr) -> Option<&str> {
     match expr {
         SExpr::List { items, .. } => match items.first() {
             Some(SExpr::Symbol { text, .. }) => Some(text),
