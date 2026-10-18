@@ -1,7 +1,7 @@
 ---
 name: design-reviewer
 description: "[A design reviewer's brief](prompts/agents/notes/launching.md#a-design-reviewers-brief)"
-model: opus
+model: sonnet
 tools: Read, Grep, Glob, Bash, Write, TaskStop
 ---
 
