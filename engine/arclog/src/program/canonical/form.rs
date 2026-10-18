@@ -324,6 +324,15 @@ pub(in crate::program) fn form_of<T: Canonical>(value: &T) -> (CanonicalForm, bo
     value.write_canonical(&mut out, &mut search, &AsWritten);
     (out.finish(), search.reached)
 }
+
+/// The canonical form of a form that stands in a program, a claim or an
+/// `ALT`, under [`AsWritten`] with a new [`SearchBudget`].
+pub(crate) fn canonical_form(form: &Form) -> CanonicalForm {
+    let mut search = SearchBudget::new();
+    let mut out = CanonicalWriter::default();
+    form_root(&mut Context::new(&mut search, &AsWritten), &mut out, form);
+    out.finish()
+}
 impl LabelScope<'_> {
 
     /// Writes the part of the form that the scope's labels enter.
@@ -354,7 +363,7 @@ pub(crate) fn relation_of(relation: &ProgramRelation) -> RelationRef {
 
 /// The scope of a form that stands in a program, a claim or an `ALT`, where
 /// its own content holds labels.
-pub(super) fn form_scope(form: &Form) -> Option<LabelScope<'_>> {
+pub(crate) fn form_scope(form: &Form) -> Option<LabelScope<'_>> {
     match form {
         Form::Claim(claim) => claim.value().scope(),
         Form::Clause(clause) => clause.value().scope(),

@@ -30,7 +30,7 @@ use crate::hash::StableHashMap;
 use form::*;
 use graph::*;
 
-pub(crate) use form::relation_of;
+pub(crate) use form::{canonical_form, form_scope, relation_of};
 pub use form::{canonical_hash, AsWritten, Canonical, CanonicalForm, CanonicalWriter, NameWriter};
 pub(in crate::program) use form::form_of;
 

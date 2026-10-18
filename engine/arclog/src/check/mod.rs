@@ -26,7 +26,7 @@ use std::sync::Arc;
 
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use crate::program::canonical::{
-    canonical_labeling, AsWritten, Canonical, CanonicalForm, CanonicalOrder, CanonicalWriter, LabelScope, SearchBudget,
+    canonical_form, canonical_labeling, form_scope, AsWritten, CanonicalForm, CanonicalOrder, CanonicalWriter, SearchBudget,
 };
 use crate::program::path::{NodePath, NodeRef, PathStep};
 use crate::program::{Form, LabelId, ProgramRelation};
@@ -520,22 +520,6 @@ fn diagnostic(kind: DiagnosticKind, severity: Severity, message: Box<str>, at: N
     Diagnostic { kind, severity, message, location: Location::Path(at), cases: Box::new([]) }
 }
 
-/// The canonical form of `form`, with each name as the file writes it.
-fn canonical_form(form: &Form) -> CanonicalForm {
-    let mut out = CanonicalWriter::default();
-    let search = &mut SearchBudget::new();
-    match form {
-        Form::Claim(claim) => claim.value().write_canonical(&mut out, search, &AsWritten),
-        Form::Clause(clause) => clause.value().write_canonical(&mut out, search, &AsWritten),
-        Form::Instance(instance) => instance.value().write_canonical(&mut out, search, &AsWritten),
-        Form::Choose(choose) => choose.value().write_canonical(&mut out, search, &AsWritten),
-        Form::RigidDet(rigid) => rigid.value().write_canonical(&mut out, search, &AsWritten),
-        Form::Demonstrated(demonstrated) => demonstrated.value().write_canonical(&mut out, search, &AsWritten),
-        Form::Alts(alts) => alts.value().write_canonical(&mut out, search, &AsWritten),
-    }
-    out.finish()
-}
-
 /// `canonical`, the canonical form of `form`, followed by the source index
 /// of each child of each node of `form`, each node's children in canonical
 /// order, so that two forms of one canonical form are equal under it only
@@ -582,15 +566,10 @@ fn read_signatures(program: &ResolvedProgram, form: &Form, path: &NodePath, orde
 /// Each label of the scope of `form` itself, with its canonical position.
 /// A claim and an `ALTS` form have no such scope.
 fn own_labels(form: &Form) -> Box<[(LabelId, u32)]> {
-    let scope = match form {
-        Form::Clause(clause) => LabelScope::Clause(clause.value()),
-        Form::Instance(instance) => LabelScope::Instance(instance.value()),
-        Form::Choose(choose) => LabelScope::Choose(choose.value()),
-        Form::RigidDet(rigid) => LabelScope::RigidDet(rigid.value()),
-        Form::Demonstrated(demonstrated) => LabelScope::DemonstratedKey(demonstrated.value()),
-        Form::Claim(_) | Form::Alts(_) => return Box::new([]),
-    };
-    canonical_labeling(scope, &AsWritten, &mut SearchBudget::new()).positions
+    match form_scope(form) {
+        Some(scope) => canonical_labeling(scope, &AsWritten, &mut SearchBudget::new()).positions,
+        None => Box::new([]),
+    }
 }
 
 /// The checks of this step, each once: one per [`CheckId`] but
