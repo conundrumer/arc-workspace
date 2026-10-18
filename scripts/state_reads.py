@@ -176,6 +176,14 @@ _frames: list[dict[Held, object]] = []
 with the result it gave."""
 
 
+def reach(hit: Held) -> None:
+    """Note that a read reached the held read `hit` at this state, and that
+    the read running, where one is, made it with its held result."""
+    hit.reached = _state
+    if _frames:
+        _frames[-1][hit] = hit.value
+
+
 def state() -> int:
     """The count of the states this process has opened."""
     return _state
@@ -268,7 +276,12 @@ class ReadInfo:
 
     def again(self, args: tuple[Any, ...], kwargs: tuple[tuple[str, Any], ...]) -> object:
         """The read's result at this state for `args` and `kwargs`, its notes
-        dropped."""
+        dropped: the held result where it was brought up to date at this
+        state, reached as `at_state` reaches it (`reach`)."""
+        hit = self.held.get((args, kwargs))
+        if hit is not None and hit.state == _state:
+            reach(hit)
+            return hit.value
         named = dict(kwargs)
         if self.notes is not None and self.notes_at is not None:
             if len(args) >= self.notes_at:
@@ -500,11 +513,9 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
             key = (args, tuple(sorted(kwargs.items())))
             value, lines = run(key, positional)
             hit = held[key]
-            hit.reached = _state
+            reach(hit)
             if sink is not None:
                 sink.extend(lines)
-            if _frames:
-                _frames[-1][hit] = value
             return value
         info.wrapped = at_state
         info.run = run

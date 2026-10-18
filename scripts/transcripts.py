@@ -12,7 +12,7 @@ from pathlib import Path
 
 from file_reads import Named, is_file, listed, stat_of  # noqa: F401
 # `transcripts.new_state` is the name the tests of these reads open a state by.
-from state_reads import DERIVED, Kept, new_state, state_cache  # noqa: F401
+from state_reads import DERIVED, Kept, new_state, state, state_cache  # noqa: F401
 
 from controlled_markdown import mctx
 from subagent_paths import SUBAGENTS, is_subagent  # noqa: F401
@@ -242,7 +242,8 @@ def held_find(ident: str) -> Path | None:
 def find(ident: str) -> Path:
     """The transcript `ident` names, and for a run of more than one
     transcript, its last. A miss reads the agent index again before it
-    refuses, for a transcript born after the held index was read."""
+    refuses, for a transcript born after the held index was read: once
+    for each state (`fresh_index`)."""
     if ident.endswith(".jsonl"):
         path = Path(ident).expanduser()
         if not is_file(path):
@@ -251,13 +252,28 @@ def find(ident: str) -> Path:
     path = held_find(ident)
     if path:
         return path
-    fresh = agent_index(tuple(project_dirs()), listed.__wrapped__)
+    fresh = fresh_index(tuple(project_dirs()))
     path = one_of(ident, fresh.get(bare_id(ident), []))
     if path:
         return path
     raise Refused(mctx("no transcript of session or agent `{ident}` under "
                        "{dirs}").format(ident=ident, dirs=", ".join(
                            str(d) for d in project_dirs())))
+
+
+_fresh: tuple[int, tuple[Path, ...], dict[str, list[Path]]] | None = None
+"""The state, the project directories and the `agent_index` of those
+directories that `fresh_index` last read."""
+
+
+def fresh_index(dirs: tuple[Path, ...]) -> dict[str, list[Path]]:
+    """`agent_index` of `dirs`, of the listings as they stand at the first
+    call of this state, so that each miss of `find` at one state reads the
+    directories once."""
+    global _fresh
+    if _fresh is None or _fresh[:2] != (state(), dirs):
+        _fresh = (state(), dirs, agent_index(dirs, listed.__wrapped__))
+    return _fresh[2]
 
 
 def transcripts(ident: str) -> list[Path]:
