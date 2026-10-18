@@ -5,10 +5,13 @@
 // wrapper clause in box.dl reads a functor's result through another functor,
 // never through a pattern.
 //
-// Constants mirror lib/orientation.dl's disjoint #define ranges (Dir 10-13,
-// Axis 20-21, DiagDir 30-33, D4 50-57).
+// The orientation constants (DIR_T, AXIS_V, ...) are the #define values of
+// lib/orientation.dl, which the build passes to the compiler.
 //
 // Build: see build_functors() in src/souffle/run.py (auto-built; artifact gitignored).
+
+#include <cstdio>
+#include <cstdlib>
 
 #include "souffle/RecordTable.h"
 #include "souffle/SouffleFunctor.h"
@@ -17,29 +20,13 @@ using souffle::RamDomain;
 using souffle::RecordTable;
 using souffle::SymbolTable;
 
-#define DIR_T 10
-#define DIR_B 11
-#define DIR_L 12
-#define DIR_R 13
-
-#define AXIS_V 20
-#define AXIS_H 21
-
-#define DIAG_TL 30
-#define DIAG_TR 31
-#define DIAG_BL 32
-#define DIAG_BR 33
-
-#define D4_ID 50
-#define D4_CW 51
-#define D4_HT 52
-#define D4_CC 53
-#define D4_LR 54
-#define D4_TB 55
-#define D4_DG 56
-#define D4_AD 57
-
 namespace {
+
+// Fail the run on an orientation value that no case of `functor` gives.
+[[noreturn]] void no_case(const char* functor, RamDomain value) {
+    std::fprintf(stderr, "%s: no case for the value %d\n", functor, static_cast<int>(value));
+    std::abort();
+}
 
 // The margins of a box: (t, b, l, r).
 struct Margins {
@@ -56,12 +43,29 @@ RamDomain box(RecordTable* rt, Margins m) {
 }
 
 // The near and far margins along an axis: (t, b) on V, (l, r) on H.
-RamDomain near(Margins m, RamDomain a) { return a == AXIS_V ? m.t : m.l; }
-RamDomain far(Margins m, RamDomain a) { return a == AXIS_V ? m.b : m.r; }
+RamDomain near(Margins m, RamDomain a) {
+    switch (a) {
+        case AXIS_V: return m.t;
+        case AXIS_H: return m.l;
+    }
+    no_case("near", a);
+}
+
+RamDomain far(Margins m, RamDomain a) {
+    switch (a) {
+        case AXIS_V: return m.b;
+        case AXIS_H: return m.r;
+    }
+    no_case("far", a);
+}
 
 // A box with near and far along axis a, zero across.
 Margins axis_only(RamDomain a, RamDomain near, RamDomain far) {
-    return a == AXIS_V ? Margins{near, far, 0, 0} : Margins{0, 0, near, far};
+    switch (a) {
+        case AXIS_V: return Margins{near, far, 0, 0};
+        case AXIS_H: return Margins{0, 0, near, far};
+    }
+    no_case("axis_only", a);
 }
 
 // Whether Dir8 d has edge `edge`: a cardinal is its own edge, a corner has
@@ -130,7 +134,7 @@ RamDomain box_dist(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain d) {
         case DIR_L: return m.l;
         case DIR_R: return m.r;
     }
-    return 0;
+    no_case("box_dist", d);
 }
 
 // Taxicab distance to corner diag: the sum of its two edge distances.
@@ -142,7 +146,7 @@ RamDomain box_corner_dist(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain 
         case DIAG_BL: return m.b + m.l;
         case DIAG_BR: return m.b + m.r;
     }
-    return 0;
+    no_case("box_corner_dist", diag);
 }
 
 RamDomain box_axis_dim(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain a) {
@@ -207,7 +211,7 @@ RamDomain box_apply(SymbolTable*, RecordTable* rt, RamDomain d, RamDomain p) {
         case D4_DG: return box(rt, {m.l, m.r, m.t, m.b});
         case D4_AD: return box(rt, {m.r, m.l, m.b, m.t});
     }
-    return p;
+    no_case("box_apply", d);
 }
 
 RamDomain box_tiles(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain a,

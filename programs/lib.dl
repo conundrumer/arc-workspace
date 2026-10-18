@@ -5,8 +5,10 @@
 //! - A relation marked `// @input` is one the caller populates, and the facts
 //!   under it hold beside the rows the caller adds. Every other relation
 //!   derives.
-//! - In a keyed component, the first column of a relation is its key, and each
-//!   key is one independent instance of the component.
+//! - In a keyed component, a relation whose first column has the component's
+//!   key type takes that column as its key, and each key is one independent
+//!   instance of the component. A relation with no such column holds one
+//!   set, which every key reads.
 //! - A `Requires:` sentence states a precondition the component does not check,
 //!   and what happens when it does not hold.
 //!
@@ -55,7 +57,7 @@
 /// Index of a task example.
 .type Example <: number
 
-/// The edge-margin record; box.dl holds its algebra.
+/// The edge-margin record; [box.dl](programs/lib/box.dl) holds its algebra.
 .type Box = [t: number, b: number, l: number, r: number]
 
 /// The (V, H) extents of a frame, for ParamsHelpers only.

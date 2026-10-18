@@ -1,5 +1,6 @@
-//! The box algebra: every component whose signature holds a Box, a Position,
-//! or an Offset, and that takes no keyed set of cells as input.
+//! The box algebra: the relations and components whose signature or clauses
+//! hold a Box, a Position, or an Offset, and that take no set of cells as
+//! input.
 //!
 //! Box is the edge-margin record (t, b, l, r), ordered V-first then H — a
 //! rectangle placed in a frame by its margins from the four edges. In a frame
@@ -162,6 +163,12 @@ apply_dir8(D, Dir, Dir_out) :-
     d4_elem(D), dir8_elem(Dir), dir8_elem(Dir_out),
     step_offset(Dir, S), apply(D, S, S2), step_offset(Dir_out, S2).
 
+/// The tile size k at which n tiles of size k, with a gap of g between each
+/// two, fill an extent of ext exactly. There is no k where no positive size
+/// fills it.
+.decl tile_size(ext: number, n: number, g: number, k: number) inline
+tile_size(Ext, N, G, K) :- Rem = Ext - (N-1)*G, Rem > 0, Rem % N = 0, K = Rem / N.
+
 /// p's axis-a extent cut into n equal parts. p_outer is the tile
 /// index in an n-strip frame; p_inner is the cell within the tile.
 /// Both axis-only (perpendicular zeroed). A cell in a gap row or column
@@ -169,9 +176,7 @@ apply_dir8(D, Dir, Dir_out) :-
 /// gap-adjusted extent divides evenly by n.
 .decl divide(p: Position, a: Axis, n: number, gap: number, p_outer: Position, p_inner: Position) inline
 divide(P, A, N, G, P_outer, P_inner) :-
-    axis_dim(P, A, Ext),
-    (Ext - (N-1)*G) % N = 0,
-    K = (Ext - (N-1)*G) / N,
+    axis_dim(P, A, Ext), tile_size(Ext, N, G, K),
     divide_by_size(P, A, K, G, P_outer, P_inner).
 
 /// Parameterized by tile size k instead of tile count n. The tile count comes
@@ -184,12 +189,11 @@ divide_by_size(P, A, K, G, P_outer, P_inner) :-
     P_outer = @box_tile_outer(P, A, K, G), P_inner = @box_tile_inner(P, A, K, G).
 
 /// Gap from tile count and tile size. Nothing is derived unless the leftover
-/// extent divides evenly by the n-1 gaps.
+/// extent divides evenly by the n-1 gaps. At a negative gap -s, down to
+/// 1 - k, two neighboring tiles share s lines.
 .decl divide_gap(p: Position, a: Axis, n: number, k: number, g: number) inline
 divide_gap(P, A, N, K, G) :-
-    axis_dim(P, A, Ext), N > 1,
-    (Ext - N*K) % (N-1) = 0,
-    G = (Ext - N*K) / (N-1).
+    axis_dim(P, A, Ext), N > 1, G = range(1 - K, Ext), tile_size(Ext, N, G, K).
 
 /// The period n that distance t falls in, and the index k within that
 /// period, along periods of width w separated by gaps of g. A distance in a
@@ -318,7 +322,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
     // A key whose index set is not dense: some index has no predecessor, or
     // the largest index is not the count less one. Such a set maps indices
-    // to positions outside the frame, so the key gets no extent and no pos.
+    // to positions outside the frame.
     .decl _sparse(key: Key)
     _sparse(Ky) :- dist_set(Ky, K), K > 0, !dist_set(Ky, K-1).
     _sparse(Ky) :-

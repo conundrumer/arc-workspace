@@ -30,24 +30,17 @@
     .decl _rival(key: Key, p: Position, piece: Piece)
     _rival(Ky, P, B) :- covers(Ky, B, P).
 
-    // The ord of each rival's successor, materialized so the aggregate runs
-    // once per rival rather than once per rival pair.
-    .decl _min_after(key: Key, p: Position, piece: Piece, m: number)
-    _min_after(Ky, P, B, M) :-
-        _rival(Ky, P, B),
-        M = min ord(B3) : { _rival(Ky, P, B3), ord(B3) > ord(B) }.
+    .type _KP = [key: Key, p: Position]
 
-    // Next in ord order.
-    .decl _next(key: Key, p: Position, piece: Piece, piece2: Piece)
-    _next(Ky, P, B, B2) :-
-        _min_after(Ky, P, B, M), _rival(Ky, P, B2), ord(B2) = M.
+    // The rivals of each cell in a chain.
+    .init _chain = OrdChain<_KP, Piece>
+    _chain.member([Ky, P], B) :- _rival(Ky, P, B).
 
-    // The cycle it closes.
+    // The cycle the chain closes.
     .decl _succ(key: Key, p: Position, piece: Piece, piece2: Piece)
-    _succ(Ky, P, B, B2) :- _next(Ky, P, B, B2).
+    _succ(Ky, P, B, B2) :- _chain.next([Ky, P], B, B2).
     _succ(Ky, P, B, B2) :-
-        _rival(Ky, P, B), !_next(Ky, P, B, _),    // the last rival
-        _rival(Ky, P, B2), !_next(Ky, P, _, B2),  // links back to the first
+        _chain.tail([Ky, P], B), _chain.head([Ky, P], B2),  // the last links back to the first
         B != B2.
 
     // Every rival from X around to the one before B, all ruled out.
@@ -112,24 +105,20 @@
         // kill sharing its fixpoint.
         .decl dead(key: K, c: C)  // @input
 
-        // The ord of each candidate's successor, materialized so the
-        // aggregate runs once per candidate rather than once per
-        // candidate pair.
-        .decl min_after(key: K, o: P, c: C, m: number)
-        min_after(Ky, O, C1, M) :-
-            item(Ky, C1, O),
-            M = min ord(C3) : { item(Ky, C3, O), ord(C3) > ord(C1) }.
+        .type _KO = [key: K, o: P]
 
-        // Each piece's candidates, chained in ord order.
+        // Each piece's candidates in a chain.
+        .init _chain = OrdChain<_KO, C>
+        _chain.member([Ky, O], C) :- item(Ky, C, O).
+
         .decl after(key: K, o: P, c: C, c2: C)
-        after(Ky, O, C1, C2) :-
-            min_after(Ky, O, C1, M), item(Ky, C2, O), ord(C2) = M.
+        after(Ky, O, C1, C2) :- _chain.next([Ky, O], C1, C2).
 
         .decl head(key: K, o: P, c: C)
-        head(Ky, O, C) :- item(Ky, C, O), !after(Ky, O, _, C).
+        head(Ky, O, C) :- _chain.head([Ky, O], C).
 
         .decl tail(key: K, o: P, c: C)
-        tail(Ky, O, C) :- item(Ky, C, O), !after(Ky, O, C, _).
+        tail(Ky, O, C) :- _chain.tail([Ky, O], C).
 
         // Piece o2 blocked beside c: every candidate of o2 so far
         // conflicts with c or is dead.

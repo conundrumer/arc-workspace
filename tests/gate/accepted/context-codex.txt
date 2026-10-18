@@ -992,8 +992,10 @@ Reading a component:
 
 - A relation marked `// @input` is one the caller populates, and the facts
   under it are its default. Every other relation derives.
-- In a keyed component, the first column of a relation is its key, and each
-  key is one independent instance of the component.
+- In a keyed component, a relation whose first column has the component's
+  key type takes that column as its key, and each key is one independent
+  instance of the component. A relation with no such column holds one
+  set, which every key reads.
 - A `Requires:` sentence states a precondition the component does not check,
   and what happens when it does not hold.
 
@@ -1018,7 +1020,7 @@ total over the expected output grid.
 - **Axis4**
 - **Ident** — An opaque label.
 - **Example** — Index of a task example.
-- **Box** — The edge-margin record; box.dl holds its algebra.
+- **Box** — The edge-margin record; [box.dl](programs/lib/box.dl) holds its algebra.
 - **Dim** — The (V, H) extents of a frame, for ParamsHelpers only.
 - **Position** — A cell.
 - **Offset** — A translation.
@@ -1065,8 +1067,9 @@ opaque, and nothing here reads a position.
 ## programs/lib/orientation.dl — index
 
 The orientation values and the relations over them. A relation belongs
-here when its signature holds only Dir, Axis, DiagDir, DiagAxis, D4, Sym,
-and Sense. A relation that also holds a Box is in box.dl.
+here when its signature and its clauses hold only Dir, Axis, DiagDir,
+DiagAxis, D4, Sym, and Sense. A relation whose signature or clauses also
+hold a Box is in [box.dl](programs/lib/box.dl).
 
 - **DIR_T**, **DIR_B**, **DIR_L**, **DIR_R**
 - **AXIS_V**, **AXIS_H**
@@ -1107,8 +1110,9 @@ and Sense. A relation that also holds a Box is in box.dl.
 
 ## programs/lib/box.dl — index
 
-The box algebra: every component whose signature holds a Box, a Position,
-or an Offset, and that takes no keyed set of cells as input.
+The box algebra: the relations and components whose signature or clauses
+hold a Box, a Position, or an Offset, and that take no set of cells as
+input.
 
 Box is the edge-margin record (t, b, l, r), ordered V-first then H — a
 rectangle placed in a frame by its margins from the four edges. A frame of
@@ -1178,8 +1182,9 @@ Every other reading is a Box read against a frame the reader supplies.
 
 ## programs/lib/cells.dl — index
 
-Components with a keyed cell-set input: the caller populates the cells of a
-set under each key, and the component reports what holds of that set.
+Components with a cell-set input: the caller populates the cells of a set,
+under each key where the set's relation has a key column, and the
+component reports what holds of that set.
 
 - **Divide2D** — The frame cut into equal tiles, from a tile count on each axis.
 - **Tile2D** — Takes a tile size on each axis, in place of a tile count.

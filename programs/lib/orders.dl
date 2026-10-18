@@ -125,7 +125,6 @@
     /// The cycle's edges.
     .decl succ(key: Key, p: T, p_next: T)  // @input
 
-    // The counts close downward into the recursion bound.
     /// The advance counts in use.
     .decl step(key: Key, n: number)  // @input
 

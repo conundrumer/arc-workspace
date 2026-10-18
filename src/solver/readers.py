@@ -674,8 +674,9 @@ def proposer_names(program: Program) -> tuple[str, ...]:
 @dataclass(frozen=True)
 class Proposer:
     """A proposer of `programs/proposers.dl`: the column types of its
-    `propose` relation with every alias resolved, and the comment above
-    its component, as the `derive` report states it."""
+    `propose` relation with every alias resolved, and the text of the
+    comment above its component with no comment marker, as the `derive`
+    report states it."""
 
     name: str
     types: tuple[str, ...]
@@ -691,7 +692,8 @@ def proposers(engine: Engine, program: Program) -> dict[str, Proposer]:
         comp = next(c for c in program.components if c.name == name)
         decl = next(r for r in program.relations
                     if r.name == PROPOSE and r.scope.components[-1:] == (name,))
-        lines = sorted((c.line, c.text.strip()) for c in program.comments
+        lines = sorted((c.line, c.text.removeprefix("/").strip())
+                       for c in program.comments
                        if c.above == comp.id and not c.block)
         text = " ".join(t for _l, t in lines if t).rstrip(".")
         out[name] = Proposer(

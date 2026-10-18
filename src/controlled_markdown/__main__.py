@@ -122,8 +122,9 @@ def shown(path: Path) -> str:
         return str(path)
 
 
-# The lib's Souffle files, whose doc comments an agent reads.
-LIB_GLOBS = ("programs/lib.dl", "programs/lib/*.dl")
+# The Souffle files whose doc comments an agent reads: the lib's, and the
+# proposers', whose comments the `analyze` context lists.
+DL_DOC_GLOBS = ("programs/lib.dl", "programs/lib/*.dl", "programs/proposers.dl")
 
 
 def check_code(root: Path, document_set: set[Path]) -> int:
@@ -163,7 +164,7 @@ def check_code(root: Path, document_set: set[Path]) -> int:
     for err in quote_rule_errors(shown):
         print(err)
         off += 1
-    for pattern in LIB_GLOBS:
+    for pattern in DL_DOC_GLOBS:
         for path in sorted(root.glob(pattern)):
             try:
                 check_dl_comments(path, shown(path), root)

@@ -1,6 +1,7 @@
 //! The orientation values and the relations over them. A relation belongs
-//! here when its signature holds only Dir, Axis, DiagDir, DiagAxis, D4, Sym,
-//! and Sense. A relation that also holds a Box is in box.dl.
+//! here when its signature and its clauses hold only Dir, Axis, DiagDir,
+//! DiagAxis, D4, Sym, and Sense. A relation whose signature or clauses also
+//! hold a Box is in [box.dl](programs/lib/box.dl).
 
 #define DIR_T 10
 #define DIR_B 11

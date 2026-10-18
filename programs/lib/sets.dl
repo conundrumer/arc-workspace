@@ -60,13 +60,14 @@
 .comp Extremes<Key> {
     .decl cand(key: Key, s: number)  // @input
 
+    .init _arg = ArgExtremes<Key, Unit>
+    _arg.cand(Ky, $U(), S) :- cand(Ky, S).
+
     .decl high(key: Key, s: number)
-    high(Ky, S) :- cand(Ky, S).
-    high(Ky, S) <= high(Ky, S2) :- S < S2.
+    high(Ky, S) :- _arg.high(Ky, _, S).
 
     .decl low(key: Key, s: number)
-    low(Ky, S) :- cand(Ky, S).
-    low(Ky, S) <= low(Ky, S2) :- S > S2.
+    low(Ky, S) :- _arg.low(Ky, _, S).
 }
 
 /// The rows that hold each key's highest and lowest score. Ties keep every
@@ -122,38 +123,60 @@
 }
 
 /// One id per class of an equivalence relation, given whole or as a relation
-/// that generates it.
-///
-/// Requires: an element stands in only one of `equiv` and `edge`; the two
-/// classes of an element in both do not merge.
+/// that generates it. The classes are those of the reflexive, symmetric and
+/// transitive closure of `equiv` and `edge` together, over the elements they
+/// hold, so an element in both inputs gets one id for the merged class.
 .comp Canon<T> {  // @construction
-    /// The equivalence. Requires: `equiv` is transitive, symmetric, and
-    /// holds a self pair for every element of the domain; an element outside
-    /// `equiv` gets no id, and a gap in transitivity gives two elements of
-    /// one class different ids.
+    /// The equivalence, or a part of it. An element that stands in neither
+    /// input gets no id.
     .decl equiv(a: T, b: T)  // @input
 
-    /// A relation whose reflexive, symmetric and transitive closure is the
-    /// equivalence, over the elements it holds.
+    /// A relation that generates the equivalence, or a part of it.
     .decl edge(a: T, b: T)  // @input
 
-    // The least label that a walk along edge in either direction reaches.
+    // A pair of one class, from either input.
+    .decl _link(a: T, b: T)
+    _link(A, B) :- equiv(A, B).
+    _link(A, B) :- edge(A, B).
+
+    // The member of least `ord` of each element's class: the least label
+    // that a walk along `_link` in either direction reaches.
     .decl _label(a: T, l: T)
-    _label(A, A) :- ( edge(A, _) ; edge(_, A) ).
-    _label(B, L) :- _label(A, L), ( edge(A, B) ; edge(B, A) ).
+    _label(A, A) :- ( _link(A, _) ; _link(_, A) ).
+    _label(B, L) :- _label(A, L), ( _link(A, B) ; _link(B, A) ).
     _label(A, L) <= _label(A, L2) :- ord(L) > ord(L2).
 
-    // The member of least `ord` of each element's class.
-    .decl _rep(a: T, b: T)
-    _rep(A, B) :- equiv(A, B).
-    _rep(A, B) :- _label(A, B).
-    _rep(A, B) <= _rep(A, B2) :- ord(B) > ord(B2).
-
     .init _ident = IdentOf<T>
-    _ident.value(B) :- _rep(_, B).
+    _ident.value(L) :- _label(_, L).
 
     .decl id(a: T, id: Ident)
-    id(A, Id) :- _rep(A, B), _ident.id(B, Id).
+    id(A, Id) :- _label(A, L), _ident.id(L, Id).
+}
+
+/// The members of each key's set put in a chain by `ord`, an order that is
+/// arbitrary and stable within a run: each member's next, and the chain's
+/// head and tail.
+.comp OrdChain<Key, M> {  // @construction
+    .decl member(key: Key, m: M)  // @input
+
+    // The ord of each member's successor, materialized so the aggregate runs
+    // once per member rather than once per member pair.
+    .decl _min_after(key: Key, m: M, n: number)
+    _min_after(Ky, A, N) :-
+        member(Ky, A),
+        N = min ord(B) : { member(Ky, B), ord(B) > ord(A) }.
+
+    /// b directly follows a in the chain.
+    .decl next(key: Key, a: M, b: M)
+    next(Ky, A, B) :- _min_after(Ky, A, N), member(Ky, B), ord(B) = N.
+
+    /// The member no member precedes.
+    .decl head(key: Key, m: M)
+    head(Ky, M) :- member(Ky, M), !next(Ky, _, M).
+
+    /// The member no member follows.
+    .decl tail(key: Key, m: M)
+    tail(Ky, M) :- member(Ky, M), !next(Ky, M, _).
 }
 
 /// The alternatives of each key's catalog that a demonstrated pair

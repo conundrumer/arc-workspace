@@ -1,5 +1,6 @@
-//! Components with a keyed cell-set input: the caller populates the cells of a
-//! set under each key, and the component reports what holds of that set.
+//! Components with a cell-set input: the caller populates the cells of a set,
+//! under each key where the set's relation has a key column, and the
+//! component reports what holds of that set.
 
 /// The frame cut into equal tiles, from a tile count on each axis. The counts
 /// may differ between the axes.
@@ -281,13 +282,18 @@
     .decl mem(key: Key, m: T)
     mem(Ky, M) :- member(Ky, M, _).
 
+    .type _KD = [key: Key, d: Dir]
+
+    // The members in order from edge d, one order per edge of the axis.
+    .init _order = Order<_KD, T>
+    _order.elem([Ky, D], M) :- mem(Ky, M), axis(Ky, A), axis_of(D, A).
+    _order.before([Ky, D], M, M2) :- nearer(Ky, D, M, M2).
+
     /// The member's place in the frame: its distance toward each edge is the
     /// count of members nearer that edge.
     .decl pos(key: Key, m: T, p_pos: Position)
     pos(Ky, M, P_pos) :-
-        mem(Ky, M), axis(Ky, A), axis_of(D, A), opposite(D, O),
-        R1 = count : { nearer(Ky, D, M1, M) },
-        R2 = count : { nearer(Ky, O, M2, M) },
+        _order.rank([Ky, D], M, R1), _order.rank_desc([Ky, D], M, R2),
         axis_inset(D, R1, R2, P_pos).
 }
 
@@ -429,7 +435,7 @@
 
     /// The steps that join nodes: the cardinals, and any a caller adds.
     .decl step(delta: Offset)  // @input
-    step([-1, 1, 0, 0]). step([1, -1, 0, 0]). step([0, 0, -1, 1]). step([0, 0, 1, -1]).
+    step(S) :- dir_elem(D), step_offset(D, S).
 
     .init _ident = IdentOf<Position>
     _ident.value(P) :- node(_, P).
