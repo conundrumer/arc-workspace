@@ -8,7 +8,7 @@ use arclog::program::path::{NodePath, PathStep};
 use arclog::program::{ColumnName, Form};
 use arclog::read::read_solver;
 use arclog::registry::Registry;
-use arclog::resolver::{resolve, MacroExpansion};
+use arclog::resolver::resolve;
 use arclog::types::ValueType;
 
 /// The checked program of the arclog file `arclog` as written, with its
@@ -16,7 +16,7 @@ use arclog::types::ValueType;
 fn checked(arclog: &str) -> CheckedProgram {
     let solver = read_solver("scopes", arclog, "", &|_| None).expect("the file reads").value;
     let registry = Registry::get();
-    let program = resolve(&solver.program, None, &solver.derived_relations(), registry, MacroExpansion::Keep).value;
+    let program = resolve(&solver.program, None, &solver.derived_relations(), registry).value;
     let clauses = SolverClauses::of(&solver, registry);
     check_program(program, &clauses, registry, &mut CheckCache::default()).expect("every check passes")
 }

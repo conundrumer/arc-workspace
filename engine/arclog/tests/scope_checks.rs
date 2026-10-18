@@ -9,7 +9,7 @@ use arclog::program::path::{NodePath, PathStep};
 use arclog::program::{Conjunct, Form};
 use arclog::read::read_solver;
 use arclog::registry::Registry;
-use arclog::resolver::{resolve, MacroExpansion};
+use arclog::resolver::resolve;
 use arclog::types::ValueType;
 
 /// The check of the program of the arclog file `arclog` as written, with
@@ -17,7 +17,7 @@ use arclog::types::ValueType;
 fn check(arclog: &str, cache: &mut CheckCache) -> Result<CheckedProgram, Vec<Diagnostic>> {
     let solver = read_solver("scopes", arclog, "", &|_| None).expect("the file reads").value;
     let registry = Registry::get();
-    let program = resolve(&solver.program, None, &solver.derived_relations(), registry, MacroExpansion::Keep).value;
+    let program = resolve(&solver.program, None, &solver.derived_relations(), registry).value;
     let clauses = SolverClauses::of(&solver, registry);
     check_program(program, &clauses, registry, cache)
 }

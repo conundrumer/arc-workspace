@@ -15,11 +15,6 @@ use super::*;
 pub enum DeclaredName {
     Written(Box<str>),
     Slot(u32),
-    /// A name that a cell-instance macro's `INIT` or `RULE` form declares,
-    /// in the expansion of one site of the macro: the path of the site's
-    /// `INIT` form and the name as the macro writes it, so that the names
-    /// of two sites are two names wherever a read of them stands.
-    CellExpansion { site: path::NodePath, name: Box<str> },
 }
 
 /// The scope of a declared name: the program, or one `DEMO_RULE` form, by

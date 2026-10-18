@@ -127,14 +127,6 @@ impl CanonicalWriter {
                 self.tag(Tag::Slot);
                 self.int(*slot);
             }
-            DeclaredName::CellExpansion { site, name } => {
-                self.tag(Tag::CellExpansion);
-                self.len(site.0.len());
-                for step in site.0.iter() {
-                    self.int(step.0);
-                }
-                self.text(name);
-            }
         }
     }
 
@@ -233,8 +225,6 @@ pub(super) enum Tag {
     Column,
     Form,
     ArgNamedLabel,
-    CellExpansion,
-    DefaultRows,
 }
 
 /// A canonical form, as its bytes and their hash.
@@ -300,11 +290,6 @@ impl NameWriter for AsWritten {
             RelationRef::DefinedPort(PortName(port)) => {
                 out.tag(Tag::DefinedPort);
                 out.text(port);
-            }
-            RelationRef::DefaultRows { component, input: PortName(input) } => {
-                out.tag(Tag::DefaultRows);
-                out.text(&component.0);
-                out.text(input);
             }
         }
     }

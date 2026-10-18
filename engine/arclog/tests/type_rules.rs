@@ -6,14 +6,14 @@ use arclog::diagnostic::{DiagnosticKind, Location};
 use arclog::program::path::{NodePath, PathStep};
 use arclog::read::read_solver;
 use arclog::registry::Registry;
-use arclog::resolver::{resolve, MacroExpansion};
+use arclog::resolver::resolve;
 
 /// The checks that refuse the program of `arclog`, each with where it
 /// refuses it.
 fn refusals(arclog: &str) -> Vec<(CheckId, Location)> {
     let solver = read_solver("rules", arclog, "", &|_| None).expect("the file reads").value;
     let registry = Registry::get();
-    let program = resolve(&solver.concept_case().program, None, &solver.derived_relations(), registry, MacroExpansion::Keep).value;
+    let program = resolve(&solver.concept_case().program, None, &solver.derived_relations(), registry).value;
     let clauses = SolverClauses::of(&solver, registry);
     match check_program(program, &clauses, registry, &mut CheckCache::default()) {
         Ok(_) => Vec::new(),

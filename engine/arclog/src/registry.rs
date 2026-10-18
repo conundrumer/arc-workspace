@@ -66,8 +66,8 @@
 //!   an atom `(self.<port> <sites>)` reads the cell instance's own input
 //!   `<port>`, as [`crate::program::RelationRef::DefinedPort`] holds it.
 //!   A `RULE` form is a local relation, written as a solver's `RULE` clause
-//!   (`docs/arclog/arclog.md#program`), which the macro's expansion makes
-//!   into a clause of the solver with the kind of the site
+//!   (`docs/arclog/arclog.md#program`), which stands at each site for a
+//!   clause of the solver with the kind of the site
 //!   (`docs/arclog/arclog.md#instance`): a `RULE` clause where the site is
 //!   per input, and a `DET` clause where the site is per example or pools
 //!   over the examples. That clause has the columns the form gives, so it
@@ -78,10 +78,9 @@
 //!   row of the form holds where it holds at some example. The form's
 //!   body may read the `INIT`'s outputs, and the output bodies, the
 //!   `INIT`'s input bodies and the other `RULE` forms read it as
-//!   `(&<rule> <sites>)`. Each site of the cell instance has its own
-//!   expansion, and a name that the macro's `INIT` or a `RULE`
-//!   form declares stands for its declaration within that expansion alone,
-//!   as [`crate::program::DeclaredName::CellExpansion`] holds it.
+//!   `(&<rule> <sites>)`. A name that the macro's `INIT` or a `RULE` form
+//!   declares is local to each site of the cell instance: at a site, it
+//!   stands for that site's declaration.
 //!   The `INIT` binds the type parameters of the underlying construction as
 //!   a solver's `INIT` binds them (`docs/arclog/arclog.md#instance`), to a
 //!   record where a projection has several sites, and may hold a key clause
@@ -297,11 +296,8 @@ pub struct Derivation {
 }
 
 /// A lib name that the lib defines from other lib names, a relation or a
-/// cell instance, with its declaration and its definition, which the
-/// resolver expands under [`crate::resolver::MacroExpansion::Expand`]. The
-/// declaration serves the checks under
-/// [`crate::resolver::MacroExpansion::Keep`], the form the corpus is written
-/// in. A program runs in either form. A relation macro's column types and
+/// cell instance, with its declaration and its definition. The checks read
+/// the declaration. A relation macro's column types and
 /// modes, and a cell instance's output column types, are its definition's,
 /// as [`macro_column_types`] gives them.
 #[derive(Clone, Debug)]

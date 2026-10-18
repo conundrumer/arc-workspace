@@ -7,7 +7,7 @@ use arclog::program::path::{NodePath, PathStep};
 use arclog::program::{Conjunct, Form, Operand};
 use arclog::read::read_solver;
 use arclog::registry::Registry;
-use arclog::resolver::{resolve, ConceptReads, MacroExpansion};
+use arclog::resolver::{resolve, ConceptReads};
 use arclog::solver::Exclusion;
 use arclog::types::ValueType;
 
@@ -39,11 +39,11 @@ fn a_zero_typed_label_takes_the_join_of_the_clauses_of_each_case() {
     let clauses = SolverClauses::of(&solver, registry);
     let mut cache = CheckCache::default();
     let concept_case = solver.concept_case();
-    let concept = resolve(&concept_case.program, None, &derived, registry, MacroExpansion::Keep).value;
+    let concept = resolve(&concept_case.program, None, &derived, registry).value;
     let mut zero_types = Vec::new();
     for case in solver.cases(Exclusion::WithExcluded) {
         let reads = (case.name != concept_case.name).then(|| ConceptReads { concept: &concept, determinations: case.concept_determinations() });
-        let program = resolve(&case.program, reads, &derived, registry, MacroExpansion::Keep).value;
+        let program = resolve(&case.program, reads, &derived, registry).value;
         let checked = check_program(program, &clauses, registry, &mut cache).expect("every check passes");
         let forms = checked.program.program.value().forms.iter().zip(0u32..);
         for (form, index) in forms {

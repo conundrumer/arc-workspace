@@ -10,7 +10,7 @@ use arclog::layout::SourceFile;
 use arclog::program::path::{NodePath, PathStep};
 use arclog::read::read_arclog;
 use arclog::registry::Registry;
-use arclog::resolver::{resolve, ColumnPosition, ConceptReads, GraphNodeIndex, MacroExpansion, ResolvedProgram, Side};
+use arclog::resolver::{resolve, ColumnPosition, ConceptReads, GraphNodeIndex, ResolvedProgram, Side};
 
 fn resolved(text: &str) -> ResolvedProgram {
     resolved_with(text, None)
@@ -20,7 +20,7 @@ fn resolved_with(text: &str, concept: Option<ConceptReads<'_>>) -> ResolvedProgr
     let read = read_arclog(text, SourceFile::Arclog).expect("the program reads");
     assert!(read.diagnostics.is_empty(), "{:?}", read.diagnostics);
     let (program, _) = read.value;
-    let resolved = resolve(&program, concept, &Default::default(), Registry::get(), MacroExpansion::Keep);
+    let resolved = resolve(&program, concept, &Default::default(), Registry::get());
     assert!(resolved.diagnostics.is_empty(), "{:?}", resolved.diagnostics);
     resolved.value
 }

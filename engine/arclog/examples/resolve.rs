@@ -5,7 +5,7 @@
 //! checks the files with no error in the report.
 //!
 //! Each file the lint passes reads and resolves. The run resolves each case
-//! program of each of those solvers, under each [`MacroExpansion`], with
+//! program of each of those solvers with
 //! [`arclog::harness::run_over_corpus`], prints each failure by task id, and
 //! exits nonzero where a solver fails or the directory is a fault.
 
@@ -16,37 +16,33 @@ use std::process::ExitCode;
 use arclog::diagnostic::{Diagnostic, Location};
 use arclog::harness::{read_corpus_solver, run_over_corpus, CorpusSolver, LintReport, SolverResult};
 use arclog::registry::Registry;
-use arclog::resolver::{resolve, ConceptReads, MacroExpansion};
+use arclog::resolver::{resolve, ConceptReads};
 use arclog::solver::{Case, Exclusion, Solver};
 
-/// A line for `diagnostic` of the resolution of `case` under `macros`. A
-/// diagnostic under [`MacroExpansion::Keep`] stands at the place in the
-/// files of its path in the case program, and one under
-/// [`MacroExpansion::Expand`] at its path in the expanded program.
-fn describe(case: &Case, macros: MacroExpansion, diagnostic: &Diagnostic) -> String {
-    let at = match (&diagnostic.location, macros) {
-        (Location::Path(path), MacroExpansion::Keep) => format!("{:?}", case.file_path(path)),
-        (Location::Path(path), MacroExpansion::Expand) => format!("{path:?}"),
-        (Location::Places(places), _) => format!("{places:?}"),
+/// A line for `diagnostic` of the resolution of `case`, at the place in the
+/// files of its path in the case program.
+fn describe(case: &Case, diagnostic: &Diagnostic) -> String {
+    let at = match &diagnostic.location {
+        Location::Path(path) => format!("{:?}", case.file_path(path)),
+        Location::Places(places) => format!("{places:?}"),
     };
-    format!("{macros:?}: case {:?}: {at}: {}", case.name, diagnostic.message)
+    format!("case {:?}: {at}: {}", case.name, diagnostic.message)
 }
 
-/// A line for each diagnostic of the resolution of each case of `solver`
-/// under `macros`.
-fn faults(solver: &Solver, macros: MacroExpansion) -> Vec<String> {
+/// A line for each diagnostic of the resolution of each case of `solver`.
+fn faults(solver: &Solver) -> Vec<String> {
     let registry = Registry::get();
     let derived = solver.derived_relations();
     let concept_case = solver.concept_case();
-    let concept = resolve(&concept_case.program, None, &derived, registry, macros);
-    let mut faults: Vec<String> = concept.diagnostics.iter().map(|d| describe(&concept_case, macros, d)).collect();
+    let concept = resolve(&concept_case.program, None, &derived, registry);
+    let mut faults: Vec<String> = concept.diagnostics.iter().map(|d| describe(&concept_case, d)).collect();
     for case in solver.cases(Exclusion::WithExcluded) {
         if case.name == concept_case.name {
             continue;
         }
         let reads = ConceptReads { concept: &concept.value, determinations: case.concept_determinations() };
-        let resolved = resolve(&case.program, Some(reads), &derived, registry, macros);
-        faults.extend(resolved.diagnostics.iter().map(|d| describe(&case, macros, d)));
+        let resolved = resolve(&case.program, Some(reads), &derived, registry);
+        faults.extend(resolved.diagnostics.iter().map(|d| describe(&case, d)));
     }
     faults
 }
@@ -62,7 +58,7 @@ fn check(dir: &Path, solver: &CorpusSolver, report: &LintReport) -> SolverResult
     let Some(read) = read_corpus_solver(dir, &solver.task_id) else {
         return SolverResult::Fail(vec!["the solver's files do not read".to_owned()]);
     };
-    let each = || [MacroExpansion::Keep, MacroExpansion::Expand].into_iter().flat_map(|macros| faults(&read, macros)).collect::<Vec<_>>();
+    let each = || faults(&read);
     match catch_unwind(AssertUnwindSafe(each)) {
         Ok(faults) if faults.is_empty() => SolverResult::Pass,
         Ok(faults) => SolverResult::Fail(faults),

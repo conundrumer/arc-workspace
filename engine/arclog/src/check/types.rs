@@ -1213,7 +1213,7 @@ fn part_steps(relation: &RelationRef) -> Option<Vec<OutputStep>> {
         RelationRef::Output(output) => match &output.of {
             OutputOwner::Instance(InstanceName(name)) | OutputOwner::RigidDet(RigidDetName(name)) => (name, &output.path[..]),
         },
-        RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) | RelationRef::DefaultRows { .. } => return None,
+        RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) => return None,
     };
     Some(std::iter::once(OutputStep::Part(owner.clone())).chain(rest.iter().cloned()).collect())
 }

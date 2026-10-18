@@ -136,9 +136,8 @@ fn read_scoped_body(exprs: &[SExpr], init: Option<&SExpr>) -> Result<(Node<crate
 }
 
 /// The `INIT` form that `expr` writes, and the names of its labels, for the
-/// definition of a cell instance in the registry file, a lib name that a
-/// config expands into its definition, in the format [`crate::registry`]
-/// gives.
+/// definition of a cell instance in the registry file, in the format
+/// [`crate::registry`] gives.
 ///
 /// Fails where an s-expression of `expr` matches no node kind of its format,
 /// with a diagnostic of the grammar at each such s-expression.

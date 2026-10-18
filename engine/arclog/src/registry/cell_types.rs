@@ -432,7 +432,7 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
         let Some(column) = path.first() else { return Ok(None) };
         Ok(match &atom.relation {
             RelationRef::Lib(_) => self.macros.site_type(atom, path).map(SiteType::Fixed),
-            RelationRef::Fact(_) | RelationRef::DefaultRows { .. } => None,
+            RelationRef::Fact(_) => None,
             RelationRef::DefinedPort(port) => self.input_column_type(port, column),
             RelationRef::Declared(name) => self.rule_column_type(name, column),
             RelationRef::Output(output) => return self.init_column_type(output, column, path.get(1)),

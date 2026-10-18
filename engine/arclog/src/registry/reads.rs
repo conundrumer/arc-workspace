@@ -58,7 +58,6 @@ impl FileReader {
                     None => Err("reads a name that no form of the registry file declares".to_string()),
                 }
             }
-            RelationRef::DefaultRows { .. } => Err("reads the default rows of an input, which only an expansion reads".to_string()),
             RelationRef::DefinedPort(port) => {
                 let input = cell.and_then(|cell| cell.inputs.iter().find(|input| input.port.name == *port));
                 input.map(|input| names(&input.port.columns)).ok_or_else(|| "reads no input of its cell instance".to_string())

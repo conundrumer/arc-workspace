@@ -160,7 +160,6 @@ fn declared(name: &DeclaredName) -> &str {
     match name {
         DeclaredName::Written(text) => text,
         DeclaredName::Slot(_) => panic!("the arclog writer writes names as a file writes them, and a slot has none"),
-        DeclaredName::CellExpansion { name, .. } => name,
     }
 }
 
@@ -201,7 +200,6 @@ pub(crate) fn relation_ref(relation: &RelationRef) -> String {
         RelationRef::Declared(RelationName(name)) => declared(name).to_owned(),
         RelationRef::Output(name) => output_name(name),
         RelationRef::DefinedPort(PortName(port)) => format!("{}{port}", sp::SELF_PREFIX),
-        RelationRef::DefaultRows { component, input: PortName(input) } => format!("{}.{input}", component.0),
     }
 }
 

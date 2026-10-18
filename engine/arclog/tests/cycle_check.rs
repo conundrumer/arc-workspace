@@ -6,7 +6,7 @@ use arclog::check::{check_cycles, CheckResult};
 use arclog::program::path::{NodePath, PathStep};
 use arclog::read::read_solver;
 use arclog::registry::Registry;
-use arclog::resolver::{resolve, ConceptReads, MacroExpansion};
+use arclog::resolver::{resolve, ConceptReads};
 use arclog::solver::Exclusion;
 
 const ARCLOG: &str = "
@@ -29,12 +29,12 @@ fn a_cycle_is_refused_at_each_form_on_it() {
     let registry = Registry::get();
     let derived = solver.derived_relations();
     let concept_case = solver.concept_case();
-    let concept = resolve(&concept_case.program, None, &derived, registry, MacroExpansion::Keep).value;
+    let concept = resolve(&concept_case.program, None, &derived, registry).value;
     assert_eq!(check_cycles(&concept.graph, &concept), CheckResult::Pass);
 
     let case = solver.cases(Exclusion::WithExcluded).find(|case| case.name != concept_case.name).expect("the case of `$Closed`");
     let reads = ConceptReads { concept: &concept, determinations: case.concept_determinations() };
-    let closed = resolve(&case.program, Some(reads), &derived, registry, MacroExpansion::Keep).value;
+    let closed = resolve(&case.program, Some(reads), &derived, registry).value;
     let CheckResult::Refuse(refusals) = check_cycles(&closed.graph, &closed) else {
         panic!("the case of `$Closed` holds a cycle");
     };

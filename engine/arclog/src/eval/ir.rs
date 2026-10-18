@@ -1,5 +1,5 @@
-//! The clause IR, the evaluator's form of a body after name resolution and
-//! macro expansion: a conjunctive query with filters and unions, over
+//! The clause IR, the evaluator's form of a body after name resolution: a
+//! conjunctive query with filters and unions, over
 //! resolved relations, and the compilation of a body's positive
 //! conjunctive part into it.
 //!
