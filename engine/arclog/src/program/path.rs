@@ -56,15 +56,13 @@
 //!
 //! A `param` form, an `exclude` form, a `representative` line, an `assign`
 //! form, a grid and an `output` form have no children.
-//!
-//! The programs-as-values stage writes the bodies.
 
 #![allow(unused_variables, dead_code)]
 
 use super::{
-    AltRecord, Alt, Alts, Arcdata, Atom, Body, Choose, Claim, Clause, Conjunct, DemoRule,
-    Demonstrated, Exclude, Grid, InstanceInput, Instance, KeyClause, LabelUse, Node, Param, ParamValue, Program,
-    Representative, RigidDet, Site, Slug, Witness, WitnessOutput, WitnessRecord, ProgramRelation,
+    Alt, AltItem, AltRecord, Alts, Arcdata, Atom, Body, Choose, Claim, Clause, Conjunct, DemoRule, Demonstrated,
+    Exclude, Form, Grid, Instance, InstanceInput, KeyClause, LabelUse, Negated, Node, Param, ParamValue, Program,
+    ProgramRelation, Representative, RigidDet, Site, SiteArg, Slug, Witness, WitnessOutput, WitnessRecord,
 };
 
 /// One step of a path: the index of a node among its parent's children.
@@ -118,16 +116,102 @@ pub enum NodeRef<'a> {
     Label(&'a LabelUse),
 }
 
+impl<'a> From<&'a Form> for NodeRef<'a> {
+    fn from(form: &'a Form) -> Self {
+        match form {
+            Form::Claim(claim) => NodeRef::Claim(claim.value()),
+            Form::Clause(clause) => NodeRef::Clause(clause.value()),
+            Form::Instance(instance) => NodeRef::Instance(instance.value()),
+            Form::Choose(choose) => NodeRef::Choose(choose.value()),
+            Form::RigidDet(rigid) => NodeRef::RigidDet(rigid.value()),
+            Form::Demonstrated(demonstrated) => NodeRef::Demonstrated(demonstrated.value()),
+            Form::Alts(alts) => NodeRef::Alts(alts.value()),
+        }
+    }
+}
+
+impl<'a> From<&'a AltItem> for NodeRef<'a> {
+    fn from(item: &'a AltItem) -> Self {
+        match item {
+            AltItem::Form(form) => NodeRef::from(form),
+            AltItem::Alt(alt) => NodeRef::Alt(alt.value()),
+        }
+    }
+}
+
 impl<'a> NodeRef<'a> {
     /// The node's children, in the order of the module comment's table.
     pub fn children(self) -> Vec<NodeRef<'a>> {
-        todo!()
+        fn forms(forms: &[Form]) -> Vec<NodeRef<'_>> {
+            forms.iter().map(NodeRef::from).collect()
+        }
+        fn sites(sites: &[Site]) -> Vec<NodeRef<'_>> {
+            sites.iter().map(NodeRef::Site).collect()
+        }
+        fn bodies<'b>(bodies: impl IntoIterator<Item = &'b Node<Body>>) -> Vec<NodeRef<'b>> {
+            bodies.into_iter().map(|body| NodeRef::Body(body.value())).collect()
+        }
+        fn inputs(inputs: &[Node<InstanceInput>]) -> impl Iterator<Item = NodeRef<'_>> {
+            inputs.iter().map(|input| NodeRef::InstanceInput(input.value()))
+        }
+        match self {
+            NodeRef::Program(program) => forms(&program.forms),
+            NodeRef::Claim(claim) => forms(&claim.forms),
+            NodeRef::DemoRule(rule) => forms(&rule.forms),
+            NodeRef::Alts(alts) => alts.alts.iter().map(|alt| NodeRef::Alt(alt.value())).collect(),
+            NodeRef::Alt(alt) => alt.items.iter().map(NodeRef::from).collect(),
+            NodeRef::Clause(clause) => bodies([&clause.body]),
+            NodeRef::Body(body) => body.conjuncts.iter().map(NodeRef::Conjunct).collect(),
+            NodeRef::Conjunct(conjunct) => match conjunct {
+                Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => sites(&atom.value().sites),
+                Conjunct::Not(Negated::Form(form)) => vec![NodeRef::Conjunct(form)],
+                Conjunct::Constraint(_) => Vec::new(),
+                Conjunct::Or(branches) => bodies(branches.iter()),
+                Conjunct::If { test, then, otherwise } => bodies([test, then, otherwise]),
+                Conjunct::All { domain, body } => bodies([domain, body]),
+            },
+            NodeRef::Atom(atom) => sites(&atom.sites),
+            NodeRef::Site(site) => site
+                .value
+                .args
+                .iter()
+                .map(|arg| match arg {
+                    SiteArg::Label(label) | SiteArg::NamedLabel { label, .. } => NodeRef::Label(label),
+                    SiteArg::Field(field) => NodeRef::Site(field),
+                })
+                .collect(),
+            NodeRef::Label(_) => Vec::new(),
+            NodeRef::Instance(instance) => {
+                let key = instance.key.iter().map(|key| NodeRef::KeyClause(key.value()));
+                key.chain(inputs(&instance.inputs)).collect()
+            }
+            NodeRef::KeyClause(clause) => bodies([&clause.key.body]).into_iter().chain(inputs(&clause.inputs)).collect(),
+            NodeRef::InstanceInput(input) => {
+                let mut children = sites(&input.head);
+                children.push(NodeRef::Body(input.body.value()));
+                children
+            }
+            NodeRef::Choose(choose) => {
+                let rows = choose.rows.iter().map(|rows| &rows.body);
+                bodies(rows.chain([&choose.from]).chain(choose.never.iter()))
+            }
+            NodeRef::RigidDet(rigid) => {
+                let clauses = bodies(rigid.key.iter().chain(rigid.instance.iter()).map(|clause| &clause.body));
+                let parts = rigid.parts.iter().map(|part| NodeRef::Atom(part.value()));
+                clauses.into_iter().chain(parts).collect()
+            }
+            NodeRef::Demonstrated(demonstrated) => {
+                let key = demonstrated.key.iter().map(|key| NodeRef::KeyClause(key.value()));
+                let rules = demonstrated.rules.iter().map(|rule| NodeRef::DemoRule(rule.value()));
+                key.chain(inputs(&demonstrated.inputs)).chain(rules).collect()
+            }
+        }
     }
 }
 
 /// The node at `path` below `root`, or `None` where `path` names no node.
 pub fn node_at<'a>(root: NodeRef<'a>, path: &NodePath) -> Option<NodeRef<'a>> {
-    todo!()
+    path.0.iter().try_fold(root, |node, step| node.children().get(step.0 as usize).copied())
 }
 
 /// A node of an arcdata file, borrowed: any node an arcdata path can name.
@@ -149,11 +233,39 @@ pub enum DataNodeRef<'a> {
 impl<'a> DataNodeRef<'a> {
     /// The node's children, in the order of the module comment's table.
     pub fn children(self) -> Vec<DataNodeRef<'a>> {
-        todo!()
+        fn witnesses(witnesses: &[Witness]) -> impl Iterator<Item = DataNodeRef<'_>> {
+            witnesses.iter().map(DataNodeRef::Witness)
+        }
+        match self {
+            DataNodeRef::Arcdata(arcdata) => {
+                let representative = arcdata.representative.iter().map(DataNodeRef::Representative);
+                let params = arcdata.params.iter().map(DataNodeRef::Param);
+                let excludes = arcdata.excludes.iter().map(DataNodeRef::Exclude);
+                let records = arcdata.witness_records.iter().map(DataNodeRef::WitnessRecord);
+                representative.chain(params).chain(excludes).chain(records).collect()
+            }
+            DataNodeRef::WitnessRecord(WitnessRecord::Alts { alts, .. }) => alts.iter().map(DataNodeRef::AltRecord).collect(),
+            DataNodeRef::WitnessRecord(WitnessRecord::Approximated { witnesses: list, .. }) => witnesses(list).collect(),
+            DataNodeRef::AltRecord(alt) => witnesses(&alt.witnesses).chain(alt.nested.iter().map(DataNodeRef::AltRecord)).collect(),
+            DataNodeRef::Witness(Witness { body: Some(body), .. }) => {
+                let relaxed = body.relaxed.iter().map(DataNodeRef::Relaxed);
+                let assigns = body.assigns.iter().map(DataNodeRef::Assign);
+                let outputs = body.outputs.iter().map(DataNodeRef::WitnessOutput);
+                relaxed.chain(assigns).chain([DataNodeRef::Grid(&body.input)]).chain(outputs).collect()
+            }
+            DataNodeRef::Witness(Witness { body: None, .. })
+            | DataNodeRef::Representative(_)
+            | DataNodeRef::Param(_)
+            | DataNodeRef::Exclude(_)
+            | DataNodeRef::Relaxed(_)
+            | DataNodeRef::Assign(_)
+            | DataNodeRef::Grid(_)
+            | DataNodeRef::WitnessOutput(_) => Vec::new(),
+        }
     }
 }
 
 /// The node at `path` below `root`, or `None` where `path` names no node.
 pub fn data_node_at<'a>(root: DataNodeRef<'a>, path: &NodePath) -> Option<DataNodeRef<'a>> {
-    todo!()
+    path.0.iter().try_fold(root, |node, step| node.children().get(step.0 as usize).copied())
 }

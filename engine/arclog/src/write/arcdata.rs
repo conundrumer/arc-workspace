@@ -4,17 +4,39 @@
 //! place its node's layout gives.
 
 use crate::layout::{Layout, SourceFile};
-use crate::program::path::NodePath;
+use crate::program::path::{DataNodeRef, NodePath};
 use crate::program::*;
 use crate::read::spelling::{self as sp, spelling};
 
-use super::arclog::{program_relation, quoted, Out, Tokens};
+use super::arclog::{address_of, child_path, program_relation, quoted, Out, PathNode, Tokens};
 
 const FILE: SourceFile = SourceFile::Arcdata;
 
 struct Writer<'l> {
     layout: &'l Layout,
     out: Out<'l>,
+}
+
+impl PathNode for DataNodeRef<'_> {
+    fn children(self) -> Vec<Self> {
+        DataNodeRef::children(self)
+    }
+
+    fn address(self) -> *const () {
+        match self {
+            DataNodeRef::Arcdata(node) => address_of(node),
+            DataNodeRef::Representative(node) => address_of(node),
+            DataNodeRef::Param(node) => address_of(node),
+            DataNodeRef::Exclude(node) => address_of(node),
+            DataNodeRef::WitnessRecord(node) => address_of(node),
+            DataNodeRef::AltRecord(node) => address_of(node),
+            DataNodeRef::Witness(node) => address_of(node),
+            DataNodeRef::Relaxed(node) => address_of(node),
+            DataNodeRef::Assign(node) => address_of(node),
+            DataNodeRef::Grid(node) => address_of(node),
+            DataNodeRef::WitnessOutput(node) => address_of(node),
+        }
+    }
 }
 
 /// The text of `value`, as the file writes it.
@@ -37,27 +59,25 @@ impl<'l> Writer<'l> {
 
     fn arcdata(&mut self, arcdata: &Arcdata) {
         let root = NodePath::default();
-        let mut next = 0u32;
+        let at = |child: DataNodeRef| child_path(&root, DataNodeRef::Arcdata(arcdata), child);
         if let Some(representative) = &arcdata.representative {
-            self.form(&root.child(next), sp::REPRESENTATIVE, |w, t| {
+            self.form(&at(DataNodeRef::Representative(representative)), sp::REPRESENTATIVE, |w, t| {
                 w.put(t, &representative.task_id);
                 if let Some(case) = &representative.case {
                     w.names(t, case.iter().map(|name| &*name.0));
                 }
             });
-            next += 1;
         }
-        for param in arcdata.params.iter() {
-            let param = param.value();
-            self.form(&root.child(next), sp::PARAM, |w, t| {
+        for node in arcdata.params.iter() {
+            let param = node.value();
+            self.form(&at(DataNodeRef::Param(node)), sp::PARAM, |w, t| {
                 w.put(t, &program_relation(&param.name));
                 w.names(t, param.columns.iter().map(|ty| spelling(sp::TYPE_NAMES, ty)));
                 w.param_value(t, &param.value);
             });
-            next += 1;
         }
         for exclude in arcdata.excludes.iter() {
-            self.form(&root.child(next), sp::EXCLUDE, |w, t| {
+            self.form(&at(DataNodeRef::Exclude(exclude)), sp::EXCLUDE, |w, t| {
                 w.put(t, "(");
                 for name in exclude.combination.iter() {
                     w.put(t, &name.0);
@@ -67,23 +87,22 @@ impl<'l> Writer<'l> {
                     w.put(t, &quoted(&reason.0));
                 }
             });
-            next += 1;
         }
         for record in arcdata.witness_records.iter() {
-            let path = root.child(next);
+            let own = DataNodeRef::WitnessRecord(record);
+            let path = at(own);
             match record {
                 WitnessRecord::Alts { name, alts } => self.form(&path, sp::ALTS_RECORD, |w, t| {
                     w.put(t, &name.0);
-                    for (index, alt) in alts.iter().enumerate() {
-                        w.alt_record(alt, &path.child(index as u32));
+                    for alt in alts.iter() {
+                        w.alt_record(alt, &child_path(&path, own, DataNodeRef::AltRecord(alt)));
                     }
                 }),
                 WitnessRecord::Approximated { claim, witnesses } => self.form(&path, sp::APPROXIMATED_RECORD, |w, t| {
                     w.put(t, &claim.0);
-                    w.witnesses(witnesses, &path, 0);
+                    w.witnesses(witnesses, own, &path);
                 }),
             }
-            next += 1;
         }
     }
 
@@ -197,16 +216,18 @@ impl<'l> Writer<'l> {
     fn alt_record(&mut self, alt: &AltRecord, path: &NodePath) {
         self.form(path, sp::ALT_RECORD, |w, t| {
             w.put(t, &alt.name.0);
-            w.witnesses(&alt.witnesses, path, 0);
-            for (index, nested) in alt.nested.iter().enumerate() {
-                w.alt_record(nested, &path.child((alt.witnesses.len() + index) as u32));
+            let own = DataNodeRef::AltRecord(alt);
+            w.witnesses(&alt.witnesses, own, path);
+            for nested in alt.nested.iter() {
+                w.alt_record(nested, &child_path(path, own, DataNodeRef::AltRecord(nested)));
             }
         });
     }
 
-    fn witnesses(&mut self, witnesses: &[Witness], parent: &NodePath, first: u32) {
-        for (index, witness) in witnesses.iter().enumerate() {
-            self.witness(witness, &parent.child(first + index as u32));
+    /// The witnesses of `parent`, the node at `path`.
+    fn witnesses(&mut self, witnesses: &[Witness], parent: DataNodeRef, path: &NodePath) {
+        for witness in witnesses.iter() {
+            self.witness(witness, &child_path(path, parent, DataNodeRef::Witness(witness)));
         }
     }
 
@@ -222,33 +243,31 @@ impl<'l> Writer<'l> {
             };
             w.put(t, verdict);
             if let Some(body) = &witness.body {
-                w.witness_body(t, body, path);
+                w.witness_body(t, witness, body, path);
             }
         });
     }
 
-    fn witness_body(&mut self, t: &mut Tokens, body: &WitnessBody, path: &NodePath) {
-        let mut child = 0u32;
-        let mut next = || {
-            child += 1;
-            path.child(child - 1)
-        };
+    /// The body of `witness`, the node at `path`.
+    fn witness_body(&mut self, t: &mut Tokens, witness: &Witness, body: &WitnessBody, path: &NodePath) {
+        let at = |child: DataNodeRef| child_path(path, DataNodeRef::Witness(witness), child);
         for slug in body.relaxed.iter() {
-            self.form(&next(), sp::RELAXED, |w, own| w.put(own, &slug.0));
+            self.form(&at(DataNodeRef::Relaxed(slug)), sp::RELAXED, |w, own| w.put(own, &slug.0));
         }
         self.put(t, "(");
         self.put(t, sp::SEPARATES);
         self.put(t, &quoted(&body.separates.0));
         self.put(t, ")");
-        for (relation, value) in body.assigns.iter() {
-            self.form(&next(), sp::ASSIGN, |w, own| {
+        for assign in body.assigns.iter() {
+            let (relation, value) = assign;
+            self.form(&at(DataNodeRef::Assign(assign)), sp::ASSIGN, |w, own| {
                 w.put(own, &program_relation(relation));
                 w.param_value(own, value);
             });
         }
-        self.form(&next(), sp::INPUT, |w, own| w.grid(own, &body.input));
+        self.form(&at(DataNodeRef::Grid(&body.input)), sp::INPUT, |w, own| w.grid(own, &body.input));
         for output in body.outputs.iter() {
-            self.form(&next(), sp::OUTPUT, |w, own| {
+            self.form(&at(DataNodeRef::WitnessOutput(output)), sp::OUTPUT, |w, own| {
                 for names in output.names.iter() {
                     w.names(
                         own,

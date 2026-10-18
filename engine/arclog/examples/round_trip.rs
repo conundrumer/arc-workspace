@@ -10,19 +10,30 @@
 //! of the two files with [`arclog::write::write_arclog`] and
 //! [`arclog::write::write_arcdata`]. A solver fails where its arcdata file
 //! reads with a diagnostic, where its arclog file reads with a diagnostic
-//! and the lint reports no error in it, and where a file that reads with no
-//! diagnostic writes back other bytes. The run prints each file that reads
-//! with a diagnostic and each failure, by task id, and a summary line that
-//! counts the files of each kind that read with a diagnostic, and exits
-//! nonzero where a solver fails or the directory is a fault.
+//! and the lint reports no error in it, where the layout of a file that
+//! reads with no diagnostic keys its nodes at other paths than those the
+//! walk of [`arclog::program::path::NodeRef::children`] or
+//! [`arclog::program::path::DataNodeRef::children`] reaches from the file's
+//! root, each bare-label argument of a site left out, with a failure for
+//! each path that one of the two sets holds and the other does not, and
+//! where a file that reads with no diagnostic writes back other bytes. The
+//! writers find each node's layout at the path that walk gives it, so the
+//! byte check also fails a file whose layout keys a node at a path where
+//! the walk reaches another node, unless the two nodes write the same text.
+//! The run prints each file that reads with a diagnostic and each failure,
+//! by task id, and a summary line that counts the files of each kind that
+//! read with a diagnostic, and exits nonzero where a solver fails or the
+//! directory is a fault.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 
 use arclog::diagnostic::{Diagnostic, Location};
 use arclog::harness::{run_over_corpus, CorpusSolver, LintReport, SolverResult};
-use arclog::layout::SourceFile;
+use arclog::layout::{Layout, SourceFile};
+use arclog::program::path::{DataNodeRef, NodePath, NodeRef};
 use arclog::read::read_solver;
 use arclog::solver::Solver;
 use arclog::write::{write_arcdata, write_arclog};
@@ -83,6 +94,35 @@ fn extension(file: SourceFile) -> &'static str {
     }
 }
 
+/// The path of each node below `root` that a walk of `children` reaches,
+/// the root's included, and each `kept` keeps.
+fn walked<N: Copy>(root: N, children: fn(N) -> Vec<N>, kept: fn(N) -> bool) -> BTreeSet<NodePath> {
+    let mut paths = BTreeSet::new();
+    let mut stack = vec![(root, NodePath::default())];
+    while let Some((node, path)) = stack.pop() {
+        for (index, child) in children(node).into_iter().enumerate() {
+            stack.push((child, path.child(index as u32)));
+        }
+        if kept(node) {
+            paths.insert(path);
+        }
+    }
+    paths
+}
+
+/// A line for each path of `file` that `layout` keys and `walk` does not
+/// hold, and for each that `walk` holds and `layout` does not key.
+fn key_mismatches(layout: &Layout, file: SourceFile, walk: &BTreeSet<NodePath>) -> Vec<String> {
+    let keyed: BTreeSet<&NodePath> = layout.nodes.keys().filter(|(f, _)| *f == file).map(|(_, path)| path).collect();
+    let name = extension(file);
+    let unwalked = keyed.iter().filter(|path| !walk.contains(**path));
+    let unkeyed = walk.iter().filter(|path| !keyed.contains(path));
+    unwalked
+        .map(|path| format!("the {name} file: the layout keys a node at {path:?}, which the walk of the path table does not reach"))
+        .chain(unkeyed.map(|path| format!("the {name} file: the walk of the path table reaches a node at {path:?}, which the layout does not key")))
+        .collect()
+}
+
 /// The files that read with a diagnostic, each with its task id, its file
 /// and its diagnostics.
 type ReadWithDiagnostics = Mutex<Vec<(String, SourceFile, Vec<String>)>>;
@@ -117,12 +157,16 @@ fn round_trip(dir: &Path, solver: &CorpusSolver, report: &LintReport, read_with_
     failures.extend(arcdata_lines.iter().map(|line| format!("the arcdata file reads with: {line}")));
     if let Some(read) = &read {
         if arclog_lines.is_empty() {
+            let walk = walked(NodeRef::Program(read.program.value()), NodeRef::children, |node| !matches!(node, NodeRef::Label(_)));
+            failures.extend(key_mismatches(&read.layout, SourceFile::Arclog, &walk));
             let written = write_arclog(&read.program, &read.layout);
             if written != arclog_text {
                 failures.push(format!("the arclog file: {}", first_difference(&arclog_text, &written)));
             }
         }
         if arcdata_lines.is_empty() {
+            let walk = walked(DataNodeRef::Arcdata(read.arcdata.value()), DataNodeRef::children, |_| true);
+            failures.extend(key_mismatches(&read.layout, SourceFile::Arcdata, &walk));
             let written = write_arcdata(&read.arcdata, &read.layout);
             if written != arcdata_text {
                 failures.push(format!("the arcdata file: {}", first_difference(&arcdata_text, &written)));
