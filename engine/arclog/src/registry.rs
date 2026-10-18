@@ -503,5 +503,6 @@ mod reader;
 mod reads;
 
 pub use cell_types::{CellForm, CellMacro};
+pub(crate) use cell_types::{binding_sites, ParameterSite};
 pub use column_types::{macro_column_types, MacroDeclarations, RelationMacro};
 use reader::FileReader;

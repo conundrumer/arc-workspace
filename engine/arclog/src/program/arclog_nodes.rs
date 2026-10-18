@@ -341,6 +341,12 @@ pub struct KeyClause {
     pub inputs: Arc<[Node<InstanceInput>]>,
 }
 
+/// The inputs an `INIT` or a `DEMONSTRATED` form writes: the keyed
+/// inputs, then the others.
+pub fn written_inputs<'a>(key: Option<&'a Node<KeyClause>>, inputs: &'a [Node<InstanceInput>]) -> impl Iterator<Item = &'a InstanceInput> + Clone {
+    key.into_iter().flat_map(|key| key.value().inputs.iter()).chain(inputs.iter()).map(|input| input.value())
+}
+
 /// An input of an instance: its name, its head sites, its body.
 #[derive(Clone, Debug)]
 pub struct InstanceInput {

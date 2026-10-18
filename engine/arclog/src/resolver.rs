@@ -820,12 +820,12 @@ mod columns {
     use std::sync::Arc;
 
     use super::ColumnPosition;
-    use crate::hash::{StableHashMap, StableHashSet};
+    use crate::hash::StableHashMap;
     use crate::program::{
-        ColumnName, DeclaredName, Demonstrated, Instance, InstanceInput, InstanceName, KeyBody, Node, OutputOwner, OutputStep,
+        ColumnName, DeclaredName, Demonstrated, Instance, InstanceName, KeyBody, OutputOwner, OutputStep,
         RelationName, RelationRef, RigidDet, RigidDetName, Site, SiteArg,
     };
-    use crate::registry::{Column, ColumnType, Component, LibEntry, LibName, Macro, Port, Proposer, Registry, TypeParameter};
+    use crate::registry::{binding_sites, Column, ColumnType, Component, LibEntry, LibName, Macro, ParameterSite, Port, Proposer, Registry, TypeParameter};
     use crate::relations::{ColumnGroup, ColumnIndex};
 
     use crate::read::spelling::KEY;
@@ -1014,49 +1014,21 @@ mod columns {
         key.columns.iter().map(|column| column.name.clone()).collect()
     }
 
-    /// The inputs an `INIT` or a `DEMONSTRATED` form writes: the keyed
-    /// inputs, then the others.
-    pub(super) fn written_inputs<'a>(
-        key: Option<&'a Node<crate::program::KeyClause>>,
-        inputs: &'a [Node<InstanceInput>],
-    ) -> impl Iterator<Item = &'a InstanceInput> + Clone {
-        key.into_iter().flat_map(|key| key.value().inputs.iter()).chain(inputs.iter()).map(|input| input.value())
-    }
-
-    /// The records that an `INIT` form binds the type parameters of its
-    /// component to: the key clause binds the parameter of the `key` column
-    /// to a record of its `^` labels, and the first projection onto each
-    /// other parameter binds it, as `docs/arclog/arclog.md#instance` gives. A
-    /// parameter that it leaves out is bound to one label's type, or, for an
-    /// instance with no key clause, to `Unit`.
+    /// The record of fields that an `INIT` form binds each type parameter
+    /// of its component to, at the place that
+    /// [`crate::registry::binding_sites`] gives. A parameter that the map
+    /// leaves out takes one column.
     pub(super) struct Bindings(StableHashMap<TypeParameter, Box<[ColumnName]>>);
 
     pub(super) fn bindings(instance: &Instance, component: &Component) -> Bindings {
-        let mut records = StableHashMap::default();
-        let mut bound = StableHashSet::default();
-        if let Some(key) = &instance.key {
-            let parameter = component.inputs.iter().flat_map(|input| input.port.columns.iter()).find_map(|column| match &column.ty {
-                ColumnType::Parameter(parameter) if column.name == written(KEY) => Some(parameter),
-                _ => None,
-            });
-            if let Some(parameter) = parameter {
-                records.insert(parameter.clone(), key_fields(&key.value().key));
-                bound.insert(parameter.clone());
-            }
-        }
-        for input in written_inputs(instance.key.as_ref(), &instance.inputs) {
-            let Some(port) = component.inputs.iter().find(|port| port.port.name == input.name) else { continue };
-            for site in input.head.iter() {
-                let Some(column) = port.port.columns.iter().find(|column| column.name == site.column) else { continue };
-                let ColumnType::Parameter(parameter) = &column.ty else { continue };
-                if bound.insert(parameter.clone()) {
-                    if let Some(fields) = projection(site) {
-                        records.insert(parameter.clone(), fields);
-                    }
-                }
-            }
-        }
-        Bindings(records)
+        let records = binding_sites(instance, &component.inputs).into_iter().filter_map(|sites| {
+            let fields = match sites.binding {
+                ParameterSite::Key(key) => key_fields(&key.key),
+                ParameterSite::Head { site, .. } => projection(site)?,
+            };
+            Some((sites.parameter.clone(), fields))
+        });
+        Bindings(records.collect())
     }
 
     /// The columns of `port` of an instance whose binding is `bindings`.
@@ -1080,7 +1052,7 @@ mod columns {
     /// those the `value` head names, `docs/arclog/arclog.md#demonstrated`.
     pub(super) fn demonstrated_columns(form: &Demonstrated) -> Columns {
         let key = key_slot(form.key.as_ref().map(|key| &key.value().key));
-        let value = written_inputs(form.key.as_ref(), &form.inputs).find(|input| *input.name.0 == *VALUE);
+        let value = crate::program::written_inputs(form.key.as_ref(), &form.inputs).find(|input| *input.name.0 == *VALUE);
         let heads = value.into_iter().flat_map(|input| input.head.iter()).map(|site| Slot::of(&site.column, projection(site).as_deref()));
         Columns(std::iter::once(key).chain(heads).collect())
     }
@@ -1501,12 +1473,11 @@ mod build {
     };
     use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity, WithDiagnostics};
     use crate::hash::{StableHashMap, StableHashSet};
-    use crate::program::canonical::{canonical_labeling, relation_of, AsWritten, CanonicalWriter, LabelScope, NameWriter, SearchBudget};
+    use crate::program::canonical::{canonical_labeling, prediction, relation_of, AsWritten, CanonicalWriter, LabelScope, NameWriter, SearchBudget};
     use crate::program::path::{node_at, NodePath, NodeRef};
     use crate::program::{
-        Atom, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, DeclaredName, FactRelation, Form, Instance, InstanceName,
-        NameScope, Negated, Node, OutputName, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationName,
-        RelationRef,
+        Atom, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, FactRelation, Form, Instance, InstanceName, NameScope,
+        Negated, Node, OutputName, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationRef,
     };
     use crate::registry::{Component, Registry};
     use crate::relations::ColumnGroup;
@@ -1665,11 +1636,6 @@ mod build {
             (relation, _, ClauseKeyword::Det) => DependencyKind::Parameter(relation.clone()),
             (relation, _, _) => DependencyKind::Clause(relation.clone()),
         }
-    }
-
-    fn prediction() -> RelationRef {
-        let name = format!("{}prediction", crate::read::spelling::DECLARED_MARK);
-        RelationRef::Declared(RelationName(DeclaredName::Written(name.into())))
     }
 
     impl<'a> Builder<'a> {
@@ -1833,7 +1799,7 @@ mod build {
             };
             self.resolutions.insert(path.clone(), Resolution::Lib(instance.component.clone()));
             let name = &instance.name;
-            let written: Vec<_> = columns::written_inputs(instance.key.as_ref(), &instance.inputs).collect();
+            let written: Vec<_> = crate::program::written_inputs(instance.key.as_ref(), &instance.inputs).collect();
             let mut inputs = Vec::new();
             let mut outputs = Vec::new();
             if component.inputs.iter().any(|input| input.reads_outputs) {

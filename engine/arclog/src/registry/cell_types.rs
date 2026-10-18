@@ -476,63 +476,56 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
     }
 
     /// The binding of each type parameter of the underlying construction by
-    /// the `INIT` form: the key clause binds the parameter of the `key`
-    /// column to a record of its `^` labels, then the first projection onto
-    /// each other parameter, in the order of the form, binds it
-    /// (`docs/arclog/arclog.md#instance`), and a later projection onto a
-    /// bound parameter is a fault where [`Binding::conflicts`] gives it. An `INIT`
-    /// with no key clause
-    /// whose inputs project nothing onto the `key` column binds it to
-    /// `Unit`.
+    /// the `INIT` form, at the place that [`binding_sites`] gives, which
+    /// binds a parameter to one label with no type where its projection
+    /// gives no binding. A later place onto the parameter is a fault where
+    /// [`Binding::conflicts`] gives it. An `INIT` with no key clause whose
+    /// inputs project nothing onto the `key` column binds it to `Unit`.
     fn bind(&self) -> Box<[(TypeParameter, Binding)]> {
         let (Some(init), Some(construction)) = (self.cell.init, self.construction) else { return Box::default() };
-        let key_parameter = construction.inputs.iter().find_map(|input| {
-            let column = input.port.columns.iter().find(|c| c.name == ColumnName::Written(KEY_COLUMN.into()))?;
-            match &column.ty {
-                ColumnType::Parameter(parameter) => Some(parameter.clone()),
-                _ => None,
-            }
-        });
-        let mut bindings: Vec<(TypeParameter, Binding)> = Vec::new();
-        if let Some(key) = &init.key {
-            let key = key.value();
-            let key_body = key.key.body.value();
-            match &key_parameter {
-                Some(parameter) => {
-                    let fields = key.key.columns.iter().map(|column| (field_name(&column.name), self.head_label_type(&[key_body], column.label, &column.name)));
-                    bindings.push((parameter.clone(), Binding::Record(fields.collect())));
-                }
-                None => self.fault(CheckId::Types, format!("the `INIT` form has a key clause, and `{}` has no `key` column", init.component.0)),
+        let key_parameter = key_parameter(construction.inputs);
+        if init.key.is_some() && key_parameter.is_none() {
+            self.fault(CheckId::Types, format!("the `INIT` form has a key clause, and `{}` has no `key` column", init.component.0));
+        }
+        let inputs = self.init_inputs();
+        for (input, _) in &inputs {
+            if !construction.inputs.iter().any(|i| i.port.name == input.name) {
+                self.fault(CheckId::Scope, format!("the `INIT` form gives the input `{}`, which `{}` has no input of", input.name.0, init.component.0));
             }
         }
-        for (input, bodies) in self.init_inputs() {
-            let Some(port) = construction.inputs.iter().find(|i| i.port.name == input.name) else {
-                self.fault(CheckId::Scope, format!("the `INIT` form gives the input `{}`, which `{}` has no input of", input.name.0, init.component.0));
-                continue;
+        let head_binding = |input: &crate::program::InstanceInput, site: &crate::program::Site| {
+            let (_, bodies) = inputs.iter().find(|(i, _)| std::ptr::eq(*i, input)).expect("each input of `binding_sites` is one of `init_inputs`");
+            self.projection(bodies, site)
+        };
+        let mut bindings: Vec<(TypeParameter, Binding)> = Vec::new();
+        for sites in binding_sites(init, construction.inputs) {
+            let binding = match sites.binding {
+                ParameterSite::Key(key) => {
+                    let key_body = key.key.body.value();
+                    let fields = key.key.columns.iter().map(|column| (field_name(&column.name), self.head_label_type(&[key_body], column.label, &column.name)));
+                    Binding::Record(fields.collect())
+                }
+                ParameterSite::Head { input, site } => head_binding(input, site).unwrap_or(Binding::One(None)),
             };
-            for site in input.head.iter() {
-                let Some(parameter) = parameter_column(port, &site.column) else { continue };
-                let Some(binding) = self.projection(&bodies, site) else { continue };
-                match bindings.iter().find(|(p, _)| p == parameter) {
-                    None => bindings.push((parameter.clone(), binding)),
-                    Some((_, bound)) if !bound.conflicts(&binding) => {}
-                    Some((_, bound)) => {
-                        let message = format!(
-                            "the head site on `{}` of the input `{}` of the `INIT` form gives the type parameter `{}` the type {binding}, and the `INIT` form binds it earlier to {bound}",
-                            column_display(&site.column),
-                            input.name.0,
-                            parameter.0
-                        );
-                        self.fault(CheckId::Types, message);
-                    }
+            for (input, site) in sites.later {
+                let Some(later) = head_binding(input, site) else { continue };
+                if binding.conflicts(&later) {
+                    let message = format!(
+                        "the head site on `{}` of the input `{}` of the `INIT` form gives the type parameter `{}` the type {later}, and the `INIT` form binds it earlier to {binding}",
+                        column_display(&site.column),
+                        input.name.0,
+                        sites.parameter.0
+                    );
+                    self.fault(CheckId::Types, message);
                 }
             }
+            bindings.push((sites.parameter.clone(), binding));
         }
         for parameter in construction.type_parameters {
             if bindings.iter().any(|(p, _)| p == parameter) {
                 continue;
             }
-            if init.key.is_none() && key_parameter.as_ref() == Some(parameter) {
+            if init.key.is_none() && key_parameter == Some(parameter) {
                 bindings.push((parameter.clone(), Binding::One(Some(SiteType::Fixed(ValueType::Unit)))));
                 continue;
             }
@@ -546,14 +539,12 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
     /// for an input inside the key clause.
     fn init_inputs(&self) -> Vec<(&'b crate::program::InstanceInput, Vec<&'b Body>)> {
         let Some(init) = self.cell.init else { return Vec::new() };
-        let mut inputs = Vec::new();
-        if let Some(key) = &init.key {
-            let key = key.value();
-            let key_body = key.key.body.value();
-            inputs.extend(key.inputs.iter().map(|input| (input.value(), vec![input.value().body.value(), key_body])));
-        }
-        inputs.extend(init.inputs.iter().map(|input| (input.value(), vec![input.value().body.value()])));
-        inputs
+        let key = init.key.as_ref().map(|key| key.value());
+        let bodies = |input: &'b crate::program::InstanceInput| {
+            let keyed = key.filter(|key| key.inputs.iter().any(|i| std::ptr::eq(i.value(), input)));
+            std::iter::once(input.body.value()).chain(keyed.map(|key| key.key.body.value())).collect()
+        };
+        crate::program::written_inputs(init.key.as_ref(), &init.inputs).map(|input| (input, bodies(input))).collect()
     }
 
     /// Gives a fault for each label of a body of the cell instance whose
@@ -664,8 +655,61 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
     }
 }
 
-/// The name of a construction's key column, which the key clause binds.
-const KEY_COLUMN: &str = "key";
+/// A place of an `INIT` form that projects onto a type parameter of its
+/// component: the key clause, which gives the parameter of the `key` column
+/// a record of its `^` labels, or a head site of an input.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ParameterSite<'a> {
+    Key(&'a crate::program::KeyClause),
+    Head { input: &'a crate::program::InstanceInput, site: &'a crate::program::Site },
+}
+
+/// The places of an `INIT` form that project onto one type parameter of
+/// its component: the place that binds it, and each later head site onto
+/// it, in the order of the form.
+#[derive(Clone, Debug)]
+pub(crate) struct ParameterSites<'a> {
+    pub(crate) parameter: &'a TypeParameter,
+    pub(crate) binding: ParameterSite<'a>,
+    pub(crate) later: Vec<(&'a crate::program::InstanceInput, &'a crate::program::Site)>,
+}
+
+/// The places of the `INIT` form `init` that project onto each type
+/// parameter of a component whose inputs are `inputs`, in the order of the
+/// first place onto each. The places, in the order of the form, are the key
+/// clause, where the component has a `key` column of a type parameter, then
+/// each head site on a column of a type parameter, of each input of the
+/// form that the component has, the keyed inputs first. The first place
+/// onto each parameter binds it (`docs/arclog/arclog.md#instance`).
+pub(crate) fn binding_sites<'a>(init: &'a crate::program::Instance, inputs: &'a [InputPort]) -> Vec<ParameterSites<'a>> {
+    let mut sites: Vec<ParameterSites> = Vec::new();
+    if let (Some(key), Some(parameter)) = (&init.key, key_parameter(inputs)) {
+        sites.push(ParameterSites { parameter, binding: ParameterSite::Key(key.value()), later: Vec::new() });
+    }
+    for input in crate::program::written_inputs(init.key.as_ref(), &init.inputs) {
+        let Some(port) = inputs.iter().find(|i| i.port.name == input.name) else { continue };
+        for site in input.head.iter() {
+            let Some(parameter) = parameter_column(port, &site.column) else { continue };
+            match sites.iter_mut().find(|s| s.parameter == parameter) {
+                Some(bound) => bound.later.push((input, site)),
+                None => sites.push(ParameterSites { parameter, binding: ParameterSite::Head { input, site }, later: Vec::new() }),
+            }
+        }
+    }
+    sites
+}
+
+/// The type parameter of the `key` column of a component whose inputs are
+/// `inputs`, the column that the key clause binds, where it has one.
+fn key_parameter(inputs: &[InputPort]) -> Option<&TypeParameter> {
+    inputs.iter().find_map(|input| {
+        let column = input.port.columns.iter().find(|c| c.name == ColumnName::Written(crate::read::spelling::KEY.into()))?;
+        match &column.ty {
+            ColumnType::Parameter(parameter) => Some(parameter),
+            _ => None,
+        }
+    })
+}
 
 /// The name of the `RULE` form `name`, for a diagnostic.
 fn rule_display(name: &RelationName) -> String {

@@ -47,7 +47,7 @@ pub trait NameWriter {
 
 /// The relation whose columns a `DEMO_RULE` form's fields are: its
 /// `&prediction` (`docs/arclog/arclog.md#demonstrated`).
-pub(super) fn prediction() -> RelationRef {
+pub(crate) fn prediction() -> RelationRef {
     RelationRef::Declared(RelationName(DeclaredName::Written(format!("{}prediction", crate::read::spelling::DECLARED_MARK).into())))
 }
 
