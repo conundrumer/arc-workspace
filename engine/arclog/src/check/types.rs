@@ -48,31 +48,45 @@ pub type ScopeTypes = Box<[(NodePath, FormTypes)]>;
 /// each label scope of the form that `order` gives, each by the scope's
 /// canonical path, with each label at its canonical position in its scope.
 ///
-/// A fault of a label whose sites give it a Pose type and another type is
-/// the pose rule's, which [`super::pose`] refuses.
+/// The result is the union of the refusals of the inference of each label
+/// scope of the form, as [`CanonicalOrder::label_scopes`] gives them, each scope inferred
+/// at its source path joined to the form's path, and, for a clause, of the
+/// refusals at the columns of its relation. A fault of a label whose sites
+/// give it a Pose type and another type is the pose rule's, which
+/// [`super::pose`] refuses.
 pub fn infer_form(input: &CheckInput<'_>, order: &CanonicalOrder) -> (CheckResult, ScopeTypes) {
     let cases = CaseInferences::new(input.scope.clauses, input.scope.registry);
     let inference = Inference::new(input.scope.program, &cases);
-    let result = match inference.infer(input.path) {
-        Some(form) => {
-            let mut found = refusals(&form, order);
-            if let Form::Clause(clause) = input.form {
-                found.extend(inference.column_refusals(&form, clause.value(), input.path, order));
-            }
-            result(found)
-        }
-        None => CheckResult::Pass,
-    };
-    let scopes = order.label_scopes().into_iter().map(|(source, _)| {
-        let form = inference.infer(&input.path.join(&source)).expect("a form or a `DEMO_RULE` stands at the path of each label scope of the form");
-        (order.canonical_path(&source), scope_types(&form, order, &source))
-    });
-    (result, scopes.collect())
+    let mut found = Vec::new();
+    let mut scopes = Vec::new();
+    for source in inferred_scopes(order) {
+        let form = inference.infer(&input.path.join(&source)).expect(SCOPE_FORM);
+        found.extend(refusals(&form, order, &source));
+        scopes.push((order.canonical_path(&source), scope_types(&form, order, &source)));
+    }
+    if let (Form::Clause(clause), Some(form)) = (input.form, inference.infer(input.path)) {
+        found.extend(inference.column_refusals(&form, clause.value(), input.path, order));
+    }
+    (result(found), scopes.into())
 }
 
-/// The refusals of the type check on `form`, the own scope of a form whose
-/// canonical order is `order`.
-fn refusals(form: &FormInference<'_>, order: &CanonicalOrder) -> Vec<Refusal> {
+/// What stands at the source path of each label scope of a form.
+const SCOPE_FORM: &str = "a form or a `DEMO_RULE` stands at the path of each label scope of the form";
+
+/// The source path of each label scope of a form whose canonical order is
+/// `order`, relative to the form, in the order of
+/// [`CanonicalOrder::label_scopes`]: the scopes that [`infer_form`] infers
+/// and whose clauses [`type_clause_signatures`] reads.
+fn inferred_scopes(order: &CanonicalOrder) -> Vec<NodePath> {
+    order.label_scopes().into_iter().map(|(source, _)| source).collect()
+}
+
+/// The refusals of the type check on `form`, the label scope whose form
+/// stands at `scope`, a source path relative to a form whose canonical
+/// order is `order`, each at the canonical path of `scope` joined to its
+/// place in the scope's form.
+fn refusals(form: &FormInference<'_>, order: &CanonicalOrder, scope: &NodePath) -> Vec<Refusal> {
+    let place = |at: &NodePath| order.canonical_path(&scope.join(at));
     let mut refusals = Vec::new();
     for (label, ty) in &form.labels {
         let Err(fault) = ty else { continue };
@@ -85,7 +99,7 @@ fn refusals(form: &FormInference<'_>, order: &CanonicalOrder) -> Vec<Refusal> {
             }
             fault => format!("the label here {}", label_fault_message(fault.clone())),
         };
-        refusals.push(Refusal { message: message.into(), at: order.canonical_path(form.walk.first_use(*label)) });
+        refusals.push(Refusal { message: message.into(), at: place(form.walk.first_use(*label)) });
     }
     for (at, constraint) in &form.walk.constraints {
         if !matches!(constraint.op, ConstraintOp::Lt | ConstraintOp::Le | ConstraintOp::Gt | ConstraintOp::Ge) {
@@ -98,7 +112,7 @@ fn refusals(form: &FormInference<'_>, order: &CanonicalOrder) -> Vec<Refusal> {
         for label in std::iter::once(constraint.first.label).chain(second) {
             if let Some(ty) = form.label(label).filter(|ty| !ty.admits_order()) {
                 let message = format!("the constraint orders a label of the type {ty:?}, and only `Number` has an order");
-                refusals.push(Refusal { message: message.into(), at: order.canonical_path(at) });
+                refusals.push(Refusal { message: message.into(), at: place(at) });
             }
         }
     }
@@ -139,15 +153,46 @@ pub fn program_types(
     types
 }
 
-/// The signatures of the clauses of the relation of `form`, a clause, that
-/// its check reads, as [`CheckId::Types`] gives, in the order
-/// [`SolverClauses`] gives.
-pub fn type_clause_signatures<'a>(form: &Form, clauses: &'a SolverClauses) -> impl Iterator<Item = &'a Signature> {
-    let entries = match form {
-        Form::Clause(clause) => clauses.of_relation(&FileScope::Program, &clause.value().derives),
-        _ => &[],
+/// The signatures of the clauses that the type check of `form`, a
+/// top-level form whose canonical order is `order`, reads, as
+/// [`CheckId::Types`] gives, each once: for a clause, those of the clauses
+/// of its relation, then, for each clause form that stands in a label scope
+/// of the form, as [`CanonicalOrder::label_scopes`] gives them, in their
+/// order, where it has a head label that only `(= *X 0)` gives a type,
+/// those of the clauses of its
+/// relation, each relation's in the order [`SolverClauses`] gives.
+pub fn type_clause_signatures<'a>(form: &Form, order: &CanonicalOrder, clauses: &'a SolverClauses) -> impl Iterator<Item = &'a Signature> {
+    let mut signatures: Vec<&'a Signature> = Vec::new();
+    let mut add = |clause: &crate::program::Clause| {
+        for entry in clauses.of_relation(&FileScope::Program, &clause.derives) {
+            if !signatures.contains(&&entry.signature) {
+                signatures.push(&entry.signature);
+            }
+        }
     };
-    entries.iter().map(|entry| &entry.signature)
+    if let Form::Clause(clause) = form {
+        add(clause.value());
+    }
+    for source in inferred_scopes(order) {
+        let scope_clauses: Vec<&crate::program::Clause> = match form_within(form, &source) {
+            Some(Form::Clause(clause)) => vec![clause.value()],
+            Some(_) => Vec::new(),
+            None => {
+                let rule = rule_within(form, &source).expect(SCOPE_FORM);
+                let shared = rule.forms.iter().filter(|found| shares_rule_scope(found));
+                shared.filter_map(|found| match found {
+                    Form::Clause(clause) => Some(clause.value()),
+                    _ => None,
+                }).collect()
+            }
+        };
+        for clause in scope_clauses {
+            if !zero_typed_heads(clause).is_empty() {
+                add(clause);
+            }
+        }
+    }
+    signatures.into_iter()
 }
 
 /// The head labels of `clause` that only `(= *X 0)` gives a type: each
@@ -288,8 +333,15 @@ pub(super) fn form_side(program: &ResolvedProgram, form: &NodePath) -> Option<Si
 /// a form of an `ALT`, or a form of a `DEMO_RULE`.
 fn form_at<'p>(program: &'p crate::program::Program, path: &NodePath) -> Option<&'p Form> {
     let (first, rest) = path.0.split_first()?;
-    let mut form = program.forms.get(first.0 as usize)?;
-    let mut steps = rest.iter();
+    form_within(program.forms.get(first.0 as usize)?, &NodePath(rest.into()))
+}
+
+/// The form at `path`, a path relative to `form`: `form` itself at the
+/// empty path, or a form of a claim, of an `ALT` or of a `DEMO_RULE`
+/// within it.
+fn form_within<'p>(form: &'p Form, path: &NodePath) -> Option<&'p Form> {
+    let mut form = form;
+    let mut steps = path.0.iter();
     while let Some(step) = steps.next() {
         form = match form {
             Form::Claim(claim) => claim.value().forms.get(step.0 as usize)?,
@@ -331,8 +383,14 @@ fn shares_rule_scope(form: &Form) -> bool {
 
 /// The `DEMO_RULE` form at `path` of `program`.
 fn demo_rule<'p>(program: &'p crate::program::Program, path: &NodePath) -> Option<&'p crate::program::DemoRule> {
-    let (rule, form) = path.0.split_last()?;
-    let Form::Demonstrated(demonstrated) = form_at(program, &NodePath(form.into()))? else { return None };
+    let (first, rest) = path.0.split_first()?;
+    rule_within(program.forms.get(first.0 as usize)?, &NodePath(rest.into()))
+}
+
+/// The `DEMO_RULE` form at `path`, a path relative to `form`.
+fn rule_within<'p>(form: &'p Form, path: &NodePath) -> Option<&'p crate::program::DemoRule> {
+    let (rule, prefix) = path.0.split_last()?;
+    let Form::Demonstrated(demonstrated) = form_within(form, &NodePath(prefix.into()))? else { return None };
     let demonstrated = demonstrated.value();
     let before = demonstrated.key.iter().count() + demonstrated.inputs.len();
     Some(demonstrated.rules.get((rule.0 as usize).checked_sub(before)?)?.value())

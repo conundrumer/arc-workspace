@@ -399,10 +399,11 @@ pub fn check_cycles(graph: &DependencyGraph, program: &ResolvedProgram) -> Check
 /// key of canonical parts does ([`crate::program`]).
 /// The signatures stand in a fixed order: those of the names the form
 /// reads, in the order of each name's first read in the form's canonical
-/// order, then, for a clause form, the signatures of the clauses of its
-/// relation that [`CheckId::Types`] reads, as
-/// [`types::type_clause_signatures`] gives, in the order [`SolverClauses`]
-/// gives. The key of [`CheckId::Cycles`], which
+/// order, then the signatures of the clauses that [`CheckId::Types`] reads:
+/// for a clause form, those of the clauses of its relation, and, in each
+/// label scope of the form, those of the clauses that type each head label
+/// of a clause that only `(= *X 0)` gives a type, as
+/// [`types::type_clause_signatures`] gives them. The key of [`CheckId::Cycles`], which
 /// reads no form, holds the form of the program's dependency graph with the
 /// path of each node's form, and no signature.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -490,7 +491,7 @@ pub fn check_program(
             alerts.push(diagnostic(DiagnosticKind::Bound, Severity::Alert, message, path.clone()));
         }
         let mut signatures = read_signatures(&program, form, &path, &order).into_vec();
-        signatures.extend(types::type_clause_signatures(form, clauses).cloned());
+        signatures.extend(types::type_clause_signatures(form, &order, clauses).cloned());
         let signatures: Box<[Signature]> = signatures.into();
         let scopes = order.label_scopes();
         let key = |check: CheckId, canonical_form: CanonicalForm, signatures: Box<[Signature]>| CheckCacheKey { check, canonical_form, signatures };
