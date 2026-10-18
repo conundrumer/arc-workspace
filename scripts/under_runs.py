@@ -2,7 +2,7 @@
 the previous call of it on that run, as `profile_runs.py --help under`
 gives them."""
 
-from collections.abc import Iterator
+from collections.abc import Collection, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,7 +19,8 @@ from open_agents import work_open
 from run_reads import BACKGROUND_TASK, agent_type, blocks, result_text, session_of
 from ticketing.times import utc_stamp
 from transcripts import agent_id, agent_transcripts, bare_id
-from transcript_entries import epoch, read_entries
+from entry_reads import read_entries
+from transcript_entries import epoch
 from transcript_snapshots import Entry
 
 from operations.batches import LEFT_OPEN, NO_RUN, RUNS_TAKEN, lines, read_under
@@ -48,19 +49,23 @@ def calls_under(command: str, ident: str) -> bool:
     return False
 
 
-def under_output(entries: list[Entry], call: str) -> str | None:
-    """The text of the result of the Bash call `call` among `entries`,
-    where that result says it completed in the foreground with no error, or
-    None otherwise."""
+def under_outputs(entries: Iterable[Entry], calls: Collection[str]) -> dict[str, str | None]:
+    """The text of the first result among `entries` of each Bash call of
+    `calls` that has one, read in one pass, where that result says it
+    completed in the foreground with no error, or None otherwise."""
+    out: dict[str, str | None] = {}
     for e in entries:
+        if e.get("type") != "user":
+            continue
         for b in blocks(e, "tool_result"):
-            if e.get("type") == "user" and b.get("tool_use_id") == call:
-                r = e.get("toolUseResult")
-                r = r if isinstance(r, dict) else {}
-                if b.get("is_error") or r.get(BACKGROUND_TASK) or r.get("interrupted"):
-                    return None
-                return result_text(b, r)
-    return None
+            call = str(b.get("tool_use_id"))
+            if call not in calls or call in out:
+                continue
+            r = e.get("toolUseResult")
+            r = r if isinstance(r, dict) else {}
+            failed = b.get("is_error") or r.get(BACKGROUND_TASK) or r.get("interrupted")
+            out[call] = None if failed else result_text(b, r)
+    return out
 
 
 @dataclass(frozen=True)
@@ -89,9 +94,9 @@ def transcript_calls(start: float | None, ident: str) -> Iterator[tuple[float, s
                 and calls_under(str((b.get("input") or {}).get("command", "")), ident)}
         if not made:
             continue
-        results = read_entries(p, naming=set(made))
+        outputs = under_outputs(read_entries(p, naming=set(made)), made)
         for call, t in made.items():
-            text = under_output(results, call)
+            text = outputs.get(call)
             if text is not None:
                 yield t, agent_id(p), text
 

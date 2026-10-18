@@ -16,7 +16,8 @@ from run_reads import (blocks, in_background, meta_parent, notified, parent_labe
                        results_by_call, run_sessions, session_agents)
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import agent_id, chain, find
-from transcript_entries import epoch, fold, line_entries
+from entry_reads import line_entries
+from transcript_entries import epoch, fold
 from transcript_snapshots import Entry
 from agent_resumes import note_latest, resumes, session_resumes
 

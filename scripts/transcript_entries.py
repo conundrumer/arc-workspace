@@ -1,11 +1,11 @@
-"""Read the entries of a Claude Code transcript, each read held for one
-state of the process (`state_cache`): the lines that hold a word, the
-lines that are its run's own, its `.meta.json` file, and the folds over
-the entries of transcripts that go on from where the last fold stopped
-(`fold`). The lines are read from the transcript's snapshot
-(`transcript_snapshots`). No held read holds a parsed entry: each read
-parses the lines it reads anew, so its entries are held by its caller
-alone.
+"""Read a Claude Code transcript, each read held for one state of the
+process (`state_cache`): the lines that hold a word, the lines that are
+its run's own, its `.meta.json` file, and the folds over the entries of
+transcripts that go on from where the last fold stopped (`fold`). The
+lines are read from the transcript's snapshot (`transcript_snapshots`),
+and `entry_reads` gives their entries. No held read holds a parsed
+entry: each read parses the lines it reads anew, so its entries are held
+by its caller alone.
 
 The lines that hold a word (`entries_naming`) and the lines that are a
 run's own (`own_range`) are kept on disk across processes as well
@@ -13,7 +13,7 @@ run's own (`own_range`) are kept on disk across processes as well
 transcript again only once it changed."""
 
 import json
-from collections.abc import Callable, Hashable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -21,48 +21,13 @@ from typing import Any
 
 from file_reads import stat_of
 from state_reads import DERIVED, Kept, state_cache
-from transcript_snapshots import Entry, Refused, Snapshot, last_snapshot, parse, snapshot
+from transcript_snapshots import Entry, Refused, Snapshot, parse, snapshot
 
 from controlled_markdown import mctx
 
 
 def epoch(iso: str) -> float:
     return datetime.fromisoformat(iso).timestamp()
-
-
-def read_entries(path: Path, naming: Iterable[str] | None = None) -> list[Entry]:
-    """The entries of the transcript at `path` as it stands at the state this
-    process is in, or with `naming` only those whose line holds one of its
-    words, which spares parsing the rest."""
-    return [e for _, e in numbered_entries(path, naming)]
-
-
-def numbered_entries(path: Path, naming: Iterable[str] | None = None
-                     ) -> Iterator[tuple[int, Entry]]:
-    """Each entry `read_entries` gives, with the index of its line, each
-    line parsed only when it is reached."""
-    lines = entries_naming(path, None if naming is None else frozenset(naming))
-    snap = last_snapshot(path)
-    for i, line in zip(lines, snap.lines(lines)):
-        for e in parse(line):
-            yield i, e
-
-
-def line_entries(path: Path, i: int) -> list[Entry]:
-    """The entries of line `i` of the snapshot of the transcript at `path`
-    that `numbered_entries` or `fold` read at this state."""
-    return last_snapshot(path).entry(i)
-
-
-@state_cache(DERIVED, kept=Kept.DISK)
-def entries_naming(path: Path, naming: frozenset[str] | None) -> Sequence[int]:
-    """The lines whose entries `read_entries` gives, held so that a read
-    derived from it sees a change of the transcript only where those lines
-    change: a transcript is added to at its end, so a line keeps its bytes
-    while its index stands here. With no `naming` they are its own lines
-    as a `range`, which its kept record holds in a few bytes."""
-    own = own_range(path)
-    return own if naming is None else selected_lines(snapshot(path), own, naming)
 
 
 def named_lines(snap: Snapshot, own: range, naming: frozenset[str]) -> list[int]:
@@ -163,22 +128,6 @@ def selected_lines(snap: Snapshot, lines: range, naming: frozenset[str] | None) 
     if not lines or naming is None:
         return list(lines)
     return named_lines(snap, lines, naming)
-
-
-def entries_forward(path: Path) -> Iterator[Entry]:
-    """The entries of the transcript at `path` as it stands at the state this
-    process is in, in their order, each line parsed only when it is reached."""
-    snap = snapshot(path)
-    for i in own_range(path):
-        yield from snap.entry(i)
-
-
-def entries_back(path: Path) -> Iterator[Entry]:
-    """The entries of the transcript at `path` as it stands at the state this
-    process is in, last first, each line parsed only when it is reached."""
-    snap = snapshot(path)
-    for i in reversed(own_range(path)):
-        yield from snap.entry(i)
 
 
 def meta_path(path: Path) -> Path:

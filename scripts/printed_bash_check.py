@@ -52,7 +52,7 @@ def after_call(path: Any, call: str) -> list[dict[str, Any]]:
     """The entries of the transcript at `path` after the result of `call`,
     in their order."""
     from run_reads import tool_results
-    from transcript_entries import entries_back
+    from entry_reads import entries_back
 
     out: list[dict[str, Any]] = []
     for e in entries_back(path):

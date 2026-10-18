@@ -4,6 +4,7 @@
 - A request is the entries of one message id, and an entry with no message id makes the cost unknown. Its usage is, for each count, the most any of its entries gives, where an entry gives its top-level counts, or the sum over its `iterations` where that sum is larger.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass, fields
 from typing import Any
 
@@ -122,7 +123,7 @@ def model_price(model: Any, undecided: list[str]) -> Price | None:
     return PRICES[model]
 
 
-def grouped(entries: list[dict[str, Any]]) -> dict[str | None, list[dict[str, Any]]]:
+def grouped(entries: Iterable[dict[str, Any]]) -> dict[str | None, list[dict[str, Any]]]:
     """The assistant entries that give a usage, by message id, None for an
     entry with no message id."""
     groups: dict[str | None, list[dict[str, Any]]] = {}
@@ -138,7 +139,7 @@ def requests[K](groups: dict[K, list[dict[str, Any]]]) -> list[dict[str, Any]]:
     return [g[0] for g in groups.values()]
 
 
-def priced_requests(entries: list[dict[str, Any]],
+def priced_requests(entries: Iterable[dict[str, Any]],
                     undecided: list[str]) -> dict[str, list[dict[str, Any]]] | None:
     """The groups `grouped` gives, or None where an entry has no message id,
     with an `undecided` line for it."""
@@ -149,7 +150,7 @@ def priced_requests(entries: list[dict[str, Any]],
     return {k: v for k, v in groups.items() if k is not None}
 
 
-def run_cost(entries: list[dict[str, Any]], undecided: list[str],
+def run_cost(entries: Iterable[dict[str, Any]], undecided: list[str],
              at: str | None = None) -> float | None:
     """The token cost in dollars of the requests `priced_requests` gives,
     each as `request_cost` prices it, or None where a request that used
@@ -193,7 +194,7 @@ def request_cost(group: list[dict[str, Any]], undecided: list[str],
     return used.cost(table.at(size)) if used is not None and table is not None else 0.0
 
 
-def span_cost(entries: list[dict[str, Any]], start: float, end: float,
+def span_cost(entries: Iterable[dict[str, Any]], start: float, end: float,
               undecided: list[str]) -> float | None:
     """The token cost in dollars of the span from `start` to `end`, in epoch
     seconds, of a run: its requests in the span, priced as `run_cost`

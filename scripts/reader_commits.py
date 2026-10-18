@@ -487,7 +487,7 @@ def held_texts(path: Path) -> tuple[str, str]:
     given to its run, as the module docstring gives them. A transcript that
     holds either in no such form is a fault."""
     from handbook.reader_diffs import PROJECT_INSTRUCTIONS
-    from transcript_entries import entries_forward
+    from entry_reads import entries_forward
 
     first: dict[str, dict[str, Any]] = {}
     for e in entries_forward(path):

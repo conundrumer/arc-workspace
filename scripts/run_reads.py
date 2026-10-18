@@ -5,7 +5,7 @@ belong to."""
 
 import re
 import sys
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -18,7 +18,8 @@ from file_reads import is_file
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import (agent_id, chain, first_parent, is_subagent, main_transcript,
                          session_directory, session_subagents)
-from transcript_entries import blocks, epoch, meta_path, read_entries, transcript_meta
+from entry_reads import read_entries
+from transcript_entries import blocks, epoch, meta_path, transcript_meta
 from transcript_snapshots import Entry, Refused
 
 UNKNOWN_TYPE = mctx("the agent type of `{path}` is unknown: its .meta.json is "
@@ -161,11 +162,11 @@ def parent_id(path: Path) -> str:
     return meta_parent(subagent_meta(path))
 
 
-def run_entries(path: Path, naming: set[str] | None = None) -> list[Entry]:
+def run_entries(path: Path, naming: set[str] | None = None) -> Iterator[Entry]:
     """The entries of the run of the agent whose transcript is at `path`,
     across its transcripts, or with `naming` only those `read_entries`
-    gives with it."""
-    return [e for p in chain(path) for e in read_entries(p, naming=naming)]
+    gives with it, each line parsed only when it is reached."""
+    return (e for p in chain(path) for e in read_entries(p, naming=naming))
 
 
 def text_of(content: Any) -> str:
@@ -209,7 +210,7 @@ def output_file(block: dict[str, Any]) -> Path | None:
     return Path(m.group(1)) if m else None
 
 
-def results_by_call(entries: list[Entry]) -> dict[str, dict[str, Any]]:
+def results_by_call(entries: Iterable[Entry]) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for e in entries:
         r = e.get("toolUseResult")
@@ -374,9 +375,14 @@ class Called(Protocol):
     call: str
 
 
-def bash_spans[S: Called](spans: Iterable[S], entries: Iterable[Entry]) -> list[S]:
-    """The spans of `spans` that are Bash calls of `entries`."""
-    bash = tool_calls(entries, ("Bash",))
+def bash_ids(entries: Iterable[Entry]) -> set[str]:
+    """The ids of the Bash calls of `entries`."""
+    return tool_calls(entries, ("Bash",))
+
+
+def bash_spans[S: Called](spans: Iterable[S], bash: Collection[str]) -> list[S]:
+    """The spans of `spans` whose call is one of `bash`, ids of Bash calls
+    (`bash_ids`)."""
     return [s for s in spans if s.call in bash]
 
 
@@ -385,14 +391,15 @@ WAIT_LEAD = ": 'unattended-wait:"
 command."""
 
 
-def repeated_runs(calls: list[tuple[str, str, float]], entries: list[Entry],
+def repeated_runs(calls: list[tuple[str, str, float]], texts: Mapping[str, str],
                   least: int) -> list[float]:
     """The time of the last call of each run of `least` or more consecutive
     calls of `calls`, each a Bash call's id, command and start, with the same
-    command and the same result text in `entries`, other than a command led
-    by `WAIT_LEAD` and a call with no result."""
+    command and the same result text in `texts`, the text of each result by
+    its call (`result_texts`), other than a command led by `WAIT_LEAD` and a
+    call with no result."""
     keys = [None if command.lstrip().startswith(WAIT_LEAD) else given
-            for (_, command, _), given in zip(calls, call_keys(calls, entries))]
+            for (_, command, _), given in zip(calls, call_keys(calls, texts))]
     return [calls[last][2] for first, last in key_runs(keys) if last - first + 1 >= least]
 
 
@@ -410,20 +417,25 @@ def key_runs[K](keys: Sequence[K | None]) -> list[tuple[int, int]]:
     return out
 
 
+def result_texts(entry: Entry, calls: Collection[str]) -> dict[str, str]:
+    """The text of each result of `entry` to a call of `calls`, by its
+    call."""
+    return {cid: text for cid, _, text in tool_results(entry) if cid in calls}
+
+
 def call_keys(calls: list[tuple[str, str, float]],
-              entries: list[Entry]) -> list[tuple[str, str] | None]:
+              texts: Mapping[str, str]) -> list[tuple[str, str] | None]:
     """The command and result text of each call of `calls`, as
     `repeated_runs` takes them, or None for a call with no result."""
-    results = {cid: text for e in entries for cid, _, text in tool_results(e)}
-    return [(command, results[cid]) if cid in results else None for cid, command, _ in calls]
+    return [(command, texts[cid]) if cid in texts else None for cid, command, _ in calls]
 
 
-def same_since(calls: list[tuple[str, str, float]], entries: list[Entry]) -> float | None:
+def same_since(calls: list[tuple[str, str, float]], texts: Mapping[str, str]) -> float | None:
     """The start of the first call of the last run of calls of `calls`, as
     `repeated_runs` takes them, with the same command and the same result
     text, a command led by `WAIT_LEAD` included, where that run holds two
     calls or more, and None otherwise."""
-    runs = key_runs(call_keys(calls, entries))
+    runs = key_runs(call_keys(calls, texts))
     if not runs or runs[-1][1] != len(calls) - 1 or runs[-1][0] == runs[-1][1]:
         return None
     return calls[runs[-1][0]][2]

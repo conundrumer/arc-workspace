@@ -137,7 +137,7 @@ def check(hook: dict[str, Any]) -> str | None:
     module docstring gives it, or None."""
     from printed_launch_hook import first_at
     from run_reads import caller_id, caller_type
-    from transcript_entries import entries_back
+    from entry_reads import entries_back
 
     from handbook.checklist import checklist_agents
 

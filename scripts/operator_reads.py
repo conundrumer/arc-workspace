@@ -25,7 +25,8 @@ from file_reads import file_text, is_dir, is_file, listed, mtime
 from state_reads import DERIVED, Kept, state_cache
 from ticket_numbers import TICKET_NUMBER
 from transcripts import find, session_directory
-from transcript_entries import epoch, read_entries
+from entry_reads import read_entries
+from transcript_entries import epoch
 
 from operations.reports import CONCEPT_FAULTS, TICKETS_FILED, section, section_items
 from operations.roles import Role

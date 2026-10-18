@@ -22,7 +22,8 @@ from run_reads import (MAIN, LaunchStatus, Notification, Status, agent_messages,
                        read_meta, run_sessions, session_agents, text_of)
 from file_reads import is_file
 from transcripts import agent_id, chain, find, main_transcript
-from transcript_entries import epoch, read_entries
+from entry_reads import read_entries
+from transcript_entries import epoch
 from transcript_snapshots import Entry
 
 # The opening of the note of a notification that the agent stopped with work

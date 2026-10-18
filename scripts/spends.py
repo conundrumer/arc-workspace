@@ -20,7 +20,7 @@ from ticket_log import held_log, line_time, log_lines, read_ticket, resolution_o
 from ticket_reads import editors_field
 from token_prices import run_cost
 from transcripts import chain, find, held_find
-from transcript_entries import entries_back
+from entry_reads import entries_back
 from transcript_snapshots import Refused
 
 from controlled_markdown import mctx

@@ -102,7 +102,7 @@ def operator_next(hook: dict[str, Any], name: str) -> NextCaller | None:
     input."""
     from operations.command_words import next_command
     from run_reads import caller_id, caller_type
-    from transcript_entries import entries_back
+    from entry_reads import entries_back
 
     path, kind = caller_type(name, hook)
     if kind is None:

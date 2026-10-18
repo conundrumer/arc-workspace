@@ -26,7 +26,8 @@ from senders import Origin, Sender, origin, sender
 from file_reads import file_text, is_file
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import chain
-from transcript_entries import epoch, fold, line_entries
+from entry_reads import line_entries
+from transcript_entries import epoch, fold
 from transcript_snapshots import Entry
 
 from operations.merge_outcomes import conflict_paths

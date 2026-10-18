@@ -13,7 +13,8 @@ from run_reads import (blocks, parent_label, results_by_call, run_entries,
                        run_sessions)
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import chain
-from transcript_entries import epoch, fold, read_entries
+from entry_reads import read_entries
+from transcript_entries import epoch, fold
 from transcript_snapshots import Entry
 from agent_deliveries import Delivery, delivery
 from session_changes import changed_with
@@ -58,22 +59,24 @@ class Send:
     note: str | None
 
 
-def sends(entries: list[Entry], run: str) -> list[Send]:
+def sends(entries: Iterable[Entry], run: str) -> list[Send]:
     """The SendMessage calls among `entries` that have a time, in their
-    order."""
-    results = results_by_call(entries)
-    out: list[Send] = []
+    order, read in one pass."""
+    results: dict[str, dict[str, Any]] = {}
+    calls: list[tuple[float, str]] = []
     for e in entries:
+        results.update(results_by_call((e,)))
         if e.get("type") != "assistant" or not e.get("timestamp"):
             continue
-        for b in blocks(e, "tool_use"):
-            if b.get("name") != "SendMessage":
-                continue
-            result = results.get(b.get("id", "")) or {}
-            notes: list[str] = []
-            aid = resumed(result, run, b.get("id", ""), notes)
-            pin = pin_id(result) if notes else None
-            out.append(Send(epoch(e["timestamp"]), aid, pin, notes[0] if notes else None))
+        calls.extend((epoch(e["timestamp"]), b.get("id", "")) for b in blocks(e, "tool_use")
+                     if b.get("name") == "SendMessage")
+    out: list[Send] = []
+    for t, call in calls:
+        result = results.get(call) or {}
+        notes: list[str] = []
+        aid = resumed(result, run, call, notes)
+        pin = pin_id(result) if notes else None
+        out.append(Send(t, aid, pin, notes[0] if notes else None))
     return out
 
 

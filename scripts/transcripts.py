@@ -17,7 +17,7 @@ from state_reads import DERIVED, Kept, new_state, state_cache  # noqa: F401
 from controlled_markdown import mctx
 from subagent_paths import SUBAGENTS, is_subagent  # noqa: F401
 from claude_config import config_dir
-from transcript_entries import entries_back
+from entry_reads import entries_back
 from transcript_snapshots import Refused, parse, snapshot
 
 CONSOLE_HOME_ENV = "CONSOLE_CLAUDE_HOME"

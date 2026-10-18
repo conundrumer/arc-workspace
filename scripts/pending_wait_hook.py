@@ -78,7 +78,7 @@ def check(hook: dict[str, Any]) -> str | None:
     from ticket_log import AGENT_ID
     from run_reads import blocks, caller_id, caller_transcript
     from transcripts import is_subagent
-    from transcript_entries import read_entries
+    from entry_reads import read_entries
 
     tool, inp = hook["tool_name"], hook["tool_input"]
     if (bound := over_bound(tool, inp, caller_id(hook) is not None)) is not None:

@@ -84,7 +84,7 @@ def check(hook: Hook) -> str | None:
     from filed_texts import brief_report_file, report_file
     from printed_launch_hook import first_at
     from run_reads import caller_id, caller_transcript
-    from transcript_entries import entries_back, entries_forward
+    from entry_reads import entries_back, entries_forward
 
     tool = hook.get("tool_name")
     if tool is not None and tool != "SubagentHandback":

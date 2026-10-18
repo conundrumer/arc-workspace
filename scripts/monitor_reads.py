@@ -10,9 +10,9 @@ from agent_turns import first_time, last_time
 from context_bound_hook import OPERATORS
 from open_agents import Listed, quiet_since
 from operator_reads import resumed_at
-from run_reads import bash_spans, repeated_runs, run_entries, same_since
+from run_reads import (bash_ids, bash_spans, repeated_runs, result_texts, run_entries,
+                       same_since)
 from transcript_entries import epoch
-from transcript_snapshots import Entry
 
 from controlled_markdown import mctx
 from operations import monitor
@@ -78,17 +78,22 @@ def stalled_at(listed: Listed, listing: list[Listed], undecided: list[str]) -> f
     return end if any(t > end for t in answered) else None
 
 
-def bash_calls(listed: Listed) -> tuple[list[tuple[str, str, float]], list[Entry]]:
+def bash_calls(listed: Listed) -> tuple[list[tuple[str, str, float]], dict[str, str]]:
     """The Bash calls of `listed`, as `run_reads.repeated_runs` takes them,
-    and the entries of its transcript."""
-    entries = run_entries(listed.path)
-    return [(s.call, s.command, s.start) for s in bash_spans(listed.run.spans, entries)], entries
+    and the text of each of their results by its call, read in one pass
+    over its entries."""
+    bash: set[str] = set()
+    texts: dict[str, str] = {}
+    for e in run_entries(listed.path):
+        bash |= bash_ids((e,))
+        texts.update(result_texts(e, bash))
+    return [(s.call, s.command, s.start) for s in bash_spans(listed.run.spans, bash)], texts
 
 
 def repeated(listed: Listed) -> tuple[float, ...]:
     """The `repeated` readings of `listed` (`run_reads.repeated_runs`)."""
-    calls, entries = bash_calls(listed)
-    return tuple(repeated_runs(calls, entries, monitor.REPEATS))
+    calls, texts = bash_calls(listed)
+    return tuple(repeated_runs(calls, texts, monitor.REPEATS))
 
 
 def stuck_at(aid: str, listed: Listed, listing: list[Listed], now: float) -> float | None:
@@ -100,8 +105,8 @@ def stuck_at(aid: str, listed: Listed, listing: list[Listed], now: float) -> flo
     quiet = quiet_since(aid, listed.path, listing, now)
     if quiet is not None:
         return quiet
-    calls, entries = bash_calls(listed)
-    since = same_since(calls, entries)
+    calls, texts = bash_calls(listed)
+    since = same_since(calls, texts)
     return since if since is not None and stuck_reached(since, now) else None
 
 

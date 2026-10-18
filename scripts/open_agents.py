@@ -17,10 +17,10 @@ from run_backgrounds import may_still_run
 from run_profiler import profile
 from senders import is_interrupt_note
 from run_records import Run, Span
-from run_reads import is_prompt, parent_label, run_entries
+from run_reads import is_prompt, parent_label
 from file_reads import mtime
 from state_reads import DERIVED, Kept, state_cache
-from transcript_entries import entries_back
+from entry_reads import entries_back
 from transcript_snapshots import Entry
 from transcripts import agent_id, chain, is_subagent
 
@@ -294,7 +294,7 @@ def turn_ended(n: Node, undecided: list[str]) -> Listed:
     """The agent of `n` as listed where its turn has ended."""
     run = profiled(n.path, undecided)
     return Listed(n.parent, n.path, n.launch, run, True,
-                  turn_end(run_entries(n.path)), parent_reports(run, undecided, n.launch))
+                  turn_end(n.path), parent_reports(run, undecided, n.launch))
 
 
 def is_busy(n: Node, undecided: list[str]) -> bool:

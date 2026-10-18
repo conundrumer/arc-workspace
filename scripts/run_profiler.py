@@ -14,7 +14,7 @@ from command_labels import AGENT_TOOLS, POLL, call_command, command_label
 from controlled_markdown import mctx
 from filed_texts import unfiled
 from run_backgrounds import background_ends, backgrounds
-from run_reads import (bash_spans, blocks, context_size, is_prompt, message_text, parent_id,
+from run_reads import (bash_ids, bash_spans, blocks, context_size, is_prompt, message_text, parent_id,
                        refused_at, results_by_call, run_entries, run_sessions, run_type,
                        session_of, tool_calls, type_in)
 from run_records import Call, Group, Key, Message, Part, Run, Span
@@ -73,7 +73,7 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
     agent_type, description = run_type(path)
     label = agent_id(path) if is_subagent(path) else path.stem
     session = session_of(path)
-    entries = run_entries(path)
+    entries = list(run_entries(path))
     results = results_by_call(entries)
     found = backgrounds(entries, tool_calls(entries, AGENT_TOOLS), undecided)
     bg_ends = background_ends(found, entries)
@@ -210,4 +210,4 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
                list(spans.values()), in_flight, backgrounded, ended, context, request_contexts,
                cost, said, waits, waiting_at_end,
                messages, others, unknown, cwd, path,
-               [s.command for s in bash_spans(spans.values(), entries)], refused_at(entries))
+               [s.command for s in bash_spans(spans.values(), bash_ids(entries))], refused_at(entries))

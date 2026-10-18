@@ -15,8 +15,10 @@ from tests.conftest import script
 
 scripts_importable()
 script("transcript_entries")
+script("entry_reads")
 transcript_entries = sys.modules["transcript_entries"]
 transcript_snapshots = sys.modules["transcript_snapshots"]
+entry_reads = sys.modules["entry_reads"]
 state_reads = sys.modules["state_reads"]
 
 AGENT = "a0123456789abcdef"
@@ -178,15 +180,15 @@ def test_reads_after_rewrite(tmp_path: Path, count: int, texts: list[str]) -> No
         out: list[object] = []
         for naming in (None, {"ZZTOP"}):
             state_reads.new_state()
-            out.append(transcript_entries.read_entries(path, naming))
+            out.append(list(entry_reads.read_entries(path, naming)))
             state_reads.new_state()
-            out.append([e for _, e in transcript_entries.numbered_entries(path, naming)])
+            out.append([e for _, e in entry_reads.numbered_entries(path, naming)])
             state_reads.new_state()
             out.append(transcript_entries.fold(
                 add_entry, list[dict[str, Any]], (path, naming is None), [path],
                 None if naming is None else frozenset(naming)))
         state_reads.new_state()
-        out.append(len(transcript_entries.entries_naming(path, frozenset({"ZZTOP"}))))
+        out.append(len(entry_reads.entries_naming(path, frozenset({"ZZTOP"}))))
         return out
 
     def expected() -> list[object]:
@@ -216,7 +218,7 @@ def drop_held() -> None:
 
 
 def contents(path: Path, naming: set[str]) -> list[Any]:
-    return [e["message"]["content"] for e in transcript_entries.read_entries(path, naming)]
+    return [e["message"]["content"] for e in entry_reads.read_entries(path, naming)]
 
 
 def test_kept_lines_in_a_later_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

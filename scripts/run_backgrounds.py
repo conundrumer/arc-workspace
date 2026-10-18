@@ -135,7 +135,7 @@ def may_still_run(path: Path, reached: frozenset[str], undecided: list[str]) -> 
     `reached`, may still run. Only the lines that name such a call or its
     ids are read, which spares `profile` the whole run where none still
     runs."""
-    results = run_entries(path, {BACKGROUND_TASK, LaunchStatus.ASYNC_LAUNCHED.value})
+    results = list(run_entries(path, {BACKGROUND_TASK, LaunchStatus.ASYNC_LAUNCHED.value}))
     calls = {str(b["tool_use_id"]) for e in results for b in blocks(e, "tool_result")
              if b.get("tool_use_id")} - reached
     if not calls:

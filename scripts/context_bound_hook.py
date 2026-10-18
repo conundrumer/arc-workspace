@@ -58,7 +58,7 @@ def check(hook: dict[str, Any]) -> str | None:
     past the bound, and None otherwise."""
     from operations.command_words import next_command
     from run_reads import caller_id, caller_type, context_size
-    from transcript_entries import entries_back
+    from entry_reads import entries_back
 
     tool, inp = hook["tool_name"], hook["tool_input"]
     if tool != "Agent":

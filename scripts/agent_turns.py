@@ -1,7 +1,7 @@
 """The turns of an agent's run, read from its transcripts, as
 `profile_runs.py --help runs` gives them."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -9,7 +9,8 @@ from run_reads import blocks, is_prompt
 from senders import is_interrupt_note
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import agent_id, chain
-from transcript_entries import entries_back, entries_forward, epoch, read_entries
+from entry_reads import entries_back, entries_forward, read_entries
+from transcript_entries import epoch
 from transcript_snapshots import Entry
 
 # The types of a transcript's message entries, the entries of a turn: the
@@ -17,7 +18,7 @@ from transcript_snapshots import Entry
 MESSAGE_TYPES = ("user", "assistant")
 
 
-def turns(entries: list[Entry]) -> tuple[set[int], set[int]]:
+def turns(entries: Sequence[Entry]) -> tuple[set[int], set[int]]:
     """The indices of the entries that start a turn and of those that end
     one. A prompt starts a turn when the next message entry is the model's;
     a local command, such as /compact, gives the model none. An assistant
@@ -28,23 +29,39 @@ def turns(entries: list[Entry]) -> tuple[set[int], set[int]]:
     model's."""
     starts: set[int] = set()
     ends: set[int] = set()
-    nxt: Entry | None = None
-    for i in range(len(entries) - 1, -1, -1):
-        e = entries[i]
-        if is_prompt(e) and nxt is not None and nxt.get("type") == "assistant":
+    for i, (_, start, end) in zip(range(len(entries) - 1, -1, -1), turn_marks(reversed(entries))):
+        if start:
             starts.add(i)
+        if end:
+            ends.add(i)
+    return starts, ends
+
+
+def turn_marks(back: Iterable[Entry]) -> Iterator[tuple[Entry, bool, bool]]:
+    """Each entry of `back`, a run's entries last first, with whether it
+    starts a turn and whether it ends one, as `turns` gives them: each
+    mark rests only on the entries after it, so a reader that stops early
+    parses none of the entries before."""
+    nxt: Entry | None = None
+    for e in back:
+        start = is_prompt(e) and nxt is not None and nxt.get("type") == "assistant"
+        end = False
         if e.get("type") == "assistant" and not blocks(e, "tool_use"):
             stop = (e.get("message") or {}).get("stop_reason")
-            if stop in ("end_turn", "stop_sequence") or (
-                    nxt is not None and is_prompt(nxt)):
-                ends.add(i)
+            end = stop in ("end_turn", "stop_sequence") or (nxt is not None and is_prompt(nxt))
         if e.get("toolEndsTurn"):
-            ends.add(i)
+            end = True
         if is_interrupt_note(e) and (nxt is None or nxt.get("type") != "assistant"):
-            ends.add(i)
+            end = True
+        yield e, start, end
         if is_turn_entry(e) or is_prompt(e):
             nxt = e
-    return starts, ends
+
+
+def run_back(path: Path) -> Iterator[Entry]:
+    """The entries of the run at `path`, across its transcripts, last
+    first, each line parsed only when it is reached."""
+    return (e for p in reversed(chain(path)) for e in entries_back(p))
 
 
 def idle_after(idle: bool, i: int, entry: Entry, starts: set[int],
@@ -56,7 +73,7 @@ def idle_after(idle: bool, i: int, entry: Entry, starts: set[int],
     return idle and entry.get("type") != "assistant" and i not in starts
 
 
-def turn_ended(entries: list[Entry]) -> bool:
+def turn_ended(entries: Sequence[Entry]) -> bool:
     """Whether the run whose entries are `entries`, or those from one of its
     timestamped assistant entries on, has ended its turn, as
     `profile_runs.py --help runs` gives when a turn ended. An entry with no timestamp moves
@@ -69,13 +86,12 @@ def turn_ended(entries: list[Entry]) -> bool:
     return idle
 
 
-def turn_end(entries: list[Entry]) -> float | None:
-    """The time of the last timestamped entry of `entries` that ends a turn
-    (`turns`), as `profile_runs.py --help runs` gives when a turn ended."""
-    _, ends = turns(entries)
-    times = [epoch(entries[i]["timestamp"]) for i in sorted(ends)
-             if entries[i].get("timestamp")]
-    return times[-1] if times else None
+def turn_end(path: Path) -> float | None:
+    """The time of the last timestamped entry of the run at `path` that
+    ends a turn (`turns`), as `profile_runs.py --help runs` gives when a
+    turn ended."""
+    return next((epoch(e["timestamp"]) for e, _, end in turn_marks(run_back(path))
+                 if end and e.get("timestamp")), None)
 
 
 @state_cache(DERIVED, kept=Kept.DISK)
@@ -83,11 +99,10 @@ def has_ended(path: Path) -> bool:
     """`turn_ended` over the run at `path`, read from its last entry back to
     its last timestamped assistant entry, which settles it."""
     tail: list[Entry] = []
-    for p in reversed(chain(path)):
-        for e in entries_back(p):
-            tail.append(e)
-            if e.get("type") == "assistant" and e.get("timestamp"):
-                return turn_ended(tail[::-1])
+    for e in run_back(path):
+        tail.append(e)
+        if e.get("type") == "assistant" and e.get("timestamp"):
+            break
     return turn_ended(tail[::-1])
 
 
@@ -111,11 +126,8 @@ def turn_after(path: Path, t: float, undecided: list[str]) -> bool:
 
 
 def last_time(path: Path, holds: Callable[[Entry], bool] | None = None) -> float | None:
-    for p in reversed(chain(path)):
-        for e in entries_back(p):
-            if e.get("timestamp") and (holds is None or holds(e)):
-                return epoch(e["timestamp"])
-    return None
+    return next((epoch(e["timestamp"]) for e in run_back(path)
+                 if e.get("timestamp") and (holds is None or holds(e))), None)
 
 
 @state_cache(DERIVED, kept=Kept.DISK)

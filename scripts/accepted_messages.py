@@ -8,7 +8,8 @@ from agent_launches import callees
 from run_reads import blocks, read_meta, run_sessions
 from session_changes import changed_since
 from transcripts import agent_id
-from transcript_entries import epoch, read_entries
+from entry_reads import read_entries
+from transcript_entries import epoch
 
 
 def accepted_after(path: Path, since: float, undecided: list[str]) -> bool:

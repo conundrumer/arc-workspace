@@ -22,7 +22,7 @@ from operations.state import Review
 scripts_importable()
 
 from checklist_walk_hook import step_calls  # noqa: E402
-from transcript_entries import read_entries  # noqa: E402
+from entry_reads import read_entries  # noqa: E402
 from transcript_snapshots import Entry, Refused, print_refused  # noqa: E402
 from transcripts import transcripts_of  # noqa: E402
 from tree_reads import REVIEW_PATHS, main_tree  # noqa: E402

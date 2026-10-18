@@ -50,5 +50,5 @@ def with_facts[F: Sized](session: Path,
     return tuple((p, t, found) for p, t in written(session) if len(found := facts(p)))
 
 
-def timed_entries(path: Path) -> list[Entry]:
-    return [e for e in run_entries(path) if e.get("timestamp")]
+def timed_entries(path: Path) -> Iterator[Entry]:
+    return (e for e in run_entries(path) if e.get("timestamp"))

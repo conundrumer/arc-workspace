@@ -5,8 +5,8 @@ records standing (`kept_reads.code_of`)."""
 
 from pathlib import Path
 
-from agent_turns import has_ended, turns
-from run_reads import blocks, run_entries
+from agent_turns import has_ended, run_back, turn_marks
+from run_reads import blocks
 from state_reads import DERIVED, Kept, state_cache
 from transcript_entries import epoch
 
@@ -20,11 +20,10 @@ def final_reply(path: Path) -> Report | None:
     its turn has ended."""
     if not has_ended(path):
         return None
-    entries = run_entries(path)
-    _, ends = turns(entries)
-    if not ends:
+    marks = turn_marks(run_back(path))
+    e = next((e for e, _, end in marks if end), None)
+    if e is None:
         return None
-    e = entries[max(ends)]
     stamp = e.get("timestamp")
     if not stamp:
         return None
@@ -33,6 +32,6 @@ def final_reply(path: Path) -> Report | None:
     else:
         ended = {b.get("tool_use_id") for b in blocks(e, "tool_result")}
         text = next((str((b.get("input") or {}).get("message", ""))
-                     for x in entries if x.get("type") == "assistant"
+                     for x, _, _ in marks if x.get("type") == "assistant"
                      for b in blocks(x, "tool_use") if b.get("id") in ended), "")
     return Report(epoch(stamp), text) if text.strip() else None
