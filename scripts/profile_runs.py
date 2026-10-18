@@ -51,15 +51,16 @@ def print_profiles(runs: list[Run], args: argparse.Namespace, each_run: bool,
         # The budgets read every run under the project directories, so of
         # their `undecided` lines, only those on a run taken are kept.
         read: list[str] = []
-        budgets = group_budgets(read) if len(runs) == 1 or args.each else None
+        budgets = group_budgets(read) if args.each else None
         among = call_times(runs)
         for r in runs:
             print(f"{r.label} {r.agent_type} {clock(r.start)}: {r.description}\n"
                   f"  wall {minutes(r.wall)}  {part_split(r.parts)}  "
                   f"cost {dollars(r.cost)}")
             print_readings(r, call_times([r]), among)
-            if budgets is not None:
-                print_messages(r, undecided, run_budget(budgets, r))
+            if len(runs) == 1 or args.each:
+                print_messages(r, undecided,
+                               run_budget(budgets, r) if budgets is not None else None)
                 print_report(r, undecided)
                 print_groups(r.groups, args.top, r.wall)
             if args.each and len(runs) > 1:

@@ -107,13 +107,14 @@ PARTS = {
             - the usual time of a label is the median duration of the run's own other ended calls with that label, or where it has none, of the other ended calls with that label of the runs profiled, or where none has one, {block} seconds;
         - after `alerts:`, each kind of monitor's alert on it that a message to it holds on a line of its own, with the number of such messages, or `none`.
     - One run prints its parts and its labels by time, with each label's share of the wall time and its calls, and for backgrounded work the time it ran from launch to its notification, or for a command that ended with none, to its end.
-    - One run of a subagent, completed or not, also prints each message from its parent, as `--help messages` gives those messages, with the time it arrived, its active time and its self time, and the run's budget.
+    - One run of a subagent, completed or not, also prints each message from its parent, as `--help messages` gives those messages, with the time it arrived, its active time and its self time.
         - A message's active time is the run's wall time less `idle` over that message's period.
         - Its self time is its active time less the run's waits on agents over that period.
         - A wait on agents is an interval in which an Agent call of the run is in flight, in the foreground or the background, and the run is not generating and blocks on no `tools` call.
+        - A run with an unknown message prints no active time and no self time.
+    - Under `--each`, each run also prints its budget, and marks `past budget` each message whose self time is past that budget.
         - A run's budget is the budget `--help budget` gives its brief, as a brief of the run's type or role, over every run under the project directories.
-        - A message whose self time is past the run's budget is marked `past budget`.
-        - A run with no budget prints none, and a run with an unknown message prints no active time and no self time.
+        - A run with no budget prints none.
     - One run of a subagent also prints, after `report to the parent:`, the latest entry of its parent's transcripts after the parent's latest message to it that gives a report of it, with the entry's time, its kind and the start of its text.
         - Where no entry does, it prints `none after the message at` and that message's time.
         - The parent's transcripts are, under each session of the run, the main transcript where the parent is `main`, and otherwise the transcripts of the parent's run.

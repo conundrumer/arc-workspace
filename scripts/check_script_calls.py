@@ -83,7 +83,8 @@ def judged(key: str, recent: list[Call], earlier: list[Call]) -> str | None:
     usual_peak = statistics.median(c.peak for c in earlier)
     peak = max(c.peak for c in recent)
     if script_calls.grew(cpu, usual_cpu, script_calls.CPU_MARGIN):
-        name = mctx("{subject}: its calls take {n:.1f} times their usual CPU time").format(
+        name = mctx("{subject}: the median CPU time of its recent calls is {n:.1f} times "
+                    "the 25th percentile CPU time of its earlier calls").format(
             subject=subject_of(key), n=ratio(cpu, usual_cpu))
         impact_text = mctx("Each call of `scripts/{key}` takes more of the machine than its usual calls "
                            "took, which the work of every session on the machine goes without.").format(key=key)
