@@ -18,6 +18,7 @@ from dependents import PYTHON_SUFFIX, Graph, Reach
 from cli.common import SOURCES
 from controlled_markdown import mctx
 from engine import checkout, duration
+from gating.edits import same_code
 from operations.merging import CHECK_FAILED, PREFIX, check_name
 
 CODE_DIRS = ("src", "scripts", "tests", "data/tasks", "tools/console")
@@ -74,9 +75,23 @@ def code_paths(tree: Path, main: Path, touched: set[str]) -> set[str]:
             or any(p.startswith(f"{d}/") for d in CODE_DIRS)}
 
 
-def code_checks(tree: Path, main: Path, touched: set[str]) -> list[Check]:
-    """The code checks of a change that touches `touched`, with the files
-    each takes, as the `--help` of `merge_change.py` gives them."""
+def same_code_paths(tree: Path, base: str, touched: set[str]) -> set[str]:
+    """The Python files of `touched` that stand at the commit `base` and in
+    `tree` and whose text in `tree` gives pyright and pytest the code their
+    text at `base` gives (`gating.edits.same_code`)."""
+    python = sorted(p for p in touched if p.endswith(PYTHON_SUFFIX) and (tree / p).is_file())
+    if not python:
+        return set()
+    at_base = set(checkout.git_out(tree, "ls-tree", "--name-only", base, "--", *python).splitlines())
+    return {p for p in python if p in at_base and same_code(
+        p, checkout.git_out(tree, "show", f"{base}:{p}"), (tree / p).read_text())}
+
+
+def code_checks(tree: Path, main: Path, base: str, touched: set[str]) -> list[Check]:
+    """The code checks of changes from the commit `base` that touch
+    `touched`, with the files each takes, as the `--help` of
+    `merge_change.py` gives them."""
+    touched = touched - same_code_paths(tree, base, touched)
     code = code_paths(tree, main, touched)
     if not code:
         return []

@@ -41,13 +41,16 @@ The checks run concurrently. A check passes when it exits 0, and a refusal
 names every check that fails. The paths whose content the results of
 pyright and pytest can depend on are those under src/, scripts/, tests/
 and data/tasks/, those `cli.common.SOURCES` matches, pyproject.toml and
-uv.lock. Pyright checks each file of its `include` from which a Python
-file the changes touch is reached along `import` statements, and pytest
-runs each test file from which one is reached along the loads of code a
-run can make (`dependents`). Pyright checks the whole tree where the
-changes touch pyproject.toml, uv.lock, or a `.pyi` or `py.typed` file, and
-pytest runs every test where they touch one of those paths that is no
-Python file. A check with no file to take does not run, and the lines of
+uv.lock, apart from each Python file that stands at `<base>` and whose
+edits change nothing but bare string statements, blank lines, comments
+that carry no type-checker directive, and argparse help values that are
+plain strings (`gating.edits.same_code`). Pyright checks each file of its
+`include` from which a Python file the changes touch is reached along
+`import` statements, and pytest runs each test file from which one is
+reached along the loads of code a run can make (`dependents`). Pyright
+checks the whole tree where the changes touch pyproject.toml, uv.lock, or
+a `.pyi` or `py.typed` file, and pytest runs every test where they touch
+one of those paths that is no Python file. A check with no file to take does not run, and the lines of
 the script name a check that takes files by its command and the number of
 its files. The gate's dependency record decides which of its commands a
 change affects, so the gate runs on every change, with `<base>` the
@@ -285,7 +288,7 @@ def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
     gate_out = tempfile.mkdtemp(prefix="merge-change-gate-")
     gate = Check(("uv", "run", "python", "scripts/gate.py", "--outputs-only", "--affected",
                   base, gate_out))
-    run_checks(tree, [*map(Check, DOCUMENT_CHECKS), gate, *code_checks(tree, main, touched)])
+    run_checks(tree, [*map(Check, DOCUMENT_CHECKS), gate, *code_checks(tree, main, base, touched)])
     return Path(gate_out)
 
 

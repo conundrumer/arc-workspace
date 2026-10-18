@@ -4,7 +4,7 @@ the merge in silence."""
 import pytest
 
 from engine import checkout
-from gating import deps
+from gating import deps, edits
 from gating.commands import COMMANDS
 
 SOURCE = '''import os
@@ -118,14 +118,43 @@ def f(x):
 ])
 def test_a_hunk_is_inert_where_it_changes_only_docstrings_comments_help_or_imports(
         hunk, new, passed):
-    assert deps.inert("src/m.py", INERT_OLD, new, hunk) is passed
+    assert edits.inert("src/m.py", INERT_OLD, new, hunk) is passed
+
+
+SAME_OLD = '''from a import b
+p = parser.add_argument("x", help="old")
+
+
+def f(x):  # type: ignore[no-untyped-def]
+    """Doc."""
+    # note
+    return x + 1
+'''
+
+
+@pytest.mark.parametrize(("old", "new", "same"), [
+    ('"""Doc."""', '"""Other doc."""', True),
+    ("# note", "# other note", True),
+    ('help="old"', 'help="new"', True),
+    ("# type: ignore[no-untyped-def]", "# type: ignore[misc]", False),
+    ("from a import b", "from a import b, c", False),
+    ('help="old"', 'help=f"{x}"', False),
+    ("x + 1", "x + 2", False),
+    ("x + 1", "(x", False),
+    ("from a", '"""Module\ndoc."""\nfrom a', True),
+    ("(x):  # type: ignore[no-untyped-def]\n    \"\"\"Doc.\"\"\"",
+     "(x):\n    \"\"\"Doc.\"\"\"  # type: ignore[no-untyped-def]", False),
+])
+def test_same_code_holds_where_an_edit_changes_only_docstrings_plain_comments_or_help(
+        old, new, same):
+    assert edits.same_code("src/m.py", SAME_OLD, SAME_OLD.replace(old, new)) is same
 
 
 def test_the_help_of_the_command_helper_is_inert_in_its_own_file_alone():
     old = 'command("x", f, help="old")\n'
     new = ['command("x", f, help="new")\n']
-    assert deps.inert("src/cli/parser.py", old, new, H(1, 1))
-    assert not deps.inert("src/m.py", old, new, H(1, 1))
+    assert edits.inert("src/cli/parser.py", old, new, H(1, 1))
+    assert not edits.inert("src/m.py", old, new, H(1, 1))
 
 
 def test_an_inert_hunk_affects_no_command_and_a_gate_file_runs_whole():
@@ -152,9 +181,9 @@ def test_an_inert_hunk_affects_no_command_and_a_gate_file_runs_whole():
      ["import foo\n", "sys.path.insert(0, 'p')\n"], H(2, 2)),
 ])
 def test_a_hunk_that_moves_where_a_module_is_first_imported_is_not_inert(old, new, hunk):
-    assert deps.inert("src/m.py", old, new, hunk) is False
+    assert edits.inert("src/m.py", old, new, hunk) is False
 
 
 def test_a_later_import_of_a_module_imported_before_is_inert():
     old = "import os\nfrom x import a\nfrom x import c\n"
-    assert deps.inert("src/m.py", old, ["from x import c, d\n"], H(3, 1))
+    assert edits.inert("src/m.py", old, ["from x import c, d\n"], H(3, 1))
