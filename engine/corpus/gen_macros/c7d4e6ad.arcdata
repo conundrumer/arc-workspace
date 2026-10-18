@@ -1,6 +1,0 @@
-;; c7d4e6ad
-
-(param &targets Color (5))
-(param &axis Axis (AXIS_H))
-(param &anchor Dir (DIR_L))
-(param &bg Color (0))

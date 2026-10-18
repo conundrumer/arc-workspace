@@ -1,4 +1,0 @@
-;; 5521c0d9
-
-(param &bg Color (0))
-(param &move_dir Dir (DIR_T))

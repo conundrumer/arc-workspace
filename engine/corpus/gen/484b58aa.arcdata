@@ -1,4 +1,0 @@
-;; 484b58aa
-
-(param &hole Color (0))
-(param &axis Axis (AXIS_V))

@@ -1,6 +1,0 @@
-;; 7b3084d4
-
-(param &bg Color (0))
-(param &marker Color (5))
-(param &corner DiagDir (DIAG_TL))
-(param &group Sym (SYM_C4))

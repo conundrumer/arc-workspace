@@ -1,4 +1,0 @@
-;; 55783887
-
-(param &line_color Color (1))
-(param &cast_color Color (6))

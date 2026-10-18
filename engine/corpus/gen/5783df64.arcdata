@@ -1,4 +1,0 @@
-;; 5783df64
-
-(param &bg Color (0))
-(param &divisor number (3))

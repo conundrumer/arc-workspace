@@ -1,5 +1,0 @@
-;; 444801d8
-
-(param &bg Color (0))
-(param &wall Color (1))
-(param &open_dir Dir (DIR_T))

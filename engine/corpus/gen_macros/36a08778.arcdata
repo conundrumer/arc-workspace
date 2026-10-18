@@ -1,5 +1,0 @@
-;; 36a08778
-
-(param &water Color (6))
-(param &block Color (2))
-(param &fall Dir (DIR_B))

@@ -1,4 +1,0 @@
-;; 6ffbe589
-
-(param &bg Color (0))
-(param &sense Sense (SENSE_CW))

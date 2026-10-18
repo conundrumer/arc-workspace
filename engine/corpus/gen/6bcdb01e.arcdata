@@ -1,4 +1,0 @@
-;; 6bcdb01e
-
-(param &wall Color (8))
-(param &seed Color (3))

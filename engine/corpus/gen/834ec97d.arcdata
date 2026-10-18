@@ -1,6 +1,0 @@
-;; 834ec97d
-
-(param &bg Color (0))
-(param &dir Dir (DIR_B))
-(param &fill Color (4))
-(param &period number (2))

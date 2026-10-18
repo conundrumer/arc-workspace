@@ -1,5 +1,0 @@
-;; 0a2355a6
-
-(param &bg Color (0))
-(param &joint_count_color (number Color) (1 1) (2 3) (3 2) (4 4))
-(param &own_count_color (number Color) (1 1) (2 3) (3 2) (4 4))

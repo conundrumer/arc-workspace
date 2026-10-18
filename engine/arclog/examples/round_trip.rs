@@ -1,6 +1,6 @@
 //! The end check of the reader and writer stage over the corpus: `cargo run
 //! --example round_trip -- <dir> <report>`, with `<dir>` the corpus
-//! directory, such as `engine/corpus/gen/`, and `<report>` the Python lint's
+//! directory, such as `work/arclog/gen/`, and `<report>` the Python lint's
 //! output over `<dir>`, read by [`arclog::harness::LintReport`].
 //!
 //! The run reads each solver of `<dir>`, its `.arclog` and `.arcdata` files,

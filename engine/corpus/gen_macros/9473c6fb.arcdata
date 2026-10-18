@@ -1,6 +1,0 @@
-;; 9473c6fb
-
-(param &bg Color (7))
-(param &order_corner DiagDir (DIAG_TL))
-(param &cycle_succ (Color Color) (2 8) (8 5) (5 2))
-(param &cycle_start Color (2))

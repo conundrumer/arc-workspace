@@ -1,6 +1,0 @@
-;; 73c3b0d8
-
-(param &bg Color (0))
-(param &mark Color (4))
-(param &wall Color (2))
-(param &move_dir Dir (DIR_B))

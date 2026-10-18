@@ -1,5 +1,0 @@
-;; 3a301edc
-
-(param &bg Color (0))
-
-(exclude ($Cells $Nest) "$Nest redraws the figure's box, so it leaves no notch for a ring to enter, and the two wraps stand as one model under it.")

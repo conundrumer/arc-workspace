@@ -1,9 +1,0 @@
-;; 8ba14f53
-
-(param &bg Color (0))
-(param &out_pos Position (Frame
-  ((:A AXIS_V) (:N 3))
-  ((:A AXIS_H) (:N 3))))
-(param &corner DiagDir (DIAG_TL))
-(param &axis Axis (AXIS_V))
-(param &order_dir Dir (DIR_L))

@@ -1,5 +1,0 @@
-;; 9b365c51
-
-(param &bg Color (0))
-(param &ink Color (8))
-(param &axis Axis (AXIS_H))

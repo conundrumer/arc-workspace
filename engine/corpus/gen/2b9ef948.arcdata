@@ -1,5 +1,0 @@
-;; 2b9ef948
-
-(param &bg Color (0))
-(param &frame Color (4))
-(param &path Color (5))

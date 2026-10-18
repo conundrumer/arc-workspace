@@ -1,6 +1,0 @@
-;; a699fb00
-
-(param &axis Axis (AXIS_H))
-(param &bg Color (0))
-(param &dot Color (1))
-(param &fill Color (2))

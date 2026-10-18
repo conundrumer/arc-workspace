@@ -1,6 +1,0 @@
-;; ce22a75a
-
-(param &bg Color (0))
-(param &out_fill Color (1))
-(param &tile_count number (3))
-(param &tile_dim number (3))

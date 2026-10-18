@@ -1,4 +1,0 @@
-;; 1be83260
-
-(param &bg Color (0))
-(param &gap number (1))

@@ -1,5 +1,0 @@
-;; 62ab2642
-
-(param &bg Color (0))
-(param &big_paint Color (8))
-(param &small_paint Color (7))

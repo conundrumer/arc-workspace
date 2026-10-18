@@ -1,6 +1,0 @@
-;; 5961cc34
-
-(param &bg Color (8))
-(param &lit Color (2))
-(param &port Color (3) (4))
-(param &source Color (4))

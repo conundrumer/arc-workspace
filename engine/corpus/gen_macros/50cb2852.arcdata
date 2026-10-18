@@ -1,4 +1,0 @@
-;; 50cb2852
-
-(param &bg Color (0))
-(param &fill Color (8))

@@ -1,5 +1,0 @@
-;; 29c11459
-
-(param &bg Color (0))
-(param &clash Color (5))
-(param &axis Axis (AXIS_H))

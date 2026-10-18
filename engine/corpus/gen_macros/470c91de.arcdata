@@ -1,4 +1,0 @@
-;; 470c91de
-
-(param &bg Color (7))
-(param &marker Color (8))

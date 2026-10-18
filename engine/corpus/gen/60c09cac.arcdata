@@ -1,5 +1,0 @@
-;; 60c09cac
-
-(param &intile Position (Frame
-  ((:A AXIS_V) (:N 2))
-  ((:A AXIS_H) (:N 2))))

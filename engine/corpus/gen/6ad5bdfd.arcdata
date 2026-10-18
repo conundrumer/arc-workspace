@@ -1,4 +1,0 @@
-;; 6ad5bdfd
-
-(param &bg Color (0))
-(param &wall Color (2))

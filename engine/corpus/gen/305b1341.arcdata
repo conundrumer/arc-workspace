@@ -1,9 +1,0 @@
-;; 305b1341
-
-(param &bg Color (0))
-(param &legend_side Dir (DIR_L))
-(param &dot_size number (1))
-(param &dot_gap number (1))
-(param &legend_sense Sense (SENSE_CW))
-
-(exclude ($Shown $Occlusion) "$Occlusion reads the dots the input hides, which only $Lattice holds.")

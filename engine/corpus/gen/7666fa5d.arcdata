@@ -1,5 +1,0 @@
-;; 7666fa5d
-
-(param &bg Color (8))
-(param &fill Color (2))
-(param &fill_axis DiagAxis (DAXIS_DG))

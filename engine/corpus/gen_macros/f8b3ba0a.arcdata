@@ -1,7 +1,0 @@
-;; f8b3ba0a
-
-(param &bg Color (0))
-(param &rank_dir Dir (DIR_T))
-(param &tile_dim (Axis number) (AXIS_V 1) (AXIS_H 2))
-(param &tile_gap number (1))
-(param &border_width number (1))

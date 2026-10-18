@@ -1,5 +1,0 @@
-;; 36d67576
-
-(param &bg Color (0))
-(param &shape Color (4))
-(param &anchor Color (2))

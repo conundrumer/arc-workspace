@@ -1,4 +1,0 @@
-;; 50f325b5
-
-(param &field Color (3))
-(param &mark Color (8))

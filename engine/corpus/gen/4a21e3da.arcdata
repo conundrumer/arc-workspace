@@ -1,5 +1,0 @@
-;; 4a21e3da
-
-(param &bg Color (1))
-(param &mark Color (2))
-(param &ink Color (7))

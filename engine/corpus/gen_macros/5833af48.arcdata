@@ -1,5 +1,0 @@
-;; 5833af48
-
-(param &bg Color (0))
-(param &blank Color (2))
-(param &ink Color (8))

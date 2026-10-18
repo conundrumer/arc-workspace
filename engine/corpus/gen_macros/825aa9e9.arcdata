@@ -1,5 +1,0 @@
-;; 825aa9e9
-
-(param &bg Color (7))
-(param &fall Dir (DIR_B))
-(param &gap number (1))

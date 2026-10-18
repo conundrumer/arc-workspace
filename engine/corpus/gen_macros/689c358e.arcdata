@@ -1,4 +1,0 @@
-;; 689c358e
-
-(param &bg Color (7))
-(param &far Color (0))

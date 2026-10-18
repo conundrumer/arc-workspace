@@ -1,6 +1,0 @@
-;; 1c56ad9f
-
-(param &bg Color (0))
-(param &anchor Dir (DIR_B))
-(param &period number (4))
-(param &wave (number Sense) (1 SENSE_CW) (3 SENSE_CC))

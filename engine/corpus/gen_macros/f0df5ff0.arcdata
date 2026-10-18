@@ -1,4 +1,0 @@
-;; f0df5ff0
-
-(param &bg Color (0))
-(param &ink Color (1))

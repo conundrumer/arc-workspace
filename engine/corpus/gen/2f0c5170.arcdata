@@ -1,5 +1,0 @@
-;; 2f0c5170
-
-(param &bg Color (8))
-(param &canvas Color (0))
-(param &ink Color (4))

@@ -1,8 +1,0 @@
-;; 33067df9
-
-(param &bg Color (0))
-(param &in_line number (1))
-(param &in_tile number (1))
-(param &out_line number (2))
-(param &canvas_side number (26))
-(param &run_axis Axis (AXIS_H))

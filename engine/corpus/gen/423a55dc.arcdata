@@ -1,5 +1,0 @@
-;; 423a55dc
-
-(param &bg Color (0))
-(param &anchor Dir (DIR_B))
-(param &sense Sense (SENSE_CW))

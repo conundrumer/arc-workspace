@@ -1,6 +1,0 @@
-;; 05a7bcf2
-
-(param &wall Color (8))
-(param &push Color (2))
-(param &shape Color (4))
-(param &mark Color (3))

@@ -1,5 +1,0 @@
-;; 2dd70a9a
-
-(param &bg Color (0))
-(param &source Color (3))
-(param &target Color (2))

@@ -1,8 +1,0 @@
-;; 87ab05b8
-
-(param &marker Color (2))
-(param &bg Color (6))
-(param &fill Color (2))
-(param &divisor number (2))
-(param &tile_dim number (2))
-(param &block_dim number (2))

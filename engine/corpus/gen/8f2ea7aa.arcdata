@@ -1,4 +1,0 @@
-;; 8f2ea7aa
-
-(param &bg Color (0))
-(param &tile_dim number (3))

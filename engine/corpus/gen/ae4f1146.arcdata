@@ -1,7 +1,0 @@
-;; ae4f1146
-
-(param &bg Color (0))
-(param &mark Color (1))
-(param &shape Position (Frame
-  ((:A AXIS_V) (:N 3))
-  ((:A AXIS_H) (:N 3))))

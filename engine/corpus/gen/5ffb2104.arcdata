@@ -1,4 +1,0 @@
-;; 5ffb2104
-
-(param &bg Color (0))
-(param &grav Dir (DIR_R))

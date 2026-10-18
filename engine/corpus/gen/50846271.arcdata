@@ -1,5 +1,0 @@
-;; 50846271
-
-(param &mark Color (2))
-(param &fill Color (8))
-(param &bg Color (0))

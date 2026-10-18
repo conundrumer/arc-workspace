@@ -1,5 +1,0 @@
-;; 1d61978c
-
-(param &mark Color (5))
-(param &major_paint Color (8))
-(param &minor_paint Color (2))

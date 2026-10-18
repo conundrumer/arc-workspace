@@ -1,4 +1,0 @@
-;; 88a10436
-
-(param &bg Color (0))
-(param &marker Color (5))

@@ -1,4 +1,0 @@
-;; 11852cab
-
-(param &bg Color (0))
-(param &sym Sym (SYM_D4))

@@ -1,5 +1,0 @@
-;; f45f5ca7
-
-(param &bg Color (0))
-(param &color_dist (Color number) (8 1) (2 2) (4 3) (3 4))
-(param &dir Dir (DIR_L))

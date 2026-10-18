@@ -1,6 +1,0 @@
-;; 320afe60
-
-(param &bg Color (4))
-(param &closed_dir Dir (DIR_L))
-(param &closed_paint Color (2))
-(param &open_paint Color (3))

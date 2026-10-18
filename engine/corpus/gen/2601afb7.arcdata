@@ -1,5 +1,0 @@
-;; 2601afb7
-
-(param &bg Color (7))
-(param &color_dir Dir (DIR_R))
-(param &anchor_sense Sense (SENSE_CW))

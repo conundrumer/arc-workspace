@@ -1,7 +1,0 @@
-;; 9aaea919
-
-(param &base Dir (DIR_B))
-(param &gap number (1))
-(param &spend Color (2))
-(param &gain Color (3))
-(param &spent_color Color (5))

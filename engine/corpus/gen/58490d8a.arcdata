@@ -1,5 +1,0 @@
-;; 58490d8a
-
-(param &panel Color (0))
-(param &spread_dir Dir (DIR_R))
-(param &period number (2))

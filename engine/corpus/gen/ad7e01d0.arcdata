@@ -1,4 +1,0 @@
-;; ad7e01d0
-
-(param &bg Color (0))
-(param &stamp Color (5))

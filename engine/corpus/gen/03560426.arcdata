@@ -1,5 +1,0 @@
-;; 03560426
-
-(param &bg Color (0))
-(param &order Dir (DIR_L))
-(param &corner DiagDir (DIAG_BR))

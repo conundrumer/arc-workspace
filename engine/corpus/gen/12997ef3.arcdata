@@ -1,4 +1,0 @@
-;; 12997ef3
-
-(param &bg Color (0))
-(param &stencil Color (1))

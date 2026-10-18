@@ -1,6 +1,0 @@
-;; 63613498
-
-(param &bg Color (0))
-(param &mark Color (5))
-(param &panel Box ((0 7 0 7)))
-(param &corner DiagDir (DIAG_TL))

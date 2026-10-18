@@ -1,5 +1,0 @@
-;; 045e512c
-
-(param &bg Color (0))
-(param &stride number (4))
-(param &gap number (1))

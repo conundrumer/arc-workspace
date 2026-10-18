@@ -1,4 +1,0 @@
-;; a740d043
-
-(param &bg Color (1))
-(param &hole Color (0))

@@ -1,4 +1,0 @@
-;; 7468f01a
-
-(param &bg Color (0))
-(param &transform D4 (D4_LR))

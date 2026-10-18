@@ -1,4 +1,0 @@
-;; 292dd178
-
-(param &wall Color (1))
-(param &fill Color (2))

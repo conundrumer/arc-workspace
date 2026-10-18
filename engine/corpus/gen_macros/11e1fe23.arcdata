@@ -1,4 +1,0 @@
-;; 11e1fe23
-
-(param &bg Color (0))
-(param &center_paint Color (5))

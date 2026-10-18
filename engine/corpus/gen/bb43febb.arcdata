@@ -1,4 +1,0 @@
-;; bb43febb
-
-(param &ink Color (5))
-(param &fill Color (2))

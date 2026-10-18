@@ -1,6 +1,0 @@
-;; 7d18a6fb
-
-(param &bg Color (0))
-(param &frame Color (1))
-(param &tiles number (2))
-(param &gap number (1))

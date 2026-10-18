@@ -1,7 +1,0 @@
-;; 9172f3a0
-
-(representative 60c09cac)
-
-(param &intile Position (Frame
-  ((:A AXIS_V) (:N 3))
-  ((:A AXIS_H) (:N 3))))

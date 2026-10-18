@@ -1,8 +1,0 @@
-;; 1990f7a8
-
-(param &bg Color (0))
-(param &gap number (1))
-(param &block_dim number (3))
-(param &frame Position (Frame
-  ((:A AXIS_V) (:N 7))
-  ((:A AXIS_H) (:N 7))))

@@ -1,6 +1,0 @@
-;; 963c33f8
-
-(param &bg Color (7))
-(param &fall Dir (DIR_B))
-(param &solid Color (5))
-(param &stop Color (1))

@@ -1,3 +1,0 @@
-;; 52fd389e
-
-(param &body Color (4))

@@ -1,4 +1,0 @@
-;; 72ca375d
-
-(param &bg Color (0))
-(param &sym D4 (D4_LR))

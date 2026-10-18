@@ -1,5 +1,0 @@
-;; 0d87d2a6
-
-(param &mark Color (1))
-(param &body Color (2))
-(param &paint Color (1))

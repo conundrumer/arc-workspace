@@ -1,4 +1,0 @@
-;; feca6190
-
-(param &bg Color (0))
-(param &sweep DiagDir (DIAG_TR))

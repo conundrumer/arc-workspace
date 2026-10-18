@@ -1,7 +1,0 @@
-;; 673ef223
-
-(param &bg Color (0))
-(param &bar Color (2))
-(param &mark Color (8))
-(param &cap Color (4))
-(param &axis Axis (AXIS_V))

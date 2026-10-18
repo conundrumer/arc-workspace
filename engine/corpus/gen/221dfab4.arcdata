@@ -1,7 +1,0 @@
-;; 221dfab4
-
-(param &marker_col Color (4))
-(param &beam_col Color (3))
-(param &period number (6))
-(param &copy_phase number (0) (2))
-(param &beam_phase number (4))

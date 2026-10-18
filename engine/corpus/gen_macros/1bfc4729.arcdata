@@ -1,5 +1,0 @@
-;; 1bfc4729
-
-(param &bg Color (0))
-(param &axis Axis (AXIS_V))
-(param &line_dist number (2))

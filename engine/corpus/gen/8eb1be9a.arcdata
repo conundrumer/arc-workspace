@@ -1,4 +1,0 @@
-;; 8eb1be9a
-
-(param &bg Color (0))
-(param &axis Axis (AXIS_V))

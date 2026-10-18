@@ -1,6 +1,0 @@
-;; 1c0d0a4b
-
-(param &bg Color (0))
-(param &paint Color (2))
-(param &sep_w number (1))
-(param &tile_w number (3))

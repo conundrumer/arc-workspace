@@ -1,4 +1,0 @@
-;; 469497ad
-
-(param &bg Color (0))
-(param &beam Color (2))

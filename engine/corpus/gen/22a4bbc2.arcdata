@@ -1,7 +1,0 @@
-;; 22a4bbc2
-
-(param &bg Color (0))
-(param &mark Color (2))
-(param &dir Dir (DIR_T))
-(param &mark_len number (1))
-(param &mark_gap number (2))

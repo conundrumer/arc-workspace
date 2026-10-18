@@ -1,4 +1,0 @@
-;; 29700607
-
-(param &bg Color (0))
-(param &head_dir Dir (DIR_T))

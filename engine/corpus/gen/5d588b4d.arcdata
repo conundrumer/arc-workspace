@@ -1,6 +1,0 @@
-;; 5d588b4d
-
-(param &bg Color (0))
-(param &read_corner DiagDir (DIAG_TL))
-(param &read_axis Axis (AXIS_V))
-(param &span_axis Axis (AXIS_H))

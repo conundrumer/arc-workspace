@@ -1,5 +1,0 @@
-;; 54d82841
-
-(param &bg Color (0))
-(param &mark Color (4))
-(param &fall Dir (DIR_B))

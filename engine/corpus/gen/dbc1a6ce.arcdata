@@ -1,4 +1,0 @@
-;; dbc1a6ce
-
-(param &bg Color (0))
-(param &fill Color (8))

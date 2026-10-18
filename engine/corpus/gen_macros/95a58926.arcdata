@@ -1,6 +1,0 @@
-;; 95a58926
-
-(param &bg Color (0))
-(param &mesh Color (5))
-(param &anchor DiagDir (DIAG_TL))
-(param &sep_width number (1))

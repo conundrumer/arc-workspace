@@ -1,8 +1,0 @@
-;; 412b6263
-
-(param &bg Color (7))
-(param &line_col Color (1))
-(param &xform D4 (D4_CC))
-(param &line_width number (1))
-(param &tiles (Axis number) (AXIS_V 2) (AXIS_H 1))
-(param &stack_axis Axis (AXIS_V))

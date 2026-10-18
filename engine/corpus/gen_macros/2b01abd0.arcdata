@@ -1,4 +1,0 @@
-;; 2b01abd0
-
-(param &bg Color (0))
-(param &line Color (1))

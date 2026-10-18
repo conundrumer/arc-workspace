@@ -1,6 +1,0 @@
-;; 29623171
-
-(param &gap number (1))
-(param &bg Color (0))
-(param &tile_count number (3))
-(param &tile_dim number (3))

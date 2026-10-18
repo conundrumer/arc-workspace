@@ -1,5 +1,0 @@
-;; 5117e062
-
-(param &bg Color (0))
-(param &mark Color (8))
-(param &win_dim number (3))

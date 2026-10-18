@@ -1,4 +1,0 @@
-;; 8fbca751
-
-(param &bg Color (0))
-(param &fill Color (2))

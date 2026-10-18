@@ -1,4 +1,0 @@
-;; 952a094c
-
-(param &bg Color (0))
-(param &eject D4 (D4_HT))

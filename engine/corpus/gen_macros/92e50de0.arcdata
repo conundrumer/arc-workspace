@@ -1,6 +1,0 @@
-;; 92e50de0
-
-(param &bg Color (0))
-(param &tile_period number (2))
-(param &anchor DiagDir (DIAG_TL))
-(param &period (Axis number) (AXIS_V 8) (AXIS_H 8))

@@ -1,6 +1,6 @@
 //! The end check of the checker stage, and of step 1, over the corpus:
 //! `cargo run --example lint -- <dir> <report>`, with `<dir>` the corpus
-//! directory, such as `engine/corpus/gen/`, and `<report>` the output of the
+//! directory, such as `work/arclog/gen/`, and `<report>` the output of the
 //! Python lint over `<dir>`, read by [`arclog::harness::LintReport`].
 //!
 //! The run lints each solver of `<dir>` with

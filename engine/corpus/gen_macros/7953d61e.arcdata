@@ -1,6 +1,0 @@
-;; 7953d61e
-
-(param &tile_d4 (Position D4)
-  (grid
-    (D4_ID D4_CC)
-    (D4_HT D4_CW)))

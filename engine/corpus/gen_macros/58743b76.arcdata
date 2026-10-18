@@ -1,4 +1,0 @@
-;; 58743b76
-
-(param &bg Color (0))
-(param &filler Color (8))

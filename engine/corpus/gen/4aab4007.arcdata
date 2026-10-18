@@ -1,8 +1,0 @@
-;; 4aab4007
-
-(param &hole Color (0))
-(param &corner DiagDir (DIAG_TL))
-(param &border_width number (3))
-(param &stripe_axis DiagAxis (DAXIS_AD))
-(param &legend (number number) (3 3) (3 4) (3 5))
-(param &band_color (number Color) (0 1) (1 1) (2 4))

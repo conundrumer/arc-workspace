@@ -1,6 +1,0 @@
-;; 7e2bad24
-
-(param &bg Color (0))
-(param &ray Color (1))
-(param &transparent Color (3))
-(param &reflective Color (2))

@@ -1,7 +1,0 @@
-;; 8b28cd80
-
-(param &bg Color (0))
-(param &gap number (3))
-(param &arm Dir (DIR_T))
-(param &wind Sense (SENSE_CW))
-(param &ring_gap number (1))

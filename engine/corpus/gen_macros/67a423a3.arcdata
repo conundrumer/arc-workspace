@@ -1,4 +1,0 @@
-;; 67a423a3
-
-(param &bg Color (0))
-(param &ring Color (4))

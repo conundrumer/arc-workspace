@@ -1,5 +1,0 @@
-;; 846bdb03
-
-(param &bg Color (0))
-(param &corner Color (4))
-(param &sym Sym (SYM_LR))

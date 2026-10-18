@@ -1,5 +1,0 @@
-;; 6455b5f5
-
-(param &bg Color (0))
-(param &most Color (1))
-(param &fewest Color (8))

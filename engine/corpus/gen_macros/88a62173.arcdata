@@ -1,5 +1,0 @@
-;; 88a62173
-
-(param &gap number (1))
-(param &tile_count number (2))
-(param &tile_size number (2))

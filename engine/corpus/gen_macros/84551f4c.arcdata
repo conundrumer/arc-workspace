@@ -1,6 +1,0 @@
-;; 84551f4c
-
-(param &bg Color (0))
-(param &ground Dir (DIR_B))
-(param &pusher Color (1))
-(param &topple Sense (SENSE_CW))

@@ -1,4 +1,0 @@
-;; 1c02dbbe
-
-(param &bg Color (0))
-(param &slab Color (5))

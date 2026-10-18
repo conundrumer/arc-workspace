@@ -1,5 +1,0 @@
-;; 96a8c0cd
-
-(param &bg Color (0))
-(param &marker Color (2))
-(param &deflect (Color Sense) (3 SENSE_CW) (1 SENSE_CC))

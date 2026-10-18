@@ -1,9 +1,0 @@
-;; 1818057f
-
-(param &field Color (4))
-(param &mark Color (8))
-(param &shape Position
-  (grid
-    (_ 1 _)
-    (1 1 1)
-    (_ 1 _)))

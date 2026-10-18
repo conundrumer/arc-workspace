@@ -1,6 +1,0 @@
-;; 18447a8d
-
-(param &bg Color (7))
-(param &base Color (8))
-(param &piece_dir Dir (DIR_R))
-(param &block_margin number (6))

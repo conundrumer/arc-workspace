@@ -1,5 +1,0 @@
-;; 8fff9e47
-
-(param &block_size number (2))
-(param &corner DiagDir (DIAG_BR))
-(param &axis Axis (AXIS_V))

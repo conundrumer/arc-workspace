@@ -1,5 +1,0 @@
-;; 52364a65
-
-(param &bg Color (8))
-(param &peel_dir Dir (DIR_L))
-(param &depth number (2))

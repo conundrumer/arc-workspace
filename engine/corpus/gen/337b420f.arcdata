@@ -1,7 +1,0 @@
-;; 337b420f
-
-(param &bg Color (8))
-(param &panel_axis Axis (AXIS_H))
-(param &sep_width number (1))
-(param &panel_count number (3))
-(param &panel_size number (5))

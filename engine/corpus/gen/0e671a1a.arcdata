@@ -1,6 +1,0 @@
-;; 0e671a1a
-
-(param &bg Color (0))
-(param &path Color (5))
-(param &leg (Color Color) (3 4) (4 2))
-(param &axis Axis (AXIS_V))

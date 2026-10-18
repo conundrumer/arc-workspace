@@ -1,4 +1,0 @@
-;; 41e4d17e
-
-(param &bg Color (8))
-(param &paint Color (6))

@@ -1,6 +1,0 @@
-;; 42f83767
-
-(param &bg Color (0))
-(param &stencil Color (5))
-(param &strip_axis Axis (AXIS_H))
-(param &gap number (1))

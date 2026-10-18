@@ -1,5 +1,0 @@
-;; dc433765
-
-(param &bg Color (0))
-(param &mover Color (3))
-(param &target Color (4))

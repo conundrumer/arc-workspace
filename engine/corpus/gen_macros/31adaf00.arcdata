@@ -1,5 +1,0 @@
-;; 31adaf00
-
-(param &bg Color (0))
-(param &mark Color (1))
-(param &min_side number (2))

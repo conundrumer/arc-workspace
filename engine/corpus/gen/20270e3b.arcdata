@@ -1,4 +1,0 @@
-;; 20270e3b
-
-(param &bg Color (1))
-(param &socket_color Color (7))

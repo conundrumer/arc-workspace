@@ -1,5 +1,0 @@
-;; bdad9b1f
-
-(param &cross Color (4))
-(param &bg Color (0))
-(param &role (Color Axis) (8 AXIS_V) (2 AXIS_H))

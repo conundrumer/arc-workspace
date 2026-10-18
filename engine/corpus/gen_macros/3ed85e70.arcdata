@@ -1,4 +1,0 @@
-;; 3ed85e70
-
-(param &legend_bg Color (3))
-(param &field_bg Color (0))

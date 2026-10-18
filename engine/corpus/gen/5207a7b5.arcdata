@@ -1,8 +1,0 @@
-;; 5207a7b5
-
-(param &bg Color (0))
-(param &bar Color (5))
-(param &paint (Dir Color) (DIR_L 8) (DIR_R 6))
-(param &slant_dir DiagDir (DIAG_BL))
-(param &rise_axis Axis (AXIS_V))
-(param &rise number (2))

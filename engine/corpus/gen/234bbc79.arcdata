@@ -1,5 +1,0 @@
-;; 234bbc79
-
-(param &bg Color (0))
-(param &joint Color (5))
-(param &chain_dir Dir (DIR_R))

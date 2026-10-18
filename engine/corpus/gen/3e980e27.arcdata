@@ -1,4 +1,0 @@
-;; 3e980e27
-
-(param &bg Color (0))
-(param &stamp_d4 (Color D4) (2 D4_LR) (3 D4_ID))

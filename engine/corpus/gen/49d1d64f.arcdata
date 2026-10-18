@@ -1,4 +1,0 @@
-;; 49d1d64f
-
-(param &ring_width number (1))
-(param &bg Color (0))

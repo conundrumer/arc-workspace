@@ -1,5 +1,0 @@
-;; bbc9ae5d
-
-(param &diag DiagDir (DIAG_BR))
-(param &divisor number (2))
-(param &bg Color (0))

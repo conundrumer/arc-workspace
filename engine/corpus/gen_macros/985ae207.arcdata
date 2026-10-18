@@ -1,4 +1,0 @@
-;; 985ae207
-
-(param &bg Color (8))
-(param &pitch number (3))

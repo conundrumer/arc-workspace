@@ -1,9 +1,0 @@
-;; 694f12f3
-
-(param &bg Color (0))
-(param &large_color (number Color) (0 2) (1 1))
-(param &small_color (number Color) (0 1) (1 2))
-(param &largest_color Color (2))
-(param &large_rest_color Color (1))
-(param &smallest_color Color (1))
-(param &small_rest_color Color (2))

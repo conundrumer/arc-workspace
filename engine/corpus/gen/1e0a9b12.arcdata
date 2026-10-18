@@ -1,4 +1,0 @@
-;; 1e0a9b12
-
-(param &grav Dir (DIR_B))
-(param &bg Color (0))

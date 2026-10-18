@@ -1,4 +1,0 @@
-;; c1d99e64
-
-(param &bg Color (0))
-(param &line Color (2))

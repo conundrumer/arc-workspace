@@ -1,7 +1,0 @@
-;; 6e453dd6
-
-(param &bg Color (6))
-(param &shape Color (0))
-(param &sep Color (5))
-(param &mark Color (2))
-(param &slide_dir Dir (DIR_R))

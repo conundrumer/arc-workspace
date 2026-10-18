@@ -1,7 +1,0 @@
-;; 28e73c20
-
-(param &ink Color (3))
-(param &corner DiagDir (DIAG_TL))
-(param &sense Sense (SENSE_CW))
-(param &pitch number (2))
-(param &bg Color (0))

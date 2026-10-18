@@ -1,5 +1,0 @@
-;; 32e9702f
-
-(param &dir Dir (DIR_L))
-(param &bg Color (0))
-(param &fill Color (5))

@@ -1,6 +1,0 @@
-;; 8886d717
-
-(param &mark Color (8))
-(param &absorb Color (2))
-(param &extend Color (7))
-(param &border Color (9))

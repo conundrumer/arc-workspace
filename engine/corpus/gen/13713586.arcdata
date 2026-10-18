@@ -1,4 +1,0 @@
-;; 13713586
-
-(param &bg Color (0))
-(param &wall Color (5))

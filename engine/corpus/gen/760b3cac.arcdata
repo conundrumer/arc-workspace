@@ -1,7 +1,0 @@
-;; 760b3cac
-
-(param &pattern Color (8))
-(param &marker Color (4))
-(param &tile_dim number (3))
-(param &axis Axis (AXIS_H))
-(param &facing Dir (DIR_T))

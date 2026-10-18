@@ -1,6 +1,0 @@
-;; ca8f78db
-
-(param &noise Color (0))
-(param &period (Axis number) (AXIS_V 2))
-(param &bg Color (1))
-(param &axis Axis (AXIS_H))

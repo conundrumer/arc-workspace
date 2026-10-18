@@ -1,6 +1,0 @@
-;; 3194b014
-
-(param &bg Color (0))
-(param &out_pos Position (Frame
-  ((:A AXIS_V) (:N 3))
-  ((:A AXIS_H) (:N 3))))

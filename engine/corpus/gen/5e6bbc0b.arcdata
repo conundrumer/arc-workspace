@@ -1,7 +1,0 @@
-;; 5e6bbc0b
-
-(param &mark Color (8))
-(param &cast Color (9))
-(param &block Color (1))
-(param &fill Color (0))
-(param &period number (2))

@@ -1,5 +1,0 @@
-;; 3906de3d
-
-(param &grav Dir (DIR_T))
-(param &bg Color (0))
-(param &mover Color (2))

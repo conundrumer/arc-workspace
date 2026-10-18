@@ -1,9 +1,0 @@
-;; 41ace6b5
-
-(param &bg Color (7))
-(param &cap Color (8))
-(param &stem Color (1))
-(param &rest Color (9))
-(param &cap_line Color (2))
-(param &stem_line Color (5))
-(param &grow Dir (DIR_T))

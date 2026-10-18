@@ -1,5 +1,0 @@
-;; 31f7f899
-
-(param &bg Color (8))
-(param &spine Color (6))
-(param &short_dir Dir (DIR_L))

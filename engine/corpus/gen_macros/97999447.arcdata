@@ -1,7 +1,0 @@
-;; 97999447
-
-(param &bg Color (0))
-(param &ray_dir Dir (DIR_R))
-(param &alt_color Color (5))
-(param &slot number (0) (1))
-(param &mask (number Color) (1 5))

@@ -1,4 +1,0 @@
-;; b7cb93ac
-
-(param &bg Color (0))
-(param &rect_dim (Axis number) (AXIS_V 3) (AXIS_H 4))

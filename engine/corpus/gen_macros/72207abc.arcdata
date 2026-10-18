@@ -1,4 +1,0 @@
-;; 72207abc
-
-(param &grow Dir (DIR_R))
-(param &bg Color (0))

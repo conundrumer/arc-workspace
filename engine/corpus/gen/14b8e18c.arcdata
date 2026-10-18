@@ -1,4 +1,0 @@
-;; 14b8e18c
-
-(param &bg Color (7))
-(param &mark_color Color (2))

@@ -1,4 +1,0 @@
-;; 5ad8a7c0
-
-(param &mark Color (2))
-(param &axis Axis (AXIS_H))

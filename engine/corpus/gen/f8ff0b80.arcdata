@@ -1,4 +1,0 @@
-;; f8ff0b80
-
-(param &bg Color (0))
-(param &rank_dir Dir (DIR_T))

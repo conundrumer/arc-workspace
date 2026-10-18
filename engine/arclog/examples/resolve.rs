@@ -1,6 +1,6 @@
 //! The end check of the registry and resolver stage over the corpus: `cargo
 //! run --example resolve -- <dir> <report>`, with `<dir>` the corpus
-//! directory, such as `engine/corpus/gen/`, and `<report>` the Python lint's
+//! directory, such as `work/arclog/gen/`, and `<report>` the Python lint's
 //! output over `<dir>`, read by [`arclog::harness::LintReport`]: the run
 //! checks the files with no error in the report.
 //!
@@ -12,7 +12,6 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::process::ExitCode;
-use std::sync::Arc;
 
 use arclog::diagnostic::{Diagnostic, Location};
 use arclog::harness::{read_corpus_solver, run_over_corpus, CorpusSolver, LintReport, SolverResult};
@@ -37,12 +36,11 @@ fn faults(solver: &Solver) -> Vec<String> {
     let concept_case = solver.concept_case();
     let concept = resolve(&concept_case.program, None, &derived, registry);
     let mut faults: Vec<String> = concept.diagnostics.iter().map(|d| describe(&concept_case, d)).collect();
-    let concept = Arc::new(concept.value);
     for case in solver.cases(Exclusion::WithExcluded) {
         if case.name == concept_case.name {
             continue;
         }
-        let reads = ConceptReads { concept: &concept, determinations: case.concept_determinations() };
+        let reads = ConceptReads { concept: &concept.value, determinations: case.concept_determinations() };
         let resolved = resolve(&case.program, Some(reads), &derived, registry);
         faults.extend(resolved.diagnostics.iter().map(|d| describe(&case, d)));
     }

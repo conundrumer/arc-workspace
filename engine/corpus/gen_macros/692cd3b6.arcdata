@@ -1,4 +1,0 @@
-;; 692cd3b6
-
-(param &bg Color (0))
-(param &paint Color (4))

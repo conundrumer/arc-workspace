@@ -1,6 +1,0 @@
-;; 90f3ed37
-
-(param &bg Color (0))
-(param &grow_dir Dir (DIR_R))
-(param &align_sense Sense (SENSE_CC))
-(param &mark Color (1))

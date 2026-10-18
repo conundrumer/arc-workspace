@@ -1,6 +1,0 @@
-;; cbded52d
-
-(param &gap number (1))
-(param &base Color (1))
-(param &arr number (3))
-(param &tile_dim number (2))

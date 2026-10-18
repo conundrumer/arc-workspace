@@ -1,7 +1,0 @@
-;; 5168d44c
-
-(param &bg Color (0))
-(param &ring Color (2))
-(param &dot Color (3))
-(param &corner DiagDir (DIAG_BR))
-(param &step number (2))

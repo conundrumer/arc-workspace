@@ -1,4 +1,0 @@
-;; 880c1354
-
-(param &fixed Color (4) (7))
-(param &sense Sense (SENSE_CW))

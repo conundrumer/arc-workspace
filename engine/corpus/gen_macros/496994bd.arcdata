@@ -1,5 +1,0 @@
-;; 496994bd
-
-(param &bg Color (0))
-(param &axis Axis (AXIS_V))
-(param &dir Dir (DIR_T))

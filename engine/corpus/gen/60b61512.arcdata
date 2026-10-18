@@ -1,9 +1,0 @@
-;; 60b61512
-
-(param &bg Color (0))
-(param &fill Color (7))
-(param &footprint Position
-  (grid
-    (1 1 1)
-    (1 1 1)
-    (1 1 1)))

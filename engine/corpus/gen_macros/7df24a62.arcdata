@@ -1,4 +1,0 @@
-;; 7df24a62
-
-(param &box Color (1))
-(param &mark Color (4))

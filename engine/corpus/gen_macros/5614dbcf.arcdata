@@ -1,5 +1,0 @@
-;; 5614dbcf
-
-(param &divisor number (3))
-(param &tile_size number (3))
-(param &noise Color (5))

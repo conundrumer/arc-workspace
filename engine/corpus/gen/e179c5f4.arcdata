@@ -1,6 +1,0 @@
-;; e179c5f4
-
-(param &bg Color (0))
-(param &fill Color (8))
-(param &axis Axis (AXIS_V))
-(param &ink Color (1))

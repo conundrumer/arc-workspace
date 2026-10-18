@@ -1,4 +1,0 @@
-;; 7f4411dc
-
-(param &bg Color (0))
-(param &square_dim number (2))

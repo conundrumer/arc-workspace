@@ -1,6 +1,0 @@
-;; 310f3251
-
-(param &bg Color (0))
-(param &mark_color Color (2))
-(param &mark_diag DiagDir (DIAG_TL))
-(param &scale number (3))

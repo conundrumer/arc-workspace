@@ -1,6 +1,0 @@
-;; 1e97544e
-
-(param &hole Color (0))
-(param &corner DiagDir (DIAG_TL))
-(param &axis Axis (AXIS_V))
-(param &diag_axis DiagAxis (DAXIS_DG))

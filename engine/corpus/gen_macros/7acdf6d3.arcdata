@@ -1,4 +1,0 @@
-;; 7acdf6d3
-
-(param &bg Color (7))
-(param &hollow_axis Axis (AXIS_H))

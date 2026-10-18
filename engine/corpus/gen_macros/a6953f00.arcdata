@@ -1,6 +1,0 @@
-;; a6953f00
-
-(param &crop_side Dir (DIR_T))
-(param &frame Position (Frame
-  ((:A AXIS_V) (:N 2))
-  ((:A AXIS_H) (:N 2))))

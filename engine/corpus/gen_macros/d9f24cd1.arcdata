@@ -1,6 +1,0 @@
-;; d9f24cd1
-
-(param &mark Color (2))
-(param &block Color (5))
-(param &dodge Sense (SENSE_CW))
-(param &dir Dir (DIR_B))

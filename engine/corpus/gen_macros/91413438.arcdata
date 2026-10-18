@@ -1,5 +1,0 @@
-;; 91413438
-
-(param &bg Color (0))
-(param &lex_corner DiagDir (DIAG_TL))
-(param &lex_axis Axis (AXIS_V))

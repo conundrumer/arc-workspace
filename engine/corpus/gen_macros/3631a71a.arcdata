@@ -1,6 +1,0 @@
-;; 3631a71a
-
-(representative af22c60d)
-
-(param &mask Color (9))
-(param &mirror_band (Axis Dir number) (AXIS_V DIR_B 2) (AXIS_H DIR_R 2))

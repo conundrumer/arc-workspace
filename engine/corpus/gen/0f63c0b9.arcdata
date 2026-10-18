@@ -1,4 +1,0 @@
-;; 0f63c0b9
-
-(param &bg Color (0))
-(param &tie_dir Dir (DIR_B))

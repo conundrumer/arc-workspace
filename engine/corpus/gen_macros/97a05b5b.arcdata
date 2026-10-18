@@ -1,4 +1,0 @@
-;; 97a05b5b
-
-(param &bg Color (0))
-(param &board_color Color (2))

@@ -1,4 +1,0 @@
-;; 9772c176
-
-(param &bg Color (0))
-(param &cap Color (4))

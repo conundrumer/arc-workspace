@@ -1,7 +1,0 @@
-;; 212895b5
-
-(param &block Color (8))
-(param &stop Color (5))
-(param &diag_paint Color (2))
-(param &arm_paint Color (4))
-(param &gait (number C4) (0 D4_ID) (1 D4_CW) (2 D4_ID) (3 D4_CC))

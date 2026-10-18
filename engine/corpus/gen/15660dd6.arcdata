@@ -1,6 +1,0 @@
-;; 15660dd6
-
-(param &bg Color (8))
-(param &frame_col Color (1))
-(param &layout_axis Axis (AXIS_H))
-(param &ink Color (2))

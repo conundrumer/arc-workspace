@@ -1,6 +1,0 @@
-;; 84ba50d3
-
-(param &bg Color (8))
-(param &shape Color (1))
-(param &divider Color (2))
-(param &fall_dir Dir (DIR_B))

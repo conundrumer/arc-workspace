@@ -1,9 +1,0 @@
-;; 4c5c2cf0
-
-(param &bg Color (0))
-(param &group Sym (SYM_BOX))
-(param &pivot_shape Position
-  (grid
-    (1 _ 1)
-    (_ 1 _)
-    (1 _ 1)))

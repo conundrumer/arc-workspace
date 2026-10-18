@@ -1,9 +1,0 @@
-;; d364b489
-
-(param &marker Color (1))
-(param &arm (Dir Color) (DIR_T 2) (DIR_B 8) (DIR_L 7) (DIR_R 6))
-(param &template (Offset Color)
-  (grid
-    (_ 2 _)
-    (7 @1 6)
-    (_ 8 _)))

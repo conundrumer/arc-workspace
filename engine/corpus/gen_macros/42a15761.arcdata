@@ -1,6 +1,0 @@
-;; 42a15761
-
-(param &mark Color (0))
-(param &order_dir Dir (DIR_L))
-(param &panel_size number (3))
-(param &gap number (1))

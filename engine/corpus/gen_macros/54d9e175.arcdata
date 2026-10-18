@@ -1,6 +1,0 @@
-;; 54d9e175
-
-(param &mapping (Color Color) (1 6) (2 7) (3 8) (4 9))
-(param &separator Color (5))
-(param &tile_size number (3))
-(param &gap number (1))

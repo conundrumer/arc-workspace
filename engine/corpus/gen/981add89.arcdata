@@ -1,4 +1,0 @@
-;; 981add89
-
-(param &mark_dir Dir (DIR_T))
-(param &axis Axis (AXIS_V))

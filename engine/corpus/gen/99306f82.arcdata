@@ -1,5 +1,0 @@
-;; 99306f82
-
-(param &bg Color (0))
-(param &frame Color (1))
-(param &corner DiagDir (DIAG_TL))

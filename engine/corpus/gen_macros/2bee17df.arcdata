@@ -1,4 +1,0 @@
-;; 2bee17df
-
-(param &open Color (0))
-(param &fill Color (3))

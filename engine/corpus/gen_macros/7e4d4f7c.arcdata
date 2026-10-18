@@ -1,5 +1,0 @@
-;; 7e4d4f7c
-
-(param &header_dir Dir (DIR_T))
-(param &out_h number (3))
-(param &marker Color (6))

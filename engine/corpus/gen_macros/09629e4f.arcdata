@@ -1,6 +1,0 @@
-;; 09629e4f
-
-(param &tile_dim number (3))
-(param &gap number (1))
-(param &bg Color (0))
-(param &marker Color (8))

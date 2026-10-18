@@ -1,6 +1,0 @@
-;; 9bebae7a
-
-(param &bg Color (0))
-(param &shape_color Color (4))
-(param &mark_color Color (6))
-(param &turn_sense Sense (SENSE_CC))

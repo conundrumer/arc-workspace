@@ -1,4 +1,0 @@
-;; 50aad11f
-
-(param &bg Color (0))
-(param &shape Color (6))

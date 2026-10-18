@@ -1,7 +1,7 @@
 """Which converted solvers use each lib name, each proposer and each form
 keyword, so that
 a check of a change runs first the solvers the change's parts reach: a scan
-of the arclog files under `engine/corpus/gen/`, written to `uses.json` beside
+of the arclog files under `work/arclog/gen/`, written to `uses.json` beside
 the records (`parity.snapshot.parity_dir`)."""
 
 import json
@@ -24,7 +24,7 @@ HEAD_RE = re.compile(r"\((?P<head>[^\s()\"]+)")
 TOKEN_RE = re.compile(r"[^\s()\"]+")
 """A bare token of a form. A proposer or a lib component is written as
 one capitalized token, in any form; an alt name opens with `$`, and a
-relation or an instance with `&` (`docs/arclog/arclog.md#names`)."""
+relation or an instance with `&` (docs/arclog/arclog.md, under "Names")."""
 
 QUOTED_RE = re.compile(r'"(?:[^"\\]|\\.)*"|;[^\n]*')
 """A string or a comment, whichever opens first, so that a `;` inside a
@@ -32,8 +32,8 @@ string opens no comment and a `"` inside a comment opens no string."""
 
 
 def gen_dir() -> Path:
-    """`engine/corpus/gen/` of the checkout."""
-    return checkout.ROOT / "engine" / "corpus" / "gen"
+    """`work/arclog/gen/` of the main worktree."""
+    return checkout.work() / "arclog" / "gen"
 
 
 def signature_path() -> Path:
@@ -68,8 +68,8 @@ def proposers() -> frozenset[str]:
 
 
 def used(text: str) -> set[str]:
-    """The lib names, the proposers and the form keywords that the arclog
-    `text` holds: a lib relation as a form's head, a keyword as a form's head, and
+    """The lib names, the proposers and the form keywords the arclog `text`
+    names: a lib relation as a form's head, a keyword as a form's head, and
     a lib component or a proposer as any capitalized token. A claim slug is
     a bare lowercase token as well, so a lib relation counts only as a
     head."""
@@ -83,9 +83,9 @@ def used(text: str) -> set[str]:
 
 
 def uses() -> dict[str, list[str]]:
-    """Each lib name, each proposer and each form keyword that a file of
-    `engine/corpus/gen/` holds (`used`), with the stems of the files that
-    hold it, both sorted."""
+    """Each lib name, each proposer and each form keyword a file of
+    `work/arclog/gen/` names (`used`), with the stems of the files that
+    name it, both sorted."""
     out: dict[str, set[str]] = {}
     for path in sorted(gen_dir().glob("*.arclog")):
         for name in used(path.read_text()):

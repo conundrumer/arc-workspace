@@ -1,6 +1,0 @@
-;; 37d3e8b2
-
-(param &bg Color (0))
-(param &joint_count_color (number Color) (1 1) (2 2) (3 3) (4 7))
-(param &own_count_color (number Color) (1 1) (2 2) (3 3) (4 7))
-(param &box_count_color (number Color) (1 1) (2 2) (3 3) (4 7))

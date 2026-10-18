@@ -1,6 +1,0 @@
-;; 1acc24af
-
-(param &wall Color (1))
-(param &piece Color (5))
-(param &mark Color (2))
-(param &open_dir Dir (DIR_B))

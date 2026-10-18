@@ -1,4 +1,0 @@
-;; 67385a82
-
-(param &ink Color (3))
-(param &mark Color (8))

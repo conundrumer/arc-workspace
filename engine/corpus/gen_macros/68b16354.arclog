@@ -1,8 +1,0 @@
-;; 68b16354
-
-(DET &transform D4Domain)
-
-(RULE &output
-  (input (:P *P_grid_in) *Col)
-  (&transform *D)
-  (apply D (:P P_grid_in) (:P_out *P)))

@@ -1,5 +1,0 @@
-;; 3f7978a0
-
-(param &bar Color (5))
-(param &axis Axis (AXIS_V))
-(param &cap Color (8))

@@ -1,4 +1,0 @@
-;; 3d6c6e23
-
-(param &bg Color (0))
-(param &gravity Dir (DIR_B))

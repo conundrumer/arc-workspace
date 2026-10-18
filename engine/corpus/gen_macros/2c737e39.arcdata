@@ -1,4 +1,0 @@
-;; 2c737e39
-
-(param &bg Color (0))
-(param &mark Color (5))

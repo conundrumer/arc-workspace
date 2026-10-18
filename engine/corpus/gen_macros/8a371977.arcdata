@@ -1,5 +1,0 @@
-;; 8a371977
-
-(param &bg Color (1))
-(param &ring Color (2))
-(param &within Color (3))

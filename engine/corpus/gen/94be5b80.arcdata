@@ -1,5 +1,0 @@
-;; 94be5b80
-
-(param &bg Color (0))
-(param &stack_axis Axis (AXIS_V))
-(param &legend_sense Sense (SENSE_CC))

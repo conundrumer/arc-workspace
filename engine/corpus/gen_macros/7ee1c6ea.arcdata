@@ -1,4 +1,0 @@
-;; 7ee1c6ea
-
-(param &bg Color (0))
-(param &frame Color (5))

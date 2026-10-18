@@ -1,6 +1,0 @@
-;; 662c240a
-
-(param &tile_axis Axis (AXIS_V))
-(param &tile_count number (3))
-(param &tile_size number (3))
-(param &sym D4 (D4_DG))

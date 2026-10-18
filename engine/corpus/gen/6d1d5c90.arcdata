@@ -1,7 +1,0 @@
-;; 6d1d5c90
-
-(param &marker_edge Dir (DIR_L))
-(param &shift_dir Dir (DIR_B))
-(param &band_width number (1))
-(param &marker_color Color (2))
-(param &marker_count number (1))

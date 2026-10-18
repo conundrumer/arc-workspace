@@ -1,5 +1,0 @@
-;; 28bf18c6
-
-(param &bg Color (0))
-(param &axis Axis (AXIS_H))
-(param &copies number (2))

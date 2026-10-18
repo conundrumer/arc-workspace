@@ -1,5 +1,0 @@
-;; 44d8ac46
-
-(param &bg Color (0))
-(param &fill Color (2))
-(param &hole_sym Sym (SYM_D4))

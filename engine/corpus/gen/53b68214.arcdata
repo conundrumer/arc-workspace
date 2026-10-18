@@ -1,4 +1,0 @@
-;; 53b68214
-
-(param &growth Dir (DIR_B))
-(param &out_dim number (10))

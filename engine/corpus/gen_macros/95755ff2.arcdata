@@ -1,4 +1,0 @@
-;; 95755ff2
-
-(param &bg Color (0))
-(param &wall Color (2))

@@ -1,7 +1,0 @@
-;; 6f473927
-
-(param &bg Color (0))
-(param &axis Axis (AXIS_H))
-(param &n_tiles number (2))
-(param &mirror (Color Color) (0 8) (2 0))
-(param &shade Color (8))

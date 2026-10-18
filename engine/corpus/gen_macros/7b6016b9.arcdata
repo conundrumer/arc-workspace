@@ -1,5 +1,0 @@
-;; 7b6016b9
-
-(param &bg Color (0))
-(param &outside_fill Color (3))
-(param &fill Color (2))

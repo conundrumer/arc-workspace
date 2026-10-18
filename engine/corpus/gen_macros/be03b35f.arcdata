@@ -1,6 +1,0 @@
-;; be03b35f
-
-(param &frame Position (Frame
-  ((:A AXIS_V) (:N 2))
-  ((:A AXIS_H) (:N 2))))
-(param &template (DiagDir D4) (DIAG_TL D4_CC) (DIAG_TR D4_HT) (DIAG_BL D4_CW))

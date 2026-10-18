@@ -1,5 +1,0 @@
-;; 4e45f183
-
-(param &line_width number (1))
-(param &tile_count number (3))
-(param &tile_side number (5))

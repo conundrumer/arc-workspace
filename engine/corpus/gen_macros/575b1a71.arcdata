@@ -1,5 +1,0 @@
-;; 575b1a71
-
-(param &mark Color (0))
-(param &rank_dir Dir (DIR_L))
-(param &rank_color (number Color) (0 1) (1 2) (2 3) (3 4))

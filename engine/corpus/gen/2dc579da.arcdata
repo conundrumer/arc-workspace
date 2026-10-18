@@ -1,4 +1,0 @@
-;; 2dc579da
-
-(param &divisor number (2))
-(param &gap number (1))

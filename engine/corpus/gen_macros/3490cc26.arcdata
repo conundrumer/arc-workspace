@@ -1,5 +1,0 @@
-;; 3490cc26
-
-(param &bg Color (0))
-(param &seed Color (2))
-(param &path Color (7))

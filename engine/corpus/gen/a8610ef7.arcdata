@@ -1,7 +1,0 @@
-;; a8610ef7
-
-(param &mirror D4 (D4_TB))
-(param &bg Color (0))
-(param &matched Color (2))
-(param &unmatched Color (5))
-(param &recolor (Color Color Color) (0 0 0) (0 8 0) (8 0 5) (8 8 2))

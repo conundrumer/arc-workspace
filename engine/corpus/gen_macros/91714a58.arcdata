@@ -1,7 +1,0 @@
-;; 91714a58
-
-(param &bg Color (0))
-(param &square Position
-  (grid
-    (1 1)
-    (1 1)))

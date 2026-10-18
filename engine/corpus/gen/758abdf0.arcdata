@@ -1,6 +1,0 @@
-;; 758abdf0
-
-(param &bg Color (7))
-(param &wall Color (0))
-(param &mark Color (8))
-(param &full number (2))

@@ -1,5 +1,0 @@
-;; 0b17323b
-
-(param &mark_color Color (1))
-(param &new_color Color (2))
-(param &dir DiagDir (DIAG_BR))

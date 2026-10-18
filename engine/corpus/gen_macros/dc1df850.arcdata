@@ -1,9 +1,0 @@
-;; dc1df850
-
-(param &marker Color (2))
-(param &halo Color (1))
-(param &template (Offset Color)
-  (grid
-    (1 1 1)
-    (1 @2 1)
-    (1 1 1)))

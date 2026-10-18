@@ -1,4 +1,0 @@
-;; 62b74c02
-
-(param &bg Color (0))
-(param &dir Dir (DIR_R))

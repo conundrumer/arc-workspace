@@ -1,6 +1,0 @@
-;; ba26e723
-
-(param &anchor Dir (DIR_L))
-(param &period number (3))
-(param &phase number (0))
-(param &mapping (Color Color) (4 6))

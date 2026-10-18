@@ -1,4 +1,0 @@
-;; 6f8cd79b
-
-(param &border Color (8))
-(param &bg Color (0))

@@ -1,4 +1,0 @@
-;; ded97339
-
-(param &ink Color (8))
-(param &bg Color (0))

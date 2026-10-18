@@ -1,6 +1,0 @@
-;; 2281f1f4
-
-(param &marker Color (5))
-(param &fill Color (2))
-(param &header DiagDir (DIAG_TR))
-(param &bg Color (0))

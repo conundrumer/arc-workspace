@@ -1,5 +1,0 @@
-;; 4df5b0ae
-
-(param &bg Color (7))
-(param &pack_dir Dir (DIR_L))
-(param &rest_sense Sense (SENSE_CC))

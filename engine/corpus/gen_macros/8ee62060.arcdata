@@ -1,4 +1,0 @@
-;; 8ee62060
-
-(param &block_size number (2))
-(param &block_d4 D4 (D4_LR) (D4_TB) (D4_CW) (D4_CC))

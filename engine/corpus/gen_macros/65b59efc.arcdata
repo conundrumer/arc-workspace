@@ -1,5 +1,0 @@
-;; 65b59efc
-
-(param &bg Color (0))
-(param &sep Color (5))
-(param &template_side Dir (DIR_T))
