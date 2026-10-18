@@ -37,7 +37,7 @@
     - Solver text read or written outside the `souffle` package.
     - A lookup that defaults where the value could be unknown, or a closed vocabulary held as `str`.
         - A lookup that defaults stands where the absent value has a known meaning.
-    - An iteration whose order reaches output, run in hash order.
+    - An iteration whose order reaches output and is an order of encodings, such as hash order or the order of interning, and no order of the content.
     - A value that crosses a package boundary as a string the other side parses.
     - A test that [Tests](prompts/agents/notes/tests.md#tests) does not keep.
     - Prose in code that breaks a rule on prose in code.
