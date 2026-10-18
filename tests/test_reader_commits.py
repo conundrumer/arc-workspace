@@ -185,9 +185,9 @@ def earlier_launch(main: Path, texts: tuple[str, str], aid: str = EARLIER_ID) ->
     return meta
 
 
-def subagent_start(main: Path, aid: str) -> subprocess.CompletedProcess[str]:
+def subagent_start(main: Path, aid: str, kind: str = "operator") -> subprocess.CompletedProcess[str]:
     return ran(command("SubagentStart"), {
-        "hook_event_name": "SubagentStart", "agent_id": aid, "agent_type": "operator",
+        "hook_event_name": "SubagentStart", "agent_id": aid, "agent_type": kind,
         "transcript_path": str(main), "cwd": str(checkout.ROOT)})
 
 
@@ -203,6 +203,14 @@ def digest(monkeypatch: pytest.MonkeyPatch) -> Any:
 
 
 HELD_HEAD = "runs from the texts you were given at your launch"
+SEARCH_RULE = "run no `grep -r` over the root of the tree"
+
+
+def test_an_explore_agent_gets_the_search_rule_after_its_agent_id(tmp_path: Path) -> None:
+    main = session(tmp_path)
+    text = started_with(subagent_start(main, OPERATOR_ID, "Explore"))
+    assert text.startswith(f"Your agent id is {OPERATOR_ID}.\n\n")
+    assert SEARCH_RULE in text
 
 
 def test_start_diff_from_an_earlier_launch_of_the_type(tmp_path: Path, digest: Any) -> None:

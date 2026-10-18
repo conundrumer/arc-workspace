@@ -18,8 +18,6 @@
 ## Launching
 - Where a launch fails with its agent type not found, give the launch as unfinished, with the failure's text as its reason.
 - Give an agent a brief in the form the sections under [Briefs](prompts/agents/notes/launching.md#briefs) for its work give, where any does, and launch it as the agent type whose `description` links those sections: read each of those sections and each section they link. Restate neither a docstring of the code nor the agent's definition.
-- In a brief of an `Explore` agent, have it search with the Grep tool or `git grep`, and with no `grep -r` over the root of the tree, whose `.claude/worktrees/` holds a copy of the tree for each worktree.
-    * comment: Five `Explore` agents of the `Interactions:` step ran `grep -rn` over `.` for 3.4 to 5.4 minutes each: ticket 11-469. `grep -rn` over `.` took 502 s where `git grep` took 0.06 s, and the `Explore` agent loads no `CLAUDE.md`, so its brief is the only text that reaches it: Grounds of ticket 11-711.
 - Where a brief gives a scratch directory, give a new directory under the session's scratchpad directory.
 - Before you write the items or the Intent of an edit, read [An edit's items](prompts/agents/notes/launching.md#an-edits-items).
 - Before you give another agent a draft `change` ticket that you filed or revised, in your reply or otherwise, read [A draft's outcome](prompts/agents/notes/launching.md#a-drafts-outcome).

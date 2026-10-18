@@ -2,7 +2,9 @@
 own agent id, the `agent_id` of the hook input, and after it the start
 diff of its documents, where it has no record yet and gets one, as the
 module docstring of `scripts/reader_commits.py` gives the start diff and
-the record (`reader_commits.start_agent`).
+the record (`reader_commits.start_agent`). Where the hook input's
+`agent_type` is `Explore`, the hook gives after these the search rule
+(`search_rule`), and an agent of any other type gets no search rule.
 
 Where the input is not a `SubagentStart` input, or gives no `agent_id`, or
 an `agent_id` that is not of the form a ticket's log line takes, the hook
@@ -17,6 +19,8 @@ from hook_entry import not_registered, run_hook, run_part
 
 HOOK = "subagent_start_hook"
 NO_AGENT_ID = "gave no agent id"
+NO_SEARCH_RULE = "gave no search rule"
+SEARCHER = "Explore"
 
 
 def started(hook: dict[str, Any]) -> str:
@@ -43,10 +47,26 @@ def context(aid: str) -> str:
     return mctx("Your agent id is {aid}.").format(aid=aid)
 
 
-def give(line: str | None, diff: str | None) -> None:
-    """Print the hook output that gives the subagent its agent id `line`
-    and its start diff `diff`, where it gets either."""
-    text = "\n\n".join(part for part in (line, diff) if part is not None)
+def search_rule(hook: dict[str, Any]) -> str | None:
+    """The search rule the subagent of the input `hook` gets in its
+    context, where its `agent_type` is `SEARCHER`. Without it, five
+    `Explore` agents ran `grep -rn` over `.` for 3.4 to 5.4 minutes each,
+    where `git grep` took 0.06 s (tickets 11-469 and 11-711), and 19 of
+    24 agents whose brief gave no such rule ran 51 such calls (ticket
+    11-1448)."""
+    from controlled_markdown import mctx
+
+    if hook.get("agent_type") != SEARCHER:
+        return None
+    return mctx("Search with the Grep tool or `git grep`, and run no `grep -r` "
+                "over the root of the tree: its `.claude/worktrees/` holds a "
+                "copy of the tree for each worktree.")
+
+
+def give(*parts: str | None) -> None:
+    """Print the hook output that gives the subagent, in their order, the
+    `parts` it gets: its agent id line, its start diff and its search rule."""
+    text = "\n\n".join(part for part in parts if part is not None)
     if text:
         print(json.dumps({"hookSpecificOutput": {
             "hookEventName": "SubagentStart", "additionalContext": text}}), flush=True)
@@ -57,17 +77,18 @@ def act(hook: dict[str, Any]) -> None:
 
     aid = started(hook)
     line = run_part(HOOK, NO_AGENT_ID, lambda: context(aid))
+    rule = run_part(HOOK, NO_SEARCH_RULE, lambda: search_rule(hook))
     printed = False
 
     def record() -> None:
         nonlocal printed
         with start_agent(hook) as diff:
-            give(line, diff)
+            give(line, diff, rule)
             printed = True
 
     run_part(HOOK, RECORD_FAILED, record)
     if not printed:
-        give(line, None)
+        give(line, None, rule)
 
 
 def main() -> int:
