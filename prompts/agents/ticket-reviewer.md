@@ -40,5 +40,4 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/commands.md#commands
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
     * comment: Inlined, not linked: assignees a15dea852806d8e0d and a6bc8a8da857ab193, holding only a link to this section, were pinned to removed worktrees, did not act by it while every Bash call was refused, and each reported its revision unfinished: ticket 2-113.
-* inline: notes/commands.md#final-reply
-* inline: notes/commands.md#message-answers
+* inline: notes/commands.md#final-report

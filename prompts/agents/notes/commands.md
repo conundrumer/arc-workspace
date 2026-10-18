@@ -1,13 +1,13 @@
 + budget: 11540
 * comment: when editing this doc
-    - Each agent whose tools include `Bash` inlines [commands](#commands), for running, waiting on and ending its commands, and the code reviewer, the lib reviewer and the design reviewer, whose documents have them run no command in the background, [foreground-commands](#foreground-commands) in its place; each agent that gives a final reply to its launcher inlines [final-report](#final-report), other than the ticket reviewer, which inlines [final-reply](#final-reply) and [message-answers](#message-answers) in its place, and the code reviewer, the lib reviewer and the design reviewer [report-file](#report-file). Each agent that inlines final-reply, directly or through final-report, inlines [denied-calls](#denied-calls) beside it, other than the agents with a checklist, whose reply file, which the last item of the checklist links, links it. The doc editor, the ticket analyst, the draft analyst and the decision analyst load Background agents by a link.
+    - Each agent whose tools include `Bash` inlines [commands](#commands), for running, waiting on and ending its commands, and the code reviewer, the lib reviewer and the design reviewer, whose documents have them run no command in the background, [foreground-commands](#foreground-commands) in its place; each agent that gives a final reply to its launcher inlines [final-report](#final-report), other than the code reviewer, the lib reviewer and the design reviewer, which inline [report-file](#report-file) in its place. Each agent that inlines final-reply, directly or through final-report, inlines [denied-calls](#denied-calls) beside it, other than the agents with a checklist, whose reply file, which the last item of the checklist links, links it. The doc editor, the ticket analyst, the draft analyst and the decision analyst load Background agents by a link.
     - Acts, each with its section:
         - Running a command: [commands](#commands) and [foreground-commands](#foreground-commands).
         - Waiting on a command: [waiting-on-commands](#waiting-on-commands).
         - Ending a command: [ending-commands](#ending-commands), and [process-trees](#process-trees) where it calls `TaskStop` or starts a process with `&` or `nohup`.
         - Launching a background agent a command prints: [Background agents](#background-agents).
         - Reporting a denied call in the reply: [denied-calls](#denied-calls).
-        - Waiting on an agent resumed by SendMessage: [resumed-agents](#resumed-agents).
+        - Waiting on an agent resumed by SendMessage, and resuming it after a usage-limit stop: [resumed-agents](#resumed-agents).
         - Sending the answer a message asks for: [message-answers](#message-answers).
         - Giving the final reply: [final-reply](#final-reply), with [coordinator](#coordinator) and [report-file](#report-file), and [final-report](#final-report), which inlines it with the two sections above.
 
@@ -60,6 +60,8 @@
 ## resumed-agents
 - While an agent you resumed by SendMessage runs, the harness does not deliver the text you hand back, and its completion may not reach you.
 - Where you need that agent's answer, ask it, in the message that resumes it, to send that answer to you by SendMessage. Then wait for that message or for a file it writes, and for nothing else of it.
+- Where the notification of an agent your SendMessage resumed has the status `failed` and a summary that gives `error type rate_limit`, resume that agent by a message that asks it to continue its work.
+    * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-18T03:00:02Z: "I'm confused rn. I want agents to resume so they keep context. Not sure ordering rn". Tickets 11-705 and 11-1084.
 
 ## message-answers
 - Where a message asks you to send its sender an answer by SendMessage, send that answer by SendMessage to the agent id that message came from, once you have done what it asks, with each item of that message as done or as unfinished with its reason, in a message apart from your final reply.
