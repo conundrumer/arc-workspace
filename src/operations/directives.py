@@ -6,7 +6,9 @@ prefix `Op`, the word of its kind and a colon, past a list marker:
   after a task id to start its pipeline at that pass;
 - `Op run: <path>`, a run script, as `runs` gives it;
 - `Op drafts to review: <number>, ...`;
-- `Op expedite: <number>, ...`, for every operator of the session;
+- `Op expedite: <number>, ...`, for every operator of the session, and
+  the tickets an `Op allow:` line with those numbers reaches
+  (`taking.expedited`);
 - `Op allow: <number>, ...`, the tickets that `Op scope: own.` and
   `Op pause.` admit for every operator of the session, and the changes a
   chain of links reaches from them, with each `change` whose Motivation

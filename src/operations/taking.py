@@ -83,12 +83,25 @@ def links(t: Ticket) -> list[str]:
     return [*t.depends_on, *([on] if on is not None else [])]
 
 
+def served(state: State, start: set[str]) -> set[str]:
+    """`start` and each ticket a chain of steps reaches from one of its
+    tickets, a step from a ticket to each ticket of its `links` and, from
+    a ticket that is not a `change`, to each `change` whose Motivation
+    gives its number."""
+    def step(t: Ticket) -> list[str]:
+        return [*links(t), *([] if t.kind is Kind.CHANGE else
+                             (f.number for f in filed_for(state).get(t.number, ())
+                              if f.kind is Kind.CHANGE and t.number in f.motivation))]
+
+    return closure(state, start, step)
+
+
 def expedited(state: State) -> set[str]:
-    """The tickets a chain of links reaches from a ticket an `Op expedite:`
-    line to any operator of the session gives, which the operator takes
-    ahead of the others, so that an expedite outlives the operator it was
-    sent to."""
-    return reached(state, {n for n, _ in numbers_in(session_lines(state), Directive.EXPEDITE)})
+    """The tickets of `served` from the tickets an `Op expedite:` line to
+    any operator of the session gives, which the operator takes ahead of
+    the others, so that an expedite outlives the operator it was sent
+    to."""
+    return served(state, {n for n, _ in numbers_in(session_lines(state), Directive.EXPEDITE)})
 
 
 def admits(state: State) -> Callable[[str], bool]:
@@ -152,16 +165,9 @@ def held_work(state: State) -> set[str]:
 
 def allowed(state: State) -> set[str]:
     """The tickets `Op pause.` admits past the work held, and `Op scope: own.`
-    past the session's line of work: each ticket a chain of steps reaches
-    from a ticket of `directives.allow_named`, a step from a ticket to each
-    ticket of its `links` and, from a ticket that is not a `change`, to each
-    `change` whose Motivation gives its number; and those of `expedited`."""
-    def step(t: Ticket) -> list[str]:
-        return [*links(t), *([] if t.kind is Kind.CHANGE else
-                             (f.number for f in filed_for(state).get(t.number, ())
-                              if f.kind is Kind.CHANGE and t.number in f.motivation))]
-
-    return closure(state, allow_named(state), step) | expedited(state)
+    past the session's line of work: those of `served` from the tickets of
+    `directives.allow_named`, and those of `expedited`."""
+    return served(state, allow_named(state)) | expedited(state)
 
 
 COMMIT_WORD = re.compile(r"\b[0-9a-f]{7,40}\b")

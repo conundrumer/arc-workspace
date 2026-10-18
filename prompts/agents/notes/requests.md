@@ -28,7 +28,7 @@
 - `direct`: file the change's `request`, write its brief, and run the change as [Running a change](#running-a-change) gives.
 - `op send`: file the `request` and, in that turn, tell an operator that tickets are open where an operator launcher of yours runs, and otherwise launch a ticket analyst on it, with its transcript brief, and tell an operator so once the analyst replies.
 - `hotfix`: file the change's `request`, write its brief, and, as [Running a change](#running-a-change) gives, launch at once on a worktree the editors it needs, each with that brief, and merge the change.
-- `expedite <number>`: write nothing, send an operator `Op expedite: <number>`, and tell the user the tickets outside `tickets/closed/` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from it.
+- `expedite <number>`: write nothing, send an operator `Op expedite: <number>`, and tell the user the tickets outside `tickets/closed/` that line gives, as [An operator's brief](prompts/agents/notes/launching.md#an-operators-brief) gives that line.
 - `op scope: own` and `op scope: all`: write nothing, and send an operator `Op scope: own.` or `Op scope: all.`.
 - `op pause` and `op resume`: write nothing, and send an operator `Op pause.` or `Op resume.`.
 - Run a change yourself only on `direct` and `hotfix`.

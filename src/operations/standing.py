@@ -85,7 +85,7 @@ def drafts_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
 
 
 def expedite_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
-    return outside_closed(state, sorted(taking.reached(state, set(NUMBER.findall(ln.rest)))),
+    return outside_closed(state, sorted(taking.served(state, set(NUMBER.findall(ln.rest)))),
                           mctx("ticket"))
 
 
