@@ -1,6 +1,6 @@
 //! The box algebra: the relations and components whose signature or clauses
-//! hold a Box, a Position, or an Offset, and that take no set of cells as
-//! input.
+//! hold a Box, a Position, or an Offset, or only the numbers that count the
+//! tiles, gaps and periods of an axis, and that take no set of cells as input.
 //!
 //! Box is the edge-margin record (t, b, l, r), ordered V-first then H — a
 //! rectangle placed in a frame by its margins from the four edges. In a frame
