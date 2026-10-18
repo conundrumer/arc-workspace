@@ -37,7 +37,7 @@ use order::Recorded;
 
 pub use order::CanonicalOrder;
 
-pub(crate) use form::{canonical_form, form_scope, prediction, relation_of};
+pub(crate) use form::{canonical_form, form_scope, prediction, relation_of, shares_rule_scope};
 pub use form::{canonical_hash, AsWritten, Canonical, CanonicalForm, CanonicalWriter, NameWriter};
 pub(in crate::program) use form::form_of;
 

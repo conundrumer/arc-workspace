@@ -345,8 +345,9 @@ pub(in crate::program) fn form_of<T: Canonical>(value: &T) -> (CanonicalForm, bo
     (out.finish(), search.reached)
 }
 
-/// The canonical form of a form that stands in a program, a claim or an
-/// `ALT`, under [`AsWritten`] with a new [`SearchBudget`].
+/// The canonical form of a form that is a label scope of its own, as
+/// [`crate::program::LabelId`] gives scopes, under [`AsWritten`] with a new
+/// [`SearchBudget`].
 pub(crate) fn canonical_form(form: &Form) -> CanonicalForm {
     let mut search = SearchBudget::new();
     let mut out = CanonicalWriter::default();
@@ -381,8 +382,9 @@ pub(crate) fn relation_of(relation: &ProgramRelation) -> RelationRef {
     }
 }
 
-/// The scope of a form that stands in a program, a claim or an `ALT`, where
-/// its own content holds labels.
+/// The scope of a form that is a label scope of its own, as
+/// [`crate::program::LabelId`] gives scopes, where its own content holds
+/// labels.
 pub(crate) fn form_scope(form: &Form) -> Option<LabelScope<'_>> {
     match form {
         Form::Claim(claim) => claim.value().scope(),
@@ -395,8 +397,17 @@ pub(crate) fn form_scope(form: &Form) -> Option<LabelScope<'_>> {
     }
 }
 
-/// Writes a form that stands in a program, a claim or an `ALT`: a scope of
-/// its own.
+/// Whether `form`, a form of a `DEMO_RULE`, stands in the rule's label
+/// scope.
+pub(crate) fn shares_rule_scope(form: &Form) -> bool {
+    match form {
+        Form::Clause(_) | Form::Instance(_) | Form::Choose(_) | Form::RigidDet(_) => true,
+        Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) => false,
+    }
+}
+
+/// Writes a form that is a label scope of its own, as
+/// [`crate::program::LabelId`] gives scopes.
 pub(super) fn form_root(cx: &mut Context, out: &mut CanonicalWriter, form: &Form) {
     let labels = form_scope(form).map(|scope| cx.labeling(scope).0);
     form_with(cx, out, form, labels);
@@ -420,8 +431,8 @@ pub(super) fn form_with(cx: &mut Context, out: &mut CanonicalWriter, form: &Form
     }
 }
 
-/// Writes the forms of a program, a claim or an `ALT`, each a scope of its
-/// own.
+/// Writes `forms`, each a label scope of its own, as
+/// [`crate::program::LabelId`] gives scopes.
 pub(super) fn forms_root(cx: &mut Context, out: &mut CanonicalWriter, parent: NodeRef, forms: &[Form]) {
     out.len(forms.len());
     for form in forms.iter() {
@@ -897,9 +908,12 @@ impl WriteForm for DemoRule {
         out.option(self.text.as_ref(), |out, text| out.text(&text.0));
         out.len(self.forms.len());
         for form in self.forms.iter() {
-            cx.child(NodeRef::DemoRule(self), NodeRef::from(form), |cx| match form {
-                Form::Clause(_) | Form::Instance(_) | Form::Choose(_) | Form::RigidDet(_) => form_with(cx, out, form, None),
-                Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) => form_root(cx, out, form),
+            cx.child(NodeRef::DemoRule(self), NodeRef::from(form), |cx| {
+                if shares_rule_scope(form) {
+                    form_with(cx, out, form, None)
+                } else {
+                    form_root(cx, out, form)
+                }
             });
         }
     }

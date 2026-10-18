@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use super::{Check, CheckId, CheckInput, CheckResult, ClauseEntry, FileScope, Prefix, PrefixResult, Refusal, SolverClauses};
 use crate::hash::StableHashMap;
-use crate::program::canonical::{canonical_labeling, form_scope, AsWritten, CanonicalOrder, LabelScope, SearchBudget};
+use crate::program::canonical::{canonical_labeling, form_scope, shares_rule_scope, AsWritten, CanonicalOrder, LabelScope, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
     Atom, Body, ColumnName, Conjunct, DemoRule, Constraint, ConstraintOp, Form, Instance, InstanceInput, LabelId, NameScope,
@@ -434,31 +434,20 @@ pub(super) fn form_side(program: &ResolvedProgram, form: &NodePath) -> Option<Si
     nodes.find(|found| program.form_of(*found) == form).map(|found| program.side(found))
 }
 
-/// The form at `path` of `program`: a top-level form, a form of a claim,
-/// a form of an `ALT`, or a form of a `DEMO_RULE`.
+/// The form at `path` of `program`: a top-level form or a form of a
+/// `DEMO_RULE`.
 fn form_at<'p>(program: &'p crate::program::Program, path: &NodePath) -> Option<&'p Form> {
     let (first, rest) = path.0.split_first()?;
     form_within(program.forms.get(first.0 as usize)?, &NodePath(rest.into()))
 }
 
 /// The form at `path`, a path relative to `form`: `form` itself at the
-/// empty path, or a form of a claim, of an `ALT` or of a `DEMO_RULE`
-/// within it.
+/// empty path, or a form of a `DEMO_RULE` within it.
 fn form_within<'p>(form: &'p Form, path: &NodePath) -> Option<&'p Form> {
     let mut form = form;
     let mut steps = path.0.iter();
     while let Some(step) = steps.next() {
         form = match form {
-            Form::Claim(claim) => claim.value().forms.get(step.0 as usize)?,
-            Form::Alts(alts) => {
-                let mut alt = alts.value().alts.get(step.0 as usize)?.value();
-                loop {
-                    match alt.items.get(steps.next()?.0 as usize)? {
-                        crate::program::AltItem::Form(form) => break form,
-                        crate::program::AltItem::Alt(nested) => alt = nested.value(),
-                    }
-                }
-            }
             Form::Demonstrated(demonstrated) => {
                 let demonstrated = demonstrated.value();
                 let before = demonstrated.key.iter().count() + demonstrated.inputs.len();
@@ -474,16 +463,6 @@ fn form_within<'p>(form: &'p Form, path: &NodePath) -> Option<&'p Form> {
 /// The labels of `scope`, in the order of its canonical labeling.
 fn scope_labels(scope: LabelScope<'_>) -> Vec<LabelId> {
     canonical_labeling(scope, &AsWritten, &mut SearchBudget::new()).positions.iter().map(|(label, _)| *label).collect()
-}
-
-/// Whether `form`, a form of a `DEMO_RULE`, stands in the rule's label
-/// scope, as the form writer writes it: a claim, a `DEMONSTRATED` form and
-/// an `ALTS` form are each a scope of their own.
-fn shares_rule_scope(form: &Form) -> bool {
-    match form {
-        Form::Clause(_) | Form::Instance(_) | Form::Choose(_) | Form::RigidDet(_) => true,
-        Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) => false,
-    }
 }
 
 /// The `DEMO_RULE` form at `path` of `program`.
@@ -502,28 +481,16 @@ fn rule_within<'p>(form: &'p Form, path: &NodePath) -> Option<&'p crate::program
 }
 
 /// Each form that declares names in `scope`, with its path: the top-level
-/// forms and the forms of claims for the program, and a `DEMO_RULE`'s forms
-/// for its scope.
+/// forms for the program, and a `DEMO_RULE`'s forms for its scope.
 fn scope_forms<'p>(program: &'p crate::program::Program, scope: &NameScope) -> Vec<(NodePath, &'p Form)> {
-    fn add<'p>(forms: &'p [Form], at: &NodePath, out: &mut Vec<(NodePath, &'p Form)>) {
-        for (form, index) in forms.iter().zip(0u32..) {
-            let path = at.child(index);
-            if let Form::Claim(claim) = form {
-                add(&claim.value().forms, &path, out);
-            }
-            out.push((path, form));
-        }
-    }
-    let mut out = Vec::new();
-    match scope {
-        NameScope::Program => add(&program.forms, &NodePath::default(), &mut out),
-        NameScope::DemoRule(rule) => {
-            if let Some(found) = demo_rule(program, rule) {
-                add(&found.forms, rule, &mut out);
-            }
-        }
-    }
-    out
+    let (forms, at) = match scope {
+        NameScope::Program => (&program.forms[..], NodePath::default()),
+        NameScope::DemoRule(rule) => match demo_rule(program, rule) {
+            Some(found) => (&found.forms[..], rule.clone()),
+            None => return Vec::new(),
+        },
+    };
+    forms.iter().zip(0u32..).map(|(form, index)| (at.child(index), form)).collect()
 }
 
 /// The type of the value at `site` of a head or of a read: its one bare
@@ -660,7 +627,7 @@ pub(super) struct SiteUse<'a> {
 /// The nodes of the own scope of one form that the inference reads by
 /// their paths relative to the form: the path of each atom, each label's
 /// first use, each constraint, and each label at a site. The forms of a
-/// claim and of a `DEMO_RULE` stand in scopes of their own.
+/// `DEMO_RULE` stand in scopes of their own.
 pub(super) struct FormWalk<'a> {
     atoms: StableHashMap<*const Atom, NodePath>,
     first_use: StableHashMap<LabelId, NodePath>,
@@ -692,7 +659,7 @@ impl<'a> FormWalk<'a> {
             return self.atom(atom, at);
         }
         match node {
-            NodeRef::Claim(_) | NodeRef::DemoRule(_) => return,
+            NodeRef::DemoRule(_) => return,
             NodeRef::Conjunct(Conjunct::Constraint(constraint)) => {
                 let second = match constraint.second {
                     Operand::Label(label) => Some(label.label),

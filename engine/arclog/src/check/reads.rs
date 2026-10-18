@@ -81,8 +81,7 @@ fn reads_example(examples: &[crate::resolver::ExamplePath], atom: &Atom) -> bool
 
 /// One read of a form: the atom, its path relative to the form the check
 /// reads, and the path in the program of the innermost form that holds it,
-/// a form of a claim or of a `DEMO_RULE` included, whose side the read
-/// takes.
+/// a form of a `DEMO_RULE` included, whose side the read takes.
 pub(super) struct FormRead<'a> {
     pub atom: &'a Atom,
     pub at: NodePath,
@@ -109,14 +108,14 @@ pub(super) fn form_reads<'a>(form: &'a Form, path: &NodePath) -> Vec<FormRead<'a
     out
 }
 
-/// `form` and each form it holds, a form of a claim or of a `DEMO_RULE`,
-/// with its path relative to `form`, in the order of the paths.
+/// `form` and each form of a `DEMO_RULE` it holds, with its path relative
+/// to `form`, in the order of the paths.
 pub(super) fn forms_within(form: &Form) -> Vec<(NodePath, NodeRef<'_>)> {
     fn walk<'a>(node: NodeRef<'a>, at: NodePath, out: &mut Vec<(NodePath, NodeRef<'a>)>) {
         if is_form(node) {
             out.push((at.clone(), node));
         }
-        if matches!(node, NodeRef::Claim(_) | NodeRef::Demonstrated(_) | NodeRef::DemoRule(_)) {
+        if matches!(node, NodeRef::Demonstrated(_) | NodeRef::DemoRule(_)) {
             for (child, index) in node.children().into_iter().zip(0u32..) {
                 walk(child, at.child(index), out);
             }

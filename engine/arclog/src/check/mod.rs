@@ -104,8 +104,8 @@ pub enum CheckId {
     PooledAndLiftedReads,
 }
 
-/// A label of a label scope within a top-level form, with its inferred type
-/// where the type check has given one.
+/// A label of a label scope within a top-level form, as [`LabelId`] gives
+/// scopes, with its inferred type where the type check has given one.
 #[derive(Clone, Debug)]
 pub struct LabelInScope {
     /// The source path, relative to the top-level form, of the form of the
@@ -117,7 +117,8 @@ pub struct LabelInScope {
 }
 
 /// The scope of a node: the declarations visible at it, and the labels of
-/// each label scope of its top-level form with their types.
+/// each label scope of its top-level form, as [`LabelId`] gives scopes,
+/// with their types.
 #[derive(Clone, Copy, Debug)]
 pub struct Scope<'a> {
     /// The case program the node stands in.

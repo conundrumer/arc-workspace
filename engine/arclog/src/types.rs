@@ -452,10 +452,11 @@ pub fn each_conjunct(body: &crate::program::Body, visit: &mut dyn FnMut(&crate::
 }
 
 /// The types the type check infers for the labels of one label scope of a
-/// form, which the check cache keeps beside the form's type check, so that
-/// the cases that share a form share its types. In the check cache a label
-/// is its canonical position in its scope, as `LabelId(position)`, and a key
-/// row's labels are the same. [`ProgramTypes`] holds the scope's own labels.
+/// form, as [`crate::program::LabelId`] gives scopes, which the check cache
+/// keeps beside the form's type check, so that the cases that share a form
+/// share its types. In the check cache a label is its canonical position in
+/// its scope, as `LabelId(position)`, and a key row's labels are the same.
+/// [`ProgramTypes`] holds the scope's own labels.
 ///
 /// In the check cache it holds as well the type of each column of each
 /// relation that a form of the scope gives whose columns the form's
@@ -531,9 +532,7 @@ pub struct ProgramTypes {
 impl ProgramTypes {
     /// The types of the labels of the label scope whose form stands at
     /// `form`, a path of the program, as [`crate::program::LabelId`] gives
-    /// scopes: a top-level form's own scope, each form of a claim or an
-    /// `ALT`, a `DEMONSTRATED` form's key clause and inputs, and each
-    /// `DEMO_RULE` form, at any depth.
+    /// scopes.
     pub fn form(&self, form: &crate::program::path::NodePath) -> Option<&FormTypes> {
         self.forms.get(form).map(|types| &**types)
     }

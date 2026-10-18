@@ -13,11 +13,9 @@ use crate::hash::StableHashMap;
 /// and served to each form of equal content through its own order, so the
 /// cases that share a form share its check.
 ///
-/// The labels are held for each label scope within the form, by the source
-/// path of that scope's form relative to the form: the empty path for the
-/// form's own scope, a `DEMONSTRATED` form's key clause and inputs among
-/// them, the path of each form of a claim or an `ALT`, and the path of each
-/// `DEMO_RULE` form.
+/// The labels are held for each label scope within the form, as
+/// [`LabelId`] gives a scope, by the source path of that scope's form
+/// relative to the form.
 #[derive(Clone, Debug)]
 pub struct CanonicalOrder {
     lists: StableHashMap<NodePath, Box<[u32]>>,

@@ -249,13 +249,13 @@ impl<'n> GraphBuilder<'n> {
         let names = self.names;
         let prediction = prediction();
         self.columns(parent, &rule.fields, |out, name| names.write_column(&prediction, std::slice::from_ref(name), out));
-        for (index, form) in rule.forms.iter().enumerate() {
+        // A form of a scope of its own reads no label of the rule.
+        for (index, form) in rule.forms.iter().enumerate().filter(|(_, form)| shares_rule_scope(form)) {
             match form {
                 Form::Clause(clause) => self.clause(clause.value(), parent, index),
                 Form::Instance(instance) => self.instance(instance.value(), parent, index),
                 Form::Choose(choose) => self.choose(choose.value(), parent, index),
                 Form::RigidDet(rigid) => self.rigid_det(rigid.value(), parent, index),
-                // A form of a scope of its own reads no label of the rule.
                 Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) => {}
             }
         }

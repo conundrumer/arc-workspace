@@ -11,12 +11,11 @@ use arclog::registry::Registry;
 use arclog::resolver::resolve;
 use arclog::types::ValueType;
 
-/// The checked program of the arclog file `arclog` as written, with its
-/// claims.
+/// The checked program of the concept case of the arclog file `arclog`.
 fn checked(arclog: &str) -> CheckedProgram {
     let solver = read_solver("scopes", arclog, "", &|_| None).expect("the file reads").value;
     let registry = Registry::get();
-    let program = resolve(&solver.program, None, &solver.derived_relations(), registry).value;
+    let program = resolve(&solver.concept_case().program, None, &solver.derived_relations(), registry).value;
     let clauses = SolverClauses::of(&solver, registry);
     check_program(program, &clauses, registry, &mut CheckCache::default()).expect("every check passes")
 }
@@ -38,16 +37,6 @@ const PROGRAM: &str = "
   (DEMO_RULE $Same
     (RULE &prediction (&stage (:Col *Col) (:P *P)))))
 ";
-
-#[test]
-fn a_label_of_a_clause_in_a_claim_takes_its_type_at_the_clause_path() {
-    let checked = checked(PROGRAM);
-    let Form::Claim(claim) = &checked.program.program.value().forms[0] else { panic!("the first form is a claim") };
-    let Form::Clause(clause) = &claim.value().forms[0] else { panic!("the claim's form is a clause") };
-    let types = checked.types.form(&path(&[0, 0])).expect("the clause of the claim is a label scope");
-    let column_types: Vec<Option<&ValueType>> = clause.value().columns.iter().map(|column| types.label(column.label)).collect();
-    assert!(column_types.contains(&Some(&ValueType::Color)), "{column_types:?}");
-}
 
 #[test]
 fn a_label_of_one_id_in_the_key_scope_and_a_demo_rule_takes_the_type_of_each_scope() {
