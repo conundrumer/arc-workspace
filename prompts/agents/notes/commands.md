@@ -22,8 +22,6 @@
 - Run each command in the foreground, with a timeout of 240000 ms on the Bash call, where no other line of your documents has you run it in the background.
 - Run each script you wrote under `timeout 60`, or a longer bound of at most `timeout 180` where a stopped script needs one, with its output unbuffered, as `python -u` gives it.
     * comment: Scripts an agent wrote ran past the Bash call's timeout, so the call moved to the background and the run spent calls stopping it, and a search piped to `tail` showed none of its output: tickets 10-591 (runs ab654598162d2ebec and aad3d038eb7ae06e5), 10-739 (runs a9335527d5f64ec96 and ac50865438dc0b06d), 10-754 (run a8d05b229bc75be5d) and 10-377.
-- An agent whose brief gives a check that does not finish within the bound it runs under gives that check in its reply as unfinished, with the output the check gave, and runs neither that check nor a narrower form of it again.
-    * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-18T19:11:49Z: "1 3 ok", which chose the coordinator's option 3 of 19:11:00Z: "A check that can't finish is an unfinished item. An editor reports a check that doesn't finish within its bound, with its partial result, through the existing path for unfinished items. It doesn't improvise a narrower version." Change 11-1551.
 
 ## waiting-on-commands
 * inline: #foreground-commands

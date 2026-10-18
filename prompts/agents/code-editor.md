@@ -48,7 +48,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 ## Working rules
 - Edit only the files your brief gives, each file your `Reuse` list gives as edited for a reuse, the accepted gate outputs a finding of your checks gives you to update, your tests directory, your scratch directory, and the tickets you file.
-- Run no git command that changes state, other than `git worktree add --detach` and `git worktree remove --force` on a directory under your scratch directory, which [the before side](prompts/agents/code-editor/before-side.md) runs.
+- Run no git command that changes state, other than `git worktree add --detach` and `git worktree remove --force` on a directory under your scratch directory, which [the run of the tree before the change](prompts/agents/code-editor/before-side.md) uses.
     + xref: prompts/agents/code-editor/before-side.md
 * inline: notes/worktree.md#worktree
 * inline: notes/worktree.md#worktree-commands

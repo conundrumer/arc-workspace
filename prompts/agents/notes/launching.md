@@ -67,6 +67,8 @@
 - Where an editor of its agent type that another session launched worked in that worktree before it, it gives the agent id and the scratch directory of the last such editor that left a report, and its latest report.
 - It gives the rounds the editor has of each review of the change that an item has it make. The editor makes at most that many rounds of such a review, and sorts its findings as [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) gives.
     + xref: prompts/agents/notes/launching.md#findings-that-block-a-change
+- An editor whose brief gives a check that does not finish within the bound it runs under gives that check in its reply as unfinished, with the output the check gave, and runs neither that check nor a narrower form of it again.
+    * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-18T19:11:49Z: "1 3 ok", which chose the coordinator's option 3 of 19:11:00Z: "A check that can't finish is an unfinished item. An editor reports a check that doesn't finish within its bound, with its partial result, through the existing path for unfinished items. It doesn't improvise a narrower version." Change 11-1551.
 
 ### An editor's report on a change
 - An editor's report on a change gives, for each item of its brief, and of each request a later message adds, that it gives as done, what shows it holds: a command it ran with the output that shows it, the line of a rendered context that states it, the check its ticket's Scope places after the merge where only that check can show it, or, where none of these can, the reason it holds.
@@ -207,7 +209,7 @@
     + xref: prompts/agents/notes/launching.md#a-changes-brief
 
 ## Findings that block a change
-- A finding of a review of a built change before its merge blocks the change only where it is a defect in what an item of the change asks for, an edit that applies an item wrongly, or a defect that an edit made to fix an earlier finding of the change, or, in a design review, code the diff adds that writes a rule a second time, that no item of the change needs and that nothing but a test or an example calls, that is larger than the cases it serves need, or that adds to a defect an open `refactor` ticket records.
+- A finding of a review of a built change before its merge blocks the change only where it is a defect in what an item of the change asks for, an edit that applies an item wrongly, or a defect that an edit made to fix an earlier finding of the change.
 - File each other finding as a ticket, in the form your documents give a ticket, and have no editor fix it: that ticket does not block the change.
 
 ## Passes on a task

@@ -13,7 +13,7 @@
 * inline: launching.md#solver-work
 
 ## solver-pass-lead
-- What an operation routes to the review goes in your report, under the section it fits.
+- Your report is the review that the operations name: what an operation routes to the review goes in your report, under the section it fits.
 - Write under `programs/solvers/`, `programs/witnesses/`, `work/task/<task_id>/`, `tickets/open/` and `tickets/deferred/`, and nowhere else, apart from a `work` link to the main worktree's `work/`.
 - Change no Analyze file.
 - Report a failing run as failing.

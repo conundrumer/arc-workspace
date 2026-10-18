@@ -152,18 +152,18 @@
 
 ### Write
 1. Read the Analyze files, one at a time: `work/task/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`.
-    - The concept file gives the concept case's claims, and the Analyze report gives each branch's standing.
+    - The concept file gives the concept case's claims, and `analyze.md` gives each branch's standing.
 2. Write the solver (`programs/solvers/<task_id>.dl`), and copy `witnesses.json` to the witness file: `cp work/task/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`.
     - Write the header's `@scene` and `@rule` lines from the concept file's claims, and `Params` from its Parameters section, under their names. The `@scene` line written from a claim gives the value of each parameter in its Scene parameters section that the claim reads.
-    - A rule that report restates takes the restated text, and the concept file's text stands under it as its `@approximated:` line when the restated text has no relational form.
-    - Each branch that report gives a witness, other than one that derives a parameter's value by a built-in derivation or stores a value the program derives, is a constructor, named as the report names it and nested as the report nests its choice point.
+    - A rule that `analyze.md` restates takes the restated text, and the concept file's text stands under it as its `@approximated:` line when the restated text has no relational form.
+    - Each branch that `analyze.md` gives a witness, other than one that derives a parameter's value by a built-in derivation or stores a value the program derives, is a constructor, named as `analyze.md` names it and nested as `analyze.md` nests its choice point.
         - [Develop](#develop) step 4 gives which of the branches the line above leaves out you hold.
             + xref: docs/handbook/procedure.md#develop
-    - A concept branch's constructor takes a name of your own, and so does the constructor of a branch the report names in a form other than a constructor name, such as `<rel>=derived`. In the witness file, rewrite each name of that branch to that name.
-    - An open parameter of that report, unless [Principles](docs/handbook/principles.md) make it a choice point, is a `Params` relation with a fact per open value, and no constructor; its values are the report's where it gives them, whatever the concept file gives.
+    - A concept branch's constructor takes a name of your own, and so does the constructor of a branch `analyze.md` names in a form other than a constructor name, such as `<rel>=derived`. In the witness file, rewrite each name of that branch to that name.
+    - An open parameter of `analyze.md`, unless [Principles](docs/handbook/principles.md) make it a choice point, is a `Params` relation with a fact per open value, and no constructor; its values are those of `analyze.md` where it gives them, whatever the concept file gives.
     - The cases are the combinations of those branches that fit, whether or not one case's model subsumes another's, and the run shows which fit, as a combination that does not fit is a witnessed case.
         * comment: The Create pass on b7955b3c read "which the run shows" without that inference: on `PASS (4 witnessed cases)` for a solver of 8 cases, it wrote a scratch script to learn whether the 4 other cases fit, as ticket 10-445 records.
-    - A line of that report that gives a `<property>` & `<property>` pair gives what each case that takes a non-concept branch at both points of that pair reads, and a `<branch>` & `<branch>` line under it gives what the case that takes both branches reads.
+    - A line of `analyze.md` that gives a `<property>` & `<property>` pair gives what each case that takes a non-concept branch at both points of that pair reads, and a `<branch>` & `<branch>` line under it gives what the case that takes both branches reads.
     - Leave the `Determine` comp for the Determine operation.
 
 ### Develop
@@ -173,13 +173,14 @@
     - When a hint appears, judge it, and put that judgment in the review.
     - Flag performance issues in the review.
     - When a performance issue prevents the principled form, make a temporary workaround, marked with the `@workaround` directive.
-3. Form as a branch each interpretation that an item under the Analyze report's Not formed gives and that states one model, and add as cases the combinations that take it and meet Fit and Relational form.
+3. Form as a branch each interpretation that an item under Not formed in `analyze.md` gives and that states one model, and add as cases the combinations that take it and meet Fit and Relational form.
     * comment: The Create pass on b9b7f026, agent a439e0b4a10625696, read this step as having it form the item "A rank among several holed rectangles", which names no order, and chose rank by cell count as branches, as ticket 10-507 records.
 4. Hold as a branch each of these:
     - A built-in derivation that fits a parameter.
         + xref: src/checker/branches/checks.py:check_two_parameterizations
     - An interpretation that stores a derived value, where a `@store` line stands on that value or `store` prints one to add for it.
-    - An interpretation that stores a derived value and that the Analyze report gives a witness, whatever `store` reports.
+    - An interpretation that stores a derived value and that `analyze.md` gives a witness, whatever `store` reports.
+5. Find and write the branches of step 4 with these:
     - `uv run python scripts/run_dl.py derive <task_id>` lists the built-in derivations that fit.
         + xref: src/checker/derive.py:survey_derive
     - `uv run python scripts/run_dl.py store <task_id>` lists the derived values that are the same on every input.
@@ -190,7 +191,7 @@
     - In the witness file, rewrite each name of the branch a `@derive` or `@store` line records to the name [Witness file](docs/handbook/solver-file.md#witness-file) gives that line.
         + xref: docs/handbook/solver-file.md#witness-file
     - A non-concept branch whose model is equivalent to that of a `@derive` or `@store` branch loses its constructor and gets no clauses of its own.
-5. Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.
+6. Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.
     + xref: src/cli/audit.py:cmd_audit
     - A check the audit skips goes in the review as open.
 
@@ -209,7 +210,7 @@
 
 ### Witness
 - **Concept and branch claims.**
-    - Write the `@witness` lines of the header and the branches, with each plausibility and verdict as the Analyze report gives it, `@relaxed` for the scene claim it breaks, which rules out `ordinary`, and `@reassigned` for each parameter that the assignment it stands at changes.
+    - Write the `@witness` lines of the header and the branches, with each plausibility and verdict as `analyze.md` gives it, `@relaxed` for the scene claim it breaks, which rules out `ordinary`, and `@reassigned` for each parameter that the assignment it stands at changes.
         + xref: src/checker/lint/form/witnesses.py:check_witness, src/checker/witness.py:check_witness_lines, src/solver/annotations.py:WitnessLine
         * comment: The clause "which rules out `ordinary`" restates the plausibility definition, and a64e4611 Create needed it.
             + xref: docs/handbook/principles.md#witnesses
@@ -256,7 +257,7 @@
     + xref: src/checker/case_conditions.py:check_subsumption
     - Some input, at some assignment of the parameters either case reads, shows the case defined and differing: build the witness that shows it, with `--assign` when it needs one, and the case meets Subsumption and stays.
     - Otherwise the case fails Subsumption and leaves.
-    - A case or branch that leaves under Subsumption is not an error of the Analyze report.
+    - A case or branch that leaves under Subsumption is not an error of `analyze.md`.
 - The audit reports each fact a parameter's relation stores whose removal changes no output on any input of the task or of the witness file. Resolve it by the first that applies, and put the resolution in the review.
     + xref: src/cli/audit.py:cmd_audit
     - No reader of the concept could take the value the fact stores: the fact leaves that relation.

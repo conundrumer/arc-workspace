@@ -55,6 +55,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 
 ## Findings
 * inline: notes/launching.md#findings-that-block-a-change
+- Besides the findings that block a change under Findings that block a change, a finding on code the diff adds blocks the change where that code writes a rule a second time, no item of the change needs it and nothing but a test or an example calls it, where it is larger than the cases it serves need, or where it adds to a defect an open `refactor` ticket records.
 - File each finding as a ticket of kind `question`, with the number of the change's ticket as `<subject>`, and with `change` as `<domain>` where it blocks the change, and otherwise `ticket`.
     + xref: scripts/ticket_vocabulary.py:FILER_KINDS, prompts/agents/notes/tickets.md#ticket-subjects
     - Give under its `Evidence` the case or state change with its instance, as a path, a command and its output, a test on `master` or the Principles line, the number of each `refactor` ticket it rests on, and the lines it rests on, each quoted with its path.
