@@ -2,7 +2,7 @@
 //! derivation of a relation macro's modes both apply.
 
 use crate::hash::StableHashSet;
-use crate::program::{Atom, Body, Conjunct, Constraint, ConstraintOp, LabelId, LabelUse, Negated, Node, Operand, Site, SiteArg};
+use crate::program::{Atom, Body, Conjunct, Constraint, ConstraintOp, LabelId, Negated, Node, Operand, Site};
 use crate::registry::Mode;
 use crate::types::{each_conjunct, ValueType};
 
@@ -183,15 +183,9 @@ fn own_labels(conjunct: &Conjunct, labels: &mut StableHashSet<LabelId>) {
 
 /// Adds each label at `site`, its fields' included, to `labels`.
 fn site_labels(site: &Site, labels: &mut StableHashSet<LabelId>) {
-    for arg in site.value.args.iter() {
-        match arg {
-            SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label)) => {
-                labels.insert(*label);
-            }
-            SiteArg::Label(LabelUse::Zero) => {}
-            SiteArg::Field(field) => site_labels(field, labels),
-        }
-    }
+    crate::types::each_site_label(site, &mut Vec::new(), &mut |use_, _| {
+        labels.extend(crate::types::use_label(use_));
+    });
 }
 
 /// Whether `ty` is an orientation type, whose label counts as grounded.

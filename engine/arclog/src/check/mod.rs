@@ -30,8 +30,20 @@ pub enum CheckId {
     /// The columns of each site.
     SiteColumns,
     /// The type check, the order rule included. The check gives each label
-    /// of a body the type that [`crate::types::label_type`] gives it, and
-    /// refuses the label where that function gives a fault. A label that only
+    /// of a body the type that [`crate::types::label_type`] gives it over
+    /// the list of the label's scope, and refuses the label where that
+    /// function gives a fault. That list is the clause's body for a label of
+    /// the top level; a branch's list for a label local to an `OR` branch or
+    /// to an `IF`'s then; for a label fresh in an `IF`'s test or in a list of
+    /// an `ALL`, the list that holds that form; and for a label that an `OR`
+    /// or an `IF` exports, the list that holds the outermost form that
+    /// exports it. The site types the check gives that function are the
+    /// declared types of the columns; at a column of a type parameter bound
+    /// to one label's type, that type, at the column's path and at the path
+    /// of the column followed by a bare label's name; and at a field of a
+    /// column of a type parameter bound to a record, that field's type in
+    /// the bound record. The parameter's first projection binds it
+    /// (`docs/arclog/arclog.md#instance`). A label that only
     /// `(= *X 0)` gives a type takes the type of the instance input it
     /// stands at, or else the join, as [`crate::types::ValueType::join`]
     /// gives it, of the types that the relation's other clauses give its

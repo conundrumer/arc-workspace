@@ -659,9 +659,12 @@ impl MacroDerivation<'_, '_> {
         relation
     }
 
-    /// The type of the column `column` of the relation `atom` reads, where
-    /// that relation is a lib name of `lib` or a macro with its declaration.
-    fn site_type(&self, atom: &Atom, column: &ColumnName) -> Option<ValueType> {
+    /// The type of the column `path` gives of the relation `atom` reads,
+    /// where that relation is a lib name of `lib` or a macro with its
+    /// declaration and `path` is one column. A longer path, a field of a
+    /// type parameter's column, gives no type.
+    fn site_type(&self, atom: &Atom, path: &[ColumnName]) -> Option<ValueType> {
+        let [column] = path else { return None };
         let RelationRef::Lib(name) = &atom.relation else { return None };
         let columns: &[Column] = match self.index.get(name) {
             Some(&j) => &self.declared(j).columns,

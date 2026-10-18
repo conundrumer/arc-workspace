@@ -151,7 +151,8 @@ pub enum LabelFault {
 }
 
 /// The type that `body` gives `label`, `None` where it gives none, or the
-/// fault of that type.
+/// fault of that type. `body` is the list of the label's scope, as the doc
+/// of [`crate::check::CheckId::Types`] gives it.
 ///
 /// The type is the meet, as [`ValueType::meet`] gives it, of the types of
 /// every site of the label, at any depth, and a join, as [`ValueType::join`]
@@ -159,23 +160,35 @@ pub enum LabelFault {
 /// at any depth, gives each the sites of the other, and `0` gives no type.
 /// A negated atom's sites count as a positive atom's, and a `NOT` of a form
 /// gives what that form gives. An `OR` gives the join of the types its
-/// branches give, an `IF` the meet of its test's type with the join of its
-/// then and else lists' types, and an `ALL` the meet of its domain's and its
-/// body's types. A branch that gives the label no type gives the `OR` or the
-/// `IF`'s join none. A site is one label at an atom's column, and has the
-/// type that `site_type` gives that atom and column.
+/// branches give, and an `ALL` the meet of its domain's and its body's
+/// types. An `IF` gives the meet of its test's type with the join of its
+/// then and else lists' types, or, where the label is fresh in the test,
+/// the meet of its test's and its then's types, since such a label is
+/// local to the test and the then (`docs/arclog/arclog.md#conditional`). A
+/// branch that gives the label no type gives the `OR` or the `IF`'s join
+/// none.
+///
+/// A site is one label at an atom's site, at any depth of the site: a bare
+/// label at the site's column, a bare label at a column of a type
+/// parameter, which names its field, or a label at a site on a record's
+/// field, `*A1` of `(:key (:C C) (:A *A1))`. The site has the type that
+/// `site_type` gives the atom and the site's column path: the site's column,
+/// then the field of each nested site, then, for a bare label at a column
+/// of a type parameter, the name it holds.
 pub fn label_type(
     body: &crate::program::Body,
     label: crate::program::LabelId,
-    site_type: &dyn Fn(&crate::program::Atom, &crate::program::ColumnName) -> Option<ValueType>,
+    site_type: &dyn Fn(&crate::program::Atom, &[crate::program::ColumnName]) -> Option<ValueType>,
 ) -> Result<Option<ValueType>, LabelFault> {
-    LabelWalk { class: equal_labels(body, label), site_type }.body_type(body)
+    LabelWalk { label, class: equal_labels(body, label), site_type }.body_type(body)
 }
 
-/// The walk of [`label_type`] over the labels of `class`.
+/// The walk of [`label_type`] over the labels of `class`, the class of
+/// `label`, the label asked.
 struct LabelWalk<'a> {
+    label: crate::program::LabelId,
     class: Vec<crate::program::LabelId>,
-    site_type: &'a dyn Fn(&crate::program::Atom, &crate::program::ColumnName) -> Option<ValueType>,
+    site_type: &'a dyn Fn(&crate::program::Atom, &[crate::program::ColumnName]) -> Option<ValueType>,
 }
 
 impl LabelWalk<'_> {
@@ -193,32 +206,96 @@ impl LabelWalk<'_> {
             Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
                 let atom = atom.value();
                 let mut ty = None;
-                for site in atom.sites.iter().filter(|site| site_label(site).is_some_and(|l| self.class.contains(&l))) {
-                    ty = meet(ty, (self.site_type)(atom, &site.column))?;
+                for site in atom.sites.iter() {
+                    let mut path = Vec::new();
+                    let mut fault = None;
+                    each_site_label(site, &mut path, &mut |use_, path| {
+                        if fault.is_some() || !use_label(use_).is_some_and(|l| self.class.contains(&l)) {
+                            return;
+                        }
+                        match meet(ty.take(), (self.site_type)(atom, path)) {
+                            Ok(met) => ty = met,
+                            Err(err) => fault = Some(err),
+                        }
+                    });
+                    if let Some(err) = fault {
+                        return Err(err);
+                    }
                 }
                 Ok(ty)
             }
             Conjunct::Not(Negated::Form(form)) => self.conjunct_type(form),
             Conjunct::Or(branches) => join_branches(branches.iter().map(|branch| self.body_type(branch.value()))),
             Conjunct::If { test, then, otherwise } => {
+                let test_type = self.body_type(test.value())?;
+                if self.fresh_in(test.value()) {
+                    return meet(test_type, self.body_type(then.value())?);
+                }
                 let branches = [then, otherwise].into_iter().map(|branch| self.body_type(branch.value()));
-                meet(self.body_type(test.value())?, join_branches(branches)?)
+                meet(test_type, join_branches(branches)?)
             }
             Conjunct::All { domain, body } => meet(self.body_type(domain.value())?, self.body_type(body.value())?),
             Conjunct::Constraint(_) => Ok(None),
         }
     }
+
+    /// Whether the label asked is fresh at a site or a constraint of
+    /// `body`, at any depth.
+    fn fresh_in(&self, body: &crate::program::Body) -> bool {
+        use crate::program::{Conjunct, LabelUse, Negated, Operand};
+        let mut fresh = false;
+        each_conjunct(body, &mut |conjunct| match conjunct {
+            Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
+                for site in atom.value().sites.iter() {
+                    each_site_label(site, &mut Vec::new(), &mut |use_, _| {
+                        fresh |= use_ == LabelUse::Fresh(self.label);
+                    });
+                }
+            }
+            Conjunct::Constraint(c) => {
+                let second = match c.second {
+                    Operand::Label(label) => Some(label),
+                    Operand::Zero => None,
+                };
+                for label in std::iter::once(c.first).chain(second) {
+                    fresh |= label.fresh && label.label == self.label;
+                }
+            }
+            _ => {}
+        });
+        fresh
+    }
 }
 
-/// The one label that `site` holds, where it holds one label and no field.
-fn site_label(site: &crate::program::Site) -> Option<crate::program::LabelId> {
+/// Visits each label use at `site`, at any depth of the site, with its
+/// column path, as [`label_type`] gives it, after `path`.
+pub fn each_site_label(
+    site: &crate::program::Site,
+    path: &mut Vec<crate::program::ColumnName>,
+    visit: &mut dyn FnMut(crate::program::LabelUse, &[crate::program::ColumnName]),
+) {
+    use crate::program::SiteArg;
+    path.push(site.column.clone());
+    for arg in site.value.args.iter() {
+        match arg {
+            SiteArg::Label(use_) => visit(*use_, path),
+            SiteArg::NamedLabel { name, label } => {
+                path.push(name.clone());
+                visit(*label, path);
+                path.pop();
+            }
+            SiteArg::Field(field) => each_site_label(field, path, visit),
+        }
+    }
+    path.pop();
+}
+
+/// The label of a label use, where it has one.
+pub fn use_label(use_: crate::program::LabelUse) -> Option<crate::program::LabelId> {
     use crate::program::LabelUse;
-    match &site.value.args[..] {
-        [arg] => match arg.label()? {
-            LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label) => Some(label),
-            LabelUse::Zero => None,
-        },
-        _ => None,
+    match use_ {
+        LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label) => Some(label),
+        LabelUse::Zero => None,
     }
 }
 
