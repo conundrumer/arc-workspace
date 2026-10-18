@@ -966,7 +966,7 @@
 
 ---
 
-## programs/lib.dl
+# programs/lib.dl
 
 Shared types and relations for ARC solvers in Souffle.
 
@@ -1069,7 +1069,7 @@ Train outputs, which the runner gives as facts in determination mode.
 
 ---
 
-## programs/lib/sets.dl
+# programs/lib/sets.dl
 
 Components over keyed sets: a component belongs here if its signature holds
 no Box, Position, Offset, or orientation type, and its inputs are keyed sets
@@ -1203,7 +1203,7 @@ arbitrary but deterministic.
 
 ---
 
-## programs/lib/orders.dl
+# programs/lib/orders.dl
 
 Components over abstract members whose input carries an order or a step: a
 `before` relation, a `succ` relation, or a step count. The members are
@@ -1326,7 +1326,7 @@ takes one item per step. `step` and `take` may be recursive with
 
 ---
 
-## programs/lib/orientation.dl
+# programs/lib/orientation.dl
 
 The orientation values and the relations over them. A relation belongs
 here when its signature and its clauses hold only Dir, Axis, DiagDir,
@@ -1450,7 +1450,7 @@ The C4 element of a quarter turn in sense s.
 
 ---
 
-## programs/lib/box.dl
+# programs/lib/box.dl
 
 The box algebra: the relations and components whose signature or clauses
 hold a Box, a Position, or an Offset, and that take no set of cells as
@@ -1842,7 +1842,7 @@ caller with an edge of no width writes that edge's zero row.
 
 ---
 
-## programs/lib/cells.dl
+# programs/lib/cells.dl
 
 Components with a cell-set input: the caller populates the cells of a set,
 under each key where the set's relation has a key column, and the
@@ -2274,7 +2274,7 @@ caller supplies no grid bounds.
 
 ---
 
-## programs/lib/constraints.dl
+# programs/lib/constraints.dl
 
 Components over pieces and candidates the caller supplies as opaque labels,
 together with a `conflict` relation over them, and the enumeration of a
@@ -2354,7 +2354,7 @@ the comp constructs:
 
 ---
 
-## programs/lib/params.dl
+# programs/lib/params.dl
 
 The helpers a solver's Params comp instantiates as
 `.init helpers = ParamsHelpers`. A Params comp cannot reach the rest of

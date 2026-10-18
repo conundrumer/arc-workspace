@@ -334,7 +334,7 @@ def lib_part(lib: Path = LIB_SRC, kind: LibForm = LibForm.INTERFACE) -> str:
     for path, text in lib_sources(lib):
         rel = Path("programs") / path.relative_to(lib.parent)
         if kind is LibForm.INDEX:
-            parts.append(f"\n---\n\n## {rel} — index\n\n{lib_entries(text)}")
+            parts.append(f"\n---\n\n# {rel} — index\n\n{lib_entries(text)}")
         else:
-            parts.append(f"\n---\n\n## {rel}\n\n{lib_doc(text)}")
+            parts.append(f"\n---\n\n# {rel}\n\n{lib_doc(text)}")
     return "".join(parts)

@@ -528,7 +528,7 @@
 
 ---
 
-## programs/lib.dl — index
+# programs/lib.dl — index
 
 Shared types and relations for ARC solvers in Souffle.
 
@@ -575,7 +575,7 @@ total over the expected output grid.
 
 ---
 
-## programs/lib/sets.dl — index
+# programs/lib/sets.dl — index
 
 Components over keyed sets: a component belongs here if its signature holds
 no Box, Position, Offset, or orientation type, and its inputs are keyed sets
@@ -593,7 +593,7 @@ with no order, no step, and no conflict among them.
 
 ---
 
-## programs/lib/orders.dl — index
+# programs/lib/orders.dl — index
 
 Components over abstract members whose input carries an order or a step: a
 `before` relation, a `succ` relation, or a step count. The members are
@@ -608,7 +608,7 @@ opaque, and nothing here reads a position.
 
 ---
 
-## programs/lib/orientation.dl — index
+# programs/lib/orientation.dl — index
 
 The orientation values and the relations over them. A relation belongs
 here when its signature and its clauses hold only Dir, Axis, DiagDir,
@@ -652,7 +652,7 @@ hold a Box is in [box.dl](programs/lib/box.dl).
 
 ---
 
-## programs/lib/box.dl — index
+# programs/lib/box.dl — index
 
 The box algebra: the relations and components whose signature or clauses
 hold a Box, a Position, or an Offset, and that take no set of cells as
@@ -724,7 +724,7 @@ Every other reading is a Box read against a frame the reader supplies.
 
 ---
 
-## programs/lib/cells.dl — index
+# programs/lib/cells.dl — index
 
 Components with a cell-set input: the caller populates the cells of a set,
 under each key where the set's relation has a key column, and the
@@ -755,7 +755,7 @@ component reports what holds of that set.
 
 ---
 
-## programs/lib/constraints.dl — index
+# programs/lib/constraints.dl — index
 
 Components over pieces and candidates the caller supplies as opaque labels,
 together with a `conflict` relation over them, and the enumeration of a
@@ -767,7 +767,7 @@ tiebreak's resolutions.
 
 ---
 
-## programs/lib/params.dl — index
+# programs/lib/params.dl — index
 
 The helpers a solver's Params comp instantiates as
 `.init helpers = ParamsHelpers`. A Params comp cannot reach the rest of
