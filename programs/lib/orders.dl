@@ -1,6 +1,7 @@
-//! Components over abstract members whose input has an order or a step: a
-//! `before` relation, a `succ` relation, or a step count. The members are
-//! opaque, and nothing here reads a position.
+//! Components over abstract members whose input has an order, the edges of a
+//! graph read in their direction, or a step: a `before` relation, an `edge`
+//! relation, a `succ` relation, or a step count. The members are opaque, and
+//! nothing here reads a position.
 
 /// The dense rank of each number of a sparse set.
 .comp Ordinal<Key> {
@@ -146,12 +147,17 @@
 /// `skip` and `take` may be recursive with `taken`, `untaken` and
 /// `excluded`.
 ///
-/// Requires: at each t a `step` leaves, `take` gives one item, and that
-/// item is in `untaken` at t; a `step` with no `take` item empties the
-/// untaken side, a `take` item not in `untaken` joins the taken side while
-/// the untaken side keeps its items, less the items `conflict` gives for it,
-/// and two `take` items at one t both join the taken side and both stay on
-/// the untaken side. With `score`, each t has one predecessor: at a t two
+/// Requires: at each t a `step` leaves, `take` gives an item; a `step` with
+/// no `take` item empties the untaken side.
+///
+/// Requires: at each t, `take` gives at most one item; two `take` items at
+/// one t both join the taken side and both stay on the untaken side.
+///
+/// Requires: the `take` item at t is in `untaken` at t; a `take` item not in
+/// `untaken` joins the taken side while the untaken side keeps its items,
+/// less the items `conflict` gives for it.
+///
+/// Requires: with `score`, each t has one predecessor; at a t two
 /// predecessors reach, `take` may also hold an item above the least score.
 .comp Take<Key, T, Item> {
     .decl start(key: Key, t: T)               // @input

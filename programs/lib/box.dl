@@ -164,8 +164,9 @@ apply_dir8(D, Dir, Dir_out) :-
     step_offset(Dir, S), apply(D, S, S2), step_offset(Dir_out, S2).
 
 /// The tile size k at which n tiles of size k, with a gap of g between each
-/// two, fill an extent of ext exactly. There is no k where no positive size
-/// fills it.
+/// two, fill an extent of ext exactly: k is ext less the n - 1 gaps, divided
+/// by n. The relation gives a row only where that length is positive and n
+/// divides it evenly.
 .decl tile_size(ext: number, n: number, g: number, k: number) inline
 tile_size(Ext, N, G, K) :- Rem = Ext - (N-1)*G, Rem > 0, Rem % N = 0, K = Rem / N.
 
