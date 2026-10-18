@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use super::{Check, CheckId, CheckInput, CheckResult, FileScope, Prefix, PrefixResult, Refusal, SolverClauses};
+use super::{Check, CheckId, CheckInput, CheckResult, ClauseEntry, FileScope, Prefix, PrefixResult, Refusal, SolverClauses};
 use crate::hash::StableHashMap;
 use crate::program::canonical::{canonical_labeling, form_scope, AsWritten, CanonicalOrder, LabelScope, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
@@ -51,7 +51,8 @@ pub type ScopeTypes = Box<[(NodePath, FormTypes)]>;
 /// A fault of a label whose sites give it a Pose type and another type is
 /// the pose rule's, which [`super::pose`] refuses.
 pub fn infer_form(input: &CheckInput<'_>, order: &CanonicalOrder) -> (CheckResult, ScopeTypes) {
-    let inference = Inference::new(input.scope.program, input.scope.registry);
+    let cases = CaseInferences::new(input.scope.clauses, input.scope.registry);
+    let inference = Inference::new(input.scope.program, &cases);
     let result = match inference.infer(input.path) {
         Some(form) => result(refusals(&form, order)),
         None => CheckResult::Pass,
@@ -141,7 +142,7 @@ pub fn type_clause_signatures<'a>(form: &Form, clauses: &'a SolverClauses) -> im
         }
         _ => &[],
     };
-    entries.iter().map(|(_, _, signature)| signature)
+    entries.iter().map(|entry| &entry.signature)
 }
 
 /// The head labels of `clause` that only `(= *X 0)` gives a type: each
@@ -654,19 +655,44 @@ impl<'a> FormInference<'a> {
     }
 }
 
+/// The inferences of the case programs of a [`SolverClauses`] that the
+/// check of one form reads, each program's once, so that a read through a
+/// cycle of forms across those programs meets the guard of
+/// [`Inference::infer`].
+pub(super) struct CaseInferences<'a> {
+    clauses: &'a SolverClauses,
+    registry: &'a Registry,
+    inferences: RefCell<StableHashMap<usize, Rc<Inference<'a>>>>,
+}
+
+impl<'a> CaseInferences<'a> {
+    pub fn new(clauses: &'a SolverClauses, registry: &'a Registry) -> Self {
+        CaseInferences { clauses, registry, inferences: RefCell::default() }
+    }
+
+    /// The inference of the case program `entry` was found in.
+    fn of(&'a self, entry: &ClauseEntry) -> Rc<Inference<'a>> {
+        let program = self.clauses.program(entry);
+        let mut inferences = self.inferences.borrow_mut();
+        let inference = inferences.entry(entry.program).or_insert_with(|| Rc::new(Inference::new(program, self)));
+        Rc::clone(inference)
+    }
+}
+
 /// The inference of the types of one case program's labels, form by form,
 /// each form once, on its first read.
 pub(super) struct Inference<'a> {
     program: &'a ResolvedProgram,
     registry: &'a Registry,
+    cases: &'a CaseInferences<'a>,
     /// Each form inferred, or `None` while its inference runs, so that a
     /// read through a cycle of forms gives no type.
     forms: RefCell<StableHashMap<NodePath, Option<Rc<FormInference<'a>>>>>,
 }
 
 impl<'a> Inference<'a> {
-    pub fn new(program: &'a ResolvedProgram, registry: &'a Registry) -> Self {
-        Inference { program, registry, forms: RefCell::default() }
+    pub fn new(program: &'a ResolvedProgram, cases: &'a CaseInferences<'a>) -> Self {
+        Inference { program, registry: cases.registry, cases, forms: RefCell::default() }
     }
 
     /// The types of the label scope whose form stands at `path`, a form or
@@ -728,9 +754,7 @@ impl<'a> Inference<'a> {
             for label in zero_typed_heads(clause) {
                 let Some((_, ty)) = types.iter_mut().find(|(found, _)| *found == label) else { continue };
                 let Some(column) = clause.columns.iter().find(|column| column.label == label) else { continue };
-                let own = |column: &ColumnName| clause.columns.iter().find(|found| found.name == *column).map(|found| found.label);
-                let column = std::slice::from_ref(&column.name);
-                *ty = self.relation_type(&NameScope::Program, &clause.derives, column, Some(path), &own, PoseOr::Given);
+                *ty = self.other_clauses_type(clause, path, &column.name);
                 zero_typed.push(label);
             }
         }
@@ -845,7 +869,7 @@ impl<'a> Inference<'a> {
         match &graph_node.kind {
             DependencyKind::Fact(fact) => declared_type(self.registry.fact_columns(*fact), path, PoseOr::Open),
             DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => {
-                self.relation_type(&graph_node.scope, relation, path, None, &reader, pose_or).ok().flatten()
+                self.relation_type(&graph_node.scope, relation, path, &reader, pose_or).ok().flatten()
             }
             DependencyKind::Chosen(name) => match form_at(self.program.program.value(), form_path)? {
                 Form::Choose(choose) => {
@@ -858,7 +882,7 @@ impl<'a> Inference<'a> {
                 }
                 _ => {
                     let relation = ProgramRelation::Declared(name.clone());
-                    self.relation_type(&graph_node.scope, &relation, path, None, &reader, pose_or).ok().flatten()
+                    self.relation_type(&graph_node.scope, &relation, path, &reader, pose_or).ok().flatten()
                 }
             },
             DependencyKind::InstanceOutput { output, .. } => self.instance_output(form_path, output, path),
@@ -875,33 +899,48 @@ impl<'a> Inference<'a> {
         }
     }
 
-    /// The type that the clauses of `relation` in `scope`, other than the one
-    /// at `except`, give its column at `path`, the join of each clause's, or
-    /// the fault of two types with no join, read under `pose_or`. A Pose
-    /// type's key row names the labels that `target` gives at the columns of
-    /// the key.
+    /// The type that the clauses of `relation` in `scope` give its column at
+    /// `path`, the join of each clause's, or the fault of two types with no
+    /// join, read under `pose_or`. A Pose type's key row names the labels
+    /// that `target` gives at the columns of the key.
     fn relation_type(
         &self,
         scope: &NameScope,
         relation: &ProgramRelation,
         path: &[ColumnName],
-        except: Option<&NodePath>,
         target: &dyn Fn(&ColumnName) -> Option<LabelId>,
         pose_or: PoseOr,
     ) -> Result<Option<ValueType>, LabelFault> {
-        let mut joined: Option<ValueType> = None;
-        for (at, form) in scope_forms(self.program.program.value(), scope) {
-            let Form::Clause(clause) = form else { continue };
-            if clause.value().derives != *relation || Some(&at) == except {
-                continue;
+        let forms = scope_forms(self.program.program.value(), scope);
+        let clauses = forms.iter().filter_map(|(at, form)| match form {
+            Form::Clause(clause) if clause.value().derives == *relation => Some((at, clause.value())),
+            _ => None,
+        });
+        join_types(clauses.filter_map(|(at, clause)| self.clause_column(at, clause, scope, path, target, pose_or)))
+    }
+
+    /// The type of the label at `column` of `clause`, the clause at `path`,
+    /// that only `(= *X 0)` gives a type: the join of the types that the
+    /// other clauses of its relation in [`SolverClauses`] give that column,
+    /// each in the case program it was found in, or the fault of two types
+    /// with no join. A Pose type's key row names the labels of `clause`.
+    fn other_clauses_type(&self, clause: &crate::program::Clause, path: &NodePath, column: &ColumnName) -> Result<Option<ValueType>, LabelFault> {
+        let own = super::clause_signature(self.program, path);
+        let target = |column: &ColumnName| clause.columns.iter().find(|found| found.name == *column).map(|found| found.label);
+        let entries = self.cases.clauses.of_relation(&FileScope::Program, &clause.derives).iter();
+        let types = entries.filter(|entry| entry.signature != own).filter_map(|entry| {
+            let inference = self.cases.of(entry);
+            let Some(Form::Clause(other)) = form_at(inference.program.program.value(), &entry.at) else {
+                unreachable!("an entry of a relation in the program's scope stands at a clause of the program it was found in")
+            };
+            let other = other.value();
+            let zero_typed = zero_typed_heads(other);
+            if other.columns.iter().any(|found| found.name == *column && zero_typed.contains(&found.label)) {
+                return None;
             }
-            let Some(ty) = self.clause_column(&at, clause.value(), scope, path, target, pose_or) else { continue };
-            joined = Some(match joined {
-                None => ty,
-                Some(prev) => prev.join(&ty).ok_or_else(|| LabelFault::NoJoin(prev.clone(), ty.clone()))?,
-            });
-        }
-        Ok(joined)
+            inference.clause_column(&entry.at, other, &NameScope::Program, std::slice::from_ref(column), &target, PoseOr::Given)
+        });
+        join_types(types)
     }
 
     /// The type that the clause at `at` gives the column at `path` of its
@@ -1005,6 +1044,18 @@ impl<'a> Inference<'a> {
         };
         try_map_labels(&project(&ty, rest)?, &|_| None)
     }
+}
+
+/// The join of `types`, or the fault of the first two with no join.
+fn join_types(types: impl Iterator<Item = ValueType>) -> Result<Option<ValueType>, LabelFault> {
+    let mut joined: Option<ValueType> = None;
+    for ty in types {
+        joined = Some(match joined {
+            None => ty,
+            Some(prev) => prev.join(&ty).ok_or_else(|| LabelFault::NoJoin(prev.clone(), ty.clone()))?,
+        });
+    }
+    Ok(joined)
 }
 
 /// The type `types` gives `label`, where it gives one.

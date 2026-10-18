@@ -62,11 +62,13 @@ pub enum CheckId {
     /// `(= *X 0)` gives a type takes the type of the instance input it
     /// stands at, or else the join, as [`crate::types::ValueType::join`]
     /// gives it, of the types that the relation's other clauses give its
-    /// column, each read from [`SolverClauses`]. Those clauses may stand in
-    /// other blocks, as an `ALT` that rederives the relation, and so in
-    /// other case programs; the check's [`CheckCacheKey`] then holds their
-    /// signatures. The check refuses the label where no type is above those
-    /// types.
+    /// column, each read from [`SolverClauses`] and typed in the case
+    /// program it stands in. Those clauses may stand in other blocks, as an
+    /// `ALT` that rederives the relation, and so in other case programs; the
+    /// check's [`CheckCacheKey`] then holds their signatures. A clause whose
+    /// label at that column is itself one that only `(= *X 0)` gives a type
+    /// adds no type. The check refuses the label where no type is above
+    /// those types.
     ///
     /// Under [`crate::resolver::MacroExpansion::Expand`], where the meet of a
     /// label's type, from the label's sites outside a part of the expansion,
@@ -125,24 +127,38 @@ pub struct Scope<'a> {
 }
 
 /// Every clause of each relation that a solver declares, across its blocks
-/// and so across its cases. A key is a relation in the name scope it is
-/// declared in. Each entry of a key is one clause of that relation: the
-/// arclog file that holds the clause, the solver's or its representative's,
-/// the clause's path in that file, and the clause's signature. The entries
-/// of a key stand in a fixed order: the clauses of the solver's own file
-/// first, then those of its representative's, the order of the
-/// [`crate::solver::FileOwner`] variants, and within a file in the order of
-/// their paths, the index of the top-level form, then the index among the
-/// children at each step. A synthesized program has one case, and its
-/// clauses are its own.
+/// and so across its cases, with the case programs they were found in. A
+/// key is a relation in the name scope it is declared in. Each entry of a
+/// key is one clause of that relation. The entries of a key stand in a
+/// fixed order: the clauses of the solver's own file first, then those of
+/// its representative's, the order of the [`crate::solver::FileOwner`]
+/// variants, and within a file in the order of their paths, the index of
+/// the top-level form, then the index among the children at each step. A
+/// synthesized program has one case, and its clauses are its own.
 #[derive(Debug, Default)]
 pub struct SolverClauses {
-    clauses: crate::hash::StableHashMap<(FileScope, crate::program::ProgramRelation), Box<[(crate::solver::FileOwner, NodePath, Signature)]>>,
+    /// Each case program the clauses were found in, the concept program
+    /// first.
+    programs: Box<[ResolvedProgram]>,
+    clauses: crate::hash::StableHashMap<(FileScope, ProgramRelation), Box<[ClauseEntry]>>,
 }
 
-/// One clause of a relation in [`SolverClauses`]: its file, its path there,
-/// and its signature.
-type ClauseEntry = (FileOwner, NodePath, Signature);
+/// One clause of a relation in [`SolverClauses`]. A clause that stands in
+/// several case programs is found once, in the first of them.
+#[derive(Clone, Debug)]
+pub struct ClauseEntry {
+    /// The arclog file that holds the clause, the solver's or its
+    /// representative's.
+    pub owner: FileOwner,
+    /// The clause's path in that file.
+    pub file_path: NodePath,
+    pub signature: Signature,
+    /// The case program the clause was found in, by its index in
+    /// [`SolverClauses`]'s programs.
+    program: usize,
+    /// The clause's path in that program.
+    pub at: NodePath,
+}
 
 /// The name scope of a relation in a solver's files: the program, or a
 /// `DEMO_RULE` form (`docs/arclog/arclog.md#demonstrated`), by the file
@@ -154,42 +170,43 @@ pub enum FileScope {
 }
 
 impl SolverClauses {
-    /// The clauses of each relation of `solver`, by the arclog file that
-    /// holds each, the solver's or its representative's, and the path there,
-    /// each key's entries in the order [`SolverClauses`] gives.
+    /// The clauses of each relation of `solver`, found in each case
+    /// program of the solver.
     pub fn of(solver: &crate::solver::Solver, registry: &Registry) -> Self {
         let derived = solver.derived_relations();
         let concept_case = solver.concept_case();
         let concept = crate::resolver::resolve(&concept_case.program, None, &derived, registry, MacroExpansion::Keep).value;
+        let cases: Vec<_> = solver.cases(Exclusion::WithExcluded).filter(|case| case.name != concept_case.name).collect();
+        let resolved: Vec<ResolvedProgram> = cases
+            .iter()
+            .map(|case| {
+                let reads = ConceptReads { concept: &concept, determinations: case.concept_determinations() };
+                crate::resolver::resolve(&case.program, Some(reads), &derived, registry, MacroExpansion::Keep).value
+            })
+            .collect();
         let mut found = ClausesFound::default();
-        found.add(&concept, &|path| concept_case.file_path(path));
-        for case in solver.cases(Exclusion::WithExcluded) {
-            if case.name == concept_case.name {
-                continue;
-            }
-            let reads = ConceptReads { concept: &concept, determinations: case.concept_determinations() };
-            let resolved = crate::resolver::resolve(&case.program, Some(reads), &derived, registry, MacroExpansion::Keep).value;
-            found.add(&resolved, &|path| case.file_path(path));
+        found.add(concept, &|path| concept_case.file_path(path));
+        for (case, program) in cases.iter().zip(resolved) {
+            found.add(program, &|path| case.file_path(path));
         }
         found.ordered()
     }
 
     /// The clauses of a synthesized program, its own.
-    pub fn of_program(program: &ResolvedProgram) -> Self {
+    pub fn of_program(program: ResolvedProgram) -> Self {
         let mut found = ClausesFound::default();
         found.add(program, &|path| (FileOwner::Solver, path.clone()));
         found.ordered()
     }
 
-    /// Each clause of `relation` in the name scope `scope`, by its file and
-    /// its path there, with its signature, in the order [`SolverClauses`]
-    /// gives.
-    pub fn of_relation(
-        &self,
-        scope: &FileScope,
-        relation: &crate::program::ProgramRelation,
-    ) -> &[(crate::solver::FileOwner, NodePath, Signature)] {
+    /// Each clause of `relation` in the name scope `scope`.
+    pub fn of_relation(&self, scope: &FileScope, relation: &ProgramRelation) -> &[ClauseEntry] {
         self.clauses.get(&(scope.clone(), relation.clone())).map_or(&[], |entries| &entries[..])
+    }
+
+    /// The case program `entry` was found in.
+    pub fn program(&self, entry: &ClauseEntry) -> &ResolvedProgram {
+        &self.programs[entry.program]
     }
 }
 
@@ -197,17 +214,19 @@ impl SolverClauses {
 /// its order.
 #[derive(Default)]
 struct ClausesFound {
+    programs: Vec<ResolvedProgram>,
     clauses: crate::hash::StableHashMap<(FileScope, ProgramRelation), Vec<ClauseEntry>>,
 }
 
 impl ClausesFound {
-    /// Adds each clause of `program`, at the top level and in each
+    /// Adds `program` and each clause of it, at the top level and in each
     /// `DEMO_RULE` form, with its file and its path there as `file_path`
     /// gives them for its path in `program`.
-    fn add(&mut self, program: &ResolvedProgram, file_path: &dyn Fn(&NodePath) -> (FileOwner, NodePath)) {
-        for (path, form) in top_level_forms(program) {
+    fn add(&mut self, program: ResolvedProgram, file_path: &dyn Fn(&NodePath) -> (FileOwner, NodePath)) {
+        let program_index = self.programs.len();
+        for (path, form) in top_level_forms(&program) {
             match form {
-                Form::Clause(clause) => self.add_clause(program, file_path, FileScope::Program, &clause.value().derives, &path),
+                Form::Clause(clause) => self.add_clause((program_index, &program), file_path, FileScope::Program, &clause.value().derives, &path),
                 Form::Demonstrated(demonstrated) => {
                     let demonstrated = demonstrated.value();
                     let first_rule = demonstrated.key.iter().count() + demonstrated.inputs.len();
@@ -217,7 +236,7 @@ impl ClausesFound {
                         for (index, form) in rule.value().forms.iter().enumerate() {
                             if let Form::Clause(clause) = form {
                                 let scope = FileScope::DemoRule(owner, file_rule_path.clone());
-                                self.add_clause(program, file_path, scope, &clause.value().derives, &rule_path.child(index as u32));
+                                self.add_clause((program_index, &program), file_path, scope, &clause.value().derives, &rule_path.child(index as u32));
                             }
                         }
                     }
@@ -225,24 +244,22 @@ impl ClausesFound {
                 _ => {}
             }
         }
+        self.programs.push(program);
     }
 
     fn add_clause(
         &mut self,
-        program: &ResolvedProgram,
+        (index, program): (usize, &ResolvedProgram),
         file_path: &dyn Fn(&NodePath) -> (FileOwner, NodePath),
         scope: FileScope,
         relation: &ProgramRelation,
         path: &NodePath,
     ) {
         let (owner, file) = file_path(path);
-        let content = program.content(path).expect("a clause of the program has its resolved content");
-        let mut out = CanonicalWriter::default();
-        out.write(&content.content_hash().0.to_le_bytes());
-        let entry = (owner, file, Signature(out.finish()));
+        let signature = clause_signature(program, path);
         let entries = self.clauses.entry((scope, relation.clone())).or_default();
-        if !entries.contains(&entry) {
-            entries.push(entry);
+        if !entries.iter().any(|entry| entry.owner == owner && entry.file_path == file && entry.signature == signature) {
+            entries.push(ClauseEntry { owner, file_path: file, signature, program: index, at: path.clone() });
         }
     }
 
@@ -256,12 +273,21 @@ impl ClausesFound {
             .clauses
             .into_iter()
             .map(|(key, mut entries)| {
-                entries.sort_by(|(a, a_path, _), (b, b_path, _)| (rank(a), a_path).cmp(&(rank(b), b_path)));
+                entries.sort_by(|a, b| (rank(&a.owner), &a.file_path).cmp(&(rank(&b.owner), &b.file_path)));
                 (key, entries.into_boxed_slice())
             })
             .collect();
-        SolverClauses { clauses }
+        SolverClauses { programs: self.programs.into(), clauses }
     }
+}
+
+/// The signature of the clause at `path` of `program`: the hash of its
+/// resolved content.
+fn clause_signature(program: &ResolvedProgram, path: &NodePath) -> Signature {
+    let content = program.content(path).expect("a clause of the program has its resolved content");
+    let mut out = CanonicalWriter::default();
+    out.write(&content.content_hash().0.to_le_bytes());
+    Signature(out.finish())
 }
 
 /// Each top-level form of `program`, with its path.
