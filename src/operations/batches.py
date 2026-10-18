@@ -44,7 +44,7 @@ the head commit of `master`. Each step launches the first overdue reader
 of `State.readers`, so the overdue readers launch in turn, with no wait
 on each other's runs.
 
-A gate agent, on the gate's timings and outputs, launches at any step
+A gate agent, on the gate's outputs, launches at any step
 where a change merged since the last one an operator of the session
 launched, or since the session's start where none was, none runs, and
 that last launch stands at least `BATCH_SPAN` back.
