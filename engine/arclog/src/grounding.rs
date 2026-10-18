@@ -145,9 +145,7 @@ impl Walk<'_, '_> {
             },
             Conjunct::Constraint(_) | Conjunct::Not(_) | Conjunct::All { .. } => {}
             Conjunct::Or(_) | Conjunct::If { .. } => {
-                let mut branches = parts(conjunct).into_iter().map(|part| self.exported(&part, grounded));
-                let first = branches.next().expect("an `OR` or an `IF` has a branch");
-                let shared: Vec<LabelId> = branches.fold(first, |shared, branch| shared.into_iter().filter(|label| branch.contains(label)).collect()).into_iter().collect();
+                let shared = common_to_all(parts(conjunct).into_iter().map(|part| self.exported(&part, grounded)));
                 grounded.extend(shared);
             }
         }
@@ -169,6 +167,14 @@ impl Walk<'_, '_> {
                 })
             })
     }
+}
+
+/// The labels that an `OR` or an `IF` grounds, from `per_branch`, the labels
+/// each of its branches grounds: those that every branch grounds.
+pub(crate) fn common_to_all(per_branch: impl IntoIterator<Item = StableHashSet<LabelId>>) -> StableHashSet<LabelId> {
+    let mut branches = per_branch.into_iter();
+    let first = branches.next().expect("an `OR` or an `IF` has a branch");
+    branches.fold(first, |shared, branch| shared.into_iter().filter(|label| branch.contains(label)).collect())
 }
 
 /// The parts of a form, each a list of conjuncts: the branches of an `OR`,

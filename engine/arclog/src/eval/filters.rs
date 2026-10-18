@@ -126,7 +126,7 @@ fn compile_union(
 ) -> Result<(), CompileFault> {
     let shared: BTreeSet<u32> = around.union(&made).copied().collect();
     let mut held = Vec::with_capacity(branches.len());
-    let mut grounded = Vec::with_capacity(branches.len());
+    let mut per_branch = Vec::with_capacity(branches.len());
     for branch in branches {
         let mut labels = BTreeSet::new();
         for (list, _) in &branch.lists {
@@ -136,11 +136,11 @@ fn compile_union(
             labels.extend(labels_of(test).intersection(&around));
         }
         let body = Body { conjuncts: branch.lists.iter().flat_map(|(list, _)| list.value().conjuncts.iter().cloned()).collect() };
-        let exports: BTreeSet<u32> = shared.iter().copied().filter(|&label| grounds(builder, &body, &shared, label)).collect();
+        let exports: StableHashSet<LabelId> = shared.iter().copied().filter(|&label| grounds(builder, &body, &shared, label)).map(LabelId).collect();
         held.push(labels);
-        grounded.push(exports);
+        per_branch.push(exports);
     }
-    let exported: BTreeSet<u32> = shared.iter().copied().filter(|label| grounded.iter().all(|g| g.contains(label))).collect();
+    let exported: BTreeSet<u32> = crate::grounding::common_to_all(per_branch).into_iter().map(|label| label.0).collect();
     let mut clauses = Vec::with_capacity(branches.len());
     for (branch, labels) in branches.iter().zip(&held) {
         let mut clause = nested(builder);
