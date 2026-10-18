@@ -60,6 +60,7 @@ from operations.state import (
     AuditWindow,
     Computed,
     Deferred,
+    DueEntry,
     GitRead,
     LateResume,
     NotComputed,
@@ -160,24 +161,28 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
                                undecided=tuple(watching))
 
 
-def due_since_read(here: Path) -> dict[str, float]:
+def due_since_read(here: Path) -> dict[str, DueEntry]:
     """`State.due_since` as the file `DUE_SINCE` under `here` gives it, or
-    empty where that file is missing or holds no JSON object of finite
-    numbers."""
+    empty where that file is missing or holds no JSON object whose values
+    are each a pair of finite numbers, the time from which the step has
+    been due and the time of the last read that found it due."""
     try:
         record = json.loads((here / DUE_SINCE).read_text())
     except (OSError, ValueError):
         return {}
     if not isinstance(record, dict) or not all(
-            isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+            isinstance(v, list) and len(v) == 2
+            and all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+                    for x in v)
             for v in record.values()):
         return {}
-    return {n: float(v) for n, v in record.items()}
+    return {n: DueEntry(float(v[0]), float(v[1])) for n, v in record.items()}
 
 
-def write_due_since(here: Path, times: Mapping[str, float]) -> None:
-    """Replaces the file `DUE_SINCE` under `here` with `times`, at once."""
-    with staged(here, json.dumps(dict(sorted(times.items())))) as tmp:
+def write_due_since(here: Path, times: Mapping[str, DueEntry]) -> None:
+    """Replaces the file `DUE_SINCE` under `here` with `times`, each entry
+    as the pair its `DueEntry` gives, at once."""
+    with staged(here, json.dumps({n: [e.since, e.last] for n, e in sorted(times.items())})) as tmp:
         os.replace(tmp, here / DUE_SINCE)
 
 

@@ -22,9 +22,12 @@ and a ticket with one is not stalled.
 The time from which a step has been due on a ticket is the time of the
 first read of the state, by an operator of the session for a step, of
 those since which each such read found the step due on it, as
-`State.due_since` records it. A read that finds a ticket of its
-`taking.purview` not due drops that time, and keeps the times of tickets
-outside it; a ticket that `State.due_since` does not hold is due
+`State.due_since` records it with the time of the last read that found
+the step due. A read that finds a ticket of its `taking.purview` not due
+drops that time, and keeps the times of tickets outside it; at each read,
+in its purview or not, a ticket whose last read that found it due is
+`STUCK_SECONDS` or more before the read at hand loses its time
+(`live_entries`); a ticket that `State.due_since` does not hold is due
 from the read at hand.
 
 A change that waits for a ticket that holds it up (`holding`), one under
@@ -42,7 +45,7 @@ from operations.constants import stuck_reached
 from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.roles import AGENT_ID
-from operations.state import Agent, State, Ticket, memoized, memoized_by_transcripts
+from operations.state import Agent, DueEntry, State, Ticket, memoized, memoized_by_transcripts
 from operations.steps import Bash, Step
 from operations.tracker import exits
 from ticketing.exits import Exit
@@ -149,15 +152,23 @@ def due(state: State) -> frozenset[str]:
     return frozenset(out)
 
 
-def due_times(state: State) -> dict[str, float]:
+def live_entries(state: State) -> dict[str, DueEntry]:
+    """The entries of `State.due_since` whose last read that found the
+    step due has not reached `STUCK_SECONDS` at `state.now`."""
+    return {n: e for n, e in state.due_since.items() if not stuck_reached(e.last, state.now)}
+
+
+def due_times(state: State) -> dict[str, DueEntry]:
     """The record of the times from which a step has been due, after the
     read that gave `state`: for each ticket of `due`, its time in
-    `State.due_since`, or `state.now` where that holds none; and the
-    entries of `State.due_since` for tickets outside `taking.purview`, as
-    they are."""
+    `live_entries`, or `state.now` where that holds none, with `state.now`
+    as its last read; and the entries of `live_entries` for tickets
+    outside `taking.purview`, as they are."""
     purview = taking.purview(state)
-    return {**{n: s for n, s in state.due_since.items() if n not in purview},
-            **{n: state.due_since.get(n, state.now) for n in sorted(due(state))}}
+    live = live_entries(state)
+    return {**{n: e for n, e in live.items() if n not in purview},
+            **{n: DueEntry(e.since if (e := live.get(n)) is not None else state.now, state.now)
+               for n in sorted(due(state))}}
 
 
 @memoized
@@ -169,7 +180,7 @@ def stalled(state: State) -> Mapping[str, float]:
     out: dict[str, float] = {}
     for n in sorted(due(state)):
         if (last := progress(state, state.tracker.tickets[n])) is not None:
-            start = max(last, since[n])
+            start = max(last, since[n].since)
             if stuck_reached(start, state.now):
                 out[n] = start
     return out
