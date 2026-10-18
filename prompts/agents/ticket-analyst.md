@@ -27,7 +27,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
     * comment: The user's words, session 2384db39, 2026-10-17T18:18:39Z: "If the deferred procedure is extremely long and repeats later , it should only be loaded once".
 - When a resolution you choose files a `change` or revises one once you have passed the item `Write the change ticket`, run `uv run python scripts/step.py ticket-analyst --enter write-the-change-ticket`, or, where your context still holds that part's file from an earlier entry, `uv run python scripts/step.py ticket-analyst --reenter write-the-change-ticket`, and take the steps from the item it prints, reading no section an item links whose text your context still holds.
     * comment: The user's words, session 2384db39, 2026-10-17T18:18:39Z: "If the deferred procedure is extremely long and repeats later , it should only be loaded once".
-- Where a line links a section, read that section, and no other part of its document: its lines run from its heading to the next heading of its depth or a shallower one, and `grep -n '^#' <path>` prints the line of each heading.
+- Where another line has you read a section it links, read that section, and no other part of its document: its lines run from its heading to the next heading of its depth or a shallower one, and `grep -n '^#' <path>` prints the line of each heading.
 
 ## Decisions
 * inline: notes/decisions.md#decisions
@@ -41,7 +41,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
         - Where the root cause of a `bug` is a defect an open `refactor` ticket records, and you do not close the bug as a duplicate of that ticket, log `recurs <the bug's number>` on that ticket.
     2. Read the title and the last log line of each ticket under `tickets/closed/` whose title refers to the target the root cause lies in by its current name or a name it had before, as `uv run python scripts/file_ticket.py closed-on` on the target's names prints them, and judge whether the fault is one more instance of a fault whose earlier instances those tickets fixed. Where it is and the line on a fault in [Decisions](#decisions) has the tree changed for it, reframe the problem from the target's purpose, as the documents and its docstrings state it, and the user's stated preferences on it, and make its resolution one that removes the fault those tickets share, in place of a fix for this instance alone. Where that resolution changes the tree, its `change` states that fault in its Motivation and gives in its Scope each of their fixes it makes redundant.
     3. Choose its resolution as [How a decision is made](#how-a-decision-is-made) gives, and carry it out as [Resolving](#resolving) gives.
-        - Where a resolution writes words in the agent-facing documents, or keeps words that a ticket you settle gives, judge those words by [What a file holds](docs/handbook/editing.md#what-a-file-holds) before you choose that resolution.
+        - When you choose a resolution that writes words in the agent-facing documents, or keeps words that a ticket you settle gives, judge those words by [What a file holds](docs/handbook/editing.md#what-a-file-holds).
             * comment: The user's "File", session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-12T16:36:16Z, which chose the coordinator's option of 16:36:02Z, "This stage holds the observed-failure test and "tool first"". Draft 10-200 failed that test at a ticket reviewer's finding and closed `wontfix`.
 
 ## Resolving
@@ -61,6 +61,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 
 ## Commands
 * inline: notes/commands.md#commands
-- Before you launch an agent, read [Background agents](prompts/agents/notes/commands.md#background-agents).
+- When you launch an agent, read [Background agents](prompts/agents/notes/commands.md#background-agents).
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 * inline: notes/commands.md#final-report

@@ -26,7 +26,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 - Run `uv run python scripts/step.py draft-analyst` at your start, and, once you have done the item it prints, run it with that item's name.
 - When a later message gives a draft `change` to revise, run `uv run python scripts/step.py draft-analyst`, and take the steps from the item it prints, reading no section an item links whose text your context still holds.
     * comment: The user's words, session 2384db39, 2026-10-17T18:18:39Z: "If the deferred procedure is extremely long and repeats later , it should only be loaded once".
-- Where a line links a section, read that section, and no other part of its document: its lines run from its heading to the next heading of its depth or a shallower one, and `grep -n '^#' <path>` prints the line of each heading.
+- Where another line has you read a section it links, read that section, and no other part of its document: its lines run from its heading to the next heading of its depth or a shallower one, and `grep -n '^#' <path>` prints the line of each heading.
 
 ## Decisions
 * inline: notes/decisions.md#decisions
@@ -43,6 +43,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 
 ## Commands
 * inline: notes/commands.md#commands
-- Before you launch an agent, read [Background agents](prompts/agents/notes/commands.md#background-agents).
+- When you launch an agent, read [Background agents](prompts/agents/notes/commands.md#background-agents).
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 * inline: notes/commands.md#final-report

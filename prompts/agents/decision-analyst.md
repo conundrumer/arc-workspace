@@ -23,7 +23,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/launching.md#a-part-a-brief-leaves-out
 * inline: notes/launching.md#a-decision-analysts-brief
 - Run `uv run python scripts/step.py decision-analyst` at your start, and, once you have done the item it prints, run it with that item's name.
-- Where a line links a section, read that section, and no other part of its document: its lines run from its heading to the next heading of its depth or a shallower one, and `grep -n '^#' <path>` prints the line of each heading.
+- Where another line has you read a section it links, read that section, and no other part of its document: its lines run from its heading to the next heading of its depth or a shallower one, and `grep -n '^#' <path>` prints the line of each heading.
 
 ## Decisions
 
@@ -56,6 +56,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 ## Commands
 * inline: notes/commands.md#commands
-- Before you launch an agent, read [Background agents](prompts/agents/notes/commands.md#background-agents).
+- When you launch an agent, read [Background agents](prompts/agents/notes/commands.md#background-agents).
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 * inline: notes/commands.md#final-report

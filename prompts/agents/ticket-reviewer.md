@@ -13,7 +13,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     - Its checklist: [checklist.md](prompts/agents/ticket-reviewer/checklist.md).
     - Acts, each with its section:
         - Reading its brief, taking its steps, writing findings and suggestions: [Ticket reviewer](#ticket-reviewer).
-        - Judging a draft against its request's Goal: [The Goal](prompts/agents/ticket-reviewer/goal.md#the-goal), by the link of the item of its checklist.
+        - Judging a draft against its Goal: [The Goal](prompts/agents/ticket-reviewer/goal.md#the-goal), by the link of the item of its checklist.
         - Weighing a design: [The user's goals](#the-users-goals).
         - Writing suggestions: [Reviewing a draft](prompts/agents/ticket-reviewer/review.md#reviewing-a-draft).
         - Checking a draft as an execution plan: [Checks](prompts/agents/ticket-reviewer/review.md#checks).
@@ -34,7 +34,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/tickets.md#ticket-fields
 * inline: notes/tickets.md#performance-tickets
 * inline: notes/tickets.md#noticed-faults
-- Before you file a ticket, read [Ticket files](prompts/agents/notes/tickets.md#ticket-files).
+- When you file a ticket, read [Ticket files](prompts/agents/notes/tickets.md#ticket-files).
 
 ## Commands
 * inline: notes/commands.md#commands

@@ -22,7 +22,7 @@ tools: Read, Grep, Glob, Bash, Write, Agent, SendMessage, TaskStop
         - Filing tickets: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects), [performance-tickets](prompts/agents/notes/tickets.md#performance-tickets), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults) and [Findings](#findings).
         - Running commands: [Commands](#commands).
 
-- Read [Prose in code](src/controlled_markdown/writing.md#prose-in-code) before you review text in a code file.
+- When you review text in a code file, read [Prose in code](src/controlled_markdown/writing.md#prose-in-code).
 
 # Doc reviewer
 * inline: notes/launching.md#a-part-a-brief-leaves-out

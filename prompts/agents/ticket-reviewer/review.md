@@ -1,6 +1,6 @@
 + budget: 9894
 * comment: when editing this doc
-    - The ticket reviewer receives this document from the step command as it enters the review of its drafts, once it has judged each draft of its brief by its request's Goal.
+    - The ticket reviewer receives this document from the step command as it enters the review of its drafts, once it has judged each draft of its brief by its Goal.
     - Acts, each with its section:
         - Reviewing a draft that meets the Goal, and writing suggestions: [Reviewing a draft](#reviewing-a-draft).
         - Checking a draft as an execution plan: [Checks](#checks).
@@ -21,7 +21,7 @@
     - A `change` ticket's `depends-on` gives the tickets [Change tickets](prompts/agents/notes/tickets.md#change-tickets) has its filer give there, and the `change` waits for no other ticket but, where it stands under `tickets/waiting/`, the `change` it waits on.
     - Instructions of the draft that edit the same part of a file, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a part, are ordered.
     - Each claim the draft makes about the current state that the draft's outcome rests on holds now, by that state: each case, count and place it gives, each thing it says a file, a command or the tree does, and each result it expects a check of the tree to give. Such a claim that you do not settle is a finding.
-        - Read [A draft's outcome](prompts/agents/notes/launching.md#a-drafts-outcome) before you check those claims.
+        - Judge which claims the draft's outcome rests on by [A draft's outcome](prompts/agents/notes/launching.md#a-drafts-outcome).
         - The draft's `Grounds` give where the source of each claim lies, as read at the hash of `master` they give.
         * comment: With the line without its list in its context, ticket reviewer a283a71c0cf18c9ba passed two such claims of draft 2-527, on the lines of `CLAUDE.md` and `prompts/agents/notes/coordinator.md` that mention launching and on the hooks of `.claude/settings.json`, whose disproof its own calls had printed: the Intent of ticket 2-530.
     - A `change` to the agents' processes, a `change` whose Scope touches `prompts/agents/` or `src/operations/`, that changes what an agent reads or does, gives in its Motivation an outcome of [Process notes](prompts/agents/notes/process.md), and serves it, and its Scope covers each line of those notes that the change makes untrue.

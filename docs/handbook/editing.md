@@ -75,7 +75,7 @@
         * comment: The user's words, session 7fd429fb, 2026-10-12T16:40:13Z: "So the files should actually be separate and deferred loaded not just sequential or sectioned".
     - Staged disclosure: where part of an entry point's work depends on the output of an earlier part, the text that only the later part needs stands in a file the reader loads once it has done the earlier part, and the earlier text gives that point as the condition to load it. A later section of a file the reader already holds does not meet this rule.
         * comment: The user's words, session 7fd429fb, 2026-10-12T16:40:13Z: "So the files should actually be separate and deferred loaded not just sequential or sectioned".
-    - An agent with a checklist has the file `prompts/agents/<agent>/checklist.md`. Before you write or review its documents, or give an agent a checklist, read [Checklists](prompts/agents/notes/checklists.md#checklists), which, for such an agent, gives the order of its steps, where its rules stand, its staged disclosure and its spec in place of the lines on them in this document.
+    - An agent with a checklist has the file `prompts/agents/<agent>/checklist.md`. When you write or review its documents, or give an agent a checklist, read [Checklists](prompts/agents/notes/checklists.md#checklists), which, for such an agent, gives the order of its steps, where its rules stand, its staged disclosure and its spec in place of the lines on them in this document.
 - Write no document line for a form that only a check with a `guard` decorator guards against.
 - A document rendered on its own is an entry point, and its lead says what the render leaves out when a link in the render leads there.
 - A render leaves out the lines that have an attribute its entry point excludes. Outside an entry point's lead, no heading of the render is left with nothing under it, and no line of it refers to a section the render leaves out.
@@ -84,8 +84,8 @@
 
 ## Writing a file
 - In an edit, follow the form the file's other lines show.
-- Before you edit or review a file that holds a directive other than `comment`, or that an `include` or `inline` directive of another file gives, read [Templating a document](src/controlled_markdown/templating.md).
-- A file that has editing notes opens with them, under a `* comment: when editing this doc` line. Read them before you edit the file.
+- When you edit or review a file that holds a directive other than `comment`, or that an `include` or `inline` directive of another file gives, read [Templating a document](src/controlled_markdown/templating.md).
+- A file that has editing notes opens with them, under a `* comment: when editing this doc` line. When you edit the file, read them.
     - A document under [agents](prompts/agents) has editing notes that give its spec: the part of each reader's work it serves, and the acts whose rules it states, each with a link to its section.
         - A document's spec also gives the agents that load it, and an entry point's spec the parts of its agent's work in the order the agent meets them, each with a link to what the agent loads for it.
     - Put each rule or fact your edit adds or changes in such a document under an act of its spec, or revise that spec.

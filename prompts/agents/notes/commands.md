@@ -33,7 +33,7 @@
 
 ## ending-commands
 - End a command of yours that runs in the background with the command a line of your documents gives to end it, and where none does, with `TaskStop` and the ID the harness gave that command. Call `TaskStop` on nothing else, and signal no process that you pick by its name or by its command line.
-- Before you call `TaskStop`, or start a process with `&` or `nohup`, read [process-trees](prompts/agents/notes/commands.md#process-trees).
+- When you call `TaskStop`, or start a process with `&` or `nohup`, read [process-trees](prompts/agents/notes/commands.md#process-trees).
 
 ## process-trees
 - The process tree of a process ID is that process ID, and each process ID that `pgrep -P <process ID>` prints for a process ID of the tree.

@@ -1,6 +1,6 @@
 + budget: 1185
 * comment: when editing this doc
-    - The ticket reviewer receives this document from the step command as it enters a later round's review, once it has entered the review of the drafts of its brief that meet their request's Goal.
+    - The ticket reviewer receives this document from the step command as it enters a later round's review, once it has entered the review of the drafts of its brief that meet their Goal.
     - Acts, each with its section:
         - Limiting a later round's findings, and taking the draft's text at that round: [A later round](#a-later-round).
 

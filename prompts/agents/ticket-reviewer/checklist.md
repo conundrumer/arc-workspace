@@ -7,7 +7,7 @@
 - Judge each draft of your brief by [The Goal](prompts/agents/ticket-reviewer/goal.md#the-goal).
 
 # Review the drafts that meet their Goal
-- This part applies where a draft of your brief meets its request's Goal: [Reviewing a draft](prompts/agents/ticket-reviewer/review.md).
+- This part applies where a draft of your brief meets its Goal: [Reviewing a draft](prompts/agents/ticket-reviewer/review.md).
 
 ## Limit a later round's findings
 - This part applies where an earlier round checked such a draft by [Checks](prompts/agents/ticket-reviewer/review.md#checks): [A later round](prompts/agents/ticket-reviewer/later-rounds.md).

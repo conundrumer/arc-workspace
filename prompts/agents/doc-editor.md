@@ -22,7 +22,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
         - Filing tickets: [Doc editor](#doc-editor), with [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields) and [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults).
         - Running commands: [Commands](#commands).
 
-- Read [Prose in code](src/controlled_markdown/writing.md#prose-in-code) before you edit or review text in a code file.
+- When you edit or review text in a code file, read [Prose in code](src/controlled_markdown/writing.md#prose-in-code).
 
 # Doc editor
 * inline: notes/launching.md#a-part-a-brief-leaves-out

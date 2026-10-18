@@ -27,7 +27,7 @@
 - [Principles](docs/handbook/principles.md) is the theory.
 - [Procedure](docs/handbook/procedure.md), [Solver file](docs/handbook/solver-file.md), the text the solver tool, `scripts/run_dl.py`, prints, [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md), [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences) and the user's other past words are support: they show what was intended, and none of them is a rule on its own.
     - Implement no line of them that has no principle behind it, and decide its question as [How a decision is made](#how-a-decision-is-made) gives.
-- The agents' definitions, the spec, and the lines after the goals are support too. The spec of a code change is the docstrings of the modules it touches. Where a line, read for its intent, works against a goal, have it rewritten.
+- The agents' definitions and the spec are support too. The spec of a code change is the docstrings of the modules it touches. Where a line, read for its intent, works against a goal, have it rewritten.
 - Have a support line added only where a rule is missing.
 - Agent-facing text is each text an agent reads: the documents, the briefs, the text a tool prints, its `--help` included, and a hook's message.
 
