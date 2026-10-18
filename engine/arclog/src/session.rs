@@ -14,8 +14,8 @@ use crate::terms::InternTable;
 
 /// The key of a result-cache entry: the resolved clause IR, the identity of
 /// each relation it reads, the grid it runs on, where it runs on one, and
-/// the parameter values it reads. Two keys are equal where each of these is, so two clauses whose
-/// hashes collide take two entries.
+/// the parameter values it reads. It compares as a key of canonical parts
+/// does ([`crate::program`]).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ResultKey {
     pub clause: crate::resolver::ResolvedContent,

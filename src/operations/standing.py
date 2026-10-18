@@ -207,7 +207,7 @@ def final(state: State, held: set[str]) -> str:
         out.append("- " + mctx("Change {n} not taken: it waits for {waited}").format(
             n=n, waited=waited))
     standing = [stands(state, f"- {sentence(draft_stands(t.number))}",
-                       drafts.draft_step(state, t, [], [], {})) for t in drafts.unended(state)]
+                       drafts.alone(state, t)) for t in drafts.unended(state)]
     standing += [(f"- {sentence(settled_open(n))}", False)
                  for n in triage.unsettled(state)]
     standing += [stands(state, "- " + mctx("Change {n} stays under `tickets/assigned/`").format(

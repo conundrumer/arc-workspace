@@ -19,7 +19,7 @@ from ticket_form import front, ticket_kind
 from ticket_log import held_log, line_time, log_lines, read_ticket, resolution_of
 from ticket_reads import editors_field
 from token_prices import run_cost
-from transcripts import chain, find, held_find
+from transcripts import chain, held_find
 from entry_reads import entries_back
 from transcript_snapshots import Refused
 
@@ -60,14 +60,6 @@ def owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | Non
     such a run whose transcript gives no agent type yet counts under the
     type of its launch."""
     held: set[Path] = set()
-
-    def look(aid: str, parent: Path) -> Path | None:
-        if aid not in pending and parent not in held:
-            return find(aid)
-        if (p := held_find(aid)) is not None:
-            held.add(p)
-        return p
-
     trees: list[tuple[str, list[Path]]] = []
     for run in runs:
         try:
@@ -79,18 +71,25 @@ def owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | Non
             if launch is None:
                 return None
             continue
-        role = agent_type(top) or launch
+        role = counted_type(top, launch)
         if role is None:
             return None
         if launch is not None:
             held.add(top)
-        trees.append((role, [top, *runs_under(top, look)]))
+        trees.append((role, [top, *runs_under(top, pending, held)]))
     owner: dict[Path, tuple[int, str]] = {}
     for role, tree in trees:
         for p in tree:
             if p not in owner or len(tree) < owner[p][0]:
                 owner[p] = (len(tree), role)
     return {p: role for p, (_, role) in owner.items()}
+
+
+def counted_type(top: Path, launch: str | None) -> str | None:
+    """The agent type the run of the transcript at `top` counts under: the
+    one its transcript gives, or, where it gives none yet, `launch`, the
+    agent type of its launch where it is still running."""
+    return agent_type(top) or launch
 
 
 @state_cache(DERIVED, notes="undecided", kept=Kept.DISK)

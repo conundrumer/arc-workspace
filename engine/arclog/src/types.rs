@@ -9,9 +9,8 @@
 
 /// One `RIGID_DET` assembly of a case program, which has its own Pose type:
 /// its form, by the form's name and canonical form, and, for a keyed form,
-/// its key row, by the labels that a read gives at the key's columns. Two
-/// ids are equal where their names, canonical forms and key rows are, so two
-/// forms whose hashes collide take two types.
+/// its key row, by the labels that a read gives at the key's columns. It
+/// compares as a key of canonical parts does ([`crate::program`]).
 ///
 /// The form's name and canonical form stay the same in every case that
 /// holds the form, so the cases that share a form that reads a pose share
@@ -329,11 +328,13 @@ fn join_branches(
 /// `label` and each label that a constraint of `body`, at any depth, makes
 /// equal to it, directly or through other labels.
 fn equal_labels(body: &crate::program::Body, label: crate::program::LabelId) -> Vec<crate::program::LabelId> {
-    use crate::program::{Conjunct, Constraint, Operand};
+    use crate::program::{constraint_second, Conjunct};
     let mut pairs = Vec::new();
     each_conjunct(body, &mut |conjunct| {
-        if let Conjunct::Constraint(Constraint { first, second: Operand::Label(second), .. }) = conjunct {
-            pairs.push((first.label, second.label));
+        if let Conjunct::Constraint(k) = conjunct {
+            if let Some(second) = constraint_second(k) {
+                pairs.push((k.first.label, second.label));
+            }
         }
     });
     let mut class = vec![label];

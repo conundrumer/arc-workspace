@@ -25,11 +25,12 @@ COMMITS = 300
 """The commits of `master` read for After a batch, newest first."""
 
 @dataclass(frozen=True)
-class ReviewPaths:
-    """The paths a review covers: each path under a prefix of `covered`
-    and under no prefix of `excluded`. Iterating it gives the same set as
-    git pathspecs, which `review_tag.py commit` stages and prints for the
-    reviewer's diff, so the two readings agree."""
+class PathSet:
+    """A set of paths of the tree, such as those a review covers: each path
+    under a prefix of `covered` and under no prefix of `excluded`.
+    Iterating it gives the same set as git pathspecs, which
+    `review_tag.py commit` stages and prints for the reviewer's diff, so
+    the two readings agree."""
     covered: tuple[str, ...]
     excluded: tuple[str, ...] = ()
 
@@ -41,17 +42,17 @@ class ReviewPaths:
         yield from (f":!{e}" for e in self.excluded)
 
 
-CODE_PATHS = ReviewPaths(
+CODE_PATHS = PathSet(
     ("src/", "scripts/", "tests/", "engine/", "theory/", "tools/", ".claude/workflows/",
      ".claude/settings.json", "justfile"),
     ("tools/console/vendor/",),
 )
 """`tools/console/vendor/` holds third-party code the project does not own."""
-LIB_PATHS = ReviewPaths(
+LIB_PATHS = PathSet(
     ("programs/lib.dl", "programs/lib/", "programs/proposers.dl", "programs/lib_functors.cpp"),
 )
 REVIEW_PATHS = {Review.CODE: CODE_PATHS, Review.LIB: LIB_PATHS}
-PROCESS_DIRS = ("prompts/agents/", "src/operations/")
+PROCESS_DIRS = PathSet(("prompts/agents/", "src/operations/"))
 ACCEPTED = "tests/gate/accepted"
 
 
@@ -115,8 +116,9 @@ def commits(main: Path) -> tuple[Commit, ...]:
     out: list[Commit] = []
     for head, files in logged(main, BASE, f"-n{COMMITS}", "--format=%x00%H %ct %s"):
         sha, ct, subject = (head.split(" ", 2) + [""])[:3]
-        out.append(Commit(sha, float(ct), frozenset(r for r in Review if changes(files, r)), subject,
-                          any(n.startswith(PROCESS_DIRS) for n in files), frozenset(files)))
+        out.append(Commit(sha, float(ct),
+                          frozenset(r for r in Review if changes(files, REVIEW_PATHS[r])), subject,
+                          changes(files, PROCESS_DIRS), frozenset(files)))
     return tuple(out)
 
 
@@ -130,8 +132,8 @@ def logged(main: Path, *argv: str) -> list[tuple[str, list[str]]]:
     return out
 
 
-def changes(files: list[str], review: Review) -> bool:
-    return any(REVIEW_PATHS[review].covers(n) for n in files)
+def changes(files: list[str], paths: PathSet) -> bool:
+    return any(paths.covers(n) for n in files)
 
 
 @state_cache(lambda main, review: (refs_stamp(main, "tags"), refs_stamp(main, "heads")))
@@ -145,7 +147,7 @@ def baseline(main: Path, review: Review) -> Baseline | NoBaseline:
         unreviewed = logged(main, f"{review.tag(n)}..{BASE}", "--format=%x00%H")
     except checkout.GitFailed:
         return NoBaseline.GIT_FAILED
-    return Baseline(n, tuple(sha for sha, files in unreviewed if changes(files, review)))
+    return Baseline(n, tuple(sha for sha, files in unreviewed if changes(files, REVIEW_PATHS[review])))
 
 
 @state_cache(lambda main: refs_stamp(main, "tags"))

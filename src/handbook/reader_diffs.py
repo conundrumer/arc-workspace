@@ -11,17 +11,13 @@ import fcntl
 import hashlib
 import os
 import re
-import shutil
 import subprocess
 import sys
-import time
-from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
-from typing import IO
 
 from engine import checkout
 from engine.memo import read_or_make
@@ -29,6 +25,7 @@ from controlled_markdown import form, markdown_heading_lines, mctx
 from handbook.linked import (Link, LinkedChange, LinkTarget, WalkStart, _Side, folded,
                             link_lines, linked_changes, sides)
 from handbook.contexts import MARKER, marked_section
+from handbook.kept_trees import TREES, flocked, tree_at
 from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT
 from handbook.readers import (calls_of, context_command, context_text, reader_calls,
                               reader_named)
@@ -49,121 +46,6 @@ before side, in place of a commit."""
 _MARKER_LINE = re.compile(form(MARKER, {"what": "(.+)"}))
 
 
-TREES = "reader-trees"
-"""The directory under `checkout.cache()` that holds the kept trees
-(`_tree_at`)."""
-
-UNUSED_SECONDS = 30 * 60
-"""How long a kept tree stays after its last use (`_tree_at`)."""
-
-
-@contextmanager
-def _flocked(path: Path, op: int) -> Iterator[IO[str]]:
-    """The lock file at `path`, held through `flock` with `op`. A file that
-    a holder removed while this one waited for it is opened again, so that
-    each hold is on the file that stands at `path`."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    while True:
-        with path.open("a+") as f:
-            fcntl.flock(f, op)
-            try:
-                standing = os.stat(path).st_ino == os.fstat(f.fileno()).st_ino
-            except FileNotFoundError:
-                standing = False
-            if standing:
-                yield f
-                return
-
-
-def _remove_tree(tree: Path) -> None:
-    """Removes `tree` and its entry in `git worktree list`, where either
-    stands."""
-    try:
-        checkout.git_out(REPO_ROOT, "worktree", "remove", "--force", str(tree))
-    except checkout.GitFailed:
-        shutil.rmtree(tree, ignore_errors=True)
-
-
-def _sweep(trees: Path) -> None:
-    """Removes each kept tree under `trees` that no block has used for
-    `UNUSED_SECONDS` and whose locks are free at once (`_tree_at`)."""
-    for use in sorted(trees.glob("*.use")):
-        make = use.with_suffix(".make")
-        try:
-            if time.time() - use.stat().st_mtime < UNUSED_SECONDS:
-                continue
-            with (_flocked(make, fcntl.LOCK_EX | fcntl.LOCK_NB),
-                  _flocked(use, fcntl.LOCK_EX | fcntl.LOCK_NB)):
-                if time.time() - use.stat().st_mtime < UNUSED_SECONDS:
-                    continue
-                use.with_suffix(".whole").unlink(missing_ok=True)
-                _remove_tree(use.with_suffix(""))
-                use.unlink()
-                make.unlink(missing_ok=True)
-        except (BlockingIOError, FileNotFoundError):
-            continue
-
-
-@contextmanager
-def _tree_at(commit: str) -> Iterator[Path]:
-    """The tree of `commit`, a detached git worktree of the repository kept
-    under `checkout.cache()`, one per commit, so that the checkout stays as
-    it is, the commit's own code finds the main worktree as in any other
-    checkout, and the tree of the old commit of one merge is made once,
-    by the merge (`keep_tree`) or by the first update after it.
-
-    The first block that needs the tree makes it under an exclusive lock on
-    the commit, and marks it whole once `git worktree add` has succeeded; a
-    block that finds that lock held waits for it, and a tree with no whole
-    mark is removed and made again under it. Each make first prunes the
-    entries of `git worktree list` whose directory is gone, such as those
-    of the trees of a run cache that was deleted, which no sweep reads
-    again. Each block holds a lock on the
-    tree shared while it reads the tree, and a block takes it exclusively
-    to remove the tree, so that no process removes a tree in use. On its
-    exit, a block removes each kept tree that no block has used for
-    `UNUSED_SECONDS` and whose locks are free at once, with its entry in
-    `git worktree list` (`_sweep`). A commit git does not know is a
-    fault."""
-    try:
-        full = checkout.git_out(REPO_ROOT, "rev-parse", "--verify", "--end-of-options",
-                                f"{commit}^{{commit}}").strip()
-    except checkout.GitFailed as e:
-        raise SystemExit(e.stderr.strip())
-    trees = checkout.cache() / TREES
-    tree = trees / full
-    use, make, whole = (tree.with_suffix(s) for s in (".use", ".make", ".whole"))
-    try:
-        while True:
-            with _flocked(use, fcntl.LOCK_SH):
-                if whole.exists():
-                    os.utime(use)
-                    yield tree
-                    return
-            with _flocked(make, fcntl.LOCK_EX):
-                if whole.exists():
-                    continue
-                with _flocked(use, fcntl.LOCK_EX):
-                    os.utime(use)
-                    _remove_tree(tree)
-                    checkout.git_out(REPO_ROOT, "worktree", "prune")
-                    try:
-                        checkout.git_out(REPO_ROOT, "worktree", "add", "--force",
-                                         "--detach", str(tree), full)
-                    except checkout.GitFailed as e:
-                        raise SystemExit(e.stderr.strip())
-                    whole.touch()
-    finally:
-        _sweep(trees)
-
-
-def keep_tree(commit: str) -> None:
-    """Makes the kept tree of `commit` (`_tree_at`) where none stands, so
-    that the blocks that need it later enter it whole."""
-    with _tree_at(commit):
-        pass
-
-
 RUNS = "reader-runs"
 """The directory under `checkout.cache()` that holds the kept outputs of
 the runs in kept trees (`_run_in`)."""
@@ -172,7 +54,7 @@ the runs in kept trees (`_run_in`)."""
 def _run_in(tree: Path, commit: str, argv: list[str]) -> str:
     """The output of `scripts/context.py` with `argv`, run in `tree`, the
     tree of `commit`, with that tree's own code. Where `tree` is a kept
-    tree (`_tree_at`), the output is kept under `checkout.cache()` by the
+    tree (`kept_trees.tree_at`), the output is kept under `checkout.cache()` by the
     tree's commit and `argv`, since it never changes for that commit, and
     one run makes it however many ask for it at once; the checkout's output
     is not kept, since its files may differ from its `HEAD`."""
@@ -182,7 +64,7 @@ def _run_in(tree: Path, commit: str, argv: list[str]) -> str:
     for part in [tree.name, *argv]:
         h.update(part.encode() + b"\0")
     key = checkout.cache() / RUNS / h.hexdigest()
-    with _flocked(key.with_suffix(".lock"), fcntl.LOCK_EX):
+    with flocked(key.with_suffix(".lock"), fcntl.LOCK_EX):
         return read_or_make(key.with_suffix(".txt"), bytes.decode, str.encode,
                             lambda: (_run(tree, commit, argv), True))
 
@@ -208,8 +90,8 @@ def _render_in(tree: Path, commit: str, reader: str, args: list[str]) -> str:
 def context_at(commit: str, reader: str, args: list[str]) -> str:
     """One reader's whole context as the tree of `commit` renders it, with
     that tree's own code, run in a detached worktree of `commit`
-    (`_tree_at`)."""
-    with _tree_at(commit) as tree:
+    (`kept_trees.tree_at`)."""
+    with tree_at(commit) as tree:
         return _render_in(tree, commit, reader, args)
 
 
@@ -333,7 +215,7 @@ def _context_sides(tree: Path, commit: str, reader: str,
 def context_diff(commit: str, reader: str, args: list[str]) -> str:
     """The diff of one reader's context since `commit` (`_context_sides`),
     with the sections it reaches by links, as `_diff_text` gives it."""
-    with _tree_at(commit) as tree:
+    with tree_at(commit) as tree:
         before, after = _context_sides(tree, commit, reader, args)
         return _diff_text([_text_diff(context_command(reader, args),
                                       before, after, tree, commit, WalkStart.CONTEXT)])
@@ -366,9 +248,9 @@ def update_diff(context_commit: str, instructions_commit: str, reader: str,
     `linked_commit`. One tree serves two commits that are the same."""
     linked = linked_commit(REPO_ROOT, context_commit, instructions_commit)
     with ExitStack() as stack:
-        context_tree = stack.enter_context(_tree_at(context_commit))
+        context_tree = stack.enter_context(tree_at(context_commit))
         instructions_tree = (context_tree if instructions_commit == context_commit
-                             else stack.enter_context(_tree_at(instructions_commit)))
+                             else stack.enter_context(tree_at(instructions_commit)))
         before, after = _context_sides(context_tree, context_commit, reader, args)
         context = _text_diff(context_command(reader, args), before, after,
                              context_tree, context_commit, WalkStart.CONTEXT)
@@ -410,7 +292,7 @@ def held_update_diff(held_context: str, held_instructions: str, launch: str,
     checkout serves as its tree."""
     with ExitStack() as stack:
         tree = (REPO_ROOT if launch == checkout.git_out(REPO_ROOT, "rev-parse", "HEAD").strip()
-                else stack.enter_context(_tree_at(launch)))
+                else stack.enter_context(tree_at(launch)))
         rendered, after = _context_sides(tree, launch, reader, args)
         context = replace(
             _text_diff(context_command(reader, args), _held_context(rendered, held_context),
@@ -497,7 +379,7 @@ def contexts_diff(commit: str) -> str:
     The checkout's readers come first, in `reader_calls` order, then the
     ones only the commit defines."""
     now = reader_calls()
-    with _tree_at(commit) as tree:
+    with tree_at(commit) as tree:
         then = _calls_in(tree, commit)
         rendered = _renders_in(tree, commit, then)
         changes: list[tuple[tuple[str, list[str]], ReaderChange]] = [

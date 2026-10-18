@@ -23,7 +23,7 @@ from entry_reads import read_entries
 from transcript_entries import epoch
 from transcript_snapshots import Entry
 
-from operations.batches import LEFT_OPEN, NO_RUN, RUNS_TAKEN, lines, read_under
+from operations.under_reads import LEFT_OPEN, NO_RUN, RUNS_TAKEN, lines, read_under
 
 PROFILE_SCRIPT = "profile_runs.py"
 """The script whose `UNDER` calls the previous call is read from."""

@@ -20,14 +20,7 @@ pub enum MacroExpansion {
     Keep,
     /// The atom of a macro gives way to the macro's definition, with the
     /// label at each of the atom's sites in the place of its column's label
-    /// in the definition. Where the meet of a label's type, from the label's
-    /// sites outside a part of the expansion, and the types of its sites in that
-    /// part is empty, that part holds nothing: a part is the body that takes the
-    /// atom's place, a branch of an `OR`, or a list of an `IF`, wherever it
-    /// stands in that body. Each macro's column types are its definition's,
-    /// a relation macro's columns and modes and a cell instance's outputs,
-    /// as [`crate::registry::macro_column_types`] gives them, so a program
-    /// that passes the checks under `Keep` passes them under `Expand`.
+    /// in the definition.
     Expand,
 }
 
@@ -171,9 +164,8 @@ pub enum Resolution {
 pub struct ColumnPosition(pub u16);
 
 /// The signature of a name a form reads: the canonical form of what the
-/// name resolves to, its columns and their types. Two signatures are equal
-/// where those canonical forms are, so two reads whose hashes collide have
-/// unequal signatures.
+/// name resolves to, its columns and their types. It compares as a key of
+/// canonical parts does ([`crate::program`]).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Signature(pub crate::program::canonical::CanonicalForm);
 

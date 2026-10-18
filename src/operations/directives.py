@@ -29,7 +29,7 @@ prefix `Op`, the word of its kind and a colon, past a list marker:
 - `Op pace: <preset> [<argument> ...]` or `Op pace: <path>`, the usage pace
   for every operator of the session (`pace`), as `pacing` gives it;
 - the rulings, `Op decision:` and `Op override:` lines in the forms that
-  `scripts/operate.py --help rulings` gives, which the command applies (`decided`,
+  `scripts/operate.py --help rulings` gives, which the command applies (`ruling`,
   `passed_over`, `given_again`, `overrides`).
 
 A line of the coordinator's in no such form, a ruling among them, goes
@@ -65,12 +65,12 @@ from operations.reports import LIST_MARKER
 from operations.pacing import Preset, line_pace
 from operations.roles import PASSES, Purpose, Role
 from operations.state import Agent, Message, Report, State
-from operations.steps import (STEP_KEY, Launch, Step, Undecided, bare, decision_key, digest,
+from operations.steps import (STEP_KEY, Step, Undecided, bare, decision_key, digest,
                               held, key)
 
 
 class Decision(StrEnum):
-    """The choices an `Op decision:` line gives a held step (`decided`): go on as though the step were passed, the
+    """The choices an `Op decision:` line gives a held step (`ruling`): go on as though the step were passed, the
     merge, the move to `tickets/open/`, or another agent on it."""
     PASSES = "passes"
     MERGE = "merge"
@@ -213,31 +213,31 @@ def allow_named(state: State) -> set[str]:
     return {n for n, _ in numbers_in(session_lines(state), Directive.ALLOW)}
 
 
-def decided(state: State, what: str, choices: dict[Decision, str]) -> Decision | Undecided:
+@dataclass(frozen=True)
+class Ruling:
+    """The choice a ruling on a held step gives, and the time of that
+    ruling. A launch on that ruling takes the time into its occasion, so a
+    second launch on one held step has a key of its own."""
+    choice: Decision
+    time: float
+
+
+def ruling(state: State, what: str, choices: dict[Decision, str]) -> Ruling | Undecided:
     """The choice among `choices` that the last `Op decision:` ruling giving
     the decision key of the held step `what` gives, of the coordinator to
     an operator of the session or of the reply of a ticket analyst on a
-    held step. Where no such ruling came, the step held on `what` with its
-    choices, and where the last such ruling gives none of them, the
-    undecided step on that line."""
-    ruling = last_decision(state, what)
-    if ruling is None:
+    held step, with its time. Where no such ruling came, the step held on
+    `what` with its choices, and where the last such ruling gives none of
+    them, the undecided step on that line."""
+    found = last_decision(state, what)
+    if found is None:
         return held_on(what, choices)
-    ln, m = ruling
+    ln, m = found
     if m["choice"] not in choices:
         listed = ", ".join(choices)
         return Undecided(mctx("the line `{line}` gives step {k} none of the choices "
                               "{listed}").format(line=ln.text, k=m["key"], listed=listed))
-    return Decision(m["choice"])
-
-
-def ruled(state: State, what: str) -> float:
-    """The time of the ruling `decided` takes its choice on the held step
-    `what` from, or 0.0 where none came. A launch on that ruling takes it
-    into its occasion, so a second launch on one held step has a key of its
-    own."""
-    ruling = last_decision(state, what)
-    return ruling[0].message.time if ruling is not None else 0.0
+    return Ruling(Decision(m["choice"]), ln.message.time)
 
 
 def last_decision(state: State, what: str) -> tuple[Line, re.Match[str]] | None:

@@ -43,7 +43,7 @@ def new_process() -> None:
 
 def spend(root: Path) -> float:
     new_process()
-    return audit_window.window(root, epoch(START), []).spend
+    return audit_window.window(root, epoch(START), []).priced_spend
 
 
 def cost(entries: list[dict[str, object]]) -> float:

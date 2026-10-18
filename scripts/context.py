@@ -18,8 +18,9 @@ from handbook.coordinator_document import (coordinator_rendering,
 from handbook.generated import MANIFEST
 from handbook.libcheck import check
 from handbook.paths import REPO_ROOT
+from handbook.kept_trees import keep_tree
 from handbook.reader_diffs import (context_at, context_diff, contexts_diff,
-                                   held_update_diff, keep_tree, update_diff)
+                                   held_update_diff, update_diff)
 from handbook.readers import context_text, contexts_text, reader_named
 
 HELP = mctx("""

@@ -73,14 +73,16 @@ fn end_place(text: &str, file: SourceFile) -> SourcePlace {
 }
 
 /// The line and column after `text`, where `text` starts at `line` and
-/// `column`, counted as the s-expression reader counts them: a newline
-/// starts the next line at column 1, and each other character takes one
-/// column.
+/// `column`, each character counted by [`after_char`].
 pub(crate) fn line_column_after(text: &str, line: u32, column: u32) -> (u32, u32) {
-    match text.rsplit_once('\n') {
-        Some((_, last_line)) => (line + text.matches('\n').count() as u32, last_line.chars().count() as u32 + 1),
-        None => (line, column + text.chars().count() as u32),
-    }
+    text.chars().fold((line, column), after_char)
+}
+
+/// The line and column after the character `c` at `at`, a line and a
+/// column: a newline starts the next line at column 1, and each other
+/// character takes one column.
+pub(crate) fn after_char((line, column): (u32, u32), c: char) -> (u32, u32) {
+    if c == '\n' { (line + 1, 1) } else { (line, column + 1) }
 }
 
 /// The s-expressions of `text` and its comments.

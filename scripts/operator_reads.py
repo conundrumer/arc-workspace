@@ -16,7 +16,7 @@ from agent_resumes import resumes
 from agent_turns import first_time
 from final_replies import final_reply
 from controlled_markdown import mctx
-from filed_texts import report_file, report_text, unfiled, written_report
+from filed_texts import filed_report, report_file, report_text, unfiled
 from open_agents import work_open
 from run_reads import (MAIN, agent_messages, agent_type, blocks, is_prompt,
                        message_text, notifications, run_entries,
@@ -221,20 +221,6 @@ def reply_to(a: Agent, since: float, undecided: list[str]) -> Report | None:
         return r if a.notifies else None
     text = report_text(path, a.agent_id or "", undecided)
     return r if text is None else replace(r, text=text, file=path)
-
-
-def filed_report(a: Agent) -> Agent:
-    """`a` with its last report read from `Agent.report_file`, at that
-    report's time, where that file is there and that report is not
-    already read from it. Where no file is there, as where the agent never
-    wrote it, its reports stay as read, and no line names the file."""
-    last = a.last_report
-    if a.report_file is None or last is None or last.file == a.report_file:
-        return a
-    text = written_report(a.report_file)
-    if text is None:
-        return a
-    return replace(a, reports=(*a.reports[:-1], replace(last, text=text, file=a.report_file)))
 
 
 def stalled_reports(agents: list[Agent], coordinators: dict[str, float],

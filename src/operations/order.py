@@ -18,7 +18,8 @@ analysts on open tickets; the move to `tickets/draft/` of the changes
 that a ticket holds up (`ticket_stall.stall`); the review
 of drafts; the changes; the solver pipelines; the cost audit, the code
 review, the standing doc review, the gate and the process assessment
-(`batches`); After a batch; the
+(`batches`); the sweep and the script check (`after_profile`); After a
+batch; the
 messages and the tickets on the stalled tickets of the operators
 (`alerts.ticket_stalls`), last, so that a step that would end a stall
 comes before the message on it. A step that
@@ -43,8 +44,8 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from controlled_markdown import mctx
-from operations import (alerts, batches, changes, concept_faults, decisions, drafts, limit_resume, lineage, merging,
-                        monitor, passes, reviews, runs, ticket_stall, triage, taking)
+from operations import (after_profile, alerts, batches, changes, concept_faults, decisions, drafts, limit_resume, lineage, merging,
+                        monitor, passes, reviews, runs, ticket_stall, triage, taking, unbatched)
 from operations.directives import (
     lines,
     passed,
@@ -52,12 +53,11 @@ from operations.directives import (
 )
 from operations import briefs
 from operations.roles import PASSES, Purpose, Role, launch_parameters, launched_type
-from operations.state import Agent, Call, State, Tool, Waits
+from operations.state import Agent, Call, NotComputed, State, Tool, Waits
 from operations.handled import held_aside, repeated
 from operations.constants import COORDINATOR, SUBAGENT_LIMIT
 from operations.journal import BOUND, Due, due, failures
 from operations.log_commands import file_ticket
-from operations.pacing import Unknown
 from operations.steps import (Bash, Journaled, Launch, Send, Step, Undecided, key,
                               retirement_key, unread_line)
 from ticketing.text import ticket_text
@@ -199,7 +199,7 @@ def joins(state: State, step: Step) -> bool:
     give."""
     if not isinstance(step, Launch):
         return False
-    analysis = batches.analysis(step.role, step.subject)
+    analysis = unbatched.analysis(step.role, step.subject)
     return analysis is None or analysis[0] is not Purpose.STEP
 
 
@@ -250,7 +250,7 @@ def unread_lines(state: State) -> Step | None:
             found.append(runs.fault_message(ln, runs.STARTS_NOTHING, fault))
         if isinstance(fault := runs.takes_given(state, ln), str):
             found.append(runs.fault_message(ln, runs.TAKES_NOTHING, fault))
-    if isinstance(pace := state.computed.pace, Unknown):
+    if isinstance(pace := state.computed.pace, NotComputed):
         found.append(Send(COORDINATOR, mctx("The usage pace counts as past: {why}").format(
             why=pace.why), f"pace {pace.why}"))
     return next((s for s in found if not repeated(s, state)), None)
@@ -268,7 +268,8 @@ LATE: tuple[Callable[[State], Step | None], ...] = (
     changes.step,
     pipelines, batches.audit, reviews.code_review, reviews.lib_review, batches.standing_review,
     batches.overdue_review, batches.gate,
-    batches.assessment, batches.step, alerts.ticket_stalls)
+    batches.assessment, after_profile.validation, after_profile.script_check, batches.step,
+    alerts.ticket_stalls)
 PROCEDURES = EARLY + LATE
 
 

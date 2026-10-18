@@ -57,8 +57,6 @@
 //! A `param` form, an `exclude` form, a `representative` line, an `assign`
 //! form, a grid and an `output` form have no children.
 
-#![allow(unused_variables, dead_code)]
-
 use super::{
     Alt, AltItem, AltRecord, Alts, Arcdata, Atom, Body, Choose, Claim, Clause, Conjunct, DemoRule, Demonstrated,
     Exclude, Form, Grid, Instance, InstanceInput, KeyClause, LabelUse, Negated, Node, Param, ParamValue, Program,

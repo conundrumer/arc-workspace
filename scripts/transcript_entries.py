@@ -130,9 +130,25 @@ def selected_lines(snap: Snapshot, lines: range, naming: frozenset[str] | None) 
     return named_lines(snap, lines, naming)
 
 
+TRANSCRIPT = ".jsonl"
+"""The suffix of a transcript's file name."""
+
+META = ".meta.json"
+"""The suffix of the name of a transcript's `.meta.json` file."""
+
+
 def meta_path(path: Path) -> Path:
     """The `.meta.json` file of the transcript at `path`."""
-    return path.with_suffix(".meta.json")
+    return path.with_suffix(META)
+
+
+def meta_transcript(meta: Path) -> Path | None:
+    """The transcript whose `.meta.json` file is at `meta`, or None where
+    `meta` is the `.meta.json` file of no transcript (`meta_path`)."""
+    if not meta.name.endswith(META):
+        return None
+    path = meta.with_name(meta.name.removesuffix(META) + TRANSCRIPT)
+    return path if meta_path(path) == meta else None
 
 
 @state_cache(lambda path: stat_of(meta_path(path)))

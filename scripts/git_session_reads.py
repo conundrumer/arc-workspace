@@ -3,6 +3,7 @@ the operator's state from: the read of git and of the main tree, the read
 of the idle sessions, the lines earlier operators of the session gave in
 their final replies, and the time an agent started."""
 
+from dataclasses import replace
 from pathlib import Path
 
 from agent_turns import first_time
@@ -40,7 +41,8 @@ def sessions(tickets: Path, index: int, session: str, now: float,
         read = read_sessions(tickets, index, session, now)
     if read.idle and not read.main and not read.main_live:
         want_main(tickets, session)
-    return SessionsRead(read.idle, read.adopted, read.fixed_for, read.main, read.main_live, main_wanted(tickets))
+        read = replace(read, main_wanted=main_wanted(tickets))
+    return read
 
 
 def given_lines(runs: list[tuple[str, Path]], me: str, calls: list[Call]) -> set[str]:

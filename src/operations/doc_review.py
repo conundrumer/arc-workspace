@@ -39,7 +39,7 @@ from controlled_markdown import mctx
 from operations import briefs, messages
 from operations.change_agents import settled
 from operations.change_holds import Hold, findings_hold, unreplied_hold
-from operations.directives import Decision, decided, ruled
+from operations.directives import Decision, ruling
 from operations.handled import sent
 from operations.reports import at_cap, no_finding, shows_current
 from operations.roles import Role
@@ -131,12 +131,12 @@ def review_decided(state: State, t: Ticket, w: Path, here: list[Agent],
                    hold: Hold, launcher: str) -> Step | Literal[False]:
     """The step on a review held on `hold`, by its decision:
     False where the review passes."""
-    choice = decided(state, hold.text, hold.choices)
-    if isinstance(choice, Undecided):
-        return choice
-    if choice is Decision.PASSES:
+    r = ruling(state, hold.text, hold.choices)
+    if isinstance(r, Undecided):
+        return r
+    if r.choice is Decision.PASSES:
         return False
-    return review_launch(state, t, w, here, launcher, ruled(state, hold.text))
+    return review_launch(state, t, w, here, launcher, r.time)
 
 
 def with_ids(agents: list[Agent]) -> list[tuple[Agent, str]] | Undecided:
@@ -155,7 +155,7 @@ def review_launch(state: State, t: Ticket, w: Path, here: list[Agent], launcher:
     the agents before it settled (`change_agents.settled`), and its rounds
     (`briefs.review_rounds`), by
     `launcher`, after the time `after` of the ruling it is launched on
-    (`directives.ruled`) or of the launch or last resume of the reviewer
+    (`directives.Ruling`) or of the launch or last resume of the reviewer
     that ended with no report it replaces, or 0.0 after neither."""
     editors = with_ids(here)
     if isinstance(editors, Undecided):
@@ -164,4 +164,3 @@ def review_launch(state: State, t: Ticket, w: Path, here: list[Agent], launcher:
     return Launch(Role.DOC_REVIEWER, t.number, briefs.doc_review(
         t.number, w, editors, launcher, known, briefs.review_rounds(known.launched_before)),
         occasion=str(max(last_reported(here), after)))
-

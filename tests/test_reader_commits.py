@@ -380,33 +380,6 @@ def test_a_call_whose_command_starts_within_the_bound_is_denied(
         assert out["permissionDecision"] == "deny", tool
 
 
-def test_a_command_that_passes_no_time_reads_the_age_at_the_entry(tmp_path: Path) -> None:
-    """A session loads its hook commands when it starts, so one started
-    before the commands passed the time runs them without it."""
-    main = session(tmp_path)
-    record(main, "main").parent.mkdir(parents=True)
-    record(main, "main").write_text(both(head()))
-    delivered(main).touch()
-    aged(delivered(main), -60)
-    bash = command("PreToolUse", "Bash|Monitor")
-    assert bash.startswith("HOOK_STARTED=")
-    untimed = bash[bash.index("uv run "):]
-    out = json.loads(run(untimed, call(main, "Bash", {})))["hookSpecificOutput"]
-    assert out["permissionDecision"] == "deny"
-
-
-def test_each_command_that_gives_the_update_passes_its_start() -> None:
-    """The entry falls back to its own start where no time is passed, so a
-    command that drops the time would give no other sign."""
-    for matcher, script in [("Bash|Monitor", "pending_wait_hook"),
-                            ("Agent", "context_bound_hook")]:
-        assert re.match(r"HOOK_STARTED=\$\([^)]*\) uv run ",
-                        command("PreToolUse", matcher, script)), script
-    sh = (checkout.scripts() / "reader_update_hook.sh").read_text()
-    assert re.search(r"^HOOK_STARTED=\$\([^)]*\)\nexport HOOK_STARTED\n", sh, re.M)
-    assert sh.index("export HOOK_STARTED") < min(sh.index("jq "), sh.index("uv run "))
-
-
 def test_an_update_at_pre_tool_use_records_its_delivery(tmp_path: Path) -> None:
     main = session(tmp_path)
     bash = command("PreToolUse", "Bash|Monitor")

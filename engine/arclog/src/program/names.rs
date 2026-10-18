@@ -1,8 +1,6 @@
 //! The names a file writes: the names a program declares, the names of
 //! columns, ports, alts and demo rules, slugs, texts and label ids.
 
-#![allow(unused_variables, dead_code)]
-
 use std::sync::Arc;
 
 use super::*;
@@ -78,8 +76,7 @@ pub struct RelationColumn {
 #[derive(Clone, Debug)]
 pub struct KeyBody {
     pub body: Node<Body>,
-    /// After an edit, the columns of the new body, as
-    /// [`crate::program::Node::apply`] gives.
+    /// Edits: [`crate::program::Node::apply`].
     pub columns: Arc<[RelationColumn]>,
 }
 

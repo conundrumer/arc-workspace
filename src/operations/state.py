@@ -14,12 +14,12 @@ from typing import TYPE_CHECKING, Any
 
 from controlled_markdown import form, mctx
 from handbook.reader_names import ReaderName
-from operations.pacing import Pace, Unknown
 from operations.roles import Model, Purpose, Role, analyst_of, subjects
 from ticketing.vocabulary import Domain, Kind, Resolution, Status
 
 if TYPE_CHECKING:
     from operations.journal import Journal
+    from operations.pacing import Pace
 
 
 @dataclass(frozen=True)
@@ -239,8 +239,11 @@ class Merge(Enum):
     script (`merge_outcomes.ran`), as where the harness denied the call.
     A call whose output holds a line of that script and not its footer
     (`merge_outcomes.ended`) was stopped, and has no outcome. A call that
-    ended was refused for a conflict in its rebase where its output gives
-    the paths that conflict (`merge_outcomes.conflict_paths`), refused
+    `pending_wait_hook` denied for its timeout has no outcome either, so
+    the merge call is given again, unless the last merge call of its
+    command was denied so too, in which case that second denial never ran.
+    A call that ended was refused for a conflict in its rebase where its
+    output gives the paths that conflict (`merge_outcomes.conflict_paths`), refused
     otherwise where its output holds a refusal line
     (`merge_outcomes.refused`), and failed otherwise, as where it ended on
     a `failed:` line of that script or on a traceback, whatever form its
@@ -344,8 +347,6 @@ class Review(Enum):
         return f"{self.value}{n}"
 
     def number(self, tag: str) -> int | None:
-        """The `<n>` of a tag of its baseline, `<prefix><n>`, or None where
-        `tag` is no such tag."""
         n = tag.removeprefix(self.value)
         return int(n) if tag.startswith(self.value) and n.isdigit() else None
 
@@ -607,16 +608,18 @@ class HeldRead:
 
 @dataclass(frozen=True)
 class AuditWindow:
-    """The window of the next cost audit: its start, and its spend in
-    dollars."""
+    """The window of the next cost audit: its start, and the spend in
+    dollars of its priced requests alone, a lower bound of its spend
+    (`audit_records.start_and_spend`)."""
     start: float
-    spend: float
+    priced_spend: float
 
 
 @dataclass(frozen=True)
 class NotComputed:
-    """A value of `Computed` the read did not give, with the text of why."""
-    why: str
+    """A value that a read did not compute, with the text of why: a value of
+    `Computed`, or a pace (`pacing`)."""
+    why: str = mctx("the read of the state did not compute it")
 
 
 @dataclass(frozen=True)
@@ -635,7 +638,7 @@ class Computed:
     taken at `State.now`, of that field's set with the doc editor.
     `run_starts` gives what the script of each `Op run:` line gave at this
     read, by its run (`runs.run_id`), and `run_takes` what its `takes`
-    gave. `pace` is the usage pace at `State.now` (`pacing`), Unknown
+    gave. `pace` is the usage pace at `State.now` (`pacing`), NotComputed
     until the read computes it. `audit_window` is the window of the next
     cost audit (`audit_window`), NotComputed until the read computes it."""
     to_settle: tuple[str, ...] = ()
@@ -644,9 +647,8 @@ class Computed:
     doc_budgets: Mapping[str, Budget] = field(default_factory=dict)
     run_starts: Mapping[str, Starts] = field(default_factory=dict)
     run_takes: Mapping[str, Takes] = field(default_factory=dict)
-    pace: Pace = field(default_factory=lambda: Unknown(mctx("the read of the state did not compute it")))
-    audit_window: AuditWindow | NotComputed = field(
-        default_factory=lambda: NotComputed(mctx("the read of the state did not compute it")))
+    pace: "Pace" = field(default_factory=NotComputed)
+    audit_window: AuditWindow | NotComputed = field(default_factory=NotComputed)
 
     def admitted(self) -> frozenset[str] | None:
         """The tickets each run whose script defines `takes` admits, a run
@@ -660,21 +662,35 @@ class Computed:
 
 @dataclass(frozen=True)
 class SessionsRead:
-    """What the operator reads of the tracker's sessions. `idle_indexes`
-    holds the idle indexes `idle_sessions.read_sessions` gives, `adopted`
-    those of them the operators act on as on the session's own
-    (`file_ticket.py main --help`), `fixed_for` the indexes whose closed
-    `interference` tickets the operators give a solver fix
-    (`idle_sessions.Sessions.fixed_for`), `main` whether the reading session is
-    the main session, `main_live` whether the main session runs an agent,
-    and `main_wanted` the session id `tickets/main-wanted` holds with the
-    time of its write, as `idle_sessions` gives them."""
-    idle_indexes: frozenset[int]
-    adopted: frozenset[int]
-    fixed_for: frozenset[int]
+    """What the operator reads of the tracker's sessions, as
+    `idle_sessions.read_sessions` gives it: `idle` holds each idle index,
+    other than the reading session's, that holds a ticket outside
+    `vocabulary.SETTLED`, and `ended` each idle index other than the
+    reading session's, whatever its tickets; `main` is whether the reading
+    session is the main, `main_live` whether a main is named and live, and
+    `main_wanted` the session id `tickets/main-wanted` holds with the time
+    of its write."""
+    idle: frozenset[int]
+    ended: frozenset[int]
     main: bool
     main_live: bool
     main_wanted: tuple[str, float] | None
+
+    @property
+    def adopted(self) -> frozenset[int]:
+        """The indexes of other sessions whose tickets the reading session's
+        operators act on as on its own (`file_ticket.py main --help`): the
+        idle ones, where it is the main."""
+        return self.idle if self.main else frozenset()
+
+    @property
+    def fixed_for(self) -> frozenset[int]:
+        """The indexes of other sessions whose closed `interference` tickets
+        the reading session's operators give a solver fix
+        (`passes.fixes`): the ended ones, where it is the main, since a
+        ticket's closure can leave its index with no ticket outside
+        `vocabulary.SETTLED`."""
+        return self.ended if self.main else frozenset()
 
 
 @dataclass(frozen=True)

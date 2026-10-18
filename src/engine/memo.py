@@ -11,7 +11,7 @@ import tempfile
 import threading
 import weakref
 from collections import OrderedDict
-from collections.abc import Callable, Hashable
+from collections.abc import Callable, Hashable, Iterable
 from typing import Protocol
 from pathlib import Path
 
@@ -214,3 +214,15 @@ def hash_file(h: "hashlib._Hash", path: str, body: bytes | None) -> None:
     its path alone where `body` is None, as the file cannot be read."""
     h.update(b"\0" + path.encode() + b"\0")
     h.update(b"\0" if body is None else b"\1" + body)
+
+
+def hash_files(h: "hashlib._Hash", files: Iterable[tuple[str, Path]]) -> None:
+    """Adds to `h` each file of `files`, a name with the path it is read
+    from, in the order `files` gives them, as `hash_file` adds it, with no
+    bytes where it cannot be read."""
+    for name, path in files:
+        try:
+            body: bytes | None = path.read_bytes()
+        except OSError:
+            body = None
+        hash_file(h, name, body)

@@ -32,7 +32,7 @@ from cli.common import SOURCES
 from controlled_markdown import mctx
 from engine import checkout, duration
 from gating.edits import same_code
-from operations.merging import CHECK_FAILED, PREFIX, check_name
+from operations.merging import CHECK_FAILED, PREFIX, TOOL, check_name
 from operations.worktrees import BASE
 
 CODE_DIRS = ("src", "scripts", "tests", "data/tasks", "tools/console")
@@ -175,7 +175,7 @@ def run_in(tree: Path, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
 def timed(step: str) -> contextlib.AbstractContextManager[None]:
     """A step of `merge_change.py`, which writes its step line
     (`engine.duration.STEP`) as it ends."""
-    return duration.step("merge_change", step)
+    return duration.step(TOOL, step)
 
 
 def run_check(tree: Path, argv: Sequence[str], shown: str) -> subprocess.CompletedProcess[str]:

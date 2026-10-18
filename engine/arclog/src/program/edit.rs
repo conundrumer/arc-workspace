@@ -3,13 +3,11 @@
 //! relation with the sites given so far, is a well-formed atom whose other
 //! columns are projected away.
 
-#![allow(unused_variables, dead_code)]
-
 use super::path::NodePath;
 use super::{Atom, Conjunct, Node, Program, Site};
 
-/// An edit of a program, at the node its path names. Each node the edit
-/// changes takes the columns of its new body, as [`Node::apply`] gives.
+/// An edit of a program, at the node its path names, as [`Node::apply`]
+/// applies it.
 #[derive(Clone, Debug)]
 pub enum Edit {
     /// Inserts `conjunct` into the body at `body`, at `index` of its source

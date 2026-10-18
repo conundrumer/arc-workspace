@@ -2,7 +2,7 @@
 runs `DEPTH` launches of its kind deep.
 
 A launch is caused by each ticket its subject gives, and a launch that no
-batch holds (`batches.follows`) by each member of the batch it follows. A
+batch holds (`unbatched.follows`) by each member of the batch it follows. A
 ticket of domain `agent` is caused by the launch of the agent its subject
 gives. A chain ends at a cause that is no launch of the session's
 operators, or whose agent id is unknown.
@@ -11,8 +11,8 @@ Two launches are of the same kind where they have the same role and, for
 ticket analysts, the same purpose."""
 
 from controlled_markdown import mctx
-from operations import batches
-from operations.directives import Decision, decided
+from operations import batches, unbatched
+from operations.directives import Decision, ruling
 from operations.roles import Purpose, Role, description, subjects
 from operations.state import Agent, State
 from operations.steps import Launch, Step, Undecided
@@ -28,20 +28,20 @@ type Kind = tuple[Role, Purpose | None]
 
 
 def kind(role: Role, subject: str) -> Kind:
-    parsed = batches.analysis(role, subject)
+    parsed = unbatched.analysis(role, subject)
     return role, None if parsed is None else parsed[0]
 
 
 def tickets(role: Role, subject: str) -> list[str]:
     """The words of `subject` that may be ticket numbers."""
-    parsed = batches.analysis(role, subject)
+    parsed = unbatched.analysis(role, subject)
     return subjects(subject if parsed is None else parsed[1])
 
 
 def causes(state: State, role: Role, subject: str, at: float) -> list[Agent]:
     """The launches of the session's operators, with a known agent id, that
     cause the launch of `role` on `subject` made at `at`."""
-    if batches.follows(role, subject):
+    if unbatched.follows(role, subject):
         found = batches.followed(state, at)
     else:
         found = [a for n in tickets(role, subject)
@@ -80,5 +80,5 @@ def held(state: State, launch: Launch) -> Step:
     what = mctx("the launch `{launch}` is caused by launches of its kind {depth} deep, the "
                 "nearest first: {links}").format(
         launch=description(launch.role, launch.subject), depth=DEPTH, links=links)
-    choice = decided(state, what, CHOICES)
-    return choice if isinstance(choice, Undecided) else launch
+    r = ruling(state, what, CHOICES)
+    return r if isinstance(r, Undecided) else launch

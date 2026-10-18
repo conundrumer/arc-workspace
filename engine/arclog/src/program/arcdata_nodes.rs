@@ -1,7 +1,5 @@
 //! The nodes of an arcdata file, from the whole file down to its values.
 
-#![allow(unused_variables, dead_code)]
-
 use std::sync::Arc;
 
 use super::*;

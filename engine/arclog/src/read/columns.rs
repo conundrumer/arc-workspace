@@ -55,12 +55,6 @@ pub(super) fn made_labels(body: &Body) -> Vec<LabelId> {
     out
 }
 
-fn constraint_second(constraint: &Constraint) -> Option<ConstraintLabel> {
-    match constraint.second {
-        Operand::Label(label) => Some(label),
-        Operand::Zero => None,
-    }
-}
 
 /// The labels `first` keeps that each of `later` names.
 fn exports(first: &Body, later: &[&Body], out: &mut Vec<LabelId>) {
@@ -83,30 +77,17 @@ fn site_labels(site: &Site, visit: &mut dyn FnMut(LabelUse)) {
 
 /// Each label use of `body`, at any depth, in source order.
 fn each_label(body: &Body, visit: &mut dyn FnMut(LabelUse)) {
-    fn atom(atom: &Atom, visit: &mut dyn FnMut(LabelUse)) {
-        for site in atom.sites.iter() {
-            site_labels(site, visit);
+    crate::types::each_conjunct(body, &mut |c| match c {
+        Conjunct::Atom(a) | Conjunct::Not(Negated::Atom(a)) => {
+            a.value().sites.iter().for_each(|site| site_labels(site, visit))
         }
-    }
-    fn conjunct(c: &Conjunct, visit: &mut dyn FnMut(LabelUse)) {
-        match c {
-            Conjunct::Atom(a) | Conjunct::Not(Negated::Atom(a)) => atom(a.value(), visit),
-            Conjunct::Not(Negated::Form(form)) => conjunct(form, visit),
-            Conjunct::Constraint(k) => {
-                for label in [Some(k.first), constraint_second(k)].into_iter().flatten() {
-                    visit(if label.fresh { LabelUse::Fresh(label.label) } else { LabelUse::Join(label.label) });
-                }
+        Conjunct::Constraint(k) => {
+            for label in [Some(k.first), constraint_second(k)].into_iter().flatten() {
+                visit(label.into());
             }
-            Conjunct::Or(branches) => branches.iter().for_each(|b| each_label(b.value(), visit)),
-            Conjunct::If { test, then, otherwise } => {
-                [test, then, otherwise].into_iter().for_each(|b| each_label(b.value(), visit))
-            }
-            Conjunct::All { domain, body } => [domain, body].into_iter().for_each(|b| each_label(b.value(), visit)),
         }
-    }
-    for c in body.conjuncts.iter() {
-        conjunct(c, visit);
-    }
+        _ => {}
+    });
 }
 
 fn body_labels(body: &Body) -> BTreeSet<u32> {

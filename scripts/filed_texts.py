@@ -7,6 +7,7 @@ leaves its text unknown, and an `undecided` line of `GONE_FILE` or
 `GONE_REPORT` names it."""
 
 import re
+from dataclasses import replace
 from pathlib import Path
 
 from controlled_markdown import form, mctx
@@ -14,6 +15,7 @@ from controlled_markdown import form, mctx
 from noted_reads import note_read
 from operations.briefs import REPORT_FILE, REPORT_RULE
 from operations.printed_forms import FILED_LINE, REPORT_NAME, filed_path
+from operations.state import Agent
 from file_reads import file_text, is_file
 
 GONE_FILE = mctx("{where}: the file {path} its text gives is gone, so that text is unknown")
@@ -77,3 +79,16 @@ def report_text(path: Path, where: str, undecided: list[str]) -> str | None:
     if text is None:
         undecided.append(GONE_REPORT.format(where=where, path=path))
     return text
+
+
+def filed_report(a: Agent) -> Agent:
+    """`a` with its last report read from `Agent.report_file`, at that
+    report's time, where that file is there and that report is not
+    already read from it."""
+    last = a.last_report
+    if a.report_file is None or last is None or last.file == a.report_file:
+        return a
+    text = written_report(a.report_file)
+    if text is None:
+        return a
+    return replace(a, reports=(*a.reports[:-1], replace(last, text=text, file=a.report_file)))

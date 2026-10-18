@@ -4,7 +4,7 @@ them: the launches of a session's agents by the Agent call of each, the
 launches of a run with the time each was last resumed, and the agents a
 run launched or resumed."""
 
-from collections.abc import Callable
+from collections.abc import Collection
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -15,7 +15,7 @@ from controlled_markdown import mctx
 from run_reads import (blocks, in_background, meta_parent, notified, parent_label, read_meta,
                        results_by_call, run_sessions, session_agents)
 from state_reads import DERIVED, Kept, state_cache
-from transcripts import agent_id, chain, find
+from transcripts import agent_id, chain, find, held_find
 from entry_reads import line_entries
 from transcript_entries import epoch, fold
 from transcript_snapshots import Entry
@@ -91,23 +91,35 @@ def children_of(path: Path, label: str) -> frozenset[str]:
     return run_launches(path)[1].get(label, frozenset())
 
 
-def found(aid: str, _parent: Path) -> Path:
-    """The transcript `find` gives the agent id `aid`."""
-    return find(aid)
+def run_transcript(aid: str, held: bool) -> Path | None:
+    """The transcript of the run `aid`: where `held`, from the agent index
+    this state holds alone (`transcripts.held_find`), None where that index
+    gives none, and otherwise as `find` gives it."""
+    return held_find(aid) if held else find(aid)
 
 
-def runs_under(path: Path, look: Callable[[str, Path], Path | None] = found) -> list[Path]:
+def runs_under(path: Path, pending: Collection[str] = frozenset(),
+               held: set[Path] | None = None) -> list[Path]:
     """The last transcript of each run under the run at `path`: the agents
     it launched, the agents those launched, and so on, by `run_launches`,
-    each as `look` gives it from its agent id and the transcript of the run
-    that launched it, leaving out a run for which `look` gives None, and
-    the runs under it."""
+    each as `run_transcript` gives it, leaving out a run it gives none
+    for, and the runs under it. A run is read held where its agent id is
+    in `pending`, or where the transcript of the run that launched it is
+    in `held`, the record of the transcripts read held, which a caller
+    may share across walks, and to which each transcript read held is
+    added."""
+    held = set() if held is None else held
     out: dict[str, Path] = {}
     todo = [path]
     while todo:
         p = todo.pop()
         for aid in sorted(children_of(p, parent_label(p))):
-            if aid not in out and (q := look(aid, p)) is not None:
+            if aid in out:
+                continue
+            run_held = p in held or aid in pending
+            if (q := run_transcript(aid, run_held)) is not None:
+                if run_held:
+                    held.add(q)
                 out[aid] = q
                 todo.append(q)
     return list(out.values())

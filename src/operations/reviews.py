@@ -46,6 +46,7 @@ def review(state: State, of: Review) -> Step | None:
             name=of.noun, prefix=of.value, commits=commits, why=baseline.value))
     if not baseline.unreviewed:
         return None
-    return Launch(of.role, of.tag(baseline.number + 1),
-                  briefs.review(of, baseline.number, scratch_dir(of.stem, state.scratch)),
+    number = baseline.number + 1
+    return Launch(of.role, of.tag(number),
+                  briefs.review(of, baseline.number, number, scratch_dir(of.stem, state.scratch)),
                   occasion=baseline.unreviewed[0])

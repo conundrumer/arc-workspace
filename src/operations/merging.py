@@ -10,7 +10,7 @@ script's own forms and by `master` (`state.Merge`,
   change unmerged, and once no editor of the change runs, the merge call
   on that worktree is given again;
 - a call that ran and was stopped before the script wrote its footer, as
-  where the step journal ended it, has no outcome, reaches no agent of
+  where the step journal ended it (`state.Merge`), reaches no agent of
   the change, and the merge call is given again with the key of the step
   that was stopped, which the step journal counts as a failure of it;
 - a call that never ran, as where the harness denied it, hands the change
@@ -21,8 +21,8 @@ script's own forms and by `master` (`state.Merge`,
   coordinator, with a note that gives the call, the line of its output
   that gives why it ended (`FAILED`) and the worktree;
 - a conflict in the rebase leaves the change in its worktree, put by the
-  script onto `master` with the paths that conflict as git's 3-way merge
-  leaves them: the command writes those paths on the ticket in a line whose
+  script onto `master` as `scripts/merge_change.py --help` gives it: the
+  command writes the paths that conflict on the ticket in a line whose
   note opens with `conflict`, once per such call, and the refusal then
   goes as a finding as any other refusal goes;
 - a conflict where the script could not put the change onto `master`
@@ -157,8 +157,9 @@ NOT_RUN = mctx("did not run: {first}")
 """The outcome a `HANDED_OFF` note gives of a merge call that did not run."""
 
 FAILED = mctx("failed: {why}")
-"""The outcome a `HANDED_OFF` note gives of a merge call that ran and
-ended with no refusal line, `why` its line that gives why (`failed_why`)."""
+"""The outcome that a `HANDED_OFF` note gives for a merge call that ran
+and ended with no refusal line. `why` is the line of its output that
+gives why it ended (`failed_why`)."""
 
 NO_TEXT = "no result text"
 """What a `HANDED_OFF` note gives in place of a line of a call's output
@@ -451,10 +452,10 @@ def refusal_line(output: str) -> str | None:
 
 
 def failed_why(output: str) -> str:
-    """The line of `output`, a merge call's that ended with no refusal
-    line, that gives why it ended: its first line that opens with
-    `FAILED_LINE`, else its last line once the footer is taken out, else
-    `NO_TEXT`."""
+    """The line that gives why a merge call ended, where its output
+    `output` holds no refusal line: the first line of `output` that opens
+    with `FAILED_LINE`, else its last line once the footer is taken out,
+    else `NO_TEXT`."""
     lines = output.splitlines()
     rest = FOOTER_RE.sub("", output).strip().splitlines()
     return next((ln for ln in lines if ln.startswith(FAILED_LINE)),

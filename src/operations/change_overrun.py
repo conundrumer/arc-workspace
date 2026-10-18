@@ -20,7 +20,6 @@ cost budget, and the change merges with the work its worktree holds."""
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 from controlled_markdown import mctx
 from operations import messages
@@ -33,7 +32,7 @@ from operations.handled import sent, sent_at
 from operations.item_check import check_items, is_checked
 from operations.roles import Role
 from operations.state import Agent, Spend, State, Ticket, last_reported
-from operations.steps import Bash, Send, Step, Undecided, agent_ids
+from operations.steps import Bash, Pause, Send, Step, Undecided, agent_ids
 from operations.log_commands import log
 from operations.worktrees import holds_work
 from ticketing.vocabulary import Status
@@ -80,19 +79,19 @@ def silent(state: State, t: Ticket, latest: list[Agent]) -> tuple[list[Agent], f
 
 
 def over_budget(state: State, t: Ticket, w: Path,
-                agents: list[Agent]) -> Step | Ended | None | Literal[False]:
+                agents: list[Agent]) -> Step | Ended | Pause:
     """The step on the change `t` past the budget its take gives, `Ended`
-    where what its agents leave goes to `changes.leftover`, or False where
-    it is not past it or no take line gives one."""
+    where what its agents leave goes to `changes.leftover`, or
+    `Pause.CLEAR` where it is not past it or no take line gives one."""
     take_line = taken(t)
     if take_line is None:
-        return False
+        return Pause.CLEAR
     spent = state.computed.spent.get(t.number)
     if spent is None:
         return Undecided(mctx("the spend of change {number} since its take is unknown").format(
             number=t.number))
     if not past_budget(take_line, spent):
-        return False
+        return Pause.CLEAR
     limit = take_line.dollars
     trip = overrun_ticket(state, t, left_draft(t))
     if trip is None:
@@ -109,7 +108,7 @@ def over_budget(state: State, t: Ticket, w: Path,
             if not sent(state, a.agent_id, message):
                 return Send(a.agent_id, message, f"over budget {t.number}")
     if any(a.pending for a in agents):
-        return None
+        return Pause.WAIT
     here = editors_in(agents, w)
     latest = latest_editors(here)
     if not holds_work(w):
@@ -140,5 +139,5 @@ def over_budget(state: State, t: Ticket, w: Path,
     if isinstance(roles, Undecided):
         return roles
     if (step := design_review(state, t, w, roles, here, agents, state.me)) is not False:
-        return step
+        return Pause.WAIT if step is None else step
     return Ended(tuple(latest))

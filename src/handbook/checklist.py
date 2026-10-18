@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, replace
+from enum import StrEnum
 from pathlib import Path
 
 import controlled_markdown as nm
@@ -39,7 +40,25 @@ class PartCall:
 type Item = Step | PartCall
 
 
-STEP = "uv run python scripts/step.py"
+STEP_SCRIPT = "scripts/step.py"
+"""The script of the step calls, from the root of the tree."""
+
+
+class Entry(StrEnum):
+    """How a step call enters the part its item calls: with the part's
+    file, or, for a reader whose context still holds that file, without
+    it."""
+    ENTER = "--enter"
+    REENTER = "--reenter"
+
+
+def step_call(agent: str, item: str | None = None, entry: Entry | None = None) -> str:
+    """The step call of `agent`, `uv run python scripts/step.py <agent>
+    [--enter|--reenter] <item>`, on the item `item` with `entry`, or, where
+    `item` is None, the call that prints the first item."""
+    return " ".join(["uv", "run", "python", STEP_SCRIPT, agent,
+                     *([] if entry is None else [entry.value]),
+                     *([] if item is None else [item])])
 
 
 @dataclass(frozen=True)
@@ -64,8 +83,8 @@ def checklist_agents(root: Path = DOCUMENTS_ROOT) -> list[str]:
 NO_CHECKLIST = mctx("no agent has a checklist")
 
 ENTER = mctx("""
-    - Where the condition above holds, run `uv run python scripts/step.py {agent} --enter {item}`, or, where your context still holds this part's file from an earlier entry, `uv run python scripts/step.py {agent} --reenter {item}`.
-    - Where it does not hold, run `uv run python scripts/step.py {agent} {item}`.
+    - Where the condition above holds, run `{enter}`, or, where your context still holds this part's file from an earlier entry, `{reenter}`.
+    - Where it does not hold, run `{skip}`.
     """)
 
 NOT_A_CALL = mctx("the item `{item}` calls no conditional part's file")
@@ -168,26 +187,30 @@ class Checklist:
         out = nm.render(nm.section_document(self.document, _own(item.heading)),
                         self.registry)
         if isinstance(item, PartCall):
+            slug = nm.slug(item.heading.text)
             out = out.rstrip("\n") + "\n\n" + ENTER.format(
-                agent=self.agent, item=nm.slug(item.heading.text))
+                enter=step_call(self.agent, slug, Entry.ENTER),
+                reenter=step_call(self.agent, slug, Entry.REENTER),
+                skip=step_call(self.agent, slug))
         return out
 
     def _walked(self, items: tuple[Item, ...], held: Callable[[str], bool],
-                args: tuple[str, ...], opens: PartCall | None = None
-                ) -> Iterator[tuple[Item, tuple[str, ...], PartCall | None]]:
-        """Each item of the walk of `items`, with the arguments of the step
-        call that prints it, where `args` prints the first of `items`, and
-        the part call `opens` for the first of `items`, None for the rest; a
-        part's items are in the walk where `held` holds the text of its
-        first item. Returns the arguments that print the item after."""
+                call: str, opens: PartCall | None = None
+                ) -> Iterator[tuple[Item, str, PartCall | None]]:
+        """Each item of the walk of `items`, with the step call that prints
+        it, where `call` prints the first of `items`, and the part call
+        `opens` for the first of `items`, None for the rest; a part's items
+        are in the walk where `held` holds the text of its first item.
+        Returns the step call that prints the item after."""
         for item in items:
-            yield item, args, opens
+            yield item, call, opens
             opens = None
-            args = (nm.slug(item.heading.text),)
+            slug = nm.slug(item.heading.text)
+            call = step_call(self.agent, slug)
             if isinstance(item, PartCall) and held(self.text(item.items[0])):
-                args = yield from self._walked(item.items, held,
-                                               ("--enter", *args), item)
-        return args
+                call = yield from self._walked(item.items, held,
+                                               step_call(self.agent, slug, Entry.ENTER), item)
+        return call
 
     def gap(self, results: Iterable[str], upto: str | None = None) -> Gap | None:
         """The first item of the walk, up to the item `upto` names or else
@@ -214,11 +237,11 @@ class Checklist:
             return bool(holding(text))
 
         target = None if upto is None else self.named(upto)[0]
-        for item, args, opens in self._walked(self.items, held, ()):
+        for item, call, opens in self._walked(self.items, held, step_call(self.agent)):
             found = holding(self.text(item))
             if not found or (opens is not None and not any(
                     self._file(opens) in t for t in texts[:found[-1] + 1])):
-                return Gap(item, self._call(args))
+                return Gap(item, call)
             last = found[-1]
             if item is target:
                 return None
@@ -227,16 +250,13 @@ class Checklist:
                              f"holds `{target.heading.text}`")
         return None
 
-    def _call(self, args: tuple[str, ...]) -> str:
-        return " ".join([STEP, self.agent, *args])
-
     def call(self, name: str) -> str:
         """The step call that prints the item `name` names, in the walk that
         enters every part."""
         target = self.named(name)[0]
-        for item, args, _ in self._walked(self.items, lambda _: True, ()):
+        for item, call, _ in self._walked(self.items, lambda _: True, step_call(self.agent)):
             if item is target:
-                return self._call(args)
+                return call
         raise AssertionError(f"the walk that enters every part skips `{name}`")
 
     def stop(self, name: str) -> str:

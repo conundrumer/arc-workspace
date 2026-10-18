@@ -217,7 +217,7 @@ fn label_use(label: LabelUse, names: &Names) -> String {
 }
 
 fn constraint_label(label: ConstraintLabel, names: &Names) -> String {
-    label_use(if label.fresh { LabelUse::Fresh(label.label) } else { LabelUse::Join(label.label) }, names)
+    label_use(label.into(), names)
 }
 
 impl<'l> Writer<'l> {

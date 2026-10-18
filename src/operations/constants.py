@@ -70,5 +70,4 @@ BACKOFF_CAP = 960
 
 REVIEW_ROUNDS = 3
 """The cap on the rounds of each kind of review of a built change since its
-last move out of `tickets/draft/`. It is provisional: the validation of
-request 9-844 judges it."""
+last move out of `tickets/draft/`."""

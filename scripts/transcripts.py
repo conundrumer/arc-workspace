@@ -80,15 +80,21 @@ def subdirectories(d: Path, depth: int,
 
 
 def walked(top: str, listing: Callable[[Path], tuple[Named, ...]]) -> Iterator[str]:
-    """The path of each entry that is no directory in the tree of `top`, as
-    `os.walk` gives the files of each directory, with `listing` as each
-    directory's entries: a link to a directory is not descended."""
+    """The path of each entry `walked_entries` gives."""
+    return (os.path.join(d, e.name) for d, e in walked_entries(top, listing))
+
+
+def walked_entries(top: str,
+                   listing: Callable[[Path], tuple[Named, ...]]) -> Iterator[tuple[str, Named]]:
+    """Each entry that is no directory in the tree of `top`, with the path
+    of its directory, as `os.walk` gives the files of each directory, with
+    `listing` as each directory's entries: a link to a directory is not
+    descended."""
     for e in listing(Path(top)):
-        path = os.path.join(top, e.name)
         if not e.is_dir:
-            yield path
+            yield top, e
         elif not e.is_link:
-            yield from walked(path, listing)
+            yield from walked_entries(os.path.join(top, e.name), listing)
 
 
 def path_order(path: str) -> list[str]:

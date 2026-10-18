@@ -52,9 +52,11 @@ what follows it), `alerts` (the alerts and the other agents' messages),
 solver pipelines), `runs` (the pipelines a run script starts),
 `task_work` (the work a pipeline sets aside), `batches` (After a batch,
 and the standing doc reviews, the gate, the process assessment and the
-cost audit, which no batch holds), `reviews` (the code review and the
-lib review), `main_session` (the launches only the main session's
-operators make),
+cost audit), `unbatched` (the kinds of launch no batch holds),
+`after_profile` (the sweep and the script check after a profile launch),
+`under_reads` (the read of `profile_runs.py --under`), `reviews` (the
+code review and the lib review), `main_session` (the launches only the
+main session's operators make),
 `order` (the order of the procedures' steps, and the batch of launches
 of one output), `plan` (the operator's next step and the block),
 `standing` (the step that ends the operator and the lines of what stands

@@ -60,8 +60,8 @@ def test_a_second_merge_waits_for_the_first_and_says_what_it_merges(tmp_path: Pa
         (tmp_path / "release b").touch()
         second, _, err_b = start(tmp_path, "b")
         until(lambda: "\n" in err_b.read_text() or second.poll() is not None)
-        wait = rwlock.MERGE_WAIT.format(path=tmp_path / rwlock.MERGE_FILE)
-        assert err_b.read_text() == f"{wait} {rwlock.MERGE_HOLDER.format(holder='merging a')}\n"
+        wait = rwlock.WAIT.format(noun=rwlock.MERGE.noun, path=tmp_path / rwlock.MERGE_FILE)
+        assert err_b.read_text() == f"{wait} {rwlock.HOLDER.format(holder='merging a')}\n"
         assert "start b" not in log.read_text()
         release_a.touch()
         assert first.wait(timeout=30) == 0 and second.wait(timeout=30) == 0

@@ -619,18 +619,15 @@ impl Reader {
                 return self.refuse("a constraint holds two labels", list.place);
             }
             let (text, place) = self.symbol(list.items.get(1), "a constraint's label", list.place)?;
-            let first = match self.label(text, place, scope)? {
-                LabelUse::Fresh(label) => ConstraintLabel { label, fresh: true },
-                LabelUse::Join(label) => ConstraintLabel { label, fresh: false },
-                _ => return self.refuse("a constraint's first label is a label, made or joined", place),
+            let Ok(first) = ConstraintLabel::try_from(self.label(text, place, scope)?) else {
+                return self.refuse("a constraint's first label is a label, made or joined", place);
             };
             record.token(place);
             let (text, place) = self.symbol(list.items.get(2), "a constraint's label", list.place)?;
-            let second = match self.label(text, place, scope)? {
-                LabelUse::Fresh(label) => Operand::Label(ConstraintLabel { label, fresh: true }),
-                LabelUse::Join(label) => Operand::Label(ConstraintLabel { label, fresh: false }),
-                LabelUse::Zero => Operand::Zero,
-                LabelUse::Key(_) => return self.refuse("a constraint takes no `^` label", place),
+            let second = match ConstraintLabel::try_from(self.label(text, place, scope)?) {
+                Ok(label) => Operand::Label(label),
+                Err(LabelUse::Zero) => Operand::Zero,
+                Err(_) => return self.refuse("a constraint takes no `^` label", place),
             };
             record.token(place);
             Conjunct::Constraint(Constraint { op, first, second })

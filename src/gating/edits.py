@@ -174,14 +174,9 @@ def _directives(text: str) -> list[tuple[str, tuple[str, ...]]]:
 
 def same_code(path: str, old: str, new: str) -> bool:
     """Whether the texts `old` and `new` of the Python file `path` give
-    pyright and pytest the same code: whether they parse to the same tree
-    once each bare string statement is dropped and the value of each
-    `HELP_KEYWORDS` keyword of a parser builder that is a plain string
-    constant is made one placeholder, and hold the same comments that carry
-    a type-checker directive (`DIRECTIVES`), in order, each on a line with
-    the same code. Imports count as
-    code, since an import edit can remove a name a module uses. A text that
-    does not parse gives `False`."""
+    pyright and pytest the same code, by the rule
+    `scripts/merge_change.py --help` gives. A text that does not parse
+    gives `False`."""
     try:
         a, b = ast.parse(old), ast.parse(new)
     except SyntaxError:

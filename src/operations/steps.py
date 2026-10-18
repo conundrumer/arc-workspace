@@ -8,6 +8,7 @@ import re
 import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
+from enum import Enum
 
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR
@@ -18,7 +19,18 @@ from operations.state import Agent, Ticket
 
 
 @dataclass(frozen=True)
-class Launch:
+class Repeatable:
+    """The fields of a launch and of a command that stay out of the step's
+    equality: `again`, whether the step is given once more past its done
+    entry (`journal.due`), which stays out of its key too, and `version`,
+    the version of the inputs of the change the step serves (`served`),
+    None for a step that serves no change."""
+    again: bool = field(default=False, repr=False, compare=False, kw_only=True)
+    version: float | None = field(default=None, repr=False, compare=False, kw_only=True)
+
+
+@dataclass(frozen=True)
+class Launch(Repeatable):
     """An Agent call, in the background, with no isolation. `model` gives
     the call's `model` in place of the one the launch's agent document
     gives (`roles.launched_model`). `items` is the
@@ -28,11 +40,8 @@ class Launch:
     mark of the `Undecided` step a launch of a ticket analyst is on, and
     stays out of the step's key and its equality. `occasion` identifies
     the event the launch answers (`key`); `change` and `origin` are as
-    `key` gives them. `again` is whether the launch is given once more
-    past its done entry (`journal.due`), and stays out of the step's key
-    and its equality. `version` is the version of the inputs of the change
-    the launch serves (`served`), None for a launch that serves no
-    change."""
+    `key` gives them. `again` and `version` are as `Repeatable` gives
+    them."""
     role: Role
     subject: str
     brief: str
@@ -41,8 +50,6 @@ class Launch:
     reread: bool = field(default=False, repr=False, compare=False)
     change: str | None = field(default=None, repr=False, compare=False)
     origin: str = field(default="", repr=False, compare=False)
-    again: bool = field(default=False, repr=False, compare=False)
-    version: float | None = field(default=None, repr=False, compare=False)
     occasion: str = field(kw_only=True, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -71,21 +78,19 @@ class Send:
 
 
 @dataclass(frozen=True)
-class Bash:
+class Bash(Repeatable):
     """A Bash command, which the command runs itself (`scripts/operate_loop.py`
     `operator_step`). `about` identifies what the command acts on, among the
     commands its function gives; `change`, `about` and `origin` are as
     `key` gives them. `occasion` identifies the event the command answers
     (`key`). `retires` is the key of the step whose retirement this command
     files the bug on (`order.retire`), or None. `again` and `version` are
-    as `Launch` gives them."""
+    as `Repeatable` gives them."""
     command: str
     about: str = field(repr=False)
     change: str | None = field(default=None, repr=False, compare=False)
     origin: str = field(default="", repr=False, compare=False)
     retires: str | None = field(default=None, repr=False, compare=False)
-    again: bool = field(default=False, repr=False, compare=False)
-    version: float | None = field(default=None, repr=False, compare=False)
     occasion: str = field(kw_only=True, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -255,6 +260,14 @@ def analyst_key(step: Undecided) -> str:
 type Step = Launch | Send | Undecided | Bash | Poll | EndTurn | Reply
 
 
+class Pause(Enum):
+    """What a stage of a change's procedure gives in place of a step:
+    `WAIT`, a wait on an agent, or `CLEAR`, nothing left to the stage, so
+    that the procedure goes on to its next stage."""
+    WAIT = "wait"
+    CLEAR = "clear"
+
+
 type Journaled = Launch | Send | Bash
 """A step the journal records (`journal`)."""
 
@@ -323,7 +336,7 @@ def served[S: Step | None](s: S, t: Ticket, version: float) -> S:
     """`s`, a step of the change `t`, with the number of `t` (`key`), and,
     for a launch or a command, `version`, the version of the change's
     inputs (`changes.version`), so its key moves with those inputs."""
-    if isinstance(s, Launch | Bash):
+    if isinstance(s, Repeatable):
         return replace(s, change=t.number, version=version)
     return replace(s, change=t.number) if isinstance(s, OF_CHANGE) else s
 
@@ -332,7 +345,7 @@ def retirement_key(step: Journaled) -> str:
     """The key the retirement of `step` is recorded and read under
     (`order.retire`, `journal.due`): its key without the version of its
     change's inputs, so a retirement holds at each version."""
-    return key(replace(step, version=None) if isinstance(step, Launch | Bash) else step)
+    return key(replace(step, version=None) if isinstance(step, Repeatable) else step)
 
 
 def with_change(step: Step, digest: str) -> str:

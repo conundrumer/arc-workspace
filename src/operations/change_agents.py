@@ -18,7 +18,7 @@ from operations import briefs
 from operations.change_budget import left_draft
 from operations.change_holds import (Hold, findings_hold, left_hold, questions_hold,
                                      unreplied_hold)
-from operations.directives import Decision, decided
+from operations.directives import Decision, Ruling, ruling
 from operations.roles import EDITORS, Purpose, Role, analyst_of, subjects
 from operations.state import Agent, Report, State, Ticket
 from operations.steps import Undecided
@@ -182,10 +182,10 @@ def settled(state: State, t: Ticket, role: Role, part: briefs.Part | None) -> Se
             holds += [(findings_hold(r, number), r), (unreplied_hold(r, number), None)]
     ruled: list[Ruled] = []
     for hold, on in holds:
-        choice = decided(state, hold.text, hold.choices)
-        if isinstance(choice, Decision) and choice is not Decision.AGAIN:
+        given = ruling(state, hold.text, hold.choices)
+        if isinstance(given, Ruling) and given.choice is not Decision.AGAIN:
             reply = reported([on]) if on is not None else ()
-            ruled.append(Ruled(hold.text, choice, hold.choices[choice],
+            ruled.append(Ruled(hold.text, given.choice, hold.choices[given.choice],
                                reply[0] if reply else None))
     return Settled(number, role, tuple(reported(analysts)), earlier, bool(before),
                    tuple(ruled))

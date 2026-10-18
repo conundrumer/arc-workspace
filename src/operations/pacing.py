@@ -5,8 +5,8 @@ An `Op pace:` line names a preset with its arguments (`PARSER`) or the path
 of a script that defines `paces` (`Script`). With no such line, the pace
 is `asap`. A preset reads a `Usage` and gives the time
 from which it admits a ticket (`Until`); a script gives whether it admits
-one now (`Scripted`); a reading that gives neither is `Unknown`, under
-which the pace counts as past."""
+one now (`Scripted`); a reading that gives neither is
+`state.NotComputed`, under which the pace counts as past."""
 
 import argparse
 import math
@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import NoReturn
 
 from controlled_markdown import mctx
+from operations.state import NotComputed
+
 
 class WindowName(StrEnum):
     """The name in the usage file of each window a preset may read."""
@@ -69,13 +71,7 @@ class Scripted:
     admits: bool
 
 
-@dataclass(frozen=True)
-class Unknown:
-    """A pace that counts as past, with the text of why."""
-    why: str
-
-
-type Pace = Until | Scripted | Unknown
+type Pace = Until | Scripted | NotComputed
 
 
 def admits(pace: Pace, now: float) -> bool:
@@ -85,7 +81,7 @@ def admits(pace: Pace, now: float) -> bool:
             return time <= now
         case Scripted(_, ok):
             return ok
-        case Unknown():
+        case NotComputed():
             return False
 
 
@@ -103,7 +99,7 @@ def even(usage: Usage, factor: float, window: WindowName) -> Pace:
     the used share over `factor`."""
     found = window_start(usage, window)
     if isinstance(found, str):
-        return Unknown(found)
+        return NotComputed(found)
     w, start = found
     if w.used_pct <= factor * w.elapsed_pct:
         return Until(usage.now)
@@ -116,7 +112,7 @@ def by(usage: Usage, end: float, window: WindowName) -> Pace:
     on always."""
     found = window_start(usage, window)
     if isinstance(found, str):
-        return Unknown(found)
+        return NotComputed(found)
     w, start = found
     if end <= start:
         return Until(usage.now)

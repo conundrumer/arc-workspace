@@ -1,32 +1,24 @@
 """After a batch, and the standing doc reviews, the gate, the process
-assessment and the cost audit, which no batch holds.
+assessment and the cost audit.
+
+No batch holds the sweep and the script check (`after_profile`), nor
+the launches `unbatched` declares: the profile agent of After a batch,
+the code and lib reviews (`reviews`), the gate, the standing doc review,
+the process assessment and the cost audit. So no profile launch waits on
+them.
 
 After a batch: once every agent of a batch has returned, or once the
 batch has stood `BATCH_SPAN` since its first launch, the release of
 tickets, and an agent on the profile of the batch's runs.
 
 A batch is the agents the session's operators launched since the launch
-of the previous batch's profile agent, other than the agents of After a
-batch, the code reviews, the lib reviews, the gates, the standing doc
-reviews, the process assessments and the cost audits, with the changes
-merged since: those an operator's merge call merged, as `state.Merge`
-reads it, and those the coordinator gives as merged. The launch of the profile agent opens the
-next batch.
-
-The sweep (`file_ticket.py sweep`) runs once a profile launch closes a
-batch, where a `validation` ticket of the session stands under `tickets/deferred/`,
-and no call of it on the runs of the batch that profile launch closed, the
-runs the profile's brief gives, was made since that launch. No batch
-holds it, so no profile launch waits on it.
-
-The check of the script calls (`scripts/check_script_calls.py`) runs
-once a profile launch closes a batch, where no call of it was made since
-that launch, on the calls since the closed batch's start. No batch holds
-it, so no profile launch waits on it.
+of the previous batch's profile agent, other than those no batch holds,
+with the changes merged since: those an operator's merge call merged, as
+`state.Merge` reads it, and those the coordinator gives as merged. The
+launch of the profile agent opens the next batch.
 
 The launches that only an operator of the main session makes are those
-`main_session.main_only` gives. The code review and the lib review are
-`reviews`.
+`main_session.main_only` gives.
 
 A standing doc review launches at any step where none runs and a change
 merged after the launch of the last one an operator of the session
@@ -54,13 +46,10 @@ A process assessment, a ticket analyst, launches at any step once
 stand since the launch of the last one an operator of the session
 launched, or since the session's start where none was, and none runs.
 
-A cost audit launches at any step once the spend of its window
-(`state.AuditWindow`) is at least `AUDIT_AFTER`, and the last cost audit
+A cost audit launches at any step once the priced spend of its window
+(`state.AuditWindow`), a lower bound of its spend, is at least
+`AUDIT_AFTER`, and the last cost audit
 an operator of the session launched does not run.
-
-No batch holds a code review, a lib review, a gate, a standing doc
-review, a process assessment or a cost audit, so no profile launch waits
-on its run.
 
 A standing doc review is a doc reviewer on one reader's whole context at
 the head of `master`. The one that launches after a merge is on the
@@ -69,36 +58,22 @@ the session runs on that no tag records, or, where each of those has
 one, on the one whose tag points at the oldest commit.
 
 The profile agent profiles each run `profile_runs.py --under` takes, and
-may launch a transcript review only of those that no batch holds: a
-review of After a batch's own runs files tickets whose triage opens the
-next batch. The ticket analyst on the tickets the
+may launch a transcript review only of those a batch holds: a review of
+the runs no batch holds, After a batch's own among them, files tickets
+whose triage opens the next batch. The ticket analyst on the tickets the
 batch filed is the one `triage` launches on any open ticket."""
-
-import re
-import shlex
-from dataclasses import dataclass
-
-import script_calls
 
 from controlled_markdown import mctx
 from operations import briefs
 from operations.taking import release
 from operations.filing import scratch_dir
 from operations.directives import Directive, numbers
-from operations.roles import AGENT_ID, Purpose, Role, analyst_of, analyst_subject
+from operations.roles import Purpose, analyst_subject
 from operations.main_session import main_only
-from operations.state import (DOC_REVIEW, Agent, Call, Merge, NotComputed, Reader,
-                              State)
-from operations.handled import bash_calls, done
+from operations.state import Agent, Merge, NotComputed, Reader, State
 from operations.steps import Bash, Launch, Step, Undecided
-from operations.log_commands import FILE_TICKET
-from ticketing.times import utc_stamp
-from ticketing.vocabulary import Kind, Status
-
-OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER, Role.LIB_REVIEWER,
-                 Role.COST_AUDIT})
-"""The roles of After a batch, the code review, the lib review, the gate
-and the cost audit, which no batch holds."""
+from operations.under_reads import last_under, under_calls, under_command
+from operations.unbatched import ASSESSMENT, COST_AUDIT, GATE, PROFILE, STANDING, follows
 
 BATCH_SPAN = 3600
 """The seconds since a batch's first launch after which the batch closes
@@ -113,7 +88,7 @@ points at, past which the reader is overdue where a later commit of
 def start(state: State, before: float | None = None) -> float:
     """The launch time of the last profile launch, of those before
     `before` where it is given, or 0.0 where there is none."""
-    return max((p.launched for p in state.agents_of(Role.BATCH_PROFILE)
+    return max((p.launched for p in PROFILE.agents(state)
                 if before is None or p.launched < before), default=0.0)
 
 
@@ -132,39 +107,12 @@ def followed(state: State, at: float) -> list[Agent]:
     return [a for a in members(state, start(state, at)) if a.launched < at]
 
 
-def follows(role: Role, subject: str) -> bool:
-    """Whether a launch of `role` on `subject` is one no batch holds."""
-    return role in OWN or standing(role, subject) or assesses(role, subject)
-
-
-def standing(role: Role, subject: str) -> bool:
-    """Whether a launch of `role` on `subject` is a standing doc review."""
-    return role is Role.DOC_REVIEWER and subject.startswith(DOC_REVIEW)
-
-
-def assesses(role: Role, subject: str) -> bool:
-    """Whether a launch of `role` on `subject` is a process assessment."""
-    parsed = analysis(role, subject)
-    return parsed is not None and parsed[0] is Purpose.ASSESS
-
-
-def analysis(role: Role, subject: str) -> tuple[Purpose, str] | None:
-    """The purpose and the rest of the subject of a launch of `role` on
-    `subject`, or None where it is no ticket analyst's or its subject opens
-    with no purpose."""
-    return analyst_of(subject) if role is Role.TICKET_ANALYST else None
-
-
 def merged(state: State, since: float) -> bool:
     return (any(c.time > since and c.merge is Merge.MERGED for c in state.transcripts.calls)
             or any(t > since for _, t in numbers(state, Directive.MERGED)))
 
 
 def step(state: State) -> Step | None:
-    if (s := validation(state)) is not None:
-        return s
-    if (s := script_check(state)) is not None:
-        return s
     since = start(state)
     batch = members(state, since)
     if not batch and not merged(state, since):
@@ -176,21 +124,22 @@ def step(state: State) -> Step | None:
     runs = batch_runs(state, batch, since, None)
     if not isinstance(runs, list):
         return runs
-    n = len(state.agents_of(Role.BATCH_PROFILE)) + 1
     ids = {a.agent_id for a in batched(state)}
-    return Launch(Role.BATCH_PROFILE, str(n),
+    return Launch(PROFILE.role, next_number(PROFILE.agents(state)),
                   briefs.batch_profile(runs, [r for r in runs if r in ids], state.git.commits[0].hash),
                   occasion=str(since))
 
 
-def standing_reviews(state: State) -> list[Agent]:
-    return [a for a in state.transcripts.agents if standing(a.role, a.subject)]
+def next_number(past: list[Agent]) -> str:
+    """The subject of the next launch of the kind whose launches are
+    `past`: its number, counted from 1."""
+    return str(len(past) + 1)
 
 
 @main_only
 def standing_review(state: State) -> Step | None:
     """The launch of a standing doc review, where one is due."""
-    past = standing_reviews(state)
+    past = STANDING.agents(state)
     if opened(state, past) is None:
         return None
     commit = briefs.standing_commit(past[-1].brief) if past else None
@@ -212,7 +161,7 @@ def overdue_review(state: State) -> Step | None:
     if times is None:
         return Undecided(UNREAD_TAGS)
     head = state.git.commits[0]
-    past = standing_reviews(state)
+    past = STANDING.agents(state)
     left = {a.subject for a in past if a.pending or a.launched > head.time}
 
     def overdue(r: Reader) -> bool:
@@ -225,12 +174,12 @@ def overdue_review(state: State) -> Step | None:
 
 def gate(state: State) -> Step | None:
     """The launch of a gate agent, where one is due."""
-    past = state.agents_of(Role.BATCH_GATE)
+    past = GATE.agents(state)
     since = merged_since(state, past)
     if since is None or (past and state.now - since < BATCH_SPAN):
         return None
-    n = len(past) + 1
-    return Launch(Role.BATCH_GATE, str(n), briefs.batch_gate(scratch_dir(f"batch-{n}", state.scratch)),
+    n = next_number(past)
+    return Launch(GATE.role, n, briefs.batch_gate(scratch_dir(f"batch-{n}", state.scratch)),
                   occasion=str(since))
 
 
@@ -264,46 +213,6 @@ def batch_runs(state: State, batch: list[Agent], since: float,
     return runs
 
 
-def validation(state: State) -> Step | None:
-    """The sweep of the batch the last profile launch closed, where one is
-    due."""
-    profiles = state.agents_of(Role.BATCH_PROFILE)
-    if not profiles:
-        return None
-    closing = profiles[-1].launched
-    if not any(t.kind is Kind.VALIDATION and t.status is Status.DEFERRED and state.mine(t)
-               for t in state.tracker.tickets.values()):
-        return None
-    runs = batch_runs(state, followed(state, closing), start(state, closing), closing)
-    # No batch waits on the sweep: where the runs do not read, the `validation`
-    # tickets stay under `deferred` for the next profile launch.
-    if not isinstance(runs, list):
-        return None
-    sweep = Bash(sweep_command(runs), "sweep", occasion=str(closing))
-    return None if done(state, sweep) else sweep
-
-
-def script_check(state: State) -> Step | None:
-    """The check of the script calls since the start of the batch the last
-    profile launch closed, where one is due; where that batch has no start,
-    of the calls of the window before that launch."""
-    profiles = state.agents_of(Role.BATCH_PROFILE)
-    if not profiles:
-        return None
-    closing = profiles[-1].launched
-    since = start(state, closing) or closing - script_calls.WINDOW_SECONDS
-    check = Bash(check_command(since), "script check", occasion=str(closing))
-    return None if done(state, check) else check
-
-
-def check_command(since: float) -> str:
-    return f"uv run python scripts/check_script_calls.py --since {utc_stamp(since)}"
-
-
-def sweep_command(runs: list[str]) -> str:
-    return shlex.join([*FILE_TICKET, "sweep", *runs])
-
-
 UNREAD_TAGS = mctx("a `doc-review/<reader>` tag does not read as a commit")
 
 
@@ -315,7 +224,7 @@ def doc_review(state: State) -> Step | None:
     if state.git.doc_reviews is None:
         return Undecided(UNREAD_TAGS)
     times = state.git.doc_reviews
-    running = {a.subject for a in standing_reviews(state) if a.pending}
+    running = {a.subject for a in STANDING.agents(state) if a.pending}
     free = [r for r in readers if r.tag not in running]
     if not free:
         return None
@@ -326,7 +235,7 @@ def doc_review(state: State) -> Step | None:
 def standing_launch(state: State, reader: Reader) -> Launch:
     """The launch of a standing doc review on `reader`, at the head of
     `master`."""
-    return Launch(Role.DOC_REVIEWER, reader.tag,
+    return Launch(STANDING.role, reader.tag,
                   briefs.standing_doc_review(" ".join((reader.name, *reader.args)), reader.tag,
                                              state.git.commits[0].hash, state.me),
                   occasion=state.git.commits[0].hash)
@@ -338,11 +247,11 @@ ASSESS_AFTER = 20
 @main_only
 def assessment(state: State) -> Step | None:
     """The launch of a process assessment, where one is due."""
-    past = [a for a in state.transcripts.agents if assesses(a.role, a.subject)]
+    past = ASSESSMENT.agents(state)
     since = opened(state, past)
     if since is None or len({c.hash for c in state.git.commits if c.process and c.time > since}) < ASSESS_AFTER:
         return None
-    return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.ASSESS, str(len(past) + 1)),
+    return Launch(ASSESSMENT.role, analyst_subject(Purpose.ASSESS, next_number(past)),
                   briefs.process_assessment(state.me), occasion=str(since))
 
 
@@ -370,84 +279,14 @@ AUDIT_AFTER = 200.0
 @main_only
 def audit(state: State) -> Step | None:
     """The launch of a cost audit, where one is due."""
-    past = state.agents_of(Role.COST_AUDIT)
+    past = COST_AUDIT.agents(state)
     if opened(state, past) is None:
         return None
     window = state.computed.audit_window
     if isinstance(window, NotComputed):
         return Undecided(mctx("the window of the next cost audit is unknown: {why}").format(why=window.why))
-    if window.spend < AUDIT_AFTER:
+    if window.priced_spend < AUDIT_AFTER:
         return None
-    return Launch(Role.COST_AUDIT, str(len(past) + 1),
+    return Launch(COST_AUDIT.role, next_number(past),
                   briefs.cost_audit(window.start, state.transcripts_dir, state.me),
                   occasion=str(window.start))
-
-
-def under_command(operator: str) -> str:
-    """Step 1 of After a batch, a Bash step that `next` runs:
-    `profile_runs.py --help under` defines the previous call of `--under`,
-    and `read_under` gives whether a call of it stands."""
-    return f"uv run python scripts/profile_runs.py --under {operator}"
-
-
-RUN = re.compile(AGENT_ID)
-LEFT_OPEN = mctx("left open:")
-"""What leads the line of `profile_runs.py --under` that gives the runs it
-left out because their work is open."""
-
-NO_RUN = mctx("none")
-"""What the `LEFT_OPEN` line gives where it left out no run."""
-
-RUNS_TAKEN = mctx("runs taken:")
-"""What leads the line of `profile_runs.py --under` that gives the runs it
-takes."""
-
-
-def lines(output: str, lead: str) -> list[list[str]]:
-    """The words after `lead` of each line of `output` that opens with
-    `lead`, one list per line. The last piece of `output` has no line break
-    after it, so a pipe or the harness may have cut it, and it counts as no
-    line."""
-    return [line.removeprefix(lead).split()
-            for line in output.split("\n")[:-1] if line.startswith(lead)]
-
-
-@dataclass(frozen=True)
-class Under:
-    """What a call of `profile_runs.py --under` gives: the agent ids of the
-    runs it left open, and of the runs it took."""
-    left: frozenset[str]
-    taken: tuple[str, ...]
-
-
-def read_under(output: str) -> Under | None:
-    """What the call of `--under` whose output is `output` gives, where the
-    call stands as `profile_runs.py --help under` has it: one `LEFT_OPEN` line and
-    one `RUNS_TAKEN` line, each ended by a line break, the count on the
-    `RUNS_TAKEN` line followed by as many agent ids. None otherwise."""
-    left, took = lines(output, LEFT_OPEN), lines(output, RUNS_TAKEN)
-    if len(left) != 1 or len(took) != 1 or not took[0] or not took[0][0].isdigit():
-        return None
-    open_ids = [] if left[0] == [NO_RUN] else left[0]
-    ids = took[0][1:]
-    if len(ids) != int(took[0][0]) or not all(RUN.fullmatch(i) for i in open_ids + ids):
-        return None
-    return Under(frozenset(open_ids), tuple(ids))
-
-
-def last_under(state: State, operator: str, since: float | None,
-               until: float | None) -> tuple[Call, Under] | None:
-    """The last call of `--under` on `operator`, of those made after
-    `since` and before `until`, each where it is given, whose output
-    `read_under` reads, with what it reads; None where there is none."""
-    calls = [(c, u) for c in under_calls(state, operator, since, until)
-             if c.result is not None and (u := read_under(c.result)) is not None]
-    return calls[-1] if calls else None
-
-
-def under_calls(state: State, operator: str, since: float | None,
-                until: float | None) -> list[Call]:
-    """The calls of `--under` on `operator`, of those made after `since`
-    and before `until`, each where it is given."""
-    return [c for c in bash_calls(state, under_command(operator))
-            if (since is None or c.time > since) and (until is None or c.time < until)]

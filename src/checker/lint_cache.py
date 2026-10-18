@@ -24,7 +24,7 @@ from checker.finding import Finding, is_hint
 from checker.plan_cache import hash_solver_files, reaches_wall
 from checker.render.commands import gathered_lint
 from engine import Engine, Limits, checkout
-from engine.memo import read_or_make
+from engine.memo import hash_files, read_or_make
 from solver.aggregate import Solver
 
 LINT_DIR = "lint"
@@ -94,16 +94,11 @@ def _key(source: Path, task_id: str, engine: Engine, limits: Limits,
 @cache
 def _shared() -> str:
     """The hash of the path and content of each file that git lists in
-    the worktree, tracked or untracked and not ignored, outside `UNKEYED`:
-    a listed file that is gone, or a submodule, is left out."""
+    the worktree, tracked or untracked and not ignored, outside `UNKEYED`."""
     listed = checkout.git_out(
         checkout.ROOT, "ls-files", "-co", "--exclude-standard", "-z", "--",
         ".", *(f":!{d.as_posix()}" for d in UNKEYED))
-    files: dict[Path, bytes] = {}
-    for name in sorted(filter(None, listed.split("\0"))):
-        path = checkout.ROOT / name
-        try:
-            files[path] = path.read_bytes()
-        except OSError:
-            pass
-    return checkout.files_digest(files)
+    h = hashlib.sha256()
+    hash_files(h, ((name, checkout.ROOT / name)
+                   for name in sorted(filter(None, listed.split("\0")))))
+    return h.hexdigest()

@@ -61,11 +61,7 @@ impl Reader {
 
     /// The form of `expr`, where `params` are the `param` forms before it.
     fn top_form(&mut self, expr: &SExpr, path: &NodePath, params: &[Node<Param>]) -> R<Top> {
-        let list = self.list(expr, "a form")?;
-        let (head, place) = self.symbol(list.items.first(), "a form's keyword", list.place)?;
-        let mut record = Record::new(Some(list.place));
-        record.token(list.open);
-        record.token(place);
+        let (list, mut record, head) = self.opened(expr, "a form")?;
         let form = match head {
             sp::REPRESENTATIVE => Top::Representative(self.representative(list.items, list.place, &mut record)?),
             sp::PARAM => Top::Param(Node::new(self.param(list.items, list.place, &mut record)?)),
@@ -73,7 +69,7 @@ impl Reader {
             sp::ALTS_RECORD | sp::APPROXIMATED_RECORD => {
                 Top::Record(self.witness_record(list.items, list.place, path, params, &mut record)?)
             }
-            _ => return self.refuse(format!("`{head}` heads no form of an arcdata file"), place),
+            _ => return self.refuse(format!("`{head}` heads no form of an arcdata file"), list.items[0].place()),
         };
         record.token(list.close);
         self.save(path, record);
@@ -378,10 +374,7 @@ impl Reader {
     }
 
     fn alt_record(&mut self, expr: &SExpr, path: &NodePath, params: &[Node<Param>]) -> R<AltRecord> {
-        let list = self.list(expr, "an `alt` form")?;
-        let mut record = Record::new(Some(list.place));
-        record.token(list.open);
-        record.token(list.items[0].place());
+        let (list, mut record, _) = self.opened(expr, "an `alt` form")?;
         let (name, place) = self.symbol(list.items.get(1), "the alt's name", list.place)?;
         record.token(place);
         let rest = &list.items[2..];
@@ -401,10 +394,7 @@ impl Reader {
     }
 
     fn witness(&mut self, expr: &SExpr, path: &NodePath, params: &[Node<Param>]) -> R<Witness> {
-        let list = self.list(expr, "a `witness` form")?;
-        let mut record = Record::new(Some(list.place));
-        record.token(list.open);
-        record.token(list.items[0].place());
+        let (list, mut record, _) = self.opened(expr, "a `witness` form")?;
         let (id, place) = self.symbol(list.items.get(1), "the witness's id", list.place)?;
         record.token(place);
         let (text, place) = self.symbol(list.items.get(2), "the witness's plausibility", list.place)?;
@@ -507,11 +497,19 @@ impl Reader {
     /// The list of a child form with no children of its own, and its record
     /// with its `(` and its keyword.
     fn child_list<'e>(&mut self, expr: &'e SExpr) -> R<(List<'e>, Record)> {
-        let list = self.list(expr, "a form")?;
-        let mut own = Record::new(Some(list.place));
-        own.token(list.open);
-        own.token(list.items[0].place());
+        let (list, own, _) = self.opened(expr, "a form")?;
         Ok((list, own))
+    }
+
+    /// The list `expr`, read as `what`, with the record of its own tokens
+    /// opened with its `(` and its keyword, and that keyword.
+    fn opened<'e>(&mut self, expr: &'e SExpr, what: &str) -> R<(List<'e>, Record, &'e str)> {
+        let list = self.list(expr, what)?;
+        let (head, place) = self.symbol(list.items.first(), "a form's keyword", list.place)?;
+        let mut record = Record::new(Some(list.place));
+        record.token(list.open);
+        record.token(place);
+        Ok((list, record, head))
     }
 
     fn witness_output(&mut self, items: &[SExpr], at: SourcePlace, record: &mut Record) -> R<WitnessOutput> {

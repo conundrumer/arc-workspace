@@ -305,7 +305,6 @@
     /// The cells to order.
     .decl cell(key: Key, p: Position)  // @input
 
-    /// The members: the cells.
     .decl elem(key: Key, t: Position)
     elem(Ky, P) :- cell(Ky, P).
 
@@ -329,7 +328,6 @@
     .decl rank(key: Key, t: Position, r: number)
     rank(Ky, P, R) :- _order.rank(Ky, P, R).
 
-    /// The same count, over the members after t.
     .decl rank_desc(key: Key, t: Position, r: number)
     rank_desc(Ky, P, R) :- _order.rank_desc(Ky, P, R).
 
@@ -337,54 +335,42 @@
     .decl _dist(key: Key, p: Position, d: Dir, k: number)
     _dist(Ky, P, D, K) :- cell(Ky, P), dir_elem(D), dist(P, D, K).
 
-    // The least and the greatest distance of a cell from the primary edge.
-    .decl _lead(key: Key, diag: DiagDir, a: Axis, k: number)
-    _lead(Ky, Diag, A, K) :-
-        corner(Ky, Diag), axis(Ky, A), dir_of(Diag, A, D),
+    // The corners the order and its reverse run from: from the opposite
+    // corner, on the same primary axis, the order runs in reverse.
+    .decl _from(key: Key, c: DiagDir, a: Axis)
+    _from(Ky, C, A) :- corner(Ky, C), axis(Ky, A).
+    _from(Ky, C, A) :- corner(Ky, Diag), diag_opposite(Diag, C), axis(Ky, A).
+
+    // The least distance of a cell from c's primary edge.
+    .decl _lead(key: Key, c: DiagDir, a: Axis, k: number)
+    _lead(Ky, C, A, K) :-
+        _from(Ky, C, A), dir_of(C, A, D),
         K = min K0 : { _dist(Ky, _, D, K0) }.
-    .decl _trail(key: Key, diag: DiagDir, a: Axis, k: number)
-    _trail(Ky, Diag, A, K) :-
-        corner(Ky, Diag), axis(Ky, A), dir_of(Diag, A, D),
-        K = max K0 : { _dist(Ky, _, D, K0) }.
 
-    // Among the cells at that distance, the least and the greatest distance
-    // from the secondary edge.
-    .decl _lead2(key: Key, diag: DiagDir, a: Axis, k: number, k2: number)
-    _lead2(Ky, Diag, A, K, K2) :-
-        _lead(Ky, Diag, A, K), diag_dirs(Diag, A, D, D2),
+    // Among the cells at that distance, the least distance from c's
+    // secondary edge.
+    .decl _lead2(key: Key, c: DiagDir, a: Axis, k: number, k2: number)
+    _lead2(Ky, C, A, K, K2) :-
+        _lead(Ky, C, A, K), diag_dirs(C, A, D, D2),
         K2 = min K0 : { _dist(Ky, Q, D, K), _dist(Ky, Q, D2, K0) }.
-    .decl _trail2(key: Key, diag: DiagDir, a: Axis, k: number, k2: number)
-    _trail2(Ky, Diag, A, K, K2) :-
-        _trail(Ky, Diag, A, K), diag_dirs(Diag, A, D, D2),
-        K2 = max K0 : { _dist(Ky, Q, D, K), _dist(Ky, Q, D2, K0) }.
 
-    // Some cell comes before p in the lexicographic order.
-    .decl _preceded(key: Key, p: Position)
-    _preceded(Ky, P) :-
-        _lead(Ky, Diag, A, K), dir_of(Diag, A, D),
+    // Some cell comes before p in the order from c.
+    .decl _preceded(key: Key, c: DiagDir, p: Position)
+    _preceded(Ky, C, P) :-
+        _lead(Ky, C, A, K), dir_of(C, A, D),
         _dist(Ky, P, D, K1), K1 > K.
-    _preceded(Ky, P) :-
-        _lead2(Ky, Diag, A, K, K2), diag_dirs(Diag, A, D, D2),
+    _preceded(Ky, C, P) :-
+        _lead2(Ky, C, A, K, K2), diag_dirs(C, A, D, D2),
         _dist(Ky, P, D, K), _dist(Ky, P, D2, K1), K1 > K2.
 
-    // Some cell comes after p in the lexicographic order.
-    .decl _followed(key: Key, p: Position)
-    _followed(Ky, P) :-
-        _trail(Ky, Diag, A, K), dir_of(Diag, A, D),
-        _dist(Ky, P, D, K1), K1 < K.
-    _followed(Ky, P) :-
-        _trail2(Ky, Diag, A, K, K2), diag_dirs(Diag, A, D, D2),
-        _dist(Ky, P, D, K), _dist(Ky, P, D2, K1), K1 < K2.
-
-    /// The element nothing precedes.
     .decl first(key: Key, t: Position)
-    first(Ky, P) :- elem(Ky, P), !_preceded(Ky, P).
+    first(Ky, P) :- elem(Ky, P), corner(Ky, C), !_preceded(Ky, C, P).
 
-    /// The element nothing follows.
     .decl last(key: Key, t: Position)
-    last(Ky, P) :- elem(Ky, P), !_followed(Ky, P).
+    last(Ky, P) :-
+        elem(Ky, P), corner(Ky, Diag), diag_opposite(Diag, C),
+        !_preceded(Ky, C, P).
 
-    /// b directly follows a: before, with nothing between.
     .decl next(key: Key, a: Position, b: Position)
     next(Ky, Q, P) :- _order.next(Ky, Q, P).
 }
@@ -727,19 +713,25 @@
     _image_class(Key, D, Delta, P, Rv, Sv, Rh, Sh) :-
         _image(Key, D, Delta, P, X), _class(Key, X, Rv, Sv, Rh, Sh).
 
+    // The frame position q lies in the lattice class (rv, sv, rh, sh).
+    .decl _class_pos(key: Key, rv: number, sv: number, rh: number,
+                     sh: number, q: Position)
+    _class_pos(Key, Rv, Sv, Rh, Sh, Q) :-
+        grid(Key, Q), _class(Key, Q, Rv, Sv, Rh, Sh).
+
     // Some shift of the coset of the candidate (d, delta) takes the frame
     // position p onto the frame position q.
     .decl _reach(key: Key, d: D4, delta: Offset, p: Position, q: Position) inline
     _reach(Key, D, Delta, P, Q) :-
         _image_class(Key, D, Delta, P, Rv, Sv, Rh, Sh),
-        _class(Key, Q, Rv, Sv, Rh, Sh), grid(Key, Q).
+        _class_pos(Key, Rv, Sv, Rh, Sh, Q).
 
-    // The frame position q holds a cell, in the lattice class
+    // A cell lies at the frame position q, in the lattice class
     // (rv, sv, rh, sh).
     .decl _class_cell(key: Key, rv: number, sv: number, rh: number,
                       sh: number, q: Position)
     _class_cell(Key, Rv, Sv, Rh, Sh, Q) :-
-        cell(Key, Q, _), grid(Key, Q), _class(Key, Q, Rv, Sv, Rh, Sh).
+        _class_pos(Key, Rv, Sv, Rh, Sh, Q), cell(Key, Q, _).
 
     // A cell of the lattice class (rv, sv, rh, sh) holds v.
     .decl _class_val(key: Key, rv: number, sv: number, rh: number,
@@ -760,9 +752,7 @@
         cell(Key, P, V1), _image_class(Key, D, Delta, P, Rv, Sv, Rh, Sh),
         _class_val(Key, Rv, Sv, Rh, Sh, V2), V1 != V2.
 
-    // The candidate (d, delta) takes some cell onto a different cell: the
-    // class of the cell's image holds cells at two positions or more, or
-    // at one that is not the cell's.
+    // The candidate (d, delta) takes some cell onto a different cell.
     .decl _witnessed(key: Key, d: D4, delta: Offset)
     _witnessed(Key, D, Delta) :-
         cell(Key, P, _), _image_class(Key, D, Delta, P, Rv, Sv, Rh, Sh),
@@ -783,8 +773,8 @@
     action(Key, P, Q) :-
         _symmetry(Key, D, Delta), _reach(Key, D, Delta, P, Q).
     action(Key, P, Q) :-
-        grid(Key, P), _class(Key, P, Rv, Sv, Rh, Sh),
-        _class(Key, Q, Rv, Sv, Rh, Sh), grid(Key, Q), P != Q.
+        _class_pos(Key, Rv, Sv, Rh, Sh, P), _class_pos(Key, Rv, Sv, Rh, Sh, Q),
+        P != Q.
 }
 
 /// Occurrences of one valued cell set, the shape, among another: a placement

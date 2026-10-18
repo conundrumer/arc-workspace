@@ -12,7 +12,7 @@ from controlled_markdown import mctx
 from operations.command_words import is_next
 from operations.constants import BACKOFF_CAP, BACKOFF_SECONDS
 from operations.state import Call, Tool
-from operations.steps import Bash, Journaled, Launch, key, retirement_key
+from operations.steps import Journaled, Repeatable, key, retirement_key
 
 BOUND = 3
 """How many times in a row a step is given before it is retired."""
@@ -151,18 +151,37 @@ def backoff(entries: Sequence[Entry]) -> float | None:
     return last.time + min(BACKOFF_SECONDS * 2 ** (count - 1), BACKOFF_CAP)
 
 
+AGAIN_LIMIT = 1
+"""The number of done entries of a step given `again` past which it is
+not given."""
+
+
+@dataclass(frozen=True)
+class Dones:
+    """The done entries of one key: their count, and the time of the close
+    of the last, None where there is none."""
+    count: int
+    last: float | None
+
+
+def done_of(entries: Sequence[Entry]) -> Dones:
+    closes = [e.close.time for e in entries if e.done and e.close is not None]
+    return Dones(len(closes), closes[-1] if closes else None)
+
+
 def due(journal: Journal, step: Journaled, now: float) -> Due:
     """What `next` does at `now` with `step`, as
     `scripts/operate.py --help journal` gives it; a step given `again` is
-    given once more past its first done entry (`changes.step`). Its
+    given once more past its done entries, up to `AGAIN_LIMIT` of them
+    (`changes.step`). Its
     failures count from the cut that lifted its retirement, where one
     did."""
     entries = journal.of(key(step))
     retiring = retirement_key(step)
     if retired(journal, retiring) or any(e.close is None for e in entries):
         return Due.WAIT
-    again = isinstance(step, Launch | Bash) and step.again
-    if sum(e.done for e in entries) > (1 if again else 0):
+    again = isinstance(step, Repeatable) and step.again
+    if done_of(entries).count > (AGAIN_LIMIT if again else 0):
         return Due.WAIT
     if (until := backoff(entries)) is not None and now < until:
         return Due.WAIT

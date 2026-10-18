@@ -351,16 +351,12 @@ def _status_digest(h: "hashlib._Hash", tree: Path) -> None:
     """Adds to `h` the path and content of each file `git status` lists in
     `tree` as differing from its `HEAD` or untracked."""
     from engine import checkout
-    from engine.memo import hash_file
+    from engine.memo import hash_files
 
     listed = checkout.git_out(tree, "status", "--porcelain=v1", "-z",
                               "--untracked-files=all", "--no-renames")
-    for name in sorted(entry[3:] for entry in listed.split("\0") if entry):
-        try:
-            body: bytes | None = (tree / name).read_bytes()
-        except OSError:
-            body = None
-        hash_file(h, name, body)
+    hash_files(h, ((name, tree / name)
+                   for name in sorted(entry[3:] for entry in listed.split("\0") if entry)))
 
 
 def _cached_run(tree: Path, after: str, args: list[str],

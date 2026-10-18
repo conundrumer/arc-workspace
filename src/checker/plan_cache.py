@@ -15,7 +15,7 @@ from checker.determination_plan import survey_determination_plan
 from checker.render.surveys import render_determination_plan
 from checker.runs import Runs
 from engine import WallLimit, checkout
-from engine.memo import hash_file, read_or_make
+from engine.memo import hash_files, read_or_make
 from solver import witness
 
 PLAN_DIR = "determination-plan"
@@ -55,13 +55,8 @@ def hash_solver_files(h: "hashlib._Hash", source: Path, task_id: str
                       ) -> None:
     """Adds to `h` the solver file `source`, and the task file and the
     witness file of its task `task_id`."""
-    for path in (source.resolve(), task_file(task_id),
-                 witness.path(task_id)):
-        try:
-            body = path.read_bytes()
-        except OSError:
-            body = None
-        hash_file(h, str(path), body)
+    hash_files(h, ((str(p), p) for p in (source.resolve(), task_file(task_id),
+                                         witness.path(task_id))))
 
 
 def reaches_wall(x: object) -> bool:

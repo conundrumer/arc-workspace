@@ -44,7 +44,9 @@ and data/tasks/, those `cli.common.SOURCES` matches, pyproject.toml and
 uv.lock, apart from each Python file that stands at `<base>` and whose
 edits change nothing but bare string statements, blank lines, comments
 that carry no type-checker directive, and argparse help values that are
-plain strings (`gating.edits.same_code`). Pyright checks each file of its
+plain strings (`gating.edits.same_code`). A comment that carries such a
+directive counts with the code of its line, and an import counts as code,
+since an import edit can remove a name a module uses. Pyright checks each file of its
 `include` from which a Python file the changes touch is reached along
 `import` statements, and pytest runs each test file from which one is
 reached along the loads of code a run can make (`dependents`). Pyright
@@ -661,8 +663,6 @@ def remove(main: Path, change: Change) -> None:
 
 
 def run_step(main: Path, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
-    """`uv run python` with `argv` run in the main tree `main`, said and
-    timed as a step of the merge."""
     shown = " ".join(argv)
     say(mctx("running {shown} in the main tree").format(shown=shown), flush=True)
     with timed(shown):
@@ -670,10 +670,8 @@ def run_step(main: Path, argv: Sequence[str]) -> subprocess.CompletedProcess[str
 
 
 def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
-    """Make the tree of the old `master` for the readers' updates,
-    fast-forward `master` to the top of `changes`, write the context in
-    the main tree, file a whole-document pass where one is due, adopt what
-    the gate wrote into `gate_out`, and remove each change's worktree and branch."""
+    """Merge `changes`, the stack the gate passed with its outputs in
+    `gate_out`, into `master` in the main tree `main`."""
     replaced = refuse_main_touched(main, {c.worktree: c.touched for c in changes})
     done = run_step(main, TREE_KEEP)
     if done.returncode != 0:

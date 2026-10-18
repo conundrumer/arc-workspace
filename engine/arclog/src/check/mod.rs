@@ -67,6 +67,16 @@ pub enum CheckId {
     /// other case programs; the check's [`CheckCacheKey`] then holds their
     /// signatures. The check refuses the label where no type is above those
     /// types.
+    ///
+    /// Under [`crate::resolver::MacroExpansion::Expand`], where the meet of a
+    /// label's type, from the label's sites outside a part of the expansion,
+    /// and the types of its sites in that part is empty, that part holds
+    /// nothing. A part is the body that takes the atom's place, a branch of
+    /// an `OR`, or a list of an `IF`, wherever it stands in that body. Each
+    /// macro's column types are its definition's, a relation macro's columns
+    /// and modes and a cell instance's outputs, as
+    /// [`crate::registry::macro_column_types`] gives them, so a program that
+    /// passes the checks under `Keep` passes them under `Expand`.
     Types,
     /// The pose rule: a Pose label stands only at the sites that
     /// `docs/arclog/rigid.md#the-pose` gives.
@@ -343,9 +353,8 @@ pub fn check_cycles(graph: &DependencyGraph, program: &ResolvedProgram) -> Check
 
 /// The key of the check cache: the check, the form's canonical form, with
 /// each name as the file writes it, and the signatures of the names it
-/// reads, so the cases that share a form share its check. Two keys are equal
-/// where their checks, their canonical forms and their signatures are, so
-/// two forms or two reads whose hashes collide take two checks.
+/// reads, so the cases that share a form share its check. It compares as a
+/// key of canonical parts does ([`crate::program`]).
 /// The signatures stand in a fixed order: those of the names the form
 /// reads, in the order of each name's first read in the form's canonical
 /// order, then, where a label's type comes from other clauses of a

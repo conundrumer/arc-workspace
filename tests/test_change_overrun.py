@@ -87,7 +87,7 @@ def state(tmp_path: Path, w: Path, reported: bool, told: bool):
         transcripts=TranscriptsRead(tuple(agents), (), (), {}, {}, {}, {}, {}, (), {}, {}),
         git=GitRead((), frozenset({w}), {}, {}, {}, frozenset(), {}, None, {}),
         taken_up=frozenset(), held=HeldRead({}, {}),
-        sessions=SessionsRead(frozenset(), frozenset(), frozenset(), False, False, None),
+        sessions=SessionsRead(frozenset(), frozenset(), False, False, None),
         journal=Journal(entries), listing=None,
         computed=Computed(spent={t.number: Spend(9.0, 100.0, {"code-editor": 9.0})}))
 

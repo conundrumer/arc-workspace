@@ -12,10 +12,10 @@ gives the files `tickets/main` and `tickets/main-wanted`."""
 import json
 import os
 import subprocess
-from dataclasses import dataclass
 from pathlib import Path
 
 from operations.constants import FOREGROUND_MS
+from operations.state import SessionsRead
 from ticket_files import listed_tickets, ticket_name
 from controlled_markdown import mctx
 from ticket_numbers import SESSIONS, indexes, link_new, session_index, session_line, staged
@@ -27,36 +27,6 @@ from transcript_snapshots import Refused
 MAIN = "main"
 
 MAIN_WANTED = "main-wanted"
-
-
-@dataclass(frozen=True)
-class Sessions:
-    """The read: `idle` holds each idle index, other than the reading
-    session's, that holds a ticket outside `vocabulary.SETTLED`, and `ended`
-    each idle index other than the reading session's, whatever its
-    tickets; `main` is whether the
-    reading session is the main, and `main_live` whether a main is named
-    and live."""
-    idle: frozenset[int]
-    ended: frozenset[int]
-    main: bool
-    main_live: bool
-
-    @property
-    def adopted(self) -> frozenset[int]:
-        """The indexes of other sessions whose tickets the reading session's
-        operators act on as on its own: the idle ones, where it is the
-        main."""
-        return self.idle if self.main else frozenset()
-
-    @property
-    def fixed_for(self) -> frozenset[int]:
-        """The indexes of other sessions whose closed `interference` tickets
-        the reading session's operators give a solver fix
-        (`passes.fixes`): the ended ones, where it is the main, since a
-        ticket's closure can leave its index with no ticket outside
-        `vocabulary.SETTLED`."""
-        return self.ended if self.main else frozenset()
 
 
 def modified(path: Path) -> float:
@@ -125,7 +95,7 @@ def named_main(tickets: Path) -> str | None:
     return held[0] if held else None
 
 
-def read_sessions(tickets: Path, index: int, session: str, now: float) -> Sessions:
+def read_sessions(tickets: Path, index: int, session: str, now: float) -> SessionsRead:
     ids = indexes(tickets)
     held = {ticket_name(p).number.session for s in Status if s not in SETTLED
             for p in listed_tickets(tickets, s)}
@@ -134,8 +104,9 @@ def read_sessions(tickets: Path, index: int, session: str, now: float) -> Sessio
                       and not any(live(sid, now) for sid in ids.get(i, [])))
     idle = frozenset(i for i in held if i in ended)
     main = named_main(tickets)
-    return Sessions(idle=idle, ended=ended, main=main == session,
-                    main_live=main is not None and live(main, now))
+    return SessionsRead(idle=idle, ended=ended, main=main == session,
+                        main_live=main is not None and live(main, now),
+                        main_wanted=main_wanted(tickets))
 
 
 def create_session_file(path: Path, session: str) -> bool:

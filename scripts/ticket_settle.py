@@ -30,7 +30,7 @@ def settled_elsewhere(tickets: Path, path: Path, name: TicketName) -> bool:
 def to_settle(tickets: Path, session: int, adopted: Collection[int],
               given: Iterable[TicketNumber]) -> list[TicketNumber]:
     """The numbers of the list of `to-settle`, for the session with index
-    `session`, the indexes it adopts (`idle_sessions.Sessions.adopted`) and
+    `session`, the indexes it adopts (`state.SessionsRead.adopted`) and
     the numbers `given`."""
     names = {p: ticket_name(p) for p in ticket_files(tickets, Status.OPEN)}
     paths = {p for p, name in names.items() if name.number.session == session

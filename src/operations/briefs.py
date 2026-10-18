@@ -665,12 +665,12 @@ def solver_fix(task: str, number: str, change: str | None, operator: str) -> str
                       LAUNCHER.format(operator=operator)])
 
 
-def review(of: Review, baseline: int, scratch: Path) -> str:
-    """The brief of the review `of` after the one whose baseline is
-    numbered `baseline`."""
+def review(of: Review, baseline: int, number: int, scratch: Path) -> str:
+    """The brief of the review `of` numbered `number`, after the one whose
+    baseline is numbered `baseline`."""
     return mctx("The earlier {name}'s baseline is the tag `{tag}`, and "
                 "this {name}'s number is {number}.").format(
-        name=of.noun, tag=of.tag(baseline), number=baseline + 1) + "\n" + SCRATCH.format(
+        name=of.noun, tag=of.tag(baseline), number=number) + "\n" + SCRATCH.format(
         scratch=scratch)
 
 

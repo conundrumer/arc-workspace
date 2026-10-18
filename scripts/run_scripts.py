@@ -20,8 +20,9 @@ from operations import (
     runs,
 )
 from operations.directives import lines
-from operations.pacing import Pace, Scripted, Unknown, Usage
+from operations.pacing import Pace, Scripted, Usage
 from operations.state import (
+    NotComputed,
     Starts,
     State,
     Takes,
@@ -102,11 +103,11 @@ def pace_reads(path: Path, usage: Usage) -> Pace:
         with bounded(runs.SCRIPT_SECONDS, mctx("the call of `paces`")):
             given = load(path, name).paces(usage)
     except (Exception, SystemExit) as e:
-        return Unknown(fault_text(e))
+        return NotComputed(fault_text(e))
     finally:
         sys.modules.pop(name, None)
     if not isinstance(given, bool):
-        return Unknown(mctx("`paces` gave {given}, no `bool`").format(given=repr(given)))
+        return NotComputed(mctx("`paces` gave {given}, no `bool`").format(given=repr(given)))
     return Scripted(path, given)
 
 

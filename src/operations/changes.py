@@ -66,8 +66,8 @@ after the doc editor of its fragments is launched where `change_fragments`
 gives one, a design reviewer is launched on it where `design_review` gives
 one due, before the step on what the editors leave, so that the item
 checker is launched while it runs. While a design reviewer of the change
-runs, the change does not merge. Its findings are `question` tickets on
-the change, which go to the ticket analyst above.
+runs, the change does not merge. `design_review` gives where its findings
+go.
 
 A code editor or a doc editor of a change launches, before its final
 reply, each design reviewer, item checker, ticket analyst and doc
@@ -85,19 +85,18 @@ command cannot place it.
 
 A step of a change that the command cannot place holds that change alone,
 until an `Op decision:` line rules it with one of the choices the step gives
-(`directives.decided`)."""
+(`directives.ruling`)."""
 
 import shlex
 from collections.abc import Callable
 from pathlib import Path
 from dataclasses import dataclass, replace
-from typing import Literal
 
 from controlled_markdown import mctx
 from operations import briefs, merging, messages
 from operations.change_budget import TAKEN
 from operations.constants import AGAIN_SECONDS, COORDINATOR
-from operations.journal import retired
+from operations.journal import AGAIN_LIMIT, done_of, retired
 from operations.change_agents import (change_editors, editors_in, elsewhere_on, latest_editors,
                                       launched_on, of_change, Reported, reported, reported_at,
                                       settled,
@@ -107,7 +106,7 @@ from operations.change_fragments import drafter_ids, fragments_step
 from operations.change_overrun import Ended, over_budget
 from operations.design_review import design_review, reviewing
 from operations.doc_review import doc_review, latest_reviewer, with_ids
-from operations.directives import Decision, decided, give_again_line, held_on, ruled
+from operations.directives import Decision, give_again_line, held_on, ruling
 from operations.item_check import check_items, is_checked, latest_reports, unfinished
 from operations.reports import Label, at_cap, items_of, left_for_decision, shows_current
 from operations.roles import (CHECKS, LAUNCHING_EDITORS, Purpose, Role, analyst_of,
@@ -116,9 +115,8 @@ from operations.state import Agent, Report, State, Ticket, last_reported
 from operations.filing import editor_scratch
 from operations.final_reply import live_holder
 from operations.handled import answered, held_aside, repeated, sent, unmoved
-from operations.steps import (Bash, Launch, Poll, Send, Step, Undecided, agent_ids, key,
-                             retirement_key,
-                             served)
+from operations.steps import (Bash, Launch, Pause, Poll, Repeatable, Send, Step, Undecided,
+                              agent_ids, key, retirement_key, served)
 from operations.log_commands import AGENT
 from operations.taking import RELEASED_LINE, take
 from operations.tracker import last_index
@@ -211,13 +209,22 @@ def carry(state: State, t: Ticket) -> Step | None:
     w = worktree(t, state)
     if w is None or revised_since_worktree(t):
         return Bash(make_worktree(t.number, state.me), f"{t.number} worktree", occasion=str(t.last_time))
-    if isinstance(step := over_budget(state, t, w, agents), Ended):
-        latest = list(step.latest)
-        if (left := leftover(state, t, w, latest, agents, True, state.me)) is not False:
-            return left
-        return merging.merge(state, t, w, latest)
-    if step is not False:
-        return step
+    match over_budget(state, t, w, agents):
+        case Ended(ended):
+            latest = list(ended)
+            match leftover(state, t, w, latest, agents, True, state.me):
+                case Pause.CLEAR:
+                    return merging.merge(state, t, w, latest)
+                case Pause.WAIT:
+                    return None
+                case left:
+                    return left
+        case Pause.WAIT:
+            return None
+        case Pause.CLEAR:
+            pass
+        case step:
+            return step
     here = editors_in(agents, w)
     if missing := unstaffed(editors, here):
         theirs = editors_in(elsewhere_on(state, t.number), w)
@@ -243,18 +250,22 @@ def carry(state: State, t: Ticket) -> Step | None:
             model=t.model(role), occasion=f"{w} {t.last_time}")
     if any(a.pending for a in here):
         return None
-    if (step := reported_step(state, t, w, editors, here, agents, state.me)) is not False:
-        return step
-    return merging.merge(state, t, w, latest_editors(here))
+    match reported_step(state, t, w, editors, here, agents, state.me):
+        case Pause.CLEAR:
+            return merging.merge(state, t, w, latest_editors(here))
+        case Pause.WAIT:
+            return None
+        case step:
+            return step
 
 
 def reported_step(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
                   here: list[Agent], agents: list[Agent],
-                  launcher: str) -> Step | None | Literal[False]:
+                  launcher: str) -> Step | Pause:
     """The step of the change `t`, whose editors are `editors`, once each
     of its editors in its worktree `w`, `here`, has ended, with
-    `launcher` as the launcher of each check it launches, or False where
-    the change merges. `agents` are the change's agents."""
+    `launcher` as the launcher of each check it launches, or `Pause.CLEAR`
+    where the change merges. `agents` are the change's agents."""
     if (step := fragments_step(state, t, w, here)) is not None:
         return step
     latest = latest_editors(here)
@@ -263,15 +274,13 @@ def reported_step(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
     reviewed = with_elsewhere(state, t.number, agents,
                               (Role.ITEM_CHECKER, Role.DOC_REVIEWER, Role.DESIGN_REVIEWER))
     if (step := design_review(state, t, w, editors, here, reviewed, launcher)) is not False:
-        return step
-    if (step := leftover(state, t, w, latest, reviewed, False, launcher)) is not False:
-        return step
+        return Pause.WAIT if step is None else step
+    if (left := leftover(state, t, w, latest, reviewed, False, launcher)) is not Pause.CLEAR:
+        return left
     if Role.DOC_EDITOR in editors and (
             step := doc_review(state, t, w, here, reviewed, launcher)) is not False:
-        return step
-    if reviewing(reviewed):
-        return None
-    return False
+        return Pause.WAIT if step is None else step
+    return Pause.WAIT if reviewing(reviewed) else Pause.CLEAR
 
 
 NO_OPERATOR = mctx("{agent} is no code editor or doc editor that an operator of the session "
@@ -335,7 +344,7 @@ def editor_step(state: State, editor: str,
     at = mine[-1].reviewing if mine[-1].reviewing is not None else state.now
     agents = [as_ended(a, at, text, path) if a.agent_id == editor else a
               for a in of_change(state, t)]
-    if over_budget(state, t, w, agents) is not False:
+    if over_budget(state, t, w, agents) is not Pause.CLEAR:
         return mctx("Change {number} is past its cost budget, so the operator takes its next "
                     "step: give your final reply.").format(number=t.number)
     here = editors_in(agents, w)
@@ -367,7 +376,7 @@ def editor_step(state: State, editor: str,
     if isinstance(step, Launch) and step.role in CHECKS:
         return step
     waited = [a for a in agents if a.operator == editor and a.pending]
-    if step is None and waited:
+    if step is Pause.WAIT and waited:
         ids = agent_ids(waited)
         if isinstance(ids, Undecided):
             return ids
@@ -467,15 +476,14 @@ def left(state: State, t: Ticket, latest: list[Agent], checkers: list[Agent],
 
 
 def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
-             agents: list[Agent], past_budget: bool,
-             launcher: str) -> Step | None | Literal[False]:
+             agents: list[Agent], past_budget: bool, launcher: str) -> Step | Pause:
     """The step on what the editors leave, with `launcher` as the launcher
-    of the agent it launches, or False where they leave nothing;
+    of the agent it launches, or `Pause.CLEAR` where they leave nothing;
     `past_budget` gives that the change is past its cost budget."""
     checkers = [a for a in agents if a.role is Role.ITEM_CHECKER]
     analysts = [a for a in agents if a.role is Role.TICKET_ANALYST]
     if any(a.pending for a in checkers + analysts):
-        return None
+        return Pause.WAIT
     editors = with_ids(latest)
     if isinstance(editors, Undecided):
         return editors
@@ -487,38 +495,42 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     judged = max((a.launched for a in analysts), default=0.0)
     given = left(state, t, latest, checkers, latest_reviewer(agents, w), judged)
     fresh = given.fresh(judged)
-    parts = fresh
-    hold: Hold | None = None
-    on_user = False
+
+    def launch(parts: str | None, at: float) -> Step:
+        """The launch of the ticket analyst on what the editors leave, with
+        `parts`, the item checker's part it takes, and `at`, the time of the
+        ruling it is launched on, or 0.0."""
+        reports = latest_reports(latest)
+        if isinstance(reports, Undecided):
+            return reports
+        return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number),
+                      briefs.findings(
+            t.number, w, parts, [q.number for q in given.questions], editors, reports,
+            [i for a, i in editors if a in given.unfinished], launcher,
+            settled(state, t, Role.TICKET_ANALYST, None),
+            briefs.round_of(checkers[-1], t.number) if checkers else briefs.Round.OPEN,
+            None if given.capped is None else (given.capped[0], given.capped[1].text),
+            past_budget),
+            occasion=str(max(given.given, at)))
+
+    def on_hold(hold: Hold, on_user: bool, parts: str | None) -> Step | Pause:
+        """The step on `hold`, by its ruling: a wait where it is not ruled
+        and the hold is on the user, `on_user`."""
+        r = ruling(state, hold.text, hold.choices)
+        if isinstance(r, Undecided):
+            return Pause.WAIT if on_user else r
+        if r.choice is not Decision.MERGE:
+            return launch(parts, r.time)
+        return Pause.CLEAR if given.capped is None else launch(fresh, r.time)
+
     if analysts and judged > checked and (hold := left_hold(analysts[-1], t.number)):
-        on_user = items_of(analysts[-1], [Label.DECISION]) is not None
-        parts = given.part
-    elif fresh is None and given.capped is None and not given.questions \
-            and not given.unfinished:
-        return False
-    elif fresh is None and given.capped is None and not given.unfinished \
+        return on_hold(hold, items_of(analysts[-1], [Label.DECISION]) is not None, given.part)
+    if fresh is None and given.capped is None and not given.questions and not given.unfinished:
+        return Pause.CLEAR
+    if fresh is None and given.capped is None and not given.unfinished \
             and analysts and questions_given(analysts[-1], list(given.questions)):
-        hold = questions_hold(analysts[-1], t.number)
-    if hold is not None:
-        choice = decided(state, hold.text, hold.choices)
-        if isinstance(choice, Undecided):
-            return None if on_user else choice
-        if choice is Decision.MERGE:
-            if given.capped is None:
-                return False
-            parts = fresh
-    at = ruled(state, hold.text) if hold is not None else 0.0
-    reports = latest_reports(latest)
-    if isinstance(reports, Undecided):
-        return reports
-    return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
-        t.number, w, parts, [q.number for q in given.questions], editors, reports,
-        [i for a, i in editors if a in given.unfinished], launcher,
-        settled(state, t, Role.TICKET_ANALYST, None),
-        briefs.round_of(checkers[-1], t.number) if checkers else briefs.Round.OPEN,
-        None if given.capped is None else (given.capped[0], given.capped[1].text),
-        past_budget),
-        occasion=str(max(given.given, at)))
+        return on_hold(questions_hold(analysts[-1], t.number), False, fresh)
+    return launch(fresh, 0.0)
 
 
 def cap_reply(reviewer: Agent | None, judged: float) -> tuple[str, Report] | None:
@@ -556,9 +568,10 @@ def no_step(state: State, t: Ticket, s: Step) -> Step | None:
     """The step in place of `s`, the step of the held change `t` that
     `repeated` passes over, where the journal gives it as done and no
     other read holds it back: `s` once more, once its done entry closed
-    `AGAIN_SECONDS` before, or, once it is done twice so, or retired, the
+    `AGAIN_SECONDS` before, or, once it is done more than
+    `journal.AGAIN_LIMIT` times so, or retired, the
     message to the coordinator on the change (`stuck`). None otherwise."""
-    if not isinstance(s, Launch | Bash) or held_aside(state, s):
+    if not isinstance(s, Repeatable) or held_aside(state, s):
         return None
     k = key(s)
     if retired(state.journal, retirement_key(s)):
@@ -566,10 +579,10 @@ def no_step(state: State, t: Ticket, s: Step) -> Step | None:
     entries = state.journal.of(k)
     if any(e.close is None for e in entries):
         return None
-    closes = [e.close.time for e in entries if e.done and e.close is not None]
-    if not closes or state.now - closes[-1] < AGAIN_SECONDS:
+    done = done_of(entries)
+    if done.last is None or state.now - done.last < AGAIN_SECONDS:
         return None
-    return replace(s, again=True) if len(closes) == 1 else stuck(t, s, retired_step=False)
+    return replace(s, again=True) if done.count <= AGAIN_LIMIT else stuck(t, s, retired_step=False)
 
 
 DONE_TWICE = mctx("it was done twice, and the line gives its key, which takes in the version of the "

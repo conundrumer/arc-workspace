@@ -201,7 +201,7 @@ def main_wanted(state: State) -> Step | None:
     if state.sessions.main_wanted is None or state.sessions.main_wanted[0] != state.session:
         return None
     stuck = [t.number for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order)
-             if t.session in state.sessions.idle_indexes and t.status not in SETTLED]
+             if t.session in state.sessions.idle and t.status not in SETTLED]
     key = f"main session, asked at {state.sessions.main_wanted[1]:.0f}"
     step = Send(COORDINATOR, labeled(key, MAIN_WANTED.format(tickets=", ".join(stuck))), key)
     return None if sent(state, step.to, step.message, key) else step

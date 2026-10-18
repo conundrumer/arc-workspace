@@ -1,7 +1,8 @@
 """What a call of `scripts/merge_change.py` printed, as the reads of an
 operator's merge calls take it: the texts of the script that those reads
-match, and whether the call ran, ended, refused a change, and whether
-for a conflict, or left a worktree for changes made after its change's commit."""
+match; whether the call ran, ended, refused a change, and left a
+worktree for changes made after its change's commit; and the paths that
+conflict in its rebase."""
 
 import re
 

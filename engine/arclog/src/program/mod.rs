@@ -8,6 +8,10 @@
 //! arclog file and the nodes of an arcdata file, each re-exported here, and
 //! the canonical form, the edits and the paths of a node.
 //!
+//! A key of canonical parts, such as a cache key that holds canonical forms,
+//! is equal to another where each of its parts is, so two keys whose
+//! hashes collide stay two keys.
+//!
 //! A node holds its lists in source order. Its canonical hash leaves out
 //! the order of the atoms of a body and of the branches of an `OR`, and
 //! keeps the order of every other list, such as a parameter's columns, a

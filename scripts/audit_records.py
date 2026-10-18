@@ -37,7 +37,8 @@ import file_reads
 from state_reads import opened
 from agent_turns import first_time
 from token_prices import priced_requests, request_cost
-from transcript_entries import epoch, meta_path, own_range, transcript_meta
+from transcript_entries import META, TRANSCRIPT, epoch, meta_transcript, own_range, transcript_meta
+from transcripts import walked_entries
 from transcript_snapshots import Refused, snapshot
 
 from controlled_markdown import mctx
@@ -66,7 +67,7 @@ class Start:
 class Fold:
     """The record of a transcript's spend in the window from `start`, up
     to `offset`, the end of the last whole line folded: `cost`, the cost of
-    the requests summed, with their `undecided` lines, and `last`, the
+    the priced requests summed, with the `undecided` lines of those summed, and `last`, the
     entries of the last request folded, unsummed."""
     start: float
     offset: int
@@ -99,10 +100,6 @@ def keep(read: str, key: str, record: object) -> None:
         store.keep(read, key, record)
 
 
-TRANSCRIPT = ".jsonl"
-META = ".meta.json"
-
-
 @dataclass(frozen=True)
 class Listing:
     """The transcripts and the `.meta.json` files under a directory, each
@@ -115,51 +112,47 @@ def listing(root: Path, since: float) -> Listing:
     """The transcripts under `root`, and its `.meta.json` files whose
     directory was modified at or after `since`: a `.meta.json` file written
     at or after `since` was made in such a directory. Each directory's
-    entries are those `file_reads.listed` gives, each file's stat is the one
-    `file_reads.state_stat` gives, and a link to a directory is not
-    descended."""
+    entries are those `file_reads.listed` gives, as `transcripts.walked_entries`
+    walks them, and each file's stat is the one `file_reads.state_stat`
+    gives."""
     transcripts: dict[str, float] = {}
     metas: dict[str, float] = {}
-    todo = [str(root)]
-    while todo:
-        directory = todo.pop()
-        stat = file_reads.stat_of(Path(directory))
-        fresh = stat is not None and stat[0] / 1e9 >= since
-        for e in file_reads.listed(Path(directory)):
-            if e.is_dir:
-                if not e.is_link:
-                    todo.append(os.path.join(directory, e.name))
-                continue
-            if e.name.endswith(TRANSCRIPT):
-                into = transcripts
-            elif fresh and e.name.endswith(META):
-                into = metas
-            else:
-                continue
-            path = os.path.join(directory, e.name)
-            try:
-                found = file_reads.state_stat(path)
-            except OSError:
-                continue
-            if found is not None:
-                into[path] = found.st_mtime
+    fresh: dict[str, bool] = {}
+    for directory, e in walked_entries(str(root), file_reads.listed):
+        if directory not in fresh:
+            stat = file_reads.stat_of(Path(directory))
+            fresh[directory] = stat is not None and stat[0] / 1e9 >= since
+        if e.name.endswith(TRANSCRIPT):
+            into = transcripts
+        elif fresh[directory] and e.name.endswith(META):
+            into = metas
+        else:
+            continue
+        path = os.path.join(directory, e.name)
+        try:
+            found = file_reads.state_stat(path)
+        except OSError:
+            continue
+        if found is not None:
+            into[path] = found.st_mtime
     return Listing(transcripts, metas)
 
 
 def start_and_spend(root: Path, started: float, undecided: list[str]) -> tuple[float, float]:
     """The start of the window of the next cost audit under `root`, or
-    `started` where no cost audit under it launched, and the window's
-    spend in dollars, with the `undecided` line of each request it counts
-    nothing for."""
+    `started` where no cost audit under it launched, and the spend in
+    dollars of the window's priced requests alone, a lower bound of its
+    spend. Each request it cannot price, for an unknown price or a missing
+    message id, gives an `undecided` line."""
     began = opened()
     held = recalled(START, str(root))
     held = held if isinstance(held, Start) else Start(None, float("-inf"))
     listed = listing(root, held.listed)
     start = audit_start(root, held, listed, began)
     start = started if start is None else start
-    spend = sum(transcript_spend(p, start, undecided)
-                for p in sorted(Path(p) for p, mtime in listed.transcripts.items() if mtime >= start))
-    return start, spend
+    priced = sum(priced_spend(p, start, undecided)
+                 for p in sorted(Path(p) for p, mtime in listed.transcripts.items() if mtime >= start))
+    return start, priced
 
 
 def audit_start(root: Path, held: Start, listed: Listing, began: float) -> float | None:
@@ -168,8 +161,8 @@ def audit_start(root: Path, held: Start, listed: Listing, began: float) -> float
     later than the read of each directory listing `listed` used."""
     found = held.found
     for meta in sorted(m for m, mtime in listed.metas.items() if mtime >= held.listed):
-        path = Path(meta.removesuffix(META) + TRANSCRIPT)
-        if str(path) not in listed.transcripts or meta_path(path) != Path(meta):
+        path = meta_transcript(Path(meta))
+        if path is None or str(path) not in listed.transcripts:
             continue
         launch = audit_launch(path)
         if launch is not None and (found is None or launch > found):
@@ -195,9 +188,10 @@ def audit_launch(path: Path) -> float | None:
     return first_time(path)
 
 
-def transcript_spend(path: Path, start: float, undecided: list[str]) -> float:
-    """The spend of the transcript at `path` in the window from `start`,
-    folded on from its record where the store holds one for `start`."""
+def priced_spend(path: Path, start: float, undecided: list[str]) -> float:
+    """The spend of the priced requests of the transcript at `path` in the
+    window from `start`, folded on from its record where the store holds
+    one for `start`."""
     held = recalled(FOLD, str(path))
     try:
         size = path.stat().st_size
@@ -220,8 +214,6 @@ def transcript_spend(path: Path, start: float, undecided: list[str]) -> float:
 
 
 def own_offset(path: Path) -> int | None:
-    """The offset of the first own line of the transcript at `path`
-    (`own_range`), or None where it has none."""
     own = own_range(path)
     return snapshot(path).starts[own.start] if own else None
 

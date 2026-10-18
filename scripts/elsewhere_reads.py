@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from operator_reads import AgentsRead, ended_by, ended_elsewhere, kept
-from operator_transcript import read_operator
+from operator_transcript import read_launches
 from transcripts import find
 from transcript_snapshots import Refused
 
@@ -29,7 +29,7 @@ def editor_checks(agents: Sequence[Agent], main: Path, undecided: list[str]) -> 
     for a in agents:
         if a.role not in LAUNCHING_EDITORS or a.agent_id is None:
             continue
-        theirs = read_operator(a.agent_id, find(a.agent_id), main, undecided, {}, False)
+        theirs = read_launches(a.agent_id, find(a.agent_id), main, undecided)
         out += [r for r in theirs.agents if r.role in CHECKS]
         reads.append(theirs.launched)
     return kept(out, reads)
@@ -57,7 +57,7 @@ def elsewhere_agents(tickets: Mapping[str, Ticket], me: str, operators: frozense
                                       "session is found, so its agents on change {number} are "
                                       "not read").format(run=me, agent=oid, number=t.number))
                 continue
-            one = read_operator(oid, path, main, undecided, {}, False)
+            one = read_launches(oid, path, main, undecided)
             theirs = [a for a in one.agents if a.launched > since and on_change(a, t.number)]
             reviewers = editor_checks(theirs, main, undecided)
             reads += [one.launched, reviewers]

@@ -40,8 +40,11 @@ NO_CALL = "none"
 
 
 def _step(agent: str) -> str:
-    """The pattern of a step call of `agent`, up to its agent argument."""
-    return rf"scripts/step\.py\s+{re.escape(agent)}"
+    """The pattern of a step call of `agent` (`checklist.step_call`), up to
+    its agent argument."""
+    from handbook.checklist import STEP_SCRIPT
+
+    return rf"{re.escape(STEP_SCRIPT)}\s+{re.escape(agent)}"
 
 
 def runs_step(command: str, agent: str) -> bool:
@@ -74,8 +77,13 @@ def _calls(entries: Iterable[dict[str, Any]], agent: str) -> list[tuple[str, str
 def step_calls(entries: Iterable[dict[str, Any]], agent: str) -> list[tuple[str, str]]:
     """The id and the result text of each step call of `agent` among
     `entries` that is not a stop, in the order of their results."""
-    return [(call, result) for call, command, result in _calls(entries, agent)
-            if stop_item(command, agent) is None]
+    return [(call, result) for call, _, result in not_stops(_calls(entries, agent), agent)]
+
+
+def not_stops(calls: list[tuple[str, str, str]], agent: str) -> list[tuple[str, str, str]]:
+    """The step calls of `calls`, as `_calls` gives them, that are not
+    stops."""
+    return [c for c in calls if stop_item(c[1], agent) is None]
 
 
 def refusal(call: str, agent: str) -> str:
@@ -120,16 +128,15 @@ def walk_gap(kind: str, calls: list[tuple[str, str, str]], stop: str | None) -> 
     from handbook.checklist import Checklist
 
     checklist = Checklist(kind)
-    results = [result for _, command, result in calls
-               if stop_item(command, kind) is None]
-    if stop is not None:
+    results = [result for _, _, result in not_stops(calls, kind)]
+    # A stop that names no item, or whose part the walk skips, bounds nothing.
+    for upto in [*([] if stop is None else [stop]), None]:
         try:
-            gap = checklist.gap(results, upto=stop)
+            gap = checklist.gap(results, upto=upto)
         except (ValueError, SystemExit):
-            gap = checklist.gap(results)
-    else:
-        gap = checklist.gap(results)
-    return None if gap is None else gap.call
+            continue
+        return None if gap is None else gap.call
+    raise AssertionError("the walk with no bound raised")
 
 
 def check(hook: dict[str, Any]) -> str | None:

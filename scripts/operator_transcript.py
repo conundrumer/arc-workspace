@@ -16,9 +16,9 @@ from agent_turns import latest_time, run_back
 from agent_reports import ENDED, Sign, last_sign
 from controlled_markdown import mctx
 from merge_reads import merge_outcome, merge_subjects
-from filed_texts import brief_report_file, unfiled
-from operator_reads import (MESSAGE_FROM, AgentsRead, agent_listing, ended_with, filed_report,
-                            from_parent, pass_read, reply_to)
+from filed_texts import brief_report_file, filed_report, unfiled
+from operator_reads import (MESSAGE_FROM, AgentsRead, agent_listing, ended_with, from_parent,
+                            pass_read, reply_to)
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, blocks, is_prompt,
                        notifications, output_file, parent_id, run_sessions, tool_results)
 from run_reads import Status as TaskStatus
@@ -97,6 +97,12 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                                  frozenset((m, t) for m, t in subjects.items() if m in merged),
                                  calls),
                    listing=agent_listing(path))
+
+
+def read_launches(aid: str, path: Path, main: Path, undecided: list[str]) -> OperatorRead:
+    """`read_operator` of the operator `aid` with `calls` False, for the
+    agents it launched."""
+    return read_operator(aid, path, main, undecided, {}, False)
 
 
 @dataclass

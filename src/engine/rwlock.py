@@ -123,28 +123,24 @@ def held(hold: Hold) -> Iterator[None]:
             del os.environ[HOLD_ENV]
 
 
-MERGE_WAIT = mctx("Another merge holds {path}, so this merge waits until it is done.")
-MERGE_HOLDER = mctx("The holder wrote: {holder}")
-MERGE_HELD = mctx("Another merge holds {path}, and this merge cannot wait for it, "
-                  "since it runs under an inherited hold of the heavy commands' lock.")
-GATE_WAIT = mctx("Another gate run of this worktree holds {path}, so this run waits until "
-                 "it is done.")
-GATE_HELD = mctx("Another gate run of this worktree holds {path}, and this run cannot wait "
-                 "for it, since it runs under an inherited hold of the heavy commands' lock.")
+WAIT = mctx("Another {noun} holds {path}, so this {noun} waits until it is done.")
+HOLDER = mctx("The holder wrote: {holder}")
+HELD = mctx("Another {noun} holds {path}, and this {noun} cannot wait for it, "
+            "since it runs under an inherited hold of the heavy commands' lock.")
 
 
 @dataclass(frozen=True)
 class Mutex:
-    """A lock one process holds at a time: its file's name, the line a wait
-    says, and the text and the fault of a process that cannot wait."""
+    """A lock one process holds at a time: its file's name, the noun of
+    the process that holds it, which `WAIT` and `HELD` take, and the fault
+    of a process that cannot wait."""
     file: str
-    wait: str
-    held: str
+    noun: str
     refused: type[Exception]
 
 
-MERGE = Mutex(MERGE_FILE, MERGE_WAIT, MERGE_HELD, MergeHeld)
-GATE = Mutex(GATE_FILE, GATE_WAIT, GATE_HELD, GateHeld)
+MERGE = Mutex(MERGE_FILE, mctx("merge"), MergeHeld)
+GATE = Mutex(GATE_FILE, mctx("gate run"), GateHeld)
 
 
 def gate_lock_dir() -> Path:
@@ -161,16 +157,17 @@ def mutex_held(mutex: Mutex, directory: Path, holder: str) -> Iterator[None]:
 
     def wait(text: str) -> str:
         written = path.read_text().strip()
-        return text if not written else f"{text} {MERGE_HOLDER.format(holder=written)}"
+        return text if not written else f"{text} {HOLDER.format(holder=written)}"
 
     with open(path, "a") as fh:
         if inherited() is None:
-            _take(fh, fcntl.LOCK_EX, Notice(), lambda: wait(mutex.wait.format(path=path)))
+            _take(fh, fcntl.LOCK_EX, Notice(),
+                  lambda: wait(WAIT.format(noun=mutex.noun, path=path)))
         else:
             try:
                 fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
-                raise mutex.refused(wait(mutex.held.format(path=path))) from None
+                raise mutex.refused(wait(HELD.format(noun=mutex.noun, path=path))) from None
         fh.truncate(0)
         fh.write(holder + "\n")
         fh.flush()

@@ -46,7 +46,7 @@ def state(tmp_path: Path, tickets: list, agents: list, w: Path, commits=()):
         transcripts=TranscriptsRead(tuple(agents), (), (), {}, {}, {}, {}, {}, (), {}, {}),
         git=GitRead(tuple(commits), frozenset({w}), {}, {}, {}, frozenset(), {}, None, {}),
         taken_up=frozenset(), held=HeldRead({}, {}),
-        sessions=SessionsRead(frozenset(), frozenset(), frozenset(), False, False, None),
+        sessions=SessionsRead(frozenset(), frozenset(), False, False, None),
         journal=Journal(()), listing=None,
         computed=Computed(spent={t.number: Spend(0.1, 1.0, {"code-editor": 0.1})
                                  for t in tickets}))
@@ -61,10 +61,9 @@ def test_two_ticket_reviewers_that_gave_no_report_hold_the_draft(tmp_path: Path)
                "2026-10-17T02:14:06Z draft [ticket-analyst]: filed\n")
     reviewers = [agent(i, Role.TICKET_REVIEWER, t.number, "", t.last_time + n,
                        t.last_time + n, []) for n, i in ((10, FIRST), (20, SECOND))]
-    ready: list = []
     w = tmp_path / "main" / ".claude" / "worktrees" / "w"
-    step = draft_step(state(tmp_path, [t], reviewers, w), t, ready, [], {})
-    assert isinstance(step, Undecided) and not ready
+    step = draft_step(state(tmp_path, [t], reviewers, w), t)
+    assert isinstance(step, Undecided)
 
 
 def change(tmp_path: Path, w: Path, editors: str = "code-editor"):

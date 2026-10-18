@@ -40,7 +40,7 @@ def state(tmp_path: Path, tickets=(), commits=(), messages=()):
         transcripts=TranscriptsRead((), (), tuple(messages), {}, {}, {}, {}, {}, (), {}, {}),
         git=GitRead(tuple(commits), frozenset(), {}, {}, {}, frozenset(), {}, None, {}),
         taken_up=frozenset(), held=HeldRead({}, {}),
-        sessions=SessionsRead(frozenset(), frozenset(), frozenset(), False, False, None),
+        sessions=SessionsRead(frozenset(), frozenset(), False, False, None),
         journal=Journal(()), listing=None)
 
 

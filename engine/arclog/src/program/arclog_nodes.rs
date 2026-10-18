@@ -1,7 +1,5 @@
 //! The nodes of an arclog file, from the whole program down to its sites.
 
-#![allow(unused_variables, dead_code)]
-
 use std::sync::Arc;
 
 use super::*;
@@ -134,8 +132,7 @@ pub struct Clause {
     /// which map onto one another by position, each named as the line's
     /// first proposer names it. A line with no proposer and no body derives
     /// a fact, a relation of no columns.
-    /// After an edit, the columns of the new body, as
-    /// [`crate::program::Node::apply`] gives.
+    /// Edits: [`crate::program::Node::apply`].
     pub columns: Arc<[RelationColumn]>,
 }
 
@@ -210,6 +207,27 @@ pub struct ConstraintLabel {
     pub fresh: bool,
 }
 
+impl From<ConstraintLabel> for LabelUse {
+    /// `*X` where the constraint makes the label, and `X` otherwise.
+    fn from(c: ConstraintLabel) -> LabelUse {
+        if c.fresh { LabelUse::Fresh(c.label) } else { LabelUse::Join(c.label) }
+    }
+}
+
+impl TryFrom<LabelUse> for ConstraintLabel {
+    type Error = LabelUse;
+
+    /// The constraint's label that `*X` or `X` gives, or the use itself
+    /// for any other use, which no constraint's label is.
+    fn try_from(u: LabelUse) -> Result<ConstraintLabel, LabelUse> {
+        match u {
+            LabelUse::Fresh(label) => Ok(ConstraintLabel { label, fresh: true }),
+            LabelUse::Join(label) => Ok(ConstraintLabel { label, fresh: false }),
+            other => Err(other),
+        }
+    }
+}
+
 /// The second operand of a constraint: a label, or the reserved label `0`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Operand {
@@ -224,6 +242,14 @@ pub struct Constraint {
     pub op: ConstraintOp,
     pub first: ConstraintLabel,
     pub second: Operand,
+}
+
+/// The second operand of `constraint` where it is a label.
+pub fn constraint_second(constraint: &Constraint) -> Option<ConstraintLabel> {
+    match constraint.second {
+        Operand::Label(label) => Some(label),
+        Operand::Zero => None,
+    }
 }
 
 /// The relation an atom reads.
@@ -363,8 +389,7 @@ pub struct Choose {
     pub rows: Option<KeyBody>,
     /// The candidate's columns, which follow the row's in the chosen
     /// relation.
-    /// After an edit, the columns of the new body, as
-    /// [`crate::program::Node::apply`] gives.
+    /// Edits: [`crate::program::Node::apply`].
     pub candidate_columns: Arc<[RelationColumn]>,
     /// The `from` clause: inside `for` where it reads the row's labels.
     pub from: Node<Body>,
@@ -407,8 +432,7 @@ pub struct Demonstrated {
 pub struct DemoRule {
     pub name: DemoRuleName,
     /// The rule's fields, each a column of its `&prediction`.
-    /// After an edit, the columns of the new body, as
-    /// [`crate::program::Node::apply`] gives.
+    /// Edits: [`crate::program::Node::apply`].
     pub fields: Arc<[RelationColumn]>,
     pub text: Option<Text>,
     pub forms: Arc<[Form]>,

@@ -30,12 +30,7 @@ impl Scanner<'_> {
     fn bump(&mut self) -> Option<char> {
         let c = self.peek()?;
         self.at.byte += c.len_utf8();
-        if c == '\n' {
-            self.at.line += 1;
-            self.at.column = 1;
-        } else {
-            self.at.column += 1;
-        }
+        (self.at.line, self.at.column) = super::after_char((self.at.line, self.at.column), c);
         Some(c)
     }
 
