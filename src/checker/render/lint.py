@@ -115,7 +115,7 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
     LintSentence.FIELD_TWICE: lambda n, _: mctx(
         "`{0}` stands once in the header").format(*n),
     LintSentence.SIBLING_DROPS: lambda n, _: mctx(
-        "a sibling carries `@representative:` in place of {drops}").format(
+        "a sibling has a `@representative:` line in place of {drops}").format(
         drops=SIBLING_DROPS_TEXT),
     LintSentence.SLUG_TWICE: lambda n, _: mctx(
         "`{0}` repeats the slug of an earlier claim; a slug stands once "
@@ -123,9 +123,9 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
     LintSentence.UNKNOWN_KEYWORD: lambda n, _: mctx(
         "`{0}` is not in keywords.md; propose it in the review").format(*n),
     LintSentence.NO_KEYWORDS: lambda n, _: mctx(
-        "the header carries `@keywords:` or `@representative:`"),
+        "the header has a `@keywords:` or `@representative:` line"),
     LintSentence.NO_DEMONSTRATED_CHOICE: lambda n, _: mctx(
-        "the `@keywords:` line carries `induce`, and the solver declares no "
+        "the `@keywords:` line lists `induce`, and the solver declares no "
         "`DemonstratedChoice` at the top level; add the case "
         "[Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice) "
         "gives, or remove `induce` from `@keywords:` and raise the matter in "
@@ -150,12 +150,12 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
         "the marker of that case; see "
         "[Params](docs/handbook/solver-file.md#params)").format(*n),
     LintSentence.BRANCH_APPROXIMATED: lambda n, _: mctx(
-        "`@{0} {1}` stands in a branch and carries `@approximated:`; a "
+        "`@{0} {1}` stands in a branch and has an `@approximated:` line; a "
         "branch's `@rule` states the rule it runs").format(*n),
     LintSentence.CLAIM_UNSTATED: lambda n, _: mctx(
         "`{0}` denotes no claim in the header").format(*n),
     LintSentence.INSTANCE_UNCLAIMED: lambda n, _: mctx(
-        "`{name}` carries no `@claim` line; the claims the instance serves "
+        "`{name}` has no `@claim` line; the claims the instance serves "
         "stand above it as {form}").format(name=n[0], form=FORM_CLAIM),
     LintSentence.CONCEPT_UNCLAIMED: lambda n, _: mctx(
         "`{name}` is the concept branch; the claim the choice answers "
@@ -368,10 +368,11 @@ def _labeled_text(p: LintLabeled) -> str:
     if p.sentence != LintSentence.ORDINARY_RELAXED:
         raise ValueError(f"no sentence for {p.sentence}")
     what = at_word(p.word) + (f" {p.name}" if p.name is not None else "")
-    return mctx("`{what}` is `ordinary` and carries {relaxed}; see "
+    return mctx("`{what}` is `ordinary` and has {relaxed}; see "
                 "plausibility in "
                 "[Witnesses](docs/handbook/principles.md#witnesses)").format(
-        what=what, relaxed=", ".join(f"`@relaxed {s}`" for s in p.relaxed))
+        what=what,
+        relaxed=", ".join(f"a `@relaxed {s}` line" for s in p.relaxed))
 
 
 def _run_text(solver: Solver, p: LintRun) -> str:

@@ -435,7 +435,7 @@
 }
 
 /// Connected components of a node set (4-adjacency), each labeled by an opaque
-/// id. The id is stable within a run and carries no geometry. The key does
+/// id. The id is stable within a run and holds no geometry. The key does
 /// not enter the id, so ids separate components under different keys only
 /// where their node sets are disjoint.
 .comp Components<Key> {
@@ -604,7 +604,7 @@
         _pair(Ky, A, K, P, Q), cell(Ky, P, V), cell(Ky, Q, V2), V != V2,
         split(P, A, L, _), split(Q, A, L2, _).
 
-    /// A broken line pair: the translation carries some cell of the line at l
+    /// A broken line pair: the translation takes some cell of the line at l
     /// onto a differently-valued cell of the line at l2.
     .decl line_mismatch(key: Key, a: Axis, k: number, l: Position, l2: Position)
     line_mismatch(Ky, A, K, L, L2) :- _line_mismatch(Ky, A, K, L, L2).
@@ -788,7 +788,7 @@
 }
 
 /// Occurrences of one valued cell set, the shape, among another: a placement
-/// occurs where every shape member lands on a cell carrying that member's
+/// occurs where every shape member lands on a cell holding that member's
 /// value. A placement that runs off the grid contradicts itself, so the
 /// caller supplies no grid bounds.
 .comp Occurrences<Key, Val> {
@@ -802,7 +802,7 @@
     placement(Ky, M) :- shape(Ky, S, V), cell(Ky, P, V), relative(S, P, M).
 
     /// A contradicted placement: some member lands on a cell of another
-    /// value, or off the grid, where no cell carries its value.
+    /// value, or off the grid, where no cell holds its value.
     .decl mismatch(key: Key, p: Position)
     mismatch(Ky, M) :-
         placement(Ky, M),                   // a candidate placement

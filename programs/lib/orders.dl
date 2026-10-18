@@ -1,4 +1,4 @@
-//! Components over abstract members whose input carries an order or a step: a
+//! Components over abstract members whose input has an order or a step: a
 //! `before` relation, a `succ` relation, or a step count. The members are
 //! opaque, and nothing here reads a position.
 
@@ -150,7 +150,7 @@
 /// Requires: at each t a `step` leaves, `take` gives one item, and that
 /// item is in `untaken` at t; a `step` with no `take` item empties the
 /// untaken side, a `take` item not in `untaken` joins the taken side while
-/// the untaken side carries over, less the items `conflict` gives for it,
+/// the untaken side keeps its items, less the items `conflict` gives for it,
 /// and two `take` items at one t both join the taken side and both stay on
 /// the untaken side. With `score`, each t has one predecessor: at a t two
 /// predecessors reach, `take` may also hold an item above the least score.
@@ -174,7 +174,7 @@
     /// side and joins the taken side.
     .decl step(key: Key, t: T, t2: T)         // @input
 
-    /// A step from t to t2 at which both sides carry over.
+    /// A step from t to t2 at which both sides keep their items.
     .decl skip(key: Key, t: T, t2: T)         // @input
 
     .decl take(key: Key, t: T, item: Item)    // @input

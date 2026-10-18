@@ -1,5 +1,5 @@
 """The handbook words each check and survey of the checker rests on, read
-from the functions themselves: a check or survey carries `quotes` or a
+from the functions themselves: a check or survey has `quotes` or a
 `guard`, a `guard` stands on a hint or lint check alone, and a check that
 is neither a hint nor a lint quotes `principles.md`. `python -m
 controlled_markdown check` reports what `unquoted` gives.
@@ -39,11 +39,11 @@ class Breach(Enum):
     """How a check or survey breaks the rule."""
 
     MISSING = auto()
-    """It carries neither `quotes` nor a `guard`."""
+    """It has neither `quotes` nor a `guard`."""
     GUARD = auto()
-    """It carries a `guard` and is no hint or lint check."""
+    """It has a `guard` and is no hint or lint check."""
     PRINCIPLE = auto()
-    """It is a check that is neither a hint nor a lint, and carries no
+    """It is a check that is neither a hint nor a lint, and has no
     `quotes` from `principles.md`."""
 
 
@@ -120,11 +120,11 @@ def quote_rule_errors(shown: Callable[[Path], str]
     gives it."""
     broken = {
         Breach.GUARD: (Rule.QUOTE_GUARD,
-                       mctx("`{name}` carries a `guard`, which only a hint or "
-                            "lint check may carry")),
-        Breach.MISSING: (Rule.QUOTE_MISSING, mctx("`{name}` carries no `quotes`")),
+                       mctx("`{name}` has a `guard`, which only a hint or "
+                            "lint check may have")),
+        Breach.MISSING: (Rule.QUOTE_MISSING, mctx("`{name}` has no `quotes`")),
         Breach.PRINCIPLE: (Rule.QUOTE_PRINCIPLE,
-                           mctx("`{name}` carries no `quotes` from `{principles}`")),
+                           mctx("`{name}` has no `quotes` from `{principles}`")),
     }
     errors: list[ControlledMarkdownError] = []
     for u in unquoted(checks_and_surveys()):

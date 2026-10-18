@@ -190,9 +190,8 @@
 
 ## Relational form
 - An ARC concept relates cells, regions, and their properties.
-- A claim has a **relational form** when some set of clauses agrees with the claim on every input the generator produces on which the claim applies.
-- A claim that refers to a number that counts nothing the task has, such as a mean or a centroid, has no relational form, even where some set of clauses agrees with it.
-    * comment: The Analyze pass a0350bef143e9424f on d22278a0 read the line above and this line's former words, which lacked "even where some set of clauses agrees with it", as giving opposite answers for a Euclidean distance that clauses over squared distances agree with, and its transcript review af2f557b8ee46b12c took the line above as enough, as tickets 10-648 and 10-654 record.
+- A claim has a **relational form** when some set of clauses agrees with the claim on every input the generator produces on which the claim applies, and the claim refers to no number that counts nothing the task has, such as a mean or a centroid.
+    * comment: The Analyze pass a0350bef143e9424f on d22278a0 read this definition, which then lacked its last clause, and a separate line that stated that clause without "even where some set of clauses agrees with it", as giving opposite answers for a Euclidean distance that clauses over squared distances agree with, and its transcript review af2f557b8ee46b12c took the definition alone as enough, as tickets 10-648 and 10-654 record.
 - An **approximation** is a set of clauses that computes no such number, under its name or another, and that the program runs in place of a rule that has no relational form.
     - The approximation disagrees with the rule on some such input, and that input is a divergence witness.
 

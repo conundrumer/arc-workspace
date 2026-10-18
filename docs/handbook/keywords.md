@@ -4,7 +4,7 @@
 # Keywords
 - Keywords index the solvers for a reader who has the headers and not the code.
 - A keyword denotes a task concept or a composition property of the program.
-- A keyword is admitted when a variant task can carry the concept it denotes, and no listed keyword denotes that concept.
+- A keyword is admitted when a variant task can have the concept it denotes, and no listed keyword denotes that concept.
     - A concept narrower than a listed keyword's is admitted when it needs a different parse or rule.
 - The mechanism a keyword's gloss states is one instance of the concept the keyword denotes, not the keyword's boundary.
 

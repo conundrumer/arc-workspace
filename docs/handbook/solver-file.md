@@ -105,7 +105,7 @@
 
 ### Header
 - `@scene` and `@rule` are in dependency order.
-- `@keywords` carries the keywords any case claims.
+- `@keywords` lists the keywords any case claims.
 - A `// review <kind>: <text>` line stands last in the header.
 - Leave it as it is.
 - A family sibling's header, omitting other fields:
@@ -260,7 +260,7 @@
     - The case part of a `@store` line's relation is each column whose type is an ADT in `Choice` or a record built only of such ADTs, and a record column that has such fields beside others is written as the list, in order, of the others.
 - The key of an `assign` for the relation of a `@store` line above an `.init` is `<instance>.<relation>`.
 - [`GRID_HxW` for grid data](docs/handbook/patterns.md#grid_hxw-for-grid-data) states the form of a GRID call that stores a parameter.
-    - For a parameter that a `GRID_STAMP_HxW` or `GRID_STAMP_SPARSE_HxW` call stores, a grid of the call's size is interpreted as a picture with the `@` on the cell that carries it in the call's layout, and `{"grid": Grid, "anchor": [row, col]}` is interpreted as a picture of any size with the `@` on the cell at that row and column, counted from 0.
+    - For a parameter that a `GRID_STAMP_HxW` or `GRID_STAMP_SPARSE_HxW` call stores, a grid of the call's size is interpreted as a picture with the `@` on the cell that has it in the call's layout, and `{"grid": Grid, "anchor": [row, col]}` is interpreted as a picture of any size with the `@` on the cell at that row and column, counted from 0.
 - A `<name>` fixes the branch at some choice points, in one of these forms. Its model takes the fixed branches and the concept branch at every other point it takes; its cases are the cases of the solver that take the fixed branches ([Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states both for one branch). A `@witness` verdict denotes its model; a case marker and an `@ignore: derive` or `@ignore: store` line denote its cases.
     - `concept`: the concept branch at every point the `Choice` encodes, the concept base; alone, its model and its one case are the concept case
     - a constructor's name with its prefix, such as `$Alt`: that branch at each point where the constructor stands, for a nested constructor too, whether or not `impl_choice` contains its model

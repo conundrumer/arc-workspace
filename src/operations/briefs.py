@@ -218,7 +218,7 @@ def editor(editor: EditorPart | DocEditor, number: str, worktree: Path, scratch:
         if editor.code_editors:
             lines.append(CODE_EDITORS.format(ids=", ".join(editor.code_editors)))
     lines.append(mctx("Accepted gate outputs under `tests/gate/accepted/` you may write: each "
-                      "that a `DIFF` of the gate your items cause names."))
+                      "whose path a `DIFF` of the gate your items cause gives."))
     if part.role is Role.CODE_EDITOR:
         lines.append(TESTS)
     lines.append(SCRATCH.format(scratch=scratch))
@@ -719,7 +719,7 @@ def batch_profile(runs: list[str], reviewable: list[str], commit: str) -> str:
 BATCH_GATE = mctx("""
     - Add a worktree with `git worktree add --detach <dir> master`, with a new directory under {scratch} as `<dir>`.
     - Run `uv run python scripts/gate.py --outputs-only --record-deps <out>` in that worktree, and remove that worktree.
-    - For each `DIFF` line that run prints that the `Evidence` of no ticket outside `tickets/draft/` and `tickets/closed/` holds, bisect the commits of `master` from the commit that the `affected:` line of that run gives after `the change from` to `master`, and file a ticket of kind `bug` that names the commit the bisection stops at.
+    - For each `DIFF` line that run prints that the `Evidence` of no ticket outside `tickets/draft/` and `tickets/closed/` holds, bisect the commits of `master` from the commit that the `affected:` line of that run gives after `the change from` to `master`, and file a ticket of kind `bug` that gives the commit the bisection stops at.
         - Run each step in a worktree you add at the commit with `git worktree add --detach` and remove after.
         - Each step is `uv run python scripts/gate.py --outputs-only <out> <cmd>`, with that line's command.
         - A step at a commit whose gate has no such command counts as before the change.

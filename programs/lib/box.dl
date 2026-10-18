@@ -8,7 +8,7 @@
 //!
 //! The per-axis sum (t+b, l+r) measures the frame's extent minus the
 //! rectangle's, so boxes with one sum are translates of one another. A
-//! Position is a cell, extent 1 on both axes, which carries its frame. An
+//! Position is a cell, extent 1 on both axes, which has its frame. An
 //! Offset is a translation, sum 0, which moves any box and keeps its extent.
 //! In every other role, a Box is interpreted in a frame that the caller
 //! supplies, such as the frame of the cell `p` in `box_extent`.
@@ -76,8 +76,8 @@ diag_dist(P, Diag, A, K1, K2) :-
 .decl corner_dist(p: Box, diag: DiagDir, k: number) inline
 corner_dist(P, Diag, K) :- diag_dir_elem(Diag), K = @box_corner_dist(P, Diag).
 
-/// p decomposed by axis: along carries the axis component (perpendicular
-/// zeroed); across carries the perpendicular (axis zeroed).
+/// p decomposed by axis: along holds the axis component (perpendicular
+/// zeroed); across holds the perpendicular (axis zeroed).
 .decl split(p: Box, a: Axis, along: Box, across: Box) inline
 split(P, A, Along, Across) :- Along = @box_along(P, A), Across = @box_across(P, A).
 
@@ -250,7 +250,7 @@ box_corner(P, B, D) :- inside(P, B), corner_anchor(D, P, B).
 
 /// p's axis-a extent cut into n equal slabs, each across the whole
 /// perpendicular extent. p_outer is axis-only on a; p_inner is the full 2D
-/// within-slab position — perpendicular carried from p.
+/// within-slab position — perpendicular taken from p.
 /// No cell decomposes unless the gap-adjusted extent divides evenly by n.
 .decl divide_slab(p: Position, a: Axis, n: number, gap: number,
                   p_outer: Position, p_inner: Position) inline

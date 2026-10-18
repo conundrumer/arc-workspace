@@ -14,7 +14,7 @@
 
 ## solver-pass-lead
 - What an operation routes to the review goes in your report, under the section it fits.
-- Write under `programs/solvers/`, `programs/witnesses/`, `work/task/<task_id>/`, and `tickets/open/`, and nowhere else, apart from a `work` link to the main worktree's `work/`.
+- Write under `programs/solvers/`, `programs/witnesses/`, `work/task/<task_id>/`, `tickets/open/` and `tickets/deferred/`, and nowhere else, apart from a `work` link to the main worktree's `work/`.
 - Change no Analyze file.
 - Report a failing run as failing.
 - Do not read `../arc-synth-bun/`.
@@ -42,6 +42,6 @@
     - <another task's file, and the line>: <the fix it needs>
 
     ## Tickets filed
-    - <the name of a file the pass wrote under `tickets/open/`>
+    - <the name of a file the pass wrote under `tickets/open/` or `tickets/deferred/`>
     ```
 - A section with nothing holds `none`.

@@ -24,7 +24,7 @@ from solver.determine import Determined, NotRun
         "**`@derive` directive.** The line is a branch of a choice point on "
         "the parameter")
 @quotes("procedure.md", "Develop",
-        "Hold as a branch each built-in derivation that fits a parameter")
+        "A built-in derivation that fits a parameter.")
 def check_two_parameterizations(solver: Solver, runs: Runs) -> list[Finding]:
     """The findings on the `@derive` lines and their named `@ignore` lines:
     a second line of one branch, a line above a parameter no case of the

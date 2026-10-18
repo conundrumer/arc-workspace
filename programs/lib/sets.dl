@@ -69,7 +69,7 @@
     low(Ky, S) <= low(Ky, S2) :- S > S2.
 }
 
-/// The rows that carry each key's highest and lowest score. Ties keep every
+/// The rows that hold each key's highest and lowest score. Ties keep every
 /// row at that score.
 .comp ArgExtremes<Key, Val> {
     .decl cand(key: Key, v: Val, s: number)  // @input
@@ -113,7 +113,7 @@
 }
 
 /// The `Ident` of each value of a domain. The id is stable within a run and
-/// carries nothing of the value but its identity.
+/// holds nothing of the value but its identity.
 .comp IdentOf<T> {
     .decl value(v: T)  // @input
 

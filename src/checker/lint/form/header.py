@@ -139,7 +139,7 @@ def check_header(solver: Solver, runs: Runs) -> list[Finding]:
 
 
 @quotes("solver-file.md", "Header",
-        "`@keywords` carries the keywords any case claims.")
+        "`@keywords` lists the keywords any case claims.")
 def check_keyword(solver: Solver, runs: Runs) -> list[Finding]:
     """A word of the `@keywords:` line that keywords.md does not list, a
     hint: a session adds the keyword it needs and proposes it in its review.
@@ -155,7 +155,7 @@ def check_keyword(solver: Solver, runs: Runs) -> list[Finding]:
 
 
 @quotes("procedure.md", "Every pass",
-        "If the solver's `@keywords:` line carries `induce`, judge by "
+        "If the solver's `@keywords:` line lists `induce`, judge by "
         "[Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice) "
         "whether the task is a nested task, and where it is, give the solver "
         "the case that section gives.")

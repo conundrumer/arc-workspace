@@ -19,7 +19,7 @@
 - **Keywords.**
     - If no keyword in [Keywords](docs/handbook/keywords.md) fits, propose one in the review, and add it to the solver's `@keywords:` line.
     - If an existing keyword's gloss should change, propose it in the review.
-    - If the solver's `@keywords:` line carries `induce`, judge by [Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice) whether the task is a nested task, and where it is, give the solver the case that section gives.
+    - If the solver's `@keywords:` line lists `induce`, judge by [Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice) whether the task is a nested task, and where it is, give the solver the case that section gives.
         * comment: The Create pass on 2ccd9fef took `induce` from its gloss, did not follow the gloss's link to Demonstrated choice, and wrote no catalog case, as change ticket 4-47 records.
 
 ## Every session
@@ -38,7 +38,7 @@
 ### Analyze
 1. Read the task whole with `cat data/tasks/<task_id>.json`, with no other command piped or chained to it; a script you write may load the file.
     * comment:
-        - The command and the rule on piping and chaining are here as well as under Every pass because the Analyze render does not carry Every pass.
+        - The command and the rule on piping and chaining are here as well as under Every pass because the Analyze render does not include Every pass.
     - A pair's `alt` of kind `rule` is a second candidate, and of kind `tiebreak` a tiebreak.
 2. Write the concept to `work/task/<task_id>/concept.md`, in this form:
     ```
@@ -129,13 +129,13 @@
     - <claim>: <why>
 
     ## Tickets filed
-    - <the name of a file the pass wrote under `tickets/open/`>
+    - <the name of a file the pass wrote under `tickets/open/` or `tickets/deferred/`>
     ```
 
 ### Write
 1. Read the Analyze files, one at a time: `work/task/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`.
     - The concept file gives the concept case's claims, and the Analyze report gives each branch's standing.
-2. Write the solver (`programs/solvers/<task_id>.dl`), and copy the Analyze file to the witness file: `cp work/task/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`.
+2. Write the solver (`programs/solvers/<task_id>.dl`), and copy `witnesses.json` to the witness file: `cp work/task/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`.
     - Write the header's `@scene` and `@rule` lines from the concept file's claims, and `Params` from its Parameters section, under their names. The `@scene` line written from a claim gives the value of each parameter in its Scene parameters section that the claim reads.
     - A rule that report restates takes the restated text, and the concept file's text stands under it as its `@approximated:` line when the restated text has no relational form.
     - Each branch that report gives a witness, other than one that derives a parameter's value by a built-in derivation or stores a value the program derives, is a constructor, named as the report names it and nested as the report nests its choice point.
@@ -155,16 +155,21 @@
     - When a performance issue prevents the principled form, make a temporary workaround, marked with the `@workaround` directive.
 3. Form as a branch each interpretation that an item under the Analyze report's Not formed gives and that states one model, and add as cases the combinations that take it and meet Fit and Relational form.
     * comment: The Create pass on b9b7f026, agent a439e0b4a10625696, read this step as having it form the item "A rank among several holed rectangles", which names no order, and chose rank by cell count as branches, as ticket 10-507 records.
-4. Hold as a branch each built-in derivation that fits a parameter, and each interpretation that stores a derived value, where a `@store` line stands on that value or `store` prints one to add for it, or where the Analyze report gives that interpretation a witness, whatever `store` reports.
+4. Hold as a branch each of these:
+    - A built-in derivation that fits a parameter.
+    - An interpretation that stores a derived value, where a `@store` line stands on that value or `store` prints one to add for it.
+    - An interpretation that stores a derived value and that the Analyze report gives a witness, whatever `store` reports.
     - `uv run python scripts/run_dl.py derive <task_id>` lists the built-in derivations that fit.
     - `uv run python scripts/run_dl.py store <task_id>` lists the derived values that are the same on every input.
-    - Write the directive line each prints, in the form the [`@derive`](docs/handbook/solver-file.md#params) or [`@store`](docs/handbook/solver-file.md#program) directive gives, and, on a `@derive` or `@store` line, with the plausibility and verdict of the witness it records, and in the witness file rewrite each name of the branch it records to the name [Witness file](docs/handbook/solver-file.md#witness-file) gives that line.
+    - Write the directive line each command prints, in the form the [`@derive`](docs/handbook/solver-file.md#params) or [`@store`](docs/handbook/solver-file.md#program) directive gives.
+    - Give each `@derive` or `@store` line the plausibility and verdict of the witness it records.
+    - In the witness file, rewrite each name of the branch a `@derive` or `@store` line records to the name [Witness file](docs/handbook/solver-file.md#witness-file) gives that line.
     - A non-concept branch whose model is equivalent to that of a `@derive` or `@store` branch loses its constructor and gets no clauses of its own.
 5. Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.
     - A check the audit skips goes in the review as open.
 
 ### Determine
-- Run the sweep (`uv run python scripts/run_dl.py sweep <task_id>`), and store a value it reports for a parameter beyond the stored values only where the concept leaves that parameter's value free, as [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) defines an open parameter, unless [Principles](docs/handbook/principles.md) make that parameter a choice point.
+- Run the sweep (`uv run python scripts/run_dl.py sweep <task_id>`), and store a value it reports for a parameter beyond the stored values only for an open parameter that [Write](docs/handbook/procedure.md#write) step 2 makes a `Params` relation.
     - Where it reports that a parameter's determination keeps fewer values than those at which the model fits every train pair, and the concept fixes that parameter's value, derive that value in the program, as [Stored or derived](docs/handbook/principles.md#stored-or-derived) gives a derivation.
 - Run the plan (`uv run python scripts/run_dl.py determination-plan <task_id>`).
 - When the plan lists actions and a different parameterization would give a simpler or more principled model, change the parameterization, run [Develop](#develop) again over the changed solver, and put the change in the review.
@@ -192,8 +197,8 @@
 * comment:
     - The audit runs the same check.
 - `uv run python scripts/run_dl.py witness <task_id>` reads the solver against `programs/witnesses/<task_id>.wit.json`, whose shape [Witness file](docs/handbook/solver-file.md#witness-file) gives.
-- Run the solver against the Analyze file: `uv run python scripts/run_dl.py witness <task_id> --file work/task/<task_id>/witnesses.json`.
-    - A branch whose model's output differs from the one the Analyze file gives the branch is an error in the solver to fix, unless the Analyze file erred; then it goes in the review as a departure, with why.
+- Run the solver against `witnesses.json`: `uv run python scripts/run_dl.py witness <task_id> --file work/task/<task_id>/witnesses.json`.
+    - A branch whose model's output differs from the one `witnesses.json` gives the branch is an error in the solver to fix, unless `witnesses.json` erred; then it goes in the review as a departure, with why.
     - Each other difference the run prints under a witness, and that no step of [Develop](#develop) through [Witness](#witness) requires, goes in the review as one departure.
 - Run the audit again when the witness file is complete.
 - `witness` without `--file` reports a pair of cases that no witness separates. Resolve it by the first that applies, and put the resolution in the review.
@@ -233,11 +238,11 @@
 ### Reconcile
 - Read the Analyze files `work/task/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`, the latest report, which is the highest-numbered `work/task/<task_id>/refine-<n>.md` when one exists and `create.md` otherwise, the solver, and the witness file.
     * comment:
-        - The Analyze files are listed here as well as in Write because the Refine render does not carry Write.
+        - The Analyze files are listed here as well as in Write because the Refine render does not include Write.
 - Run these in this order.
 - **Overrides.** An override in your brief decides an item of that report. Apply each override, and quote it in the report where you apply it. Then run again each operation from [Develop](#develop) through [Witness](#witness) that applying the overrides touches.
 - **Departures.** Judge each departure and open item of that report, and each `## Fixes elsewhere` item on this task's files in another task's latest report (`grep -l <task_id> work/task/*/create.md work/task/*/refine-*.md`), under the current docs, from the solver, the witness file, and the pairs; an item on an Analyze file is judged as a departure, and a `## Fixes elsewhere` item that holds is applied to the solver or the witness file.
-    - Run the solver against the Analyze file, as [Witness](#witness) says.
+    - Run the solver against `witnesses.json`, as [Witness](#witness) says.
     - A departure holds when what it rests on is true and each case it adds or keeps meets every case condition, and each case it drops fails one in a `witness --every-case` run with that case restored. Restore its clauses with it.
         * comment: Read as the case put back in `impl_choice` alone, where the solver had no clauses for it, the line had a Refine pass on b25e450b see no finding for a dropped case: ticket 10-280.
     - Revert a departure that does not hold, make the solver follow the docs on each open item they decide, and run again each operation these changes and each applied fix touch.
@@ -259,6 +264,6 @@
     - A concept fault.
     - A judgment the session made.
     - An issue with a doc or tool that interfered with the pass or cost it effort.
-    - An item carried over from an earlier pass's report, marked with the pass it came from.
+    - An item kept from an earlier pass's report, marked with the pass it came from.
         - Do not recheck it against the current runner, lib, or docs, unless Reconcile judges it.
     - A fix or a problem in a file the pass does not edit, with the file, the line, and the fix it needs.

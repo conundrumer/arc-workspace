@@ -5,6 +5,6 @@ train 3: PASS (3 witnessed cases)
 test 0: PASS (3 witnessed cases)
 
 --- 1 finding(s) ---
-  50846271.dl:3: demonstrated choice: the `@keywords:` line carries `induce`, and the solver declares no `DemonstratedChoice` at the top level; add the case [Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice) gives, or remove `induce` from `@keywords:` and raise the matter in the review
+  50846271.dl:3: demonstrated choice: the `@keywords:` line lists `induce`, and the solver declares no `DemonstratedChoice` at the top level; add the case [Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice) gives, or remove `induce` from `@keywords:` and raise the matter in the review
 
 determination: no Determine comp

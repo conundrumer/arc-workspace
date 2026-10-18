@@ -471,8 +471,10 @@ def _make_run(failure: RunFailure) -> str:
 JUDGE_FREE: Annotated[str, quotes(
     "procedure.md", "Determine",
     "store a value it reports for a parameter beyond the stored values only "
-    "where the concept leaves that parameter's value free")] \
-    = mctx("judge whether the concept leaves the value free")
+    "for an open parameter that [Write](docs/handbook/procedure.md#write) "
+    "step 2 makes a `Params` relation")] \
+    = mctx("judge whether the parameter is an open parameter that Write step 2 "
+           "makes a `Params` relation")
 
 PLAN_HELP = mctx("""
     - Each entry under `write a determination relation:` is a value that needs a determination relation, with the rows each case needs, and the note beside it gives why.

@@ -362,13 +362,13 @@ def check_other_verdict(solver: Solver, runs: Runs) -> list[Finding]:
 
 
 @quotes("procedure.md", "Witness",
-        "Run the solver against the Analyze file: `uv run python "
+        "Run the solver against `witnesses.json`: `uv run python "
         "scripts/run_dl.py witness <task_id> --file "
         "work/task/<task_id>/witnesses.json`.")
 @quotes("procedure.md", "Witness",
-        "A branch whose model's output differs from the one the Analyze file "
-        "gives the branch is an error in the solver to fix, unless the "
-        "Analyze file erred; then it goes in the review as a departure, "
+        "A branch whose model's output differs from the one `witnesses.json` "
+        "gives the branch is an error in the solver to fix, unless "
+        "`witnesses.json` erred; then it goes in the review as a departure, "
         "with why.")
 def check_concept_output(solver: Solver, runs: Runs) -> list[Finding]:
     """On an entry of a given file with a judged output, the concept case

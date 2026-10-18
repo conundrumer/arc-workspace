@@ -299,7 +299,7 @@ def _with_relation(f: Finding, on: bool) -> Finding:
 @quotes("solver-file.md", "Program",
         "The hint does not fire on the relation.")
 @quotes("style.md", "Program",
-        "The gloss of a relation that carries an `@ignore` directive is in a "
+        "The gloss of a relation that has an `@ignore` directive is in a "
         "separate comment immediately above its `@ignore` lines.")
 def check_lint(solver: Solver, runs: Runs) -> list[Finding]:
     """Every lint finding and hint of the solver, less the hints an
