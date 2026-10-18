@@ -31,7 +31,7 @@ impl Reader {
         for expr in exprs {
             let path = root.child(kept);
             let read = self.optional(|r| {
-                let form = r.top_form(expr, &path)?;
+                let form = r.top_form(expr, &path, &params)?;
                 let rank = form.rank();
                 if rank < last || (rank == 0 && kept > 0) {
                     return r.refuse("the form stands out of the order `docs/arclog/arcdata.md#arcdata` gives", expr.place());
@@ -59,7 +59,8 @@ impl Reader {
         })
     }
 
-    fn top_form(&mut self, expr: &SExpr, path: &NodePath) -> R<Top> {
+    /// The form of `expr`, where `params` are the `param` forms before it.
+    fn top_form(&mut self, expr: &SExpr, path: &NodePath, params: &[Node<Param>]) -> R<Top> {
         let list = self.list(expr, "a form")?;
         let (head, place) = self.symbol(list.items.first(), "a form's keyword", list.place)?;
         let mut record = Record::new(Some(list.place));
@@ -70,7 +71,7 @@ impl Reader {
             sp::PARAM => Top::Param(Node::new(self.param(list.items, list.place, &mut record)?)),
             sp::EXCLUDE => Top::Exclude(self.exclude(list.items, list.place, &mut record)?),
             sp::ALTS_RECORD | sp::APPROXIMATED_RECORD => {
-                Top::Record(self.witness_record(list.items, list.place, path, &mut record)?)
+                Top::Record(self.witness_record(list.items, list.place, path, params, &mut record)?)
             }
             _ => return self.refuse(format!("`{head}` heads no form of an arcdata file"), place),
         };
@@ -129,7 +130,7 @@ impl Reader {
         let name = self.program_relation(name, place)?;
         record.token(place);
         let columns = self.columns(items.get(2), at, record)?;
-        let value = self.param_value(&items[3..], record)?;
+        let value = self.param_value(&items[3..], &written_types(&columns), record)?;
         Ok(Param { name, columns, value })
     }
 
@@ -146,8 +147,14 @@ impl Reader {
     }
 
     /// The rows of a `param` form or an `assign` form, all of one kind: rows
-    /// of values, grids, or a derivation.
-    pub(super) fn param_value(&mut self, rows: &[SExpr], record: &mut Record) -> R<ParamValue> {
+    /// of values, grids, or a derivation. `columns` gives the type that a
+    /// form writes for each column, `None` where no form writes one, and a
+    /// column past its end counts as `None`.
+    ///
+    /// Refuses a grid that marks a cell with `@` at a Position column, and
+    /// one that marks none at an Offset column, the column after the grid's
+    /// `before` values.
+    pub(super) fn param_value(&mut self, rows: &[SExpr], columns: &[Option<TypeName>], record: &mut Record) -> R<ParamValue> {
         if let [row] = rows {
             if is_derivation(row) {
                 return self.derivation(row, record);
@@ -159,7 +166,7 @@ impl Reader {
                 if !is_grid_row(row) {
                     return self.refuse("each row of a form whose first row is a grid is a grid", row.place());
                 }
-                grids.push(self.grid_rows(row, record)?);
+                grids.push(self.grid_rows(row, columns, record)?);
             }
             return Ok(ParamValue::Grids(grids.into()));
         }
@@ -208,9 +215,10 @@ impl Reader {
 
     /// `(grid ...)`, or the values before a grid and the grid,
     /// `(1 (grid ...))`.
-    fn grid_rows(&mut self, expr: &SExpr, record: &mut Record) -> R<GridRows> {
+    fn grid_rows(&mut self, expr: &SExpr, columns: &[Option<TypeName>], record: &mut Record) -> R<GridRows> {
         if head_of(expr) == Some(sp::GRID) {
-            return Ok(GridRows { before: Arc::new([]), grid: self.grid(expr, record)? });
+            let grid = self.typed_grid(expr, columns, 0, record)?;
+            return Ok(GridRows { before: Arc::new([]), grid });
         }
         let list = self.list(expr, "a row")?;
         record.token(list.open);
@@ -219,11 +227,24 @@ impl Reader {
         for item in before_items {
             before.push(self.value(item, record)?);
         }
-        let grid = self.grid(last, record)?;
+        let grid = self.typed_grid(last, columns, before.len(), record)?;
         record.token(list.close);
         Ok(GridRows { before: before.into(), grid })
     }
 
+    /// The grid of `expr`, whose position column is the one of `columns`
+    /// after `before` values.
+    fn typed_grid(&mut self, expr: &SExpr, columns: &[Option<TypeName>], before: usize, record: &mut Record) -> R<Grid> {
+        let grid = self.grid(expr, record)?;
+        match (columns.get(before).copied().flatten(), grid.anchor) {
+            (Some(TypeName::Position), Some(_)) => self.refuse("a grid of a Position column marks no cell with `@`", expr.place()),
+            (Some(TypeName::Offset), None) => self.refuse("a grid of an Offset column marks one cell with `@`", expr.place()),
+            _ => Ok(grid),
+        }
+    }
+
+    /// Refuses a grid whose rows differ in length, and one that marks two
+    /// cells with `@`.
     fn grid(&mut self, expr: &SExpr, record: &mut Record) -> R<Grid> {
         let list = self.list(expr, "a grid")?;
         if head_of(expr) != Some(sp::GRID) {
@@ -257,6 +278,9 @@ impl Reader {
                 record.token(place);
             }
             record.token(row.close);
+            if rows.first().is_some_and(|first: &Arc<[Option<DataValue>]>| first.len() != cells.len()) {
+                return self.refuse("a grid's rows are of one length", list.place);
+            }
             rows.push(cells.into());
         }
         record.token(list.close);
@@ -321,7 +345,7 @@ impl Reader {
         Ok(Exclude { combination: combination.into(), reason })
     }
 
-    fn witness_record(&mut self, items: &[SExpr], at: SourcePlace, path: &NodePath, record: &mut Record) -> R<WitnessRecord> {
+    fn witness_record(&mut self, items: &[SExpr], at: SourcePlace, path: &NodePath, params: &[Node<Param>], record: &mut Record) -> R<WitnessRecord> {
         let (head, _) = self.symbol(items.first(), "a form's keyword", at)?;
         let (name, place) = self.symbol(items.get(1), "the form's name", at)?;
         record.token(place);
@@ -332,28 +356,28 @@ impl Reader {
                     return self.refuse("an `alts` form holds `alt` forms after its name", expr.place());
                 }
                 let child = path.child(alts.len() as u32);
-                alts.push(self.alt_record(expr, &child)?);
+                alts.push(self.alt_record(expr, &child, params)?);
             }
             Ok(WitnessRecord::Alts { name: AltsName(name.into()), alts: alts.into() })
         } else {
-            let witnesses = self.witnesses(&items[2..], path)?;
+            let witnesses = self.witnesses(&items[2..], path, params)?;
             Ok(WitnessRecord::Approximated { claim: Slug(name.into()), witnesses: witnesses.into() })
         }
     }
 
-    fn witnesses(&mut self, exprs: &[SExpr], path: &NodePath) -> R<Vec<Witness>> {
+    fn witnesses(&mut self, exprs: &[SExpr], path: &NodePath, params: &[Node<Param>]) -> R<Vec<Witness>> {
         let mut witnesses = Vec::new();
         for expr in exprs {
             if head_of(expr) != Some(sp::WITNESS) {
                 return self.refuse("the form holds `witness` forms here", expr.place());
             }
             let child = path.child(witnesses.len() as u32);
-            witnesses.push(self.witness(expr, &child)?);
+            witnesses.push(self.witness(expr, &child, params)?);
         }
         Ok(witnesses)
     }
 
-    fn alt_record(&mut self, expr: &SExpr, path: &NodePath) -> R<AltRecord> {
+    fn alt_record(&mut self, expr: &SExpr, path: &NodePath, params: &[Node<Param>]) -> R<AltRecord> {
         let list = self.list(expr, "an `alt` form")?;
         let mut record = Record::new(Some(list.place));
         record.token(list.open);
@@ -362,21 +386,21 @@ impl Reader {
         record.token(place);
         let rest = &list.items[2..];
         let split = rest.iter().position(|e| head_of(e) == Some(sp::ALT_RECORD)).unwrap_or(rest.len());
-        let witnesses = self.witnesses(&rest[..split], path)?;
+        let witnesses = self.witnesses(&rest[..split], path, params)?;
         let mut nested = Vec::new();
         for expr in &rest[split..] {
             if head_of(expr) != Some(sp::ALT_RECORD) {
                 return self.refuse("an `alt` form holds its witnesses before its nested `alt` forms", expr.place());
             }
             let child = path.child((witnesses.len() + nested.len()) as u32);
-            nested.push(self.alt_record(expr, &child)?);
+            nested.push(self.alt_record(expr, &child, params)?);
         }
         record.token(list.close);
         self.save(path, record);
         Ok(AltRecord { name: AltsName(name.into()), witnesses: witnesses.into(), nested: nested.into() })
     }
 
-    fn witness(&mut self, expr: &SExpr, path: &NodePath) -> R<Witness> {
+    fn witness(&mut self, expr: &SExpr, path: &NodePath, params: &[Node<Param>]) -> R<Witness> {
         let list = self.list(expr, "a `witness` form")?;
         let mut record = Record::new(Some(list.place));
         record.token(list.open);
@@ -396,7 +420,7 @@ impl Reader {
             sp::OTHER => Verdict::Other,
             name => Verdict::Alt(AltsName(name.into())),
         };
-        let body = if list.items.len() > 4 { Some(self.witness_body(&list.items[4..], list.place, path, &mut record)?) } else { None };
+        let body = if list.items.len() > 4 { Some(self.witness_body(&list.items[4..], list.place, path, params, &mut record)?) } else { None };
         record.token(list.close);
         self.save(path, record);
         Ok(Witness { id: id.into(), plausibility, verdict, body })
@@ -404,8 +428,10 @@ impl Reader {
 
     /// The body of a witness given in full: its `relaxed` forms, its
     /// `separates` form, whose tokens are the witness's own, its `assign`
-    /// forms, its `input` form and its `output` forms.
-    fn witness_body(&mut self, items: &[SExpr], at: SourcePlace, path: &NodePath, record: &mut Record) -> R<WitnessBody> {
+    /// forms, its `input` form and its `output` forms. An `assign` form's
+    /// columns take the types that the `param` form of its relation among
+    /// `params` writes, and none where `params` holds none.
+    fn witness_body(&mut self, items: &[SExpr], at: SourcePlace, path: &NodePath, params: &[Node<Param>], record: &mut Record) -> R<WitnessBody> {
         let mut rest = items;
         let mut child = 0u32;
         let mut relaxed = Vec::new();
@@ -437,7 +463,11 @@ impl Reader {
             let (name, place) = self.symbol(list.items.get(1), "the assigned relation", list.place)?;
             let relation = self.program_relation(name, place)?;
             own.token(place);
-            let value = self.param_value(&list.items[2..], &mut own)?;
+            let written = match params.iter().find(|param| param.value().name == relation) {
+                Some(param) => written_types(&param.value().columns),
+                None => Vec::new(),
+            };
+            let value = self.param_value(&list.items[2..], &written, &mut own)?;
             own.token(list.close);
             self.save(&path.child(child), own);
             child += 1;
@@ -528,6 +558,11 @@ impl Top {
             Top::Record(_) => 3,
         }
     }
+}
+
+/// The column types of a `param` form, each as a type a form writes.
+fn written_types(columns: &[TypeName]) -> Vec<Option<TypeName>> {
+    columns.iter().copied().map(Some).collect()
 }
 
 fn case_ref(text: &str) -> CaseRef {

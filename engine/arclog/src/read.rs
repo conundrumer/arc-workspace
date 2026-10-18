@@ -133,13 +133,19 @@ pub fn read_instance(expr: &SExpr) -> Result<(Node<crate::program::Instance>, La
 
 /// The rows that `rows` write, as a `param` form writes them after its types
 /// (`docs/arclog/arcdata.md#params`), for the default of an input in the
-/// registry file.
+/// registry file. `columns` gives the type the registry file writes for each
+/// of the input's columns, `None` at a column of a type parameter.
 ///
 /// Fails where an s-expression of `rows` matches no node kind of its format,
-/// with a diagnostic of the grammar at each such s-expression.
-pub fn read_param_value(rows: &[SExpr]) -> Result<crate::program::ParamValue, Vec<Diagnostic>> {
+/// and where a grid's rows differ in length, or it marks a cell with `@` at
+/// a Position column or none at an Offset column, with a diagnostic of the
+/// grammar at each such s-expression.
+pub fn read_param_value(
+    rows: &[SExpr],
+    columns: &[Option<crate::program::TypeName>],
+) -> Result<crate::program::ParamValue, Vec<Diagnostic>> {
     let mut reader = Reader::with_owners(Owners::default(), false);
-    match reader.param_value(rows, &mut Record::new(None)) {
+    match reader.param_value(rows, columns, &mut Record::new(None)) {
         Ok(value) if reader.diagnostics.is_empty() => Ok(value),
         _ => Err(reader.diagnostics),
     }
