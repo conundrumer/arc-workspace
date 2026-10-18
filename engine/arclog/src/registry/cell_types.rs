@@ -68,11 +68,13 @@ impl SiteType {
 /// What the `INIT` form binds a type parameter of the underlying
 /// construction to: the type of one label, or a record of named fields
 /// (`docs/arclog/arclog.md#instance`). A field may be a type parameter of
-/// the cell instance, which [`ValueType::Record`] holds no place for.
+/// the cell instance, which [`ValueType::Record`] holds no place for. The
+/// binding holds the label and each field that the form writes, and holds
+/// no type for one whose label's type has a fault.
 #[derive(Clone, Debug)]
 enum Binding {
-    One(SiteType),
-    Record(Box<[(FieldName, SiteType)]>),
+    One(Option<SiteType>),
+    Record(Box<[(FieldName, Option<SiteType>)]>),
 }
 
 impl Binding {
@@ -80,16 +82,28 @@ impl Binding {
     /// a parameter that `self` binds: two fixed types with an empty meet,
     /// two type parameters that differ or a type parameter and a fixed
     /// type, or records where a field name stands in one and not in the
-    /// other or two fields of one name conflict so.
+    /// other or two fields of one name conflict so. A one-label binding or a
+    /// field with no type conflicts with nothing, a record included, since
+    /// its label's diagnostic gives its fault.
     fn conflicts(&self, other: &Binding) -> bool {
+        let types_conflict = |a: &Option<SiteType>, b: &Option<SiteType>| matches!((a, b), (Some(a), Some(b)) if a.conflicts(b));
         match (self, other) {
-            (Binding::One(a), Binding::One(b)) => a.conflicts(b),
+            (Binding::One(None), _) | (_, Binding::One(None)) => false,
+            (Binding::One(a), Binding::One(b)) => types_conflict(a, b),
             (Binding::Record(a), Binding::Record(b)) => {
                 let names_differ = a.len() != b.len() || a.iter().any(|(name, _)| !b.iter().any(|(n, _)| n == name));
-                names_differ || a.iter().any(|(name, ty)| b.iter().any(|(n, t)| n == name && ty.conflicts(t)))
+                names_differ || a.iter().any(|(name, ty)| b.iter().any(|(n, t)| n == name && types_conflict(ty, t)))
             }
             _ => true,
         }
+    }
+}
+
+/// The text of a type of a binding, for a diagnostic.
+fn binding_type_display(ty: &Option<SiteType>) -> String {
+    match ty {
+        Some(ty) => ty.to_string(),
+        None => "no type".to_string(),
     }
 }
 
@@ -117,9 +131,9 @@ impl std::fmt::Display for SiteType {
 impl std::fmt::Display for Binding {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Binding::One(ty) => write!(f, "{ty}"),
+            Binding::One(ty) => write!(f, "{}", binding_type_display(ty)),
             Binding::Record(fields) => {
-                let fields: Vec<String> = fields.iter().map(|(name, ty)| format!("{}: {ty}", name.0)).collect();
+                let fields: Vec<String> = fields.iter().map(|(name, ty)| format!("{}: {}", name.0, binding_type_display(ty))).collect();
                 write!(f, "{{{}}}", fields.join(", "))
             }
         }
@@ -127,10 +141,11 @@ impl std::fmt::Display for Binding {
 }
 
 /// What the `INIT` form's binding gives a column of one of its outputs:
-/// a type, or the record bound to the column's type parameter.
+/// the column's fixed type, or the column's type parameter with its
+/// binding.
 enum InitColumn<'s> {
     Type(SiteType),
-    Record(&'s TypeParameter, &'s [(FieldName, SiteType)]),
+    Bound(&'s TypeParameter, &'s Binding),
 }
 
 /// Where the derivation stands in its typing of one form of a cell
@@ -386,7 +401,8 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
             }
             RelationRef::Output(output) => match self.init_column(output, column)? {
                 InitColumn::Type(ty) => Some(ty),
-                InitColumn::Record(_, fields) => record_field(fields, path.get(1)?).cloned(),
+                InitColumn::Bound(_, Binding::One(ty)) => ty.clone(),
+                InitColumn::Bound(_, Binding::Record(fields)) => record_field(fields, path.get(1)?)?.clone(),
             },
         }
     }
@@ -400,16 +416,16 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
         let outputs = self.construction?.outputs;
         let ty = &outputs.iter().find(|p| p.name == *port)?.columns.iter().find(|c| c.name == *column)?.ty;
         let ColumnType::Parameter(parameter) = ty else { return SiteType::of_column(ty).map(InitColumn::Type) };
-        match &bindings.iter().find(|(p, _)| p == parameter)?.1 {
-            Binding::One(ty) => Some(InitColumn::Type(ty.clone())),
-            Binding::Record(fields) => Some(InitColumn::Record(parameter, fields)),
-        }
+        Some(InitColumn::Bound(parameter, &bindings.iter().find(|(p, _)| p == parameter)?.1))
     }
 
-    /// Gives a fault for each field that a site on an output of the `INIT`
-    /// form names, in any body of the cell instance, where the record bound
-    /// to the site's column has no such field. It reads the direct
-    /// arguments of each site, so a field that holds sites gives one fault.
+    /// Gives a fault for each site on an output of the `INIT` form, in any
+    /// body of the cell instance, whose column's type parameter has a
+    /// binding that the site does not fit: at a parameter bound to a
+    /// record, one for each field of the site that the record does not
+    /// have, read from the direct arguments of the site, so a field that
+    /// holds sites gives one fault; at a parameter bound to one label, one
+    /// for a site that holds other than one bare label.
     fn check_fields(&self) {
         use crate::program::SiteArg;
         let outputs = self.cell.outputs.iter().map(|(_, form)| form.body);
@@ -421,7 +437,22 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
                 let atom = atom.value();
                 let RelationRef::Output(output) = &atom.relation else { return };
                 for site in atom.sites.iter() {
-                    let Some(InitColumn::Record(parameter, fields)) = self.init_column(output, &site.column) else { continue };
+                    let Some(InitColumn::Bound(parameter, binding)) = self.init_column(output, &site.column) else { continue };
+                    let fields = match binding {
+                        Binding::Record(fields) => fields,
+                        Binding::One(_) => {
+                            if one_label(&site.value.args).is_none() {
+                                let message = format!(
+                                    "a site on `{}` of `{}` holds other than one label, and the `INIT` form binds `{}` to one label",
+                                    column_display(&site.column),
+                                    crate::write::relation_ref(&atom.relation),
+                                    parameter.0
+                                );
+                                self.fault(CheckId::SiteColumns, message);
+                            }
+                            continue;
+                        }
+                    };
                     for arg in site.value.args.iter() {
                         let field = match arg {
                             SiteArg::Field(field) => &field.column,
@@ -468,10 +499,7 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
             let key_body = key.key.body.value();
             match &key_parameter {
                 Some(parameter) => {
-                    let fields = key.key.columns.iter().filter_map(|column| {
-                        let ty = self.head_label_type(&[key_body], column.label, &column.name)?;
-                        Some((field_name(&column.name), ty))
-                    });
+                    let fields = key.key.columns.iter().map(|column| (field_name(&column.name), self.head_label_type(&[key_body], column.label, &column.name)));
                     bindings.push((parameter.clone(), Binding::Record(fields.collect())));
                 }
                 None => self.fault(CheckId::Types, format!("the `INIT` form has a key clause, and `{}` has no `key` column", init.component.0)),
@@ -505,7 +533,7 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
                 continue;
             }
             if init.key.is_none() && key_parameter.as_ref() == Some(parameter) {
-                bindings.push((parameter.clone(), Binding::One(SiteType::Fixed(ValueType::Unit))));
+                bindings.push((parameter.clone(), Binding::One(Some(SiteType::Fixed(ValueType::Unit)))));
                 continue;
             }
             self.fault(CheckId::Types, format!("the `INIT` form binds the type parameter `{}` of `{}` to no type", parameter.0, init.component.0));
@@ -592,13 +620,14 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
     /// The binding that the head site `site` of an input gives its column's
     /// type parameter: the type of its one label, or a record with a field
     /// for each of its sites, named by the site's head or by its label where
-    /// it is elided.
+    /// it is elided. A label or a field whose label's type has a fault
+    /// takes no type, beside that fault.
     fn projection(&self, bodies: &[&Body], site: &crate::program::Site) -> Option<Binding> {
         use crate::program::SiteArg;
         let args = &site.value.args[..];
-        if let [arg @ (SiteArg::Label(_) | SiteArg::NamedLabel { .. })] = args {
-            let label = arg.label().and_then(use_label)?;
-            return self.head_label_type(bodies, label, &site.column).map(Binding::One);
+        if let Some(label) = one_label(args) {
+            let label = use_label(label)?;
+            return Some(Binding::One(self.head_label_type(bodies, label, &site.column)));
         }
         let mut fields = Vec::new();
         for arg in args {
@@ -617,7 +646,7 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
                 }
             };
             let label = use_label(label)?;
-            fields.push((field_name(name), self.head_label_type(bodies, label, name)?));
+            fields.push((field_name(name), self.head_label_type(bodies, label, name)));
         }
         Some(Binding::Record(fields.into()))
     }
@@ -652,9 +681,18 @@ fn parameter_column<'p>(port: &'p InputPort, column: &ColumnName) -> Option<&'p 
     }
 }
 
-/// The type of the field `field` of the record `fields`, where it has one.
-fn record_field<'f>(fields: &'f [(FieldName, SiteType)], field: &ColumnName) -> Option<&'f SiteType> {
+/// The field `field` of the record `fields`, with its type where its label
+/// has one, where the record has that field.
+fn record_field<'f>(fields: &'f [(FieldName, Option<SiteType>)], field: &ColumnName) -> Option<&'f Option<SiteType>> {
     fields.iter().find(|(name, _)| ColumnName::Written(name.0.clone()) == *field).map(|(_, ty)| ty)
+}
+
+/// The label of a site whose arguments `args` are one bare label.
+fn one_label(args: &[crate::program::SiteArg]) -> Option<crate::program::LabelUse> {
+    match args {
+        [arg] => arg.label(),
+        _ => None,
+    }
 }
 
 /// The field that a site's head or an elided site's label names.

@@ -83,9 +83,11 @@ pub struct MacroDeclarations {
 /// relation macro's labels at each column of its outputs and its `RULE`
 /// forms, and at each other label of its outputs' bodies, and these
 /// besides: a type parameter of the instantiated component that the `INIT`
-/// form binds to no type, a site that names a field its record does not have, and a
-/// label whose sites give a type parameter of the cell instance beside
-/// another parameter or a fixed type. Where a relation macro has a fault,
+/// form binds to no type, a site that names a field its record does not have, a
+/// site on a column whose type parameter the `INIT` form binds to one label
+/// that holds other than one bare label, and a label whose sites give a
+/// type parameter of the cell instance beside another parameter or a fixed
+/// type. Where a relation macro has a fault,
 /// the cell instances are not read.
 pub fn macro_column_types(
     macros: &[RelationMacro<'_>],
