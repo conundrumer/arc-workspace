@@ -176,6 +176,17 @@ pub enum Conjunct {
     },
 }
 
+impl Conjunct {
+    /// The atom that the conjunct stands for: that of an atom and of a
+    /// negated atom; none for each other conjunct.
+    pub fn atom(&self) -> Option<&Node<Atom>> {
+        match self {
+            Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => Some(atom),
+            Conjunct::Not(Negated::Form(_)) | Conjunct::Constraint(_) | Conjunct::Or(_) | Conjunct::If { .. } | Conjunct::All { .. } => None,
+        }
+    }
+}
+
 /// A constraint operator, as `docs/arclog/arclog.md#negation-and-constraints`
 /// gives.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]

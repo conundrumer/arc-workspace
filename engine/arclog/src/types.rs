@@ -289,28 +289,29 @@ impl LabelWalk<'_> {
         class: &[crate::program::LabelId],
     ) -> Result<Option<ValueType>, LabelFault> {
         use crate::program::{Conjunct, Negated};
-        match conjunct {
-            Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
-                let atom = atom.value();
-                let mut ty = None;
-                for site in atom.sites.iter() {
-                    let mut path = Vec::new();
-                    let mut fault = None;
-                    each_site_label(site, &mut path, &mut |use_, path| {
-                        if fault.is_some() || !use_label(use_).is_some_and(|l| class.contains(&l)) {
-                            return;
-                        }
-                        match meet(ty.take(), (self.site_type)(atom, path)) {
-                            Ok(met) => ty = met,
-                            Err(err) => fault = Some(err),
-                        }
-                    });
-                    if let Some(err) = fault {
-                        return Err(err);
+        if let Some(atom) = conjunct.atom() {
+            let atom = atom.value();
+            let mut ty = None;
+            for site in atom.sites.iter() {
+                let mut path = Vec::new();
+                let mut fault = None;
+                each_site_label(site, &mut path, &mut |use_, path| {
+                    if fault.is_some() || !use_label(use_).is_some_and(|l| class.contains(&l)) {
+                        return;
                     }
+                    match meet(ty.take(), (self.site_type)(atom, path)) {
+                        Ok(met) => ty = met,
+                        Err(err) => fault = Some(err),
+                    }
+                });
+                if let Some(err) = fault {
+                    return Err(err);
                 }
-                Ok(ty)
             }
+            return Ok(ty);
+        }
+        match conjunct {
+            Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)) => unreachable!("the atom of the conjunct is typed above"),
             Conjunct::Not(Negated::Form(form)) => self.conjunct_type(form, pairs, class),
             Conjunct::Or(branches) => join_branches(branches.iter().map(|branch| self.body_type(branch.value(), pairs))),
             Conjunct::If { test, then, otherwise } => {
@@ -333,16 +334,9 @@ impl LabelWalk<'_> {
     /// Whether the label asked is fresh at a site or a constraint of
     /// `body`, at any depth.
     fn fresh_in(&self, body: &crate::program::Body) -> bool {
-        use crate::program::{Conjunct, LabelUse, Negated, Operand};
+        use crate::program::{Conjunct, LabelUse, Operand};
         let mut fresh = false;
         each_conjunct(body, &mut |conjunct| match conjunct {
-            Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
-                for site in atom.value().sites.iter() {
-                    each_site_label(site, &mut Vec::new(), &mut |use_, _| {
-                        fresh |= use_ == LabelUse::Fresh(self.label);
-                    });
-                }
-            }
             Conjunct::Constraint(c) => {
                 let second = match c.second {
                     Operand::Label(label) => Some(label),
@@ -352,7 +346,15 @@ impl LabelWalk<'_> {
                     fresh |= label.fresh && label.label == self.label;
                 }
             }
-            _ => {}
+            _ => {
+                if let Some(atom) = conjunct.atom() {
+                    for site in atom.value().sites.iter() {
+                        each_site_label(site, &mut Vec::new(), &mut |use_, _| {
+                            fresh |= use_ == LabelUse::Fresh(self.label);
+                        });
+                    }
+                }
+            }
         });
         fresh
     }

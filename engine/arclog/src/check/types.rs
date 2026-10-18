@@ -12,7 +12,7 @@ use crate::program::canonical::{canonical_labeling, form_scope, shares_rule_scop
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
     Atom, Body, ColumnName, Conjunct, DemoRule, Constraint, ConstraintOp, Form, Instance, InstanceInput, LabelId, NameScope,
-    Negated, Node, Operand, OutputOwner, OutputStep, PortName, ProgramRelation, RelationColumn, RelationRef, Site, SiteArg,
+    Node, Operand, OutputOwner, OutputStep, PortName, ProgramRelation, RelationColumn, RelationRef, Site, SiteArg,
 };
 use crate::program::written_inputs;
 use crate::registry::{binding_sites, key_parameter, Column, ColumnType, Component, ParameterSite, Registry, TypeParameter};
@@ -309,13 +309,14 @@ fn zero_typed_heads(clause: &crate::program::Clause) -> Vec<LabelId> {
     let mut at_sites = Vec::new();
     let mut zeroed = Vec::new();
     each_conjunct(clause.body.value(), &mut |conjunct| match conjunct {
-        Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
-            for site in atom.value().sites.iter() {
-                each_site_label(site, &mut Vec::new(), &mut |use_, _| at_sites.extend(use_label(use_)));
+        Conjunct::Constraint(Constraint { op: ConstraintOp::Eq, first, second: Operand::Zero }) if first.fresh => zeroed.push(first.label),
+        _ => {
+            if let Some(atom) = conjunct.atom() {
+                for site in atom.value().sites.iter() {
+                    each_site_label(site, &mut Vec::new(), &mut |use_, _| at_sites.extend(use_label(use_)));
+                }
             }
         }
-        Conjunct::Constraint(Constraint { op: ConstraintOp::Eq, first, second: Operand::Zero }) if first.fresh => zeroed.push(first.label),
-        _ => {}
     });
     let heads = clause.columns.iter().map(|column| column.label);
     heads.filter(|label| zeroed.contains(label) && !at_sites.contains(label)).collect()

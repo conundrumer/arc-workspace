@@ -147,7 +147,7 @@ impl<'a> NodeRef<'a> {
     /// conjunct or of a negated conjunct; none for each other node.
     pub fn atom(self) -> Option<&'a Atom> {
         match self {
-            NodeRef::Conjunct(Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom))) => Some(atom.value()),
+            NodeRef::Conjunct(conjunct) => conjunct.atom().map(Node::value),
             NodeRef::Atom(atom) => Some(atom),
             _ => None,
         }
