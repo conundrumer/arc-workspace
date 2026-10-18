@@ -142,7 +142,7 @@ Every element of the lib is one of these kinds, and each kind has its own test.
 - A `Requires:` sentence states a precondition the comp does not check, and what happens when it fails.
 - A relation over an infinite domain, such as `margin`, is inline or a functor. That is an engine choice, and the one restriction it puts on callers is stated once in the lib header.
 - A site that writes out the definition of a relation or cell instance the lib holds is a reimplementation, which a lint flags. The engine has a config that expands each such name like a macro, so a program runs in either form.
-- Default facts under an extensional relation exist only in a construction or detector over cells, where they are the cardinal steps or directions, or the D4 identity. A construction over members has none.
+- Default rows under an extensional relation, which facts or a rule of the component give, exist only in a construction or detector over cells, where they are the cardinal steps or directions, or the D4 identity. A construction over members has none.
 
 ## The box algebra
 

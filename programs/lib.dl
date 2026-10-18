@@ -2,9 +2,9 @@
 //!
 //! Reading a component:
 //!
-//! - A relation marked `// @input` is one the caller populates, and the facts
-//!   under it hold beside the rows the caller adds. Every other relation
-//!   derives.
+//! - A relation marked `// @input` is one the caller populates, and the rows
+//!   the component's own facts and rules under it give hold beside the rows
+//!   the caller adds. Every other relation derives.
 //! - In a keyed component, a relation whose first column has the component's
 //!   key type takes that column as its key, and each key is one independent
 //!   instance of the component. A relation with no such column holds one

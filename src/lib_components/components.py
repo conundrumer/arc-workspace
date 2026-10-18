@@ -185,24 +185,6 @@ def Canon(T: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, equiv: Ite
     return CanonRows(got['id'])
 
 
-class OrdChainRows(NamedTuple):
-    """The output relations of `OrdChain` (programs/lib/sets.dl)."""
-
-    next: Relation
-    head: Relation
-    tail: Relation
-
-
-def OrdChain(Key: TypeArg, M: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, member: Iterable[PyRow] | None = None) -> OrdChainRows:
-    """Runs `OrdChain` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
-    got = call('OrdChain', [Key, M],
-               GridTypes(LibType.POSITION, LibType.OFFSET),
-               {'member': Columns((Key, M, ), True), 'next': Columns((Key, M, M, ), True), 'head': Columns((Key, M, ), True), 'tail': Columns((Key, M, ), True)},
-               {'member': member},
-               ['next', 'head', 'tail'], sizes)
-    return OrdChainRows(got['next'], got['head'], got['tail'])
-
-
 class DemonstrationConsistencyRows(NamedTuple):
     """The output relations of `DemonstrationConsistency` (programs/lib/sets.dl)."""
 

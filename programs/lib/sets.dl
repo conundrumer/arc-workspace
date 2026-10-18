@@ -153,10 +153,10 @@
     id(A, Id) :- _label(A, L), _ident.id(L, Id).
 }
 
-/// The members of each key's set put in a chain by `ord`, an order that is
-/// arbitrary and stable within a run: each member's next, and the chain's
-/// head and tail.
-.comp OrdChain<Key, M> {  // @construction
+// The members of each key's set put in a chain by `ord`, an order that is
+// arbitrary and stable within a run: each member's next, and the chain's
+// head and tail.
+.comp _OrdChain<Key, M> {  // @construction
     .decl member(key: Key, m: M)  // @input
 
     // The ord of each member's successor, materialized so the aggregate runs
@@ -166,15 +166,15 @@
         member(Ky, A),
         N = min ord(B) : { member(Ky, B), ord(B) > ord(A) }.
 
-    /// b directly follows a in the chain.
+    // b directly follows a in the chain.
     .decl next(key: Key, a: M, b: M)
     next(Ky, A, B) :- _min_after(Ky, A, N), member(Ky, B), ord(B) = N.
 
-    /// The member no member precedes.
+    // The member no member precedes.
     .decl head(key: Key, m: M)
     head(Ky, M) :- member(Ky, M), !next(Ky, _, M).
 
-    /// The member no member follows.
+    // The member no member follows.
     .decl tail(key: Key, m: M)
     tail(Ky, M) :- member(Ky, M), !next(Ky, M, _).
 }

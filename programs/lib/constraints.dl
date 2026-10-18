@@ -33,7 +33,7 @@
     .type _KP = [key: Key, p: Position]
 
     // The rivals of each cell in a chain.
-    .init _chain = OrdChain<_KP, Piece>
+    .init _chain = _OrdChain<_KP, Piece>
     _chain.member([Ky, P], B) :- _rival(Ky, P, B).
 
     // The cycle the chain closes.
@@ -108,7 +108,7 @@
         .type _KO = [key: K, o: P]
 
         // Each piece's candidates in a chain.
-        .init _chain = OrdChain<_KO, C>
+        .init _chain = _OrdChain<_KO, C>
         _chain.member([Ky, O], C) :- item(Ky, C, O).
 
         .decl after(key: K, o: P, c: C, c2: C)

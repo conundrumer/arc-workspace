@@ -1,6 +1,6 @@
 # override-input-defaults — caller-replaceable defaults on `@input` relations
 
-A change to the comps whose `@input` relations carry default facts: each such comp, where justified, gains a form in which the caller supplies that relation in full. Souffle's `.override` is the mechanism — a derived comp marks the relation `.override` and gives it no clauses, and that drops the inherited defaults:
+A change to the comps whose `@input` relations carry default rows: each such comp, where justified, gains a form in which the caller supplies that relation in full. Souffle's `.override` is the mechanism — a derived comp marks the relation `.override` and gives it no clauses, and that drops the inherited defaults:
 
 ```
 .comp <name><Key> : <comp><Key> {
@@ -10,9 +10,9 @@ A change to the comps whose `@input` relations carry default facts: each such co
 
 Today one relation qualifies: `Components.step`, the four cardinal steps, inherited by `Components8` and `Reach`. A caller whose step set excludes the units carries the defaults as dead facts it cannot remove. An override in a grandchild (`: Reach<Key>`) must drop the grandparent's facts; before promotion, verify that with a step set that excludes the units over two adjacent nodes.
 
-Not: a derived comp that adds to a base's `@input` (`Components8.step`; `Between.dir`, derived from `axis`); an internal relation with baked-in values (`Rim._dir`), which no caller populates; an `@input` with no default facts.
+Not: a derived comp that adds to a base's `@input` (`Components8.step`; `Between.dir`, derived from `axis`); an internal relation with baked-in values (`Rim._dir`), which no caller populates; an `@input` with no default rows.
 
-Match: an instance of a comp whose `@input` carries default facts, where the instance's feed of that relation holds only values outside the defaults — for `step`, offsets that are all non-unit: `jump_offset` at k >= 2, a composed step, or a stored offset; a comment beside such a feed saying the defaults never fire; a local recursive relation written in place of a Components-family instance, whose recursive clause steps by any set other than the four cardinals — `jump` or `jump_offset` at k >= 2, `neighbor` under a restricted or keyed direction set, or `compose` with a stored offset. A frame walk with no node set, and a step that carries state, are not that statement. Match with the parser.
+Match: an instance of a comp whose `@input` carries default rows, where the instance's feed of that relation holds only values outside the defaults — for `step`, offsets that are all non-unit: `jump_offset` at k >= 2, a composed step, or a stored offset; a comment beside such a feed saying the defaults never fire; a local recursive relation written in place of a Components-family instance, whose recursive clause steps by any set other than the four cardinals — `jump` or `jump_offset` at k >= 2, `neighbor` under a restricted or keyed direction set, or `compose` with a stored offset. A frame walk with no node set, and a step that carries state, are not that statement. Match with the parser.
 
 Survey: 2026-09-18 11:38 — every solver.
 
