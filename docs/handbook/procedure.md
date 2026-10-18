@@ -1,4 +1,4 @@
-+ budget: 27900
++ budget: 30897
 * comment: when editing this doc
     - Do not add notices about tooling when it would not change the reader's action or when the tooling already explains itself.
 
@@ -8,7 +8,7 @@
 ## Every pass
 - **One operation at a time.** Finish each operation before you start the next.
 - **Reading files and outputs.** Read the task with `cat data/tasks/<task_id>.json`, and each other file you need whole, with no other command piped or chained to the read, and the output of each `uv run python scripts/run_dl.py` command you run whole, piped to no other command.
-    * comment: The `run_dl.py` output is here for the passes that cut it with a pipe, missed lines they needed and ran the command again: tickets 10-489, 10-523, 10-594, 10-623, 10-637, 10-682, 10-747, 10-748 and 10-749, settled by 10-776, among them run a7de50afca6ce1e22, 2026-10-17T02:30:05Z, `deletions c64f1187 2>&1 | tail -40` then `| head -60`, 49 s each.
+    * comment: Passes that cut the `run_dl.py` output with a pipe missed lines they needed and ran the command again: tickets 10-489, 10-523, 10-594, 10-623, 10-637, 10-682, 10-747, 10-748 and 10-749, settled by 10-776.
 - **Banned forms.** A claim that needs a form the program bans, where no lib relation states that part of it, has no set of clauses: write no comp for it. Where it is a claim of the concept case, give in the review, as a concept fault, the task, the claim, and the form it needs.
     * comment: The user's ruling, session 19c17548, 2026-10-15T23:34:30Z, on the choice "replaces the protocol with the line that a pass that needs a banned form reports a fault of the concept and writes no comp": "2 but leave proposals alone".
 - **Reading `src/`.**
@@ -66,7 +66,7 @@
     - Then check that it fits every pair.
         - Where a script of this pass needs what a lib component computes, read the component's interface, then call the component in place of rebuilding it: `lib_components.components` has a function of the same name for each component with no column of a type its caller declares, which runs the component on the rows it is given.
             - The function takes the component's type arguments, each a `Primitive` from `engine.program` or a `LibType` from `lib_components.components`, the grid size of each key as `sizes`, and the rows of each input relation by that relation's name, with each value of a `Position` or `Offset` column as `(row, column)`, and each other value in its lib form, which for a lib constant is the number its `#define` gives. It returns each output relation, whose `.rows` is its set of rows as tuples, and whose `.map()` and `.map_per_key()` give a relation that is a function of its leading columns as a dict.
-                * comment: Analyze passes on d37a1ef5 (run a9a7317839d4ebf21), c3fa4749 (run a924c8bad8bf3c779) and c909285e (run a7055daae36096bf3) read "with a cell as `(row, column)`" as the form of `Bbox`'s `cell` column, of type `Box`, and each call failed, as tickets 10-503, 10-558 and 10-685 record. Run a3fc126e8889a064d (analyze, task e6721834) passed each `step` offset of `Components` as `(dr, -dr, dc, -dc)`, and the call failed (ticket 10-941). Run ae6e4e5ce8ef5ce32 (task d43fd935) passed a `Dir8` value to `Ray` as `'$T'`, `'T'`, `('T',)` and `'DIR_T'`, run a8b39dacfcb0c42ad (task d5c634a2) passed an `Axis` and a `DiagDir` value to `LexOrder` as `'$H'` and `'$TL'`, and each call failed (ticket 10-698). The analyze pass on task d687bc17 passed a `Dir` value to `Gravity` as `'$T'`, `'DIR_T'` and `'T'`, and each call failed (ticket 10-725).
+                * comment: Analyze passes passed a cell as `(row, column)` for `Bbox`, offsets as `(dr, -dr, dc, -dc)` for `Components`, and a direction or axis value as `'$T'`, `'T'`, `('T',)` or `'DIR_T'` for `Ray`, `LexOrder` and `Gravity`, and each call failed: tickets 10-503, 10-558, 10-685, 10-941, 10-698 and 10-725.
             - `Components(Primitive.NUMBER, sizes={i: (h, w)}, node=[(i, (r, c)), ...]).label.map_per_key()` gives `{i: {(r, c): id}}` for each key `i`.
     - A scene claim fixes no task data.
         - A value a scene claim states that is task data is a parameter: name it in the claim, and list it with this task's value, under Parameters when the program reads its value and under Scene parameters otherwise.
@@ -103,7 +103,7 @@
     - A branch with no witness: why there is none.
 4. Write each witness step 3 gives to `work/task/<task_id>/witnesses.json` in the shape [Witness file](docs/handbook/solver-file.md#witness-file) gives, with an `assign` that reassigns each parameter whose value the assignment step 3 gives it changes, and, in each witness whose verdict is not `other`, each fitting branch in the group of the output the branch's model gives at that witness's assignment.
     * comment: Runs that read this step with no link looked for the witness file's shape in `witness --help` and in other tasks' witness files: tickets 10-354, 10-751 (run a690b8262f699d72a) and 10-771 (run ac50865438dc0b06d).
-    * comment: On 2026-09-23, an Analyze pass on a1aa0c1e read this step without the verdict clause, and reported that `four-rungs`, a witness with verdict `other`, had no place for its fitting branches: agent `a12540b7d9e9d4aee` of console session `622904c2-70f8-4e98-830a-3863e040da52`.
+    * comment: An Analyze pass on a1aa0c1e read this step without the verdict clause and reported that its `other` witness `four-rungs` had no place for its fitting branches (console session `622904c2`, 2026-09-23).
     - `uv run python scripts/run_dl.py witness --file work/task/<task_id>/witnesses.json` checks the file's shape.
 5. Write the report to `work/task/<task_id>/analyze.md`, in this form:
 
