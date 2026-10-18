@@ -15,7 +15,7 @@ use crate::write::relation_ref;
 use std::sync::Arc;
 
 use crate::program::{
-    Alt, AltItem, Alts, AltsName, Arcdata, Body, Clause, ClauseKeyword, Conjunct, Form, InstanceName, Negated, Node,
+    Alt, AltItem, Alts, AltsName, Arcdata, Body, Clause, ClauseKeyword, Form, InstanceName, Node,
     OutputOwner, OutputStep, Program, ProgramRelation, RelationRef, RigidDetName,
 };
 
@@ -593,10 +593,8 @@ fn each_alt_form<'a>(alt: &'a Alt, f: &mut dyn FnMut(&'a Form)) {
 
 /// Calls `f` on the relation of each atom below `node`.
 fn each_read<'a>(node: NodeRef<'a>, f: &mut dyn FnMut(&'a RelationRef)) {
-    match node {
-        NodeRef::Conjunct(Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom))) => f(&atom.value().relation),
-        NodeRef::Atom(atom) => f(&atom.relation),
-        _ => {}
+    if let Some(atom) = node.atom() {
+        f(&atom.relation);
     }
     for child in node.children() {
         each_read(child, f);

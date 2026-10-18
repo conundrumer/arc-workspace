@@ -138,6 +138,16 @@ impl<'a> From<&'a AltItem> for NodeRef<'a> {
 }
 
 impl<'a> NodeRef<'a> {
+    /// The atom that the node stands for: an atom, and the atom of a
+    /// conjunct or of a negated conjunct; none for each other node.
+    pub fn atom(self) -> Option<&'a Atom> {
+        match self {
+            NodeRef::Conjunct(Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom))) => Some(atom.value()),
+            NodeRef::Atom(atom) => Some(atom),
+            _ => None,
+        }
+    }
+
     /// The node's children, in the order of the module comment's table.
     pub fn children(self) -> Vec<NodeRef<'a>> {
         fn forms(forms: &[Form]) -> Vec<NodeRef<'_>> {

@@ -16,8 +16,8 @@ use crate::hash::{StableHashMap, StableHashSet};
 use crate::program::canonical::{prediction, relation_of, AsWritten, CanonicalWriter, NameWriter};
 use crate::program::path::{child_index, node_at, NodePath, NodeRef};
 use crate::program::{
-    Atom, Clause, ClauseKeyword, ColumnName, Conjunct, FactRelation, Form, Instance, InstanceName, NameScope,
-    Negated, Node, OutputName, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationRef,
+    Atom, Clause, ClauseKeyword, ColumnName, FactRelation, Form, Instance, InstanceName, NameScope,
+    Node, OutputName, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationRef,
 };
 use crate::program::{Demonstrated, InstanceInput, LabelId, RigidDet, Site};
 use crate::registry::{binding_sites, ColumnType, Component, ParameterSite, Registry};
@@ -487,9 +487,10 @@ impl<'a> Builder<'a> {
     /// Resolves each atom below `node`, at `path`, as read by each node
     /// of `readers` in the form at `form`.
     fn read_below(&mut self, node: NodeRef<'a>, path: NodePath, scope: &NameScope, readers: &[GraphNodeIndex], form: &NodePath) {
+        if let Some(atom) = node.atom() {
+            return self.read_atom(atom, path, scope, readers, form);
+        }
         match node {
-            NodeRef::Conjunct(Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom))) => self.read_atom(atom.value(), path, scope, readers, form),
-            NodeRef::Atom(atom) => self.read_atom(atom, path, scope, readers, form),
             NodeRef::DemoRule(_) => {}
             _ => {
                 for (index, child) in node.children().into_iter().enumerate() {

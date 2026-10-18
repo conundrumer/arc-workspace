@@ -157,14 +157,10 @@ impl Names {
         let mut atom = None;
         for (depth, step) in path.0.iter().enumerate() {
             node = *node.children().get(step.0 as usize)?;
-            match node {
-                NodeRef::DemoRule(_) => scope = NameScope::DemoRule(NodePath(path.0[..=depth].into())),
-                NodeRef::Conjunct(crate::program::Conjunct::Atom(found) | crate::program::Conjunct::Not(crate::program::Negated::Atom(found))) => {
-                    atom = Some(found.value())
-                }
-                NodeRef::Atom(found) => atom = Some(found),
-                _ => {}
+            if let NodeRef::DemoRule(_) = node {
+                scope = NameScope::DemoRule(NodePath(path.0[..=depth].into()));
             }
+            atom = node.atom().or(atom);
             own = Own::of(node).or(own);
         }
         let writer = Writer { names: self, scope: &scope, own: own.as_ref() };

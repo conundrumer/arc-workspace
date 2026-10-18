@@ -688,9 +688,10 @@ impl<'a> FormWalk<'a> {
     }
 
     fn node(&mut self, node: NodeRef<'a>, at: NodePath) {
+        if let Some(atom) = node.atom() {
+            return self.atom(atom, at);
+        }
         match node {
-            NodeRef::Conjunct(Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom))) => return self.atom(atom.value(), at),
-            NodeRef::Atom(atom) => return self.atom(atom, at),
             NodeRef::Claim(_) | NodeRef::DemoRule(_) => return,
             NodeRef::Conjunct(Conjunct::Constraint(constraint)) => {
                 let second = match constraint.second {

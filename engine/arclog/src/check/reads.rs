@@ -7,7 +7,7 @@ use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refus
 use crate::hash::StableHashSet;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
-use crate::program::{Atom, Conjunct, FactRelation, Form, Negated};
+use crate::program::{Atom, FactRelation, Form};
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Side};
 use crate::types::each_site_label;
 
@@ -93,12 +93,8 @@ pub(super) struct FormRead<'a> {
 /// it holds, in the order of the forms' paths.
 pub(super) fn form_reads<'a>(form: &'a Form, path: &NodePath) -> Vec<FormRead<'a>> {
     fn walk<'a>(node: NodeRef<'a>, at: NodePath, form: &NodePath, out: &mut Vec<FormRead<'a>>) {
-        match node {
-            NodeRef::Conjunct(Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom))) => {
-                return out.push(FormRead { atom: atom.value(), at, form: form.clone() });
-            }
-            NodeRef::Atom(atom) => return out.push(FormRead { atom, at, form: form.clone() }),
-            _ => {}
+        if let Some(atom) = node.atom() {
+            return out.push(FormRead { atom, at, form: form.clone() });
         }
         for (child, index) in node.children().into_iter().zip(0u32..) {
             if !is_form(child) {
