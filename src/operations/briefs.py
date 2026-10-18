@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from controlled_markdown import form, mctx
 from operations.constants import REVIEW_ROUNDS
-from operations.reports import LEFT_FOR_DECISION, WORKTREE
+from operations.reports import AT_CAP, LEFT_FOR_DECISION, NO_FINDING, WORKTREE
 from operations.roles import Role
 from operations.state import SETTLED, Agent, Place, Review, Ticket
 from operations.log_commands import AGENT, FILE_TICKET
@@ -266,6 +266,14 @@ FINGERPRINT = mctx("Before you write each final reply, run `uv run python "
                    "the line `{opening} <what it printed>`.")
 
 
+OPENINGS = mctx("Where no finding stands, other than one you filed as a ticket, and none is "
+                "held back, open each final reply with `{no_finding}`. Otherwise, where the "
+                "last round this brief gives leaves a finding that blocks the change, open it "
+                "with `{at_cap}`.").format(no_finding=NO_FINDING, at_cap=AT_CAP)
+"""The line of a doc reviewer's brief on a change that gives the openings of
+its final reply that `reports.no_finding` and `reports.at_cap` read."""
+
+
 def fingerprint_line(worktree: Path) -> str:
     return FINGERPRINT.format(worktree=worktree, opening=WORKTREE)
 
@@ -293,7 +301,7 @@ def doc_review(number: str, worktree: Path, editors: list[tuple[Agent, str]],
                   "`git -C {worktree} ls-files --others --exclude-standard` prints.").format(
                       number=number, worktree=worktree)]
     lines.extend(editor_lines(editors))
-    lines.append(ROUNDS.format(number=number, rounds=rounds))
+    lines.extend([ROUNDS.format(number=number, rounds=rounds), OPENINGS])
     return "\n".join(lines + reviewer_closing(worktree, operator, settled))
 
 
