@@ -1,6 +1,5 @@
 # Writing a document
 - The lines of a document and the markers that open them.
-- [Controlled Markdown](src/controlled_markdown/README.md) says what the format is and what the other documents hold.
 
 * comment: when editing this doc
     - Use each marker before the rule that states it, so a reader of the source sees the marker in use.

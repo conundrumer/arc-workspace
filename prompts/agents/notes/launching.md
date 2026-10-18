@@ -59,14 +59,14 @@
 - An editor's brief gives the change's worktree, and the agent id of the agent that launches it, where that is not the coordinator.
 - It gives the accepted gate outputs under `tests/gate/accepted/` the editor may write, where its items change or add one, with a scratch directory.
 - Where an editor of its agent type that another session launched worked in that worktree before it, it gives the agent id and the scratch directory of the last such editor that left a report, and its latest report.
-- It gives the rounds the editor has of each review of the change that an item has it make. The editor makes at most that many rounds of such a review, and sorts its findings as [Findings that block a change](#findings-that-block-a-change) gives.
+- It gives the rounds the editor has of each review of the change that an item has it make. The editor makes at most that many rounds of such a review, and sorts its findings as [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) gives.
 
 ### An editor's report on a change
 - An editor's report on a change gives, for each item of its brief, and of each request a later message adds, that it gives as done, what shows it holds: a command it ran with the output that shows it, the line of a rendered context that states it, the check its ticket's Scope places after the merge where only that check can show it, or, where none of these can, the reason it holds.
 - It gives each finding of the last round of a review its brief gives that blocks the change as left for a decision, with a reason that opens with `at the round cap`, and each finding a later message gave that the editor left unfixed, with why it left it and whether a doc reviewer sent it.
 
 ### A code editor's brief
-- A code editor's brief gives as well its tests directory and a scratch directory.
+- A code editor's brief gives as well its tests directory.
 
 ### A change's brief
 - A brief for a change with a ticket gives the ticket's number, and, where another editor takes part of the ticket's Intent and Scope, the part that is this editor's. Where the brief gives no items of its own, the ticket's Intent gives its items, and the ticket's Scope the files the editor may edit, within that part.

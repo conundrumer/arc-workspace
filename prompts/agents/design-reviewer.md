@@ -26,7 +26,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 - Edit under the tree only the tickets you file.
 
 ## What you read
-- Read the Intent, the Design, the Motivation and the Scope of the change's ticket, as `uv run python scripts/file_ticket.py show <number> Intent Design Motivation Scope` prints them.
+- Read the Intent, the Design, the Motivation and the Scope of the change's ticket, as `uv run python scripts/file_ticket.py show <number>` with those sections prints them, the Design where the ticket has one.
 - The change's diff is the one this command prints, with the change's worktree as `<worktree>`, and each file that `git -C <worktree> ls-files --others --exclude-standard` prints:
     ```
     git -C <worktree> diff --merge-base master -- . ':!programs/witnesses'

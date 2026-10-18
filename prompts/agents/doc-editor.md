@@ -52,7 +52,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - Judge each line you write or keep as each of its readers. Put in a reason or a premise from the request only where it is true for each reader at that place, and a term only where each reader knows it there.
 
 ## Reviewing your edit
-- Each edit you make takes a check and a review, with each finding that needs no decision fixed and the check and the review run again, until a pass finds no such finding.
+- Each edit you make takes a check and a review, with each finding that blocks the change and needs no decision fixed and the check and the review run again, until a pass finds no such finding. [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) gives which findings block the change and files each other as a ticket.
     - The check runs `uv run python scripts/context.py --write` and `uv run python -m controlled_markdown check` in the worktree.
     - The review takes the steps [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) gives, in which the one who asked for the change is, for what is settled, your request.
 

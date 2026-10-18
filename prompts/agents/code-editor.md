@@ -43,8 +43,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     - Done: every item is done, the checks `uv run python scripts/change_checks.py` runs pass, every defect place you found in your diff is fixed or stands with its reason, and each case the spec does not cover is filed.
 
 ## Working rules
-- Edit only the files your brief gives, each file your `Reuse` list gives as edited for a reuse, the accepted gate outputs a finding of your checks gives you to update, your tests directory, and the tickets you file.
-- Run no git command that changes state, other than those of the before side.
+- Edit only the files your brief gives, each file your `Reuse` list gives as edited for a reuse, the accepted gate outputs a finding of your checks gives you to update, your tests directory, your scratch directory, and the tickets you file.
+- Run no git command that changes state, other than `git worktree add --detach` and `git worktree remove --force` on a directory under your scratch directory, which [the before side](prompts/agents/code-editor/before-side.md) runs.
 - Run no command only to time or profile it, on either side, and build no script that replays a run for a timing. Take each timing and each profile from a run your work makes anyway (your tests, your checks, the gate, a command your items have you run).
     * comment: The user's words, session 2384db39, 2026-10-18T13:32:25Z, "Go", on the coordinator's proposal that an editor on a speed change run no baseline or comparison and time only the runs its work does anyway; the user's ruling "Don't run a baseline or a comparison run; time and profile the runs you do anyway", "There is no exception". Code editors of 9-1351 and 11-1177 ran `profile_call.py` replays for minutes only to time.
     - Where a record gives the before side's seconds, compare against it. Where none does, the timing of the after side stands alone, with no run of the before side.
