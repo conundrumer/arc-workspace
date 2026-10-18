@@ -34,8 +34,10 @@ command line that tree's code gives:
     uv run python -m controlled_markdown check
     uv run python scripts/context.py --write
     uv run python scripts/gate.py --affected <base> <out>
+    cargo check --manifest-path engine/Cargo.toml --workspace --all-targets --offline
 
-The checks run concurrently. A check passes when it exits 0, and a refusal
+The last runs only where the changes touch a path under `engine/`. The
+checks run concurrently. A check passes when it exits 0, and a refusal
 names every check that fails. The gate's dependency record decides which
 of its commands a change affects, so the gate runs on every change, with
 `<base>` the `master` commit the stack is rebased onto. It writes into a

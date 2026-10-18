@@ -10,7 +10,8 @@ merge refuses, and where the fast-forward fails after its removal, which
 writes it back; a copied file the change left as copied is in no
 commit. The merge makes the readers' tree of the old `master` before the
 fast-forward, and fast-forwards where that make fails. The checks run by
-the command lines of the tree they check."""
+the command lines of the tree they check, and refuse changes to `engine/`
+where the engine does not compile."""
 
 import os
 import subprocess
@@ -277,3 +278,32 @@ def test_the_checks_run_the_command_lines_of_the_tree_checked(merge_change, tree
         STEPS.replace('"--since"', '"--affected"'))
     with pytest.raises(merge_change.Refused, match="unrecognized arguments: --affected"):
         merge_change.check(worktree, main, base, {"p"})
+
+
+CRATE = """[package]
+name = "e"
+version = "0.0.0"
+edition = "2021"
+"""
+
+
+def test_the_checks_refuse_an_engine_that_does_not_compile(trees, monkeypatch):
+    """A change under `engine/` whose crate does not compile is refused; a
+    change that touches no path under `engine/` is not, though the engine
+    it stands on does not compile."""
+    steps = script("merge_steps")
+    monkeypatch.setattr(steps, "DOCUMENT_CHECKS", ())
+    _, worktree = trees
+    (worktree / "scripts").mkdir()
+    (worktree / "scripts" / "gate.py").write_text("")
+    (worktree / "engine" / "src").mkdir(parents=True)
+    (worktree / "engine" / "Cargo.toml").write_text(CRATE)
+    (worktree / "engine" / "src" / "lib.rs").write_text("pub fn f() -> u8 { \"\" }\n")
+    base = git(worktree, "rev-parse", "HEAD").strip()
+    failed = steps.checks(worktree, base, str(worktree / "out"))
+    assert len(failed) == 1 and "mismatched types" in failed[0]
+    git(worktree, "add", "-A")
+    git(worktree, "commit", "-q", "-m", "e")
+    base = git(worktree, "rev-parse", "HEAD").strip()
+    commit_file(worktree, "p")
+    assert steps.checks(worktree, base, str(worktree / "out")) == []

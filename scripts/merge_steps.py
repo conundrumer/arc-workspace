@@ -37,19 +37,30 @@ from handbook.paths import scripts_importable
 
 scripts_importable()
 
-from change_checks import Check, failures, run_in, said  # noqa: E402
+from change_checks import Check, changed_outside_work, failures, run_in, said  # noqa: E402
 from operations.merging import CONTEXT_WRITE, DOCUMENT_CHECKS  # noqa: E402
 
 DOCUMENT_PASS = ("scripts/document_pass.py",)
 """The command, after `uv run python`, that files a whole-document pass."""
 
+ENGINE = "engine/"
+"""The directory of the Cargo workspace."""
+
+ENGINE_CHECK = ("cargo", "check", "--manifest-path", f"{ENGINE}Cargo.toml",
+                "--workspace", "--all-targets", "--offline")
+"""The check that compiles every target of each crate of the workspace
+under `ENGINE`, from the crates already fetched."""
+
 
 def checks(tree: Path, base: str, gate_out: str) -> list[str]:
     """Run in `tree` the checks of changes from the commit `base`: the
-    output of each that fails."""
+    output of each that fails. The compile of the engine (`ENGINE_CHECK`)
+    is among them where the changes touch a path under `ENGINE`."""
+    engine = any(p.startswith(ENGINE) for p in changed_outside_work(tree, base))
     with contextlib.redirect_stdout(sys.stderr):
         return failures(tree, [*map(Check, DOCUMENT_CHECKS),
-                               Check(("uv", "run", "python", "scripts/gate.py", "--affected", base, gate_out))])
+                               Check(("uv", "run", "python", "scripts/gate.py", "--affected", base, gate_out)),
+                               *([Check(ENGINE_CHECK)] if engine else [])])
 
 
 def after(tree: Path, gate_out: str) -> bool:
