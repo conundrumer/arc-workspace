@@ -101,6 +101,20 @@ def run():
 """
 
 
+GUIDE = """# Guide
+- Read it.
+
+## Making a change
+- Write it.
+
+### Detail
+- Write it small.
+
+## Other
+- Keep it.
+"""
+
+
 def _tree(root: Path) -> None:
     _git(root, "init", "-q")
     (root / ".gitignore").write_text("tests/scratch/\n")
@@ -108,6 +122,8 @@ def _tree(root: Path) -> None:
     (root / "scripts" / "tool.py").write_text(MODULE)
     (root / "src" / "pkg").mkdir(parents=True)
     (root / "src" / "pkg" / "__init__.py").write_text("")
+    (root / "docs").mkdir()
+    (root / "docs" / "guide.md").write_text(GUIDE)
 
 
 def _rules(text: str, root: Path) -> list[str]:
@@ -117,6 +133,10 @@ def _rules(text: str, root: Path) -> list[str]:
 @pytest.mark.parametrize("line", [
     "- Run it.\n    + xref: scripts/tool.py:Filer.TWO",
     "- Run it.\n    + xref: scripts/tool.py:nothing",
+    "- Run it.\n    + xref: docs/guide.md#absent",
+    "- Run it.\n    + xref: scripts/tool.py#run",
+    "- Run it.\n    + xref: docs/guide.md#",
+    "- Run it.\n    + xref: scripts/tool.py:",
     "- Run `uv run python scripts/absent.py go`.",
     "- Run `uv run python -m absent`.",
     "- Read `src/absent.py`.",
@@ -129,6 +149,7 @@ def test_check_xrefs_refuses_what_the_tree_lacks(tmp_path, line):
 @pytest.mark.parametrize("line", [
     "- Run it.\n    + xref: scripts/tool.py, scripts/tool.py:Filer.ONE, "
     "scripts/tool.py:run, scripts/tool.py:Other",
+    "- Run it.\n    + xref: docs/guide.md, docs/guide.md#making-a-change, docs/guide.md#detail",
     "- Run `uv run python scripts/tool.py go --flag` and `uv run python -m pkg`.",
     "- Read `src/pkg/`, `scripts/*.py` and `src/<name>.py`.",
     "- Run `uv run python -c 'import absent'`.",
@@ -157,3 +178,20 @@ def test_touched_lists_a_line_whose_definition_a_hunk_changes(tmp_path):
                      "- Kept.\n    + xref: scripts/tool.py:Filer.ONE\n", "doc.md")
     assert [(t.node.text, t.target) for t in touched([document], tmp_path, base)] == [
         ("Changed.", "scripts/tool.py:run")]
+
+
+def test_touched_lists_a_line_whose_section_a_hunk_changes(tmp_path):
+    _tree(tmp_path)
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "base")
+    base = _git(tmp_path, "rev-parse", "HEAD").strip()
+    path = tmp_path / "docs" / "guide.md"
+    path.write_text(GUIDE.replace("Write it small.", "Write it short."))
+    document = parse("- Section.\n    + xref: docs/guide.md#making-a-change\n"
+                     "- Subsection.\n    + xref: docs/guide.md#detail\n"
+                     "- Kept.\n    + xref: docs/guide.md#other\n"
+                     "- Gone.\n    + xref: docs/guide.md#absent\n", "doc.md")
+    assert [(t.node.text, t.target) for t in touched([document], tmp_path, base)] == [
+        ("Section.", "docs/guide.md#making-a-change"),
+        ("Subsection.", "docs/guide.md#detail"),
+        ("Gone.", "docs/guide.md#absent")]

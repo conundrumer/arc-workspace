@@ -6,7 +6,7 @@
     uv run python -m controlled_markdown xrefs <base> [paths...]
 
 `check` reports each file that fails to parse or is not in canonical form,
-each target of an `xref` attribute that names no definition, each script,
+each target of an `xref` attribute that names nothing, each script,
 module or path a backticked span names that the tree does not hold
 (`controlled_markdown.xrefs`), and each line whose own words hold a form
 of `carry` of a document, of an `mctx` fragment, of a lib doc comment, or of a docstring or a comment of a
@@ -17,9 +17,10 @@ it changed. With no path, both read the set under
 `[tool.controlled_markdown]` in `pyproject.toml`, so the command that guards the
 documents is one word wherever it is written. `render` prints the first path as
 ordinary Markdown, with its includes resolved from the files they name, and it
-takes its paths as given. `xrefs` prints, for each `xref` target whose
-definition the diff from the commit `base` to the working tree changes, or
-that names no definition, one line `<path>:<line>: <target>: <text>`, with
+takes its paths as given. `xrefs` prints, for each `xref` target, a file's
+path, `<path>:<name>` for a definition in a Python file or `<path>#<slug>`
+for a section of a document, whose lines the diff from the commit `base` to
+the working tree changes, or that names nothing, one line `<path>:<line>: <target>: <text>`, with
 the text of the statement the attribute describes, and exits 0; with no
 path, it reads the set `check` reads. A path that names a directory
 stands for every `.md` file under it, and a path that names no file or directory is reported on one
@@ -280,7 +281,8 @@ def show_touched(base: str, paths: list[Path]) -> int:
 def main(argv: list[str]) -> int:
     usage = (f"usage: {argv[0]} check|fmt [paths...]\n"
              f"       {argv[0]} render <path> [paths...]\n"
-             f"       {argv[0]} xrefs <base> [paths...]")
+             f"       {argv[0]} xrefs <base> [paths...]\n"
+             f"an xref target: <path>, <path>:<name> or <path>#<slug>")
     if {"-h", "--help"} & set(argv[1:]):
         print(usage)
         return 0

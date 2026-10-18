@@ -108,6 +108,7 @@ from controlled_markdown.document_set import (
     relative_link as relative_link,
     RelativeToNoFile as RelativeToNoFile,
     target_of as target_of,
+    section as section,
     check_links as check_links,
 )
 from controlled_markdown.prose import (

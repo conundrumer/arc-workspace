@@ -46,14 +46,15 @@
         + xref: scripts/ticket_vocabulary.py:Filer.TICKET_ANALYST
     ```
 - The value is one target or a list of targets separated by commas.
-- A target is a path from the repo root, which names a file, or, for a Python file, the path, a `:` and the dotted name of a definition in it.
+- A target is a path from the repo root, which names a file, or, for a Python file, the path, a `:` and the dotted name of a definition in it, or, for a document, the path, a `#` and the slug of one of its headings, which names that heading's section with its subsections.
+    * comment: The user's words, session 2384db39, 2026-10-18T16:01:04Z: "send request for general resolution for cross doc consistency. would +attr links make sense? or md links?". Ticket 11-1390.
     - The definition is a module-level `def`, `class`, `type` alias, assignment or annotated assignment, or such a name in the body of a class the name before it gives, as an enum member.
         + xref: src/controlled_markdown/xrefs.py:span
-- The check reports a target whose file or definition is absent.
+- The check reports a target whose file, definition or section is absent.
     + xref: src/controlled_markdown/xrefs.py:check_xrefs
 - The check also reports, with no attribute, a backticked command that runs a script or module the tree lacks (`uv run python <path>`, `uv run python -m <module>`), and a token of a backticked span that is a path under `scripts/`, `src/`, `programs/`, `tests/`, `tools/`, `docs/` or `prompts/` that the tree lacks, and not a path that git ignores, since no worktree holds one. It resolves no subcommand or flag of a command: a line that depends on one declares the definition of its parser.
     + xref: src/controlled_markdown/xrefs.py:references, src/controlled_markdown/xrefs.py:check_xrefs
-- `uv run python -m controlled_markdown xrefs <base>` prints, for each declared target whose definition has changed in the working tree since the commit `<base>`, or names no definition, the line `<path>:<line>: <target>: <the line's text>`. Judge each such line against the code as it now stands.
+- `uv run python -m controlled_markdown xrefs <base>` prints, for each declared target whose definition or section has changed in the working tree since the commit `<base>`, or that names nothing, the line `<path>:<line>: <target>: <the line's text>`. Judge each such line against the code and the documents as they now stand.
     + xref: src/controlled_markdown/__main__.py:main, src/controlled_markdown/xrefs.py:touched
 
 ## Prose in code

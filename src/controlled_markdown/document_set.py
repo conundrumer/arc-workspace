@@ -1,5 +1,6 @@
 """The checks of a document set: its closure, its partials, its blocks and
-its links, with the links a node's text holds and the file each names."""
+its links, with the links a node's text holds, the file each names, and
+the section a slug names."""
 
 from __future__ import annotations
 
@@ -225,6 +226,13 @@ def target_of(path: str, file: Path | None, root: Path | None = None) -> Path:
     return resolve_reference(path, file)
 
 
+def section(document: Node, ident: str) -> Node | None:
+    """The last heading node of `document` whose slug is `ident`, with its
+    subtree, or None where no heading has that slug."""
+    found = [h for h in _walk(document) if h.kind == HEADING and slug(h.text) == ident]
+    return found[-1] if found else None
+
+
 def check_links(document: Node, file: Path, root: Path | None = None) -> None:
     """Every link in the document resolves: the file or directory stands where
     `target_of` puts it, and a slug names a heading of that file whose text the
@@ -240,12 +248,11 @@ def check_links(document: Node, file: Path, root: Path | None = None) -> None:
             raise ControlledMarkdownError(node.source, node.line, Rule.LINK_MISSING,
                                       f"`{path}` is a directory and holds no "
                                       f"heading `{ident}`")
-        heads = {slug(h.text): h.text for h in _walk(
-            parse(target.read_text(), str(target))) if h.kind == HEADING}
-        if ident not in heads:
+        heading = section(parse(target.read_text(), str(target)), ident)
+        if heading is None:
             raise ControlledMarkdownError(node.source, node.line, Rule.LINK_MISSING,
                                       f"no heading `{ident}` in `{path}`")
-        if text != heads[ident]:
+        if text != heading.text:
             raise ControlledMarkdownError(node.source, node.line, Rule.LINK_TEXT,
                                       f"a link to a heading reads as that "
-                                      f"heading: `{heads[ident]}`")
+                                      f"heading: `{heading.text}`")

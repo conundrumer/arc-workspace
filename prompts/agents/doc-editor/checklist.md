@@ -21,6 +21,11 @@
 # Cut what no rule keeps
 - Judge each line of each place you edited again as each of its readers, by the rules of [Writing the edit](prompts/agents/doc-editor.md#writing-the-edit), cut each line there that those rules do not keep, and check and review the cut, as [Reviewing your edit](prompts/agents/doc-editor.md#reviewing-your-edit) gives.
 
+# Judge the document lines your diff touches
+* comment: The user's words, session 2384db39, 2026-10-18T16:01:04Z: "send request for general resolution for cross doc consistency. would +attr links make sense? or md links?". Ticket 11-1390.
+- Run `uv run python -m controlled_markdown xrefs $(git merge-base master HEAD)`, and judge each line it prints against the text and the code your edit leaves. Edit a line that no longer holds where your change's Scope gives its document, and otherwise give it in your reply as unfinished.
+    + xref: src/controlled_markdown/__main__.py:main
+
 # Set the budgets
 - Where you made a whole-document pass, set the `+ budget:` line of each document your change's Scope gives, as [Whole-document pass](prompts/agents/doc-editor/whole-document.md#whole-document-pass) gives, and check and review that edit, as [Reviewing your edit](prompts/agents/doc-editor.md#reviewing-your-edit) gives.
 
