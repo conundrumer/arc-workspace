@@ -1,5 +1,8 @@
 //! The reader of the two lib files, which reads each form into the
-//! registry's records and gives a diagnostic at the form of each fault.
+//! registry's records and gives a diagnostic at the form of each fault: the
+//! spellings of the forms, the records of a read form, the reader's state
+//! and its helpers, the declaration of the macros, the completeness check of
+//! the accessors and the assembly of the registry.
 
 use super::*;
 
@@ -126,6 +129,15 @@ pub(super) struct ComponentHead<'e> {
     pub(super) outputs: &'e [SExpr],
 }
 
+/// A `(proposer <name> arclog (columns <Label> ...))` form: the proposer's
+/// name, the place of its form, and the labels it names, in the order the
+/// form gives them.
+pub(super) struct ArclogProposer {
+    pub(super) name: LibName,
+    pub(super) place: SourcePlace,
+    pub(super) columns: Box<[Box<str>]>,
+}
+
 /// A body of either file, whose reads [`FileReader::check_reads`] checks
 /// once every form is read: the place of its form, and the index of the
 /// cell instance it stands in, where it stands in one.
@@ -147,11 +159,11 @@ pub(super) struct FileReader {
     pub(super) derivations: StableHashMap<LibName, Derivation>,
     pub(super) constants: StableHashMap<OrientationType, TypeConstants>,
     /// The names of the `C4` form, and its place.
-    c4: Option<(Box<[Box<str>]>, SourcePlace)>,
+    pub(super) c4: Option<(Box<[Box<str>]>, SourcePlace)>,
     pub(super) facts: StableHashMap<FactRelation, Box<[Column]>>,
     pub(super) relation_macros: Vec<WrittenMacro>,
-    /// Each `(proposer <name> arclog)` form's name and place, in file order.
-    pub(super) arclog_proposers: Vec<(LibName, SourcePlace)>,
+    /// Each `(proposer <name> arclog (columns ...))` form, in file order.
+    pub(super) arclog_proposers: Vec<ArclogProposer>,
     pub(super) cells: Vec<WrittenCell>,
     pub(super) bodies: Vec<BodyInFile>,
 }
@@ -186,7 +198,7 @@ impl FileReader {
     }
 
     /// The items after the head of `expr`, a list headed by `head`.
-    fn headed<'e>(&mut self, expr: Option<&'e SExpr>, head: &str, at: SourcePlace) -> Option<&'e [SExpr]> {
+    pub(super) fn headed<'e>(&mut self, expr: Option<&'e SExpr>, head: &str, at: SourcePlace) -> Option<&'e [SExpr]> {
         match expr {
             Some(expr) => match headed(expr, head) {
                 Some(rest) => Some(rest),
@@ -198,7 +210,7 @@ impl FileReader {
 
     /// Gives a diagnostic at each item of `exprs`, which the form has no
     /// place for.
-    fn no_more(&mut self, exprs: &[SExpr]) -> Option<()> {
+    pub(super) fn no_more(&mut self, exprs: &[SExpr]) -> Option<()> {
         match exprs.first() {
             Some(expr) => self.refuse("the form has no place for this item", expr.place()),
             None => Some(()),
@@ -213,276 +225,6 @@ impl FileReader {
         }
         self.fault(CheckId::Scope, format!("`{}` is declared by two forms", name.0), place);
         false
-    }
-
-    pub(super) fn form(&mut self, expr: &SExpr) {
-        let place = expr.place();
-        let SExpr::List { items, .. } = expr else {
-            self.refuse::<()>("a form of the registry file is a list", place);
-            return;
-        };
-        let rest = items.get(1..).unwrap_or_default();
-        match head_of(expr) {
-            Some(RELATION) => self.relation(rest, place),
-            Some(COMPONENT) => {
-                if let Some((name, component)) = self.component(rest, place)
-                    && self.declare(&name, place)
-                {
-                    self.entries.insert(name, LibEntry::Component(component));
-                }
-                Some(())
-            }
-            Some(PROPOSER) => self.proposer(rest, place),
-            Some(DERIVATION) => self.derivation(rest, place),
-            Some(CONSTANTS) => self.constants(rest, place),
-            Some(FACT) => self.fact(rest, place),
-            Some(MACRO) => self.macro_form(rest, place),
-            _ => self.refuse("the form's head is no kind of form of the registry file", place),
-        };
-    }
-
-    /// The type that `expr` writes, with its type name where it writes one,
-    /// for the reader of a default's rows.
-    fn column_type(&mut self, expr: &SExpr, parameters: &[TypeParameter]) -> Option<(ColumnType, Option<TypeName>)> {
-        if let Some(rest) = headed(expr, POSE_OR) {
-            let name = match rest {
-                [SExpr::Symbol { text, .. }] => spelling::parse(spelling::TYPE_NAMES, text),
-                _ => None,
-            };
-            return match name {
-                Some(name) => Some((ColumnType::PoseOr(name.value_type()), Some(name))),
-                None => self.refuse(format!("a `({POSE_OR} <type>)` form holds one type name"), expr.place()),
-            };
-        }
-        let text = self.symbol(Some(expr), "a type", expr.place())?;
-        if let Some(name) = spelling::parse(spelling::TYPE_NAMES, text) {
-            return Some((ColumnType::Fixed(name.value_type()), Some(name)));
-        }
-        match text {
-            POSE => Some((ColumnType::Pose, None)),
-            SHARED_POSE => Some((ColumnType::SharedPose, None)),
-            _ => match parameters.iter().find(|p| &*p.0 == text) {
-                Some(parameter) => Some((ColumnType::Parameter(parameter.clone()), None)),
-                None => self.refuse(format!("`{text}` is no type and no type parameter of the component"), expr.place()),
-            },
-        }
-    }
-
-    /// The column that `expr`, `(<Column> <type>)`, writes.
-    fn column(&mut self, expr: &SExpr, parameters: &[TypeParameter]) -> Option<(Column, Option<TypeName>)> {
-        let SExpr::List { items, place, .. } = expr else {
-            return self.refuse("a column is a list of its name and its type", expr.place());
-        };
-        let [name, ty] = &items[..] else {
-            return self.refuse("a column is a list of its name and its type", *place);
-        };
-        let name = self.symbol(Some(name), "the column's name", *place)?;
-        let (ty, written) = self.column_type(ty, parameters)?;
-        Some((Column { name: ColumnName::Written(name.into()), ty }, written))
-    }
-
-    /// The columns that `expr`, `(<head> (<Column> <type>) ...)`, writes.
-    fn columns(&mut self, expr: Option<&SExpr>, head: &str, parameters: &[TypeParameter], at: SourcePlace) -> Option<Box<[Column]>> {
-        let items = self.headed(expr, head, at)?;
-        let columns: Option<Vec<Column>> = items.iter().map(|item| self.column(item, parameters).map(|(c, _)| c)).collect();
-        columns.map(Into::into)
-    }
-
-    /// `(relation <name> (columns ...) [(modes ...)])`, after its head.
-    fn relation(&mut self, rest: &[SExpr], place: SourcePlace) -> Option<()> {
-        let name = LibName(self.symbol(rest.first(), "the relation's name", place)?.into());
-        let columns = self.columns(rest.get(1), COLUMNS, &[], place)?;
-        let modes = match rest.get(2) {
-            Some(expr) => self.modes(expr, &columns, place)?,
-            None => Box::default(),
-        };
-        self.no_more(rest.get(3..).unwrap_or_default())?;
-        if self.declare(&name, place) {
-            self.entries.insert(name, LibEntry::Relation(AlgebraRelation { columns, modes }));
-        }
-        Some(())
-    }
-
-    /// `(modes (<Column> ...) ...)`, each mode a nonempty list of columns of
-    /// `columns`.
-    fn modes(&mut self, expr: &SExpr, columns: &[Column], place: SourcePlace) -> Option<Box<[Mode]>> {
-        let items = self.headed(Some(expr), MODES, place)?;
-        let mut modes = Vec::new();
-        for item in items {
-            let SExpr::List { items: names, place, .. } = item else {
-                return self.refuse("a mode is a list of columns", item.place());
-            };
-            if names.is_empty() {
-                return self.refuse("a mode is not empty", *place);
-            }
-            let mut grounded = Vec::new();
-            for name in names.iter() {
-                let text = self.symbol(Some(name), "a mode's column", *place)?;
-                let column = ColumnName::Written(text.into());
-                if !columns.iter().any(|c| c.name == column) {
-                    return self.refuse(format!("`{text}` is no column of the relation"), name.place());
-                }
-                grounded.push(column);
-            }
-            modes.push(Mode { grounded: grounded.into() });
-        }
-        Some(modes.into())
-    }
-
-    /// `(component <Name> <kind> (type-parameters ...) (inputs ...) (outputs ...))`,
-    /// after its head.
-    pub(super) fn component_head<'e>(&mut self, rest: &'e [SExpr], place: SourcePlace) -> Option<ComponentHead<'e>> {
-        let name = LibName(self.symbol(rest.first(), "the component's name", place)?.into());
-        let kind_text = self.symbol(rest.get(1), "the component's kind", place)?;
-        let Some(kind) = spelling::parse(COMPONENT_KINDS, kind_text) else {
-            return self.refuse(format!("`{kind_text}` is no kind of component"), rest[1].place());
-        };
-        let parameters = self.headed(rest.get(2), TYPE_PARAMETERS, place)?;
-        let parameters: Option<Vec<TypeParameter>> =
-            parameters.iter().map(|p| self.symbol(Some(p), "a type parameter", place).map(|t| TypeParameter(t.into()))).collect();
-        let type_parameters: Box<[TypeParameter]> = parameters?.into();
-        let inputs = self.headed(rest.get(3), INPUTS, place)?;
-        let inputs: Option<Vec<InputPort>> = inputs.iter().map(|input| self.input(input, &type_parameters)).collect();
-        let outputs = self.headed(rest.get(4), OUTPUTS, place)?;
-        self.no_more(rest.get(5..).unwrap_or_default())?;
-        Some(ComponentHead { name, kind, type_parameters, inputs: inputs?.into(), outputs })
-    }
-
-    /// `(component <Name> <kind> (type-parameters ...) (inputs ...) (outputs ...))`,
-    /// after its head, each output column with its type.
-    fn component(&mut self, rest: &[SExpr], place: SourcePlace) -> Option<(LibName, Component)> {
-        let head = self.component_head(rest, place)?;
-        let outputs: Option<Vec<Port>> = head.outputs.iter().map(|output| self.port(output, &head.type_parameters)).collect();
-        let component = Component { kind: head.kind, type_parameters: head.type_parameters, inputs: head.inputs, outputs: outputs?.into() };
-        Some((head.name, component))
-    }
-
-    /// An output, `(<output> (<column> <type>) ...)`.
-    fn port(&mut self, expr: &SExpr, parameters: &[TypeParameter]) -> Option<Port> {
-        let SExpr::List { items, place, .. } = expr else {
-            return self.refuse("a port is a list of its name and its columns", expr.place());
-        };
-        let name = PortName(self.symbol(items.first(), "the port's name", *place)?.into());
-        let columns: Option<Vec<Column>> = items[1..].iter().map(|item| self.column(item, parameters).map(|(c, _)| c)).collect();
-        Some(Port { name, columns: columns?.into() })
-    }
-
-    /// An input, `(<input> (<column> <type>) ... [(default <rows>)] [reads-outputs])`.
-    fn input(&mut self, expr: &SExpr, parameters: &[TypeParameter]) -> Option<InputPort> {
-        let SExpr::List { items, place, .. } = expr else {
-            return self.refuse("an input is a list of its name and its columns", expr.place());
-        };
-        let name = PortName(self.symbol(items.first(), "the input's name", *place)?.into());
-        let mut rest = &items[1..];
-        let reads_outputs = matches!(rest.last(), Some(SExpr::Symbol { text, .. }) if &**text == READS_OUTPUTS);
-        if reads_outputs {
-            rest = &rest[..rest.len() - 1];
-        }
-        let default_rows = rest.last().and_then(|last| headed(last, DEFAULT));
-        if default_rows.is_some() {
-            rest = &rest[..rest.len() - 1];
-        }
-        let mut columns = Vec::new();
-        let mut written = Vec::new();
-        for item in rest {
-            let (column, name) = self.column(item, parameters)?;
-            columns.push(column);
-            written.push(name);
-        }
-        let default = match default_rows {
-            Some(rows) => Some(DefaultRows { written: self.read(read_param_value(rows, &written))? }),
-            None => None,
-        };
-        Some(InputPort { port: Port { name, columns: columns.into() }, default, reads_outputs })
-    }
-
-    /// `(proposer <name> native (columns ...))` or `(proposer <name> arclog)`,
-    /// after its head.
-    fn proposer(&mut self, rest: &[SExpr], place: SourcePlace) -> Option<()> {
-        let name = LibName(self.symbol(rest.first(), "the proposer's name", place)?.into());
-        match self.symbol(rest.get(1), "the proposer's kind", place)? {
-            NATIVE => {
-                let columns = self.columns(rest.get(2), COLUMNS, &[], place)?;
-                self.no_more(rest.get(3..).unwrap_or_default())?;
-                if self.declare(&name, place) {
-                    self.entries.insert(name, LibEntry::Proposer(Proposer::Native { columns }));
-                }
-            }
-            ARCLOG => {
-                self.no_more(rest.get(2..).unwrap_or_default())?;
-                if self.declare(&name, place) {
-                    self.arclog_proposers.push((name, place));
-                }
-            }
-            other => return self.refuse(format!("`{other}` is no kind of proposer, `{NATIVE}` or `{ARCLOG}`"), rest[1].place()),
-        }
-        Some(())
-    }
-
-    /// `(derivation <Name> (fields ...) (columns ...))`, after its head.
-    fn derivation(&mut self, rest: &[SExpr], place: SourcePlace) -> Option<()> {
-        let name = LibName(self.symbol(rest.first(), "the derivation's name", place)?.into());
-        let fields = self.columns(rest.get(1), FIELDS, &[], place)?;
-        let columns = self.columns(rest.get(2), COLUMNS, &[], place)?;
-        self.no_more(rest.get(3..).unwrap_or_default())?;
-        match self.derivations.entry(name) {
-            std::collections::hash_map::Entry::Occupied(entry) => {
-                let message = format!("`{}` is declared by two `derivation` forms", entry.key().0);
-                self.fault(CheckId::Scope, message, place);
-            }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Derivation { fields, columns });
-            }
-        }
-        Some(())
-    }
-
-    /// `(constants <type> <NAME> ...)` or `(constants C4 <NAME> ...)`, after
-    /// its head.
-    fn constants(&mut self, rest: &[SExpr], place: SourcePlace) -> Option<()> {
-        let ty_text = self.symbol(rest.first(), "the constants' type", place)?;
-        let names: Option<Vec<Box<str>>> =
-            rest[1..].iter().map(|name| self.symbol(Some(name), "a constant's name", place).map(Into::into)).collect();
-        let names: Box<[Box<str>]> = names?.into();
-        if ty_text == C4 {
-            if self.c4.is_some() {
-                return self.refuse("the file has two `C4` forms", place);
-            }
-            self.c4 = Some((names, place));
-            return Some(());
-        }
-        let Some(ty) = spelling::parse(spelling::TYPE_NAMES, ty_text).and_then(orientation_type) else {
-            return self.refuse(format!("`{ty_text}` is no orientation type and not `{C4}`"), rest[0].place());
-        };
-        if self.constants.contains_key(&ty) {
-            return self.refuse(format!("the file has two `constants` forms of `{ty_text}`"), place);
-        }
-        if names.len() > usize::from(u8::MAX) + 1 {
-            return self.refuse("an orientation type has at most 256 constants", place);
-        }
-        for (index, name) in names.iter().enumerate() {
-            let earlier = names[..index].contains(name) || self.constants.values().any(|c| c.names.contains(name));
-            if earlier {
-                self.fault(CheckId::Scope, format!("the constant `{name}` is written twice"), place);
-            }
-        }
-        let set = (0..names.len()).map(|index| OrientationConstant::new(ty, index as u8)).collect();
-        self.constants.insert(ty, TypeConstants { names, set: ConstantSet { constants: set } });
-        Some(())
-    }
-
-    /// `(fact <name> (columns ...))`, after its head.
-    fn fact(&mut self, rest: &[SExpr], place: SourcePlace) -> Option<()> {
-        let text = self.symbol(rest.first(), "the fact's name", place)?;
-        let Some(fact) = spelling::parse(spelling::FACT_RELATIONS, text) else {
-            return self.refuse(format!("`{text}` is no fact relation"), rest[0].place());
-        };
-        let columns = self.columns(rest.get(1), COLUMNS, &[], place)?;
-        self.no_more(rest.get(2..).unwrap_or_default())?;
-        if self.facts.insert(fact, columns).is_some() {
-            return self.refuse(format!("the file has two `fact` forms of `{text}`"), place);
-        }
-        Some(())
     }
 
     /// Gives each relation macro its declaration and each cell instance its

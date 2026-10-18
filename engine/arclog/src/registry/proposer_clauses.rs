@@ -2,13 +2,15 @@
 //! gives each proposer written in arclog its clause.
 
 use super::reader::{headed, BodyInFile, FileReader, PROPOSER};
+use crate::read::LabelNames;
 use super::*;
 
 impl FileReader {
     /// Reads the forms of the proposers file, and gives each
-    /// `(proposer <name> arclog)` form its clause.
+    /// `(proposer <name> arclog (columns ...))` form its clause, with the
+    /// columns the form names, each a label the clause keeps.
     pub(super) fn proposer_clauses(&mut self, exprs: &[SExpr]) {
-        let mut clauses: Vec<(LibName, SourcePlace, Proposer)> = Vec::new();
+        let mut clauses: Vec<(LibName, SourcePlace, Node<Body>, LabelNames)> = Vec::new();
         for expr in exprs {
             let place = expr.place();
             let Some(rest) = headed(expr, PROPOSER) else {
@@ -18,25 +20,32 @@ impl FileReader {
             let Some(name) = self.symbol(rest.first(), "the proposer's name", place) else { continue };
             let name = LibName(name.into());
             let Some((body, kept)) = self.read(read_body(&rest[1..], None)) else { continue };
-            if clauses.iter().any(|(n, _, _)| *n == name) {
+            if clauses.iter().any(|(n, ..)| *n == name) {
                 self.fault(CheckId::Scope, format!("the proposer `{}` has two clauses", name.0), place);
                 continue;
             }
-            let columns = kept.iter().map(|(n, _)| ColumnName::Written(n.clone())).collect();
             self.bodies.push(BodyInFile { body: body.clone(), place, cell: None });
-            clauses.push((name, place, Proposer::Arclog { columns, body }));
+            clauses.push((name, place, body, kept));
         }
-        for (name, place) in std::mem::take(&mut self.arclog_proposers) {
-            match clauses.iter().position(|(n, _, _)| *n == name) {
-                Some(index) => {
-                    let (name, _, proposer) = clauses.remove(index);
-                    self.entries.insert(name, LibEntry::Proposer(proposer));
-                }
-                None => self.fault(CheckId::Scope, format!("the proposer `{}` has no clause in the proposers file", name.0), place),
+        for proposer in std::mem::take(&mut self.arclog_proposers) {
+            let Some(index) = clauses.iter().position(|(n, ..)| *n == proposer.name) else {
+                let message = format!("the proposer `{}` has no clause in the proposers file", proposer.name.0);
+                self.fault(CheckId::Scope, message, proposer.place);
+                continue;
+            };
+            let (name, _, body, kept) = clauses.remove(index);
+            let what = |label: &str| format!("the column `{label}` of the proposer `{}`", name.0);
+            let columns: Vec<Option<ColumnName>> = proposer
+                .columns
+                .iter()
+                .map(|label| self.label_of(&kept, label, &what(label), proposer.place).map(|_| ColumnName::Written(label.clone())))
+                .collect();
+            if let Some(columns) = columns.into_iter().collect::<Option<Box<[ColumnName]>>>() {
+                self.entries.insert(name, LibEntry::Proposer(Proposer::Arclog { columns, body }));
             }
         }
-        for (name, place, _) in clauses {
-            self.fault(CheckId::Scope, format!("the clause of `{}` stands for no `(proposer {} arclog)` form", name.0, name.0), place);
+        for (name, place, ..) in clauses {
+            self.fault(CheckId::Scope, format!("the clause of `{}` stands for no `(proposer {} arclog ...)` form", name.0, name.0), place);
         }
     }
 }

@@ -95,8 +95,7 @@ pub fn read_sexprs(text: &str, file: SourceFile) -> Result<(Vec<SExpr>, Vec<crat
 
 /// The names of labels of a node that one s-expression gives, for a
 /// reader of a form that names labels outside the node, as the registry's
-/// `(macro ...)` and `(output ...)` forms do. A proposer written in arclog
-/// has the labels its clause keeps as its columns.
+/// `(macro ...)`, `(output ...)` and arclog `(proposer ...)` forms do.
 pub type LabelNames = Box<[(Box<str>, crate::program::LabelId)]>;
 
 /// The body that the s-expressions `exprs` write, as the atoms of a clause,

@@ -75,3 +75,32 @@ fn a_written_column_at_a_label_local_to_an_or_branch_refuses() {
     let kinds: Vec<&DiagnosticKind> = error.diagnostics.iter().map(|d| &d.kind).collect();
     assert_eq!(kinds, [&DiagnosticKind::Check(CheckId::Scope)], "{:?}", error.diagnostics);
 }
+
+/// The kinds of the diagnostics of the lib files with the arclog proposer
+/// form of `ChangedPairs` replaced by `form`.
+fn changed_pairs_kinds(form: &str) -> Vec<DiagnosticKind> {
+    let written = "(proposer ChangedPairs arclog (columns C_from C_to))";
+    assert!(REGISTRY_TEXT.contains(written));
+    let text = REGISTRY_TEXT.replacen(written, form, 1);
+    let error = Registry::parse(&text, PROPOSERS_TEXT).err().expect("the form refuses");
+    error.diagnostics.into_iter().map(|d| d.kind).collect()
+}
+
+#[test]
+fn an_arclog_proposer_that_names_no_columns_refuses() {
+    for form in ["(proposer ChangedPairs arclog)", "(proposer ChangedPairs arclog (columns))"] {
+        assert_eq!(changed_pairs_kinds(form), [DiagnosticKind::Check(CheckId::Scope)], "{form}");
+    }
+}
+
+#[test]
+fn an_arclog_proposer_column_its_clause_does_not_keep_refuses() {
+    let kinds = changed_pairs_kinds("(proposer ChangedPairs arclog (columns C_from Z))");
+    assert_eq!(kinds, [DiagnosticKind::Check(CheckId::Scope)]);
+}
+
+#[test]
+fn an_arclog_proposer_column_named_twice_refuses() {
+    let kinds = changed_pairs_kinds("(proposer ChangedPairs arclog (columns C_from C_from))");
+    assert_eq!(kinds, [DiagnosticKind::Check(CheckId::Scope)]);
+}

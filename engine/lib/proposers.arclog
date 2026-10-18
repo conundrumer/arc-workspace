@@ -1,5 +1,54 @@
 ;; The proposers of the lib written in arclog, one form each. Their forms
 ;; and their meaning: the module comment of engine/arclog/src/registry.rs.
+(proposer SharedColor
+  (ex_input *E (:Col *C))
+  (ALL ((ex_input (:E *E2)))
+       ((ex_input (:E E2) (:Col C)))))
+(proposer OutNewColor
+  (ex_output *E (:Col *C))
+  (ALL ((ex_output (:E *E2)))
+       ((ex_output (:E E2) (:Col C))))
+  (NOT (ex_input (:Col C))))
 (proposer AnyOutNewColor
   (ex_output (:Col *C))
   (NOT (ex_input (:Col C))))
+(proposer VanishedColor
+  (ex_input *E (:Col *C))
+  (ALL ((ex_input (:E *E2)))
+       ((ex_input (:E E2) (:Col C))))
+  (NOT (ex_output (:Col C))))
+(proposer ChangedColor
+  (ex_input *E (:Col *C))
+  (ex_output E)
+  (ALL ((ex_input (:E *E2) (:P *P2) (:Col C)))
+       ((NOT (ex_output (:E E2) (:P P2) (:Col C))))))
+(proposer UnchangedColor
+  (ex_input *E (:Col *C))
+  (ex_output E)
+  (ALL ((ex_input (:E *E2) (:P *P2) (:Col C))
+        (ex_output (:E E2)))
+       ((ex_output (:E E2) (:P P2) (:Col C)))))
+(proposer ChangedPairs
+  (ex_input *E *P (:Col *C_from))
+  (ex_output E P (:Col *C_to))
+  (!= C_from C_to))
+(proposer VanishedNewPairs
+  (ex_input *E (:Col *C_from))
+  (NOT (ex_output E (:Col C_from)))
+  (ex_output E (:Col *C_to))
+  (NOT (ex_input E (:Col C_to))))
+(proposer ConstInDim
+  (ex_input *E *P)
+  (frame_extent P *A *N)
+  (ALL ((ex_input (:E *E2) (:P *P2)))
+       ((frame_extent (:P P2) A N))))
+(proposer ConstOutDim
+  (ex_output *E *P)
+  (frame_extent P *A *N)
+  (ALL ((ex_output (:E *E2) (:P *P2)))
+       ((frame_extent (:P P2) A N))))
+(proposer ConstOutDimAxis
+  (ex_output *E *P)
+  (frame_extent P *A *N)
+  (ALL ((ex_output (:E *E2) (:P *P2)))
+       ((frame_extent (:P P2) A N))))

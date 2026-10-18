@@ -20,7 +20,7 @@ impl FileReader {
 
     /// The label of `labels` named `name`, the first that stands, or a fault
     /// that `what` stands for no label the body keeps.
-    fn label_of(&mut self, labels: &crate::read::LabelNames, name: &str, what: &str, place: SourcePlace) -> Option<LabelId> {
+    pub(super) fn label_of(&mut self, labels: &crate::read::LabelNames, name: &str, what: &str, place: SourcePlace) -> Option<LabelId> {
         match labels.iter().find(|(n, _)| &**n == name) {
             Some((_, label)) => Some(*label),
             None => {

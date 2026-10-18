@@ -35,9 +35,11 @@
 //!   for it, reads the input's relation.
 //! - `(proposer <name> native (columns (<Column> <type>) ...))`: a native
 //!   proposer, such as a domain proposer.
-//! - `(proposer <name> arclog)`: a proposer written in arclog, whose clause
-//!   stands in `engine/lib/proposers.arclog`. Its columns are the labels its
-//!   clause keeps, in the order [`crate::read::read_body`] gives them.
+//! - `(proposer <name> arclog (columns <Label> ...))`: a proposer written
+//!   in arclog, whose clause stands in `engine/lib/proposers.arclog`. Its
+//!   columns are the labels the form names, in the order the form gives.
+//!   Each is a label that its clause keeps, and each other label of the
+//!   clause is projected away.
 //! - `(derivation <Name> (fields (<Field> <type>) ...) (columns (<Column> <type>) ...))`:
 //!   a fixed derivation of a table, its row's fields and the table's columns.
 //!   A derivation may share its name with a component, as `Frame` and
@@ -110,13 +112,13 @@
 //!
 //! # The modules
 //!
-//! The reader of the two files, the reader of the registry file's macro
-//! forms, the reader of the proposers file's clauses, the check of the reads of their bodies, and the derivation of the
+//! The reader of the two files, the reader of the registry file's other
+//! forms, the reader of its macro forms, the reader of the proposers file's clauses, the check of the reads of their bodies, and the derivation of the
 //! macros' column types each stand in a module of their own. The derivations take the forms as the reader gives them, and
 //! read no file.
 //!
 //! `engine/lib/proposers.arclog` holds one form `(proposer <Name> <atom> ...)`
-//! per proposer of the form `(proposer <name> arclog)`, its name in the
+//! per proposer of the form `(proposer <name> arclog (columns ...))`, its name in the
 //! spelling of a proposer, as `(proposer DominantColor ...)`, then the atoms
 //! of its clause's body, which [`crate::read::read_body`] reads.
 
@@ -268,8 +270,9 @@ pub enum Proposer {
     /// A native proposer and its columns.
     Native { columns: Box<[Column]> },
     /// A proposer written in arclog: the body of its clause, and its
-    /// columns, the names of the clause's labels in the order they first
-    /// stand in it.
+    /// columns, the labels its `(columns <Label> ...)` form names, in the
+    /// order the form gives. Each is a label the clause keeps, and each
+    /// other label of the clause is projected away.
     Arclog { columns: Box<[ColumnName]>, body: Node<Body> },
 }
 
@@ -502,6 +505,7 @@ impl Registry {
 
 mod cell_types;
 mod column_types;
+mod forms;
 mod macro_forms;
 mod proposer_clauses;
 mod reader;
