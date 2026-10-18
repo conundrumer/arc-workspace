@@ -146,6 +146,20 @@ impl std::fmt::Display for Binding {
     }
 }
 
+/// The fault of a label's type whose diagnostic stands already: a site of
+/// the label takes its type from a binding of the `INIT` form whose type
+/// has a fault, which that binding's label gives.
+#[derive(Clone, Copy, Debug)]
+struct Reported;
+
+/// The fault of the type of a label of a cell instance's body.
+#[derive(Clone, Debug)]
+enum TypeFault {
+    Reported,
+    /// The text of a fault that no diagnostic gives yet.
+    Text(String),
+}
+
 /// What the `INIT` form's binding gives a column of one of its outputs:
 /// the column's fixed type, or the column's type parameter with its
 /// binding.
@@ -240,6 +254,15 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
         self.faults.borrow_mut().push((check, message));
     }
 
+    /// Gives `fault` of the label that `label` names, where no diagnostic
+    /// gives it yet.
+    fn type_fault(&self, fault: TypeFault, label: &str) {
+        match fault {
+            TypeFault::Reported => {}
+            TypeFault::Text(message) => self.fault(CheckId::Types, format!("{label} {message}")),
+        }
+    }
+
     /// Types `form` after each form it reads, where it is not typed yet.
     fn type_form(&mut self, form: CellRead) {
         let state_is_unread = match form {
@@ -324,51 +347,64 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
     fn column_types(&self, form: &CellForm<'_>, what: &dyn Fn(&ColumnName) -> String) -> Vec<Option<SiteType>> {
         form.columns
             .iter()
-            .map(|(column, label)| match self.typed_label(&[form.body], *label) {
-                Ok(ty) => Some(ty),
-                Err(message) => {
-                    self.fault(CheckId::Types, format!("the label of {} {message}", what(column)));
-                    None
-                }
+            .map(|(column, label)| {
+                self.typed_label(&[form.body], *label)
+                    .map_err(|fault| self.type_fault(fault, &format!("the label of {}", what(column))))
+                    .ok()
             })
             .collect()
     }
 
     /// The type of `label` in `bodies`, as [`Self::label_type`] gives it,
-    /// where its sites give one, or the text of its fault.
-    fn typed_label(&self, bodies: &[&Body], label: LabelId) -> Result<SiteType, String> {
-        self.label_type(bodies, label)?.ok_or_else(|| "stands at no site that gives a type".to_string())
+    /// where its sites give one, or its fault: [`TypeFault::Reported`] as
+    /// [`Self::label_type`] gives it, and otherwise the text of the fault,
+    /// among them that its sites give it no type.
+    fn typed_label(&self, bodies: &[&Body], label: LabelId) -> Result<SiteType, TypeFault> {
+        self.label_type(bodies, label)?.ok_or_else(|| TypeFault::Text("stands at no site that gives a type".to_string()))
     }
 
     /// The type that the sites of `label` in `bodies` give it, `None` where
-    /// they give none, or the text of its fault: the meet of its fixed
-    /// types, as [`label_type`] gives it over each body, or the one type
-    /// parameter of the cell instance its sites give where they give no
-    /// fixed type.
-    fn label_type(&self, bodies: &[&Body], label: LabelId) -> Result<Option<SiteType>, String> {
+    /// they give none, or its fault: the meet of its fixed types, as
+    /// [`label_type`] gives it over each body, or the one type parameter of
+    /// the cell instance its sites give where they give no fixed type. A
+    /// label at a site for which [`Self::site_type`] gives [`Reported`]
+    /// takes [`TypeFault::Reported`], whatever its other sites give.
+    fn label_type(&self, bodies: &[&Body], label: LabelId) -> Result<Option<SiteType>, TypeFault> {
+        let reported = Cell::new(false);
+        let probe = |atom: &Atom, path: &[ColumnName]| {
+            reported.set(reported.get() || self.site_type(atom, path).is_err());
+            None
+        };
+        for body in bodies {
+            label_type(body, label, &probe).expect("a label whose sites give no type has no fault");
+        }
+        if reported.get() {
+            return Err(TypeFault::Reported);
+        }
+        let text = |fault| TypeFault::Text(label_fault_message(fault));
         let parameters: RefCell<Vec<TypeParameter>> = RefCell::new(Vec::new());
         let fixed_site = Cell::new(false);
         let site = |atom: &Atom, path: &[ColumnName]| match self.site_type(atom, path) {
-            Some(SiteType::Fixed(ty)) => {
+            Ok(Some(SiteType::Fixed(ty))) => {
                 fixed_site.set(true);
                 Some(ty)
             }
-            Some(SiteType::Parameter(parameter)) => {
+            Ok(Some(SiteType::Parameter(parameter))) => {
                 let mut parameters = parameters.borrow_mut();
                 if !parameters.contains(&parameter) {
                     parameters.push(parameter);
                 }
                 None
             }
-            None => None,
+            Ok(None) | Err(Reported) => None,
         };
         let mut fixed: Option<ValueType> = None;
         for body in bodies {
-            let ty = label_type(body, label, &site).map_err(label_fault_message)?;
+            let ty = label_type(body, label, &site).map_err(text)?;
             fixed = match (fixed, ty) {
                 (Some(a), Some(b)) => match a.meet(&b) {
                     Meet::Type(ty) => Some(ty),
-                    Meet::Empty => return Err(label_fault_message(LabelFault::EmptyMeet(a, b))),
+                    Meet::Empty => return Err(text(LabelFault::EmptyMeet(a, b))),
                 },
                 (a, b) => a.or(b),
             };
@@ -377,10 +413,10 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
         match (&parameters[..], fixed) {
             ([], ty) => Ok(ty.map(SiteType::Fixed)),
             ([parameter], _) if !fixed_site.get() => Ok(Some(SiteType::Parameter(parameter.clone()))),
-            ([parameter], _) => Err(format!("stands at sites of the type parameter `{}` and at sites of a fixed type", parameter.0)),
+            ([parameter], _) => Err(TypeFault::Text(format!("stands at sites of the type parameter `{}` and at sites of a fixed type", parameter.0))),
             (parameters, _) => {
                 let names: Vec<String> = parameters.iter().map(|p| format!("`{}`", p.0)).collect();
-                Err(format!("stands at sites of the type parameters {}", names.join(", ")))
+                Err(TypeFault::Text(format!("stands at sites of the type parameters {}", names.join(", "))))
             }
         }
     }
@@ -389,27 +425,50 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
     /// a lib name's, as [`MacroDerivation`] gives it, a column of the cell
     /// instance's own input, a `RULE` form's column, or a column of an
     /// output of the `INIT` form under its binding. A read of a form being
-    /// typed gives no type.
-    fn site_type(&self, atom: &Atom, path: &[ColumnName]) -> Option<SiteType> {
-        let column = path.first()?;
-        match &atom.relation {
+    /// typed gives no type. A site under a binding, or a field of a record
+    /// binding, that holds no type gives [`Reported`], since that binding
+    /// holds no type only where its label's type has a fault.
+    fn site_type(&self, atom: &Atom, path: &[ColumnName]) -> Result<Option<SiteType>, Reported> {
+        let Some(column) = path.first() else { return Ok(None) };
+        Ok(match &atom.relation {
             RelationRef::Lib(_) => self.macros.site_type(atom, path).map(SiteType::Fixed),
             RelationRef::Fact(_) | RelationRef::DefaultRows { .. } => None,
-            RelationRef::DefinedPort(port) => {
-                let input = self.cell.inputs.iter().find(|input| input.port.name == *port)?;
-                SiteType::of_column(&input.port.columns.iter().find(|c| c.name == *column)?.ty)
-            }
-            RelationRef::Declared(name) => {
-                let i = self.cell.rules.iter().position(|(rule, _)| *rule == name)?;
-                let FormState::Typed(types) = &self.rules[i] else { return None };
-                let index = self.cell.rules[i].1.columns.iter().position(|(c, _)| c == column)?;
-                types[index].clone()
-            }
-            RelationRef::Output(output) => match self.init_column(output, column)? {
-                InitColumn::Type(ty) => Some(ty),
-                InitColumn::Bound(_, Binding::One(ty)) => ty.clone(),
-                InitColumn::Bound(_, Binding::Record(fields)) => record_field(fields, path.get(1)?)?.clone(),
-            },
+            RelationRef::DefinedPort(port) => self.input_column_type(port, column),
+            RelationRef::Declared(name) => self.rule_column_type(name, column),
+            RelationRef::Output(output) => return self.init_column_type(output, column, path.get(1)),
+        })
+    }
+
+    /// The type of the column `column` of the cell instance's own input
+    /// `port`, where it gives one.
+    fn input_column_type(&self, port: &PortName, column: &ColumnName) -> Option<SiteType> {
+        let input = self.cell.inputs.iter().find(|input| input.port.name == *port)?;
+        SiteType::of_column(&input.port.columns.iter().find(|c| c.name == *column)?.ty)
+    }
+
+    /// The type of the column `column` of the `RULE` form `name`, where
+    /// that form is typed and gives the column one.
+    fn rule_column_type(&self, name: &RelationName, column: &ColumnName) -> Option<SiteType> {
+        let i = self.cell.rules.iter().position(|(rule, _)| *rule == name)?;
+        let FormState::Typed(types) = &self.rules[i] else { return None };
+        let index = self.cell.rules[i].1.columns.iter().position(|(c, _)| c == column)?;
+        types[index].clone()
+    }
+
+    /// The type that the binding of the `INIT` form gives the column
+    /// `column` of the output `output` reads, at the field `field` of a
+    /// record binding, as [`Self::site_type`] gives it.
+    fn init_column_type(&self, output: &crate::program::OutputName, column: &ColumnName, field: Option<&ColumnName>) -> Result<Option<SiteType>, Reported> {
+        let bound = match self.init_column(output, column) {
+            Some(InitColumn::Type(ty)) => return Ok(Some(ty)),
+            Some(InitColumn::Bound(_, Binding::One(ty))) => Some(ty),
+            Some(InitColumn::Bound(_, Binding::Record(fields))) => field.and_then(|field| record_field(fields, field)),
+            None => None,
+        };
+        match bound {
+            Some(Some(ty)) => Ok(Some(ty.clone())),
+            Some(None) => Err(Reported),
+            None => Ok(None),
         }
     }
 
@@ -569,7 +628,9 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
     /// type has a fault, over the bodies of its form, as [`Self::label_type`]
     /// gives it, where neither [`Self::column_types`] nor [`Self::bind`]
     /// types it. A label whose sites give no type takes no fault here, since
-    /// the type check refuses no such label (the doc of [`CheckId::Types`]).
+    /// the type check refuses no such label (the doc of [`CheckId::Types`]),
+    /// and a label of [`TypeFault::Reported`] takes none, since the
+    /// diagnostic of its fault stands already.
     fn check_labels(&self) {
         let rules = self.cell.rules.iter().map(|(name, form)| (format!("the rule `{}`", rule_display(name)), form));
         let outputs = self.cell.outputs.iter().map(|(port, form)| (format!("the output `{}`", port.0), form));
@@ -620,8 +681,8 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
         for (label, site) in labels {
             let scope = [scope_list(bodies[0], label)];
             let over = if later.iter().any(|labels| labels.contains(&label)) { bodies } else { &scope[..] };
-            if let Err(message) = self.label_type(over, label) {
-                self.fault(CheckId::Types, format!("the label at {site} in {form} {message}"));
+            if let Err(fault) = self.label_type(over, label) {
+                self.type_fault(fault, &format!("the label at {site} in {form}"));
             }
         }
     }
@@ -663,13 +724,9 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
     /// The type of the label `label` of a head site or a key column, which
     /// stands for `column`, or `None` with its fault.
     fn head_label_type(&self, bodies: &[&Body], label: LabelId, column: &ColumnName) -> Option<SiteType> {
-        match self.typed_label(bodies, label) {
-            Ok(ty) => Some(ty),
-            Err(message) => {
-                self.fault(CheckId::Types, format!("the label at `{}` of the `INIT` form {message}", column_display(column)));
-                None
-            }
-        }
+        self.typed_label(bodies, label)
+            .map_err(|fault| self.type_fault(fault, &format!("the label at `{}` of the `INIT` form", column_display(column))))
+            .ok()
     }
 }
 

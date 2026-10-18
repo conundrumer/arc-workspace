@@ -104,3 +104,20 @@ fn an_arclog_proposer_column_named_twice_refuses() {
     let kinds = changed_pairs_kinds("(proposer ChangedPairs arclog (columns C_from C_from))");
     assert_eq!(kinds, [DiagnosticKind::Check(CheckId::Scope)]);
 }
+
+#[test]
+fn a_type_fault_of_an_init_binding_gives_the_diagnostics_of_the_init_form_alone() {
+    let edits = [
+        ("(OR ((self.node (:key *Ky) *P) (= *Q P))", "(OR ((self.node (:key *Ky) *P) (axis_elem (:A P)) (= *Q P))", "the label at `P` of the `INIT` form"),
+        ("(source ((:n Origin)))", "(source ((:n Origin)) (axis_elem (:A Origin)))", "the label at `n` of the `INIT` form"),
+        ("(self.dir (:key Ky) ^D))", "(self.dir (:key Ky) ^D) (axis_elem (:A D)))", "the label at `D` of the `INIT` form"),
+    ];
+    for (written, edited, init_label) in edits {
+        assert!(REGISTRY_TEXT.contains(written));
+        let text = REGISTRY_TEXT.replacen(written, edited, 1);
+        let error = Registry::parse(&text, PROPOSERS_TEXT).err().expect("a binding whose type has a fault refuses");
+        let messages: Vec<&str> = error.diagnostics.iter().map(|d| &*d.message).collect();
+        assert!(messages.iter().all(|m| !m.contains("stands at no site that gives a type")), "{messages:?}");
+        assert!(messages.iter().any(|m| m.contains(init_label)), "{messages:?}");
+    }
+}
