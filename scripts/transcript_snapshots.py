@@ -26,7 +26,7 @@ type Entry = dict[str, Any]
 
 
 class Refused(Exception):
-    """A call the command does not carry out, with the reason."""
+    """A call the command does not run, with the reason."""
 
 
 def print_refused(reason: object) -> None:

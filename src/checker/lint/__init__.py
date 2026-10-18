@@ -307,7 +307,7 @@ def check_lint(solver: Solver, runs: Runs) -> list[Finding]:
     finding on each `@ignore` line that dismisses none. An
     `@ignore` line of a category that gives lint findings dismisses
     nothing, and is a lint finding at its line. A hint on a line of more
-    than one relation stays unless each of them carries such a line. A
+    than one relation stays unless each of them has such a line. A
     banned-form finding on a line no derivation of the concept case reads
     names the cases that read it (`_branch_forms`). The findings come in
     this order: the form checks, the idle `@ignore` lines, the rewrite

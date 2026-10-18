@@ -1,5 +1,5 @@
 """Where a solver's program holds a case value: the types whose values
-carry a case, the places of a unit's terms of those types, and whether a
+hold a case, the places of a unit's terms of those types, and whether a
 base's value can stand there, as `solver.dependence` reads them."""
 
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -49,7 +49,7 @@ record fields that lead to it in that column, and its type."""
 
 @dataclass(frozen=True)
 class CaseTypes:
-    """The types whose values carry a case (`CasePlaces`): `Choice`, each
+    """The types whose values hold a case (`CasePlaces`): `Choice`, each
     type that stands in it, and each record type of the solver's own text
     with a field of such a type; with each record type's field types, and
     the type of each choice point as the model resolves it, by its path.
@@ -92,7 +92,7 @@ class CaseTypes:
                 for x in self.leaves(f, v)]
 
     def whole(self, type: str) -> bool:
-        """Whether every place of a value of `type` carries the case:
+        """Whether every place of a value of `type` holds the case:
         `Choice`, a type that stands in it, or a record type whose fields
         are each of such a type."""
         if type not in self.types:
@@ -221,8 +221,8 @@ class CasePlaces:
     holds no row, so it admits no base. An atom where some clause holds
     no term there, or whose relation only units an operation wrote head,
     sets no bound. The record types
-    that carry a case are those of the solver's own text, so a column of a
-    record type that a lib component declares carries none, though the
+    that hold a case are those of the solver's own text, so a column of a
+    record type that a lib component declares holds none, though the
     component holds its key in a field of it.
 
     One clause also ties the places of an atom to one another: where the

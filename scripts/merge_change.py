@@ -45,8 +45,8 @@ pyright and pytest can depend on are those under src/, scripts/, tests/
 and data/tasks/, those `cli.common.SOURCES` matches, pyproject.toml and
 uv.lock, apart from each Python file that stands at `<base>` and whose
 edits change nothing but bare string statements, blank lines, comments
-that carry no type-checker directive, and argparse help values that are
-plain strings (`gating.edits.same_code`). A comment that carries such a
+that hold no type-checker directive, and argparse help values that are
+plain strings (`gating.edits.same_code`). A comment that holds such a
 directive counts with the code of its line, and an import counts as code,
 since an import edit can remove a name a module uses. Pyright checks each file of its
 `include` from which a Python file the changes touch is reached along
@@ -101,13 +101,13 @@ tree, where the main tree holds it untracked, and whose copy still has
 the content copied, is no change of that worktree: the script puts it in
 no commit, and leaves the main tree's file in place.
 
-A carried file is a file the main tree holds untracked at a path a change
+A copied file is a file the main tree holds untracked at a path a change
 touches, where the worktree of each change that touches that path holds a
 copy that `change_worktree.py` made, and the main tree's file still has
 the content it had when copied. Just before the fast-forward, the script
-removes each carried file from the main tree, so that the fast-forward
+removes each copied file from the main tree, so that the fast-forward
 writes the change's version there. Where the fast-forward then fails, it
-writes each carried file back with the content and the mode it had.
+writes each copied file back with the content and the mode it had.
 
 Where the stack's rebase conflicts or a check fails on the top of the stack,
 and the stack holds more than one change, the script moves each branch back
@@ -147,7 +147,7 @@ The script refuses a change, and says why, where:
   the change left uncommitted in the worktree and nothing staged;
 - the main tree has uncommitted changes to a path the change touches,
   among them a path the main tree marks skip-worktree whose file there
-  is moved away or holds other content than its commit, and a carried
+  is moved away or holds other content than its commit, and a copied
   file is no such change;
 - a submodule of the worktree holds changes or untracked files, which no
   commit of the worktree's branch can hold;
@@ -309,8 +309,8 @@ def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
 def refuse_main_touched(main: Path, touched: Mapping[Path, frozenset[str]]) -> dict[str, str]:
     """Refuse where the main tree has uncommitted changes to a path a change
     touches, `touched` giving the paths each worktree's change touches,
-    other than a carried file, as the module docstring gives it. Return
-    each carried file, with the hash of its blob."""
+    other than a copied file, as the module docstring gives it. Return
+    each copied file, with the hash of its blob."""
     every = set().union(*touched.values())
     records = {w: carried(w) for w in touched}
     hit: list[str] = []

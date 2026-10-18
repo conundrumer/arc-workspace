@@ -66,7 +66,7 @@ type Handler = Callable[[argparse.Namespace], int]
 
 def parser() -> argparse.ArgumentParser:
     """The parser, with a subparser for each `Command`. Each subparser
-    carries, as `handler`, the function its command runs."""
+    holds, as `handler`, the function its command runs."""
     top = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=mctx("""

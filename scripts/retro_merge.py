@@ -49,7 +49,7 @@ TAIL = 2000
 
 def patch_text(worktree: Path) -> tuple[str, list[str]]:
     """The worktree's whole change as one patch, and the paths it covers. A
-    new file carries no HEAD side, so it takes a diff against `/dev/null`."""
+    new file has no HEAD side, so it takes a diff against `/dev/null`."""
     changed = checkout.changed_paths(worktree, "HEAD", *PATHSPEC)
     patch = checkout.git_out(worktree, "diff", "HEAD", "--binary", "--", *PATHSPEC)
     for c in changed:

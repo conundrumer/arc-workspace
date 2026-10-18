@@ -636,7 +636,7 @@ def _written_assign(solver: Solver, name: str,
     relation, writes: each row a fact without its case part
     (`PerCase.value`), a parameter's case part being its `Choice` columns
     (`parameter_reading`) and a `@store` relation's every column that
-    carries the case (`case_reading`), written at every base of the `Choice`
+    holds the case (`case_reading`), written at every base of the `Choice`
     (`at_every_case`). Each argument is read as a value of its column's
     type, and a case column's record as the list of its fields outside the
     case, each read as a value of its field's type

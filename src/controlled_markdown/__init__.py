@@ -5,9 +5,9 @@ CommonMark. `parse` reads text into a tree, `write` puts a tree back as
 canonical text, and the renderers project a tree down to ordinary Markdown for
 an agent to read.
 
-A node carries attributes. `+ name: value` is an attribute of the node it is
+A node has attributes. `+ name: value` is an attribute of the node it is
 nested under, and it describes that node. `* name: value` is a directive: a
-node with no text of its own, carrying that attribute, and the lines under it
+node with no text of its own, holding that attribute, and the lines under it
 are the lines it governs.
 
 `Registry` holds the documents a render draws on, together with each document's

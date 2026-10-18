@@ -297,7 +297,7 @@ def _depending(solver: Solver, groups: Sequence[tuple[Case, ...]],
 
 def _cases_agree(reference: Profile) -> bool:
     """The pairs never part the `Choice` values, which a case column
-    carries: on every pair, two or more cases that take no `@derive` or
+    holds: on every pair, two or more cases that take no `@derive` or
     `@store` branch give grids, and all give the same grids."""
     for e in reference:
         bases = [(c, g) for c, g in e if c.is_base_case]

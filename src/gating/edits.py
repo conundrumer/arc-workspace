@@ -174,7 +174,7 @@ def inert_dl(old: str, new_lines: Sequence[str], hunk: "Hunk") -> bool:
 
 
 DIRECTIVES = ("type:", "pyright:")
-"""The openings of a comment, after its `#`, that carry a directive to a
+"""The openings of a comment, after its `#`, that hold a directive to a
 type checker."""
 
 
@@ -184,7 +184,7 @@ LAYOUT = frozenset({tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.IN
 
 
 def _directives(text: str) -> list[tuple[str, tuple[str, ...]]]:
-    """The comments of the Python text `text` that carry a type-checker
+    """The comments of the Python text `text` that hold a type-checker
     directive, in order, each with the code tokens of its line: a type
     checker applies such a comment to the line it stands on."""
     tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))

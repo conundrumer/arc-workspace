@@ -1,4 +1,4 @@
-"""The handbook syntax a solver carries in comments, as one reader over the
+"""The handbook syntax a solver holds in comments, as one reader over the
 engine's comment list gives it."""
 
 import re
@@ -420,7 +420,7 @@ SIBLING_DROPS: Annotated[frozenset[HeaderWord],
            "A family sibling's header, omitting other fields:")
 ] = frozenset({HeaderWord.KEYWORDS, HeaderWord.CONCEPT,
                HeaderWord.INPUT, HeaderWord.OUTPUT})
-"""The fields a family sibling leaves out, since it carries
+"""The fields a family sibling leaves out, since it holds
 `@representative:` in their place."""
 
 
@@ -509,7 +509,7 @@ _RELATION_RE = re.compile(r"[\w.]+")
 """The relation a `@store` or `@ignore` line names."""
 _PROPOSER_RE = re.compile(r"[A-Za-z_]\w*")
 """The `<Proposer>` of `@ignore: derive <Proposer>`: a bare word, which no
-case name is but `concept`, since a constructor's name carries `$` and a
+case name is but `concept`, since a constructor's name holds `$` and a
 branch's name `=`."""
 _REPRESENTATIVE_RE = re.compile(r"^(\S+)(?:\s+(\S+))?$")
 _PLAIN_FIELD_RE = re.compile(r"^(\w+)(?:\s+([\w-]+))?:\s*(.*)$")
@@ -775,14 +775,14 @@ def _holds(span: Span | None, line: int) -> bool:
 
 def read(engine: Engine, program: Program
          ) -> tuple[Annotations, tuple[Fault, ...]]:
-    """The annotations the program's comments carry, positioned through
+    """The annotations the program's comments hold, positioned through
     each comment's `above` link and its indentation, and what could not be
     read.
 
     The comments read are the solver's own (`file` None) and the `//` ones: a
     line inside a block comment is no annotation. A comment block is a run of
     own-line comments on consecutive lines; the header is the block that starts
-    on line 1 (solver-file.md, under "File structure"). A nested line carries
+    on line 1 (solver-file.md, under "File structure"). A nested line has
     two spaces or more after `//` (solver-file.md, under "File structure"); a
     line of two spaces or more that opens no directive continues the field or
     claim above it (solver-file.md, under "File structure"). A line off its

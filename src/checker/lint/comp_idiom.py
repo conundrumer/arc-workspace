@@ -173,7 +173,7 @@ def _comp_idiom(v: View, members: dict[str, str], unit: Unit, a: Atom,
 
 
 def _image_link(p: str, q: str, atoms: list[Atom]) -> str | None:
-    """The lib relation carrying `p` onto `q`, `apply` for a D4 image and
+    """The lib relation mapping `p` onto `q`, `apply` for a D4 image and
     `compose` for a shift, where one stands in the body."""
     for atom in atoms:
         name = atom.relation.name

@@ -47,7 +47,7 @@ NIL_WORD = "nil"
 (`engine.program.NilTerm`)."""
 
 PREFIX = "$"
-"""What a constructor's name carries in a value, in a term, in a name and
+"""What a constructor's name holds in a value, in a term, in a name and
 in an `assign` string, as Souffle reads and prints a constructor."""
 
 

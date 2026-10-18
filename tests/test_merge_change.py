@@ -4,10 +4,10 @@ its submodules, and, before the commit alone, submodule
 commits that only the worktree's own copies of the submodules' repositories
 hold. Before the removal, the script also moves the files under its
 `work/` to the main tree's, and fails on a file whose path there is
-taken. A file the main tree holds untracked and a change carries keeps
-its main-tree content where a pass edited it after the carry, which the
+taken. A file the main tree holds untracked and a change holds a copy of keeps
+its main-tree content where a pass edited it after the copy, which the
 merge refuses, and where the fast-forward fails after its removal, which
-writes it back; a carried file the change left as copied is in no
+writes it back; a copied file the change left as copied is in no
 commit. The merge makes the readers' tree of the old `master` before the
 fast-forward, and fast-forwards where that make fails. The checks run by
 the command lines of the tree they check, and take as a code path a
@@ -177,7 +177,7 @@ def test_work_link_is_removed_alone(merge_change, trees):
 @pytest.fixture
 def carrying(trees, tmp_path, merge_change, monkeypatch):
     """The main tree of `trees` with the untracked file `p/u`, which the
-    worktree carries, and the checks and the main tree's commands stubbed
+    worktree holds a copy of, and the checks and the main tree's commands stubbed
     out."""
     main, worktree = trees
     (main / "p").mkdir()

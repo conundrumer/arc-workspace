@@ -56,7 +56,7 @@ def run_solver(solver: Solver, grid: Grid) -> list[Candidate] | RunFailure:
     """Each witnessed case of the solver (`solver.witnessed_cases.witnessed`), run
     on `grid` at the stored assignment, in the order of the cases; the
     failure of the run that enumerates the cases where it fails. A case
-    whose run gives no result carries the failure's line."""
+    whose run gives no result gives the failure's line."""
     engine = _engine()
     cases = witnessed(engine, solver, LIMITS, WitnessFileRole.TASK)
     if not isinstance(cases, tuple):

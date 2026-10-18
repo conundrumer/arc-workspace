@@ -1,6 +1,6 @@
 """The list prices of the tokens a request uses, in dollars per million tokens, keyed by the model ids the transcripts give, and the token cost of a run's requests at those prices.
 
-- Source: Anthropic's pricing page and release notes, https://platform.claude.com/docs/en/release-notes/overview, which carry price changes the bundled claude-api skill lags. 5-minute cache writes are 1.25x input and 1-hour cache writes 2x input.
+- Source: Anthropic's pricing page and release notes, https://platform.claude.com/docs/en/release-notes/overview, which give price changes the bundled claude-api skill lags. 5-minute cache writes are 1.25x input and 1-hour cache writes 2x input.
 - A request is the entries of one message id, and an entry with no message id makes the cost unknown. Its usage is, for each count, the most any of its entries gives, where an entry gives its top-level counts, or the sum over its `iterations` where that sum is larger.
 """
 

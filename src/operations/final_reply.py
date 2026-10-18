@@ -4,10 +4,10 @@ gives, whether that text ends the operator for
 its context (`for_context`) or hands its lines to the operator launched
 after it (`hands_over`) or to one operator by name (`hands_to`), the calls that sent its text to its parent
 (`final_sends`), the calls of each operator (`OwnCalls`), whether an operator has ended (`ended`), which of two
-operators carries on the lines one hands the other (`takes_up`), whether a holder
+operators continues the lines one hands the other (`takes_up`), whether a holder
 of a change is live (`live_holder`), the operators launched before and
 after one (`split_at`),
-the operator whose final reply carries what
+the operator whose final reply gives what
 reached an earlier one (`carrier`), the operator whose launch an agent is or
 stands in (`session_operator`), and the lines the reply nests.
 `ended_at`, `takes_up` and `carrier` read the calls of
@@ -144,8 +144,8 @@ def takes_up(own: Mapping[str, OwnCalls], earlier: str, later: str) -> bool:
     """Whether `later` takes up the lines that the last final send of the
     operator `earlier`, launched before it, hands it (`hands_to`, or
     `hands_over` in a row), where `own` gives the calls of each. Of the
-    two, the one whose call of `next` after that send came first carries
-    those lines on: `earlier` only where its call came first and `later`
+    two, the one whose call of `next` after that send came first continues
+    those lines: `earlier` only where its call came first and `later`
     had `ended_at` that call."""
     sent = own[earlier].finals[-1].time
     first_earlier = first_next(own[earlier], sent)
@@ -189,7 +189,7 @@ def replies_by_operator(state: State) -> dict[str, list[float]]:
 
 def carrier(state: State, operator: str, time: float,
             replies: Mapping[str, list[float]]) -> str | None:
-    """The operator whose final reply carries what reached `operator` at
+    """The operator whose final reply gives what reached `operator` at
     `time`: of `operator` and the operators launched after it, the one
     whose call that printed a final reply came first after `time`, by
     `replies`, which `replies_by_operator` gives, with `me` counted as

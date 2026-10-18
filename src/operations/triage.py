@@ -28,7 +28,7 @@ form:
   message that opens with `steps.DECISION`, read back by the analyst's
   agent id and the reply's time in any message to the coordinator.
 - Its `tell:` items reach the coordinator together, in the final reply of
-  the operator that carries that reply (`final_reply.carrier`).
+  the operator that gives that reply (`final_reply.carrier`).
 - Its `unfinished:` items, and its items that open with a label with no
   colon after it (`reports.MISLABELED`), are a step the command cannot
   decide, which goes to a ticket analyst launched on it (`decisions`),
@@ -164,7 +164,7 @@ def decision_key(number: str, time: float) -> str:
 
 def carried(state: State, t: Ticket, line: LogLine) -> bool:
     """Whether the reply of the ticket analyst that wrote `line` on `t`
-    carries its decision to the coordinator: the analyst still runs, or
+    gives its decision to the coordinator: the analyst still runs, or
     its reply after `line` gives a `decision:` item."""
     return any(a.pending or (
         (r := a.last_report) is not None and r.time >= line.time
@@ -263,7 +263,7 @@ def unfinished(state: State) -> Step | None:
 def told(state: State) -> list[str]:
     """The lines of the final reply of the operator `me` that give the
     coordinator the `tell:` items of each ticket analyst's reply that `me`
-    carries (`final_reply.carrier`), and of the reply of an analyst on a held
+    gives (`final_reply.carrier`), and of the reply of an analyst on a held
     step, its `unfinished:` items and its items that open with a label with
     no colon after it. An analyst whose `final_reply.session_operator` is
     None gives no lines."""

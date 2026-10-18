@@ -160,7 +160,7 @@ def check_keyword(solver: Solver, runs: Runs) -> list[Finding]:
         "whether the task is a nested task, and where it is, give the solver "
         "the case that section gives.")
 def check_demonstrated_choice(solver: Solver, runs: Runs) -> list[Finding]:
-    """A `@keywords:` line that carries `induce` in a solver that declares
+    """A `@keywords:` line that holds `induce` in a solver that declares
     no `DemonstratedChoice` at the top level. A sibling's keywords stand
     in its representative's header, so a sibling gets none. Serves the
     concept's form: the rules a nested task's inputs demonstrate stand as

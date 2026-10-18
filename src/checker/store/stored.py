@@ -337,7 +337,7 @@ def stored_already(solver: Solver, runs: Runs, stored: StoredAlready,
                    f: Found, concept: Base | None = None,
                    every: bool = True) -> bool:
     """Whether the value is stored already (`StoredAlready`): at the rows
-    of every case that holds it, and at every row where no column carries
+    of every case that holds it, and at every row where no column holds
     the case; with `every` false, at the concept case's rows alone."""
     held_by_case = case_reading(solver, f.relation)
     types, case_cols = held_by_case.types, held_by_case.case

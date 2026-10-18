@@ -100,7 +100,7 @@ def _call_phases(text: str) -> dict[int, str]:
 
 
 def _role_aliases(text: str, stems: set[str]) -> dict[str, str]:
-    """Each variable bound to a role text, with the stem it carries."""
+    """Each variable bound to a role text, with the stem it holds."""
     return {m.group(1): m.group(2) for m in ROLE_ALIAS_RE.finditer(text)
             if m.group(2) in stems}
 
@@ -130,7 +130,7 @@ def _at_column(named: dict[str, int], stem: str, column: int) -> None:
 def workflow_phases(name: str, roles: Path = ROLE_DIR,
                     workflows: Path = WORKFLOW_DIR) -> dict[str, Phase]:
     """Each role the workflow script refers to, in phase order, with the phase it
-    runs in. A line inside an `agent(` call that carries a `phase:` option
+    runs in. A line inside an `agent(` call that holds a `phase:` option
     takes that phase, and any other line takes the phase of the nearest
     `phase()` statement above it. A line refers to a role by its stem, by a
     variable bound to `roles.<stem>`, or, inside such a call, by a list of

@@ -9,7 +9,7 @@ Source records are listed canonical-first; non-canonical sources include a
 `perm` mapping from that source's ordering back to canonical.
 
 Each applied patch contributes one entry to a `patches` list on the resulting
-dict, each carrying its level and any top-of-file metadata (`comment`,
+dict, each holding its level and any top-of-file metadata (`comment`,
 `issue`, …) from that patch.
 """
 
@@ -37,7 +37,7 @@ DESCRIPTION_KEYS = (ID, SOURCE, PATCHES, VARIANT)
 def materialize_default(task_id: str) -> dict[str, Any]:
     """Materialize the highest-consistency form of a task.
 
-    The output dict carries a `patches` list (one entry per applied patch)
+    The output dict holds a `patches` list (one entry per applied patch)
     plus a `variant` field naming the highest level applied when any was."""
     sources = find_all(task_id)
     if not sources:

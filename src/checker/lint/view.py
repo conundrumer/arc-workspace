@@ -519,7 +519,7 @@ def choice_tags(solver: Solver, v: View) -> dict[str, int]:
 
 
 def head_ctors(unit: Unit) -> set[str]:
-    """The constructors a clause's head carries: the ones its arguments
+    """The constructors a clause's head holds: the ones its arguments
     spell, and the ones a body equality `V = <term>` sets a head variable
     to."""
     bound: dict[str, list[Term]] = {}

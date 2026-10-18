@@ -405,7 +405,7 @@ class LintCaseValue:
 class LintLabeled:
     """A lint sentence over a `@witness`, `@derive` or `@store` line: its
     word, the witness id or proposer it names (None for `@store`), and the
-    `@relaxed` slugs it carries."""
+    `@relaxed` slugs it has."""
 
     category: Category
     sentence: LintSentence

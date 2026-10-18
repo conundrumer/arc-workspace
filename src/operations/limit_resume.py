@@ -1,7 +1,7 @@
 """The resume of each agent of the session's operators that the usage limit
 stopped and that has not run since (`TranscriptsRead.limited`): once a
 reading of the limit made after that stop gives it as lifted
-(`State.limit_lifted`), a message that asks the agent to carry on its
+(`State.limit_lifted`), a message that asks the agent to continue its
 work. A step that sends it only after the stop's time counts as made, so
 each stop gets one resume, and a later stop of the resumed agent gets its
 own. An agent another agent resumed, or that a notification woke, has run

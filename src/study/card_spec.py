@@ -80,7 +80,7 @@ class Card:
     # question the task's own pairs already separate. Write a witness file
     # when the question turns on an input the task does not contain.
     witnesses: list[str] = field(default_factory=list[str])
-    # The user answers by index, so the options carry the whole decision:
+    # The user answers by index, so the options hold the whole decision:
     # each states a position rather than a direction, they exclude each
     # other, and together they cover the answers. The expected answer goes
     # first. In JSON, `OPTION_FORM` gives an option's forms.

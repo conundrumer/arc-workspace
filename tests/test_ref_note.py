@@ -13,7 +13,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "console" / "ref_note.p
 @pytest.fixture(scope="session")
 def fixed_repo(tmp_path_factory):
     """The three solvers every test reads, written once for the whole run.
-    aaaa1111 carries the user's approval — no draft line; the other two are
+    aaaa1111 holds the user's approval — no draft line; the other two are
     tagged. No test writes to the repo; only the state dir varies."""
     root = tmp_path_factory.mktemp("fixed") / "repo"
     solvers = root / "programs" / "solvers"

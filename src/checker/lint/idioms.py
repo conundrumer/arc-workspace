@@ -289,7 +289,7 @@ PARTNER = Partner()
 @dataclass(frozen=True)
 class Chain:
     """A lib relation's defining body as the two atoms a hand-written
-    clause carries: each atom's relation, arity and linking slot (the
+    clause holds: each atom's relation, arity and linking slot (the
     second's, the slots the link may take where the relation is
     commutative there), and the replacement's arguments."""
 

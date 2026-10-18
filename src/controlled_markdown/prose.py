@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import ast
 import functools
+import io
 import re
+import tokenize
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -100,18 +102,36 @@ def carry_errors(document: Node) -> Iterator[ControlledMarkdownError]:
             continue
         for at, line in enumerate(node.text.split("\n")):
             if words := carry_words(line):
-                yield ControlledMarkdownError(
-                    node.source, node.line + at, Rule.LITERAL_WORD,
-                    f"{', '.join(f'`{w}`' for w in words)}: a line says the "
-                    f"relation it means with a literal verb, such as `has`, "
-                    f"`gives`, `holds`, `does` or `takes`")
+                yield _carry_error(node.source, node.line + at, words)
+
+
+def _carry_error(source: str, line: int,
+                 words: list[str]) -> ControlledMarkdownError:
+    """The finding at `line` of `source`, whose own words hold `words`."""
+    return ControlledMarkdownError(
+        source, line, Rule.LITERAL_WORD,
+        f"{', '.join(f'`{w}`' for w in words)}: a line says the relation it "
+        f"means with a literal verb, such as `has`, `gives`, `holds`, `does` "
+        f"or `takes`")
+
+
+# The deprecated console, whose docstrings and comments `code_carry_errors`
+# passes over.
+DEPRECATED = checkout.ROOT / "tools" / "console"
 
 
 def code_carry_errors(path: Path, source: str) -> Iterator[ControlledMarkdownError]:
-    """A finding at each line of a fragment or of a lib doc comment that the
-    file `path` holds whose own words hold a form of `carry`, at its line in
-    the file. Where the other rules refuse to read a fragment, or the file's
-    fragments past one, this check reads neither: those rules report it."""
+    """A finding at each line of a fragment, of a lib doc comment, or of a
+    docstring or a comment of a Python file outside `DEPRECATED`, that the
+    file `path` holds and whose own words hold a form of `carry`, at its
+    line in the file. Where the other rules refuse to read a fragment, or
+    the file's fragments past one, this check reads neither: those rules
+    report it. The docstrings and comments are read apart from the
+    fragments."""
+    if path.suffix == ".py" and not path.resolve().is_relative_to(DEPRECATED):
+        for line, text in python_prose_lines(path.read_text()):
+            if words := carry_words(text):
+                yield _carry_error(source, line, words)
     if path.suffix == ".dl":
         for fragment in dl_fragments(path, source):
             yield from carry_errors(_statement(fragment.text, source,
@@ -127,6 +147,39 @@ def code_carry_errors(path: Path, source: str) -> Iterator[ControlledMarkdownErr
                 yield _at_file_line(fragment, err)
     except ControlledMarkdownError:
         return
+
+
+# The prefix and the opening quotes of a Python string literal.
+STRING_OPEN_RE = re.compile(r"^[A-Za-z]*(\"\"\"|'''|\"|')")
+
+
+def python_prose_lines(text: str) -> list[tuple[int, str]]:
+    """Each line of a docstring or of a `#` comment of the Python text
+    `text`, with its line, in the order of the lines. A docstring is any bare
+    string statement, wherever it stands, read as its source spells each of
+    its literals, so each line is the file's own line; a comment gives its
+    text after the `#`. A text that does not parse gives none."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    bare = [((n.lineno, n.col_offset), (n.end_lineno, n.end_col_offset))
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)
+            and isinstance(n.value.value, str)]
+    lines: list[tuple[int, str]] = []
+    for token in tokenize.generate_tokens(io.StringIO(text).readline):
+        if token.type == tokenize.COMMENT:
+            lines.append((token.start[0], token.string[1:]))
+        elif token.type == tokenize.STRING and any(
+                start <= token.start and token.end <= end
+                for start, end in bare):
+            opening = STRING_OPEN_RE.match(token.string)
+            assert opening is not None, token.string
+            body = token.string[opening.end():-len(opening.group(1))]
+            lines.extend((token.start[0] + at, ln)
+                         for at, ln in enumerate(body.split("\n")))
+    return sorted(lines)
 
 
 # A hole a fragment leaves for the program to fill: `{name}` in Python,
@@ -296,7 +349,7 @@ def text_fragments(text: str, path: Path, source: str):
 
 def check_file_fragments(path: Path, source: str,
                          root: Path | None = None) -> None:
-    """Every fragment a file holds, checked where it stands. An error carries
+    """Every fragment a file holds, checked where it stands. An error gives
     the file and the fragment's own line, offset within a multi-line one."""
     for fragment in fragments(path, source):
         try:
@@ -410,7 +463,7 @@ def check_citation_anchors(path: Path, source: str,
 
 
 # A `quotes` call names a handbook document, a heading in it and the words
-# under that heading. The checker's own rule on which of its functions carry
+# under that heading. The checker's own rule on which of its functions have
 # one is `checker.quoting`'s.
 LINE_MARKER_RE = re.compile(r"^\s*(?:[-+*]\s+|\d+\.\s+)?")
 
@@ -523,7 +576,7 @@ DL_DOC_RE = re.compile(r"^\s*(?://!|///)[ \t]?(.*)$")
 
 def dl_fragments(path: Path, source: str):
     """Every doc-comment line a Souffle file holds. A line blank after its
-    marker carries no prose."""
+    marker holds no prose."""
     for n, line in enumerate(path.read_text().split("\n"), 1):
         m = DL_DOC_RE.match(line)
         if m is not None and m.group(1).strip():

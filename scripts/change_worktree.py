@@ -115,7 +115,7 @@ def copy_included(main: Path, path: Path) -> None:
 
 
 def carried_record(worktree: Path) -> Path:
-    """The record of the files `copy_scope_untracked` carried into
+    """The record of the files `copy_scope_untracked` copied into
     `worktree`, in its own git directory, which the worktree's removal
     deletes."""
     return Path(checkout.git_out(worktree, "rev-parse", "--path-format=absolute",
@@ -139,7 +139,7 @@ def same_blobs(tree: Path, hashes: Mapping[str, str]) -> set[str]:
 
 def as_copied(worktree: Path) -> set[str]:
     """Each file `carried` gives that `worktree` still holds as copied
-    (`same_blobs`): a carried file the change left as copied."""
+    (`same_blobs`): a copied file the change left as copied."""
     return same_blobs(worktree, carried(worktree))
 
 

@@ -398,7 +398,7 @@ def file_validation(tickets: Path, path: Path, request: TicketNumber, agent: str
 
 def unblock(tickets: Path, change: TicketNumber, agent: str, agent_id: str | None,
             resolution: Resolution, note: str) -> Moves:
-    """Carries out, for the change `change` closed with `resolution` and `note`,
+    """Performs, for the change `change` closed with `resolution` and `note`,
     the moves of the tickets that wait on it that `ticket_log_command.LOG_RULES`
     gives, and returns what it did. Each line is as `log_moves` writes it."""
     moves = Moves()

@@ -150,7 +150,7 @@ class Undecided:
     before it launches the step's analyst (`scripts/operate_loop.py`
     `operator_step`); it stays out of the step's key and its equality.
     `change` is the number of the held change whose step it is
-    (`changes.step`), which the launch of its analyst carries
+    (`changes.step`), which the launch of its analyst gives
     (`decisions.launch`). `ruling` is the sentence that gives the line
     that rules a step `held` made, and `former_ruling` that sentence in
     the bare form (`former`); both stay out of the step's key and of
@@ -334,7 +334,7 @@ def digest(step: Step) -> str:
 
 
 OF_CHANGE = (Launch, Send, Bash, Undecided)
-"""The steps that carry the number of the change they serve."""
+"""The steps that hold the number of the change they serve."""
 
 
 def served[S: Step | None](s: S, t: Ticket, version: float) -> S:

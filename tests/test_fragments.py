@@ -159,6 +159,33 @@ def test_prose_in_code_takes_the_literal_word_rule(tmp_path, name, text, lines):
     assert [(e.rule, e.line) for e in errors] == [("literal-word", n) for n in lines]
 
 
+CARRY_PROSE_PY = '''\
+"""The module carries a word in a figurative sense."""
+
+
+def f():
+    """The function carries a word in a figurative sense."""
+    # The comment carries a word in a figurative sense.
+    """The name `carries` stands in a code span."""
+
+
+LIMIT = 8
+"""The constant carries a word in a figurative sense."""
+("The statement spans "
+ "two literals and carries a word.")
+"""The line ends in a continuation \\
+and carries a word."""
+'''
+
+
+def test_a_docstring_and_a_comment_take_the_literal_word_rule(tmp_path):
+    path = tmp_path / "prose.py"
+    path.write_text(CARRY_PROSE_PY)
+    errors = list(code_carry_errors(path, "prose.py"))
+    assert [(e.rule, e.line) for e in errors] == [
+        ("literal-word", n) for n in [1, 5, 6, 11, 13, 15]]
+
+
 def test_the_handbook_links_only_where_its_reader_can_follow(tmp_path):
     docs = tmp_path / "docs"
     docs.mkdir()

@@ -55,7 +55,7 @@ night log The night log lines added since the snapshot.
 
 The flags and what to do about them
 -----------------------------------
-Each flag names its threshold and carries a level. The levels are what to
+Each flag names its threshold and has a level. The levels are what to
 do, in order of how much they cost:
 
 BRAKE  Post autopilot off. Admissions stop and the turns in flight finish.
@@ -461,7 +461,7 @@ def run(args) -> int:
     spent: dict[str, float] = {}
     loops = []
     reports_now = sum(it.get("callout_n") or 0 for it in items)
-    # The light items on the state endpoint carry no feed, so the per-item
+    # The light items on the state endpoint hold no feed, so the per-item
     # events come from the state file, which the server writes on every change.
     try:
         full = json.loads((STATE_DIR / "state.json").read_text())["items"]

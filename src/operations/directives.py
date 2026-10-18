@@ -50,7 +50,7 @@ rulings in the same forms.
 Which operator a line gives steps to is as `plan` gives. A ruling holds
 for every operator of the session, whether the coordinator gave it or a
 ticket analyst on a held step replied with it, so an operator that takes
-over a change from an earlier one carries it on by the rulings the earlier
+over a change from an earlier one continues it by the rulings the earlier
 one received."""
 
 import re

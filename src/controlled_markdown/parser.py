@@ -292,7 +292,7 @@ def parse(text: str, source: str = "<input>", fragment: bool = False) -> Node:
                                f"`{name}` is a reserved attribute name")
 
         if marker == "*":
-            # A directive: a node with no text of its own, carrying one
+            # A directive: a node with no text of its own, holding one
             # attribute, on the lines under it.
             node = Node(CONTENT, line=num, source=source, star=True)
             node.children.append(Node(ATTRIBUTE, name=name, value=value,

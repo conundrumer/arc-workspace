@@ -1,6 +1,6 @@
 """What a base holds at a case column: whether a row's case values are
 the base's, the values a base holds at a case type, the columns of a
-relation that carry the case, and each parameter's column that carries
+relation that hold the case, and each parameter's column that holds
 the case off the form of a case column."""
 
 from collections.abc import Iterator, Sequence
@@ -80,10 +80,10 @@ def case_columns(solver: Solver, of: RelationName | Sequence[str]
                  ) -> tuple[int, ...]:
     """The columns of the relation `of` of the solver's program, or of a
     relation of column types `of`, as the model resolves them
-    (`column_types`), that carry the case: of type `Choice`, of an
+    (`column_types`), that hold the case: of type `Choice`, of an
     ADT that stands in `Choice` (solver-file.md, under "Types"), or of a record
     type with a field of such a type, a component's type parameter read through
-    the instance, which carries the case in that field and is a key in its
+    the instance, which holds the case in that field and is a key in its
     other fields (`case_types`, as `dependence` reads them). A
     case column is a key of a stored value, never one of its columns."""
     if solver.choice is None:
@@ -95,9 +95,9 @@ def case_columns(solver: Solver, of: RelationName | Sequence[str]
 
 
 def off_form_case_columns(solver: Solver) -> Iterator[Fault]:
-    """Each parameter's column that carries the case (`case_columns`) and
+    """Each parameter's column that holds the case (`case_columns`) and
     is no case column of a parameter (`parameter_case_columns`). With no
-    `Choice` no column carries the case, and with no instance of `Params`
+    `Choice` no column holds the case, and with no instance of `Params`
     the program reads no parameter."""
     if solver.choice is None or instance_of(solver.program, PARAMS) is None:
         return

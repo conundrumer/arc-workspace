@@ -1,6 +1,6 @@
 """A change the operator holds, from its take to its merge: the editors, the review of the documents, the design review, the item checker
 and the ticket analyst on what the editors leave; `doc_review` gives the
-review of the documents. The steps carry out
+review of the documents. The steps perform
 [Making a change](prompts/agents/notes/changes.md#making-a-change);
 `taking` gives the release of tickets and the take of open changes,
 `merging` the merge and what follows it. `change_agents` gives the
@@ -12,7 +12,7 @@ A change with no worktree gets one from
 `scripts/change_worktree.py`, which logs its path on the ticket, so a
 later operator continues the change there. Where a change's ticket is
 revised after the log line that gives its worktree, the operator runs
-`scripts/change_worktree.py` again, whose `--help` gives what it carries in.
+`scripts/change_worktree.py` again, whose `--help` gives what it copies in.
 Every editor and reviewer is
 launched with no isolation, and its brief gives that worktree.
 
@@ -158,8 +158,8 @@ def last_served(state: State) -> Ticket | None:
 
 def give_up(state: State) -> Step | None:
     """A message that tells an agent at work on a change that no operator
-    carries any more, or that another live holder (`live_holder`) carries,
-    to end. A live holder among the session's operators carries the same
+    holds any more, or that another live holder (`live_holder`) holds,
+    to end. A live holder among the session's operators has the same
     agents, so their work goes on."""
     for a in state.transcripts.agents:
         if not a.pending or a.agent_id is None:
@@ -587,7 +587,7 @@ def cap_reply(reviewer: Agent | None, judged: float) -> tuple[str, Report] | Non
 
 def step(state: State) -> Step | None:
     """The next step of the changes: a message to an agent on a change no
-    longer carried, a take, then a step of each change the operator
+    longer held, a take, then a step of each change the operator
     holds, other than a step an operator already made or handled
     (`repeated`), where `no_step` gives none in its place. Where each step
     is such a step, the step is that of the message or the take, so the

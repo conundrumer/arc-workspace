@@ -239,7 +239,7 @@ class GridInput:
 
 @dataclass(frozen=True)
 class IndexedGrids:
-    """Grids as one relation's input, one per example: the cell facts carry
+    """Grids as one relation's input, one per example: the cell facts hold
     the example's index in a leading column."""
 
     grids: tuple[Grid, ...]
@@ -471,8 +471,8 @@ class Engine(Protocol):
 
     def prefixed(self, text: str) -> str | None:
         """The constructor whose name `text` writes with the prefix a
-        constructor carries in a value, a term or a case's name; None
-        where `text` carries no such prefix."""
+        constructor has in a value, a term or a case's name; None
+        where `text` has no such prefix."""
         ...
 
     def line_comment(self, content: str) -> str:
@@ -485,7 +485,7 @@ class Engine(Protocol):
         ...
 
     def constructor_prefix(self) -> str:
-        """The prefix a constructor's name carries in a value, a term or a
+        """The prefix a constructor's name has in a value, a term or a
         case's name (`prefixed`)."""
         ...
 

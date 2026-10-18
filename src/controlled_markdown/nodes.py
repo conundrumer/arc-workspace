@@ -143,7 +143,7 @@ class Node:
         return [c for c in self.children if c.kind in (CONTENT, HEADING)]
 
     def anonymous(self) -> bool:
-        """Whether the node carries no text of its own."""
+        """Whether the node has no text of its own."""
         return self.kind == CONTENT and self.text == ""
 
     def shape(self) -> tuple:

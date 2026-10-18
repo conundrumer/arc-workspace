@@ -97,7 +97,7 @@ def _no_doc(name: str, docs: Path = DOCS_DIR) -> SystemExit:
 
 def _named_doc(name: str, docs: Path = DOCS_DIR) -> Path | None:
     """The handbook doc a reader refers to: the slug of its title, as a render
-    shows it, its file stem, or the link form a document carries,
+    shows it, its file stem, or the link form a document uses,
     `docs/handbook/<stem>.md`; None where no doc has that name."""
     if name.endswith(".md"):
         name = name[:-3]
@@ -127,7 +127,7 @@ def _doc_names(path: Path) -> str:
 
 def section_text(where: str, docs: Path = DOCS_DIR) -> str:
     """One section of a handbook doc in full, named `<doc>#<section>`, or
-    by its heading alone, bare or as a link within a document carries it,
+    by its heading alone, bare or as a link within a document holds it,
     `#<section>`, where one section of the handbook's documents has that
     heading, the heading standing alone also where `<doc>` names no doc, as
     an agent's title in place of the chapter, or one lib component's
@@ -235,7 +235,7 @@ def workflow_bundle(name: str, roles: Path = ROLE_DIR) -> dict:
     """What a workflow run needs: the text of every role under `roles`, since
     a run picks the ones it reaches. The script holds its own briefs and its
     own return schemas, each an `mctx` literal the check reads where it
-    stands. A name no script under `WORKFLOW_DIR` carries is an error."""
+    stands. A name no script under `WORKFLOW_DIR` holds is an error."""
     workflow_file(name)
     return {
         "roles": {r: role_text(r, roles) for r in _workflow_roles(name, roles)},
@@ -317,7 +317,7 @@ CODEX_DOC_BYTES = 1 << 20
 # profile keeps the workspace root's own `.codex` and `.git` read-only, and
 # the profile below lifts that for `.codex`, so a session can regenerate
 # this file. A profile does not compose with `sandbox_mode`, so the config
-# carries one or the other. The project layer applies only to a project the
+# sets one or the other. The project layer applies only to a project the
 # user's own config trusts.
 CODEX_PROFILE = "project"
 

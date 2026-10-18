@@ -10,7 +10,7 @@ the repo root with the brief on stdin and that schema as the shape of the
 final message. Codex writes that message to `.scratch/retro/codex/<label>.json`
 and the script prints it.
 
-A label carries a stage name and a count, such as `fix:prose:1/3`. A character
+A label holds a stage name and a count, such as `fix:prose:1/3`. A character
 a file name cannot take folds to `-`, so that label names the files
 `fix-prose-1-3.md` and `fix-prose-1-3.json`.
 

@@ -35,7 +35,7 @@ def finding_of(problem: Fault) -> Finding:
 
 def fault_findings(solver: Solver, runs: Runs) -> list[Finding]:
     """A finding for each of the model's faults, so that every
-    command reports them the same way. It is no check and carries no
+    command reports them the same way. It is no check and has no
     `quotes`. A fault's finding kind is its own kind
     (`Kind(problem.kind)`): the undecided one outside `FAILING`, every
     other inside it. Where the runs read a given file (`witness

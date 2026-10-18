@@ -16,7 +16,7 @@ coordinator gives the user's decision in an `Op decision:` line.
 
 The operator that answers an analyst's reply (`applier`) is the one that
 launched it, while that operator has printed no final reply since the
-launch, and otherwise the operator `me`. Since one operator carries the
+launch, and otherwise the operator `me`. Since one operator does the
 session's work at a time (`plan`), one operator answers each reply.
 
 A step the command cannot place is `steps.rulable`. A reply that goes

@@ -57,7 +57,7 @@ def gist(text: str) -> str:
     return re.split(r"(?<=\.)\s+", " ".join(text.split()), maxsplit=1)[0]
 
 
-# A section a render carries: its document's file and the section's id.
+# A section a render includes: its document's file and the section's id.
 type SectionKey = tuple[Path, str]
 
 
@@ -68,9 +68,9 @@ class _State:
     given: bool = False     # whether the caller gave values at all
     # How many times so far the render has left lines out of what it
     # expands, by an `exclude` or by an abridgement. A section expanded with
-    # the count unchanged is carried whole.
+    # the count unchanged is included whole.
     left_out: int = 0
-    # Each section the render carries whole, with each copy's heading in the
+    # Each section the render includes whole, with each copy's heading in the
     # render: the heading written at the site of an `inline` that is the one
     # line under it, or None where the copy has no heading of its own.
     whole: dict[SectionKey, list[Node | None]] = field(default_factory=dict)
@@ -163,7 +163,7 @@ def _expand(nodes: list[Node], st: _State, seen: tuple[str, ...],
 
 
 def _sole_inline(heading: Node) -> bool:
-    """Whether the lines a render carries under a heading are one `inline`
+    """Whether the lines a render shows under a heading are one `inline`
     directive, which makes the heading the inlined section's heading."""
     lines = [c for c in heading.children
              if c.kind != ATTRIBUTE and not c.has(COMMENT)]
@@ -171,7 +171,7 @@ def _sole_inline(heading: Node) -> bool:
 
 
 def _carry(source: str, ident: str, heading: Node | None, st: _State) -> None:
-    """Note that the render carries the section `ident` of the document read
+    """Note that the render includes the section `ident` of the document read
     as `source` whole, under `heading`. No link names a document read from no
     file, so nothing is noted for one."""
     file = st.reg.file(source)
@@ -244,7 +244,7 @@ def _fence(text: str) -> str:
 
 def _block(node: Node, st: _State) -> Node:
     """The block a `code`, a `quote`, or a `text` directive renders. A `text`
-    block carries the value as it stands, so a render marks it up no
+    block holds the value as it stands, so a render marks it up no
     further."""
     if node.has(TEXT_OF):
         return Node(CODE, text=_value_of(node, TEXT_OF, st),
@@ -291,7 +291,7 @@ def _include(node: Node, st: _State, seen: tuple[str, ...],
              abridged: set[Path] | str | None = None) -> list[Node]:
     """A whole document, in place of the `include` directive that names it.
 
-    The path is relative to the file that carries the directive. `exclude`
+    The path is relative to the file that holds the directive. `exclude`
     names the attributes to drop throughout, and `abridged` picks the
     documents that render as their `index` says.
     """
@@ -580,7 +580,7 @@ def markdown_headings(text: str) -> list[str]:
 
 
 def _lay_out(nodes: list[Node], st: _State, after: str = "") -> str:
-    """The nodes as Markdown, each link to a section they carry whole pointed
+    """The nodes as Markdown, each link to a section they include whole pointed
     at that section's heading (`_anchored`). `after` is the Markdown a caller
     sets after this text, whose headings take anchors too."""
     shown: list[Node] = []
@@ -606,7 +606,7 @@ def _walk_all(nodes: list[Node]) -> Iterator[Node]:
 
 def _anchored(node: Node, st: _State, shown: set[int],
               anchors: dict[str, int]) -> str:
-    """A node's text with each link to a section the render carries whole
+    """A node's text with each link to a section the render includes whole
     pointing at that section's heading in the render, as `#<anchor>`. A link
     stays as it is where the render gives its section no one heading of its
     own, written as a heading whose anchor no other heading of the render
@@ -667,7 +667,7 @@ def _require(document: Node, st: _State) -> None:
     if not st.given:
         return
     used = _names(document.children, st, (), st.reg.rel(document))
-    # A document node stands over every line and carries no line of its own,
+    # A document node stands over every line and has no line of its own,
     # so the report names the document's first line.
     line = document.line or 1
     missing = sorted(used - set(st.values))

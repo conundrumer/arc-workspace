@@ -138,7 +138,7 @@ def _aggregate_of(unit: Unit, atom: Atom) -> AggregateOperator | None:
 
 def _drops_columns(unit: Unit) -> bool:
     """The head loses information from the body: a body variable or
-    wildcard no head column carries."""
+    wildcard no head column holds."""
     if unit.body is None:
         return False
     head = literal_vars(unit.head)
@@ -292,7 +292,7 @@ def _single_atom(unit: Unit) -> Atom | None:
 
 
 def _alias_inline(v: View, decl: RelationDecl) -> Finding | None:
-    """A pure rename: one rule, one positive atom, every column carried
+    """A pure rename: one rule, one positive atom, every column passed
     through."""
     if not _inlinable(v, decl):
         return None
@@ -322,7 +322,7 @@ def _alias_inline(v: View, decl: RelationDecl) -> Finding | None:
         "Has unusual or needless indirection.")
 def check_alias_inline(solver: Solver, runs: Runs) -> list[Finding]:
     """A relation that renames another: one rule, one positive atom, every
-    column carried through. Serves the purest form: a rewrite family the
+    column passed through. Serves the purest form: a rewrite family the
     corpus's edits take (nothing verbose)."""
     return _claimed(solver, runs, Category.ALIAS_INLINE)
 

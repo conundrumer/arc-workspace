@@ -53,7 +53,7 @@ class guard:
 
 
 def guarded(target: object) -> guard | None:
-    """What a decorated check guards against; None where it carries no
+    """What a decorated check guards against; None where it has no
     `guard`."""
     got = getattr(target, GUARD_ATTRIBUTE, None)
     return got if isinstance(got, guard) else None

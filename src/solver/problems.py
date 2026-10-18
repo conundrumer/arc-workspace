@@ -96,7 +96,7 @@ class ProblemKind(StrEnum):
     """An instance, or a component's base, given another number of type
     arguments than the component declares type parameters."""
     CASE_COLUMN_OFF_FORM = "case-column-off-form"
-    """A parameter's column that carries the case in another form than a
+    """A parameter's column that holds the case in another form than a
     parameter's case column (`CaseColumnOffForm`)."""
     RIGID_CHARTS = "rigid-charts"
     """A RIGID call in `Params` whose block's chart relations are not one
@@ -401,7 +401,7 @@ class AssignType:
         "value of the case that stores the fact.")
 @dataclass(frozen=True)
 class CaseColumnOffForm:
-    """A parameter's column that carries the case and is no case column
+    """A parameter's column that holds the case and is no case column
     of a parameter (`solver.columns.parameter_case_columns`): of `type`, as
     the declaration writes it, which is of the `kind` given."""
 
@@ -412,7 +412,7 @@ class CaseColumnOffForm:
 
 
 class OffFormType(StrEnum):
-    """What a column that carries the case is, other than `Choice`
+    """What a column that holds the case is, other than `Choice`
     (`solver.case_columns.case_columns`)."""
 
     ADT = "adt"

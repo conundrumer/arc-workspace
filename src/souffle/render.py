@@ -51,7 +51,7 @@ def parts_of(program: Program) -> dict[Key, Part]:
 
 def scope_of(part: Part) -> Scope | None:
     """The scope a part stands in; None for a functor declaration, which
-    stands at the top level and carries no scope."""
+    stands at the top level and has no scope."""
     return None if isinstance(part, FunctorDecl) else part.scope
 
 
@@ -159,7 +159,7 @@ class _Renderer:
                 case Piece(text, line, parts):
                     if not parts and LINE_DIRECTIVE_RE.match(text):
                         # Never printed: each rendered line's origin
-                        # carries the number the directive gives it.
+                        # has the number the directive gives it.
                         continue
                     if not parts or self.unchanged(parts):
                         out.add(text, line if own else None, True)

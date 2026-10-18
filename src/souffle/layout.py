@@ -1,6 +1,6 @@
 """Where each part of a parsed program stands in the text it was parsed
 from, so that a rendering copies the text of each part no operation
-changed, and the program that carries it."""
+changed, and the program that holds it."""
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field

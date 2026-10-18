@@ -37,7 +37,7 @@ GOAL, TRANSCRIPT, GROUNDS = SECTIONS[Kind.REQUEST]
 ROUTES = ticked(r.value for r in Route)
 
 HELD = (Route.DIRECT, Route.HOTFIX)
-"""The routes whose request the coordinator holds while it carries the
+"""The routes whose request the coordinator holds while it makes the
 change itself."""
 
 

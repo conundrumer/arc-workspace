@@ -636,7 +636,7 @@ def check_approximation_witness(solver: Solver, runs: Runs
                                 ) -> list[Finding]:
     """A `foreign` witness under an `@approximated:` line, and a case that
     runs the approximation with no witness on which its output is not the
-    verdict's. A case whose branch carries a `@rule` line of the claim's
+    verdict's. A case whose branch has a `@rule` line of the claim's
     slug restates the claim, and the approximation does not run on it."""
     solver_cases = runs.cases_or_none
     restated: dict[str, set[str]] = {}

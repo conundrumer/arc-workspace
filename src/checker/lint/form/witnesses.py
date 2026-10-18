@@ -59,8 +59,8 @@ from checker.lint.form.case_type import choice_adts, comment_block_above
         "A branch's witnesses are divergence witnesses between its model and "
         "the concept branch's model.")
 def check_witness(solver: Solver, runs: Runs) -> list[Finding]:
-    """A `@witness`, `@derive` or `@store` line at `ordinary` that carries
-    `@relaxed`; a concept branch that carries a `@witness` line, and a
+    """A `@witness`, `@derive` or `@store` line at `ordinary` that holds
+    `@relaxed`; a concept branch that holds a `@witness` line, and a
     `@witness` line under neither a branch nor an `@approximated:` line.
     Serves the concept's form."""
     v = view(solver, runs)
@@ -167,8 +167,8 @@ def _constructions(v: View) -> frozenset[str]:
 def check_claim(solver: Solver, runs: Runs) -> list[Finding]:
     """A `@claim` line whose slug no header claim states; in a solver whose
     header states claims, an instance at program scope or inside `Parse` of
-    a component without `@construction` that carries no `@claim` line, and a
-    concept branch with no `@claim` line; and a branch's claim that carries
+    a component without `@construction` that holds no `@claim` line, and a
+    concept branch with no `@claim` line; and a branch's claim that holds
     `@approximated:`. Serves the concept's form."""
     v = view(solver, runs)
     ann = solver.annotations

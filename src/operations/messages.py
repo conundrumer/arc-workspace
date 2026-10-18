@@ -35,7 +35,7 @@ def later_line(number: str, time: float, note: str) -> str:
 
 def stop_work(number: str) -> str:
     """The message that tells an agent at work on a change or a draft whose
-    ticket the operator no longer carries to end."""
+    ticket the operator no longer holds to end."""
     return mctx("Write nothing further on {number}, and end with your open work in your "
                 "reply.").format(number=number)
 

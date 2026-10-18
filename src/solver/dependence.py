@@ -112,7 +112,7 @@ def dependence(engine: Engine, solver: Solver, bases: Sequence[Base | None]
     unit whose head has a case column, a column of `Choice` (the case column
     `ch`, solver-file.md, under "Cases"), of a type that stands in `Choice`, or
     of a record type with a field of such a type, admits a base when the base's
-    value can stand in each term the head holds there, whatever carries the
+    value can stand in each term the head holds there, whatever holds the
     value there (`CasePlaces`). A unit whose head has none admits every base,
     whatever section it stands in, since the program runs it for every case.
     Either unit admits only the bases whose value can stand in the term of an

@@ -31,7 +31,7 @@ from solver.vocabulary import INPUT
 class StoredValue:
     """The value a `@store` branch stores: the columns of the relation that
     hold one value on every input, and the rows of that value, each row over
-    those columns alone, at each value of the columns that carry the case
+    those columns alone, at each value of the columns that hold the case
     (`case_columns`). The other columns are the value's keys, which the
     relation's clauses give on each input."""
 
@@ -43,7 +43,7 @@ class StoredValue:
 
     @property
     def keyed_by_case(self) -> bool:
-        """Whether every column outside the value carries the case, so
+        """Whether every column outside the value holds the case, so
         that the relation's rows are the stored rows at each case,
         whatever the input."""
         return all(i in self.columns or i in self.case
@@ -80,14 +80,14 @@ def stored_value(engine: Engine, solver: Solver, program: Program,
                  ) -> StoredValue | RunFailure:
     """The value a `@store` branch stores (solver-file.md, under "Program"),
     from the relation's rows in `program` on each input of the task's pairs. A
-    column that carries the case (`case_columns`) is a key, never a column of
+    column that holds the case (`case_columns`) is a key, never a column of
     the value (solver-file.md, under "Program"). The value's columns are every
     other column where the rows are one set on every input. Else they are the
     most such columns, the first in column order among equals, whose rows are
     one set on every input and whose rows on each input are the same at each
     key, a key being the rows' part over the other columns: the relation is
     then its keys, which its clauses give on each input, with the value at
-    each. Else every column that carries no case.
+    each. Else every column that holds no case.
     The value's rows are the relation's rows over its columns on the first
     train input. The relation's arity is the one its declaration gives, a
     relation empty on every input included.

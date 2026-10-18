@@ -1,17 +1,17 @@
 """The operator's next step, in the order `order` gives, and its waits.
 
-One operator carries the session's work at a time: an operator for which a
+One operator does the session's work at a time: an operator for which a
 later one of the session runs, and has not ended (`final_reply.ended`)
 or takes up its lines (`taken_up`), ends at once, and the later one
-carries on from the state, so two operators never act on one ticket. Of
+continues from the state, so two operators never act on one ticket. Of
 an operator whose final reply hands its lines to a later one and that
-later one, one alone carries those lines on (`final_reply.takes_up`).
+later one, one alone continues those lines (`final_reply.takes_up`).
 The coordinator's lines, and the other agents' messages other than the
-alerts `alerts` acts on for the operator that carries the work on, give steps only to the
+alerts `alerts` acts on for the operator that continues the work, give steps only to the
 operator they reached or to one that takes them up (`taken_up`);
 an `Op decision:` line that rules a held step holds for every operator
 (`directives`), and the items for the coordinator of a ticket analyst's
-reply go to the final reply of the operator that carries that reply
+reply go to the final reply of the operator that gives that reply
 (`final_reply.carrier`). An operator past its context bound ends at once
 too, and asks its parent, the coordinator or an operator launcher, for a
 fresh operator with no lines. The operator launched next takes up from the state each line
@@ -128,7 +128,7 @@ def taken_up(me: str, operators: Sequence[str], calls: Sequence[Call],
     whose last final send hands its lines to `me` by name (`hands_to`), and
     those each of these takes up, whose lines its reply gives; of these,
     only those whose lines the operator they hand them to takes up
-    (`takes_up`), and not those that carry them on themselves."""
+    (`takes_up`), and not those that continue them themselves."""
     before = split_at(operators, me)[0]
     own = own_calls(calls, parents)
     texts = {o: sent_final_text(sends[-1]) or "" for o in before

@@ -3,10 +3,10 @@
     uv run python scripts/survey.py <entry>
 
 A run that starts prints its run directory and the `session.log` under it. A
-run may take up to an hour; when it ends, the entry carries the report under
+run may take up to an hour; when it ends, the entry holds the report under
 a `Survey:` line of its own.
 
-The scope is every solver when the entry carries no result, and otherwise
+The scope is every solver when the entry holds no result, and otherwise
 the solvers written since the entry's newest `Survey:` time. An entry with no
 such solver is current, and the command runs nothing. A closed entry is
 refused.

@@ -39,7 +39,7 @@ relations."""
 
 @dataclass(frozen=True)
 class Constant:
-    """One constant relation, under every instance path that carries it
+    """One constant relation, under every instance path that holds it
     with the same tuples."""
 
     paths: tuple[RelationName, ...]

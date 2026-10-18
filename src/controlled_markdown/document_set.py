@@ -52,7 +52,7 @@ def reached(entry: Path, registry: Registry) -> set[str]:
 
 
 def carried(node: Node) -> Iterator[Node]:
-    """Every node a render carries: the lines under a `comment` are the
+    """Every node a render shows: the lines under a `comment` are the
     editor's and reach no reader."""
     for child in node.children:
         if child.has(COMMENT):
@@ -69,7 +69,7 @@ def check_closure(entries: list[Path], document_set: set[Path],
 
     An entry document is the composition itself, and its lead is its own: it
     points an editor at what the render leaves out, so it is not closed. Only
-    the lines a render carries count, so a link under a `comment` is the
+    the lines a render shows count, so a link under a `comment` is the
     editor's and not a reader's.
     """
     registry = Registry(root)
@@ -88,7 +88,7 @@ def check_closure(entries: list[Path], document_set: set[Path],
                 if registry.rel(registry.open(target)) not in inside:
                     raise ControlledMarkdownError(
                         source, node.line, Rule.HANDBOOK_LINK,
-                        f"`{path}` is a document the handbook does not carry")
+                        f"`{path}` is a document the handbook does not hold")
 
 
 # The heading whose sections are the partials of a document: the runs of
@@ -159,7 +159,7 @@ def check_blocks(node: Node) -> None:
             if seen:
                 raise ControlledMarkdownError(child.source, child.line,
                                           Rule.BLOCK_REPEAT,
-                                          "a line carries one code node, "
+                                          "a line holds one code node, "
                                           "quote, or table at most")
             seen = True
         check_blocks(child)

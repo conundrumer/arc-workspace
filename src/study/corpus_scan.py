@@ -28,7 +28,7 @@ def equal_literal_params(solver: Solver) -> list[tuple[int, list[str]]]:
 
 def equal_literal_corpus() -> list[tuple[str, int, list[str]]]:
     """(stem, literal, relation names) for every solver under
-    programs/solvers/ carrying such a group, sorted by stem."""
+    programs/solvers/ holding such a group, sorted by stem."""
     found = []
     engine = _engine()
     for stem in all_stems():

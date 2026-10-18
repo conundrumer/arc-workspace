@@ -5,10 +5,12 @@
     uv run python -m controlled_markdown render <path> [paths...]
 
 `check` reports each file that fails to parse or is not in canonical form,
-and each line of prose whose own words hold a form of `carry`, and exits 1
-when any does. A run given no path also counts, over the whole set, the
-sites each partial is inlined at. `fmt` rewrites each file in canonical form
-and prints the ones it changed. With no path, both read the set under
+and each line whose own words hold a form of `carry` of a document, of an
+`mctx` fragment, of a lib doc comment, or of a docstring or a comment of a
+Python file outside `tools/console/`, and exits 1 when any does. A run
+given no path also counts, over the whole set, the sites each partial is
+inlined at. `fmt` rewrites each file in canonical form and prints the ones
+it changed. With no path, both read the set under
 `[tool.controlled_markdown]` in `pyproject.toml`, so the command that guards the
 documents is one word wherever it is written. `render` prints the first path as
 ordinary Markdown, with its includes resolved from the files they name, and it

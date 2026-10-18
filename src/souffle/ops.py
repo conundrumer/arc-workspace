@@ -92,7 +92,7 @@ def _remove_unit(program: Program, unit: UnitId) -> Program:
     if gone:
         out = _in_rigid_bodies(
             replace(program, units=tuple(u for u in program.units if u.id != unit)), unit)
-        # The index is carried where the removal changes no declaration
+        # The index is kept where the removal changes no declaration
         # and no RIGID call's body.
         index = held_index(program)
         if index is not None and not program.in_rigid_body(unit):
@@ -341,7 +341,7 @@ def _fix_relation(program: Program, relation: RelationName,
                    units=tuple(u for u in program.units if u.id not in feeders),
                    macros=tuple(m for m in program.macros if m.id not in feeders))
     out = _add_value(kept, relation, value, layout)
-    # The index is carried: the rewrite changes no declaration, so the
+    # The index is kept: the rewrite changes no declaration, so the
     # result's index is this one without the feeders and with the value's
     # units or call.
     hold(out, index.changed(

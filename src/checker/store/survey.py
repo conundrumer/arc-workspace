@@ -1,6 +1,6 @@
 """The values the `store` survey finds, and what it judges of each.
 
-A relation's value is read per case where a column carries the case, and
+A relation's value is read per case where a column holds the case, and
 at each subset of its data columns: one value on every input (`OWNED`),
 one family of values keyed by the other columns (`CONSTANT`), or one
 value once each set is shifted to its own corner (`TRANSLATED`). Of each
@@ -169,13 +169,13 @@ def _split(rows: Sequence[Row], key: Callable[[Row], tuple[Value, ...]]
 
 _MASKED: Value = ""
 """What a row's case values hold at a field of a record case column
-that carries no case (`case_key`)."""
+that holds no case (`case_key`)."""
 
 
 def case_key(reading: CaseTypes, types: Sequence[str],
              case_cols: Sequence[int]) -> Callable[[Row], tuple[Value, ...]]:
     """A row's case values: each case column's value, a record's fields
-    that carry no case masked, since a record column with a case field is
+    that hold no case masked, since a record column with a case field is
     a case column in that field and a key in its other fields."""
     def mask(type: str, value: Value) -> Value:
         fields = reading.fields(type)
@@ -192,7 +192,7 @@ def case_key(reading: CaseTypes, types: Sequence[str],
 
 def keyed_too(reading: CaseTypes, type: str) -> bool:
     """Whether a case column of `type` is a record with a field that
-    carries no case, which makes it a key too."""
+    holds no case, which makes it a key too."""
     fields = reading.fields(type)
     if fields is None:
         return False
@@ -256,7 +256,7 @@ class SearchEnd(StrEnum):
 class Found:
     """One column subset of one relation whose projected value repeats on
     every input, at the `Choice` cases whose rows hold it where a column
-    carries the case. The survey asks some of them for a `@store` line
+    holds the case. The survey asks some of them for a `@store` line
     (`asks_line`)."""
 
     relation: RelationName
@@ -275,7 +275,7 @@ class Found:
     subset: tuple[int, ...]
     case_values: tuple[tuple[Value, ...], ...]
     """The values of the case columns of the rows that hold the value;
-    empty where no column carries the case."""
+    empty where no column holds the case."""
     cases: tuple[Case, ...]
     """The `Choice` cases those values stand for."""
     case_names: tuple[str, ...] = field(default=(), kw_only=True)
@@ -293,13 +293,13 @@ class Found:
     where the line stands above the relation's `.decl`."""
     concept: bool = True
     concept_section: bool = True
-    """Where no column carries the case: whether the concept case runs a
+    """Where no column holds the case: whether the concept case runs a
     clause that feeds the relation, as the case markers place it
     (`concept_section`); the store section's order reads it."""
     concept_stored: bool = False
     """At the concept case's rows, the value is a parameter's already."""
     stored: bool = False
-    """At every case the rows hold, and where no column carries the case
+    """At every case the rows hold, and where no column holds the case
     at every row, the value is stored already (`StoredAlready`), or it is
     the value of stored parameters that feed it, read back
     (`reads_back`)."""
@@ -540,8 +540,8 @@ def _named_case(solver: Solver, restricted: Sequence[Base | None],
                 types: Sequence[str], case_cols: Sequence[int]
                 ) -> tuple[Case, ...]:
     """The cases a row's case values stand for: of the bases that hold
-    them, the model of the constructors they carry, the one that takes
-    the concept branch at every point no case column carries
+    them, the model of the constructors they hold, the one that takes
+    the concept branch at every point no case column holds
     (principles.md, "A branch's model"); where no base of the solver is
     that model, every base that holds them."""
     choice = solver.choice

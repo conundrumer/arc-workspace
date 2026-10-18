@@ -169,7 +169,7 @@ def line_states(state: State) -> list[str]:
 
 def reply_lines(state: State, held: set[str]) -> list[str]:
     """The lines each reply of the operator that ends it gives: its lines
-    (`line_states`), the items for the coordinator it carries
+    (`line_states`), the items for the coordinator it gives
     (`triage.told`), the held steps no decision reached
     (`decisions.undecided`, `decisions.failed`), and the steps it set
     retired (`retired_lines`)."""
