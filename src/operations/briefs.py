@@ -740,7 +740,7 @@ def batch_profile(runs: list[str], reviewable: list[str], commit: str) -> str:
     return f"{text}\n\n```\n{brief}\n```"
 
 
-BATCH_GATE = mctx("""
+GATE = mctx("""
     - Add a worktree with `git worktree add --detach <dir> master`, with a new directory under {scratch} as `<dir>`.
     - Run `uv run python scripts/gate.py --record-deps <out>` in that worktree, and remove that worktree.
     - For each `DIFF` line that run prints that the `Evidence` of no ticket outside `tickets/draft/` and `tickets/closed/` holds, bisect the commits of `master` from the commit that the `affected:` line of that run gives after `the change from` to `master`, and file a ticket of kind `bug` that gives the commit the bisection stops at.
@@ -753,8 +753,8 @@ BATCH_GATE = mctx("""
     """)
 
 
-def batch_gate(scratch: Path) -> str:
-    return BATCH_GATE.format(scratch=scratch, filing=AT_MASTER)
+def gate(scratch: Path) -> str:
+    return GATE.format(scratch=scratch, filing=AT_MASTER)
 
 
 LISTING_WAIT = mctx("""

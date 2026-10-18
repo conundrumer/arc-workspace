@@ -1,5 +1,4 @@
-"""After a batch, and the procedures of the launches no batch holds
-that no other module gives.
+"""After a batch.
 
 No batch holds the sweep and the script check (`after_profile`), nor
 the launches `unbatched` declares. So no profile launch waits on them.
@@ -14,69 +13,25 @@ with the changes merged since: those an operator's merge call merged, as
 `state.Merge` reads it, and those the coordinator gives as merged. The
 launch of the profile agent opens the next batch.
 
-The launches that only an operator of the main session makes are those
-`main_session.main_only` gives.
-
-A standing doc review launches at any step where none runs and a change
-merged since `opened` of the standing doc reviews: where the head of
-`master` is not the commit the last one's brief gives. `master` only
-fast-forwards, so another head means a change merged after that launch,
-whichever session merged it, and a last brief that gives no commit counts
-as one that gives another commit. Where none was launched, it launches
-where a commit of `master` has a time after the session's start.
-
-A standing doc review also launches at any step on an overdue reader: one
-that no tag records, or whose tag points at a commit older than
-`STANDING_SPAN` that a later commit of `master` follows, where no
-standing doc review of the session on that reader runs or launched at
-the head of `master`, as the commit its brief gives shows. Each step
-launches the first overdue reader of `State.readers`, so the overdue
-readers launch in turn, with no wait on each other's runs.
-
-A gate agent, on the gate's outputs, launches at any step
-where a change merged since `opened` of the gate agents, none runs, and
-the last launch of one stands at least `BATCH_SPAN` back.
-
-A process assessment, a ticket analyst, launches at any step once
-`ASSESS_AFTER` commits of `master` that change the agents' processes
-stand since `opened` of the process assessments, and none runs.
-
-A cost audit launches at any step once the priced spend of its window
-(`state.AuditWindow`), a lower bound of its spend, is at least
-`AUDIT_AFTER`, and the last cost audit
-an operator of the session launched does not run.
-
-A standing doc review is a doc reviewer on one reader's whole context at
-the head of `master`. The one that launches after a merge is on the
-first of the readers of `State.readers` that no standing doc review of
-the session runs on that no tag records, or, where each of those has
-one, on the one whose tag points at the oldest commit.
-
 The profile agent profiles each run `profile_runs.py --under` takes, and
 may launch a transcript review only of those a batch holds: a review of
 the runs no batch holds, After a batch's own among them, files tickets
 whose triage opens the next batch. The ticket analyst on the tickets the
 batch filed is the one `triage` launches on any open ticket."""
 
-from collections.abc import Mapping
-from dataclasses import dataclass
-
 from controlled_markdown import mctx
 from operations import briefs
 from operations.taking import release
-from operations.filing import scratch_dir
-from operations.directives import Directive, numbers
-from operations.roles import Purpose, analyst_subject
-from operations.main_session import main_only
-from operations.state import Agent, Merge, NotComputed, Reader, State
+from operations.occasions import merged, next_number
+from operations.state import Agent, State
 from operations.steps import Bash, Launch, Step, Undecided
 from operations.under_reads import last_under, under_calls, under_command
-from operations.unbatched import ASSESSMENT, COST_AUDIT, GATE, PROFILE, STANDING, follows
+from operations.unbatched import PROFILE, follows
+
 
 BATCH_SPAN = 3600
 """The seconds since a batch's first launch after which the batch closes
 with members pending, and the least span between two gate launches."""
-
 
 
 def start(state: State, before: float | None = None) -> float:
@@ -101,11 +56,6 @@ def followed(state: State, at: float) -> list[Agent]:
     return [a for a in members(state, start(state, at)) if a.launched < at]
 
 
-def merged(state: State, since: float) -> bool:
-    return (any(c.time > since and c.merge is Merge.MERGED for c in state.transcripts.calls)
-            or any(t > since for _, t in numbers(state, Directive.MERGED)))
-
-
 def step(state: State) -> Step | None:
     since = start(state)
     batch = members(state, since)
@@ -121,23 +71,6 @@ def step(state: State) -> Step | None:
     ids = {a.agent_id for a in batched(state)}
     return Launch(PROFILE.role, next_number(PROFILE.agents(state)),
                   briefs.batch_profile(runs, [r for r in runs if r in ids], state.git.commits[0].hash),
-                  occasion=str(since))
-
-
-def next_number(past: list[Agent]) -> str:
-    """The subject of the next launch of the kind whose launches are
-    `past`: its number, counted from 1."""
-    return str(len(past) + 1)
-
-
-def gate(state: State) -> Step | None:
-    """The launch of a gate agent, where one is due."""
-    past = GATE.agents(state)
-    since = merged_since(state, past)
-    if since is None or (past and state.now - since < BATCH_SPAN):
-        return None
-    n = next_number(past)
-    return Launch(GATE.role, n, briefs.batch_gate(scratch_dir(f"batch-{n}", state.scratch)),
                   occasion=str(since))
 
 
@@ -169,142 +102,3 @@ def batch_runs(state: State, batch: list[Agent], since: float,
             return Undecided(mctx("`{command}` failed").format(command=command))
         runs += last[1].taken
     return runs
-
-
-ASSESS_AFTER = 20
-
-
-@main_only
-def assessment(state: State) -> Step | None:
-    """The launch of a process assessment, where one is due."""
-    past = ASSESSMENT.agents(state)
-    since = opened(state, past)
-    if since is None or len({c.hash for c in state.git.commits if c.process and c.time > since}) < ASSESS_AFTER:
-        return None
-    return Launch(ASSESSMENT.role, analyst_subject(Purpose.ASSESS, next_number(past)),
-                  briefs.process_assessment(state.me), occasion=str(since))
-
-
-def opened(state: State, past: list[Agent]) -> float | None:
-    """The time from which the next launch of the kind whose launches are
-    `past`, those the session's operators made, counts what stands: the
-    launch of the last of `past`, or the session's start where `past` is
-    empty. None where the last of `past` runs."""
-    if past and past[-1].pending:
-        return None
-    return past[-1].launched if past else state.started
-
-
-def merged_since(state: State, past: list[Agent]) -> float | None:
-    since = opened(state, past)
-    return since if since is not None and merged(state, since) else None
-
-
-AUDIT_AFTER = 200.0
-"""The spend, in dollars, of a cost audit's window at which it launches."""
-
-
-@main_only
-def audit(state: State) -> Step | None:
-    """The launch of a cost audit, where one is due."""
-    past = COST_AUDIT.agents(state)
-    if opened(state, past) is None:
-        return None
-    window = state.computed.audit_window
-    if isinstance(window, NotComputed):
-        return Undecided(mctx("the window of the next cost audit is unknown: {why}").format(why=window.why))
-    if window.priced_spend < AUDIT_AFTER:
-        return None
-    return Launch(COST_AUDIT.role, next_number(past),
-                  briefs.cost_audit(window.start, state.transcripts_dir, state.me),
-                  occasion=str(window.start))
-
-
-STANDING_SPAN = 86400
-"""The age, in seconds, of the commit a reader's standing doc review tag
-points at, past which the reader is overdue where a later commit of
-`master` follows that commit."""
-
-
-@main_only
-def standing_review(state: State) -> Step | None:
-    """The launch of a standing doc review, where one is due."""
-    past = STANDING.agents(state)
-    if opened(state, past) is None:
-        return None
-    if not past:
-        due = any(c.time > state.started for c in state.git.commits)
-    else:
-        due = not at_head(state, past[-1])
-    return doc_review(state) if due else None
-
-
-def at_head(state: State, review: Agent) -> bool:
-    """Whether the standing doc review `review` launched at the head of
-    `master`."""
-    return briefs.standing_commit(review.brief) == state.git.commits[0].hash
-
-
-@main_only
-def overdue_review(state: State) -> Step | None:
-    """The launch of a standing doc review on an overdue reader, where one
-    is due."""
-    free = free_readers(state)
-    if not isinstance(free, Free):
-        return free
-    reviewed = {a.subject for a in STANDING.agents(state) if at_head(state, a)}
-
-    def overdue(r: Reader) -> bool:
-        t = free.times.get(r.tag)
-        return t is None or (t < state.now - STANDING_SPAN and any(c.time > t for c in state.git.commits))
-
-    reader = next((r for r in free.readers if r.tag not in reviewed and overdue(r)), None)
-    return None if reader is None else standing_launch(state, reader)
-
-
-UNREAD_TAGS = mctx("a `doc-review/<reader>` tag does not read as a commit")
-
-
-@dataclass(frozen=True)
-class Free:
-    """The readers, in the order of `State.readers`, that no standing doc
-    review of the session runs on, and the time of the commit each
-    reader's `doc-review/<reader>` tag points at, by tag."""
-    readers: list[Reader]
-    times: Mapping[str, float]
-
-
-def free_readers(state: State) -> Free | Undecided | None:
-    """The readers a standing doc review may launch on, or None where no
-    reader is listed."""
-    readers = state.readers.value
-    if not readers:
-        return None
-    times = state.git.doc_reviews
-    if times is None:
-        return Undecided(UNREAD_TAGS)
-    running = {a.subject for a in STANDING.agents(state) if a.pending}
-    return Free([r for r in readers if r.tag not in running], times)
-
-
-def doc_review(state: State) -> Step | None:
-    """The launch of a standing doc review, on the reader it is due on."""
-    free = free_readers(state)
-    if free is None:
-        return Undecided(mctx("no reader is listed for a standing doc review"))
-    if not isinstance(free, Free):
-        return free
-    if not free.readers:
-        return None
-    times = free.times
-    unreviewed = [r for r in free.readers if r.tag not in times]
-    return standing_launch(state, unreviewed[0] if unreviewed else min(free.readers, key=lambda r: times[r.tag]))
-
-
-def standing_launch(state: State, reader: Reader) -> Launch:
-    """The launch of a standing doc review on `reader`, at the head of
-    `master`."""
-    return Launch(STANDING.role, reader.tag,
-                  briefs.standing_doc_review(" ".join((reader.name, *reader.args)), reader.tag,
-                                             state.git.commits[0].hash, state.me),
-                  occasion=state.git.commits[0].hash)

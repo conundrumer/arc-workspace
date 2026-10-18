@@ -18,13 +18,16 @@ analysts on open tickets; the review of drafts; the changes, and for a
 held change with no step, the step `idle_changes` gives where it is
 idle; the move to `tickets/draft/` of the changes that a ticket holds up
 (`ticket_stall.stall`), so that the take of a change comes before the
-move of the changes that wait on it; the solver pipelines; the cost audit, the code
-review, the standing doc review, the gate and the process assessment
-(`batches`); the sweep and the script check (`after_profile`); After a
-batch; the
+move of the changes that wait on it; the solver pipelines; the cost
+audit (`cost_audit`); the code review and the lib review (`reviews`);
+the standing doc review and the review on an overdue reader
+(`standing_reviews`); the gate (`gate_launch`); the process assessment
+(`assessment`); the sweep and the script check (`after_profile`); After
+a batch (`batches`); the
 messages and the tickets on the stalled tickets of the operators
-(`alerts.ticket_stalls`), last, so that a step that would end a stall
-comes before the message on it. A step that
+(`alerts.ticket_stalls`), so that a step that would end a stall comes
+before the message on it; and, last, the message to the coordinator on
+a held change whose wait is stuck (`alerts.stuck_waits`). A step that
 is a message an operator already sent is passed over, and so are an
 undecided step an operator already handled (`handled.repeated`) and a step
 an `Op override: pass over` ruling passed over (`directives.passed`), other
@@ -46,9 +49,9 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from controlled_markdown import mctx
-from operations import (after_profile, alerts, batches, changes, concept_faults, decisions, drafts,
-                        idle_changes, limit_resume, lineage, merging, monitor, passes, reviews, runs,
-                        ticket_stall, triage, taking, unbatched)
+from operations import (after_profile, alerts, assessment, batches, changes, concept_faults, cost_audit, decisions, drafts,
+                        gate_launch, idle_changes, limit_resume, lineage, merging, monitor, passes, reviews, runs,
+                        standing_reviews, ticket_stall, triage, taking, unbatched)
 from operations.directives import (
     lines,
     passed,
@@ -274,9 +277,9 @@ EARLY: tuple[Callable[[State], Step | None], ...] = (
 LATE: tuple[Callable[[State], Step | None], ...] = (
     taking.release, triage.reopen, triage.later_lines, triage.settle, drafts.step,
     held_changes, ticket_stall.stall,
-    pipelines, batches.audit, *reviews.PROCEDURES, batches.standing_review,
-    batches.overdue_review, batches.gate,
-    batches.assessment, after_profile.validation, after_profile.script_check, batches.step,
+    pipelines, cost_audit.audit, *reviews.PROCEDURES, standing_reviews.standing_review,
+    standing_reviews.overdue_review, gate_launch.gate,
+    assessment.assessment, after_profile.validation, after_profile.script_check, batches.step,
     alerts.ticket_stalls, alerts.stuck_waits)
 PROCEDURES = EARLY + LATE
 
