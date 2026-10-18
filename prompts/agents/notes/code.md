@@ -43,8 +43,6 @@
     - Prose in code that breaks a rule on prose in code.
     - A name the diff gives a thing, where practitioners of the thing's discipline use a conventional name for it that the diff does not use.
 - A defect place of any kind stands where a rule requires it.
-    - Each check quotes for itself the handbook passage it rests on, so one passage quoted at several checks stands.
-        * comment: Code review 7: one style.md sentence quoted at four checks stood, as the quote rule requires.
 - Places that pose a question:
     - A condition on one solver, one command or one shape of input.
     - A change in the diff that makes false the premise of any line but its own lines, in a document or in prose in code.
