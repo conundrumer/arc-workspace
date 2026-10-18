@@ -9,6 +9,7 @@ mod determinism;
 mod lib_compare;
 mod speed;
 
+use arclog::algebra::tables::OrientationTables;
 use std::process::ExitCode;
 
 /// Each subcommand, by the name the first argument gives it.
@@ -20,6 +21,9 @@ const SUBCOMMANDS: [(&str, fn(&[String]) -> ExitCode); 4] = [
 ];
 
 fn main() -> ExitCode {
+    // Reads and checks the orientation tables: a table that is not
+    // D4-invariant stops the engine here, before any subcommand runs.
+    OrientationTables::get();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let run = args.first().and_then(|name| SUBCOMMANDS.iter().find(|(n, _)| n == name)).map(|(_, run)| run);
     match run {
