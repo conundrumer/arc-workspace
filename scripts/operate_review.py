@@ -24,12 +24,13 @@ from filed_texts import written_report  # noqa: E402
 from operations import changes  # noqa: E402
 from operations.roles import LAUNCHING_EDITORS, Role  # noqa: E402
 from operations.steps import Launch, Poll, Step, Undecided  # noqa: E402
-from operate_loop import prepared, print_step, waited  # noqa: E402
+from operate_loop import prepared, print_step, read_again, waited  # noqa: E402
 
 
 def review(editor: str) -> int:
     """Print the step `changes.editor_step` gives the editor `editor`,
-    read again within `operate_loop.waited` while it is `steps.Poll`."""
+    read again within `operate_loop.waited` while it is `steps.Poll`, and
+    once more where a worktree it reads is gone (`operate_loop.read_again`)."""
     path = find(editor)
     parent = parent_id(path)
     kind = parent_type(path)
@@ -42,7 +43,7 @@ def review(editor: str) -> int:
         state, _ = read_state(parent, filed)
         return changes.editor_step(state, editor, written_report), state.scratch
 
-    (step, scratch), _ = waited(editor, step_at, lambda out: not isinstance(out[0], Poll))
+    (step, scratch), _ = waited(editor, read_again(step_at), lambda out: not isinstance(out[0], Poll))
     if isinstance(step, str):
         print(step)
         return 0
