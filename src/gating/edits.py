@@ -13,7 +13,7 @@ from cli import HELP_FLAGS
 from gating.commands import COMMANDS
 
 if TYPE_CHECKING:
-    from gating.deps import Hunk
+    from gating.hunks import Hunk
 
 HELP_KEYWORDS = frozenset({"help", "description", "epilog"})
 """The keywords of an argparse parser builder whose text argparse prints

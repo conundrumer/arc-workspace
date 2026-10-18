@@ -6,6 +6,7 @@ import pytest
 from engine import checkout
 from gating import deps, edits
 from gating.commands import COMMANDS
+from gating.hunks import Hunk, Touched, hunks_of, moved
 
 SOURCE = '''import os
 
@@ -29,7 +30,7 @@ RAN = frozenset({1, 3, 6, 7, 9, 10, 13})
 
 
 def H(start, count):
-    return deps.Hunk(start, count, start, count)
+    return Hunk(start, count, start, count)
 
 
 @pytest.mark.parametrize(("hunks", "runs"), [
@@ -60,7 +61,7 @@ def test_a_change_affects_a_command_through_what_it_read_listed_or_ran():
         return deps.affects(cmd, "ac0c5833", ran, touched, recorded)
 
     S = checkout.Change
-    T = deps.Touched
+    T = Touched
     assert affects(T("programs/lib.dl", S.MODIFIED))
     assert not affects(T("programs/other.dl", S.MODIFIED))
     assert affects(T("programs/solvers/new.dl", S.ADDED))
@@ -78,12 +79,22 @@ def test_the_old_side_of_each_hunk_is_read_from_a_git_diff():
             "@@ -9 +9 @@ def ran(a):\n-    b = a + 1\n+    b = a + 2\n"
             "@@ -13,0 +14,2 @@ def not_ran(a):\n+    x\n+    y\n"
             "@@ -20,3 +22 @@\n-a\n-b\n-c\n+d\n")
-    assert deps.hunks_of(diff) == ((9, 1, 9, 1), (13, 0, 14, 2), (20, 3, 22, 1))
+    assert hunks_of(diff) == ((9, 1, 9, 1), (13, 0, 14, 2), (20, 3, 22, 1))
 
 
 def test_a_line_outside_every_hunk_moves_by_the_lines_the_hunks_before_it_add():
-    hunks = (deps.Hunk(9, 1, 9, 1), deps.Hunk(13, 0, 14, 2), deps.Hunk(20, 3, 22, 1))
-    assert deps.moved(frozenset({8, 10, 13, 14, 19, 23}), hunks) == {8, 10, 13, 16, 21, 23}
+    hunks = (Hunk(9, 1, 9, 1), Hunk(13, 0, 14, 2), Hunk(20, 3, 22, 1))
+    assert moved(frozenset({8, 10, 13, 14, 19, 23}), hunks) == {8, 10, 13, 16, 21, 23}
+
+
+def test_a_line_inside_a_replaced_side_moves_to_each_line_the_hunk_wrote():
+    hunks = (Hunk(5, 0, 5, 2), Hunk(9, 2, 11, 3))
+    assert moved(frozenset({10}), hunks) == {11, 12, 13}
+
+
+def test_a_line_inside_a_deleted_side_moves_to_the_line_after_the_hunk():
+    hunks = (Hunk(5, 0, 5, 2), Hunk(9, 2, 10, 0))
+    assert moved(frozenset({9}), hunks) == {11}
 
 
 INERT_OLD = '''"""Module."""
@@ -103,18 +114,18 @@ def f(x):
 
 
 @pytest.mark.parametrize(("hunk", "new", "passed"), [
-    (deps.Hunk(9, 1, 9, 1), ['    """Other doc."""\n'], True),
-    (deps.Hunk(10, 1, 10, 2), ["    # other\n", "\n"], True),
-    (deps.Hunk(1, 1, 1, 0), [], True),
-    (deps.Hunk(5, 1, 5, 1), ['p = parser.add_argument("x", help="new")\n'], True),
-    (deps.Hunk(5, 1, 5, 1), ['p = parser.add_argument("y", help="old")\n'], False),
-    (deps.Hunk(3, 1, 3, 1), ["from a import b\n"], True),
-    (deps.Hunk(3, 1, 3, 1), ["from a import b, c, d\n"], True),
-    (deps.Hunk(3, 1, 3, 1), ["from a import b\nfrom e import c\n"], False),
-    (deps.Hunk(3, 1, 3, 1), ["from a import b, d as c\n"], False),
-    (deps.Hunk(2, 1, 2, 0), [], False),
-    (deps.Hunk(11, 1, 11, 1), ["    return x + 2\n"], False),
-    (deps.Hunk(11, 1, 11, 1), ["    return (x\n"], False),
+    (Hunk(9, 1, 9, 1), ['    """Other doc."""\n'], True),
+    (Hunk(10, 1, 10, 2), ["    # other\n", "\n"], True),
+    (Hunk(1, 1, 1, 0), [], True),
+    (Hunk(5, 1, 5, 1), ['p = parser.add_argument("x", help="new")\n'], True),
+    (Hunk(5, 1, 5, 1), ['p = parser.add_argument("y", help="old")\n'], False),
+    (Hunk(3, 1, 3, 1), ["from a import b\n"], True),
+    (Hunk(3, 1, 3, 1), ["from a import b, c, d\n"], True),
+    (Hunk(3, 1, 3, 1), ["from a import b\nfrom e import c\n"], False),
+    (Hunk(3, 1, 3, 1), ["from a import b, d as c\n"], False),
+    (Hunk(2, 1, 2, 0), [], False),
+    (Hunk(11, 1, 11, 1), ["    return x + 2\n"], False),
+    (Hunk(11, 1, 11, 1), ["    return (x\n"], False),
 ])
 def test_a_hunk_is_inert_where_it_changes_only_docstrings_comments_help_or_imports(
         hunk, new, passed):
@@ -165,7 +176,7 @@ def test_an_inert_hunk_affects_no_command_and_a_gate_file_runs_whole():
         return deps.affects(cmd, "ac0c5833", ran, touched, {"src/m.py": SOURCE})
 
     S = checkout.Change
-    T = deps.Touched
+    T = Touched
     assert not affects(T("src/m.py", S.MODIFIED, (H(3, 1), H(9, 1)), passed=frozenset({0, 1})))
     assert not affects(T("src/m.py", S.MODIFIED, (H(3, 1), H(14, 1)), passed=frozenset({0})))
     assert affects(T("src/m.py", S.MODIFIED, (H(3, 1),), passed=frozenset()))
@@ -176,7 +187,7 @@ def test_an_inert_hunk_affects_no_command_and_a_gate_file_runs_whole():
 
 @pytest.mark.parametrize(("old", "new", "hunk"), [
     ("from x import a\nfrom y import b\nfrom x import c\n",
-     ["from y import b\n", "from x import a, c\n"], deps.Hunk(1, 3, 1, 2)),
+     ["from y import b\n", "from x import a, c\n"], Hunk(1, 3, 1, 2)),
     ("import sys\nsys.path.insert(0, 'p')\nimport foo\n",
      ["import foo\n", "sys.path.insert(0, 'p')\n"], H(2, 2)),
 ])

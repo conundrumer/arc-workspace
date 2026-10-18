@@ -12,7 +12,8 @@ from controlled_markdown import mctx
 from engine import checkout
 from engine.memo import write_whole
 from gating.commands import COMMANDS, GateCommand, keys_of
-from gating.deps import PY_SUFFIXES, Deps, affects, moved, text_at, touched_from
+from gating.deps import Deps, affects
+from gating.hunks import PY_SUFFIXES, moved, text_at, touched_from
 from gating.records import deps_file
 
 RECORD_OUT = "record.json"
@@ -63,9 +64,10 @@ class Record:
         """Each entry of a key outside `keys`, the keys the run traces
         again, with each line number of a Python file the change from the
         record's commit to the checkout modifies moved to the number that
-        line has in the checkout. It moves only the entries the run keeps:
-        the move is exact only for the entries of the commands that
-        `traced_keys` leaves untraced."""
+        line has in the checkout, as `moved` gives it. It moves only the
+        entries the run keeps, those of the commands that `traced_keys`
+        leaves untraced: the move is exact for a line outside every hunk,
+        and gives a superset of the lines run for a line inside one."""
         hunks = {t.path: t.hunks for t in touched_from(self.commit, self.commit)}
         return {k: Deps({p: moved(ns, hunks[p]) if p in hunks else ns
                          for p, ns in d.lines.items()}, d.reads, d.listed)
