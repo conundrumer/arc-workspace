@@ -2,13 +2,15 @@
 an agent whose type has a checklist (`handbook.checklist.checklist_agents`)
 where the results of the step calls in its own transcript leave an item of
 its walk unprinted (`handbook.checklist.Checklist.gap`), and the reason
-gives the step call that prints the first such item.
+gives, as one command (`handbook.checklist.Gap.command`), the step calls
+that print each item from the first such item.
 
 A result counts where its Bash command runs `scripts/step.py <agent>` for
 the caller's own agent type, however the command pipes or joins it. The
-results are taken in order: an item is held only by a result that comes
-after the last result that holds an earlier item of the walk, so a later
-round is held to each item from the first one it repeats.
+results are taken in order: an item is held only after the item before
+it, in a later result or later in the same result, so one result may hold
+several items, and a later round is held to each item from the first one
+it repeats.
 
 Where the agent's last step call is a stop, `scripts/step.py <agent>
 --stop <item>`, and no entry after that call's result gives the agent a
@@ -29,9 +31,12 @@ allows the call and says why on stderr."""
 import re
 import sys
 from collections.abc import Iterable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from hook_entry import not_registered, run_pre_tool_use
+
+if TYPE_CHECKING:
+    from handbook.checklist import Gap
 
 HOOK = "checklist_walk_hook"
 STOPS = "checklist-walk-stops"
@@ -86,21 +91,21 @@ def not_stops(calls: list[tuple[str, str, str]], agent: str) -> list[tuple[str, 
     return [c for c in calls if stop_item(c[1], agent) is None]
 
 
-def refusal(call: str, agent: str) -> str:
+def refusal(command: str, agent: str) -> str:
     from controlled_markdown import mctx
 
     return "\n".join([
         mctx("Blocked: the results of your step calls do not hold, whole, each item the "
              "step command gives up to your checklist's last item, or, where your last "
              "step call is a stop and no message has reached you since its result, up "
-             "to its item, each in a result after the last result that holds an "
-             "earlier item."),
-        mctx("Run `{call}`, do each item from the one it prints to your checklist's last "
-             "item, then give your report again."),
+             "to its item, each after the item before it, in a later result or later "
+             "in the same result."),
+        mctx("Run `{command}` in one Bash call, do each item from the first one it prints "
+             "to your checklist's last item, then give your report again."),
         mctx("Where you find no way to do the item your walk is at, run "
              "`uv run python scripts/step.py {agent} --stop <item>`, with that item as "
              "`<item>`, then give your report again."),
-    ]).format(call=call, agent=agent)
+    ]).format(command=command, agent=agent)
 
 
 def stop_bound(entries: list[dict[str, Any]], calls: list[tuple[str, str, str]],
@@ -121,10 +126,10 @@ def stop_bound(entries: list[dict[str, Any]], calls: list[tuple[str, str, str]],
     return stop
 
 
-def walk_gap(kind: str, calls: list[tuple[str, str, str]], stop: str | None) -> str | None:
-    """The step call that prints the first item the step calls `calls` of
-    an agent of type `kind` leave unheld, up to the item `stop` where it
-    gives one, as the module docstring gives it, or None."""
+def walk_gap(kind: str, calls: list[tuple[str, str, str]], stop: str | None) -> "Gap | None":
+    """The gap the step calls `calls` of an agent of type `kind` leave in
+    its walk, up to the item `stop` where it gives one, as the module
+    docstring gives it, or None."""
     from handbook.checklist import Checklist
 
     checklist = Checklist(kind)
@@ -135,7 +140,7 @@ def walk_gap(kind: str, calls: list[tuple[str, str, str]], stop: str | None) -> 
             gap = checklist.gap(results, upto=upto)
         except (ValueError, SystemExit):
             continue
-        return None if gap is None else gap.call
+        return gap
     raise AssertionError("the walk with no bound raised")
 
 
@@ -157,15 +162,15 @@ def check(hook: dict[str, Any]) -> str | None:
         return None
     entries = list(reversed(list(entries_back(path))))
     calls = _calls(entries, kind)
-    call = walk_gap(kind, calls, stop_bound(entries, calls, kind))
-    if call is None:
+    gap = walk_gap(kind, calls, stop_bound(entries, calls, kind))
+    if gap is None:
         return None
     last = calls[-1][0] if calls else NO_CALL
     if not first_at(hook, STOPS, agent, last):
         print(f"{HOOK}: allowed: a handback was denied at step call {last}, "
               "and the agent made no step call since", file=sys.stderr)
         return None
-    return refusal(call, kind)
+    return refusal(gap.command, kind)
 
 
 def main() -> int:

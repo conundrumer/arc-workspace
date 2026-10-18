@@ -40,10 +40,10 @@ HELP = mctx("""
     - `commit` records the review's commit, with `<n>`, the review's number, in its message: the tree of `HEAD` with the paths `<reviewer>` reviews as the working tree it runs from holds them, untracked files included, as a commit whose parent is `HEAD`.
         - It prints the commit's hash on one line, then the git pathspecs that select those paths, one on a line.
     - The form with `<commit>` makes the tag of the review's baseline.
-        - It reads the transcripts of the reviewer `<agent id>`, and checks that the tool results of its Bash calls whose command runs `scripts/step.py <reviewer>` hold, whole, each item the step command gives from the first item of the checklist of the main tree, as it stands at the command's call, up to the item after that item, each in a result after the last result that holds an earlier item.
+        - It reads the transcripts of the reviewer `<agent id>`, and checks that the tool results of its Bash calls whose command runs `scripts/step.py <reviewer>` hold, whole, each item the step command gives from the first item of the checklist of the main tree, as it stands at the command's call, up to the item after that item, each after the item before it, in a later result or later in the same result.
             - Where that checklist holds no such item, the command fails and names the item it wants.
         - Where the results hold each of those items, it runs `git tag <prefix><m> <commit>` for the least `<m>` from `<n>` up that git accepts, and prints the tag.
-        - Where they do not, it makes no tag, exits non-zero, and prints the step call that prints the first item they do not hold, to be run, with each item from the one it prints up to this command done, before the command is run again.
+        - Where they do not, it makes no tag, exits non-zero, and prints, as one command, the step calls that print each item from the first item they do not hold, to be run in one Bash call, with each item from the first one it prints up to this command done, before the command is run again.
             - Where it finds no transcript of `<agent id>`, it prints that, and that `<agent id>` is the reviewer's own agent id.
     """)
 
@@ -53,11 +53,11 @@ NO_TRANSCRIPT = mctx("no transcript of the agent `{agent}` is found: give your o
                      "id as `<agent id>`")
 
 NO_STEP = mctx("the step-call results in the transcripts of `{agent}` do not hold, whole, "
-               "the item `{missing}` of the checklist as it stands now in a result after "
-               "the last result that holds an earlier item, and the tag needs "
-               "each item the step command gives up to the item after `{item}`: run `{call}`, "
-               "do each item from the one it prints up to this command, then run this "
-               "command again")
+               "the item `{missing}` of the checklist as it stands now after the item "
+               "before it, in a later result or later in the same result, and the tag needs "
+               "each item the step command gives up to the item after `{item}`: run "
+               "`{command}` in one Bash call, do each item from the first one it prints up "
+               "to this command, then run this command again")
 
 
 def step_gap(entries: Iterable[Entry], checklist: Checklist, item: str) -> Gap | None:
@@ -110,7 +110,7 @@ def review_tag(review: Review, n: int, commit: str, agent: str) -> str:
     gap = step_gap((e for p in paths for e in read_entries(p)), checklist, item)
     if gap is not None:
         raise Refused(NO_STEP.format(agent=agent, missing=gap.item.heading.text, item=item,
-                                     call=gap.call))
+                                     command=gap.command))
     return tag(review, n, commit)
 
 

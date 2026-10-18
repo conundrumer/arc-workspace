@@ -60,6 +60,10 @@ def test_a_whole_walk_is_allowed(tmp_path: Path) -> None:
     assert not denied(session(tmp_path, whole_walk()))
 
 
+def test_a_walk_printed_whole_by_one_result_is_allowed(tmp_path: Path) -> None:
+    assert not denied(session(tmp_path, ["\n".join(whole_walk())]))
+
+
 def test_a_walk_cut_short_is_denied_once(tmp_path: Path) -> None:
     stdin = session(tmp_path, whole_walk()[:3])
     assert denied(stdin)

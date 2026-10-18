@@ -64,10 +64,19 @@ def step_call(agent: str, item: str | None = None, entry: Entry | None = None) -
 @dataclass(frozen=True)
 class Gap:
     """The first item of a walk whose text no step-call result holds, and
-    the step call that prints it."""
+    the step calls that print each item from it, in walk order, through the
+    first item that calls a conditional part's file or through the last item
+    of the walk the gap is found in, with the call of `item` first. The calls
+    after the first enter no part, since the agent chooses at a part call
+    whether to enter it."""
 
     item: Item
-    call: str
+    calls: tuple[str, ...]
+
+    @property
+    def command(self) -> str:
+        """The calls as one shell command, joined by ` ; `."""
+        return " ; ".join(self.calls)
 
 
 def checklist_file(agent: str, root: Path = DOCUMENTS_ROOT) -> Path:
@@ -132,6 +141,20 @@ def _find(items: tuple[Item, ...], want: str, after: Item | None
             if found is not None:
                 return found
     return None
+
+
+def _through(item: Item, walk: Iterator[tuple[Item, str, PartCall | None]],
+             target: Item | None) -> Iterator[str]:
+    """The step calls of the items `walk` gives after `item`, through the
+    first one that calls a conditional part's file or is `target`, or
+    through its last; none where `item` is such an item itself. `walk` is
+    not advanced past such an item, so these calls enter no part."""
+    if isinstance(item, PartCall) or item is target:
+        return
+    for following, call, _ in walk:
+        yield call
+        if isinstance(following, PartCall) or following is target:
+            return
 
 
 class Checklist:
@@ -215,34 +238,42 @@ class Checklist:
     def gap(self, results: Iterable[str], upto: str | None = None) -> Gap | None:
         """The first item of the walk, up to the item `upto` names or else
         up to the last item, that no result of `results` holds, or None.
-        `results` are the results of the agent's step calls, in order. A
-        result holds an item where it holds the item's text, both with
-        trailing whitespace stripped, and it comes after the last result
-        that holds an earlier item of the walk, so a later round that
-        prints an item again needs each item after it printed again. A
-        part's items are in the walk where a result holds its first item by
-        the same rule, and a result at or before the last result that holds
-        that item holds the part's file as `enter` renders it; where none
-        does, the gap is that first item. Raises `ValueError` where the walk
-        skips the part that holds `upto`."""
+        `results` are the results of the agent's step calls, in order. The
+        place of an item is a result and the end of the item's text in it.
+        An item is held by its text, both with trailing whitespace stripped,
+        where it stands after the place of the item before it: in a later
+        result, or later in the same result. Its place is then in the last
+        result where its text so stands, at the first such stand there, so a
+        later round that prints an item again needs each item after it
+        printed again. A part's items are in the walk where a result holds
+        its first item by the same rule, and a result at or before the one
+        that holds that item holds the part's file as `enter` renders it;
+        where none does, the gap is that first item. Raises `ValueError`
+        where the walk skips the part that holds `upto`."""
         texts = [r.rstrip() for r in results]
-        # The index of the last result that holds an item of the walk so far.
-        last = -1
+        # The place of the last item of the walk so far: the index of its
+        # result, and the end of its text there.
+        at, end = -1, 0
 
-        def holding(text: str) -> list[int]:
+        def holding(text: str) -> tuple[int, int] | None:
             want = text.rstrip()
-            return [n for n, t in enumerate(texts) if n > last and want in t]
+            for n in range(len(texts) - 1, max(at, 0) - 1, -1):
+                found = texts[n].find(want, end if n == at else 0)
+                if found >= 0:
+                    return n, found + len(want)
+            return None
 
         def held(text: str) -> bool:
-            return bool(holding(text))
+            return holding(text) is not None
 
         target = None if upto is None else self.named(upto)[0]
-        for item, call, opens in self._walked(self.items, held, step_call(self.agent)):
-            found = holding(self.text(item))
-            if not found or (opens is not None and not any(
-                    self._file(opens) in t for t in texts[:found[-1] + 1])):
-                return Gap(item, call)
-            last = found[-1]
+        walk = self._walked(self.items, held, step_call(self.agent))
+        for item, call, opens in walk:
+            place = holding(self.text(item))
+            if place is None or (opens is not None and not any(
+                    self._file(opens) in t for t in texts[:place[0] + 1])):
+                return Gap(item, (call, *_through(item, walk, target)))
+            at, end = place
             if item is target:
                 return None
         if target is not None:
