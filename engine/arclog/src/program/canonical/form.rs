@@ -700,7 +700,7 @@ impl WriteForm for Body {
 
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
         out.tag(Tag::Body);
-        cx.sorted(out, &self.conjuncts, |cx, out, conjunct| write_conjunct(cx, out, conjunct));
+        cx.sorted(out, NodeRef::Body(self), &self.conjuncts, NodeRef::Conjunct, |cx, out, conjunct| write_conjunct(cx, out, conjunct));
     }
 }
 
@@ -732,7 +732,7 @@ pub(super) fn write_conjunct(cx: &mut Context, out: &mut CanonicalWriter, conjun
         }
         Conjunct::Or(branches) => {
             out.tag(Tag::Or);
-            cx.sorted(out, branches, |cx, out, branch| branch.value().write_form(cx, out));
+            cx.sorted(out, NodeRef::Conjunct(conjunct), branches, |branch| NodeRef::Body(branch.value()), |cx, out, branch| branch.value().write_form(cx, out));
         }
         Conjunct::If { test, then, otherwise } => {
             out.tag(Tag::If);

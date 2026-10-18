@@ -199,6 +199,15 @@ fn by_position(labels: &Labels) -> Box<[(LabelId, u32)]> {
     positions.into()
 }
 
+/// The panic text for a child the form writer writes that the children of
+/// its parent do not hold at its step.
+const CHILD_FAULT: &str = "the children of the node being written hold each child the form writer writes";
+
+/// The step of `child` among the children of `parent`.
+fn child_step(parent: NodeRef<'_>, child: NodeRef<'_>) -> u32 {
+    child_index(parent, child).expect(CHILD_FAULT)
+}
+
 /// The state of one write: the labels of the scope being written, the
 /// search budget, the name writer, and, for [`CanonicalOrder`], the source
 /// path of the node being written, relative to the form, and the orders
@@ -234,8 +243,7 @@ impl<'a> Context<'a> {
     /// `parent` do not hold `child`, a fault of the path table or of the
     /// form writer.
     fn child<'n, R>(&mut self, parent: NodeRef<'n>, child: NodeRef<'n>, write: impl FnOnce(&mut Self) -> R) -> R {
-        let step = || child_index(parent, child).expect("the children of the node being written hold each child the form writer writes");
-        self.at_step(step, write)
+        self.at_step(|| child_step(parent, child), write)
     }
 
     /// Runs `write` on the child at the step `step` gives. The path is read
@@ -253,20 +261,46 @@ impl<'a> Context<'a> {
         result
     }
 
-    /// Writes `members`, each through `write` as the child at its index,
-    /// sorted by the bytes of their forms, and records their order.
-    fn sorted<T>(&mut self, out: &mut CanonicalWriter, members: &[T], write: impl Fn(&mut Self, &mut CanonicalWriter, &T)) {
+    /// Writes `members`, the children of `parent`, each through `write` as
+    /// the child `node` gives for it, sorted by the bytes of their forms,
+    /// and records their order.
+    ///
+    /// The recorded order maps each canonical position to a member's index
+    /// in `members`, and [`CanonicalOrder`] reads a step at `parent` as a
+    /// position in that list, so `members` must be the whole list of the
+    /// children of `parent`, in order.
+    ///
+    /// # Panics
+    ///
+    /// Where the write records a [`CanonicalOrder`] and a member's index
+    /// among the children of `parent` is not its index in `members`, or
+    /// `members` does not hold every child of `parent`, a fault of the path
+    /// table or of the form writer.
+    fn sorted<'n, T>(
+        &mut self,
+        out: &mut CanonicalWriter,
+        parent: NodeRef<'n>,
+        members: &'n [T],
+        node: impl Fn(&'n T) -> NodeRef<'n>,
+        write: impl Fn(&mut Self, &mut CanonicalWriter, &T),
+    ) {
         let mut forms: Vec<(Vec<u8>, u32)> = members
             .iter()
-            .enumerate()
-            .map(|(index, member)| {
+            .zip(0u32..)
+            .map(|(member, index)| {
                 let mut own = CanonicalWriter::default();
-                self.at_step(|| index as u32, |cx| write(cx, &mut own, member));
-                (own.bytes, index as u32)
+                let step = || {
+                    let step = child_step(parent, node(member));
+                    assert_eq!(step, index, "{CHILD_FAULT}");
+                    step
+                };
+                self.at_step(step, |cx| write(cx, &mut own, member));
+                (own.bytes, index)
             })
             .collect();
         forms.sort();
         if let Some(order) = &mut self.order {
+            assert_eq!(members.len(), parent.children().len(), "{CHILD_FAULT}");
             order.lists.insert(NodePath(self.path.clone().into()), forms.iter().map(|(_, index)| *index).collect());
         }
         out.len(forms.len());
