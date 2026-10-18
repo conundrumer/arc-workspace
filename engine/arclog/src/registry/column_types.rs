@@ -368,7 +368,7 @@ pub(super) fn local_label_types(
 /// list is an `IF`'s test or a list of an `ALL`, or where its sites stand in
 /// both the test and the then of an `IF`, the list that holds that form,
 /// since a label fresh there is local to the form.
-fn scope_list(list: &Body, label: LabelId) -> &Body {
+pub(super) fn scope_list(list: &Body, label: LabelId) -> &Body {
     let holds = |conjunct: &Conjunct| {
         let mut labels = StableHashSet::default();
         conjunct_labels(conjunct, &mut labels);

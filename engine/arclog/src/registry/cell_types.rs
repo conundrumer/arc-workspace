@@ -5,9 +5,9 @@
 
 use std::cell::{Cell, RefCell};
 
-use super::column_types::{column_display, label_fault_message, local_label_types, MacroDerivation};
+use super::column_types::{column_display, label_fault_message, scope_list, MacroDerivation};
 use super::*;
-use crate::types::{use_label, FieldName, Meet};
+use crate::types::{each_site_label, use_label, FieldName, Meet};
 
 /// A cell instance of the file, as [`super::macro_column_types`] reads it.
 #[derive(Clone, Debug)]
@@ -73,6 +73,57 @@ impl SiteType {
 enum Binding {
     One(SiteType),
     Record(Box<[(FieldName, SiteType)]>),
+}
+
+impl Binding {
+    /// Whether the type check refuses a projection that gives `other` onto
+    /// a parameter that `self` binds: two fixed types with an empty meet,
+    /// two type parameters that differ or a type parameter and a fixed
+    /// type, or records where a field name stands in one and not in the
+    /// other or two fields of one name conflict so.
+    fn conflicts(&self, other: &Binding) -> bool {
+        match (self, other) {
+            (Binding::One(a), Binding::One(b)) => a.conflicts(b),
+            (Binding::Record(a), Binding::Record(b)) => {
+                let names_differ = a.len() != b.len() || a.iter().any(|(name, _)| !b.iter().any(|(n, _)| n == name));
+                names_differ || a.iter().any(|(name, ty)| b.iter().any(|(n, t)| n == name && ty.conflicts(t)))
+            }
+            _ => true,
+        }
+    }
+}
+
+impl SiteType {
+    /// Whether a label of both types takes a fault: two fixed types with an
+    /// empty meet, or two types of which one is a type parameter and the
+    /// other differs.
+    fn conflicts(&self, other: &SiteType) -> bool {
+        match (self, other) {
+            (SiteType::Fixed(a), SiteType::Fixed(b)) => matches!(a.meet(b), Meet::Empty),
+            (a, b) => a != b,
+        }
+    }
+}
+
+impl std::fmt::Display for SiteType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SiteType::Fixed(ty) => write!(f, "{ty:?}"),
+            SiteType::Parameter(parameter) => write!(f, "{}", parameter.0),
+        }
+    }
+}
+
+impl std::fmt::Display for Binding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Binding::One(ty) => write!(f, "{ty}"),
+            Binding::Record(fields) => {
+                let fields: Vec<String> = fields.iter().map(|(name, ty)| format!("{}: {ty}", name.0)).collect();
+                write!(f, "{{{}}}", fields.join(", "))
+            }
+        }
+    }
 }
 
 /// What the `INIT` form's binding gives a column of one of its outputs:
@@ -146,11 +197,11 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
             derivation.type_form(CellRead::Rule(i));
         }
         derivation.check_fields();
+        derivation.check_labels();
         let mut ports = Vec::new();
         for (port, form) in cell.outputs.iter() {
             let what = |column: &ColumnName| format!("the column `{}` of the output `{}`", column_display(column), port.0);
             let types = derivation.column_types(form, &what);
-            derivation.local_label_faults(form, &format!("the body of the output `{}`", port.0));
             let columns = form.columns.iter().zip(types).map(|((name, _), ty)| ty.map(|ty| Column { name: name.clone(), ty: ty.column_type() }));
             if let Some(columns) = columns.collect::<Option<Box<[Column]>>>() {
                 ports.push(Port { name: (*port).clone(), columns });
@@ -192,7 +243,7 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
             }
             CellRead::Rule(i) => {
                 let (name, rule) = &self.cell.rules[i];
-                let rule_name = crate::write::relation_ref(&RelationRef::Declared((*name).clone()));
+                let rule_name = rule_display(name);
                 let what = |column: &ColumnName| format!("the column `{}` of the rule `{rule_name}`", column_display(column));
                 let types = self.column_types(rule, &what);
                 self.rules[i] = FormState::Typed(types.into());
@@ -252,7 +303,7 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
     fn column_types(&self, form: &CellForm<'_>, what: &dyn Fn(&ColumnName) -> String) -> Vec<Option<SiteType>> {
         form.columns
             .iter()
-            .map(|(column, label)| match self.label_type(&[form.body], *label) {
+            .map(|(column, label)| match self.typed_label(&[form.body], *label) {
                 Ok(ty) => Some(ty),
                 Err(message) => {
                     self.fault(CheckId::Types, format!("the label of {} {message}", what(column)));
@@ -262,26 +313,18 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
             .collect()
     }
 
-    /// Gives a fault for each label of `form` that stands for no column and
-    /// whose fixed types, as [`local_label_types`] gives them, have an
-    /// empty meet or no join. `what` names the body, for a diagnostic.
-    fn local_label_faults(&self, form: &CellForm<'_>, what: &str) {
-        let site = |atom: &Atom, path: &[ColumnName]| match self.site_type(atom, path) {
-            Some(SiteType::Fixed(ty)) => Some(ty),
-            Some(SiteType::Parameter(_)) | None => None,
-        };
-        for (_, ty) in local_label_types(form.body, form.columns, &site) {
-            if let Err(fault) = ty {
-                self.fault(CheckId::Types, format!("a label of {what} {}", label_fault_message(fault)));
-            }
-        }
+    /// The type of `label` in `bodies`, as [`Self::label_type`] gives it,
+    /// where its sites give one, or the text of its fault.
+    fn typed_label(&self, bodies: &[&Body], label: LabelId) -> Result<SiteType, String> {
+        self.label_type(bodies, label)?.ok_or_else(|| "stands at no site that gives a type".to_string())
     }
 
-    /// The type that the sites of `label` in `bodies` give it, or the text
-    /// of its fault: the meet of its fixed types, as [`label_type`] gives it
-    /// over each body, or the one type parameter of the cell instance its
-    /// sites give where they give no fixed type.
-    fn label_type(&self, bodies: &[&Body], label: LabelId) -> Result<SiteType, String> {
+    /// The type that the sites of `label` in `bodies` give it, `None` where
+    /// they give none, or the text of its fault: the meet of its fixed
+    /// types, as [`label_type`] gives it over each body, or the one type
+    /// parameter of the cell instance its sites give where they give no
+    /// fixed type.
+    fn label_type(&self, bodies: &[&Body], label: LabelId) -> Result<Option<SiteType>, String> {
         let parameters: RefCell<Vec<TypeParameter>> = RefCell::new(Vec::new());
         let fixed_site = Cell::new(false);
         let site = |atom: &Atom, path: &[ColumnName]| match self.site_type(atom, path) {
@@ -311,9 +354,8 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
         }
         let parameters = parameters.into_inner();
         match (&parameters[..], fixed) {
-            ([], Some(ty)) => Ok(SiteType::Fixed(ty)),
-            ([], None) => Err("stands at no site that gives a type".to_string()),
-            ([parameter], _) if !fixed_site.get() => Ok(SiteType::Parameter(parameter.clone())),
+            ([], ty) => Ok(ty.map(SiteType::Fixed)),
+            ([parameter], _) if !fixed_site.get() => Ok(Some(SiteType::Parameter(parameter.clone()))),
             ([parameter], _) => Err(format!("stands at sites of the type parameter `{}` and at sites of a fixed type", parameter.0)),
             (parameters, _) => {
                 let names: Vec<String> = parameters.iter().map(|p| format!("`{}`", p.0)).collect();
@@ -406,7 +448,9 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
     /// the `INIT` form: the key clause binds the parameter of the `key`
     /// column to a record of its `^` labels, then the first projection onto
     /// each other parameter, in the order of the form, binds it
-    /// (`docs/arclog/arclog.md#instance`). An `INIT` with no key clause
+    /// (`docs/arclog/arclog.md#instance`), and a later projection onto a
+    /// bound parameter is a fault where [`Binding::conflicts`] gives it. An `INIT`
+    /// with no key clause
     /// whose inputs project nothing onto the `key` column binds it to
     /// `Unit`.
     fn bind(&self) -> Box<[(TypeParameter, Binding)]> {
@@ -419,7 +463,6 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
             }
         });
         let mut bindings: Vec<(TypeParameter, Binding)> = Vec::new();
-        let mut inputs: Vec<(&crate::program::InstanceInput, Option<&Body>)> = Vec::new();
         if let Some(key) = &init.key {
             let key = key.value();
             let key_body = key.key.body.value();
@@ -433,23 +476,27 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
                 }
                 None => self.fault(CheckId::Types, format!("the `INIT` form has a key clause, and `{}` has no `key` column", init.component.0)),
             }
-            inputs.extend(key.inputs.iter().map(|input| (input.value(), Some(key_body))));
         }
-        inputs.extend(init.inputs.iter().map(|input| (input.value(), None)));
-        for (input, key_body) in inputs {
+        for (input, bodies) in self.init_inputs() {
             let Some(port) = construction.inputs.iter().find(|i| i.port.name == input.name) else {
                 self.fault(CheckId::Scope, format!("the `INIT` form gives the input `{}`, which `{}` has no input of", input.name.0, init.component.0));
                 continue;
             };
-            let bodies: Vec<&Body> = std::iter::once(input.body.value()).chain(key_body).collect();
             for site in input.head.iter() {
-                let Some(column) = port.port.columns.iter().find(|c| c.name == site.column) else { continue };
-                let ColumnType::Parameter(parameter) = &column.ty else { continue };
-                if bindings.iter().any(|(p, _)| p == parameter) {
-                    continue;
-                }
-                if let Some(binding) = self.projection(&bodies, site) {
-                    bindings.push((parameter.clone(), binding));
+                let Some(parameter) = parameter_column(port, &site.column) else { continue };
+                let Some(binding) = self.projection(&bodies, site) else { continue };
+                match bindings.iter().find(|(p, _)| p == parameter) {
+                    None => bindings.push((parameter.clone(), binding)),
+                    Some((_, bound)) if !bound.conflicts(&binding) => {}
+                    Some((_, bound)) => {
+                        let message = format!(
+                            "the head site on `{}` of the input `{}` of the `INIT` form gives the type parameter `{}` the type {binding}, and the `INIT` form binds it earlier to {bound}",
+                            column_display(&site.column),
+                            input.name.0,
+                            parameter.0
+                        );
+                        self.fault(CheckId::Types, message);
+                    }
                 }
             }
         }
@@ -464,6 +511,82 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
             self.fault(CheckId::Types, format!("the `INIT` form binds the type parameter `{}` of `{}` to no type", parameter.0, init.component.0));
         }
         bindings.into()
+    }
+
+    /// Each input of the `INIT` form, in the order of the form, with the
+    /// bodies its labels stand in: its body, then the key clause's body
+    /// for an input inside the key clause.
+    fn init_inputs(&self) -> Vec<(&'b crate::program::InstanceInput, Vec<&'b Body>)> {
+        let Some(init) = self.cell.init else { return Vec::new() };
+        let mut inputs = Vec::new();
+        if let Some(key) = &init.key {
+            let key = key.value();
+            let key_body = key.key.body.value();
+            inputs.extend(key.inputs.iter().map(|input| (input.value(), vec![input.value().body.value(), key_body])));
+        }
+        inputs.extend(init.inputs.iter().map(|input| (input.value(), vec![input.value().body.value()])));
+        inputs
+    }
+
+    /// Gives a fault for each label of a body of the cell instance whose
+    /// type has a fault, over the bodies of its form, as [`Self::label_type`]
+    /// gives it, where neither [`Self::column_types`] nor [`Self::bind`]
+    /// types it. A label whose sites give no type takes no fault here, since
+    /// the type check refuses no such label (the doc of [`CheckId::Types`]).
+    fn check_labels(&self) {
+        let rules = self.cell.rules.iter().map(|(name, form)| (format!("the rule `{}`", rule_display(name)), form));
+        let outputs = self.cell.outputs.iter().map(|(port, form)| (format!("the output `{}`", port.0), form));
+        for (what, form) in rules.chain(outputs) {
+            let typed: Vec<LabelId> = form.columns.iter().map(|(_, label)| *label).collect();
+            self.check_body_labels(&[form.body], &typed, &what);
+        }
+        let Some(init) = self.cell.init else { return };
+        if let Some(key) = &init.key {
+            let key = key.value();
+            let typed: Vec<LabelId> = key.key.columns.iter().map(|column| column.label).collect();
+            self.check_body_labels(&[key.key.body.value()], &typed, "the key clause of the `INIT` form");
+        }
+        for (input, bodies) in self.init_inputs() {
+            let port = self.construction.and_then(|c| c.inputs.iter().find(|i| i.port.name == input.name));
+            let mut typed = Vec::new();
+            for site in input.head.iter() {
+                if port.is_some_and(|port| parameter_column(port, &site.column).is_some()) {
+                    each_site_label(site, &mut Vec::new(), &mut |use_, _| typed.extend(use_label(use_)));
+                }
+            }
+            self.check_body_labels(&bodies, &typed, &format!("the input `{}` of the `INIT` form", input.name.0));
+        }
+    }
+
+    /// Gives a fault for each label at a site of the first of `bodies`,
+    /// other than those of `typed`, whose type has a fault: over `bodies`
+    /// where the label stands in a later one of them, and otherwise over
+    /// the list of its scope in the first, as [`scope_list`] gives it.
+    /// `form` names the form of `bodies`, for a diagnostic.
+    fn check_body_labels(&self, bodies: &[&Body], typed: &[LabelId], form: &str) {
+        let mut labels: Vec<(LabelId, String)> = Vec::new();
+        each_conjunct(bodies[0], &mut |conjunct| {
+            let (Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom))) = conjunct else { return };
+            let atom = atom.value();
+            for site in atom.sites.iter() {
+                each_site_label(site, &mut Vec::new(), &mut |use_, path| {
+                    let Some(label) = use_label(use_) else { return };
+                    if typed.contains(&label) || labels.iter().any(|(l, _)| *l == label) {
+                        return;
+                    }
+                    let path: Vec<String> = path.iter().map(column_display).collect();
+                    labels.push((label, format!("`{}` of `{}`", path.join("."), crate::write::relation_ref(&atom.relation))));
+                });
+            }
+        });
+        let later: Vec<StableHashSet<LabelId>> = bodies[1..].iter().map(|body| crate::grounding::body_labels(body)).collect();
+        for (label, site) in labels {
+            let scope = [scope_list(bodies[0], label)];
+            let over = if later.iter().any(|labels| labels.contains(&label)) { bodies } else { &scope[..] };
+            if let Err(message) = self.label_type(over, label) {
+                self.fault(CheckId::Types, format!("the label at {site} in {form} {message}"));
+            }
+        }
     }
 
     /// The binding that the head site `site` of an input gives its column's
@@ -502,7 +625,7 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
     /// The type of the label `label` of a head site or a key column, which
     /// stands for `column`, or `None` with its fault.
     fn head_label_type(&self, bodies: &[&Body], label: LabelId, column: &ColumnName) -> Option<SiteType> {
-        match self.label_type(bodies, label) {
+        match self.typed_label(bodies, label) {
             Ok(ty) => Some(ty),
             Err(message) => {
                 self.fault(CheckId::Types, format!("the label at `{}` of the `INIT` form {message}", column_display(column)));
@@ -514,6 +637,20 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
 
 /// The name of a construction's key column, which the key clause binds.
 const KEY_COLUMN: &str = "key";
+
+/// The name of the `RULE` form `name`, for a diagnostic.
+fn rule_display(name: &RelationName) -> String {
+    crate::write::relation_ref(&RelationRef::Declared(name.clone()))
+}
+
+/// The type parameter of the column `column` of the input `port`, where
+/// the column has one.
+fn parameter_column<'p>(port: &'p InputPort, column: &ColumnName) -> Option<&'p TypeParameter> {
+    match &port.port.columns.iter().find(|c| c.name == *column)?.ty {
+        ColumnType::Parameter(parameter) => Some(parameter),
+        _ => None,
+    }
+}
 
 /// The type of the field `field` of the record `fields`, where it has one.
 fn record_field<'f>(fields: &'f [(FieldName, SiteType)], field: &ColumnName) -> Option<&'f SiteType> {
