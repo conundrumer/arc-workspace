@@ -93,40 +93,28 @@ pub fn read_sexprs(text: &str, file: SourceFile) -> Result<(Vec<SExpr>, Vec<crat
     sexpr::read(text, file)
 }
 
-/// The names of the labels of a node that one s-expression gives, in the
-/// order they first stand, for a reader of a form that names labels outside
-/// the node, as the registry's `(macro ...)` and `(output ...)` forms do. A
-/// proposer written in arclog has its clause's labels as its columns.
+/// The names of labels of a node that one s-expression gives, for a
+/// reader of a form that names labels outside the node, as the registry's
+/// `(macro ...)` and `(output ...)` forms do. A proposer written in arclog
+/// has the labels its clause keeps as its columns.
 pub type LabelNames = Box<[(Box<str>, crate::program::LabelId)]>;
 
 /// The body that the s-expressions `exprs` write, as the atoms of a clause,
-/// and the names of its labels: the one reader of a body that stands inside
-/// a form of the registry file, such as the definition of a lib name by
-/// other lib names, in the format [`crate::registry`] gives. Where `exprs`
-/// write an output body of a cell instance, `init` is the instance's `INIT`
-/// form, and a read `&x.y` may name an output of it; [`read_rule_body`] reads
-/// a `RULE` form of a cell instance.
+/// and the names of the labels the body keeps, in source order: the one
+/// reader of a body that stands inside a form of the registry file, such as
+/// the definition of a lib name by other lib names, in the format
+/// [`crate::registry`] gives. The kept labels are the columns the body can
+/// have, as a program's clause has the labels its body keeps as its columns.
+/// A label that one branch of an `OR` makes and some later branch does not
+/// name is local to its branch, as `docs/arclog/arclog.md#disjunction`
+/// gives, and a label fresh inside a `NOT` or an `ALL` is local to that
+/// form; neither is kept. Where `exprs` write an output body or a `RULE` form
+/// of a cell instance, `init` is the instance's `INIT` form, and a read
+/// `&x.y` may name an output of it.
 ///
 /// Fails where an s-expression of `exprs` matches no node kind of its
 /// format, with a diagnostic of the grammar at each such s-expression.
 pub fn read_body(
-    exprs: &[SExpr],
-    init: Option<&SExpr>,
-) -> Result<(Node<crate::program::Body>, LabelNames), Vec<Diagnostic>> {
-    let (body, scope) = read_scoped_body(exprs, init)?;
-    Ok((body, scope.names_in_order()))
-}
-
-/// The body that the s-expressions `exprs` of a `RULE` form of a cell
-/// instance write, as [`read_body`] reads it, and the names of the labels
-/// the body keeps, in source order: the columns of the rule, as a program's
-/// clause has the labels its body keeps as its columns. A label that one
-/// branch of an `OR` makes and some later branch does not name is local to
-/// its branch, as `docs/arclog/arclog.md#disjunction` gives, and is no
-/// column.
-///
-/// Fails as [`read_body`] fails.
-pub fn read_rule_body(
     exprs: &[SExpr],
     init: Option<&SExpr>,
 ) -> Result<(Node<crate::program::Body>, LabelNames), Vec<Diagnostic>> {
@@ -297,7 +285,7 @@ pub fn read_solver(
     if let Some((line_task_id, place)) = representative_line(&exprs) {
         match representative(line_task_id) {
             Some(solver) => solver_of_line = Some(solver),
-            None => diagnostics.push(check_error(CheckId::Scope, format!("`{line_task_id}` names no solver of the corpus"), place)),
+            None => diagnostics.push(check_error(CheckId::Scope, format!("the lookup of `{line_task_id}` gives no solver"), place)),
         }
     }
     let end = end_place(arcdata, SourceFile::Arcdata);

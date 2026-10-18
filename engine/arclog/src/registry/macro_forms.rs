@@ -5,7 +5,6 @@
 
 use super::reader::{headed, BodyInFile, FileReader, WrittenCell, WrittenMacro, LabelColumns, COLUMNS, COMPONENT, OUTPUT};
 use super::*;
-use crate::read::read_rule_body;
 
 impl FileReader {
     /// `(macro <name> (columns ...) <body>)` or a cell instance,
@@ -20,12 +19,12 @@ impl FileReader {
     }
 
     /// The label of `labels` named `name`, the first that stands, or a fault
-    /// that `what` stands for no label of the body.
+    /// that `what` stands for no label the body keeps.
     fn label_of(&mut self, labels: &crate::read::LabelNames, name: &str, what: &str, place: SourcePlace) -> Option<LabelId> {
         match labels.iter().find(|(n, _)| &**n == name) {
             Some((_, label)) => Some(*label),
             None => {
-                self.fault(CheckId::Scope, format!("{what} stands for the label `{name}`, which its body holds no label of"), place);
+                self.fault(CheckId::Scope, format!("{what} stands for the label `{name}`, which its body does not keep"), place);
                 None
             }
         }
@@ -103,7 +102,7 @@ impl FileReader {
                 return self.refuse(format!("`{text}` is not a declared name, `&` and a name"), place);
             }
             let rule_name = RelationName(DeclaredName::Written(text.into()));
-            let (body, kept) = self.read(read_rule_body(&rule[1..], init))?;
+            let (body, kept) = self.read(read_body(&rule[1..], init))?;
             let columns = kept.iter().map(|(n, label)| (ColumnName::Written(n.clone()), *label)).collect();
             bodies.push(body.clone());
             rules.push((CellRule { name: rule_name, body }, columns));

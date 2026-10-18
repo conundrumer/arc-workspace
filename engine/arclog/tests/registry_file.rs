@@ -64,3 +64,14 @@ fn an_init_head_site_at_an_undeclared_column_refuses() {
     let text = REGISTRY_TEXT.replacen(QUOTIENT_EDGE, "(edge ((:zz Ky P) (:b Ky (:P Q)))", 1);
     assert!(Registry::parse(&text, PROPOSERS_TEXT).is_err());
 }
+
+#[test]
+fn a_written_column_at_a_label_local_to_an_or_branch_refuses() {
+    let written = "(macro same_dist (columns (D D) (P1 P1) (P2 P2))\n  (margin (:B *P1) *D *K)\n  (margin (:B *P2) D K))";
+    assert!(REGISTRY_TEXT.contains(written));
+    let local = "(macro same_dist (columns (D D) (P1 P1) (P2 P2) (Z Z))\n  (margin (:B *P1) *D *K)\n  (margin (:B *P2) D K)\n  (OR ((margin (:B *Z) D K)) ((margin (:B P1) D K))))";
+    let text = REGISTRY_TEXT.replacen(written, local, 1);
+    let error = Registry::parse(&text, PROPOSERS_TEXT).err().expect("a column at `Z` refuses");
+    let kinds: Vec<&DiagnosticKind> = error.diagnostics.iter().map(|d| &d.kind).collect();
+    assert_eq!(kinds, [&DiagnosticKind::Check(CheckId::Scope)], "{:?}", error.diagnostics);
+}

@@ -36,8 +36,8 @@
 //! - `(proposer <name> native (columns (<Column> <type>) ...))`: a native
 //!   proposer, such as a domain proposer.
 //! - `(proposer <name> arclog)`: a proposer written in arclog, whose clause
-//!   stands in `engine/lib/proposers.arclog`. Its columns are its clause's
-//!   labels, in the order they first stand in the clause.
+//!   stands in `engine/lib/proposers.arclog`. Its columns are the labels its
+//!   clause keeps, in the order [`crate::read::read_body`] gives them.
 //! - `(derivation <Name> (fields (<Field> <type>) ...) (columns (<Column> <type>) ...))`:
 //!   a fixed derivation of a table, its row's fields and the table's columns.
 //!   A derivation may share its name with a component, as `Frame` and
@@ -111,7 +111,7 @@
 //! # The modules
 //!
 //! The reader of the two files, the reader of the registry file's macro
-//! forms, the check of the reads of their bodies, and the derivation of the
+//! forms, the reader of the proposers file's clauses, the check of the reads of their bodies, and the derivation of the
 //! macros' column types each stand in a module of their own. The derivations take the forms as the reader gives them, and
 //! read no file.
 //!
@@ -503,6 +503,7 @@ impl Registry {
 mod cell_types;
 mod column_types;
 mod macro_forms;
+mod proposer_clauses;
 mod reader;
 mod reads;
 

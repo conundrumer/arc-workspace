@@ -93,7 +93,8 @@ impl Node<Program> {
     /// The program `apply` gives holds each bare label other than `0` as a
     /// [`super::SiteArg::NamedLabel`] at each site on a column of a type
     /// parameter, and as a [`super::SiteArg::Label`] at each other site, a
-    /// site on a fixed-type column or on a field, as the doc of
+    /// site on a fixed-type column, on a column the node names by its slot,
+    /// or on a field, as the doc of
     /// [`super::SiteArg`] gives the two variants. Each label of a scope has
     /// one name over its `NamedLabel` arguments. Each site of such a label,
     /// read by the join rule of `engine/arclog/src/read/labels.rs`, takes
