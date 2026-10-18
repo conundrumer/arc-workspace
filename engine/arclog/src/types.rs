@@ -171,8 +171,11 @@ pub(crate) fn label_fault_message(fault: LabelFault) -> String {
 ///
 /// The type is the meet, as [`ValueType::meet`] gives it, of the types of
 /// every site of the label, at any depth, and a join, as [`ValueType::join`]
-/// gives it, comes only between alternatives. A constraint over two labels,
-/// at any depth, gives each the sites of the other, and `0` gives no type.
+/// gives it, comes only between alternatives. A constraint over two labels
+/// gives each the sites of the other in the list that holds the constraint
+/// and in the lists nested in it, and, for a constraint in an `IF`'s test or
+/// in an `ALL`'s domain, in that form's then or body as well; `0` gives no
+/// type.
 /// A negated atom's sites count as a positive atom's, and a `NOT` of a form
 /// gives what that form gives. An `OR` gives the join of the types its
 /// branches give, and an `ALL` the meet of its domain's and its body's
@@ -195,7 +198,7 @@ pub fn label_type(
     label: crate::program::LabelId,
     site_type: &dyn Fn(&crate::program::Atom, &[crate::program::ColumnName]) -> Option<ValueType>,
 ) -> Result<Option<ValueType>, LabelFault> {
-    LabelWalk { label, class: equal_labels(body, label), site_type }.body_type(body)
+    LabelWalk { label, site_type }.body_type(body, &[])
 }
 
 /// The list of the scope of `label`, a label of `list` that is no head
@@ -236,24 +239,33 @@ pub(crate) fn scope_list(list: &crate::program::Body, label: crate::program::Lab
     }
 }
 
-/// The walk of [`label_type`] over the labels of `class`, the class of
-/// `label`, the label asked.
+/// The walk of [`label_type`] for `label`, the label asked.
 struct LabelWalk<'a> {
     label: crate::program::LabelId,
-    class: Vec<crate::program::LabelId>,
     site_type: &'a dyn Fn(&crate::program::Atom, &[crate::program::ColumnName]) -> Option<ValueType>,
 }
 
 impl LabelWalk<'_> {
-    fn body_type(&self, body: &crate::program::Body) -> Result<Option<ValueType>, LabelFault> {
+    /// The type of `body`, where `outer` holds the pairs of labels that the
+    /// constraints of the lists around `body` make equal there.
+    fn body_type(&self, body: &crate::program::Body, outer: &[LabelPair]) -> Result<Option<ValueType>, LabelFault> {
+        let pairs = with_constraints(outer, body);
+        let class = equal_labels(&pairs, self.label);
         let mut ty = None;
         for conjunct in body.conjuncts.iter() {
-            ty = meet(ty, self.conjunct_type(conjunct)?)?;
+            ty = meet(ty, self.conjunct_type(conjunct, &pairs, &class)?)?;
         }
         Ok(ty)
     }
 
-    fn conjunct_type(&self, conjunct: &crate::program::Conjunct) -> Result<Option<ValueType>, LabelFault> {
+    /// The type of `conjunct`, a conjunct of a list whose constraints and
+    /// those around it give `pairs`, and the class of the label asked there.
+    fn conjunct_type(
+        &self,
+        conjunct: &crate::program::Conjunct,
+        pairs: &[LabelPair],
+        class: &[crate::program::LabelId],
+    ) -> Result<Option<ValueType>, LabelFault> {
         use crate::program::{Conjunct, Negated};
         match conjunct {
             Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
@@ -263,7 +275,7 @@ impl LabelWalk<'_> {
                     let mut path = Vec::new();
                     let mut fault = None;
                     each_site_label(site, &mut path, &mut |use_, path| {
-                        if fault.is_some() || !use_label(use_).is_some_and(|l| self.class.contains(&l)) {
+                        if fault.is_some() || !use_label(use_).is_some_and(|l| class.contains(&l)) {
                             return;
                         }
                         match meet(ty.take(), (self.site_type)(atom, path)) {
@@ -277,17 +289,21 @@ impl LabelWalk<'_> {
                 }
                 Ok(ty)
             }
-            Conjunct::Not(Negated::Form(form)) => self.conjunct_type(form),
-            Conjunct::Or(branches) => join_branches(branches.iter().map(|branch| self.body_type(branch.value()))),
+            Conjunct::Not(Negated::Form(form)) => self.conjunct_type(form, pairs, class),
+            Conjunct::Or(branches) => join_branches(branches.iter().map(|branch| self.body_type(branch.value(), pairs))),
             Conjunct::If { test, then, otherwise } => {
-                let test_type = self.body_type(test.value())?;
+                let test_type = self.body_type(test.value(), pairs)?;
+                let then_type = self.body_type(then.value(), &with_constraints(pairs, test.value()))?;
                 if self.fresh_in(test.value()) {
-                    return meet(test_type, self.body_type(then.value())?);
+                    return meet(test_type, then_type);
                 }
-                let branches = [then, otherwise].into_iter().map(|branch| self.body_type(branch.value()));
-                meet(test_type, join_branches(branches)?)
+                let otherwise_type = self.body_type(otherwise.value(), pairs);
+                meet(test_type, join_branches([Ok(then_type), otherwise_type].into_iter())?)
             }
-            Conjunct::All { domain, body } => meet(self.body_type(domain.value())?, self.body_type(body.value())?),
+            Conjunct::All { domain, body } => {
+                let domain_type = self.body_type(domain.value(), pairs)?;
+                meet(domain_type, self.body_type(body.value(), &with_constraints(pairs, domain.value()))?)
+            }
             Conjunct::Constraint(_) => Ok(None),
         }
     }
@@ -379,23 +395,37 @@ fn join_branches(
     Ok(joined)
 }
 
-/// `label` and each label that a constraint of `body`, at any depth, makes
-/// equal to it, directly or through other labels.
-fn equal_labels(body: &crate::program::Body, label: crate::program::LabelId) -> Vec<crate::program::LabelId> {
-    use crate::program::{constraint_second, Conjunct};
-    let mut pairs = Vec::new();
-    each_conjunct(body, &mut |conjunct| {
+/// Two labels that a constraint makes equal.
+type LabelPair = (crate::program::LabelId, crate::program::LabelId);
+
+/// `outer` and the pairs of labels of each constraint of `list` itself, a
+/// constraint under a `NOT` included, and no constraint of a list nested in
+/// `list`.
+fn with_constraints(outer: &[LabelPair], list: &crate::program::Body) -> Vec<LabelPair> {
+    use crate::program::{constraint_second, Conjunct, Negated};
+    let mut pairs = outer.to_vec();
+    for conjunct in list.conjuncts.iter() {
+        let mut conjunct = conjunct;
+        while let Conjunct::Not(Negated::Form(inner)) = conjunct {
+            conjunct = inner;
+        }
         if let Conjunct::Constraint(k) = conjunct {
             if let Some(second) = constraint_second(k) {
                 pairs.push((k.first.label, second.label));
             }
         }
-    });
+    }
+    pairs
+}
+
+/// `label` and each label that `pairs` make equal to it, directly or
+/// through other labels.
+fn equal_labels(pairs: &[LabelPair], label: crate::program::LabelId) -> Vec<crate::program::LabelId> {
     let mut class = vec![label];
     let mut grown = true;
     while grown {
         grown = false;
-        for &(a, b) in &pairs {
+        for &(a, b) in pairs {
             for (x, y) in [(a, b), (b, a)] {
                 if class.contains(&x) && !class.contains(&y) {
                     class.push(y);
