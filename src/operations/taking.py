@@ -44,7 +44,7 @@ from ticketing.references import referring
 from ticketing.vocabulary import COORDINATOR, Domain, Kind, Status
 
 
-def scope(state: State) -> set[str]:
+def purview(state: State) -> set[str]:
     """The tickets the operators release and take changes among: those
     `State.mine` gives, those the coordinator gives in a line to the operator `me`,
     and each ticket a chain of links reaches from one of those, with those
@@ -247,10 +247,10 @@ RELEASED_LINE = re.compile(form(RELEASED, {"holder": r"\S+"}))
 
 
 def release(state: State) -> Step | None:
-    """The move back to `tickets/open/` of each ticket of `scope` under
+    """The move back to `tickets/open/` of each ticket of `purview` under
     `tickets/assigned/` whose holder is not live (`live_holder`), in one
     command whose moves run apart (`moves`)."""
-    released = {n: t for n in sorted(scope(state))
+    released = {n: t for n in sorted(purview(state))
                 if (t := state.tracker.tickets.get(n)) is not None
                 and Exit.RELEASE in exits(state, t).by
                 and (t.holder is None or not live_holder(state, t.holder))}
@@ -280,14 +280,14 @@ def boosted(state: State) -> set[str]:
 
 
 def ready(state: State) -> list[Ticket]:
-    """The open changes of `scope` whose `depends-on` are closed."""
+    """The open changes of `purview` whose `depends-on` are closed."""
     return [t for t, awaited in awaiting(state) if not awaited]
 
 
 def awaiting(state: State) -> list[tuple[Ticket, list[str]]]:
-    """Each ticket of `scope` that `Exit.TAKE` takes out of its status,
+    """Each ticket of `purview` that `Exit.TAKE` takes out of its status,
     with the tickets of its `depends-on` that are not closed."""
-    return [(t, [d for d in t.depends_on if not closed(state, d)]) for n in sorted(scope(state))
+    return [(t, [d for d in t.depends_on if not closed(state, d)]) for n in sorted(purview(state))
             if (t := state.tracker.tickets.get(n)) is not None and Exit.TAKE in exits(state, t).by]
 
 
@@ -307,7 +307,7 @@ def takeable(state: State) -> list[Ticket]:
 
 
 def waiting(state: State) -> list[tuple[str, list[str]]]:
-    """Each open `change` of `scope` not taken for its `depends-on`, with
+    """Each open `change` of `purview` not taken for its `depends-on`, with
     the tickets it waits for."""
     return [(t.number, awaited) for t, awaited in awaiting(state) if awaited]
 

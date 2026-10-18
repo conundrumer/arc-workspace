@@ -6,7 +6,7 @@ line of an analyst or the coordinator that opens so is none.
 
 The drafts given to the operator are the `change` tickets under
 `tickets/draft/` that `State.mine` gives, those the coordinator names, those a
-ticket analyst an operator launched files, and those of `taking.scope`
+ticket analyst an operator launched files, and those of `taking.purview`
 of another session whose index `SessionsRead.idle` holds. A draft is
 ready for a ticket reviewer once its log holds a `filed` or a `revised`
 line and no line after the last of them is the coordinator's or moves it
@@ -56,7 +56,7 @@ from enum import Enum
 from controlled_markdown import mctx
 from operations import briefs, messages
 from operations.change_budget import OVERRUN_FINDING, left_draft
-from operations.taking import STALLED, scope
+from operations.taking import STALLED, purview
 from operations.directives import Decision, Directive, named, numbers, ruling
 from operations.roles import Purpose, Role, analyst_subject, joined, subjects
 from operations.reports import left_for_decision
@@ -81,8 +81,8 @@ def draft_change(state: State, t: Ticket) -> bool:
 
 
 def elsewhere(state: State) -> list[Ticket]:
-    """The drafts of `taking.scope` that `State.mine` leaves out."""
-    return [t for n in sorted(scope(state)) if (t := state.tracker.tickets.get(n)) is not None
+    """The drafts of `taking.purview` that `State.mine` leaves out."""
+    return [t for n in sorted(purview(state)) if (t := state.tracker.tickets.get(n)) is not None
             and draft_change(state, t) and t.session is not None and not state.mine(t)]
 
 

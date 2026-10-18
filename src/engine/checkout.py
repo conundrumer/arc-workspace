@@ -4,13 +4,11 @@ every package reads. Each directory is computed from `ROOT` when asked, so
 a checkout that sets `ROOT` moves every one of them. The run cache, the
 solver files and the witness files each move to the directory an
 environment variable names, where it is set. Git runs in a tree through
-`git`, whose error is `TreeGone` where that tree is gone, `changed_paths`
-lists what a tree changes against a commit, `worktree_list` gives the
-worktrees of the repository, a `uv run` in another tree runs in
-`tree_env`, and `sources_digest` gives a hash of files of the checkout."""
+`git`, `changed_paths` lists what a tree changes against a commit,
+`worktree_list` gives the worktrees of the repository, a `uv run` in
+another tree runs in `tree_env`, and `sources_digest` gives a hash of files of the checkout."""
 
 import dataclasses
-import errno
 import functools
 import hashlib
 import os
@@ -65,28 +63,13 @@ class GitFailed(RuntimeError):
         self.stderr = stderr
 
 
-class TreeGone(FileNotFoundError):
-    """A git command whose tree, `tree`, is no directory, such as a
-    worktree that `git worktree remove` removed."""
-
-    def __init__(self, tree: Path) -> None:
-        super().__init__(errno.ENOENT, os.strerror(errno.ENOENT), str(tree))
-        self.tree = tree
-
-
 def git(tree: Path, *argv: str, stdin: str | None = None,
         env: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     """One git command in `tree`, with `stdin` on its standard input and
     `env` as its environment where they are given: what it did, whatever
-    its exit status. Where the command cannot start and `tree` is no
-    directory, the error is `TreeGone`."""
-    try:
-        return subprocess.run(["git", *argv], cwd=tree, input=stdin, env=env,
-                              capture_output=True, text=True)
-    except FileNotFoundError as e:
-        if Path(tree).is_dir():
-            raise
-        raise TreeGone(tree) from e
+    its exit status."""
+    return subprocess.run(["git", *argv], cwd=tree, input=stdin, env=env,
+                          capture_output=True, text=True)
 
 
 @dataclass(frozen=True)

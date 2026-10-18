@@ -11,8 +11,10 @@ editor. An editor of the change may launch its doc reviewer, as
 `changes.editor_step` gives; otherwise the command launches it. A
 reply that precedes the last report of any other editor is read for no
 finding, and that reviewer is asked once to review the change again, and
-the review is held where it has not replied since, unless that reply
-opens with `no finding stands` and its `reports.WORKTREE` line gives the
+the review is held where it has not replied since, or, where that
+reviewer is of another session (`TranscriptsRead.elsewhere`), which no
+message reaches, a new doc reviewer is launched on the worktree, unless
+that reply opens with `no finding stands` and its `reports.WORKTREE` line gives the
 `worktrees.fingerprint` the worktree has now, as then the worktree is in
 the state that reply read. `steps.Undecided.reread` gives why the
 command reads the state again before it launches an analyst on that hold.
@@ -104,9 +106,11 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
     with `no finding stands` and `r` sent each of them a message or is a
     launch of theirs, since its reply reaches its launcher, or where it
     opens so and gives the change's worktree `w` in the state it is in,
-    and otherwise the message that asks `r` to review the change again,
-    or, where `r` is of `TranscriptsRead.elsewhere`, the step `unreplied`
-    gives."""
+    and otherwise, where `r` is of `TranscriptsRead.elsewhere`, which no
+    message reaches, the launch of a new doc reviewer on `w`
+    (`review_launch`), and where it is not, the message that asks `r` to
+    review the change again, or, where `r` has no agent id or was sent
+    that message, the step `unreplied` gives."""
     if no_finding(r):
         if shows_current(r, w):
             return Pause.CLEAR
@@ -119,9 +123,10 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
             return ids
         if all(i in messaged or i == r.operator for i in ids):
             return Pause.CLEAR
+    if r in state.transcripts.elsewhere:
+        return review_launch(state, t, w, here, launcher, since)
     message = messages.review_again(since)
-    if r.agent_id is not None and r not in state.transcripts.elsewhere \
-            and not sent(state, r.agent_id, message):
+    if r.agent_id is not None and not sent(state, r.agent_id, message):
         return Send(r.agent_id, message, f"review again {t.number} {since}")
     return unreplied(state, t, w, here, r, launcher)
 
@@ -154,8 +159,10 @@ def review_launch(state: State, t: Ticket, w: Path, here: list[Agent], launcher:
     the agents before it settled (`change_agents.settled`), and its rounds
     (`briefs.review_rounds`), by
     `launcher`, after the time `after` of the ruling it is launched on
-    (`directives.Ruling`) or of the launch or last resume of the reviewer
-    that ended with no report it replaces, or 0.0 after neither."""
+    (`directives.Ruling`), of the launch or last resume of the reviewer
+    that ended with no report it replaces, or of the reply of the reviewer
+    of `TranscriptsRead.elsewhere` it replaces (`review_stale`), or 0.0
+    after none of those."""
     editors = with_ids(here)
     if isinstance(editors, Undecided):
         return editors

@@ -27,7 +27,6 @@ from run_reads import agent_type
 from state_assembly import read_state
 from transcripts import find
 
-from engine import checkout
 from operations import briefs, order, plan
 from operations.command_words import Action
 from operations.constants import BLOCK_SECONDS, LIMIT_SECONDS
@@ -135,7 +134,7 @@ def block(me: str, action: Action,
     launches, with the scratchpad their files go under, by the deadline it
     is given, as `--help next` gives the block of `next` and `--help relay`
     the end of the turn of `relay`, each read made again once where a
-    worktree it reads is gone (`read_again`)."""
+    worktree or a file it reads is gone (`read_again`)."""
     if not served(me, action):
         return 0
     (steps, scratch), accepted = waited(me, read_again(step_at), lambda out: not isinstance(out[0][0], Poll))
@@ -161,14 +160,15 @@ def block(me: str, action: Action,
 
 def read_again[T](out_at: Callable[[float], T]) -> Callable[[float], T]:
     """`out_at`, which reads the state and plans, called again once where
-    a call raises `checkout.TreeGone`: the second call lists the worktrees
-    again, so it reads no worktree that a merge removed after the first
-    call listed it. A second `TreeGone` is raised, so a worktree that git
-    still lists with its directory gone ends the command."""
+    a call raises `FileNotFoundError`: the second call lists the worktrees
+    and their files again, so it reads no worktree or file that a merge
+    removed after the first call listed it. A second `FileNotFoundError` is
+    raised, so a worktree that git still lists with its directory gone ends
+    the command."""
     def again(deadline: float) -> T:
         try:
             return out_at(deadline)
-        except checkout.TreeGone:
+        except FileNotFoundError:
             return out_at(deadline)
     return again
 

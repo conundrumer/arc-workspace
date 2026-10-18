@@ -1,7 +1,7 @@
 """The tickets that stall, and the move to `tickets/draft/` of a change
 that waits on a ticket that holds it up.
 
-A ticket of `taking.scope` is stalled (`stalled`) where an operator's step
+A ticket of `taking.purview` is stalled (`stalled`) where an operator's step
 is due on it and it has made no progress for `STUCK_SECONDS`, whatever the
 cause that held it. A step is due on it by an exit of `tracker.exits` that
 an operator's step makes, read by the function that step selects its work
@@ -97,7 +97,7 @@ def stalled(state: State) -> dict[str, float]:
     operator's step is due on each."""
     selections: dict[Exit, set[str]] = {}
     out: dict[str, float] = {}
-    for n in sorted(taking.scope(state)):
+    for n in sorted(taking.purview(state)):
         t = state.tracker.tickets.get(n)
         if t is None:
             continue

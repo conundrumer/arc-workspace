@@ -1,7 +1,7 @@
 """A read of the operator's state races a merge that removes a change
 worktree the read listed: `operate_loop.read_again` reads once more and
 gives the second read, and a worktree git still lists with its directory
-gone ends the read with `checkout.TreeGone`."""
+gone ends the read with `FileNotFoundError`."""
 
 import shutil
 import subprocess
@@ -42,7 +42,7 @@ def test_a_read_that_races_a_worktree_removal_is_read_again(tmp_path: Path) -> N
     scripts_importable()
     loop = script("operate_loop")
     main, tree = repo_with_worktree(tmp_path)
-    with pytest.raises(checkout.TreeGone):
+    with pytest.raises(FileNotFoundError):
         heads_read(main, [tree])(0.0)
     main, tree = repo_with_worktree(tmp_path / "again")
     assert len(loop.read_again(heads_read(main, [tree]))(0.0)) == 1
@@ -53,5 +53,5 @@ def test_a_listed_worktree_whose_directory_is_gone_ends_the_read(tmp_path: Path)
     loop = script("operate_loop")
     main, tree = repo_with_worktree(tmp_path)
     shutil.rmtree(tree)
-    with pytest.raises(checkout.TreeGone):
+    with pytest.raises(FileNotFoundError):
         loop.read_again(heads_read(main, []))(0.0)

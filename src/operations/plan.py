@@ -57,9 +57,10 @@ from operations.steps import EndTurn, ListingHold, Poll, Step
 
 
 def elsewhere(state: State) -> list[str]:
-    """The tickets of the operators' scope that another live holder
-    (`live_holder`) of the session (`State.session_holders`) holds."""
-    return [n for n in sorted(taking.scope(state))
+    """The tickets of the operators' purview (`taking.purview`) that
+    another live holder (`live_holder`) of the session
+    (`State.session_holders`) holds."""
+    return [n for n in sorted(taking.purview(state))
             if (t := state.tracker.tickets.get(n)) is not None and t.status is Status.ASSIGNED
             and t.holder not in (None, state.me) and t.holder in state.session_holders
             and live_holder(state, t.holder)]

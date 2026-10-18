@@ -30,7 +30,8 @@ from operate_loop import prepared, print_step, read_again, waited  # noqa: E402
 def review(editor: str) -> int:
     """Print the step `changes.editor_step` gives the editor `editor`,
     read again within `operate_loop.waited` while it is `steps.Poll`, and
-    once more where a worktree it reads is gone (`operate_loop.read_again`)."""
+    once more where a worktree or a file it reads is gone
+    (`operate_loop.read_again`)."""
     path = find(editor)
     parent = parent_id(path)
     kind = parent_type(path)
