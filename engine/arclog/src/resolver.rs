@@ -8,7 +8,7 @@ use crate::diagnostic::WithDiagnostics;
 use crate::hash::StableHash;
 use crate::program::path::NodePath;
 use crate::program::{
-    ColumnName, InstanceName, LabelId, Node, PortName, Program, ProgramRelation, RelationName, RigidDetName,
+    ColumnName, InstanceName, LabelId, Node, OutputStep, PortName, RelationRef, Program, ProgramRelation, RelationName, RigidDetName,
 };
 use crate::registry::{LibName, Registry};
 
@@ -181,6 +181,10 @@ pub struct ResolvedProgram {
     /// The columns of each node of the graph that hold an Example, by its
     /// index.
     examples: Box<[std::sync::Arc<[ExamplePath]>]>,
+    /// The columns that hold an Example of each relation of a node whose
+    /// forms give it several, by the node and the relation's path after
+    /// the form's name, which a read of that relation reads.
+    output_examples: crate::hash::StableHashMap<(GraphNodeIndex, std::sync::Arc<[OutputStep]>), std::sync::Arc<[ExamplePath]>>,
     resolutions: crate::hash::StableHashMap<NodePath, Resolution>,
     signatures: crate::hash::StableHashMap<NodePath, Signature>,
     positions: crate::hash::StableHashMap<NodePath, ColumnPosition>,
@@ -240,10 +244,14 @@ impl ResolvedProgram {
         self.sides[node.0 as usize]
     }
 
-    /// The columns of the rows of `node` of the graph that hold an
-    /// Example, each by its path, in no order.
-    pub fn example_columns(&self, node: GraphNodeIndex) -> &[ExamplePath] {
-        &self.examples[node.0 as usize]
+    /// The columns that hold an Example of the relation of `node` of the
+    /// graph that a read at `output` after the owner's name reads, each by
+    /// its path, in no order: those of the relation a form of `node` gives
+    /// at `output`, where one does, and otherwise those of each relation of
+    /// `node`. [`output_of`] gives a read's `output`.
+    pub fn example_columns(&self, node: GraphNodeIndex, output: Option<&[OutputStep]>) -> &[ExamplePath] {
+        let at = output.and_then(|output| self.output_examples.get(&(node, std::sync::Arc::from(output))));
+        at.unwrap_or(&self.examples[node.0 as usize])
     }
 
     /// The signature of the name read at `path`.
@@ -292,6 +300,15 @@ impl ResolvedProgram {
 /// A column of a relation by its path: the column's name, then, on a
 /// record, the field's.
 pub type ExamplePath = Box<[ColumnName]>;
+
+/// The path after the owner's name of the output that `relation` reads,
+/// where it reads one.
+pub fn output_of(relation: &RelationRef) -> Option<&[OutputStep]> {
+    match relation {
+        RelationRef::Output(output) => Some(&output.path),
+        RelationRef::Declared(_) | RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) => None,
+    }
+}
 
 /// The concept program's resolution, which the `DET` forms that a case
 /// takes from the concept program read through: each of those forms, at its

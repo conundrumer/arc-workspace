@@ -3,13 +3,16 @@
 //! of an instance keyed on an Example label included, reads such an
 //! instance's outputs unlifted, gives a keyed instance the task-wide side
 //! where its key holds an Example label, by what the label holds, and
-//! writes the content of a `DEMONSTRATED` form with the names its rules
+//! gives a `CHOOSE` form the task-wide side where its `for` clause holds
+//! an Example label, gives each output of a `RIGID_DET` form its own
+//! Example columns, writes the content of a `DEMONSTRATED` form with the names its rules
 //! declare resolved, writes no name a `CHOOSE` form declares into its
 //! content, and gives each column of each `DET` form of one parameter the
 //! position of the node's column of its name.
 
 use arclog::layout::SourceFile;
 use arclog::program::path::{NodePath, PathStep};
+use arclog::program::{ColumnName, DeclaredName, OutputStep};
 use arclog::read::read_arclog;
 use arclog::registry::Registry;
 use arclog::resolver::{resolve, ColumnPosition, ConceptReads, GraphNodeIndex, ResolvedProgram, Side};
@@ -276,6 +279,38 @@ fn an_instance_keyed_on_a_column_whose_binding_head_projects_an_example_label_is
         let program = resolved(&format!("{PER_INPUT_BACKGROUND}{forms}"));
         assert!(form_sides(&program, 2).iter().all(|side| *side == Side::TaskWide), "{forms}");
     }
+}
+
+#[test]
+fn a_choose_whose_for_body_binds_an_example_label_is_task_wide_where_its_from_body_reads_a_per_input_relation() {
+    let program = resolved(&format!(
+        "{PER_INPUT_BACKGROUND}\
+         (DET &cells (ex_input *E *P *Col))\n\
+         (CHOOSE &pick\n\
+           (for ((&cells ^E *P))\n\
+             (from (&bg P *Col))))\n",
+    ));
+    assert_eq!(form_sides(&program, 2), [Side::TaskWide]);
+}
+
+#[test]
+fn each_output_of_a_rigid_det_holds_an_example_at_the_columns_its_own_relation_binds_at_one() {
+    let program = resolved(
+        "(DET &member (ex_input *E *P (:Col *Id)))\n\
+         (RIGID_DET &piece\n\
+           (&member *E *Id *P))\n",
+    );
+    let form = path(&[1]);
+    let node = (0..program.graph.nodes.len() as u32)
+        .map(GraphNodeIndex)
+        .find(|node| *program.form_of(*node) == form)
+        .expect("the node of the `RIGID_DET` form");
+    let e: Box<[ColumnName]> = Box::from([ColumnName::Written("E".into())]);
+    let member = [OutputStep::Part(DeclaredName::Written("&member".into()))];
+    let part = program.example_columns(node, Some(&member));
+    assert!(part.contains(&e), "{part:?}");
+    let pose = program.example_columns(node, Some(&[OutputStep::Pose]));
+    assert!(!pose.contains(&e), "{pose:?}");
 }
 
 #[test]

@@ -1,16 +1,18 @@
-//! The columns of a relation's rows, as the sites of a read name them.
+//! The columns of a relation's rows, as the sites of a read name them, and
+//! the source of each column path of a relation.
 
 use std::sync::Arc;
 
 use super::ColumnPosition;
 use crate::hash::StableHashMap;
-use crate::program::path::NodeRef;
+use crate::program::path::{child_index, node_at, NodePath, NodeRef};
 use crate::program::{
-    Choose, ColumnName, DeclaredName, Demonstrated, Instance, InstanceName, KeyBody, OutputOwner, OutputStep,
-    RelationColumn, RelationName, RelationRef, RigidDet, RigidDetName, Site, SiteArg,
+    Choose, ColumnName, DeclaredName, Demonstrated, Instance, InstanceInput, InstanceName, KeyBody, LabelId, OutputOwner,
+    OutputStep, RelationColumn, RelationName, RelationRef, RigidDet, RigidDetName, Site, SiteArg,
 };
 use crate::registry::{binding_sites, Column, ColumnType, Component, LibEntry, LibName, Macro, ParameterSite, Port, Proposer, Registry, TypeParameter};
 use crate::relations::{ColumnGroup, ColumnIndex};
+use crate::types::{each_site_label, use_label};
 
 use crate::read::spelling::KEY;
 
@@ -167,9 +169,14 @@ pub(super) fn lib_columns(registry: &Registry, name: &LibName) -> Option<Columns
     }
 }
 
+/// Whether `ty` is the type `Example`.
+pub(super) fn is_example(ty: &ColumnType) -> bool {
+    *ty == ColumnType::Fixed(crate::types::ValueType::Example)
+}
+
 /// The names of `columns` of the type `Example`.
 pub(super) fn examples(columns: &[Column]) -> impl Iterator<Item = ColumnName> + '_ {
-    columns.iter().filter(|column| column.ty == ColumnType::Fixed(crate::types::ValueType::Example)).map(|column| column.name.clone())
+    columns.iter().filter(|column| is_example(&column.ty)).map(|column| column.name.clone())
 }
 
 /// The declared columns, with their types, of the fact, the lib
@@ -239,46 +246,176 @@ fn key_fields(key: &KeyBody) -> Box<[ColumnName]> {
     key.columns.iter().map(|column| column.name.clone()).collect()
 }
 
-/// The record of fields that an `INIT` form binds each type parameter
-/// of its component to, at the place that
-/// [`crate::registry::binding_sites`] gives. A parameter that the map
-/// leaves out takes one column.
-pub(super) struct Bindings(StableHashMap<TypeParameter, Box<[ColumnName]>>);
+/// What gives the value at a column path of a relation.
+#[derive(Clone, Debug)]
+pub(super) enum Source {
+    /// A label that the form giving the relation writes at the path,
+    /// which the body at `body`, a path below the form, binds.
+    Label { label: LabelId, body: NodePath },
+    /// The column's declared type.
+    Declared(ColumnType),
+}
+
+/// A column path of a relation, from a column's name, with its source.
+pub(super) type Sourced = (Box<[ColumnName]>, Source);
+
+/// One slot of a relation's columns, with the source of each column
+/// path at it or below it.
+#[derive(Clone, Debug)]
+pub(super) struct Listed {
+    slot: Slot,
+    sources: Vec<Sourced>,
+}
+
+/// The slots of a relation's columns, in the order of its rows, each
+/// with its sources. The relation's [`Columns`] derive from it.
+#[derive(Clone, Debug)]
+pub(super) struct Listing(Vec<Listed>);
+
+impl Listing {
+    pub(super) fn columns(&self) -> Columns {
+        Columns(self.0.iter().map(|listed| listed.slot.clone()).collect())
+    }
+
+    pub(super) fn sources(&self) -> impl Iterator<Item = &Sourced> + '_ {
+        self.0.iter().flat_map(|listed| listed.sources.iter())
+    }
+}
+
+/// `sources` below the column `column`.
+fn below(column: &ColumnName, sources: impl IntoIterator<Item = Sourced>) -> Vec<Sourced> {
+    sources.into_iter().map(|(path, source)| (std::iter::once(column.clone()).chain(path).collect(), source)).collect()
+}
+
+/// The labels at the site `site`, each with its column path from the
+/// site's column, or with the site's column alone where `whole` holds,
+/// bound by the body at `body`.
+fn site_sources(site: &Site, whole: bool, body: &NodePath) -> Vec<Sourced> {
+    let mut found = Vec::new();
+    each_site_label(site, &mut Vec::new(), &mut |use_, path| {
+        if let Some(label) = use_label(use_) {
+            let path: Box<[ColumnName]> = if whole { Box::from([site.column.clone()]) } else { path.into() };
+            found.push((path, Source::Label { label, body: body.clone() }));
+        }
+    });
+    found
+}
+
+/// The key clause of the form `form`, with the path below the form of
+/// the body whose `^` labels are its columns: the `key` of an `INIT`, a
+/// `DEMONSTRATED` or a `RIGID_DET` form, or the `for` of a `CHOOSE`
+/// form; none where the form has no key clause.
+pub(super) fn key_clause(form: NodeRef<'_>) -> Option<(&KeyBody, NodePath)> {
+    let first = NodePath::default().child(0);
+    match form {
+        NodeRef::Instance(Instance { key: Some(key), .. }) | NodeRef::Demonstrated(Demonstrated { key: Some(key), .. }) => {
+            Some((&key.value().key, first.child(0)))
+        }
+        NodeRef::RigidDet(RigidDet { key: Some(key), .. }) | NodeRef::Choose(Choose { rows: Some(key), .. }) => Some((key, first)),
+        _ => None,
+    }
+}
+
+/// The sources of the fields of `key`, whose body is at `body`, each
+/// path from the field's name.
+fn key_sources(key: &KeyBody, body: &NodePath) -> Vec<Sourced> {
+    key.columns.iter().map(|column| (Box::from([column.name.clone()]), Source::Label { label: column.label, body: body.clone() })).collect()
+}
+
+/// The `key` slot of the relation of a keyed form: the record of its key
+/// clause's fields, or one column where it has none.
+fn key_listed(key: Option<(&KeyBody, NodePath)>) -> Listed {
+    match key {
+        Some((key, body)) => Listed { slot: Slot::of(&self::key(), Some(&key_fields(key))), sources: below(&self::key(), key_sources(key, &body)) },
+        None => Listed { slot: Slot::Column(self::key()), sources: Vec::new() },
+    }
+}
+
+/// The path below `form` of the body of `input`, an input of `form`
+/// written after the form's key clause or inside it.
+fn input_body(form: NodeRef<'_>, input: &InstanceInput) -> NodePath {
+    let child = NodeRef::InstanceInput(input);
+    let path = match child_index(form, child) {
+        Some(index) => NodePath::default().child(index),
+        None => {
+            let key = NodePath::default().child(0);
+            let clause = node_at(form, &key).expect("the key clause of a form whose input stands inside it");
+            key.child(child_index(clause, child).expect("an input of the form, after its key clause or inside it"))
+        }
+    };
+    path.child(u32::try_from(input.head.len()).expect("a head of fewer than 2^32 sites"))
+}
+
+/// What an `INIT` form binds a type parameter of its component to: the
+/// record of fields of a column of the parameter, where it has one, and
+/// the source of each path below such a column.
+struct Binding {
+    record: Option<Box<[ColumnName]>>,
+    sources: Vec<Sourced>,
+}
+
+/// What an `INIT` form binds each type parameter of its component to,
+/// at the place that [`crate::registry::binding_sites`] gives. A
+/// parameter that the map leaves out takes one column, with no source
+/// below it.
+pub(super) struct Bindings(StableHashMap<TypeParameter, Binding>);
 
 pub(super) fn bindings(instance: &Instance, component: &Component) -> Bindings {
-    let records = binding_sites(instance, &component.inputs).into_iter().filter_map(|sites| {
-        let fields = match sites.binding {
-            ParameterSite::Key(key) => key_fields(&key.key),
-            ParameterSite::Head { site, .. } => projection(site)?,
+    let form = NodeRef::Instance(instance);
+    let records = binding_sites(instance, &component.inputs).into_iter().map(|sites| {
+        let binding = match sites.binding {
+            ParameterSite::Key(_) => {
+                let (key, body) = key_clause(form).expect("the key clause of an `INIT` form whose key binds a parameter");
+                Binding { record: Some(key_fields(key)), sources: key_sources(key, &body) }
+            }
+            ParameterSite::Head { input, site } => {
+                let record = projection(site);
+                let sources = site_sources(site, record.is_none(), &input_body(form, input));
+                Binding { record, sources: sources.into_iter().map(|(path, source)| (path[1..].into(), source)).collect() }
+            }
         };
-        Some((sites.parameter.clone(), fields))
+        (sites.parameter.clone(), binding)
     });
     Bindings(records.collect())
 }
 
-/// The columns of `port` of an instance whose binding is `bindings`.
-pub(super) fn port_columns(port: &Port, bindings: &Bindings) -> Columns {
-    Columns(
-        port.columns
-            .iter()
-            .map(|column| match &column.ty {
-                ColumnType::Parameter(parameter) => Slot::of(&column.name, bindings.0.get(parameter).map(|f| &f[..])),
-                _ => Slot::Column(column.name.clone()),
-            })
-            .collect(),
-    )
-}
-
-fn key_slot(key: Option<&KeyBody>) -> Slot {
-    Slot::of(&self::key(), key.map(key_fields).as_deref())
+/// The columns of `port` of an instance whose binding is `bindings`:
+/// each column's declared type, and below a column of a type
+/// parameter, the sources of the parameter's binding.
+pub(super) fn port_columns(port: &Port, bindings: &Bindings) -> Listing {
+    let listed = port.columns.iter().map(|column| {
+        let binding = match &column.ty {
+            ColumnType::Parameter(parameter) => bindings.0.get(parameter),
+            _ => None,
+        };
+        let mut sources = vec![(Box::from([column.name.clone()]), Source::Declared(column.ty.clone()))];
+        sources.extend(binding.into_iter().flat_map(|binding| below(&column.name, binding.sources.iter().cloned())));
+        Listed { slot: Slot::of(&column.name, binding.and_then(|binding| binding.record.as_deref())), sources }
+    });
+    Listing(listed.collect())
 }
 
 /// The columns of a `DEMONSTRATED` form's relation,
 /// `docs/arclog/arclog.md#demonstrated`.
 pub(crate) fn demonstrated_columns(form: &Demonstrated) -> Columns {
-    let key = key_slot(form.key.as_ref().map(|key| &key.value().key));
-    let heads = demonstrated_value(form).into_iter().flat_map(|input| input.head.iter()).map(|site| Slot::of(&site.column, projection(site).as_deref()));
-    Columns(std::iter::once(key).chain(heads).collect())
+    demonstrated_listing(form).columns()
+}
+
+/// The listing of a `DEMONSTRATED` form's relation: the `key` slot, then
+/// a slot per head site of the `value` input, with the labels the site
+/// writes, which the input's body binds.
+pub(super) fn demonstrated_listing(form: &Demonstrated) -> Listing {
+    let at = NodeRef::Demonstrated(form);
+    let key = key_listed(key_clause(at));
+    let heads = demonstrated_value(form).into_iter().flat_map(|input| {
+        let body = input_body(at, input);
+        input.head.iter().map(move |site| {
+            let record = projection(site);
+            let sources = site_sources(site, record.is_none(), &body);
+            Listed { slot: Slot::of(&site.column, record.as_deref()), sources }
+        })
+    });
+    Listing(std::iter::once(key).chain(heads).collect())
 }
 
 /// The `value` input of a `DEMONSTRATED` form, whose head names the
@@ -305,31 +442,64 @@ pub(crate) fn part_steps(relation: &RelationRef) -> Option<Vec<OutputStep>> {
 /// its columns, as `docs/arclog/rigid.md#semantics` gives. A form with no key
 /// clause has one `key` column, as an instance with no key clause has.
 pub(crate) fn rigid_outputs(form: &RigidDet) -> Vec<(Arc<[OutputStep]>, Columns)> {
-    let key = key_slot(form.key.as_ref());
-    let pose = Slot::Column(self::pose());
-    let mut outputs: Vec<(Arc<[OutputStep]>, Columns)> = form
+    rigid_listings(form).into_iter().map(|(steps, listing)| (steps, listing.columns())).collect()
+}
+
+/// The listing of each output of a `RIGID_DET` form, by its path after the
+/// form's name: the `key` slot; for a part, `:Pose` and then the part's
+/// columns; for `.pose`, the instance's columns and then `:Pose`. A label
+/// at a part's site or among the instance's columns is bound by the form.
+pub(super) fn rigid_listings(form: &RigidDet) -> Vec<(Arc<[OutputStep]>, Listing)> {
+    let whole = NodePath::default();
+    let key = key_listed(key_clause(NodeRef::RigidDet(form)));
+    let pose = Listed { slot: Slot::Column(self::pose()), sources: vec![(Box::from([self::pose()]), Source::Declared(ColumnType::Pose))] };
+    let mut outputs: Vec<(Arc<[OutputStep]>, Listing)> = form
         .parts
         .iter()
         .filter_map(|part| {
             let part = part.value();
             let steps = part_steps(&part.relation)?;
-            let sites = part.sites.iter().map(|site| Slot::Column(site.column.clone()));
-            Some((steps.into(), Columns([key.clone(), pose.clone()].into_iter().chain(sites).collect())))
+            let sites = part.sites.iter().map(|site| Listed { slot: Slot::Column(site.column.clone()), sources: site_sources(site, true, &whole) });
+            Some((steps.into(), Listing([key.clone(), pose.clone()].into_iter().chain(sites).collect())))
         })
         .collect();
-    let instance = form.instance.iter().flat_map(|instance| instance.columns.iter()).map(|column| Slot::Column(column.name.clone()));
-    outputs.push((Arc::from([OutputStep::Pose]), Columns(std::iter::once(key).chain(instance).chain([pose]).collect())));
+    let instance = form.instance.iter().flat_map(|instance| instance.columns.iter()).map(|column| Listed {
+        slot: Slot::Column(column.name.clone()),
+        sources: vec![(Box::from([column.name.clone()]), Source::Label { label: column.label, body: whole.clone() })],
+    });
+    outputs.push((Arc::from([OutputStep::Pose]), Listing(std::iter::once(key).chain(instance).chain([pose]).collect())));
     outputs
 }
 
-/// The columns that `form` gives the rows of its node: a clause's, or a
+/// The columns that `form` gives the rows of its node, each with the path
+/// below the form of the body that binds its label: a clause's, or a
 /// `CHOOSE` form's row columns and then its candidate's.
-pub(crate) fn form_columns<'f>(form: NodeRef<'f>) -> Box<dyn Iterator<Item = &'f RelationColumn> + 'f> {
+fn bound_columns(form: NodeRef<'_>) -> Vec<(&RelationColumn, NodePath)> {
     match form {
-        NodeRef::Clause(clause) => Box::new(clause.columns.iter()),
-        NodeRef::Choose(choose) => Box::new(row_columns(choose).chain(choose.candidate_columns.iter())),
-        _ => Box::new(std::iter::empty()),
+        NodeRef::Clause(clause) => clause.columns.iter().map(|column| (column, NodePath::default().child(0))).collect(),
+        NodeRef::Choose(choose) => {
+            let rows = key_clause(form).into_iter().flat_map(|(rows, body)| rows.columns.iter().map(move |column| (column, body.clone())));
+            let from = NodePath::default().child(u32::from(choose.rows.is_some()));
+            rows.chain(choose.candidate_columns.iter().map(|column| (column, from.clone()))).collect()
+        }
+        _ => Vec::new(),
     }
+}
+
+/// The columns that `form` gives the rows of its node, as
+/// [`bound_columns`] gives them.
+pub(crate) fn form_columns<'f>(form: NodeRef<'f>) -> Box<dyn Iterator<Item = &'f RelationColumn> + 'f> {
+    Box::new(bound_columns(form).into_iter().map(|(column, _)| column))
+}
+
+/// The listing of the relation of a clause or a `CHOOSE` form: a column per
+/// column that [`form_columns`] gives, with its label.
+pub(super) fn form_listing(form: NodeRef<'_>) -> Listing {
+    let listed = bound_columns(form).into_iter().map(|(column, body)| Listed {
+        slot: Slot::Column(column.name.clone()),
+        sources: vec![(Box::from([column.name.clone()]), Source::Label { label: column.label, body })],
+    });
+    Listing(listed.collect())
 }
 
 /// The row columns of a chosen relation, in the order of the `for`

@@ -22,7 +22,7 @@ impl Check for PooledAndLiftedReadsCheck {
     /// Refuses each read that `docs/arclog/arclog.md#program` does not let
     /// its form make: a per-input form's read of `ex_input` or `ex_output`, a
     /// task-wide form's read of `input`, and a per-input form's read at a
-    /// site on a column of a relation that holds an Example, as
+    /// site on a column that holds an Example of the relation it reads, as
     /// [`ResolvedProgram::example_columns`] gives. A read of a form's own
     /// nodes, as an `Unfold` instance's of its outputs, is no read of another
     /// side.
@@ -60,7 +60,7 @@ fn refused_read(program: &ResolvedProgram, side: Side, node: GraphNodeIndex, ato
             Some("a per-input form reads `ex_input` or `ex_output`, which only a task-wide form reads")
         }
         (Side::TaskWide, Some(FactRelation::Input)) => Some("a task-wide form reads `input`, which only a per-input form reads"),
-        (Side::PerInput, None) if reads_example(program.example_columns(node), atom) => {
+        (Side::PerInput, None) if reads_example(program.example_columns(node, crate::resolver::output_of(&atom.relation)), atom) => {
             Some("a per-input form reads the Example column of a relation, which it reads only pooled, with no site on that column")
         }
         _ => None,
@@ -134,14 +134,13 @@ fn is_form(node: NodeRef<'_>) -> bool {
 
 /// The relations of `program` that have an Example column: `ex_input`,
 /// `ex_output`, and each node of the dependency graph a column of which holds
-/// an Example, as [`ResolvedProgram::example_columns`] gives from the node's
-/// reads and its key. A per-input relation that a task-wide form reads lifted
+/// an Example, as [`ResolvedProgram::example_columns`] gives. A per-input relation that a task-wide form reads lifted
 /// has none of its own (`docs/arclog/arclog.md#program`).
 pub fn example_relations(program: &ResolvedProgram) -> StableHashSet<GraphNodeIndex> {
     let nodes = (0..program.graph.nodes.len() as u32).map(GraphNodeIndex);
     let has_example = |node: &GraphNodeIndex| match program.graph.nodes[node.0 as usize].kind {
         DependencyKind::Fact(FactRelation::ExInput | FactRelation::ExOutput) => true,
-        _ => !program.example_columns(*node).is_empty(),
+        _ => !program.example_columns(*node, None).is_empty(),
     };
     nodes.filter(has_example).collect()
 }
