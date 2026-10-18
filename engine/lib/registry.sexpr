@@ -1,7 +1,7 @@
 ;; The lib registry of the arclog engine. Its forms and their meaning: the
 ;; module comment of engine/arclog/src/registry.rs.
 
-;; Relations: the columns and types of work/arclog/lib-signature.dl, and the modes of programs/lib/box.dl.
+;; Relations: the modes of programs/lib/box.dl.
 (relation compose (columns (A Box) (B Box) (C Box)) (modes (A B)))
 (relation relative (columns (Base Box) (X Box) (X_rel Box)) (modes (Base X)))
 (relation edge_inset (columns (D Dir) (K number) (B Box)) (modes (K)))
@@ -42,7 +42,7 @@
 (relation d4_identity (columns (D D4)))
 (relation pose_difference (columns (A shared-pose) (B shared-pose) (D D4)))
 
-;; Components: the columns, types and type parameters of work/arclog/lib-signature.dl.
+;; Components.
 (component Cardinality construction (type-parameters Key Member)
   (inputs (member (key Key) (m Member))
     (domain (key Key)))
@@ -162,7 +162,7 @@
     (unconfirmed (key Key) (c Demonstrated))
     (confirmed (key Key) (c Demonstrated))))
 
-;; Derivations: docs/arclog/arcdata.md#params, with the types of the components of work/arclog/lib-signature.dl.
+;; Derivations: docs/arclog/arcdata.md#params.
 (derivation Frame (fields (A Axis) (N number)) (columns (P Position)))
 (derivation Division (fields (A Axis) (Count number) (Size number) (Gap number)) (columns (P Position) (P_outer Position) (P_inner Position)))
 
@@ -181,7 +181,7 @@
 (fact ex_input (columns (E Example) (P Position) (Col Color)))
 (fact ex_output (columns (E Example) (P Position) (Col Color)))
 
-;; Macros: work/arclog/libmap/macros.py, in the names of the lib.
+;; Macros, in the names of the lib.
 (macro inside (columns (A A) (B B))
   (relative (:Base *B) (:X *A) (:X_rel *R))
   (axis_of (:D *D1) (:A *A1))

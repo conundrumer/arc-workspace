@@ -13,7 +13,7 @@ from engine.memo import write_whole
 from ticket_files import FIELD, TicketName, ticket_files, ticket_name, ticket_path, ticket_status
 from ticket_form import (HEADING, LOG, TITLE_MARK, VALIDATES, section, section_head, ticket_kind,
                          title, without_section)
-from ticket_numbers import TICKET_NUMBER, TicketNumber, matched_number, reserve, write_new
+from ticket_numbers import TICKET_NUMBER, TicketNumber, matched_number, reserve, ticket_number, write_new
 from ticket_vocabulary import ticked
 from operations.roles import AGENT_ID as AGENT_ID_FORM
 from ticketing.text import VALIDATION, heading
@@ -57,6 +57,12 @@ UNBLOCKED_BY = "{change} {number} closed {resolution}"
 """The note of the line that moves into `open` a ticket that waits on a
 change closed with another resolution, with that change's number and
 resolution."""
+
+WAITS_ON_NEXT = "{change} {next}: {change} {number} closed {resolution}"
+"""The note of the line that keeps under `waiting` a ticket that waits on
+a change closed with `fixed`, where another change outside
+`tickets/closed/` serves it: `next`, the number of the change it then waits on, and the closed
+change's number and resolution."""
 
 VALIDATED = f"{Resolution.FIXED}: {Verdict.VALIDATED}:"
 """The opening of the note of a line into `closed` that states that the
@@ -293,7 +299,7 @@ class Moves:
 
 class Close(Enum):
     """What a line into `closed` does beyond the move, as
-    `file_ticket.LOG_RULES` gives."""
+    `ticket_log_command.LOG_RULES` gives."""
     UNBLOCKS = auto()
     """It closes a `change`, and `unblock` moves the tickets that wait on it."""
     FILES_VALIDATION = auto()
@@ -373,16 +379,25 @@ def file_validation(tickets: Path, path: Path, request: TicketNumber, agent: str
 def unblock(tickets: Path, change: TicketNumber, agent: str, agent_id: str | None,
             resolution: Resolution, note: str) -> Moves:
     """Carries out, for the change `change` closed with `resolution` and `note`,
-    the moves of the tickets that wait on it that `file_ticket.LOG_RULES`
+    the moves of the tickets that wait on it that `ticket_log_command.LOG_RULES`
     gives, and returns what it did. Each line is as `log_moves` writes it."""
     moves = Moves()
     opened = UNBLOCKED_BY.format(change=Wait.CHANGE, number=change, resolution=resolution)
     closed = CLOSED_BY.format(fixed=resolution, change=Wait.CHANGE, number=change, note=note)
+    served: dict[TicketNumber, list[TicketNumber]] | None = None
     for path in ticket_files(tickets, Status.WAITING):
         try:
             if waits_on(read_ticket(path)) == change:
                 if resolution is Resolution.FIXED and not is_change(path):
-                    to, line = Status.CLOSED, closed
+                    if served is None:
+                        served = served_by(tickets, change)
+                    following = served.get(ticket_name(path).number)
+                    if following:
+                        to, line = Status.WAITING, WAITS_ON_NEXT.format(
+                            change=Wait.CHANGE, next=min(following, key=lambda n: n.order),
+                            number=change, resolution=resolution)
+                    else:
+                        to, line = Status.CLOSED, closed
                 else:
                     to, line = Status.OPEN, opened
                 moves.add(log_moves(tickets, ticket_name(path).number, to, agent, Status.WAITING,
@@ -392,6 +407,29 @@ def unblock(tickets: Path, change: TicketNumber, agent: str, agent_id: str | Non
         except Refused as e:
             moves.refused.append((path, str(e)))
     return moves
+
+
+def served_by(tickets: Path, change: TicketNumber) -> dict[TicketNumber, list[TicketNumber]]:
+    """The changes outside `tickets/closed/`, other than `change`, whose
+    `Motivation` gives a ticket's number, by that number. A change whose
+    file moves while this reads it is left out."""
+    from ticket_reads import motivation
+
+    served: dict[TicketNumber, list[TicketNumber]] = {}
+    for status in Status:
+        if status is Status.CLOSED:
+            continue
+        for path in ticket_files(tickets, status):
+            number = ticket_name(path).number
+            try:
+                text = read_ticket(path)
+            except Moved:
+                continue
+            if number == change or ticket_kind(text) is not Kind.CHANGE:
+                continue
+            for cited in motivation(text):
+                served.setdefault(ticket_number(cited), []).append(number)
+    return served
 
 
 def line_time(line: re.Match[str]) -> float:

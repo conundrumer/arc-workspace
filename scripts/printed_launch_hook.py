@@ -117,9 +117,9 @@ def operator_next(hook: dict[str, Any], name: str) -> NextCaller | None:
 
 def first_at(hook: dict[str, Any], records: str, agent: str, call: str) -> bool:
     """Whether the caller `agent` of `hook` has no record under `records`
-    of its session directory that gives `call`, the id of its last call of
-    its command, which it then records: a hook that holds the caller to
-    that call's result acts on it once."""
+    of its session directory that gives `call`, the id the hook gives of
+    the event it acts on, which it then records: a hook acts once on each
+    event."""
     from run_reads import hook_session
 
     record = hook_session(hook) / records / agent
