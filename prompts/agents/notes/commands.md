@@ -5,7 +5,7 @@
         - Running a command: [commands](#commands) and [foreground-commands](#foreground-commands).
         - Waiting on a command: [waiting-on-commands](#waiting-on-commands).
         - Ending a command: [ending-commands](#ending-commands), and [process-trees](#process-trees) where it calls `TaskStop` or starts a process with `&` or `nohup`.
-        - Launching a background agent a command prints: [Background agents](#background-agents).
+        - Launching a background agent: [Background agents](#background-agents).
         - Reporting a denied call in the reply: [denied-calls](#denied-calls).
         - Waiting on an agent resumed by SendMessage, and resuming it after a usage-limit stop: [resumed-agents](#resumed-agents).
         - Sending the answer a message asks for: [message-answers](#message-answers).
@@ -41,6 +41,8 @@
 - Where you start a process with `&` or `nohup`, print its process ID with `echo $!` in that Bash call. To end it, take the process tree of that process ID, and end each process of that tree with `kill <process ID>`.
 
 ## Background agents
+- Where the harness refuses an Agent call of yours with "Concurrent subagent limit reached", whatever the refusal's text says, wait about a minute and make that call again: run a foreground Bash call that runs `: 'unattended-wait: concurrent subagent limit'; sleep 60`. After ten refusals in a row of that call, treat it as denied, as [denied-calls](#denied-calls) gives.
+    * comment: Code editor `af224b57041f5ecc8` (ticket 9-788) ended `blocked` on this refusal, and ticket analysts `a907dcfa6dc70ff5d` (ticket 11-1085) and `af8ca0bd59f4bf834` (session `129de8fc`) stopped on it, each led by the text "Do not retry", though slots free within minutes.
 - When you end your turn while a command of yours runs on in the background and no agent you launched is running, the harness reports you to the session that launched you as stopped. It does not while an agent you launched is running.
 - While an agent you launched is running, no line of [waiting-on-commands](#waiting-on-commands) holds: run each command that can outlast the Bash call's default timeout in the background, and when no other work is ready, start your keep-alive timer, then end your turn with a line that gives each agent you launched and each command of yours that is still running, and run no other command to wait on them. The harness resumes you when an agent sends you a message, when one of them that no agent has resumed by SendMessage completes, or when a command of yours that runs in the background completes.
     * comment: The cases this rule covers: waiting while an agent you launched runs; the start of the keep-alive timer before you end your turn; waiting, once no agent you launched runs, on each command you ran in the background, which [waiting-on-commands](#waiting-on-commands) covers once this rule no longer holds.
