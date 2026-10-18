@@ -2,11 +2,13 @@
 accepted outputs under `tests/gate/accepted/` and the machine's accepted
 times.
 
-    uv run python scripts/gate.py [--affected <base>] <out-dir> [cmd ...]
-    uv run python scripts/gate.py [--accept [--replace]] --since-timed <out-dir>
     uv run python scripts/gate.py --outputs-only [--affected <base> | --record-deps] [--coverage] <out-dir> [cmd ...]
-    uv run python scripts/gate.py --accept [--replace] [--affected <base>] <out-dir> [cmd ...]
     uv run python scripts/gate.py --adopt-record <out-dir>
+
+A run without `--outputs-only` is a timed run, and the gate runs no timed
+run: it refuses one, `--accept` and `--since-timed` with it, with exit
+status 2 before it runs a command. The paragraphs on a timed run below give
+what one would do.
 
 The paragraphs below say how the commands run and what they write, how
 their outputs and times are compared and what each line printed means, the
@@ -272,6 +274,8 @@ def run_gate(argv: Sequence[str]) -> int:
                 or a.since_timed or a.record_deps or a.coverage or a.accepted != ACCEPTED:
             ap.error(mctx("--adopt-record takes no command and no other option"))
         return adopt_record(a.out)
+    if not a.outputs_only:
+        ap.error(mctx("the gate runs no timed run: give --outputs-only"))
     if a.replace and not a.accept:
         ap.error("--replace is given without --accept")
     if a.accept and a.outputs_only:

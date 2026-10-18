@@ -716,18 +716,14 @@ def batch_profile(runs: list[str], reviewable: list[str], commit: str) -> str:
     return f"{text}\n\n```\n{brief}\n```"
 
 
-# "no ticket for a `LOADED` line": the user's ruling, option 1, in ticket
-# 1791213581-gate-slow-load-triage-1.
 BATCH_GATE = mctx("""
     - Add a worktree with `git worktree add --detach <dir> master`, with a new directory under {scratch} as `<dir>`.
-    - Run `uv run python scripts/gate.py --accept --since-timed <out>` in that worktree, and file a `performance` ticket for each `SLOW` line it prints, and no ticket for a `LOADED` line.
-    - Then run `uv run python scripts/gate.py --outputs-only --record-deps <out>` there, with a new `<out>`, and remove that worktree.
-    - For each `DIFF` line these runs print that the `Evidence` of no ticket outside `tickets/draft/` and `tickets/closed/` holds, bisect the commits of `master` from the commit that the `affected:` line of the run that printed it gives after `the change from` to `master`, and file a ticket of kind `bug` that names the commit the bisection stops at.
+    - Run `uv run python scripts/gate.py --outputs-only --record-deps <out>` in that worktree, and remove that worktree.
+    - For each `DIFF` line that run prints that the `Evidence` of no ticket outside `tickets/draft/` and `tickets/closed/` holds, bisect the commits of `master` from the commit that the `affected:` line of that run gives after `the change from` to `master`, and file a ticket of kind `bug` that names the commit the bisection stops at.
         - Run each step in a worktree you add at the commit with `git worktree add --detach` and remove after.
-        - A step for a `DIFF` line ending in `warm` is `uv run python scripts/gate.py <out> <cmd ...>`, with the commands of that commit's gate in the order its `--help` lists them, up to and including that line's command, and you pass over each line it prints on a command's time.
-        - Each other step is `uv run python scripts/gate.py --outputs-only <out> <cmd>`, with that line's command.
+        - Each step is `uv run python scripts/gate.py --outputs-only <out> <cmd>`, with that line's command.
         - A step at a commit whose gate has no such command counts as before the change.
-        - File a `DIFF` line unbisected where it stands at that commit, where no `affected:` line of that run gives one, or where it ends in `warm` and its step at `master` does not print it, and say which in the ticket.
+        - File a `DIFF` line unbisected where it stands at that commit, or where no `affected:` line of that run gives one, and say which in the ticket.
     - File each ticket {filing}.
     - Reply with the tickets you filed.
     """)
