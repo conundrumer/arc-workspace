@@ -97,8 +97,8 @@ sub_extent(P, A, K) :- axis_dim(P, A, N), K = range(1, N).
 /// the box's two margins on the axis.
 .decl box_extent(b: Box, p: Position, a: Axis, n: number) inline
 box_extent(B, P, A, N) :-
-    axis_dim(P, A, Ext), axis_of(D, A), opposite(D, O),
-    dist(B, D, M1), dist(B, O, M2), N = Ext - M1 - M2.
+    axis_elem(A), axis_dim(P, A, Ext),
+    N = Ext + 1 - @box_axis_dim(B, A).  // the functor gives b's margin sum plus 1
 
 /// Box inset from the frame by k on side d, zero elsewhere. At a corner, k
 /// sits at both of the corner's edges.

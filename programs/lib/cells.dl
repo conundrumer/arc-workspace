@@ -293,8 +293,9 @@
 
 /// Orders the cells lexicographically: the primary axis first, the corner's
 /// other axis breaking a tie. Reading order is the top-left corner with the V
-/// axis primary.
-.comp LexOrder<Key> : Order<Key, Position> {
+/// axis primary. The relations it shares with `Order` mean what they mean
+/// there.
+.comp LexOrder<Key> {
     /// The corner the order runs from.
     .decl corner(key: Key, d: DiagDir)  // @input
 
@@ -304,8 +305,12 @@
     /// The cells to order.
     .decl cell(key: Key, p: Position)  // @input
 
+    /// The members: the cells.
+    .decl elem(key: Key, t: Position)
     elem(Ky, P) :- cell(Ky, P).
 
+    /// The lexicographic order of the cells, as a strict order.
+    .decl before(key: Key, a: Position, b: Position)
     before(Ky, Q, P) :-
         cell(Ky, Q), cell(Ky, P),
         corner(Ky, Diag), axis(Ky, A), dir_of(Diag, A, D),  // primary dir
@@ -316,6 +321,72 @@
         diag_dirs(Diag, A, D, D2),                   // primary/secondary dirs
         same_dist(D, Q, P),                          // primary tie
         nearer(D2, Q, P).                            // q strictly nearer
+
+    .init _order = Order<Key, Position>
+    _order.elem(Ky, P) :- elem(Ky, P).
+    _order.before(Ky, Q, P) :- before(Ky, Q, P).
+
+    .decl rank(key: Key, t: Position, r: number)
+    rank(Ky, P, R) :- _order.rank(Ky, P, R).
+
+    /// The same count, over the members after t.
+    .decl rank_desc(key: Key, t: Position, r: number)
+    rank_desc(Ky, P, R) :- _order.rank_desc(Ky, P, R).
+
+    // A cell's distance from edge d.
+    .decl _dist(key: Key, p: Position, d: Dir, k: number)
+    _dist(Ky, P, D, K) :- cell(Ky, P), dir_elem(D), dist(P, D, K).
+
+    // The least and the greatest distance of a cell from the primary edge.
+    .decl _lead(key: Key, diag: DiagDir, a: Axis, k: number)
+    _lead(Ky, Diag, A, K) :-
+        corner(Ky, Diag), axis(Ky, A), dir_of(Diag, A, D),
+        K = min K0 : { _dist(Ky, _, D, K0) }.
+    .decl _trail(key: Key, diag: DiagDir, a: Axis, k: number)
+    _trail(Ky, Diag, A, K) :-
+        corner(Ky, Diag), axis(Ky, A), dir_of(Diag, A, D),
+        K = max K0 : { _dist(Ky, _, D, K0) }.
+
+    // Among the cells at that distance, the least and the greatest distance
+    // from the secondary edge.
+    .decl _lead2(key: Key, diag: DiagDir, a: Axis, k: number, k2: number)
+    _lead2(Ky, Diag, A, K, K2) :-
+        _lead(Ky, Diag, A, K), diag_dirs(Diag, A, D, D2),
+        K2 = min K0 : { _dist(Ky, Q, D, K), _dist(Ky, Q, D2, K0) }.
+    .decl _trail2(key: Key, diag: DiagDir, a: Axis, k: number, k2: number)
+    _trail2(Ky, Diag, A, K, K2) :-
+        _trail(Ky, Diag, A, K), diag_dirs(Diag, A, D, D2),
+        K2 = max K0 : { _dist(Ky, Q, D, K), _dist(Ky, Q, D2, K0) }.
+
+    // Some cell comes before p in the lexicographic order.
+    .decl _preceded(key: Key, p: Position)
+    _preceded(Ky, P) :-
+        _lead(Ky, Diag, A, K), dir_of(Diag, A, D),
+        _dist(Ky, P, D, K1), K1 > K.
+    _preceded(Ky, P) :-
+        _lead2(Ky, Diag, A, K, K2), diag_dirs(Diag, A, D, D2),
+        _dist(Ky, P, D, K), _dist(Ky, P, D2, K1), K1 > K2.
+
+    // Some cell comes after p in the lexicographic order.
+    .decl _followed(key: Key, p: Position)
+    _followed(Ky, P) :-
+        _trail(Ky, Diag, A, K), dir_of(Diag, A, D),
+        _dist(Ky, P, D, K1), K1 < K.
+    _followed(Ky, P) :-
+        _trail2(Ky, Diag, A, K, K2), diag_dirs(Diag, A, D, D2),
+        _dist(Ky, P, D, K), _dist(Ky, P, D2, K1), K1 < K2.
+
+    /// The element nothing precedes.
+    .decl first(key: Key, t: Position)
+    first(Ky, P) :- elem(Ky, P), !_preceded(Ky, P).
+
+    /// The element nothing follows.
+    .decl last(key: Key, t: Position)
+    last(Ky, P) :- elem(Ky, P), !_followed(Ky, P).
+
+    /// b directly follows a: before, with nothing between.
+    .decl next(key: Key, a: Position, b: Position)
+    next(Ky, Q, P) :- _order.next(Ky, Q, P).
 }
 
 /// Bounding box of a box set: the pointwise minimum over the set, the least

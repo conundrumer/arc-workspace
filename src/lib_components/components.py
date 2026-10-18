@@ -573,6 +573,8 @@ def OrderFrame(Key: TypeArg, T: TypeArg, *, sizes: Mapping[PyValue, Size] | None
 class LexOrderRows(NamedTuple):
     """The output relations of `LexOrder` (programs/lib/cells.dl)."""
 
+    elem: Relation
+    before: Relation
     rank: Relation
     rank_desc: Relation
     first: Relation
@@ -580,14 +582,14 @@ class LexOrderRows(NamedTuple):
     next: Relation
 
 
-def LexOrder(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, corner: Iterable[PyRow] | None = None, axis: Iterable[PyRow] | None = None, cell: Iterable[PyRow] | None = None, elem: Iterable[PyRow] | None = None, before: Iterable[PyRow] | None = None) -> LexOrderRows:
+def LexOrder(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, corner: Iterable[PyRow] | None = None, axis: Iterable[PyRow] | None = None, cell: Iterable[PyRow] | None = None) -> LexOrderRows:
     """Runs `LexOrder` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('LexOrder', [Key],
                GridTypes(LibType.POSITION, LibType.OFFSET),
                {'corner': Columns((Key, LibType.DIAG_DIR, ), True), 'axis': Columns((Key, LibType.AXIS, ), True), 'cell': Columns((Key, LibType.POSITION, ), True), 'elem': Columns((Key, LibType.POSITION, ), True), 'before': Columns((Key, LibType.POSITION, LibType.POSITION, ), True), 'rank': Columns((Key, LibType.POSITION, Primitive.NUMBER, ), True), 'rank_desc': Columns((Key, LibType.POSITION, Primitive.NUMBER, ), True), 'first': Columns((Key, LibType.POSITION, ), True), 'last': Columns((Key, LibType.POSITION, ), True), 'next': Columns((Key, LibType.POSITION, LibType.POSITION, ), True)},
-               {'corner': corner, 'axis': axis, 'cell': cell, 'elem': elem, 'before': before},
-               ['rank', 'rank_desc', 'first', 'last', 'next'], sizes)
-    return LexOrderRows(got['rank'], got['rank_desc'], got['first'], got['last'], got['next'])
+               {'corner': corner, 'axis': axis, 'cell': cell},
+               ['elem', 'before', 'rank', 'rank_desc', 'first', 'last', 'next'], sizes)
+    return LexOrderRows(got['elem'], got['before'], got['rank'], got['rank_desc'], got['first'], got['last'], got['next'])
 
 
 class BboxRows(NamedTuple):
