@@ -310,7 +310,7 @@ def _marked_text(engine: Engine, p: LintMarked) -> str:
                 name=p.name)
         case LintSentence.CASE_SECTION_READ:
             return mctx("by the program's rules, not by a run, {cases} "
-                        "read `{rel}`, which the clause feeds, and the "
+                        "may read `{rel}`, which the clause feeds, and the "
                         "marker `{marker}` above it does not list them; see "
                         "\"Case markers\" in "
                         "[Cases](docs/handbook/solver-file.md#cases)").format(

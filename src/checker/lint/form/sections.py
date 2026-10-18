@@ -249,17 +249,19 @@ def check_case_section(solver: Solver, runs: Runs) -> list[Finding]:
         "A parameter that some case never reads goes under the marker of the "
         "cases that read it.")
 def check_case_section_read(solver: Solver, runs: Runs) -> list[Finding]:
-    """A clause that feeds a relation some cases read, where the clause
+    """A clause that feeds a relation some cases may read, where the clause
     stands under a marker that does not list them
-    (`solver.dependence.Dependence.stranded`): the program runs the clause for
-    those cases, so its marker does not list every case that reads it. The
-    marker finding of `solver.dependence.dependence`, which the `store` report
-    prints too. One finding per solver line, relation and marker: the clauses
-    on one line that feed one relation under one marker give one finding, on
-    that line, naming through `cover` the cases that read any of them. Where
-    the run that enumerates the solver's cases gives no result, nothing is
-    judged, and a hint at `Choice` says so with the run's failure. Serves
-    the purest form."""
+    (`solver.dependence.Dependence.stranded`): the program may run the clause
+    for those cases. The walk of `solver.dependence.dependence` admits a unit
+    for a base by the terms of its head and of its `impl_choice` atoms alone,
+    so the finding states each read as one the cases may make. The marker
+    finding of `solver.dependence.dependence`, which the `store` report prints
+    too. One finding per solver line, relation and marker: the clauses on one
+    line that feed one relation under one marker give one finding, on that
+    line, naming through `cover` the cases that may read any of them. Where the
+    run that enumerates the solver's cases gives no result, nothing is judged,
+    and a hint at `Choice` says so with the run's failure. Serves the purest
+    form."""
     every = runs.solver_cases
     if solver.choice is None:
         return []

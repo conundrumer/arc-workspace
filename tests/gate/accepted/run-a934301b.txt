@@ -10,6 +10,6 @@ test 0: PASS (76 witnessed cases)
   a934301b.dl:144: arithmetic: `*`; no derivation of the concept case reads `below`, and the cases that read it: `$BelowMean`; a branch whose claim needs this form fails [Relational form](docs/handbook/principles.md#relational-form)
 
 --- 1 hint(s) ---
-  a934301b.dl:380: case section: by the program's rules, not by a run, `$MarkCells` read `parse.marks`, which the clause feeds, and the marker `// --- $MarkPieces ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
+  a934301b.dl:380: case section: by the program's rules, not by a run, `$MarkCells` may read `parse.marks`, which the clause feeds, and the marker `// --- $MarkPieces ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
 
 determination: ok (dropped_count, kept_count)
