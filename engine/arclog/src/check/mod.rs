@@ -447,12 +447,11 @@ pub fn check_program(
     let mut form_types = Vec::new();
     for (path, form) in top_level_forms(&program) {
         let mut search = SearchBudget::new();
-        let order = CanonicalOrder::of(form, &mut search);
+        let (order, canonical) = CanonicalOrder::with_form(form, &mut search);
         if search.reached {
             let message = "the search for the form's canonical form reached its cap".into();
             alerts.push(diagnostic(DiagnosticKind::Bound, Severity::Alert, message, path.clone()));
         }
-        let canonical = canonical_form(form);
         let mut signatures = read_signatures(&program, form, &path, &order).into_vec();
         signatures.extend(types::type_clause_signatures(form, clauses).cloned());
         let signatures: Box<[Signature]> = signatures.into();

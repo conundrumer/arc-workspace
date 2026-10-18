@@ -4,7 +4,7 @@
 
 use super::super::path::{NodePath, PathStep};
 use super::super::{Form, LabelId};
-use super::{form_root, AsWritten, CanonicalWriter, Context, SearchBudget};
+use super::{form_root, AsWritten, CanonicalForm, CanonicalWriter, Context, SearchBudget};
 use crate::hash::StableHashMap;
 
 /// The canonical order of one form: for each list of the form, the source
@@ -35,11 +35,18 @@ pub(super) struct Recorded {
 impl CanonicalOrder {
     /// The canonical order of `form`.
     pub fn of(form: &Form, search: &mut SearchBudget) -> Self {
+        Self::with_form(form, search).0
+    }
+
+    /// The canonical order of `form` and its canonical form under
+    /// [`AsWritten`], from one write of `form`.
+    pub fn with_form(form: &Form, search: &mut SearchBudget) -> (Self, CanonicalForm) {
         let mut cx = Context::new(search, &AsWritten);
         cx.order = Some(Recorded::default());
-        form_root(&mut cx, &mut CanonicalWriter::default(), form);
+        let mut out = CanonicalWriter::default();
+        form_root(&mut cx, &mut out, form);
         let recorded = cx.order.take().expect("the order is recorded");
-        CanonicalOrder { lists: recorded.lists, labels: recorded.labels }
+        (CanonicalOrder { lists: recorded.lists, labels: recorded.labels }, out.finish())
     }
 
     /// The source path of the node at `canonical`, a path in canonical
