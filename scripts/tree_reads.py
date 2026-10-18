@@ -17,6 +17,7 @@ from controlled_markdown.prose import Fragment, text_fragments
 from engine import checkout
 from operations.state import DOC_REVIEW, Baseline, Commit, NoBaseline, Place, Restore, Review
 from operations.task_dirs import CLAIM, restore_records, restores_file, tasks_work
+from operations import worktrees as change_worktree
 from operations.worktrees import BASE
 from solver.vocabulary import SOLVER_SUFFIX
 
@@ -212,8 +213,8 @@ def fragments(tree: Path) -> tuple[Place, ...]:
 
 @state_cache(lambda tree: (trees_stamp(main_tree()), refs_stamp(main_tree(), "heads")))
 def merge_base(tree: Path) -> str:
-    """The merge base of the worktree `tree`'s `HEAD` with `master`."""
-    return git(tree, "merge-base", "HEAD", BASE).strip()
+    """`worktrees.merge_base` of `tree`."""
+    return change_worktree.merge_base(tree)
 
 
 @state_cache(lambda tree, base, name: ())

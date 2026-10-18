@@ -448,7 +448,7 @@ def item_check(number: str, worktree: Path, reports: list[tuple[str, str]], gate
 def findings(number: str, worktree: Path, left: str | None, questions: list[str],
              editors: list[tuple[Agent, str]], reports: list[tuple[str, str]],
              unfinished: list[str], operator: str, settled: "Settled", round: Round,
-             cap_reply: tuple[str, str] | None) -> str:
+             cap_reply: tuple[str, str] | None, past_budget: bool) -> str:
     """The brief of a ticket analyst that judges what a change's editors
     leave for a decision, by the latest item checker's reply from after
     its last `LEFT_FOR_DECISION` line, or the whole reply where it has none,
@@ -461,8 +461,11 @@ def findings(number: str, worktree: Path, left: str | None, questions: list[str]
     settled (`settled_lines`). `round` is the round of the item checker
     whose reply it gives, and `cap_reply` the agent id and reply of a doc
     reviewer at the round cap, where one stands since the last such
-    analyst's launch."""
+    analyst's launch. `past_budget` gives that the change is past its cost
+    budget, which the brief then gives with `OVER_BUDGET`."""
     lines = [*change_lines(number, worktree), *editor_lines(editors), *round.lines(number)]
+    if past_budget:
+        lines.append(OVER_BUDGET.format(number=number))
     if left is not None:
         lines.append(LEFT_REPLY.format(number=number, heading=LEFT_FOR_DECISION))
         lines.append(f"\n{left}\n")

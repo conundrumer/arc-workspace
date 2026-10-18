@@ -92,7 +92,7 @@
 ### A decision analyst's brief
 - A decision analyst's brief gives one of these:
     - The findings an editor left on a review of its change, the items an editor left unfinished for a decision, the places a code editor's report gives as standing, each with the editor's reasons, and the findings of a doc reviewer's reply that opens with `at the round cap`.
-        - Where what it gives comes from the item checker's last review round of the change, or from the check after its review round cap, it gives that.
+        - Where what it gives comes from the item checker's last review round of the change, or from the check after its review round cap, or the change is past its cost budget, it gives that.
         - With those, it gives the agent id of each editor of the change, with the part that editor's brief gave it, or the whole change where its brief gave none.
         - It gives the change's worktree, and the number of the change's ticket, or, where the change has none, its intent and what is already settled about it.
     - A step that an operator's command cannot decide, which the operator holds.

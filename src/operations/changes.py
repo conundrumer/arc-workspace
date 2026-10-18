@@ -52,6 +52,11 @@ which gets those items with the line that rules the step
 (`triage.for_coordinator`), and otherwise it goes to a ticket analyst
 (`decisions`).
 
+A change past its cost budget that `change_overrun` gives as `Ended`
+gets that step on what its agents leave, with that analyst's brief
+giving the change past its cost budget, and merges once that step
+leaves nothing, in place of the steps below.
+
 Once no editor of a change with an editor that builds code runs, and
 after the doc editor of its fragments is launched where `change_fragments`
 gives one, a design reviewer is launched on it where `design_review` gives
@@ -87,7 +92,7 @@ from operations.change_agents import (change_editors, editors_in, elsewhere_on, 
                                       unstaffed, with_before, with_elsewhere)
 from operations.change_holds import Hold, left_hold, questions_hold
 from operations.change_fragments import drafter_ids, fragments_step
-from operations.change_overrun import over_budget
+from operations.change_overrun import Ended, over_budget
 from operations.design_review import design_review, open_questions, reviewing
 from operations.doc_review import doc_review, latest_reviewer, with_ids
 from operations.directives import Decision, decided, give_again_line, held_on, ruled
@@ -190,7 +195,12 @@ def carry(state: State, t: Ticket) -> Step | None:
     w = worktree(t, state)
     if w is None or revised_since_worktree(t):
         return Bash(make_worktree(t.number, state.me), f"{t.number} worktree", occasion=str(t.last_time))
-    if (step := over_budget(state, t, w, agents)) is not False:
+    if isinstance(step := over_budget(state, t, w, agents), Ended):
+        latest = list(step.latest)
+        if (left := leftover(state, t, w, latest, agents, True)) is not False:
+            return left
+        return merging.merge(state, t, w, latest)
+    if step is not False:
         return step
     here = editors_in(agents, w)
     if missing := unstaffed(editors, here):
@@ -224,7 +234,7 @@ def carry(state: State, t: Ticket) -> Step | None:
                               (Role.ITEM_CHECKER, Role.DOC_REVIEWER, Role.DESIGN_REVIEWER))
     if (step := design_review(state, t, w, editors, here, reviewed)) is not False:
         return step
-    if (step := leftover(state, t, w, latest, reviewed)) is not False:
+    if (step := leftover(state, t, w, latest, reviewed, False)) is not False:
         return step
     if Role.DOC_EDITOR in editors and (
             step := doc_review(state, t, w, here, reviewed)) is not False:
@@ -304,9 +314,10 @@ def left(state: State, t: Ticket, latest: list[Agent], checkers: list[Agent],
 
 
 def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
-             agents: list[Agent]) -> Step | None | Literal[False]:
+             agents: list[Agent], past_budget: bool) -> Step | None | Literal[False]:
     """The step on what the editors leave, or False where they leave
-    nothing."""
+    nothing; `past_budget` gives that the change is past its cost
+    budget."""
     checkers = [a for a in agents if a.role is Role.ITEM_CHECKER]
     analysts = [a for a in agents if a.role is Role.TICKET_ANALYST]
     if any(a.pending for a in checkers + analysts):
@@ -351,7 +362,8 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
         [i for a, i in editors if a in given.unfinished], state.me,
         settled(state, t, Role.TICKET_ANALYST, None),
         briefs.round_of(checkers[-1], t.number) if checkers else briefs.Round.OPEN,
-        None if given.capped is None else (given.capped[0], given.capped[1].text)),
+        None if given.capped is None else (given.capped[0], given.capped[1].text),
+        past_budget),
         occasion=str(max(given.given, at)))
 
 
