@@ -15,8 +15,8 @@ use crate::write::relation_ref;
 use std::sync::Arc;
 
 use crate::program::{
-    Alt, AltItem, Alts, AltsName, Arcdata, Body, Clause, ClauseKeyword, DemoRule, Demonstrated, DemonstratedPart, Form, InstanceName, Node,
-    OutputOwner, OutputStep, Program, ProgramRelation, RelationRef, RigidDetName,
+    written_inputs, Alt, AltItem, Alts, AltsName, Arcdata, Body, Clause, ClauseKeyword, DemoRule, Demonstrated, DemonstratedPart, Form, Instance,
+    InstanceInput, InstanceName, KeyClause, Node, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationRef, RigidDetName,
 };
 
 /// A solver read from its two files: the claims, the tree of alts, the
@@ -71,6 +71,13 @@ pub enum Exclusion {
 /// [`crate::resolver::DependencyKind::Parameter`], or
 /// [`crate::resolver::DependencyKind::Chosen`] for a `DET` that ends in
 /// `(ONE)`.
+///
+/// A `DET_OR_RULE` or `RULE_OR_DET` line on a port of an instance,
+/// `&<instance>.<port>`, gives the port one source. A case that takes its
+/// derived reading holds no clause of the line where the line holds no
+/// proposer, so the instance derives the port. A case that takes its stored
+/// reading holds the line's `DET`, and, on an input, the instance's `INIT`
+/// form with that input left out.
 #[derive(Clone, Debug)]
 pub struct Case {
     pub name: CaseName,
@@ -210,21 +217,26 @@ impl Solver {
             return Err(UnknownCase { name });
         }
         let mut other_readings = StableHashSet::default();
-        let placed: Vec<Placed> = walk
-            .placed
-            .iter()
-            .map(|p| match line_of(&p.form) {
-                Some(line) => {
-                    let all = readings(line);
-                    let (alt, reading) = all.iter().find(|(alt, _)| name.0.contains(alt)).unwrap_or(&all[0]);
-                    if *alt != all[0].0 {
-                        other_readings.insert(p.step);
-                    }
-                    Placed { form: Form::Clause(Node::new(read_as(line, *reading))), ..p.clone() }
+        let mut placed: Vec<Option<Placed>> = walk.placed.iter().cloned().map(Some).collect();
+        for (index, p) in walk.placed.iter().enumerate() {
+            let Some(line) = line_of(&p.form) else { continue };
+            let all = readings(line);
+            let (alt, reading) = all.iter().find(|(alt, _)| name.0.contains(alt)).unwrap_or(&all[0]);
+            if *alt != all[0].0 {
+                other_readings.insert(p.step);
+            }
+            let port = port_of(line, &walk.placed);
+            placed[index] = match (port, reading) {
+                (Some(_), Reading::Derived(_)) if line.proposers.is_empty() => None,
+                _ => Some(Placed { form: Form::Clause(Node::new(read_as(line, *reading))), ..p.clone() }),
+            };
+            if let (Some(Port { instance, name, input: true }), Reading::Stored) = (port, reading) {
+                if let Some(Placed { form: Form::Instance(form), .. }) = &mut placed[instance] {
+                    *form = Node::new(without_input(form.value(), name));
                 }
-                None => p.clone(),
-            })
-            .collect();
+            }
+        }
+        let placed: Vec<Placed> = placed.into_iter().flatten().collect();
         let taken = rederived(&placed);
         let mut forms = Vec::new();
         let mut origins = StableHashMap::default();
@@ -406,22 +418,52 @@ impl<'a> Walk<'a> {
     /// atom that names it, or, for an input of an instance, the instance's
     /// `INIT` form, which holds that input.
     fn read_elsewhere(&self, line: &Placed, clause: &Clause) -> bool {
+        if port_of(clause, &self.placed).is_some_and(|port| port.input) {
+            return true;
+        }
         let relation = relation_of(&clause.derives);
         self.placed.iter().filter(|p| !std::ptr::eq(*p, line)).any(|p| {
-            if let (Form::Instance(instance), ProgramRelation::Output(output)) = (&p.form, &clause.derives) {
-                let instance = instance.value();
-                let inputs = instance.key.iter().flat_map(|key| key.value().inputs.iter()).chain(instance.inputs.iter());
-                if output.of == OutputOwner::Instance(instance.name.clone())
-                    && matches!(&output.path[..], [OutputStep::Port(port)] if inputs.clone().any(|input| input.value().name == *port))
-                {
-                    return true;
-                }
-            }
             let mut reads = false;
             each_read(NodeRef::from(&p.form), &mut |read| reads |= *read == relation);
             reads
         })
     }
+}
+
+/// The port of an instance that a clause derives: the index among `placed`
+/// of the instance's `INIT` form, the port's name, and whether the port is
+/// an input that the form writes.
+#[derive(Clone, Copy, Debug)]
+struct Port<'c> {
+    instance: usize,
+    name: &'c PortName,
+    input: bool,
+}
+
+/// The port of an instance among `placed` that `clause` derives,
+/// `&<instance>.<port>`, or `None` where it derives no port of an instance
+/// of `placed`.
+fn port_of<'c>(clause: &'c Clause, placed: &[Placed]) -> Option<Port<'c>> {
+    let ProgramRelation::Output(output) = &clause.derives else { return None };
+    let (OutputOwner::Instance(name), [OutputStep::Port(port)]) = (&output.of, &output.path[..]) else { return None };
+    placed.iter().enumerate().find_map(|(index, p)| match &p.form {
+        Form::Instance(instance) if instance.value().name == *name => {
+            let instance = instance.value();
+            let input = written_inputs(instance.key.as_ref(), &instance.inputs).any(|input| input.name == *port);
+            Some(Port { instance: index, name: port, input })
+        }
+        _ => None,
+    })
+}
+
+/// `instance` with its input `port` left out, of its key clause's inputs
+/// or of its own.
+fn without_input(instance: &Instance, port: &PortName) -> Instance {
+    let kept = |inputs: &Arc<[Node<InstanceInput>]>| -> Arc<[Node<InstanceInput>]> {
+        inputs.iter().filter(|input| input.value().name != *port).cloned().collect()
+    };
+    let key = instance.key.as_ref().map(|key| Node::new(KeyClause { inputs: kept(&key.value().inputs), ..key.value().clone() }));
+    Instance { key, inputs: kept(&instance.inputs), ..instance.clone() }
 }
 
 /// The alt names of an `ALTS` form: the concept case's, then each alt's
