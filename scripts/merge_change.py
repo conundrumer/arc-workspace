@@ -92,6 +92,11 @@ under `tickets/open/` with no ticket review, and the script prints its
 path. A document that goes past its budget while a pass stands open gets
 the next pass, which the first merge after that pass closes files.
 
+A file that `change_worktree.py` copied into a worktree from the main
+tree, where the main tree holds it untracked, and whose copy still has
+the content copied, is no change of that worktree: the script puts it in
+no commit, and leaves the main tree's file in place.
+
 A carried file is a file the main tree holds untracked at a path a change
 touches, where the worktree of each change that touches that path holds a
 copy that `change_worktree.py` made, and the main tree's file still has
@@ -206,7 +211,7 @@ scripts_importable()
 
 from change_checks import (Check, merge_base, changed_outside_work,  # noqa: E402
                            code_checks, failures, outside_work, run_in, said, timed)
-from change_worktree import carried  # noqa: E402
+from change_worktree import carried, same_blobs  # noqa: E402
 from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, locked_update, SetupFailed)
 
@@ -306,18 +311,19 @@ def refuse_main_touched(main: Path, touched: Mapping[Path, frozenset[str]]) -> d
     every = set().union(*touched.values())
     records = {w: carried(w) for w in touched}
     hit: list[str] = []
-    replaced: dict[str, str] = {}
+    candidates: dict[str, str] = {}
     for c in checkout.changed_paths(main, "HEAD"):
         if c.path not in every:
             continue
         hashes = {records[w].get(c.path) for w, paths in touched.items() if c.path in paths}
         recorded = hashes.pop() if len(hashes) == 1 else None
         if c.change is checkout.Change.UNTRACKED and recorded is not None:
-            if checkout.git_out(main, "hash-object", "--", c.path).strip() == recorded:
-                replaced[c.path] = recorded
-                continue
-        hit.append(c.path)
-    hit.sort()
+            candidates[c.path] = recorded
+        else:
+            hit.append(c.path)
+    kept = same_blobs(main, candidates)
+    replaced = {p: candidates[p] for p in sorted(kept)}
+    hit = sorted([*hit, *(p for p in candidates if p not in kept)])
     if hit:
         raise Refused(f"the main tree {main} has uncommitted changes the fast-forward "
                       "would touch:\n" + "\n".join(hit))
@@ -391,13 +397,15 @@ def index_file(worktree: Path) -> Path:
 
 
 def stage(worktree: Path, main: Path, backup: Path, base: str) -> None:
-    """Stage every uncommitted change of the worktree outside `work`
-    (`outside_work`), with a copy of its
+    """Stage each path of the worktree that `changed_outside_work` gives
+    against its `HEAD`, with a copy of its
     index kept at `backup` first, and refuse where `refuse_gitlinks` or
     `refuse_markers` against the commit `base` does, with the index put
     back."""
     shutil.copy2(index_file(worktree), backup)
-    checkout.git_out(worktree, "add", "-A", "--", *outside_work())
+    changed = changed_outside_work(worktree, "HEAD")
+    if changed:
+        checkout.git_out(worktree, "--literal-pathspecs", "add", "-A", "--", *changed)
     try:
         refuse_gitlinks(worktree, main)
         refuse_markers(worktree, base)

@@ -304,12 +304,19 @@ def assign_arg(written: str | None
 
 SOURCES = ["src/engine/**/*.py", "src/souffle/**/*.py", "src/solver/**/*.py",
            "src/checker/**/*.py", "src/cli/**/*.py", "src/arc/**/*.py",
+           "src/controlled_markdown/**/*.py", "src/instructions.py",
            "programs/lib.dl",
            "programs/lib/*.dl", "programs/proposers.dl",
            (FUNCTOR_DIR / FUNCTOR_SOURCE).relative_to(
                checkout.ROOT).as_posix()]
 """What a run's result depends on besides the solver and the task: the
 packages' code and the Souffle sources every solver includes."""
+
+
+def stamped_paths(root: Path) -> set[str]:
+    """The path, from `root`, of each file under `root` that a pattern of
+    `SOURCES` matches."""
+    return {p.relative_to(root).as_posix() for pattern in SOURCES for p in root.glob(pattern)}
 
 
 def stamp() -> str:

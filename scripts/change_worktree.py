@@ -7,6 +7,7 @@ import json
 import shutil
 import sys
 import textwrap
+from collections.abc import Mapping
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -124,6 +125,22 @@ def carried_record(worktree: Path) -> Path:
 def carried(worktree: Path) -> dict[str, str]:
     record = carried_record(worktree)
     return json.loads(record.read_text()) if record.is_file() else {}
+
+
+def same_blobs(tree: Path, hashes: Mapping[str, str]) -> set[str]:
+    """Each path of `hashes` whose file in `tree` hashes to the blob
+    `hashes` gives it, as `copy_scope_untracked` hashes a file."""
+    files = sorted(p for p in hashes if (tree / p).is_file())
+    if not files:
+        return set()
+    blobs = checkout.git_out(tree, "hash-object", "--stdin-paths", stdin="\n".join(files))
+    return {p for p, blob in zip(files, blobs.split(), strict=True) if blob == hashes[p]}
+
+
+def as_copied(worktree: Path) -> set[str]:
+    """Each file `carried` gives that `worktree` still holds as copied
+    (`same_blobs`): a carried file the change left as copied."""
+    return same_blobs(worktree, carried(worktree))
 
 
 def copy_scope_untracked(main: Path, path: Path, t: Ticket) -> None:

@@ -26,9 +26,10 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+from change_worktree import as_copied
 from dependents import PYTHON_SUFFIX, Graph, Reach
 
-from cli.common import SOURCES
+from cli.common import stamped_paths
 from controlled_markdown import mctx
 from engine import checkout, duration
 from gating.edits import same_code
@@ -92,8 +93,11 @@ def outside_work() -> tuple[str, str, str]:
 def changed_outside_work(worktree: Path, base: str) -> list[str]:
     """The paths of `worktree` outside `work` (`outside_work`) whose
     content differs from the commit `base` (`checkout.changed_paths`),
-    sorted."""
-    return sorted(c.path for c in checkout.changed_paths(worktree, base, *outside_work()))
+    sorted, apart from each untracked file that `change_worktree.as_copied`
+    gives."""
+    copied = as_copied(worktree)
+    return sorted(c.path for c in checkout.changed_paths(worktree, base, *outside_work())
+                  if not (c.change is checkout.Change.UNTRACKED and c.path in copied))
 
 
 def merge_base(worktree: Path) -> str:
@@ -104,11 +108,10 @@ def merge_base(worktree: Path) -> str:
 
 def code_paths(tree: Path, main: Path, touched: set[str]) -> set[str]:
     """The paths of `touched` whose content the results of pyright and
-    pytest can depend on. A path `SOURCES` matches is found in `tree`, where the
+    pytest can depend on. A path `stamped_paths` gives is found in `tree`, where the
     change adds or edits it, or in the main worktree `main`, where the
     change deletes it."""
-    sources = {str(p.relative_to(root)) for root in (tree, main)
-               for pattern in SOURCES for p in root.glob(pattern)}
+    sources = stamped_paths(tree) | stamped_paths(main)
     return {p for p in touched
             if p in CODE_FILES or p in sources
             or any(p.startswith(f"{d}/") for d in CODE_DIRS)}

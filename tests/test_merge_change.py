@@ -7,8 +7,9 @@ hold. Before the removal, the script also moves the files under its
 taken. A file the main tree holds untracked and a change carries keeps
 its main-tree content where a pass edited it after the carry, which the
 merge refuses, and where the fast-forward fails after its removal, which
-writes it back. The merge makes the readers' tree of the old `master`
-before the fast-forward, and fast-forwards where that make fails."""
+writes it back; a carried file the change left as copied is in no
+commit. The merge makes the readers' tree of the old `master` before the
+fast-forward, and fast-forwards where that make fails."""
 
 import os
 import subprocess
@@ -195,6 +196,15 @@ def test_carried_file_edited_in_the_main_tree_is_refused(merge_change, carrying)
     (main / "p" / "u").write_text("pass, edited")
     assert not merge_change.merge([(worktree, "m")])
     assert (main / "p" / "u").read_text() == "pass, edited"
+
+
+def test_carried_file_left_as_copied_is_in_no_commit(merge_change, carrying):
+    main, worktree = carrying
+    (worktree / "p" / "u").write_text("pass")
+    (worktree / "b").write_text("b")
+    assert merge_change.merge([(worktree, "m")])
+    assert git(main, "ls-files", "--", "p/u") == ""
+    assert (main / "p" / "u").read_text() == "pass"
 
 
 def test_carried_file_is_written_back_where_the_fast_forward_fails(

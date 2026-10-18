@@ -17,7 +17,6 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from arc.task import task_file
 from controlled_markdown import mctx
 from operations.change_budget import EDITORS_NOTE, budget_fields
 from operations.roles import EDITORS, Role
@@ -34,12 +33,13 @@ from tree_reads import main_tree  # noqa: E402
 from ticket_form import (DESIGN, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402
                          RETIRED, VALIDATES, checked_kind, front, section, sections_example, ticket_kind,
                          title_line)
-from ticket_log import (AGENT_ID, CLOSED_BY, DUPLICATE_OF, SESSION_ID, UNBLOCKED_BY, VALIDATED,  # noqa: E402
+from ticket_log import (CLOSED_BY, DUPLICATE_OF, UNBLOCKED_BY, VALIDATED,  # noqa: E402
                         WAITS_ON_NEXT, Wait, log_lines, log_moves, logged, read_ticket, resolution_of)
 from ticket_log_command import LOG_HELP, LOG_RULES, log_args, log_command  # noqa: E402
 from ticket_numbers import (SESSION_VAR, SESSIONS, TicketNumber, reserve, session_id,  # noqa: E402
                             session_index, ticket_number, write_new)
 from ticket_settle import to_settle  # noqa: E402
+from ticket_subjects import filed_subject  # noqa: E402
 from idle_sessions import MAIN, name_main, read_sessions  # noqa: E402
 from ticket_reads import editors_field  # noqa: E402
 from spends import budget  # noqa: E402
@@ -210,34 +210,6 @@ SCOPE_CHECK_HELP = mctx("""
 COVERED = mctx("the Scope covers each path the Design gives")
 
 
-COMMIT = re.compile(r"[0-9a-f]{7,40}")
-
-CHANGE_SUBJECT = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)+")
-"""The subject of a ticket that asks for a change: its namespace, then
-kebab words."""
-
-ASKS_CHANGE = frozenset({Kind.CHANGE, Kind.REQUEST})
-
-
-def check_subject(tickets: Path, domain: Domain, subject: str) -> None:
-    """Refuses a `subject` that is no id of a thing of `domain`: a task
-    with no file, a ticket the ticket tracker does not hold, a hash of no commit, or
-    no agent id or session id."""
-    match domain:
-        case Domain.TASK:
-            known = task_file(subject).exists()
-        case Domain.CHANGE | Domain.TICKET:
-            ticket_path(tickets, ticket_number(subject))
-            known = True
-        case Domain.COMMIT:
-            known = bool(COMMIT.fullmatch(subject)) and checkout.git(
-                checkout.ROOT, "cat-file", "-e", f"{subject}^{{commit}}").returncode == 0
-        case Domain.AGENT:
-            known = bool(AGENT_ID.fullmatch(subject) or SESSION_ID.fullmatch(subject))
-    if not known:
-        raise Refused(mctx("`{subject}` is no `{domain}` id").format(subject=subject, domain=domain))
-
-
 def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
                 case: list[str] | None = None, filed: str = Note.FILED) -> Path:
     """Writes `text` as a ticket of the agent's session under its first
@@ -252,15 +224,7 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
     if not FIELD.fullmatch(agent):
         raise Refused(mctx("`{agent}` is not kebab words").format(agent=agent))
     kind = checked_kind(tickets, agent, text)
-    if kind in ASKS_CHANGE:
-        subject = subject.replace("_", "-")
-    if not FIELD.fullmatch(subject):
-        raise Refused(mctx("`{subject}` is not kebab words").format(subject=subject))
-    if kind in ASKS_CHANGE:
-        if dom is not Domain.CHANGE or not CHANGE_SUBJECT.fullmatch(subject):
-            raise Refused(mctx("a `{kind}` takes `change` and `<namespace>-<short-title>`").format(kind=kind))
-    else:
-        check_subject(tickets, dom, subject)
+    subject = filed_subject(tickets, kind, dom, subject)
     fix = fix_field(text)
     if (case is None) != (fix is None) or (case is not None and kind is not Kind.DELAY):
         raise Refused(mctx("a `{delay}` that gives a case gives `fix`, and only then").format(
