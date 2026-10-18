@@ -198,8 +198,8 @@ from change_worktree import carried  # noqa: E402
 from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, locked_update, SetupFailed)
 
-from operations.merging import (CONTEXT_WRITE, DOCUMENT_CHECKS, PATHS_SEP,  # noqa: E402
-                                NOT_PUT_ON, PREFIX, REFUSED, REFUSED_TREE, TOOL)
+from operations.merging import (CONTEXT_WRITE, DOCUMENT_CHECKS, FAILED_LINE,  # noqa: E402
+                                NOT_PUT_ON, PATHS_SEP, PREFIX, REFUSED, REFUSED_TREE, TOOL)
 from operations.merge_outcomes import CONFLICT, LEFT_AFTER, STAYS  # noqa: E402
 from operations.worktrees import BASE  # noqa: E402
 
@@ -813,7 +813,7 @@ def merge_main(argv: Sequence[str]) -> int:
         print_refusal(exc)
         return 1
     except (Failed, checkout.GitFailed) as exc:
-        say(f"failed: {exc}", file=sys.stderr)
+        print(f"{FAILED_LINE}{exc}", file=sys.stderr)
         return 1
     return 0 if merged else 1
 
