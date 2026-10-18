@@ -40,8 +40,7 @@ pub enum DependencyKind {
     /// several blocks of the case determine is one node, with the values
     /// `docs/arclog/arclog.md#the-alts-form` gives it. Each read of the
     /// parameter's own `DET` bodies is an edge into the node, so a `DET` that
-    /// reads a relation which depends on its own parameter makes a cycle,
-    /// which the checker refuses.
+    /// reads a relation which depends on its own parameter makes a cycle.
     Parameter(ProgramRelation),
     /// A chosen relation: a `CHOOSE` form's, or a clause's with `ONE` marks,
     /// a `DET` with `(ONE)` included, which is a chosen relation at the task
