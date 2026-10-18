@@ -46,3 +46,21 @@ fn a_read_of_a_rule_at_a_branch_local_label_is_a_site_at_an_undeclared_column() 
     let kinds: Vec<&DiagnosticKind> = error.diagnostics.iter().map(|d| &d.kind).collect();
     assert_eq!(kinds, [&DiagnosticKind::Check(CheckId::SiteColumns)], "{:?}", error.diagnostics);
 }
+
+/// Connectivity's `INIT` of Quotient, whose `edge` input writes the head
+/// columns `a` and `b`, as Quotient declares them.
+const QUOTIENT_EDGE: &str = "(edge ((:a Ky P) (:b Ky (:P Q)))";
+
+#[test]
+fn an_init_input_its_component_does_not_declare_refuses() {
+    assert!(REGISTRY_TEXT.contains(QUOTIENT_EDGE));
+    let text = REGISTRY_TEXT.replacen(QUOTIENT_EDGE, "(edgex ((:a Ky P) (:b Ky (:P Q)))", 1);
+    assert!(Registry::parse(&text, PROPOSERS_TEXT).is_err());
+}
+
+#[test]
+fn an_init_head_site_at_an_undeclared_column_refuses() {
+    assert!(REGISTRY_TEXT.contains(QUOTIENT_EDGE));
+    let text = REGISTRY_TEXT.replacen(QUOTIENT_EDGE, "(edge ((:zz Ky P) (:b Ky (:P Q)))", 1);
+    assert!(Registry::parse(&text, PROPOSERS_TEXT).is_err());
+}

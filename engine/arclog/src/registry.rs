@@ -94,6 +94,10 @@
 //! cell instance its own input `self.<port>`, a `RULE` form `&<rule>` or an
 //! output of its `INIT` form. An atom that reads another name or column is a
 //! fault of the file.
+//! An `INIT` form of a cell instance writes inputs, its key's included, that
+//! its component declares, each with head sites at columns that input
+//! declares, and an `INIT` form that names another component, input or
+//! column is a fault of the file too.
 //!
 //! A `<type>` is a type name of [`crate::program::TypeName`], `Pose` for
 //! the assembly the read names, `shared-pose` for one assembly's Pose type

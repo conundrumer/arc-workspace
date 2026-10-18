@@ -481,6 +481,8 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
     /// gives no binding. A later place onto the parameter is a fault where
     /// [`Binding::conflicts`] gives it. An `INIT` with no key clause whose
     /// inputs project nothing onto the `key` column binds it to `Unit`.
+    /// An input that the construction does not declare, and a head site at
+    /// a column that its input does not declare, is a fault.
     fn bind(&self) -> Box<[(TypeParameter, Binding)]> {
         let (Some(init), Some(construction)) = (self.cell.init, self.construction) else { return Box::default() };
         let key_parameter = key_parameter(construction.inputs);
@@ -489,8 +491,18 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
         }
         let inputs = self.init_inputs();
         for (input, _) in &inputs {
-            if !construction.inputs.iter().any(|i| i.port.name == input.name) {
+            let Some(port) = construction.inputs.iter().find(|i| i.port.name == input.name) else {
                 self.fault(CheckId::Scope, format!("the `INIT` form gives the input `{}`, which `{}` has no input of", input.name.0, init.component.0));
+                continue;
+            };
+            for site in input.head.iter().filter(|site| !port.port.columns.iter().any(|column| column.name == site.column)) {
+                let message = format!(
+                    "the input `{}` of the `INIT` form has a head site at `{}`, which is no column of that input of `{}`",
+                    input.name.0,
+                    column_display(&site.column),
+                    init.component.0
+                );
+                self.fault(CheckId::SiteColumns, message);
             }
         }
         let head_binding = |input: &crate::program::InstanceInput, site: &crate::program::Site| {
