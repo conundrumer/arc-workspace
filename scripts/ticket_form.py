@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from controlled_markdown import mctx
+from filing_help import FormPart, form_part
 from operations.roles import EDITORS
 from ticket_files import ticket_path
 from ticket_numbers import ticket_number
@@ -18,6 +19,16 @@ FRONT = r"---\nkind: (?P<kind>\S+)\n(?P<fields>(?:[a-z-]+: .*\n)*)---\n"
 
 
 TITLE_MARK = "# "
+
+
+class FormRefused(Refused):
+    """A refusal of the form of the ticket on stdin, which the command
+    completes with the pointer to the help that gives the form: the part
+    `part`, or the bare `--help` where `part` is None."""
+
+    def __init__(self, reason: str, part: FormPart | None) -> None:
+        super().__init__(reason)
+        self.part = part
 
 TICKET_HEAD = re.compile(FRONT + TITLE_MARK)
 """The front matter and title mark of a ticket: at the start of a ticket's
@@ -55,7 +66,7 @@ RETIRED = {Kind.REQUEST: "Words"}
 refuses."""
 
 def sections_example(sections: tuple[str, ...]) -> str:
-    """`sections` as the form in the `HELP` of `file_ticket` shows them
+    """`sections` as the usage form in the `HELP` of `filing_help` shows them
     after its title, at the indent of that form."""
     return "".join(f"\n\n    {heading(s)}\n    <its {s.lower()}>" for s in sections)
 
@@ -80,7 +91,7 @@ FIELDS = {Kind.CHANGE: frozenset({"depends-on", "editors", "after-merge",
 
 MECHANICAL = "yes"
 """The one value of a `change`'s `mechanical` field, whose condition the
-`HELP` of `file_ticket` gives."""
+`change` form of `FORMS` in `filing_help` gives."""
 
 REQUIRED = {Kind.CHANGE: frozenset({"editors"}), Kind.VALIDATION: frozenset({VALIDATES})}
 """The front matter fields besides `kind` that each kind must give."""
@@ -202,11 +213,11 @@ with no entry has none."""
 
 def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
     """The kind of the ticket `text`, refused where `text` does not have
-    the form the `HELP` of `file_ticket` shows or `agent` may not file
-    that kind."""
+    the form the `HELP` and `FORMS` of `filing_help` show or `agent` may
+    not file that kind."""
     head = re.match(FRONT, text)
     if head is None:
-        raise Refused(mctx("the ticket on stdin does not have the form `--help` shows"))
+        raise FormRefused(mctx("the ticket on stdin does not open with the front matter the usage form shows"), None)
     kind = front_kind(head)
     kinds = filer_kinds(agent)
     if kind not in kinds:
@@ -225,7 +236,8 @@ def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
     for key in sorted(REQUIRED.get(kind, frozenset()) - set(keys)):
         raise Refused(mctx("a `{kind}` gives `{key}`").format(kind=kind, key=key))
     if not body_form(kind).match(text, head.end()):
-        raise Refused(mctx("the ticket on stdin does not have the form `--help` shows"))
+        raise FormRefused(mctx("the ticket on stdin does not have the form of a `{kind}`").format(kind=kind),
+                          form_part(kind))
     retired = RETIRED.get(kind)
     if retired is not None and section_head(text, retired):
         raise Refused(mctx("a `{kind}` has no `{section}` section").format(

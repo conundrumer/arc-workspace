@@ -69,7 +69,7 @@ HELP = mctx("""
         - `{goal_flag}` gives `<goal>` as the request's `{goal}`, in place of the one it holds, or before its `{transcript}` where it holds none.
     - `<goal>` holds at most {goal_words} words.
     - `<route>` is one of {routes}, and `{inferred}` marks a route the coordinator inferred.
-    - `<subject>` and `<title>` are a `request`'s, as `uv run python scripts/file_ticket.py --help` gives them.
+    - `<subject>` and `<title>` are a `request`'s, as `uv run python scripts/file_ticket.py --help request` gives them.
     - A message is a message of the user, or the text of one of the coordinator's replies, in the session whose id the shell holds in `CLAUDE_CODE_SESSION_ID`.
     - A words argument matches a message whose words hold its words in a row, where a word is a run of letters and digits, compared in lower case, and each other character only separates words.
     - A words argument that is a time in the form `{time_form}` names the one message of the session at that time.

@@ -153,7 +153,7 @@
 ## Resolving
 - Where [The user's part](#the-users-part) brings a decision to the user, act on none of its options, and move the ticket to `tickets/blocked/` with a note that opens with `user` and gives the decision.
 - Apply every other resolution: where it changes the tree, file a `change` ticket for it, with the number of each ticket it settles in its Motivation, and move each of those tickets to `tickets/waiting/` with a note that opens with `change` and that change's number, and otherwise close the ticket with its resolution word.
-    - Where that `change` serves a `request`, add to the request the `## Validation` section that `uv run python scripts/file_ticket.py --help` gives, from the need its Goal states.
+    - Where that `change` serves a `request`, add to the request the `## Validation` section that `uv run python scripts/file_ticket.py --help request` gives, from the need its Goal states.
 - Where your resolution is a decline, close no ticket for it. Move the ticket it leaves with the decline, the `change` you file or revise or the ticket you would close, to `tickets/blocked/` with a note that opens with `user decline` and gives the declined part and its defense.
 - Give rote work to an agent, and judge the list it returns.
 

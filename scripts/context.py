@@ -100,13 +100,13 @@ HELP = mctx("""
         - A section links from the context lead to runs from the first commit.
         - A section links from `CLAUDE.md` lead to runs from the first commit where it descends from the second, and from the second otherwise.
         - A section whose diff both give with the same text on each side stands once.
-        - `CLAUDE.md` stands only as itself, whole, with each section of it whose diff runs from the second commit, and the walks to those give no link lines.
+        - A section of `CLAUDE.md` whose diff would run from the second commit gets no diff of its own, since the diff of `CLAUDE.md` gives it, and the walks to it give no link lines.
         - Of the other sections whose diffs run from the same commit, one that lies within another or within a whole document, as `contexts --diff` gives it, has no diff of its own.
     - `context --update --held <file> <file> <commit> <reader> [args]` prints what `context --update` prints for that reader, with the context's and `CLAUDE.md`'s diffs run from the texts the two files hold, those the harness gave the reader at its launch, in place of a commit, under a line that names each as at `launch`.
         - The context's before side is that reader's context at the commit, with its first marked section, the reader's own definition, holding the first file's text.
         - The second file's text gets a final newline where it has none, as `CLAUDE.md` has.
         - Each section links from either lead to runs from the commit.
-    - `context --keep-tree <commit>` makes the commit's tree, in which each form above that takes a commit renders, where none stands, and prints nothing.
+    - `context --keep-tree <commit>` makes the commit's tree where none stands, and prints nothing. Each form above that takes a commit renders in that tree.
     - Each hunk header line of the diffs `context --diff` and `context --update` print ends in the heading lines whose sections hold the hunk's first line, outermost first and joined by ` > `, as the text that line stands in renders them.
         - A heading line in the hunk starts a section that holds each line after it up to the next heading line with as many `#` or fewer.
     """)

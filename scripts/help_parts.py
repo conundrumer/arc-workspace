@@ -19,6 +19,13 @@ PART_LINE = mctx("- `--help {part}`: {purpose}")
 REFUSED_PART = mctx("`--help` takes at most one PART, one of {parts}")
 
 
+def part_lines[P: StrEnum](kind: type[P], purposes: Mapping[P, str]) -> str:
+    """The lines of the bare `--help` that list the parts of `kind`, each
+    with its purpose of `purposes`."""
+    return "\n".join([PARTS_LEAD, *("    " + PART_LINE.format(part=p, purpose=purposes[p])
+                                   for p in kind)])
+
+
 def print_help[P: StrEnum](rest: list[str], kind: type[P], usage: Callable[[str], str],
                            purposes: Mapping[P, str], text: Callable[[P], str]) -> int:
     """Print the help `rest`, the arguments after `--help`, asks for, or
@@ -26,9 +33,7 @@ def print_help[P: StrEnum](rest: list[str], kind: type[P], usage: Callable[[str]
     parts of `kind`, each with its purpose of `purposes`, and `text` gives
     the text of a part."""
     if not rest:
-        lines = [PARTS_LEAD, *("    " + PART_LINE.format(part=p, purpose=purposes[p])
-                               for p in kind)]
-        print(usage("\n".join(lines)).rstrip("\n"))
+        print(usage(part_lines(kind, purposes)).rstrip("\n"))
         return 0
     if len(rest) > 1 or rest[0] not in {p.value for p in kind}:
         print_refused(REFUSED_PART.format(parts=", ".join(f"`{p}`" for p in kind)))
