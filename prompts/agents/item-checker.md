@@ -31,8 +31,8 @@ tools: Read, Grep, Glob, Bash, Write, SendMessage, TaskStop
 - Send each item the lines above have you send with SendMessage, to the agent id your brief gives for each editor it goes to, other than one you hold back.
     * comment: The cases this rule and the hold-back rule below cover: the channel of each message; a finding or an item a report leaves unfinished for a decision; a place the `Review` section of a code editor's report gives as standing; a change past its cost budget, at its last review round, or after its review round cap.
 - Hold back each of these:
-    - Each finding or item a report leaves unfinished for a decision.
-    - Each place that the `Review` section of a code editor's report gives in a list item that opens with `stands:`.
+    - Each finding or item a report leaves unfinished for a decision, that no report of a ticket analyst or ruling your brief gives settles, unless you have, or an editor's report gives, a reason for it that the report or the ruling did not judge.
+    - Each place that the `Review` section of a code editor's report gives in a list item that opens with `stands:`, that no such report or ruling settles, unless you have, or an editor's report gives, such a reason.
     - Where your brief gives the change past its cost budget, gives the item check at its last review round, or gives the check after its review round cap, each item and edit you would send.
         * comment: Item checker f820059d, past its cost budget on change 9-890, gave Intent items 1 to 3 under `Left for a decision` as held back for the cost budget, while it gave each as shown to hold, and each budget hit of 9-890 went to `tickets/draft/` (11-526).
 - At the end of your reply, under a `## Left for a decision` heading, give a list item for each one you hold back, with the agent id of each editor it would go to and the reason the report gives or why it fails, and after that list nothing but the line your brief has you end your reply with, where it gives one. Where it would have no list item, give the item `none` under it.
