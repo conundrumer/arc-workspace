@@ -319,71 +319,56 @@
     .decl elem(key: Key, t: Position)
     elem(Ky, P) :- cell(Ky, P).
 
+    // A cell's distances from the corner's primary edge, k1, and from its
+    // secondary edge, k2.
+    .decl _place(key: Key, p: Position, k1: number, k2: number)
+    _place(Ky, P, K1, K2) :-
+        cell(Ky, P), corner(Ky, Diag), axis(Ky, A),
+        diag_dist(P, Diag, A, K1, K2).
+
+    // The least and the greatest k2 of the key's cells.
+    .decl _span(key: Key, lo: number, hi: number)
+    _span(Ky, Lo, Hi) :-
+        corner(Ky, _),
+        Lo = min K2 : { _place(Ky, _, _, K2) },
+        Hi = max K2 : { _place(Ky, _, _, K2) }.
+
+    // The cell's place in the order: k1 first, k2 on a tie. Each k2 less
+    // the least is below the span's width, so places compare as the pairs
+    // (k1, k2) do.
+    .decl _score(key: Key, p: Position, s: number)
+    _score(Ky, P, K1 * (Hi - Lo + 1) + K2 - Lo) :-
+        _place(Ky, P, K1, K2), _span(Ky, Lo, Hi).
+
     /// The lexicographic order of the cells, as a strict order.
     .decl before(key: Key, a: Position, b: Position)
-    before(Ky, Q, P) :-
-        cell(Ky, Q), cell(Ky, P),
-        corner(Ky, Diag), axis(Ky, A), dir_of(Diag, A, D),  // primary dir
-        nearer(D, Q, P).                                    // q strictly nearer
-    before(Ky, Q, P) :-
-        cell(Ky, Q), cell(Ky, P),
-        corner(Ky, Diag), axis(Ky, A),
-        diag_dirs(Diag, A, D, D2),                   // primary/secondary dirs
-        same_dist(D, Q, P),                          // primary tie
-        nearer(D2, Q, P).                            // q strictly nearer
-
-    .init _order = Order<Key, Position>
-    _order.elem(Ky, P) :- elem(Ky, P).
-    _order.before(Ky, Q, P) :- before(Ky, Q, P).
+    before(Ky, Q, P) :- _score(Ky, Q, S), _score(Ky, P, S2), S < S2.
 
     .decl rank(key: Key, t: Position, r: number)
-    rank(Ky, P, R) :- _order.rank(Ky, P, R).
+    rank(Ky, P, R) :-
+        _score(Ky, P, S), R = count : { _score(Ky, _, S2), S2 < S }.
 
     .decl rank_desc(key: Key, t: Position, r: number)
-    rank_desc(Ky, P, R) :- _order.rank_desc(Ky, P, R).
+    rank_desc(Ky, P, R) :-
+        _score(Ky, P, S), R = count : { _score(Ky, _, S2), S2 > S }.
 
-    // A cell's distance from edge d.
-    .decl _dist(key: Key, p: Position, d: Dir, k: number)
-    _dist(Ky, P, D, K) :- cell(Ky, P), dir_elem(D), dist(P, D, K).
-
-    // The corners the order and its reverse run from: from the opposite
-    // corner, on the same primary axis, the order runs in reverse.
-    .decl _from(key: Key, c: DiagDir, a: Axis)
-    _from(Ky, C, A) :- corner(Ky, C), axis(Ky, A).
-    _from(Ky, C, A) :- corner(Ky, Diag), diag_opposite(Diag, C), axis(Ky, A).
-
-    // The least distance of a cell from c's primary edge.
-    .decl _lead(key: Key, c: DiagDir, a: Axis, k: number)
-    _lead(Ky, C, A, K) :-
-        _from(Ky, C, A), dir_of(C, A, D),
-        K = min K0 : { _dist(Ky, _, D, K0) }.
-
-    // Among the cells at that distance, the least distance from c's
-    // secondary edge.
-    .decl _lead2(key: Key, c: DiagDir, a: Axis, k: number, k2: number)
-    _lead2(Ky, C, A, K, K2) :-
-        _lead(Ky, C, A, K), diag_dirs(C, A, D, D2),
-        K2 = min K0 : { _dist(Ky, Q, D, K), _dist(Ky, Q, D2, K0) }.
-
-    // Some cell comes before p in the order from c.
-    .decl _preceded(key: Key, c: DiagDir, p: Position)
-    _preceded(Ky, C, P) :-
-        _lead(Ky, C, A, K), dir_of(C, A, D),
-        _dist(Ky, P, D, K1), K1 > K.
-    _preceded(Ky, C, P) :-
-        _lead2(Ky, C, A, K, K2), diag_dirs(C, A, D, D2),
-        _dist(Ky, P, D, K), _dist(Ky, P, D2, K1), K1 > K2.
+    .init _extremes = ArgExtremes<Key, Position>
+    _extremes.cand(Ky, P, S) :- _score(Ky, P, S).
 
     .decl first(key: Key, t: Position)
-    first(Ky, P) :- elem(Ky, P), corner(Ky, C), !_preceded(Ky, C, P).
+    first(Ky, P) :- _extremes.low(Ky, P, _).
 
     .decl last(key: Key, t: Position)
-    last(Ky, P) :-
-        elem(Ky, P), corner(Ky, Diag), diag_opposite(Diag, C),
-        !_preceded(Ky, C, P).
+    last(Ky, P) :- _extremes.high(Ky, P, _).
+
+    // The places in use, ranked: two cells at adjacent ranks are next.
+    .init _ordinal = Ordinal<Key>
+    _ordinal.idx_set(Ky, S) :- _score(Ky, _, S).
 
     .decl next(key: Key, a: Position, b: Position)
-    next(Ky, Q, P) :- _order.next(Ky, Q, P).
+    next(Ky, Q, P) :-
+        _score(Ky, Q, S), _ordinal.rank(Ky, S, R),
+        _score(Ky, P, S2), _ordinal.rank(Ky, S2, R + 1).
 }
 
 /// Bounding box of a box set: the pointwise minimum over the set, the least
