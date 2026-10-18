@@ -662,9 +662,11 @@ def _marker_of(p: Parameter) -> CaseMarker | None:
 @quotes("procedure.md", "Determine",
         "Run the sweep (`uv run python scripts/run_dl.py sweep <task_id>`), "
         "and store a value it reports for a parameter beyond the stored "
-        "values only for an open parameter that "
-        "[Write](docs/handbook/procedure.md#write) step 2 makes a `Params` "
-        "relation.")
+        "values only for an open parameter, as "
+        "[Choice points and open parameters]"
+        "(docs/handbook/principles.md#choice-points-and-open-parameters) "
+        "defines one, unless [Principles](docs/handbook/principles.md) make "
+        "that parameter a choice point.")
 def survey_sweep(solver: Solver, runs: Runs,
                  max_candidates: int = MAX_CANDIDATES,
                  time_limit: float = TIME_LIMIT_SECONDS) -> SweepReport:
