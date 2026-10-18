@@ -29,7 +29,9 @@ pub enum CheckId {
     Scope,
     /// The columns of each site.
     SiteColumns,
-    /// The type check, the order rule included. A label that only
+    /// The type check, the order rule included. The check gives each label
+    /// of a body the type that [`crate::types::label_type`] gives it, and
+    /// refuses the label where that function gives a fault. A label that only
     /// `(= *X 0)` gives a type takes the type of the instance input it
     /// stands at, or else the join, as [`crate::types::ValueType::join`]
     /// gives it, of the types that the relation's other clauses give its
@@ -37,9 +39,7 @@ pub enum CheckId {
     /// other blocks, as an `ALT` that rederives the relation, and so in
     /// other case programs; the check's [`CheckCacheKey`] then holds their
     /// signatures. The check refuses the label where no type is above those
-    /// types. The check refuses a label, and a branch, whose
-    /// [`crate::types::Meet`] is empty, and a join of poses at different key
-    /// labels.
+    /// types.
     Types,
     /// The pose rule: a Pose label stands only at the sites that
     /// `docs/arclog/rigid.md#the-pose` gives.

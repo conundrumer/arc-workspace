@@ -141,6 +141,156 @@ impl ValueType {
     }
 }
 
+/// A fault of the type of one label in a body.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum LabelFault {
+    /// Two sites give the label types with an empty meet.
+    EmptyMeet(ValueType, ValueType),
+    /// Two branches give the label types with no join.
+    NoJoin(ValueType, ValueType),
+}
+
+/// The type that `body` gives `label`, `None` where it gives none, or the
+/// fault of that type.
+///
+/// The type is the meet, as [`ValueType::meet`] gives it, of the types of
+/// every site of the label, at any depth, and a join, as [`ValueType::join`]
+/// gives it, comes only between alternatives. A constraint over two labels,
+/// at any depth, gives each the sites of the other, and `0` gives no type.
+/// A negated atom's sites count as a positive atom's, and a `NOT` of a form
+/// gives what that form gives. An `OR` gives the join of the types its
+/// branches give, an `IF` the meet of its test's type with the join of its
+/// then and else lists' types, and an `ALL` the meet of its domain's and its
+/// body's types. A branch that gives the label no type gives the `OR` or the
+/// `IF`'s join none. A site is one label at an atom's column, and has the
+/// type that `site_type` gives that atom and column.
+pub fn label_type(
+    body: &crate::program::Body,
+    label: crate::program::LabelId,
+    site_type: &dyn Fn(&crate::program::Atom, &crate::program::ColumnName) -> Option<ValueType>,
+) -> Result<Option<ValueType>, LabelFault> {
+    LabelWalk { class: equal_labels(body, label), site_type }.body_type(body)
+}
+
+/// The walk of [`label_type`] over the labels of `class`.
+struct LabelWalk<'a> {
+    class: Vec<crate::program::LabelId>,
+    site_type: &'a dyn Fn(&crate::program::Atom, &crate::program::ColumnName) -> Option<ValueType>,
+}
+
+impl LabelWalk<'_> {
+    fn body_type(&self, body: &crate::program::Body) -> Result<Option<ValueType>, LabelFault> {
+        let mut ty = None;
+        for conjunct in body.conjuncts.iter() {
+            ty = meet(ty, self.conjunct_type(conjunct)?)?;
+        }
+        Ok(ty)
+    }
+
+    fn conjunct_type(&self, conjunct: &crate::program::Conjunct) -> Result<Option<ValueType>, LabelFault> {
+        use crate::program::{Conjunct, Negated};
+        match conjunct {
+            Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
+                let atom = atom.value();
+                let mut ty = None;
+                for site in atom.sites.iter().filter(|site| site_label(site).is_some_and(|l| self.class.contains(&l))) {
+                    ty = meet(ty, (self.site_type)(atom, &site.column))?;
+                }
+                Ok(ty)
+            }
+            Conjunct::Not(Negated::Form(form)) => self.conjunct_type(form),
+            Conjunct::Or(branches) => join_branches(branches.iter().map(|branch| self.body_type(branch.value()))),
+            Conjunct::If { test, then, otherwise } => {
+                let branches = [then, otherwise].into_iter().map(|branch| self.body_type(branch.value()));
+                meet(self.body_type(test.value())?, join_branches(branches)?)
+            }
+            Conjunct::All { domain, body } => meet(self.body_type(domain.value())?, self.body_type(body.value())?),
+            Conjunct::Constraint(_) => Ok(None),
+        }
+    }
+}
+
+/// The one label that `site` holds, where it holds one label and no field.
+fn site_label(site: &crate::program::Site) -> Option<crate::program::LabelId> {
+    use crate::program::{LabelUse, SiteArg};
+    match &site.value.args[..] {
+        [SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label))] => Some(*label),
+        _ => None,
+    }
+}
+
+/// The meet of two types of one label, either of which may be absent.
+fn meet(a: Option<ValueType>, b: Option<ValueType>) -> Result<Option<ValueType>, LabelFault> {
+    match (a, b) {
+        (Some(a), Some(b)) => match a.meet(&b) {
+            Meet::Type(ty) => Ok(Some(ty)),
+            Meet::Empty => Err(LabelFault::EmptyMeet(a, b)),
+        },
+        (a, b) => Ok(a.or(b)),
+    }
+}
+
+/// The join of the types that branches give one label, or `None` where a
+/// branch gives it none.
+fn join_branches(
+    branches: impl Iterator<Item = Result<Option<ValueType>, LabelFault>>,
+) -> Result<Option<ValueType>, LabelFault> {
+    let mut joined: Option<ValueType> = None;
+    for branch in branches {
+        let Some(ty) = branch? else { return Ok(None) };
+        joined = Some(match joined {
+            None => ty,
+            Some(prev) => prev.join(&ty).ok_or_else(|| LabelFault::NoJoin(prev.clone(), ty.clone()))?,
+        });
+    }
+    Ok(joined)
+}
+
+/// `label` and each label that a constraint of `body`, at any depth, makes
+/// equal to it, directly or through other labels.
+fn equal_labels(body: &crate::program::Body, label: crate::program::LabelId) -> Vec<crate::program::LabelId> {
+    use crate::program::{Conjunct, Constraint, Operand};
+    let mut pairs = Vec::new();
+    each_conjunct(body, &mut |conjunct| {
+        if let Conjunct::Constraint(Constraint { first, second: Operand::Label(second), .. }) = conjunct {
+            pairs.push((first.label, second.label));
+        }
+    });
+    let mut class = vec![label];
+    let mut grown = true;
+    while grown {
+        grown = false;
+        for &(a, b) in &pairs {
+            for (x, y) in [(a, b), (b, a)] {
+                if class.contains(&x) && !class.contains(&y) {
+                    class.push(y);
+                    grown = true;
+                }
+            }
+        }
+    }
+    class
+}
+
+/// Visits each conjunct of `body` at any depth, a conjunct inside a `NOT`
+/// included.
+pub fn each_conjunct(body: &crate::program::Body, visit: &mut dyn FnMut(&crate::program::Conjunct)) {
+    use crate::program::{Conjunct, Negated};
+    fn conjunct(c: &Conjunct, visit: &mut dyn FnMut(&Conjunct)) {
+        visit(c);
+        match c {
+            Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)) | Conjunct::Constraint(_) => {}
+            Conjunct::Not(Negated::Form(form)) => conjunct(form, visit),
+            Conjunct::Or(branches) => branches.iter().for_each(|b| each_conjunct(b.value(), visit)),
+            Conjunct::If { test, then, otherwise } => [test, then, otherwise].into_iter().for_each(|b| each_conjunct(b.value(), visit)),
+            Conjunct::All { domain, body } => [domain, body].into_iter().for_each(|b| each_conjunct(b.value(), visit)),
+        }
+    }
+    for c in body.conjuncts.iter() {
+        conjunct(c, visit);
+    }
+}
+
 /// The types the type check infers for the labels of one form, which the
 /// check cache keeps beside the form's type check, so that the cases that
 /// share a form share its types. In the check cache a label is its canonical

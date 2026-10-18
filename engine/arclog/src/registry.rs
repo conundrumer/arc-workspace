@@ -86,9 +86,9 @@
 use crate::check::CheckId;
 use crate::hash::StableHashMap;
 use crate::layout::SourcePlace;
-use crate::program::{Atom, Body, ColumnName, Conjunct, Constraint, Operand, LabelId, LabelUse, Negated, Node, PortName, RelationRef, Site, SiteArg};
+use crate::program::{Atom, Body, ColumnName, Conjunct, LabelId, Negated, Node, PortName, RelationRef};
 use crate::terms::{OrientationConstant, OrientationType};
-use crate::types::{Meet, ValueType};
+use crate::types::{each_conjunct, label_type, LabelFault, ValueType};
 
 /// The text of the registry file, which [`Registry::get`] reads.
 pub const REGISTRY_TEXT: &str = include_str!("../../lib/registry.sexpr");
@@ -420,20 +420,11 @@ pub struct RelationMacro<'a> {
 /// The column types of each relation macro of `macros`, in the order of its
 /// columns, or a diagnostic at a macro's form for each fault.
 ///
-/// The type of a column is the meet, as [`ValueType::meet`] gives it, of
-/// the types of every site where its label stands in the definition, at any
-/// depth, and a join, as [`ValueType::join`] gives it, comes only between
-/// alternatives. A negated atom's sites count as a positive atom's, and a
-/// `NOT` of a form gives what that form gives. An `OR` gives the join of the
-/// types its branches give, an `IF` the meet of its test's type with the
-/// join of its then and else lists' types, and an `ALL` the meet of its
-/// domain's and its body's types. A branch that gives the label no type
-/// gives the `OR` or the `IF`'s join none. A constraint over two labels,
-/// at any depth, gives each the sites of the other, and `0` gives no type.
-/// A site is one label at an atom's column, and has the column's type: a
-/// column of a lib name that `lib` declares, where the type is fixed or
-/// `(pose-or <type>)`, or a column of another macro of `macros`, of the type
-/// this gives it. Any other site gives no type.
+/// The type of a column is the type that [`label_type`] gives its label
+/// over the definition. A site has the column's type: a column of a lib
+/// name that `lib` declares, where the type is fixed or `(pose-or <type>)`,
+/// or a column of another macro of `macros`, of the type this gives it. Any
+/// other site gives no type.
 ///
 /// `lib` holds the columns of each lib name that a form other than a
 /// relation macro declares. The macros are read in an order of their reads
@@ -478,14 +469,6 @@ enum MacroState {
     Typed(Box<[ValueType]>),
     /// It has a fault, or reads a macro with one.
     Faulted,
-}
-
-/// A fault of the type of one label in a definition.
-enum LabelFault {
-    /// Two sites give the label types with an empty meet.
-    EmptyMeet(ValueType, ValueType),
-    /// Two branches give the label types with no join.
-    NoJoin(ValueType, ValueType),
 }
 
 struct MacroDerivation<'a, 'b> {
@@ -558,7 +541,7 @@ impl MacroDerivation<'_, '_> {
         let mut types = Vec::new();
         let mut faulted = false;
         for (column, label) in m.columns {
-            let message = match self.label_type(m.definition, &equal_labels(m.definition, *label)) {
+            let message = match label_type(m.definition, *label, &|atom, column| self.site_type(atom, column)) {
                 Ok(Some(ty)) => {
                     types.push(ty);
                     continue;
@@ -572,41 +555,6 @@ impl MacroDerivation<'_, '_> {
             self.diagnostics.push(crate::read::check_error(CheckId::Types, message, m.place));
         }
         if faulted { None } else { Some(types.into()) }
-    }
-
-    /// The type that `body` gives the labels of `class`, the labels that
-    /// the definition's constraints make equal, `None` where it gives none.
-    fn label_type(&self, body: &Body, class: &[LabelId]) -> Result<Option<ValueType>, LabelFault> {
-        let mut ty = None;
-        for conjunct in body.conjuncts.iter() {
-            ty = meet(ty, self.conjunct_type(conjunct, class)?)?;
-        }
-        Ok(ty)
-    }
-
-    /// The type that `conjunct` gives the labels of `class`, `None` where it
-    /// gives none.
-    fn conjunct_type(&self, conjunct: &Conjunct, class: &[LabelId]) -> Result<Option<ValueType>, LabelFault> {
-        match conjunct {
-            Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
-                let atom = atom.value();
-                let mut ty = None;
-                for site in atom.sites.iter().filter(|site| site_label(site).is_some_and(|l| class.contains(&l))) {
-                    ty = meet(ty, self.site_type(atom, &site.column))?;
-                }
-                Ok(ty)
-            }
-            Conjunct::Not(Negated::Form(form)) => self.conjunct_type(form, class),
-            Conjunct::Or(branches) => join_branches(branches.iter().map(|branch| self.label_type(branch.value(), class))),
-            Conjunct::If { test, then, otherwise } => {
-                let branches = [then, otherwise].into_iter().map(|branch| self.label_type(branch.value(), class));
-                meet(self.label_type(test.value(), class)?, join_branches(branches)?)
-            }
-            Conjunct::All { domain, body } => {
-                meet(self.label_type(domain.value(), class)?, self.label_type(body.value(), class)?)
-            }
-            Conjunct::Constraint(_) => Ok(None),
-        }
     }
 
     /// The type of the column `column` of the relation `atom` reads, where
@@ -627,88 +575,10 @@ impl MacroDerivation<'_, '_> {
     }
 }
 
-/// The one label that `site` holds, where it holds one label and no field.
-fn site_label(site: &Site) -> Option<LabelId> {
-    match &site.value.args[..] {
-        [SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label))] => Some(*label),
-        _ => None,
-    }
-}
-
-/// The meet of two types of one label, either of which may be absent.
-fn meet(a: Option<ValueType>, b: Option<ValueType>) -> Result<Option<ValueType>, LabelFault> {
-    match (a, b) {
-        (Some(a), Some(b)) => match a.meet(&b) {
-            Meet::Type(ty) => Ok(Some(ty)),
-            Meet::Empty => Err(LabelFault::EmptyMeet(a, b)),
-        },
-        (a, b) => Ok(a.or(b)),
-    }
-}
-
-/// The join of the types that branches give one label, or `None` where a
-/// branch gives it none.
-fn join_branches(
-    branches: impl Iterator<Item = Result<Option<ValueType>, LabelFault>>,
-) -> Result<Option<ValueType>, LabelFault> {
-    let mut joined: Option<ValueType> = None;
-    for branch in branches {
-        let Some(ty) = branch? else { return Ok(None) };
-        joined = Some(match joined {
-            None => ty,
-            Some(prev) => prev.join(&ty).ok_or_else(|| LabelFault::NoJoin(prev.clone(), ty.clone()))?,
-        });
-    }
-    Ok(joined)
-}
-
 /// The name of `column`, for a diagnostic.
 fn column_display(column: &ColumnName) -> String {
     match column {
         ColumnName::Written(name) => name.to_string(),
         ColumnName::Slot(slot) => format!("slot {slot}"),
-    }
-}
-
-/// `label` and each label that a constraint of `body`, at any depth, makes
-/// equal to it, directly or through other labels.
-fn equal_labels(body: &Body, label: LabelId) -> Vec<LabelId> {
-    let mut pairs = Vec::new();
-    each_conjunct(body, &mut |conjunct| {
-        if let Conjunct::Constraint(Constraint { first, second: Operand::Label(second), .. }) = conjunct {
-            pairs.push((first.label, second.label));
-        }
-    });
-    let mut class = vec![label];
-    let mut grown = true;
-    while grown {
-        grown = false;
-        for &(a, b) in &pairs {
-            for (x, y) in [(a, b), (b, a)] {
-                if class.contains(&x) && !class.contains(&y) {
-                    class.push(y);
-                    grown = true;
-                }
-            }
-        }
-    }
-    class
-}
-
-/// Visits each conjunct of `body` at any depth, a conjunct inside a `NOT`
-/// included.
-fn each_conjunct(body: &Body, visit: &mut dyn FnMut(&Conjunct)) {
-    fn conjunct(c: &Conjunct, visit: &mut dyn FnMut(&Conjunct)) {
-        visit(c);
-        match c {
-            Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)) | Conjunct::Constraint(_) => {}
-            Conjunct::Not(Negated::Form(form)) => conjunct(form, visit),
-            Conjunct::Or(branches) => branches.iter().for_each(|b| each_conjunct(b.value(), visit)),
-            Conjunct::If { test, then, otherwise } => [test, then, otherwise].into_iter().for_each(|b| each_conjunct(b.value(), visit)),
-            Conjunct::All { domain, body } => [domain, body].into_iter().for_each(|b| each_conjunct(b.value(), visit)),
-        }
-    }
-    for c in body.conjuncts.iter() {
-        conjunct(c, visit);
     }
 }
