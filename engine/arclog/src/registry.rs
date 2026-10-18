@@ -190,13 +190,15 @@ pub struct DefaultRows {
 
 impl DefaultRows {
     /// The default rows, typed by `types`, the types of the input's columns
-    /// in order, as the rows of a `param` form that writes those types.
+    /// in order: [`crate::terms::encode_param_value`] of the default's
+    /// value, with `table` interning an Ident's values.
     pub fn rows(
         &self,
         types: &[ValueType],
         registry: &Registry,
+        table: &mut crate::terms::InternTable,
     ) -> Result<crate::hash::StableHashSet<Box<[crate::terms::TermId]>>, crate::terms::DataValueError> {
-        todo!()
+        crate::terms::encode_param_value(&self.written, types, registry, table)
     }
 }
 

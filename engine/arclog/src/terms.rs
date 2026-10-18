@@ -395,6 +395,22 @@ pub fn encode_data_value(
     todo!()
 }
 
+/// The rows of term ids of `value`, whose columns take `types` in order, for
+/// the rows of a `param` form, of an `assign` form and of an input's default
+/// alike, as `docs/arclog/arcdata.md#params` gives them, a grid's cells as
+/// Position rows or, in a grid with an anchor, as Offset rows. A
+/// derivation's values give the rows of the table the
+/// registry's [`crate::registry::Derivation`] derives from them. Each value
+/// takes its term ids from [`encode_data_value`].
+pub fn encode_param_value(
+    value: &crate::program::ParamValue,
+    types: &[ValueType],
+    registry: &crate::registry::Registry,
+    table: &mut InternTable,
+) -> Result<crate::hash::StableHashSet<Box<[TermId]>>, DataValueError> {
+    todo!()
+}
+
 /// An arcdata value that its column's type cannot read, such as a digit
 /// outside `0..=9` at a Color column or a list of three at a Box column, or
 /// a Box whose margin lies outside a byte, which is a reached bound.
