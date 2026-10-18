@@ -5,7 +5,7 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 
 from controlled_markdown import mctx
-from run_reads import blocks, is_prompt
+from run_reads import blocks, is_prompt, text_of
 from senders import is_interrupt_note
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import agent_id, chain
@@ -17,11 +17,17 @@ from transcript_snapshots import Entry
 # message that opens it and its work.
 MESSAGE_TYPES = ("user", "assistant")
 
+# The starts of the text of the entries the harness writes for a local
+# command, such as /compact, and for its output.
+LOCAL_COMMAND = ("<command-name>", "<local-command-")
+
 
 def turns(entries: Sequence[Entry]) -> tuple[set[int], set[int]]:
     """The indices of the entries that start a turn and of those that end
-    one. A prompt starts a turn when the next message entry is the model's;
-    a local command, such as /compact, gives the model none. An assistant
+    one. A prompt starts a turn when the next message entry is the model's,
+    or when no message entry follows it and it gives the model a message
+    it has not answered yet; a local command, such as /compact, and the
+    harness's note that the user interrupted the run give it none. An assistant
     entry with no tool call ends a turn when it says so, or when the next
     message entry is a prompt, and the result of a call that ends the turn,
     such as SubagentHandback, ends one. The harness's note that the user
@@ -53,7 +59,8 @@ def marks(entry: Entry, nxt: Entry | None) -> tuple[bool, bool]:
     """Whether `entry` starts a turn and whether it ends one, as `turns`
     gives them, where `nxt` is the next message entry after it
     (`is_message`), or None where none follows."""
-    start = is_prompt(entry) and nxt is not None and nxt.get("type") == "assistant"
+    start = is_prompt(entry) and (nxt is not None and nxt.get("type") == "assistant"
+                                  or nxt is None and gives_model(entry))
     end = False
     if entry.get("type") == "assistant" and not blocks(entry, "tool_use"):
         stop = (entry.get("message") or {}).get("stop_reason")
@@ -63,6 +70,15 @@ def marks(entry: Entry, nxt: Entry | None) -> tuple[bool, bool]:
     if is_interrupt_note(entry) and (nxt is None or nxt.get("type") != "assistant"):
         end = True
     return start, end
+
+
+def gives_model(entry: Entry) -> bool:
+    """Whether a prompt gives the model a message: it is neither a local
+    command nor the harness's note that the user interrupted the run."""
+    if is_interrupt_note(entry):
+        return False
+    return entry.get("type") != "user" or not text_of(
+        (entry.get("message") or {}).get("content")).lstrip().startswith(LOCAL_COMMAND)
 
 
 def is_message(entry: Entry) -> bool:

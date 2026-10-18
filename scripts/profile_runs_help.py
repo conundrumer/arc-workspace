@@ -83,7 +83,8 @@ PARTS = {
             - These are labelled `agent TYPE`, `poll` and `bg LABEL`.
         - `model`: no call is pending and the turn has not ended.
         - `idle`: the turn has ended and nothing the run launched is running.
-    - A turn starts at a message the model answers.
+    - A turn starts at a message the model answers, and at the run's last `user` or `assistant` entry where that is a message the model has not answered yet.
+        - A local command, such as /compact, and the harness's note that the user interrupted the run start none.
     - A turn ends at the model's last entry, at the result of a call that ends it, such as SubagentHandback, or at the harness's note that the user interrupted the run, unless the next `user` or `assistant` entry after that note is the model's.
     - Calls that are pending at once share an interval in equal parts.
     - While the model works, backgrounded work that runs goes to `model`.
