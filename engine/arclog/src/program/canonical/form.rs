@@ -345,7 +345,7 @@ impl LabelScope<'_> {
 
 
 /// The relation a clause or a `param` form names, as an atom reads it.
-pub(super) fn relation_of(relation: &ProgramRelation) -> RelationRef {
+pub(crate) fn relation_of(relation: &ProgramRelation) -> RelationRef {
     match relation {
         ProgramRelation::Declared(name) => RelationRef::Declared(name.clone()),
         ProgramRelation::Output(name) => RelationRef::Output(name.clone()),
