@@ -75,6 +75,13 @@ enum Binding {
     Record(Box<[(FieldName, SiteType)]>),
 }
 
+/// What the `INIT` form's binding gives a column of one of its outputs:
+/// a type, or the record bound to the column's type parameter.
+enum InitColumn<'s> {
+    Type(SiteType),
+    Record(&'s TypeParameter, &'s [(FieldName, SiteType)]),
+}
+
 /// Where the derivation stands in its typing of one form of a cell
 /// instance: its `INIT` form or a `RULE` form.
 #[derive(Clone, Debug)]
@@ -138,6 +145,7 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
         for i in 0..cell.rules.len() {
             derivation.type_form(CellRead::Rule(i));
         }
+        derivation.check_fields();
         let mut ports = Vec::new();
         for (port, form) in cell.outputs.iter() {
             let what = |column: &ColumnName| format!("the column `{}` of the output `{}`", column_display(column), port.0);
@@ -318,31 +326,63 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
                 let index = self.cell.rules[i].1.columns.iter().position(|(c, _)| c == column)?;
                 types[index].clone()
             }
-            RelationRef::Output(output) => {
-                let port = self.is_init_output(output)?;
-                let FormState::Typed(bindings) = &self.init else { return None };
-                let outputs = self.construction?.outputs;
-                let ty = &outputs.iter().find(|p| p.name == *port)?.columns.iter().find(|c| c.name == *column)?.ty;
-                let ColumnType::Parameter(parameter) = ty else { return SiteType::of_column(ty) };
-                match &bindings.iter().find(|(p, _)| p == parameter)?.1 {
-                    Binding::One(ty) => Some(ty.clone()),
-                    Binding::Record(fields) => {
-                        let field = path.get(1)?;
-                        let found = fields.iter().find(|(name, _)| ColumnName::Written(name.0.clone()) == *field);
-                        if found.is_none() {
+            RelationRef::Output(output) => match self.init_column(output, column)? {
+                InitColumn::Type(ty) => Some(ty),
+                InitColumn::Record(_, fields) => record_field(fields, path.get(1)?).cloned(),
+            },
+        }
+    }
+
+    /// What the `INIT` form's binding gives the column `column` of the
+    /// output `output` reads, where `output` is an output of the `INIT`
+    /// form and the form is typed.
+    fn init_column(&self, output: &crate::program::OutputName, column: &ColumnName) -> Option<InitColumn<'_>> {
+        let port = self.is_init_output(output)?;
+        let FormState::Typed(bindings) = &self.init else { return None };
+        let outputs = self.construction?.outputs;
+        let ty = &outputs.iter().find(|p| p.name == *port)?.columns.iter().find(|c| c.name == *column)?.ty;
+        let ColumnType::Parameter(parameter) = ty else { return SiteType::of_column(ty).map(InitColumn::Type) };
+        match &bindings.iter().find(|(p, _)| p == parameter)?.1 {
+            Binding::One(ty) => Some(InitColumn::Type(ty.clone())),
+            Binding::Record(fields) => Some(InitColumn::Record(parameter, fields)),
+        }
+    }
+
+    /// Gives a fault for each field that a site on an output of the `INIT`
+    /// form names, in any body of the cell instance, where the record bound
+    /// to the site's column has no such field. It reads the direct
+    /// arguments of each site, so a field that holds sites gives one fault.
+    fn check_fields(&self) {
+        use crate::program::SiteArg;
+        let outputs = self.cell.outputs.iter().map(|(_, form)| form.body);
+        let rules = self.cell.rules.iter().map(|(_, form)| form.body);
+        let bodies: Vec<&Body> = outputs.chain(rules).chain(self.bodies_of(CellRead::Init)).collect();
+        for body in bodies {
+            each_conjunct(body, &mut |conjunct| {
+                let (Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom))) = conjunct else { return };
+                let atom = atom.value();
+                let RelationRef::Output(output) = &atom.relation else { return };
+                for site in atom.sites.iter() {
+                    let Some(InitColumn::Record(parameter, fields)) = self.init_column(output, &site.column) else { continue };
+                    for arg in site.value.args.iter() {
+                        let field = match arg {
+                            SiteArg::Field(field) => &field.column,
+                            SiteArg::NamedLabel { name, .. } => name,
+                            SiteArg::Label(_) => continue,
+                        };
+                        if record_field(fields, field).is_none() {
                             let message = format!(
                                 "a site on `{}` of `{}` names the field `{}`, which the record bound to `{}` does not have",
-                                column_display(column),
+                                column_display(&site.column),
                                 crate::write::relation_ref(&atom.relation),
                                 column_display(field),
                                 parameter.0
                             );
                             self.fault(CheckId::SiteColumns, message);
                         }
-                        found.map(|(_, ty)| ty.clone())
                     }
                 }
-            }
+            });
         }
     }
 
@@ -458,6 +498,11 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
 
 /// The name of a construction's key column, which the key clause binds.
 const KEY_COLUMN: &str = "key";
+
+/// The type of the field `field` of the record `fields`, where it has one.
+fn record_field<'f>(fields: &'f [(FieldName, SiteType)], field: &ColumnName) -> Option<&'f SiteType> {
+    fields.iter().find(|(name, _)| ColumnName::Written(name.0.clone()) == *field).map(|(_, ty)| ty)
+}
 
 /// The field that a site's head or an elided site's label names.
 fn field_name(column: &ColumnName) -> FieldName {
