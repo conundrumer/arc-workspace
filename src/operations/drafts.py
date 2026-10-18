@@ -20,8 +20,9 @@ analyst's that gives no agent id, while a ticket analyst of the operators'
 launched before that line runs.
 
 A draft waits for a ticket analyst where its log holds findings after its
-last `filed` or `revised` line, and no ticket reviewer or ticket analyst
-runs on it; a line of the operator's that moves a change past its cost
+last `filed` or `revised` line and after the last line that moves it out
+of `tickets/draft/` (`findings_start`), and no ticket reviewer or ticket
+analyst runs on it; a line of the operator's that moves a change past its cost
 budget to `tickets/draft/` (`change_budget.OVERRUN_FINDING`), or that moves
 there a change that waits on a ticket that holds it up
 (`taking.STALL_FINDING`), counts as findings,
@@ -54,7 +55,7 @@ from enum import Enum
 
 from controlled_markdown import mctx
 from operations import briefs, messages
-from operations.change_budget import OVERRUN_FINDING
+from operations.change_budget import OVERRUN_FINDING, left_draft
 from operations.taking import STALLED, scope
 from operations.directives import Decision, Directive, named, numbers, ruling
 from operations.roles import Purpose, Role, analyst_subject, joined, subjects
@@ -93,7 +94,7 @@ def drafts(state: State) -> list[Ticket]:
                    if draft_change(state, t)
                    and (state.mine(t) or t.number in names or t.number in analysed
                         or t.number in idle
-                        or ((ln := operator_finding(t, base(t))) is not None
+                        or ((ln := operator_finding(t, findings_start(t))) is not None
                             and ln.agent_id in state.operators))),
                   key=lambda t: t.order)
 
@@ -109,6 +110,12 @@ def base(t: Ticket) -> float:
     """The time of `t`'s last `filed` or `revised` line."""
     i = last_index(t, FILED_OR_REVISED)
     return t.log[i].time if i >= 0 else t.filed
+
+
+def findings_start(t: Ticket) -> float:
+    """The time from which `t`'s findings and suggestions count: the later
+    of `base` and `change_budget.left_draft`."""
+    return max(base(t), left_draft(t))
 
 
 def log_ready(t: Ticket) -> bool:
@@ -165,11 +172,10 @@ def operator_finding(t: Ticket, since: float) -> LogLine | None:
 
 
 def overrun(state: State, t: Ticket) -> tuple[str, str, str | None] | None:
-    """The number of `t`, the line of `overrun_line` since its last
-    `filed` or `revised` line, and what the last item checker launched on
-    `t` before that line leaves for a decision, or None where no such line
-    is."""
-    ln = overrun_line(t, base(t))
+    """The number of `t`, the line of `overrun_line` since `findings_start`,
+    and what the last item checker launched on `t` before that line leaves
+    for a decision, or None where no such line is."""
+    ln = overrun_line(t, findings_start(t))
     if ln is None:
         return None
     checkers = [a for a in state.agents_of(Role.ITEM_CHECKER, t.number) if a.launched < ln.time]
@@ -289,7 +295,7 @@ def draft_step(state: State, t: Ticket) -> Step | Joined | None:
             or any(a.pending and a.agent_id in writers for a in state.transcripts.agents)
             or analyst_writes(state, t)):
         return None
-    since = base(t)
+    since = findings_start(t)
     found = review_lines_after(t, since, Note.FINDING)
     overran = operator_finding(t, since) is not None
     suggested = review_lines_after(t, since, Note.SUGGESTION)
