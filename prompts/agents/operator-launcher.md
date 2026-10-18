@@ -7,7 +7,7 @@ tools: Bash, Agent, SendMessage
 
 + lib: none
 + message: brief
-+ budget: 945
++ budget: 1106
 * comment: when editing this doc
     - The operator launcher's entry point: the coordinator launches it with an operator's brief, and `operate.py relay` reads that brief and gives each call it makes.
     - Its one act is the loop on `operate.py relay`, in [Operator launcher](#operator-launcher); what it relays stands in the docstrings of [operate.py](scripts/operate.py) and of the modules under [operations](src/operations).

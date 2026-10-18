@@ -1,4 +1,4 @@
-+ budget: 2809
++ budget: 3151
 * comment: when editing this doc
     - The doc editor's checklist: `uv run python scripts/step.py doc-editor` prints its items one at a time, by [Doc editor](prompts/agents/doc-editor.md#doc-editor), each as the doc editor reaches its step.
     - Acts, each with its section: each step of its work, under the item of that step.

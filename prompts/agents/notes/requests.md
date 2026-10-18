@@ -1,4 +1,4 @@
-+ budget: 8885
++ budget: 10703
 * comment: when editing this doc
     - The coordinator loads each section by a link: Routes before it acts on a user's message that asks for work, Running a change from the `direct` and `hotfix` lines of Routes, and Tickets, The user's words on a ticket and Waiting on a ticket at the triggers its document gives.
     - Acts, each with its section:
@@ -29,8 +29,7 @@
 - `op send`: file the `request` and, in that turn, tell an operator that tickets are open where an operator launcher of yours runs, and otherwise launch a ticket analyst on it, with its transcript brief, and tell an operator so once the analyst replies.
 - `hotfix`: file the change's `request`, write its brief, and, as [Running a change](#running-a-change) gives, launch at once on a worktree the editors it needs, each with that brief, and merge the change.
 - `expedite <number>`: write nothing, send an operator `Op expedite: <number>`, and tell the user the tickets outside `tickets/closed/` that line gives, as [An operator's brief](prompts/agents/notes/launching.md#an-operators-brief) gives that line.
-- `op scope: own` and `op scope: all`: write nothing, and send an operator `Op scope: own.` or `Op scope: all.`.
-- `op pause` and `op resume`: write nothing, and send an operator `Op pause.` or `Op resume.`.
+- `op scope: own`, `op scope: all`, `op pause` and `op resume`: write nothing, and send an operator the directive with a capital `Op` and a closing period, as `Op pause.`.
 - Run a change yourself only on `direct` and `hotfix`.
 
 ## Running a change

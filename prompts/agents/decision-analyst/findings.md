@@ -1,4 +1,4 @@
-+ budget: 1546
++ budget: 3414
 * comment: when editing this doc
     - The decision analyst receives this document from the step command as it enters the judging of what a change's editors leave, once it has read its brief.
     - Acts, each with its section:

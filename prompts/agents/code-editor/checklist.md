@@ -1,4 +1,4 @@
-+ budget: 3700
++ budget: 4339
 * comment: when editing this doc
     - The code editor's checklist: `uv run python scripts/step.py code-editor` prints its items one at a time, by [Code editor](prompts/agents/code-editor.md#code-editor), each as the code editor reaches its step.
     - Acts, each with its section: each step of its work, under the item of that step.
