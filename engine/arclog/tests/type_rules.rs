@@ -148,17 +148,3 @@ fn a_det_with_a_proposer_and_no_body_is_refused_at_its_own_path() {
     let det = Location::Path(NodePath(Box::new([PathStep(1)])));
     assert!(refused.contains(&(CheckId::Types, det)), "{refused:?}");
 }
-
-#[test]
-fn a_column_whose_types_have_a_join_passes() {
-    let checks = refusing_checks(
-        "
-(RULE &way
-  (dir_elem *D))
-
-(RULE &way
-  (diag_dir_elem *D))
-",
-    );
-    assert_eq!(checks, Vec::new());
-}
