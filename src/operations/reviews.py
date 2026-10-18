@@ -12,6 +12,8 @@ commit of `master` that the state reads changes them, on the baseline
 alone, so that one analyst takes it until the baseline reads or such a
 commit merges."""
 
+from collections.abc import Callable
+
 from controlled_markdown import mctx
 from operations import briefs
 from operations.filing import scratch_dir
@@ -20,14 +22,14 @@ from operations.state import NoBaseline, Review, State
 from operations.steps import Launch, Step, Undecided
 
 
-@main_only
-def code_review(state: State) -> Step | None:
-    return review(state, Review.CODE)
+def procedure(of: Review) -> Callable[[State], Step | None]:
+    """The procedure of the review `of`: its step alone, which only an
+    operator of the main session gives."""
+    return main_only(lambda state: review(state, of))
 
 
-@main_only
-def lib_review(state: State) -> Step | None:
-    return review(state, Review.LIB)
+PROCEDURES = tuple(procedure(r) for r in Review)
+"""The procedure of each review, in the order of `Review`."""
 
 
 def review(state: State, of: Review) -> Step | None:
@@ -43,7 +45,7 @@ def review(state: State, of: Review) -> Step | None:
                         "it reviews").format(commit=newest))
         return Undecided(mctx("the last {name}'s baseline, its `{prefix}<n>` tag of the highest "
                               "`<n>`, is unknown, {commits}: {why}").format(
-            name=of.noun, prefix=of.value, commits=commits, why=baseline.value))
+            name=of.facts.noun, prefix=of.value, commits=commits, why=baseline.value))
     if not baseline.unreviewed:
         return None
     number = baseline.number + 1

@@ -309,7 +309,7 @@ class Message:
 @dataclass(frozen=True)
 class Commit:
     """A commit of `master`: its hash, its time, the reviews whose paths,
-    as `tree_reads.REVIEW_PATHS` gives them, it changes, its subject,
+    as `ReviewFacts.paths` gives them, it changes, its subject,
     whether it changes a directory of `tree_reads.PROCESS_DIRS`, a change
     to the agents' processes, and the files it changes."""
     hash: str
@@ -331,16 +331,16 @@ class Review(Enum):
     LIB = "lib-review/"
 
     @property
-    def role(self) -> Role:
-        return REVIEWERS[self]
+    def facts(self) -> "ReviewFacts":
+        return REVIEW_FACTS[self]
 
     @property
-    def noun(self) -> str:
-        return NOUNS[self]
+    def role(self) -> Role:
+        return self.facts.role
 
     @property
     def stem(self) -> str:
-        """Its prefix with no `/`, the name of its scratch directory."""
+        """The name of its scratch directory."""
         return self.value.removesuffix("/")
 
     def tag(self, n: int) -> str:
@@ -351,8 +351,49 @@ class Review(Enum):
         return int(n) if tag.startswith(self.value) and n.isdigit() else None
 
 
-REVIEWERS = {Review.CODE: Role.CODE_REVIEWER, Review.LIB: Role.LIB_REVIEWER}
-NOUNS = {Review.CODE: mctx("code review"), Review.LIB: mctx("lib review")}
+@dataclass(frozen=True)
+class PathSet:
+    """A set of paths of the tree, such as those a review covers: each path
+    under a prefix of `covered` and under no prefix of `excluded`.
+    Iterating it gives the same set as git pathspecs, which
+    `review_tag.py commit` stages and prints for the reviewer's diff, so
+    the two readings agree."""
+    covered: tuple[str, ...]
+    excluded: tuple[str, ...] = ()
+
+    def covers(self, path: str) -> bool:
+        return path.startswith(self.covered) and not path.startswith(self.excluded)
+
+    def __iter__(self) -> Iterator[str]:
+        yield from self.covered
+        yield from (f":!{e}" for e in self.excluded)
+
+
+@dataclass(frozen=True)
+class ReviewFacts:
+    """What a review is: the role of its reviewer, its noun, the paths it
+    covers, and the item of its reviewer's checklist whose completion the
+    tag of its baseline needs, by that item's heading text."""
+    role: Role
+    noun: str
+    paths: PathSet
+    item: str
+
+
+REVIEW_FACTS = {
+    Review.CODE: ReviewFacts(
+        Role.CODE_REVIEWER, mctx("code review"),
+        PathSet(("src/", "scripts/", "tests/", "engine/", "theory/", "tools/", ".claude/workflows/",
+                 ".claude/settings.json", "justfile"),
+                # `tools/console/vendor/` holds third-party code the project does not own.
+                ("tools/console/vendor/",)),
+        "Find the line-level places"),
+    Review.LIB: ReviewFacts(
+        Role.LIB_REVIEWER, mctx("lib review"),
+        PathSet(("programs/lib.dl", "programs/lib/", "programs/proposers.dl",
+                 "programs/lib_functors.cpp")),
+        "Find the places"),
+}
 
 
 @dataclass(frozen=True)

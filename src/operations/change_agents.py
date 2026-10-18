@@ -10,6 +10,7 @@ since its last move out of `tickets/draft/`. Those an operator of
 another session launched (`elsewhere_on`) are read apart: no step sends to
 one, as `TranscriptsRead.elsewhere` gives why."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -21,18 +22,44 @@ from operations.change_holds import (Hold, findings_hold, left_hold, questions_h
 from operations.directives import Decision, Ruling, ruling
 from operations.roles import EDITORS, Purpose, Role, analyst_of, subjects
 from operations.state import Agent, Report, State, Ticket
-from operations.steps import Undecided
+from operations.steps import Step, Undecided
+
+REVIEWER_ROLES = (Role.DOC_REVIEWER, Role.DESIGN_REVIEWER, Role.ITEM_CHECKER)
+"""The roles of the reviewers of a change."""
 
 
 def on_change(a: Agent, number: str) -> bool:
-    """Whether `a` is an editor, a doc reviewer, a design reviewer, an item
-    checker or a ticket analyst launched on the change `number`."""
+    """Whether `a` is an editor, a reviewer (`REVIEWER_ROLES`) or a ticket
+    analyst launched on the change `number`."""
     if a.role is Role.TICKET_ANALYST:
         parsed = analyst_of(a.subject)
         return parsed is not None and parsed[0] is Purpose.CHANGE \
             and number in subjects(parsed[1])
-    return a.role in (*EDITORS, Role.DOC_REVIEWER, Role.DESIGN_REVIEWER,
-                      Role.ITEM_CHECKER) and a.subject == number
+    return a.role in (*EDITORS, *REVIEWER_ROLES) and a.subject == number
+
+
+def unreported(a: Agent, number: str) -> Undecided:
+    """The hold on the agent `a` of the change `number`, which ended with
+    no report."""
+    return Undecided(mctx("{role} {agent} on change {number} ended with no report").format(
+        role=a.role, agent=a.agent_id, number=number))
+
+
+def latest_of_role(agents: list[Agent], role: Role, since: float, number: str,
+                   launch: Callable[[], Step]) -> Step | None:
+    """The step on the latest of the agents of `role` among `agents`, those
+    of the change `number`, launched after `since`: `launch` where there
+    is none, its hold (`unreported`) where it ended with no report, and
+    otherwise None."""
+    found = [a for a in agents if a.role is role and a.launched > since]
+    if not found:
+        return launch()
+    return unreported(found[-1], number) if found[-1].unreported else None
+
+
+def worktree_occasion(t: Ticket, w: Path) -> str:
+    """The `occasion` of a launch on the change `t` in its worktree `w`."""
+    return f"{w} {t.last_time}"
 
 
 def launched_on(state: State, number: str) -> list[Agent]:

@@ -11,17 +11,16 @@ reviewer's findings are the `question` tickets on the change
 (`change_holds.open_questions`), which `changes.leftover` hands to a ticket analyst."""
 
 from pathlib import Path
-from typing import Literal
 
 from controlled_markdown import mctx
 from operations import briefs
-from operations.change_agents import settled
+from operations.change_agents import latest_of_role, settled, worktree_occasion
 from operations.change_budget import left_draft
 from operations.filing import editor_scratch
 from operations.merging import CONFLICT_OPENING, conflict_note_paths, documents_only
 from operations.roles import BUILDERS, Role
 from operations.state import Agent, State, Ticket
-from operations.steps import Launch, Step, Undecided
+from operations.steps import Launch, Pause, Step, Undecided
 from ticketing.times import utc_stamp
 
 
@@ -61,28 +60,23 @@ def builds_code(editors: tuple[Role, ...]) -> bool:
 
 
 def design_review(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
-                  here: list[Agent], agents: list[Agent], launcher: str) -> Step | Literal[False]:
+                  here: list[Agent], agents: list[Agent], launcher: str) -> Step | Pause:
     """The launch by `launcher` of the design reviewer of the change `t`,
     whose editors are `editors`, those in its worktree `w` `here`, and
     whose agents, those of other sessions and those its editors launched
-    included, are `agents`, or False where none is due or
+    included, are `agents`, or `Pause.CLEAR` where none is due or
     the one due is at work or has reported. A reviewer that ended with no
     report holds the change, since the merge waits on its judgment."""
     if not builds_code(editors):
-        return False
+        return Pause.CLEAR
     since = due_since(t, here)
     if isinstance(since, Undecided):
         return since
     if since is None:
-        return False
-    reviewers = [a for a in agents if a.role is Role.DESIGN_REVIEWER and a.launched > since]
-    if not reviewers:
-        return design_launch(state, t, w, launcher)
-    last = reviewers[-1]
-    if not last.unreported:
-        return False
-    return Undecided(mctx("design reviewer {agent} on change {number} ended with no "
-                          "report").format(agent=last.agent_id, number=t.number))
+        return Pause.CLEAR
+    step = latest_of_role(agents, Role.DESIGN_REVIEWER, since, t.number,
+                          lambda: design_launch(state, t, w, launcher))
+    return Pause.CLEAR if step is None else step
 
 
 def reviewing(agents: list[Agent]) -> bool:
@@ -93,8 +87,8 @@ def reviewing(agents: list[Agent]) -> bool:
 
 def design_launch(state: State, t: Ticket, w: Path, launcher: str) -> Launch:
     """The launch by `launcher` of a design reviewer on the change `t` in
-    its worktree `w`, keyed as an editor's launch is."""
+    its worktree `w`."""
     return Launch(Role.DESIGN_REVIEWER, t.number, briefs.design_review(
         t.number, w, editor_scratch(t.number, Role.DESIGN_REVIEWER, state.scratch), launcher,
         settled(state, t, Role.DESIGN_REVIEWER, None)),
-        occasion=f"{w} {t.last_time}")
+        occasion=worktree_occasion(t, w))

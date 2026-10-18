@@ -270,6 +270,15 @@ def fingerprint_line(worktree: Path) -> str:
     return FINGERPRINT.format(worktree=worktree, opening=WORKTREE)
 
 
+def reviewer_closing(worktree: Path, operator: str, settled: "Settled") -> list[str]:
+    """The lines that close the brief of a reviewer launched on a change in
+    its worktree `worktree` by `operator`: the fingerprint line, the
+    launcher line, and what the agents before it settled
+    (`settled_lines`)."""
+    return [fingerprint_line(worktree), LAUNCHER.format(operator=operator),
+            *settled_lines(settled)]
+
+
 def editor_lines(editors: list[tuple[Agent, str]]) -> list[str]:
     """The line of each editor of a change, with its agent id beside its
     record, that gives its part."""
@@ -285,9 +294,7 @@ def doc_review(number: str, worktree: Path, editors: list[tuple[Agent, str]],
                       number=number, worktree=worktree)]
     lines.extend(editor_lines(editors))
     lines.append(ROUNDS.format(number=number, rounds=rounds))
-    lines.append(fingerprint_line(worktree))
-    lines.append(LAUNCHER.format(operator=operator))
-    return "\n".join(lines + settled_lines(settled))
+    return "\n".join(lines + reviewer_closing(worktree, operator, settled))
 
 
 DESIGN_REVIEW = mctx("Review the design of change {number}, in the worktree {worktree}.")
@@ -299,8 +306,7 @@ def design_review(number: str, worktree: Path, scratch: Path, operator: str,
                   settled: "Settled") -> str:
     return "\n".join([DESIGN_REVIEW.format(number=number, worktree=worktree),
                       SCRATCH.format(scratch=scratch),
-                      fingerprint_line(worktree), LAUNCHER.format(operator=operator),
-                      *settled_lines(settled)])
+                      *reviewer_closing(worktree, operator, settled)])
 
 
 def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], scratch: Path,
@@ -440,9 +446,7 @@ def item_check(number: str, worktree: Path, reports: list[tuple[str, str]], gate
             "each difference there that the change's items do not ask for to its editors, "
             "{editors}, as a finding of its checks.").format(
                 gate=", ".join(gate), editors=", ".join(i for _, i in editors)))
-    lines.append(fingerprint_line(worktree))
-    lines.append(LAUNCHER.format(operator=operator))
-    return "\n".join(lines + settled_lines(settled))
+    return "\n".join(lines + reviewer_closing(worktree, operator, settled))
 
 
 def findings(number: str, worktree: Path, left: str | None, questions: list[str],
@@ -671,7 +675,7 @@ def review(of: Review, baseline: int, number: int, scratch: Path) -> str:
     baseline is numbered `baseline`."""
     return mctx("The earlier {name}'s baseline is the tag `{tag}`, and "
                 "this {name}'s number is {number}.").format(
-        name=of.noun, tag=of.tag(baseline), number=number) + "\n" + SCRATCH.format(
+        name=of.facts.noun, tag=of.tag(baseline), number=number) + "\n" + SCRATCH.format(
         scratch=scratch)
 
 

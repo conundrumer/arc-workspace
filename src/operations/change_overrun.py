@@ -23,7 +23,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from operations import messages
-from operations.change_agents import change_editors, editors_in, latest_editors
+from operations.change_agents import change_editors, editors_in, latest_editors, latest_of_role
 from operations.change_budget import (OVERRUN_FINDING, by_role, file_overrun, left_draft,
                                       overrun_ticket, past_budget, taken)
 from operations.design_review import design_review
@@ -46,9 +46,12 @@ class Ended:
     latest: tuple[Agent, ...]
 
 
-def unreported(a: Agent, number: str) -> Undecided:
-    return Undecided(mctx("{role} {agent} on change {number}, past its cost budget, returned "
-                          "no report").format(role=a.role, agent=a.agent_id, number=number))
+TOLD_AS: dict[Role, bool | None] = {
+    Role.DOC_REVIEWER: True, Role.DESIGN_REVIEWER: None, Role.ITEM_CHECKER: False}
+"""How each reviewer role of a change at work is told to end once the
+change passes its budget: the `reviewer` argument of
+`messages.over_budget`, or None where it is not told. An agent of a role
+that is no reviewer's is told with `reviewer` False."""
 
 
 def to_draft(state: State, t: Ticket, limit: float, spent: Spend, case: str,
@@ -102,9 +105,10 @@ def over_budget(state: State, t: Ticket, w: Path,
                                       number=t.number))
         return file_overrun(t, spent, budget, limit, agents)
     for a in agents:
+        reviewer = TOLD_AS.get(a.role, False)
         if a.pending and a.agent_id is not None and a.launched < trip.filed \
-                and a.role is not Role.DESIGN_REVIEWER:
-            message = messages.over_budget(t.number, a.role is Role.DOC_REVIEWER)
+                and reviewer is not None:
+            message = messages.over_budget(t.number, reviewer)
             if not sent(state, a.agent_id, message):
                 return Send(a.agent_id, message, f"over budget {t.number}")
     if any(a.pending for a in agents):
@@ -125,19 +129,19 @@ def over_budget(state: State, t: Ticket, w: Path,
             "each of {agents} gave no report, or none after it was told to end").format(
                 agents=", ".join(ids)), max(told, trip.filed))
     checked = [a for a in latest if is_checked(a)]
-    if checked:
-        reported = last_reported(checked)
-        checkers = [a for a in agents if a.role is Role.ITEM_CHECKER and a.launched > reported]
-        if not checkers:
-            editors = with_ids(latest)
-            if isinstance(editors, Undecided):
-                return editors
-            return check_items(state, t, w, latest, editors, state.me, past=trip.filed)
-        if checkers[-1].unreported:
-            return unreported(checkers[-1], t.number)
+
+    def check() -> Step:
+        editors = with_ids(latest)
+        if isinstance(editors, Undecided):
+            return editors
+        return check_items(state, t, w, latest, editors, state.me, past=trip.filed)
+
+    if checked and (step := latest_of_role(agents, Role.ITEM_CHECKER, last_reported(checked),
+                                           t.number, check)) is not None:
+        return step
     roles = change_editors(t)
     if isinstance(roles, Undecided):
         return roles
-    if (step := design_review(state, t, w, roles, here, agents, state.me)) is not False:
-        return Pause.WAIT if step is None else step
+    if (step := design_review(state, t, w, roles, here, agents, state.me)) is not Pause.CLEAR:
+        return step
     return Ended(tuple(latest))

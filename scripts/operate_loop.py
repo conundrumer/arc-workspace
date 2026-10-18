@@ -58,7 +58,7 @@ def prepared(step: Step, scratch: Path) -> Step:
     match step:
         case Launch():
             return with_budget(with_report(step, scratch))
-        case EndTurn(ListingHold(held, Launch() as wait)):
+        case EndTurn(ListingHold(held, _)) if (wait := step.wait) is not None:
             return EndTurn(ListingHold(held, with_budget(with_report(wait, scratch))))
         case _:
             return step
@@ -67,7 +67,7 @@ def prepared(step: Step, scratch: Path) -> Step:
 def print_step(step: Step, scratch: Path, me: str) -> None:
     """Write the files `step` gives, and those of the launch of an end of
     turn, then print it."""
-    made = [step.hold.wait] if isinstance(step, EndTurn) and step.hold and step.hold.wait else []
+    made = [wait] if isinstance(step, EndTurn) and (wait := step.wait) is not None else []
     for s in (step, *made):
         for path, text in filed(s, scratch).items():
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -145,9 +145,11 @@ def block(me: str, action: Action,
         steps = (head,)
     if action is Action.NEXT:
         step_journal.give(scratch, [s for s in steps if isinstance(s, CALLS)], me, time.time())
-        if isinstance(head, EndTurn) and head.hold is not None and head.hold.wait is not None:
-            step_journal.give_failed(scratch, head.hold.launch, me, time.time(),
-                                     listing_line(head.hold.launch))
+        match head:
+            case EndTurn(ListingHold(held, _)) if head.wait is not None:
+                step_journal.give_failed(scratch, held, me, time.time(), listing_line(held))
+            case _:
+                pass
     if len(steps) > 1:
         print(batch_line(steps, me, action))
     elif isinstance(head, CALLS):

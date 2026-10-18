@@ -224,8 +224,8 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
         case EndTurn(hold):
             if hold is None:
                 return END_TURN
-            held, wait = hold.launch, hold.wait
-            line = listing_line(held)
+            line = listing_line(hold.launch)
+            wait = step.wait
             return line if wait is None else printed(wait, agent, scratch) + "\n" + line
         case Reply(to):
             return REPLY_TEXT.format(to=to)

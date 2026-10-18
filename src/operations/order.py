@@ -145,9 +145,8 @@ GIVE_LINE = mctx("- {time}, to {operator}: {outcome} {why}")
 
 
 def unlisted(state: State, step: Step) -> bool:
-    """Whether `step` launches an agent type that the agent listing of
-    `state.me` lacks, where that listing is read, and whose rendered
-    definition stands in the main tree (`GitRead.definitions`)."""
+    """Whether `step` is a launch that `operate.py --help next` gives as
+    one of an agent type the operator's agent listing lacks."""
     if not isinstance(step, Launch) or state.listing is None:
         return False
     agent_type = launched_type(step.role, step.subject)
@@ -267,7 +266,7 @@ EARLY: tuple[Callable[[State], Step | None], ...] = (
 LATE: tuple[Callable[[State], Step | None], ...] = (
     taking.release, triage.reopen, triage.later_lines, triage.settle, drafts.step,
     changes.step, ticket_stall.stall,
-    pipelines, batches.audit, reviews.code_review, reviews.lib_review, batches.standing_review,
+    pipelines, batches.audit, *reviews.PROCEDURES, batches.standing_review,
     batches.overdue_review, batches.gate,
     batches.assessment, after_profile.validation, after_profile.script_check, batches.step,
     alerts.ticket_stalls)

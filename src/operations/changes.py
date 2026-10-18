@@ -97,10 +97,10 @@ from operations import briefs, merging, messages
 from operations.change_budget import TAKEN
 from operations.constants import AGAIN_SECONDS, COORDINATOR
 from operations.journal import AGAIN_LIMIT, done_of, retired
-from operations.change_agents import (change_editors, editors_in, elsewhere_on, latest_editors,
-                                      launched_on, of_change, Reported, reported, reported_at,
-                                      settled,
-                                      unstaffed, with_before, with_elsewhere)
+from operations.change_agents import (REVIEWER_ROLES, change_editors, editors_in, elsewhere_on,
+                                      latest_editors, launched_on, of_change, Reported, reported,
+                                      reported_at, settled, unstaffed, with_before,
+                                      with_elsewhere, worktree_occasion)
 from operations.change_holds import Hold, left_hold, open_questions, questions_given, questions_hold
 from operations.change_fragments import drafter_ids, fragments_step
 from operations.change_overrun import Ended, over_budget
@@ -247,7 +247,7 @@ def carry(state: State, t: Ticket) -> Step | None:
             editor, t.number, w,
             editor_scratch(t.number, role, state.scratch), state.me, known,
             before=None if before is None else briefs.Before(before[0].agent_id, before[1])),
-            model=t.model(role), occasion=f"{w} {t.last_time}")
+            model=t.model(role), occasion=worktree_occasion(t, w))
     if any(a.pending for a in here):
         return None
     match reported_step(state, t, w, editors, here, agents, state.me):
@@ -271,16 +271,62 @@ def reported_step(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
     latest = latest_editors(here)
     if (hold := editor_unreported(t, latest)) is not None:
         return hold
-    reviewed = with_elsewhere(state, t.number, agents,
-                              (Role.ITEM_CHECKER, Role.DOC_REVIEWER, Role.DESIGN_REVIEWER))
-    if (step := design_review(state, t, w, editors, here, reviewed, launcher)) is not False:
-        return Pause.WAIT if step is None else step
-    if (left := leftover(state, t, w, latest, reviewed, False, launcher)) is not Pause.CLEAR:
-        return left
-    if Role.DOC_EDITOR in editors and (
-            step := doc_review(state, t, w, here, reviewed, launcher)) is not False:
-        return Pause.WAIT if step is None else step
-    return Pause.WAIT if reviewing(reviewed) else Pause.CLEAR
+    reviewed = Reviewed(state, t, w, editors, here, latest,
+                        with_elsewhere(state, t.number, agents, REVIEWER_ROLES), launcher)
+    for stage in STAGES:
+        if (given := stage(reviewed)) is not Pause.CLEAR:
+            return given
+    return Pause.CLEAR
+
+
+@dataclass(frozen=True)
+class Reviewed:
+    """What the review stages of the change `t` read: its editors
+    `editors`, those in its worktree `w` `here`, the latest of them
+    `latest`, its agents with the reviewers of other sessions (`agents`),
+    and the launcher of each check a stage launches."""
+    state: State
+    t: Ticket
+    w: Path
+    editors: tuple[Role, ...]
+    here: list[Agent]
+    latest: list[Agent]
+    agents: list[Agent]
+    launcher: str
+
+
+def design_stage(r: Reviewed) -> Step | Pause:
+    return design_review(r.state, r.t, r.w, r.editors, r.here, r.agents, r.launcher)
+
+
+def leftover_stage(r: Reviewed) -> Step | Pause:
+    return leftover(r.state, r.t, r.w, r.latest, r.agents, False, r.launcher)
+
+
+def doc_stage(r: Reviewed) -> Step | Pause:
+    """The step of the review of the change's documents, where its editors
+    include a doc editor."""
+    if Role.DOC_EDITOR not in r.editors:
+        return Pause.CLEAR
+    match doc_review(r.state, r.t, r.w, r.here, r.agents, r.launcher):
+        case False:
+            return Pause.CLEAR
+        case None:
+            return Pause.WAIT
+        case step:
+            return step
+
+
+def reviewing_stage(r: Reviewed) -> Step | Pause:
+    """The hold of the merge while a design reviewer of the change runs."""
+    return Pause.WAIT if reviewing(r.agents) else Pause.CLEAR
+
+
+STAGES: tuple[Callable[[Reviewed], Step | Pause], ...] = (
+    design_stage, leftover_stage, doc_stage, reviewing_stage)
+"""The review stages of a change, in the order `reported_step` walks
+them: each gives its step, `Pause.WAIT`, or `Pause.CLEAR`, which goes on
+to the next stage."""
 
 
 NO_OPERATOR = mctx("{agent} is no code editor or doc editor that an operator of the session "

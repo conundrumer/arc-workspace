@@ -123,6 +123,11 @@ class EndTurn:
     refreshes its agent listing."""
     hold: ListingHold | None = None
 
+    @property
+    def wait(self) -> Launch | None:
+        """The launch it makes before it ends, or None."""
+        return None if self.hold is None else self.hold.wait
+
 
 @dataclass(frozen=True)
 class Reply:

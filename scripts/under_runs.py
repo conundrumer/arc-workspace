@@ -78,9 +78,8 @@ class Previous:
 
 
 def transcript_calls(start: float | None, ident: str) -> Iterator[tuple[float, str, str]]:
-    """The time, the agent id and the result text of each operator's Bash
-    call of `UNDER` on `ident` that completed in the foreground with no
-    error, in the transcripts that changed at or after `start`."""
+    """The calls of `UNDER` on `ident` in the transcripts, as
+    `profile_runs.py --help under` gives them."""
     for p in (p for ps in agent_transcripts().values() for p in ps):
         if start is not None and p.stat().st_mtime < start:
             continue
@@ -103,9 +102,8 @@ def transcript_calls(start: float | None, ident: str) -> Iterator[tuple[float, s
 
 def journal_calls(path: Path, ident: str,
                   undecided: list[str]) -> Iterator[tuple[float, str, str]]:
-    """The time `next` gave it, the operator and the output of each Bash
-    step of `UNDER` on `ident` in the step journal of the session of the
-    run at `path` that closed with no error."""
+    """The calls of `UNDER` on `ident` in the step journal, as
+    `profile_runs.py --help under` gives them."""
     found = [r for r in step_journal.records(tree_reads.scratch(session_of(path).name))
              if calls_under(r.entry.text, ident)]
     for c in step_journal.run_calls(found, {}, undecided):

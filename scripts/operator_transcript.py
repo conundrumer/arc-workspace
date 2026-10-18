@@ -83,33 +83,28 @@ class OperatorRead:
 
 
 def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
-                  subjects: Mapping[str, float], calls: bool = True) -> OperatorRead:
+                  subjects: Mapping[str, float]) -> OperatorRead:
     """What the transcript at `path` of the operator `aid` gives. A message
     from the operator's parent, the coordinator or the operator launcher
     that launched it, or from the coordinator where the parent is an
-    operator launcher, is read as a message of the coordinator's.
-
-    `calls` False is for a read taken only for the agents the operator
-    launched, whose calls no step reads. Such a read reads no call's
-    outcome and gives no `Call`, it adds no `undecided` line, and of each
-    `Agent` call it reads only the filed text of its `prompt`, which is the
-    brief of the agent that call launches."""
+    operator launcher, is read as a message of the coordinator's."""
     merged = merge_subjects(path)
     return replace(operator_read(aid, path, main, undecided,
-                                 frozenset((m, t) for m, t in subjects.items() if m in merged),
-                                 calls),
+                                 frozenset((m, t) for m, t in subjects.items() if m in merged)),
                    listing=agent_listing(path))
 
 
 def read_launches(aid: str, path: Path, main: Path, undecided: list[str]) -> OperatorRead:
-    """`read_operator` of the operator `aid` with `calls` False, for the
-    agents it launched."""
-    return read_operator(aid, path, main, undecided, {}, False)
+    """`read_operator` of the operator `aid` for the agents it launched,
+    whose calls no step reads. It reads no call's outcome and gives no
+    `Call`, and of each `Agent` call it reads only the filed text of its
+    `prompt`, which is the brief of the agent that call launches."""
+    return replace(launch_read(aid, path, main, undecided), listing=agent_listing(path))
 
 
 @dataclass
 class OperatorLines:
-    """What `operator_read` reads of an operator's entries, for an operator
+    """What `lines_of` reads of an operator's entries, for an operator
     whose parent is `parent` and whose run spans `sessions`: each call with
     its time, input and tool, the text of each call's result and whether
     it is an error, the task and output file of each call the harness ran
@@ -170,7 +165,7 @@ class OperatorLines:
 
 @dataclass(frozen=True)
 class CallMade:
-    """A `Call` as `operator_read` made it from a use, with the values it was
+    """A `Call` as `calls_of` made it from a use, with the values it was
     made from (`given`), the last of them whether the operator's last merge
     call of the use's command was denied before it, the `undecided` lines
     its making gave, and whether that last denied call is the use's own
@@ -183,28 +178,56 @@ class CallMade:
 
 _calls_made: dict[tuple[str, Path, str], tuple[OperatorLines, frozenset[tuple[str, float]],
                                                 dict[str, CallMade]]] = {}
-"""The calls `operator_read` last made for each operator, by the id of
+"""The calls `calls_of` last made for each operator, by the id of
 their use, with the state of the fold and the commits they were made
 from."""
 
 
+type Uses = dict[str, tuple[float, dict[str, Any], str]]
+"""Each call of an operator, by the id of its use, with its time, its
+input and its tool."""
+
+
+def lines_of(aid: str, path: Path) -> OperatorLines:
+    parent = parent_id(path)
+    return fold(OperatorLines.step, lambda: OperatorLines(parent, run_sessions(path)),
+                (aid, path, parent), chain(path))
+
+
 @state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
 def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
-                  commits: frozenset[tuple[str, float]], calls_read: bool) -> OperatorRead:
+                  commits: frozenset[tuple[str, float]]) -> OperatorRead:
     """`read_operator`, with `subjects` as the pairs `commits` gives, those
-    of `merge_subjects`, and `calls` as `calls_read`. The `Call` of a use is
-    made anew only where a value it is made from changed since the last
-    read on the same fold."""
-    subjects = dict(commits)
-    agents: list[Agent] = []
-    calls: list[Call] = []
-    passes: dict[str, PassReport] = {}
-    messaged: dict[str, frozenset[str]] = {}
-    limited: dict[str, float] = {}
-    parent = parent_id(path)
-    read = fold(OperatorLines.step, lambda: OperatorLines(parent, run_sessions(path)),
-                (aid, path, parent), chain(path))
+    of `merge_subjects`."""
+    read = lines_of(aid, path)
     messages = read.messages(aid, children_of(path, aid), undecided)
+    calls, uses = calls_of(aid, path, read, commits, undecided)
+    launched, passes = launches_of(aid, path, main, uses, undecided)
+    return OperatorRead(launched, calls, tuple(messages), passes)
+
+
+@state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
+def launch_read(aid: str, path: Path, main: Path, undecided: list[str]) -> OperatorRead:
+    """`read_launches`, with no listing."""
+    read = lines_of(aid, path)
+    messages = read.messages(aid, children_of(path, aid), undecided)
+    uses = {call: (t, unfiled_call(aid, tool, inp, None, undecided)[0] if tool == Tool.AGENT
+                   else inp, tool)
+            for call, (t, inp, tool) in read.uses.items()}
+    launched, passes = launches_of(aid, path, main, uses, undecided)
+    return OperatorRead(launched, (), tuple(messages), passes)
+
+
+def calls_of(aid: str, path: Path, read: OperatorLines, commits: frozenset[tuple[str, float]],
+             undecided: list[str]) -> tuple[tuple[Call, ...], Uses]:
+    """The calls of the operator `aid` that `read` gives, each with its
+    outcome, with `subjects` as the pairs `commits` gives, and the uses of
+    `read` with each input read as `unfiled_call` gives it. The `Call` of a
+    use is made anew only where a value it is made from changed since the
+    last read on the same fold."""
+    subjects = dict(commits)
+    parent = read.parent
+    calls: list[Call] = []
     uses = dict(read.uses)
     results, moved, tasks = read.results, read.moved, read.tasks
     held = _calls_made.get((aid, path, parent))
@@ -212,10 +235,6 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
     made: dict[str, CallMade] = {}
     denied: set[str] = set()
     for call, (t, inp, tool) in uses.items():
-        if not calls_read:
-            if tool == Tool.AGENT:
-                uses[call] = (t, unfiled_call(aid, tool, inp, None, undecided)[0], tool)
-            continue
         text, error = results.get(call, (None, False))
         if call in moved:
             text, error = background_output(aid, call, *moved[call], tasks, undecided)
@@ -237,11 +256,22 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
         made[call] = m
         undecided.extend(m.lines)
         calls.append(m.call)
-    if calls_read:
-        _calls_made[aid, path, parent] = read, commits, made
+    _calls_made[aid, path, parent] = read, commits, made
+    return tuple(calls), uses
+
+
+def launches_of(aid: str, path: Path, main: Path, uses: Uses,
+                undecided: list[str]) -> tuple[AgentsRead, dict[str, PassReport]]:
+    """The agents the operator `aid` launched by the calls of `uses`, and,
+    for each solver pass it launched with an agent id, the read of its
+    report."""
+    agents: list[Agent] = []
+    passes: dict[str, PassReport] = {}
+    messaged: dict[str, frozenset[str]] = {}
+    limited: dict[str, float] = {}
     if not any(tool == Tool.AGENT and described(str(inp.get("description", "")))
                for _, inp, tool in uses.values()):
-        return OperatorRead(AgentsRead((), {}, {}), tuple(calls), tuple(messages), {})
+        return AgentsRead((), {}, {}), {}
     found = launched(path, undecided)
     signs = turn_signs(path, [launch for launch in found if launch.pending])
     own = resumes(path, undecided)
@@ -275,8 +305,7 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
         agents.append(a)
         if d.role in PASSES and launch.agent:
             passes[launch.agent] = pass_read(d.subject, d.role, use[0], main)
-    return OperatorRead(AgentsRead(tuple(agents), messaged, limited), tuple(calls),
-                        tuple(messages), passes)
+    return AgentsRead(tuple(agents), messaged, limited), passes
 
 
 def reviewing_since(path: Path | None, agent: str | None) -> float | None:

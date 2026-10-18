@@ -51,8 +51,8 @@ what follows it), `alerts` (the alerts and the other agents' messages),
 `reports` (the fixed forms of the replies the command reads), `passes` (the
 solver pipelines), `runs` (the pipelines a run script starts),
 `task_work` (the work a pipeline sets aside), `batches` (After a batch,
-and the standing doc reviews, the gate, the process assessment and the
-cost audit), `unbatched` (the kinds of launch no batch holds),
+and the procedures of the launches no batch holds that no other module
+gives), `unbatched` (the kinds of launch no batch holds),
 `after_profile` (the sweep and the script check after a profile launch),
 `under_reads` (the read of `profile_runs.py --under`), `reviews` (the
 code review and the lib review), `main_session` (the launches only the

@@ -5,8 +5,7 @@ gate outputs a change writes, the `mctx` fragments a change adds or
 changes, and the session's scratchpad directory."""
 
 import os
-from collections.abc import Hashable, Iterator
-from dataclasses import dataclass
+from collections.abc import Hashable
 from pathlib import Path
 
 from file_reads import file_text, listed, stat_of, stat_read
@@ -15,7 +14,7 @@ from state_reads import state_cache
 from controlled_markdown import ControlledMarkdownError
 from controlled_markdown.prose import Fragment, text_fragments
 from engine import checkout
-from operations.state import DOC_REVIEW, Baseline, Commit, NoBaseline, Place, Restore, Review
+from operations.state import DOC_REVIEW, Baseline, Commit, NoBaseline, PathSet, Place, Restore, Review
 from operations.task_dirs import CLAIM, restore_records, restores_file, tasks_work
 from operations import worktrees as change_worktree
 from operations.worktrees import BASE
@@ -24,34 +23,6 @@ from solver.vocabulary import SOLVER_SUFFIX
 COMMITS = 300
 """The commits of `master` read for After a batch, newest first."""
 
-@dataclass(frozen=True)
-class PathSet:
-    """A set of paths of the tree, such as those a review covers: each path
-    under a prefix of `covered` and under no prefix of `excluded`.
-    Iterating it gives the same set as git pathspecs, which
-    `review_tag.py commit` stages and prints for the reviewer's diff, so
-    the two readings agree."""
-    covered: tuple[str, ...]
-    excluded: tuple[str, ...] = ()
-
-    def covers(self, path: str) -> bool:
-        return path.startswith(self.covered) and not path.startswith(self.excluded)
-
-    def __iter__(self) -> Iterator[str]:
-        yield from self.covered
-        yield from (f":!{e}" for e in self.excluded)
-
-
-CODE_PATHS = PathSet(
-    ("src/", "scripts/", "tests/", "engine/", "theory/", "tools/", ".claude/workflows/",
-     ".claude/settings.json", "justfile"),
-    ("tools/console/vendor/",),
-)
-"""`tools/console/vendor/` holds third-party code the project does not own."""
-LIB_PATHS = PathSet(
-    ("programs/lib.dl", "programs/lib/", "programs/proposers.dl", "programs/lib_functors.cpp"),
-)
-REVIEW_PATHS = {Review.CODE: CODE_PATHS, Review.LIB: LIB_PATHS}
 PROCESS_DIRS = PathSet(("prompts/agents/", "src/operations/"))
 ACCEPTED = "tests/gate/accepted"
 
@@ -114,19 +85,19 @@ def worktrees(main: Path) -> dict[Path, str | None]:
 @state_cache(lambda main: refs_stamp(main, "heads"))
 def commits(main: Path) -> tuple[Commit, ...]:
     out: list[Commit] = []
-    for head, files in logged(main, BASE, f"-n{COMMITS}", "--format=%x00%H %ct %s"):
+    for head, files in logged(main, "%H %ct %s", BASE, f"-n{COMMITS}"):
         sha, ct, subject = (head.split(" ", 2) + [""])[:3]
         out.append(Commit(sha, float(ct),
-                          frozenset(r for r in Review if changes(files, REVIEW_PATHS[r])), subject,
+                          frozenset(r for r in Review if changes(files, r.facts.paths)), subject,
                           changes(files, PROCESS_DIRS), frozenset(files)))
     return tuple(out)
 
 
-def logged(main: Path, *argv: str) -> list[tuple[str, list[str]]]:
-    """The `git log --name-only` of `argv`, whose format leads each commit
-    with a NUL: each commit's first line, with the files it changes."""
+def logged(main: Path, form: str, *argv: str) -> list[tuple[str, list[str]]]:
+    """The `git log` of `argv`: each commit's line in the format `form`,
+    with the files it changes."""
     out: list[tuple[str, list[str]]] = []
-    for chunk in git(main, "log", *argv, "--name-only").split("\0")[1:]:
+    for chunk in git(main, "log", *argv, f"--format=%x00{form}", "--name-only").split("\0")[1:]:
         head, _, names = chunk.partition("\n")
         out.append((head, names.split()))
     return out
@@ -144,10 +115,10 @@ def baseline(main: Path, review: Review) -> Baseline | NoBaseline:
         return NoBaseline.NO_TAG
     n = max(tags)
     try:
-        unreviewed = logged(main, f"{review.tag(n)}..{BASE}", "--format=%x00%H")
+        unreviewed = logged(main, "%H", f"{review.tag(n)}..{BASE}")
     except checkout.GitFailed:
         return NoBaseline.GIT_FAILED
-    return Baseline(n, tuple(sha for sha, files in unreviewed if changes(files, REVIEW_PATHS[review])))
+    return Baseline(n, tuple(sha for sha, files in unreviewed if changes(files, review.facts.paths)))
 
 
 @state_cache(lambda main: refs_stamp(main, "tags"))

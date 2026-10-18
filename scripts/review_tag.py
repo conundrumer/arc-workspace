@@ -25,10 +25,7 @@ from checklist_walk_hook import step_calls  # noqa: E402
 from entry_reads import read_entries  # noqa: E402
 from transcript_snapshots import Entry, Refused, print_refused  # noqa: E402
 from transcripts import transcripts_of  # noqa: E402
-from tree_reads import REVIEW_PATHS, main_tree  # noqa: E402
-
-ITEMS = {Review.CODE: "Find the line-level places", Review.LIB: "Find the places"}
-"""The item of each reviewer's checklist whose completion the tag needs."""
+from tree_reads import main_tree  # noqa: E402
 
 REVIEWS = {r.role.value: r for r in Review}
 
@@ -94,7 +91,7 @@ def review_commit(review: Review, n: int) -> str:
     """The hash of the commit `HELP` gives for `commit`. Its index is a
     file of its own, so the repo's index stays as it was."""
     root = checkout.ROOT
-    paths = REVIEW_PATHS[review]
+    paths = review.facts.paths
     with tempfile.TemporaryDirectory() as scratch:
         env = {**os.environ, "GIT_INDEX_FILE": str(Path(scratch) / "index")}
         checkout.git_out(root, "read-tree", "HEAD", env=env)
@@ -108,7 +105,7 @@ def review_tag(review: Review, n: int, commit: str, agent: str) -> str:
     paths = transcripts_of(agent)
     if not paths:
         raise Refused(NO_TRANSCRIPT.format(agent=agent))
-    item = ITEMS[review]
+    item = review.facts.item
     checklist = Checklist(review.role.value, main_tree())
     gap = step_gap((e for p in paths for e in read_entries(p)), checklist, item)
     if gap is not None:
@@ -118,7 +115,7 @@ def review_tag(review: Review, n: int, commit: str, agent: str) -> str:
 
 
 def help_text() -> str:
-    rows = "\n".join(ROW.format(reviewer=r.role.value, item=ITEMS[r], prefix=r.value) for r in Review)
+    rows = "\n".join(ROW.format(reviewer=r.role.value, item=r.facts.item, prefix=r.value) for r in Review)
     return textwrap.dedent(HELP).format(table=textwrap.indent(rows, " " * 4).lstrip())
 
 
@@ -129,7 +126,7 @@ def commit_main(argv: list[str]) -> int:
     parser.add_argument("n", type=int)
     args = parser.parse_args(argv)
     review = REVIEWS[args.reviewer]
-    print("\n".join([review_commit(review, args.n), *REVIEW_PATHS[review]]))
+    print("\n".join([review_commit(review, args.n), *review.facts.paths]))
     return 0
 
 

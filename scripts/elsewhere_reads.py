@@ -44,6 +44,10 @@ def elsewhere_agents(tickets: Mapping[str, Ticket], me: str, operators: frozense
     reads: list[AgentsRead] = []
     for t in (t for t in tickets.values() if holds(t, me)):
         since = left_draft(t)
+
+        def kept_on(a: Agent) -> bool:
+            return a.launched > since and on_change(a, t.number)
+
         others = dict.fromkeys(ln.agent_id for ln in t.log
                                if ln.time > since and ln.agent == AGENT and ln.agent_id
                                and ln.agent_id not in operators)
@@ -56,10 +60,9 @@ def elsewhere_agents(tickets: Mapping[str, Ticket], me: str, operators: frozense
                                       "not read").format(run=me, agent=oid, number=t.number))
                 continue
             one = read_launches(oid, path, main, undecided)
-            theirs = [a for a in one.agents if a.launched > since and on_change(a, t.number)]
+            theirs = [a for a in one.agents if kept_on(a)]
             reviewers = editor_checks(theirs, main, undecided)
             reads += [one.launched, reviewers]
-            theirs += [r for r in reviewers.agents
-                       if r.launched > since and on_change(r, t.number)]
+            theirs += [r for r in reviewers.agents if kept_on(r)]
             out += ended_by(theirs, ended_elsewhere(theirs, me, undecided))
     return kept(sorted(out, key=lambda a: a.launched), reads)

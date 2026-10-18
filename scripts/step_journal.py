@@ -190,7 +190,7 @@ def alive(pid: int) -> bool:
 
 def run_close(r: Record, now: float) -> Close | None:
     """The outcome of the Bash run of `r`, read from its files at `now`, or
-    None while it runs; a run past `RUN_SECONDS` is ended."""
+    None while it runs, as `operate.py --help journal` gives it."""
     if r.run is None:
         return None
     if r.run.status.exists():
