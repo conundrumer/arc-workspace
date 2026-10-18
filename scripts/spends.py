@@ -129,15 +129,22 @@ def priced(owner: dict[Path, str], undecided: list[str]) -> Spend | None:
     return Spend(total, union_seconds(spans), by_role)
 
 
-def spend(runs: list[str], pending: Mapping[str, str], undecided: list[str]) -> Spend | None:
-    """The spend of the runs `runs` and of the runs under them, those that
-    `pending` gives still running, as `owners` and `priced` give it, or
-    None where a read is refused."""
+def known_owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | Unknown | None:
+    """What `owners` gives for `runs` and `pending`, with `Unknown.SPEND`
+    where it gives None, or None where a read is refused."""
     try:
         owner = owners(runs, pending)
     except Refused:
         return None
-    return None if owner is None else priced(owner, undecided)
+    return Unknown.SPEND if owner is None else owner
+
+
+def spend(runs: list[str], pending: Mapping[str, str], undecided: list[str]) -> Spend | None:
+    """The spend of the runs `runs` and of the runs under them, those that
+    `pending` gives still running, as `owners` and `priced` give it, or
+    None where a read is refused."""
+    owner = known_owners(runs, pending)
+    return priced(owner, undecided) if isinstance(owner, dict) else None
 
 
 def stopped(path: Path) -> bool:
@@ -153,38 +160,34 @@ def stopped(path: Path) -> bool:
 
 def change_spend(path: Path, undecided: list[str]) -> Spend | None:
     """The spend of the `change` at `path`, closed `fixed`: that of the
-    runs its last `fixed` closing line gives, or None where that line gives
-    no run or `spend` gives none.
-    A record under `SPENDS` is written for a change whose log holds a
-    `fixed` closing line, once its spend is settled: its spend once `priced`
-    gives one with no `undecided` line and each run it read has stopped,
-    since the spend of a run that goes on still grows; and no known spend
-    where that line gives no run or `owners` gives None. A run counts as
-    stopped where `stopped` holds or its transcripts hold no entry timed
-    after that line. A refused read writes no record."""
+    runs its last `fixed` closing line gives, as `spend` gives it, or None
+    where there is no such line or the line gives no run.
+    The record under `SPENDS` it writes, where none is written yet, is no
+    known spend where that line gives no run or `known_owners` gives
+    `Unknown.SPEND`, and the spend once it is settled: `priced` gives it
+    with no `undecided` line and each run it read has stopped."""
     found = recorded_spend(path)
     if found is not None:
         return None if found is Unknown.SPEND else found
-    record = spend_record(path)
     closing = [m for m in held_ticket_log(path)[1] if m["status"] == Status.CLOSED
                and resolution_of(m["note"]) is Resolution.FIXED]
-    if not closing:
-        return None
-    runs = (closing[-1]["note"] or "").split()[3:]
-    try:
-        owner = owners(runs, {}) if runs else None
-    except Refused:
-        return None
-    if owner is None:
-        write_record(record, None)
-        return None
-    closed_at = line_time(closing[-1])
+    runs = (closing[-1]["note"] or "").split()[3:] if closing else []
+    owner = None if not closing else known_owners(runs, {}) if runs else Unknown.SPEND
     lines = len(undecided)
-    s = priced(owner, undecided)
-    if s is not None and len(undecided) == lines and all(
-            stopped(p) or (last_time(p) or 0.0) <= closed_at for p in owner):
-        write_record(record, asdict(s))
+    s = priced(owner, undecided) if isinstance(owner, dict) else None
+    record = (owner if owner is Unknown.SPEND
+              else s if s is not None and isinstance(owner, dict) and len(undecided) == lines
+              and all_stopped(owner, line_time(closing[-1])) else None)
+    if record is not None:
+        write_record(spend_record(path), None if record is Unknown.SPEND else asdict(record))
     return s
+
+
+def all_stopped(owner: dict[Path, str], at: float) -> bool:
+    """Whether each run of the transcripts `owner` gives has stopped since
+    `at`, so its spend no longer grows: `stopped` holds, or its transcripts
+    hold no entry timed after `at`."""
+    return all(stopped(p) or (last_time(p) or 0.0) <= at for p in owner)
 
 
 def write_record(record: Path, value: object) -> None:
