@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from operations.pacing import Pace
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LogLine:
     """A line of a ticket's log: its time, the status it leaves the ticket
     in, the agent name and the agent id its bracket gives, and its note.
@@ -63,7 +63,7 @@ class Unread:
     session: int | None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Ticket:
     """A ticket of the tracker. `editors` is None where a `change` gives no
     `editors` field, `mechanical` is whether a `change` gives the

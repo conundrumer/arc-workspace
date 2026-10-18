@@ -37,7 +37,7 @@ import file_reads
 from state_reads import opened
 from agent_turns import first_time
 from token_prices import priced_requests, request_cost
-from transcript_entries import META, TRANSCRIPT, epoch, meta_transcript, own_range, transcript_meta
+from transcript_entries import META, TRANSCRIPT, epoch, meta_transcript, own_range, read_meta
 from transcripts import walked_entries
 from transcript_snapshots import Refused, snapshot
 
@@ -175,7 +175,7 @@ def audit_launch(path: Path) -> float | None:
     """The launch of the run of the transcript at `path`, where its
     `.meta.json` gives a `description` that reads as `Role.COST_AUDIT`."""
     try:
-        meta = transcript_meta(path)
+        meta = read_meta(path)
     except OSError:
         return None
     except ValueError as exc:

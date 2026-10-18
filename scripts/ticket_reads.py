@@ -10,7 +10,8 @@ from controlled_markdown import mctx
 from ticket_files import listed_tickets, ticket_files, ticket_name
 from ticket_form import FRONT, depends_on, front_fields, list_items, section, section_head, title
 from state_reads import DERIVED, Kept, state_cache
-from ticket_log import (CLOSED_BY_LINE, DUPLICATE_OF_LINE, WAIT, Wait, held_log, holder_of,
+from file_reads import stat_of
+from ticket_log import (CLOSED_BY_LINE, DUPLICATE_OF_LINE, WAIT, Wait, holder_of,
                         line_time, log_lines, resolution_of, waited, waited_change)
 from ticket_numbers import matched_number
 from transcript_snapshots import Refused
@@ -64,8 +65,11 @@ def read_ticket(path: Path) -> Ticket:
 
 @state_cache(DERIVED, kept=Kept.DISK)
 def held_ticket(path: Path) -> Ticket:
-    """`read_ticket` of the text and log lines `held_log` holds."""
-    return ticket_of(path, *held_log(path))
+    """`read_ticket` of the file at `path`, which rests on the file's stat
+    (`file_reads.stat_read`), so that a call holds the `Ticket` and not the
+    text it is read from."""
+    stat_of(path)
+    return read_ticket(path)
 
 
 def ticket_of(path: Path, text: str, found: list[re.Match[str]]) -> Ticket:

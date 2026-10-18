@@ -3,7 +3,6 @@ is settled, and the budget of a change taken over the changes like
 it."""
 
 import json
-import re
 import statistics
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
@@ -16,9 +15,8 @@ from run_reads import agent_type, run_entries
 from file_reads import file_text, stat_read
 from state_reads import DERIVED, Kept, state_cache
 from ticket_files import listed_tickets, ticket_name
-from ticket_form import front, ticket_kind
-from ticket_log import held_log, line_time, log_lines, read_ticket, resolution_of
-from ticket_reads import editors_field
+from ticket_log import moved
+from ticket_reads import held_ticket
 from token_prices import run_cost
 from transcripts import chain, held_find
 from entry_reads import entries_back
@@ -27,7 +25,7 @@ from transcript_snapshots import Refused
 from controlled_markdown import mctx
 from engine.memo import write_whole
 from operations.roles import Role
-from operations.state import Budget, Spend
+from operations.state import Budget, Spend, Ticket
 from ticketing.vocabulary import Kind, Resolution, Status
 
 
@@ -169,15 +167,15 @@ def change_spend(path: Path, undecided: list[str]) -> Spend | None:
     found = recorded_spend(path)
     if found is not None:
         return None if found is Unknown.SPEND else found
-    closing = [m for m in held_ticket_log(path)[1] if m["status"] == Status.CLOSED
-               and resolution_of(m["note"]) is Resolution.FIXED]
-    runs = (closing[-1]["note"] or "").split()[3:] if closing else []
+    closing = [line for line in held_closed(path).log if line.status is Status.CLOSED
+               and line.resolution is Resolution.FIXED]
+    runs = closing[-1].note.split()[3:] if closing else []
     owner = None if not closing else known_owners(runs, {}) if runs else Unknown.SPEND
     lines = len(undecided)
     s = priced(owner, undecided) if isinstance(owner, dict) else None
     record = (owner if owner is Unknown.SPEND
               else s if s is not None and isinstance(owner, dict) and len(undecided) == lines
-              and all_stopped(owner, line_time(closing[-1])) else None)
+              and all_stopped(owner, closing[-1].time) else None)
     if record is not None:
         write_record(spend_record(path), None if record is Unknown.SPEND else asdict(record))
     return s
@@ -212,43 +210,41 @@ def recorded_spend(path: Path) -> Recorded:
 
 @dataclass(frozen=True)
 class Closed:
-    """A ticket under `tickets/closed/` of kind `change`: its path, its
-    text, and the time of its last log line."""
+    """A ticket under `tickets/closed/` of kind `change`: its path, the
+    roles its `editors` field gives (`ticket_reads.editors_field`), and the
+    time of its last log line."""
     path: Path
-    text: str
+    editors: tuple[Role, ...] | None
     at: float
 
 
 @state_cache(DERIVED)
 def closed_changes(tickets: Path) -> tuple[Closed, ...]:
-    """Each ticket under `tickets/closed/` of kind `change`, each file read
-    again only where its stat changed."""
+    """Each ticket under `tickets/closed/` of kind `change`, as
+    `ticket_reads.held_ticket` reads it."""
     out: list[Closed] = []
     for path in listed_tickets(tickets, Status.CLOSED):
-        text, lines = held_ticket_log(path)
-        if ticket_kind(text) is Kind.CHANGE:
-            out.append(Closed(path, text, line_time(lines[-1])))
+        t = held_closed(path)
+        if t.kind is Kind.CHANGE:
+            out.append(Closed(path, t.editors, t.last_time))
     return tuple(out)
 
 
 @state_cache(DERIVED)
-def closed_spends(tickets: Path) -> tuple[tuple[Closed, tuple[Role, ...] | None,
-                                               Recorded], ...]:
-    """Each change of `closed_changes`, with its `editors` field and its
-    `recorded_spend`, so that a read of the changes like a change reads
-    again only the changes that no file records."""
-    return tuple((c, editors_field(front(c.text)), recorded_spend(c.path))
-                 for c in closed_changes(tickets))
+def closed_spends(tickets: Path) -> tuple[tuple[Closed, Recorded], ...]:
+    """Each change of `closed_changes`, with its `recorded_spend`, so that
+    a read of the changes like a change reads again only the changes that
+    no file records."""
+    return tuple((c, recorded_spend(c.path)) for c in closed_changes(tickets))
 
 
-def held_ticket_log(path: Path) -> tuple[str, list[re.Match[str]]]:
-    """`ticket_log.held_log` of `path`, refused as `ticket_log.read_ticket`
-    refuses a file that moved."""
+def held_closed(path: Path) -> Ticket:
+    """`ticket_reads.held_ticket` of `path`, refused (`ticket_log.moved`)
+    where its file moved."""
     try:
-        return held_log(path)
+        return held_ticket(path)
     except FileNotFoundError:
-        text = read_ticket(path)
-        return text, log_lines(text)
+        raise moved(path)
 
 
 OVERRUN = 8
@@ -267,12 +263,12 @@ def like_changes(tickets: Path, editors: frozenset[Role], before: float,
     known spend whose `editors` set is `editors`, or of each such change
     whatever its `editors` where fewer than `FEWEST_LIKE` have it."""
     every: list[tuple[tuple[Role, ...] | None, Spend]] = []
-    for c, editors_of, recorded in closed_spends(tickets):
+    for c, recorded in closed_spends(tickets):
         if c.at >= before:
             continue
         s = change_spend(c.path, undecided) if recorded is None else recorded
         if isinstance(s, Spend):
-            every.append((editors_of, s))
+            every.append((c.editors, s))
     like = [s for e, s in every if e is not None and frozenset(e) == editors]
     return like if len(like) >= FEWEST_LIKE else [s for _, s in every]
 

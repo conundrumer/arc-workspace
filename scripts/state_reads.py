@@ -39,8 +39,9 @@ class Held:
     result and `undecided` lines, the version of its result in the store of
     `kept_reads`, where it is kept there (`Kept.DISK`), the held reads its
     last run made (`made`) with the result each gave it, the held reads
-    whose last run made it (`dependents`), and whether a source it rests on
-    gave another result since it was last checked (`marked`). A held read
+    whose last run made it (`dependents`, None where no held read has
+    rested on it), and whether a source it rests on gave another result
+    since it was last checked (`marked`). A held read
     is a source where its stamp is not `DERIVED`."""
     __slots__ = ("source", "read", "call", "positional", "state", "reached", "mark",
                  "stamped", "value", "lines", "version", "made", "dependents", "marked")
@@ -58,7 +59,7 @@ class Held:
         self.value: object = None
         self.lines: tuple[str, ...] = ()
         self.made: Mapping[Held, object] = EMPTY
-        self.dependents: dict[Held, None] = {}
+        self.dependents: dict[Held, None] | None = None
         self.marked = False
 
     def recall(self) -> object:
@@ -74,9 +75,12 @@ class Held:
         """Replace the reads this one rests on, and their reverse edges, by
         `made`."""
         for below in self.made:
+            assert below.dependents is not None
             del below.dependents[self]
         self.made = made or EMPTY
         for below in made:
+            if below.dependents is None:
+                below.dependents = {}
             below.dependents[self] = None
 
 
@@ -149,7 +153,7 @@ def bring_up(source: Held) -> None:
 def mark_dependents(below: Held) -> None:
     """Mark each held read that rests on `below`, transitively."""
     seen: set[Held] = set()
-    stack = list(below.dependents)
+    stack = list(below.dependents or ())
     while stack:
         h = stack.pop()
         if h in seen:
@@ -158,7 +162,7 @@ def mark_dependents(below: Held) -> None:
         h.marked = True
         if h.state == _state:
             _marked_late.append(h)
-        stack += h.dependents
+        stack += h.dependents or ()
 
 
 class Derived:
@@ -393,7 +397,10 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
 
     A `DERIVED` read makes each read of a file, a directory or a process
     through a `state_cache` read, and takes each other input as an
-    argument: a read it makes otherwise takes no part in its stamp.
+    argument: a read it makes otherwise takes no part in its stamp. It may
+    read a file's text outside a `state_cache` read where it first makes
+    that file's `file_reads.stat_read`, which stamps that text as it stamps
+    `file_reads.file_text`.
 
     Where a read runs again and gives a result equal to the held one, the
     held one stands, so a read derived from it sees no change. Each caller

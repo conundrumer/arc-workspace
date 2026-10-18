@@ -121,7 +121,13 @@ def read_ticket(path: Path) -> str:
     try:
         return path.read_text()
     except FileNotFoundError:
-        raise Moved(mctx("{path} moved before this call could read it").format(path=path))
+        raise moved(path)
+
+
+def moved(path: Path) -> Moved:
+    """The refusal of a read of the ticket at `path`, whose file moved
+    after `ticket_path` found it."""
+    return Moved(mctx("{path} moved before this call could read it").format(path=path))
 
 
 @state_cache(stat_of)

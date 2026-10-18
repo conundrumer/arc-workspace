@@ -64,6 +64,12 @@ def meta_transcript(meta: Path) -> Path | None:
 
 @state_cache(lambda path: stat_of(meta_path(path)))
 def transcript_meta(path: Path) -> dict[str, Any] | None:
+    return read_meta(path)
+
+
+def read_meta(path: Path) -> dict[str, Any] | None:
+    """The `.meta.json` of the transcript at `path`, parsed, None where it
+    is no file, read with no held read."""
     m = meta_path(path)
     return json.loads(m.read_bytes()) if m.is_file() else None
 

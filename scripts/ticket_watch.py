@@ -15,7 +15,6 @@ from ticket_files import ticket_files, ticket_name
 from ticket_form import bounds, check_fix, front, ticket_kind, title
 from ticket_log import line_time, log_lines, log_moves, read_ticket
 from ticket_numbers import TicketNumber
-from ticket_reads import editors_field
 from token_prices import span_cost
 from transcripts import find
 from transcript_snapshots import Refused
@@ -85,7 +84,7 @@ def threshold(tickets: Path, editor: Role, undecided: list[str]) -> float | None
     `undecided` line, where fewer exist."""
     losses: list[float] = []
     for c in sorted(closed_changes(tickets), key=lambda c: c.at, reverse=True):
-        if editor not in (editors_field(front(c.text)) or ()):
+        if editor not in (c.editors or ()):
             continue
         s = change_spend(c.path, undecided)
         if s is not None:
