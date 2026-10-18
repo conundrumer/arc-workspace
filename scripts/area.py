@@ -17,6 +17,7 @@ scripts_importable()
 from ticket_paths import scope_paths, ticket_text  # noqa: E402
 from ticketing.references import refers, word_forms  # noqa: E402
 from ticket_reads import read_tickets  # noqa: E402
+from path_args import refuse_absolute  # noqa: E402
 from transcript_snapshots import Refused, print_refused  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 
@@ -62,9 +63,7 @@ def recent(tickets: dict[str, Ticket], paths: list[str], since: float) -> list[T
 
 
 def area(paths: list[str]) -> str:
-    if bad := [p for p in paths if Path(p).is_absolute()]:
-        raise Refused(mctx("{paths} are absolute: give each path from the root of the tree, as "
-                           "`uv run python scripts/area.py --help` gives").format(paths=", ".join(bad)))
+    refuse_absolute(paths, "area")
     root = main_tree()
     tickets, _ = read_tickets(root / "tickets")
     ordered = dict(sorted(tickets.items(), key=lambda kv: kv[1].order))

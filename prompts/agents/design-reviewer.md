@@ -33,7 +33,8 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
     ```
 - In addition to the diff, run `git -C <worktree> check-ignore <the Scope's paths>`, and read each path it prints as the main tree holds it.
 - Read each function, record, class and module that diff touches whole, as it stands in the worktree, and the code that calls each of them or that each of them calls.
-- Search the tree outside the diff for code that computes what each function the diff adds computes, and read each you find.
+- Read the index of the packages that hold the files of that diff, as `uv run python scripts/code_index.py <those files>` prints it, and read each unit it leads to that computes what a unit the diff adds computes.
+    * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-18T12:53:52Z: "Go", which chose "and so does the design reviewer." Ticket 11-1251.
 - Read the commits of `master` since the change's merge base that touch the files of that diff, as `git -C <worktree> log -p $(git -C <worktree> merge-base master HEAD)..master -- <files>` prints them.
 - Read the tickets on each path that diff touches, as `uv run python scripts/file_ticket.py citing <paths>` prints them.
 - Where that diff touches a file under `programs/`, read [Principles](docs/handbook/principles.md), as the change's worktree holds it.
