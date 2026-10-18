@@ -8,18 +8,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from engine import RelationName, checkout
+from engine import Engine, RelationName, checkout
+from solver import names as solver_names
 from solver.aggregate import Solver
-from solver.model import (
-    Case,
-    DeriveBranch,
-    StoreBranch,
-    StoredAtDerive,
-    constructors_taken,
-    is_concept_branch,
-)
+from solver.model import Branch, Case, DeriveBranch, StoreBranch, StoredAtDerive
 from solver.annotations import VerdictWord
-from solver.names import SEPARATOR, ctor_text
+from solver.names import ctor_text
 
 PARAMS_COMPONENT = ("Params",)
 """The component path the converter's name map gives a parameter under."""
@@ -43,23 +37,24 @@ class SouffleRelation:
 
 @dataclass(frozen=True)
 class NameMap:
-    """One solver's name map: each arclog relation name with its Souffle
-    relation, and each arclog `ALT` name with its Souffle `Choice`
-    constructor."""
+    """One solver's name map: each arclog relation name with each Souffle
+    relation it was written from, and each arclog `ALT` name with its
+    Souffle `Choice` constructor."""
 
-    relations: Mapping[str, SouffleRelation]
+    relations: Mapping[str, tuple[SouffleRelation, ...]]
     constructors: Mapping[str, str]
 
     def arclog_at(self, path: str) -> str | None:
         """The arclog name of the relation at `path` from the top level of
         the Souffle program; None where the map gives it none."""
-        return next((a for a, s in self.relations.items() if s.path == path), None)
+        return next((a for a, ss in self.relations.items()
+                     if any(s.path == path for s in ss)), None)
 
     def arclog_of(self, component: tuple[str, ...], relation: str) -> str | None:
         """The arclog name of `relation` declared under `component`; None
         where the map gives it none."""
-        return next((a for a, s in self.relations.items()
-                     if s.component == component and s.relation == relation), None)
+        return next((a for a, ss in self.relations.items()
+                     if any(s.component == component and s.relation == relation for s in ss)), None)
 
     def arclog_constructor(self, ctor: str) -> str | None:
         """The arclog `ALT` name of the Souffle constructor `ctor`; None
@@ -85,8 +80,8 @@ def name_map(stem: str) -> NameMap | None:
         return None
     data = json.loads(path.read_text())
     return NameMap(
-        {a: SouffleRelation(tuple(s["component"]), s["relation"], s["path"])
-         for a, s in data["relations"].items()},
+        {a: tuple(SouffleRelation(tuple(s["component"]), s["relation"], s["path"]) for s in ss)
+         for a, ss in data["relations"].items()},
         dict(data["constructors"]))
 
 
@@ -103,36 +98,29 @@ def relation_name(names: NameMap | None, relation: RelationName) -> str:
 
 
 def case_name(solver: Solver, case: Case, names: NameMap | None) -> str:
-    """The arclog name of `case`: the parts `solver.names.name` gives the
-    case, in its order and joined as it joins them, each constructor by its
-    `ALT` name and each parameter or relation of a `@derive` or `@store`
-    branch by its arclog name; a part the map gives no name, by its Souffle
-    text under `SOUFFLE_MARK`."""
-    parts: list[str] = []
-    choice = solver.choice
-    if choice is not None and case.base is not None:
-        for point, ctor in constructors_taken(choice, case.base):
-            text = ctor_text(solver.engine, ctor)
-            got = None if names is None else names.arclog_constructor(ctor)
-            part = marked(text) if got is None else got
-            if not is_concept_branch(point, ctor) and part not in parts:
-                parts.append(part)
-    ordered = [b for b in solver.branches if b in case.branches] + \
-        [b for b in case.branches
-         if b not in solver.branches and not isinstance(b, StoredAtDerive)]
-    for b in ordered:
+    """The arclog name of `case`: the name `solver.names.name` gives the
+    case, with each constructor by its `ALT` name and each parameter or
+    relation of a `@derive` or `@store` branch by its arclog name; a part
+    the map gives no name, by its Souffle text under `SOUFFLE_MARK`."""
+    def ctor(engine: Engine, c: str) -> str:
+        got = None if names is None else names.arclog_constructor(c)
+        return marked(ctor_text(engine, c)) if got is None else got
+
+    def branch(b: Branch) -> str:
         match b:
             case DeriveBranch(parameter=p, proposer=q):
-                parts.append(f"{_named(names, PARAMS_COMPONENT, p)}={q}")
-            case StoreBranch(spelled=r):
-                parts.append(f"{_named(names, (), r)}={VerdictWord.STORED}")
+                return f"{_named(names, p)}={q}"
+            case StoreBranch(relation=r, spelled=spelled):
+                got = None if names is None else names.arclog_at(r.text)
+                return f"{marked(spelled) if got is None else got}={VerdictWord.STORED}"
             case StoredAtDerive(parameter=p):
-                parts.append(f"{_named(names, PARAMS_COMPONENT, p)}={VerdictWord.STORED}")
-    return SEPARATOR.join(parts) or VerdictWord.CONCEPT.value
+                return f"{_named(names, p)}={VerdictWord.STORED}"
+
+    return solver_names.name(solver, case, ctor=ctor, branch=branch)
 
 
-def _named(names: NameMap | None, component: tuple[str, ...], relation: str) -> str:
-    """The arclog name of `relation` under `component`, else its Souffle
-    name under `SOUFFLE_MARK`."""
-    got = None if names is None else names.arclog_of(component, relation)
-    return marked(relation) if got is None else got
+def _named(names: NameMap | None, parameter: str) -> str:
+    """The arclog name of the parameter `parameter`, else its Souffle name
+    under `SOUFFLE_MARK`."""
+    got = None if names is None else names.arclog_of(PARAMS_COMPONENT, parameter)
+    return marked(parameter) if got is None else got

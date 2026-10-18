@@ -5,7 +5,7 @@ where it asks for cases (`denoted_cases`, `lists`, `cover`). It lives here and
 nowhere else."""
 
 import re
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from functools import cache
 from itertools import combinations
@@ -361,7 +361,9 @@ def _verdict_key(solver: Solver, verdict: Verdict) -> _VerdictKey:
             frozenset(d.derived))
 
 
-def name(solver: Solver, case: Case | Base) -> str:
+def name(solver: Solver, case: Case | Base, *,
+         ctor: Callable[[Engine, str], str] = ctor_text,
+         branch: Callable[[Branch], str] = branch_text) -> str:
     """The name of `case` for a place that asks for a model (solver-file.md,
     under "Witness file"), the inverse of `denote` read by `model_of`: the
     points at which the case differs from the concept case. `concept` for the
@@ -372,17 +374,19 @@ def name(solver: Solver, case: Case | Base) -> str:
     point at its concept branch is left out: a first constructor,
     `<param>=stored` at a `@derive` point, and `<rel>=derived` at a `@store`
     point (solver-file.md, under "Params" and "Program"). A base is named
-    as its base case (`solver.model.as_case`)."""
+    as its base case (`solver.model.as_case`). `ctor` and `branch` give the
+    text of a constructor and of a branch: by default, as solver-file.md
+    writes them (`ctor_text`, `branch_text`)."""
     case = as_case(case)
     choice = solver.choice
     parts: list[str] = []
     if choice is not None and case.base is not None:
-        for point, ctor in constructors_taken(choice, case.base):
-            if not is_concept_branch(point, ctor) \
-                    and ctor_text(solver.engine, ctor) not in parts:
-                parts.append(ctor_text(solver.engine, ctor))
-    parts += [branch_text(b) for b in solver.branches if b in case.branches]
-    parts += [branch_text(b) for b in case.branches
+        for point, c in constructors_taken(choice, case.base):
+            text = ctor(solver.engine, c)
+            if not is_concept_branch(point, c) and text not in parts:
+                parts.append(text)
+    parts += [branch(b) for b in solver.branches if b in case.branches]
+    parts += [branch(b) for b in case.branches
               if b not in solver.branches and not isinstance(b, StoredAtDerive)]
     return SEPARATOR.join(parts) or VerdictWord.CONCEPT.value
 
