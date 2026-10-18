@@ -16,7 +16,7 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from file_reads import stat_of, state_stat
+from file_reads import FileStat, stat_of, state_stat
 from state_reads import state_cache
 
 from controlled_markdown import mctx
@@ -107,11 +107,11 @@ class Snapshot:
         self.agent_ids: dict[str, tuple[int, ...]] | None = None
         self.generation = object()
 
-    def covers(self, st: os.stat_result) -> bool:
+    def covers(self, st: FileStat) -> bool:
         """Whether this snapshot was read from the file `st` gives, no
         earlier than its last modification and up to its size at least."""
-        return (self.file == (st.st_dev, st.st_ino) and self.mtime_ns >= st.st_mtime_ns
-                and self.size >= st.st_size)
+        return (self.file == (st.dev, st.ino) and self.mtime_ns >= st.mtime_ns
+                and self.size >= st.size)
 
     @property
     def count(self) -> int:

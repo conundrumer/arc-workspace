@@ -134,7 +134,7 @@ def listing(root: Path, since: float) -> Listing:
         except OSError:
             continue
         if found is not None:
-            into[path] = found.st_mtime
+            into[path] = found.mtime
     return Listing(transcripts, metas)
 
 

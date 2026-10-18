@@ -20,7 +20,7 @@ from ticket_files import listed_tickets, ticket_name
 from controlled_markdown import mctx
 from ticket_numbers import SESSIONS, indexes, link_new, session_index, session_line, staged
 from ticketing.vocabulary import SETTLED, Status
-from file_reads import stat_read
+from file_reads import state_stat
 from transcripts import mains_named, project_dirs, session_directory, session_subagents
 from transcript_snapshots import Refused
 
@@ -30,7 +30,7 @@ MAIN_WANTED = "main-wanted"
 
 
 def modified(path: Path) -> float:
-    found = stat_read(path)
+    found = state_stat(str(path))
     return 0.0 if found is None else found.mtime
 
 
