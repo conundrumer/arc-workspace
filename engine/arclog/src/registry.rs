@@ -119,7 +119,7 @@
 #![allow(unused_variables, dead_code)]
 
 use crate::check::CheckId;
-use crate::grounding::{body_labels, grounded_labels};
+use crate::grounding::{body_labels, conjunct_labels, grounded_labels, own_labels};
 use crate::hash::{StableHashMap, StableHashSet};
 use crate::layout::{SourceFile, SourcePlace};
 use crate::program::{

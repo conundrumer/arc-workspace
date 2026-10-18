@@ -5,7 +5,7 @@
 
 use std::cell::{Cell, RefCell};
 
-use super::column_types::{column_display, label_fault_message, MacroDerivation};
+use super::column_types::{column_display, label_fault_message, local_label_types, MacroDerivation};
 use super::*;
 use crate::types::{use_label, FieldName, Meet};
 
@@ -150,6 +150,7 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
         for (port, form) in cell.outputs.iter() {
             let what = |column: &ColumnName| format!("the column `{}` of the output `{}`", column_display(column), port.0);
             let types = derivation.column_types(form, &what);
+            derivation.local_label_faults(form, &format!("the body of the output `{}`", port.0));
             let columns = form.columns.iter().zip(types).map(|((name, _), ty)| ty.map(|ty| Column { name: name.clone(), ty: ty.column_type() }));
             if let Some(columns) = columns.collect::<Option<Box<[Column]>>>() {
                 ports.push(Port { name: (*port).clone(), columns });
@@ -259,6 +260,21 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
                 }
             })
             .collect()
+    }
+
+    /// Gives a fault for each label of `form` that stands for no column and
+    /// whose fixed types, as [`local_label_types`] gives them, have an
+    /// empty meet or no join. `what` names the body, for a diagnostic.
+    fn local_label_faults(&self, form: &CellForm<'_>, what: &str) {
+        let site = |atom: &Atom, path: &[ColumnName]| match self.site_type(atom, path) {
+            Some(SiteType::Fixed(ty)) => Some(ty),
+            Some(SiteType::Parameter(_)) | None => None,
+        };
+        for (_, ty) in local_label_types(form.body, form.columns, &site) {
+            if let Err(fault) = ty {
+                self.fault(CheckId::Types, format!("a label of {what} {}", label_fault_message(fault)));
+            }
+        }
     }
 
     /// The type that the sites of `label` in `bodies` give it, or the text

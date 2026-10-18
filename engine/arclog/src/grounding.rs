@@ -27,16 +27,22 @@ use crate::types::{each_conjunct, ValueType};
 /// - A label to which `types` gives an orientation type counts as grounded.
 ///
 /// A label that stands only in a part of a form, a branch of an `OR`, the
-/// test and the then of an `IF`, its else, or the two lists of an `ALL`, is
-/// grounded where that part grounds it from the labels grounded outside it.
+/// test and the then of an `IF`, its else, or the two lists of an `ALL`, and
+/// that `outside` does not hold, is grounded where that part grounds it from
+/// the labels grounded outside it. `outside` holds the labels that the
+/// body's context names outside the body: a clause's head labels, or a
+/// relation macro's column labels. Each of them is an outer label of each
+/// form of `body` where it stands, so a form grounds it for the body only by
+/// the rule above for that form, and never as a label local to a part.
 pub fn grounded_labels<'m>(
     body: &Body,
     grounded: &StableHashSet<LabelId>,
+    outside: &StableHashSet<LabelId>,
     modes: &dyn Fn(&Atom) -> &'m [Mode],
     types: &dyn Fn(LabelId) -> Option<ValueType>,
 ) -> StableHashSet<LabelId> {
     let list: Vec<&Conjunct> = body.conjuncts.iter().collect();
-    Walk { modes, types }.grounded(&list, grounded, &StableHashSet::default())
+    Walk { modes, types }.grounded(&list, grounded, outside)
 }
 
 /// Each label that stands in `body`, at any depth.
@@ -158,22 +164,23 @@ fn parts(conjunct: &Conjunct) -> Vec<Vec<&Conjunct>> {
 }
 
 /// Adds each label that stands in `conjunct`, at any depth, to `labels`.
-fn conjunct_labels(conjunct: &Conjunct, labels: &mut StableHashSet<LabelId>) {
+pub(crate) fn conjunct_labels(conjunct: &Conjunct, labels: &mut StableHashSet<LabelId>) {
     own_labels(conjunct, labels);
     for part in parts(conjunct) {
         part.into_iter().for_each(|inner| conjunct_labels(inner, labels));
     }
 }
 
-/// Adds the labels of `conjunct` that stand outside its parts to `labels`:
-/// an atom's, a negated atom's and a constraint's.
-fn own_labels(conjunct: &Conjunct, labels: &mut StableHashSet<LabelId>) {
+/// Adds the labels of `conjunct` that stand outside its parts to `labels`,
+/// in the order of its sites: an atom's, a negated atom's and a
+/// constraint's.
+pub(crate) fn own_labels(conjunct: &Conjunct, labels: &mut impl Extend<LabelId>) {
     match conjunct {
         Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => atom.value().sites.iter().for_each(|site| site_labels(site, labels)),
         Conjunct::Constraint(Constraint { first, second, .. }) => {
-            labels.insert(first.label);
+            labels.extend([first.label]);
             if let Operand::Label(second) = second {
-                labels.insert(second.label);
+                labels.extend([second.label]);
             }
         }
         Conjunct::Not(Negated::Form(form)) => own_labels(form, labels),
@@ -182,7 +189,7 @@ fn own_labels(conjunct: &Conjunct, labels: &mut StableHashSet<LabelId>) {
 }
 
 /// Adds each label at `site`, its fields' included, to `labels`.
-fn site_labels(site: &Site, labels: &mut StableHashSet<LabelId>) {
+fn site_labels(site: &Site, labels: &mut impl Extend<LabelId>) {
     crate::types::each_site_label(site, &mut Vec::new(), &mut |use_, _| {
         labels.extend(crate::types::use_label(use_));
     });

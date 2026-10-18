@@ -42,7 +42,8 @@ pub struct MacroDeclarations {
 ///
 /// The modes are the minimal sets of the columns, other than an orientation
 /// type's, whose labels, taken as grounded, let [`grounded_labels`] ground
-/// every label of the definition. An atom of a lib relation takes the modes
+/// every label of the definition, with the labels of all the columns as the
+/// labels outside the definition. An atom of a lib relation takes the modes
 /// that `modes` gives it, and an atom of another macro of `macros` the modes
 /// this gives it. Where the empty set grounds the definition, the macro has
 /// no mode, as a relation over a finite domain has none.
@@ -71,15 +72,18 @@ pub struct MacroDeclarations {
 /// none for a form with no `modes` form. The macros are read in an order of
 /// their reads of one another, so the order of `macros` and of `cells`
 /// gives the order of the diagnostics alone. A fault is a cycle of macros
-/// that read one another, given at each macro of the cycle; a column whose
-/// label's sites have an empty meet, or whose branches give types with no
-/// join; a column whose label stands at no site that gives a type; or a
-/// definition that no set of the columns grounds. A macro that reads a
-/// macro with a fault takes no declaration, and gives no diagnostic of its
-/// own for it. A cell instance has the faults of a relation macro's labels
-/// at each column of its outputs and its `RULE` forms, and these besides: a
-/// type parameter of the instantiated component that the `INIT` form binds
-/// to no type, a site that names a field its record does not have, and a
+/// that read one another, given at each macro of the cycle; a label of the
+/// definition, a column's or one that no column stands for, whose sites
+/// have an empty meet, or whose branches give types with no join, over the
+/// list of the label's scope that the doc of [`CheckId::Types`] names, the
+/// definition for a column's label; a column whose label stands at no site
+/// that gives a type; or a definition that no set of the columns grounds.
+/// A macro that reads a macro with a fault takes no declaration, and gives
+/// no diagnostic of its own for it. A cell instance has the faults of a
+/// relation macro's labels at each column of its outputs and its `RULE`
+/// forms, and at each other label of its outputs' bodies, and these
+/// besides: a type parameter of the instantiated component that the `INIT`
+/// form binds to no type, a site that names a field its record does not have, and a
 /// label whose sites give a type parameter of the cell instance beside
 /// another parameter or a fixed type. Where a relation macro has a fault,
 /// the cell instances are not read.
@@ -174,8 +178,8 @@ impl MacroDerivation<'_, '_> {
             return;
         }
         let m = self.macros[i];
-        let declaration = self.column_types(&m).and_then(|types| {
-            let modes = self.modes_of(&m)?;
+        let declaration = self.label_types(&m).and_then(|(types, label_types)| {
+            let modes = self.modes_of(&m, &label_types)?;
             let columns = m.columns.iter().zip(types).map(|((name, _), ty)| Column { name: name.clone(), ty: ColumnType::Fixed(ty) });
             Some(AlgebraRelation { columns: columns.collect(), modes })
         });
@@ -201,13 +205,15 @@ impl MacroDerivation<'_, '_> {
         }
     }
 
-    /// The type of each column of `m`, or `None` with a diagnostic for each
-    /// column that has a fault.
-    fn column_types(&mut self, m: &RelationMacro<'_>) -> Option<Box<[ValueType]>> {
+    /// The type of each column of `m`, and the type of each other label of
+    /// its definition that has one, or `None` with a diagnostic for each
+    /// column and each other label that has a fault.
+    fn label_types(&mut self, m: &RelationMacro<'_>) -> Option<(Box<[ValueType]>, StableHashMap<LabelId, ValueType>)> {
+        let site_type = |atom: &Atom, column: &[ColumnName]| self.site_type(atom, column);
+        let mut diagnostics = Vec::new();
         let mut types = Vec::new();
-        let mut faulted = false;
         for (column, label) in m.columns {
-            let message = match label_type(m.definition, *label, &|atom, column| self.site_type(atom, column)) {
+            let message = match label_type(m.definition, *label, &site_type) {
                 Ok(Some(ty)) => {
                     types.push(ty);
                     continue;
@@ -215,25 +221,45 @@ impl MacroDerivation<'_, '_> {
                 Ok(None) => "stands at no site that gives a type".to_string(),
                 Err(fault) => label_fault_message(fault),
             };
-            faulted = true;
             let message = format!("the label of the column `{}` of the macro `{}` {message}", column_display(column), m.name.0);
-            self.diagnostics.push(crate::read::check_error(CheckId::Types, message, m.place));
+            diagnostics.push(crate::read::check_error(CheckId::Types, message, m.place));
         }
-        if faulted { None } else { Some(types.into()) }
+        let mut label_types = StableHashMap::default();
+        for (label, ty) in local_label_types(m.definition, m.columns, &site_type) {
+            match ty {
+                Ok(Some(ty)) => {
+                    label_types.insert(label, ty);
+                }
+                Ok(None) => {}
+                Err(fault) => {
+                    let message = format!("a label of the definition of the macro `{}` {}", m.name.0, label_fault_message(fault));
+                    diagnostics.push(crate::read::check_error(CheckId::Types, message, m.place));
+                }
+            }
+        }
+        let faulted = !diagnostics.is_empty();
+        self.diagnostics.extend(diagnostics);
+        if faulted {
+            return None;
+        }
+        label_types.extend(m.columns.iter().map(|(_, label)| *label).zip(types.iter().cloned()));
+        Some((types.into(), label_types))
     }
 
     /// The modes of `m`, as [`macro_column_types`] gives them, or `None`
     /// with a diagnostic where no set of its columns grounds its definition.
-    /// A set that holds a column of an orientation type grounds what the set
-    /// without it grounds, so no mode holds one.
-    fn modes_of(&mut self, m: &RelationMacro<'_>) -> Option<Box<[Mode]>> {
+    /// `label_types` holds the type of each label of the definition that has
+    /// one. A set that holds a column of an orientation type grounds what the
+    /// set without it grounds, so no mode holds one.
+    fn modes_of(&mut self, m: &RelationMacro<'_>, label_types: &StableHashMap<LabelId, ValueType>) -> Option<Box<[Mode]>> {
         let definition_labels = body_labels(m.definition);
-        let label_types = |label: LabelId| label_type(m.definition, label, &|atom, column| self.site_type(atom, column)).ok().flatten();
+        let column_labels: StableHashSet<LabelId> = m.columns.iter().map(|(_, label)| *label).collect();
+        let label_types = |label: LabelId| label_types.get(&label).cloned();
         let atom_modes = |atom: &Atom| self.atom_modes(atom);
         let columns: Vec<usize> = (0..m.columns.len()).collect();
         let grounds = |set: &[usize]| {
             let grounded: StableHashSet<LabelId> = set.iter().map(|&c| m.columns[c].1).collect();
-            let reached = grounded_labels(m.definition, &grounded, &atom_modes, &label_types);
+            let reached = grounded_labels(m.definition, &grounded, &column_labels, &atom_modes, &label_types);
             definition_labels.iter().all(|label| reached.contains(label))
         };
         let mut found: Vec<Vec<usize>> = Vec::new();
@@ -312,6 +338,66 @@ fn subsets_of_size(items: &[usize], size: usize) -> Vec<Vec<usize>> {
         }
     }
     subsets
+}
+
+/// The type that [`label_type`] gives each label of `body` that `columns`
+/// gives no column, in the order of the label's first site in `body`, over
+/// the list of the label's scope, as the doc of [`CheckId::Types`] names it.
+/// `body` stands for the body of a clause whose head labels are the labels
+/// of `columns`.
+pub(super) fn local_label_types(
+    body: &Body,
+    columns: &[(ColumnName, LabelId)],
+    site_type: &dyn Fn(&Atom, &[ColumnName]) -> Option<ValueType>,
+) -> Vec<(LabelId, Result<Option<ValueType>, LabelFault>)> {
+    let mut labels: Vec<LabelId> = Vec::new();
+    each_conjunct(body, &mut |conjunct| {
+        let mut own = Vec::new();
+        own_labels(conjunct, &mut own);
+        for label in own {
+            if !labels.contains(&label) && !columns.iter().any(|(_, column)| *column == label) {
+                labels.push(label);
+            }
+        }
+    });
+    labels.into_iter().map(|label| (label, label_type(scope_list(body, label), label, site_type))).collect()
+}
+
+/// The list of the scope of `label`, a label of `list` that is no head
+/// label: the innermost list that holds each of its sites, or, where that
+/// list is an `IF`'s test or a list of an `ALL`, or where its sites stand in
+/// both the test and the then of an `IF`, the list that holds that form,
+/// since a label fresh there is local to the form.
+fn scope_list(list: &Body, label: LabelId) -> &Body {
+    let holds = |conjunct: &Conjunct| {
+        let mut labels = StableHashSet::default();
+        conjunct_labels(conjunct, &mut labels);
+        labels.contains(&label)
+    };
+    let mut holders = list.conjuncts.iter().filter(|conjunct| holds(conjunct));
+    let (Some(conjunct), None) = (holders.next(), holders.next()) else { return list };
+    let mut own = Vec::new();
+    own_labels(conjunct, &mut own);
+    if own.contains(&label) {
+        return list;
+    }
+    let mut form = conjunct;
+    while let Conjunct::Not(Negated::Form(inner)) = form {
+        form = inner;
+    }
+    // Each part of the form, with whether a label that stands only in it
+    // takes it as its scope.
+    let parts: Vec<(&Body, bool)> = match form {
+        Conjunct::Or(branches) => branches.iter().map(|branch| (branch.value(), true)).collect(),
+        Conjunct::If { test, then, otherwise } => vec![(test.value(), false), (then.value(), true), (otherwise.value(), true)],
+        Conjunct::All { domain, body } => vec![(domain.value(), false), (body.value(), false)],
+        Conjunct::Atom(_) | Conjunct::Not(_) | Conjunct::Constraint(_) => Vec::new(),
+    };
+    let mut holding = parts.into_iter().filter(|(part, _)| body_labels(part).contains(&label));
+    match (holding.next(), holding.next()) {
+        (Some((part, true)), None) => scope_list(part, label),
+        _ => list,
+    }
 }
 
 /// The text of `fault` of a label, for a diagnostic that names the label
