@@ -15,20 +15,25 @@
 //! [`crate::resolver::ResolvedProgram::content`], which writes the same
 //! canonical form through a [`NameWriter`] of the resolver.
 //!
-//! The byte encoding of a form is in `form`, and the graph of a label scope
-//! with its color refinement in `graph`. This module holds the search over
-//! that graph and the canonical order of a form. Each module writes a column
-//! path through the [`NameWriter`] of the write, so the edge labels of the
-//! graph and the bytes of the form name each column alike.
+//! The byte encoding of a form is in `form`, the graph of a label scope
+//! with its color refinement in `graph`, and the canonical order of a form
+//! in `order`. This module holds the search over that graph. Each module
+//! writes a column path through the [`NameWriter`] of the write, so the
+//! edge labels of the graph and the bytes of the form name each column
+//! alike.
 
 mod form;
 mod graph;
+mod order;
 
 use super::path::{child_index, NodePath, NodeRef, PathStep};
 use super::*;
 use crate::hash::StableHashMap;
 use form::*;
 use graph::*;
+use order::Recorded;
+
+pub use order::CanonicalOrder;
 
 pub(crate) use form::{canonical_form, form_scope, prediction, relation_of};
 pub use form::{canonical_hash, AsWritten, Canonical, CanonicalForm, CanonicalWriter, NameWriter};
@@ -103,91 +108,6 @@ pub fn canonical_labeling(scope: LabelScope, names: &dyn NameWriter, search: &mu
     let mut cx = Context::new(search, names);
     let (labels, reached_cap) = cx.labeling(scope);
     CanonicalLabeling { positions: by_position(&labels), reached_cap }
-}
-
-/// The canonical order of one form: for each list of the form, the source
-/// index at each canonical position, and for each label, its canonical
-/// position. A result cached by canonical hash is held in canonical order
-/// and served to each form of equal content through its own order, so the
-/// cases that share a form share its check.
-///
-/// The labels are held for each label scope within the form, by the source
-/// path of that scope's form relative to the form: the empty path for the
-/// form's own scope, a `DEMONSTRATED` form's key clause and inputs among
-/// them, the path of each form of a claim or an `ALT`, and the path of each
-/// `DEMO_RULE` form.
-#[derive(Clone, Debug)]
-pub struct CanonicalOrder {
-    lists: crate::hash::StableHashMap<super::path::NodePath, Box<[u32]>>,
-    labels: crate::hash::StableHashMap<super::path::NodePath, Box<[(super::LabelId, u32)]>>,
-}
-
-/// The orders a write records for [`CanonicalOrder`]: each sorted list's,
-/// and each scope's labels, by source path.
-#[derive(Default)]
-struct Recorded {
-    lists: StableHashMap<NodePath, Box<[u32]>>,
-    labels: StableHashMap<NodePath, Box<[(LabelId, u32)]>>,
-}
-
-impl CanonicalOrder {
-    /// The canonical order of `form`.
-    pub fn of(form: &super::Form, search: &mut SearchBudget) -> Self {
-        let mut cx = Context::new(search, &AsWritten);
-        cx.order = Some(Recorded::default());
-        form_root(&mut cx, &mut CanonicalWriter::default(), form);
-        let recorded = cx.order.take().expect("the order is recorded");
-        CanonicalOrder { lists: recorded.lists, labels: recorded.labels }
-    }
-
-    /// The source path of the node at `canonical`, a path in canonical
-    /// order, relative to the form.
-    pub fn source_path(&self, canonical: &super::path::NodePath) -> super::path::NodePath {
-        let mut source: Vec<PathStep> = Vec::with_capacity(canonical.0.len());
-        for step in canonical.0.iter() {
-            let mapped = match self.lists.get(&NodePath(source.clone().into())) {
-                Some(order) => PathStep(*order.get(step.0 as usize).expect("a canonical path names a member of each list")),
-                None => *step,
-            };
-            source.push(mapped);
-        }
-        NodePath(source.into())
-    }
-
-    /// The canonical path of the node at `source`, a path in source order,
-    /// relative to the form.
-    pub fn canonical_path(&self, source: &super::path::NodePath) -> super::path::NodePath {
-        let mut canonical = Vec::with_capacity(source.0.len());
-        for (depth, step) in source.0.iter().enumerate() {
-            let mapped = match self.lists.get(&NodePath(source.0[..depth].into())) {
-                Some(order) => {
-                    let position = order.iter().position(|&index| index == step.0);
-                    PathStep(position.expect("a source path names a member of each list") as u32)
-                }
-                None => *step,
-            };
-            canonical.push(mapped);
-        }
-        NodePath(canonical.into())
-    }
-
-    /// The label at canonical `position` of the scope whose form stands at
-    /// `scope`, a source path relative to the form.
-    pub fn source_label(&self, scope: &super::path::NodePath, position: u32) -> super::LabelId {
-        let found = self.scope_labels(scope).iter().find(|(_, p)| *p == position);
-        found.expect("a canonical position of a label of the scope").0
-    }
-
-    /// The canonical position of `label` of the scope whose form stands at
-    /// `scope`, a source path relative to the form.
-    pub fn canonical_label(&self, scope: &super::path::NodePath, label: super::LabelId) -> u32 {
-        let found = self.scope_labels(scope).iter().find(|(l, _)| *l == label);
-        found.expect("a label of the scope").1
-    }
-
-    fn scope_labels(&self, scope: &NodePath) -> &[(LabelId, u32)] {
-        self.labels.get(scope).expect("the path of a label scope of the form")
-    }
 }
 
 /// Each label's canonical position.

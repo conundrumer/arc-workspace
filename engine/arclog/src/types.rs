@@ -353,7 +353,7 @@ pub fn use_label(use_: crate::program::LabelUse) -> Option<crate::program::Label
 }
 
 /// The meet of two types of one label, either of which may be absent.
-fn meet(a: Option<ValueType>, b: Option<ValueType>) -> Result<Option<ValueType>, LabelFault> {
+pub(crate) fn meet(a: Option<ValueType>, b: Option<ValueType>) -> Result<Option<ValueType>, LabelFault> {
     match (a, b) {
         (Some(a), Some(b)) => match a.meet(&b) {
             Meet::Type(ty) => Ok(Some(ty)),
@@ -426,11 +426,11 @@ pub fn each_conjunct(body: &crate::program::Body, visit: &mut dyn FnMut(&crate::
     }
 }
 
-/// The types the type check infers for the labels of one form, which the
-/// check cache keeps beside the form's type check, so that the cases that
-/// share a form share its types. In the check cache a label is its canonical
-/// position, as `LabelId(position)`, and a key row's labels are the same.
-/// [`ProgramTypes`] holds the form's own labels.
+/// The types the type check infers for the labels of one label scope of a
+/// form, which the check cache keeps beside the form's type check, so that
+/// the cases that share a form share its types. In the check cache a label
+/// is its canonical position in its scope, as `LabelId(position)`, and a key
+/// row's labels are the same. [`ProgramTypes`] holds the scope's own labels.
 #[derive(Clone, Debug, Default)]
 pub struct FormTypes {
     labels: crate::hash::StableHashMap<crate::program::LabelId, ValueType>,
@@ -479,8 +479,11 @@ pub struct ProgramTypes {
 }
 
 impl ProgramTypes {
-    /// The types of the labels of the scope at `form`, a form of the program
-    /// or a `DEMO_RULE`, as [`crate::program::LabelId`] gives scopes.
+    /// The types of the labels of the label scope whose form stands at
+    /// `form`, a path of the program, as [`crate::program::LabelId`] gives
+    /// scopes: a top-level form's own scope, each form of a claim or an
+    /// `ALT`, a `DEMONSTRATED` form's key clause and inputs, and each
+    /// `DEMO_RULE` form, at any depth.
     pub fn form(&self, form: &crate::program::path::NodePath) -> Option<&FormTypes> {
         self.forms.get(form).map(|types| &**types)
     }

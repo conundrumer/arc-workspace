@@ -1,6 +1,7 @@
 //! The checker: a set of checks, each over one syntax node and its scope,
-//! the declarations, labels and types visible at that node. The cycle check
-//! reads the dependency graph instead.
+//! the declarations visible at that node and the labels of each label scope
+//! of its top-level form with their types. The cycle check reads the
+//! dependency graph instead.
 //!
 //! Each check has a form on a prefix, [`Check::check_prefix`], so that a
 //! decode can refuse a prefix that no completion passes. Until step 6 builds
@@ -25,9 +26,8 @@ pub mod unfold_reads;
 use std::sync::Arc;
 
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
-use crate::program::canonical::{
-    canonical_form, canonical_labeling, form_scope, AsWritten, CanonicalForm, CanonicalOrder, CanonicalWriter, SearchBudget,
-};
+use crate::hash::StableHashMap;
+use crate::program::canonical::{canonical_form, CanonicalForm, CanonicalOrder, CanonicalWriter, SearchBudget};
 use crate::program::path::{NodePath, NodeRef, PathStep};
 use crate::program::{Form, LabelId, ProgramRelation};
 use crate::registry::Registry;
@@ -97,22 +97,28 @@ pub enum CheckId {
     PooledAndLiftedReads,
 }
 
-/// A label visible at a node, with its inferred type where the type check
-/// has given one.
+/// A label of a label scope within a top-level form, with its inferred type
+/// where the type check has given one.
 #[derive(Clone, Debug)]
 pub struct LabelInScope {
+    /// The source path, relative to the top-level form, of the form of the
+    /// label scope the label stands in, as
+    /// [`crate::program::canonical::CanonicalOrder::label_scopes`] gives it.
+    pub scope: NodePath,
     pub label: LabelId,
     pub ty: Option<ValueType>,
 }
 
-/// The scope of a node: the declarations, labels and types visible at it.
+/// The scope of a node: the declarations visible at it, and the labels of
+/// each label scope of its top-level form with their types.
 #[derive(Clone, Copy, Debug)]
 pub struct Scope<'a> {
     /// The case program the node stands in.
     pub program: &'a ResolvedProgram,
     /// The registry the program's names resolve against.
     pub registry: &'a Registry,
-    /// The labels visible at the node.
+    /// The labels of each label scope within the top-level form the node
+    /// stands in.
     pub labels: &'a [LabelInScope],
     /// The clauses of each relation across the solver's blocks.
     pub clauses: &'a SolverClauses,
@@ -374,9 +380,10 @@ pub struct CheckCacheKey {
 #[derive(Debug, Default)]
 pub struct CheckCache {
     entries: crate::hash::StableHashMap<CheckCacheKey, CheckResult>,
-    /// The types the type check inferred for a form, under the key of its
+    /// The types the type check inferred for each label scope of a form, by
+    /// the scope's canonical path, under the key of the form's
     /// [`CheckId::Types`] check.
-    types: crate::hash::StableHashMap<CheckCacheKey, std::sync::Arc<crate::types::FormTypes>>,
+    types: crate::hash::StableHashMap<CheckCacheKey, std::sync::Arc<types::ScopeTypes>>,
 }
 
 impl CheckCache {
@@ -390,13 +397,15 @@ impl CheckCache {
         self.entries.insert(key, result);
     }
 
-    /// The types cached under `key`, the key of a form's type check.
-    pub fn types(&self, key: &CheckCacheKey) -> Option<std::sync::Arc<crate::types::FormTypes>> {
+    /// The types of each label scope of a form, by the scope's canonical
+    /// path, cached under `key`, the key of the form's type check.
+    pub fn types(&self, key: &CheckCacheKey) -> Option<std::sync::Arc<types::ScopeTypes>> {
         self.types.get(key).cloned()
     }
 
-    /// Caches `types` under `key`, the key of a form's type check.
-    pub fn insert_types(&mut self, key: CheckCacheKey, types: std::sync::Arc<crate::types::FormTypes>) {
+    /// Caches `types`, the types of each label scope of a form by the
+    /// scope's canonical path, under `key`, the key of the form's type check.
+    pub fn insert_types(&mut self, key: CheckCacheKey, types: std::sync::Arc<types::ScopeTypes>) {
         self.types.insert(key, types);
     }
 }
@@ -417,9 +426,10 @@ pub struct CheckedProgram {
 /// cycle check, through `cache`, and gives the checked program, or each
 /// diagnostic where a check refuses. It maps each refusal's path, which a
 /// [`Refusal`] holds in the form's canonical order, to the form's source
-/// order through [`crate::program::canonical::CanonicalOrder`], and the
-/// labels of each cached [`crate::types::FormTypes`], each its canonical
-/// position, to the form's own labels in the same way. Each diagnostic's
+/// order through [`crate::program::canonical::CanonicalOrder`], and each
+/// cached [`crate::types::FormTypes`], by its label scope's canonical path
+/// and with each label its canonical position in that scope, to the scope's
+/// source path and its own labels in the same way. Each diagnostic's
 /// location is a [`crate::diagnostic::Location::Path`] in
 /// `program`.
 pub fn check_program(
@@ -446,7 +456,7 @@ pub fn check_program(
         let mut signatures = read_signatures(&program, form, &path, &order).into_vec();
         signatures.extend(types::type_clause_signatures(form, clauses).cloned());
         let signatures: Box<[Signature]> = signatures.into();
-        let positions = own_labels(form);
+        let scopes = order.label_scopes();
         let key = |check: CheckId, canonical_form: CanonicalForm, signatures: Box<[Signature]>| CheckCacheKey { check, canonical_form, signatures };
         let report = |refused: &mut Vec<Diagnostic>, check: CheckId, result: &CheckResult| {
             if let CheckResult::Refuse(refusals) = result {
@@ -457,7 +467,13 @@ pub fn check_program(
             }
         };
 
-        let untyped: Vec<LabelInScope> = positions.iter().map(|&(label, _)| LabelInScope { label, ty: None }).collect();
+        let in_scopes = |ty: &dyn Fn(&NodePath, u32) -> Option<ValueType>| -> Vec<LabelInScope> {
+            let each = |(scope, labels): &(NodePath, &[(LabelId, u32)])| {
+                labels.iter().map(|&(label, position)| LabelInScope { scope: scope.clone(), label, ty: ty(scope, position) }).collect::<Vec<_>>()
+            };
+            scopes.iter().flat_map(each).collect()
+        };
+        let untyped = in_scopes(&|_, _| None);
         let input = CheckInput { form, path: &path, scope: Scope { program: &program, registry, labels: &untyped, clauses } };
         let types_key = key(CheckId::Types, canonical.clone(), signatures.clone());
         let (result, types) = match (cache.get(&types_key).cloned(), cache.types(&types_key)) {
@@ -472,8 +488,11 @@ pub fn check_program(
         };
         report(&mut refused, CheckId::Types, &result);
 
-        let labels: Vec<LabelInScope> =
-            positions.iter().map(|&(label, position)| LabelInScope { label, ty: types.label(LabelId(position)).cloned() }).collect();
+        let typed: StableHashMap<NodePath, &crate::types::FormTypes> = types.iter().map(|(canonical, types)| (order.source_path(canonical), types)).collect();
+        let labels = in_scopes(&|scope, position| {
+            let types = typed.get(scope).expect("the type check gives the types of each label scope of the form");
+            types.label(LabelId(position)).cloned()
+        });
         let input = CheckInput { scope: Scope { labels: &labels, ..input.scope }, ..input };
         for check in checks().iter().filter(|check| check.id() != CheckId::Types) {
             let canonical_form = match check.id() {
@@ -571,15 +590,6 @@ fn read_signatures(program: &ResolvedProgram, form: &Form, path: &NodePath, orde
         }
     }
     signatures.into()
-}
-
-/// Each label of the scope of `form` itself, with its canonical position.
-/// A claim and an `ALTS` form have no such scope.
-fn own_labels(form: &Form) -> Box<[(LabelId, u32)]> {
-    match form_scope(form) {
-        Some(scope) => canonical_labeling(scope, &AsWritten, &mut SearchBudget::new()).positions,
-        None => Box::new([]),
-    }
 }
 
 /// The checks of this step, each once: one per [`CheckId`] but

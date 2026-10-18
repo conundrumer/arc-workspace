@@ -8,10 +8,10 @@ use std::sync::Arc;
 
 use super::{Check, CheckId, CheckInput, CheckResult, FileScope, Prefix, PrefixResult, Refusal, SolverClauses};
 use crate::hash::StableHashMap;
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
+use crate::program::canonical::{canonical_labeling, form_scope, AsWritten, CanonicalOrder, LabelScope, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
-    Atom, Body, ColumnName, Conjunct, Constraint, ConstraintOp, DeclaredName, Form, Instance, InstanceInput, InstanceName,
+    Atom, Body, ColumnName, Conjunct, DemoRule, Constraint, ConstraintOp, DeclaredName, Form, Instance, InstanceInput, InstanceName,
     LabelId, NameScope, Negated, Node, Operand, OutputOwner, OutputStep, PortName, ProgramRelation, RelationColumn,
     RelationName, RelationRef, RigidDetName, Site, SiteArg,
 };
@@ -39,17 +39,33 @@ impl Check for TypesCheck {
     }
 }
 
-/// The type check's result on the form of `input`, and the form's
-/// [`FormTypes`] with each label at its canonical position in `order`, as
+/// The [`FormTypes`] of each label scope of a form, by the scope's
+/// canonical path relative to the form, in the order of those paths, as
 /// [`super::CheckCache`] keeps them.
+pub type ScopeTypes = Box<[(NodePath, FormTypes)]>;
+
+/// The type check's result on the form of `input`, and the [`FormTypes`] of
+/// each label scope of the form that `order` gives, each by the scope's
+/// canonical path, with each label at its canonical position in its scope.
 ///
 /// A fault of a label whose sites give it a Pose type and another type is
 /// the pose rule's, which [`super::pose`] refuses.
-pub fn infer_form(input: &CheckInput<'_>, order: &CanonicalOrder) -> (CheckResult, FormTypes) {
+pub fn infer_form(input: &CheckInput<'_>, order: &CanonicalOrder) -> (CheckResult, ScopeTypes) {
     let inference = Inference::new(input.scope.program, input.scope.registry);
-    let Some(form) = inference.infer(input.path) else {
-        return (CheckResult::Pass, FormTypes::default());
+    let result = match inference.infer(input.path) {
+        Some(form) => result(refusals(&form, order)),
+        None => CheckResult::Pass,
     };
+    let scopes = order.label_scopes().into_iter().map(|(source, _)| {
+        let form = inference.infer(&input.path.join(&source)).expect("a form or a `DEMO_RULE` stands at the path of each label scope of the form");
+        (order.canonical_path(&source), scope_types(&form, order, &source))
+    });
+    (result, scopes.collect())
+}
+
+/// The refusals of the type check on `form`, the own scope of a form whose
+/// canonical order is `order`.
+fn refusals(form: &FormInference<'_>, order: &CanonicalOrder) -> Vec<Refusal> {
     let mut refusals = Vec::new();
     for (label, ty) in &form.labels {
         let Err(fault) = ty else { continue };
@@ -79,27 +95,39 @@ pub fn infer_form(input: &CheckInput<'_>, order: &CanonicalOrder) -> (CheckResul
             }
         }
     }
-    let position = |label: LabelId| LabelId(order.canonical_label(&NodePath::default(), label));
+    refusals
+}
+
+/// The types of the labels of `form`, the scope whose form stands at
+/// `scope`, a source path relative to the form whose canonical order is
+/// `order`, each label at its canonical position in that scope.
+fn scope_types(form: &FormInference<'_>, order: &CanonicalOrder, scope: &NodePath) -> FormTypes {
+    let position = |label: LabelId| LabelId(order.canonical_label(scope, label));
     let types = form.labels.iter().filter_map(|(label, ty)| match ty {
         Ok(Some(ty)) => Some((position(*label), map_labels(ty, &position))),
         Ok(None) | Err(_) => None,
     });
-    (result(refusals), types.collect())
+    types.collect()
 }
 
-/// The [`ProgramTypes`] of `program`: each form's labels of `forms`, mapped
-/// from their canonical positions to the form's own labels through the
-/// form's order, and the type of each column of each relation.
+/// The [`ProgramTypes`] of `program`: for each form of `forms`, at its path,
+/// the types of each label scope of the form, at the scope's source path
+/// joined to the form's path, each label mapped from its canonical position
+/// to its own label through the form's order, and the type of each column
+/// of each relation.
 pub fn program_types(
     _program: &ResolvedProgram,
     _clauses: &SolverClauses,
-    forms: &[(NodePath, Arc<FormTypes>, CanonicalOrder)],
+    forms: &[(NodePath, Arc<ScopeTypes>, CanonicalOrder)],
 ) -> ProgramTypes {
     let mut types = ProgramTypes::default();
-    for (path, form_types, order) in forms {
-        let own = |position: LabelId| order.source_label(&NodePath::default(), position.0);
-        let labels = form_types.labels().map(|(label, ty)| (own(label), map_labels(ty, &own)));
-        types.insert_form(path.clone(), Arc::new(labels.collect()));
+    for (path, scopes, order) in forms {
+        for (canonical, form_types) in scopes.iter() {
+            let source = order.source_path(canonical);
+            let own = |position: LabelId| order.source_label(&source, position.0);
+            let labels = form_types.labels().map(|(label, ty)| (own(label), map_labels(ty, &own)));
+            types.insert_form(path.join(&source), Arc::new(labels.collect()));
+        }
     }
     types
 }
@@ -251,7 +279,7 @@ pub(super) fn form_side(program: &ResolvedProgram, form: &NodePath) -> Option<Si
 }
 
 /// The form at `path` of `program`: a top-level form, a form of a claim,
-/// or a form of a `DEMO_RULE`.
+/// a form of an `ALT`, or a form of a `DEMO_RULE`.
 fn form_at<'p>(program: &'p crate::program::Program, path: &NodePath) -> Option<&'p Form> {
     let (first, rest) = path.0.split_first()?;
     let mut form = program.forms.get(first.0 as usize)?;
@@ -259,6 +287,15 @@ fn form_at<'p>(program: &'p crate::program::Program, path: &NodePath) -> Option<
     while let Some(step) = steps.next() {
         form = match form {
             Form::Claim(claim) => claim.value().forms.get(step.0 as usize)?,
+            Form::Alts(alts) => {
+                let mut alt = alts.value().alts.get(step.0 as usize)?.value();
+                loop {
+                    match alt.items.get(steps.next()?.0 as usize)? {
+                        crate::program::AltItem::Form(form) => break form,
+                        crate::program::AltItem::Alt(nested) => alt = nested.value(),
+                    }
+                }
+            }
             Form::Demonstrated(demonstrated) => {
                 let demonstrated = demonstrated.value();
                 let before = demonstrated.key.iter().count() + demonstrated.inputs.len();
@@ -269,6 +306,21 @@ fn form_at<'p>(program: &'p crate::program::Program, path: &NodePath) -> Option<
         };
     }
     Some(form)
+}
+
+/// The labels of `scope`, in the order of its canonical labeling.
+fn scope_labels(scope: LabelScope<'_>) -> Vec<LabelId> {
+    canonical_labeling(scope, &AsWritten, &mut SearchBudget::new()).positions.iter().map(|(label, _)| *label).collect()
+}
+
+/// Whether `form`, a form of a `DEMO_RULE`, stands in the rule's label
+/// scope, as the form writer writes it: a claim, a `DEMONSTRATED` form and
+/// an `ALTS` form are each a scope of their own.
+fn shares_rule_scope(form: &Form) -> bool {
+    match form {
+        Form::Clause(_) | Form::Instance(_) | Form::Choose(_) | Form::RigidDet(_) => true,
+        Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) => false,
+    }
 }
 
 /// The `DEMO_RULE` form at `path` of `program`.
@@ -463,6 +515,18 @@ impl<'a> FormWalk<'a> {
         walk
     }
 
+    /// The walk of the scope of `rule`: each of its forms that stands in its
+    /// scope, at its path relative to the rule.
+    fn of_rule(rule: &'a DemoRule) -> Self {
+        let mut walk = FormWalk { atoms: StableHashMap::default(), first_use: StableHashMap::default(), constraints: Vec::new(), uses: Vec::new() };
+        for (form, index) in rule.forms.iter().zip(0u32..) {
+            if shares_rule_scope(form) {
+                walk.node(NodeRef::from(form), NodePath::default().child(index));
+            }
+        }
+        walk
+    }
+
     fn node(&mut self, node: NodeRef<'a>, at: NodePath) {
         match node {
             NodeRef::Conjunct(Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom))) => return self.atom(atom.value(), at),
@@ -527,9 +591,10 @@ impl<'a> FormWalk<'a> {
     }
 }
 
-/// The types of one form's own scope.
+/// The types of one label scope: a form's own scope, or a `DEMO_RULE`'s.
 pub(super) struct FormInference<'a> {
-    pub form: &'a Form,
+    /// The form whose own scope this is, or `None` for a `DEMO_RULE`'s.
+    pub form: Option<&'a Form>,
     pub path: NodePath,
     /// Each label of the scope, in the order of its canonical labeling, with
     /// its type or its fault.
@@ -604,15 +669,27 @@ impl<'a> Inference<'a> {
         Inference { program, registry, forms: RefCell::default() }
     }
 
-    /// The types of the form at `path`, or `None` where no form stands
-    /// there or its inference runs.
+    /// The types of the label scope whose form stands at `path`, a form or
+    /// a `DEMO_RULE`, or `None` where no such form stands there or its
+    /// inference runs.
     pub fn infer(&self, path: &NodePath) -> Option<Rc<FormInference<'a>>> {
         if let Some(found) = self.forms.borrow().get(path) {
             return found.clone();
         }
-        let form = form_at(self.program.program.value(), path)?;
+        let program = self.program.program.value();
+        enum ScopeForm<'p> {
+            Form(&'p Form),
+            DemoRule(&'p DemoRule),
+        }
+        let scope = match form_at(program, path) {
+            Some(form) => ScopeForm::Form(form),
+            None => ScopeForm::DemoRule(demo_rule(program, path)?),
+        };
         self.forms.borrow_mut().insert(path.clone(), None);
-        let inferred = Rc::new(self.infer_new(form, path));
+        let inferred = Rc::new(match scope {
+            ScopeForm::Form(form) => self.infer_new(form, path),
+            ScopeForm::DemoRule(rule) => self.infer_rule(rule, path),
+        });
         self.forms.borrow_mut().insert(path.clone(), Some(Rc::clone(&inferred)));
         Some(inferred)
     }
@@ -620,7 +697,7 @@ impl<'a> Inference<'a> {
     fn infer_new(&self, form: &'a Form, path: &NodePath) -> FormInference<'a> {
         let scope = ScopeBody::of(form, self.registry);
         let walk = FormWalk::of(form);
-        let labels: Vec<LabelId> = super::own_labels(form).iter().map(|(label, _)| *label).collect();
+        let labels: Vec<LabelId> = form_scope(form).map(scope_labels).unwrap_or_default();
         let no_bindings = StableHashMap::default();
         let type_all = |bindings: &StableHashMap<TypeParameter, ValueType>, pose_or: PoseOr| -> Vec<(LabelId, Result<Option<ValueType>, LabelFault>)> {
             let reading = SiteReading { path, walk: &walk, component: scope.component, bindings, pose_or };
@@ -657,7 +734,36 @@ impl<'a> Inference<'a> {
                 zero_typed.push(label);
             }
         }
-        FormInference { form, path: path.clone(), labels: types, bindings, walk, component: scope.component, zero_typed, given: given_labels }
+        FormInference { form: Some(form), path: path.clone(), labels: types, bindings, walk, component: scope.component, zero_typed, given: given_labels }
+    }
+
+    /// The types of the scope of `rule`, the `DEMO_RULE` at `path`: each
+    /// label of its fields and of its forms that stand in its scope takes
+    /// the meet of the types that the inference of each such form, at its
+    /// own path, gives it, so that its type comes from each of its sites in
+    /// the rule.
+    fn infer_rule(&self, rule: &'a DemoRule, path: &NodePath) -> FormInference<'a> {
+        let mut labels: Vec<(LabelId, Result<Option<ValueType>, LabelFault>)> =
+            scope_labels(LabelScope::DemoRule(rule)).into_iter().map(|label| (label, Ok(None))).collect();
+        let mut given = Vec::new();
+        for (form, index) in rule.forms.iter().zip(0u32..) {
+            if !shares_rule_scope(form) {
+                continue;
+            }
+            let Some(inferred) = self.infer(&path.child(index)) else { continue };
+            for (label, ty) in labels.iter_mut() {
+                let Some((_, form_ty)) = inferred.labels.iter().find(|(found, _)| found == label) else { continue };
+                *ty = match (ty.clone(), form_ty.clone()) {
+                    (Err(fault), _) | (_, Err(fault)) => Err(fault),
+                    (Ok(a), Ok(b)) => crate::types::meet(a, b),
+                };
+                if inferred.given.contains(label) && !given.contains(label) {
+                    given.push(*label);
+                }
+            }
+        }
+        let no_bindings = StableHashMap::default();
+        FormInference { form: None, path: path.clone(), labels, bindings: no_bindings, walk: FormWalk::of_rule(rule), component: None, zero_typed: Vec::new(), given }
     }
 
     /// The type that the column at `path` of the relation `atom` reads gives
@@ -848,7 +954,7 @@ impl<'a> Inference<'a> {
     /// the labels `atom` gives at the key's columns.
     fn rigid_output(&self, at: &NodePath, atom: &Atom, path: &[ColumnName]) -> Option<ValueType> {
         let inference = self.infer(at)?;
-        let Form::RigidDet(rigid) = inference.form else { return None };
+        let Some(form @ Form::RigidDet(rigid)) = inference.form else { return None };
         let rigid_value = rigid.value();
         let RelationRef::Output(output) = &atom.relation else { return None };
         let (first, rest) = path.split_first()?;
@@ -865,7 +971,7 @@ impl<'a> Inference<'a> {
                 None => KeyRow::Unkeyed,
                 Some(key_body) => KeyRow::Labels(key_body.columns.iter().map(|column| field_label(atom, &key, &column.name)).collect::<Option<_>>()?),
             };
-            let canonical_form = super::canonical_form(inference.form);
+            let canonical_form = super::canonical_form(form);
             return Some(ValueType::Pose(AssemblyId { name: rigid_value.name.clone(), canonical_form, key: key_row }));
         }
         if let [OutputStep::Pose] = &output.path[..] {
@@ -881,7 +987,7 @@ impl<'a> Inference<'a> {
     /// head names (`docs/arclog/arclog.md#demonstrated`).
     fn demonstrated_column(&self, at: &NodePath, path: &[ColumnName]) -> Option<ValueType> {
         let inference = self.infer(at)?;
-        let Form::Demonstrated(demonstrated) = inference.form else { return None };
+        let Some(Form::Demonstrated(demonstrated)) = inference.form else { return None };
         let demonstrated = demonstrated.value();
         let (first, rest) = path.split_first()?;
         let label = |label: LabelId| inference.label(label);
