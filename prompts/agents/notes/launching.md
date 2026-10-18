@@ -154,7 +154,7 @@
         + xref: src/operations/directives.py
     - `Op resume.`: ends `Op pause.`.
         + xref: src/operations/directives.py
-    - `Op pace: <preset> [<argument> ...]` or `Op pace: <path>`: the usage pace, as `uv run python scripts/operate.py --help pace` gives it. Past that pace, the operators of the session admit only the tickets and changes an `Op allow:` or an `Op expedite:` line gives, and the work an operator of the session took and each `change` that work waits on.
+    - `Op pace: <preset> [<argument> ...]` or `Op pace: <path>`: the usage pace, as `uv run python scripts/operate.py --help pace` gives it. Past that pace, the operators of the session start no agent's run, of any line's work.
         + xref: src/operations/directives.py, src/operations/pacing.py, scripts/operate.py:main
     - `Op override: <task id> <pass> <override>`: an override that the brief of the next launch of that pass on that task gives.
         + xref: src/operations/directives.py

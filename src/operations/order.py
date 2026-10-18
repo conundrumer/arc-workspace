@@ -36,7 +36,10 @@ the step journal gives as in flight or retired (`journal.due`). A
 launch a procedure gives, other than that of a ticket analyst on a held
 step, is held where its chain of causes runs `lineage.DEPTH` launches of
 its kind deep (`lineage`), and so is a launch of an agent type the
-operator's agent listing lacks (`unlisted`). A launch comes with each
+operator's agent listing lacks (`unlisted`). Past the usage pace, each
+step that starts an agent's run is held (`taking.pace_holds`), and its
+procedure gives its next step in its place, with the held step set aside
+(`State.aside`). A launch comes with each
 launch the procedures
 give after it, with the launches before it made, up to the harness's
 limit of concurrent subagents; each step of the procedures from the
@@ -58,6 +61,7 @@ from operations.directives import (
     unread,
 )
 from operations import briefs
+from operations.pacing import Pace
 from operations.roles import PASSES, Purpose, Role, launch_parameters, launched_type
 from operations.state import Agent, Call, NotComputed, State, Tool, Waits
 from operations.handled import held_aside, repeated
@@ -93,10 +97,23 @@ def placed(state: State, procedure: Callable[[State], Step | None]
     step. Which step the journal holds back or retires is as
     `scripts/operate.py --help journal` gives it (`journal.due`, `retire`).
     A launch the operator's agent listing lacks (`unlisted`) gives no step
-    where it is due."""
-    s = procedure(state)
-    if s is not None and held_aside(state, s):
-        return None, None
+    where it is due. A step the usage pace holds (`taking.pace_holds`) is
+    set aside, and the procedure read again."""
+    waited: Undecided | None = None
+    while True:
+        given = procedure(state)
+        if given is None or held_aside(state, given):
+            return None, waited
+        s, on = place(state, given)
+        if s is None or not taking.pace_holds(state, s):
+            return s, on or waited
+        waited = waited or on
+        state = replace(state, aside=state.aside | {key(given)})
+
+
+def place(state: State, s: Step | None) -> tuple[Step | None, Undecided | None]:
+    """The step of `placed` for the step `s` its procedure gives, the
+    usage pace aside."""
     while s is not None:
         if isinstance(s, Launch):
             s = lineage.held(state, s)
@@ -156,6 +173,21 @@ def unlisted(state: State, step: Step) -> bool:
         return False
     agent_type = launched_type(step.role, step.subject)
     return agent_type not in state.listing and agent_type in state.git.definitions
+
+
+def pace_held_step(state: State) -> Pace | None:
+    """The usage pace, where it holds the step that `place` gives for a
+    procedure of `PROCEDURES` on `state`, or None."""
+    if not taking.past_pace(state):
+        return None
+    for procedure in PROCEDURES:
+        given = procedure(state)
+        if given is None or held_aside(state, given):
+            continue
+        s, _ = place(state, given)
+        if s is not None and taking.pace_holds(state, s):
+            return state.computed.pace
+    return None
 
 
 def lacked(state: State) -> Launch | None:

@@ -8,7 +8,8 @@ last progress and the time from which a step has been due on it
 exit of `tracker.exits` that an operator's step makes, read by the
 function that step selects its work by (`selection`); a ticket whose only
 exits are steps of no operator, or that such a function leaves out, waits
-by design and is not due. A ticket
+by design and is not due, and so does a ticket whose step the usage pace
+holds (`taking.pace_holds`). A ticket
 that a live holder outside the session's own agent runs holds waits on
 that holder's work, a step of no operator, which the operators'
 transcripts do not show and which that holder's own session watches, and
@@ -35,7 +36,7 @@ import re
 from collections.abc import Mapping
 from typing import assert_never
 
-from operations import drafts, lineage, merging, taking, triage, waits
+from operations import changes, drafts, lineage, merging, taking, triage, waits
 from operations.change_budget import TAKEN
 from operations.constants import stuck_reached
 from operations.final_reply import live_holder
@@ -57,16 +58,22 @@ def held_outside_session(state: State, t: Ticket) -> bool:
 
 def selection(state: State, e: Exit) -> set[str]:
     """The tickets on which the step that makes `e` is due, as the function
-    that step selects its work by gives them, or none where no operator's
+    that step selects its work by gives them, less those whose step the
+    usage pace holds (`taking.pace_holds`), or none where no operator's
     step makes `e`."""
     match e:
-        case Exit.HOLDER | Exit.RELEASE:
-            return {n for n, t in state.tracker.tickets.items()
-                    if t.status is Status.ASSIGNED and not held_outside_session(state, t)}
+        case Exit.RELEASE:
+            return {n for n in assigned(state)
+                    if (h := state.tracker.tickets[n].holder) is None or not live_holder(state, h)}
+        case Exit.HOLDER:
+            return {n for n in assigned(state)
+                    if not (changes.holds(t := state.tracker.tickets[n], state.me)
+                            and (s := changes.next_step(state, t)) is not None
+                            and taking.pace_holds(state, s))}
         case Exit.TAKE:
             return {t.number for t in taking.reach(state)}
         case Exit.TICKET_REVIEW:
-            return drafts.due(state)
+            return {n for n in drafts.due(state) if not review_held(state, n)}
         case Exit.TICKET_ANALYST:
             return set(triage.selected(state))
         case (Exit.MERGE | Exit.CHANGE_ANALYST | Exit.COORDINATOR_MOVE | Exit.COORDINATOR_LINE
@@ -74,6 +81,22 @@ def selection(state: State, e: Exit) -> set[str]:
             return set()
         case _:
             assert_never(e)
+
+
+def review_held(state: State, number: str) -> bool:
+    """Whether the usage pace holds the step of the review on the draft
+    `number`: a draft that joins a group joins a launch."""
+    s = drafts.draft_step(state, state.tracker.tickets[number])
+    if isinstance(s, drafts.Joined):
+        return taking.past_pace(state)
+    return s is not None and taking.pace_holds(state, s)
+
+
+def assigned(state: State) -> set[str]:
+    """The tickets under `tickets/assigned/` that no live holder outside
+    the session holds (`held_outside_session`)."""
+    return {n for n, t in state.tracker.tickets.items()
+            if t.status is Status.ASSIGNED and not held_outside_session(state, t)}
 
 
 def agents_of(state: State, number: str) -> tuple[Agent, ...]:

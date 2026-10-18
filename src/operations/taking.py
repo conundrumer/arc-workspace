@@ -17,9 +17,9 @@ ticket analyst judges that the line needs it (`follow_ups`, `judging`).
 While an
 `Op pause.` line stands (`directives.paused`), it takes only those of
 `held_work` and of `allowed`, and each other change waits for an
-`Op resume.` line. Past the usage pace (`pacing`), the changes of
-`held_work` and of `allowed` are taken, and each other one waits until the
-pace admits it.
+`Op resume.` line. Past the usage pace (`pacing`), no change is taken and
+no open ticket admitted, and each step that starts an agent's run
+(`starts_run`) is held (`pace_holds`).
 
 A change that waits for a ticket that holds it up moves to
 `tickets/draft/` with a line whose note is `STALL_FINDING` on that ticket,
@@ -39,8 +39,8 @@ from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.merging import merge_commit
 from operations.pacing import Pace
-from operations.state import State, Ticket, memoized
-from operations.steps import Bash, Step, Undecided
+from operations.state import State, Ticket, Waits, memoized
+from operations.steps import Bash, Launch, Send, Step, Undecided
 from operations.tracker import closed, exits, final_run, wait_line
 from ticketing.exits import Exit
 from ticketing.links import link_targets
@@ -112,22 +112,26 @@ def expedited(state: State) -> set[str]:
 
 @memoized
 def admits(state: State) -> Callable[[str], bool]:
-    """Whether the operator may admit an open ticket: one the `takes` of
-    the run scripts admit (`Computed.admitted`), or one of `expedited`,
-    or any where no script defines `takes`; of those, one of `held_work`
-    or of `allowed` always, and any other only while the usage pace
-    admits one (`Computed.pace`) and `scope_admits` admits it."""
+    """Whether the operator may admit an open ticket: one `gate` passes
+    with `scope_admits` as the tickets it admits."""
     return gate(state, scope_admits(state))
 
 
 def gate(state: State, clear: Callable[[str], bool]) -> Callable[[str], bool]:
-    """Whether the operator may launch work on a ticket that `clear`
+    """Whether the operator may launch work on a ticket: one `unpaced`
+    passes with `clear`, while the usage pace admits one
+    (`Computed.pace`)."""
+    rule = unpaced(state, clear)
+    past = past_pace(state)
+    return lambda n: not past and rule(n)
+
+
+def unpaced(state: State, clear: Callable[[str], bool]) -> Callable[[str], bool]:
+    """Whether the lines other than `Op pace:` admit a ticket that `clear`
     admits: one `passing` passes, of `held_work` or of `allowed` always,
-    and any other only while the usage pace admits one (`Computed.pace`)
-    and `clear` admits it."""
+    and any other that `clear` admits."""
     passes, held = passing(state)
-    paced = pacing.admits(state.computed.pace, state.now)
-    return lambda n: passes(n) and (held(n) or (paced and clear(n)))
+    return lambda n: passes(n) and (held(n) or clear(n))
 
 
 @memoized
@@ -156,13 +160,39 @@ def passing(state: State) -> tuple[Callable[[str], bool], Callable[[str], bool]]
 
 def pace_held(state: State, numbers: list[str]) -> Pace | None:
     """The pace, where it alone holds back one of `numbers`: one `admits`
-    would pass but for the pace."""
-    pace = state.computed.pace
-    if pacing.admits(pace, state.now):
+    or `judging` would pass but for the pace."""
+    if not past_pace(state):
         return None
-    passes, held = passing(state)
-    clear = scope_admits(state)
-    return pace if any(passes(n) and clear(n) and not held(n) for n in numbers) else None
+    clear = unpaced(state, scope_admits(state))
+    pending = judge_scope(state)
+    judge = unpaced(state, pending)
+    return (state.computed.pace if any(clear(n) or (pending(n) and judge(n)) for n in numbers)
+            else None)
+
+
+def past_pace(state: State) -> bool:
+    """Whether `State.now` is past the usage pace (`Computed.pace`)."""
+    return not pacing.admits(state.computed.pace, state.now)
+
+
+def starts_run(state: State, step: Step) -> bool:
+    """Whether `step` starts an agent's run: a launch, or a message to an
+    agent of the operators whose run has ended or that the usage limit
+    stopped (`Waits.LIMITED`)."""
+    match step:
+        case Launch():
+            return True
+        case Send(to):
+            found = [a for a in state.transcripts.agents if a.agent_id == to]
+            return bool(found) and found[-1].waits in (None, Waits.LIMITED)
+        case _:
+            return False
+
+
+def pace_holds(state: State, step: Step) -> bool:
+    """Whether the usage pace holds `step`: it is past at `State.now` and
+    `step` starts an agent's run (`starts_run`)."""
+    return past_pace(state) and starts_run(state, step)
 
 
 def taken_before(t: Ticket) -> bool:
@@ -273,14 +303,19 @@ def title_refers(files: frozenset[str]) -> Callable[[str], bool]:
 
 def judging(state: State) -> Callable[[str], bool]:
     """Whether the operator may launch a ticket analyst to judge a ticket
-    of `follow_ups`: while `directives.own_scope` holds and no `Op pause.`
-    line stands, a ticket of `follow_ups` that `gate` passes with
-    `follow_ups` as the tickets it admits."""
+    of `follow_ups`: a ticket of `judge_scope` that `gate` passes with
+    `judge_scope` as the tickets it admits."""
+    pending = judge_scope(state)
+    passes = gate(state, pending)
+    return lambda n: pending(n) and passes(n)
+
+
+def judge_scope(state: State) -> Callable[[str], bool]:
+    """Whether a ticket is one of `follow_ups` while `directives.own_scope`
+    holds and no `Op pause.` line stands."""
     if not own_scope(state) or paused(state):
         return lambda _: False
-    pending = follow_ups(state)
-    passes = gate(state, pending.__contains__)
-    return lambda n: n in pending and passes(n)
+    return follow_ups(state).__contains__
 
 
 def touched(state: State, numbers: set[str]) -> frozenset[str]:
@@ -375,7 +410,10 @@ def lead(state: State) -> set[str]:
 
 def takeable(state: State) -> list[Ticket]:
     """The changes of `ready` that `admits` passes or that were taken
-    before, `lead` first, then in rank order (`rank.ranking`)."""
+    before, `lead` first, then in rank order (`rank.ranking`); none past
+    the usage pace."""
+    if past_pace(state):
+        return []
     first = lead(state)
     admitted = admits(state)
     key = rank.ranking(state)
@@ -407,8 +445,7 @@ def status_since(t: Ticket) -> float:
 def batch(state: State) -> list[Ticket]:
     """The changes of `takeable` that one step of `take` takes, as `take`
     gives them."""
-    free = (pacing.admits(state.computed.pace, state.now)
-            and not paused(state))
+    free = not paused(state)
     first = lead(state)
     out: list[Ticket] = []
     paced = False
@@ -437,9 +474,10 @@ def reach(state: State) -> tuple[Ticket, ...]:
 def take(state: State) -> Step | None:
     """The take of each change of `takeable`, in its order, up to the first
     whose budget `Computed.budgets` does not give (`reach`), or, where the
-    first has no budget, `Undecided` on it. Where the usage pace does
-    not admit a ticket, or an `Op pause.` line stands, a step takes, of the changes neither of `lead` nor `taken_before`, only the first, so that
-    the pace is read again before each further take."""
+    first has no budget, `Undecided` on it. Where an `Op pause.` line
+    stands, a step takes, of the changes neither of `lead` nor
+    `taken_before`, only the first, so that the pause is read again before
+    each further take."""
     commands: list[str] = []
     taken: list[str] = []
     for t in reach(state):

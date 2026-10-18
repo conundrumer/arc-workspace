@@ -3,7 +3,7 @@
 
 An `Op pace:` line names a preset with its arguments (`PARSER`) or the path
 of a script that defines `paces` (`Script`). With no such line, the pace
-is `asap`. A preset reads a `Usage` and gives the time
+is `DEFAULT`. A preset reads a `Usage` and gives the time
 from which it admits a ticket (`Until`); a script gives whether it admits
 one now (`Scripted`); a reading that gives neither is
 `state.NotComputed`, under which the pace counts as past."""
@@ -23,7 +23,7 @@ from operations.state import NotComputed
 
 
 class WindowName(StrEnum):
-    """The name in the usage file of each window a preset may read."""
+    """The name of each window of the usage cache a preset may read."""
     FIVE_HOUR = "five_hour"
     SEVEN_DAY = "seven_day"
     FABLE_WEEKLY = "fable_weekly"
@@ -34,7 +34,7 @@ WINDOW_SECONDS: Mapping[WindowName, int] = {
     WindowName.SEVEN_DAY: 7 * 86400,
     WindowName.FABLE_WEEKLY: 7 * 86400,
 }
-"""The length of each window of the usage file a preset may read."""
+"""The length of each window of the usage cache a preset may read."""
 
 EVEN_FACTOR = 2.0
 """The default of `even --factor`: the account's two Claude Code accounts
@@ -52,7 +52,7 @@ class Window:
 
 @dataclass(frozen=True)
 class Usage:
-    """The reading a pace takes: `now`, and each window of the usage file
+    """The reading a pace takes: `now`, and each window of the usage cache
     that a fresh reading gives in full."""
     now: float
     windows: Mapping[str, Window]
@@ -88,7 +88,7 @@ def admits(pace: Pace, now: float) -> bool:
 def window_start(usage: Usage, name: WindowName) -> tuple[Window, float] | str:
     w = usage.windows.get(name)
     if w is None:
-        return mctx("the usage file gives no fresh reading of its `{window}` window").format(
+        return mctx("the usage cache gives no fresh reading of its `{window}` window").format(
             window=name)
     return w, w.resets_at - WINDOW_SECONDS[name]
 
@@ -174,7 +174,7 @@ def preset(words: list[str]) -> Preset:
     return args.build(args)
 
 
-DEFAULT: Preset = preset(["asap"])
+DEFAULT: Preset = preset(["even", "--factor", "1", "--window", WindowName.FIVE_HOUR])
 
 
 def line_pace(rest: str, main_tree: Path) -> Preset | Path | None:

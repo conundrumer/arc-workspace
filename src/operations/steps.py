@@ -101,7 +101,8 @@ class Bash(Repeatable):
 class Poll:
     """Nothing is ready by the end of the command's block: the agent runs
     the command again at once. `pace` is the usage pace where it alone
-    holds back an open ticket (`taking.pace_held`), or None."""
+    holds back an open ticket (`taking.pace_held`) or holds a step
+    (`order.pace_held_step`), or None."""
     pace: Pace | None = None
 
 

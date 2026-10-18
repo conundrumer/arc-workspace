@@ -96,9 +96,7 @@ def held(state: State, t: Ticket) -> Held | None:
     passes, admitted = taking.passing(state)
     if not passes(t.number):
         return Held(Hold.TAKES)
-    if admitted(t.number):
-        return None
-    if not taking.scope_admits(state)(t.number):
+    if not admitted(t.number) and not taking.scope_admits(state)(t.number):
         return Held(Hold.PAUSE if paused(state) else Hold.OWN_SCOPE)
     pace = taking.pace_held(state, [t.number])
     return None if pace is None else Held(Hold.PACE, pace)

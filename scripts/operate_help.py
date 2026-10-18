@@ -51,7 +51,7 @@ PURPOSES = {
     HelpPart.JOURNAL: mctx("how `next` runs each Bash step, records each step it gives, and tells whether a step is done"),
     HelpPart.RULINGS: mctx("the forms of the rulings `next` applies"),
     HelpPart.RUN: mctx("the `Op run:` line and the run script `next` reads"),
-    HelpPart.PACE: mctx("the `Op pace:` line, which sets the usage pace within which `next` admits open tickets"),
+    HelpPart.PACE: mctx("the `Op pace:` line, which sets the usage pace within which `next` starts agents"),
     HelpPart.RELAY: mctx("what `relay` prints"),
     HelpPart.REVIEW: mctx("what `review` prints"),
     HelpPart.ALERTS: mctx("the alerts `next` sends, the paths of links from a ticket, and the messages it sends the coordinator on waits and on concept faults"),
@@ -94,7 +94,9 @@ PARTS = {
             - N is that budget in minutes, rounded up.
         - An agent whose latest notification has the status `failed` and a summary that gives `{rate_limit}` was stopped by the usage limit.
             - `next` counts such an agent as running, and takes nothing from that notification as its report.
-            - Once the usage file of the Claude config directory (`$CLAUDE_CONFIG_DIR/usage.json`, or `~/.claude/usage.json` where that is unset) was written after that stop, less than {stale} seconds ago, with a `used_pct` under 100 in each window, `next` prints, ahead of every other step, a SendMessage call that asks the agent to continue its work, once for each such stop.
+            - The usage cache is `$CLAUDE_CONFIG_DIR/usage-api.json`, or `~/.claude/usage-api.json` where that is unset. A read of it first runs `~/.claude/scripts/fetch-usage-api.sh` where the cache is missing or past the age from which that script fetches again.
+            - A cache fetched less than {stale} seconds ago gives the usage limit as in force where a window is at `used_pct` 100 or more, and as lifted where each window is under 100. Any other reading leaves the limit unknown.
+            - Once the cache gives the limit as lifted, after that stop, `next` prints, ahead of every other step, a SendMessage call that asks the agent to continue its work, once for each such stop.
         - Where no other step is ready and a launch it would give is of an agent type that the operator's agent listing lacks and whose rendered definition `.claude/agents/<agent type>.md` stands in the main tree, it prints the launch of an agent whose end resumes the operator, unless one such runs, then that the operator ends its turn.
         - Where no step is ready, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
             - The block also ends, and it prints that the operator runs it again, once a message to the operator waits that the harness accepted after the latest `user` entry of the operator's transcript before the call.
@@ -176,19 +178,19 @@ PARTS = {
     """),
     HelpPart.PACE: mctx("""
     - `next` reads a coordinator's line `Op pace: <preset> [<argument> ...]` or `Op pace: <path>` as the usage pace of each operator of the session, and the last line in one of these forms stands. An `Op pace:` line in neither form goes back to the coordinator and leaves the pace as it was.
-        - Past the pace, `next` launches no ticket analyst on an open ticket and takes no open change, other than the tickets and changes an `Op allow:` or an `Op expedite:` line gives, the work an operator of the session took, and each change that work waits on.
-        - Past the pace, or while an `Op pause.` line stands, one call of `next` takes each change an `Op expedite:` line gives, each change that settles an `interference` ticket and each change an operator took before, and at most one other change, so that the pace is read again before each further take.
-        - Where no step is ready and only the pace holds back an open ticket, `next` prints that the operator runs it again, with the time from which a preset's pace admits a ticket, or with the path of the script whose pace holds them back.
-    - The pace reads the usage file that `--help next` gives: for each of its windows, `used_pct`, `elapsed_pct` and the time it resets.
+        - Past the pace, `next` starts no agent's run, of any line's work: it prints no launch, and no SendMessage call that resumes an agent of the operators whose run has ended or that the usage limit stopped. It takes no open ticket and no change. A SendMessage call to a running agent or to the coordinator, and each step that runs no agent, stand.
+        - While an `Op pause.` line stands, one call of `next` takes each change an `Op expedite:` line gives, each change that settles an `interference` ticket and each change an operator took before, and at most one other change, so that the pause is read again before each further take.
+        - Where no step is ready and the pace holds back a step, `next` prints that the operator runs it again, with the time from which a preset's pace admits agent starts, or with the path of the script whose pace holds them back.
+    - The pace reads the usage cache that `--help next` gives: for each of its windows, `used_pct`, `elapsed_pct` and the time it resets.
     - The presets:
         - `even [--factor F] [--window W]`, with F {factor} and W `{window}` by default: within the pace while the window's `used_pct` is at most F times its `elapsed_pct`.
         - `by <ISO 8601 time> [--window W]`, the time with its time zone and W `{window}` by default: within the pace while the window's `used_pct` is at most the percentage that has passed of the time from the window's start to the given time, and always from that time on.
         - `asap`: always within the pace.
-    - With no `Op pace:` line, the pace is `asap`.
-    - Where the usage file holds no reading of a preset's window written less than {stale} seconds ago, that preset's pace counts as past, and the coordinator gets a line that says so.
+    - With no `Op pace:` line, the pace is `even --factor 1 --window five_hour`.
+    - Where the usage cache holds no reading of a preset's window fetched less than {stale} seconds ago, that preset's pace counts as past, and the coordinator gets a line that says so.
     - `Op pace: <path>` gives the Python script at `<path>`, absolute or relative to the main tree, which `next` loads at each read of the state.
-        - It defines `paces(usage: Usage) -> bool`, with `Usage` from the module `operations.pacing`, which gives `True` where the pace admits a ticket now.
-        - `usage.now` is the time in seconds since the epoch, and `usage.windows` maps the name of each window of which the usage file holds a reading written less than {stale} seconds ago to a `Window` with `used_pct`, `elapsed_pct` and `resets_at`, the last in seconds since the epoch.
+        - It defines `paces(usage: Usage) -> bool`, with `Usage` from the module `operations.pacing`, which gives `True` where the pace admits agent starts now.
+        - `usage.now` is the time in seconds since the epoch, and `usage.windows` maps the name of each window of which the usage cache holds a reading fetched less than {stale} seconds ago to a `Window` with `used_pct`, `elapsed_pct` and `resets_at`, the last in seconds since the epoch.
         - With `paces` held back by a fault of the script, as `--help run` gives it, the pace counts as past.
     """),
     HelpPart.RELAY: mctx("""

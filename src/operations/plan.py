@@ -34,9 +34,9 @@ launched before it in the session has open work and is not stuck
 that operator has given its final reply (`taken_up`), a ticket
 file the read of the tracker left out may still be written
 (`decisions.writing`), the usage pace alone holds back an open
-ticket (`taking.pace_held`), or a step waits after the harness refused it
-at its limit of concurrent subagents (`journal.backing_off`), the agent runs
-the command again, which blocks in the foreground first. Otherwise the
+ticket (`taking.pace_held`) or holds a step (`order.pace_held_step`), or
+a step waits after the harness refused it at its limit of concurrent
+subagents (`journal.backing_off`), the agent runs the command again, which blocks in the foreground first. Otherwise the
 agent gives its final reply, after the message that sends its parent
 its text (`standing.ending`), with each stuck agent or holder it waited on."""
 
@@ -52,7 +52,7 @@ from operations.final_reply import (FOR_CONTEXT, FOR_LATER, ended, hands_over, h
                                     live_holder, own_calls, sent_final_text, split_at,
                                     takes_up)
 from operations.standing import ending, final, holding, reply_lines
-from operations.order import EARLY, LATE, first, lacked, listing_wait, monitor_step
+from operations.order import EARLY, LATE, first, lacked, listing_wait, monitor_step, pace_held_step
 from operations.steps import EndTurn, ListingHold, Poll, Step
 
 
@@ -104,8 +104,9 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
     if held is not None:
         return EndTurn(ListingHold(held, listing_wait(state, held)))
     pace = taking.pace_held(state, [*triage.unsettled_open(state),
-                                    *(t.number for t in taking.ready(state)
-                                      if not taking.taken_before(t))])
+                                    *(t.number for t in taking.ready(state))])
+    if pace is None:
+        pace = pace_held_step(state)
     stuck = state.transcripts.stuck
     waits = [a.agent_id for a in state.transcripts.agents if a.pending or a.agent_id in state.transcripts.quiet]
     waits += [h for n in elsewhere(state) if (h := state.tracker.tickets[n].holder) is not None]
