@@ -109,13 +109,13 @@ def _own(heading: nm.Node) -> nm.Node:
                                       if c.kind != nm.HEADING])
 
 
-def _walk(items: tuple[Item, ...]) -> list[Item]:
+def walk(items: tuple[Item, ...]) -> list[Item]:
     """Every item, each before the items of its part, in order."""
     out: list[Item] = []
     for item in items:
         out.append(item)
         if isinstance(item, PartCall):
-            out.extend(_walk(item.items))
+            out.extend(walk(item.items))
     return out
 
 
@@ -177,7 +177,7 @@ class Checklist:
         found = _find(self.items, nm.slug(name), None)
         if found is None:
             raise no_item_named("item", "items", name,
-                                [i.heading.text for i in _walk(self.items)])
+                                [i.heading.text for i in walk(self.items)])
         return found
 
     def text(self, item: Item) -> str:

@@ -151,12 +151,18 @@ class Purpose(StrEnum):
     ASSESS = "assess"
 
 
-ANALYST_TYPES: dict[Purpose, str] = {Purpose.CHANGE: "decision-analyst",
-                                     Purpose.STEP: "decision-analyst",
-                                     Purpose.DRAFT: "draft-analyst"}
+DECISION_ANALYST = "decision-analyst"
+DRAFT_ANALYST = "draft-analyst"
+
+ANALYST_TYPES: dict[Purpose, str] = {Purpose.CHANGE: DECISION_ANALYST,
+                                     Purpose.STEP: DECISION_ANALYST,
+                                     Purpose.DRAFT: DRAFT_ANALYST}
 """The agent type that runs a ticket analyst on a purpose, where it is not
 `ticket-analyst`: the role stays `Role.TICKET_ANALYST` whichever type runs
-it."""
+it, and the agent's name is its type."""
+
+ANALYST_NAMES = frozenset({Role.TICKET_ANALYST.value, *ANALYST_TYPES.values()})
+"""The agent names of a ticket analyst, whichever type runs it."""
 
 
 def launched_type(role: Role, subject: str) -> str:

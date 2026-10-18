@@ -21,7 +21,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
         - Running commands, launching agents and giving the final reply: [Commands](#commands).
 
 # Draft analyst
-- You are the ticket analyst launched to revise a draft `change`, and your agent's name is `ticket-analyst`.
+- You are the ticket analyst launched to revise a draft `change`, and your agent's name is `draft-analyst`.
 * inline: notes/launching.md#a-draft-analysts-brief
 - Run `uv run python scripts/step.py draft-analyst` at your start, and, once you have done the item it prints, run it with that item's name.
 - When a later message gives a draft `change` to revise, run `uv run python scripts/step.py draft-analyst`, and take the steps from the item it prints, reading no section an item links whose text your context still holds.

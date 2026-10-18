@@ -60,7 +60,7 @@ from operations import briefs, messages
 from operations.change_budget import OVERRUN_FINDING, left_draft
 from operations.taking import STALLED, purview
 from operations.directives import Decision, Directive, named, numbers, ruling
-from operations.roles import Purpose, Role, analyst_subject, joined, subjects
+from operations.roles import ANALYST_NAMES, Purpose, Role, analyst_subject, joined, subjects
 from operations.reports import left_for_decision
 from operations.state import Agent, LogLine, State, Ticket
 from ticketing.vocabulary import Note, Status, last_move_into
@@ -259,7 +259,7 @@ def analyst_writes(state: State, t: Ticket) -> bool:
     launched before that line still runs, which may be the one that wrote
     it."""
     i = last_index(t, FILED_OR_REVISED)
-    if i < 0 or t.log[i].agent != Role.TICKET_ANALYST or t.log[i].agent_id is not None:
+    if i < 0 or t.log[i].agent not in ANALYST_NAMES or t.log[i].agent_id is not None:
         return False
     return any(a.pending and a.launched < t.log[i].time for a, _, _ in state.analysts())
 

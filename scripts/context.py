@@ -45,7 +45,7 @@ HELP = mctx("""
     - The items below say what each form does.
     - With no argument, the command prints the handbook, the passes a session runs, and the lib.
         - That form and `--write` also write the lib's interface files: the `.md` beside each lib source.
-    - `--write` first checks the lib's sources and the `description` of each agent whose prompt's `message` attribute is `brief`, prints what the checks find and exits 1 when they find anything.
+    - `--write` first checks the lib's sources, the `description` of each agent whose prompt's `message` attribute is `brief`, and the ticket kinds each agent's own documents have it file, against `FILER_KINDS`, prints what the checks find and exits 1 when they find anything.
         - Otherwise it writes the files below, which git ignores.
             - One agent definition file under `.claude/agents/` per document that stands directly in `prompts/agents/` and whose text opens with front matter, with the context its document composes as its system prompt.
             - `.claude/agents/.manifest`, which lists each generated file written in the checkout.
@@ -127,7 +127,8 @@ if __name__ == "__main__":
     if args and args[0] in ("--help", "-h"):
         print(HELP)
     elif args == ["--write"]:
-        if findings := [*check(), *description_findings()]:
+        from ticket_vocabulary import filing_findings
+        if findings := [*check(), *description_findings(), *filing_findings()]:
             print("\n".join(findings))
             sys.exit(1)
         report(budgeted.sizes())

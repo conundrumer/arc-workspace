@@ -61,7 +61,7 @@ from controlled_markdown import mctx
 from operations import briefs, changes, messages, taking
 from operations.reports import Label, items_of, mislabeled
 from operations.passes import awaits_analyst
-from operations.roles import Purpose, Role, analyst_subject, joined
+from operations.roles import ANALYST_NAMES, Purpose, Role, analyst_subject, joined
 from operations.state import Agent, LogLine, State, Ticket
 from ticketing.vocabulary import SETTLED, Status
 from operations.constants import COORDINATOR
@@ -181,7 +181,7 @@ def decisions(state: State) -> Step | None:
         if line is None:
             continue
         by_ours = line.agent_id in known or (
-            line.agent in (Role.TICKET_ANALYST.value, AGENT) and t.number in briefed)
+            line.agent in ANALYST_NAMES | {AGENT} and t.number in briefed)
         key = decision_key(t.number, line.time)
         step = Send(COORDINATOR, labeled(key, mctx("- decision: {note}").format(note=line.note)),
                     key)
