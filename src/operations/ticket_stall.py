@@ -59,7 +59,7 @@ def selection(state: State, e: Exit) -> set[str]:
             return {n for n, t in state.tracker.tickets.items()
                     if t.status is Status.ASSIGNED and not held_outside_session(state, t)}
         case Exit.TAKE:
-            return {t.number for t in taking.takeable(state)}
+            return {t.number for t in taking.batch(state)}
         case Exit.TICKET_REVIEW:
             return drafts.due(state)
         case Exit.TICKET_ANALYST:
