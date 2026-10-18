@@ -27,7 +27,7 @@ from operator_reads import (
     joined,
     read_operator,
 )
-from relay_reads import run_index, session_id
+from relay_reads import session_id
 from run_reads import context_size, parent_id
 from run_scripts import pace_reads, read_runs
 from state_reads import new_state
@@ -62,8 +62,8 @@ from operations.state import (
     TrackerRead,
     TranscriptsRead,
 )
-from operator_state import (EndsRead, ends_read, holders_read, read_held, stuck_read,
-                            undecided_lines, watched_read, with_quiet_holders, work_of)
+from holder_reads import holders_read, read_held, with_quiet_holders
+from operator_state import EndsRead, ends_read, stuck_read, undecided_lines, watched_read, work_of
 
 STARTED = time.time()
 """The start of the process: a step given to `me` before it, with no call
@@ -184,9 +184,9 @@ def operators_since(runs: list[tuple[str, Path]], me: str,
 
 
 def open_operators(runs: list[tuple[str, Path]], me: str) -> frozenset[str]:
-    """`State.open_operators`: the operators after `me` in `runs` whose work
-    is open."""
-    return frozenset(aid for aid, p in runs[run_index(runs, me) + 1:] if work_open(p, []))
+    """`State.open_operators`: the operators of `runs` other than `me`
+    whose work is open."""
+    return frozenset(aid for aid, p in runs if aid != me and work_open(p, []))
 
 
 def transcripts_read(ops: OperatorRead, ends: "EndsRead",

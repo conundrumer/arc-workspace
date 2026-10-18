@@ -25,7 +25,10 @@ listing (`order.lacked`), the operator ends its turn, so that the resume
 refreshes that listing. Otherwise, where no step is ready, and an agent
 of an operator runs that is not
 stuck, a ticket of the operators' waits on another holder whose work is
-open and that is not stuck (`TranscriptsRead.stuck`), a ticket
+open and that is not stuck (`TranscriptsRead.stuck`), an operator
+launched before it in the session has open work and is not stuck
+(`earlier_open`), so that the agent takes up that operator's lines once
+that operator has given its final reply (`taken_up`), a ticket
 file the read of the tracker left out may still be written
 (`decisions.writing`), the usage pace alone holds back an open
 ticket (`taking.pace_held`), or a step waits after the harness refused it
@@ -55,6 +58,13 @@ def elsewhere(state: State) -> list[str]:
             if (t := state.tracker.tickets.get(n)) is not None and t.status is Status.ASSIGNED
             and t.holder not in (None, state.me) and t.holder in state.session_holders
             and live_holder(state, t.holder)]
+
+
+def earlier_open(state: State) -> list[str]:
+    """The operators of `State.open_operators` launched before `me`, in
+    the order of their launch."""
+    mine = state.operators.index(state.me) if state.me in state.operators else 0
+    return [o for o in state.operators[:mine] if o in state.open_operators]
 
 
 def unknown_line(line: str) -> str:
@@ -92,6 +102,7 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
     stuck = state.transcripts.stuck
     waits = [a.agent_id for a in state.transcripts.agents if a.pending or a.agent_id in state.transcripts.quiet]
     waits += [h for n in elsewhere(state) if (h := state.tracker.tickets[n].holder) is not None]
+    waits += earlier_open(state)
     if (pace is not None or any(w is None or w not in stuck for w in waits)
             or any(decisions.writing(state, u) for u in state.tracker.unread)
             or backing_off(state.journal, state.now)):

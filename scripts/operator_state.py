@@ -1,45 +1,32 @@
 """The reads the assembly of the operator's state (`state_assembly`) takes
 beside the reads of the tracker, git and the transcripts: the ends of the
-operators' agents, with the quiet and the stuck ones, and the holders of
-assigned tickets."""
+operators' agents, with the quiet and the stuck ones."""
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 from filed_texts import gone_line
 from git_session_reads import given_lines
 from monitor_reads import watched
-from open_agents import Listed, quiet_since, work_open
+from open_agents import Listed, quiet_since
 from operator_reads import (
     ended_by,
     ended_elsewhere,
     stalled_reports,
 )
-from transcripts import find, is_subagent
+from transcripts import find
 from transcript_entries import Refused
-from tree_reads import (
-    fragments,
-    gate_outputs,
-)
 
-from operations.changes import holds
 from operations.monitor import Watched
-from operations.plan import elsewhere, unknown_line
+from operations.plan import unknown_line
 from operations.state import (
     Agent,
     Call,
-    GitRead,
-    HeldRead,
-    ReadOnUse,
     Report,
     Waits,
-    State,
     Stuck,
-    Ticket,
 )
-from operations.worktrees import worktree_in
-from ticketing.vocabulary import Status
 
 
 def watched_read(listing: list[Listed], agents: Sequence[Agent], undecided: list[str],
@@ -131,46 +118,6 @@ def undecided_lines(me: str, runs: list[tuple[str, Path]], calls: Sequence[Call]
             and (where in readers or not gone_line(line))]
 
 
-@dataclass(frozen=True)
-class HoldersRead:
-    """The transcript of each holder of an assigned ticket (`found`), those
-    of them whose work is open (`State.open_holders`), and
-    `State.session_holders`."""
-    found: Mapping[str, Path]
-    open: frozenset[str]
-    session: frozenset[str]
-
-
-def holders_read(tickets: Mapping[str, Ticket], session: str, main_path: Path,
-                 sessions_running: frozenset[str] | None) -> HoldersRead:
-    """`HoldersRead` of `tickets`, where `main_path` is the transcript of
-    `session`. A holder that is a session is open where
-    `sessions_running` gives it, and any other where its work is open."""
-    holders = {t.holder for t in tickets.values() if t.status is Status.ASSIGNED and t.holder}
-    found = {h: find(h) for h in sorted(holders)}
-    open_paths = {h: p for h, p in found.items()
-                  if (h in sessions_running if sessions_running is not None
-                      and not is_subagent(p) else work_open(p, []))}
-    return HoldersRead(found, frozenset(open_paths), frozenset(
-        h for h, p in open_paths.items()
-        if p == main_path or p.is_relative_to(main_path.parent / session)))
-
-
-def with_quiet_holders(state: State, found: Mapping[str, Path], listing: list[Listed],
-                       running_work: Mapping[str, tuple[str, ...]]) -> State:
-    """`state` with each live holder of a ticket of `plan.elsewhere` that is
-    quiet in `TranscriptsRead.stuck`, where `found` gives each holder's
-    transcript."""
-    stuck = state.transcripts.stuck
-    holders = dict.fromkeys(h for n in elsewhere(state)
-                            if (h := state.tracker.tickets[n].holder) is not None
-                            and h not in stuck)
-    quiet = {h: q for h in holders
-             if (q := quiet_since(h, found[h], listing, state.now)) is not None}
-    added = stuck_read(state.session, quiet, (), running_work)
-    return replace(state, transcripts=replace(state.transcripts, stuck={**stuck, **added}))
-
-
 def text_readers(me: str, took_up: frozenset[str], ended: Mapping[str, Report | None],
                  agents: Sequence[Agent]) -> frozenset[str]:
     """The runs and agents whose texts a step of `me` still reads: `me`, the
@@ -182,12 +129,3 @@ def text_readers(me: str, took_up: frozenset[str], ended: Mapping[str, Report | 
                     if a.agent_id and a.agent_id not in out and a.operator in out}:
         out |= added
     return frozenset(out)
-
-
-def read_held(tickets: Mapping[str, Ticket], me: str, tree: GitRead) -> HeldRead:
-    """The read of the worktrees of the tickets of `tickets` that `me`
-    holds."""
-    trees = {w for t in tickets.values() if holds(t, me)
-             and (w := worktree_in(t, tree.worktrees)) is not None}
-    return HeldRead(gate_outputs=ReadOnUse(sorted(trees), gate_outputs),
-                    fragments=ReadOnUse(sorted(trees), fragments))

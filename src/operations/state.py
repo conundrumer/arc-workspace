@@ -453,8 +453,9 @@ class TranscriptsRead:
     `scripts/open_agents.py` gives it, by agent id, read while it was
     pending and the usage limit had not stopped it (`limit_resume` covers
     that agent). `stuck` gives, by agent id, each agent of `quiet`, each
-    live holder of a ticket held elsewhere (`plan.elsewhere`) that is
-    quiet, and each watched agent whose `Watched.stuck` holds.
+    live holder of a ticket held elsewhere (`plan.elsewhere`) and each
+    operator of `plan.earlier_open` that is quiet, and each watched agent
+    whose `Watched.stuck` holds.
     `messaged` gives, for each doc reviewer and item checker of `agents`
     and of `elsewhere` whose transcript is known, the agent ids its
     SendMessage calls went to. `limited` gives, by agent id, the time of
@@ -661,9 +662,9 @@ class State:
     """What the procedures read. `operators` holds the agent ids of the
     session's operators in the order of their launch, `parents` the parent
     of each, `main` or the agent id of the operator launcher that launched
-    it, and `open_operators` those after `me` whose work is open, the only
-    ones a procedure asks after. `transcripts` is the read of the
-    operators' transcripts. `open_holders` gives
+    it, and `open_operators` those other than `me` whose work is open,
+    before and after `me`, the only ones a procedure asks after.
+    `transcripts` is the read of the operators' transcripts. `open_holders` gives
     the holders of tickets under `tickets/assigned/` whose work is open, as
     `profile_runs.py --open` gives it, or, for a holder whose run is a main
     transcript, whose session runs (`idle_sessions.running`), and `session_holders` those of

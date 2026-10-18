@@ -39,7 +39,7 @@ def received(tmp_path: Path, operators: tuple[str, ...], calls, sender: str) -> 
     s = State(
         me=me, now=1000.0, session="s", started=0.0, transcripts_dir=tmp_path,
         main_tree=tmp_path, scratch=tmp_path, operators=operators,
-        open_operators=frozenset({me}), past_bound=False, open_holders=frozenset(),
+        open_operators=frozenset(), past_bound=False, open_holders=frozenset(),
         session_holders=frozenset(), tracker=TrackerRead({}, (), 1),
         transcripts=TranscriptsRead((), (), (line,), {}, {}, {}, {}, {}, (), {}, {}),
         git=GitRead((), frozenset(), {}, {}, {}, frozenset(), {}, None, {}),

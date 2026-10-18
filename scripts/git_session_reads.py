@@ -15,7 +15,7 @@ from tree_reads import baseline, claims, commits, doc_reviews, restores, solvers
 
 from controlled_markdown import mctx
 from engine.checkout import agents_of
-from operations.final_reply import final_sends_in, for_context, sent_final_text
+from operations.final_reply import final_sends_in, hands_over, sent_final_text
 from operations.state import Call, GitRead, Review, SessionsRead
 
 
@@ -45,13 +45,14 @@ def sessions(tickets: Path, index: int, session: str, now: float,
 
 def given_lines(runs: list[tuple[str, Path]], me: str, calls: list[Call]) -> set[str]:
     """The lines of each final reply that an operator of `runs` before `me`
-    sent its parent, other than one that ends it for its context: a line
-    one of them gave reaches the coordinator in no later reply."""
+    sent its parent, other than one that hands its lines over
+    (`hands_over`): a line one of them gave reaches the coordinator in no
+    later reply."""
     out: set[str] = set()
     for aid, path in runs[:run_index(runs, me)]:
         for c in final_sends_in(calls, aid, parent_id(path)):
             text = sent_final_text(c)
-            if text is not None and not for_context(text):
+            if text is not None and not hands_over(text):
                 out.update(text.split("\n"))
     return out
 
