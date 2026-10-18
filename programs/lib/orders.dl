@@ -1,7 +1,6 @@
-//! Components over abstract members whose input has an order, the edges of a
-//! graph read in their direction, or a step: a `before` relation, an `edge`
-//! relation, a `succ` relation, or a step count. The members are opaque, and
-//! nothing here reads a position.
+//! Components whose signature holds no Box, Position, Offset, or orientation
+//! type, and that read an order among the values of their input, or follow a
+//! relation among them in its direction, from one value to the next.
 
 /// The dense rank of each number of a sparse set.
 .comp Ordinal<Key> {
@@ -20,6 +19,34 @@
     rank_desc(Ky, K, R) :-
         idx_set(Ky, K),
         R = count : { idx_set(Ky, K2), K2 > K }.
+}
+
+/// The highest and the lowest score of each key's candidate set.
+.comp Extremes<Key> {
+    .decl cand(key: Key, s: number)  // @input
+
+    .init _arg = ArgExtremes<Key, Unit>
+    _arg.cand(Ky, $U(), S) :- cand(Ky, S).
+
+    .decl high(key: Key, s: number)
+    high(Ky, S) :- _arg.high(Ky, _, S).
+
+    .decl low(key: Key, s: number)
+    low(Ky, S) :- _arg.low(Ky, _, S).
+}
+
+/// The rows that hold each key's highest and lowest score. Ties keep every
+/// row at that score.
+.comp ArgExtremes<Key, Val> {
+    .decl cand(key: Key, v: Val, s: number)  // @input
+
+    .decl high(key: Key, v: Val, s: number)
+    high(Ky, V, S) :- cand(Ky, V, S).
+    high(Ky, V, S) <= high(Ky, _, S2) :- S < S2.
+
+    .decl low(key: Key, v: Val, s: number)
+    low(Ky, V, S) :- cand(Ky, V, S).
+    low(Ky, V, S) <= low(Ky, _, S2) :- S > S2.
 }
 
 /// Ranking over members of any type: the caller supplies the strict order,

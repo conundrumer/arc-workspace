@@ -101,40 +101,6 @@ def Unanimous(Key: TypeArg, Val: TypeArg, *, sizes: Mapping[PyValue, Size] | Non
     return UnanimousRows(got['clash'], got['value'])
 
 
-class ExtremesRows(NamedTuple):
-    """The output relations of `Extremes` (programs/lib/sets.dl)."""
-
-    high: Relation
-    low: Relation
-
-
-def Extremes(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cand: Iterable[PyRow] | None = None) -> ExtremesRows:
-    """Runs `Extremes` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
-    got = call('Extremes', [Key],
-               GridTypes(LibType.POSITION, LibType.OFFSET),
-               {'cand': Columns((Key, Primitive.NUMBER, ), True), 'high': Columns((Key, Primitive.NUMBER, ), True), 'low': Columns((Key, Primitive.NUMBER, ), True)},
-               {'cand': cand},
-               ['high', 'low'], sizes)
-    return ExtremesRows(got['high'], got['low'])
-
-
-class ArgExtremesRows(NamedTuple):
-    """The output relations of `ArgExtremes` (programs/lib/sets.dl)."""
-
-    high: Relation
-    low: Relation
-
-
-def ArgExtremes(Key: TypeArg, Val: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cand: Iterable[PyRow] | None = None) -> ArgExtremesRows:
-    """Runs `ArgExtremes` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
-    got = call('ArgExtremes', [Key, Val],
-               GridTypes(LibType.POSITION, LibType.OFFSET),
-               {'cand': Columns((Key, Val, Primitive.NUMBER, ), True), 'high': Columns((Key, Val, Primitive.NUMBER, ), True), 'low': Columns((Key, Val, Primitive.NUMBER, ), True)},
-               {'cand': cand},
-               ['high', 'low'], sizes)
-    return ArgExtremesRows(got['high'], got['low'])
-
-
 class KeyedSetCompareRows(NamedTuple):
     """The output relations of `KeyedSetCompare` (programs/lib/sets.dl)."""
 
@@ -219,6 +185,40 @@ def Ordinal(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, idx_se
                {'idx_set': idx_set},
                ['rank', 'rank_desc'], sizes)
     return OrdinalRows(got['rank'], got['rank_desc'])
+
+
+class ExtremesRows(NamedTuple):
+    """The output relations of `Extremes` (programs/lib/orders.dl)."""
+
+    high: Relation
+    low: Relation
+
+
+def Extremes(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cand: Iterable[PyRow] | None = None) -> ExtremesRows:
+    """Runs `Extremes` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
+    got = call('Extremes', [Key],
+               GridTypes(LibType.POSITION, LibType.OFFSET),
+               {'cand': Columns((Key, Primitive.NUMBER, ), True), 'high': Columns((Key, Primitive.NUMBER, ), True), 'low': Columns((Key, Primitive.NUMBER, ), True)},
+               {'cand': cand},
+               ['high', 'low'], sizes)
+    return ExtremesRows(got['high'], got['low'])
+
+
+class ArgExtremesRows(NamedTuple):
+    """The output relations of `ArgExtremes` (programs/lib/orders.dl)."""
+
+    high: Relation
+    low: Relation
+
+
+def ArgExtremes(Key: TypeArg, Val: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cand: Iterable[PyRow] | None = None) -> ArgExtremesRows:
+    """Runs `ArgExtremes` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
+    got = call('ArgExtremes', [Key, Val],
+               GridTypes(LibType.POSITION, LibType.OFFSET),
+               {'cand': Columns((Key, Val, Primitive.NUMBER, ), True), 'high': Columns((Key, Val, Primitive.NUMBER, ), True), 'low': Columns((Key, Val, Primitive.NUMBER, ), True)},
+               {'cand': cand},
+               ['high', 'low'], sizes)
+    return ArgExtremesRows(got['high'], got['low'])
 
 
 class OrderRows(NamedTuple):

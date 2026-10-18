@@ -1,7 +1,7 @@
 //! Components over sets: a component belongs here if its signature holds no
-//! Box, Position, Offset, or orientation type, and its inputs are sets, or an
-//! equivalence given whole or by a relation that generates it, with no order,
-//! no step, no edge read in its direction, and no conflict among them.
+//! Box, Position, Offset, or orientation type, it reads no order among the
+//! values of its input, follows no relation among them in its direction, and
+//! takes no conflict relation as input.
 
 /// The size of each key's member set.
 .comp Tally<Key, Member> {
@@ -55,34 +55,6 @@
 
     .decl value(key: Key, v: Val)
     value(Ky, V) :- item(Ky, V), !clash(Ky).
-}
-
-/// The highest and the lowest score of each key's candidate set.
-.comp Extremes<Key> {
-    .decl cand(key: Key, s: number)  // @input
-
-    .init _arg = ArgExtremes<Key, Unit>
-    _arg.cand(Ky, $U(), S) :- cand(Ky, S).
-
-    .decl high(key: Key, s: number)
-    high(Ky, S) :- _arg.high(Ky, _, S).
-
-    .decl low(key: Key, s: number)
-    low(Ky, S) :- _arg.low(Ky, _, S).
-}
-
-/// The rows that hold each key's highest and lowest score. Ties keep every
-/// row at that score.
-.comp ArgExtremes<Key, Val> {
-    .decl cand(key: Key, v: Val, s: number)  // @input
-
-    .decl high(key: Key, v: Val, s: number)
-    high(Ky, V, S) :- cand(Ky, V, S).
-    high(Ky, V, S) <= high(Ky, _, S2) :- S < S2.
-
-    .decl low(key: Key, v: Val, s: number)
-    low(Ky, V, S) :- cand(Ky, V, S).
-    low(Ky, V, S) <= low(Ky, _, S2) :- S > S2.
 }
 
 /// The known sets of a catalog that each observed set contains, and those
