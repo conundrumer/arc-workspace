@@ -1,14 +1,38 @@
-"""The checks `merge_change.py` runs on a change: the paths
-that call for the code checks, the files each code check takes, and the
-runs of the checks in a tree.
+"""The pyright and pytest checks of a change: the paths that call for
+them and the files each takes; the paths a change touches; and the runs
+of checks in a tree, which `merge_steps.py` also uses for the checks of a
+merge.
 
     uv run python scripts/change_checks.py
 
 Run in a change's worktree, the command runs there the pyright and pytest
-checks that `merge_change.py` runs on that change before its rebase. It
-takes as touched the paths outside `work` whose content differs from the
-merge base of `master` and `HEAD`, committed or not. The `--help` of
-`merge_change.py` says which files each check takes.
+checks that the change calls for:
+
+    uv run pyright [<file> ...]
+    uv run pytest -q [<file> ...]
+
+It takes as touched the paths outside `work` whose content differs from
+the merge base of `master` and `HEAD`, committed or not. A check runs
+where the change touches a path whose content its results can depend on:
+a path under src/, scripts/, tests/, data/tasks/ or tools/console/, one
+`cli.common.SOURCES` matches, pyproject.toml or uv.lock, apart from each
+Python file that stands at the merge base and whose edits change nothing
+but bare string statements, blank lines, comments that hold no
+type-checker directive, and argparse help values that are plain strings
+(`gating.edits.same_code`). A comment that holds such a directive counts
+with the code of its line, and an import counts as code, since an import
+edit can remove a name a module uses. A source file the change deletes is
+found in the main tree.
+
+Pyright checks each file of its `include` from which a Python file the
+change touches is reached along `import` statements, and pytest runs each
+test file from which one is reached along the loads of code a run can
+make (`dependents`). Pyright checks the whole tree where the change
+touches pyproject.toml, uv.lock, or a `.pyi` or `py.typed` file, and
+pytest runs every test where it touches one of those paths that is no
+Python file. A check with no file to take does not run, and the lines of
+the command name a check that takes files by its command and the number
+of its files.
 
 Exit status: 0 where each check passes or no check runs, 1 where one
 fails, with the output of each that fails.
@@ -37,7 +61,7 @@ from operations.merging import CHECK_FAILED, PREFIX, TOOL, check_name
 from operations.worktrees import BASE
 
 CODE_DIRS = ("src", "scripts", "tests", "data/tasks", "tools/console")
-"""The directories a change under which runs the code checks."""
+"""The directories a change under which calls for the code checks."""
 
 CODE_FILES = ("pyproject.toml", "uv.lock")
 """The files that set the environment every code check runs in."""
@@ -127,8 +151,8 @@ def same_code_paths(tree: Path, base: str, touched: set[str]) -> set[str]:
 
 def code_checks(tree: Path, main: Path, base: str, touched: set[str]) -> list[Check]:
     """The code checks of changes from the commit `base` that touch
-    `touched`, with the files each takes, as the `--help` of
-    `merge_change.py` gives them."""
+    `touched`, with the files each takes, as the module docstring gives
+    them."""
     touched = touched - same_code_paths(tree, base, touched)
     code = code_paths(tree, main, touched)
     if not code:

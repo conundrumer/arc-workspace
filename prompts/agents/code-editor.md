@@ -57,7 +57,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     * comment: Without this line, code editor `a5601fd48719bea3b` ran `grep -E "^E"` over a failed pytest run, which matched nothing, and lost the failure's message: ticket `1791214744-a5601fd48719bea3b-transcript-review-2`.
 - Run pytest with `-n 0`, in one process, only for a debugger or `-s`. `-p no:xdist` fails on the `-n` that `addopts` in [pyproject.toml](pyproject.toml) gives.
     * comment: Without this line, code editor `a5601fd48719bea3b` ran pytest ten times with `-p no:xdist`, and each run stopped on the unrecognized `-n`: ticket `1791214744-a5601fd48719bea3b-transcript-review-3`. Without its condition for one process, code editors `a2f38cb4539af9799` and `af7175a5f8bbe70e8` ran the whole suite with `-n 0`, at about 2.5 times the time of the default workers: tickets 10-22 and 9-111.
-- Check your code, between edits and at Done, with `uv run python scripts/change_checks.py` in your worktree: it runs the pyright and pytest checks the merge makes on your change.
+- Check your code, between edits and at Done, with `uv run python scripts/change_checks.py` in your worktree: it runs the pyright and pytest checks on your change.
     * comment: The user's words, session 2384db39, 2026-10-18T01:19:30Z: "Throughput!!", and 01:19:55Z: "Expedite", which chose the option "Editor checks scoped to the change": ticket 11-649.
 * inline: notes/commands.md#commands
 * inline: notes/commands.md#final-report

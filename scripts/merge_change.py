@@ -31,35 +31,15 @@ they will merge, by `uv run python scripts/merge_steps.py checks`, so that
 the top of the stack's copy of `merge_steps.py` runs each check by the
 command line that tree's code gives:
 
-    uv run python -m controlled_markdown check     always
-    uv run python scripts/context.py --write       always
+    uv run python -m controlled_markdown check
+    uv run python scripts/context.py --write
     uv run python scripts/gate.py --affected <base> <out>
-                                                   always
-    uv run pyright [<file> ...]                    where a change touches
-    uv run pytest -q [<file> ...]                  a path whose content
-                                                   their results can depend on
 
 The checks run concurrently. A check passes when it exits 0, and a refusal
-names every check that fails. The paths whose content the results of
-pyright and pytest can depend on are those under src/, scripts/, tests/
-and data/tasks/, those `cli.common.SOURCES` matches, pyproject.toml and
-uv.lock, apart from each Python file that stands at `<base>` and whose
-edits change nothing but bare string statements, blank lines, comments
-that hold no type-checker directive, and argparse help values that are
-plain strings (`gating.edits.same_code`). A comment that holds such a
-directive counts with the code of its line, and an import counts as code,
-since an import edit can remove a name a module uses. Pyright checks each file of its
-`include` from which a Python file the changes touch is reached along
-`import` statements, and pytest runs each test file from which one is
-reached along the loads of code a run can make (`dependents`). Pyright
-checks the whole tree where the changes touch pyproject.toml, uv.lock, or
-a `.pyi` or `py.typed` file, and pytest runs every test where they touch
-one of those paths that is no Python file. A check with no file to take does not run, and the lines of
-the script name a check that takes files by its command and the number of
-its files. The gate's dependency record decides which of its commands a
-change affects, so the gate runs on every change, with `<base>` the
-`master` commit the stack is rebased onto. It writes into a new
-directory under `$TMPDIR`, whose name is `merge-change-gate-`, then the
+names every check that fails. The gate's dependency record decides which
+of its commands a change affects, so the gate runs on every change, with
+`<base>` the `master` commit the stack is rebased onto. It writes into a
+new directory under `$TMPDIR`, whose name is `merge-change-gate-`, then the
 first 8 hex digits of each commit after `<base>` up to the top of the stack,
 newest first, each followed by `-`, for at most the 24 newest commits,
 then a random part. So `ls -dt "$TMPDIR"/merge-change-gate-*<hash>*`, with
@@ -292,9 +272,9 @@ system's 255 bytes."""
 
 
 def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
-    """Run in `tree` the checks of changes from the commit `base` that touch
-    `touched`, or refuse; the gate's out-dir, named as the module docstring
-    gives."""
+    """Run in `tree` the checks of changes from the commit `base`, or
+    refuse; the gate's out-dir, named as the module docstring gives. `main`
+    and `touched`, the paths the changes touch, go to `merge_steps.py`."""
     commits = checkout.git_out(tree, "rev-list", f"--max-count={NAMED_COMMITS}", f"{base}..HEAD").split()
     gate_out = tempfile.mkdtemp(prefix=GATE_PREFIX + "".join(f"{c[:8]}-" for c in commits))
     argv = ("uv", "run", "python", *STEPS, "checks", str(main), base, gate_out)

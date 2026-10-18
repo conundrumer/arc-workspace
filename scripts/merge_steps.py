@@ -12,11 +12,11 @@ command line the checks and the steps run is the one that tree's code
 gives. A change that changes the command line of this script itself merges
 by the command line of `master`'s copy.
 
-`checks` takes on stdin the paths the changes touch, one per line, and
-`<main>`, the main tree, where it finds a source file a change deletes. It
-runs the checks concurrently. Each line that names a check as it starts,
-and each step line (`engine.duration.STEP`) a check writes, goes on stderr
-as it comes, and the output of each check that fails goes on stdout.
+`checks` takes `<main>`, the main tree, and on stdin the paths the
+changes touch, one per line, and reads neither. It runs the checks
+concurrently. Each line that names a check as it starts, and each step
+line (`engine.duration.STEP`) a check writes, goes on stderr as it comes,
+and the output of each check that fails goes on stdout.
 
 `after` runs the steps in order, stops at the first that fails, and prints
 the stdout of each step it runs. For a step that fails, it then prints the
@@ -37,20 +37,19 @@ from handbook.paths import scripts_importable
 
 scripts_importable()
 
-from change_checks import Check, code_checks, failures, run_in, said  # noqa: E402
+from change_checks import Check, failures, run_in, said  # noqa: E402
 from operations.merging import CONTEXT_WRITE, DOCUMENT_CHECKS  # noqa: E402
 
 DOCUMENT_PASS = ("scripts/document_pass.py",)
 """The command, after `uv run python`, that files a whole-document pass."""
 
 
-def checks(tree: Path, main: Path, base: str, gate_out: str, touched: set[str]) -> list[str]:
-    """Run in `tree` the checks of changes from the commit `base` that touch
-    `touched`: the output of each that fails."""
+def checks(tree: Path, base: str, gate_out: str) -> list[str]:
+    """Run in `tree` the checks of changes from the commit `base`: the
+    output of each that fails."""
     with contextlib.redirect_stdout(sys.stderr):
         return failures(tree, [*map(Check, DOCUMENT_CHECKS),
-                               Check(("uv", "run", "python", "scripts/gate.py", "--affected", base, gate_out)),
-                               *code_checks(tree, main, base, touched)])
+                               Check(("uv", "run", "python", "scripts/gate.py", "--affected", base, gate_out))])
 
 
 def after(tree: Path, gate_out: str) -> bool:
@@ -71,7 +70,7 @@ def main(argv: Sequence[str]) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     forms = ap.add_subparsers(dest="form", required=True)
     on_checks = forms.add_parser("checks", help="run the checks on the changes")
-    on_checks.add_argument("main", type=Path, help="the main tree")
+    on_checks.add_argument("main", type=Path, help="the main tree, which the checks do not read")
     on_checks.add_argument("base", help="the commit the changes stand on")
     on_checks.add_argument("gate_out", help="the gate's out-dir")
     on_after = forms.add_parser("after", help="run the steps after the fast-forward")
@@ -80,8 +79,7 @@ def main(argv: Sequence[str]) -> int:
     tree = Path(checkout.git_out(Path.cwd(), "rev-parse", "--show-toplevel").strip())
     if a.form == "after":
         return 0 if after(tree, a.gate_out) else 1
-    touched = {line for line in sys.stdin.read().splitlines() if line}
-    failed = checks(tree, a.main, a.base, a.gate_out, touched)
+    failed = checks(tree, a.base, a.gate_out)
     print("\n".join(failed), end="\n" if failed else "")
     return 1 if failed else 0
 

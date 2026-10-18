@@ -118,8 +118,8 @@ CONTEXT_WRITE = ("scripts/context.py", "--write")
 
 
 def check_name(argv: Sequence[str], files: Sequence[str] = ()) -> str:
-    """The name a merge's lines give the check whose command is `argv`
-    with `files` after it."""
+    """The name the lines of `merge_change.py` and `change_checks.py` give
+    the check whose command is `argv` with `files` after it."""
     command = " ".join(argv)
     return CHECK_FILES.format(command=command, n=len(files)) if files else command
 

@@ -10,10 +10,8 @@ merge refuses, and where the fast-forward fails after its removal, which
 writes it back; a copied file the change left as copied is in no
 commit. The merge makes the readers' tree of the old `master` before the
 fast-forward, and fast-forwards where that make fails. The checks run by
-the command lines of the tree they check, and take as a code path a
-source file the change deletes."""
+the command lines of the tree they check."""
 
-import io
 import os
 import subprocess
 from pathlib import Path
@@ -279,21 +277,3 @@ def test_the_checks_run_the_command_lines_of_the_tree_checked(merge_change, tree
         STEPS.replace('"--since"', '"--affected"'))
     with pytest.raises(merge_change.Refused, match="unrecognized arguments: --affected"):
         merge_change.check(worktree, main, base, {"p"})
-
-
-def test_a_deleted_source_file_gets_the_code_checks(trees, monkeypatch):
-    """A source file `SOURCES` matches that the change deletes, standing
-    in the main tree alone, is a code path of the checks."""
-    main, worktree = trees
-    merge_steps, change_checks = script("merge_steps"), script("change_checks")
-    (main / "programs").mkdir()
-    (main / "programs" / "lib.dl").write_text("")
-    seen: list[set[str]] = []
-    monkeypatch.setattr(merge_steps, "code_checks",
-                        lambda tree, main, base, touched: seen.append(
-                            change_checks.code_paths(tree, main, touched)) or [])
-    monkeypatch.setattr(merge_steps, "failures", lambda tree, checks: [])
-    monkeypatch.chdir(worktree)
-    monkeypatch.setattr("sys.stdin", io.StringIO("programs/lib.dl\n"))
-    assert merge_steps.main(["checks", str(main), "HEAD", "out"]) == 0
-    assert seen == [{"programs/lib.dl"}]
