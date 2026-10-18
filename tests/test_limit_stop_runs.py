@@ -1,7 +1,6 @@
 """An agent the usage limit stopped counts as stopped (`TranscriptsRead.limited`)
-only until its own transcript gains an entry after the stop: an agent another
-agent resumed is resumed by the operator a second time where it does not, and
-its report goes to the operator, with no failure."""
+only until its own transcript gains an entry after the stop: an agent the
+operator resumed is resumed by it a second time where it does not."""
 
 import json
 import sys

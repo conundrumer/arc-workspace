@@ -472,8 +472,10 @@ class TranscriptsRead:
     SendMessage calls went to. `limited` gives, by agent id, the time of
     the usage-limit stop of each agent of `agents` and of `elsewhere` whose
     latest sign is that stop and whose own transcript, where it is known,
-    holds no entry later than that stop, kept where a later read ends the
-    agent, so
+    holds no entry later than that stop, and, of an agent of `agents`,
+    that reports to its operator at that stop (`Agent.notifies`), as an
+    agent another agent resumed is that agent's to resume, kept where a
+    later read ends the agent, so
     that the work of such an agent of `agents` is resumed once the limit
     lifts. `pass_reports` gives, for each
     solver pass with an agent id, the read of the report file it wrote

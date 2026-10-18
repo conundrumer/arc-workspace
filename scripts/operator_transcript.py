@@ -216,7 +216,8 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
                   report_file=brief_report_file(prompt))
         if d.role in MESSAGING and launch.path and launch.agent is not None:
             messaged[launch.agent] = sent_to(launch.path)
-        if signed is not None and signed[0] is Sign.LIMITED and launch.agent is not None:
+        if (signed is not None and signed[0] is Sign.LIMITED and launch.agent is not None
+                and a.notifies):
             limited[launch.agent] = signed[1]
         if a.unreported and launch.agent:
             a = ended_with(a, reply_to(a, launch.since, undecided))

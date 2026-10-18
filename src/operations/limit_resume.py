@@ -5,7 +5,8 @@ reading of the limit made after that stop gives it as lifted
 work. A step that sends it only after the stop's time counts as made, so
 each stop gets one resume, and a later stop of the resumed agent gets its
 own. An agent another agent resumed, or that a notification woke, has run
-since the stop, so it gets none."""
+since the stop, so it gets none, and a later stop of an agent another agent
+resumed last is that agent's to resume, so it gets none either."""
 
 from controlled_markdown import mctx
 from operations.state import State
