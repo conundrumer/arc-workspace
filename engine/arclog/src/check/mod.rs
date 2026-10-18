@@ -7,17 +7,32 @@
 //! the prefix forms, each check's `check_prefix` gives
 //! [`PrefixResult::Undecided`].
 //!
-//! The checker stage writes the bodies.
+//! The checker stage writes the bodies of the checks, each in a submodule of
+//! its own.
 
-#![allow(unused_variables, dead_code)]
-
+pub mod grammar;
+pub mod grounding;
+pub mod instance_inputs;
+pub mod labels;
 pub mod lint;
+pub mod pose;
+pub mod reads;
+pub mod scope;
+pub mod site_columns;
+pub mod types;
+pub mod unfold_reads;
 
-use crate::diagnostic::Diagnostic;
-use crate::program::path::NodePath;
-use crate::program::{Form, LabelId};
+use std::sync::Arc;
+
+use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
+use crate::program::canonical::{
+    canonical_labeling, AsWritten, Canonical, CanonicalForm, CanonicalOrder, CanonicalWriter, LabelScope, SearchBudget,
+};
+use crate::program::path::{NodePath, NodeRef, PathStep};
+use crate::program::{Form, LabelId, ProgramRelation};
 use crate::registry::Registry;
-use crate::resolver::{DependencyGraph, ResolvedProgram, Signature};
+use crate::resolver::{ConceptReads, DependencyGraph, MacroExpansion, ResolvedProgram, Signature};
+use crate::solver::{Exclusion, FileOwner};
 use crate::types::{ProgramTypes, ValueType};
 
 /// The checks this step builds, those that evaluation needs.
@@ -109,6 +124,10 @@ pub struct SolverClauses {
     clauses: crate::hash::StableHashMap<(FileScope, crate::program::ProgramRelation), Box<[(crate::solver::FileOwner, NodePath, Signature)]>>,
 }
 
+/// One clause of a relation in [`SolverClauses`]: its file, its path there,
+/// and its signature.
+type ClauseEntry = (FileOwner, NodePath, Signature);
+
 /// The name scope of a relation in a solver's files: the program, or a
 /// `DEMO_RULE` form (`docs/arclog/arclog.md#demonstrated`), by the file
 /// that holds it and its path there.
@@ -123,12 +142,27 @@ impl SolverClauses {
     /// holds each, the solver's or its representative's, and the path there,
     /// each key's entries in the order [`SolverClauses`] gives.
     pub fn of(solver: &crate::solver::Solver, registry: &Registry) -> Self {
-        todo!()
+        let derived = solver.derived_relations();
+        let concept_case = solver.concept_case();
+        let concept = crate::resolver::resolve(&concept_case.program, None, &derived, registry, MacroExpansion::Keep).value;
+        let mut found = ClausesFound::default();
+        found.add(&concept, &|path| concept_case.file_path(path));
+        for case in solver.cases(Exclusion::WithExcluded) {
+            if case.name == concept_case.name {
+                continue;
+            }
+            let reads = ConceptReads { concept: &concept, determinations: case.concept_determinations() };
+            let resolved = crate::resolver::resolve(&case.program, Some(reads), &derived, registry, MacroExpansion::Keep).value;
+            found.add(&resolved, &|path| case.file_path(path));
+        }
+        found.ordered()
     }
 
     /// The clauses of a synthesized program, its own.
     pub fn of_program(program: &ResolvedProgram) -> Self {
-        todo!()
+        let mut found = ClausesFound::default();
+        found.add(program, &|path| (FileOwner::Solver, path.clone()));
+        found.ordered()
     }
 
     /// Each clause of `relation` in the name scope `scope`, by its file and
@@ -139,8 +173,85 @@ impl SolverClauses {
         scope: &FileScope,
         relation: &crate::program::ProgramRelation,
     ) -> &[(crate::solver::FileOwner, NodePath, Signature)] {
-        todo!()
+        self.clauses.get(&(scope.clone(), relation.clone())).map_or(&[], |entries| &entries[..])
     }
+}
+
+/// The clauses [`SolverClauses`] gathers, each once, before they are put in
+/// its order.
+#[derive(Default)]
+struct ClausesFound {
+    clauses: crate::hash::StableHashMap<(FileScope, ProgramRelation), Vec<ClauseEntry>>,
+}
+
+impl ClausesFound {
+    /// Adds each clause of `program`, at the top level and in each
+    /// `DEMO_RULE` form, with its file and its path there as `file_path`
+    /// gives them for its path in `program`.
+    fn add(&mut self, program: &ResolvedProgram, file_path: &dyn Fn(&NodePath) -> (FileOwner, NodePath)) {
+        for (path, form) in top_level_forms(program) {
+            match form {
+                Form::Clause(clause) => self.add_clause(program, file_path, FileScope::Program, &clause.value().derives, &path),
+                Form::Demonstrated(demonstrated) => {
+                    let demonstrated = demonstrated.value();
+                    let first_rule = demonstrated.key.iter().count() + demonstrated.inputs.len();
+                    for (index, rule) in demonstrated.rules.iter().enumerate() {
+                        let rule_path = path.child((first_rule + index) as u32);
+                        let (owner, file_rule_path) = file_path(&rule_path);
+                        for (index, form) in rule.value().forms.iter().enumerate() {
+                            if let Form::Clause(clause) = form {
+                                let scope = FileScope::DemoRule(owner, file_rule_path.clone());
+                                self.add_clause(program, file_path, scope, &clause.value().derives, &rule_path.child(index as u32));
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn add_clause(
+        &mut self,
+        program: &ResolvedProgram,
+        file_path: &dyn Fn(&NodePath) -> (FileOwner, NodePath),
+        scope: FileScope,
+        relation: &ProgramRelation,
+        path: &NodePath,
+    ) {
+        let (owner, file) = file_path(path);
+        let content = program.content(path).expect("a clause of the program has its resolved content");
+        let mut out = CanonicalWriter::default();
+        out.write(&content.content_hash().0.to_le_bytes());
+        let entry = (owner, file, Signature(out.finish()));
+        let entries = self.clauses.entry((scope, relation.clone())).or_default();
+        if !entries.contains(&entry) {
+            entries.push(entry);
+        }
+    }
+
+    /// The clauses, each key's entries in the order [`SolverClauses`] gives.
+    fn ordered(self) -> SolverClauses {
+        let rank = |owner: &FileOwner| match owner {
+            FileOwner::Solver => 0,
+            FileOwner::Representative => 1,
+        };
+        let clauses = self
+            .clauses
+            .into_iter()
+            .map(|(key, mut entries)| {
+                entries.sort_by(|(a, a_path, _), (b, b_path, _)| (rank(a), a_path).cmp(&(rank(b), b_path)));
+                (key, entries.into_boxed_slice())
+            })
+            .collect();
+        SolverClauses { clauses }
+    }
+}
+
+/// Each top-level form of `program`, with its path.
+fn top_level_forms(program: &ResolvedProgram) -> impl Iterator<Item = (NodePath, &Form)> {
+    let forms = program.program.value().forms.iter();
+    forms.zip(0u32..).map(|(form, index)| (NodePath(Box::new([PathStep(index)])), form))
 }
 
 /// A check's input: one node, its path, and its scope.
@@ -216,7 +327,18 @@ pub trait Check: Sync {
 /// refusal's path is relative to the program: the form of a node on the
 /// cycle.
 pub fn check_cycles(graph: &DependencyGraph, program: &ResolvedProgram) -> CheckResult {
-    todo!()
+    let Some(cycle) = graph.find_cycle() else {
+        return CheckResult::Pass;
+    };
+    let mut forms: Vec<&NodePath> = Vec::new();
+    for node in cycle {
+        let form = program.form_of(node);
+        if !forms.contains(&form) {
+            forms.push(form);
+        }
+    }
+    let refusal = |at: &NodePath| Refusal { message: "the form stands on a cycle of the dependency graph".into(), at: at.clone() };
+    CheckResult::Refuse(forms.into_iter().map(refusal).collect())
 }
 
 /// The key of the check cache: the check, the form's canonical form, with
@@ -228,7 +350,9 @@ pub fn check_cycles(graph: &DependencyGraph, program: &ResolvedProgram) -> Check
 /// reads, in the order of each name's first read in the form's canonical
 /// order, then, where a label's type comes from other clauses of a
 /// relation, as [`CheckId::Types`] gives, those clauses' signatures, in the
-/// order [`SolverClauses`] gives.
+/// order [`SolverClauses`] gives. The key of [`CheckId::Cycles`], which
+/// reads no form, holds the form of the program's dependency graph with the
+/// path of each node's form, and no signature.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct CheckCacheKey {
     pub check: CheckId,
@@ -249,22 +373,22 @@ pub struct CheckCache {
 impl CheckCache {
     /// The result cached under `key`, if any.
     pub fn get(&self, key: &CheckCacheKey) -> Option<&CheckResult> {
-        todo!()
+        self.entries.get(key)
     }
 
     /// Caches `result` under `key`.
     pub fn insert(&mut self, key: CheckCacheKey, result: CheckResult) {
-        todo!()
+        self.entries.insert(key, result);
     }
 
     /// The types cached under `key`, the key of a form's type check.
     pub fn types(&self, key: &CheckCacheKey) -> Option<std::sync::Arc<crate::types::FormTypes>> {
-        todo!()
+        self.types.get(key).cloned()
     }
 
     /// Caches `types` under `key`, the key of a form's type check.
     pub fn insert_types(&mut self, key: CheckCacheKey, types: std::sync::Arc<crate::types::FormTypes>) {
-        todo!()
+        self.types.insert(key, types);
     }
 }
 
@@ -295,7 +419,178 @@ pub fn check_program(
     registry: &Registry,
     cache: &mut CheckCache,
 ) -> Result<CheckedProgram, Vec<Diagnostic>> {
-    todo!()
+    let mut refused = Vec::new();
+    let cycles_key = CheckCacheKey { check: CheckId::Cycles, canonical_form: graph_form(&program), signatures: Box::new([]) };
+    if let CheckResult::Refuse(refusals) = cached(cache, cycles_key, || check_cycles(&program.graph, &program)) {
+        refused.extend(refusals.iter().map(|r| diagnostic(DiagnosticKind::Check(CheckId::Cycles), Severity::Error, r.message.clone(), r.at.clone())));
+    }
+    let mut alerts = Vec::new();
+    let mut form_types = Vec::new();
+    for (path, form) in top_level_forms(&program) {
+        let mut search = SearchBudget::new();
+        let order = CanonicalOrder::of(form, &mut search);
+        if search.reached {
+            let message = "the search for the form's canonical form reached its cap".into();
+            alerts.push(diagnostic(DiagnosticKind::Bound, Severity::Alert, message, path.clone()));
+        }
+        let canonical = canonical_form(form);
+        let mut signatures = read_signatures(&program, form, &path, &order).into_vec();
+        signatures.extend(types::type_clause_signatures(form, clauses).cloned());
+        let signatures: Box<[Signature]> = signatures.into();
+        let positions = own_labels(form);
+        let key = |check: CheckId, canonical_form: CanonicalForm, signatures: Box<[Signature]>| CheckCacheKey { check, canonical_form, signatures };
+        let report = |refused: &mut Vec<Diagnostic>, check: CheckId, result: &CheckResult| {
+            if let CheckResult::Refuse(refusals) = result {
+                for refusal in refusals.iter() {
+                    let at = path.join(&order.source_path(&refusal.at));
+                    refused.push(diagnostic(DiagnosticKind::Check(check), Severity::Error, refusal.message.clone(), at));
+                }
+            }
+        };
+
+        let untyped: Vec<LabelInScope> = positions.iter().map(|&(label, _)| LabelInScope { label, ty: None }).collect();
+        let input = CheckInput { form, path: &path, scope: Scope { program: &program, registry, labels: &untyped, clauses } };
+        let types_key = key(CheckId::Types, canonical.clone(), signatures.clone());
+        let (result, types) = match (cache.get(&types_key).cloned(), cache.types(&types_key)) {
+            (Some(result), Some(types)) => (result, types),
+            _ => {
+                let (result, types) = types::infer_form(&input, &order);
+                let types = Arc::new(types);
+                cache.insert(types_key.clone(), result.clone());
+                cache.insert_types(types_key, Arc::clone(&types));
+                (result, types)
+            }
+        };
+        report(&mut refused, CheckId::Types, &result);
+
+        let labels: Vec<LabelInScope> =
+            positions.iter().map(|&(label, position)| LabelInScope { label, ty: types.label(LabelId(position)).cloned() }).collect();
+        let input = CheckInput { scope: Scope { labels: &labels, ..input.scope }, ..input };
+        for check in checks().iter().filter(|check| check.id() != CheckId::Types) {
+            let canonical_form = match check.id() {
+                CheckId::Grounding => with_written_order(form, &canonical, &order),
+                _ => canonical.clone(),
+            };
+            let check_key = key(check.id(), canonical_form, signatures.clone());
+            let result = cached(cache, check_key, || check.check(&input));
+            report(&mut refused, check.id(), &result);
+        }
+        form_types.push((path.clone(), types, order));
+    }
+    if !refused.is_empty() {
+        return Err(refused);
+    }
+    let types = types::program_types(&program, clauses, &form_types);
+    Ok(CheckedProgram { program, types, alerts })
+}
+
+/// The result cached under `key`, or else the result of `run`, which it
+/// caches there.
+fn cached(cache: &mut CheckCache, key: CheckCacheKey, run: impl FnOnce() -> CheckResult) -> CheckResult {
+    if let Some(result) = cache.get(&key) {
+        return result.clone();
+    }
+    let result = run();
+    cache.insert(key, result.clone());
+    result
+}
+
+/// The form of the dependency graph of `program`: for each node, the path
+/// of its form and the nodes it reads. Two programs of one such form give
+/// one result of [`check_cycles`], whose refusals are paths of the program.
+fn graph_form(program: &ResolvedProgram) -> CanonicalForm {
+    let mut out = CanonicalWriter::default();
+    let len = |out: &mut CanonicalWriter, len: usize| out.write(&(len as u32).to_le_bytes());
+    len(&mut out, program.graph.reads.len());
+    for (reads, index) in program.graph.reads.iter().zip(0u32..) {
+        let form = program.form_of(crate::resolver::GraphNodeIndex(index));
+        len(&mut out, form.0.len());
+        for step in form.0.iter() {
+            out.write(&step.0.to_le_bytes());
+        }
+        len(&mut out, reads.len());
+        for read in reads.iter() {
+            out.write(&read.0.to_le_bytes());
+        }
+    }
+    out.finish()
+}
+
+fn diagnostic(kind: DiagnosticKind, severity: Severity, message: Box<str>, at: NodePath) -> Diagnostic {
+    Diagnostic { kind, severity, message, location: Location::Path(at), cases: Box::new([]) }
+}
+
+/// The canonical form of `form`, with each name as the file writes it.
+fn canonical_form(form: &Form) -> CanonicalForm {
+    let mut out = CanonicalWriter::default();
+    let search = &mut SearchBudget::new();
+    match form {
+        Form::Claim(claim) => claim.value().write_canonical(&mut out, search, &AsWritten),
+        Form::Clause(clause) => clause.value().write_canonical(&mut out, search, &AsWritten),
+        Form::Instance(instance) => instance.value().write_canonical(&mut out, search, &AsWritten),
+        Form::Choose(choose) => choose.value().write_canonical(&mut out, search, &AsWritten),
+        Form::RigidDet(rigid) => rigid.value().write_canonical(&mut out, search, &AsWritten),
+        Form::Demonstrated(demonstrated) => demonstrated.value().write_canonical(&mut out, search, &AsWritten),
+        Form::Alts(alts) => alts.value().write_canonical(&mut out, search, &AsWritten),
+    }
+    out.finish()
+}
+
+/// `canonical`, the canonical form of `form`, followed by the source index
+/// of each child of each node of `form`, each node's children in canonical
+/// order, so that two forms of one canonical form are equal under it only
+/// where their lists are written in one order.
+fn with_written_order(form: &Form, canonical: &CanonicalForm, order: &CanonicalOrder) -> CanonicalForm {
+    fn write(node: NodeRef<'_>, at: &NodePath, order: &CanonicalOrder, out: &mut CanonicalWriter) {
+        let children = node.children();
+        for position in 0..children.len() as u32 {
+            let child = at.child(position);
+            let index = order.source_path(&child).0.last().expect("a child's path ends in its step").0;
+            out.write(&index.to_le_bytes());
+            write(children[index as usize], &child, order, out);
+        }
+    }
+    let mut out = CanonicalWriter::default();
+    out.write(&canonical.bytes);
+    write(NodeRef::from(form), &NodePath::default(), order, &mut out);
+    out.finish()
+}
+
+/// The signatures of the names `form`, at `path` in `program`, reads, in
+/// the order of each name's first read in the form's canonical order.
+fn read_signatures(program: &ResolvedProgram, form: &Form, path: &NodePath, order: &CanonicalOrder) -> Box<[Signature]> {
+    fn collect<'a>(program: &'a ResolvedProgram, node: NodeRef<'_>, form_path: &NodePath, at: NodePath, order: &CanonicalOrder, out: &mut Vec<(NodePath, &'a Signature)>) {
+        if let Some(signature) = program.signature(&form_path.join(&at)) {
+            out.push((order.canonical_path(&at), signature));
+        }
+        for (child, index) in node.children().into_iter().zip(0u32..) {
+            collect(program, child, form_path, at.child(index), order, out);
+        }
+    }
+    let mut reads = Vec::new();
+    collect(program, NodeRef::from(form), path, NodePath::default(), order, &mut reads);
+    reads.sort_by(|(a, _), (b, _)| a.cmp(b));
+    let mut signatures: Vec<Signature> = Vec::new();
+    for (_, signature) in reads {
+        if !signatures.contains(signature) {
+            signatures.push(signature.clone());
+        }
+    }
+    signatures.into()
+}
+
+/// Each label of the scope of `form` itself, with its canonical position.
+/// A claim and an `ALTS` form have no such scope.
+fn own_labels(form: &Form) -> Box<[(LabelId, u32)]> {
+    let scope = match form {
+        Form::Clause(clause) => LabelScope::Clause(clause.value()),
+        Form::Instance(instance) => LabelScope::Instance(instance.value()),
+        Form::Choose(choose) => LabelScope::Choose(choose.value()),
+        Form::RigidDet(rigid) => LabelScope::RigidDet(rigid.value()),
+        Form::Demonstrated(demonstrated) => LabelScope::DemonstratedKey(demonstrated.value()),
+        Form::Claim(_) | Form::Alts(_) => return Box::new([]),
+    };
+    canonical_labeling(scope, &AsWritten, &mut SearchBudget::new()).positions
 }
 
 /// The checks of this step, each once: one per [`CheckId`] but
@@ -307,5 +602,17 @@ pub fn check_program(
 /// a partial form that no completion makes a node of the grammar, or a name
 /// that no completion resolves.
 pub fn checks() -> &'static [&'static dyn Check] {
-    todo!()
+    static CHECKS: [&dyn Check; 10] = [
+        &grammar::GrammarCheck,
+        &scope::ScopeCheck,
+        &site_columns::SiteColumnsCheck,
+        &types::TypesCheck,
+        &pose::PoseRuleCheck,
+        &labels::MadeAndExportedLabelsCheck,
+        &grounding::GroundingCheck,
+        &unfold_reads::UnfoldReadsCheck,
+        &instance_inputs::InstanceInputsCheck,
+        &reads::PooledAndLiftedReadsCheck,
+    ];
+    &CHECKS
 }
