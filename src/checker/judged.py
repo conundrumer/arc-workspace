@@ -94,7 +94,8 @@ solver's task has no task file."""
 class Fits:
     """The model fits the task at its stored assignment: some case of it
     gives one of each pair's candidates on every train and test pair
-    (principles.md, under "Models and tasks" and "Cases")."""
+    (docs/handbook/principles.md#models-and-tasks,
+    docs/handbook/principles.md#cases)."""
 
     case: Case
 
@@ -125,8 +126,8 @@ type Fit = Fits | Misses | NoResult
 def differ(a: object, b: object) -> bool:
     """Two results of runs differ, one of them defined: other grids, in
     their resolutions' order, or one defined and the other not; two
-    undefined outcomes agree (principles.md, under "Witnesses" and
-    "Equivalence and subsumption")."""
+    undefined outcomes agree (docs/handbook/principles.md#witnesses,
+    docs/handbook/principles.md#equivalence-and-subsumption)."""
     if isinstance(a, Grids) and isinstance(b, Grids):
         return a != b
     return {type(a), type(b)} == {Grids, Undefined}
@@ -134,7 +135,8 @@ def differ(a: object, b: object) -> bool:
 
 def missed(run: CaseOnPair) -> bool:
     """The case misses the pair: its run gives a result, and that result
-    is no candidate of the pair (principles.md, under "Models and tasks")."""
+    is no candidate of the pair
+    (docs/handbook/principles.md#models-and-tasks)."""
     return is_result(run.outcome) and not run.matches
 
 
@@ -163,11 +165,11 @@ def _case_fit(pairs: Sequence[PairRuns], case: Case) -> Fit | None:
 
 def fit(pairs: Sequence[PairRuns], cases: Sequence[Case]) -> Fit | None:
     """How the model whose cases are `cases` meets Fit
-    (principles.md, under "Cases"): it fits where some case fits every pair. Where
-    none fits and some case misses at no pair but has a run that reached
-    a limit or failed, the
-    judgment rests on no result; otherwise it misses where its first case
-    misses first. None where `pairs` runs none of `cases`."""
+    (docs/handbook/principles.md#cases): it fits where some case fits every
+    pair. Where none fits and some case misses at no pair but has a run that
+    reached a limit or failed, the judgment rests on no result; otherwise it
+    misses where its first case misses first. None where `pairs` runs none of
+    `cases`."""
     judged = [f for c in cases if (f := _case_fit(pairs, c)) is not None]
     if not judged:
         return None
@@ -260,13 +262,13 @@ def concept_among(solver: Solver, bases: Iterable[Base | None]
 @dataclass(frozen=True)
 class AnyCase:
     """`any`: the output of any case defined on the witness
-    (principles.md, under "Witnesses")."""
+    (docs/handbook/principles.md#witnesses)."""
 
 
 @dataclass(frozen=True)
 class NoCase:
-    """`other`: an output that no case produces (principles.md, under
-    "Witnesses")."""
+    """`other`: an output that no case produces
+    (docs/handbook/principles.md#witnesses)."""
 
 
 type VerdictCase = Case | None | AnyCase | NoCase | NameFault
@@ -274,14 +276,15 @@ type VerdictCase = Case | None | AnyCase | NoCase | NameFault
 
 def verdict_case(solver: Solver, verdict: Verdict, among: Sequence[Case],
                  branch: Branch | None) -> VerdictCase:
-    """The case whose output the verdict denotes (principles.md, under "Witnesses";
-    `derived` solver-file.md, under "Params", `stored` solver-file.md, under
-    "Program"). A verdict asks for a model (principles.md, under "Witnesses",
-    "the branch's name: the output of that branch's model"), so a name reads
-    through `solver.names.model_of`, one case: the branches it names, with
-    every other point at its concept branch (principles.md, under
-    "Choice points and open parameters"), the case of `among` that is it where
-    one is.
+    """The case whose output the verdict denotes
+    (docs/handbook/principles.md#witnesses; `derived`
+    docs/handbook/solver-file.md#params, `stored`
+    docs/handbook/solver-file.md#program). A verdict asks for a model
+    (docs/handbook/principles.md#witnesses, "the branch's name: the output of
+    that branch's model"), so a name reads through `solver.names.model_of`, one
+    case: the branches it names, with every other point at its concept branch
+    (docs/handbook/principles.md#choice-points-and-open-parameters), the case
+    of `among` that is it where one is.
     `concept` is the concept case, and `derived` and `stored` the model of
     `branch`, the line's own. None where no model can be built.
     A name that denotes nothing is the fault `denote` gives. `derived` or

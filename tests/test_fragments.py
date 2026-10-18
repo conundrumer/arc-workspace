@@ -13,6 +13,7 @@ import pytest
 from controlled_markdown import (
     ControlledMarkdownError,
     check_citation_anchors,
+    check_citation_paths,
     check_citations,
     check_closure,
     check_dl_comments,
@@ -116,6 +117,28 @@ def test_an_anchor_cited_outside_the_engine_names_a_heading(tmp_path, citation, 
     code = write_cited_tree(tmp_path, citation)
     errors = list(check_citation_anchors(code, "code", tmp_path))
     assert [e.rule for e in errors] == rules
+
+
+BARE_CITATIONS = '''\
+"""The checks of the witness rules (principles.md, under "Witnesses")."""
+
+# The form `solver-file.md` gives.
+
+
+@quotes("principles.md", "Witnesses", "the words")
+def check():
+    """As docs/handbook/principles.md#witnesses and CLAUDE.md give."""
+'''
+
+
+def test_a_docstring_or_a_comment_that_cites_a_document_by_its_name_alone(tmp_path):
+    code = tmp_path / "code.py"
+    code.write_text(BARE_CITATIONS)
+    present = frozenset({"docs/handbook/principles.md",
+                         "docs/handbook/solver-file.md", "CLAUDE.md"})
+    errors = list(check_citation_paths(code, "code.py", present))
+    assert [(e.line, e.rule) for e in errors] == [
+        (1, "citation-path"), (3, "citation-path")]
 
 
 BAD_DL_LINK = """\

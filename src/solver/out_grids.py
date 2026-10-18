@@ -58,7 +58,7 @@ def out_decl(program: Program) -> RelationDecl | None:
 
 class ResolutionType(StrEnum):
     """The types of the columns of `out` that split a case's rows into
-    grids (solver-file.md, under "Cases")."""
+    grids (docs/handbook/solver-file.md#cases)."""
 
     TIEBREAK = TIEBREAK_RESOLUTION
 
@@ -74,8 +74,10 @@ class ResolutionColumn:
 @dataclass(frozen=True)
 class OutColumns:
     """The case column, the resolution columns, the open-value column and
-    the demonstrated-rule column of `out`, by type (solver-file.md, under
-    "Cases", "Alt outputs" and "Demonstrated choice"); None where `out` has
+    the demonstrated-rule column of `out`, by type
+    (docs/handbook/solver-file.md#cases,
+    docs/handbook/solver-file.md#alt-outputs,
+    docs/handbook/solver-file.md#demonstrated-choice); None where `out` has
     none. The resolution columns stand in `out`'s column order, and a
     resolution value holds one value per column, in that order."""
 
@@ -252,10 +254,10 @@ def case_grids(columns: OutColumns, mine: Sequence[Row],
                margins: dict[int, Place | None],
                fields: FieldValues) -> Grids | Undefined:
     """The grids `mine`, `out`'s rows at one case, hold, or undefined
-    where it holds none (principles.md, under "Models and tasks"),
+    where it holds none (docs/handbook/principles.md#models-and-tasks),
     `margins` as `_grid_of` reads it: where `out` has an open-value column,
-    `open_grids` over the case's open values, `fields` its values at
-    each field, else `rule_grids` at the case's `rule_choices`."""
+    `open_grids` over the case's open values, `fields` its values at each
+    field, else `rule_grids` at the case's `rule_choices`."""
     if not mine:
         return Undefined(NoOutput())
     if columns.open is None:
@@ -316,7 +318,7 @@ def _fields(value: Value, width: int) -> Choice[int]:
     the pairs of each field's index and value, with no pair for a field
     that holds `nil`; `nil` holds `nil` in every field. Raises ValueError
     for a value that is no record of `width` fields, which `OpenValue`, a
-    record type, never holds (solver-file.md, under "Cases")."""
+    record type, never holds (docs/handbook/solver-file.md#cases)."""
     if isinstance(value, NilValue):
         return ()
     if not isinstance(value, RecordValue):
@@ -349,7 +351,7 @@ def _task_rule(value: Value) -> Choice[Value]:
     one pair; no pair for `nil`, which reads as every rule of every inner
     task. Raises ValueError
     for a value that is no record of two fields, which `DemonstratedRule`
-    never holds (solver-file.md, under "Demonstrated choice")."""
+    never holds (docs/handbook/solver-file.md#demonstrated-choice)."""
     if isinstance(value, NilValue):
         return ()
     if not isinstance(value, RecordValue) or len(value.fields) != 2:
@@ -423,7 +425,7 @@ def resolution_grids(res_cols: tuple[ResolutionColumn, ...],
                      margins: dict[int, Place | None]) -> Grids | Undefined:
     """The distinct grids of `mine`, the rows of one combination of open
     values and rule choice (`rule_grids`), in the order of the resolution
-    values (solver-file.md, under "Cases"), each with the resolution value
+    values (docs/handbook/solver-file.md#cases), each with the resolution value
     it first stands at where `out` has resolution columns `res_cols`; or
     undefined, with the reason of the first resolution that gives no total
     grid."""

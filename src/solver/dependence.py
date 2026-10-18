@@ -85,7 +85,8 @@ def dependence(engine: Engine, solver: Solver, bases: Sequence[Base | None]
                ) -> Dependence:
     """Which of `bases` have a derivation of `out` that depends on each
     unit, parameter and relation of the solver's own text
-    (solver-file.md, under "Cases", "Params" and "Program").
+    (docs/handbook/solver-file.md#cases, docs/handbook/solver-file.md#params,
+    docs/handbook/solver-file.md#program).
 
     The result is a function of the solver's model, its case markers
     among its annotations, the program's declarations, its GRID and RIGID
@@ -110,38 +111,40 @@ def dependence(engine: Engine, solver: Solver, bases: Sequence[Base | None]
     each unit that heads `out` and admits it, and, from each unit it depends
     on, on each unit that heads a relation that unit reads and admits it. A
     unit whose head has a case column, a column of `Choice` (the case column
-    `ch`, solver-file.md, under "Cases"), of a type that stands in `Choice`, or
-    of a record type with a field of such a type, admits a base when the base's
-    value can stand in each term the head holds there, whatever holds the
-    value there (`CasePlaces`). A unit whose head has none admits every base,
-    whatever section it stands in, since the program runs it for every case.
-    Either unit admits only the bases whose value can stand in the term of an
-    `impl_choice` atom of its body. A read asks for the rows its terms fix:
-    where a read holds a constant constructor in a column of a type that stands
-    at one choice point, or a constant `Choice` value, it asks for the rows
-    that hold that value there, whatever the base holds, and the units it
-    reaches are read for the base with that value at that point
-    (`CasePlaces.demand`); so `near_arm($Clear(), P, D) :- near_arm($Any(), P, D)`
-    reads the `$Any()` clauses for a base that takes `$Clear`. A read is at
-    every value at each case-typed place where it holds a wildcard, or a
-    variable that no case variable of the unit's head fills: there, a unit
-    that heads its relation admits the base whatever term it holds. At the
-    read's other case-typed places, the base's value still bounds which units
-    the read reaches (`CasePlaces.bounded`), so `crowded(A, Id, Ch)` in a clause
-    whose head fills `Ch` and not `A` reaches only the clauses whose head can
-    hold the base's value in the column of `Ch`. So a read of a relation of
-    an instance of a lib component reaches, through the component's rules at
-    the instance's type arguments, only the units that feed the instance at
-    the case values the read can take: where `layout` is an instance of
+    `ch`, docs/handbook/solver-file.md#cases), of a type that stands in
+    `Choice`, or of a record type with a field of such a type, admits a base
+    when the base's value can stand in each term the head holds there, whatever
+    holds the value there (`CasePlaces`). A unit whose head has none admits
+    every base, whatever section it stands in, since the program runs it for
+    every case. Either unit admits only the bases whose value can stand in the
+    term of an `impl_choice` atom of its body. A read asks for the rows its
+    terms fix: where a read holds a constant constructor in a column of a type
+    that stands at one choice point, or a constant `Choice` value, it asks for
+    the rows that hold that value there, whatever the base holds, and the units
+    it reaches are read for the base with that value at that point
+    (`CasePlaces.demand`); so
+    `near_arm($Clear(), P, D) :- near_arm($Any(), P, D)` reads the `$Any()`
+    clauses for a base that takes `$Clear`. A read is at every value at each
+    case-typed place where it holds a wildcard, or a variable that no case
+    variable of the unit's head fills: there, a unit that heads its relation
+    admits the base whatever term it holds. At the read's other case-typed
+    places, the base's value still bounds which units the read reaches
+    (`CasePlaces.bounded`), so `crowded(A, Id, Ch)` in a clause whose head
+    fills `Ch` and not `A` reaches only the clauses whose head can hold the
+    base's value in the column of `Ch`. So a read of a relation of an instance
+    of a lib component reaches, through the component's rules at the instance's
+    type arguments, only the units that feed the instance at the case values
+    the read can take: where `layout` is an instance of
     `Unanimous<EmptyPanel, Layout>`, `layout.value(E, L)` in a clause whose
     head fills `E` reaches only the clauses of `layout.item` whose head can
     hold the base's value in the key column. A record type a lib component
-    declares is no case type (`CasePlaces`), so a read is at every value past
-    a place where the component passes its key into such a record. A base's derivation depends on a parameter where it depends on a
-    unit that reads it, and on a relation where it depends on a unit that reads
-    it or a unit that feeds it. A unit the walk reads for a base that stands
-    under a marker that does not list the base (`section_at`, solver-file.md,
-    under "Cases") is reported with the base (`Dependence.stranded`)."""
+    declares is no case type (`CasePlaces`), so a read is at every value past a
+    place where the component passes its key into such a record. A base's
+    derivation depends on a parameter where it depends on a unit that reads it,
+    and on a relation where it depends on a unit that reads it or a unit that
+    feeds it. A unit the walk reads for a base that stands under a marker that
+    does not list the base (`section_at`, docs/handbook/solver-file.md#cases)
+    is reported with the base (`Dependence.stranded`)."""
     program = solver.program
     held: tuple[object, ...] = (
         solver.stem, solver.task_id, solver.annotations.markers, solver.choice,

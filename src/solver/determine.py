@@ -149,21 +149,21 @@ def determine(engine: Engine, solver: Solver, limits: Limits,
               measured: float | None = None,
               added: Sequence[Example] = ()) -> DetermineResult:
     """The Determine comp over the examples, diffed against the stored values
-    (solver-file.md, under "Determination"). The parameters with an `Ident`
-    column compare together modulo a renaming of ids (solver-file.md, under
-    "Determination"), one a RIGID call stores by the orbit of its placed rows
-    at each id (`_signatures`). The other parameters a RIGID call stores
-    compare together per block, up to a D4 image of the stored assembly, since
-    a RIGID block exposes them only as D4 placements that transform them
-    together and the stored pose is unobservable (patterns.md, under "`RIGID` —
-    a stored shape and its attached parts, in every orientation"): the
-    Determine relations stand in for the block's charts, the program places
-    them, and the parameters agree where some pose of one side gives the
-    rows of every parameter of the block that the other side gives at some
-    pose (`_same_pose_orbits`). A block whose Determine relations lead with
-    key columns gives one copy of the assembly per key, each placed and
-    compared on its own (`_compare_copies`). A diff of such a parameter
-    holds its placed rows.
+    (docs/handbook/solver-file.md#determination). The parameters with an
+    `Ident` column compare together modulo a renaming of ids
+    (docs/handbook/solver-file.md#determination), one a RIGID call stores by
+    the orbit of its placed rows at each id (`_signatures`). The other
+    parameters a RIGID call stores compare together per block, up to a D4 image
+    of the stored assembly, since a RIGID block exposes them only as D4
+    placements that transform them together and the stored pose is unobservable
+    (docs/handbook/patterns.md#rigid-a-stored-shape-and-its-attached-parts-in-every-orientation):
+    the Determine relations stand in for the block's charts, the program places
+    them, and the parameters agree where some pose of one side gives the rows
+    of every parameter of the block that the other side gives at some pose
+    (`_same_pose_orbits`). A block whose Determine relations lead with key
+    columns gives one copy of the assembly per key, each placed and compared on
+    its own (`_compare_copies`). A diff of such a parameter holds its placed
+    rows.
     The runs take `limits` once per example; a variant's runs, where the
     solver's own determination spent `measured` CPU seconds, take
     `variant_limits` of those. A solver whose task has no task file is a
@@ -341,8 +341,7 @@ def determine_columns(p: Parameter, rigid: frozenset[str]
     """The columns of `p`'s determination relation after its key columns:
     its own, the pose column of a parameter of `rigid` left out, since the
     determination writes such a parameter's chart in a pose of its own
-    (patterns.md, under "`RIGID` — a stored shape and its attached parts,
-    in every orientation")."""
+    (docs/handbook/patterns.md#rigid-a-stored-shape-and-its-attached-parts-in-every-orientation)."""
     return tuple(c for i, c in enumerate(p.columns)
                  if p.name not in rigid or i != POSE_COLUMN)
 
@@ -358,8 +357,8 @@ def key_width(d: RelationDecl, p: Parameter, rigid: frozenset[str]) -> int:
     """The number of key columns that lead `d`, the relation of `Determine`
     that gives `p`: the columns before as many as `determine_columns`
     gives, for a parameter of `rigid`, and none for any other; negative
-    where `d` has too few columns (solver-file.md, under
-    "Determination")."""
+    where `d` has too few columns
+    (docs/handbook/solver-file.md#determination)."""
     if p.name not in rigid:
         return 0
     return len(d.columns) - len(determine_columns(p, rigid))
@@ -562,8 +561,7 @@ def _id_signatures(rows_by_param: Mapping[str, Rows],
     and each id's assembly is its own: its part of the id's signature is the
     orbit of its placed rows at the id, the set over the poses of its rows at
     the pose, so that the id's assembly in any pose gives the same part
-    (patterns.md, under "`RIGID` — a stored shape and its attached parts,
-    in every orientation")."""
+    (docs/handbook/patterns.md#rigid-a-stored-shape-and-its-attached-parts-in-every-orientation)."""
     by_id: dict[Value, list[_Key]] = {}
     for name, col in ident_cols.items():
         if name not in placed:

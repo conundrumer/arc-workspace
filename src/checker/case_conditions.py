@@ -1,5 +1,5 @@
 """The checks of the case conditions the witness file is the evidence for
-(principles.md, under "Cases")."""
+(docs/handbook/principles.md#cases)."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -276,7 +276,8 @@ def unseparated_findings(solver: Solver, runs: Runs, every: bool = False
 def _subsumers(solver: Solver, inputs: Inputs, a: Case,
                others: Sequence[Case]) -> list[Case]:
     """The cases of `others` that subsume `a`, less each that subsumes
-    another of them; none for the concept case (principles.md, under "Cases")."""
+    another of them; none for the concept case
+    (docs/handbook/principles.md#cases)."""
     if is_concept_case(solver, a):
         return []
     partners = [b for b in others if b != a and subsumes(inputs, a, b)]

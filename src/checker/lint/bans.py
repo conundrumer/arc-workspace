@@ -106,7 +106,7 @@ def linted_nodes(v: View) -> Iterator[tuple[int, BodyLiteral | Atom | Term,
 
 def _bans(solver: Solver, runs: Runs, category: Category) -> list[Finding]:
     """The findings of one ban over the clauses program style applies to
-    (style.md, under "Bans"); the message is the fragment that fires."""
+    (docs/handbook/style.md#bans); the message is the fragment that fires."""
     v = view(solver, runs)
     macros = frozenset(solver.lib.constants) - ZERO_MACROS
     out: list[Finding] = []
@@ -206,8 +206,8 @@ def check_raw_aggregate(solver: Solver, runs: Runs) -> list[Finding]:
 
 
 def _singleton_axis(solver: Solver, unit: Unit) -> bool:
-    """The clause ends with `// @singleton-axis: …` (solver-file.md, under
-    "Params")."""
+    """The clause ends with `// @singleton-axis: …`
+    (docs/handbook/solver-file.md#params)."""
     return any(t.word == TrailingWord.SINGLETON_AXIS
                and (t.unit == unit.id
                     or (unit.span is not None and t.line == unit.span.last))
@@ -253,7 +253,7 @@ ranks."""
 def _unordered_types(solver: Solver, v: View) -> frozenset[str]:
     """The types an order may not read: `Color`, `Ident`, the lib's
     orientation types, the subtypes they reach, and the unions whose every
-    member is one (principles.md, under "Color"; history 1139)."""
+    member is one (docs/handbook/principles.md#color; history 1139)."""
     out = {COLOR, IDENT} | set(solver.lib.orientation_types)
     changed = True
     while changed:

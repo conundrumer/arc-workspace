@@ -262,13 +262,13 @@ def read_back(solver: Solver, reads: ParameterReads, f: Found
     """The stored parameters whose value the found value is on every
     input: the same rows as one parameter's, or as the product of several
     parameters' rows, under a renaming of columns, each column of the
-    value of a parameter column's type (principles.md, under "Stored or
-    derived"); a parameter that stores a value per case gives its value at
-    the found value's bases (`_stored_reading`). Each set of the fewest
-    parameters that gives it, each set and the sets in `Params` order,
-    where each parameter of the set feeds the value: the derivation of the
-    value's relation depends on it at some base that holds the value
-    (`ParameterReads`). Empty where no set does."""
+    value of a parameter column's type
+    (docs/handbook/principles.md#stored-or-derived); a parameter that stores a
+    value per case gives its value at the found value's bases
+    (`_stored_reading`). Each set of the fewest parameters that gives it, each
+    set and the sets in `Params` order, where each parameter of the set feeds
+    the value: the derivation of the value's relation depends on it at some
+    base that holds the value (`ParameterReads`). Empty where no set does."""
     if len(f.family) != 1:
         return ()
     (value,) = f.family
@@ -365,12 +365,12 @@ def concept_section(solver: Solver, graph: Graph, f: Found,
                     concept: Base | None) -> bool:
     """Whether the concept case runs a clause that feeds the value's
     relation at its instance path, as the case markers place the clause
-    (solver-file.md, under "Cases"): a clause of the solver's own text under no
-    marker that lists a case, or under a marker that lists the concept
-    case, runs on it. The clauses that feed a relation of a lib instance
-    are those that feed the instance (`Graph.heads`). A relation no clause
-    of the solver's own text feeds holds one value for every case, the
-    concept case's among them."""
+    (docs/handbook/solver-file.md#cases): a clause of the solver's own text
+    under no marker that lists a case, or under a marker that lists the concept
+    case, runs on it. The clauses that feed a relation of a lib instance are
+    those that feed the instance (`Graph.heads`). A relation no clause of the
+    solver's own text feeds holds one value for every case, the concept case's
+    among them."""
     node = graph.resolve((), f.relation)
     lines = [(u.scope, u.span.first)
              for u, _at in (graph.heads.get(node, ()) if node else ())

@@ -1,8 +1,8 @@
 """The checks of prose in code: each string a program marks with `mctx`,
-each doc comment of the lib, each `quotes` call and each path a code file
-names; with `mctx` itself, and `form`, the pattern that reads back a text
-built from an `mctx` template. It holds as well the check of the words of
-any prose, in a document or in code."""
+each doc comment of the lib and each `quotes` call; with `mctx` itself, and
+`form`, the pattern that reads back a text built from an `mctx` template.
+It holds as well the check of the words of any prose, in a document or in
+code, and the reader of the docstrings and comments of Python code."""
 
 from __future__ import annotations
 
@@ -30,8 +30,6 @@ from controlled_markdown import (
     TABLE,
 )
 from controlled_markdown.document_set import carried, check_blocks, check_links
-from controlled_markdown.nodes import slug
-from controlled_markdown.renderers import markdown_heading_lines
 
 
 # ----------------------------------------------------------------- prose
@@ -115,9 +113,18 @@ def _carry_error(source: str, line: int,
         f"or `takes`")
 
 
-# The deprecated console, whose docstrings and comments `code_carry_errors`
+# The deprecated console, whose docstrings and comments `code_prose_lines`
 # passes over.
 DEPRECATED = checkout.ROOT / "tools" / "console"
+
+
+def code_prose_lines(path: Path) -> list[tuple[int, str]]:
+    """Each line of a docstring or of a comment of the Python file `path`,
+    with its line, as `python_prose_lines` gives them; none where `path` is
+    no Python file or stands in `DEPRECATED`."""
+    if path.suffix != ".py" or path.resolve().is_relative_to(DEPRECATED):
+        return []
+    return python_prose_lines(path.read_text())
 
 
 def code_carry_errors(path: Path, source: str) -> Iterator[ControlledMarkdownError]:
@@ -128,10 +135,9 @@ def code_carry_errors(path: Path, source: str) -> Iterator[ControlledMarkdownErr
     the file's fragments past one, this check reads neither: those rules
     report it. The docstrings and comments are read apart from the
     fragments."""
-    if path.suffix == ".py" and not path.resolve().is_relative_to(DEPRECATED):
-        for line, text in python_prose_lines(path.read_text()):
-            if words := carry_words(text):
-                yield _carry_error(source, line, words)
+    for line, text in code_prose_lines(path):
+        if words := carry_words(text):
+            yield _carry_error(source, line, words)
     if path.suffix == ".dl":
         for fragment in dl_fragments(path, source):
             yield from carry_errors(_statement(fragment.text, source,
@@ -364,102 +370,6 @@ def _at_file_line(fragment: Fragment,
     return ControlledMarkdownError(
         fragment.source, fragment.line + max(err.line - 1, 0), err.rule,
         err.message)
-
-
-# A path a document takes in the repo: the shapes the document set uses, so a
-# literal that names one is checked against the tree.
-DOC_PATH_RE = re.compile(
-    r"^(?:docs/[\w./-]+\.md|prompts/[\w./-]+\.md|CLAUDE\.md"
-    r"|\.claude/[\w./-]+\.md)$")
-
-
-def _named_paths(path: Path, text: str):
-    """Every string a file holds that names a document, with its line. A
-    string holding a hole or a wildcard names a shape and is passed over."""
-    def wanted(value: str, line: int):
-        if "{" in value or "*" in value or not DOC_PATH_RE.match(value):
-            return
-        yield line, value
-
-    if path.suffix == ".py":
-        for node in ast.walk(ast.parse(text, str(path))):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                yield from wanted(node.value, node.lineno)
-        return
-    for m in JS_STRING_RE.finditer(text):
-        yield from wanted(m.group(2), text.count("\n", 0, m.start()) + 1)
-
-
-JS_STRING_RE = re.compile(r"""(['"])((?:[^'"\\\n]|\\.)*?)\1""")
-
-
-def check_paths(path: Path, source: str, root: Path) -> None:
-    """Every document a file names by path stands in the tree. A name that
-    goes stale is a reference no reader can follow."""
-    for line, value in _named_paths(path, path.read_text()):
-        if not (root / value).exists():
-            raise ControlledMarkdownError(
-                source, line, Rule.PATH_MISSING,
-                f"no file at `{value}`")
-
-
-# A citation in code: a document by its path from the root of the tree, and
-# a section of it by the slug of its heading.
-CITATION_RE = re.compile(r"(?:docs|work)/[\w./-]+\.md(?:#[\w-]+)?")
-
-
-def _citations(path: Path) -> Iterator[tuple[int, str, str, str]]:
-    """Every citation the file holds, with its line, its path and its
-    anchor, empty where it has none. A file that is no UTF-8 text holds
-    none."""
-    try:
-        text = path.read_text()
-    except UnicodeDecodeError:
-        return
-    for at, line in enumerate(text.split("\n"), 1):
-        for m in CITATION_RE.finditer(line):
-            name, _, anchor = m.group(0).partition("#")
-            yield at, m.group(0), name, anchor
-
-
-def _anchor_fault(source: str, at: int, citation: str, name: str,
-                  anchor: str, root: Path) -> ControlledMarkdownError | None:
-    """The fault of an anchor that names no heading of the cited file. The
-    headings are read from the file's text, since a cited spec file stands
-    outside the document set."""
-    if anchor in {slug(heading) for _, _, heading in
-                  markdown_heading_lines((root / name).read_text())}:
-        return None
-    return ControlledMarkdownError(source, at, Rule.CITATION_ANCHOR,
-                                   f"`{citation}` names no heading of `{name}`")
-
-
-def check_citations(path: Path, source: str, root: Path,
-                    present: frozenset[str]) -> Iterator[ControlledMarkdownError]:
-    """Every citation a file of the engine holds names a file of `present`,
-    the files a commit of the tree takes, and its anchor, where it has one,
-    a heading of that file. A citation of a file a clone does not hold is
-    one no reader of the code can follow."""
-    for at, citation, name, anchor in _citations(path):
-        if name not in present:
-            yield ControlledMarkdownError(
-                source, at, Rule.PATH_MISSING,
-                f"`{citation}` names no file a commit of the tree takes")
-        elif anchor and (err := _anchor_fault(source, at, citation, name,
-                                               anchor, root)):
-            yield err
-
-
-def check_citation_anchors(path: Path, source: str,
-                           root: Path) -> Iterator[ControlledMarkdownError]:
-    """Every anchor of a citation the file holds names a heading of the
-    cited file, where the tree holds that file. Code outside the engine
-    names untracked files by path on purpose, so a cited file that is
-    absent is passed over."""
-    for at, citation, name, anchor in _citations(path):
-        if anchor and (root / name).is_file() and (
-                err := _anchor_fault(source, at, citation, name, anchor, root)):
-            yield err
 
 
 # A `quotes` call names a handbook document, a heading in it and the words

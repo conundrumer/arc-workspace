@@ -138,7 +138,7 @@ def run_of(pair: PairRuns, case: Case) -> CaseOnPair:
 
 def split_tasks(pairs: Sequence[PairRuns], case: Case) -> list[dict[str, str]]:
     """The split tasks `case` fits, each as the candidate it takes at each
-    pair that has two, by pair (principles.md, under "Models and tasks"):
+    pair that has two, by pair (docs/handbook/principles.md#models-and-tasks):
     those where the case's run on each pair matches the candidate the split
     task takes there."""
     runs = [(p.pair.text, run_of(p, case)) for p in pairs]

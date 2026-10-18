@@ -150,8 +150,8 @@ def branch_witnesses(solver: Solver, ctor: str) -> list[WitnessLine]:
 
 def assignable(solver: Solver, key: str) -> bool:
     """Whether an `assign` key names something an entry may assign
-    (solver-file.md, under "Witness file"): a parameter, or a `@store` relation
-    as its line spells it."""
+    (docs/handbook/solver-file.md#witness-file): a parameter, or a `@store`
+    relation as its line spells it."""
     return any(p.name == key for p in solver.params.parameters) \
         or store_branch(solver, key) is not None
 
@@ -178,7 +178,7 @@ def read_witness(text: str, params: Params, role: WitnessFileRole
 
 def grid_stored(params: Params) -> frozenset[str]:
     """The parameters stored by GRID calls, whose `assign` values read as
-    grids (solver-file.md, under "Witness file")."""
+    grids (docs/handbook/solver-file.md#witness-file)."""
     return frozenset(p.name for p in params.parameters
                      if isinstance(p.stored, StoredGrid))
 
@@ -221,7 +221,7 @@ def own_top[D: RelationDecl | Component | TypeDecl](
 
 def enumerates(program: Program) -> bool:
     """Whether the solver's own text declares `impl_choice` at the top
-    level (solver-file.md, under "Cases")."""
+    level (docs/handbook/solver-file.md#cases)."""
     return own_top(program.relations, ENUMERATOR) is not None
 
 
@@ -237,8 +237,8 @@ def takes(solver: Solver, case: Case, branch: Branch) -> bool:
 def branch_under(solver: Solver, line: IgnoreLine) -> Branch | None:
     """The branch of the `@derive` or `@store` line a named `@ignore: derive`
     or `@ignore: store` line stands under: the nearest line of its kind above
-    it on the same declaration (solver-file.md, under "Params" and
-    "Program")."""
+    it on the same declaration (docs/handbook/solver-file.md#params,
+    docs/handbook/solver-file.md#program)."""
     found: tuple[int, DeriveBranch | StoreBranch] | None = None
     for b in solver.branches:
         if isinstance(b, StoredAtDerive) or b.line is None \
@@ -254,14 +254,16 @@ def branch_under(solver: Solver, line: IgnoreLine) -> Branch | None:
 
 def has_determine(solver: Solver) -> bool:
     """Whether the solver's own file declares the top-level `Determine` comp
-    that holds its determination (solver-file.md, under "Determination")."""
+    that holds its determination
+    (docs/handbook/solver-file.md#determination)."""
     return own_top(solver.program.components, DETERMINE) is not None
 
 
 def is_concept(solver: Solver, base: Base | None) -> bool:
     """Whether `base` is the concept case's: the first constructor at each
-    point it reaches (solver-file.md, under "Witness file"; principles.md,
-    "concept branch")."""
+    point it reaches (docs/handbook/solver-file.md#witness-file;
+    docs/handbook/principles.md#choice-points-and-open-parameters, "concept
+    branch")."""
     choice = solver.choice
     if choice is None or base is None:
         return base is None
@@ -272,5 +274,5 @@ def is_concept(solver: Solver, base: Base | None) -> bool:
 def is_concept_case(solver: Solver, case: Case) -> bool:
     """Whether `case` is the concept case: the base case
     (`solver.model.base_case`) of the concept case's base (`is_concept`)
-    (principles.md, under "The concept")."""
+    (docs/handbook/principles.md#the-concept)."""
     return case.is_base_case and is_concept(solver, case.base)

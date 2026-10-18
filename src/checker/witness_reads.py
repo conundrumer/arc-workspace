@@ -81,8 +81,8 @@ def records(expected: GroupGrid, got: Outcome) -> bool:
 
 def judged_entries(runs: Runs) -> list[tuple[Entry, RejectedOutput]]:
     """The entries the checks read that hold a judged output
-    (solver-file.md, under "Witness file") at an assignment the model places,
-    each with that output."""
+    (docs/handbook/solver-file.md#witness-file) at an assignment the model
+    places, each with that output."""
     return [(e, e.output) for e in runs.entries
             if isinstance(e.output, RejectedOutput)
             and not isinstance(runs.assignment(e), Fault)]
@@ -186,9 +186,9 @@ def _agree(inputs: Inputs, a: Case, b: Case) -> bool | None:
 def subsumes(inputs: Inputs, a: Case, b: Case) -> bool:
     """No input shows `a` defined and differing from `b` (`shows_apart`),
     and some input shows `a` undefined where `b` is defined, so the two
-    are not equivalent there (principles.md, under "Equivalence and
-    subsumption"). An input with no result for either shows nothing, and
-    then no subsumption is found."""
+    are not equivalent there
+    (docs/handbook/principles.md#equivalence-and-subsumption). An input with no
+    result for either shows nothing, and then no subsumption is found."""
     apart = False
     for got in inputs:
         x, y = got[a], got[b]

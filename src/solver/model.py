@@ -67,7 +67,7 @@ class ChoicePoint:
 def concept_branch(point: ChoicePoint) -> ConstructorBranch:
     """The concept branch at `point`: its first constructor, since the
     concept branch is declared first in `Choice` and in each field's type
-    of a record `Choice` (style.md, under "Cases")."""
+    of a record `Choice` (docs/handbook/style.md#cases)."""
     return point.constructors[0]
 
 
@@ -503,7 +503,7 @@ def takes_constructor(choice: Choice, base: Base | None,
 
 def every_base(choice: Choice) -> tuple[Base, ...] | None:
     """Every `Choice` value, for a solver that has no `impl_choice`
-    (solver-file.md, under "Cases": the cases are every combination of the
+    (docs/handbook/solver-file.md#cases: the cases are every combination of the
     fields); None where a field is of a type with no ADT to enumerate."""
     by_path = {p.path: p for p in choice.points}
 

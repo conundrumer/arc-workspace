@@ -27,10 +27,10 @@ class ColumnDomain(StrEnum):
 
 def column_domain(type_name: str, lib: Lib) -> ColumnDomain | None:
     """What a column's candidate domain ranges over, by its type: the
-    members of an orientation type (principles.md, "Orientation"), the
-    colors of the known grids, the numbers up to the largest grid
-    dimension, or the values a Box record's stored values imply; None for
-    a type no domain enumerates."""
+    members of an orientation type (docs/handbook/principles.md#orientation),
+    the colors of the known grids, the numbers up to the largest grid
+    dimension, or the values a Box record's stored values imply; None for a
+    type no domain enumerates."""
     if type_name in lib.orientation_types:
         return ColumnDomain.ORIENTATION
     if type_name == COLOR:

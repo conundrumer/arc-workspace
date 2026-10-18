@@ -65,7 +65,7 @@ class HeaderField:
     @property
     def words(self) -> tuple[str, ...]:
         """The field's words, every line of it read: the keywords of a
-        `@keywords:` field (solver-file.md, under "File structure")."""
+        `@keywords:` field (docs/handbook/solver-file.md#file-structure)."""
         return tuple(self.value.split())
 
 
@@ -339,7 +339,7 @@ class MarkerPart:
     @property
     def slash_joined(self) -> bool:
         """Whether the part joins names by `/`, which a marker writes as
-        separate parts (solver-file.md, under "Cases")."""
+        separate parts (docs/handbook/solver-file.md#cases)."""
         return "/" in self.name
 
 
@@ -729,7 +729,7 @@ def _read_judgment(rest: str | None
 def _marker(engine: Engine, text: str, line: int) -> CaseMarker:
     """`<names>[: gloss]`: the names split at the commas that stand outside
     parentheses, each kept as written, for `names.denote` to read
-    (solver-file.md, under "Cases")."""
+    (docs/handbook/solver-file.md#cases)."""
     head, colon, gloss = text.partition(":")
     parts = [MarkerPart(name) for name in engine.split_top(head) if name]
     return CaseMarker(tuple(parts), gloss.strip() if colon else None, line)
@@ -737,9 +737,9 @@ def _marker(engine: Engine, text: str, line: int) -> CaseMarker:
 
 def branch_band(adt: AdtType, index: int) -> tuple[int, int]:
     """The lines between which constructor `index`'s branch comment stands
-    (solver-file.md, under "File structure"), both outside it: the last line of
-    the constructor before it, or the type's first line, and the constructor's
-    first line."""
+    (docs/handbook/solver-file.md#file-structure), both outside it: the last
+    line of the constructor before it, or the type's first line, and the
+    constructor's first line."""
     start = adt.span.first if index == 0 \
         else adt.constructors[index - 1].span.last
     return start, adt.constructors[index].span.first
@@ -784,12 +784,12 @@ def read(engine: Engine, program: Program
     The comments read are the solver's own (`file` None) and the `//` ones: a
     line inside a block comment is no annotation. A comment block is a run of
     own-line comments on consecutive lines; the header is the block that starts
-    on line 1 (solver-file.md, under "File structure"). A nested line has
-    two spaces or more after `//` (solver-file.md, under "File structure"); a
-    line of two spaces or more that opens no directive continues the field or
-    claim above it (solver-file.md, under "File structure"). A line off its
-    word's form gives one fault, with each part of it found off the form
-    (`OffForm`)."""
+    on line 1 (docs/handbook/solver-file.md#file-structure). A nested line has
+    two spaces or more after `//`
+    (docs/handbook/solver-file.md#file-structure); a line of two spaces or more
+    that opens no directive continues the field or claim above it
+    (docs/handbook/solver-file.md#file-structure). A line off its word's form
+    gives one fault, with each part of it found off the form (`OffForm`)."""
     problems: list[Fault] = []
     off_at: dict[int, int] = {}
     """The index in `problems` of the off-form fault of each line."""
@@ -1154,10 +1154,11 @@ def _ignore(tail: str, content: str, line: int, above: DeclId | None,
             problem: Callable[[ProblemKind, int, str | Detail], None],
             off: Callable[[int, str, DirectiveWord, Iterable[OffPart]], None]
             ) -> None:
-    """One `@ignore` line (solver-file.md, under "Params" and "Program"). The
-    lint form stands on the declaration its comment block stands above where
-    only `@ignore` lines and their continuation lines stand between
-    (solver-file.md, under "Program"); the derive and store forms stand on
+    """One `@ignore` line (docs/handbook/solver-file.md#params,
+    docs/handbook/solver-file.md#program). The lint form stands on the
+    declaration its comment block stands above where only `@ignore` lines and
+    their continuation lines stand between
+    (docs/handbook/solver-file.md#program); the derive and store forms stand on
     the declaration their comment block stands above."""
     relation, rest, parts = _name_colon(tail, _RELATION_RE,
                                         FormPart.RELATION, True)
@@ -1247,7 +1248,7 @@ def _judgment(plausibility: Plausibility | Slot,
 
 def witness_text(id: str | Slot, plausibility: Plausibility | Slot,
                  verdict: Verdict | Slot) -> str:
-    """A `@witness` line (solver-file.md, under "File structure"), as the
+    """A `@witness` line (docs/handbook/solver-file.md#file-structure), as the
     reader reads it."""
     return (f"{at_word(DirectiveWord.WITNESS)} {id}: "
             f"{_judgment(plausibility, verdict)}")
@@ -1255,16 +1256,16 @@ def witness_text(id: str | Slot, plausibility: Plausibility | Slot,
 
 def derive_text(proposer: str, plausibility: Plausibility | Slot,
                 verdict: Verdict | Slot) -> str:
-    """A `@derive` line (solver-file.md, under "Params"), as the reader reads
-    it."""
+    """A `@derive` line (docs/handbook/solver-file.md#params), as the reader
+    reads it."""
     return (f"{at_word(DirectiveWord.DERIVE)} {proposer}: "
             f"{_judgment(plausibility, verdict)}")
 
 
 def store_text(relation: str | None, plausibility: Plausibility | Slot,
                verdict: Verdict | Slot) -> str:
-    """A `@store` line (solver-file.md, under "Program"), naming the relation
-    of an instance where it stands above an `.init`."""
+    """A `@store` line (docs/handbook/solver-file.md#program), naming the
+    relation of an instance where it stands above an `.init`."""
     return (f"{at_word(DirectiveWord.STORE)}{_named(relation)}: "
             f"{_judgment(plausibility, verdict)}")
 
@@ -1272,11 +1273,11 @@ def store_text(relation: str | None, plausibility: Plausibility | Slot,
 def ignore_text(relation: str | None, what: Category | IgnoreForm,
                 reason: str | Slot | None = None, proposer: str | None = None
                 ) -> str:
-    """An `@ignore` line (solver-file.md, under "Params" and "Program"):
-    `what` is the category of the lint form, or the derive or store form,
-    the derive form with `proposer` where it is given; `reason` follows the
-    dash where it is given. The lint form without its category raises
-    `ValueError`."""
+    """An `@ignore` line (docs/handbook/solver-file.md#params,
+    docs/handbook/solver-file.md#program): `what` is the category of the lint
+    form, or the derive or store form, the derive form with `proposer` where it
+    is given; `reason` follows the dash where it is given. The lint form
+    without its category raises `ValueError`."""
     if what == IgnoreForm.LINT:
         raise ValueError("an `@ignore` line of the lint form has a category")
     word = what.value if proposer is None else f"{what.value} {proposer}"

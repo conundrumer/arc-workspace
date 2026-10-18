@@ -102,8 +102,9 @@ class Candidates:
 
 
 def candidates(section: TaskSection, ex: Example) -> Candidates:
-    """The candidates of `ex`, a pair of `section` (principles.md, under
-    "Models and tasks"; solver-file.md, under "Alt outputs")."""
+    """The candidates of `ex`, a pair of `section`
+    (docs/handbook/principles.md#models-and-tasks;
+    docs/handbook/solver-file.md#alt-outputs)."""
     output = as_grid(ex.output)
     if ex.alt is None:
         return Candidates(section, ((Candidate.OUTPUT, frozenset({output})),))
@@ -174,7 +175,7 @@ def pair_runs(task: Task, cases: Sequence[Case],
     """`pairs` of `cases`, from `got`, what each case gives on each pair's
     input in the order of `examples`, each case matched against the pair's
     candidates (`matching`; a `tiebreak` alt joins the output's candidate, a
-    `rule` alt is a second one, solver-file.md, under "Alt outputs")."""
+    `rule` alt is a second one, docs/handbook/solver-file.md#alt-outputs)."""
     return tuple(pair_on(pair, ex, cases, here)
                  for (pair, ex), here in zip(examples(task), got, strict=True))
 

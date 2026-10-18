@@ -30,22 +30,23 @@ def cases(solver: Solver, engine: Engine, limits: Limits
     run on the empty input since the enumeration is a clause, each combined
     with every choice of branch at the `@derive` and `@store` points whose
     parameter or relation the base's derivation of `out` depends on
-    (`dependence`; solver-file.md, under "Params" and "Program"), minus each
-    case that an `@ignore: derive` or `@ignore: store` line excludes: the bare
-    form excludes every case that takes the branch in its place, every
-    derivation of the parameter for the derive form; `@ignore: derive
-    <Proposer>` every case that takes that one derivation; and a named form,
-    under a `@derive` or `@store` line, every case that takes that line's
-    branch and every branch its `<name>` contains (`solver.names.cases_of`;
-    solver-file.md, under "Params" and "Program"; history "The runner holds
-    cases the solver does not write" and 1103), and minus each case that takes
-    a `@store` branch on a relation with an `Ident` column (`ident_keyed`);
-    the `@store` line on such a relation is a finding of the store check that
-    fails the command. The handbook does not define the solver's cases in one
-    place; this docstring is where the definition stands.
+    (`dependence`; docs/handbook/solver-file.md#params,
+    docs/handbook/solver-file.md#program), minus each case that an
+    `@ignore: derive` or `@ignore: store` line excludes: the bare form excludes
+    every case that takes the branch in its place, every derivation of the
+    parameter for the derive form; `@ignore: derive <Proposer>` every case that
+    takes that one derivation; and a named form, under a `@derive` or `@store`
+    line, every case that takes that line's branch and every branch its
+    `<name>` contains (`solver.names.cases_of`;
+    docs/handbook/solver-file.md#params, docs/handbook/solver-file.md#program;
+    history "The runner holds cases the solver does not write" and 1103), and
+    minus each case that takes a `@store` branch on a relation with an `Ident`
+    column (`ident_keyed`); the `@store` line on such a relation is a finding
+    of the store check that fails the command. The handbook does not define the
+    solver's cases in one place; this docstring is where the definition stands.
 
     A `Choice` with no `impl_choice` relation has every combination of
-    its fields as a case (solver-file.md, under "Cases")."""
+    its fields as a case (docs/handbook/solver-file.md#cases)."""
     from solver.names import Denoted, cases_of, denote
 
     choice = solver.choice

@@ -1,4 +1,4 @@
-"""The witness file (solver-file.md, under "Witness file"): its entries,
+"""The witness file (docs/handbook/solver-file.md#witness-file): its entries,
 their reading from the file's text, and their writing to it."""
 
 import fcntl
@@ -134,8 +134,8 @@ class WitnessFile:
 
 
 def path(task_id: str) -> Path:
-    """`programs/witnesses/<task_id>.wit.json` (solver-file.md, under "Witness
-    file")."""
+    """`programs/witnesses/<task_id>.wit.json`
+    (docs/handbook/solver-file.md#witness-file)."""
     return checkout.witnesses() / f"{task_id}{WITNESS_SUFFIX}"
 
 
@@ -307,7 +307,7 @@ def assign_with_grids(assign: tuple[tuple[str, AssignValue], ...],
                       ) -> tuple[tuple[str, AssignValue], ...]:
     """`assign` with each value of a name in `grid_names`, a parameter
     stored as a grid, read as a grid where it has a grid's shape
-    (solver-file.md, under "Witness file"), and as facts otherwise."""
+    (docs/handbook/solver-file.md#witness-file), and as facts otherwise."""
     out: list[tuple[str, AssignValue]] = []
     for name, value in assign:
         if name in grid_names and isinstance(value, AssignRows):
@@ -411,7 +411,7 @@ def _entry(raw: object, index: int, off: Off) -> Entry | None:
 def with_grids(file: WitnessFile, grid_names: frozenset[str]) -> WitnessFile:
     """`file` with each `assign` value of a name in `grid_names`, a
     parameter stored as a grid, read as a grid where it has a grid's shape
-    (solver-file.md, under "Witness file"), and as facts otherwise
+    (docs/handbook/solver-file.md#witness-file), and as facts otherwise
     (`assign_with_grids`)."""
     entries = tuple(replace(e, assign=assign_with_grids(e.assign, grid_names))
                     for e in file.entries)

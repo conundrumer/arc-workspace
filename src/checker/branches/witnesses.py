@@ -96,8 +96,8 @@ def shows_apart(a: object, b: object) -> bool:
     """A run shows `a` defined and differing from `b` (`differ`): what a
     branch's witness needs of a case against its counterpart
     (`witness_divergence`), and what a run shows of no case that `b`
-    subsumes (principles.md, under "Witnesses" and "Equivalence and
-    subsumption")."""
+    subsumes (docs/handbook/principles.md#witnesses,
+    docs/handbook/principles.md#equivalence-and-subsumption)."""
     return isinstance(a, Grids) and differ(a, b)
 
 
@@ -105,10 +105,9 @@ def witness_divergence(runs: Runs, solver: Solver, cases: Sequence[Case],
                        branch: DeriveBranch | StoreBranch, grid: Grid,
                        assign: Assignment
                        ) -> tuple[Case, Case] | RunFailure | None:
-    """The output a witness needs (principles.md, under "Witnesses"): the
-    first case of `cases` defined on `grid` at `assign` that gives an
-    output other than its counterpart's, with that counterpart
-    (`diverges`)."""
+    """The output a witness needs (docs/handbook/principles.md#witnesses): the
+    first case of `cases` defined on `grid` at `assign` that gives an output
+    other than its counterpart's, with that counterpart (`diverges`)."""
     return diverges(runs, solver, cases, branch, grid, assign, defined=True)
 
 
@@ -187,10 +186,9 @@ def swap_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
     """The color-swap witness of `branch` (`judged.swaps`): the first
     swapped train input on which a case the survey looks with
     (`witness_targets`) gives the output a witness needs
-    (`witness_divergence`, principles.md, under "Witnesses"). `color` is
-    the one color the branch's value holds; None where it holds other
-    than one color. `NoFit.NO_FIT` where the survey looks with no
-    case."""
+    (`witness_divergence`, docs/handbook/principles.md#witnesses). `color` is
+    the one color the branch's value holds; None where it holds other than one
+    color. `NoFit.NO_FIT` where the survey looks with no case."""
     task = solver.given_task
     if color is None:
         return NoWitness.NOT_ONE_COLOR
@@ -218,12 +216,11 @@ def recorded_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
     """The first input of the witness file, each at its entry's
     assignment, on which a case the survey looks with
     (`witness_targets`) gives the output a witness needs
-    (`witness_divergence`, principles.md, under "Witnesses"): the
-    recorded inputs a survey looks on beside the color swaps, `swap`
-    saying why no color swap serves. `Unwitnessed` where none does, and
-    with `NoFit.NO_FIT` where it looks with no case; an entry whose
-    `assign` names nothing is the fault `fault_findings` reports, and is
-    passed over."""
+    (`witness_divergence`, docs/handbook/principles.md#witnesses): the recorded
+    inputs a survey looks on beside the color swaps, `swap` saying why no color
+    swap serves. `Unwitnessed` where none does, and with `NoFit.NO_FIT` where
+    it looks with no case; an entry whose `assign` names nothing is the fault
+    `fault_findings` reports, and is passed over."""
     models = witness_targets(runs, solver, cases, branch)
     if not models:
         return Unwitnessed(NoFit.NO_FIT, None)
@@ -291,7 +288,7 @@ def solver_with_entry(solver: Solver, entry: Entry) -> Solver:
     """The solver with `entry` in its witness file, as `put` writes it
     (`solver.witness.with_entry`). The cases `record` groups are then the
     cases witnessed with the entry's input among the file's
-    (solver-file.md, under "Cases"), which `witness` reads on the file
+    (docs/handbook/solver-file.md#cases), which `witness` reads on the file
     `record` writes."""
     held = () if solver.witness_file is None \
         else solver.witness_file.entries
@@ -356,7 +353,7 @@ def unnamed(solver: Solver, cases: Sequence[Case], entry: Entry
     """The names of the entry's groups that denote no case of `cases`,
     the solver's cases, in the order the groups hold them: a survey writes
     an entry only where each name it holds denotes a case of the solver
-    (solver-file.md, under "Witness file")."""
+    (docs/handbook/solver-file.md#witness-file)."""
     if not isinstance(entry.output, Groups):
         return ()
     out: list[str] = []
@@ -373,10 +370,10 @@ def entry_findings(runs: Runs, solver: Solver,
                    name: str, cases: Sequence[Case], entry: Entry
                    ) -> list[Finding]:
     """Where the witness file's entry of a branch's name does not witness
-    it (principles.md, under "Witnesses"): at its assignment, no case that takes the
-    branch diverges from its counterpart. A run that fails where none
-    diverges is the finding in its place; an `assign` that names nothing
-    is the fault `fault_findings` reports."""
+    it (docs/handbook/principles.md#witnesses): at its assignment, no case that
+    takes the branch diverges from its counterpart. A run that fails where none
+    diverges is the finding in its place; an `assign` that names nothing is the
+    fault `fault_findings` reports."""
     assign = assignment(runs.engine, solver, entry, runs.file_role)
     if isinstance(assign, Fault):
         return []

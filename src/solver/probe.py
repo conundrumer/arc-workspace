@@ -35,7 +35,7 @@ class Proposals:
 def example_inputs(task: Task) -> dict[RelationName, InputValue]:
     """`ex_in` over every example's input, train first, and `ex_out` over
     the train outputs, each with the example's index (lib.dl's runner
-    contract; solver-file.md, under "Determination")."""
+    contract; docs/handbook/solver-file.md#determination)."""
     return {
         EX_IN: IndexedGrids(tuple(as_grid(e.input)
                                   for e in (*task.train, *task.test))),

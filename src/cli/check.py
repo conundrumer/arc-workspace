@@ -34,8 +34,8 @@ COLLISIONS = frozenset({Category.RESERVED_NAME, Category.SHADOWED_TYPE,
 
 def lint_findings(solver: Solver, runs: Runs, hints: bool) -> list[Finding]:
     """The lint section's findings: the faults, then the lint's;
-    the hints only with `hints`: the lint that procedure.md, under
-    "Develop", asks the solver to pass."""
+    the hints only with `hints`: the lint that
+    docs/handbook/procedure.md#develop, asks the solver to pass."""
     found = fault_findings(solver, runs) + check_lint(solver, runs)
     return found if hints else [f for f in found if not is_hint(f)]
 
@@ -120,7 +120,7 @@ def _pairs(solver: Solver, runs: Runs
 
 def check_one(eng: SouffleEngine, solver: Solver, hints: bool) -> Checked:
     """The pairs, the lint and the determination of one solver: the run
-    procedure.md asks for under "Develop", "Run the solver"."""
+    docs/handbook/procedure.md#develop asks for, "Run the solver"."""
     runs = Runs(eng, solver, LIMITS)
     off = open_value_off(eng, solver)
     if off:

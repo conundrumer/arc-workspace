@@ -1,5 +1,6 @@
 """The lint check on the fields of `OpenValue`: a field off the form
-solver-file.md gives it under "Cases" (`solver.open_values.field_readings`)."""
+docs/handbook/solver-file.md#cases gives it
+(`solver.open_values.field_readings`)."""
 
 from checker.finding import Finding, LintNamed, LintSentence
 from checker.lint.view import lint

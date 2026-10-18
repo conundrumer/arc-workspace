@@ -33,7 +33,7 @@ def grouped(solver: "Solver", outcomes: Sequence[tuple["Case", GroupGrid]]
     input: one group per distinct output (`same_output`), the group that
     holds the concept case first and the rest in the order the cases come
     in, naming its cases by the fewest names that denote exactly them
-    (`solver.names.cover`; solver-file.md, under "Witness file")."""
+    (`solver.names.cover`; docs/handbook/solver-file.md#witness-file)."""
     from solver.aggregate import is_concept_case
     from solver.names import cover
     among = [c for c, _g in outcomes]

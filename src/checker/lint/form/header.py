@@ -60,7 +60,7 @@ def doc_keywords(written: str) -> dict[str, list[str]]:
 
 
 def known_keywords() -> frozenset[str]:
-    """Every keyword keywords.md lists (`doc_keywords`)."""
+    """Every keyword docs/handbook/keywords.md lists (`doc_keywords`)."""
     return frozenset(w for words in doc_keywords(
         keywords_doc().read_text()).values() for w in words)
 
@@ -141,9 +141,9 @@ def check_header(solver: Solver, runs: Runs) -> list[Finding]:
 @quotes("solver-file.md", "Header",
         "`@keywords` lists the keywords any case claims.")
 def check_keyword(solver: Solver, runs: Runs) -> list[Finding]:
-    """A word of the `@keywords:` line that keywords.md does not list, a
-    hint: a session adds the keyword it needs and proposes it in its review.
-    Serves readability: keywords index the corpus."""
+    """A word of the `@keywords:` line that docs/handbook/keywords.md does not
+    list, a hint: a session adds the keyword it needs and proposes it in its
+    review. Serves readability: keywords index the corpus."""
     got = header_keywords(solver)
     if got is None:
         return []

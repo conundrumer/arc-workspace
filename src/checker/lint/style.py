@@ -46,8 +46,8 @@ def check_choice_domain(solver: Solver, runs: Runs) -> list[Finding]:
     """A `choice-domain` declaration in program code: the relation keeps
     one arbitrary tuple per key, so which one it keeps is a choice the
     program does not state. Serves the concept's form: every choice the
-    model makes is stated (principles.md, under
-    "Choice points and open parameters")."""
+    model makes is stated
+    (docs/handbook/principles.md#choice-points-and-open-parameters)."""
     v = view(solver, runs)
     return [lint(d.span.first, LintNamed(
                 Category.CHOICE_DOMAIN, LintSentence.CHOICE_DOMAIN,

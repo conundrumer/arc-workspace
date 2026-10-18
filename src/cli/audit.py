@@ -80,11 +80,11 @@ def _every_case(runs: Runs, held: Collection[str] | None = None
 def witness_findings(solver: Solver, runs: Runs, every_case: bool,
                      held: Collection[str] | None = None
                      ) -> list[Finding] | RunFailure:
-    """The witness report's findings, for procedure.md under "Witness"
+    """The witness report's findings, for docs/handbook/procedure.md#witness
     ("`witness <task_id>` reads the solver against" its witness file): the
-    faults, then each witness check, over the runs with `impl_choice` holding every case
-    under `every_case` (`_every_case`, with `held`), which adds the case
-    conditions.
+    faults, then each witness check, over the runs with `impl_choice` holding
+    every case under `every_case` (`_every_case`, with `held`), which adds the
+    case conditions.
     Under `every_case`, the failure of the run that enumerates the
     solver's cases, where it fails."""
     if every_case:

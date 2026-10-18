@@ -178,8 +178,8 @@ def cmd_size(arg: str | None = None) -> int:
 # `keywords`
 
 def cmd_keywords(args: list[str] | None = None) -> int:
-    """How many solvers hold each keyword of keywords.md, and each header
-    keyword the doc does not list."""
+    """How many solvers hold each keyword of docs/handbook/keywords.md, and
+    each header keyword the doc does not list."""
     for a in args or []:
         if missing(a):
             return 2

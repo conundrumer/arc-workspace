@@ -80,16 +80,17 @@ class StoredValue:
 def stored_value(engine: Engine, solver: Solver, program: Program,
                  branch: StoreBranch, limits: Limits
                  ) -> StoredValue | RunFailure:
-    """The value a `@store` branch stores (solver-file.md, under "Program"),
-    from the relation's rows in `program` on each input of the task's pairs. A
-    column that holds the case (`case_columns`) is a key, never a column of
-    the value (solver-file.md, under "Program"). The value's columns are every
-    other column where the rows are one set on every input. Else they are the
-    most such columns, the first in column order among equals, whose rows are
-    one set on every input and whose rows on each input are the same at each
-    key, a key being the rows' part over the other columns: the relation is
-    then its keys, which its clauses give on each input, with the value at
-    each. Else every column that holds no case.
+    """The value a `@store` branch stores
+    (docs/handbook/solver-file.md#program), from the relation's rows in
+    `program` on each input of the task's pairs. A column that holds the case
+    (`case_columns`) is a key, never a column of the value
+    (docs/handbook/solver-file.md#program). The value's columns are every other
+    column where the rows are one set on every input. Else they are the most
+    such columns, the first in column order among equals, whose rows are one
+    set on every input and whose rows on each input are the same at each key, a
+    key being the rows' part over the other columns: the relation is then its
+    keys, which its clauses give on each input, with the value at each. Else
+    every column that holds no case.
     The value's rows are the relation's rows over its columns on the first
     train input. The relation's arity is the one its declaration gives, a
     relation empty on every input included.

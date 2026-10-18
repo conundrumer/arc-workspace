@@ -234,8 +234,8 @@ def inline_text(solver: Solver, types: Sequence[str],
 def color_ask_text(solver: Solver, types: Sequence[str],
                    members: Sequence[Sequence[object]]) -> str:
     """The sentence that asks for a value of one color on every input to
-    be a parameter (principles.md, under "Stored or derived"), its members as
-    `inline_text` writes them."""
+    be a parameter (docs/handbook/principles.md#stored-or-derived), its members
+    as `inline_text` writes them."""
     return mctx("one color on every input: {value}; make it a "
                 "parameter").format(value=inline_text(solver, types,
                                                       members))

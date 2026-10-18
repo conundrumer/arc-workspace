@@ -352,7 +352,7 @@ class OnTest(StrEnum):
     PASSED, the test pairs give the stored program's profile under it;
     REFUTED, they give another; UNJUDGED, the stored program fails a test
     pair, so it has no test profile to judge by; NOT_RUN, no test ran for
-    it (principles.md, "Models and tasks")."""
+    it (docs/handbook/principles.md#models-and-tasks)."""
 
     PASSED = "passed"
     REFUTED = "refuted"

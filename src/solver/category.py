@@ -11,8 +11,8 @@ from engine.quotes import quotes
         "`@ignore` lines directly above its declaration.")
 class Category(StrEnum):
     """The closed vocabulary of lint categories an `@ignore: <category>`
-    line may name (solver-file.md, the `@ignore` directive under
-    "Program"). A line that names a word outside it is a fault."""
+    line may name (docs/handbook/solver-file.md#program, the `@ignore`
+    directive). A line that names a word outside it is a fault."""
 
     RESERVED_NAME = "reserved name"
     SHADOWED_TYPE = "shadowed type"

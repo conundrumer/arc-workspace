@@ -97,10 +97,11 @@ def excluded_finding(runs: Runs, solver: Solver,
 def idle_ignores(runs: Runs, form: IgnoreForm) -> list[Finding]:
     """A finding per named `@ignore: derive` or `@ignore: store` line
     that excludes no case the runner would hold without it
-    (solver-file.md, under "Params" and "Program"): no `@derive` or `@store`
-    line stands above it, or no case takes that line's branch and every branch
-    its name contains. A name that denotes no case is the fault
-    `fault_findings` reports."""
+    (docs/handbook/solver-file.md#params,
+    docs/handbook/solver-file.md#program): no `@derive` or `@store` line stands
+    above it, or no case takes that line's branch and every branch its name
+    contains. A name that denotes no case is the fault `fault_findings`
+    reports."""
     solver = runs.solver
     a = solver.annotations
     bare = _unnamed(solver)

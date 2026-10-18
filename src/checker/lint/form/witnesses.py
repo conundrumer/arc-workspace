@@ -138,8 +138,8 @@ def _choice_line(v: View, choice: Choice) -> int:
 
 def _constructions(v: View) -> frozenset[str]:
     """The lib components whose `.comp` line ends with `// @construction`
-    (solver-file.md, under "Program"): an instance of one builds a term the model
-    reads through, and serves no claim of its own."""
+    (docs/handbook/solver-file.md#program): an instance of one builds a term
+    the model reads through, and serves no claim of its own."""
     trailing = {(c.file, c.line) for c in v.program.comments
                 if not c.own_line and c.text.strip()
                 .startswith("@construction")}

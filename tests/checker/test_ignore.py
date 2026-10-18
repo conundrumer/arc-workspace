@@ -1,7 +1,8 @@
 """An `@ignore` line that dismisses nothing is itself a finding, and the
 hints of other categories stay: a line of another category is idle, and a
-line on a lint category dismisses nothing (solver-file.md, `@ignore`
-directive). A wrong dismissal hides a finding, which no run shows."""
+line on a lint category dismisses nothing
+(docs/handbook/solver-file.md#program, `@ignore` directive). A wrong dismissal
+hides a finding, which no run shows."""
 
 from checker import Runs, check_lint
 from checker.finding import Kind, LintCounted, LintIgnore, LintSentence

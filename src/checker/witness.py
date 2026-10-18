@@ -1,6 +1,6 @@
-"""The checks of the witness rules (principles.md, under "Witnesses" and
-"Relational form"), and the checks of the `witness` report in the order
-it prints them."""
+"""The checks of the witness rules (docs/handbook/principles.md#witnesses,
+docs/handbook/principles.md#relational-form), and the checks of the `witness`
+report in the order it prints them."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -225,21 +225,21 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
     """The groups of one entry read against the runs: a group's names
     denote sets of the solver's cases (`solver.names.denoted_cases`), and
     together the groups name each case once, by the group of its output
-    (solver-file.md, under "Witness file"). A case a name denotes whose output
-    is not its group's grid is `drift`: the name reaches into another group. A case
-    no group names is `unlisted`, and a name that denotes none of the
-    solver's cases `lists-no-case`. Under the `witness --every-case` form the
-    names denote the solver's cases still, those the solver's own
+    (docs/handbook/solver-file.md#witness-file). A case a name denotes whose
+    output is not its group's grid is `drift`: the name reaches into another
+    group. A case no group names is `unlisted`, and a name that denotes none of
+    the solver's cases `lists-no-case`. Under the `witness --every-case` form
+    the names denote the solver's cases still, those the solver's own
     `impl_choice` holds (`is_shown`): a dropped case is judged by
-    `check_case_conditions` alone (solver-file.md, under "Witness file"). A
-    given file's name is read as the model of the branches it names, where
-    that model is one of `solver_cases` (`_model_set`), and a name whose
-    model is not one of them, while some case takes its branches, is
-    compared with no case, names none, and is reported `model-not-case`:
-    the file gives each branch's
-    output, the output of its model alone, and no other case is compared
-    with it (procedure.md, under "Analyze after the concept" and "Witness";
-    solver-file.md, under "Witness file").
+    `check_case_conditions` alone (docs/handbook/solver-file.md#witness-file).
+    A given file's name is read as the model of the branches it names, where
+    that model is one of `solver_cases` (`_model_set`), and a name whose model
+    is not one of them, while some case takes its branches, is compared with no
+    case, names none, and is reported `model-not-case`: the file gives each
+    branch's output, the output of its model alone, and no other case is
+    compared with it (docs/handbook/procedure.md#analyze-after-the-concept,
+    docs/handbook/procedure.md#witness;
+    docs/handbook/solver-file.md#witness-file).
     The names denote cases of the solver, and the `drift` and `unlisted`
     findings are on `solver_cases`, the witnessed cases, alone."""
     assert isinstance(entry.output, Groups)
@@ -312,11 +312,12 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
 def _model_set(solver: Solver, text: str, solver_cases: Sequence[Case]
                ) -> frozenset[Case] | NameFault | None:
     """A given file's group name read as a branch's model
-    (procedure.md, under "Analyze after the concept" and "Witness"): that
-    model where it is one of `solver_cases` (`solver.names.model_of`;
-    solver-file.md, under "Witness file"); None, nothing to compare, where
-    it is not and some case of `solver_cases` takes the branch; none where
-    no case takes the branch; the problem where the name denotes nothing."""
+    (docs/handbook/procedure.md#analyze-after-the-concept,
+    docs/handbook/procedure.md#witness): that model where it is one of
+    `solver_cases` (`solver.names.model_of`;
+    docs/handbook/solver-file.md#witness-file); None, nothing to compare, where
+    it is not and some case of `solver_cases` takes the branch; none where no
+    case takes the branch; the problem where the name denotes nothing."""
     d = denote(solver, text)
     if isinstance(d, NameFault):
         return d
@@ -397,15 +398,15 @@ def check_concept_output(solver: Solver, runs: Runs) -> list[Finding]:
        "solver no group of the entry names.")
 def check_separates(solver: Solver, runs: Runs) -> list[Finding]:
     """An entry's `separates` text names the models its input separates
-    (solver-file.md, under "Witness file"), and each group lists the cases it
-    records (solver-file.md, under "Witness file"): a name in the text denotes
-    a model, the named branches with every other point at its concept branch
-    (principles.md, under "Choice points and open parameters"), and where that
-    model is a case of the solver no group names, the name is a finding. An
-    entry of a judged output has no groups, and an entry need not name the
-    cases its id names; a group's names denote sets of cases
-    (`solver.names.denoted_cases`). No principle states this: the text is
-    prose for the reader of the file.
+    (docs/handbook/solver-file.md#witness-file), and each group lists the cases
+    it records (docs/handbook/solver-file.md#witness-file): a name in the text
+    denotes a model, the named branches with every other point at its concept
+    branch (docs/handbook/principles.md#choice-points-and-open-parameters), and
+    where that model is a case of the solver no group names, the name is a
+    finding. An entry of a judged output has no groups, and an entry need not
+    name the cases its id names; a group's names denote sets of cases
+    (`solver.names.denoted_cases`). No principle states this: the text is prose
+    for the reader of the file.
     Its kind, `separates`, is a hint outside `FAILING`."""
     solver_cases = runs.cases_or_none
     out: list[Finding] = []
@@ -491,8 +492,8 @@ def _differing_witness_text(solver: Solver) -> list[Finding]:
 
 def _header_claims(solver: Solver, runs: Runs) -> tuple[Claim, ...] | Fault:
     """The claims of the header, a sibling's being its representative's
-    (solver-file.md, under "Header"); the model's fault where the representative
-    has no solver file, since its claims are then unknown."""
+    (docs/handbook/solver-file.md#header); the model's fault where the
+    representative has no solver file, since its claims are then unknown."""
     def header(s: Solver) -> tuple[Claim, ...]:
         return tuple(c for c in s.annotations.claims if c.constructor is None)
 
@@ -605,11 +606,11 @@ def _departs(runs: Runs, verdict: Verdict, named: VerdictCase,
              case: Case, entry: Entry | None
              ) -> bool | tuple[Case, RunFailure]:
     """The witness shows `case` giving an output other than the verdict's
-    (solver-file.md, under "Header"): `other` every case's, `any` no case's,
-    and otherwise where the verdict's case, `named`, gives another output on
-    the witness. An entry whose assignment the model cannot place shows
-    nothing, which `fault_findings` reports. Where a run reached a limit or
-    failed, the output is not known, and the run's case and failure stand in
+    (docs/handbook/solver-file.md#header): `other` every case's, `any` no
+    case's, and otherwise where the verdict's case, `named`, gives another
+    output on the witness. An entry whose assignment the model cannot place
+    shows nothing, which `fault_findings` reports. Where a run reached a limit
+    or failed, the output is not known, and the run's case and failure stand in
     its place."""
     if verdict == VerdictWord.OTHER:
         return True
@@ -689,7 +690,8 @@ def check_approximation_witness(solver: Solver, runs: Runs
 class _BranchWitness:
     """A `@witness` line of a branch other than its point's first: the
     branch's model and the model of the point's first branch
-    (principles.md, under "Choice points and open parameters" and "Witnesses")."""
+    (docs/handbook/principles.md#choice-points-and-open-parameters,
+    docs/handbook/principles.md#witnesses)."""
 
     line: WitnessLine
     branch: ConstructorBranch
@@ -702,11 +704,11 @@ def _branch_witnesses(solver: Solver, runs: Runs
     """Each `@witness` line in the branch comment of a constructor other
     than its point's first, under no `@approximated:` line, whose verdict
     denotes another model than the branch's: a witness of the concept
-    case stands under the branch its verdict denotes (procedure.md, under
-    "Witness").
-    A line whose branch or first branch has no model to build is not
-    here. A line in the comment of a constructor that is at no choice
-    point is a fault: the name of its branch denotes no case."""
+    case stands under the branch its verdict denotes
+    (docs/handbook/procedure.md#witness). A line whose branch or first branch
+    has no model to build is not here. A line in the comment of a constructor
+    that is at no choice point is a fault: the name of its branch denotes no
+    case."""
     choice = solver.choice
     solver_cases = runs.cases_or_none
     out: list[_BranchWitness] = []

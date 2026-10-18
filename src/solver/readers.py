@@ -117,12 +117,12 @@ def read_lib(program: Program) -> Lib:
     """The lib's types and constants as the model reads them, from a
     program that includes the lib: the parts whose `file` is set.
 
-    The Box types are `Box` and each alias of one (style.md, "Box
-    readings"); an orientation type is the type of an `*_elem` relation,
-    and its members are the constants its facts state and the members of
-    the `*_elem` relations its clauses read (principles.md, "Orientation");
-    the constants are the lib's `#define` names whose value is a
-    constant."""
+    The Box types are `Box` and each alias of one
+    (docs/handbook/style.md#box-roles); an orientation type is the type of an
+    `*_elem` relation, and its members are the constants its facts state and
+    the members of the `*_elem` relations its clauses read
+    (docs/handbook/principles.md#orientation); the constants are the lib's
+    `#define` names whose value is a constant."""
     lib_types = [t for t in program.types if not own(t.span)]
     links = {t.name: t.target.text for t in lib_types
              if isinstance(t, AliasType)}
@@ -216,9 +216,10 @@ def _points(program: Program, adt: AdtType, path: tuple[str, ...],
 
 def read_choice(program: Program, index: Index, problems: list[Fault]
                 ) -> Choice | None:
-    """The `Choice` type (solver-file.md, under "Cases" and "Types"): an ADT,
-    or a record whose fields are ADTs, each ADT a choice point, and each ADT a
-    field of a constructor stands in takes a point of its own."""
+    """The `Choice` type (docs/handbook/solver-file.md#cases,
+    docs/handbook/solver-file.md#types): an ADT, or a record whose fields are
+    ADTs, each ADT a choice point, and each ADT a field of a constructor stands
+    in takes a point of its own."""
     types = _own_type(index)
     root = types(TypeName((), CHOICE), TOP)
     if root is None:
@@ -271,7 +272,7 @@ def instance_of(program: Program, component: str) -> Instance | None:
 
 def parameter(solver: Solver, name: str) -> RelationName:
     """A parameter as the program reads it, `params.<rel>`
-    (solver-file.md, under "Params")."""
+    (docs/handbook/solver-file.md#params)."""
     inst = instance_of(solver.program, PARAMS)
     if inst is None:
         raise ValueError(f"{solver.stem}: no instance of `Params`")
@@ -297,15 +298,17 @@ def read_params(program: Program, annotations: Annotations,
                 constants: Mapping[str, Value],
                 lists_case: Callable[[CaseMarker], bool],
                 problems: list[Fault]) -> Params:
-    """The relations of `Params` (solver-file.md, under "Params"). A relation
-    that a clause of `Params` feeds, other than a RIGID block's relations,
-    which its closure places, is derived data (solver-file.md, under "Params"),
-    listed apart with whether a `Determine` relation of its name mirrors it
-    (solver-file.md, under "Determination"). Every other relation is a
+    """The relations of `Params` (docs/handbook/solver-file.md#params). A
+    relation that a clause of `Params` feeds, other than a RIGID block's
+    relations, which its closure places, is derived data
+    (docs/handbook/solver-file.md#params), listed apart with whether a
+    `Determine` relation of its name mirrors it
+    (docs/handbook/solver-file.md#determination). Every other relation is a
     parameter, with its stored facts or GRID calls, whether a `Determine`
-    relation of its name mirrors it (solver-file.md, under "Determination");
-    each with the section it stands in (`section_at`) and whether an `@open`
-    line stands above it. An `@open` line above no parameter is unplaced."""
+    relation of its name mirrors it
+    (docs/handbook/solver-file.md#determination); each with the section it
+    stands in (`section_at`) and whether an `@open` line stands above it. An
+    `@open` line above no parameter is unplaced."""
     comp = _component(program, PARAMS)
     if comp is None or comp.span is None:
         return Params(())
@@ -401,8 +404,9 @@ def _grid_call(call: GridCall, constants: Mapping[str, Value]
 def _section(markers: Sequence[CaseMarker], line: int,
              lists_case: Callable[[CaseMarker], bool]) -> Section:
     """The section a line stands in among the markers of its part of the file:
-    unmarked above the first marker that lists a case (style.md, under
-    "Params"), else under the nearest marker above it, whatever it lists."""
+    unmarked above the first marker that lists a case
+    (docs/handbook/style.md#params), else under the nearest marker above it,
+    whatever it lists."""
     above = [m for m in markers if m.line < line]
     if any(lists_case(m) for m in above):
         return UnderMarker(above[-1])
@@ -411,9 +415,9 @@ def _section(markers: Sequence[CaseMarker], line: int,
 
 def section_at(solver: Solver, scope: Scope, line: int) -> Section:
     """The section a line of the solver's own text stands in
-    (solver-file.md, under "Cases"): among the markers inside the top-level
-    component the line's scope stands in, or for a top-level line, among
-    the markers outside every component (`_section`)."""
+    (docs/handbook/solver-file.md#cases): among the markers inside the
+    top-level component the line's scope stands in, or for a top-level line,
+    among the markers outside every component (`_section`)."""
     return _SECTIONS.compute(solver, lambda: _sections(solver))(scope, line)
 
 
@@ -538,10 +542,12 @@ def _unplaced(problems: list[Fault], line: int, word: DirectiveWord) -> None:
 def read_branches(program: Program, annotations: Annotations,
                   proposers: frozenset[str] | None,
                   problems: list[Fault]) -> tuple[Branch, ...]:
-    """The branches of the `@derive` and `@store` lines (solver-file.md, under
-    "Params" and "Program"), and `<param>=stored` at each `@derive` point
-    (history 1103), in file order: a point's stored branch before its `@derive`
-    branches. A second line of one branch's name holds no branch of its own."""
+    """The branches of the `@derive` and `@store` lines
+    (docs/handbook/solver-file.md#params,
+    docs/handbook/solver-file.md#program), and `<param>=stored` at each
+    `@derive` point (history 1103), in file order: a point's stored branch
+    before its `@derive` branches. A second line of one branch's name holds no
+    branch of its own."""
     found: list[tuple[int, Branch]] = []
     stored_at: set[str] = set()
     derivations: set[tuple[str, str]] = set()
@@ -619,12 +625,13 @@ def read_branches(program: Program, annotations: Annotations,
 def ignore_targets(program: Program, line: IgnoreLine
                    ) -> tuple[RelationName, ...]:
     """The parameters or relations a bare `@ignore: derive` or `@ignore: store`
-    line stands on (solver-file.md, under "Params" and "Program"), which are
-    those a directive in its place stands on: a parameter's `.decl` for the
-    derive form; for the store form, a relation's `.decl`, and above a `.init`
-    the relation the line states, or with none stated every relation of the
-    instance (solver-file.md, under "Program"). Empty where it stands on
-    nothing its form takes."""
+    line stands on (docs/handbook/solver-file.md#params,
+    docs/handbook/solver-file.md#program), which are those a directive in its
+    place stands on: a parameter's `.decl` for the derive form; for the store
+    form, a relation's `.decl`, and above a `.init` the relation the line
+    states, or with none stated every relation of the instance
+    (docs/handbook/solver-file.md#program). Empty where it stands on nothing
+    its form takes."""
     decl = None if line.above is None else _decl(program, line.above)
     if line.form is IgnoreForm.DERIVE:
         if isinstance(decl, RelationDecl) and decl.scope == PARAMS_SCOPE \

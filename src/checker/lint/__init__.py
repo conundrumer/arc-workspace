@@ -1,6 +1,6 @@
 """The lint: one check per lint category, each reading the parsed program,
 and their composition, which applies the solver's `@ignore` lines
-(solver-file.md, under "Program")."""
+(docs/handbook/solver-file.md#program)."""
 
 from collections.abc import Callable, Sequence
 from dataclasses import replace
@@ -247,7 +247,7 @@ BANNED_FORMS = frozenset({
     Category.ARITHMETIC, Category.RAW_AGGREGATE, Category.RANGE,
     Category.ORD, Category.NONZERO_LITERAL, Category.ORIENTATION_LITERAL,
 })
-"""The categories of the banned forms (style.md, under "Bans")."""
+"""The categories of the banned forms (docs/handbook/style.md#bans)."""
 
 
 def _branch_forms(solver: Solver, runs: Runs, findings: list[Finding]

@@ -1,6 +1,6 @@
-"""The `derive` survey (procedure.md, under "Develop"): the built-in derivations of
-the solver's stored parameters that fit, each a branch, with its witness,
-and the findings on the solver's `@derive` lines."""
+"""The `derive` survey (docs/handbook/procedure.md#develop): the built-in
+derivations of the solver's stored parameters that fit, each a branch, with its
+witness, and the findings on the solver's `@derive` lines."""
 
 import threading
 from dataclasses import dataclass, replace
@@ -101,13 +101,12 @@ reads the parameter, so the model is the concept case's
 @dataclass(frozen=True)
 class Derivation:
     """One parameter read off the input by one proposer whose model does
-    not miss Fit (procedure.md, under "Develop"): how its model meets Fit, its
-    `@derive` line where one stands, the RIGID block whose chart the
-    parameter is, whether a bare `@ignore: derive` line stands in its
-    place, or an `@ignore: derive <Proposer>` line of its proposer,
-    whether the witness file holds the entry of its name, the swap
-    witness the survey sought where it holds none, and the entry built
-    from that witness."""
+    not miss Fit (docs/handbook/procedure.md#develop): how its model meets Fit,
+    its `@derive` line where one stands, the RIGID block whose chart the
+    parameter is, whether a bare `@ignore: derive` line stands in its place, or
+    an `@ignore: derive <Proposer>` line of its proposer, whether the witness
+    file holds the entry of its name, the swap witness the survey sought where
+    it holds none, and the entry built from that witness."""
 
     parameter: str
     proposer: Proposer
@@ -143,10 +142,11 @@ def derivations(runs: Runs, known: dict[str, Proposer]
                 ) -> tuple[list[tuple[Parameter, Proposer]], list[Finding]]:
     """Each parameter with a stored value, with each proposer of its
     column types that gives a value on every pair's input, each input
-    read alone (solver-file.md, under "Params"; principles.md, under "Stored
-    or derived"): Fit, judged per pair with the value derived from that
-    pair's input, not the stored value, decides which the survey reports.
-    The findings are the probe runs that gave no result, one per pair."""
+    read alone (docs/handbook/solver-file.md#params;
+    docs/handbook/principles.md#stored-or-derived): Fit, judged per pair with
+    the value derived from that pair's input, not the stored value, decides
+    which the survey reports. The findings are the probe runs that gave no
+    result, one per pair."""
     task = runs.solver.given_task
     given: dict[str, int] = {}
     failed: list[Finding] = []
@@ -227,9 +227,9 @@ class _One:
         "`uv run python scripts/run_dl.py derive <task_id>` lists the built-in "
         "derivations that fit.")
 def survey_derive(runs: Runs) -> DeriveSurvey:
-    """The `derive` report (procedure.md, under "Develop"): each derivation of a
-    stored parameter whose model does not miss Fit, and the findings on
-    the solver's `@derive` lines and on the derivations."""
+    """The `derive` report (docs/handbook/procedure.md#develop): each
+    derivation of a stored parameter whose model does not miss Fit, and the
+    findings on the solver's `@derive` lines and on the derivations."""
     solver = runs.solver
     solver_cases = runs.cases
     if not isinstance(solver_cases, tuple):

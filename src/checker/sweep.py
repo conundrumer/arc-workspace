@@ -335,7 +335,7 @@ def _set_cases(sets: CaseSets[SetValue]) -> SetCases:
 @dataclass(frozen=True)
 class NoCaseMarker:
     """A marker in `Params` that lists no case, with the parameters under
-    it (solver-file.md, under "Cases")."""
+    it (docs/handbook/solver-file.md#cases)."""
 
     marker: CaseMarker
     parameters: tuple[str, ...]
@@ -672,12 +672,12 @@ def survey_sweep(solver: Solver, runs: Runs,
                  time_limit: float = TIME_LIMIT_SECONDS) -> SweepReport:
     """Each enumerable parameter swept one at a time, the others at their
     stored values: a value fits where it reproduces the stored program's
-    profile on every train pair (principles.md, under "Models and tasks", a
-    stored assignment determined by the evidence). Fitting values beyond the
-    stored ones (`Extras`) run on the test pairs. A parameter whose value
-    is a set of rows stores its one set, and its sweep counts the
-    single-row changes of that set that also fit (`SetSweep`). Above the
-    cap, the candidates one change from the stored facts.
+    profile on every train pair (docs/handbook/principles.md#models-and-tasks,
+    a stored assignment determined by the evidence). Fitting values beyond the
+    stored ones (`Extras`) run on the test pairs. A parameter whose value is a
+    set of rows stores its one set, and its sweep counts the single-row changes
+    of that set that also fit (`SetSweep`). Above the cap, the candidates one
+    change from the stored facts.
     The parameters run cheapest first, and a spent time limit cuts the
     parameter in flight and leaves the rest unswept. A value the pairs
     reproduce only because the cases that read the parameter give nothing

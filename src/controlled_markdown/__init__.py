@@ -26,7 +26,8 @@ verbatim, `write` puts it back unchanged, and a render leaves it out.
 The package holds Controlled Markdown as a whole: `nodes` holds the node
 tree, `parser` the parser, `formatter` the formatter, `registry` the
 registry, `directives` the directives a render acts on, `prose` the checks
-of prose in code, `document_set` the checks of a document set with the
+of prose in code, `citations` the checks of the documents a code file
+names and cites, `document_set` the checks of a document set with the
 links a node's text holds, `renderers` the renderers, `round_trip` the
 formatter's round trip, and `xrefs` the references from a document to
 code. This module gives every name of the package.
@@ -132,12 +133,6 @@ from controlled_markdown.prose import (
     check_fragment as check_fragment,
     fragments as fragments,
     check_file_fragments as check_file_fragments,
-    DOC_PATH_RE as DOC_PATH_RE,
-    JS_STRING_RE as JS_STRING_RE,
-    check_paths as check_paths,
-    CITATION_RE as CITATION_RE,
-    check_citations as check_citations,
-    check_citation_anchors as check_citation_anchors,
     LINE_MARKER_RE as LINE_MARKER_RE,
     Quote as Quote,
     handbook_sections as handbook_sections,
@@ -145,6 +140,16 @@ from controlled_markdown.prose import (
     DL_DOC_RE as DL_DOC_RE,
     dl_fragments as dl_fragments,
     check_dl_comments as check_dl_comments,
+    code_prose_lines as code_prose_lines,
+)
+from controlled_markdown.citations import (
+    DOC_PATH_RE as DOC_PATH_RE,
+    JS_STRING_RE as JS_STRING_RE,
+    check_paths as check_paths,
+    CITATION_RE as CITATION_RE,
+    check_citations as check_citations,
+    check_citation_anchors as check_citation_anchors,
+    check_citation_paths as check_citation_paths,
 )
 from controlled_markdown.renderers import brief as brief
 from controlled_markdown.renderers import entries as entries

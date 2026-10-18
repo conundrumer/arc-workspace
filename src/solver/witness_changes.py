@@ -1,5 +1,5 @@
 """The changes a run of a witness again makes in its entry of the witness
-file (solver-file.md, under "Witness file"), and the entry that run
+file (docs/handbook/solver-file.md#witness-file), and the entry that run
 writes."""
 
 from collections.abc import Callable, Sequence

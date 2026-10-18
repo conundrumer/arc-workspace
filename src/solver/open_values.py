@@ -3,7 +3,7 @@ values of the field's `@open` relation that the derivation gives on the
 run's input where the case takes a `@derive` branch on it, else that the
 run's assignment gives it, else the facts of the run's program, each
 projected onto the columns the field's record names, which tell one open
-value from another (solver-file.md, under "Cases")."""
+value from another (docs/handbook/solver-file.md#cases)."""
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -30,8 +30,8 @@ def open_value_type(solver: Solver) -> RecordType | None:
 
 
 class FieldFault(Enum):
-    """How a field of `OpenValue` is off the form solver-file.md gives it
-    under "Cases"."""
+    """How a field of `OpenValue` is off the form
+    docs/handbook/solver-file.md#cases gives it."""
 
     NO_RELATION = "no relation"
     """The field has the name of no `@open` relation."""

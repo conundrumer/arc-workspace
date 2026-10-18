@@ -51,6 +51,7 @@ from . import (
     carry_errors,
     check_blocks,
     check_citation_anchors,
+    check_citation_paths,
     check_citations,
     code_carry_errors,
     check_closure,
@@ -203,8 +204,9 @@ DL_DOC_GLOBS = ("programs/lib.dl", "programs/lib/*.dl", "programs/proposers.dl")
 def check_code(root: Path, document_set: set[Path]) -> int:
     """Every fragment a program holds, read as the format, every document
     it names by path, every handbook passage it quotes, every file and
-    section the engine cites, and every section other code cites. The rest
-    of each file is code, so nothing else in it is read."""
+    section the engine cites, every section other code cites, and every
+    document a Python docstring or comment cites by its file name alone.
+    The rest of each file is code, so nothing else in it is read."""
     off = 0
     present = present_files(root)
     for name in sorted(present):
@@ -218,6 +220,9 @@ def check_code(root: Path, document_set: set[Path]) -> int:
             for err in check_citation_anchors(path, shown(path), root):
                 print(err)
                 off += 1
+        for err in check_citation_paths(path, shown(path), present):
+            print(err)
+            off += 1
         try:
             check_file_fragments(path, shown(path), root)
             # A test names the paths it makes up, so a name there stands for a

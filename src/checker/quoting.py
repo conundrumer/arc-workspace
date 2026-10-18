@@ -1,12 +1,12 @@
 """The handbook words each check and survey of the checker rests on, read
 from the functions themselves: a check or survey has `quotes` or a
 `guard`, a `guard` stands on a hint or lint check alone, and a check that
-is neither a hint nor a lint quotes `principles.md`. `python -m
-controlled_markdown check` reports what `unquoted` gives.
+is neither a hint nor a lint quotes `docs/handbook/principles.md`.
+`python -m controlled_markdown check` reports what `unquoted` gives.
 
 A check quotes the principle it serves and, where it checks the solver's
-form, the solver-file.md passage that states the form too; a hint or lint
-quotes the nearest procedure or style line."""
+form, the docs/handbook/solver-file.md passage that states the form too; a hint
+or lint quotes the nearest procedure or style line."""
 
 import ast
 import importlib
@@ -44,7 +44,7 @@ class Breach(Enum):
     """It has a `guard` and is no hint or lint check."""
     PRINCIPLE = auto()
     """It is a check that is neither a hint nor a lint, and has no
-    `quotes` from `principles.md`."""
+    `quotes` from `docs/handbook/principles.md`."""
 
 
 @dataclass(frozen=True)

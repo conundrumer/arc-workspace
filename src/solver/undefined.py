@@ -1,5 +1,5 @@
-"""The undefined output, and why a run gives no grid (principles.md, under
-"Models and tasks")."""
+"""The undefined output, and why a run gives no grid
+(docs/handbook/principles.md#models-and-tasks)."""
 
 from dataclasses import dataclass, field
 
@@ -61,8 +61,8 @@ class InconsistentBounds:
 @dataclass(frozen=True)
 class NoDerivedValue:
     """A `@derive` branch of the case derives its parameter, and the
-    proposer gives it no value on the input (principles.md, under "Stored or
-    derived")."""
+    proposer gives it no value on the input
+    (docs/handbook/principles.md#stored-or-derived)."""
 
     parameter: str
     proposer: str

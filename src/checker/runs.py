@@ -629,7 +629,8 @@ class Runs:
     def alone(self, case: Case) -> "Runs":
         """The runs of the solver with `impl_choice` holding the case's
         base alone, so that no other case `impl_choice` holds changes what
-        it gives (procedure.md, under "Reconcile", "with that case restored")."""
+        it gives (docs/handbook/procedure.md#reconcile, "with that case
+        restored")."""
         if case.base not in self._alone:
             self._alone[case.base] = self._restricted((case.base,))
         return self._alone[case.base]
@@ -638,7 +639,7 @@ class Runs:
                     kept: tuple[Case, ...] | None = None) -> "Runs":
         """The runs of the solver with `impl_choice` holding `bases`
         alone (`solver.variations.Restrict`). Where the solver declares no
-        `impl_choice`, no clause reads it (solver-file.md, under "Cases"),
+        `impl_choice`, no clause reads it (docs/handbook/solver-file.md#cases),
         so these are the runs of the solver as it stands."""
         solver = self.solver
         if enumerates(solver.program):
@@ -658,11 +659,12 @@ class Runs:
     @cached_property
     def restored(self) -> "Runs | RunFailure | None":
         """The runs of the `witness --every-case` form: the solver with
-        `impl_choice` holding every case of `Choice` (procedure.md, under
-        "Reconcile"), with `kept` the solver's cases. None for a solver with no
-        `impl_choice`, which holds every case already, and for a `Choice`
-        whose cases no enumeration gives; the failure of the run that
-        enumerates the solver's cases where it fails."""
+        `impl_choice` holding every case of `Choice`
+        (docs/handbook/procedure.md#reconcile), with `kept` the solver's cases.
+        None for a solver with no `impl_choice`, which holds every case
+        already, and for a `Choice` whose cases no enumeration gives; the
+        failure of the run that enumerates the solver's cases where it
+        fails."""
         if not enumerates(self.solver.program):
             return None
         bases = self._every_base()

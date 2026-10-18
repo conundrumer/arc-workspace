@@ -29,8 +29,8 @@ undefined."""
 
 
 def resolved(solver: Solver) -> bool:
-    """Whether `out` has a resolution column (solver-file.md, under
-    "Cases")."""
+    """Whether `out` has a resolution column
+    (docs/handbook/solver-file.md#cases)."""
     return bool(out_columns(solver.program).resolution)
 
 

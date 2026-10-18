@@ -269,10 +269,10 @@ name ends in `Choice` already (`enumerator_name`)."""
 
 
 def enumerator_name(type_name: str) -> str:
-    """The name solver-file.md gives the enumerator of a record `Choice`'s
-    field of type `type_name`: the type's name in snake_case, with
-    `ENUMERATOR_SUFFIX` appended unless the type's name ends in
-    `Choice` (`dec_choice(dc: DecChoice)`)."""
+    """The name docs/handbook/solver-file.md gives the enumerator of a record
+    `Choice`'s field of type `type_name`: the type's name in snake_case, with
+    `ENUMERATOR_SUFFIX` appended unless the type's name ends in `Choice`
+    (`dec_choice(dc: DecChoice)`)."""
     snake = "_".join(camel_words(type_name))
     return snake if type_name.endswith(CHOICE) else snake + ENUMERATOR_SUFFIX
 

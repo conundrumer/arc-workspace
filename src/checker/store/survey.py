@@ -382,7 +382,7 @@ class Found:
     def asks_params(self) -> bool:
         """The value is a color on every input with no `@store` line, and
         the concept case reads it: its stored reading is a Params
-        parameter (principles.md, under "Stored or derived")."""
+        parameter (docs/handbook/principles.md#stored-or-derived)."""
         return self.storable and not self.store_branch and self.read \
             and self.concept and not self.concept_stored
 
@@ -542,8 +542,9 @@ def _named_case(solver: Solver, restricted: Sequence[Base | None],
     """The cases a row's case values stand for: of the bases that hold
     them, the model of the constructors they hold, the one that takes
     the concept branch at every point no case column holds
-    (principles.md, "A branch's model"); where no base of the solver is
-    that model, every base that holds them."""
+    (docs/handbook/principles.md#choice-points-and-open-parameters, "A branch's
+    model"); where no base of the solver is that model, every base that holds
+    them."""
     choice = solver.choice
     if choice is None or not restricted:
         return ()

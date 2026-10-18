@@ -77,8 +77,9 @@ def survey_witness_try(solver: Solver, runs: Runs, entry: Entry
     it. It writes nothing. The first run on the entry that gives no
     result, where one does.
     It serves the Witness step that resolves a pair no witness separates or a
-    subsumed case by building "the witness that shows it" (procedure.md, under
-    "Witness"): it shows whether a candidate input would."""
+    subsumed case by building "the witness that shows it"
+    (docs/handbook/procedure.md#witness): it shows whether a candidate input
+    would."""
     with_entry, outcomes = runs_with_entry(runs, entry)
     if not isinstance(outcomes, tuple):
         return outcomes

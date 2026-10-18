@@ -22,6 +22,7 @@ class Rule(StrEnum):
     BLOCK_REPEAT = "block-repeat"
     BLOCK_SYNTAX = "block-syntax"
     CITATION_ANCHOR = "citation-anchor"
+    CITATION_PATH = "citation-path"
     CODE_CHILD = "code-child"
     CODE_FENCE = "code-fence"
     CODE_INDENT = "code-indent"

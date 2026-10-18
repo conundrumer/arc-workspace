@@ -1,8 +1,8 @@
 """Name resolution: what a name of the witness file, a verdict, a marker or an
-`@ignore` line denotes, in the forms solver-file.md gives under "Witness file",
-a model where the place asks for one (`denote`, `name`) and a set of cases
-where it asks for cases (`denoted_cases`, `lists`, `cover`). It lives here and
-nowhere else."""
+`@ignore` line denotes, in the forms docs/handbook/solver-file.md#witness-file
+gives, a model where the place asks for one (`denote`, `name`) and a set of
+cases where it asks for cases (`denoted_cases`, `lists`, `cover`). It lives
+here and nowhere else."""
 
 import re
 from collections.abc import Callable, Collection, Sequence
@@ -103,12 +103,12 @@ class NameParts:
 
 
 def name_parts(engine: Engine, name: str | tuple[str, ...]) -> NameParts | None:
-    """The parts of `name` in the forms solver-file.md lists under "Witness
-    file", judged with no solver; None where a part is in no listed form: a
-    bare constructor name, a slug, a constructor applied to a field or a
-    value (`Derive(g=Iso)`, `Rank(Big)`), or `&` without its spaces. `name` is
-    the name's parts as a reader gives them, or its string form, whose parts
-    ` & ` joins."""
+    """The parts of `name` in the forms
+    docs/handbook/solver-file.md#witness-file lists, judged with no solver;
+    None where a part is in no listed form: a bare constructor name, a slug, a
+    constructor applied to a field or a value (`Derive(g=Iso)`, `Rank(Big)`),
+    or `&` without its spaces. `name` is the name's parts as a reader gives
+    them, or its string form, whose parts ` & ` joins."""
     parts = [p.strip() for p in (name.split(SEPARATOR) if isinstance(name, str)
                                  else name)]
     readings: list[tuple[str, str]] = []
@@ -132,15 +132,16 @@ def name_parts(engine: Engine, name: str | tuple[str, ...]) -> NameParts | None:
 
 def denote(solver: Solver, name: str | tuple[str, ...]
            ) -> Denoted | NameFault:
-    """The branches `name` fixes, a partial choice (solver-file.md, under
-    "Witness file"): `concept` the concept branch at every point the `Choice`
-    encodes; `<param>=<Proposer>`, `<rel>=stored`, `<param>=stored` and
-    `<rel>=derived` the branch of that point; a constructor's name with
-    Souffle's prefix, `$Drawn`, that branch at each point where the constructor
-    stands (solver-file.md, under "Witness file"). A name `name_parts` finds
-    off the listed forms is the problem `NAME_FORM`. Two constructors that are
-    branches of the same points denote no case. The problem's place is left
-    for the caller, which knows where the name stands (`NameFault.at`)."""
+    """The branches `name` fixes, a partial choice
+    (docs/handbook/solver-file.md#witness-file): `concept` the concept branch
+    at every point the `Choice` encodes; `<param>=<Proposer>`, `<rel>=stored`,
+    `<param>=stored` and `<rel>=derived` the branch of that point; a
+    constructor's name with Souffle's prefix, `$Drawn`, that branch at each
+    point where the constructor stands
+    (docs/handbook/solver-file.md#witness-file). A name `name_parts` finds off
+    the listed forms is the problem `NAME_FORM`. Two constructors that are
+    branches of the same points denote no case. The problem's place is left for
+    the caller, which knows where the name stands (`NameFault.at`)."""
     text = name if isinstance(name, str) else SEPARATOR.join(name)
     parts = name_parts(solver.engine, name)
     if parts is None:
@@ -223,11 +224,11 @@ def _prose_name_re(prefix: str) -> re.Pattern[str]:
 
 
 def names_in(engine: Engine, text: str) -> list[str]:
-    """The names in the one form (solver-file.md, under "Witness file") that
-    prose, an entry's `separates` text among it, holds, each once, in text
+    """The names in the one form (docs/handbook/solver-file.md#witness-file)
+    that prose, an entry's `separates` text among it, holds, each once, in text
     order: the runs of words joined by ` & `, a word with `=`, a constructor
-    with its `$`, or `concept`. A bare word is prose. No other reader
-    finds a name in prose."""
+    with its `$`, or `concept`. A bare word is prose. No other reader finds a
+    name in prose."""
     out: list[str] = []
     for m in _prose_name_re(engine.constructor_prefix()).finditer(text):
         n = m.group(0)
@@ -245,10 +246,10 @@ def marker_lists(solver: Solver, marker: CaseMarker, base: Base | None
 
 
 def lists(solver: Solver, part: MarkerPart, base: Base | None) -> bool:
-    """Whether a case marker's part lists a base (solver-file.md, under
-    "Cases"): the base of a case `cases_of` gives for the part's name, its
-    `@derive` and `@store` branches aside. A part that denotes nothing, prose
-    among them (`MarkerPart.prose`), lists no base."""
+    """Whether a case marker's part lists a base
+    (docs/handbook/solver-file.md#cases): the base of a case `cases_of` gives
+    for the part's name, its `@derive` and `@store` branches aside. A part that
+    denotes nothing, prose among them (`MarkerPart.prose`), lists no base."""
     if part.prose:
         return False
     denoted = denote(solver, part.name)
@@ -283,14 +284,14 @@ def _branch(solver: Solver, target: str, reading: str) -> Branch | None:
 
 def derived_text(store: StoreBranch) -> str:
     """The derived branch of a `@store` point as a name's part,
-    `<rel>=derived` (solver-file.md, under "Witness file")."""
+    `<rel>=derived` (docs/handbook/solver-file.md#witness-file)."""
     return f"{store.spelled}={VerdictWord.DERIVED}"
 
 
 def branch_text(branch: Branch) -> str:
-    """A `@derive` or `@store` branch as a name's part (solver-file.md, under
-    "Witness file"): `<param>=<Proposer>`, `<rel>=stored`, or
-    `<param>=stored`."""
+    """A `@derive` or `@store` branch as a name's part
+    (docs/handbook/solver-file.md#witness-file): `<param>=<Proposer>`,
+    `<rel>=stored`, or `<param>=stored`."""
     match branch:
         case DeriveBranch(parameter=p, proposer=q):
             return f"{p}={q}"
@@ -364,19 +365,20 @@ def _verdict_key(solver: Solver, verdict: Verdict) -> _VerdictKey:
 def name(solver: Solver, case: Case | Base, *,
          ctor: Callable[[Engine, str], str] = ctor_text,
          branch: Callable[[Branch], str] = branch_text) -> str:
-    """The name of `case` for a place that asks for a model (solver-file.md,
-    under "Witness file"), the inverse of `denote` read by `model_of`: the
-    points at which the case differs from the concept case. `concept` for the
-    concept case; else each constructor that is not first at its choice point,
-    with its `$`, once, in the order of the points, and then each `@derive` and
-    `@store` branch the case takes, in file order, and each it takes that no
-    line of the file holds, a branch a survey proposes, in the case's order. A
-    point at its concept branch is left out: a first constructor,
-    `<param>=stored` at a `@derive` point, and `<rel>=derived` at a `@store`
-    point (solver-file.md, under "Params" and "Program"). A base is named
-    as its base case (`solver.model.as_case`). `ctor` and `branch` give the
-    text of a constructor and of a branch: by default, as
-    `docs/handbook/solver-file.md` writes them (`ctor_text`, `branch_text`)."""
+    """The name of `case` for a place that asks for a model
+    (docs/handbook/solver-file.md#witness-file), the inverse of `denote` read
+    by `model_of`: the points at which the case differs from the concept case.
+    `concept` for the concept case; else each constructor that is not first at
+    its choice point, with its `$`, once, in the order of the points, and then
+    each `@derive` and `@store` branch the case takes, in file order, and each
+    it takes that no line of the file holds, a branch a survey proposes, in the
+    case's order. A point at its concept branch is left out: a first
+    constructor, `<param>=stored` at a `@derive` point, and `<rel>=derived` at
+    a `@store` point (docs/handbook/solver-file.md#params,
+    docs/handbook/solver-file.md#program). A base is named as its base case
+    (`solver.model.as_case`). `ctor` and `branch` give the text of a
+    constructor and of a branch: by default, as `docs/handbook/solver-file.md`
+    writes them (`ctor_text`, `branch_text`)."""
     case = as_case(case)
     choice = solver.choice
     parts: list[str] = []
@@ -399,21 +401,21 @@ def model_of(solver: Solver, denoted: Denoted, among: Sequence[Case] = ()
     """The model of the branches `denoted` fixes, for a place that asks for a
     model (a `@witness` verdict, `grid --case`): the case that takes the fixed
     branches and the concept branch at every other point it takes
-    (solver-file.md, under "Witness file"; principles.md, under "Choice points
-    and open parameters"). The concept branch is "the branch taken by the
-    claims the point stands under" (principles.md, under "Choice points and
-    open parameters"), a point's first
-    constructor, `<param>=stored` at a `@derive` point and `<rel>=derived` at a
-    `@store` point (solver-file.md, under "Params" and "Program"). A
-    constructor that stands at more than one point is taken at the one the
-    other branches reach, under the concept parent where they fix none; one
-    that no point they reach holds is reached through its first point's
-    parents. The case of `among` that is that model where one is, else the case
-    built, a case of the solver or not: a constructor denotes its branch
-    "whether or not `impl_choice` contains its model" (solver-file.md, under
-    "Witness file"). None where no case of `among` is the model and a point it
-    reaches has no values to build (a field of a type that is no choice
-    point)."""
+    (docs/handbook/solver-file.md#witness-file;
+    docs/handbook/principles.md#choice-points-and-open-parameters). The concept
+    branch is "the branch taken by the claims the point stands under"
+    (docs/handbook/principles.md#choice-points-and-open-parameters), a point's
+    first constructor, `<param>=stored` at a `@derive` point and
+    `<rel>=derived` at a `@store` point (docs/handbook/solver-file.md#params,
+    docs/handbook/solver-file.md#program). A constructor that stands at more
+    than one point is taken at the one the other branches reach, under the
+    concept parent where they fix none; one that no point they reach holds is
+    reached through its first point's parents. The case of `among` that is that
+    model where one is, else the case built, a case of the solver or not: a
+    constructor denotes its branch "whether or not `impl_choice` contains its
+    model" (docs/handbook/solver-file.md#witness-file). None where no case of
+    `among` is the model and a point it reaches has no values to build (a field
+    of a type that is no choice point)."""
     wanted = _reaching(solver, denoted)
     found = next((c for c in among if _is_model(solver, wanted, c)), None)
     if found is not None:
@@ -534,12 +536,13 @@ def cases_of(solver: Solver, denoted: Denoted, among: Sequence[Case]
              ) -> tuple[Case, ...]:
     """The cases of `among` that take each branch `denoted` holds, for a place
     that asks for cases (a case marker, an `@ignore` line, a group): "A
-    branch's cases are the cases that take it" (principles.md, under "Choice
-    points and open parameters"), and of branches taken together, the cases
-    that take each (solver-file.md, under "Witness file"). A point `denoted`
-    does not fix is free; with `concept` among the name's parts, every point it
-    does not fix is at its concept branch, so `concept` alone gives the concept
-    case (solver-file.md, under "Witness file"). In the order of `among`."""
+    branch's cases are the cases that take it"
+    (docs/handbook/principles.md#choice-points-and-open-parameters), and of
+    branches taken together, the cases that take each
+    (docs/handbook/solver-file.md#witness-file). A point `denoted` does not fix
+    is free; with `concept` among the name's parts, every point it does not fix
+    is at its concept branch, so `concept` alone gives the concept case
+    (docs/handbook/solver-file.md#witness-file). In the order of `among`."""
     return tuple(c for c in among if _in(solver, denoted, c))
 
 
@@ -636,13 +639,13 @@ parts, whether it is other than `concept`, and its text."""
 def cover(solver: Solver, chosen: Collection[Case] | Collection[Base],
           among: Sequence[Case] | Sequence[Base]) -> tuple[str, ...]:
     """The fewest names whose sets within `among` (`denoted_cases`) are
-    together exactly `chosen` (solver-file.md, under "Witness file"), in the
-    order of the first case each denotes. A set of cases is covered exactly by
-    the largest partial names it contains, a case alone by every point it
+    together exactly `chosen` (docs/handbook/solver-file.md#witness-file), in
+    the order of the first case each denotes. A set of cases is covered exactly
+    by the largest partial names it contains, a case alone by every point it
     fixes, and the cases of the concept base are also named `concept`
-    (solver-file.md, under "Witness file"). Of the covers by those names, the
-    fewest names; of names of one set, the fewest parts, then `concept` before
-    any other name, then name order. Bases are read as their base cases
+    (docs/handbook/solver-file.md#witness-file). Of the covers by those names,
+    the fewest names; of names of one set, the fewest parts, then `concept`
+    before any other name, then name order. Bases are read as their base cases
     (`solver.model.base_case`), for naming a set of bases."""
     universe = [as_case(c) for c in among]
     wanted = {as_case(c) for c in chosen}

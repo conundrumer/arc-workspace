@@ -45,19 +45,19 @@ def outcomes(engine: Engine, solver: Solver, cases: Sequence[Case],
 
     Cases that take the same `@derive` and `@store` branches share one run,
     with `impl_choice` holding their bases, and each case reads its grids from
-    `out` at its case (solver-file.md, under "Cases"); where `out` has no case
-    column, each base runs alone. In that run each parameter `assign` names
-    holds its value there, save one a `@derive` branch of the cases derives:
-    for that one the value reassigns its stored value, which the cases do not
-    read (history 826). Each `@derive` branch's parameter holds the values its
-    proposer gives with `input` as its example (solver-file.md, under
-    "Params"); where the proposer gives none, the cases are undefined on
-    `input`, and no run holds the parameter empty (principles.md, under
-    "Stored or derived"). Each `@store` branch's relation holds the value
-    `assign` gives it, else the value it stores at the cases' bases
-    (`stored_value`, solver-file.md, under "Program"; history 1131). A case
-    with no cells in `out`, or a grid that is not total, is undefined
-    (principles.md, under "Models and tasks").
+    `out` at its case (docs/handbook/solver-file.md#cases); where `out` has no
+    case column, each base runs alone. In that run each parameter `assign`
+    names holds its value there, save one a `@derive` branch of the cases
+    derives: for that one the value reassigns its stored value, which the cases
+    do not read (history 826). Each `@derive` branch's parameter holds the
+    values its proposer gives with `input` as its example
+    (docs/handbook/solver-file.md#params); where the proposer gives none, the
+    cases are undefined on `input`, and no run holds the parameter empty
+    (docs/handbook/principles.md#stored-or-derived). Each `@store` branch's
+    relation holds the value `assign` gives it, else the value it stores at the
+    cases' bases (`stored_value`, docs/handbook/solver-file.md#program; history
+    1131). A case with no cells in `out`, or a grid that is not total, is
+    undefined (docs/handbook/principles.md#models-and-tasks).
 
     Every run of cases goes through here, those of `pairs` and of every
     variation among them: the solver's `program` is the one that runs, so a
@@ -153,14 +153,14 @@ def case_program(engine: Engine, solver: Solver, case: Case,
 
 def assignment(engine: Engine, solver: Solver, entry: Entry,
                file: WitnessFileRole) -> Assignment | Fault:
-    """The assignment a witness entry's `assign` states (solver-file.md, under
-    "Witness file"): each parameter or `@store` relation it names with its
-    rows, a string read as the lib constant it names and a list as a record,
-    and a grid as the value of a parameter stored by one GRID call, under that
-    call's keys and in its form, a sparse form reading every cell as a value:
-    for a `GRID_STAMP` call, a grid of the call's size anchored where the
-    call marks `@`, or a grid of any size at the anchor the entry gives. A
-    name, a constant or a grid it cannot place is the problem in its place,
-    at the entry of `file`."""
+    """The assignment a witness entry's `assign` states
+    (docs/handbook/solver-file.md#witness-file): each parameter or `@store`
+    relation it names with its rows, a string read as the lib constant it names
+    and a list as a record, and a grid as the value of a parameter stored by
+    one GRID call, under that call's keys and in its form, a sparse form
+    reading every cell as a value: for a `GRID_STAMP` call, a grid of the
+    call's size anchored where the call marks `@`, or a grid of any size at the
+    anchor the entry gives. A name, a constant or a grid it cannot place is the
+    problem in its place, at the entry of `file`."""
     return assigned(engine, solver, entry.assign,
                     InWitnessFile(entry.id, file))

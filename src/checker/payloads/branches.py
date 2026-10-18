@@ -1,6 +1,7 @@
 """The payloads of the `@derive` and `@store` kinds and of the
-determination check (solver-file.md, under "Params", "Program" and
-"Determination")."""
+determination check (docs/handbook/solver-file.md#params,
+docs/handbook/solver-file.md#program,
+docs/handbook/solver-file.md#determination)."""
 
 from dataclasses import dataclass
 
@@ -20,9 +21,10 @@ judges it with."""
 @dataclass(frozen=True)
 class IdleIgnorePayload:
     """A named `@ignore: derive` or `@ignore: store` line that excludes
-    no case of the solver (solver-file.md, under "Params" and "Program"): the
-    line, the branch of the `@derive` or `@store` line it stands under (None
-    where it stands under none), and the branches its name contains."""
+    no case of the solver (docs/handbook/solver-file.md#params,
+    docs/handbook/solver-file.md#program): the line, the branch of the
+    `@derive` or `@store` line it stands under (None where it stands under
+    none), and the branches its name contains."""
 
     ignore: IgnoreLine
     under: DeriveBranch | StoreBranch | None
@@ -156,10 +158,11 @@ class StoreNoValuePayload:
 @dataclass(frozen=True)
 class ColorAskPayload:
     """A relation, at the columns `columns` where they are fewer than its
-    own, that holds one color on every input (principles.md, under
-    "Stored or derived"): its rows there, and the `Choice` cases at which it
-    has them where another case of it has another value, by the fewest names that
-    denote exactly them (`solver.names.cover`)."""
+    own, that holds one color on every input
+    (docs/handbook/principles.md#stored-or-derived): its rows there, and the
+    `Choice` cases at which it has them where another case of it has another
+    value, by the fewest names that denote exactly them
+    (`solver.names.cover`)."""
 
     relation: RelationName
     columns: tuple[str, ...]
@@ -180,7 +183,7 @@ class RowCapPayload:
 @dataclass(frozen=True)
 class HomonymsPayload:
     """A branch's name that denotes the `@store` branches of several
-    relations (solver-file.md, under "Witness file")."""
+    relations (docs/handbook/solver-file.md#witness-file)."""
 
     branch: StoreBranch
     relations: tuple[RelationName, ...]
@@ -189,10 +192,10 @@ class HomonymsPayload:
 @dataclass(frozen=True)
 class DeterminationDiffPayload:
     """A determined parameter whose determination differs from its stored
-    value (solver-file.md, under "Determination"), and for a parameter that
-    stores a value per case (`solver.per_case.per_case`), each base at which
-    the two differ, at least one, or the failure of the run that enumerates
-    the cases; None for a parameter with no case column
+    value (docs/handbook/solver-file.md#determination), and for a parameter
+    that stores a value per case (`solver.per_case.per_case`), each base at
+    which the two differ, at least one, or the failure of the run that
+    enumerates the cases; None for a parameter with no case column
     (`checker.runs.Runs.differing_bases`)."""
 
     diff: ParamDiff
@@ -202,7 +205,7 @@ class DeterminationDiffPayload:
 @dataclass(frozen=True)
 class DerivedDataPayload:
     """A `Determine` relation named for a relation `Params` derives
-    (solver-file.md, under "Determination")."""
+    (docs/handbook/solver-file.md#determination)."""
 
     relation: str
 

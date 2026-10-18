@@ -55,16 +55,16 @@ from solver.vocabulary import IDENT, PARAMS_SCOPE
 ENUMERATION_LIMIT = 100
 """The joint candidate count a produce run may enumerate to settle
 parameters by verification; over it, parameters move under determination
-until the rest go under (procedure.md, under "Determine")."""
+until the rest go under (docs/handbook/procedure.md#determine)."""
 
 
 @dataclass(frozen=True)
 class KeyedTable:
     """A relation keyed by a multiset of members, held as two tables
     joined by an id: `child` holds `(id, member fields)`, `parent` holds
-    `(id, out fields)` (patterns.md, "Set-keyed relations via
-    parent/child tables"); for parameters that store a value per case,
-    their values at one case."""
+    `(id, out fields)`
+    (docs/handbook/patterns.md#set-keyed-relations-via-parentchild-tables); for
+    parameters that store a value per case, their values at one case."""
 
     child: "PlanValue"
     parent: "PlanValue"

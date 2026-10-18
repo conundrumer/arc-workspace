@@ -81,11 +81,11 @@ def case_columns(solver: Solver, of: RelationName | Sequence[str]
     """The columns of the relation `of` of the solver's program, or of a
     relation of column types `of`, as the model resolves them
     (`column_types`), that hold the case: of type `Choice`, of an
-    ADT that stands in `Choice` (solver-file.md, under "Types"), or of a record
-    type with a field of such a type, a component's type parameter read through
-    the instance, which holds the case in that field and is a key in its
-    other fields (`case_types`, as `dependence` reads them). A
-    case column is a key of a stored value, never one of its columns."""
+    ADT that stands in `Choice` (docs/handbook/solver-file.md#types), or of a
+    record type with a field of such a type, a component's type parameter read
+    through the instance, which holds the case in that field and is a key in
+    its other fields (`case_types`, as `dependence` reads them). A case column
+    is a key of a stored value, never one of its columns."""
     if solver.choice is None:
         return ()
     types = column_types(solver.engine, solver.program, of) \

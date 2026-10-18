@@ -63,7 +63,7 @@ from solver.vocabulary import (
 
 def _determined(v: View) -> set[str]:
     """The relations of `Params` a `Determine` relation mirrors
-    (solver-file.md, under "Determination"): `Parameter.determined` and
+    (docs/handbook/solver-file.md#determination): `Parameter.determined` and
     `DerivedRelation.mirrored`."""
     params = v.solver.params
     return {p.name for p in params.parameters if p.determined} \

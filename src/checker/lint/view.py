@@ -57,7 +57,8 @@ from solver.vocabulary import (
 )
 
 STOCK_COMPS = (PARAMS, DETERMINE, PARSE)
-"""The comps a solver holds as its own (solver-file.md, under "Components")."""
+"""The comps a solver holds as its own
+(docs/handbook/solver-file.md#components)."""
 
 
 

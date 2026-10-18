@@ -126,7 +126,7 @@ WROTE_NOTHING = mctx("wrote nothing to {path}: {failed} of {n} witnesses "
 COUNT_LINE = mctx("{n} witnessed cases of {m}, {g} distinct grid(s)")
 """The count line of a built witness: the witnessed cases its groups were
 built from, the solver's cases, and the distinct grids they give
-(solver-file.md, under "Cases"). `grid` prints the same line
+(docs/handbook/solver-file.md#cases). `grid` prints the same line
 (`record_lines`)."""
 
 

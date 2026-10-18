@@ -1,8 +1,7 @@
-"""The `store` survey (procedure.md, under "Develop"): each program
-relation between `in` and `out` whose projection onto some of its columns
-is the same on every input of the task, with its witness, and the
-findings on the solver's `@store` lines and on those relations. This
-module runs the survey.
+"""The `store` survey (docs/handbook/procedure.md#develop): each program
+relation between `in` and `out` whose projection onto some of its columns is
+the same on every input of the task, with its witness, and the findings on the
+solver's `@store` lines and on those relations. This module runs the survey.
 
 `checker.store.relations` holds the relations the survey reads;
 `checker.store.survey` the values the survey finds and what it judges of
@@ -74,8 +73,9 @@ def _bases(solver: Solver, solver_cases: Sequence[Case]
         "`uv run python scripts/run_dl.py store <task_id>` lists the derived "
         "values that are the same on every input.")
 def survey_store(runs: Runs) -> StoreSurvey:
-    """The `store` report (procedure.md, under "Develop"), and the findings
-    the audit prints on the `@store` lines and on the values (`StoreSurvey`)."""
+    """The `store` report (docs/handbook/procedure.md#develop), and the
+    findings the audit prints on the `@store` lines and on the values
+    (`StoreSurvey`)."""
     solver = runs.solver
     solver_cases = runs.cases
     if not isinstance(solver_cases, tuple):
