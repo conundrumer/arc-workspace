@@ -7,9 +7,8 @@
 //!
 //! # Files by the stage that writes their bodies
 //!
-//! Each public item here has its final signature, and each body is
-//! `todo!()` until its stage writes it. Each later stage writes the bodies
-//! of its own files, and edits no file of another stage.
+//! Each public item here has its final signature. Each later stage writes
+//! the bodies of its own files, and edits no file of another stage.
 //!
 //! ## Step 1
 //!
@@ -17,10 +16,12 @@
 //! - reader and writer: [`layout`], [`read`], [`write`](mod@write),
 //!   [`harness`], and the example `round_trip`
 //! - registry and resolver: [`registry`], [`resolver`], the files of
-//!   `engine/lib/`, the example `resolve`, and the test `registry_file`
+//!   `engine/lib/`, the example `resolve`, and the test `registry_file`;
+//!   the derivation of a macro's modes applies [`grounding`]
 //! - `cases()`: [`solver`], and the example `cases`
 //! - programs as values: [`program`] and its submodules
-//! - checker: [`types`], [`diagnostic`], [`check`] and its submodules, the
+//! - checker: [`types`], [`diagnostic`], [`check`] and its submodules,
+//!   [`grounding`], which its grounding check applies, the
 //!   example `lint`, and the tests under `engine/arclog/tests/` that feed a
 //!   check a file that breaks it, such as the order rule's and the pose
 //!   rule's

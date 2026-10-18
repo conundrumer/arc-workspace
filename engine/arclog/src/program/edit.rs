@@ -30,7 +30,7 @@ pub enum Edit {
     /// On a site, `index` counts all of its arguments, bare labels and field
     /// sites alike, as the table in `engine/arclog/src/program/path.rs`
     /// gives them. A `node` that names a bare-label argument gives
-    /// [`EditPathError`].
+    /// [`EditError::Path`].
     AddSite {
         node: NodePath,
         index: u32,
@@ -58,10 +58,15 @@ pub enum Edit {
     ReplaceSite { at: NodePath, site: Site },
 }
 
-/// A path of an edit that names no node of the edit's kind.
+/// An edit that [`Node::apply`] refuses, with the path of the node it names.
 #[derive(Clone, Debug)]
-pub struct EditPathError {
-    pub path: NodePath,
+pub enum EditError {
+    /// A path of the edit names no node of the edit's kind.
+    Path { path: NodePath },
+    /// The program the edit gives holds at `path`, a site on a column of a
+    /// type parameter, a bare label that breaks the naming conditions of
+    /// [`Node::apply`].
+    BareLabel { path: NodePath },
 }
 
 impl Node<Program> {
@@ -83,7 +88,18 @@ impl Node<Program> {
     /// site: `RemoveSite` on `(:D D)` of `(:key (:C (:D D)))` gives the atom
     /// with `(:key ...)` left out. Each [`super::SiteValue`] of the program
     /// `apply` gives holds an argument.
-    pub fn apply(&self, edit: &Edit) -> Result<Node<Program>, EditPathError> {
+    ///
+    /// At each site on a column of a type parameter, the program `apply`
+    /// gives holds each bare label other than `0` as a
+    /// [`super::SiteArg::NamedLabel`], and each label of a scope has one
+    /// name over its `NamedLabel` arguments. Each site of such a label, read
+    /// by the join rule of `engine/arclog/src/read/labels.rs`, takes that
+    /// label under that name. So two labels of one scope take one name only
+    /// where that rule keeps them apart, as two locals of sibling `OR`
+    /// branches. An edit whose result breaks this gives
+    /// [`EditError::BareLabel`] at the site, and a path that names no node of
+    /// the edit's kind gives [`EditError::Path`].
+    pub fn apply(&self, edit: &Edit) -> Result<Node<Program>, EditError> {
         todo!()
     }
 }

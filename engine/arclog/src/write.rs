@@ -52,10 +52,23 @@ pub fn write_solver(solver: &Solver) -> SolverText {
 }
 
 /// A synthesized program as an arclog file, in the program form and the
-/// s-expression layout, with names in place of token ids: a label takes the
-/// name of the column or field of its first site, PascalCase, with a digit
-/// suffix where the clause already has that name, and a relation slot is
-/// written by its index.
+/// s-expression layout, with names in place of token ids, and a relation
+/// slot written by its index.
+///
+/// A label that a [`crate::program::SiteArg::NamedLabel`] holds takes that
+/// argument's `name`, so the file reads that field at that site. Each name
+/// so taken is reserved in its scope, as [`crate::program::LabelId`] gives
+/// a scope, before any other label is named. Each other label takes the
+/// name of the column or field of its first site, PascalCase, with the
+/// least digit suffix that gives a name no other label of its scope holds
+/// or has reserved: in `(:a *A) (:key *A2)`, where
+/// `A2` is the label of `NamedLabel { name: A }`, `A2` is written `A` and the
+/// label at `(:a ...)` is written `A1`.
+///
+/// Two labels take one name only where [`Node::apply`](crate::program::Node::apply)
+/// gives them one, so the file reads back to the same labels:
+/// `(OR ((r (:key *X))) ((s (:key *X))))` is written with `X` at each site,
+/// and reads back as two labels.
 pub fn write_synthesized(program: &Node<Program>, registry: &Registry) -> String {
     todo!()
 }
