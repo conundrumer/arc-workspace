@@ -101,8 +101,9 @@ pub type LabelNames = Box<[(Box<str>, crate::program::LabelId)]>;
 /// and the names of its labels: the one reader of a body that stands inside
 /// a form of the registry file, such as the definition of a lib name by
 /// other lib names, in the format [`crate::registry`] gives. Where `exprs`
-/// write an output body or a `RULE` form of a cell instance, `init` is the
-/// instance's `INIT` form, and a read `&x.y` may name an output of it.
+/// write an output body of a cell instance, `init` is the instance's `INIT`
+/// form, and a read `&x.y` may name an output of it; [`read_rule_body`] reads
+/// a `RULE` form of a cell instance.
 ///
 /// Fails where an s-expression of `exprs` matches no node kind of its
 /// format, with a diagnostic of the grammar at each such s-expression.
@@ -110,6 +111,31 @@ pub fn read_body(
     exprs: &[SExpr],
     init: Option<&SExpr>,
 ) -> Result<(Node<crate::program::Body>, LabelNames), Vec<Diagnostic>> {
+    let (body, scope) = read_scoped_body(exprs, init)?;
+    Ok((body, scope.names_in_order()))
+}
+
+/// The body that the s-expressions `exprs` of a `RULE` form of a cell
+/// instance write, as [`read_body`] reads it, and the names of the labels
+/// the body keeps, in source order: the columns of the rule, as a program's
+/// clause has the labels its body keeps as its columns. A label that one
+/// branch of an `OR` makes and some later branch does not name is local to
+/// its branch, as `docs/arclog/arclog.md#disjunction` gives, and is no
+/// column.
+///
+/// Fails as [`read_body`] fails.
+pub fn read_rule_body(
+    exprs: &[SExpr],
+    init: Option<&SExpr>,
+) -> Result<(Node<crate::program::Body>, LabelNames), Vec<Diagnostic>> {
+    let (body, scope) = read_scoped_body(exprs, init)?;
+    let kept = columns::made_labels(body.value()).into_iter().map(|label| (scope.name(label).into(), label)).collect();
+    Ok((body, kept))
+}
+
+/// The body that `exprs` write, as [`read_body`] reads it, and the scope of
+/// its labels.
+fn read_scoped_body(exprs: &[SExpr], init: Option<&SExpr>) -> Result<(Node<crate::program::Body>, LabelScope), Vec<Diagnostic>> {
     let scope = LabelScope::new(exprs, &|_| false);
     let mut owners = Owners::default();
     for expr in exprs.iter().chain(init) {
@@ -117,7 +143,7 @@ pub fn read_body(
     }
     let mut reader = Reader::with_owners(owners, true);
     let body = reader.body(exprs, &scope);
-    if reader.diagnostics.is_empty() { Ok((body, scope.names_in_order())) } else { Err(reader.diagnostics) }
+    if reader.diagnostics.is_empty() { Ok((body, scope)) } else { Err(reader.diagnostics) }
 }
 
 /// The `INIT` form that `expr` writes, and the names of its labels, for the

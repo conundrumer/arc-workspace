@@ -106,9 +106,9 @@
 //!
 //! # The modules
 //!
-//! The reader of the two files, the check of the reads of their bodies, and
-//! the derivation of the macros' column types each stand in a module of
-//! their own. The derivations take the forms as the reader gives them, and
+//! The reader of the two files, the reader of the registry file's macro
+//! forms, the check of the reads of their bodies, and the derivation of the
+//! macros' column types each stand in a module of their own. The derivations take the forms as the reader gives them, and
 //! read no file.
 //!
 //! `engine/lib/proposers.arclog` holds one form `(proposer <Name> <atom> ...)`
@@ -498,6 +498,7 @@ impl Registry {
 
 mod cell_types;
 mod column_types;
+mod macro_forms;
 mod reader;
 mod reads;
 

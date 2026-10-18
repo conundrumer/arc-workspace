@@ -1,6 +1,8 @@
 //! The lib files under `engine/lib/` parse into a registry, so a fault of
 //! either file fails the engine's tests.
 
+use arclog::check::CheckId;
+use arclog::diagnostic::DiagnosticKind;
 use arclog::registry::{PROPOSERS_TEXT, REGISTRY_TEXT, Registry};
 
 #[test]
@@ -16,4 +18,31 @@ fn a_site_at_an_undeclared_column_refuses() {
     assert!(REGISTRY_TEXT.contains(written));
     let text = REGISTRY_TEXT.replacen(written, "(jump_offset (:Dir *D) *K *V)", 1);
     assert!(Registry::parse(&text, PROPOSERS_TEXT).is_err());
+}
+
+/// Division's `&whole_side` with an `OR` whose first branch makes `Z`, which
+/// the later branch does not name.
+fn with_branch_local_label() -> String {
+    let written = "    (axis_of *D A)\n    (axis_inset D (:K1 0) (:K2 0) (:B *P_whole))";
+    assert!(REGISTRY_TEXT.contains(written));
+    let local = "    (axis_of *D A)\n    (OR ((self.parts (:key Ky) A (:N *Z))) ((axis_of D A)))\n    (axis_inset D (:K1 0) (:K2 0) (:B *P_whole))";
+    REGISTRY_TEXT.replacen(written, local, 1)
+}
+
+#[test]
+fn a_label_local_to_an_or_branch_of_a_rule_is_no_column() {
+    if let Err(error) = Registry::parse(&with_branch_local_label(), PROPOSERS_TEXT) {
+        panic!("the rule with a branch-local label does not parse: {:?}", error.diagnostics);
+    }
+}
+
+#[test]
+fn a_read_of_a_rule_at_a_branch_local_label_is_a_site_at_an_undeclared_column() {
+    let read = "((&whole_side Ky A) (frame_extent";
+    let text = with_branch_local_label();
+    assert!(text.contains(read));
+    let text = text.replacen(read, "((&whole_side Ky A (:Z *W)) (frame_extent", 1);
+    let error = Registry::parse(&text, PROPOSERS_TEXT).err().expect("a read at `Z` refuses");
+    let kinds: Vec<&DiagnosticKind> = error.diagnostics.iter().map(|d| &d.kind).collect();
+    assert_eq!(kinds, [&DiagnosticKind::Check(CheckId::SiteColumns)], "{:?}", error.diagnostics);
 }
