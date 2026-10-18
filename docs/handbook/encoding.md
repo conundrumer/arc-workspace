@@ -36,10 +36,12 @@
     - The program states that relation directly.
     - A wraparound shift is a walk around a cycle.
 - **Zero is absence.** A `0` counts nothing that is present.
+    + xref: src/checker/lint/heads.py:check_head_zero
     - In a spatial setting, `0` represents the absence of a gap, offset, or distance.
 
 ### Component instances
 - In the program, an instance of a component that is not a construction implements a claim and asserts that the task has that claim.
+    + xref: src/checker/lint/form/witnesses.py:check_claim
     - When the task has no such claim, the program expresses the needed step with lib relations or a local clause.
     - That instance may leave any other outputs unused.
 - An instance of a construction asserts nothing about the task.

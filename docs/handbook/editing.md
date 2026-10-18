@@ -21,6 +21,7 @@
         * comment: The user's words, session 7fd429fb, 2026-10-15T22:44:57Z: "Let’s try it. Principles are short and well known in training set"; 2026-10-16T02:19:36Z: "almost seems liek a regression".
 - When the premise of a line is wrong, change the line that states that premise.
 - A line kept against a rule of [Editing the agent-facing documents](docs/handbook/editing.md), or put back after a cut, has a `comment`, as [Directives](src/controlled_markdown/writing.md#directives) gives it, that says why it stays, taken from the one who asked for the change or from a ticket or a transcript you read, and cites the ticket, the transcript, the user's instruction file or the Principles line that records it.
+    + xref: src/controlled_markdown/writing.md#directives
     - On kept words that need an observed failure, the comment states that failure: the reader that failed, where, and what it did without that text. That failure is a case the line covers, and any words that cover that case meet it.
     - On words whose source is the user's words or rulings, or a line of Principles, the comment quotes the words that source gave, with the user's session and time, or the path and section of the user's instruction file that holds them, the ruling, or the Principles line.
 - Where words you write or keep in your edit need an observed failure and have no ticket or transcript that records one, search the tickets and the project's session transcripts for one. Where you find one, rewrite the comment to cite it, and where you find none, cut those words.
@@ -37,6 +38,7 @@
 - What each Claude Code session on the repo and each agent launched in such a session reads, and no codex session reads: [arc-workspace](CLAUDE.md).
 - What the coordinator, the session the user talks with, reads: [Coordinator](prompts/agents/notes/coordinator.md), rendered to `.claude/coordinator.md`, and, where the user starts it with [claude.py](scripts/claude.py), [User session](prompts/user-session.md), as its appended system prompt.
     - Its context: `context coordinator` where the user starts it with `claude`, and `context user-session` where the user starts it with [claude.py](scripts/claude.py), then the user's messages.
+        + xref: src/handbook/coordinator_document.py:budgeted_text
     - The coordinator also reads each document or section outside its `context` output that a link of those documents leads to, where the link's condition holds.
 - What a session at a terminal reads, and the passes it runs: [Session](.claude/skills/session/SKILL.md), then [Solver session](prompts/session.md).
     - [Session](.claude/skills/session/SKILL.md) is deprecated, and has no `comment` directive.
@@ -53,7 +55,9 @@
 - The texts of the solver console, of the roles and of the workflows, all deprecated: where you edit one, or a reader of your change reads one, read [Deprecated texts](prompts/agents/notes/deprecated-texts.md#deprecated-texts).
 - The `deletions` report: [Deletion report](prompts/run_dl.md).
 - Each text a program puts in an agent's context: its `mctx` fragments, as [Prose in code](src/controlled_markdown/writing.md#prose-in-code) gives them.
+    + xref: src/controlled_markdown/writing.md#prose-in-code
 - `uv run python scripts/context.py --write` generates files git does not track, and `uv run python scripts/context.py --help` lists them.
+    + xref: scripts/context.py
 
 ## What goes where
 - A document or a section that more than one entry point includes, inlines or links says nothing that holds for one of them and not another, and no default that a line of one of them overrides.
@@ -61,14 +65,18 @@
     - A session's entry point inlines [Every pass](docs/handbook/procedure.md#every-pass) as well.
 - The prompt of each agent whose `tools` include `Bash`, other than one whose documents give it no call but a command and the calls that command prints, has `TaskStop` in its `tools` too.
 - An entry point's `+ lib:` attribute says how it reads the lib.
+    + xref: src/handbook/lib.py:lib_form
     - A reader whose `+ lib:` is `index` reads a declaration's interface when it needs one.
+        + xref: src/handbook/lib.py:LibForm
 - A document mentions a file under [src](src) only where its reader runs or reads the file.
 - State a fact or a rule once, in the document and the section whose subject it is.
     - A rule on an act that one step of a reader applies stands in that reader's context at that step: inlined there from the section that states it, or stated there where that step is its subject.
     - A rule on an act that several steps of a reader apply stands once in that reader's context, in the section whose subject is that act or at the first of those steps, and each other step links it there.
     - Link every other fact or rule from each other place that needs it.
 - An agent's `description`, in the front matter of its prompt, is, where its `message` attribute is `brief`, the links to the sections under [Briefs](prompts/agents/notes/launching.md#briefs) that give its brief's form, and otherwise one phrase that says what work the agent is for, as much as a launcher needs to pick the agent.
+    + xref: prompts/agents/notes/launching.md#briefs
 - A line that links a section relies on that section's heading alone. A line that relies on what a section states past its heading declares that section, as [Cross-references](src/controlled_markdown/writing.md#cross-references) gives it.
+    + xref: src/controlled_markdown/writing.md#cross-references
     * comment: The user's words, session 2384db39, 2026-10-18T16:01:04Z: "send request for general resolution for cross doc consistency. would +attr links make sense? or md links?". Ticket 11-1390.
 - No document restricts, replaces or redirects an operation another document states.
 - Progressive disclosure and staged disclosure manage an agent's context: an agent does better work when its context holds only what its current work needs, and these rules keep the rest out of its context until the agent reaches the work that needs it, so that its context does not overload.
@@ -78,11 +86,15 @@
     - Staged disclosure: where part of an entry point's work depends on the output of an earlier part, the text that only the later part needs stands in a file the reader loads once it has done the earlier part, and the earlier text gives that point as the condition to load it. A later section of a file the reader already holds does not meet this rule.
         * comment: The user's words, session 7fd429fb, 2026-10-12T16:40:13Z: "So the files should actually be separate and deferred loaded not just sequential or sectioned".
     - An agent with a checklist has the file `prompts/agents/<agent>/checklist.md`. When you write or review its documents, or give an agent a checklist, read [Checklists](prompts/agents/notes/checklists.md#checklists), which, for such an agent, gives the order of its steps, where its rules stand, its staged disclosure and its spec in place of the lines on them in this document.
+        + xref: prompts/agents/notes/checklists.md#checklists
 - Write no document line for a form that only a check with a `guard` decorator guards against.
+    + xref: src/engine/quotes.py:guard
 - A document rendered on its own is an entry point, and its lead says what the render leaves out when a link in the render leads there.
 - A render leaves out the lines that have an attribute its entry point excludes. Outside an entry point's lead, no heading of the render is left with nothing under it, and no line of it refers to a section the render leaves out.
+    + xref: src/controlled_markdown/renderers.py:_include
     - `deferred` marks a section of a pass no entry point runs yet.
     - The session render includes them, and so does `uv run python scripts/context.py section`.
+        + xref: src/handbook/context.py:section_text
 
 ## Writing a file
 - In an edit, follow the form the file's other lines show.
@@ -100,7 +112,9 @@
         * comment: The user's words, session `6dfaef3b`, 2026-10-02T04:45:16Z: "don't write that something always or never holds unless you know it does. [the common words to watch out for]".
 - Write a statement in the imperative mood where it tells its reader to do something or sets a rule on an act its reader does, and every other statement in the indicative mood.
 - A reference to a document or a section is a link, as [Links](src/controlled_markdown/writing.md#links) gives it.
+    + xref: src/controlled_markdown/writing.md#links
 - A line that depends on a definition in code declares it, as [Cross-references](src/controlled_markdown/writing.md#cross-references) gives it.
+    + xref: src/controlled_markdown/xrefs.py:check_xrefs, src/controlled_markdown/writing.md#cross-references
     * comment: The user's words, session 2384db39, 2026-10-18T14:41:46Z: "I think more generally there is dependencies between doc and code. In code it's mechanically checked. In docs, No."; 15:12:01Z: "You gave an overfitted example"; 15:11:45Z: "General". Ticket 11-1368.
 - A bare path stands in code that compares it, and nowhere else.
 - A document tells no agent to write a file named `report.md`.
@@ -108,21 +122,29 @@
 
 ## Checking
 - `uv run python -m controlled_markdown check` reports each line that breaks a rule, with the rule's message.
+    + xref: src/controlled_markdown/__main__.py:check
 - `fmt` in place of `check` rewrites a file in canonical form.
+    + xref: src/controlled_markdown/__main__.py:main
 - The document set is the paths under `[tool.controlled_markdown]` in [pyproject.toml](pyproject.toml).
+    + xref: pyproject.toml
 - The check does not report each rule on nesting, attributes, directives, quotes, code nodes and tables.
 - Where you write or judge a line that nests under another or uses one of those constructs, or one the file shows no instance of, or where a message of the check is not enough, read the section of [Writing a document](src/controlled_markdown/writing.md) on that construct.
+    + xref: src/controlled_markdown/writing.md
 
 ## Reviewing a change
 + review steps
 - A reader's context is everything it receives, from its entry point to the last message, in the order it arrives.
 - `uv run python scripts/context.py contexts` lists the readers, and `uv run python scripts/context.py context <reader> [args]` prints one reader's context, with the argument the listing gives for that reader.
+    + xref: src/handbook/readers.py:contexts_text, src/handbook/readers.py:context_text
 - The `context` output leaves out [arc-workspace](CLAUDE.md) and each `comment` directive with the lines under it.
+    + xref: src/handbook/readers.py:context_text
 - The readers of a comment are the editor of its file, whose context is the `context agent doc-editor` output, then that file with its comments, and each reader whose documents have it read that file raw.
 - Review a change by reading each context that contains the changed lines, or whose reader reaches by links a section that contains them, from its entry point to the end, as the reader of that context.
     - `uv run python scripts/context.py contexts --diff <commit>`, with `git merge-base HEAD master` as the commit, lists each reader whose context the change alters or leads by links to a changed section, and under each reader, each such section outside its context, then each link on the way to such a section.
+        + xref: src/handbook/reader_diffs.py:contexts_diff
     - A reader of the change is a reader that listing gives, other than one it marks `(removed)`, whose context the change alters or that reaches a section listed under it.
     - Read the `context` output for each reader of the change, with each other text [Where each text is](#where-each-text-is) gives that reader as reading, and judge each line as a reader that has only that context.
+        + xref: docs/handbook/editing.md#where-each-text-is
     - A line `<target> via <source>` of that listing gives a link: a line of `<source>` links to `<target>`, and `<source>` is `context` where the link stands in the reader's context.
     - A link leads the reader to its target where its line has the reader read that target, under the condition that line gives, and not where its line gives that target as a document to edit, describe or mention.
     - A reader reaches a section only where a path of the links listed for it, each of which leads the reader to its target, runs from `context` to that section. Read each section a reader reaches as part of that reader's context, at the line of that context that has the first link of such a path.
@@ -137,17 +159,23 @@
 
 ### What stays and its whole unit
 - Judge each part the change adds to a context, keeps there or moves within it, and, where no change is under review, each part of the context, by the rules of [What a file holds](docs/handbook/editing.md#what-a-file-holds) and [What goes where](#what-goes-where). Report each part that reaches its reader before the reader meets the part of its work that needs it, and each section that holds parts that different operations need, so that no condition loads one part without the other. The handbook and the lib, in the context of a reader that loads them up front, are neither.
+    + xref: docs/handbook/editing.md#what-a-file-holds, docs/handbook/editing.md#what-goes-where
     * comment: Request 6-402, transcript `7fd429fb-e3be-4173-9b0e-df52f507d6a2` at 17:57:14Z: the doc reviews of the agents' documents, with the line above in their context, reported no part of a context that only some of its reader's operations need, such as the rules of draft revision, held steps and the process assessment in the ticket analyst's context.
 - Read each section and each rule the change touches whole, for a rule grown by stacked conditions, exceptions or cases that [What a file holds](docs/handbook/editing.md#what-a-file-holds) has you restructure.
+    + xref: docs/handbook/editing.md#what-a-file-holds
     - A line far longer than the lines around it is a sign of such growth: judge its rule and its section, and where they have grown so, ask in your finding for their restructure.
 - For each line the change cuts or moves in a document, or drops from a render, check that every reader whose context contained that line, or who reached it by links, still gets what it said, and report each reader that loses a meaning.
 - Run `uv run python scripts/context.py context --diff <commit> <reader> [args]` for each reader of the change that `contexts --diff` lists, with the commit it took. Read the diffs it prints, apart from that of a section the reader does not reach, for the lines that reader lost, and judge each line it gained against the operations that reader's context gives it.
+    + xref: src/handbook/reader_diffs.py:context_diff
     - Report each gained line that does not fit those operations. Where the change's intent puts that line on that reader, report it to the one who asked for the change.
         * comment: On 2026-10-04, in session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a`, the doc-reviewer `a628be02072210fa7` read the whole context of [Operator](prompts/agents/operator.md), judged the foreground command rule it gained against the change's scope, "the agents that run commands", and did not report that the rule does not fit an agent that launches agents. On 2026-10-05, the operator `a37be74e20c8008ae` polled up to 10 minutes on a backgrounded merge.
 
 ### How the kept text reads
 - Judge no line that a finding of [What stays and its whole unit](docs/handbook/editing.md#what-stays-and-its-whole-unit) asks to cut or restructure.
+    + xref: docs/handbook/editing.md#what-stays-and-its-whole-unit
 - Check each line against every rule that [Writing a file](#writing-a-file) gives a line, against what `uv run python -m controlled_markdown check` reports, against each section of [Writing a document](src/controlled_markdown/writing.md) that [Checking](#checking) has you read for it, and, where [Writing a file](#writing-a-file) has you read [Templating a document](src/controlled_markdown/templating.md), against every rule that document gives a line.
+    + xref: docs/handbook/editing.md#writing-a-file, docs/handbook/editing.md#checking, src/controlled_markdown/writing.md, src/controlled_markdown/templating.md
 - List every term the change introduces, headings and labels included, apart from its findings, and report as a finding each that breaks the rule on conventional words in [Writing a file](#writing-a-file).
+    + xref: docs/handbook/editing.md#writing-a-file
     * comment: On 2026-10-04, the doc-reviewer runs `ab58e2331176baa7c` and `a8875999997fee88e` of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a` applied the rule on conventional words to other lines of a diff that added the section name `pass-issues`, and their findings did not report that name.
 - Find each line of the document set or of prose in code, outside the change, whose premise the change makes false, read it in each of its readers' contexts, and report each that no longer stands.

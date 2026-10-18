@@ -33,7 +33,9 @@
     ```
 - A clause for one branch of a field writes that field's constructor and a variable for each other field.
 - When only some combinations are cases, the record remains, and `impl_choice` excludes the others, as [Cases](docs/handbook/solver-file.md#cases) states.
+    + xref: docs/handbook/solver-file.md#cases
 - The linter's `choice-tag` finding names two clauses identical but for one head argument, a constructor with no arguments in each, that facts of one relation hold: write the shared clause once, with that argument a variable that relation binds, and each other constructor it holds excluded.
+    + xref: src/checker/lint/rewrites.py:check_choice_tag
 
 ## Choice grounding via `impl_choice`
 - If the case column otherwise appears only under negation, a clause shared by all cases needs a positive atom to bind its case variable. An enumeration relation that holds each case provides it.
@@ -46,11 +48,17 @@
 
 ## `GRID_HxW` for grid data
 - A GRID call stores a grid as a literal layout, one fact per cell in row-major order: `GRID_HxW` emits every cell with its value; `GRID_MASK_HxW` and `GRID_SPARSE_HxW` emit the cells that hold something; `GRID_STAMP_HxW` and `GRID_STAMP_SPARSE_HxW` emit those cells as offsets from a marked anchor.
+    + xref: src/solver/model.py:StoredGridCall
     - A cell that holds nothing is an empty cell, and `_` is its token.
+        + xref: src/solver/model.py:StoredGridCall
     - `GRID_HxW` has no empty cell: every cell of its layout holds a value.
+        + xref: src/souffle/expand.py:expand
     - Each cell fact's Position is in the call's own H×W frame.
+        + xref: src/souffle/expand.py:grid_facts
     - The runner expands the call before Souffle sees the file, and GRID is not defined in the lib.
+        + xref: src/souffle/expand.py:expand
     - H and W are the grid's dims and take any size.
+        + xref: src/souffle/parser.py:GRID_RE
     * comment:
         - A call therefore carries H·W cell values.
     - Cells can hold any per-cell data: colors, labels, transforms.
@@ -63,16 +71,27 @@
         1, 2, 1)
     ```
 - Arguments between the relation name and the cell values pass through as leading columns, so one relation can hold several grids keyed by id (995c5fa3 `mapping_member`).
+    + xref: src/souffle/expand.py:expand
 - An empty cell states a modeling claim: the grid holds nothing there. A sparse form reads each other digit as a value, `0` included.
+    + xref: src/souffle/expand.py:expand
 - `GRID_MASK_HxW(rel, ...)` takes `1` for a member cell and emits `rel(p)` for it — membership grids (1818057f `shape`).
+    + xref: src/souffle/expand.py:expand
 - `GRID_SPARSE_HxW(rel, ...)` takes a digit for a cell's value and emits `rel(p, v)` for it — ink templates (21897d95 `bracket_glyph`).
+    + xref: src/souffle/expand.py:expand
 - `GRID_STAMP_HxW(rel, ...)` and `GRID_STAMP_SPARSE_HxW(rel, ...)` store a mark-anchored stamp as `Offset` values.
+    + xref: src/souffle/expand.py:expand
     - The layout is a picture with one token that has the `@` prefix, and each member cell is emitted as its offset from that anchor.
+        + xref: src/solver/problems.py:GridOffLayout
     - To choose between a grid and a stamp, ask what locates a cell in the data at hand: a position in a frame whose extent the data fixes takes a grid, and a distance from a mark takes a stamp.
+        + xref: src/solver/problems.py:AnchorWithoutStamp
     - `GRID_STAMP_HxW` takes `1` for a member cell and emits `rel(delta)` for it (3ac3eb23 `template`).
+        + xref: src/solver/problems.py:GridCellOffForm
     - `GRID_STAMP_SPARSE_HxW` takes a digit for a cell's value and emits `rel(delta, v)` for it (dc1df850 `template`).
+        + xref: src/solver/problems.py:GridCellOffForm
     - An empty cell emits no offset.
+        + xref: src/souffle/expand.py:grid_facts
     - The `@` prefix goes on any token, an empty cell included: 0962bcdd `template_arm` anchors on an empty cell, 0962bcdd `template_center` on a member. A picture anchored on a member emits the zero offset.
+        + xref: src/souffle/expand.py:grid_facts
 
 ## `GRID_HxW` catalogs
 - A catalog stores several patterns in one id-keyed relation.
@@ -98,11 +117,16 @@
 ## `RIGID` — a stored shape and its attached parts, in every orientation
 * comment: The user's words, session 129de8fc, 2026-10-15T01:32:56Z to 01:34:03Z: "in rigid.md i noted the gloss may be resulting in solvers not using rigid. let's update the gloss?", and "send", which chose the coordinator's proposed gloss.
 - Where a shape the parameters store may stand in more than one orientation, and the task treats each orientation alike, a `RIGID` block stores it once, with each cell, direction or second shape attached to it, and gives each D4 image of the whole, in place of a shape closed over D4 by hand or a stamp stored apart from its direction.
+    + xref: src/souffle/parser.py:RIGID_CHART_PREFIX
 - A `RIGID` block groups parameter relations stated in one shared intrinsic frame and exposes them only as D4 placements that transform them together, so the stored pose is unobservable.
+    + xref: src/checker/branches/checks.py:check_stored_assignment, src/checker/lint/names.py:check_rigid_chart
     - Each relation reappears as `<block>_<rel>` with a leading D4 column and every column transformed by that element.
+        + xref: src/souffle/expand.py:rigid_rule
     - Consumers join relations on the element, which is what "the same oriented instance" means.
     - The runner expands the block before Souffle sees the file, like GRID.
+        + xref: src/souffle/expand.py:expand
     - The block's generated names are unreadable outside the expansion (lint category 'rigid chart').
+        + xref: src/checker/lint/names.py:check_rigid_chart
     ```
     RIGID(marker,
         .decl glyph(p: Position)
@@ -118,6 +142,7 @@
 - The transform is type-directed: `Box`, `Position`, and `Offset` via `apply`; `Dir`, `DiagDir`, and `Dir8` via the direction actions; `Axis` and `DiagAxis` via the induced swap; `Color`, `number`, and `Ident` by identity.
 - Scope is orientation only: translation freedom stays with `Occurrences` placement anchors, color freedom with instantiation keying.
 - The determination writes the chart under its placed name, as the copies of the assembly that [Determination](docs/handbook/solver-file.md#determination) gives, each in a pose of its own, and the runner compares each copy up to pose.
+    + xref: docs/handbook/solver-file.md#determination
     - Each copy of an ident-free block must be one joint D4 image of the stored assembly.
     - An id-keyed chart is compared per id, composed with id renaming.
 
@@ -148,8 +173,10 @@
 ## Tabulated decomposition
 - A constant layout is stored as parameter data.
     - The layout's dims are stored in fact parameters, and one relation maps each grid position to its decomposition, built with `helpers.tile_pos` and embedded behind a border with `compose`.
+        + xref: programs/lib/params.dl, programs/lib/box.dl
     - The program joins `in` against it and works in decomposed coordinates.
     - A model that derives the decomposition instead uses `divide` or `divide_by_size`.
+        + xref: programs/lib/box.dl
     - When the layout is the same in every pair, tabulation fits.
     ```
     .decl arr_dim(a: Axis, n: number)
@@ -196,6 +223,7 @@
 ## Set-keyed relations via parent/child tables
 - A relation keyed by a multiset of members is represented as two tables joined by an `id`: the parent holds `(id, out-fields)`; the child holds `(id, member-fields)`.
     - The match uses `KeyedSetCompare`: the child table provides `pattern_member`, the observed cells provide `observed_member`, and `covers` / `equals` test containment / equality.
+        + xref: programs/lib/sets.dl
     - The parent table maps the matched `id` to its output.
     ```
     .decl combine_member(id: Ident, p_outer: Position, c: Color)
@@ -233,6 +261,7 @@
 
 ## 1D `divide` composed to 2D
 - `divide` along V and H separately, composed via `compose`, gives 2D decomposition.
+    + xref: programs/lib/box.dl
     ```
     divide(P_grid, AXIS_V, Nv, Gv, P_outer_v, P_inner_v),
     divide(P_grid, AXIS_H, Nh, Gh, P_outer_h, P_inner_h),
@@ -247,6 +276,7 @@
 - Wide is a single atom.
 - A clause that repeats an atom once per member is not a wide layout.
 - When those members are a closed domain in one shared role, that clause states a universal by hand, as [Universals via defect negation](docs/handbook/patterns.md#universals-via-defect-negation) describes.
+    + xref: docs/handbook/patterns.md#universals-via-defect-negation
 - A solver reads wide data by unification and long data by joins.
 - A long encoding of a fixed co-occurrence makes every consumer reassemble it, as a self-join with a distinctness guard that derives each symmetric result twice:
     ```
@@ -254,6 +284,7 @@
     ```
 - The reassembly occurs in one place: the domain's pairing relation, or the defining clause of a wide relation.
     - `opposite` is the Dir form of a pairing relation, and each closed domain gets its own.
+        + xref: programs/lib/orientation.dl
     - On a domain with identity only, such as colors, the distinctness join is the concept itself.
 - Order inside a wide atom is a tag column or a repeated value, never slot position.
 - A pairing relation holds all orders as rows, as `opposite` and `turn` do, so which member fills which slot is data.
@@ -275,6 +306,7 @@
     ring(P, Col)   :- arm(P, _, Col), !broken(P, Col).
     ```
 - The enum relation supplies the domain: `dir_elem`, `d4_elem`, `axis_elem`.
+    + xref: programs/lib/orientation.dl
 - Repeating the tested atom once per member states the same universal by hand: the members become variable positions, and an assembly join must bind one variable per member.
 
 ## `cell_split` — input cell with its axis decomposition

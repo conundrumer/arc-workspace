@@ -9,6 +9,7 @@
 - Each row gives the current name for a former one that a reader would otherwise take for something else or fail to find.
 
 ## Terms
++ xref: src/cli/survey.py:cmd_determination_plan, programs/lib/box.dl
 | Former | Current |
 | --- | --- |
 | Fit, fit pass, fit-plan | determination, determination pass, `determination-plan` |
@@ -18,8 +19,10 @@
 | lib primitive | lib relation |
 | `Position`, the record | `Box`; `Position` is its cell role |
 - Fit is the name of the case condition that [Cases](docs/handbook/principles.md#cases) states.
+    + xref: docs/handbook/principles.md#cases
 
 ## Identifiers
++ xref: programs/lib/box.dl, programs/lib/cells.dl, programs/lib.dl, src/solver/annotations.py:DirectiveWord
 | Former | Current |
 | --- | --- |
 | `Shift` | `Offset` |

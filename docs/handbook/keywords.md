@@ -50,6 +50,7 @@
 - `repair` — damaged cells are restored from what the rest of the grid implies; a symmetry or a period gives one set of counterparts
 - `classify` — the input, or a part of it, maps to a class; the output renders the class
 - `induce` — the input pairs content with the content a rule maps it to, and that rule varies per input; the program reads the rule from those pairs, validates it against them, and applies it beyond them
+    + xref: src/checker/lint/form/header.py:INDUCE
 - `move` — content translates, stacks, or shears within the frame
 - `pack` — pieces jointly fill a region exactly
 - `stamp` — a footprint stamps at qualifying positions
