@@ -202,9 +202,16 @@ def in_read() -> bool:
 def held_still(made: Mapping[Held, object]) -> bool:
     """Whether each of the reads `made` gives, at this state, the very result
     it gave: a read gives its held result again where its stamp holds or
-    where what it reads anew equals it."""
+    where what it reads anew equals it. A read up to date at this state, or
+    a `DERIVED` read that is not marked while no source is being brought up
+    to date, gives its held result with no run (`run`), so it is compared
+    by that result."""
     for below, value in made.items():
         below.reached = _state
+        if below.state == _state or not (below.marked or below.source or _marking):
+            if below.value is not value:
+                return False
+            continue
         try:
             if below.recall() is not value:
                 return False

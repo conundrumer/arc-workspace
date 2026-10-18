@@ -17,7 +17,7 @@ from token_prices import request_input
 from file_reads import is_file
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import (agent_id, chain, first_parent, is_subagent, main_transcript,
-                         session_directory, session_subagents)
+                         session_agent_transcripts, session_directory)
 from entry_reads import read_entries
 from transcript_entries import blocks, epoch, meta_path, transcript_meta
 from transcript_snapshots import Entry, Refused
@@ -236,7 +236,7 @@ def run_sessions(path: Path) -> list[Path]:
 
 @state_cache(DERIVED)
 def session_agents(session: Path) -> dict[str, Path]:
-    return {agent_id(p): p for p in session_subagents(session)}
+    return {agent: paths[-1] for agent, paths in session_agent_transcripts(session).items()}
 
 
 def type_in(sessions: Iterable[Path], agent: str) -> str | None:

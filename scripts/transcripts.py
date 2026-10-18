@@ -157,8 +157,19 @@ def agent_transcripts() -> dict[str, list[Path]]:
 @state_cache(DERIVED)
 def agent_transcripts_in(dirs: tuple[Path, ...]) -> dict[str, list[Path]]:
     """`agent_index` of `dirs`, of the listings this state holds, each
-    session's from `session_subagents`."""
-    return by_agent(p for s in sessions_under(dirs, listed) for p in session_subagents(s))
+    session's from `session_agent_transcripts`, so that a new transcript reads again
+    only the agent ids of its session."""
+    out: dict[str, list[Path]] = {}
+    for s in sessions_under(dirs, listed):
+        for agent, paths in session_agent_transcripts(s).items():
+            out.setdefault(agent, []).extend(paths)
+    return out
+
+
+@state_cache(DERIVED)
+def session_agent_transcripts(session: Path) -> dict[str, list[Path]]:
+    """`by_agent` of `session_subagents` of `session`."""
+    return by_agent(session_subagents(session))
 
 
 def transcripts_of(agent: str) -> list[Path]:
