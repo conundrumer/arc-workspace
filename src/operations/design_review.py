@@ -8,7 +8,7 @@ that is no document (`merging.CONFLICT_OPENING`), once an editor of the
 change has reported after that conflict, so that the reviewer judges the
 resolution against the `master` the change was rebased onto. The
 reviewer's findings are the `question` tickets on the change
-(`open_questions`), which `changes.leftover` hands to a ticket analyst."""
+(`change_holds.open_questions`), which `changes.leftover` hands to a ticket analyst."""
 
 from pathlib import Path
 from typing import Literal
@@ -23,14 +23,6 @@ from operations.roles import BUILDERS, Role
 from operations.state import Agent, State, Ticket
 from operations.steps import Launch, Step, Undecided
 from ticketing.times import utc_stamp
-from ticketing.vocabulary import Domain, Kind, Status
-
-
-def open_questions(state: State, number: str) -> list[Ticket]:
-    """The open `question` tickets filed on the change `number`."""
-    return [q for q in state.tracker.tickets.values() if q.kind is Kind.QUESTION
-            and q.domain is Domain.CHANGE and q.subject == number
-            and q.status in (Status.OPEN, Status.ASSIGNED)]
 
 
 def code_conflicts(t: Ticket) -> list[float] | Undecided:
@@ -86,7 +78,7 @@ def design_review(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
     if not reviewers:
         return design_launch(state, t, w)
     last = reviewers[-1]
-    if last.pending or last.last_report is not None:
+    if not last.unreported:
         return False
     return Undecided(mctx("design reviewer {agent} on change {number} ended with no "
                           "report").format(agent=last.agent_id, number=t.number))

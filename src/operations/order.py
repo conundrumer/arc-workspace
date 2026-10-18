@@ -185,7 +185,7 @@ def made(state: State, step: Launch) -> State:
     call = Call(operator=state.me, time=state.now, tool=Tool.AGENT, result=None, error=False,
                 input=launch_parameters(step.role, step.subject, step.model) | {"prompt": step.brief})
     agent = Agent(agent_id=None, operator=state.me, role=step.role, subject=step.subject,
-                  brief=step.brief, launched=state.now, waits=Waits.AT_WORK, reports=(),
+                  brief=step.brief, launched=state.now, since=state.now, waits=Waits.AT_WORK, reports=(),
                   notifies=True)
     t = state.transcripts
     return replace(state, transcripts=replace(t, calls=(*t.calls, call),

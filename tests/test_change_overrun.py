@@ -54,7 +54,7 @@ def agent(agent_id: str, role, w: Path, launched: float, reports):
     from operations import briefs
     from operations.state import Agent
     return Agent(agent_id, ME, role, "9-1", briefs.WORK_IN.format(worktree=w), launched,
-                 None, tuple(reports), True)
+                 launched, None, tuple(reports), True)
 
 
 def state(tmp_path: Path, w: Path, reported: bool, told: bool):

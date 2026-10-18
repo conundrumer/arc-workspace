@@ -3,14 +3,17 @@ text and its choices (`Hold`): the step on what its editors leave
 (`left_hold`, `questions_hold`) and the review of its documents
 (`findings_hold`, `unreplied_hold`). A ruling is keyed on the text of its
 step, so the step that holds and each read of its ruling build that text
-here."""
+here. The module also selects the open `question` tickets on a change
+(`open_questions`), which the step on what its editors leave hands on and
+the close of the change closes."""
 
 from dataclasses import dataclass
 
 from controlled_markdown import mctx
 from operations.directives import Decision
 from operations.reports import NO_FINDING, OPEN_LABELS, items_of
-from operations.state import Agent
+from operations.state import Agent, State, Ticket
+from ticketing.vocabulary import Domain, Kind, Status
 
 
 LEFT_CHOICES = {
@@ -19,6 +22,14 @@ LEFT_CHOICES = {
     Decision.AGAIN: mctx("launch another ticket analyst on what the item checker leaves for a "
                        "decision")}
 """The choices of a step held on what the editors of a change leave."""
+
+
+def open_questions(state: State, number: str) -> list[Ticket]:
+    """The open `question` tickets filed on the change `number`, in ticket
+    order."""
+    return sorted((q for q in state.tracker.tickets.values() if q.kind is Kind.QUESTION
+                   and q.domain is Domain.CHANGE and q.subject == number
+                   and q.status in (Status.OPEN, Status.ASSIGNED)), key=lambda q: q.order)
 
 
 @dataclass(frozen=True)

@@ -210,16 +210,15 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
             signed = None
         prompt = str(use[1].get("prompt", ""))
         a = Agent(launch.agent, aid, d.role, d.subject, prompt,
-                  use[0], waits(signed, launch.pending), reports,
+                  use[0], launch.since, waits(signed, launch.pending), reports,
                   notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)),
                   report_file=brief_report_file(prompt))
         if d.role in MESSAGING and launch.path and launch.agent is not None:
             messaged[launch.agent] = sent_to(launch.path)
         if signed is not None and signed[0] is Sign.LIMITED and launch.agent is not None:
             limited[launch.agent] = signed[1]
-        if not a.pending and launch.agent:
-            a = ended_with(a, None if any(r.time > launch.since for r in reports)
-                           else reply_to(a, launch.since, undecided))
+        if a.unreported and launch.agent:
+            a = ended_with(a, reply_to(a, launch.since, undecided))
         a = filed_report(a)
         agents.append(a)
         if d.role in PASSES and launch.agent:

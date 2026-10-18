@@ -61,8 +61,8 @@ latest merge call, the merge call is given again.
 Once the change is merged, an agent runs the steps and checks its
 ticket's `after-merge` field gives, then the command closes each `refactor` ticket
 on a module a code editor of the change reports it split, or logs the part
-the report gives as left unsplit, then each `question` ticket filed on the
-change, then the change's own ticket."""
+the report gives as left unsplit, then each open `question` ticket filed on
+the change (`change_holds.open_questions`), then the change's own ticket."""
 
 import re
 import shlex
@@ -74,6 +74,7 @@ from controlled_markdown.nodes import Rule, finding_lines
 from engine.duration import FOOTER_RE
 from operations import briefs, messages
 from operations.change_agents import of_change, settled
+from operations.change_holds import open_questions
 from operations.change_budget import TIME_NOTE, TIME_OPENING, left_draft, taken
 from operations.filing import editor_scratch
 from operations.reports import splits, unread_split
@@ -85,7 +86,7 @@ from operations.handled import ask_again, decided_by, sent, unmoved
 from operations.steps import Bash, Launch, Send, Step, labeled
 from operations.log_commands import log
 from operations.worktrees import WORKTREE
-from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Note, Resolution, Status
+from ticketing.vocabulary import MANY_IDEAS, Kind, Note, Resolution, Status
 
 MERGE_SCRIPT = "scripts/merge_change.py"
 
@@ -536,11 +537,10 @@ def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
                    log(r.number, r.status, r.status, f"{unsplit(t)}: {part}", None))
         if not any(ln.note.startswith(unsplit(t)) for ln in r.log):
             return Bash(command, f"{r.number} split by {t.number}", occasion=str(left_draft(t)))
-    for q in sorted(state.tracker.tickets.values(), key=lambda q: q.order):
-        if (q.kind is Kind.QUESTION and q.domain is Domain.CHANGE and q.subject == t.number
-                and q.status is not Status.CLOSED):
-            return Bash(log(q.number, Status.CLOSED, q.status, note, None), f"{q.number} close",
-                        occasion=str(q.last_time))
+    if questions := open_questions(state, t.number):
+        q = questions[0]
+        return Bash(log(q.number, Status.CLOSED, q.status, note, None), f"{q.number} close",
+                    occasion=str(q.last_time))
     ids = [a.agent_id for a in agents]
     # An agent with no known id leaves the line with no run, and the
     # change with no known cost (`scripts/spends.py`).

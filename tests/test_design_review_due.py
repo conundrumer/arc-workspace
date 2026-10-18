@@ -27,7 +27,7 @@ def editor(reported: float):
     from operations.roles import Role
     from operations.state import Agent, Report
     return Agent("a0000000000000001", "aef519b953a4e20ed", Role.CODE_EDITOR, "9-1", "", 0.0,
-                 None, (Report(reported, "done"),), True)
+                 0.0, None, (Report(reported, "done"),), True)
 
 
 def test_a_conflict_in_code_holds_the_review_until_an_editor_reports(tmp_path: Path) -> None:

@@ -21,7 +21,11 @@ command reads the state again before it launches an analyst on that hold.
 A reply that opens with `reports.AT_CAP` holds the review until a ticket
 analyst launched on it since it has replied, which `changes.leftover`
 launches, and then the review passes, whatever editors report after it, and
-that reviewer is asked to review the change no more. A reply in any other form holds the review. The command launches no editor for a reviewer's findings: that
+that reviewer is asked to review the change no more. A reply in any other form holds the review.
+A doc reviewer that ended with no report (`state.Agent.unreported`) is
+no review, and another is launched, unless an earlier doc reviewer of
+the worktree also ended so, and then the review is held as on a reviewer
+that has not replied. The command launches no editor for a reviewer's findings: that
 reviewer sends them to the editors of its brief.
 
 A doc editor that `change_fragments` launches on a change's `mctx` fragments after
@@ -46,13 +50,18 @@ from operations.steps import Launch, Send, Step, Undecided, agent_ids
 from operations.worktrees import worktree
 
 
-def latest_reviewer(agents: list[Agent], w: Path) -> Agent | None:
-    """The latest doc reviewer among a change's `agents` whose brief gives
-    the change's worktree `w`, which is the change's doc reviewer, or None
-    where it has none. A reviewer of an earlier run of the change reviewed
-    that run's worktree, so it is none of the change's now."""
+def reviewers_of(agents: list[Agent], w: Path) -> list[Agent]:
+    """The doc reviewers among a change's `agents` whose brief gives the
+    change's worktree `w`. A reviewer of an earlier run of the change
+    reviewed that run's worktree, so it is none of the change's now."""
     line = briefs.fingerprint_line(w)
-    reviewers = [a for a in agents if a.role is Role.DOC_REVIEWER and line in a.brief]
+    return [a for a in agents if a.role is Role.DOC_REVIEWER and line in a.brief]
+
+
+def latest_reviewer(agents: list[Agent], w: Path) -> Agent | None:
+    """The latest of `reviewers_of`, which is the change's doc reviewer,
+    or None where it has none."""
+    reviewers = reviewers_of(agents, w)
     return reviewers[-1] if reviewers else None
 
 
@@ -76,6 +85,8 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
     if reply is not None and no_finding(r):
         return False
     if reply is None:
+        if r.unreported and not any(a.unreported for a in reviewers_of(agents, w)[:-1]):
+            return review_launch(state, t, w, here, state.me, r.since)
         return unreplied(state, t, w, here, r)
     return review_decided(state, t, w, here, findings_hold(r, t.number))
 
@@ -141,19 +152,20 @@ def with_ids(agents: list[Agent]) -> list[tuple[Agent, str]] | Undecided:
 
 
 def review_launch(state: State, t: Ticket, w: Path, here: list[Agent], launcher: str,
-                  ruled: float) -> Step:
+                  after: float) -> Step:
     """The launch of a doc reviewer on the change, with its editors, what
     the agents before it settled (`change_agents.settled`), and its rounds
     (`briefs.review_rounds`), by
-    `launcher`, on the ruling at `ruled` (`directives.ruled`), or 0.0 on
-    none."""
+    `launcher`, after the time `after` of the ruling it is launched on
+    (`directives.ruled`) or of the launch or last resume of the reviewer
+    that ended with no report it replaces, or 0.0 after neither."""
     editors = with_ids(here)
     if isinstance(editors, Undecided):
         return editors
     known = settled(state, t, Role.DOC_REVIEWER, None)
     return Launch(Role.DOC_REVIEWER, t.number, briefs.doc_review(
         t.number, w, editors, launcher, known, briefs.review_rounds(known.launched_before)),
-        occasion=str(max(last_reported(here), ruled)))
+        occasion=str(max(last_reported(here), after)))
 
 
 NO_OPERATOR = mctx("{agent} is no doc editor that an operator of the session launched: give "

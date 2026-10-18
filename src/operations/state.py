@@ -186,13 +186,17 @@ class Agent:
     is there, as where the agent never wrote it, its reports stay as read,
     and no `undecided` line names the file.
     `brief` is the brief it was launched with cut at its `SETTLED` line
-    (`own`), so that no read of it sees the text that block quotes."""
+    (`own`), so that no read of it sees the text that block quotes.
+    `launched` is the time of its launch, and `since` the time of that
+    launch or of the last call of any agent of the session that resumed
+    it."""
     agent_id: str | None
     operator: str
     role: Role
     subject: str
     brief: str
     launched: float
+    since: float
     waits: Waits | None
     reports: tuple[Report, ...]
     notifies: bool
@@ -208,6 +212,12 @@ class Agent:
     @property
     def last_report(self) -> Report | None:
         return self.reports[-1] if self.reports else None
+
+    @property
+    def unreported(self) -> bool:
+        """Whether it no longer waits and gave no report since its launch
+        or its last resume, so that it did none of the work it was given."""
+        return not self.pending and not any(r.time > self.since for r in self.reports)
 
 
 def last_reported(agents: Iterable[Agent]) -> float:

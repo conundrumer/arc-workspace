@@ -57,6 +57,10 @@ gets that step on what its agents leave, with that analyst's brief
 giving the change past its cost budget, and merges once that step
 leaves nothing, in place of the steps below.
 
+An editor of a change that ended with no report since its launch or its
+last resume holds the change in place of the steps below, since its
+worktree may lack the work it was given.
+
 Once no editor of a change with an editor that builds code runs, and
 after the doc editor of its fragments is launched where `change_fragments`
 gives one, a design reviewer is launched on it where `design_review` gives
@@ -90,10 +94,10 @@ from operations.journal import retired
 from operations.change_agents import (change_editors, editors_in, elsewhere_on, latest_editors,
                                       launched_on, of_change, Reported, reported, settled,
                                       unstaffed, with_before, with_elsewhere)
-from operations.change_holds import Hold, left_hold, questions_hold
+from operations.change_holds import Hold, left_hold, open_questions, questions_hold
 from operations.change_fragments import drafter_ids, fragments_step
 from operations.change_overrun import Ended, over_budget
-from operations.design_review import design_review, open_questions, reviewing
+from operations.design_review import design_review, reviewing
 from operations.doc_review import doc_review, latest_reviewer, with_ids
 from operations.directives import Decision, decided, give_again_line, held_on, ruled
 from operations.item_check import check_items, is_checked, latest_reports, unfinished
@@ -108,6 +112,7 @@ from operations.log_commands import AGENT
 from operations.taking import RELEASED_LINE, take
 from operations.tracker import last_index
 from operations.worktrees import WORKTREE, worktree
+from ticketing.times import utc_stamp
 from ticketing.vocabulary import Domain, Kind, Note, Status
 
 
@@ -230,6 +235,8 @@ def carry(state: State, t: Ticket) -> Step | None:
     if (step := fragments_step(state, t, w, here)) is not None:
         return step
     latest = latest_editors(here)
+    if (hold := editor_unreported(t, latest)) is not None:
+        return hold
     reviewed = with_elsewhere(state, t.number, agents,
                               (Role.ITEM_CHECKER, Role.DOC_REVIEWER, Role.DESIGN_REVIEWER))
     if (step := design_review(state, t, w, editors, here, reviewed)) is not False:
@@ -242,6 +249,19 @@ def carry(state: State, t: Ticket) -> Step | None:
     if reviewing(reviewed):
         return None
     return merging.merge(state, t, w, latest)
+
+
+def editor_unreported(t: Ticket, latest: list[Agent]) -> Undecided | None:
+    """The hold of the change `t` on the first of its editors `latest`
+    that ended with no report since its launch or its last resume, or None
+    where none did."""
+    for a in latest:
+        if a.unreported:
+            return Undecided(mctx("{role} {agent} on change {number} ended with no report "
+                                  "since its launch or last resume at {time}").format(role=a.role, agent=a.agent_id,
+                                                           number=t.number,
+                                                           time=utc_stamp(a.since)))
+    return None
 
 
 def editor_before(theirs: list[Agent]) -> tuple[Reported, Path] | None:

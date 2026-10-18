@@ -41,7 +41,10 @@ end. Where a ticket reviewer returned and left a draft in
 `tickets/draft/` with no finding and no suggestion, or a ticket analyst
 returned with no revision written, the review of that draft holds until a
 `Op decision:` line rules it with one of the choices the command gives it
-(`directives.decided`)."""
+(`directives.decided`). A ticket reviewer that ended with no report
+(`Agent.unreported`) and wrote no line on the draft is no review of it,
+and the draft is ready for another, unless an earlier ticket reviewer
+launched on it since its last `filed` or `revised` line also ended so."""
 
 from collections.abc import Callable
 
@@ -237,8 +240,9 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
     """The step on the draft `t` alone, or None where it waits or joins
     `ready`, the drafts ready for a ticket reviewer, or `waiting`, those
     waiting for a ticket analyst. Where it joins one, `at` gives under its
-    number the time of the ruling it joins on (`directives.ruled`), or
-    0.0."""
+    number the time of the ruling it joins on (`directives.ruled`), the
+    time of the launch or last resume of the ticket reviewer whose end with
+    no report it joins after, or 0.0."""
     agents = on(state, t)
     last_line = t.log[-1]
     for a in agents:
@@ -286,7 +290,10 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
     reviewed = [a for a in agents if a.role is Role.TICKET_REVIEWER and a.launched > since
                 and a.launched >= given]
     at[t.number] = 0.0
-    if reviewed:
+    silent = [a for a in reviewed if a.unreported and a.agent_id not in writers]
+    if reviewed and silent == [reviewed[-1]]:
+        at[t.number] = reviewed[-1].since
+    elif reviewed:
         what = mctx("ticket reviewer {agent} left draft {number} under `tickets/draft/` with "
                     "no finding").format(agent=reviewed[-1].agent_id, number=t.number)
         choice = decided(state, what, {Decision.AGAIN: mctx("launch another ticket reviewer on it"),
