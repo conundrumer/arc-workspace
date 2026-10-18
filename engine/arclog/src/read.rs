@@ -21,8 +21,7 @@ use std::sync::Arc;
 use crate::check::CheckId;
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity, WithDiagnostics};
 use crate::layout::{FilePlace, Layout, SourceFile, SourcePlace};
-use crate::program::path::NodePath;
-use crate::program::{Arcdata, Form, Node, Program};
+use crate::program::{Arcdata, Node, Program};
 use crate::solver::Solver;
 
 pub(crate) use self::arclog::head_of;
@@ -107,52 +106,23 @@ pub type LabelNames = Box<[(Box<str>, crate::program::LabelId)]>;
 /// A label that one branch of an `OR` makes and some later branch does not
 /// name is local to its branch, as `docs/arclog/arclog.md#disjunction`
 /// gives, and a label fresh inside a `NOT` or an `ALL` is local to that
-/// form; neither is kept. Where `exprs` write an output body or a `RULE` form
-/// of a cell instance, `init` is the instance's `INIT` form, and a read
-/// `&x.y` may name an output of it.
+/// form; neither is kept.
 ///
 /// Fails where an s-expression of `exprs` matches no node kind of its
 /// format, with a diagnostic of the grammar at each such s-expression.
-pub fn read_body(
-    exprs: &[SExpr],
-    init: Option<&SExpr>,
-) -> Result<(Node<crate::program::Body>, LabelNames), Vec<Diagnostic>> {
-    let (body, scope) = read_scoped_body(exprs, init)?;
+pub fn read_body(exprs: &[SExpr]) -> Result<(Node<crate::program::Body>, LabelNames), Vec<Diagnostic>> {
+    let (body, scope) = read_scoped_body(exprs)?;
     let kept = columns::made_labels(body.value()).into_iter().map(|label| (scope.name(label).into(), label)).collect();
     Ok((body, kept))
 }
 
 /// The body that `exprs` write, as [`read_body`] reads it, and the scope of
 /// its labels.
-fn read_scoped_body(exprs: &[SExpr], init: Option<&SExpr>) -> Result<(Node<crate::program::Body>, LabelScope), Vec<Diagnostic>> {
+fn read_scoped_body(exprs: &[SExpr]) -> Result<(Node<crate::program::Body>, LabelScope), Vec<Diagnostic>> {
     let scope = LabelScope::new(exprs, &|_| false);
-    let mut owners = Owners::default();
-    for expr in exprs.iter().chain(init) {
-        owners.collect(expr);
-    }
-    let mut reader = Reader::with_owners(owners, true);
+    let mut reader = Reader::new(exprs);
     let body = reader.body(exprs, &scope);
     if reader.diagnostics.is_empty() { Ok((body, scope)) } else { Err(reader.diagnostics) }
-}
-
-/// The `INIT` form that `expr` writes, and the names of its labels, for the
-/// definition of a cell instance in the registry file, in the format
-/// [`crate::registry`] gives.
-///
-/// Fails where an s-expression of `expr` matches no node kind of its format,
-/// with a diagnostic of the grammar at each such s-expression.
-pub fn read_instance(expr: &SExpr) -> Result<(Node<crate::program::Instance>, LabelNames), Vec<Diagnostic>> {
-    let exprs = std::slice::from_ref(expr);
-    let scope = LabelScope::new(exprs, &|_| false);
-    let mut reader = Reader::new(exprs, true);
-    let form = reader.form(expr, &NodePath::default(), Some(&scope));
-    match form {
-        Ok(Form::Instance(instance)) if reader.diagnostics.is_empty() => Ok((instance, scope.names_in_order())),
-        Ok(_) if reader.diagnostics.is_empty() => {
-            Err(vec![grammar("the definition is an `INIT` form", expr.place())])
-        }
-        _ => Err(reader.diagnostics),
-    }
 }
 
 /// The rows that `rows` write, as a `param` form writes them after its types
@@ -168,7 +138,7 @@ pub fn read_param_value(
     rows: &[SExpr],
     columns: &[Option<crate::program::TypeName>],
 ) -> Result<crate::program::ParamValue, Vec<Diagnostic>> {
-    let mut reader = Reader::with_owners(Owners::default(), false);
+    let mut reader = Reader::with_owners(Owners::default());
     match reader.param_value(rows, columns, &mut Record::new(None)) {
         Ok(value) if reader.diagnostics.is_empty() => Ok(value),
         _ => Err(reader.diagnostics),
@@ -187,7 +157,7 @@ pub fn read_param_value(
 /// [`read_sexprs`] does.
 pub fn read_arclog(text: &str, file: SourceFile) -> Result<WithDiagnostics<(Node<Program>, Layout)>, Vec<Diagnostic>> {
     let (exprs, comments) = read_sexprs(text, file)?;
-    let mut reader = Reader::new(&exprs, false);
+    let mut reader = Reader::new(&exprs);
     let program = reader.program(&exprs, end_place(text, file));
     let diagnostics = std::mem::take(&mut reader.diagnostics);
     Ok(WithDiagnostics { value: (program, reader.layout(file, comments)), diagnostics })
@@ -220,7 +190,7 @@ fn arcdata_of(
     layout: Layout,
 ) -> WithDiagnostics<(Node<Arcdata>, Layout)> {
     let programs: Vec<&Program> = std::iter::once(program).chain(representative).map(Node::value).collect();
-    let mut reader = Reader::with_owners(Owners::of_programs(&programs), false);
+    let mut reader = Reader::with_owners(Owners::of_programs(&programs));
     let arcdata = reader.arcdata(exprs, end);
     let diagnostics = std::mem::take(&mut reader.diagnostics);
     let own = reader.layout(SourceFile::Arcdata, comments);

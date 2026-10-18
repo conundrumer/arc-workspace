@@ -161,6 +161,44 @@
     (consistent (key Key) (c Demonstrated) (o Object) (o2 Object))
     (unconfirmed (key Key) (c Demonstrated))
     (confirmed (key Key) (c Demonstrated))))
+(component Flood construction (type-parameters Key)
+  (inputs (node (key Key) (P Position))
+    (source (key Key) (P Position))
+    (step (Delta Offset) (default (grid
+        (_ 1 _)
+        (1 @_ 1)
+        (_ 1 _)))))
+  (outputs (reached (key Key) (P Position))))
+(component CellDistance construction (type-parameters Key)
+  (inputs (node (key Key) (P Position))
+    (source (key Key) (P Position))
+    (step (Delta Offset) (default (grid
+        (_ 1 _)
+        (1 @_ 1)
+        (_ 1 _)))))
+  (outputs (distance (key Key) (P Position) (K number))
+    (predecessor (key Key) (Q Position) (P Position))))
+(component Connectivity construction (type-parameters Key)
+  (inputs (node (key Key) (P Position))
+    (step (Delta Offset) (default (grid
+        (_ 1 _)
+        (1 @_ 1)
+        (_ 1 _)))))
+  (outputs (component (key Key) (P Position) (Id Ident))
+    (connected (key Key) (P Position) (Q Position))
+    (adjacent (key Key) (P Position) (Q Position))))
+(component Ray construction (type-parameters Key)
+  (inputs (source (key Key) (P Position))
+    (node (key Key) (P Position))
+    (dir (key Key) (D Dir8)))
+  (outputs (ray (key Key) (P Position) (D Dir8) (K number) (Origin Position))
+    (end (key Key) (P Position) (D Dir8) (K number) (Origin Position))))
+(component Division construction (type-parameters Key)
+  (inputs (cell (key Key) (P Position))
+    (parts (key Key) (A Axis) (N number))
+    (side (key Key) (A Axis) (K number))
+    (gap (key Key) (A Axis) (G number)))
+  (outputs (tile (key Key) (P Position) (P_outer Position) (P_inner Position))))
 
 ;; Derivations: docs/arclog/arcdata.md#params.
 (derivation Frame (fields (A Axis) (N number)) (columns (P Position)))
@@ -344,147 +382,6 @@
   (step_offset D (:V *S))
   (apply (:D T) (:P S) (:P_out *S2))
   (step_offset (:D D2) (:V S2)))
-(macro Flood
-  (component Flood construction (type-parameters Key)
-    (inputs (node (key Key) (P Position))
-      (source (key Key) (P Position))
-      (step (Delta Offset) (default (grid
-        (_ 1 _)
-        (1 @_ 1)
-        (_ 1 _)))))
-    (outputs (reached (key Ky) (P P))))
-  (INIT &propagation Propagation
-    (source ((:key Ky) (:n P))
-      (self.source (:key *Ky) *P)
-      (self.node (:key Ky) P))
-    (edge ((:key Ky) (:a P) (:b Q))
-      (self.node (:key *Ky) *P)
-      (self.step *Delta)
-      (compose (:A P) (:B Delta) (:C *Q))
-      (self.node (:key Ky) (:P Q))))
-  (output reached
-    (&propagation.reached (:key *Ky) (:n *P))))
-(macro CellDistance
-  (component CellDistance construction (type-parameters Key)
-    (inputs (node (key Key) (P Position))
-      (source (key Key) (P Position))
-      (step (Delta Offset) (default (grid
-        (_ 1 _)
-        (1 @_ 1)
-        (_ 1 _)))))
-    (outputs (distance (key Ky) (P P) (K K))
-      (predecessor (key Ky) (Q Q) (P P))))
-  (INIT &distance Distance
-    (source ((:key Ky) (:n P))
-      (self.source (:key *Ky) *P))
-    (edge ((:key Ky) (:a P) (:b Q))
-      (self.node (:key *Ky) *P)
-      (self.step *Delta)
-      (compose (:A P) (:B Delta) (:C *Q))
-      (self.node (:key Ky) (:P Q))))
-  (output distance
-    (&distance.distance (:key *Ky) (:n *P) *K))
-  (output predecessor
-    (&distance.predecessor (:key *Ky) (:b *Q) (:a *P))))
-(macro Connectivity
-  (component Connectivity construction (type-parameters Key)
-    (inputs (node (key Key) (P Position))
-      (step (Delta Offset) (default (grid
-        (_ 1 _)
-        (1 @_ 1)
-        (_ 1 _)))))
-    (outputs (component (key Ky) (P P) (Id Id))
-      (connected (key Ky) (P P) (Q Q))
-      (adjacent (key Ky) (P P) (Q Q))))
-  (INIT &quotient Quotient
-    (edge ((:a Ky P) (:b Ky (:P Q)))
-      (OR ((self.node (:key *Ky) *P) (= *Q P))
-        ((&adjacent_node Ky P Q)))))
-  (RULE &adjacent_node
-    (self.node (:key *Ky) *P)
-    (self.step *Delta)
-    (compose (:A P) (:B Delta) (:C *Q))
-    (self.node (:key Ky) (:P Q)))
-  (output component
-    (&quotient.class (:a *Ky *P) *Id))
-  (output connected
-    (&quotient.class (:a *Ky *P) *Id)
-    (&quotient.class (:a Ky (:P *Q)) Id))
-  (output adjacent
-    (&adjacent_node *Ky *P *Q)))
-(macro Ray
-  (component Ray construction (type-parameters Key)
-    (inputs (source (key Key) (P Position))
-      (node (key Key) (P Position))
-      (dir (key Key) (D Dir8)))
-    (outputs (ray (key Ky) (P P) (D D) (K K) (Origin Origin))
-      (end (key Ky) (P P) (D D) (K K) (Origin Origin))))
-  (INIT &distance Distance
-    (key ((self.source (:key ^Ky) (:P ^Origin)) (self.dir (:key Ky) ^D))
-      (source ((:n Origin)))
-      (edge ((:a P) (:b Q))
-        (OR ((= *P Origin))
-          ((OR ((axis_of D *A)) ((diag_dir_elem D) (axis_elem A))) (sub_extent (:P Origin) A *K) (jump (:P Origin) D K (:Q P)) (self.node (:key Ky) P)))
-        (neighbor P D *Q)
-        (self.node (:key Ky) (:P Q)))))
-  (output ray
-    (&distance.distance (:key *Ky *D *Origin) (:n *P) *K))
-  (output end
-    (&distance.distance (:key *Ky *D *Origin) (:n *P) *K)
-    (neighbor P D *Q)
-    (NOT (&distance.distance (:key Ky D Origin) (:n Q)))))
-(macro Division
-  (component Division construction (type-parameters Key)
-    (inputs (cell (key Key) (P Position))
-      (parts (key Key) (A Axis) (N number))
-      (side (key Key) (A Axis) (K number))
-      (gap (key Key) (A Axis) (G number)))
-    (outputs (tile (key Ky) (P P) (P_outer P_outer) (P_inner P_inner))))
-  (INIT &divisions ExtentDivisions
-    (frame ((:key Ky) P)
-      (self.parts (:key *Ky))
-      (self.cell (:key Ky) *P)))
-  (RULE &counted_side
-    (self.parts (:key *Ky) *A *N)
-    (&divisions.division (:key Ky) A N *K *G))
-  ;; The axes whose `parts` row counts one part, the extent of the
-  ;; P_outer of a part that spans the axis.
-  (RULE &whole_side
-    (self.parts (:key *Ky) *A *N)
-    (axis_of *D A)
-    (axis_inset D (:K1 0) (:K2 0) (:B *P_whole))
-    (frame_extent (:P P_whole) A N))
-  (RULE &axis_divided
-    (self.cell (:key *Ky) *P)
-    (axis_elem *A)
-    (OR ((self.gap (:key Ky) A *G))
-      ((NOT (self.gap (:key Ky) A)) (= G 0)))
-    (OR ((self.side (:key Ky) A *K))
-      ((&counted_side Ky A K G))
-      ((&whole_side Ky A) (frame_extent P A (:N K))))
-    (axis_of *D A)
-    (opposite D (:Opp *O))
-    (margin (:B P) D (:K *T))
-    (margin (:B P) (:D O) (:K *T2))
-    (divide T (:Side K) (:Gap G) (:Part *I) (:Remainder *R))
-    (divide (:T T2) (:Side K) (:Gap G) (:Part *I2) (:Remainder *R2))
-    (axis_inset D (:K1 I) (:K2 I2) (:B *P_outer))
-    (axis_inset D (:K1 R) (:K2 R2) (:B *P_inner))
-    (frame_extent (:P P_inner) A (:N K)))
-  (RULE &axis_tile
-    (OR ((&axis_divided *Ky *P *A *P_outer *P_inner))
-      ((self.cell (:key Ky) P)
-       (axis_elem A)
-       (NOT (self.parts (:key Ky) A))
-       (NOT (self.side (:key Ky) A))
-       (split P A (:Along P_inner))
-       (relative (:Base P_inner) (:X P_inner) (:X_rel P_outer)))))
-  (output tile
-    (&axis_tile *Ky *P (:A *A1) (:P_outer *Po1) (:P_inner *Pi1))
-    (perp (:A A1) *A2)
-    (&axis_tile Ky P (:A A2) (:P_outer *Po2) (:P_inner *Pi2))
-    (compose (:A Po1) (:B Po2) (:C *P_outer))
-    (compose (:A Pi1) (:B Pi2) (:C *P_inner))))
 
 ;; Proposers: the domain proposers of docs/arclog/arclog.md#program, then the components of programs/proposers.dl, each with the columns of its propose relation, apart from PanelCombine, whose columns are those of a set-keyed table, one row for each panel of each entry: the entry's id, the entry's output color, the panel's place in the arrangement's frame, and the color of the panel's cell.
 (proposer AxisDomain native (columns (A Axis)))

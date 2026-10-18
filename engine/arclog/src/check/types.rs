@@ -309,14 +309,14 @@ fn lib_columns<'r>(registry: &'r Registry, name: &crate::registry::LibName) -> O
     match registry.entry(name)? {
         LibEntry::Relation(relation) | LibEntry::Macro(Macro::Relation { relation, .. }) => Some(&relation.columns),
         LibEntry::Proposer(Proposer::Native { columns }) => Some(columns),
-        LibEntry::Proposer(Proposer::Arclog { .. }) | LibEntry::Component(_) | LibEntry::Macro(Macro::CellInstance { .. }) => None,
+        LibEntry::Proposer(Proposer::Arclog { .. }) | LibEntry::Component(_) => None,
     }
 }
 
 /// The component an `INIT` form names.
 pub(super) fn component<'r>(registry: &'r Registry, name: &crate::registry::LibName) -> Option<&'r Component> {
     match registry.entry(name)? {
-        LibEntry::Component(component) | LibEntry::Macro(Macro::CellInstance { component, .. }) => Some(component),
+        LibEntry::Component(component) => Some(component),
         LibEntry::Relation(_) | LibEntry::Proposer(_) | LibEntry::Macro(Macro::Relation { .. }) => None,
     }
 }

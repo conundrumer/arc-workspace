@@ -14,7 +14,7 @@ use crate::layout::SourcePlace;
 use crate::program::LabelId;
 
 use super::spelling::{FRESH_MARK, KEY_MARK};
-use super::{LabelNames, SExpr};
+use super::SExpr;
 
 /// A site of the scope that makes a label.
 struct Made {
@@ -108,18 +108,5 @@ impl LabelScope {
     /// The name of `label`.
     pub(super) fn name(&self, label: LabelId) -> &str {
         &self.made[label.0 as usize].name
-    }
-
-    /// The names of the labels the scope's sites have read, in the order
-    /// they first stand.
-    pub(super) fn names_in_order(&self) -> LabelNames {
-        let mut uses: Vec<(u32, LabelId)> = self.joins.borrow().clone();
-        uses.extend(self.made.iter().enumerate().map(|(index, m)| (m.start, LabelId(index as u32))));
-        uses.sort_by_key(|(start, _)| *start);
-        let mut seen = std::collections::BTreeSet::new();
-        uses.into_iter()
-            .filter(|(_, id)| seen.insert(id.0))
-            .map(|(_, id)| (self.name(id).into(), id))
-            .collect()
     }
 }

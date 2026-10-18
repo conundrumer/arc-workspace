@@ -263,10 +263,9 @@ pub enum RelationRef {
     /// chosen relation, a demonstrated relation.
     Declared(RelationName),
     Output(OutputName),
-    /// In the definition of a cell instance in the registry, a read of an
-    /// input port of the component the definition defines, which stands for
-    /// the instance's input at each site. The registry file
-    /// writes it `(self.<port> ...)`, and no arclog file holds it.
+    /// A read of an input port of the component an `INIT` form names: the
+    /// head of one of the form's inputs, as the type check reads it. No file
+    /// holds it.
     DefinedPort(PortName),
 }
 

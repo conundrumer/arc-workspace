@@ -55,49 +55,10 @@
 //!   with the label of the definition it stands for, and its definition. A
 //!   [`Macro::Relation`]'s column types and modes are the ones
 //!   [`macro_column_types`] gives.
-//! - `(macro <name> (component ...) [(INIT ...)] (RULE &<rule> <body>) ... (output <port> <body>) ...)`:
-//!   a cell instance, its declaration as a `component` form gives it, the
-//!   `INIT` form of the underlying construction where it has one, its local
-//!   relations, and a body for each of its outputs, as [`Macro::CellInstance`]
-//!   gives. The declaration writes each output as
-//!   `(<output> (<column> <Label>) ...)`, each column with the label of the
-//!   output's body it stands for, and no type: the column's type is the one
-//!   [`macro_column_types`] gives. Within the `INIT`'s bodies, the `RULE` forms' and the outputs',
-//!   an atom `(self.<port> <sites>)` reads the cell instance's own input
-//!   `<port>`, as [`crate::program::RelationRef::DefinedPort`] holds it.
-//!   A `RULE` form is a local relation, written as a solver's `RULE` clause
-//!   (`docs/arclog/arclog.md#program`), which stands at each site for a
-//!   clause of the solver with the kind of the site
-//!   (`docs/arclog/arclog.md#instance`): a `RULE` clause where the site is
-//!   per input, and a `DET` clause where the site is per example or pools
-//!   over the examples. That clause has the columns the form gives, so it
-//!   has an Example column only where the site's key holds an Example
-//!   label. At a site keyed by an Example label, the form reads the site's
-//!   `self.<port>` inputs at that key, so the rows of one example do not
-//!   mix with those of another. At a site that pools over the examples, a
-//!   row of the form holds where it holds at some example. The form's
-//!   body may read the `INIT`'s outputs, and the output bodies, the
-//!   `INIT`'s input bodies and the other `RULE` forms read it as
-//!   `(&<rule> <sites>)`. A name that the macro's `INIT` or a `RULE` form
-//!   declares is local to each site of the cell instance: at a site, it
-//!   stands for that site's declaration.
-//!   The `INIT` binds the type parameters of the underlying construction as
-//!   a solver's `INIT` binds them (`docs/arclog/arclog.md#instance`), to a
-//!   record where a projection has several sites, and may hold a key clause
-//!   over the cell instance's own inputs. One definition holds for each set
-//!   of inputs a site writes clauses for: a `self.<port>` atom of an input
-//!   the site writes no clause for reads that input's default rows alone,
-//!   and no row where the input has no default.
 //!
 //! An atom of a body of either file reads a name that a form declares, at
-//! columns that name declares: a lib name, a macro, a fact, and within a
-//! cell instance its own input `self.<port>`, a `RULE` form `&<rule>` or an
-//! output of its `INIT` form. An atom that reads another name or column is a
-//! fault of the file.
-//! An `INIT` form of a cell instance writes inputs, its key's included, that
-//! its component declares, each with head sites at columns that input
-//! declares, and an `INIT` form that names another component, input or
-//! column is a fault of the file too.
+//! columns that name declares: a lib name, a macro or a fact. An atom that
+//! reads another name or column is a fault of the file.
 //!
 //! A `<type>` is a type name of [`crate::program::TypeName`], `Pose` for
 //! the assembly the read names, `shared-pose` for one assembly's Pose type
@@ -111,8 +72,9 @@
 //! # The modules
 //!
 //! The reader of the two files, the reader of the registry file's other
-//! forms, the reader of its macro forms, the reader of the proposers file's clauses, the check of the reads of their bodies, and the derivation of the
-//! macros' column types each stand in a module of their own. The derivations take the forms as the reader gives them, and
+//! forms, the reader of its macro form, the reader of the proposers file's clauses, the check of the reads of their bodies, the derivation of the
+//! macros' column types, the declaration of the macros from it, and the rule by which an `INIT` form binds its
+//! component's type parameters each stand in a module of their own. The derivations take the forms as the reader gives them, and
 //! read no file.
 //!
 //! `engine/lib/proposers.arclog` holds one form `(proposer <Name> <atom> ...)`
@@ -127,11 +89,10 @@ use crate::grounding::{body_labels, grounded_labels, own_labels};
 use crate::hash::{StableHashMap, StableHashSet};
 use crate::layout::{SourceFile, SourcePlace};
 use crate::program::{
-    Atom, Body, ClauseKeyword, ColumnName, Conjunct, DeclaredName, FactRelation, LabelId, Negated, Node,
-    OutputOwner, OutputStep, PortName, RelationName, RelationRef, TypeName,
+    Atom, Body, ColumnName, Conjunct, FactRelation, LabelId, Negated, Node, PortName, RelationRef, TypeName,
 };
 use crate::read::spelling;
-use crate::read::{check_error, head_of, read_body, read_instance, read_param_value, read_sexprs, SExpr};
+use crate::read::{check_error, head_of, read_body, read_param_value, read_sexprs, SExpr};
 use crate::terms::{OrientationConstant, OrientationType};
 use crate::types::{each_conjunct, label_type, LabelFault, ValueType};
 
@@ -306,11 +267,10 @@ pub struct Derivation {
     pub columns: Box<[Column]>,
 }
 
-/// A lib name that the lib defines from other lib names, a relation or a
-/// cell instance, with its declaration and its definition. The checks read
-/// the declaration. A relation macro's column types and
-/// modes, and a cell instance's output column types, are its definition's,
-/// as [`macro_column_types`] gives them.
+/// A lib name that the lib defines from other lib names, with its
+/// declaration and its definition. The checks read the declaration. A
+/// relation macro's column types and modes are its definition's, as
+/// [`macro_column_types`] gives them.
 #[derive(Clone, Debug)]
 pub enum Macro {
     /// A lib relation: its declaration, its columns, their types and its
@@ -321,55 +281,6 @@ pub enum Macro {
         labels: Box<[crate::program::LabelId]>,
         definition: Node<Body>,
     },
-    /// A cell instance: its declaration as a component, its type
-    /// parameters, inputs in order with their defaults, and outputs, each
-    /// output column of the type [`macro_column_types`] gives it; its
-    /// definition over the underlying construction or relation; its local
-    /// relations, each a `RULE` form's name and body; and a body for each of
-    /// its outputs.
-    CellInstance {
-        component: Component,
-        definition: CellDefinition,
-        rules: Box<[CellRule]>,
-        outputs: Box<[CellOutput]>,
-    },
-}
-
-/// What a cell instance is defined over: Connectivity over Quotient, Flood
-/// over Propagation, CellDistance and Ray over Distance, and Division over
-/// ExtentDivisions with `divide`.
-#[derive(Clone, Debug)]
-pub enum CellDefinition {
-    /// An `INIT` form of the underlying construction with its domain inputs
-    /// populated, whose other input bodies read the cell instance's inputs
-    /// by their port names, as Connectivity over Quotient.
-    Instance(Node<crate::program::Instance>),
-    /// No instance: the outputs' bodies read the underlying relation over
-    /// the cell instance's inputs.
-    Relation,
-}
-
-/// A local relation of a cell instance, a `RULE` form: the relation's name,
-/// which the instance's bodies read it by, its body, and its columns, each
-/// column's name and the label of the body it stands for, the labels the
-/// body keeps.
-#[derive(Clone, Debug)]
-pub struct CellRule {
-    pub name: crate::program::RelationName,
-    pub body: Node<Body>,
-    pub columns: Box<[(ColumnName, LabelId)]>,
-}
-
-/// An output of a cell instance, as a body over the outputs of its
-/// definition's instance, where it has one, and its own inputs: the output's
-/// port, the label of the body that each of its columns stands for, in the
-/// order of the port's columns, and the body, which gives each column its
-/// type, as [`macro_column_types`] gives it.
-#[derive(Clone, Debug)]
-pub struct CellOutput {
-    pub port: PortName,
-    pub labels: Box<[crate::program::LabelId]>,
-    pub body: Node<Body>,
 }
 
 /// The constants of one orientation type, as a set: it gives membership
@@ -511,15 +422,15 @@ impl Registry {
     }
 }
 
-mod cell_types;
+mod bindings;
 mod column_types;
 mod forms;
+mod macro_declarations;
 mod macro_forms;
 mod proposer_clauses;
 mod reader;
 mod reads;
 
-pub use cell_types::{CellForm, CellMacro};
-pub(crate) use cell_types::{binding_sites, ParameterSite};
+pub(crate) use bindings::{binding_sites, ParameterSite};
 pub use column_types::{macro_column_types, MacroDeclarations, RelationMacro};
 use reader::FileReader;

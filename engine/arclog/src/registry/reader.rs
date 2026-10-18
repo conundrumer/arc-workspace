@@ -1,8 +1,8 @@
 //! The reader of the two lib files, which reads each form into the
 //! registry's records and gives a diagnostic at the form of each fault: the
 //! spellings of the forms, the records of a read form, the reader's state
-//! and its helpers, the declaration of the macros, the completeness check of
-//! the accessors and the assembly of the registry.
+//! and its helpers, the completeness check of the accessors and the assembly
+//! of the registry.
 
 use super::*;
 
@@ -24,7 +24,6 @@ pub(super) const DEFAULT: &str = "default";
 pub(super) const READS_OUTPUTS: &str = "reads-outputs";
 pub(super) const NATIVE: &str = "native";
 pub(super) const ARCLOG: &str = "arclog";
-pub(super) const OUTPUT: &str = "output";
 pub(super) const POSE: &str = "Pose";
 pub(super) const SHARED_POSE: &str = "shared-pose";
 pub(super) const POSE_OR: &str = "pose-or";
@@ -89,36 +88,8 @@ pub(super) struct WrittenMacro {
 /// column stands for.
 pub(super) type LabelColumns = Box<[(ColumnName, LabelId)]>;
 
-/// A cell instance as its form writes it, before its outputs' column types:
-/// what its bodies read beside the names of the lib, its own inputs, its
-/// `RULE` forms with their columns and its `INIT` form, and each output's
-/// port with the label each of its columns stands for.
-pub(super) struct WrittenCell {
-    pub(super) name: LibName,
-    pub(super) place: SourcePlace,
-    pub(super) kind: ComponentKind,
-    pub(super) type_parameters: Box<[TypeParameter]>,
-    pub(super) inputs: Box<[InputPort]>,
-    pub(super) definition: CellDefinition,
-    pub(super) rules: Box<[CellRule]>,
-    /// Each output, with each column of its port and the label of its body
-    /// that the column stands for.
-    pub(super) outputs: Box<[(PortName, LabelColumns, Node<Body>)]>,
-}
-
-impl WrittenCell {
-    /// The `INIT` form, where the cell instance has one.
-    pub(super) fn init(&self) -> Option<&crate::program::Instance> {
-        match &self.definition {
-            CellDefinition::Instance(instance) => Some(instance.value()),
-            CellDefinition::Relation => None,
-        }
-    }
-}
-
 /// A `component` form's name, kind, type parameters and inputs, and the
-/// items of its `outputs` form, which a component's form writes with their
-/// types and a cell instance's with their labels.
+/// items of its `outputs` form.
 pub(super) struct ComponentHead<'e> {
     pub(super) name: LibName,
     pub(super) kind: ComponentKind,
@@ -137,12 +108,10 @@ pub(super) struct ArclogProposer {
 }
 
 /// A body of either file, whose reads [`FileReader::check_reads`] checks
-/// once every form is read: the place of its form, and the index of the
-/// cell instance it stands in, where it stands in one.
+/// once every form is read, and the place of its form.
 pub(super) struct BodyInFile {
     pub(super) body: Node<Body>,
     pub(super) place: SourcePlace,
-    pub(super) cell: Option<usize>,
 }
 
 /// The reader of the two lib files. It reads each form whatever an earlier
@@ -162,7 +131,6 @@ pub(super) struct FileReader {
     pub(super) relation_macros: Vec<WrittenMacro>,
     /// Each `(proposer <name> arclog (columns ...))` form, in file order.
     pub(super) arclog_proposers: Vec<ArclogProposer>,
-    pub(super) cells: Vec<WrittenCell>,
     pub(super) bodies: Vec<BodyInFile>,
 }
 
@@ -223,67 +191,6 @@ impl FileReader {
         }
         self.fault(CheckId::Scope, format!("`{}` is declared by two forms", name.0), place);
         false
-    }
-
-    /// Gives each relation macro its declaration and each cell instance its
-    /// output ports, as [`macro_column_types`] derives them from the columns
-    /// of the other forms' names, the modes of the `relation` forms and the
-    /// components.
-    pub(super) fn declare_macros(&mut self) {
-        let mut lib: StableHashMap<LibName, Box<[Column]>> = StableHashMap::default();
-        let mut modes: StableHashMap<LibName, Box<[Mode]>> = StableHashMap::default();
-        let mut components: StableHashMap<LibName, Component> = StableHashMap::default();
-        for (name, entry) in &self.entries {
-            match entry {
-                LibEntry::Relation(relation) => {
-                    lib.insert(name.clone(), relation.columns.clone());
-                    modes.insert(name.clone(), relation.modes.clone());
-                }
-                LibEntry::Proposer(Proposer::Native { columns }) => {
-                    lib.insert(name.clone(), columns.clone());
-                }
-                LibEntry::Component(component) => {
-                    components.insert(name.clone(), component.clone());
-                }
-                LibEntry::Proposer(Proposer::Arclog { .. }) | LibEntry::Macro(_) => {}
-            }
-        }
-        let macros: Vec<RelationMacro<'_>> = self
-            .relation_macros
-            .iter()
-            .map(|m| RelationMacro { name: &m.name, place: m.place, columns: &m.columns, definition: m.definition.value() })
-            .collect();
-        let cells: Vec<CellMacro<'_>> = self
-            .cells
-            .iter()
-            .map(|cell| CellMacro {
-                name: &cell.name,
-                place: cell.place,
-                type_parameters: &cell.type_parameters,
-                inputs: &cell.inputs,
-                init: cell.init(),
-                rules: cell.rules.iter().map(|rule| (&rule.name, CellForm { columns: &rule.columns, body: rule.body.value() })).collect(),
-                outputs: cell.outputs.iter().map(|(port, columns, body)| (port, CellForm { columns, body: body.value() })).collect(),
-            })
-            .collect();
-        let declarations = macro_column_types(&macros, &cells, &lib, &modes, &components);
-        match declarations {
-            Ok(mut declarations) => {
-                for m in std::mem::take(&mut self.relation_macros) {
-                    let relation = declarations.relations.remove(&m.name).expect("each relation macro takes a declaration");
-                    let labels = m.columns.iter().map(|(_, label)| *label).collect();
-                    self.entries.insert(m.name, LibEntry::Macro(Macro::Relation { relation, labels, definition: m.definition }));
-                }
-                for cell in std::mem::take(&mut self.cells) {
-                    let ports = declarations.cells.remove(&cell.name).expect("each cell instance takes its output ports");
-                    let component = Component { kind: cell.kind, type_parameters: cell.type_parameters, inputs: cell.inputs, outputs: ports };
-                    let outputs = cell.outputs.into_iter().map(|(port, columns, body)| CellOutput { port, labels: columns.iter().map(|(_, label)| *label).collect(), body });
-                    let instance = Macro::CellInstance { component, definition: cell.definition, rules: cell.rules, outputs: outputs.collect() };
-                    self.entries.insert(cell.name, LibEntry::Macro(instance));
-                }
-            }
-            Err(diagnostics) => self.diagnostics.extend(diagnostics),
-        }
     }
 
     /// Gives a diagnostic where an accessor of the registry would have no

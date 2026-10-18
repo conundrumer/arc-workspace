@@ -168,9 +168,6 @@ fn is_type_parameter_column(column: &str) -> bool {
 
 pub(super) struct Reader {
     owners: Owners,
-    /// Whether a read `(self.<port> ...)` stands, as in a definition of the
-    /// registry file.
-    defined_ports: bool,
     /// Whether the reader reads the body of a key clause, where a `^`
     /// label stands (`docs/arclog/arclog.md#instance`).
     in_key_body: bool,
@@ -179,17 +176,17 @@ pub(super) struct Reader {
 }
 
 impl Reader {
-    pub(super) fn new(exprs: &[SExpr], defined_ports: bool) -> Self {
+    pub(super) fn new(exprs: &[SExpr]) -> Self {
         let mut owners = Owners::default();
         for expr in exprs {
             owners.collect(expr);
         }
-        Reader::with_owners(owners, defined_ports)
+        Reader::with_owners(owners)
     }
 
     /// A reader whose read `&x.y` names the outputs of `owners`.
-    pub(super) fn with_owners(owners: Owners, defined_ports: bool) -> Self {
-        Reader { owners, defined_ports, in_key_body: false, diagnostics: Vec::new(), nodes: Vec::new() }
+    pub(super) fn with_owners(owners: Owners) -> Self {
+        Reader { owners, in_key_body: false, diagnostics: Vec::new(), nodes: Vec::new() }
     }
 
     /// The layout of the nodes read, as nodes of `file`.
@@ -298,9 +295,6 @@ impl Reader {
                 ProgramRelation::Declared(name) => RelationRef::Declared(name),
                 ProgramRelation::Output(name) => RelationRef::Output(name),
             });
-        }
-        if let Some(port) = text.strip_prefix(sp::SELF_PREFIX).filter(|_| self.defined_ports) {
-            return Ok(RelationRef::DefinedPort(PortName(port.into())));
         }
         if is_name(text) {
             return Ok(RelationRef::Lib(LibName(text.into())));

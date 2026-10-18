@@ -1,8 +1,6 @@
-//! The derivation of a macro's column types from its definition: a
-//! relation macro's columns with their modes, and a cell instance's output
-//! columns.
+//! The derivation of a relation macro's column types and modes from its
+//! definition.
 
-use super::cell_types::{cell_ports, CellMacro};
 use super::*;
 use crate::types::{label_fault_message, scope_list};
 
@@ -20,20 +18,15 @@ pub struct RelationMacro<'a> {
 }
 
 /// The declarations of the macros of the file that
-/// [`macro_column_types`] gives: each relation macro's, and each cell
-/// instance's output ports.
+/// [`macro_column_types`] gives: each relation macro's.
 #[derive(Clone, Debug)]
 pub struct MacroDeclarations {
     pub relations: StableHashMap<LibName, AlgebraRelation>,
-    /// Each cell instance's outputs, in the order of its `output` forms,
-    /// each column with its type.
-    pub cells: StableHashMap<LibName, Box<[Port]>>,
 }
 
 /// The declaration of each relation macro of `macros`, its columns in order
-/// with their types and its modes, and the output ports of each cell
-/// instance of `cells` with their column types, or a diagnostic at a
-/// macro's form for each fault.
+/// with their types and its modes, or a diagnostic at a macro's form for
+/// each fault.
 ///
 /// The type of a relation macro's column is the type that [`label_type`]
 /// gives its label over the definition. A site has the column's type: a
@@ -49,29 +42,10 @@ pub struct MacroDeclarations {
 /// this gives it. Where the empty set grounds the definition, the macro has
 /// no mode, as a relation over a finite domain has none.
 ///
-/// The type of a cell instance's output column is the type its `output`
-/// body gives the column's label, by the sites a relation macro's label
-/// takes, with these besides. A site on the cell instance's own input takes
-/// the type that input's column declares, a type parameter of the cell
-/// instance included. A site on an output of the `INIT` form's instance
-/// takes the type of that output's column in the component the form
-/// instantiates, a component of `components` or another cell instance of
-/// `cells`, with each type parameter of that component bound as the form
-/// binds it (`docs/arclog/arclog.md#instance`): to the type of a label, or
-/// to a record with a field per site or per `^` label, whose fields a site
-/// on that column reads by name. A site on a `RULE` form takes the type of
-/// that form's column, the type its body gives the column's label. The
-/// `INIT` form and the `RULE` forms are typed in an order of their reads of
-/// one another, and a site that reads a form whose typing reads the form
-/// that holds the site gives no type. A label whose sites give one type
-/// parameter of the cell instance, and no fixed type, takes that parameter;
-/// a label whose sites give no parameter takes the meet and join of their
-/// types, as a relation macro's does.
-///
 /// `lib` holds the columns of each lib name that a form other than a
 /// relation macro declares, and `modes` the modes of each `relation` form,
 /// none for a form with no `modes` form. The macros are read in an order of
-/// their reads of one another, so the order of `macros` and of `cells`
+/// their reads of one another, so the order of `macros`
 /// gives the order of the diagnostics alone. A fault is a cycle of macros
 /// that read one another, given at each macro of the cycle; a label of the
 /// definition, a column's or one that no column stands for, whose sites
@@ -80,22 +54,11 @@ pub struct MacroDeclarations {
 /// definition for a column's label; a column whose label stands at no site
 /// that gives a type; or a definition that no set of the columns grounds.
 /// A macro that reads a macro with a fault takes no declaration, and gives
-/// no diagnostic of its own for it. A cell instance has the faults of a
-/// relation macro's labels at each column of its outputs and its `RULE`
-/// forms, and at each other label of its outputs' bodies, and these
-/// besides: a type parameter of the instantiated component that the `INIT`
-/// form binds to no type, a site that names a field its record does not have, a
-/// site on a column whose type parameter the `INIT` form binds to one label
-/// that holds other than one bare label, and a label whose sites give a
-/// type parameter of the cell instance beside another parameter or a fixed
-/// type. Where a relation macro has a fault,
-/// the cell instances are not read.
+/// no diagnostic of its own for it.
 pub fn macro_column_types(
     macros: &[RelationMacro<'_>],
-    cells: &[CellMacro<'_>],
     lib: &StableHashMap<LibName, Box<[Column]>>,
     modes: &StableHashMap<LibName, Box<[Mode]>>,
-    components: &StableHashMap<LibName, Component>,
 ) -> Result<MacroDeclarations, Vec<crate::diagnostic::Diagnostic>> {
     let mut derivation = MacroDerivation {
         macros,
@@ -112,16 +75,11 @@ pub fn macro_column_types(
     if !derivation.diagnostics.is_empty() {
         return Err(derivation.diagnostics);
     }
-    let mut diagnostics = Vec::new();
-    let cells = cell_ports(&derivation, cells, components, &mut diagnostics);
-    if !diagnostics.is_empty() {
-        return Err(diagnostics);
-    }
     let relations = derivation.states.iter().zip(macros).map(|(state, m)| match state {
         MacroState::Declared(relation) => (m.name.clone(), relation.clone()),
         _ => unreachable!("a macro with no declaration gives a diagnostic"),
     });
-    Ok(MacroDeclarations { relations: relations.collect(), cells })
+    Ok(MacroDeclarations { relations: relations.collect() })
 }
 
 /// Where [`macro_column_types`] stands in its read of one macro.
@@ -137,7 +95,7 @@ enum MacroState {
     Faulted,
 }
 
-pub(super) struct MacroDerivation<'a, 'b> {
+struct MacroDerivation<'a, 'b> {
     macros: &'a [RelationMacro<'b>],
     lib: &'a StableHashMap<LibName, Box<[Column]>>,
     modes: &'a StableHashMap<LibName, Box<[Mode]>>,
@@ -311,7 +269,7 @@ impl MacroDerivation<'_, '_> {
     /// where that relation is a lib name of `lib` or a macro with its
     /// declaration and `path` is one column. A longer path, a field of a
     /// type parameter's column, gives no type.
-    pub(super) fn site_type(&self, atom: &Atom, path: &[ColumnName]) -> Option<ValueType> {
+    fn site_type(&self, atom: &Atom, path: &[ColumnName]) -> Option<ValueType> {
         let [column] = path else { return None };
         let RelationRef::Lib(name) = &atom.relation else { return None };
         let columns: &[Column] = match self.index.get(name) {
@@ -345,7 +303,7 @@ fn subsets_of_size(items: &[usize], size: usize) -> Vec<Vec<usize>> {
 /// the list of the label's scope, as the doc of [`CheckId::Types`] names it.
 /// `body` stands for the body of a clause whose head labels are the labels
 /// of `columns`.
-pub(super) fn local_label_types(
+fn local_label_types(
     body: &Body,
     columns: &[(ColumnName, LabelId)],
     site_type: &dyn Fn(&Atom, &[ColumnName]) -> Option<ValueType>,

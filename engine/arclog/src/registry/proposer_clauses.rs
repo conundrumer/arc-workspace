@@ -19,12 +19,12 @@ impl FileReader {
             };
             let Some(name) = self.symbol(rest.first(), "the proposer's name", place) else { continue };
             let name = LibName(name.into());
-            let Some((body, kept)) = self.read(read_body(&rest[1..], None)) else { continue };
+            let Some((body, kept)) = self.read(read_body(&rest[1..])) else { continue };
             if clauses.iter().any(|(n, ..)| *n == name) {
                 self.fault(CheckId::Scope, format!("the proposer `{}` has two clauses", name.0), place);
                 continue;
             }
-            self.bodies.push(BodyInFile { body: body.clone(), place, cell: None });
+            self.bodies.push(BodyInFile { body: body.clone(), place });
             clauses.push((name, place, body, kept));
         }
         for proposer in std::mem::take(&mut self.arclog_proposers) {

@@ -88,8 +88,7 @@ pub enum ConstructionsFault {
 impl Constructions {
     /// The table of `constructions`. Each one's name is a name of
     /// `registry` that declares a construction or a detector: a component,
-    /// a cell instance, or a derivation that a `DET` names, such as
-    /// `Division`.
+    /// or a derivation that a `DET` names, such as `Division`.
     pub fn new(
         constructions: Vec<Box<dyn Construction>>,
         registry: &crate::registry::Registry,

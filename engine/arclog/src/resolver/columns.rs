@@ -157,7 +157,7 @@ pub(super) fn lib_columns(registry: &Registry, name: &LibName) -> Option<Columns
         LibEntry::Relation(relation) | LibEntry::Macro(Macro::Relation { relation, .. }) => Some(of_columns(&relation.columns)),
         LibEntry::Proposer(Proposer::Native { columns }) => Some(of_columns(columns)),
         LibEntry::Proposer(Proposer::Arclog { columns, .. }) => Some(Columns::of_names(columns.iter().cloned())),
-        LibEntry::Component(_) | LibEntry::Macro(Macro::CellInstance { .. }) => None,
+        LibEntry::Component(_) => None,
     }
 }
 
@@ -175,7 +175,7 @@ pub(super) fn typed_columns<'r>(registry: &'r Registry, relation: &RelationRef) 
         RelationRef::Lib(name) => match registry.entry(name)? {
             LibEntry::Relation(relation) | LibEntry::Macro(Macro::Relation { relation, .. }) => Some(&relation.columns),
             LibEntry::Proposer(Proposer::Native { columns }) => Some(columns),
-            LibEntry::Proposer(Proposer::Arclog { .. }) | LibEntry::Component(_) | LibEntry::Macro(Macro::CellInstance { .. }) => None,
+            LibEntry::Proposer(Proposer::Arclog { .. }) | LibEntry::Component(_) => None,
         },
         RelationRef::Declared(_) | RelationRef::Output(_) | RelationRef::DefinedPort(_) => None,
     }
@@ -197,11 +197,11 @@ pub(super) fn is_proposer(registry: &Registry, name: &LibName) -> bool {
     matches!(registry.entry(name), Some(LibEntry::Proposer(_))) || registry.derivation(name).is_some()
 }
 
-/// The component an `INIT` form names: a construction, a detector, a
-/// task-structure component or a cell instance.
+/// The component an `INIT` form names: a construction, a detector or a
+/// task-structure component.
 pub(super) fn component<'r>(registry: &'r Registry, name: &LibName) -> Option<&'r Component> {
     match registry.entry(name)? {
-        LibEntry::Component(component) | LibEntry::Macro(Macro::CellInstance { component, .. }) => Some(component),
+        LibEntry::Component(component) => Some(component),
         LibEntry::Relation(_) | LibEntry::Proposer(_) | LibEntry::Macro(Macro::Relation { .. }) => None,
     }
 }
