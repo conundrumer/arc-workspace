@@ -15,7 +15,7 @@ use crate::program::{
     Negated, Node, Operand, OutputOwner, OutputStep, PortName, ProgramRelation, RelationColumn, RelationRef, Site, SiteArg,
 };
 use crate::program::written_inputs;
-use crate::registry::{binding_sites, Column, ColumnType, Component, ParameterSite, Registry, TypeParameter};
+use crate::registry::{binding_sites, key_parameter, Column, ColumnType, Component, ParameterSite, Registry, TypeParameter};
 use crate::resolver::columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Side, Signature};
 use crate::types::{
@@ -169,10 +169,12 @@ fn scope_forms_within<'f>(form: &'f Form, scope: &NodePath) -> Vec<(NodePath, &'
 /// and a Pose type names its key row by the positions of the key's
 /// columns. A relation whose columns a form's
 /// declaration fixes takes the types that [`FormTypes::relations`] gives
-/// it, in the order of the resolver's columns of it. A relation a column of
-/// which no form types, and a fact relation, get no column types.
+/// it, in the order of the resolver's columns of it. A fact relation takes
+/// the types of the columns that [`Registry::fact_columns`] gives it. A
+/// relation a column of which no form types gets no column types.
 pub fn program_types(
     program: &ResolvedProgram,
+    registry: &Registry,
     _clauses: &SolverClauses,
     forms: &[(NodePath, Arc<ScopeTypes>, CanonicalOrder)],
 ) -> ProgramTypes {
@@ -195,7 +197,12 @@ pub fn program_types(
         let form = program.form_of(node);
         let output = |port: &PortName| fixed.get(&(form.clone(), Arc::from([OutputStep::Port(port.clone())]))).copied();
         match &program.graph.nodes[index as usize].kind {
-            DependencyKind::Fact(_) => {}
+            DependencyKind::Fact(fact) => {
+                let declared = registry.fact_columns(*fact);
+                let column = |name: &ColumnName| declared_type(declared, std::slice::from_ref(name), PoseOr::Open);
+                let found = relation_columns(declared.iter().map(|column| &column.name), &column);
+                columns.extend(found.map(|found| (GraphRelation { node, output: None }, found)));
+            }
             DependencyKind::Clause(_) | DependencyKind::Parameter(_) | DependencyKind::Chosen(_) => {
                 columns.extend(given_columns(program, &types, &fixed, node).map(|found| (GraphRelation { node, output: None }, found)));
             }
@@ -1371,11 +1378,7 @@ fn bind(instance: &Instance, component: &Component, label: &dyn Fn(LabelId) -> O
             bindings.insert(sites.parameter.clone(), ty);
         }
     }
-    let key_parameter = component.inputs.iter().flat_map(|input| input.port.columns.iter()).find_map(|column| match &column.ty {
-        ColumnType::Parameter(parameter) if column.name == columns::key() => Some(parameter),
-        _ => None,
-    });
-    if let Some(parameter) = key_parameter.filter(|parameter| sites.iter().all(|sites| sites.parameter != *parameter)) {
+    if let Some(parameter) = key_parameter(&component.inputs).filter(|parameter| sites.iter().all(|sites| sites.parameter != *parameter)) {
         bindings.insert(parameter.clone(), ValueType::Unit);
     }
     bindings

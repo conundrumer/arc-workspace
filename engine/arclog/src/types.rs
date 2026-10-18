@@ -544,8 +544,8 @@ impl ProgramTypes {
     }
 
     /// The type of each column of `relation`, one per column, a record's
-    /// fields each a column of its own, or `None` for a fact relation and
-    /// where the type check gives a column of the relation no type.
+    /// fields each a column of its own, or `None` where the type check
+    /// gives a column of the relation no type.
     pub fn columns(&self, relation: &GraphRelation) -> Option<&[ValueType]> {
         self.columns.get(relation).map(|columns| &columns[..])
     }

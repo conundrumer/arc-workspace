@@ -425,6 +425,6 @@ mod proposer_clauses;
 mod reader;
 mod reads;
 
-pub(crate) use bindings::{binding_sites, ParameterSite};
+pub(crate) use bindings::{binding_sites, key_parameter, ParameterSite};
 pub use column_types::{macro_column_types, MacroDeclarations, RelationMacro};
 use reader::FileReader;

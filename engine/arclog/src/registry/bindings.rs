@@ -49,7 +49,7 @@ pub(crate) fn binding_sites<'a>(init: &'a crate::program::Instance, inputs: &'a 
 
 /// The type parameter of the `key` column of a component whose inputs are
 /// `inputs`, the column that the key clause binds, where it has one.
-fn key_parameter(inputs: &[InputPort]) -> Option<&TypeParameter> {
+pub(crate) fn key_parameter(inputs: &[InputPort]) -> Option<&TypeParameter> {
     inputs.iter().find_map(|input| {
         let column = input.port.columns.iter().find(|c| c.name == ColumnName::Written(crate::read::spelling::KEY.into()))?;
         match &column.ty {

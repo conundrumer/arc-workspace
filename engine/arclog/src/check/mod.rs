@@ -370,7 +370,7 @@ pub fn check_program(
     if !refused.is_empty() {
         return Err(refused);
     }
-    let mut types = types::program_types(&program, clauses, &form_types);
+    let mut types = types::program_types(&program, registry, clauses, &form_types);
     types.set_example_nodes(reads::example_relations(&program));
     Ok(CheckedProgram { program, types, alerts })
 }
