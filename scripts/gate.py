@@ -115,14 +115,14 @@ commit, to `<out-dir>/gate/record.json`.
 an earlier run wrote as the dependency record, where its commit is the
 `HEAD` commit of the checkout it runs in, and fails where it is another;
 where none stands, it says so and leaves the dependency record as it is.
-It then writes the counts that run wrote, in
-`<out-dir>/gate/instructions.json`, into the accepted counts: for each
+It then files a `performance` ticket, on domain `commit` and the `HEAD`
+commit, for each `SLOW` line that the counts that run wrote, in
+`<out-dir>/gate/instructions.json`, give against the accepted counts, with
+the line as its evidence, and none where a ticket outside `tickets/closed/`
+on the same command and stem stands. It prints the path of each ticket it
+files. It then writes those counts into the accepted counts: for each
 command, the lower of its count and the accepted one, and its count where
-no accepted one stands or where that run gave it a `SLOW` line. It then
-files a `performance` ticket, on domain `commit` and the `HEAD` commit, for
-each `SLOW` line, with the line as its evidence, and none where a ticket
-outside `tickets/closed/` on the same command and stem stands. It prints
-the path of each ticket it files.
+no accepted one stands or where that run gave it a `SLOW` line.
 
 A command that takes a witness file is given one at
 `<out-dir>/gate/wit/cur/`, copied from `tests/gate/frozen/` before the
@@ -215,9 +215,9 @@ def run_gate(argv: Sequence[str]) -> int:
     ap.add_argument("--accepted", type=Path, default=ACCEPTED,
                     help="the accepted directory (default: tests/gate/accepted)")
     ap.add_argument("--adopt", action="store_true",
-                    help="write the dependency record and the counts a run wrote under the "
-                         "out-dir as the machine's, file a ticket on each SLOW line, and run "
-                         "no command")
+                    help="write the dependency record a run wrote under the out-dir as the "
+                         "machine's, file a ticket on each SLOW line, then write the counts "
+                         "that run wrote as the machine's, and run no command")
     # Kept only for master's `scripts/merge_change.py`, which passes them
     # to this script, until bug 11-750 is fixed: `--adopt-record` is
     # `--adopt`, and `--outputs-only` does nothing.
@@ -302,11 +302,14 @@ def adopt(out: Path) -> int:
     rc = adopt_record(out)
     if rc != 0:
         return rc
-    grown = adopt_counts(out)
-    if grown:
+    adoption = adopt_counts(out)
+    if adoption is None:
+        return 0
+    if adoption.grown:
         commit = head()
-        for path in filed(grown, commit):
+        for path in filed(adoption.grown, commit):
             print(path)
+    adoption.keep()
     return 0
 
 

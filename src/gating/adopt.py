@@ -2,6 +2,7 @@
 written into the machine's accepted ones, as `scripts/gate.py --help`
 gives."""
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -42,17 +43,31 @@ def adopted(accepted: Counts, run: Counts) -> tuple[Counts, list[Line]]:
     return out, grown
 
 
-def adopt_counts(out: Path) -> list[Line]:
-    """Write the counts of the run under `out` into the machine's accepted
-    ones, where it wrote them; its `SLOW` lines."""
+@dataclass(frozen=True)
+class Adoption:
+    """The accepted counts at `to` with those of the run at `run` adopted,
+    and the `SLOW` lines of that run."""
+
+    run: Path
+    to: Path
+    counts: Counts
+    grown: list[Line]
+
+    def keep(self) -> None:
+        """Write `counts` to `to`."""
+        keep_counts(self.to, self.counts)
+        print(mctx("instructions: the counts of {path} are adopted into {to}").format(
+            path=self.run, to=self.to))
+
+
+def adopt_counts(out: Path) -> Adoption | None:
+    """The adoption of the counts of the run under `out`, where it wrote
+    them; it writes no count."""
     path = out.resolve() / "gate" / RUN_COUNTS
     to = count_file(ACCEPTED)
     if not path.exists():
         print(mctx("instructions: no {path} stands, so the accepted counts at {to} stay as "
                    "they are").format(path=path, to=to))
-        return []
+        return None
     counts, grown = adopted(read_counts(to), read_counts(path))
-    keep_counts(to, counts)
-    print(mctx("instructions: the counts of {path} are adopted into {to}").format(
-        path=path, to=to))
-    return grown
+    return Adoption(path, to, counts, grown)
