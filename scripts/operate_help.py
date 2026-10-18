@@ -36,8 +36,8 @@ USAGE = mctx("""
     - Where `next`, `relay` or `review` is given the agent id of an agent other than the one its part of this help gives, it prints that the agent is none that form serves, and what that agent does.
     {parts}
     - `claim` claims a task for the session, and, where a claim on the task stands, fails and prints the session that holds it.
-    - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, as [Passes on a task](prompts/agents/notes/launching.md#passes-on-a-task) gives.
-    - `restore` puts that work back and removes the task's claim, as that section gives.
+    - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass.
+    - `restore` puts that work back, removes the task's claim and records the call.
         - `<reason>` is the reason the task's pipeline stopped, or empty where that pipeline ran to its end, and `next` then takes that pipeline as ended with that reason.
     - `release` removes the task's claim.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives.

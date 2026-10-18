@@ -1,8 +1,9 @@
 + budget: 25786
 * comment: when editing this doc
-    - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed, and A transcript review's brief by its link, at a transcript review's launch. Each reader of Launching loads A draft's outcome by the link of its line on giving another agent a draft, the ticket analyst and the draft analyst by the link of [Checking a draft](prompts/agents/ticket-analyst/change.md#checking-a-draft), and each reader of the Checks of [Reviewing a draft](prompts/agents/ticket-reviewer/review.md) by the link at the check of a draft's claims about the current state. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, which its `description` links for each launcher. The item checker, the design reviewer and the `handbook-expanded` agent inline A part a brief leaves out, and the reply files that the last items of the other agents' checklists link, other than the ticket reviewer's, link it. The `handbook-expanded` agent and the item checker inline An editor's report on a change, and the reply files of the code editor and the doc editor link it. The doc reviewer and the design reviewer inline Findings that block a change, the editors load it by the link of An editor's brief, for a review an item has them make, and the decision analyst by the links of [An editor's findings](prompts/agents/decision-analyst/findings.md). The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section, and An operator's brief by the link of the `expedite` route of [Routes](prompts/agents/notes/requests.md#routes).
+    - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed, and A transcript review's brief by its link, at a transcript review's launch. Each reader of Launching loads An edit's items by its link, before it writes the items or the Intent of an edit, the ticket analyst and the draft analyst by the link of [Revising a draft](prompts/agents/ticket-analyst/drafts.md#revising-a-draft), and the ticket reviewer by the link of its Checks. Each reader of Launching loads A draft's outcome by the link of its line on giving another agent a draft, the ticket analyst and the draft analyst by the link of [Checking a draft](prompts/agents/ticket-analyst/change.md#checking-a-draft), and each reader of the Checks of [Reviewing a draft](prompts/agents/ticket-reviewer/review.md) by the link at the check of a draft's claims about the current state. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, which its `description` links for each launcher. The item checker, the design reviewer and the `handbook-expanded` agent inline A part a brief leaves out, and the reply files that the last items of the other agents' checklists link, other than the ticket reviewer's, link it. The `handbook-expanded` agent and the item checker inline An editor's report on a change, and the reply files of the code editor and the doc editor link it. The doc reviewer and the design reviewer inline Findings that block a change, the editors load it by the link of An editor's brief, for a review an item has them make, and the decision analyst by the links of [An editor's findings](prompts/agents/decision-analyst/findings.md). The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section, and An operator's brief by the link of the `expedite` route of [Routes](prompts/agents/notes/requests.md#routes).
     - Acts, each with its section:
         - Launching an agent and acting on what it leaves unfinished: [Launching](#launching).
+        - Writing the items or the Intent of an edit: [An edit's items](#an-edits-items).
         - Writing a brief, and reading one's own: [Briefs](#briefs), one section per form.
         - Giving in an editor's report what shows a change's item holds, the findings left at the round cap and the findings of later messages left unfixed: [An editor's report on a change](#an-editors-report-on-a-change).
         - Sorting a review's findings into those that block a change and those filed as tickets: [Findings that block a change](#findings-that-block-a-change).
@@ -18,9 +19,7 @@
 - Where a launch fails with its agent type not found, give the launch as unfinished, with the failure's text as its reason.
 - Give an agent a brief in the form the sections under [Briefs](prompts/agents/notes/launching.md#briefs) for its work give, where any does, and launch it as the agent type whose `description` links those sections: read each of those sections and each section they link. Restate neither a docstring of the code nor the agent's definition.
 - Where a brief gives a scratch directory, give a new directory under the session's scratchpad directory.
-- In a brief or a `change` ticket that gives the items or the Intent of an edit, give the meaning to state, the case that shows the need, and the span the edit may change, and no wording.
-    - Give each item as a requirement: a statement of what holds once the edit is made, that a check or a reading of the result can confirm. Give each way the edit can fail that you foresee as an item that gives what holds in that case, and ask no agent to think a case through.
-    - In those items or that Intent, give no account of how each way the edit can fail is met, and no claim on what other lines of the documents or other branches of the code then do, unless the meaning to state, or the decision a `change` ticket gives, depends on it.
+- Before you write the items or the Intent of an edit, read [An edit's items](prompts/agents/notes/launching.md#an-edits-items).
 - Before you give another agent a draft `change` ticket that you filed or revised, in your reply or otherwise, read [A draft's outcome](prompts/agents/notes/launching.md#a-drafts-outcome).
 - Split work off to another agent where what the split saves outweighs its overhead. A split can save wall-clock, tokens, or your own context; its overhead is the documents the new agent loads before it starts, and the brief.
     * comment: The user's words, session 7fd429fb, 2026-10-16, on a fixed ratio of wall-clock to token cost: "that seems overly rigid", "also saves on context rot", and on the overhead: "that sounds right": ticket 6-1416.
@@ -37,6 +36,11 @@
 - In your reply, give each item an agent you launched left unfinished that you have not finished, as unfinished with its reason.
 - A transcript review is a `general-purpose` agent that reviews a run's transcript, with the brief [A transcript review's brief](prompts/agents/notes/launching.md#a-transcript-reviews-brief) gives.
 - Pause or serialize agents only where the user agreed to it.
+
+## An edit's items
+- In a brief or a `change` ticket that gives the items or the Intent of an edit, give the meaning to state, the case that shows the need, and the span the edit may change, and no wording.
+    - Give each item as a requirement: a statement of what holds once the edit is made, that a check or a reading of the result can confirm. Give each way the edit can fail that you foresee as an item that gives what holds in that case, and ask no agent to think a case through.
+    - In those items or that Intent, give no account of how each way the edit can fail is met, and no claim on what other lines of the documents or other branches of the code then do, unless the meaning to state, or the decision a `change` ticket gives, depends on it.
 
 ## Briefs
 
@@ -83,7 +87,8 @@
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### A draft analyst's brief
-- A draft analyst's brief gives a draft `change` ticket whose log holds findings or a suggestion.
+- A draft analyst's brief gives one or more draft `change` tickets whose logs hold findings or suggestions.
+    - With each draft that an operator's line moved past its cost budget, it gives that line, and what the last item checker launched on that draft before that line leaves for a decision, where it leaves something.
     - With a draft whose next revision opens at its operator's cap of ticket reviews, it gives that this revision is the last: once it is written, the operator moves the draft to `tickets/open/` with no further ticket review, and the change's own review checks what the change writes.
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
@@ -173,15 +178,8 @@
 
 ## Passes on a task
 - Before you launch a pass on a task whose claim you do not hold, claim the task: run `uv run python scripts/operate.py claim <task_id>`. Where it fails, launch no pass on that task.
-- Where that pass is an Analyze or a Create pass, set aside the task's earlier work in the main worktree:
-    1. Make a new directory `work/task/<task_id>/<n>/`, with `n` one more than the highest numbered directory there, and 1 where there is none.
-    2. Write the output of `git diff HEAD -- programs/solvers/<task_id>.dl programs/witnesses/<task_id>.wit.json` to `uncommitted.diff` in it.
-    3. Move into it the task's solver and its witness file, each where it exists, and, before an Analyze pass, each entry of `work/task/<task_id>/` other than `claim` and the numbered directories, or, before a Create pass, `create.md`, each `refine-<n>.md` and `progress.md`.
-    4. Run `git update-index --skip-worktree <path>` on the path of each of those two files that `git ls-files <path>` lists.
-- Once each pass you launch on the task for one request or one procedure has ended, or the harness or the permission classifier has refused the launch of such a pass while no other such pass runs:
-    1. Move the solver and the witness file you set aside back to their paths, each where nothing stands at its path.
-    2. Run `git update-index --no-skip-worktree <path>` on each path you marked.
-    3. Remove the claim file, `work/task/<task_id>/claim` in the main worktree.
+- Where that pass is an Analyze or a Create pass, set aside the task's earlier work: run `uv run python scripts/operate.py set-aside <task_id> analyze` before an Analyze pass, or `uv run python scripts/operate.py set-aside <task_id> create` before a Create pass.
+- Once each pass you launch on the task for one request or one procedure has ended, or the harness or the permission classifier has refused the launch of such a pass while no other such pass runs, run `uv run python scripts/operate.py restore <task_id>`.
 
 ## Operators
 - Send each line you give an operator to your running operator launcher, and where none runs, launch a new operator launcher with it. Give it in a form [An operator's brief](#an-operators-brief) gives, with nothing else in that message.

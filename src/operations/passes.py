@@ -1,7 +1,6 @@
 """The solver pipelines: Analyze, then Create, then Refine on one task, from
-the pass the coordinator gives, as
-[Passes on a task](prompts/agents/notes/launching.md#passes-on-a-task)
-gives the claim and the work set aside around them. Whether a task is
+the pass the coordinator gives. `task_work` claims the task and sets
+aside its earlier work around those passes. Whether a task is
 claimed is read from its claim file: a pipeline on a task another session
 claims stops.
 

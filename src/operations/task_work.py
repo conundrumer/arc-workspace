@@ -1,9 +1,8 @@
 """The work on a task that a solver pipeline sets aside in the main worktree
 before an Analyze or a Create pass, and puts back with the release of the
-task's claim once the pipeline ends, as the section `Passes on a task` of
-[Launching notes](prompts/agents/notes/launching.md#passes-on-a-task)
-gives. Each `restore` call, by any agent, is recorded in one file
-outside every task's work directory, which no set-aside moves. `scripts/operate.py set-aside`, `restore` and `release` run these, as steps
+task's claim once the pipeline ends. Each `restore` call, by any agent,
+is recorded in one file outside every task's work directory, which no
+set-aside moves. `scripts/operate.py set-aside`, `restore` and `release` run these, as steps
 `passes` prints; this is the one module of the package that writes."""
 
 import json
@@ -50,7 +49,14 @@ def numbered(directory: Path) -> list[int]:
 
 def set_aside(main: Path, task: str, role: Role) -> Path:
     """Set aside the task's earlier work before a pass of `role`, and give
-    the directory it went to."""
+    the directory it went to: a new directory of the task's work directory,
+    numbered one more than the highest numbered one there, or 1 where none
+    is. That directory takes `uncommitted.diff`, the diff of the solver and
+    the witness file against `HEAD`, and each of those two files that
+    exists. Before an Analyze pass it takes each entry of the task's work
+    directory other than the claim and the numbered directories, and before
+    a Create pass the entries `BEFORE_CREATE` gives and each Refine report.
+    Each of the two paths that git tracks is marked skip-worktree."""
     work = tasks_work(main) / task
     taken = numbered(work)
     target = work / str((taken[-1] if taken else 0) + 1)
