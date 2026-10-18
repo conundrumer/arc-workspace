@@ -65,7 +65,7 @@ from operations.roles import Purpose, Role, analyst_subject, joined
 from operations.state import Agent, LogLine, State, Ticket
 from ticketing.vocabulary import SETTLED, Status
 from operations.constants import COORDINATOR
-from operations.final_reply import carrier, nested, replies_by_operator
+from operations.final_reply import carrier, nested, replies_by_operator, session_operator
 from operations.handled import repeated, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, labeled
 from operations.log_commands import AGENT, log
@@ -265,12 +265,14 @@ def told(state: State) -> list[str]:
     coordinator the `tell:` items of each ticket analyst's reply that `me`
     carries (`final_reply.carrier`), and of the reply of an analyst on a held
     step, its `unfinished:` items and its items that open with a label with
-    no colon after it."""
+    no colon after it. An analyst whose `final_reply.session_operator` is
+    None gives no lines."""
     out: list[str] = []
     replies = replies_by_operator(state)
     for a, purpose, _, key in replied(state):
         r = a.last_report
-        if r is None or carrier(state, a.operator, r.time, replies) != state.me:
+        op = session_operator(state, a)
+        if r is None or op is None or carrier(state, op, r.time, replies) != state.me:
             continue
         on_step = purpose is Purpose.STEP
         part = items_of(a, [Label.TELL, Label.UNFINISHED] if on_step else [Label.TELL])

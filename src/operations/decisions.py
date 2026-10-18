@@ -42,7 +42,7 @@ from operations.directives import reply_decisions
 from operations.reports import Label, items_of
 from operations.roles import Purpose, Role, analyst_of, analyst_subject, described
 from operations.state import Agent, State, Tool, Unread, own
-from operations.final_reply import failure, final_replies, nested
+from operations.final_reply import failure, final_replies, nested, session_operator
 from operations.handled import ask_again, decided_by, repeated
 from operations.steps import Launch, Send, Step, Undecided, analyst_key, rulable
 from operations.tracker import closed
@@ -90,9 +90,11 @@ def applier(state: State, a: Agent) -> str:
 
 
 def launcher_ended(state: State, a: Agent) -> bool:
-    """Whether the operator that launched `a` sent the coordinator the text
-    of its final reply since that launch."""
-    return any(t > a.launched for t in final_replies(state, a.operator))
+    """Whether the operator whose launch `a` is or stands in
+    (`final_reply.session_operator`) sent the coordinator the text of its
+    final reply since that launch; False where it gives None."""
+    op = session_operator(state, a)
+    return op is not None and any(t > a.launched for t in final_replies(state, op))
 
 
 def decides(a: Agent) -> bool:

@@ -8,7 +8,8 @@ operators carries on the lines one hands the other (`takes_up`), whether a holde
 of a change is live (`live_holder`), the operators launched before and
 after one (`split_at`),
 the operator whose final reply carries what
-reached an earlier one (`carrier`), and the lines the reply nests.
+reached an earlier one (`carrier`), the operator whose launch an agent is or
+stands in (`session_operator`), and the lines the reply nests.
 `ended_at`, `takes_up` and `carrier` read the calls of
 `next` by `handled.next_call`."""
 
@@ -22,7 +23,7 @@ from operations.constants import COORDINATOR
 from operations.handled import sends_in
 from operations.journal import next_call
 from operations.printing import FINAL_REPLY, final_message, unfenced
-from operations.state import Call, State, Tool, memoized
+from operations.state import Agent, Call, State, Tool, memoized
 from operations.steps import Reply, Send
 
 
@@ -192,12 +193,24 @@ def carrier(state: State, operator: str, time: float,
     `time`: of `operator` and the operators launched after it, the one
     whose call that printed a final reply came first after `time`, by
     `replies`, which `replies_by_operator` gives, with `me` counted as
-    printing one now, or None where none did."""
+    printing one now, or None where none did. `operator` is an operator
+    of `state.operators`; `session_operator` gives it for an agent."""
     after = state.operators[state.operators.index(operator):]
     printed_at = [(t, o) for o in after for t in replies[o] if t > time]
     if state.me in after:
         printed_at.append((state.now, state.me))
     return min(printed_at)[1] if printed_at else None
+
+
+def session_operator(state: State, a: Agent) -> str | None:
+    """The operator of `state.operators` whose launch `a` is or stands in:
+    `a.operator` where it is one, else the `operator` of the agent of
+    `state.transcripts.agents` whose id is `a.operator`, the editor that
+    launched `a`, where that one is, or None where neither is."""
+    if a.operator in state.operators:
+        return a.operator
+    return next((e.operator for e in state.transcripts.agents
+                 if e.agent_id == a.operator and e.operator in state.operators), None)
 
 
 def ending_step(to: str, text: str, since: float, sent: bool) -> Send | Reply:
