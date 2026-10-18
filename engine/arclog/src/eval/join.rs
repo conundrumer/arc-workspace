@@ -4,8 +4,7 @@
 //!
 //! An algebra relation is evaluated at the point in the order where one of
 //! its modes is satisfied, and its outputs are variables that later atoms
-//! join on through an index. Where two algebra outputs join on a computed
-//! key, the join builds a [`KeyIndex`] on the key over the smaller side.
+//! join on through an index.
 
 use std::sync::Arc;
 
@@ -619,28 +618,5 @@ fn domain(registry: &Registry, ty: &ValueType) -> Vec<TermId> {
     match orientation_domain(ty).expect("an orientation type") {
         OrientationDomain::C4 => registry.c4_constants().each().map(encode).collect(),
         OrientationDomain::Types(types) => types.iter().flat_map(|&t| registry.constants_of(t).each()).map(encode).collect(),
-    }
-}
-
-/// A hash index on a key computed by an algebra relation: each key's rows
-/// of one side of the join.
-#[derive(Debug, Default)]
-pub struct KeyIndex {
-    rows: StableHashMap<Box<[TermId]>, Vec<Row>>,
-}
-
-impl KeyIndex {
-    /// The index of `rows` on the key that `key` computes from each row.
-    pub fn build(rows: impl Iterator<Item = Row>, key: impl Fn(&[TermId]) -> Box<[TermId]>) -> Self {
-        let mut index = KeyIndex::default();
-        for row in rows {
-            index.rows.entry(key(&row)).or_default().push(row);
-        }
-        index
-    }
-
-    /// The rows whose key is `key`.
-    pub fn get(&self, key: &[TermId]) -> &[Row] {
-        self.rows.get(key).map_or(&[], Vec::as_slice)
     }
 }

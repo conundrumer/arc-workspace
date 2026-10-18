@@ -213,17 +213,5 @@ fn site_labels(site: &Site, labels: &mut impl Extend<LabelId>) {
 
 /// Whether `ty` is an orientation type, whose label counts as grounded.
 fn is_orientation(ty: &ValueType) -> bool {
-    match ty {
-        ValueType::C4
-        | ValueType::D4
-        | ValueType::Dir
-        | ValueType::DiagDir
-        | ValueType::Dir8
-        | ValueType::Axis
-        | ValueType::DiagAxis
-        | ValueType::Axis4
-        | ValueType::Sym
-        | ValueType::Sense => true,
-        ValueType::Number | ValueType::Color | ValueType::Example | ValueType::Unit | ValueType::Box | ValueType::Ident | ValueType::Pose(_) | ValueType::Record(_) => false,
-    }
+    ty.orientation_types().is_some()
 }

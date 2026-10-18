@@ -98,12 +98,31 @@ impl Constructions {
         constructions: Vec<Box<dyn Construction>>,
         registry: &crate::registry::Registry,
     ) -> Result<Self, ConstructionsFault> {
-        todo!()
+        let mut by_name = StableHashMap::default();
+        for construction in constructions {
+            let name = LibName(construction.name().into());
+            let declares = match registry.entry(&name) {
+                Some(LibEntry::Component(component)) => {
+                    matches!(component.kind, ComponentKind::Construction | ComponentKind::Detector)
+                }
+                Some(LibEntry::Relation(_) | LibEntry::Proposer(_) | LibEntry::Macro(_)) | None => {
+                    registry.derivation(&name).is_some()
+                }
+            };
+            if !declares {
+                return Err(ConstructionsFault::NotAComponent(name));
+            }
+            if by_name.contains_key(&name) {
+                return Err(ConstructionsFault::Repeated(name));
+            }
+            by_name.insert(name, construction);
+        }
+        Ok(Constructions { by_name })
     }
 
     /// The construction of `name`, or `None` where the table has none.
     pub fn get(&self, name: &LibName) -> Option<&dyn Construction> {
-        todo!()
+        self.by_name.get(name).map(|construction| construction.as_ref())
     }
 }
 

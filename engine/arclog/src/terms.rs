@@ -76,6 +76,11 @@ impl Example {
     pub fn at(index: u16) -> Example {
         Example(index)
     }
+
+    /// The example's index in the task file.
+    pub fn index(self) -> u16 {
+        self.0
+    }
 }
 
 /// The orientation types of the lib, each a type with a finite set of
@@ -252,16 +257,11 @@ impl Term {
             ValueType::Unit => Term::Constant(Constant::Unit),
             ValueType::Box => Term::Box(Margins::unpack(bits)),
             ValueType::Ident => Term::Ident(Ident(bits)),
-            ValueType::C4 | ValueType::D4 | ValueType::Pose(_) => orientation(&[OrientationType::D4]),
-            ValueType::Dir => orientation(&[OrientationType::Dir]),
-            ValueType::DiagDir => orientation(&[OrientationType::DiagDir]),
-            ValueType::Dir8 => orientation(&[OrientationType::Dir, OrientationType::DiagDir]),
-            ValueType::Axis => orientation(&[OrientationType::Axis]),
-            ValueType::DiagAxis => orientation(&[OrientationType::DiagAxis]),
-            ValueType::Axis4 => orientation(&[OrientationType::Axis, OrientationType::DiagAxis]),
-            ValueType::Sym => orientation(&[OrientationType::Sym]),
-            ValueType::Sense => orientation(&[OrientationType::Sense]),
+            ValueType::Pose(_) => Term::decode(id, &ValueType::D4),
             ValueType::Record(_) => panic!("a record's value takes one column per field"),
+            orientation_type => orientation(
+                orientation_type.orientation_types().expect("each type of no other arm is an orientation type"),
+            ),
         }
     }
 }
@@ -431,16 +431,11 @@ pub fn encode_data_value(
             one(Term::Ident(table.intern(Content::FromFile { ty: ValueType::Ident, written })))
         }
         (ValueType::C4, _) => orientation(&|constant| registry.c4_constants().contains(constant)),
-        (ValueType::D4 | ValueType::Pose(_), _) => orientation(&of_type(&[OrientationType::D4])),
-        (ValueType::Dir, _) => orientation(&of_type(&[OrientationType::Dir])),
-        (ValueType::DiagDir, _) => orientation(&of_type(&[OrientationType::DiagDir])),
-        (ValueType::Dir8, _) => orientation(&of_type(&[OrientationType::Dir, OrientationType::DiagDir])),
-        (ValueType::Axis, _) => orientation(&of_type(&[OrientationType::Axis])),
-        (ValueType::DiagAxis, _) => orientation(&of_type(&[OrientationType::DiagAxis])),
-        (ValueType::Axis4, _) => orientation(&of_type(&[OrientationType::Axis, OrientationType::DiagAxis])),
-        (ValueType::Sym, _) => orientation(&of_type(&[OrientationType::Sym])),
-        (ValueType::Sense, _) => orientation(&of_type(&[OrientationType::Sense])),
-        _ => Err(not_of_type()),
+        (ValueType::Pose(_), _) => orientation(&of_type(ValueType::D4.orientation_types().expect("D4 is an orientation type"))),
+        (ty, _) => match ty.orientation_types() {
+            Some(types) => orientation(&of_type(types)),
+            None => Err(not_of_type()),
+        },
     }
 }
 

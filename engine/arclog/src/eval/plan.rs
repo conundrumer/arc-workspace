@@ -160,25 +160,8 @@ pub(super) enum OrientationDomain {
 
 /// The domain of `ty`, or `None` where `ty` is no orientation type.
 pub(super) fn orientation_domain(ty: &ValueType) -> Option<OrientationDomain> {
-    let types: &'static [OrientationType] = match ty {
-        ValueType::C4 => return Some(OrientationDomain::C4),
-        ValueType::D4 => &[OrientationType::D4],
-        ValueType::Dir => &[OrientationType::Dir],
-        ValueType::DiagDir => &[OrientationType::DiagDir],
-        ValueType::Dir8 => &[OrientationType::Dir, OrientationType::DiagDir],
-        ValueType::Axis => &[OrientationType::Axis],
-        ValueType::DiagAxis => &[OrientationType::DiagAxis],
-        ValueType::Axis4 => &[OrientationType::Axis, OrientationType::DiagAxis],
-        ValueType::Sym => &[OrientationType::Sym],
-        ValueType::Sense => &[OrientationType::Sense],
-        ValueType::Number
-        | ValueType::Color
-        | ValueType::Example
-        | ValueType::Unit
-        | ValueType::Box
-        | ValueType::Ident
-        | ValueType::Pose(_)
-        | ValueType::Record(_) => return None,
-    };
-    Some(OrientationDomain::Types(types))
+    match ty {
+        ValueType::C4 => Some(OrientationDomain::C4),
+        ty => ty.orientation_types().map(OrientationDomain::Types),
+    }
 }

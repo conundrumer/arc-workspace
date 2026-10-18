@@ -29,7 +29,7 @@ pub mod rigid;
 pub mod unfold;
 pub mod values;
 
-pub use values::{Caps, Cancellation, GridValue, Limits, Outcome, ReachedBound, RelationValue, RunFault, Stop};
+pub use values::{Caps, Cancellation, GridValue, Limits, NoGridColumns, Outcome, ReachedBound, RelationValue, RunFault, Stop};
 
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -123,20 +123,23 @@ impl Evaluation<'_> {
     /// by column position. Where two of them give different grids on an
     /// input of the task, the grid columns are undetermined, and this gives a
     /// [`RunFault`] at the form of `&output`, as an undetermined `DET` does.
-    /// It gives `None` only where no pair solves every train pair.
-    pub fn grid_columns(&self) -> Outcome<Option<output::GridColumns>> {
+    /// Where `&output` stops on a train pair, this gives that stop.
+    pub fn grid_columns(&self) -> Outcome<Result<output::GridColumns, NoGridColumns>> {
         Driver::new(self).grid_columns()
     }
 
     /// The grid of `&output` on each example of the task, train pairs then
     /// test inputs, by the grid columns that [`Evaluation::grid_columns`]
-    /// gives; `None` where it gives none.
-    pub fn outputs(&self) -> Outcome<Option<Box<[(Example, GridValue)]>>> {
+    /// gives, or why it gives none.
+    pub fn outputs(&self) -> Outcome<Result<Box<[(Example, GridValue)]>, NoGridColumns>> {
         let driver = Driver::new(self);
-        let Some(columns) = driver.grid_columns()? else { return Ok(None) };
+        let columns = match driver.grid_columns()? {
+            Ok(columns) => columns,
+            Err(none) => return Ok(Err(none)),
+        };
         let grids: Outcome<Box<[(Example, GridValue)]>> =
             self.task.examples().map(|example| Ok((example, driver.grid(example, columns)?))).collect();
-        grids.map(Some)
+        grids.map(Ok)
     }
 }
 
@@ -362,7 +365,7 @@ impl<'e, 'a> Driver<'e, 'a> {
 
     /// The grid columns of `&output`, as [`Evaluation::grid_columns`] gives
     /// them.
-    fn grid_columns(&self) -> Outcome<Option<output::GridColumns>> {
+    fn grid_columns(&self) -> Outcome<Result<output::GridColumns, NoGridColumns>> {
         let relation = self.output_relation();
         let program = self.evaluation.program;
         let form = program.program.form_of(relation.node).clone();
@@ -375,16 +378,20 @@ impl<'e, 'a> Driver<'e, 'a> {
         for columns in output::candidate_columns(types) {
             let mut solves = true;
             for (pair, example) in task.train.iter().zip(task.examples()) {
-                if !matches!(self.grid(example, columns)?, GridValue::Grid(grid) if grid == pair.output) {
-                    solves = false;
-                    break;
+                match self.grid(example, columns)? {
+                    GridValue::Grid(grid) if grid == pair.output => {}
+                    GridValue::Stopped(stop) => return Ok(Err(NoGridColumns::Stopped(stop))),
+                    GridValue::Grid(_) | GridValue::Undefined => {
+                        solves = false;
+                        break;
+                    }
                 }
             }
             if solves {
                 solving.push(columns);
             }
         }
-        let Some((&first, rest)) = solving.split_first() else { return Ok(None) };
+        let Some((&first, rest)) = solving.split_first() else { return Ok(Err(NoGridColumns::NoPairSolves)) };
         for &other in rest {
             for example in task.examples() {
                 let (a, b) = (self.grid(example, first)?, self.grid(example, other)?);
@@ -393,7 +400,7 @@ impl<'e, 'a> Driver<'e, 'a> {
                 }
             }
         }
-        Ok(Some(first))
+        Ok(Ok(first))
     }
 }
 

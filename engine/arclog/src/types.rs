@@ -137,6 +137,33 @@ impl ValueType {
         }
     }
 
+    /// The orientation types whose constants are the values of the type:
+    /// its own, or the types a union such as `Dir8` unites, and `D4` for
+    /// `C4`, whose constants are D4's. `None` for every other type, a Pose
+    /// type among them.
+    pub fn orientation_types(&self) -> Option<&'static [crate::terms::OrientationType]> {
+        use crate::terms::OrientationType;
+        Some(match self {
+            ValueType::C4 | ValueType::D4 => &[OrientationType::D4],
+            ValueType::Dir => &[OrientationType::Dir],
+            ValueType::DiagDir => &[OrientationType::DiagDir],
+            ValueType::Dir8 => &[OrientationType::Dir, OrientationType::DiagDir],
+            ValueType::Axis => &[OrientationType::Axis],
+            ValueType::DiagAxis => &[OrientationType::DiagAxis],
+            ValueType::Axis4 => &[OrientationType::Axis, OrientationType::DiagAxis],
+            ValueType::Sym => &[OrientationType::Sym],
+            ValueType::Sense => &[OrientationType::Sense],
+            ValueType::Number
+            | ValueType::Color
+            | ValueType::Example
+            | ValueType::Unit
+            | ValueType::Box
+            | ValueType::Ident
+            | ValueType::Pose(_)
+            | ValueType::Record(_) => return None,
+        })
+    }
+
     /// Whether `<`, `<=`, `>` and `>=` may compare values of the type: true
     /// for `number` alone.
     pub fn admits_order(&self) -> bool {

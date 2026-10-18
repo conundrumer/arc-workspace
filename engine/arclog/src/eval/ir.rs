@@ -314,18 +314,14 @@ pub(super) fn atom_modes<'r>(registry: &'r Registry, atom: &Atom) -> &'r [Mode] 
 }
 
 /// The path of the form whose label scope holds the labels of the form at
-/// `path`: the top-level form, or the form of a claim, an `ALT` or a
-/// `DEMO_RULE` that holds it.
+/// `path`: the innermost label scope of the canonical labeling,
+/// [`CanonicalOrder::label_scopes`], whose form holds it.
 fn scope_of(program: &CheckedProgram, path: &NodePath) -> NodePath {
-    let root = NodeRef::Program(program.program.program.value());
-    let mut scope = NodePath(path.0[..1].into());
-    for depth in 1..path.0.len() {
-        let parent = node_at(root, &NodePath(path.0[..depth].into())).expect("a path of the program");
-        if matches!(parent, NodeRef::Claim(_) | NodeRef::Alt(_) | NodeRef::DemoRule(_)) {
-            scope = NodePath(path.0[..=depth].into());
-        }
-    }
-    scope
+    let (first, within) = path.0.split_first().expect("the path of a form of the program");
+    let top = &program.program.program.value().forms[first.0 as usize];
+    let order = CanonicalOrder::of(top, &mut SearchBudget::new());
+    let inner = order.label_scopes().into_iter().map(|(scope, _)| scope).filter(|scope| within.starts_with(&scope.0)).max_by_key(|scope| scope.0.len());
+    NodePath(std::iter::once(*first).chain(inner.into_iter().flat_map(|scope| scope.0.into_vec())).collect())
 }
 
 /// The body and the columns of the form at `clause`, with the path of the

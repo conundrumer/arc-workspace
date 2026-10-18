@@ -160,6 +160,14 @@ pub enum GridValue {
     Stopped(Stop),
 }
 
+/// Why `&output` has no grid columns: no pair of its columns solves every
+/// train pair, or `&output` stopped at a bound on a train pair.
+#[derive(Clone, Debug)]
+pub enum NoGridColumns {
+    NoPairSolves,
+    Stopped(Stop),
+}
+
 /// A flag that cancels the evaluations that share it. Clones share one
 /// flag.
 #[derive(Clone, Debug, Default)]
