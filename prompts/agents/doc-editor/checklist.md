@@ -11,15 +11,19 @@
 
 ## Judge each line of the Scope's documents
 - Judge each line of each document your change's Scope gives, as [Whole-document pass](prompts/agents/doc-editor/whole-document.md#whole-document-pass) gives.
+    + xref: prompts/agents/doc-editor/whole-document.md#whole-document-pass
 
 # Write the edit
 - Write the edit your request and each later message need, as [Writing the edit](prompts/agents/doc-editor.md#writing-the-edit) and [Building the Design](prompts/agents/doc-editor/design.md#building-the-design) give.
+    + xref: prompts/agents/doc-editor.md#writing-the-edit, prompts/agents/doc-editor/design.md#building-the-design
 
 # Check and review the edit
 - Check and review the edit, as [Reviewing your edit](prompts/agents/doc-editor.md#reviewing-your-edit) gives.
+    + xref: prompts/agents/doc-editor.md#reviewing-your-edit
 
 # Cut what no rule keeps
 - Judge each line of each place you edited again as each of its readers, by the rules of [Writing the edit](prompts/agents/doc-editor.md#writing-the-edit), cut each line there that those rules do not keep, and check and review the cut, as [Reviewing your edit](prompts/agents/doc-editor.md#reviewing-your-edit) gives.
+    + xref: prompts/agents/doc-editor.md#writing-the-edit, prompts/agents/doc-editor.md#reviewing-your-edit
 
 # Judge the document lines your diff touches
 * comment: The user's words, session 2384db39, 2026-10-18T16:01:04Z: "send request for general resolution for cross doc consistency. would +attr links make sense? or md links?". Ticket 11-1390.
@@ -28,15 +32,20 @@
 
 # Set the budgets
 - Where you made a whole-document pass, set the `+ budget:` line of each document your change's Scope gives, as [Whole-document pass](prompts/agents/doc-editor/whole-document.md#whole-document-pass) gives, and check and review that edit, as [Reviewing your edit](prompts/agents/doc-editor.md#reviewing-your-edit) gives.
+    + xref: prompts/agents/doc-editor/whole-document.md#whole-document-pass, prompts/agents/doc-editor.md#reviewing-your-edit
 
 # Run the gate
 - Where you have accepted gate outputs to write, read [Gate](prompts/agents/notes/worktree.md#gate), and run the gate as it gives.
+    + xref: prompts/agents/notes/worktree.md#gate
 
 # Write your reply
 - Where your brief gives a report file, write your reply to it, as [Your reply](prompts/agents/doc-editor/reply.md#your-reply) gives.
+    + xref: prompts/agents/doc-editor/reply.md#your-reply
 
 # Launch the checks
 - Run `uv run python scripts/operate.py review <agent id>`, with your own agent id, and do as it prints. Where it prints an Agent call, read [Background agents](prompts/agents/notes/commands.md#background-agents) and make that call. Run it again after each Agent call it prints.
+    + xref: scripts/operate_review.py:review
 
 # Reply
 - Give your final reply, as [Your reply](prompts/agents/doc-editor/reply.md#your-reply) gives, once each agent you launched has replied after your last edit, and where you launched none, once `review` prints that you give it.
+    + xref: prompts/agents/doc-editor/reply.md#your-reply

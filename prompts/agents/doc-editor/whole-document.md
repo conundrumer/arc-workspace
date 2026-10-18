@@ -7,6 +7,7 @@
 # Whole-document pass
 * comment: The user's words, request 6-1481, session 7fd429fb, 2026-10-16T16:59:32Z: "\"does the reader need this right now\" and \"does the reader need this at all\" and \"is there a shorter way to say all these things\" (shorter as in higher level not like mechanically dropping words and making it telegraphic)", and 16:52:24Z: "The doc budget might have failure modes, the same as in agent memory: important things get cut".
 - A whole-document pass judges each line of each document your change's Scope gives, and not only the lines a diff changes, as each reader that loads that line, by [What a file holds](docs/handbook/editing.md#what-a-file-holds), [What stays and its whole unit](docs/handbook/editing.md#what-stays-and-its-whole-unit) and these questions:
+    + xref: docs/handbook/editing.md#what-a-file-holds, docs/handbook/editing.md#what-stays-and-its-whole-unit
     - Does the reader need it at the step where it reaches it?
     - Does the reader need it at all?
     - Can a rule at a higher level say it in fewer words? Dropping words from the line is no answer.
@@ -21,3 +22,4 @@
 - Cut no line that a reader needs, whatever the budget: the size is the outcome of the pass.
 - Cut or reword no line of [Principles](docs/handbook/principles.md), which the user judges. You may change which readers load it.
 - The pass sets the `+ budget:` line of each document your change's Scope gives to the size of its bounded text divided by `BAND` in [budget.py](src/handbook/budget.py), rounded down, plus one, so that its next growth draws a warning before a pass. `uv run python -c 'from handbook import budgeted; [print(s.doc, s.size) for s in budgeted.sizes()]'` prints each size.
+    + xref: src/handbook/budget.py:BAND, src/handbook/budgeted.py:sizes

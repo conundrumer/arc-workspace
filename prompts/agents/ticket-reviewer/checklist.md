@@ -14,12 +14,16 @@
 
 ### Read each draft's text at that round
 - Read the text that each draft an earlier round checked by Checks had at the last such round, as [A later round](prompts/agents/ticket-reviewer/later-rounds.md#a-later-round) gives.
+    + xref: prompts/agents/ticket-reviewer/later-rounds.md#a-later-round
 
 ## Review each draft
 - Review each draft that meets its Goal, as [Reviewing a draft](prompts/agents/ticket-reviewer/review.md#reviewing-a-draft) gives.
+    + xref: prompts/agents/ticket-reviewer/review.md#reviewing-a-draft
 
 # Leave or move each draft
 - Leave each draft of your brief with a finding or a suggestion under `tickets/draft/`, and move each other draft of your brief to `tickets/open/` with `uv run python scripts/file_ticket.py log`, in the form its `--help` gives.
+    + xref: scripts/file_ticket.py:SUBCOMMANDS
 
 # Reply
 - Give your final reply, as [Reply](prompts/agents/ticket-reviewer/reply.md#reply) gives.
+    + xref: prompts/agents/ticket-reviewer/reply.md#reply

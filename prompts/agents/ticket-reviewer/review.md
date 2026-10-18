@@ -10,9 +10,11 @@
     * comment: With "Review each draft" in its context and a brief that gave the revised parts, ticket reviewer a031cd2826cb3df6e checked mainly those parts of draft 2-525 and moved it to `tickets/open/` while three findings stood on lines of the draft as first filed: the Intent of ticket 2-530.
 - Report nothing on a draft's wording where each agent that executes the draft, each editor its `editors` field gives and the `general-purpose` agent the operator's command launches on its `after-merge` steps, would act on the draft the same way under other words.
 - Where the draft changes or relies on what the operator's command does, read the operator's procedures in the docstrings of [operate.py](scripts/operate.py) and of the modules under [operations](src/operations), which the docstring of [__init__.py](src/operations/__init__.py) indexes, and its loop and its use of overrides with `uv run python scripts/context.py context agent operator`. Read the documents of each agent that executes the draft, and of each agent the draft has the operator's command launch or message, with `uv run python scripts/context.py context agent <name>`.
+    + xref: scripts/operate.py, src/operations/__init__.py
 - Take the state from `uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID`, `git log master`, the tickets under `tickets/`, and the operators' transcripts, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` says how to read.
 - A finding quotes the draft's line and gives what you checked it against, with what that showed.
 - A finding or a suggestion that adds a part to the draft, a check included, gives that part's estimate, as [Checks](#checks) has a `Design` give it.
+    + xref: prompts/agents/ticket-reviewer/review.md#checks
     * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-18T19:11:49Z: "1 3 ok", which chose the coordinator's option 1 of 19:11:00Z: "... A reviewer who asks for a check states the same estimate." Change 11-1551.
 - Give as a suggestion each resolution you see one level above the draft's, one that meets the need of the draft's Motivation at a place where it also covers the cases the draft's mechanism leaves, or that removes the need for a mechanism the draft adds or keeps. A ticket analyst takes or leaves it.
     - Suggest no patch to the draft's own mechanism.
@@ -22,13 +24,17 @@
 ## Checks
 - Check each of these:
     - A `change` ticket's `depends-on` gives the tickets [Change tickets](prompts/agents/notes/tickets.md#change-tickets) has its filer give there, and the `change` waits for no other ticket but, where it stands under `tickets/waiting/`, the `change` it waits on.
+        + xref: prompts/agents/notes/tickets.md#change-tickets
     - Instructions of the draft that edit the same part of a file, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a part, are ordered among themselves. An edit of that part by another change gives no finding and no `depends-on` entry.
+        + xref: prompts/agents/notes/tickets.md#change-tickets
         * comment: Ticket reviewer findings of 2026-10-18 asked for an order against another change under this check (change 9-1343 log 12:42:44Z by a4855fbd115d39313; change 11-716 log 03:26:27Z by a568a6b7454fe371c; Grounds of ticket 11-1316). The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-18T14:32:26Z: "Go", on the coordinator's proposal "Only a real need blocks."
     - Each claim the draft makes about the current state that the draft's outcome rests on holds now, by that state: each case, count and place it gives, each thing it says a file, a command or the tree does, and each result it expects a check of the tree to give. Such a claim that you do not settle is a finding.
         - Judge which claims the draft's outcome rests on by [A draft's outcome](prompts/agents/notes/launching.md#a-drafts-outcome).
+            + xref: prompts/agents/notes/launching.md#a-drafts-outcome
         - The draft's `Grounds` give where the source of each claim lies, as read at the hash of `master` they give.
         * comment: With the line without its list in its context, ticket reviewer a283a71c0cf18c9ba passed two such claims of draft 2-527, on the lines of `CLAUDE.md` and `prompts/agents/notes/coordinator.md` that mention launching and on the hooks of `.claude/settings.json`, whose disproof its own calls had printed: the Intent of ticket 2-530.
     - A `change` to the agents' processes, a `change` whose Scope touches `prompts/agents/` or `src/operations/`, that changes what an agent reads or does, gives in its Motivation an outcome of [Process notes](prompts/agents/notes/process.md), and serves it, and its Scope covers each line of those notes that the change makes untrue.
+        + xref: prompts/agents/notes/process.md
         * comment: On the Scope: without it, the ticket reviews of these changes passed a Scope that left a line of Process notes untrue: change 6-1141 left Measurement of Process notes with no owner for the script-call check it added (bug 6-1171), change 6-597 left the line of Work products on a built document change giving the doc reviewer's review to a change merged past its cost budget (change 11-313), and the batch gate and the after-merge agent were left out of Verification, Merge and the built code change line (change 9-745).
     - A `change` that adds a mechanism to code has a `Design`, each existing operation that design gives does in the code what the design uses it for, no operation in the code computes what a new one it gives computes (DRY), and the Scope covers each file that design gives.
         * comment: On the units that compute the same thing, the user's words, session 7fd429fb, 2026-10-15T16:11:25Z: "3 ok", which chose the option "A one-line design rule, \"where the design names two units that compute the same thing, it unifies them\"". Without it, the `Design` of change 6-1052 named `takeable` and `waiting` and did not unify them: ticket 6-1058.
@@ -36,8 +42,10 @@
         - No rule that design leaves standing beside the new one is an exception to it.
         - No existing line states what a line that design gives states.
         - Each line that design gives stands, by the rules of [Editing the agent-facing documents](docs/handbook/editing.md), in the section whose subject it is.
+            + xref: docs/handbook/editing.md
         - Each reader of such a line loads that section for the part of its work the design gives.
         - Each line, or words in a line, that the design adds to stop a reader's failure meets the observed-failure test of [What a file holds](docs/handbook/editing.md#what-a-file-holds) by the failure the `change` cites under its `Grounds`.
+            + xref: docs/handbook/editing.md#what-a-file-holds
         - The Scope covers each file that design gives.
         - For a rule or fact in a document under [agents](prompts/agents), the `Design` leaves no rule standing beside it, and gives the act it falls under of the spec in that document's editing notes, which you read in the file, or, where that spec gives no such act, a revision of that spec that gives the part of the reader's work that needs a new act and why no act's rule covers it.
     - The `Design` of a `change` to code or to the agent-facing documents gives under `Interactions:` each part of the system that reads, calls, orders or is ordered by what the files it touches hold, with what the change does to it.
@@ -45,6 +53,7 @@
     - Each agent that executes the draft can follow each instruction under its documents: each agent, tool, permission and name the instruction relies on exists.
     - A rule's stated scope covers the readers the draft means it for, and no others.
     - Each item of the Intent is a requirement, as [An edit's items](prompts/agents/notes/launching.md#an-edits-items) gives it.
+        + xref: prompts/agents/notes/launching.md#an-edits-items
     - In a `change` that serves a `request`, each item of the Intent gives what it traces to: the user's words in a span of that request, quoted, or a line of that request's Grounds.
         - What an item traces to itself asks for or states what the item states.
         - The user's words are the text of the user's own messages.
@@ -53,6 +62,7 @@
         - Such an item states no means of that option, and no range or ceiling a number of the option sets, that the user's words do not themselves state, whatever a line of the request's Grounds states about it.
             * comment: Trials of the ticket analyst where the user's reply "1" chose the coordinator's option 1, a 100,000-token bound on the operator. With this rule as a clause of the ticket analyst's Requirements line on the trace of an item, trial af69a9d000e72d8c7, on change 6-482's Intent item 5, called that option the user's words and stated its bound as the requirement: finding 1 of doc reviewer afcae52beb2a651c8 on change 6-482. Trial ae412b205171e826f, on the same item, stated the bound as the requirement with no goal, and traced another item to the coordinator's text alone: finding 2 of doc reviewer a5dc7383329340bf6 on change 6-482. Trial af819ed27cf316f08, in its revision of 6-453, stated the bound with no goal, traced as well to the request's Grounds line on Haiku 5.5's price, which asks for no bound: its transcript, in session 7fd429fb-e3be-4173-9b0e-df52f507d6a2. Trial a2162605bb068a162, under this rule with no clause on terms that hold for any design or on a range or ceiling, on change 6-482's Intent item 5, gave the option as the coordinator's and stated as its requirement that the operator's context bound gives a token cost no higher than the cost of each bound from 60,000 to 100,000 tokens, the option's mechanism with its 100k as the ceiling: finding 1 of doc reviewer ac169657861c854eb on change 6-482.
     - A `Design` estimates what each part, each check it gives its editors included, costs and gains against the goal of [The user's goals](prompts/agents/ticket-reviewer.md#the-users-goals) that its Intent serves, on each model an agent the design acts on runs on from the merge, where the model changes the estimate. A part whose estimated gain exceeds its estimated cost summed over those models passes on the models where it gains, and fails on a model where it falls short. No Intent item costs more than it gains by those estimates, and no part is kept whose estimated gain does not exceed its estimated cost. An estimate is a finding only where a figure the tree or the session gives shows it off by enough to turn that comparison.
+        + xref: prompts/agents/ticket-reviewer.md#the-users-goals
         - A check's cost includes its run time, and a check fails where a less costly check shows what its Intent item states.
         * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-18T19:11:49Z: "1 3 ok", which chose the coordinator's option 1 of 19:11:00Z: "Checks count as part of the design. ... Each check is the cheapest one that shows its Intent item, and the Design estimates its run time. A reviewer who asks for a check states the same estimate." Change 11-1551.
     - No case that the readers of a line that sets a design meet, in the current state or among the cases the draft gives, makes that line wrong.

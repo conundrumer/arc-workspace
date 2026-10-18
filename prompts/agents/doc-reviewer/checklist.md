@@ -20,15 +20,20 @@
 
 # Review the change
 - Review the change by the steps [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) gives.
+    + xref: docs/handbook/editing.md#reviewing-a-change
 
 # Judge the trials
 - Where you launched trials in this review, judge each trial's reply once its run has ended, as [Trials](prompts/agents/doc-reviewer/trials.md) gives.
+    + xref: prompts/agents/doc-reviewer/trials.md
 
 # File the tickets
 - File each finding of this review that [Filing and sending findings](prompts/agents/doc-reviewer/findings.md#filing-and-sending-findings), or, in a review of a commit or a standing doc review, [A review of a commit](prompts/agents/doc-reviewer/commit-review.md), gives as a ticket.
+    + xref: prompts/agents/doc-reviewer/findings.md#filing-and-sending-findings, prompts/agents/doc-reviewer/commit-review.md
 
 # Send the findings
 - Send each other finding of this review, as [Filing and sending findings](prompts/agents/doc-reviewer/findings.md#filing-and-sending-findings) gives.
+    + xref: prompts/agents/doc-reviewer/findings.md#filing-and-sending-findings
 
 # Reply
 - Give your reply, as [Your reply](prompts/agents/doc-reviewer/reply.md#your-reply) gives.
+    + xref: prompts/agents/doc-reviewer/reply.md#your-reply

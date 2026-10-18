@@ -6,3 +6,4 @@
 
 # Your reply
 - Your final reply gives what [review-reply](prompts/agents/notes/code.md#review-reply) and [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out) give.
+    + xref: prompts/agents/notes/code.md#review-reply, prompts/agents/notes/launching.md#a-part-a-brief-leaves-out

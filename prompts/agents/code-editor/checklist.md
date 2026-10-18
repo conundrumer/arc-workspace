@@ -14,6 +14,7 @@
 
 # Find the refactor tickets on your modules
 - For each module your brief gives, and each your `Reuse` list gives as edited, find the `refactor` tickets that cite it, as [Writing the code](prompts/agents/code-editor/writing-the-code.md#writing-the-code) gives.
+    + xref: prompts/agents/code-editor/writing-the-code.md#writing-the-code
 
 # Split the cited modules
 - This part applies where a ticket the step before this one found cites a module you are to edit: [A split](prompts/agents/code-editor/split.md).
@@ -23,9 +24,11 @@
 
 # Write the code
 - Write the code your items need, as [Writing the code](prompts/agents/code-editor/writing-the-code.md#writing-the-code) gives.
+    + xref: prompts/agents/code-editor/writing-the-code.md#writing-the-code
 
 # Review your diff
 - Read your diff for each kind of place [Your diff](prompts/agents/code-editor.md#your-diff) gives, other than many ideas in one place, and fix each defect place that does not stand.
+    + xref: prompts/agents/code-editor.md#your-diff
 
 # Judge the document lines your diff touches
 * comment: The user's words, session 2384db39, 2026-10-18T15:14:04Z, "File", and 14:41:46Z: "I think more generally there is dependencies between doc and code. In code it's mechanically checked. In docs, No." Ticket 11-1368.
@@ -43,15 +46,20 @@
 
 # Run the gate
 - Where your brief, or a finding of your checks, gives accepted gate outputs for you to write, read [Gate](prompts/agents/notes/worktree.md#gate), and run the gate as it gives.
+    + xref: prompts/agents/notes/worktree.md#gate
 
 # File your tickets
 - File each case noted under the `Questions` heading of your `progress.md`, and each place your diff holds that poses a question, as [Tickets](prompts/agents/code-editor.md#tickets) gives.
+    + xref: prompts/agents/code-editor.md#tickets
 
 # Write your report
 - Where your brief gives a report file, write your report to it, as [Your report](prompts/agents/code-editor/reply.md#your-report) gives.
+    + xref: prompts/agents/code-editor/reply.md#your-report
 
 # Launch the checks
 - Run `uv run python scripts/operate.py review <agent id>`, with your own agent id, and do as it prints. Where it prints an Agent call, read [Background agents](prompts/agents/notes/commands.md#background-agents) and make that call. Run it again after each Agent call it prints.
+    + xref: scripts/operate_review.py:review
 
 # Report
 - Give your final reply, as [Your report](prompts/agents/code-editor/reply.md#your-report) gives, once each agent you launched has replied after your last edit, and where you launched none, once `review` prints that you give it.
+    + xref: prompts/agents/code-editor/reply.md#your-report

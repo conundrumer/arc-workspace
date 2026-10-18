@@ -6,4 +6,5 @@
 
 # The Goal
 - Judge whether the change, merged as its Intent and its `Design` give it, meets the Goal of the request it serves, over every case that Goal covers. `uv run python scripts/spans.py brief <number>` prints that request's Goal and spans. For a change that serves no request, its Goal is the Impact of each ticket it settles.
+    + xref: scripts/spans.py:brief
 - Where it does not, log one finding that gives the part of the Goal the design does not meet and a case it leaves out, and check that draft no further in this round.

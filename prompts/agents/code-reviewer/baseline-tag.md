@@ -6,3 +6,4 @@
 
 # The baseline tag
 - `uv run python scripts/review_tag.py code-reviewer <n> <commit> <agent id>`, with this code review's commit as `<commit>` and your own agent id as `<agent id>`, makes this code review's baseline tag. Where it refuses, do what it prints.
+    + xref: scripts/review_tag.py:main

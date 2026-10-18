@@ -6,4 +6,6 @@
 
 # Reply
 - Your final reply gives what [analyst-reply](prompts/agents/notes/decisions.md#analyst-reply), [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out) and [denied-calls](prompts/agents/notes/commands.md#denied-calls) give.
+    + xref: prompts/agents/notes/decisions.md#analyst-reply, prompts/agents/notes/launching.md#a-part-a-brief-leaves-out, prompts/agents/notes/commands.md#denied-calls
 - Give in your reply each one that [Tracking](prompts/agents/ticket-analyst.md#tracking) has you settle, with its root cause and its resolution.
+    + xref: prompts/agents/ticket-analyst.md#tracking
