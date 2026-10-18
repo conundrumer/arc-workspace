@@ -176,12 +176,18 @@ impl ResolvedProgram {
     /// such as `(:P P2)` in `(:key (:P P2))`, names that field's column of
     /// the record's column group, so it is told apart from a column of the
     /// same name, `(:P P2)` beside it.
+    ///
+    /// A bare-label argument at `site` maps to its field's column where its
+    /// site reads a record, and to the site's own column where it does not,
+    /// so each field of `(:key P_intile *Col)` has its own position.
     pub fn column_position(&self, site: &NodePath) -> Option<ColumnPosition> {
         todo!()
     }
 
     /// The column group that the site at `site` reads, where the site is on
-    /// a column of a record, the key's or a type parameter's.
+    /// a column of a record, the key's or a type parameter's. A bare-label
+    /// argument at `site` maps to a column as
+    /// [`ResolvedProgram::column_position`] gives.
     pub fn column_group(&self, site: &NodePath) -> Option<crate::relations::ColumnGroup> {
         todo!()
     }

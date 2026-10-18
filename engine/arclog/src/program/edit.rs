@@ -27,10 +27,10 @@ pub enum Edit {
     /// order: an atom, a negated atom, a `RIGID_DET` part, an input, whose
     /// head takes it, or a site, which takes it as a field-site argument.
     ///
-    /// On a site, `index` counts its field-site arguments alone, as the
-    /// table in `engine/arclog/src/program/path.rs` gives them. The new
-    /// argument goes just before the field-site argument at `index`, and
-    /// last where `index` is their count, so each bare label keeps its place.
+    /// On a site, `index` counts all of its arguments, bare labels and field
+    /// sites alike, as the table in `engine/arclog/src/program/path.rs`
+    /// gives them. A `node` that names a bare-label argument gives
+    /// [`EditPathError`].
     AddSite {
         node: NodePath,
         index: u32,
@@ -47,9 +47,14 @@ pub enum Edit {
     RemovePart { at: NodePath },
     /// Replaces the part at `at` with `part`.
     ReplacePart { at: NodePath, part: Node<Atom> },
-    /// Removes the site at `at`, of any node that `AddSite` names.
+    /// Removes the site at `at`, of any node that `AddSite` names. Where `at`
+    /// names an argument of a site, a bare label or a field site, the edit
+    /// removes that argument. A site the removal leaves with no argument is
+    /// removed too, as [`Node::apply`] gives.
     RemoveSite { at: NodePath },
-    /// Replaces the site at `at` with `site`.
+    /// Replaces the site at `at` with `site`. Where `at` names an argument
+    /// of a site, a bare label or a field site, `site` takes its place as a
+    /// field site.
     ReplaceSite { at: NodePath, site: Site },
 }
 
@@ -71,6 +76,13 @@ impl Node<Program> {
     /// written name, and each other column is named by its slot, its position
     /// among the columns. The edit gives no diagnostic for a read elsewhere
     /// of a dropped column, which the resolver reports.
+    ///
+    /// Where a [`Edit::RemoveSite`] leaves a site with no argument, the
+    /// edit removes that site too, and so on up each enclosing site it
+    /// leaves with none, until the node that holds the removed site is no
+    /// site: `RemoveSite` on `(:D D)` of `(:key (:C (:D D)))` gives the atom
+    /// with `(:key ...)` left out. Each [`super::SiteValue`] of the program
+    /// `apply` gives holds an argument.
     pub fn apply(&self, edit: &Edit) -> Result<Node<Program>, EditPathError> {
         todo!()
     }

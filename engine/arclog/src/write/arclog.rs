@@ -402,14 +402,10 @@ impl<'l> Writer<'l> {
         }
         self.put(&mut t, "(");
         self.put(&mut t, &format!("{}{}", sp::COLUMN_MARK, column(&site.column)));
-        let mut fields = 0;
-        for arg in site.value.args.iter() {
+        for (index, arg) in site.value.args.iter().enumerate() {
             match arg {
                 SiteArg::Label(label) => self.put(&mut t, &label_use(*label, names)),
-                SiteArg::Field(field) => {
-                    self.site(field, &path.child(fields), names, false);
-                    fields += 1;
-                }
+                SiteArg::Field(field) => self.site(field, &path.child(index as u32), names, false),
             }
         }
         self.put(&mut t, ")");

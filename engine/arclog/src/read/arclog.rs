@@ -1,9 +1,10 @@
 //! The reader of the nodes of an arclog file from its s-expressions, and of
 //! a body or an `INIT` form of the registry file.
 //!
-//! Each node records its layout under its path, numbered as the table of
-//! `engine/arclog/src/program/path.rs` gives, and the writer of
-//! [`crate::write`] walks the nodes in the same order.
+//! Each node records its layout under its path, as [`crate::layout::Layout`]
+//! gives, numbered as the table of `engine/arclog/src/program/path.rs`
+//! gives, and the writer of [`crate::write`] walks the nodes in the same
+//! order.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -676,7 +677,6 @@ impl Reader {
                 };
                 record.token(place);
                 let mut args = Vec::new();
-                let mut fields = 0;
                 for item in &list.items[1..] {
                     match item {
                         SExpr::Symbol { text, place } => {
@@ -684,9 +684,9 @@ impl Reader {
                             record.token(*place);
                         }
                         _ => {
-                            if let Some((field, _)) = self.optional(|r| r.site(item, &path.child(fields), scope)) {
+                            let index = args.len() as u32;
+                            if let Some((field, _)) = self.optional(|r| r.site(item, &path.child(index), scope)) {
                                 args.push(SiteArg::Field(field));
-                                fields += 1;
                             }
                         }
                     }

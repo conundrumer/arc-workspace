@@ -66,8 +66,10 @@ pub struct NodeLayout {
     pub place: Option<SourcePlace>,
     /// The place of each token the node writes outside its children, in the
     /// order the file writes them: its parentheses, keywords, names and
-    /// strings, and the labels of a site or a constraint. The root of a
-    /// file, the empty path, holds one: the place of the file's end.
+    /// strings, and the labels of a site or a constraint. A bare-label
+    /// argument of a site has its token here, among its site's tokens. The
+    /// root of a file, the empty path, holds one: the place of the file's
+    /// end.
     pub tokens: Box<[SourcePlace]>,
     /// The name the file writes for each label the node makes. A label is
     /// made by the form that is its scope, as [`LabelId`] gives.
@@ -80,7 +82,8 @@ pub struct NodeLayout {
 /// The layout of a solver's two files. A node of the arclog file is keyed by
 /// its path, as [`crate::program::path::node_at`] walks it, and a node of
 /// the arcdata file by its path, as [`crate::program::path::data_node_at`]
-/// walks it.
+/// walks it. A bare-label argument of a site has no node layout of its own,
+/// as [`NodeLayout::tokens`] gives.
 #[derive(Clone, Debug, Default)]
 pub struct Layout {
     pub nodes: BTreeMap<(SourceFile, NodePath), NodeLayout>,

@@ -6,8 +6,8 @@
 //! [`crate::registry`] gives.
 //!
 //! Each node reader records the layout of each node it reads under the
-//! node's path, and leaves out a node that matches no node kind with a
-//! diagnostic of the grammar at it.
+//! node's path, as [`crate::layout::Layout`] gives, and leaves out a node
+//! that matches no node kind with a diagnostic of the grammar at it.
 
 mod arcdata;
 mod arclog;

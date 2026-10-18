@@ -29,7 +29,7 @@
 //! | `IF` | the test, the then, the else |
 //! | `ALL` | the domain, the body |
 //! | constraint | none |
-//! | site | the field-site arguments, each a [`super::SiteArg::Field`], in source order |
+//! | site | the arguments, each bare label and each field site, in source order |
 //! | `INIT` form | the key clause where it has one, then the inputs after it |
 //! | key clause | the body, then the inputs inside it |
 //! | input | the head sites, then the body |
@@ -37,9 +37,11 @@
 //! | `RIGID_DET` form | the `key` body, the `instance` body, each where it has one, then the parts |
 //! | `DEMONSTRATED` form | the key clause where it has one, the inputs after it, the `DEMO_RULE` forms |
 //!
-//! A site's children are its field-site arguments as written, whether or not
-//! it reads a record: `(:key P_intile *Col)` has no children, and
-//! `(:key (:P_intile P_intile) (:Col *Col))` has two.
+//! A site's children are its arguments as written, whether or not it reads
+//! a record, so argument `i` has path `i` under the site's path in each
+//! spelling of one site: `(:key C A)` and `(:key (:C C) (:A A))` each have
+//! two children. A bare-label argument is a [`NodeRef::Label`], with no
+//! children.
 //!
 //! The arcdata file's nodes are numbered the same way, by
 //! [`DataNodeRef::children`] and walked by [`data_node_at`]:
@@ -61,7 +63,7 @@
 
 use super::{
     AltRecord, Alt, Alts, Arcdata, Atom, Body, Choose, Claim, Clause, Conjunct, DemoRule,
-    Demonstrated, Exclude, Grid, InstanceInput, Instance, KeyClause, Node, Param, ParamValue, Program,
+    Demonstrated, Exclude, Grid, InstanceInput, Instance, KeyClause, LabelUse, Node, Param, ParamValue, Program,
     Representative, RigidDet, Site, Slug, Witness, WitnessOutput, WitnessRecord, ProgramRelation,
 };
 
@@ -111,6 +113,8 @@ pub enum NodeRef<'a> {
     /// [`NodeRef::Conjunct`].
     Atom(&'a Atom),
     Site(&'a Site),
+    /// A bare-label argument of a site, a [`super::SiteArg::Label`].
+    Label(&'a LabelUse),
 }
 
 impl<'a> NodeRef<'a> {
