@@ -14,7 +14,7 @@ import step_journal
 from agent_turns import last_time
 from audit_window import window
 from context_bound_hook import past_bound
-from elsewhere_reads import editor_reviewers, elsewhere_agents
+from elsewhere_reads import editor_checks, elsewhere_agents
 from git_session_reads import read_git, sessions, started
 from held_budgets import change_budgets, change_spend, doc_budgets
 from idle_sessions import running
@@ -214,13 +214,13 @@ def operators_read(read: list[tuple[str, Path]], me: str, main: Path, undecided:
                    tree: GitRead) -> OperatorRead:
     """What the transcripts of the operators `read`, by agent id and
     transcript, give together, as `OperatorRead` gives it of one, with the
-    doc reviewers of their doc editors (`editor_reviewers`), and the
+    checks their editors launched (`editor_checks`), and the
     listing of `me`'s. A commit's subject stands at the latest time `tree`
     gives it."""
     subjects = commit_subjects(tree)
     ones = [read_operator(aid, path, main, undecided, subjects) for aid, path in read]
     launched = joined([one.launched for one in ones])
-    reviewers = editor_reviewers(launched.agents, main, undecided)
+    reviewers = editor_checks(launched.agents, main, undecided)
     return OperatorRead(
         joined([launched, reviewers]), tuple(c for one in ones for c in one.calls),
         tuple(m for one in ones for m in one.messages),

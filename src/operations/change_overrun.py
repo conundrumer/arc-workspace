@@ -133,12 +133,12 @@ def over_budget(state: State, t: Ticket, w: Path,
             editors = with_ids(latest)
             if isinstance(editors, Undecided):
                 return editors
-            return check_items(state, t, w, latest, editors, past=trip.filed)
+            return check_items(state, t, w, latest, editors, state.me, past=trip.filed)
         if checkers[-1].unreported:
             return unreported(checkers[-1], t.number)
     roles = change_editors(t)
     if isinstance(roles, Undecided):
         return roles
-    if (step := design_review(state, t, w, roles, here, agents)) is not False:
+    if (step := design_review(state, t, w, roles, here, agents, state.me)) is not False:
         return step
     return Ended(tuple(latest))

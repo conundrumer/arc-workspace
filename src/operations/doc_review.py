@@ -7,10 +7,8 @@ doc reviewer opens with `no finding stands` and follows each editor's last
 report, or precedes the last report only of editors that reviewer sent a
 message, since such an editor sends that reviewer its fixes before each
 reply, or of the editor that launched it, since its reply reaches that
-editor. A doc editor launches its doc reviewer from the launch
-`scripts/operate.py` prints to it (`editor_review`), once no other
-editor of the change is pending, and stays in its run until that
-reviewer has replied; otherwise the command launches the reviewer. A
+editor. An editor of the change may launch its doc reviewer, as
+`changes.editor_step` gives; otherwise the command launches it. A
 reply that precedes the last report of any other editor is read for no
 finding, and that reviewer is asked once to review the change again, and
 the review is held where it has not replied since, unless that reply
@@ -39,7 +37,7 @@ from typing import Literal
 
 from controlled_markdown import mctx
 from operations import briefs, messages
-from operations.change_agents import change_editors, editors_in, of_change, settled, unstaffed
+from operations.change_agents import settled
 from operations.change_holds import Hold, findings_hold, unreplied_hold
 from operations.directives import Decision, decided, ruled
 from operations.handled import sent
@@ -47,7 +45,6 @@ from operations.reports import at_cap, no_finding, shows_current
 from operations.roles import Role
 from operations.state import Agent, State, Ticket, last_reported
 from operations.steps import Launch, Send, Step, Undecided, agent_ids
-from operations.worktrees import worktree
 
 
 def reviewers_of(agents: list[Agent], w: Path) -> list[Agent]:
@@ -66,12 +63,13 @@ def latest_reviewer(agents: list[Agent], w: Path) -> Agent | None:
 
 
 def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
-               agents: list[Agent]) -> Step | None | Literal[False]:
-    """The step of the review of the change's documents, or False where it
+               agents: list[Agent], launcher: str) -> Step | None | Literal[False]:
+    """The step of the review of the change's documents, with `launcher`
+    as the launcher of each doc reviewer it launches, or False where it
     has passed."""
     r = latest_reviewer(agents, w)
     if r is None:
-        return review_launch(state, t, w, here, state.me, 0.0)
+        return review_launch(state, t, w, here, launcher, 0.0)
     if r.pending:
         return None
     reply = r.last_report
@@ -81,27 +79,27 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
         return False if judged else None
     if reply is not None and (late := [a for a in here if (rep := a.last_report) is not None
                                        and rep.time > reply.time]):
-        return review_stale(state, t, w, here, r, reply.time, late)
+        return review_stale(state, t, w, here, r, reply.time, late, launcher)
     if reply is not None and no_finding(r):
         return False
     if reply is None:
         if r.unreported and not any(a.unreported for a in reviewers_of(agents, w)[:-1]):
-            return review_launch(state, t, w, here, state.me, r.since)
-        return unreplied(state, t, w, here, r)
-    return review_decided(state, t, w, here, findings_hold(r, t.number))
+            return review_launch(state, t, w, here, launcher, r.since)
+        return unreplied(state, t, w, here, r, launcher)
+    return review_decided(state, t, w, here, findings_hold(r, t.number), launcher)
 
 
 def unreplied(state: State, t: Ticket, w: Path, here: list[Agent],
-              r: Agent) -> Step | Literal[False]:
+              r: Agent, launcher: str) -> Step | Literal[False]:
     """The step on a review whose doc reviewer `r` has not replied since
     its editors ended. `steps.Undecided.reread` gives why its held step is
     marked."""
-    step = review_decided(state, t, w, here, unreplied_hold(r, t.number))
+    step = review_decided(state, t, w, here, unreplied_hold(r, t.number), launcher)
     return replace(step, reread=True) if isinstance(step, Undecided) else step
 
 
 def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, since: float,
-                 late: list[Agent]) -> Step | Literal[False]:
+                 late: list[Agent], launcher: str) -> Step | Literal[False]:
     """The step on the reply at `since` of the doc reviewer `r`, which
     precedes the last report of the editors `late`: False where it opens
     with `no finding stands` and `r` sent each of them a message or is a
@@ -126,11 +124,11 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
     if r.agent_id is not None and r not in state.transcripts.elsewhere \
             and not sent(state, r.agent_id, message):
         return Send(r.agent_id, message, f"review again {t.number} {since}")
-    return unreplied(state, t, w, here, r)
+    return unreplied(state, t, w, here, r, launcher)
 
 
 def review_decided(state: State, t: Ticket, w: Path, here: list[Agent],
-                 hold: Hold) -> Step | Literal[False]:
+                   hold: Hold, launcher: str) -> Step | Literal[False]:
     """The step on a review held on `hold`, by its decision:
     False where the review passes."""
     choice = decided(state, hold.text, hold.choices)
@@ -138,7 +136,7 @@ def review_decided(state: State, t: Ticket, w: Path, here: list[Agent],
         return choice
     if choice is Decision.PASSES:
         return False
-    return review_launch(state, t, w, here, state.me, ruled(state, hold.text))
+    return review_launch(state, t, w, here, launcher, ruled(state, hold.text))
 
 
 def with_ids(agents: list[Agent]) -> list[tuple[Agent, str]] | Undecided:
@@ -167,44 +165,3 @@ def review_launch(state: State, t: Ticket, w: Path, here: list[Agent], launcher:
         t.number, w, editors, launcher, known, briefs.review_rounds(known.launched_before)),
         occasion=str(max(last_reported(here), after)))
 
-
-NO_OPERATOR = mctx("{agent} is no doc editor that an operator of the session launched: give "
-                   "your final reply.")
-"""The line `editor_review` gives an agent that is no doc editor an operator
-launched."""
-
-
-def editor_review(state: State, editor: str) -> Step | str:
-    """The launch of the doc reviewer of the change of the doc editor
-    `editor`, launched by it. In its place it gives a line: where
-    `editor` is no doc editor an operator launched, `NO_OPERATOR`; where the change has a doc
-    reviewer on its current worktree, whoever launched it, the line that names the latest one, so
-    the editor launches no other; and where an editor role of the change
-    has no agent in its worktree or another editor there is pending, the
-    line that says the operator launches the review."""
-    mine = [a for a in state.transcripts.agents if a.agent_id == editor and a.role is Role.DOC_EDITOR]
-    if not mine:
-        return NO_OPERATOR.format(agent=editor)
-    t = state.tracker.tickets.get(mine[-1].subject)
-    if t is None:
-        return Undecided(mctx("the ticket of change {number} of doc editor {agent} is not "
-                              "read").format(number=mine[-1].subject, agent=editor))
-    editors = change_editors(t)
-    if not isinstance(editors, tuple):
-        return editors
-    w = worktree(t, state)
-    if w is None:
-        return Undecided(mctx("change {number} gives no worktree").format(number=t.number))
-    agents = of_change(state, t)
-    if (reviewer := latest_reviewer(agents, w)) is not None:
-        ids = agent_ids([reviewer])
-        if isinstance(ids, Undecided):
-            return ids
-        return mctx("Change {number} already has doc reviewer {agent}, so launch no other "
-                    "doc reviewer.").format(number=t.number, agent=ids[0])
-    here = editors_in(agents, w)
-    if (unstaffed(editors, here)
-            or any(a.pending for a in here if a.agent_id != editor)):
-        return mctx("Another editor of change {number} has not reported, so the operator "
-                    "launches the review: give your final reply.").format(number=t.number)
-    return review_launch(state, t, w, here, editor, 0.0)

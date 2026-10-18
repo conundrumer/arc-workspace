@@ -69,6 +69,12 @@ checker is launched while it runs. While a design reviewer of the change
 runs, the change does not merge. Its findings are `question` tickets on
 the change, which go to the ticket analyst above.
 
+A code editor or a doc editor of a change launches, before its final
+reply, each design reviewer, item checker, ticket analyst and doc
+reviewer that these steps give with that editor ended and as the
+launcher (`editor_step`). The operator reads each as one it launched,
+so the steps go on from it.
+
 A change whose `editors` field gives a doc editor, the one
 `change_fragments` adds included, merges once its review passes as
 `doc_review` gives.
@@ -82,6 +88,7 @@ until an `Op decision:` line rules it with one of the choices the step gives
 (`directives.decided`)."""
 
 import shlex
+from collections.abc import Callable
 from pathlib import Path
 from dataclasses import dataclass, replace
 from typing import Literal
@@ -102,12 +109,14 @@ from operations.doc_review import doc_review, latest_reviewer, with_ids
 from operations.directives import Decision, decided, give_again_line, held_on, ruled
 from operations.item_check import check_items, is_checked, latest_reports, unfinished
 from operations.reports import Label, at_cap, items_of, left_for_decision, shows_current
-from operations.roles import Purpose, Role, analyst_of, analyst_subject
+from operations.roles import (CHECKS, LAUNCHING_EDITORS, Purpose, Role, analyst_of,
+                              analyst_subject)
 from operations.state import Agent, Report, State, Ticket, last_reported
 from operations.filing import editor_scratch
 from operations.final_reply import live_holder
 from operations.handled import answered, held_aside, repeated, sent, unmoved
-from operations.steps import Bash, Launch, Send, Step, Undecided, key, retirement_key, served
+from operations.steps import (Bash, Launch, Send, Step, Undecided, agent_ids, key, retirement_key,
+                             served)
 from operations.log_commands import AGENT
 from operations.taking import RELEASED_LINE, take
 from operations.tracker import last_index
@@ -202,7 +211,7 @@ def carry(state: State, t: Ticket) -> Step | None:
         return Bash(make_worktree(t.number, state.me), f"{t.number} worktree", occasion=str(t.last_time))
     if isinstance(step := over_budget(state, t, w, agents), Ended):
         latest = list(step.latest)
-        if (left := leftover(state, t, w, latest, agents, True)) is not False:
+        if (left := leftover(state, t, w, latest, agents, True, state.me)) is not False:
             return left
         return merging.merge(state, t, w, latest)
     if step is not False:
@@ -232,6 +241,18 @@ def carry(state: State, t: Ticket) -> Step | None:
             model=t.model(role), occasion=f"{w} {t.last_time}")
     if any(a.pending for a in here):
         return None
+    if (step := reported_step(state, t, w, editors, here, agents, state.me)) is not False:
+        return step
+    return merging.merge(state, t, w, latest_editors(here))
+
+
+def reported_step(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
+                  here: list[Agent], agents: list[Agent],
+                  launcher: str) -> Step | None | Literal[False]:
+    """The step of the change `t`, whose editors are `editors`, once each
+    of its editors in its worktree `w`, `here`, has ended, with
+    `launcher` as the launcher of each check it launches, or False where
+    the change merges. `agents` are the change's agents."""
     if (step := fragments_step(state, t, w, here)) is not None:
         return step
     latest = latest_editors(here)
@@ -239,16 +260,86 @@ def carry(state: State, t: Ticket) -> Step | None:
         return hold
     reviewed = with_elsewhere(state, t.number, agents,
                               (Role.ITEM_CHECKER, Role.DOC_REVIEWER, Role.DESIGN_REVIEWER))
-    if (step := design_review(state, t, w, editors, here, reviewed)) is not False:
+    if (step := design_review(state, t, w, editors, here, reviewed, launcher)) is not False:
         return step
-    if (step := leftover(state, t, w, latest, reviewed, False)) is not False:
+    if (step := leftover(state, t, w, latest, reviewed, False, launcher)) is not False:
         return step
     if Role.DOC_EDITOR in editors and (
-            step := doc_review(state, t, w, here, reviewed)) is not False:
+            step := doc_review(state, t, w, here, reviewed, launcher)) is not False:
         return step
     if reviewing(reviewed):
         return None
-    return merging.merge(state, t, w, latest)
+    return False
+
+
+NO_OPERATOR = mctx("{agent} is no code editor or doc editor that an operator of the session "
+                   "launched: give your final reply.")
+"""The line `editor_step` gives an agent that is none of `LAUNCHING_EDITORS`
+an operator launched."""
+
+
+def editor_step(state: State, editor: str,
+                written: Callable[[Path], str | None]) -> Step | str:
+    """The launch of the check of the change of the editor `editor` that
+    `reported_step` gives with `editor` ended and as the launcher, where
+    that check is of `CHECKS`. The editor's report is the text `written`
+    gives of the report file its brief gives (`state.Agent.report_file`),
+    which it writes before the call, at `State.now`. In place of the
+    launch it gives a line: where `editor` is none of `LAUNCHING_EDITORS`
+    an operator launched, `NO_OPERATOR`; where its report file is not
+    there, the line that has it write that file; where the change is past
+    its cost budget (`change_overrun.over_budget`), the line that says the
+    operator takes its next step; where an editor role of the change has
+    no agent in its worktree or another editor there is pending, the line
+    that says the operator launches the checks; where that step is none
+    and a check `editor` launched is pending, the line that has it wait on
+    that check; and otherwise the line that has it give its final
+    reply."""
+    mine = [a for a in state.transcripts.agents
+            if a.agent_id == editor and a.role in LAUNCHING_EDITORS]
+    if not mine:
+        return NO_OPERATOR.format(agent=editor)
+    t = state.tracker.tickets.get(mine[-1].subject)
+    if t is None:
+        return Undecided(mctx("the ticket of change {number} of {role} {agent} is not "
+                              "read").format(number=mine[-1].subject, role=mine[-1].role,
+                                             agent=editor))
+    editors = change_editors(t)
+    if not isinstance(editors, tuple):
+        return editors
+    w = worktree(t, state)
+    if w is None:
+        return Undecided(mctx("change {number} gives no worktree").format(number=t.number))
+    path = mine[-1].report_file
+    if path is None:
+        return Undecided(mctx("the brief of {role} {agent} gives no report file").format(
+            role=mine[-1].role, agent=editor))
+    text = written(path)
+    if text is None:
+        return mctx("Your report file {path} does not exist: write your report to it, then run "
+                    "this command again.").format(path=path)
+    report = Report(state.now, text, path)
+    agents = [replace(a, waits=None, reports=(*a.reports, report)) if a.agent_id == editor else a
+              for a in of_change(state, t)]
+    if over_budget(state, t, w, agents) is not False:
+        return mctx("Change {number} is past its cost budget, so the operator takes its next "
+                    "step: give your final reply.").format(number=t.number)
+    here = editors_in(agents, w)
+    if unstaffed(editors, here) or any(a.pending for a in here):
+        return mctx("Another editor of change {number} has not reported, so the operator "
+                    "launches the change's checks: give your final reply.").format(number=t.number)
+    step = reported_step(state, t, w, editors, here, agents, editor)
+    if isinstance(step, Launch) and step.role in CHECKS:
+        return step
+    waited = [a for a in agents if a.operator == editor and a.pending]
+    if step is None and waited:
+        ids = agent_ids(waited)
+        if isinstance(ids, Undecided):
+            return ids
+        return mctx("Wait on {agents}, which you launched, and each time one of them gives its "
+                    "final reply, run this command again.").format(agents=", ".join(ids))
+    return mctx("No check of change {number} is due from you: give your final reply.").format(
+        number=t.number)
 
 
 def editor_unreported(t: Ticket, latest: list[Agent]) -> Undecided | None:
@@ -334,10 +425,11 @@ def left(state: State, t: Ticket, latest: list[Agent], checkers: list[Agent],
 
 
 def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
-             agents: list[Agent], past_budget: bool) -> Step | None | Literal[False]:
-    """The step on what the editors leave, or False where they leave
-    nothing; `past_budget` gives that the change is past its cost
-    budget."""
+             agents: list[Agent], past_budget: bool,
+             launcher: str) -> Step | None | Literal[False]:
+    """The step on what the editors leave, with `launcher` as the launcher
+    of the agent it launches, or False where they leave nothing;
+    `past_budget` gives that the change is past its cost budget."""
     checkers = [a for a in agents if a.role is Role.ITEM_CHECKER]
     analysts = [a for a in agents if a.role is Role.TICKET_ANALYST]
     if any(a.pending for a in checkers + analysts):
@@ -349,7 +441,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     needing = [a for a in latest if is_checked(a) and (r := a.last_report) is not None
                and r.time > checked]
     if needing and not unchanged_since(state, checkers, w):
-        return check_items(state, t, w, needing, editors)
+        return check_items(state, t, w, needing, editors, launcher)
     judged = max((a.launched for a in analysts), default=0.0)
     given = left(state, t, latest, checkers, latest_reviewer(agents, w), judged)
     fresh = given.fresh(judged)
@@ -379,7 +471,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
         return reports
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
         t.number, w, parts, [q.number for q in given.questions], editors, reports,
-        [i for a, i in editors if a in given.unfinished], state.me,
+        [i for a, i in editors if a in given.unfinished], launcher,
         settled(state, t, Role.TICKET_ANALYST, None),
         briefs.round_of(checkers[-1], t.number) if checkers else briefs.Round.OPEN,
         None if given.capped is None else (given.capped[0], given.capped[1].text),

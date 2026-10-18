@@ -1,6 +1,6 @@
 + budget: 2100
 * comment: when editing this doc
-    - The doc editor reads this document by the link of the item `Reply` of its [checklist](prompts/agents/doc-editor/checklist.md), as it gives its final reply.
+    - The doc editor reads this document by the links of the items `Write your reply` and `Reply` of its [checklist](prompts/agents/doc-editor/checklist.md), as it writes its reply to its report file before it launches its change's checks, and as it gives its final reply.
     - Acts, each with its section:
         - What its reply opens with and gives: [Your reply](#your-reply).
 

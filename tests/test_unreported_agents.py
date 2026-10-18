@@ -102,7 +102,7 @@ def test_two_doc_reviewers_that_gave_no_reply_hold_the_review(tmp_path: Path) ->
     reviewers = [agent(i, Role.DOC_REVIEWER, t.number, line, launched + n, launched + n, [])
                  for n, i in ((20, FIRST), (40, SECOND))]
     agents = [editor, *reviewers]
-    assert isinstance(doc_review(state(tmp_path, [t], agents, w), t, w, [editor], agents),
+    assert isinstance(doc_review(state(tmp_path, [t], agents, w), t, w, [editor], agents, ME),
                       Undecided)
 
 

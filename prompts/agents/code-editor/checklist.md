@@ -40,5 +40,11 @@
 # File your tickets
 - File each case noted under the `Questions` heading of your `progress.md`, and each place your diff holds that poses a question, as [Tickets](prompts/agents/code-editor.md#tickets) gives.
 
+# Write your report
+- Where your brief gives a report file, write your report to it, as [Your report](prompts/agents/code-editor/reply.md#your-report) gives.
+
+# Launch the checks
+- Run `uv run python scripts/operate.py review <agent id>`, with your own agent id, and do as it prints. Where it prints an Agent call, read [Background agents](prompts/agents/notes/commands.md#background-agents) and make that call. Run it again after each Agent call it prints.
+
 # Report
-- Give your final reply, as [Your report](prompts/agents/code-editor/reply.md#your-report) gives.
+- Give your final reply, as [Your report](prompts/agents/code-editor/reply.md#your-report) gives, once each agent you launched has replied after your last edit, and where you launched none, at once.

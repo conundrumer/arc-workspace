@@ -1,5 +1,5 @@
-"""The `review` subcommand of `operate.py`: the step it prints for a doc
-editor, as `--help review` gives it."""
+"""The `review` subcommand of `operate.py`: the step it prints for a code
+editor or a doc editor, as `--help review` gives it."""
 
 import sys
 
@@ -18,24 +18,24 @@ from tree_reads import main_tree  # noqa: E402
 from ticket_files import ticket_path  # noqa: E402
 from ticket_numbers import parsed_number  # noqa: E402
 from ticket_reads import read_ticket  # noqa: E402
+from filed_texts import written_report  # noqa: E402
 
-from operations import doc_review  # noqa: E402
-from operations.roles import Role  # noqa: E402
+from operations import changes  # noqa: E402
+from operations.roles import LAUNCHING_EDITORS, Role  # noqa: E402
 from operations.steps import Launch, Undecided  # noqa: E402
 from operate_loop import prepared, print_step  # noqa: E402
 
 
 def review(editor: str) -> int:
-    """Print the step `doc_review.editor_review` gives the doc editor
-    `editor`."""
+    """Print the step `changes.editor_step` gives the editor `editor`."""
     path = find(editor)
     parent = parent_id(path)
     kind = parent_type(path)
     if kind != Role.OPERATOR.agent_type:
-        print(doc_review.NO_OPERATOR.format(agent=editor))
+        print(changes.NO_OPERATOR.format(agent=editor))
         return 0
     state, _ = read_state(parent, change_filed(parent, editor))
-    step = doc_review.editor_review(state, editor)
+    step = changes.editor_step(state, editor, written_report)
     if isinstance(step, str):
         print(step)
         return 0
@@ -49,11 +49,12 @@ def review(editor: str) -> int:
 
 
 def change_filed(operator: str, editor: str) -> float | None:
-    """The time of the first log line of the change of the doc editor
-    `editor`, as the launches of `operator` give that change, or None where
-    they give no such launch or that ticket is not read."""
+    """The time of the first log line of the change of the editor
+    `editor`, of `roles.LAUNCHING_EDITORS`, as the launches of `operator`
+    give that change, or None where they give no such launch or that
+    ticket is not read."""
     agents = read_operator(operator, find(operator), main_tree(), [], {}).agents
-    mine = [a for a in agents if a.agent_id == editor and a.role is Role.DOC_EDITOR]
+    mine = [a for a in agents if a.agent_id == editor and a.role in LAUNCHING_EDITORS]
     number = parsed_number(mine[-1].subject) if mine else None
     if number is None:
         return None

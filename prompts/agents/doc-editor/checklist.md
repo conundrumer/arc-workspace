@@ -27,8 +27,11 @@
 # Run the gate
 - Where you have accepted gate outputs to write, read [Gate](prompts/agents/notes/worktree.md#gate), and run the gate as it gives.
 
-# Launch the doc review
-- Run `uv run python scripts/operate.py review <agent id>`, with your own agent id, and do as it prints. Where it prints an Agent call, read [Background agents](prompts/agents/notes/commands.md#background-agents) and make that call.
+# Write your reply
+- Where your brief gives a report file, write your reply to it, as [Your reply](prompts/agents/doc-editor/reply.md#your-reply) gives.
+
+# Launch the checks
+- Run `uv run python scripts/operate.py review <agent id>`, with your own agent id, and do as it prints. Where it prints an Agent call, read [Background agents](prompts/agents/notes/commands.md#background-agents) and make that call. Run it again after each Agent call it prints.
 
 # Reply
-- Give your final reply, as [Your reply](prompts/agents/doc-editor/reply.md#your-reply) gives, once each doc reviewer you launched has replied after your last edit, and where you launched none, at once.
+- Give your final reply, as [Your reply](prompts/agents/doc-editor/reply.md#your-reply) gives, once each agent you launched has replied after your last edit, and where you launched none, at once.

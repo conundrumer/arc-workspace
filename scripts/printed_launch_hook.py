@@ -3,9 +3,9 @@ that is none of the launches the last result of `operate.py next` printed
 to it, other than the launch of a reply-only agent
 (`context_bound_hook.reply_only`). An operator
 launcher is held the same way to the launch `operate.py relay` last printed
-to it (`context_bound_hook.ACTIONS`), and a doc editor's launch of a doc
-reviewer to the launch `operate.py review` last printed to it
-(`EDITOR_LAUNCHES`).
+to it (`context_bound_hook.ACTIONS`), and a code editor's and a doc
+editor's launch of a check of its change to the launch `operate.py
+review` last printed to it (`EDITOR_LAUNCHES`).
 
 The printed launches are read from the result of the last call of `next`
 in the caller's own transcript (`printing.printed_launches`). Where that
@@ -23,13 +23,13 @@ from typing import Any, NamedTuple
 
 from context_bound_hook import ACTIONS, reply_only
 from operations.command_words import Action
-from operations.roles import Role
+from operations.roles import CHECK_TYPES, LAUNCHING_EDITORS
 from hook_entry import not_registered, run_pre_tool_use
 
 HOOK = "printed_launch_hook"
-EDITOR_LAUNCHES = {Role.DOC_EDITOR.agent_type: (Role.DOC_REVIEWER.agent_type, Action.REVIEW)}
-"""For each agent type held only in its launches of one agent type, that
-type and the action of `operate.py` that prints those launches."""
+EDITOR_LAUNCHES = {editor.agent_type: (CHECK_TYPES, Action.REVIEW) for editor in LAUNCHING_EDITORS}
+"""For each agent type held only in its launches of some agent types,
+those types and the action of `operate.py` that prints those launches."""
 UNSEEN = "run_in_background"
 
 
@@ -88,7 +88,7 @@ def held_action(kind: str, inp: dict[str, Any]) -> Action | None:
         return ACTIONS[kind]
     if kind in EDITOR_LAUNCHES:
         launched, action = EDITOR_LAUNCHES[kind]
-        return action if inp.get("subagent_type") == launched else None
+        return action if inp.get("subagent_type") in launched else None
     return None
 
 

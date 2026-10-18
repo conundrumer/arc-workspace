@@ -61,10 +61,11 @@ def builds_code(editors: tuple[Role, ...]) -> bool:
 
 
 def design_review(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
-                  here: list[Agent], agents: list[Agent]) -> Step | Literal[False]:
-    """The launch of the design reviewer of the change `t`, whose editors
-    are `editors`, those in its worktree `w` `here`, and whose agents, those
-    of other sessions included, are `agents`, or False where none is due or
+                  here: list[Agent], agents: list[Agent], launcher: str) -> Step | Literal[False]:
+    """The launch by `launcher` of the design reviewer of the change `t`,
+    whose editors are `editors`, those in its worktree `w` `here`, and
+    whose agents, those of other sessions and those its editors launched
+    included, are `agents`, or False where none is due or
     the one due is at work or has reported. A reviewer that ended with no
     report holds the change, since the merge waits on its judgment."""
     if not builds_code(editors):
@@ -76,7 +77,7 @@ def design_review(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
         return False
     reviewers = [a for a in agents if a.role is Role.DESIGN_REVIEWER and a.launched > since]
     if not reviewers:
-        return design_launch(state, t, w)
+        return design_launch(state, t, w, launcher)
     last = reviewers[-1]
     if not last.unreported:
         return False
@@ -90,10 +91,10 @@ def reviewing(agents: list[Agent]) -> bool:
     return any(a.pending for a in agents if a.role is Role.DESIGN_REVIEWER)
 
 
-def design_launch(state: State, t: Ticket, w: Path) -> Launch:
-    """The launch of a design reviewer on the change `t` in its worktree
-    `w`, keyed as an editor's launch is."""
+def design_launch(state: State, t: Ticket, w: Path, launcher: str) -> Launch:
+    """The launch by `launcher` of a design reviewer on the change `t` in
+    its worktree `w`, keyed as an editor's launch is."""
     return Launch(Role.DESIGN_REVIEWER, t.number, briefs.design_review(
-        t.number, w, editor_scratch(t.number, Role.DESIGN_REVIEWER, state.scratch), state.me,
+        t.number, w, editor_scratch(t.number, Role.DESIGN_REVIEWER, state.scratch), launcher,
         settled(state, t, Role.DESIGN_REVIEWER, None)),
         occasion=f"{w} {t.last_time}")

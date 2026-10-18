@@ -149,10 +149,10 @@ def own(brief: str) -> str:
 @dataclass(frozen=True)
 class Agent:
     """An agent an operator of any session launched with a description the
-    command gave, or a doc reviewer that a doc editor an operator launched
-    launched, which is read as a launch of that doc editor's, with
-    the doc editor as its `operator`. `waits` is None where it no longer
-    waits: where that operator holds the result of a launch in the
+    command gave, or a check that an editor an operator launched
+    launched (`changes.editor_step`), which is read as a launch of that
+    editor's, with the editor as its `operator`. `waits` is None where it
+    no longer waits: where that operator holds the result of a launch in the
     foreground, or a sign since its launch or its last resume, in any
     transcript of the session, that its turn ended, as
     `agent_reports.last_sign` gives the latest sign: a notification that
@@ -483,7 +483,7 @@ class TranscriptsRead:
     whatever its reply. `elsewhere` holds, for each change `State.me`
     holds whose log gives a line of an operator of another session since
     its last move out of `tickets/draft/`, the agents that operator
-    launched on it since then, with the doc reviewers of its doc editors,
+    launched on it since then, with the checks its editors launched,
     in the order of their launch. No step sends to one of them: a
     subagent of another session reports to that session."""
     agents: tuple[Agent, ...]

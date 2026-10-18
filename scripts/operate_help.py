@@ -184,10 +184,14 @@ PARTS = {
             - It then prints the launcher's final reply, unless a line of the coordinator's waits for a next operator.
     """),
     HelpPart.REVIEW: mctx("""
-    - `review` prints, to the doc editor whose agent id it is given, which an operator of the session launched, the launch of its change's doc reviewer, in the form of `next`'s, with the brief `next` gives a doc reviewer, the doc editor as its launcher, and each editor of the change in its worktree.
-        - Where the change already has a doc reviewer, whoever launched it, it prints that reviewer's agent id and that the doc editor launches no other.
-        - Where an editor the change's ticket gives has no agent in the worktree, or another editor of the change there has not reported, it prints instead that the operator launches the review, and that the doc editor gives its final reply.
-        - It reads the state as the doc editor's operator's `next` reads it.
+    - `review` prints, to the code editor or the doc editor whose agent id it is given, which an operator of the session launched, the step `next` would give next on its change with that editor ended, where that step is the launch of a design reviewer, an item checker, a decision analyst or a doc reviewer, in the form of `next`'s, with the brief `next` gives that agent and the editor as its launcher.
+        - It takes as the editor's report the text of the report file the editor's brief gives.
+            - Where that file does not exist, it prints that the editor writes it and then runs `review` again.
+        - Where the change is past its cost budget, it prints instead that the operator takes the change's next step, and that the editor gives its final reply.
+        - Where an editor the change's ticket gives has no agent in the worktree, or another editor of the change there has not reported, it prints instead that the operator launches the checks, and that the editor gives its final reply.
+        - Where that step is none and an agent the editor launched has not given its final reply, it prints that the editor waits on each such agent, and runs `review` again each time one of them gives its final reply.
+        - Otherwise it prints that the editor gives its final reply.
+        - It reads the state as the editor's operator's `next` reads it.
     """),
     HelpPart.ALERTS: ALERTS + "\n" + concept_faults.HELP,
 }

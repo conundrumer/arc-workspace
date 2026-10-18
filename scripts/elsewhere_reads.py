@@ -1,6 +1,6 @@
 """The agents of other runs on the changes an operator holds: the agents
-that operators of other sessions launched on them, and the doc reviewers
-that doc editors launched."""
+that operators of other sessions launched on them, and the checks that
+their editors launched."""
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -15,21 +15,22 @@ from operations.change_agents import on_change
 from operations.change_budget import left_draft
 from operations.changes import holds
 from operations.log_commands import AGENT
-from operations.roles import Role
+from operations.roles import CHECKS, LAUNCHING_EDITORS
 from operations.state import Agent, Ticket
 
 
-def editor_reviewers(agents: Sequence[Agent], main: Path, undecided: list[str]) -> AgentsRead:
-    """The doc reviewers that the doc editors among `agents` launched, read
-    from those editors' transcripts as an operator's launches are read,
-    with the doc editor as their `operator`."""
+def editor_checks(agents: Sequence[Agent], main: Path, undecided: list[str]) -> AgentsRead:
+    """The checks, of `roles.CHECKS`, that the editors among `agents` of
+    `roles.LAUNCHING_EDITORS` launched, read from those editors'
+    transcripts as an operator's launches are read, with the editor as
+    their `operator`."""
     out: list[Agent] = []
     reads: list[AgentsRead] = []
     for a in agents:
-        if a.role is not Role.DOC_EDITOR or a.agent_id is None:
+        if a.role not in LAUNCHING_EDITORS or a.agent_id is None:
             continue
         theirs = read_operator(a.agent_id, find(a.agent_id), main, undecided, {}, False)
-        out += [r for r in theirs.agents if r.role is Role.DOC_REVIEWER]
+        out += [r for r in theirs.agents if r.role in CHECKS]
         reads.append(theirs.launched)
     return kept(out, reads)
 
@@ -58,7 +59,7 @@ def elsewhere_agents(tickets: Mapping[str, Ticket], me: str, operators: frozense
                 continue
             one = read_operator(oid, path, main, undecided, {}, False)
             theirs = [a for a in one.agents if a.launched > since and on_change(a, t.number)]
-            reviewers = editor_reviewers(theirs, main, undecided)
+            reviewers = editor_checks(theirs, main, undecided)
             reads += [one.launched, reviewers]
             theirs += [r for r in reviewers.agents
                        if r.launched > since and on_change(r, t.number)]

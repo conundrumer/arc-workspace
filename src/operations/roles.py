@@ -214,3 +214,15 @@ def joined(numbers: list[str]) -> str:
 def subjects(subject: str) -> list[str]:
     """The ticket numbers a subject joined by `joined` gives."""
     return subject.split(JOIN)
+
+
+LAUNCHING_EDITORS = (Role.CODE_EDITOR, Role.DOC_EDITOR)
+"""The editors that launch the checks of their change, as
+`changes.editor_step` gives."""
+
+CHECKS = (Role.DESIGN_REVIEWER, Role.ITEM_CHECKER, Role.TICKET_ANALYST, Role.DOC_REVIEWER)
+"""The roles of the checks of a change that its editors launch."""
+
+CHECK_TYPES = frozenset(launched_type(r, analyst_subject(Purpose.CHANGE, "")) for r in CHECKS)
+"""The `subagent_type` of each launch of `CHECKS`: a ticket analyst of a
+change runs as the agent type of its purpose (`ANALYST_TYPES`)."""
