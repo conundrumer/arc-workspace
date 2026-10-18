@@ -34,6 +34,8 @@
     - Where it needs a decision, act on it as that decision rules, once the decision is made.
 - Where the reply of an agent you launched gives items of its brief each as done or as unfinished, and gives an item you sent it as neither, send that item again, file its drop as a ticket, and leave finding the drop's cause to the ticket analyst that takes that ticket.
 - Launch a ticket analyst with each ticket the lines above have you file that still stands under `tickets/open/`, before you end your turn with no other work.
+- Launch a ticket analyst only where a line of your documents has you, and, while an operator launcher of yours runs, launch none, and tell an operator that tickets are open in place of each launch.
+    * comment: The user's words, session 129de8fc-2a0d-4d4d-b950-3a0194c762e2, 2026-10-18T18:46:46Z: "i mean why did you launch and not the op". Session 9's coordinator launched ticket analyst ad5167ab44fc0b88d at 2026-10-18T18:42:43Z on tickets 9-886 and 9-942, which it had not filed, under `Op pause.`, while its operator launcher ran: ticket 11-1523.
 - In your reply, give each item an agent you launched left unfinished that you have not finished, as unfinished with its reason.
 - A transcript review is a `general-purpose` agent that reviews a run's transcript, with the brief [A transcript review's brief](prompts/agents/notes/launching.md#a-transcript-reviews-brief) gives.
 - Pause or serialize agents only where the user agreed to it.

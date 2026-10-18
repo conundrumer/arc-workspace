@@ -26,7 +26,7 @@
             * comment: Ticket 6-1167: the coordinator gave a readback again as a labelled decision with a default.
 - `scratch` is work after which nothing under version control has changed, nothing has left the session, and nothing later depends on it. Do it with no readback, no ticket and no brief. Where that work would change a tracked file or send something out of the session, read back a route before that step.
 - `direct`: file the change's `request`, write its brief, and run the change as [Running a change](#running-a-change) gives.
-- `op send`: file the `request` and, in that turn, tell an operator that tickets are open where an operator launcher of yours runs, and otherwise launch a ticket analyst on it, with its transcript brief, and tell an operator so once the analyst replies.
+- `op send`: file the `request` and, where no operator launcher of yours runs, launch a ticket analyst on it, with its transcript brief, and tell an operator so once the analyst replies.
 - `hotfix`: file the change's `request`, write its brief, and, as [Running a change](#running-a-change) gives, launch at once on a worktree the editors it needs, each with that brief, and merge the change.
 - `expedite <number>`: write nothing, send an operator `Op expedite: <number>`, and tell the user the tickets outside `tickets/closed/` that line gives, as [An operator's brief](prompts/agents/notes/launching.md#an-operators-brief) gives that line.
 - `op scope: own`, `op scope: all`, `op pause` and `op resume`: write nothing, and send an operator the directive with a capital `Op` and a closing period, as `Op pause.`.
@@ -48,7 +48,7 @@
 - Tell the user what each ticket a line of this document has you file does, in your own words, without quoting its text, and the number of each `request` you move to `tickets/draft/`.
 - A `request`'s first span runs from the user's first message on the change to the user's message that gives its route, or on an inferred route to the user's last one on it, or to an earlier message where the user asks for one.
 - Write each line under `Grounds` of a `request` or of a brief as one addition of yours to what the spans give, with its source: a line of a file quoted with its path, a command with its output, or a ticket's log line. Write no other line there.
-- Launch a ticket analyst on a ticket you file only where a line of your documents has you. Once you write on a ticket outside `tickets/draft/` by a line of this document, tell an operator that tickets are open before you end your turn with no other work, unless you hold that ticket, you filed it on `op send`, or you launch a ticket analyst with it.
+- Once you write on a ticket outside `tickets/draft/` by a line of this document, tell an operator that tickets are open before you end your turn with no other work, unless you hold that ticket, you filed it on `op send`, or you launch a ticket analyst with it.
 
 ## The user's words on a ticket
 - Where the user's later words bear on a `request` you filed, append their span to it with `uv run python scripts/spans.py append`, with the new goal where those words change the goal or state one. Send that span to each agent that holds the `request` or the `change` it waits on, and move the `request` to `tickets/open/` where it waits on a `change` that has not merged.
