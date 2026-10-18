@@ -139,7 +139,8 @@ REASONS: dict[Directive | None, Callable[[State, Line, Outcomes], list[str]]] = 
     Directive.SOLVE: solve_state, Directive.RUN: run_state, Directive.DRAFTS: drafts_state,
     Directive.EXPEDITE: expedite_state, Directive.ALLOW: no_state,
     Directive.MERGED: merged_state, Directive.MERGE: merge_state, Directive.OPEN: open_state,
-    Directive.SCOPE: no_state, Directive.PACE: no_state,
+    Directive.SCOPE: no_state, Directive.PAUSE: no_state, Directive.RESUME: no_state,
+    Directive.PACE: no_state,
     Directive.OVERRIDE: no_state, Directive.DECISION: no_state, None: unread_state}
 """The reasons a line of each directive stands unfinished, by its
 directive, None for a line in no form the command reads."""

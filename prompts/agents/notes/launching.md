@@ -118,12 +118,14 @@
     - `Op merged: <number>, ...`: the changes the coordinator merged itself.
     - `Op merge: <number>`: a `change` under `tickets/blocked/`, which the user's ruling has the operator merge.
     - `Op tickets are open.`
-    - `Op allow: <number>, ...`: tickets of any session, and each `change` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from them. The operators of the session settle and take each of them under `Op scope: own.` too, with no priority over other work.
+    - `Op allow: <number>, ...`: tickets of any session, and each `change` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from them. The operators of the session settle and take each of them under `Op scope: own.` and `Op pause.` too, with no priority over other work.
     - `Op scope: own.`: the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than these:
         - The tickets the session's coordinator filed, and each ticket filed for one of them: a ticket a link leads to from it, a ticket filed on it, or a `change` whose Motivation gives its number, and so on down each chain.
         - The tickets and changes an `Op allow:` or an `Op expedite:` line gives.
         - The work an operator of the session took and each `change` that work waits on, which they carry to its end.
     - `Op scope: all.`: ends the limit of `Op scope: own.`.
+    - `Op pause.`: the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than the tickets and changes an `Op allow:` or an `Op expedite:` line gives, and the work an operator of the session took and each `change` that work waits on, which they carry to its end.
+    - `Op resume.`: ends `Op pause.`.
     - `Op pace: <preset> [<argument> ...]` or `Op pace: <path>`: the usage pace, as `uv run python scripts/operate.py --help pace` gives it. Past that pace, the operators of the session admit only the tickets and changes an `Op allow:` or an `Op expedite:` line gives, and the work an operator of the session took and each `change` that work waits on.
     - `Op override: <task id> <pass> <override>`: an override that the brief of the next launch of that pass on that task gives.
     - `Op override: pass over <step key>`: passes over the solver pass whose step key it gives: that pass's task id and its pass, in the form `uv run python scripts/operate.py --help rulings` gives.

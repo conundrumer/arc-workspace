@@ -11,9 +11,11 @@ takes, of the changes it would take under `Op scope: all.`, only those of
 `held_work`, so the work already held reaches its end, those of `allowed`,
 the tickets an `Op allow:` or an `Op expedite:` line gives, and those of
 `filed_work`, the work the session's coordinator filed, and each other change
-waits for an `Op scope: all.` line. Past the usage pace (`pacing`), the changes
-of `held_work` and of `allowed` are taken, and each other one waits
-until the pace admits it.
+waits for an `Op scope: all.` line. While an `Op pause.` line stands
+(`directives.paused`), it takes only those of `held_work` and of
+`allowed`, and each other change waits for an `Op resume.` line. Past the
+usage pace (`pacing`), the changes of `held_work` and of `allowed` are
+taken, and each other one waits until the pace admits it.
 
 A change that waits for a ticket that holds it up moves to
 `tickets/draft/` with a line whose note is `STALL_FINDING` on that ticket,
@@ -27,7 +29,7 @@ from controlled_markdown import form, mctx
 from operations import pacing, rank
 from operations.change_budget import TAKE_NOTE, budget_fields
 from operations.directives import (Directive, allow_named, named, NUMBER, numbers, numbers_in, own_scope,
-                                   session_lines)
+                                   paused, session_lines)
 from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.pacing import Pace
@@ -89,8 +91,9 @@ def admits(state: State) -> Callable[[str], bool]:
     the run scripts admit (`Computed.admitted`), or one of `expedited`,
     or any where no script defines `takes`; of those, one of `held_work`
     or of `allowed` always, and any other only while the usage pace
-    admits one (`Computed.pace`) and, where an `Op scope: own.` line stands,
-    only one of `filed_work`."""
+    admits one (`Computed.pace`), no other while an `Op pause.` line
+    stands, and, where an `Op scope: own.` line stands, only one of
+    `filed_work`."""
     passes, held = passing(state)
     clear = scope_admits(state)
     paced = pacing.admits(state.computed.pace, state.now)
@@ -98,8 +101,11 @@ def admits(state: State) -> Callable[[str], bool]:
 
 
 def scope_admits(state: State) -> Callable[[str], bool]:
-    """Whether the `Op scope:` lines admit a ticket: one of `allowed` or of
-    `filed_work`, or any while no `Op scope: own.` line stands."""
+    """Whether the `Op pause.` and `Op scope:` lines admit a ticket: one of
+    `allowed` while an `Op pause.` line stands; otherwise one of `allowed`
+    or of `filed_work`, or any while no `Op scope: own.` line stands."""
+    if paused(state):
+        return allowed(state).__contains__
     if not own_scope(state):
         return lambda _: True
     return (allowed(state) | filed_work(state)).__contains__
@@ -141,9 +147,9 @@ def held_work(state: State) -> set[str]:
 
 
 def allowed(state: State) -> set[str]:
-    """The tickets `Op scope: own.` admits past the work the session's
-    coordinator filed: each ticket a chain of links reaches
-    from a ticket of `directives.allow_named`, and those of `expedited`."""
+    """The tickets `Op pause.` admits past the work held, and `Op scope: own.`
+    past the work the session's coordinator filed: each ticket a chain of
+    links reaches from a ticket of `directives.allow_named`, and those of `expedited`."""
     return reached(state, allow_named(state)) | expedited(state)
 
 
@@ -262,7 +268,8 @@ def blocked_since(t: Ticket) -> float:
 def batch(state: State) -> list[Ticket]:
     """The changes of `takeable` that one step of `take` takes, as `take`
     gives them."""
-    free = pacing.admits(state.computed.pace, state.now) and not own_scope(state)
+    free = (pacing.admits(state.computed.pace, state.now)
+            and not own_scope(state) and not paused(state))
     first = lead(state)
     out: list[Ticket] = []
     paced = False
@@ -278,8 +285,8 @@ def batch(state: State) -> list[Ticket]:
 def take(state: State) -> Step | None:
     """The take of each change of `takeable`, in its order, up to the first
     whose budget `Computed.budgets` does not give. Where the usage pace does
-    not admit a ticket, or an `Op scope: own.` line stands, a step takes, of the
-    changes neither of `lead` nor `taken_before`, only the first, so that
+    not admit a ticket, or an `Op scope: own.` or an `Op pause.` line
+    stands, a step takes, of the changes neither of `lead` nor `taken_before`, only the first, so that
     the pace is read again before each further take."""
     commands: list[str] = []
     taken: list[str] = []

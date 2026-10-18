@@ -17,6 +17,10 @@ prefix `Op`, the word of its kind and a colon, past a list marker:
   `Op allow:` or an `Op expedite:` line gives and the work the session's
   coordinator filed, and `Op scope: all.`, which ends that limit, the last
   such line standing (`own_scope`);
+- `Op pause.`, after which no operator of the session settles an open
+  ticket or takes a change outside the work held and the tickets an
+  `Op allow:` or an `Op expedite:` line gives, and `Op resume.`, which ends
+  the pause, the last such line standing (`paused`);
 - `Op pace: <preset> [<argument> ...]` or `Op pace: <path>`, the usage pace
   for every operator of the session (`pace`), as `pacing` gives it;
 - the rulings, `Op decision:` and `Op override:` lines in the forms that
@@ -45,7 +49,7 @@ over a change from an earlier one carries it on by the rulings the earlier
 one received."""
 
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -88,6 +92,8 @@ class Directive(StrEnum):
     MERGED = "Op merged"
     MERGE = "Op merge"
     OPEN = "Op tickets are open"
+    PAUSE = "Op pause"
+    RESUME = "Op resume"
     SCOPE = "Op scope"
     PACE = "Op pace"
     OVERRIDE = "Op override"
@@ -98,6 +104,8 @@ BARE = {d.removeprefix(OP).capitalize(): d for d in Directive}
 
 
 RULINGS = frozenset({Directive.OVERRIDE, Directive.DECISION})
+
+PAUSE_LINES = frozenset({Directive.PAUSE, Directive.RESUME})
 
 PASS_OVER = re.compile(rf"pass over (?P<key>{STEP_KEY.pattern})")
 GIVE_AGAIN_WORDS = "give again"
@@ -258,17 +266,31 @@ def own_scope(state: State) -> bool:
     operator of the session, gives `own`. The result holds for every
     operator of the session, one that takes over from an ended operator
     included."""
-    given = [s for ln in session_lines(state) if ln.kind is Directive.SCOPE
-             if (s := line_scope(ln.rest)) is not None]
-    return bool(given) and given[-1] is Scope.OWN
+    return last_given(state, frozenset({Directive.SCOPE}),
+                      lambda ln: line_scope(ln.rest)) is Scope.OWN
+
+
+def paused(state: State) -> bool:
+    """Whether the last `Op pause.` or `Op resume.` line, to any operator
+    of the session, is `Op pause.`. The result holds for every operator of
+    the session, one that takes over from an ended operator included."""
+    return last_given(state, PAUSE_LINES, lambda ln: None if ln.rest else ln.kind) is Directive.PAUSE
 
 
 def pace(state: State) -> Preset | Path | None:
     """The preset or the script path of the last `Op pace:` line in a form
     `pacing.line_pace` reads to any operator of the session, or None where
     none came."""
-    given = [p for ln in session_lines(state) if ln.kind is Directive.PACE
-             if (p := line_pace(ln.rest, state.main_tree)) is not None]
+    return last_given(state, frozenset({Directive.PACE}),
+                      lambda ln: line_pace(ln.rest, state.main_tree))
+
+
+def last_given[T](state: State, kinds: frozenset[Directive],
+                  read: Callable[[Line], T | None]) -> T | None:
+    """What `read` gives for the last line of `kinds`, to any operator of
+    the session, for which it gives anything, or None where no such line
+    came."""
+    given = [v for ln in session_lines(state) if ln.kind in kinds if (v := read(ln)) is not None]
     return given[-1] if given else None
 
 
@@ -363,8 +385,10 @@ def pipelines(given: list[Line]) -> list[Pipeline]:
 
 def unread(state: State) -> list[Line]:
     """The coordinator's lines in no form the command reads, rulings,
-    `Op pace:` and `Op scope:` lines in no fixed form among them."""
+    `Op pace:` and `Op scope:` lines in no fixed form, and `Op pause:` and
+    `Op resume:` lines with text after the colon, among them."""
     return [ln for ln in lines(state)
             if ln.kind is None or ln.kind in RULINGS and ruling_form(ln) is None
             or ln.kind is Directive.PACE and line_pace(ln.rest, state.main_tree) is None
-            or ln.kind is Directive.SCOPE and line_scope(ln.rest) is None]
+            or ln.kind is Directive.SCOPE and line_scope(ln.rest) is None
+            or ln.kind in PAUSE_LINES and bool(ln.rest)]
