@@ -40,6 +40,18 @@ def origin(entry: Entry) -> tuple[str | None, Origin | None]:
     return kind, member(Origin, kind)
 
 
+def is_notification(entry: Entry) -> bool:
+    """Whether `entry` is a notification of the agent's backgrounded work."""
+    return (origin(entry)[1] is Origin.TASK_NOTIFICATION
+            or bool(NOTIFICATION.search(message_text(entry))))
+
+
+def is_harness_note(entry: Entry) -> bool:
+    """Whether `entry` is a note the harness writes into the run, such as a
+    system reminder or a hook's feedback, which no sender sent."""
+    return bool(entry.get("isMeta")) and origin(entry)[0] is None
+
+
 class Sender(Enum):
     """Who a message after a run's brief is from, as `profile_runs.py --help messages` gives it."""
     PARENT = "parent"
@@ -59,7 +71,7 @@ def sender(entry: Entry, parent: str, children: frozenset[str],
     if kind is not None and given is None:
         return Sender.UNKNOWN
     from_main = Sender.PARENT if parent == MAIN else Sender.OTHER
-    if given is Origin.TASK_NOTIFICATION or NOTIFICATION.search(text):
+    if is_notification(entry):
         return Sender.OTHER
     if given is Origin.COORDINATOR:
         return from_main

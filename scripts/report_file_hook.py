@@ -1,8 +1,15 @@
 """PreToolUse hook on SubagentHandback: denies the SubagentHandback call of
 an agent whose brief gives a report file (`filed_texts.brief_report_file`)
 where the call's message is not that file's path alone
-(`filed_texts.report_file`), or no file is there, and the reason gives the
-path.
+(`filed_texts.report_file`), or no file is there, or that file was last
+written before the last message the agent got that is no notification
+(`senders.is_notification`) and no note of the harness
+(`senders.is_harness_note`), and the reason gives the path. A file written
+before that message holds the reply of an earlier round. A notification
+does not count, as one that resumes the agent after its final reply has it
+give that reply again with the file unchanged. A note of the harness does
+not count, as the harness writes one, such as one that asks for the
+handback, after the agent has written its final reply.
 
 The brief is the first message of the agent's own transcript, with each
 file it gives by `FILED_LINE` read in (`filed_texts.unfiled`).
@@ -43,12 +50,30 @@ def last_message(entries: Iterable[dict[str, Any]]) -> str:
     return next(str(e["uuid"]) for e in entries if is_prompt(e))
 
 
+def written_since(path: Path, entries: Iterable[dict[str, Any]]) -> bool:
+    """Whether the file at `path` was last written after the first message
+    among `entries`, read last first, that is no notification and no note
+    of the harness."""
+    from file_reads import stat_read
+    from run_reads import is_prompt
+    from senders import is_harness_note, is_notification
+    from transcript_entries import epoch
+
+    found = stat_read(path)
+    if found is None or not found.is_file:
+        return False
+    last = next(e for e in entries
+                if is_prompt(e) and not is_notification(e) and not is_harness_note(e))
+    return found.mtime > epoch(str(last["timestamp"]))
+
+
 def refusal(path: Path) -> str:
     from controlled_markdown import mctx
 
     return "\n".join([
         mctx("Blocked: your brief gives the report file `{path}`, and the message of this "
-             "call is not that file's path alone, or that file does not exist."),
+             "call is not that file's path alone, or that file does not exist or was last "
+             "written before the last message you got."),
         mctx("Write your final reply to that file, then give its path alone as your report."),
     ]).format(path=path)
 
@@ -56,7 +81,6 @@ def refusal(path: Path) -> str:
 def check(hook: Hook) -> str | None:
     """The reason to deny the SubagentHandback call `hook` gives, as the
     module docstring gives it, or None."""
-    from file_reads import is_file
     from filed_texts import brief_report_file, report_file
     from printed_launch_hook import first_at
     from run_reads import caller_id, caller_transcript
@@ -79,7 +103,7 @@ def check(hook: Hook) -> str | None:
     if wanted is None:
         return None
     given = report_file(str((hook.get("tool_input") or {}).get("message", "")))
-    if given == wanted and is_file(wanted):
+    if given == wanted and written_since(wanted, entries_back(path)):
         return None
     last = last_message(entries_back(path))
     if not first_at(hook, STOPS, agent, last):
