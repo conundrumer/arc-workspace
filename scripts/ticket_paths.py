@@ -18,8 +18,10 @@ from transcript_entries import Refused  # noqa: E402
 from operations.state import Ticket  # noqa: E402
 from operations.task_work import task_paths  # noqa: E402
 from solver.vocabulary import SOLVER_SUFFIX  # noqa: E402
+from ticketing.text import SECTIONS  # noqa: E402
+from ticketing.vocabulary import Kind  # noqa: E402
 
-SCOPE = "Scope"
+_, _, SCOPE, _ = SECTIONS[Kind.CHANGE]
 
 LINES = re.compile(r":\d+(?:-\d+)?$")
 

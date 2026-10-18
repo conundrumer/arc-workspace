@@ -361,11 +361,6 @@ class View:
         """The outermost component a scope stands in; None at the top."""
         return scope.components[0] if scope.components else None
 
-    def program_scope(self, scope: Scope) -> bool:
-        """A scope that holds program code: the top level and each comp
-        declared there."""
-        return len(scope.components) <= 1
-
     @cached_property
     def top_heads(self) -> dict[str, list[Unit]]:
         """The own clauses of each top-level relation other than an
@@ -454,17 +449,13 @@ class View:
                 or (u.scope != TOP and self.comp_of(u.scope) != PARAMS)]
 
     def program_units(self) -> list[Unit]:
-        """The own units of the program scopes, less the case
-        enumeration's clauses."""
-        return [u for u in self.own_units if self.program_scope(u.scope)
-                and not self.in_enumeration(u)]
+        """The own units, less the case enumeration's clauses."""
+        return [u for u in self.own_units if not self.in_enumeration(u)]
 
     def program_relations(self) -> list[RelationDecl]:
-        """The own relations of the program scopes, less the case
-        enumeration's."""
+        """The written relations, less the case enumeration's."""
         return [r for r in self.written_relations
-                if self.program_scope(r.scope)
-                and not (r.scope == TOP and r.name in self.enumeration)]
+                if not (r.scope == TOP and r.name in self.enumeration)]
 
     # Sections
 

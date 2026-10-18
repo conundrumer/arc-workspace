@@ -246,9 +246,7 @@ def _rewrite(touched: set[str], corpus: set[str]) -> bool:
 
 def cmd_since(when: str) -> int:
     """The stems the commits since `when` touch, and those whose
-    working-tree content differs from HEAD, the scope lib-protocol.md
-    gives under "The sequence" for a survey of an entry whose newest
-    `Survey:` time is `when`; a commit that rewrites more
+    working-tree content differs from HEAD; a commit that rewrites more
     than half the corpus gives none, and a window whose commits together
     do keeps only the solvers they add. A git call that fails exits 1
     with git's error."""

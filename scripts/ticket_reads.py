@@ -17,10 +17,11 @@ from transcript_entries import Refused
 
 from operations.roles import Role, editors_of
 from operations.state import LogLine, Ticket, Unread
+from ticketing.text import SECTIONS
 from ticketing.vocabulary import TICKET_NUMBER, Domain, Kind, Status
 
 
-MOTIVATION = "Motivation"
+_, MOTIVATION, _, _ = SECTIONS[Kind.CHANGE]
 
 CITED_NUMBER = re.compile(rf"(?<![\w.:-]){TICKET_NUMBER.pattern}(?![\w:-]|\.\d)")
 """A ticket number in a ticket's prose, apart from the parts of a date, a

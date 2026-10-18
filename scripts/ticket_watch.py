@@ -12,7 +12,7 @@ from pathlib import Path
 from run_reads import run_entries
 from spends import change_spend, closed_changes
 from ticket_files import ticket_files, ticket_name
-from ticket_form import check_fix, front, ticket_kind, title
+from ticket_form import bounds, check_fix, front, ticket_kind, title
 from ticket_log import line_time, log_lines, log_moves, read_ticket
 from ticket_numbers import TicketNumber
 from ticket_reads import editors_field
@@ -25,7 +25,9 @@ from operations.roles import Role
 from ticketing.loss import CASE, Found, loss, rate
 from ticketing.loss import cases as loss_cases
 from ticketing.times import TIME_FORM, stamp_time
-from ticketing.vocabulary import Kind, Resolution, Status
+from ticketing.vocabulary import DEFECT_SECTIONS, Kind, Resolution, Status
+
+_, EVIDENCE = DEFECT_SECTIONS
 
 CHANGES = 10
 """The count of the most recent fixed changes an editor's threshold is the
@@ -229,9 +231,6 @@ def evict(tickets: Path, agent: str) -> None:
 
 
 def add_evidence(text: str, evidence: str) -> str:
-    """`text` with `evidence` at the end of its `## Evidence` section."""
-    at = re.search(r"^## Evidence\n(?:(?!## ).*\n)*", text, re.MULTILINE)
-    if at is None:
-        raise Refused(mctx("the ticket has no `## Evidence` section"))
-    body = at.group().rstrip("\n")
-    return f"{text[:at.start()]}{body}\n{evidence.strip(chr(10))}\n\n{text[at.end():].lstrip(chr(10))}"
+    """`text` with `evidence` at the end of its `Evidence` section."""
+    _, end = bounds(text, EVIDENCE)
+    return f"{text[:end].rstrip(chr(10))}\n{evidence.strip(chr(10))}\n\n{text[end:].lstrip(chr(10))}"
