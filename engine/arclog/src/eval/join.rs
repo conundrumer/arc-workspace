@@ -45,7 +45,6 @@ impl<'a> Budget<'a> {
         Budget { limits, session, work: 0, rows: 0 }
     }
 
-    /// The caps the budget counts against.
     pub fn caps(&self) -> Caps {
         self.limits.caps
     }

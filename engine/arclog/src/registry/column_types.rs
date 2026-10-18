@@ -50,7 +50,7 @@ pub struct MacroDeclarations {
 /// that read one another, given at each macro of the cycle; a label of the
 /// definition, a column's or one that no column stands for, whose sites
 /// have an empty meet, or whose branches give types with no join, over the
-/// list of the label's scope that the doc of [`CheckId::Types`] names, the
+/// list of the label's scope that [`crate::types::scope_list`] gives, the
 /// definition for a column's label; a column whose label stands at no site
 /// that gives a type; or a definition that no set of the columns grounds.
 /// A macro that reads a macro with a fault takes no declaration, and gives
@@ -120,12 +120,10 @@ impl MacroDerivation<'_, '_> {
         self.states[i] = MacroState::Reading;
         self.stack.push(i);
         let mut reads = Vec::new();
-        each_conjunct(self.macros[i].definition, &mut |conjunct| {
-            if let Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) = conjunct {
-                if let RelationRef::Lib(name) = &atom.value().relation {
-                    if let Some(&j) = self.index.get(name) {
-                        reads.push(j);
-                    }
+        each_atom(self.macros[i].definition, &mut |atom| {
+            if let RelationRef::Lib(name) = &atom.relation {
+                if let Some(&j) = self.index.get(name) {
+                    reads.push(j);
                 }
             }
         });
@@ -300,7 +298,7 @@ fn subsets_of_size(items: &[usize], size: usize) -> Vec<Vec<usize>> {
 
 /// The type that [`label_type`] gives each label of `body` that `columns`
 /// gives no column, in the order of the label's first site in `body`, over
-/// the list of the label's scope, as the doc of [`CheckId::Types`] names it.
+/// the list of the label's scope, as [`crate::types::scope_list`] gives it.
 /// `body` stands for the body of a clause whose head labels are the labels
 /// of `columns`.
 fn local_label_types(

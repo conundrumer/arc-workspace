@@ -6,7 +6,7 @@
 
 use crate::layout::{Comment, Layout, NodeLayout, SourceFile, SourcePlace};
 
-use crate::program::path::{child_index, NodePath, NodeRef, PathNode};
+use crate::program::path::{index_among, NodePath, NodeRef, PathNode};
 use crate::program::*;
 use crate::read::spelling::{self as sp, spelling};
 
@@ -124,18 +124,30 @@ impl<'l> Tokens<'l> {
     }
 }
 
-/// The path of `child` below `parent`, the node at `path`: the index of
-/// `child` among the children of `parent`, as
-/// [`crate::program::path::child_index`] gives it.
-///
-/// # Panics
-///
-/// Where the children of `parent` do not hold `child`, a fault of the path
-/// table or of the writer.
-pub(super) fn child_path<N: PathNode>(path: &NodePath, parent: N, child: N) -> NodePath {
-    let index = child_index(parent, child)
-        .unwrap_or_else(|| panic!("the children of the node at {path:?} do not hold a node the writer writes in it"));
-    path.child(index)
+/// The children of one node, the node at `path`, by which the writer takes
+/// the path of each child it writes in that node.
+pub(super) struct ChildPaths<'p, N> {
+    path: &'p NodePath,
+    children: Vec<N>,
+}
+
+impl<'p, N: PathNode> ChildPaths<'p, N> {
+    pub(super) fn of(path: &'p NodePath, parent: N) -> Self {
+        ChildPaths { path, children: parent.children() }
+    }
+
+    /// The path of `child`: the index of `child` among the children, as
+    /// [`crate::program::path::index_among`] gives it.
+    ///
+    /// # Panics
+    ///
+    /// Where the children do not hold `child`, a fault of the path table or
+    /// of the writer.
+    pub(super) fn path(&self, child: N) -> NodePath {
+        let index = index_among(&self.children, child)
+            .unwrap_or_else(|| panic!("the children of the node at {:?} do not hold a node the writer writes in it", self.path));
+        self.path.child(index)
+    }
 }
 
 /// The labels of one scope by their names.
@@ -239,13 +251,13 @@ impl<'l> Writer<'l> {
 
     fn program(&mut self, program: &Program) {
         let root = NodePath::default();
-        self.forms(&program.forms, NodeRef::Program(program), &root, None);
+        self.forms(&program.forms, &ChildPaths::of(&root, NodeRef::Program(program)), None);
     }
 
-    /// The forms of `parent`, the node at `path`.
-    fn forms(&mut self, forms: &[Form], parent: NodeRef, path: &NodePath, scope: Option<&Names>) {
+    /// The forms of the node whose children are `children`.
+    fn forms(&mut self, forms: &[Form], children: &ChildPaths<NodeRef>, scope: Option<&Names>) {
         for form in forms.iter() {
-            self.form(form, &child_path(path, parent, NodeRef::from(form)), scope);
+            self.form(form, &children.path(NodeRef::from(form)), scope);
         }
     }
 
@@ -281,7 +293,7 @@ impl<'l> Writer<'l> {
             self.put(&mut t, &quoted(&rule.0));
             self.put(&mut t, ")");
         }
-        self.forms(&claim.forms, NodeRef::Claim(claim), path, None);
+        self.forms(&claim.forms, &ChildPaths::of(path, NodeRef::Claim(claim)), None);
         self.put(&mut t, ")");
     }
 
@@ -292,8 +304,9 @@ impl<'l> Writer<'l> {
         self.put(&mut t, &alts.name.0);
         self.put(&mut t, &quoted(&alts.gloss.0));
         self.put(&mut t, &alts.concept.0);
+        let children = ChildPaths::of(path, NodeRef::Alts(alts));
         for alt in alts.alts.iter() {
-            self.alt(alt.value(), &child_path(path, NodeRef::Alts(alts), NodeRef::Alt(alt.value())));
+            self.alt(alt.value(), &children.path(NodeRef::Alt(alt.value())));
         }
         self.put(&mut t, ")");
     }
@@ -303,8 +316,9 @@ impl<'l> Writer<'l> {
         self.put(&mut t, "(");
         self.put(&mut t, sp::ALT);
         self.put(&mut t, &alt.name.0);
+        let children = ChildPaths::of(path, NodeRef::Alt(alt));
         for item in alt.items.iter() {
-            let child = child_path(path, NodeRef::Alt(alt), NodeRef::from(item));
+            let child = children.path(NodeRef::from(item));
             match item {
                 AltItem::Form(form) => self.form(form, &child, None),
                 AltItem::Alt(alt) => self.alt(alt.value(), &child),
@@ -323,7 +337,7 @@ impl<'l> Writer<'l> {
             self.put(t, &proposer.0);
         }
         let body = clause.body.value();
-        self.conjuncts(body, &child_path(path, NodeRef::Clause(clause), NodeRef::Body(body)), names);
+        self.conjuncts(body, &ChildPaths::of(path, NodeRef::Clause(clause)).path(NodeRef::Body(body)), names);
         for mark in clause.ones.iter() {
             self.put(t, "(");
             self.put(t, sp::ONE);
@@ -336,8 +350,9 @@ impl<'l> Writer<'l> {
 
     /// The conjuncts of a body that is not a list of its own.
     fn conjuncts(&mut self, body: &Body, path: &NodePath, names: &Names) {
+        let children = ChildPaths::of(path, NodeRef::Body(body));
         for conjunct in body.conjuncts.iter() {
-            self.conjunct(conjunct, &child_path(path, NodeRef::Body(body), NodeRef::Conjunct(conjunct)), names);
+            self.conjunct(conjunct, &children.path(NodeRef::Conjunct(conjunct)), names);
         }
     }
 
@@ -351,20 +366,20 @@ impl<'l> Writer<'l> {
 
     fn conjunct(&mut self, conjunct: &Conjunct, path: &NodePath, names: &Names) {
         let mut t = self.tokens(path);
-        let own = NodeRef::Conjunct(conjunct);
-        let body_path = |body: &Node<Body>| child_path(path, own, NodeRef::Body(body.value()));
+        let children = ChildPaths::of(path, NodeRef::Conjunct(conjunct));
+        let body_path = |body: &Node<Body>| children.path(NodeRef::Body(body.value()));
         self.put(&mut t, "(");
         match conjunct {
-            Conjunct::Atom(atom) => self.atom(atom.value(), own, path, names, &mut t),
+            Conjunct::Atom(atom) => self.atom(atom.value(), &children, names, &mut t),
             Conjunct::Not(negated) => {
                 self.put(&mut t, sp::NOT);
                 match negated {
                     Negated::Atom(atom) => {
                         self.put(&mut t, "(");
-                        self.atom(atom.value(), own, path, names, &mut t);
+                        self.atom(atom.value(), &children, names, &mut t);
                         self.put(&mut t, ")");
                     }
-                    Negated::Form(form) => self.conjunct(form, &child_path(path, own, NodeRef::Conjunct(form)), names),
+                    Negated::Form(form) => self.conjunct(form, &children.path(NodeRef::Conjunct(form)), names),
                 }
             }
             Conjunct::Constraint(constraint) => {
@@ -398,19 +413,18 @@ impl<'l> Writer<'l> {
         self.put(&mut t, ")");
     }
 
-    /// An atom's relation and its sites, the sites as the children of
-    /// `parent`, the node at `path`, whose layout gives which the file
-    /// elides.
-    fn atom(&mut self, atom: &Atom, parent: NodeRef, path: &NodePath, names: &Names, t: &mut Tokens) {
+    /// An atom's relation and its sites, the sites among `children`, the
+    /// children of the node whose layout gives which the file elides.
+    fn atom(&mut self, atom: &Atom, children: &ChildPaths<NodeRef>, names: &Names, t: &mut Tokens) {
         self.put(t, &relation_ref(&atom.relation));
-        self.sites(&atom.sites, parent, path, names);
+        self.sites(&atom.sites, children, names);
     }
 
-    /// The sites of `parent`, the node at `path`.
-    fn sites(&mut self, sites: &[Site], parent: NodeRef, path: &NodePath, names: &Names) {
-        let elided = self.node(path).map_or(&[][..], |n| &n.elided_sites);
+    /// The sites among `children`, the children of one node.
+    fn sites(&mut self, sites: &[Site], children: &ChildPaths<NodeRef>, names: &Names) {
+        let elided = self.node(children.path).map_or(&[][..], |n| &n.elided_sites);
         for (index, site) in sites.iter().enumerate() {
-            let child = child_path(path, parent, NodeRef::Site(site));
+            let child = children.path(NodeRef::Site(site));
             self.site(site, &child, names, elided.contains(&(index as u32)));
         }
     }
@@ -425,11 +439,12 @@ impl<'l> Writer<'l> {
         }
         self.put(&mut t, "(");
         self.put(&mut t, &format!("{}{}", sp::COLUMN_MARK, column(&site.column)));
+        let children = ChildPaths::of(path, NodeRef::Site(site));
         for arg in site.value.args.iter() {
             match arg {
                 SiteArg::Label(label) | SiteArg::NamedLabel { label, .. } => self.put(&mut t, &label_use(*label, names)),
                 SiteArg::Field(field) => {
-                    self.site(field, &child_path(path, NodeRef::Site(site), NodeRef::Site(field)), names, false)
+                    self.site(field, &children.path(NodeRef::Site(field)), names, false)
                 }
             }
         }
@@ -441,11 +456,11 @@ impl<'l> Writer<'l> {
         self.put(&mut t, "(");
         self.put(&mut t, &input.name.0);
         self.put(&mut t, "(");
-        let own = NodeRef::InstanceInput(input);
-        self.sites(&input.head, own, path, names);
+        let children = ChildPaths::of(path, NodeRef::InstanceInput(input));
+        self.sites(&input.head, &children, names);
         self.put(&mut t, ")");
         let body = input.body.value();
-        self.conjuncts(body, &child_path(path, own, NodeRef::Body(body)), names);
+        self.conjuncts(body, &children.path(NodeRef::Body(body)), names);
         self.put(&mut t, ")");
     }
 
@@ -453,26 +468,27 @@ impl<'l> Writer<'l> {
         let mut t = self.tokens(path);
         self.put(&mut t, "(");
         self.put(&mut t, sp::KEY);
-        let own = NodeRef::KeyClause(clause);
+        let children = ChildPaths::of(path, NodeRef::KeyClause(clause));
         let body = clause.key.body.value();
-        self.body_list(body, &child_path(path, own, NodeRef::Body(body)), names);
-        self.inputs(&clause.inputs, own, path, names);
+        self.body_list(body, &children.path(NodeRef::Body(body)), names);
+        self.inputs(&clause.inputs, &children, names);
         self.put(&mut t, ")");
     }
 
-    /// The inputs of `parent`, the node at `path`.
-    fn inputs(&mut self, inputs: &[Node<InstanceInput>], parent: NodeRef, path: &NodePath, names: &Names) {
+    /// The inputs among `children`, the children of one node.
+    fn inputs(&mut self, inputs: &[Node<InstanceInput>], children: &ChildPaths<NodeRef>, names: &Names) {
         for input in inputs.iter() {
             let input = input.value();
-            self.input(input, &child_path(path, parent, NodeRef::InstanceInput(input)), names);
+            self.input(input, &children.path(NodeRef::InstanceInput(input)), names);
         }
     }
 
-    /// The key clause of `parent`, the node at `path`, where it has one.
-    fn key(&mut self, key: &Option<Node<KeyClause>>, parent: NodeRef, path: &NodePath, names: &Names) {
+    /// The key clause among `children`, the children of one node, where it
+    /// has one.
+    fn key(&mut self, key: &Option<Node<KeyClause>>, children: &ChildPaths<NodeRef>, names: &Names) {
         if let Some(key) = key {
             let key = key.value();
-            self.key_clause(key, &child_path(path, parent, NodeRef::KeyClause(key)), names);
+            self.key_clause(key, &children.path(NodeRef::KeyClause(key)), names);
         }
     }
 
@@ -480,15 +496,16 @@ impl<'l> Writer<'l> {
         self.put(t, sp::INIT);
         self.put(t, declared(&instance.name.0));
         self.put(t, &instance.component.0);
-        let own = NodeRef::Instance(instance);
-        self.key(&instance.key, own, path, names);
-        self.inputs(&instance.inputs, own, path, names);
+        let children = ChildPaths::of(path, NodeRef::Instance(instance));
+        self.key(&instance.key, &children, names);
+        self.inputs(&instance.inputs, &children, names);
     }
 
     fn choose(&mut self, choose: &Choose, path: &NodePath, names: &Names, t: &mut Tokens) {
         self.put(t, sp::CHOOSE);
         self.put(t, declared(&choose.name.0));
-        let body_path = |body: &Node<Body>| child_path(path, NodeRef::Choose(choose), NodeRef::Body(body.value()));
+        let children = ChildPaths::of(path, NodeRef::Choose(choose));
+        let body_path = |body: &Node<Body>| children.path(NodeRef::Body(body.value()));
         if let Some(rows) = &choose.rows {
             self.put(t, "(");
             self.put(t, sp::FOR);
@@ -520,23 +537,23 @@ impl<'l> Writer<'l> {
     fn rigid_det(&mut self, rigid: &RigidDet, path: &NodePath, names: &Names, t: &mut Tokens) {
         self.put(t, sp::RIGID_DET);
         self.put(t, declared(&rigid.name.0));
-        let own = NodeRef::RigidDet(rigid);
+        let children = ChildPaths::of(path, NodeRef::RigidDet(rigid));
         let mut open = 0;
         for (head, clause) in [(sp::KEY, &rigid.key), (sp::INSTANCE, &rigid.instance)] {
             if let Some(clause) = clause {
                 self.put(t, "(");
                 self.put(t, head);
                 let body = clause.body.value();
-                self.body_list(body, &child_path(path, own, NodeRef::Body(body)), names);
+                self.body_list(body, &children.path(NodeRef::Body(body)), names);
                 open += 1;
             }
         }
         for part in rigid.parts.iter() {
             let atom = part.value();
-            let child = child_path(path, own, NodeRef::Atom(atom));
+            let child = children.path(NodeRef::Atom(atom));
             let mut part_tokens = self.tokens(&child);
             self.put(&mut part_tokens, "(");
-            self.atom(atom, NodeRef::Atom(atom), &child, names, &mut part_tokens);
+            self.atom(atom, &ChildPaths::of(&child, NodeRef::Atom(atom)), names, &mut part_tokens);
             self.put(&mut part_tokens, ")");
         }
         for _ in 0..open {
@@ -547,12 +564,12 @@ impl<'l> Writer<'l> {
     fn demonstrated(&mut self, demonstrated: &Demonstrated, path: &NodePath, names: &Names, t: &mut Tokens) {
         self.put(t, sp::DEMONSTRATED);
         self.put(t, declared(&demonstrated.name.0));
-        let own = NodeRef::Demonstrated(demonstrated);
-        self.key(&demonstrated.key, own, path, names);
-        self.inputs(&demonstrated.inputs, own, path, names);
+        let children = ChildPaths::of(path, NodeRef::Demonstrated(demonstrated));
+        self.key(&demonstrated.key, &children, names);
+        self.inputs(&demonstrated.inputs, &children, names);
         for rule in demonstrated.rules.iter() {
             let rule = rule.value();
-            self.demo_rule(rule, &child_path(path, own, NodeRef::DemoRule(rule)));
+            self.demo_rule(rule, &children.path(NodeRef::DemoRule(rule)));
         }
     }
 
@@ -574,7 +591,7 @@ impl<'l> Writer<'l> {
         if let Some(text) = &rule.text {
             self.put(&mut t, &quoted(&text.0));
         }
-        self.forms(&rule.forms, NodeRef::DemoRule(rule), path, Some(&names));
+        self.forms(&rule.forms, &ChildPaths::of(path, NodeRef::DemoRule(rule)), Some(&names));
         self.put(&mut t, ")");
     }
 }

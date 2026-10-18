@@ -375,8 +375,8 @@ def name(solver: Solver, case: Case | Base, *,
     `<param>=stored` at a `@derive` point, and `<rel>=derived` at a `@store`
     point (solver-file.md, under "Params" and "Program"). A base is named
     as its base case (`solver.model.as_case`). `ctor` and `branch` give the
-    text of a constructor and of a branch: by default, as solver-file.md
-    writes them (`ctor_text`, `branch_text`)."""
+    text of a constructor and of a branch: by default, as
+    `docs/handbook/solver-file.md` writes them (`ctor_text`, `branch_text`)."""
     case = as_case(case)
     choice = solver.choice
     parts: list[str] = []

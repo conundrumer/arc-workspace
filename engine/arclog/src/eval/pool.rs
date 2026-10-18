@@ -13,7 +13,6 @@ use std::sync::Arc;
 
 use crate::hash::StableHashMap;
 
-/// A pool of threads.
 #[derive(Debug)]
 pub struct Pool {
     threads: rayon::ThreadPool,
@@ -40,7 +39,6 @@ pub struct InFlight<K, V> {
 }
 
 impl<K: Eq + std::hash::Hash + Clone, V: Clone> InFlight<K, V> {
-    /// No entry in flight.
     pub fn new() -> Self {
         InFlight { entries: std::sync::Mutex::new(StableHashMap::default()) }
     }

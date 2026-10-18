@@ -13,7 +13,7 @@ pub struct Connectivity;
 
 impl Construction for Connectivity {
     fn name(&self) -> &'static str {
-        "Connectivity"
+        Self::NAME
     }
 
     fn evaluate(
@@ -33,7 +33,7 @@ pub struct Quotient;
 
 impl Construction for Quotient {
     fn name(&self) -> &'static str {
-        "Quotient"
+        Self::NAME
     }
 
     fn evaluate(
@@ -52,7 +52,7 @@ pub struct Propagation;
 
 impl Construction for Propagation {
     fn name(&self) -> &'static str {
-        "Propagation"
+        Self::NAME
     }
 
     fn evaluate(
@@ -71,7 +71,7 @@ pub struct Enclosure;
 
 impl Construction for Enclosure {
     fn name(&self) -> &'static str {
-        "Enclosure"
+        Self::NAME
     }
 
     fn evaluate(
@@ -90,7 +90,7 @@ pub struct Flood;
 
 impl Construction for Flood {
     fn name(&self) -> &'static str {
-        "Flood"
+        Self::NAME
     }
 
     fn evaluate(

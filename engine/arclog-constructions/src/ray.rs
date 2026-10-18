@@ -13,7 +13,7 @@ pub struct Ray;
 
 impl Construction for Ray {
     fn name(&self) -> &'static str {
-        "Ray"
+        Self::NAME
     }
 
     fn evaluate(
@@ -31,7 +31,7 @@ pub struct Walk;
 
 impl Construction for Walk {
     fn name(&self) -> &'static str {
-        "Walk"
+        Self::NAME
     }
 
     fn evaluate(
@@ -50,7 +50,7 @@ pub struct Boundary;
 
 impl Construction for Boundary {
     fn name(&self) -> &'static str {
-        "Boundary"
+        Self::NAME
     }
 
     fn evaluate(
@@ -69,7 +69,7 @@ pub struct Outlines;
 
 impl Construction for Outlines {
     fn name(&self) -> &'static str {
-        "Outlines"
+        Self::NAME
     }
 
     fn evaluate(

@@ -1,10 +1,11 @@
 //! The byte encoding of a canonical form: the writer of its bytes, the tag
 //! of each value's kind, the form of each node kind, and the name writers
-//! through which a form names each relation and column it reads.
+//! through which a form writes each relation and column it reads.
 
 use std::hash::Hasher;
 
 use super::*;
+use super::walk::{self, Open, ScopeSink};
 use crate::program::path::NodeRef;
 use crate::hash::{StableHash, StableHasher};
 
@@ -38,17 +39,15 @@ pub trait NameWriter {
     /// holds no name of the relation it derives.
     fn write_own(&self, name: &super::DeclaredName, out: &mut CanonicalWriter);
 
-    /// Writes a column of `relation` into `out`: a column that a site names,
-    /// or that a clause gives the relation it derives. `column` is the
+    /// Writes a column of `relation` into `out`: a column of a site, or a
+    /// column that a clause gives the relation it derives. `column` is the
     /// column's path: its name, or, for a site on a field of a record, the
     /// record's column and then the field, as `[key, P]` for `(:P P2)` in
     /// `(:key (:P P2))`. For a [`SiteArg::NamedLabel`], the path is its
     /// site's path and then its name, as `[key, A]` for `A` in `(:key C A)`.
-    /// The resolver writes its canonical position, as
-    /// [`crate::resolver::ColumnPosition`] gives, so that names do not enter
-    /// the resolved content. An instance input's head sites name columns of
-    /// a lib port, which no [`super::RelationRef`] names, so they are written
-    /// as the file writes them and never pass through this method.
+    /// An instance input's head sites stand on columns of a lib port, which
+    /// no [`super::RelationRef`] refers to, so they are written as the file
+    /// writes them and never pass through this method.
     fn write_column(&self, relation: &super::RelationRef, column: &[super::ColumnName], out: &mut CanonicalWriter);
 }
 
@@ -124,28 +123,16 @@ impl CanonicalWriter {
         }
     }
 
-    pub(crate) fn declared(&mut self, name: &DeclaredName) {
-        match name {
-            DeclaredName::Written(text) => {
+    /// Writes a declared name or a column name.
+    pub(crate) fn name<'n>(&mut self, name: impl Into<NameRef<'n>>) {
+        match name.into() {
+            NameRef::Written(text) => {
                 self.tag(Tag::Written);
                 self.text(text);
             }
-            DeclaredName::Slot(slot) => {
+            NameRef::Slot(slot) => {
                 self.tag(Tag::Slot);
-                self.int(*slot);
-            }
-        }
-    }
-
-    pub(crate) fn column(&mut self, name: &ColumnName) {
-        match name {
-            ColumnName::Written(text) => {
-                self.tag(Tag::Written);
-                self.text(text);
-            }
-            ColumnName::Slot(slot) => {
-                self.tag(Tag::Slot);
-                self.int(*slot);
+                self.int(slot);
             }
         }
     }
@@ -159,7 +146,7 @@ impl CanonicalWriter {
                 OutputStep::Port(port) => self.port_step(port),
                 OutputStep::Part(part) => {
                     self.tag(Tag::PartStep);
-                    self.declared(part);
+                    self.name(part);
                 }
                 OutputStep::Pose => self.tag(Tag::PoseStep),
             }
@@ -175,7 +162,33 @@ impl CanonicalWriter {
     pub(super) fn column_path(&mut self, path: &[ColumnName]) {
         self.len(path.len());
         for name in path {
-            self.column(name);
+            self.name(name);
+        }
+    }
+}
+
+/// A [`DeclaredName`] or a [`ColumnName`], borrowed: its text as the file
+/// writes it, or its slot.
+#[derive(Clone, Copy)]
+pub(crate) enum NameRef<'n> {
+    Written(&'n str),
+    Slot(u32),
+}
+
+impl<'n> From<&'n DeclaredName> for NameRef<'n> {
+    fn from(name: &'n DeclaredName) -> Self {
+        match name {
+            DeclaredName::Written(text) => NameRef::Written(text),
+            DeclaredName::Slot(slot) => NameRef::Slot(*slot),
+        }
+    }
+}
+
+impl<'n> From<&'n ColumnName> for NameRef<'n> {
+    fn from(name: &'n ColumnName) -> Self {
+        match name {
+            ColumnName::Written(text) => NameRef::Written(text),
+            ColumnName::Slot(slot) => NameRef::Slot(*slot),
         }
     }
 }
@@ -287,18 +300,18 @@ impl NameWriter for AsWritten {
             }
             RelationRef::Declared(RelationName(name)) => {
                 out.tag(Tag::Declared);
-                out.declared(name);
+                out.name(name);
             }
             RelationRef::Output(name) => {
                 out.tag(Tag::Output);
                 match &name.of {
                     OutputOwner::Instance(InstanceName(owner)) => {
                         out.tag(Tag::InstanceOwner);
-                        out.declared(owner);
+                        out.name(owner);
                     }
                     OutputOwner::RigidDet(RigidDetName(owner)) => {
                         out.tag(Tag::RigidDetOwner);
-                        out.declared(owner);
+                        out.name(owner);
                     }
                 }
                 out.output_path(&name.path);
@@ -311,7 +324,7 @@ impl NameWriter for AsWritten {
     }
 
     fn write_own(&self, name: &super::DeclaredName, out: &mut CanonicalWriter) {
-        out.declared(name);
+        out.name(name);
     }
 
     /// Writes `column` as given. The path of a [`SiteArg::NamedLabel`]
@@ -355,24 +368,11 @@ pub(crate) fn canonical_form(form: &Form) -> CanonicalForm {
     out.finish()
 }
 impl LabelScope<'_> {
-
     /// Writes the part of the form that the scope's labels enter.
     pub(super) fn write(self, cx: &mut Context, out: &mut CanonicalWriter) {
-        match self {
-            LabelScope::Clause(clause) => clause.write_form(cx, out),
-            LabelScope::Instance(instance) => instance.write_form(cx, out),
-            LabelScope::Choose(choose) => choose.write_form(cx, out),
-            LabelScope::RigidDet(rigid) => rigid.write_form(cx, out),
-            LabelScope::DemonstratedKey(demonstrated) => demonstrated_key(cx, out, demonstrated),
-            LabelScope::DemoRule(rule) => rule.write_form(cx, out),
-            LabelScope::Body(body) => body.write_form(cx, out),
-            LabelScope::Atom(atom) => atom.write_form(cx, out),
-            LabelScope::KeyClause(key) => key.write_form(cx, out),
-            LabelScope::InstanceInput(input) => input.write_form(cx, out),
-        }
+        cx.walk_into(out, |cx| walk::scope(cx, (), self));
     }
 }
-
 
 /// The relation a clause or a `param` form names, as an atom reads it.
 pub(crate) fn relation_of(relation: &ProgramRelation) -> RelationRef {
@@ -440,15 +440,6 @@ pub(super) fn forms_root(cx: &mut Context, out: &mut CanonicalWriter, parent: No
     }
 }
 
-pub(super) fn demonstrated_key(cx: &mut Context, out: &mut CanonicalWriter, demonstrated: &Demonstrated) {
-    let parent = NodeRef::Demonstrated(demonstrated);
-    out.option(demonstrated.key.as_ref(), |out, key| cx.child(parent, NodeRef::KeyClause(key.value()), |cx| key.value().write_form(cx, out)));
-    out.len(demonstrated.inputs.len());
-    for input in demonstrated.inputs.iter() {
-        cx.child(parent, NodeRef::InstanceInput(input.value()), |cx| input.value().write_form(cx, out));
-    }
-}
-
 pub(super) fn label_use(cx: &Context, out: &mut CanonicalWriter, label: LabelUse) {
     match label {
         LabelUse::Fresh(id) => {
@@ -477,39 +468,6 @@ pub(super) fn constraint_label(cx: &Context, out: &mut CanonicalWriter, label: C
 /// [`SiteArg::NamedLabel`] whose name is `column`.
 pub(super) fn column_path(prefix: &[ColumnName], column: &ColumnName) -> Vec<ColumnName> {
     prefix.iter().chain(std::iter::once(column)).cloned().collect()
-}
-
-/// Writes `site`, with each column path as `column` writes it.
-pub(super) fn site(cx: &Context, out: &mut CanonicalWriter, site_: &Site, prefix: &[ColumnName], column: &dyn Fn(&mut CanonicalWriter, &[ColumnName])) {
-    let path = column_path(prefix, &site_.column);
-    out.tag(Tag::Site);
-    column(out, &path);
-    out.len(site_.value.args.len());
-    for arg in site_.value.args.iter() {
-        match arg {
-            SiteArg::Label(label) => {
-                out.tag(Tag::ArgLabel);
-                label_use(cx, out, *label);
-            }
-            SiteArg::NamedLabel { name, label } => {
-                out.tag(Tag::ArgNamedLabel);
-                column(out, &column_path(&path, name));
-                label_use(cx, out, *label);
-            }
-            SiteArg::Field(field) => {
-                out.tag(Tag::ArgField);
-                site(cx, out, field, &path, column);
-            }
-        }
-    }
-}
-
-/// Writes a key body, whose body is a child of `parent`, the node being
-/// written.
-pub(super) fn key_body(cx: &mut Context, out: &mut CanonicalWriter, parent: NodeRef, key: &KeyBody) {
-    out.tag(Tag::KeyBody);
-    cx.child(parent, NodeRef::Body(key.body.value()), |cx| key.body.value().write_form(cx, out));
-    cx.columns(out, &key.columns, |out, name| out.column(name));
 }
 
 pub(super) fn data_value(out: &mut CanonicalWriter, value: &DataValue) {
@@ -576,7 +534,7 @@ pub(super) fn param_value(cx: &Context, out: &mut CanonicalWriter, value: &Param
             for row in rows.iter() {
                 out.len(row.len());
                 for field in row.iter() {
-                    out.column(&field.column);
+                    out.name(&field.column);
                     data_value(out, &field.value);
                 }
             }
@@ -678,7 +636,7 @@ impl WriteForm for Demonstrated {
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
         out.tag(Tag::Demonstrated);
         cx.names.write_own(&self.name.0, out);
-        demonstrated_key(cx, out, self);
+        cx.walk_into(out, |cx| walk::demonstrated_key(cx, (), self));
         out.len(self.rules.len());
         for rule in self.rules.iter() {
             let rule = rule.value();
@@ -711,25 +669,7 @@ impl WriteForm for Clause {
     }
 
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
-        let derives = relation_of(&self.derives);
-        out.tag(Tag::Clause);
-        out.byte(self.keyword as u8);
-        cx.names.write_name(&derives, out);
-        out.option(self.gloss.as_ref(), |out, text| out.text(&text.0));
-        out.len(self.proposers.len());
-        for proposer in self.proposers.iter() {
-            cx.names.write_name(&RelationRef::Lib(proposer.clone()), out);
-        }
-        cx.child(NodeRef::Clause(self), NodeRef::Body(self.body.value()), |cx| self.body.value().write_form(cx, out));
-        out.len(self.ones.len());
-        for one in self.ones.iter() {
-            out.len(one.key.len());
-            for label in one.key.iter() {
-                cx.label(out, *label);
-            }
-        }
-        let names = cx.names;
-        cx.columns(out, &self.columns, |out, name| names.write_column(&derives, std::slice::from_ref(name), out));
+        cx.walk_into(out, |cx| walk::clause(cx, (), 0, self));
     }
 }
 
@@ -739,53 +679,7 @@ impl WriteForm for Body {
     }
 
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
-        out.tag(Tag::Body);
-        cx.sorted(out, NodeRef::Body(self), &self.conjuncts, NodeRef::Conjunct, |cx, out, conjunct| write_conjunct(cx, out, conjunct));
-    }
-}
-
-pub(super) fn write_conjunct(cx: &mut Context, out: &mut CanonicalWriter, conjunct: &Conjunct) {
-    match conjunct {
-        Conjunct::Atom(atom) => {
-            out.tag(Tag::Atom);
-            atom.value().write_form(cx, out);
-        }
-        Conjunct::Not(Negated::Atom(atom)) => {
-            out.tag(Tag::NotAtom);
-            atom.value().write_form(cx, out);
-        }
-        Conjunct::Not(Negated::Form(form)) => {
-            out.tag(Tag::NotForm);
-            cx.child(NodeRef::Conjunct(conjunct), NodeRef::Conjunct(form), |cx| write_conjunct(cx, out, form));
-        }
-        Conjunct::Constraint(constraint) => {
-            out.tag(Tag::Constraint);
-            out.byte(constraint.op as u8);
-            constraint_label(cx, out, constraint.first);
-            match constraint.second {
-                Operand::Label(label) => {
-                    out.tag(Tag::ArgLabel);
-                    constraint_label(cx, out, label);
-                }
-                Operand::Zero => out.tag(Tag::Zero),
-            }
-        }
-        Conjunct::Or(branches) => {
-            out.tag(Tag::Or);
-            cx.sorted(out, NodeRef::Conjunct(conjunct), branches, |branch| NodeRef::Body(branch.value()), |cx, out, branch| branch.value().write_form(cx, out));
-        }
-        Conjunct::If { test, then, otherwise } => {
-            out.tag(Tag::If);
-            for part in [test, then, otherwise] {
-                cx.child(NodeRef::Conjunct(conjunct), NodeRef::Body(part.value()), |cx| part.value().write_form(cx, out));
-            }
-        }
-        Conjunct::All { domain, body } => {
-            out.tag(Tag::All);
-            for part in [domain, body] {
-                cx.child(NodeRef::Conjunct(conjunct), NodeRef::Body(part.value()), |cx| part.value().write_form(cx, out));
-            }
-        }
+        cx.walk_into(out, |cx| walk::body(cx, (), Tag::Body, 0, self));
     }
 }
 
@@ -795,12 +689,7 @@ impl WriteForm for Atom {
     }
 
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
-        let names = cx.names;
-        names.write_name(&self.relation, out);
-        out.len(self.sites.len());
-        for s in self.sites.iter() {
-            site(cx, out, s, &[], &|out, path| names.write_column(&self.relation, path, out));
-        }
+        cx.walk_into(out, |cx| walk::atom(cx, (), Tag::Part, 0, self, false, false));
     }
 }
 
@@ -810,15 +699,7 @@ impl WriteForm for Instance {
     }
 
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
-        out.tag(Tag::Instance);
-        cx.names.write_own(&self.name.0, out);
-        cx.names.write_name(&RelationRef::Lib(self.component.clone()), out);
-        let parent = NodeRef::Instance(self);
-        out.option(self.key.as_ref(), |out, key| cx.child(parent, NodeRef::KeyClause(key.value()), |cx| key.value().write_form(cx, out)));
-        out.len(self.inputs.len());
-        for input in self.inputs.iter() {
-            cx.child(parent, NodeRef::InstanceInput(input.value()), |cx| input.value().write_form(cx, out));
-        }
+        cx.walk_into(out, |cx| walk::instance(cx, (), 0, self));
     }
 }
 
@@ -828,13 +709,7 @@ impl WriteForm for KeyClause {
     }
 
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
-        out.tag(Tag::KeyClause);
-        let parent = NodeRef::KeyClause(self);
-        key_body(cx, out, parent, &self.key);
-        out.len(self.inputs.len());
-        for input in self.inputs.iter() {
-            cx.child(parent, NodeRef::InstanceInput(input.value()), |cx| input.value().write_form(cx, out));
-        }
+        cx.walk_into(out, |cx| walk::key_clause(cx, (), self));
     }
 }
 
@@ -844,13 +719,7 @@ impl WriteForm for InstanceInput {
     }
 
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
-        out.tag(Tag::Input);
-        out.text(&self.name.0);
-        out.len(self.head.len());
-        for head in self.head.iter() {
-            site(cx, out, head, &[], &|out, path| out.column_path(path));
-        }
-        cx.child(NodeRef::InstanceInput(self), NodeRef::Body(self.body.value()), |cx| self.body.value().write_form(cx, out));
+        cx.walk_into(out, |cx| walk::input(cx, (), 0, self));
     }
 }
 
@@ -860,19 +729,7 @@ impl WriteForm for Choose {
     }
 
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
-        out.tag(Tag::Choose);
-        cx.names.write_own(&self.name.0, out);
-        let parent = NodeRef::Choose(self);
-        out.option(self.rows.as_ref(), |out, rows| key_body(cx, out, parent, rows));
-        let relation = RelationRef::Declared(self.name.clone());
-        let names = cx.names;
-        cx.columns(out, &self.candidate_columns, |out, name| names.write_column(&relation, std::slice::from_ref(name), out));
-        cx.child(parent, NodeRef::Body(self.from.value()), |cx| self.from.value().write_form(cx, out));
-        out.flag(self.from_inside_for);
-        out.len(self.never.len());
-        for never in self.never.iter() {
-            cx.child(parent, NodeRef::Body(never.value()), |cx| never.value().write_form(cx, out));
-        }
+        cx.walk_into(out, |cx| walk::choose(cx, (), 0, self));
     }
 }
 
@@ -882,15 +739,7 @@ impl WriteForm for RigidDet {
     }
 
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
-        out.tag(Tag::RigidDet);
-        cx.names.write_own(&self.name.0, out);
-        let parent = NodeRef::RigidDet(self);
-        out.option(self.key.as_ref(), |out, key| key_body(cx, out, parent, key));
-        out.option(self.instance.as_ref(), |out, instance| key_body(cx, out, parent, instance));
-        out.len(self.parts.len());
-        for part in self.parts.iter() {
-            cx.child(parent, NodeRef::Atom(part.value()), |cx| part.value().write_form(cx, out));
-        }
+        cx.walk_into(out, |cx| walk::rigid_det(cx, (), 0, self));
     }
 }
 
@@ -900,22 +749,200 @@ impl WriteForm for DemoRule {
     }
 
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
-        out.tag(Tag::DemoRule);
-        out.text(&self.name.0);
-        let names = cx.names;
-        let prediction = prediction();
-        cx.columns(out, &self.fields, |out, name| names.write_column(&prediction, std::slice::from_ref(name), out));
-        out.option(self.text.as_ref(), |out, text| out.text(&text.0));
-        out.len(self.forms.len());
-        for form in self.forms.iter() {
-            cx.child(NodeRef::DemoRule(self), NodeRef::from(form), |cx| {
-                if shares_rule_scope(form) {
-                    form_with(cx, out, form, None)
-                } else {
-                    form_root(cx, out, form)
+        cx.walk_into(out, |cx| walk::demo_rule(cx, (), self));
+    }
+}
+
+/// The form writer takes from the walk the bytes of each node, into the
+/// bytes of the node being written.
+impl<'a> ScopeSink<'a> for Context<'_> {
+    type At = ();
+
+    fn open(&mut self, _at: (), _role: Tag, _index: usize, node: Open<'a>) {
+        let names = self.names;
+        let out = &mut self.out;
+        match node {
+            Open::Clause(clause) => {
+                out.tag(Tag::Clause);
+                out.byte(clause.keyword as u8);
+                names.write_name(&relation_of(&clause.derives), out);
+                out.option(clause.gloss.as_ref(), |out, text| out.text(&text.0));
+                out.len(clause.proposers.len());
+                for proposer in clause.proposers.iter() {
+                    names.write_name(&RelationRef::Lib(proposer.clone()), out);
                 }
-            });
+            }
+            Open::Instance(instance) => {
+                out.tag(Tag::Instance);
+                names.write_own(&instance.name.0, out);
+                names.write_name(&RelationRef::Lib(instance.component.clone()), out);
+            }
+            Open::Choose(choose) => {
+                out.tag(Tag::Choose);
+                names.write_own(&choose.name.0, out);
+            }
+            Open::RigidDet(rigid) => {
+                out.tag(Tag::RigidDet);
+                names.write_own(&rigid.name.0, out);
+            }
+            Open::DemoRule(rule) => {
+                out.tag(Tag::DemoRule);
+                out.text(&rule.name.0);
+            }
+            Open::KeyClause => out.tag(Tag::KeyClause),
+            Open::KeyBody => out.tag(Tag::KeyBody),
+            Open::Input(input) => {
+                out.tag(Tag::Input);
+                out.text(&input.name.0);
+            }
+            Open::Head => {}
+            Open::Body => out.tag(Tag::Body),
+            Open::Atom { atom, negated, member } => {
+                if member {
+                    out.tag(if negated { Tag::NotAtom } else { Tag::Atom });
+                }
+                names.write_name(&atom.relation, out);
+            }
+            Open::NotForm => out.tag(Tag::NotForm),
+            Open::Constraint(constraint) => {
+                out.tag(Tag::Constraint);
+                out.byte(constraint.op as u8);
+            }
+            Open::Or => out.tag(Tag::Or),
+            Open::If => out.tag(Tag::If),
+            Open::All => out.tag(Tag::All),
+            Open::One(one) => out.len(one.key.len()),
         }
+    }
+
+    fn child(&mut self, parent: NodeRef<'a>, child: NodeRef<'a>, visit: impl FnOnce(&mut Self)) {
+        Context::child(self, parent, child, visit);
+    }
+
+    /// Writes `members` sorted by the bytes of their forms, and records their
+    /// order.
+    ///
+    /// The recorded order maps each canonical position to a member's index
+    /// in `members`, and [`CanonicalOrder`] reads a step at `parent` as a
+    /// position in that list, so `members` must be the whole list of the
+    /// children of `parent`, in order.
+    ///
+    /// # Panics
+    ///
+    /// Where the write records a [`CanonicalOrder`] and a member's index
+    /// among the children of `parent` is not its index in `members`, or
+    /// `members` does not hold every child of `parent`, a fault of the path
+    /// table or of the form writer.
+    fn members<T>(&mut self, parent: NodeRef<'a>, members: &'a [T], node: impl Fn(&'a T) -> NodeRef<'a>, visit: impl Fn(&mut Self, &'a T)) {
+        let mut forms: Vec<(Vec<u8>, u32)> = Vec::with_capacity(members.len());
+        for (member, index) in members.iter().zip(0u32..) {
+            let outer = std::mem::take(&mut self.out);
+            let step = || {
+                let step = child_step(parent, node(member));
+                assert_eq!(step, index, "{CHILD_FAULT}");
+                step
+            };
+            self.at_step(step, |cx| visit(cx, member));
+            forms.push((std::mem::replace(&mut self.out, outer).bytes, index));
+        }
+        forms.sort();
+        if let Some(order) = &mut self.order {
+            assert_eq!(members.len(), parent.children().len(), "{CHILD_FAULT}");
+            order.lists.insert(NodePath(self.path.clone().into()), forms.iter().map(|(_, index)| *index).collect());
+        }
+        self.out.len(forms.len());
+        for (bytes, _) in &forms {
+            self.out.nested(bytes);
+        }
+    }
+
+    fn len(&mut self, len: usize) {
+        self.out.len(len);
+    }
+
+    fn option(&mut self, present: bool) {
+        self.out.tag(if present { Tag::Some } else { Tag::None });
+    }
+
+    fn site(&mut self, _at: (), path: &[ColumnName], args: usize, relation: Option<&RelationRef>) {
+        self.out.tag(Tag::Site);
+        site_column(self.names, relation, path, &mut self.out);
+        self.out.len(args);
+    }
+
+    fn site_label(&mut self, _at: (), _index: usize, path: &[ColumnName], named: Option<&ColumnName>, label: LabelUse, relation: Option<&RelationRef>) {
+        match named {
+            Some(name) => {
+                self.out.tag(Tag::ArgNamedLabel);
+                site_column(self.names, relation, &column_path(path, name), &mut self.out);
+            }
+            None => self.out.tag(Tag::ArgLabel),
+        }
+        let mut out = std::mem::take(&mut self.out);
+        label_use(self, &mut out, label);
+        self.out = out;
+    }
+
+    fn site_field(&mut self) {
+        self.out.tag(Tag::ArgField);
+    }
+
+    fn operand(&mut self, _at: (), index: usize, label: Option<ConstraintLabel>) {
+        let mut out = std::mem::take(&mut self.out);
+        match (index, label) {
+            (0, Some(label)) => constraint_label(self, &mut out, label),
+            (_, Some(label)) => {
+                out.tag(Tag::ArgLabel);
+                constraint_label(self, &mut out, label);
+            }
+            (_, None) => out.tag(Tag::Zero),
+        }
+        self.out = out;
+    }
+
+    fn one_label(&mut self, _at: (), _index: usize, label: LabelId) {
+        let mut out = std::mem::take(&mut self.out);
+        self.label(&mut out, label);
+        self.out = out;
+    }
+
+    fn columns(&mut self, _at: (), columns: &'a [RelationColumn], relation: Option<&RelationRef>) {
+        let names = self.names;
+        let mut out = std::mem::take(&mut self.out);
+        Context::columns(self, &mut out, columns, |out, name| relation_column(names, relation, name, out));
+        self.out = out;
+    }
+
+    fn choose_from_inside_for(&mut self, choose: &'a Choose) {
+        self.out.flag(choose.from_inside_for);
+    }
+
+    fn rule_text(&mut self, rule: &'a DemoRule) {
+        self.out.option(rule.text.as_ref(), |out, text| out.text(&text.0));
+    }
+
+    fn own_scope(&mut self, form: &'a Form) {
+        let mut out = std::mem::take(&mut self.out);
+        form_root(self, &mut out, form);
+        self.out = out;
+    }
+}
+
+/// Writes the column path `path` of a site on `relation` through `names`,
+/// or as given at an instance input's head, where `relation` is `None`.
+pub(super) fn site_column(names: &dyn NameWriter, relation: Option<&RelationRef>, path: &[ColumnName], out: &mut CanonicalWriter) {
+    match relation {
+        Some(relation) => names.write_column(relation, path, out),
+        None => out.column_path(path),
+    }
+}
+
+/// Writes `name`, a column of `relation`, through `names`, or as given
+/// where `relation` is `None`, a key body's column.
+pub(super) fn relation_column(names: &dyn NameWriter, relation: Option<&RelationRef>, name: &ColumnName, out: &mut CanonicalWriter) {
+    match relation {
+        Some(relation) => names.write_column(relation, std::slice::from_ref(name), out),
+        None => out.name(name),
     }
 }
 

@@ -11,9 +11,7 @@ impl FileReader {
     pub(super) fn check_reads(&mut self) {
         let mut faults = Vec::new();
         for body in &self.bodies {
-            each_conjunct(body.body.value(), &mut |conjunct| {
-                let (Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom))) = conjunct else { return };
-                let atom = atom.value();
+            each_atom(body.body.value(), &mut |atom| {
                 let relation = crate::write::relation_ref(&atom.relation);
                 let columns = match self.columns_of(&atom.relation) {
                     Ok(columns) => columns,

@@ -67,17 +67,12 @@ impl Caps {
 /// The bound an evaluation reached.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ReachedBound {
-    /// The work cap, [`Caps::work`].
     Work { cap: u64 },
-    /// The row cap, [`Caps::rows`].
     Rows { cap: u64 },
     /// A Box with a margin outside a signed byte.
     Margin(ReachedMarginBound),
-    /// The task session's byte bound.
     SessionBytes(ReachedSessionBound),
-    /// The deadline of the evaluation.
     Deadline,
-    /// A cancellation of the evaluation.
     Cancelled,
 }
 

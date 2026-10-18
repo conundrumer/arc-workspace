@@ -151,8 +151,7 @@ fn scope_forms_within<'f>(form: &'f Form, scope: &NodePath) -> Vec<(NodePath, &'
         return vec![(scope.clone(), found)];
     }
     let rule = rule_within(form, scope).expect(SCOPE_FORM);
-    let shared = rule.forms.iter().zip(0u32..).filter(|(found, _)| shares_rule_scope(found));
-    shared.map(|(found, index)| (scope.child(index), found)).collect()
+    rule_scope_forms(rule).map(|(index, found)| (scope.child(index), found)).collect()
 }
 
 /// The [`ProgramTypes`] of `program`: for each form of `forms`, at its path,
@@ -449,10 +448,8 @@ fn form_within<'p>(form: &'p Form, path: &NodePath) -> Option<&'p Form> {
     while let Some(step) = steps.next() {
         form = match form {
             Form::Demonstrated(demonstrated) => {
-                let demonstrated = demonstrated.value();
-                let before = demonstrated.key.iter().count() + demonstrated.inputs.len();
-                let rule = demonstrated.rules.get((step.0 as usize).checked_sub(before)?)?;
-                rule.value().forms.get(steps.next()?.0 as usize)?
+                let rule = demonstrated.value().rule_at(step.0)?;
+                rule.forms.get(steps.next()?.0 as usize)?
             }
             _ => return None,
         };
@@ -465,6 +462,12 @@ fn scope_labels(scope: LabelScope<'_>) -> Vec<LabelId> {
     canonical_labeling(scope, &AsWritten, &mut SearchBudget::new()).positions.iter().map(|(label, _)| *label).collect()
 }
 
+/// Each form of `rule` that stands in the rule's label scope, with its
+/// index among the rule's forms.
+fn rule_scope_forms(rule: &DemoRule) -> impl Iterator<Item = (u32, &Form)> {
+    (0u32..).zip(rule.forms.iter()).filter(|(_, form)| shares_rule_scope(form))
+}
+
 /// The `DEMO_RULE` form at `path` of `program`.
 fn demo_rule<'p>(program: &'p crate::program::Program, path: &NodePath) -> Option<&'p crate::program::DemoRule> {
     let (first, rest) = path.0.split_first()?;
@@ -475,9 +478,7 @@ fn demo_rule<'p>(program: &'p crate::program::Program, path: &NodePath) -> Optio
 fn rule_within<'p>(form: &'p Form, path: &NodePath) -> Option<&'p crate::program::DemoRule> {
     let (rule, prefix) = path.0.split_last()?;
     let Form::Demonstrated(demonstrated) = form_within(form, &NodePath(prefix.into()))? else { return None };
-    let demonstrated = demonstrated.value();
-    let before = demonstrated.key.iter().count() + demonstrated.inputs.len();
-    Some(demonstrated.rules.get((rule.0 as usize).checked_sub(before)?)?.value())
+    demonstrated.value().rule_at(rule.0)
 }
 
 /// Each form that declares names in `scope`, with its path: the top-level
@@ -646,10 +647,8 @@ impl<'a> FormWalk<'a> {
     /// scope, at its path relative to the rule.
     fn of_rule(rule: &'a DemoRule) -> Self {
         let mut walk = FormWalk { atoms: StableHashMap::default(), first_use: StableHashMap::default(), constraints: Vec::new(), uses: Vec::new() };
-        for (form, index) in rule.forms.iter().zip(0u32..) {
-            if shares_rule_scope(form) {
-                walk.node(NodeRef::from(form), NodePath::default().child(index));
-            }
+        for (index, form) in rule_scope_forms(rule) {
+            walk.node(NodeRef::from(form), NodePath::default().child(index));
         }
         walk
     }
@@ -719,10 +718,16 @@ impl<'a> FormWalk<'a> {
     }
 }
 
-/// The types of one label scope: a form's own scope, or a `DEMO_RULE`'s.
+/// The owner of a label scope: a form, of its own scope, or a `DEMO_RULE`.
+#[derive(Clone, Copy)]
+pub(super) enum ScopeOwner<'a> {
+    Form(&'a Form),
+    DemoRule(&'a DemoRule),
+}
+
+/// The types of one label scope.
 pub(super) struct FormInference<'a> {
-    /// The form whose own scope this is, or `None` for a `DEMO_RULE`'s.
-    pub form: Option<&'a Form>,
+    pub owner: ScopeOwner<'a>,
     pub path: NodePath,
     /// Each label of the scope, in the order of its canonical labeling, with
     /// its type or its fault.
@@ -742,11 +747,11 @@ pub(super) struct FormInference<'a> {
 
 impl<'a> FormInference<'a> {
     /// The types of this inference, of a form of the concept program, given
-    /// to `form`, the same form at `path` in a case, whose sites `walk`
+    /// to `owner`, the same scope at `path` in a case, whose sites `walk`
     /// walks.
-    fn at(&self, form: Option<&'a Form>, path: &NodePath, walk: FormWalk<'a>) -> Self {
+    fn at(&self, owner: ScopeOwner<'a>, path: &NodePath, walk: FormWalk<'a>) -> Self {
         FormInference {
-            form,
+            owner,
             path: path.clone(),
             labels: self.labels.clone(),
             bindings: self.bindings.clone(),
@@ -869,27 +874,23 @@ impl<'a> Inference<'a> {
             return found.clone();
         }
         let program = self.program.program.value();
-        enum ScopeForm<'p> {
-            Form(&'p Form),
-            DemoRule(&'p DemoRule),
-        }
-        let scope = match form_at(program, path) {
-            Some(form) => ScopeForm::Form(form),
-            None => ScopeForm::DemoRule(demo_rule(program, path)?),
+        let owner = match form_at(program, path) {
+            Some(form) => ScopeOwner::Form(form),
+            None => ScopeOwner::DemoRule(demo_rule(program, path)?),
         };
         if let Some((concept, at)) = self.in_concept(path) {
-            let (form, walk) = match scope {
-                ScopeForm::Form(form) => (Some(form), FormWalk::of(form)),
-                ScopeForm::DemoRule(rule) => (None, FormWalk::of_rule(rule)),
+            let walk = match owner {
+                ScopeOwner::Form(form) => FormWalk::of(form),
+                ScopeOwner::DemoRule(rule) => FormWalk::of_rule(rule),
             };
-            let inferred = Rc::new(concept.infer(&at)?.at(form, path, walk));
+            let inferred = Rc::new(concept.infer(&at)?.at(owner, path, walk));
             self.forms.borrow_mut().insert(path.clone(), Some(Rc::clone(&inferred)));
             return Some(inferred);
         }
         self.forms.borrow_mut().insert(path.clone(), None);
-        let inferred = Rc::new(match scope {
-            ScopeForm::Form(form) => self.infer_new(form, path),
-            ScopeForm::DemoRule(rule) => self.infer_rule(rule, path),
+        let inferred = Rc::new(match owner {
+            ScopeOwner::Form(form) => self.infer_new(form, path),
+            ScopeOwner::DemoRule(rule) => self.infer_rule(rule, path),
         });
         self.forms.borrow_mut().insert(path.clone(), Some(Rc::clone(&inferred)));
         Some(inferred)
@@ -933,7 +934,7 @@ impl<'a> Inference<'a> {
                 zero_typed.push(label);
             }
         }
-        FormInference { form: Some(form), path: path.clone(), labels: types, bindings, walk, component: scope.component, zero_typed, given: given_labels }
+        FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels: types, bindings, walk, component: scope.component, zero_typed, given: given_labels }
     }
 
     /// The types of the scope of `rule`, the `DEMO_RULE` at `path`: each
@@ -945,10 +946,7 @@ impl<'a> Inference<'a> {
         let mut labels: Vec<(LabelId, Result<Option<ValueType>, LabelFault>)> =
             scope_labels(LabelScope::DemoRule(rule)).into_iter().map(|label| (label, Ok(None))).collect();
         let mut given = Vec::new();
-        for (form, index) in rule.forms.iter().zip(0u32..) {
-            if !shares_rule_scope(form) {
-                continue;
-            }
+        for (index, _) in rule_scope_forms(rule) {
             let Some(inferred) = self.infer(&path.child(index)) else { continue };
             for (label, ty) in labels.iter_mut() {
                 let Some((_, form_ty)) = inferred.labels.iter().find(|(found, _)| found == label) else { continue };
@@ -962,7 +960,7 @@ impl<'a> Inference<'a> {
             }
         }
         let no_bindings = StableHashMap::default();
-        FormInference { form: None, path: path.clone(), labels, bindings: no_bindings, walk: FormWalk::of_rule(rule), component: None, zero_typed: Vec::new(), given }
+        FormInference { owner: ScopeOwner::DemoRule(rule), path: path.clone(), labels, bindings: no_bindings, walk: FormWalk::of_rule(rule), component: None, zero_typed: Vec::new(), given }
     }
 
     /// The type that the column at `path` of the relation `atom` reads gives
@@ -1157,9 +1155,7 @@ impl<'a> Inference<'a> {
     /// inference is `form`, a form whose canonical order is `order`, at each
     /// column of its relation to which it gives a type with no join with
     /// the types that the relation's other clauses give that column, as
-    /// [`CheckId::Types`] gives. Each stands at the first use of the
-    /// clause's label at that column, or at the clause where it holds no
-    /// columns.
+    /// [`CheckId::Types`] gives.
     fn column_refusals(&self, form: &FormInference<'_>, clause: &crate::program::Clause, path: &NodePath, order: &CanonicalOrder) -> Vec<Refusal> {
         let target = |column: &ColumnName| head_label(clause, column);
         let mut refusals = Vec::new();
@@ -1229,7 +1225,7 @@ impl<'a> Inference<'a> {
             }
             Form::Instance(_) => {
                 let Some(inference) = self.infer(at) else { return Vec::new() };
-                let (Some(component), Some(Form::Instance(instance))) = (inference.component, inference.form) else { return Vec::new() };
+                let (Some(component), ScopeOwner::Form(Form::Instance(instance))) = (inference.component, inference.owner) else { return Vec::new() };
                 let written: Vec<&PortName> = written_inputs(instance.value().key.as_ref(), &instance.value().inputs).map(|input| &input.name).collect();
                 let inputs = component.inputs.iter().map(|input| &input.port).filter(|port| written.contains(&&port.name));
                 let outputs = component.outputs.iter();
@@ -1279,7 +1275,7 @@ impl<'a> Inference<'a> {
         key_row: &dyn Fn(&[RelationColumn]) -> Option<KeyRow>,
     ) -> Option<ValueType> {
         let inference = self.infer(at)?;
-        let Some(form @ Form::RigidDet(rigid)) = inference.form else { return None };
+        let ScopeOwner::Form(form @ Form::RigidDet(rigid)) = inference.owner else { return None };
         let rigid_value = rigid.value();
         let (first, rest) = path.split_first()?;
         let local = |ty: ValueType| try_map_labels(&ty, &|_| None);
@@ -1310,7 +1306,7 @@ impl<'a> Inference<'a> {
     /// form at `at` (`docs/arclog/arclog.md#demonstrated`).
     fn demonstrated_column(&self, at: &NodePath, path: &[ColumnName]) -> Option<ValueType> {
         let inference = self.infer(at)?;
-        let Some(Form::Demonstrated(demonstrated)) = inference.form else { return None };
+        let ScopeOwner::Form(Form::Demonstrated(demonstrated)) = inference.owner else { return None };
         let demonstrated = demonstrated.value();
         let (first, rest) = path.split_first()?;
         let label = |label: LabelId| inference.label(label);

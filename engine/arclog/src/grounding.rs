@@ -2,9 +2,9 @@
 //! derivation of a relation macro's modes both apply.
 
 use crate::hash::StableHashSet;
-use crate::program::{Atom, Body, Conjunct, Constraint, ConstraintOp, LabelId, Negated, Node, Operand, Site};
+use crate::program::{constraint_second, Atom, Body, Conjunct, Constraint, ConstraintOp, LabelId, LabelUse, Negated, Node, Operand, Site};
 use crate::registry::Mode;
-use crate::types::{each_conjunct, ValueType};
+use crate::types::{each_conjunct, each_site_label, use_label, ValueType};
 
 /// The labels that `body` grounds where the labels of `grounded` are
 /// grounded, those of `grounded` included.
@@ -29,8 +29,8 @@ use crate::types::{each_conjunct, ValueType};
 /// A label that stands only in a part of a form, a branch of an `OR`, the
 /// test and the then of an `IF`, its else, or the two lists of an `ALL`, and
 /// that `outside` does not hold, is grounded where that part grounds it from
-/// the labels grounded outside it. `outside` holds the labels that the
-/// body's context names outside the body: a clause's head labels, or a
+/// the labels grounded outside it. `outside` holds the labels that stand in
+/// the body's context outside the body: a clause's head labels, or a
 /// relation macro's column labels. Each of them is an outer label of each
 /// form of `body` where it stands, so a form grounds it for the body only by
 /// the rule above for that form, and never as a label local to a part.
@@ -48,8 +48,33 @@ pub fn grounded_labels<'m>(
 /// Each label that stands in `body`, at any depth.
 pub(crate) fn body_labels(body: &Body) -> StableHashSet<LabelId> {
     let mut labels = StableHashSet::default();
-    each_conjunct(body, &mut |conjunct| own_labels(conjunct, &mut labels));
+    each_label_use(body, &mut |use_| labels.extend(use_label(use_)));
     labels
+}
+
+/// Visits each label use of `body`, at any depth, in source order.
+pub(crate) fn each_label_use(body: &Body, visit: &mut dyn FnMut(LabelUse)) {
+    each_conjunct(body, &mut |conjunct| site_label_uses(conjunct, visit));
+}
+
+/// Visits each label use at the sites of `conjunct` itself, in the order
+/// of its sites: an atom's, a negated atom's and a constraint's. A conjunct
+/// of another kind has no sites of its own.
+pub(crate) fn site_label_uses(conjunct: &Conjunct, visit: &mut dyn FnMut(LabelUse)) {
+    match conjunct {
+        Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
+            for site in atom.value().sites.iter() {
+                each_site_label(site, &mut Vec::new(), &mut |use_, _| visit(use_));
+            }
+        }
+        Conjunct::Constraint(constraint) => {
+            visit(constraint.first.into());
+            if let Some(second) = constraint_second(constraint) {
+                visit(second.into());
+            }
+        }
+        Conjunct::Not(Negated::Form(_)) | Conjunct::Or(_) | Conjunct::If { .. } | Conjunct::All { .. } => {}
+    }
 }
 
 struct Walk<'a, 'm> {
@@ -176,23 +201,14 @@ pub(crate) fn conjunct_labels(conjunct: &Conjunct, labels: &mut StableHashSet<La
 /// constraint's.
 pub(crate) fn own_labels(conjunct: &Conjunct, labels: &mut impl Extend<LabelId>) {
     match conjunct {
-        Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => atom.value().sites.iter().for_each(|site| site_labels(site, labels)),
-        Conjunct::Constraint(Constraint { first, second, .. }) => {
-            labels.extend([first.label]);
-            if let Operand::Label(second) = second {
-                labels.extend([second.label]);
-            }
-        }
         Conjunct::Not(Negated::Form(form)) => own_labels(form, labels),
-        Conjunct::Or(_) | Conjunct::If { .. } | Conjunct::All { .. } => {}
+        _ => site_label_uses(conjunct, &mut |use_| labels.extend(use_label(use_))),
     }
 }
 
 /// Adds each label at `site`, its fields' included, to `labels`.
 fn site_labels(site: &Site, labels: &mut impl Extend<LabelId>) {
-    crate::types::each_site_label(site, &mut Vec::new(), &mut |use_, _| {
-        labels.extend(crate::types::use_label(use_));
-    });
+    each_site_label(site, &mut Vec::new(), &mut |use_, _| labels.extend(use_label(use_)));
 }
 
 /// Whether `ty` is an orientation type, whose label counts as grounded.

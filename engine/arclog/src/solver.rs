@@ -9,13 +9,13 @@
 
 use crate::hash::{StableHashMap, StableHashSet};
 use crate::layout::Layout;
-use crate::program::path::{child_index, NodePath, NodeRef};
+use crate::program::path::{NodePath, NodeRef};
 use crate::program::canonical::relation_of;
 use crate::write::relation_ref;
 use std::sync::Arc;
 
 use crate::program::{
-    Alt, AltItem, Alts, AltsName, Arcdata, Body, Clause, ClauseKeyword, DemoRule, Demonstrated, Form, InstanceName, Node,
+    Alt, AltItem, Alts, AltsName, Arcdata, Body, Clause, ClauseKeyword, DemoRule, Demonstrated, DemonstratedPart, Form, InstanceName, Node,
     OutputOwner, OutputStep, Program, ProgramRelation, RelationRef, RigidDetName,
 };
 
@@ -189,7 +189,7 @@ impl Solver {
     fn walk<'a>(&'a self, chosen: &'a [AltsName]) -> Walk<'a> {
         let mut walk = Walk { chosen, placed: Vec::new(), points: Vec::new(), unchosen: None };
         for (index, form) in self.representative_claims() {
-            walk.form(form, FileOwner::Representative, NodePath(Box::new([PathStep(index as u32)])), 0);
+            walk.form(form, FileOwner::Representative, NodePath::top(index as u32), 0);
         }
         walk.forms(&self.program.value().forms, FileOwner::Solver, &NodePath::default(), 0);
         walk
@@ -231,7 +231,7 @@ impl Solver {
         let mut concept_determinations = Vec::new();
         for taken in taken {
             let p = taken.placed;
-            let path = NodePath(Box::new([PathStep(forms.len() as u32)]));
+            let path = NodePath::top(forms.len() as u32);
             if p.depth == 0 && is_det(&p.form) && !other_readings.contains(&p.step) {
                 concept_determinations.push(path.clone());
             }
@@ -338,8 +338,6 @@ impl Iterator for Cases<'_> {
     }
 }
 
-use crate::program::path::PathStep;
-
 /// A form a case reaches: the form, its file and its path there, and the
 /// number of `ALT` blocks it stands in, so the form of a combination's
 /// nested `ALT` stands deeper than each alt's. `step` counts the walk's
@@ -372,18 +370,17 @@ impl<'a> Walk<'a> {
     }
 
     fn form(&mut self, form: &'a Form, owner: FileOwner, path: NodePath, depth: u32) {
+        let chosen = self.chosen;
         match form {
-            Form::Claim(claim) => self.forms(&claim.value().forms, owner, &path, depth),
+            Form::Claim(_) => self.descend(Block::Form(form), owner, &path, depth, &|alt| chosen.contains(&alt.name)),
             Form::Alts(alts) => {
                 let alts = alts.value();
-                let Some(choice) = alt_names(alts).find(|name| self.chosen.contains(name)) else {
+                let Some(choice) = alt_names(alts).find(|name| chosen.contains(name)) else {
                     self.unchosen = Some(alts.name.clone());
                     return;
                 };
                 self.points.push((self.placed.len() + self.points.len(), choice.clone()));
-                if let Some((index, alt)) = alts.alts.iter().enumerate().find(|(_, alt)| alt.value().name == *choice) {
-                    self.alt(alt.value(), owner, path.child(index as u32), depth + 1);
-                }
+                self.descend(Block::Form(form), owner, &path, depth, &|alt| alt.name == *choice);
             }
             _ => {
                 let step = self.placed.len() + self.points.len();
@@ -392,14 +389,15 @@ impl<'a> Walk<'a> {
         }
     }
 
-    fn alt(&mut self, alt: &'a Alt, owner: FileOwner, path: NodePath, depth: u32) {
-        for (index, item) in alt.items.iter().enumerate() {
-            match item {
-                AltItem::Form(form) => self.form(form, owner, path.child(index as u32), depth),
-                AltItem::Alt(nested) if self.chosen.contains(&nested.value().name) => {
-                    self.alt(nested.value(), owner, path.child(index as u32), depth + 1)
-                }
-                AltItem::Alt(_) => {}
+    /// The blocks of `block`, the block at `path`, that `enter` admits, an
+    /// `ALT` block one deeper than `depth`; below an `ALT` block, each nested
+    /// block that the case chooses.
+    fn descend(&mut self, block: Block<'a>, owner: FileOwner, path: &NodePath, depth: u32, enter: &dyn Fn(&Alt) -> bool) {
+        let chosen = self.chosen;
+        for (index, inner) in inner_blocks(block, enter) {
+            match inner {
+                Block::Form(form) => self.form(form, owner, path.child(index), depth),
+                Block::Alt(_) => self.descend(inner, owner, &path.child(index), depth + 1, &|alt| chosen.contains(&alt.name)),
             }
         }
     }
@@ -440,7 +438,7 @@ fn alts_product(forms: &[Form]) -> Vec<Vec<AltsName>> {
 
 fn form_bases(form: &Form) -> Vec<Vec<AltsName>> {
     match form {
-        Form::Claim(claim) => alts_product(&claim.value().forms),
+        Form::Claim(_) => forms_bases(Block::Form(form)),
         Form::Alts(alts) => {
             let alts = alts.value();
             alt_names(alts)
@@ -458,9 +456,15 @@ fn form_bases(form: &Form) -> Vec<Vec<AltsName>> {
 /// The bases of the `ALTS` forms an `ALT` block holds. A nested `ALT`
 /// block holds a combination's forms, and no `ALTS` form of its own.
 fn alt_bases(alt: &Alt) -> Vec<Vec<AltsName>> {
-    alt.items.iter().fold(vec![Vec::new()], |bases, item| match item {
-        AltItem::Form(form) => product(bases, form_bases(form)),
-        AltItem::Alt(_) => bases,
+    forms_bases(Block::Alt(alt))
+}
+
+/// The bases of the `ALTS` forms that the forms of `block` reach, a claim
+/// or an `ALT` block, its nested `ALT` blocks left out.
+fn forms_bases(block: Block<'_>) -> Vec<Vec<AltsName>> {
+    inner_blocks(block, &|_| false).into_iter().fold(vec![Vec::new()], |bases, (_, inner)| match inner {
+        Block::Form(form) => product(bases, form_bases(form)),
+        Block::Alt(_) => bases,
     })
 }
 
@@ -527,8 +531,9 @@ fn read_as(line: &Clause, reading: Reading) -> Clause {
     Clause { keyword, proposers, body, ..line.clone() }
 }
 
-/// What a form derives, by which a form of an alt takes the place of the
-/// concept program's.
+/// The relation, instance or rigid `DET` that a form derives. A case keeps,
+/// of the forms that derive one such thing, those of the deepest blocks
+/// (`rederived`).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 enum Derives {
     Relation(ProgramRelation),
@@ -629,9 +634,8 @@ impl Taken<'_> {
             form => return (form.clone(), Vec::new()),
         };
         let mut origins = Vec::new();
-        let rules = demonstrated.rules.iter().map(|rule| {
-            let step = child_index(NodeRef::Demonstrated(demonstrated), NodeRef::DemoRule(rule.value()))
-                .expect("a `DEMO_RULE` form is a child of its `DEMONSTRATED` form");
+        let rules = demonstrated.rules.iter().enumerate().map(|(index, rule)| {
+            let step = demonstrated.position(DemonstratedPart::Rule(index));
             let mut forms: Vec<(Form, (FileOwner, NodePath))> = Vec::new();
             let mut placed_keys = StableHashSet::default();
             for (at, form) in rule.value().forms.iter().enumerate() {
@@ -646,7 +650,7 @@ impl Taken<'_> {
             if placed_keys.is_empty() {
                 return rule.clone();
             }
-            let rule_path = NodePath(Box::new([PathStep(step)]));
+            let rule_path = NodePath::default().child(step);
             origins.extend(forms.iter().enumerate().map(|(at, (_, origin))| (rule_path.child(at as u32), origin.clone())));
             let forms = forms.into_iter().map(|(form, _)| form).collect();
             Node::new(DemoRule { forms, ..rule.value().clone() })
@@ -671,19 +675,49 @@ fn rule_forms(form: &Form) -> impl Iterator<Item = &Form> {
 /// stands in an `ALT` block.
 fn each_form<'a>(form: &'a Form, in_alt: bool, f: &mut dyn FnMut(&'a Form, bool)) {
     f(form, in_alt);
-    match form {
-        Form::Claim(claim) => claim.value().forms.iter().for_each(|form| each_form(form, in_alt, f)),
-        Form::Alts(alts) => alts.value().alts.iter().for_each(|alt| each_alt_form(alt.value(), f)),
-        _ => {}
+    each_inner_form(Block::Form(form), in_alt, f);
+}
+
+/// Calls `f` on each form below `block`, through every `ALT` block, with
+/// whether the form stands in an `ALT` block; `in_alt` gives whether
+/// `block` stands in one.
+fn each_inner_form<'a>(block: Block<'a>, in_alt: bool, f: &mut dyn FnMut(&'a Form, bool)) {
+    let in_alt = in_alt || matches!(block, Block::Alt(_));
+    for (_, inner) in inner_blocks(block, &|_| true) {
+        match inner {
+            Block::Form(form) => each_form(form, in_alt, f),
+            Block::Alt(_) => each_inner_form(inner, in_alt, f),
+        }
     }
 }
 
-fn each_alt_form<'a>(alt: &'a Alt, f: &mut dyn FnMut(&'a Form, bool)) {
-    for item in alt.items.iter() {
-        match item {
-            AltItem::Form(form) => each_form(form, true, f),
-            AltItem::Alt(nested) => each_alt_form(nested.value(), f),
-        }
+/// A block of the descent through a program's claims, `ALTS` forms and
+/// `ALT` blocks.
+#[derive(Clone, Copy)]
+enum Block<'a> {
+    Form(&'a Form),
+    Alt(&'a Alt),
+}
+
+/// The blocks that `block` holds, each by its index among the children of
+/// `block`: the forms of a claim, the `ALT` blocks of an `ALTS` form, and
+/// the forms and the nested `ALT` blocks of an `ALT` block, each `ALT`
+/// block where `enter` admits it. Another form holds none.
+fn inner_blocks<'a>(block: Block<'a>, enter: &dyn Fn(&Alt) -> bool) -> Vec<(u32, Block<'a>)> {
+    let alt = |index: usize, alt: &'a Alt| enter(alt).then_some((index as u32, Block::Alt(alt)));
+    match block {
+        Block::Form(Form::Claim(claim)) => claim.value().forms.iter().enumerate().map(|(index, form)| (index as u32, Block::Form(form))).collect(),
+        Block::Form(Form::Alts(alts)) => alts.value().alts.iter().enumerate().filter_map(|(index, block)| alt(index, block.value())).collect(),
+        Block::Form(_) => Vec::new(),
+        Block::Alt(block) => block
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| match item {
+                AltItem::Form(form) => Some((index as u32, Block::Form(form))),
+                AltItem::Alt(nested) => alt(index, nested.value()),
+            })
+            .collect(),
     }
 }
 

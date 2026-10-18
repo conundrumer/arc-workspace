@@ -163,8 +163,8 @@ pub(crate) fn label_fault_message(fault: LabelFault) -> String {
 }
 
 /// The type that `body` gives `label`, `None` where it gives none, or the
-/// fault of that type. `body` is the list of the label's scope, as the doc
-/// of [`crate::check::CheckId::Types`] gives it.
+/// fault of that type. `body` is the list of the label's scope, as
+/// [`scope_list`] gives it.
 ///
 /// The type is the meet, as [`ValueType::meet`] gives it, of the types of
 /// every site of the label, at any depth, and a join, as [`ValueType::join`]
@@ -449,6 +449,16 @@ pub fn each_conjunct(body: &crate::program::Body, visit: &mut dyn FnMut(&crate::
     for c in body.conjuncts.iter() {
         conjunct(c, visit);
     }
+}
+
+/// Visits each atom of `body` at any depth, a negated atom included.
+pub fn each_atom(body: &crate::program::Body, visit: &mut dyn FnMut(&crate::program::Atom)) {
+    use crate::program::{Conjunct, Negated};
+    each_conjunct(body, &mut |conjunct| {
+        if let Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) = conjunct {
+            visit(atom.value());
+        }
+    });
 }
 
 /// The types the type check infers for the labels of one label scope of a

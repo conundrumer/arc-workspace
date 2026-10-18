@@ -13,7 +13,7 @@ pub struct Agreement;
 
 impl Construction for Agreement {
     fn name(&self) -> &'static str {
-        "Agreement"
+        Self::NAME
     }
 
     fn evaluate(
@@ -32,7 +32,7 @@ pub struct Periods;
 
 impl Construction for Periods {
     fn name(&self) -> &'static str {
-        "Periods"
+        Self::NAME
     }
 
     fn evaluate(
@@ -51,7 +51,7 @@ pub struct Occurrences;
 
 impl Construction for Occurrences {
     fn name(&self) -> &'static str {
-        "Occurrences"
+        Self::NAME
     }
 
     fn evaluate(
@@ -70,7 +70,7 @@ pub struct Wallpaper;
 
 impl Construction for Wallpaper {
     fn name(&self) -> &'static str {
-        "Wallpaper"
+        Self::NAME
     }
 
     fn evaluate(

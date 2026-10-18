@@ -52,7 +52,6 @@ END_TURN_LISTING = mctx("End your turn with no other call: the end of an agent y
 
 
 def listing_line(held: Launch) -> str:
-    """`END_TURN_LISTING` for the held launch `held`."""
     return END_TURN_LISTING.format(agent_type=launched_type(held.role, held.subject))
 
 

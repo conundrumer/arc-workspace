@@ -3,6 +3,7 @@
 //! color refinement.
 
 use super::*;
+use super::walk::{Open, ScopeSink};
 
 
 /// The graph of a scope, as [`canonical_labeling`] refines it: a vertex per
@@ -47,7 +48,7 @@ impl<'n> GraphBuilder<'n> {
     }
 
     /// A vertex of `tag` under `parent`, by an edge of `role` and `index`.
-    pub(super) fn child(&mut self, parent: usize, role: Tag, index: usize, tag: Tag, color: impl FnOnce(&mut CanonicalWriter)) -> usize {
+    pub(super) fn vertex_under(&mut self, parent: usize, role: Tag, index: usize, tag: Tag, color: impl FnOnce(&mut CanonicalWriter)) -> usize {
         let vertex = self.vertex(tag, color);
         self.edge(parent, vertex, role, |out| out.len(index));
         vertex
@@ -61,204 +62,6 @@ impl<'n> GraphBuilder<'n> {
             LabelUse::Zero => (self.vertex(Tag::Zero, |_| {}), Tag::Zero),
         };
         self.edge(from, to, mark, edge);
-    }
-
-    pub(super) fn body(&mut self, body: &Body, parent: usize, role: Tag, index: usize) {
-        let vertex = self.child(parent, role, index, Tag::Body, |_| {});
-        for conjunct in body.conjuncts.iter() {
-            self.conjunct(conjunct, vertex);
-        }
-    }
-
-    pub(super) fn conjunct(&mut self, conjunct: &Conjunct, body: usize) {
-        match conjunct {
-            Conjunct::Atom(atom) => self.atom(atom.value(), false, body, Tag::Member, 0),
-            Conjunct::Not(Negated::Atom(atom)) => self.atom(atom.value(), true, body, Tag::Member, 0),
-            Conjunct::Not(Negated::Form(form)) => {
-                let vertex = self.child(body, Tag::Member, 0, Tag::NotForm, |_| {});
-                self.conjunct(form, vertex);
-            }
-            Conjunct::Constraint(constraint) => {
-                let vertex = self.child(body, Tag::Member, 0, Tag::Constraint, |out| out.byte(constraint.op as u8));
-                let first = constraint.first;
-                let to = self.label(first.label);
-                self.edge(vertex, to, Tag::Part, |out| {
-                    out.len(0);
-                    out.flag(first.fresh);
-                });
-                match constraint.second {
-                    Operand::Label(second) => {
-                        let to = self.label(second.label);
-                        self.edge(vertex, to, Tag::Part, |out| {
-                            out.len(1);
-                            out.flag(second.fresh);
-                        });
-                    }
-                    Operand::Zero => {
-                        let zero = self.vertex(Tag::Zero, |_| {});
-                        self.edge(vertex, zero, Tag::Part, |out| out.len(1));
-                    }
-                }
-            }
-            Conjunct::Or(branches) => {
-                let vertex = self.child(body, Tag::Member, 0, Tag::Or, |_| {});
-                for branch in branches.iter() {
-                    self.body(branch.value(), vertex, Tag::Branch, 0);
-                }
-            }
-            Conjunct::If { test, then, otherwise } => {
-                let vertex = self.child(body, Tag::Member, 0, Tag::If, |_| {});
-                for (index, part) in [test, then, otherwise].into_iter().enumerate() {
-                    self.body(part.value(), vertex, Tag::Part, index);
-                }
-            }
-            Conjunct::All { domain, body: each } => {
-                let vertex = self.child(body, Tag::Member, 0, Tag::All, |_| {});
-                for (index, part) in [domain, each].into_iter().enumerate() {
-                    self.body(part.value(), vertex, Tag::Part, index);
-                }
-            }
-        }
-    }
-
-    pub(super) fn atom(&mut self, atom: &Atom, negated: bool, parent: usize, role: Tag, index: usize) {
-        let names = self.names;
-        let vertex = self.child(parent, role, index, Tag::Atom, |out| {
-            out.flag(negated);
-            names.write_name(&atom.relation, out);
-        });
-        for site in atom.sites.iter() {
-            self.site(vertex, site, &[], &|out, path| names.write_column(&atom.relation, path, out));
-        }
-    }
-
-    /// The edges from `from` to the labels of `site`, each labeled by its
-    /// column path as `column` writes it and its index among the site's
-    /// arguments. The path of a [`SiteArg::NamedLabel`] ends with its name.
-    pub(super) fn site(&mut self, from: usize, site: &Site, prefix: &[ColumnName], column: &dyn Fn(&mut CanonicalWriter, &[ColumnName])) {
-        let path = column_path(prefix, &site.column);
-        for (index, arg) in site.value.args.iter().enumerate() {
-            match arg {
-                SiteArg::Label(label) => self.label_use(from, *label, |out| {
-                    column(out, &path);
-                    out.len(index);
-                }),
-                SiteArg::NamedLabel { name, label } => self.label_use(from, *label, |out| {
-                    column(out, &column_path(&path, name));
-                    out.len(index);
-                }),
-                SiteArg::Field(field) => self.site(from, field, &path, column),
-            }
-        }
-    }
-
-    pub(super) fn input(&mut self, input: &InstanceInput, parent: usize, index: usize) {
-        let vertex = self.child(parent, Tag::Input, index, Tag::Input, |out| out.text(&input.name.0));
-        for (index, site) in input.head.iter().enumerate() {
-            let head = self.child(vertex, Tag::Head, index, Tag::Head, |_| {});
-            self.site(head, site, &[], &|out, path| out.column_path(path));
-        }
-        self.body(input.body.value(), vertex, Tag::Body, 0);
-    }
-
-    pub(super) fn key_body(&mut self, key: &KeyBody, parent: usize, role: Tag) {
-        let vertex = self.child(parent, role, 0, Tag::KeyBody, |_| {});
-        self.body(key.body.value(), vertex, Tag::Body, 0);
-        self.columns(vertex, &key.columns, |out, name| out.column(name));
-    }
-
-    pub(super) fn key_clause(&mut self, key: &KeyClause, parent: usize) {
-        let vertex = self.child(parent, Tag::KeyClause, 0, Tag::KeyClause, |_| {});
-        self.key_body(&key.key, vertex, Tag::Key);
-        for (index, input) in key.inputs.iter().enumerate() {
-            self.input(input.value(), vertex, index);
-        }
-    }
-
-    /// Edges from `from` to the labels of `columns`, each labeled by its
-    /// name as `name` writes it.
-    pub(super) fn columns(&mut self, from: usize, columns: &[RelationColumn], name: impl Fn(&mut CanonicalWriter, &ColumnName)) {
-        for column in columns {
-            let to = self.label(column.label);
-            self.edge(from, to, Tag::Column, |out| name(out, &column.name));
-        }
-    }
-
-    pub(super) fn clause(&mut self, clause: &Clause, parent: usize, index: usize) {
-        let names = self.names;
-        let derives = relation_of(&clause.derives);
-        let vertex = self.child(parent, Tag::Form, index, Tag::Clause, |out| out.byte(clause.keyword as u8));
-        self.body(clause.body.value(), vertex, Tag::Body, 0);
-        for (index, one) in clause.ones.iter().enumerate() {
-            let mark = self.child(vertex, Tag::One, index, Tag::One, |_| {});
-            for (index, label) in one.key.iter().enumerate() {
-                let to = self.label(*label);
-                self.edge(mark, to, Tag::Part, |out| out.len(index));
-            }
-        }
-        self.columns(vertex, &clause.columns, |out, name| names.write_column(&derives, std::slice::from_ref(name), out));
-    }
-
-    pub(super) fn instance(&mut self, instance: &Instance, parent: usize, index: usize) {
-        let vertex = self.child(parent, Tag::Form, index, Tag::Instance, |_| {});
-        if let Some(key) = &instance.key {
-            self.key_clause(key.value(), vertex);
-        }
-        for (index, input) in instance.inputs.iter().enumerate() {
-            self.input(input.value(), vertex, index);
-        }
-    }
-
-    pub(super) fn choose(&mut self, choose: &Choose, parent: usize, index: usize) {
-        let names = self.names;
-        let relation = RelationRef::Declared(choose.name.clone());
-        let vertex = self.child(parent, Tag::Form, index, Tag::Choose, |out| out.flag(choose.from_inside_for));
-        if let Some(rows) = &choose.rows {
-            self.key_body(rows, vertex, Tag::Key);
-        }
-        self.columns(vertex, &choose.candidate_columns, |out, name| names.write_column(&relation, std::slice::from_ref(name), out));
-        self.body(choose.from.value(), vertex, Tag::Body, 0);
-        for (index, never) in choose.never.iter().enumerate() {
-            self.body(never.value(), vertex, Tag::Part, index);
-        }
-    }
-
-    pub(super) fn rigid_det(&mut self, rigid: &RigidDet, parent: usize, index: usize) {
-        let vertex = self.child(parent, Tag::Form, index, Tag::RigidDet, |_| {});
-        if let Some(key) = &rigid.key {
-            self.key_body(key, vertex, Tag::Key);
-        }
-        if let Some(instance) = &rigid.instance {
-            self.key_body(instance, vertex, Tag::Instance);
-        }
-        for (index, part) in rigid.parts.iter().enumerate() {
-            self.atom(part.value(), false, vertex, Tag::Part, index);
-        }
-    }
-
-    pub(super) fn demonstrated_key(&mut self, demonstrated: &Demonstrated, parent: usize) {
-        if let Some(key) = &demonstrated.key {
-            self.key_clause(key.value(), parent);
-        }
-        for (index, input) in demonstrated.inputs.iter().enumerate() {
-            self.input(input.value(), parent, index);
-        }
-    }
-
-    pub(super) fn demo_rule(&mut self, rule: &DemoRule, parent: usize) {
-        let names = self.names;
-        let prediction = prediction();
-        self.columns(parent, &rule.fields, |out, name| names.write_column(&prediction, std::slice::from_ref(name), out));
-        // A form of a scope of its own reads no label of the rule.
-        for (index, form) in rule.forms.iter().enumerate().filter(|(_, form)| shares_rule_scope(form)) {
-            match form {
-                Form::Clause(clause) => self.clause(clause.value(), parent, index),
-                Form::Instance(instance) => self.instance(instance.value(), parent, index),
-                Form::Choose(choose) => self.choose(choose.value(), parent, index),
-                Form::RigidDet(rigid) => self.rigid_det(rigid.value(), parent, index),
-                Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) => {}
-            }
-        }
     }
 
     /// The graph as numbers: each vertex's initial color, as its rank among
@@ -338,19 +141,106 @@ impl ColoredGraph {
     }
 }
 
-impl LabelScope<'_> {
-    pub(super) fn graph(self, graph: &mut GraphBuilder, root: usize) {
-        match self {
-            LabelScope::Clause(clause) => graph.clause(clause, root, 0),
-            LabelScope::Instance(instance) => graph.instance(instance, root, 0),
-            LabelScope::Choose(choose) => graph.choose(choose, root, 0),
-            LabelScope::RigidDet(rigid) => graph.rigid_det(rigid, root, 0),
-            LabelScope::DemonstratedKey(demonstrated) => graph.demonstrated_key(demonstrated, root),
-            LabelScope::DemoRule(rule) => graph.demo_rule(rule, root),
-            LabelScope::Body(body) => graph.body(body, root, Tag::Body, 0),
-            LabelScope::Atom(atom) => graph.atom(atom, false, root, Tag::Part, 0),
-            LabelScope::KeyClause(key) => graph.key_clause(key, root),
-            LabelScope::InstanceInput(input) => graph.input(input, root, 0),
+/// The graph takes from the walk a vertex for each node it opens, under the
+/// vertex of its parent, and an edge to a label for each label use.
+impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
+    type At = usize;
+
+    fn open(&mut self, at: usize, role: Tag, index: usize, node: Open<'a>) -> usize {
+        let names = self.names;
+        match node {
+            Open::Clause(clause) => self.vertex_under(at, role, index, Tag::Clause, |out| out.byte(clause.keyword as u8)),
+            Open::Instance(_) => self.vertex_under(at, role, index, Tag::Instance, |_| {}),
+            Open::Choose(choose) => self.vertex_under(at, role, index, Tag::Choose, |out| out.flag(choose.from_inside_for)),
+            Open::RigidDet(_) => self.vertex_under(at, role, index, Tag::RigidDet, |_| {}),
+            // The fields and the forms of a rule stand at the vertex of its form.
+            Open::DemoRule(_) => at,
+            Open::KeyClause => self.vertex_under(at, role, index, Tag::KeyClause, |_| {}),
+            Open::KeyBody => self.vertex_under(at, role, index, Tag::KeyBody, |_| {}),
+            Open::Input(input) => self.vertex_under(at, role, index, Tag::Input, |out| out.text(&input.name.0)),
+            Open::Head => self.vertex_under(at, role, index, Tag::Head, |_| {}),
+            Open::Body => self.vertex_under(at, role, index, Tag::Body, |_| {}),
+            Open::Atom { atom, negated, .. } => self.vertex_under(at, role, index, Tag::Atom, |out| {
+                out.flag(negated);
+                names.write_name(&atom.relation, out);
+            }),
+            Open::NotForm => self.vertex_under(at, role, index, Tag::NotForm, |_| {}),
+            Open::Constraint(constraint) => self.vertex_under(at, role, index, Tag::Constraint, |out| out.byte(constraint.op as u8)),
+            Open::Or => self.vertex_under(at, role, index, Tag::Or, |_| {}),
+            Open::If => self.vertex_under(at, role, index, Tag::If, |_| {}),
+            Open::All => self.vertex_under(at, role, index, Tag::All, |_| {}),
+            Open::One(_) => self.vertex_under(at, role, index, Tag::One, |_| {}),
         }
     }
+
+    fn child(&mut self, _parent: NodeRef<'a>, _child: NodeRef<'a>, visit: impl FnOnce(&mut Self)) {
+        visit(self);
+    }
+
+    fn members<T>(&mut self, _parent: NodeRef<'a>, members: &'a [T], _node: impl Fn(&'a T) -> NodeRef<'a>, visit: impl Fn(&mut Self, &'a T)) {
+        for member in members {
+            visit(self, member);
+        }
+    }
+
+    fn len(&mut self, _len: usize) {}
+
+    fn option(&mut self, _present: bool) {}
+
+    fn site(&mut self, _at: usize, _path: &[ColumnName], _args: usize, _relation: Option<&RelationRef>) {}
+
+    /// An edge to the label, labeled by its column path as the name writer
+    /// writes it and its index among the site's arguments. The path of a
+    /// [`SiteArg::NamedLabel`] ends with its name.
+    fn site_label(&mut self, at: usize, index: usize, path: &[ColumnName], named: Option<&ColumnName>, label: LabelUse, relation: Option<&RelationRef>) {
+        let names = self.names;
+        let path = match named {
+            Some(name) => column_path(path, name),
+            None => path.to_vec(),
+        };
+        self.label_use(at, label, |out| {
+            site_column(names, relation, &path, out);
+            out.len(index);
+        });
+    }
+
+    fn site_field(&mut self) {}
+
+    fn operand(&mut self, at: usize, index: usize, label: Option<ConstraintLabel>) {
+        match label {
+            Some(label) => {
+                let to = self.label(label.label);
+                self.edge(at, to, Tag::Part, |out| {
+                    out.len(index);
+                    out.flag(label.fresh);
+                });
+            }
+            None => {
+                let zero = self.vertex(Tag::Zero, |_| {});
+                self.edge(at, zero, Tag::Part, |out| out.len(index));
+            }
+        }
+    }
+
+    fn one_label(&mut self, at: usize, index: usize, label: LabelId) {
+        let to = self.label(label);
+        self.edge(at, to, Tag::Part, |out| out.len(index));
+    }
+
+    /// An edge to the label of each column, labeled by the column's name as
+    /// the name writer writes it.
+    fn columns(&mut self, at: usize, columns: &'a [RelationColumn], relation: Option<&RelationRef>) {
+        let names = self.names;
+        for column in columns {
+            let to = self.label(column.label);
+            self.edge(at, to, Tag::Column, |out| relation_column(names, relation, &column.name, out));
+        }
+    }
+
+    fn choose_from_inside_for(&mut self, _choose: &'a Choose) {}
+
+    fn rule_text(&mut self, _rule: &'a DemoRule) {}
+
+    /// A form of a scope of its own reads no label of the rule.
+    fn own_scope(&mut self, _form: &'a Form) {}
 }

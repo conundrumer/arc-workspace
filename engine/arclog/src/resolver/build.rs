@@ -19,7 +19,7 @@ use crate::program::{
     Atom, Clause, ClauseKeyword, ColumnName, FactRelation, Form, Instance, InstanceName, NameScope,
     Node, OutputName, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationRef,
 };
-use crate::program::LabelId;
+use crate::program::{DemonstratedPart, LabelId};
 use crate::registry::{Component, Registry};
 use crate::relations::ColumnGroup;
 use crate::types::{each_site_label, use_label};
@@ -158,13 +158,13 @@ pub(super) fn resolve(
     let forms = &case.value().forms;
     let mut pending = Vec::new();
     for (index, form) in forms.iter().enumerate() {
-        builder.declare(form, top(index), &NameScope::Program, &mut pending);
+        builder.declare(form, NodePath::top(index as u32), &NameScope::Program, &mut pending);
     }
     for (scope, relation, target) in pending {
         builder.target(&scope, relation, target);
     }
     for (index, form) in forms.iter().enumerate() {
-        builder.read_form(form, top(index), &NameScope::Program);
+        builder.read_form(form, NodePath::top(index as u32), &NameScope::Program);
     }
     builder.sides();
     builder.contents();
@@ -175,10 +175,6 @@ pub(super) fn resolve(
         ConceptForms { program: Arc::clone(concept.concept), paths: std::mem::take(&mut builder.concept_forms) }
     });
     builder.finish(concept)
-}
-
-fn top(index: usize) -> NodePath {
-    NodePath(Box::new([crate::program::path::PathStep(index as u32)]))
 }
 
 /// The node kind of a clause: a chosen relation where it has `ONE`
@@ -247,7 +243,7 @@ impl<'a> Builder<'a> {
         for path in concept.determinations {
             let Some(Form::Clause(clause)) = path.0.first().and_then(|step| self.case.value().forms.get(step.0 as usize)) else { continue };
             let Some(index) = concept_forms.iter().position(|form| matches!(form, Form::Clause(other) if other == clause)) else { continue };
-            let concept_path = top(index);
+            let concept_path = NodePath::top(index as u32);
             let Some(content) = concept.concept.content(&concept_path) else { continue };
             let relation = relation_of(&clause.value().derives);
             let columns = concept.concept.names.columns(&NameScope::Program, &relation).cloned();
@@ -467,13 +463,13 @@ impl<'a> Builder<'a> {
             Form::Demonstrated(demonstrated) => {
                 let demonstrated = demonstrated.value();
                 let node = self.form_node[&path];
-                let mut before = 0;
                 if let Some(key) = &demonstrated.key {
-                    self.read_below(NodeRef::KeyClause(key.value()), path.child(0), scope, &[node], &path);
-                    before = 1;
+                    let at = path.child(demonstrated.position(DemonstratedPart::Key));
+                    self.read_below(NodeRef::KeyClause(key.value()), at, scope, &[node], &path);
                 }
                 for (index, input) in demonstrated.inputs.iter().enumerate() {
-                    self.read_below(NodeRef::InstanceInput(input.value()), path.child(before + index as u32), scope, &[node], &path);
+                    let at = path.child(demonstrated.position(DemonstratedPart::Input(index)));
+                    self.read_below(NodeRef::InstanceInput(input.value()), at, scope, &[node], &path);
                 }
                 for (rule_path, rule) in super::demo_rules(demonstrated, &path) {
                     let rule_scope = NameScope::DemoRule(rule_path.clone());

@@ -418,6 +418,36 @@ pub struct Demonstrated {
     pub rules: Arc<[Node<DemoRule>]>,
 }
 
+/// A part of a [`Demonstrated`] form, by its index among the parts of its
+/// kind.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DemonstratedPart {
+    Key,
+    Input(usize),
+    Rule(usize),
+}
+
+impl Demonstrated {
+    /// The position of `part` among the children of the form, as
+    /// [`crate::program::path::NodeRef::children`] orders them: the key
+    /// clause, the inputs, then the rules.
+    pub fn position(&self, part: DemonstratedPart) -> u32 {
+        let inputs = u32::from(self.key.is_some());
+        match part {
+            DemonstratedPart::Key => 0,
+            DemonstratedPart::Input(index) => inputs + index as u32,
+            DemonstratedPart::Rule(index) => inputs + self.inputs.len() as u32 + index as u32,
+        }
+    }
+
+    /// The rule at `position` among the children of the form, where a rule
+    /// stands there.
+    pub fn rule_at(&self, position: u32) -> Option<&DemoRule> {
+        let index = position.checked_sub(self.position(DemonstratedPart::Rule(0)))?;
+        self.rules.get(index as usize).map(|rule| rule.value())
+    }
+}
+
 /// A `DEMO_RULE` form: its name, its fields, its text, and its clauses.
 #[derive(Clone, Debug)]
 pub struct DemoRule {

@@ -11,7 +11,7 @@ pub struct Division;
 
 impl Construction for Division {
     fn name(&self) -> &'static str {
-        "Division"
+        Self::NAME
     }
 
     fn evaluate(
@@ -30,7 +30,7 @@ pub struct Tiling;
 
 impl Construction for Tiling {
     fn name(&self) -> &'static str {
-        "Tiling"
+        Self::NAME
     }
 
     fn evaluate(
@@ -48,7 +48,7 @@ pub struct Frame;
 
 impl Construction for Frame {
     fn name(&self) -> &'static str {
-        "Frame"
+        Self::NAME
     }
 
     fn evaluate(
@@ -66,7 +66,7 @@ pub struct ExtentDivisions;
 
 impl Construction for ExtentDivisions {
     fn name(&self) -> &'static str {
-        "ExtentDivisions"
+        Self::NAME
     }
 
     fn evaluate(

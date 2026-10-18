@@ -4,7 +4,7 @@ by (`parity.rerun`): the name map `work/arclog/convert.py` writes for each
 solver it converts, under `work/arclog/names/`."""
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -93,8 +93,7 @@ def marked(souffle: str) -> str:
 def relation_name(names: NameMap | None, relation: RelationName) -> str:
     """The arclog name of the Souffle relation `relation`, read from the
     top level, else its Souffle name under `SOUFFLE_MARK`."""
-    got = None if names is None else names.arclog_at(relation.text)
-    return marked(relation.text) if got is None else got
+    return _arclog_or_marked(names, lambda n: n.arclog_at(relation.text), relation.text)
 
 
 def case_name(solver: Solver, case: Case, names: NameMap | None) -> str:
@@ -103,16 +102,14 @@ def case_name(solver: Solver, case: Case, names: NameMap | None) -> str:
     relation of a `@derive` or `@store` branch by its arclog name; a part
     the map gives no name, by its Souffle text under `SOUFFLE_MARK`."""
     def ctor(engine: Engine, c: str) -> str:
-        got = None if names is None else names.arclog_constructor(c)
-        return marked(ctor_text(engine, c)) if got is None else got
+        return _arclog_or_marked(names, lambda n: n.arclog_constructor(c), ctor_text(engine, c))
 
     def branch(b: Branch) -> str:
         match b:
             case DeriveBranch(parameter=p, proposer=q):
                 return f"{_named(names, p)}={q}"
             case StoreBranch(relation=r, spelled=spelled):
-                got = None if names is None else names.arclog_at(r.text)
-                return f"{marked(spelled) if got is None else got}={VerdictWord.STORED}"
+                return f"{_arclog_or_marked(names, lambda n: n.arclog_at(r.text), spelled)}={VerdictWord.STORED}"
             case StoredAtDerive(parameter=p):
                 return f"{_named(names, p)}={VerdictWord.STORED}"
 
@@ -122,5 +119,11 @@ def case_name(solver: Solver, case: Case, names: NameMap | None) -> str:
 def _named(names: NameMap | None, parameter: str) -> str:
     """The arclog name of the parameter `parameter`, else its Souffle name
     under `SOUFFLE_MARK`."""
-    got = None if names is None else names.arclog_of(PARAMS_COMPONENT, parameter)
-    return marked(parameter) if got is None else got
+    return _arclog_or_marked(names, lambda n: n.arclog_of(PARAMS_COMPONENT, parameter), parameter)
+
+
+def _arclog_or_marked(names: NameMap | None, arclog: Callable[[NameMap], str | None], souffle: str) -> str:
+    """The name `arclog` gives in `names`, else the Souffle name `souffle`
+    under `SOUFFLE_MARK`."""
+    got = None if names is None else arclog(names)
+    return marked(souffle) if got is None else got

@@ -4,8 +4,8 @@
 use std::sync::Arc;
 
 use crate::program::canonical::CanonicalWriter;
-use crate::program::path::{NodePath, PathStep};
-use crate::program::{Form, ProgramRelation};
+use crate::program::path::NodePath;
+use crate::program::{DemonstratedPart, Form, ProgramRelation};
 use crate::registry::Registry;
 use crate::resolver::{ConceptReads, ResolvedProgram, Signature};
 use crate::solver::{Exclusion, FileOwner};
@@ -113,9 +113,8 @@ impl ClausesFound {
                 Form::Clause(clause) => self.add_clause((program_index, &*program), file_path, FileScope::Program, &clause.value().derives, &path),
                 Form::Demonstrated(demonstrated) => {
                     let demonstrated = demonstrated.value();
-                    let first_rule = demonstrated.key.iter().count() + demonstrated.inputs.len();
                     for (index, rule) in demonstrated.rules.iter().enumerate() {
-                        let rule_path = path.child((first_rule + index) as u32);
+                        let rule_path = path.child(demonstrated.position(DemonstratedPart::Rule(index)));
                         let (owner, file_rule_path) = file_path(&rule_path);
                         for (index, form) in rule.value().forms.iter().enumerate() {
                             if let Form::Clause(clause) = form {
@@ -177,5 +176,5 @@ pub(super) fn clause_signature(program: &ResolvedProgram, path: &NodePath) -> Si
 /// Each top-level form of `program`, with its path.
 pub(super) fn top_level_forms(program: &ResolvedProgram) -> impl Iterator<Item = (NodePath, &Form)> {
     let forms = program.program.value().forms.iter();
-    forms.zip(0u32..).map(|(form, index)| (NodePath(Box::new([PathStep(index)])), form))
+    forms.zip(0u32..).map(|(form, index)| (NodePath::top(index), form))
 }

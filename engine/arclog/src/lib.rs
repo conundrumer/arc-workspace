@@ -34,24 +34,25 @@
 //! ## Step 2
 //!
 //! Each change of step 2 writes the bodies of its own files, and edits a
-//! file of another change only at the lines its ticket's Scope gives:
+//! file of another change only at the lines its ticket's Scope gives. The
+//! files of each change:
 //!
-//! - 9-1037, the driver and the joins: [`eval`] (its `mod.rs`),
+//! - the driver and the joins: [`eval`] (its `mod.rs`),
 //!   [`eval::ir`], [`eval::plan`], [`eval::join`], [`eval::examples`],
 //!   [`eval::output`], [`task`], and the subcommand `compare` of
 //!   `arclog-cli`
-//! - 9-1038, the filters: [`eval::filters`]
-//! - 9-1039, the result cache: [`eval::cache`], and the bodies of
+//! - the filters: [`eval::filters`]
+//! - the result cache: [`eval::cache`], and the bodies of
 //!   [`session`]
-//! - 9-1040, the algebra: [`algebra`] and its submodules
-//! - 9-1041, the lib comparison: the subcommand `lib-compare` of
+//! - the algebra: [`algebra`] and its submodules
+//! - the lib comparison: the subcommand `lib-compare` of
 //!   `arclog-cli`
-//! - 9-1042, instances: [`eval::instance`]
-//! - 9-1043, `RIGID_DET`: [`eval::rigid`]
-//! - 9-1044 to 9-1049, the constructions: one file of
-//!   `arclog-constructions` each, as that crate's module comment gives
-//! - 9-1050, `Unfold`: [`eval::unfold`]
-//! - 9-1051, parallelism and determinism: [`eval::pool`], the values of
+//! - instances: [`eval::instance`]
+//! - `RIGID_DET`: [`eval::rigid`]
+//! - the constructions: one file of `arclog-constructions` each, as that
+//!   crate's module comment gives
+//! - `Unfold`: [`eval::unfold`]
+//! - parallelism and determinism: [`eval::pool`], the values of
 //!   [`eval::Caps::PROVISIONAL`], and the subcommands `determinism` and
 //!   `speed` of `arclog-cli`
 //!

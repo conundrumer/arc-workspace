@@ -174,8 +174,9 @@ impl FileReader {
         }
     }
 
-    /// Gives a diagnostic at each item of `exprs`, which the form has no
-    /// place for.
+    /// Gives a diagnostic of the grammar at the first item of `exprs`, an
+    /// item the form has no place for, and `None`; `Some(())` where `exprs`
+    /// is empty.
     pub(super) fn no_more(&mut self, exprs: &[SExpr]) -> Option<()> {
         match exprs.first() {
             Some(expr) => self.refuse("the form has no place for this item", expr.place()),

@@ -14,7 +14,7 @@ pub struct Order;
 
 impl Construction for Order {
     fn name(&self) -> &'static str {
-        "Order"
+        Self::NAME
     }
 
     fn evaluate(
@@ -32,7 +32,7 @@ pub struct BoundingBox;
 
 impl Construction for BoundingBox {
     fn name(&self) -> &'static str {
-        "BoundingBox"
+        Self::NAME
     }
 
     fn evaluate(
@@ -50,7 +50,7 @@ pub struct Cardinality;
 
 impl Construction for Cardinality {
     fn name(&self) -> &'static str {
-        "Cardinality"
+        Self::NAME
     }
 
     fn evaluate(
@@ -68,7 +68,7 @@ pub struct Excess;
 
 impl Construction for Excess {
     fn name(&self) -> &'static str {
-        "Excess"
+        Self::NAME
     }
 
     fn evaluate(
@@ -87,7 +87,7 @@ pub struct Singleton;
 
 impl Construction for Singleton {
     fn name(&self) -> &'static str {
-        "Singleton"
+        Self::NAME
     }
 
     fn evaluate(
@@ -106,7 +106,7 @@ pub struct Inclusion;
 
 impl Construction for Inclusion {
     fn name(&self) -> &'static str {
-        "Inclusion"
+        Self::NAME
     }
 
     fn evaluate(

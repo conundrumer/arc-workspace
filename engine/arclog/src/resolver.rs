@@ -384,9 +384,9 @@ fn demo_rules<'d>(
     demonstrated: &'d crate::program::Demonstrated,
     path: &NodePath,
 ) -> impl Iterator<Item = (NodePath, &'d crate::program::DemoRule)> + 'd {
-    let before = u32::from(demonstrated.key.is_some()) + demonstrated.inputs.len() as u32;
     let path = path.clone();
-    demonstrated.rules.iter().enumerate().map(move |(index, rule)| (path.child(before + index as u32), rule.value()))
+    let rules = demonstrated.rules.iter().enumerate();
+    rules.map(move |(index, rule)| (path.child(demonstrated.position(crate::program::DemonstratedPart::Rule(index))), rule.value()))
 }
 
 pub(crate) mod columns;

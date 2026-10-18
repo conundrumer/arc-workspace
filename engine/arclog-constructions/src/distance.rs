@@ -13,7 +13,7 @@ pub struct Distance;
 
 impl Construction for Distance {
     fn name(&self) -> &'static str {
-        "Distance"
+        Self::NAME
     }
 
     fn evaluate(
@@ -32,7 +32,7 @@ pub struct CellDistance;
 
 impl Construction for CellDistance {
     fn name(&self) -> &'static str {
-        "CellDistance"
+        Self::NAME
     }
 
     fn evaluate(

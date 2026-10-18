@@ -10,9 +10,6 @@
 //!
 //! The checker stage writes the bodies of the checks, each in a submodule of
 //! its own.
-//!
-//! [`SolverClauses`] indexes the clauses of a solver across its case
-//! programs, for the checks that compare the clauses of one relation.
 
 pub mod grammar;
 pub mod grounding;
@@ -53,18 +50,7 @@ pub enum CheckId {
     /// The type check, the order rule included. The check gives each label of
     /// a body the type that [`crate::types::label_type`] gives it over the
     /// list of the label's scope, and refuses the label where that function
-    /// gives a fault. That list is the clause's body for a label of the top
-    /// level; a branch's list for a label local to an `OR` branch or to an
-    /// `IF`'s then; for a label fresh in an `IF`'s test or in a list of an
-    /// `ALL`, the list that holds that form; and for a label that an `OR` or
-    /// an `IF` exports, the list that holds the outermost form that exports
-    /// it. The site types the check gives that function are the declared
-    /// types of the columns; at a column of a type parameter bound to one
-    /// label's type, that type, at the column's path and at the path of the
-    /// column followed by a bare label's name; and at a field of a column of
-    /// a type parameter bound to a record, that field's type in the bound
-    /// record, as `docs/arclog/arclog.md#instance` binds the parameter. A
-    /// label that only `(= *X 0)` gives a type takes the type of the instance
+    /// gives a fault. A label that only `(= *X 0)` gives a type takes the type of the instance
     /// input it stands at, or else the join, as
     /// [`crate::types::ValueType::join`] gives it, of the types that the
     /// relation's other clauses give its column, each read from
@@ -81,7 +67,7 @@ pub enum CheckId {
     /// [`SolverClauses`] give that column, each typed in the case program it
     /// stands in, and its [`CheckCacheKey`] holds those clauses' signatures.
     /// The refusal stands at the clause's label at that column, or at the
-    /// clause where it holds no columns, as a `DET` that names a proposer
+    /// clause where it holds no columns, as a `DET` that gives a proposer
     /// and has no body. A column that the clause's label takes from the
     /// rule on `(= *X 0)` above is that rule's.
     Types,
@@ -225,11 +211,8 @@ pub fn check_cycles(graph: &DependencyGraph, program: &ResolvedProgram) -> Check
 /// key of canonical parts does ([`crate::program`]).
 /// The signatures stand in a fixed order: those of the names the form
 /// reads, in the order of each name's first read in the form's canonical
-/// order, then the signatures of the clauses that [`CheckId::Types`] reads:
-/// for a clause form, those of the clauses of its relation, and, in each
-/// label scope of the form, those of the clauses that type each head label
-/// of a clause that only `(= *X 0)` gives a type, as
-/// [`types::type_clause_signatures`] gives them. The key of [`CheckId::Cycles`], which
+/// order, then the signatures of the clauses that [`CheckId::Types`] reads,
+/// as [`types::type_clause_signatures`] gives them. The key of [`CheckId::Cycles`], which
 /// reads no form, holds the form of the program's dependency graph with the
 /// path of each node's form, and no signature.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

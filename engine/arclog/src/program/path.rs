@@ -86,6 +86,11 @@ impl NodePath {
     pub fn child(&self, index: u32) -> NodePath {
         NodePath(self.0.iter().copied().chain(std::iter::once(PathStep(index))).collect())
     }
+
+    /// The path of the top-level form at `index` of its file.
+    pub fn top(index: u32) -> NodePath {
+        NodePath(Box::new([PathStep(index)]))
+    }
 }
 
 /// A node of an arclog program, borrowed: any node a path can name.
@@ -219,6 +224,12 @@ impl<'a> NodeRef<'a> {
 
 /// The node at `path` below `root`, or `None` where `path` names no node.
 pub fn node_at<'a>(root: NodeRef<'a>, path: &NodePath) -> Option<NodeRef<'a>> {
+    descend(root, path)
+}
+
+/// The node at `path` below `root` of either file, by the children
+/// [`PathNode::children`] gives, or `None` where `path` names no node.
+fn descend<N: PathNode>(root: N, path: &NodePath) -> Option<N> {
     path.0.iter().try_fold(root, |node, step| node.children().get(step.0 as usize).copied())
 }
 
@@ -238,8 +249,15 @@ fn address_of<T>(value: &T) -> *const () {
 /// variant at its address, or `None` where the children of `parent` do not
 /// hold it.
 pub(crate) fn child_index<N: PathNode>(parent: N, child: N) -> Option<u32> {
+    index_among(&parent.children(), child)
+}
+
+/// The index of `child` among `children`, the children of one node: the
+/// child of its variant at its address, or `None` where `children` do not
+/// hold it.
+pub(crate) fn index_among<N: PathNode>(children: &[N], child: N) -> Option<u32> {
     let same = |node: &N| std::mem::discriminant(node) == std::mem::discriminant(&child) && node.address() == child.address();
-    parent.children().iter().position(same).map(|index| index as u32)
+    children.iter().position(same).map(|index| index as u32)
 }
 
 impl PathNode for NodeRef<'_> {
@@ -345,5 +363,5 @@ impl<'a> DataNodeRef<'a> {
 
 /// The node at `path` below `root`, or `None` where `path` names no node.
 pub fn data_node_at<'a>(root: DataNodeRef<'a>, path: &NodePath) -> Option<DataNodeRef<'a>> {
-    path.0.iter().try_fold(root, |node, step| node.children().get(step.0 as usize).copied())
+    descend(root, path)
 }

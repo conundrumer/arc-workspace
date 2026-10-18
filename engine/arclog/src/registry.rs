@@ -87,12 +87,12 @@ use crate::grounding::{body_labels, grounded_labels, own_labels};
 use crate::hash::{StableHashMap, StableHashSet};
 use crate::layout::{SourceFile, SourcePlace};
 use crate::program::{
-    Atom, Body, ColumnName, Conjunct, FactRelation, LabelId, Negated, Node, PortName, RelationRef, TypeName,
+    Atom, Body, ColumnName, FactRelation, LabelId, Node, PortName, RelationRef, TypeName,
 };
 use crate::read::spelling;
 use crate::read::{check_error, head_of, read_body, read_param_value, read_sexprs, SExpr};
 use crate::terms::{OrientationConstant, OrientationType};
-use crate::types::{each_conjunct, label_type, LabelFault, ValueType};
+use crate::types::{each_atom, each_conjunct, label_type, LabelFault, ValueType};
 
 /// The text of the registry file, which [`Registry::get`] reads.
 pub const REGISTRY_TEXT: &str = include_str!("../../lib/registry.sexpr");

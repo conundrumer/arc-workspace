@@ -9,8 +9,8 @@
 //! scope. A body that reaches the cap takes the least labeling the search
 //! has found.
 //!
-//! A node's canonical hash names each relation it reads as the file writes
-//! it, [`AsWritten`]. The resolved content of a node in one case program, in
+//! A node's canonical hash writes each relation the node reads as the file
+//! writes it, [`AsWritten`]. The resolved content of a node in one case program, in
 //! which each derived relation stands for its own content, is
 //! [`crate::resolver::ResolvedProgram::content`], which writes the same
 //! canonical form through a [`NameWriter`] of the resolver. That content
@@ -18,8 +18,9 @@
 //! under different names have equal resolved content.
 //!
 //! The byte encoding of a form is in `form`, the graph of a label scope
-//! with its color refinement in `graph`, and the canonical order of a form
-//! in `order`. This module holds the search over that graph. Each module
+//! with its color refinement in `graph`, the one walk of a label scope's
+//! nodes that both take in `walk`, and the canonical order of a form in
+//! `order`. This module holds the search over that graph. Each module
 //! writes a column path through the [`NameWriter`] of the write, so the
 //! edge labels of the graph and the bytes of the form name each column
 //! alike.
@@ -27,6 +28,7 @@
 mod form;
 mod graph;
 mod order;
+mod walk;
 
 use super::path::{child_index, NodePath, NodeRef, PathStep};
 use super::*;
@@ -104,8 +106,7 @@ pub enum LabelScope<'a> {
 /// The canonical labeling of `scope`, by individualization–refinement, with
 /// the column paths as edge labels as `names` writes them: as written for a
 /// node's hash, [`AsWritten`], or as the resolved positions for the
-/// resolved content. It takes a scope in place of one body, since a body
-/// alone does not give the labels of the scope's head sites.
+/// resolved content.
 pub fn canonical_labeling(scope: LabelScope, names: &dyn NameWriter, search: &mut SearchBudget) -> CanonicalLabeling {
     let mut cx = Context::new(search, names);
     let (labels, reached_cap) = cx.labeling(scope);
@@ -136,6 +137,9 @@ fn child_step(parent: NodeRef<'_>, child: NodeRef<'_>) -> u32 {
 /// recorded.
 struct Context<'a> {
     labels: Labels,
+    /// The bytes of the node being written, while the walk of a label
+    /// scope's nodes writes it ([`Context::walk_into`]).
+    out: CanonicalWriter,
     search: &'a mut SearchBudget,
     names: &'a dyn NameWriter,
     path: Vec<PathStep>,
@@ -144,7 +148,7 @@ struct Context<'a> {
 
 impl<'a> Context<'a> {
     fn new(search: &'a mut SearchBudget, names: &'a dyn NameWriter) -> Self {
-        Context { labels: Labels::default(), search, names, path: Vec::new(), order: None }
+        Context { labels: Labels::default(), out: CanonicalWriter::default(), search, names, path: Vec::new(), order: None }
     }
 
     fn position(&self, label: LabelId) -> u32 {
@@ -183,52 +187,11 @@ impl<'a> Context<'a> {
         result
     }
 
-    /// Writes `members`, the children of `parent`, each through `write` as
-    /// the child `node` gives for it, sorted by the bytes of their forms,
-    /// and records their order.
-    ///
-    /// The recorded order maps each canonical position to a member's index
-    /// in `members`, and [`CanonicalOrder`] reads a step at `parent` as a
-    /// position in that list, so `members` must be the whole list of the
-    /// children of `parent`, in order.
-    ///
-    /// # Panics
-    ///
-    /// Where the write records a [`CanonicalOrder`] and a member's index
-    /// among the children of `parent` is not its index in `members`, or
-    /// `members` does not hold every child of `parent`, a fault of the path
-    /// table or of the form writer.
-    fn sorted<'n, T>(
-        &mut self,
-        out: &mut CanonicalWriter,
-        parent: NodeRef<'n>,
-        members: &'n [T],
-        node: impl Fn(&'n T) -> NodeRef<'n>,
-        write: impl Fn(&mut Self, &mut CanonicalWriter, &T),
-    ) {
-        let mut forms: Vec<(Vec<u8>, u32)> = members
-            .iter()
-            .zip(0u32..)
-            .map(|(member, index)| {
-                let mut own = CanonicalWriter::default();
-                let step = || {
-                    let step = child_step(parent, node(member));
-                    assert_eq!(step, index, "{CHILD_FAULT}");
-                    step
-                };
-                self.at_step(step, |cx| write(cx, &mut own, member));
-                (own.bytes, index)
-            })
-            .collect();
-        forms.sort();
-        if let Some(order) = &mut self.order {
-            assert_eq!(members.len(), parent.children().len(), "{CHILD_FAULT}");
-            order.lists.insert(NodePath(self.path.clone().into()), forms.iter().map(|(_, index)| *index).collect());
-        }
-        out.len(forms.len());
-        for (bytes, _) in &forms {
-            out.nested(bytes);
-        }
+    /// Runs `walk` with `out` as the bytes it writes.
+    fn walk_into(&mut self, out: &mut CanonicalWriter, walk: impl FnOnce(&mut Self)) {
+        std::mem::swap(&mut self.out, out);
+        walk(self);
+        std::mem::swap(&mut self.out, out);
     }
 
     /// Writes `columns` in the order of their labels' canonical positions,
@@ -265,7 +228,7 @@ impl<'a> Context<'a> {
     fn labeling(&mut self, scope: LabelScope) -> (Labels, bool) {
         let mut graph = GraphBuilder::new(self.names);
         let root = graph.vertex(Tag::Root, |_| {});
-        scope.graph(&mut graph, root);
+        walk::scope(&mut graph, root, scope);
         let graph = graph.colored();
         let outer = std::mem::replace(&mut self.search.remaining, SEARCH_NODE_CAP);
         let mut best = None;

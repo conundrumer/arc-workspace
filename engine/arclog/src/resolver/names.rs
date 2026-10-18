@@ -144,7 +144,7 @@ impl Names {
     pub(super) fn content(&self, program: &Node<Program>, path: &NodePath) -> Option<CanonicalForm> {
         if path.0.is_empty() {
             let forms: Option<Vec<Arc<[u8]>>> = (0..program.value().forms.len())
-                .map(|index| self.content(program, &NodePath(Box::new([crate::program::path::PathStep(index as u32)]))).map(|form| form.bytes))
+                .map(|index| self.content(program, &NodePath::top(index as u32)).map(|form| form.bytes))
                 .collect();
             return Some(combined(0, forms?, &[]));
         }

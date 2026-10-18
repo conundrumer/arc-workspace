@@ -1,15 +1,15 @@
 //! Instances of lib components: the [`Construction`] trait, the table of
 //! constructions by registry name, the evaluation of an `INIT` form, the
-//! defaults of its inputs, and a `DET` that names a construction.
+//! defaults of its inputs, and a `DET` whose proposer is a construction.
 //!
 //! The constructions stand in the crate `arclog-constructions`, which
-//! depends on this crate, so this crate names none of them. An instance
+//! depends on this crate, so no code of this crate refers to them. An instance
 //! finds its component's construction by its registry name in the
 //! [`Constructions`] of its evaluation.
 //!
 //! A construction is evaluated over its inputs grouped by key, and gives
 //! its outputs as sets: it reads no order of the rows it is given, and none
-//! of its outputs reads the order it built them in.
+//! of its outputs depends on the order it built them in.
 
 #![allow(unused_variables, dead_code)]
 
@@ -88,7 +88,8 @@ pub enum ConstructionsFault {
 impl Constructions {
     /// The table of `constructions`. Each one's name is a name of
     /// `registry` that declares a construction or a detector: a component,
-    /// or a derivation that a `DET` names, such as `Division`.
+    /// or a derivation that a `DET` gives as its proposer, such as
+    /// `Division`.
     pub fn new(
         constructions: Vec<Box<dyn Construction>>,
         registry: &crate::registry::Registry,
@@ -115,7 +116,7 @@ pub fn evaluate_instance(
     todo!()
 }
 
-/// The value of a `DET` at `form` that names a construction, such as
+/// The value of a `DET` at `form` whose proposer is a construction, such as
 /// `(DET &frame Frame)`: the construction evaluated over the inputs its
 /// stored parameter gives, such as the extents of a Frame.
 pub fn evaluate_det_construction(

@@ -140,14 +140,14 @@ impl Columns {
             match slot {
                 Slot::Column(name) => {
                     out.write(&[0]);
-                    out.column(name);
+                    out.name(name);
                 }
                 Slot::Record { name, fields } => {
                     out.write(&[1]);
-                    out.column(name);
+                    out.name(name);
                     out.len(fields.len());
                     for field in fields.iter() {
-                        out.column(field);
+                        out.name(field);
                     }
                 }
             }
