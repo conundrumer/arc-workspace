@@ -83,6 +83,17 @@ pub enum DependencyKind {
     RecursiveInstance(InstanceName),
 }
 
+/// The side of a node of the dependency graph, as
+/// `docs/arclog/arclog.md#program` and `#instance` give: per input, as a
+/// `RULE` relation is, or task-wide, as a `DET` relation is. A task-wide
+/// form reads a per-input relation in its lifted form, with the Example
+/// column `E` first.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Side {
+    PerInput,
+    TaskWide,
+}
+
 /// The index of a node in a [`DependencyGraph`].
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct GraphNodeIndex(pub u32);
@@ -189,6 +200,8 @@ pub struct ResolvedProgram {
     pub graph: DependencyGraph,
     /// The path of the form of each node of the graph, by its index.
     forms: Box<[NodePath]>,
+    /// The side of each node of the graph, by its index.
+    sides: Box<[Side]>,
     resolutions: crate::hash::StableHashMap<NodePath, Resolution>,
     signatures: crate::hash::StableHashMap<NodePath, Signature>,
     positions: crate::hash::StableHashMap<NodePath, ColumnPosition>,
@@ -226,6 +239,13 @@ impl ResolvedProgram {
     /// [`ResolvedProgram::column_position`] gives.
     pub fn column_group(&self, site: &NodePath) -> Option<crate::relations::ColumnGroup> {
         self.groups.get(site).copied()
+    }
+
+    /// The side of `node` of the graph: by the keyword of its clause, and,
+    /// for an `INIT`, a `CHOOSE` or a `DEMONSTRATED` form, by what its bodies
+    /// read.
+    pub fn side(&self, node: GraphNodeIndex) -> Side {
+        self.sides[node.0 as usize]
     }
 
     /// The signature of the name read at `path`.
@@ -784,6 +804,17 @@ mod expand {
     }
 }
 
+/// Each `DEMO_RULE` form of the `DEMONSTRATED` form at `path`, with its
+/// path: its children after the key clause and the inputs.
+fn demo_rules<'d>(
+    demonstrated: &'d crate::program::Demonstrated,
+    path: &NodePath,
+) -> impl Iterator<Item = (NodePath, &'d crate::program::DemoRule)> + 'd {
+    let before = u32::from(demonstrated.key.is_some()) + demonstrated.inputs.len() as u32;
+    let path = path.clone();
+    demonstrated.rules.iter().enumerate().map(move |(index, rule)| (path.child(before + index as u32), rule.value()))
+}
+
 /// The columns of a relation's rows, as the sites of a read name them.
 mod columns {
     use std::sync::Arc;
@@ -1071,9 +1102,10 @@ mod columns {
     /// Each output of a `RIGID_DET` form, by its path after the form's
     /// name, with its columns, as `docs/arclog/rigid.md#semantics` gives:
     /// the key's, `:Pose` and the part's for a part, and the key's, the
-    /// instance's and `:Pose` for `.pose`.
+    /// instance's and `:Pose` for `.pose`. A form with no key clause has one
+    /// `key` column, as an instance with no key clause has.
     pub(super) fn rigid_outputs(form: &RigidDet) -> Vec<(Arc<[OutputStep]>, Columns)> {
-        let key: Option<Slot> = form.key.as_ref().map(|key| key_slot(Some(key)));
+        let key = key_slot(form.key.as_ref());
         let pose = Slot::Column(written(POSE));
         let mut outputs: Vec<(Arc<[OutputStep]>, Columns)> = form
             .parts
@@ -1082,11 +1114,11 @@ mod columns {
                 let part = part.value();
                 let steps = part_steps(&part.relation)?;
                 let sites = part.sites.iter().map(|site| Slot::Column(site.column.clone()));
-                Some((steps.into(), Columns(key.iter().cloned().chain([pose.clone()]).chain(sites).collect())))
+                Some((steps.into(), Columns([key.clone(), pose.clone()].into_iter().chain(sites).collect())))
             })
             .collect();
         let instance = form.instance.iter().flat_map(|instance| instance.columns.iter()).map(|column| Slot::Column(column.name.clone()));
-        outputs.push((Arc::from([OutputStep::Pose]), Columns(key.into_iter().chain(instance).chain([pose]).collect())));
+        outputs.push((Arc::from([OutputStep::Pose]), Columns(std::iter::once(key).chain(instance).chain([pose]).collect())));
         outputs
     }
 }
@@ -1103,7 +1135,7 @@ mod names {
     use crate::program::canonical::{AsWritten, Canonical, CanonicalForm, CanonicalWriter, NameWriter, SearchBudget};
     use crate::program::path::{NodePath, NodeRef};
     use crate::program::{
-        Body, ColumnName, DeclaredName, NameScope, Node, OutputOwner, OutputStep, Program, RelationRef,
+        Body, ColumnName, DeclaredName, Demonstrated, NameScope, Node, OutputOwner, OutputStep, Program, RelationRef,
     };
     use crate::registry::LibName;
 
@@ -1310,13 +1342,17 @@ mod names {
                 own = Own::of(node).or(own);
             }
             let writer = Writer { names: self, scope: &scope, own: own.as_ref() };
-            written(node, atom, &writer)
+            written(node, path, atom, &writer)
         }
     }
 
-    /// The canonical form of `node` through `writer`. A site or a bare label
-    /// is written as the atom `atom` that holds it, with that site alone.
-    pub(super) fn written(node: NodeRef<'_>, atom: Option<&crate::program::Atom>, writer: &Writer<'_>) -> Option<CanonicalForm> {
+    /// The canonical form of `node`, at `path`, through `writer`. A site or a
+    /// bare label is written as the atom `atom` that holds it, with that site
+    /// alone.
+    pub(super) fn written(node: NodeRef<'_>, path: &NodePath, atom: Option<&crate::program::Atom>, writer: &Writer<'_>) -> Option<CanonicalForm> {
+        if let NodeRef::Demonstrated(demonstrated) = node {
+            return Some(demonstrated_form(demonstrated, path, writer));
+        }
         let mut out = CanonicalWriter::default();
         let search = &mut SearchBudget::new();
         let out_ = &mut out;
@@ -1329,7 +1365,7 @@ mod names {
             NodeRef::InstanceInput(value) => value.write_canonical(out_, search, writer),
             NodeRef::Choose(value) => value.write_canonical(out_, search, writer),
             NodeRef::RigidDet(value) => value.write_canonical(out_, search, writer),
-            NodeRef::Demonstrated(value) => value.write_canonical(out_, search, writer),
+            NodeRef::Demonstrated(_) => unreachable!("a `DEMONSTRATED` form is written by `demonstrated_form`"),
             NodeRef::DemoRule(value) => value.write_canonical(out_, search, writer),
             NodeRef::Alts(value) => value.write_canonical(out_, search, writer),
             NodeRef::Alt(value) => value.write_canonical(out_, search, writer),
@@ -1346,6 +1382,26 @@ mod names {
             }
         }
         Some(out.finish())
+    }
+
+    /// The canonical form of the `DEMONSTRATED` form `demonstrated` at
+    /// `path`: its key clause and its inputs through `writer`, then each of
+    /// its `DEMO_RULE` forms through a writer of the rule's scope, so that
+    /// each name a rule declares is written as the resolved content of what
+    /// it resolves to in that rule.
+    fn demonstrated_form(demonstrated: &Demonstrated, path: &NodePath, writer: &Writer<'_>) -> CanonicalForm {
+        let mut out = CanonicalWriter::default();
+        let bare = Demonstrated { rules: Arc::from([]), ..demonstrated.clone() };
+        bare.write_canonical(&mut out, &mut SearchBudget::new(), writer);
+        write_len(&mut out, demonstrated.rules.len());
+        for (rule_path, rule) in super::demo_rules(demonstrated, path) {
+            let scope = NameScope::DemoRule(rule_path.clone());
+            let rule_writer = Writer { names: writer.names, scope: &scope, own: None };
+            let form = written(NodeRef::DemoRule(rule), &rule_path, None, &rule_writer).expect("a rule has a canonical form");
+            write_len(&mut out, form.bytes.len());
+            out.write(&form.bytes);
+        }
+        out.finish()
     }
 
     /// Whether `arg` is the bare label at `node`.
@@ -1441,7 +1497,7 @@ mod build {
     use super::names::{combined, write_port, write_steps, ColumnsOf, Names, Own, Target, Writer};
     use super::{
         ColumnPosition, ConceptReads, DependencyGraph, DependencyKind, DependencyNode, GraphNodeIndex, ResolvedProgram,
-        Resolution, Signature,
+        Resolution, Side, Signature,
     };
     use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity, WithDiagnostics};
     use crate::hash::{StableHashMap, StableHashSet};
@@ -1475,6 +1531,15 @@ mod build {
         }
     }
 
+    /// An atom that a form of the case reads: its path, its name scope, and
+    /// the path of the form whose body holds it.
+    struct AtomRead<'a> {
+        path: NodePath,
+        atom: &'a Atom,
+        scope: NameScope,
+        form: NodePath,
+    }
+
     struct Builder<'a> {
         case: &'a Node<Program>,
         registry: &'a Registry,
@@ -1493,7 +1558,11 @@ mod build {
         /// The columns of each relation that a form resolving in the concept
         /// program derives, as the concept program gives them.
         concept_columns: StableHashMap<NodePath, Option<Columns>>,
-        atoms: Vec<(NodePath, &'a Atom, NameScope)>,
+        atoms: Vec<AtomRead<'a>>,
+        /// The side of each node, by its index.
+        sides: Vec<Side>,
+        /// The side of each form whose reads the case resolves.
+        form_sides: StableHashMap<NodePath, Side>,
         clauses: Vec<(NodePath, &'a Clause)>,
         resolutions: StableHashMap<NodePath, Resolution>,
         signatures: StableHashMap<NodePath, Signature>,
@@ -1523,6 +1592,8 @@ mod build {
             concept_forms: StableHashMap::default(),
             concept_columns: StableHashMap::default(),
             atoms: Vec::new(),
+            sides: Vec::new(),
+            form_sides: StableHashMap::default(),
             clauses: Vec::new(),
             resolutions: StableHashMap::default(),
             signatures: StableHashMap::default(),
@@ -1550,6 +1621,7 @@ mod build {
         for (index, form) in forms.iter().enumerate() {
             builder.read_form(form, top(index), &NameScope::Program);
         }
+        builder.sides();
         builder.contents();
         builder.sites();
         builder.proposers();
@@ -1730,11 +1802,9 @@ mod build {
                     self.form_node.insert(path.clone(), node);
                     let columns = ColumnsOf::Fixed(columns::demonstrated_columns(demonstrated));
                     pending.push((scope.clone(), RelationRef::Declared(demonstrated.name.clone()), Target { node, columns }));
-                    let before = u32::from(demonstrated.key.is_some()) + demonstrated.inputs.len() as u32;
-                    for (index, rule) in demonstrated.rules.iter().enumerate() {
-                        let rule_path = path.child(before + index as u32);
+                    for (rule_path, rule) in super::demo_rules(demonstrated, &path) {
                         let rule_scope = NameScope::DemoRule(rule_path.clone());
-                        for (index, form) in rule.value().forms.iter().enumerate() {
+                        for (index, form) in rule.forms.iter().enumerate() {
                             self.declare(form, rule_path.child(index as u32), &rule_scope, pending);
                         }
                     }
@@ -1827,7 +1897,7 @@ mod build {
                             self.unresolved(&path, &proposer.0);
                         }
                     }
-                    self.read_below(NodeRef::Body(clause.body.value()), path.child(0), scope, &[node]);
+                    self.read_below(NodeRef::Body(clause.body.value()), path.child(0), scope, &[node], &path);
                     self.read_instance_line(clause, node, scope);
                 }
                 Form::Instance(instance) => {
@@ -1850,29 +1920,27 @@ mod build {
                         readers.push((NodeRef::InstanceInput(input.value()), path.child(before + index as u32), vec![reader(&input.value().name)]));
                     }
                     for (node, at, readers) in readers {
-                        self.read_below(node, at, scope, &readers);
+                        self.read_below(node, at, scope, &readers, &path);
                     }
                 }
                 Form::Choose(_) | Form::RigidDet(_) => {
                     let node = self.form_node[&path];
-                    self.read_below(NodeRef::from(form), path, scope, &[node]);
+                    self.read_below(NodeRef::from(form), path.clone(), scope, &[node], &path);
                 }
                 Form::Demonstrated(demonstrated) => {
                     let demonstrated = demonstrated.value();
                     let node = self.form_node[&path];
                     let mut before = 0;
                     if let Some(key) = &demonstrated.key {
-                        self.read_below(NodeRef::KeyClause(key.value()), path.child(0), scope, &[node]);
+                        self.read_below(NodeRef::KeyClause(key.value()), path.child(0), scope, &[node], &path);
                         before = 1;
                     }
                     for (index, input) in demonstrated.inputs.iter().enumerate() {
-                        self.read_below(NodeRef::InstanceInput(input.value()), path.child(before + index as u32), scope, &[node]);
+                        self.read_below(NodeRef::InstanceInput(input.value()), path.child(before + index as u32), scope, &[node], &path);
                     }
-                    let before = before + demonstrated.inputs.len() as u32;
-                    for (index, rule) in demonstrated.rules.iter().enumerate() {
-                        let rule_path = path.child(before + index as u32);
+                    for (rule_path, rule) in super::demo_rules(demonstrated, &path) {
                         let rule_scope = NameScope::DemoRule(rule_path.clone());
-                        for (index, form) in rule.value().forms.iter().enumerate() {
+                        for (index, form) in rule.forms.iter().enumerate() {
                             self.read_form(form, rule_path.child(index as u32), &rule_scope);
                         }
                         let prediction = self.names.scopes.get(&rule_scope).and_then(|names| names.get(&prediction())).map(|target| target.node);
@@ -1906,21 +1974,21 @@ mod build {
         }
 
         /// Resolves each atom below `node`, at `path`, as read by each node
-        /// of `readers`.
-        fn read_below(&mut self, node: NodeRef<'a>, path: NodePath, scope: &NameScope, readers: &[GraphNodeIndex]) {
+        /// of `readers` in the form at `form`.
+        fn read_below(&mut self, node: NodeRef<'a>, path: NodePath, scope: &NameScope, readers: &[GraphNodeIndex], form: &NodePath) {
             match node {
-                NodeRef::Conjunct(Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom))) => self.read_atom(atom.value(), path, scope, readers),
-                NodeRef::Atom(atom) => self.read_atom(atom, path, scope, readers),
+                NodeRef::Conjunct(Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom))) => self.read_atom(atom.value(), path, scope, readers, form),
+                NodeRef::Atom(atom) => self.read_atom(atom, path, scope, readers, form),
                 NodeRef::DemoRule(_) => {}
                 _ => {
                     for (index, child) in node.children().into_iter().enumerate() {
-                        self.read_below(child, path.child(index as u32), scope, readers);
+                        self.read_below(child, path.child(index as u32), scope, readers, form);
                     }
                 }
             }
         }
 
-        fn read_atom(&mut self, atom: &'a Atom, path: NodePath, scope: &NameScope, readers: &[GraphNodeIndex]) {
+        fn read_atom(&mut self, atom: &'a Atom, path: NodePath, scope: &NameScope, readers: &[GraphNodeIndex], form: &NodePath) {
             let resolution = self.resolve_name(scope, &atom.relation, &path);
             if let Resolution::Node(read) = resolution {
                 for &reader in readers {
@@ -1931,7 +1999,7 @@ mod build {
                 }
             }
             self.resolutions.insert(path.clone(), resolution);
-            self.atoms.push((path, atom, scope.clone()));
+            self.atoms.push(AtomRead { path, atom, scope: scope.clone(), form: form.clone() });
         }
 
         fn resolve_name(&mut self, scope: &NameScope, relation: &RelationRef, path: &NodePath) -> Resolution {
@@ -2006,7 +2074,7 @@ mod build {
                 let writer = Writer { names: &self.names, scope, own: own.as_ref() };
                 let bytes = match self.names.fixed.get(path) {
                     Some(content) => content.bytes.clone(),
-                    None => super::names::written(form, None, &writer).expect("a form has a canonical form").bytes,
+                    None => super::names::written(form, path, None, &writer).expect("a form has a canonical form").bytes,
                 };
                 let columns = match form {
                     NodeRef::Clause(clause) => match self.concept_columns.get(path) {
@@ -2046,12 +2114,10 @@ mod build {
         /// the signature of each name read.
         fn sites(&mut self) {
             let atoms = std::mem::take(&mut self.atoms);
-            for (path, atom, scope) in &atoms {
+            for AtomRead { path, atom, scope, form } in &atoms {
                 let mut columns = self.names.columns(scope, &atom.relation).cloned();
-                let reads_example = atom.sites.iter().any(|site| site.column == ColumnName::Written(columns::EXAMPLE.into()));
-                let declared = matches!(atom.relation, RelationRef::Declared(_) | RelationRef::Output(_));
-                if let Some(found) = columns.as_ref().filter(|found| declared && reads_example && found.place(&[ColumnName::Written(columns::EXAMPLE.into())]).is_none()) {
-                    columns = Some(found.lifted());
+                if self.lifts(form, &self.resolutions[path]) {
+                    columns = columns.map(|found| found.lifted());
                 }
                 if let Some(columns) = &columns {
                     for (index, site) in atom.sites.iter().enumerate() {
@@ -2061,6 +2127,38 @@ mod build {
                 let signature = self.signature(&self.resolutions[path], &atom.relation, columns.as_ref());
                 self.signatures.insert(path.clone(), signature);
             }
+        }
+
+        /// Whether the form at `form` reads, in its lifted form, the relation
+        /// a read that resolves to `resolution` reads: where the form is
+        /// task-wide and that relation is a per-input relation of the case.
+        fn lifts(&self, form: &NodePath, resolution: &Resolution) -> bool {
+            let Resolution::Node(read) = resolution else { return false };
+            !self.is_fact(*read) && self.form_sides[form] == Side::TaskWide && self.sides[read.0 as usize] == Side::PerInput
+        }
+
+        fn is_fact(&self, node: GraphNodeIndex) -> bool {
+            matches!(self.nodes[node.0 as usize].kind, DependencyKind::Fact(_))
+        }
+
+        /// The side of each node and of each form whose reads the case
+        /// resolves.
+        fn sides(&mut self) {
+            let mut reads: StableHashMap<NodePath, Vec<usize>> = StableHashMap::default();
+            for (index, read) in self.atoms.iter().enumerate() {
+                reads.entry(read.form.clone()).or_default().push(index);
+            }
+            let mut forms: Vec<NodePath> = reads.keys().cloned().collect();
+            forms.sort();
+            let mut sides = Sides { builder: self, reads, forms: StableHashMap::default() };
+            let decided = "a side that a call from outside the decision gives is decided";
+            for form in &forms {
+                sides.form(form).expect(decided);
+            }
+            let node_sides: Vec<Side> = (0..self.nodes.len()).map(|node| sides.node(node).expect(decided)).collect();
+            let form_sides = sides.forms.into_iter().map(|(path, side)| (path, side.expect(decided))).collect();
+            self.sides = node_sides;
+            self.form_sides = form_sides;
         }
 
         fn place_site(&mut self, columns: &Columns, site: &crate::program::Site, path: NodePath) {
@@ -2152,6 +2250,7 @@ mod build {
                     program: self.case.clone(),
                     graph,
                     forms,
+                    sides: self.sides.into(),
                     resolutions: self.resolutions,
                     signatures: self.signatures,
                     positions: self.positions,
@@ -2160,6 +2259,102 @@ mod build {
                     names: self.names,
                 },
                 diagnostics: self.diagnostics,
+            }
+        }
+    }
+
+    /// The side of a clause of `keyword`.
+    fn keyword_side(keyword: ClauseKeyword) -> Side {
+        match keyword {
+            ClauseKeyword::Rule | ClauseKeyword::RuleOrDet => Side::PerInput,
+            ClauseKeyword::Det | ClauseKeyword::DetOrRule => Side::TaskWide,
+        }
+    }
+
+    /// The sides of the nodes of a case, each decided once, a form's after
+    /// the sides of the nodes it reads, as `docs/arclog/arclog.md#program`
+    /// and `#instance` give.
+    struct Sides<'b, 'a> {
+        builder: &'b Builder<'a>,
+        /// The index in [`Builder::atoms`] of each atom of each form.
+        reads: StableHashMap<NodePath, Vec<usize>>,
+        /// The side of each form, `None` while it is being decided, so that a
+        /// read on a cycle, which the checker refuses, decides nothing.
+        forms: StableHashMap<NodePath, Option<Side>>,
+    }
+
+    impl Sides<'_, '_> {
+        fn node(&mut self, node: usize) -> Option<Side> {
+            match &self.builder.nodes[node].kind {
+                DependencyKind::Fact(FactRelation::Input) => Some(Side::PerInput),
+                DependencyKind::Fact(FactRelation::ExInput | FactRelation::ExOutput) => Some(Side::TaskWide),
+                _ => {
+                    let form = self.builder.forms[node].first().expect("a form of each node of the case that is no fact").clone();
+                    self.form(&form)
+                }
+            }
+        }
+
+        /// The side of the form at `path`. A clause takes the side of its
+        /// keyword, apart from the `&prediction` clause of a `DEMO_RULE`,
+        /// which takes the side of the `DEMONSTRATED` form that holds the
+        /// rule, `docs/arclog/arclog.md#demonstrated`.
+        fn form(&mut self, path: &NodePath) -> Option<Side> {
+            if let Some(side) = self.forms.get(path) {
+                return *side;
+            }
+            self.forms.insert(path.clone(), None);
+            let program = NodeRef::Program(self.builder.case.value());
+            let form = node_at(program, path).expect("the path of a form of the case");
+            let side = match form {
+                NodeRef::Clause(clause) if relation_of(&clause.derives) == prediction() && path.0.len() >= 2 => {
+                    let rule = NodePath(path.0[..path.0.len() - 1].into());
+                    let demonstrated = NodePath(path.0[..path.0.len() - 2].into());
+                    match node_at(program, &rule) {
+                        Some(NodeRef::DemoRule(_)) => self.form(&demonstrated).expect(
+                            "a `DEMONSTRATED` form's side is decided from its input bodies, which see no name of its rules",
+                        ),
+                        _ => keyword_side(clause.keyword),
+                    }
+                }
+                NodeRef::Clause(clause) => keyword_side(clause.keyword),
+                NodeRef::RigidDet(_) => Side::TaskWide,
+                _ => self.read_side(path),
+            };
+            self.forms.insert(path.clone(), Some(side));
+            Some(side)
+        }
+
+        /// The side of an `INIT`, a `CHOOSE` or a `DEMONSTRATED` form at
+        /// `path`, by what its bodies read: task-wide where they read
+        /// `ex_input`, `ex_output`, or a per-input relation at a site on `E`;
+        /// per input where they read, with no such read, `input` or a
+        /// per-input relation; and task-wide otherwise, pooled over the
+        /// examples. A read of the form's own nodes, as an `Unfold`
+        /// instance's of its outputs, counts toward neither side.
+        fn read_side(&mut self, path: &NodePath) -> Side {
+            let builder = self.builder;
+            let mut per_input = false;
+            for index in self.reads.get(path).cloned().unwrap_or_default() {
+                let read = &builder.atoms[index];
+                let Resolution::Node(read_node) = builder.resolutions[&read.path] else { continue };
+                let node = read_node.0 as usize;
+                if builder.forms[node].contains(path) {
+                    continue;
+                }
+                let fact = builder.is_fact(read_node);
+                let reads_example = read.atom.sites.iter().any(|site| site.column == ColumnName::Written(columns::EXAMPLE.into()));
+                match self.node(node) {
+                    Some(Side::TaskWide) if fact => return Side::TaskWide,
+                    Some(Side::PerInput) if reads_example && !fact => return Side::TaskWide,
+                    Some(Side::PerInput) => per_input = true,
+                    Some(Side::TaskWide) | None => {}
+                }
+            }
+            if per_input {
+                Side::PerInput
+            } else {
+                Side::TaskWide
             }
         }
     }
