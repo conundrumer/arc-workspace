@@ -37,6 +37,7 @@ from transcript_snapshots import Refused, print_refused  # noqa: E402
 
 from profile_runs_help import HELP_VALUES, ISO_TIME, PARTS, PURPOSES, REPRICED, USAGE, HelpPart  # noqa: E402
 from under_runs import UNDER, runs_since  # noqa: E402
+from operator_state import line_where  # noqa: E402
 
 
 def utc_time(text: str) -> float:
@@ -47,7 +48,10 @@ def utc_time(text: str) -> float:
 def print_profiles(runs: list[Run], args: argparse.Namespace, each_run: bool,
                    undecided: list[str]) -> None:
     if runs and each_run:
-        budgets = group_budgets(undecided) if len(runs) == 1 or args.each else None
+        # The budgets read every run under the project directories, so of
+        # their `undecided` lines, only those on a run taken are kept.
+        read: list[str] = []
+        budgets = group_budgets(read) if len(runs) == 1 or args.each else None
         among = call_times(runs)
         for r in runs:
             print(f"{r.label} {r.agent_type} {clock(r.start)}: {r.description}\n"
@@ -60,6 +64,8 @@ def print_profiles(runs: list[Run], args: argparse.Namespace, each_run: bool,
                 print_groups(r.groups, args.top, r.wall)
             if args.each and len(runs) > 1:
                 print()
+        taken = {r.label for r in runs}
+        undecided.extend(line for line in read if line_where(line) in taken)
         if len(runs) > 1 and not args.each:
             print()
     if len(runs) > 1:

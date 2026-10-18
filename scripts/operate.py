@@ -32,7 +32,7 @@ from operations import journal, pacing, runs  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
 from operations.roles import Role  # noqa: E402
-from operations.constants import BLOCK_SECONDS, FOREGROUND_MS, LIMIT_SECONDS, SUBAGENT_LIMIT  # noqa: E402
+from operations.constants import BLOCK_SECONDS, LIMIT_SECONDS, RUN_SECONDS, SUBAGENT_LIMIT  # noqa: E402
 from operations.task_work import release, restore, set_aside  # noqa: E402
 from operate_loop import block, operator_step  # noqa: E402
 from operate_actions import TASK_ID, OperateAction, claim_task, relay_step  # noqa: E402
@@ -44,7 +44,7 @@ def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("--help", "-h"):
         return print_help(argv[1:], HelpPart, lambda parts: USAGE.format(parts=parts), PURPOSES,
                           lambda part: PARTS[part].format(
-                              block=BLOCK_SECONDS, limit=LIMIT_SECONDS, foreground=FOREGROUND_MS // 1000,
+                              block=BLOCK_SECONDS, limit=LIMIT_SECONDS, run=RUN_SECONDS,
                               journal=step_journal.JOURNAL,
                               bound=journal.BOUND,
                               write=round(WRITE_SECONDS), stale=USAGE_STALE, rate_limit=RATE_LIMIT,

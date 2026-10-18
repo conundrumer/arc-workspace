@@ -26,6 +26,7 @@ class Filer(StrEnum):
     TICKET_REVIEWER = Role.TICKET_REVIEWER.value
     CODE_REVIEWER = Role.CODE_REVIEWER.value
     LIB_REVIEWER = Role.LIB_REVIEWER.value
+    ITEM_CHECKER = Role.ITEM_CHECKER.value
     COORDINATOR = COORDINATOR
     TICKET_ANALYST = Role.TICKET_ANALYST.value
     MERGE_CHANGE = "merge-change"
@@ -54,6 +55,7 @@ FILER_KINDS: dict[Filer, frozenset[Kind]] = {
     Filer.COORDINATOR: frozenset({Kind.REQUEST, Kind.BUG}),
     Filer.TICKET_ANALYST: frozenset({Kind.CHANGE, Kind.BUG}),
     Filer.MERGE_CHANGE: frozenset({Kind.CHANGE}),
+    Filer.ITEM_CHECKER: frozenset({Kind.BUG}),
 }
 """The kinds each filing agent, by its name, may file."""
 

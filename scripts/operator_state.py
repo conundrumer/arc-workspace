@@ -114,8 +114,14 @@ def undecided_lines(me: str, runs: list[tuple[str, Path]], calls: Sequence[Call]
     given = given_lines(runs, me, list(calls))
     readers = text_readers(me, took_up, ended, agents)
     return [line for line in dict.fromkeys(undecided)
-            if (where := line.split(":", 1)[0]) in known and unknown_line(line) not in given
+            if (where := line_where(line)) in known and unknown_line(line) not in given
             and (where in readers or not gone_line(line))]
+
+
+def line_where(line: str) -> str:
+    """The run or the agent the `undecided` line `line` is on: the text
+    before its first `:`."""
+    return line.split(":", 1)[0]
 
 
 def text_readers(me: str, took_up: frozenset[str], ended: Mapping[str, Report | None],

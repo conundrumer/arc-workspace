@@ -249,13 +249,10 @@ def check_status(path: Path, number: TicketNumber, status: Status) -> None:
             ref=number, actual=actual, status=status))
 
 
-def write_log(tickets: Path, path: Path, number: TicketNumber, status: Status, agent: str,
-              source: Status, agent_id: str | None, note: str | None) -> Path:
-    """Moves ticket `number`, at `path`, from `source`'s directory to `status`'s where
-    they differ, then appends a log line to it, and returns its path. The
-    move is a rename, and a call refuses where the ticket no longer stands
-    in `source`, so of two calls that move one file, the later one is
-    refused, as `mv` from `source`'s directory would be."""
+def check_log(tickets: Path, path: Path, number: TicketNumber, status: Status, agent: str,
+              source: Status, agent_id: str | None, note: str | None) -> None:
+    """Refuses where `write_log` with the same arguments refuses, and
+    writes nothing."""
     check_status(path, number, source)
     moves = source is not status
     check_line(status, moves, agent, agent_id, note)
@@ -267,6 +264,17 @@ def write_log(tickets: Path, path: Path, number: TicketNumber, status: Status, a
         raise Refused(mctx("`{log}` is not the last section of {path}").format(log=LOG, path=path))
     if not moves and status is Status.ASSIGNED and agent_id:
         check_take(text, agent_id)
+
+
+def write_log(tickets: Path, path: Path, number: TicketNumber, status: Status, agent: str,
+              source: Status, agent_id: str | None, note: str | None) -> Path:
+    """Moves ticket `number`, at `path`, from `source`'s directory to `status`'s where
+    they differ, then appends a log line to it, and returns its path. The
+    move is a rename, and a call refuses where the ticket no longer stands
+    in `source`, so of two calls that move one file, the later one is
+    refused, as `mv` from `source`'s directory would be."""
+    check_log(tickets, path, number, status, agent, source, agent_id, note)
+    moves = source is not status
     if moves:
         target = tickets / status / path.name
         target.parent.mkdir(exist_ok=True)
@@ -328,12 +336,13 @@ def close_of(path: Path, status: Status, source: Status, note: str | None) -> Cl
     return None
 
 
-def log_moves(tickets: Path, number: TicketNumber, status: Status, agent: str, source: Status,
-              agent_id: str | None, note: str | None) -> Moves:
-    """Writes the log line as `write_log` does, refused as it refuses, and
-    returns the ticket's path, followed by what the line does beyond the
-    move (`Close`): the path of the `validation` ticket `file_validation`
-    files, or what `unblock` returns."""
+def check_moves(tickets: Path, number: TicketNumber, status: Status, agent: str,
+                source: Status, agent_id: str | None,
+                note: str | None) -> tuple[Path, Close | None, Status]:
+    """Refuses where `log_moves` with the same arguments refuses before it
+    writes, and writes nothing; otherwise gives the ticket's path, what
+    the line does beyond the move (`close_of`), and the status the line
+    leaves the ticket in."""
     path = ticket_path(tickets, number)
     close = close_of(path, status, source, note)
     if close is Close.DEFERS:
@@ -341,6 +350,17 @@ def log_moves(tickets: Path, number: TicketNumber, status: Status, agent: str, s
     if close is Close.FILES_VALIDATION and number.session is None:
         raise Refused(mctx("request `{number}` has a bare number, so its `validation` ticket "
                            "has no session to take its number from").format(number=number))
+    check_log(tickets, path, number, status, agent, source, agent_id, note)
+    return path, close, status
+
+
+def log_moves(tickets: Path, number: TicketNumber, status: Status, agent: str, source: Status,
+              agent_id: str | None, note: str | None) -> Moves:
+    """Writes the log line as `write_log` does, refused as it refuses, and
+    returns the ticket's path, followed by what the line does beyond the
+    move (`Close`): the path of the `validation` ticket `file_validation`
+    files, or what `unblock` returns."""
+    path, close, status = check_moves(tickets, number, status, agent, source, agent_id, note)
     moves = Moves([write_log(tickets, path, number, status, agent, source, agent_id, note)])
     match close:
         case None | Close.DEFERS:

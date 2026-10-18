@@ -41,9 +41,11 @@ records its time as the modification time of the caller's delivery file
 records none. A denial with no text is a delivery too, so a call after a
 denied one is measured from that denial. Claude Code puts a delivery with a
 call's result in the caller's context only after the calls the caller
-chose in the same message as that call, and starts the next of those calls
-within a fraction of a second, while a call of a later message starts at
-least a model turn after. So at PreToolUse, where that file is younger than
+chose in the same message as that call, and starts the next of those
+calls, most within a fraction of a second, while a call of a later message
+starts at least a model turn after. A call of the same message that starts
+later than `DELIVERY_BOUND` runs by the update's older documents. So at
+PreToolUse, where that file is younger than
 `DELIVERY_BOUND` at the time the hook's command started, as Claude Code
 fired it (`hook_entry.hook_started`), before its check, the update denies the call, with
 `_same_message_denial`, which holds no text, before any other step; where
@@ -82,7 +84,8 @@ DELIVERED = ".delivered"
 
 DELIVERY_BOUND = 0.5
 """In seconds. Of 23,547 first calls of a new message after a call's result,
-none started within it (change 11-303)."""
+none started within it (change 11-303). Most calls of the same message
+after a delivery start within it, and one measured at 0.609 s did not."""
 
 
 def delivery_path(hook: dict[str, Any]) -> Path:

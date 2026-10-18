@@ -30,10 +30,10 @@ from entry_reads import line_entries
 from transcript_entries import epoch, fold
 from transcript_snapshots import Entry
 
-from operations.merge_outcomes import conflict_paths
+from operations.merge_outcomes import call_conflicts
 from operations.roles import PASSES, Role, described
 from operations.state import (
-    Agent, Call, Merge, Message, PassReport, Report, Tool, Waits,
+    Agent, Call, Message, PassReport, Report, Tool, Waits,
 )
 from operations.command_words import is_next
 from operations.printing import unfenced
@@ -190,8 +190,7 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
         uses[call] = (t, inp, tool)
         merge = merge_outcome(aid, str(inp.get("command", "")) if tool == Tool.BASH else "",
                               t, text, error, subjects, denied, undecided)
-        conflicts = conflict_paths(text or "") if merge is Merge.CONFLICT else None
-        calls.append(Call(aid, t, tool, inp, text, error, merge, conflicts or ()))
+        calls.append(Call(aid, t, tool, inp, text, error, merge, call_conflicts(merge, text)))
     if not any(tool == Tool.AGENT and described(str(inp.get("description", "")))
                for _, inp, tool in uses.values()):
         return OperatorRead(AgentsRead((), {}, {}), tuple(calls), tuple(messages), {})

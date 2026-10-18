@@ -474,14 +474,30 @@ def findings(number: str, worktree: Path, left: str | None, questions: list[str]
         lines.append(f"\n{cap_reply[1]}\n")
     lines.extend(editor_reports(reports))
     if questions:
-        lines.append(mctx("Decide, as items left for a decision, the `question` tickets filed "
-                          "on the change, {questions}.").format(questions=", ".join(questions)))
+        lines.append(QUESTIONS.format(questions=QUESTIONS_SEPARATOR.join(questions)))
     if unfinished:
         lines.append(mctx("Decide, as items left for a decision, the items that the latest "
                           "report above of each of {editors} gives as "
                           "unfinished.").format(editors=", ".join(unfinished)))
     lines.append(LAUNCHER.format(operator=operator))
     return "\n".join(lines + settled_lines(settled))
+
+
+QUESTIONS = mctx("Decide, as items left for a decision, the `question` tickets filed on the "
+                 "change, {questions}.")
+"""The line of a ticket analyst's brief on what a change's editors leave
+that gives the open `question` tickets on the change, each by its number,
+apart by `QUESTIONS_SEPARATOR`."""
+
+QUESTIONS_SEPARATOR = ", "
+
+
+def questions_of(brief: str) -> frozenset[str]:
+    """The numbers of the `question` tickets the `QUESTIONS` line of
+    `brief` gives, or none where it holds no such line."""
+    m = re.search(form(QUESTIONS, {"questions": r"(?P<questions>[^\n]*?)"}) + "$", brief,
+                  re.MULTILINE)
+    return frozenset() if m is None else frozenset(m["questions"].split(QUESTIONS_SEPARATOR))
 
 
 DECIDED = mctx("Raise, keep or leave for a decision, in any words, no finding or item, or place "

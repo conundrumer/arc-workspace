@@ -94,7 +94,7 @@ from operations.journal import retired
 from operations.change_agents import (change_editors, editors_in, elsewhere_on, latest_editors,
                                       launched_on, of_change, Reported, reported, settled,
                                       unstaffed, with_before, with_elsewhere)
-from operations.change_holds import Hold, left_hold, open_questions, questions_hold
+from operations.change_holds import Hold, left_hold, open_questions, questions_given, questions_hold
 from operations.change_fragments import drafter_ids, fragments_step
 from operations.change_overrun import Ended, over_budget
 from operations.design_review import design_review, reviewing
@@ -363,7 +363,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
             and not given.unfinished:
         return False
     elif fresh is None and given.capped is None and not given.unfinished \
-            and judged > given.questions_given:
+            and analysts and questions_given(analysts[-1], list(given.questions)):
         hold = questions_hold(analysts[-1], t.number)
     if hold is not None:
         choice = decided(state, hold.text, hold.choices)

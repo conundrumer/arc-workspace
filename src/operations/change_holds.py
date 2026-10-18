@@ -1,6 +1,7 @@
 """The steps a change is held on that a ruling can decide, each with its
 text and its choices (`Hold`): the step on what its editors leave
-(`left_hold`, `questions_hold`) and the review of its documents
+(`left_hold`, `questions_hold`, held only on the questions the last
+ticket analyst's brief gave, `questions_given`) and the review of its documents
 (`findings_hold`, `unreplied_hold`). A ruling is keyed on the text of its
 step, so the step that holds and each read of its ruling build that text
 here. The module also selects the open `question` tickets on a change
@@ -10,6 +11,7 @@ the close of the change closes."""
 from dataclasses import dataclass
 
 from controlled_markdown import mctx
+from operations.briefs import questions_of
 from operations.directives import Decision
 from operations.reports import NO_FINDING, OPEN_LABELS, items_of
 from operations.state import Agent, State, Ticket
@@ -55,6 +57,14 @@ def questions_hold(a: Agent, number: str) -> Hold:
     `a`, the ticket analyst on what its editors leave, returned."""
     return Hold(mctx("ticket analyst {agent} returned on change {number}, and its question "
                      "tickets stand open").format(agent=a.agent_id, number=number), LEFT_CHOICES)
+
+
+def questions_given(a: Agent, questions: list[Ticket]) -> bool:
+    """Whether the brief of `a`, a ticket analyst on what a change's
+    editors leave, gave each of `questions`, the open `question` tickets
+    on the change."""
+    given = questions_of(a.brief)
+    return all(q.number in given for q in questions)
 
 
 REVIEW_CHOICES = {Decision.PASSES: mctx("the review passes"),

@@ -25,7 +25,8 @@ from typing import Any
 from merge_reads import merge_outcome
 
 from controlled_markdown import mctx
-from operations.constants import FOREGROUND_MS
+from operations.constants import RUN_SECONDS
+from operations.merge_outcomes import call_conflicts
 from operations.journal import Close, Entry, Journal, Outcome, closing
 from operations.roles import description
 from operations.state import Call, Tool
@@ -189,7 +190,7 @@ def alive(pid: int) -> bool:
 
 def run_close(r: Record, now: float) -> Close | None:
     """The outcome of the Bash run of `r`, read from its files at `now`, or
-    None while it runs; a run past `FOREGROUND_MS` is ended."""
+    None while it runs; a run past `RUN_SECONDS` is ended."""
     if r.run is None:
         return None
     if r.run.status.exists():
@@ -203,12 +204,12 @@ def run_close(r: Record, now: float) -> Close | None:
                      lines[-1] if lines else mctx("exit status {status}").format(status=text))
     if not alive(r.run.pid):
         return Close(Outcome.FAILED, now, NO_STATUS)
-    if now - r.entry.given > FOREGROUND_MS / 1000:
+    if now - r.entry.given > RUN_SECONDS:
         try:
             os.killpg(r.run.pid, signal.SIGTERM)
         except ProcessLookupError:
             pass
-        return Close(Outcome.FAILED, now, TIMED_OUT.format(seconds=FOREGROUND_MS // 1000))
+        return Close(Outcome.FAILED, now, TIMED_OUT.format(seconds=RUN_SECONDS))
     return None
 
 
@@ -244,7 +245,8 @@ def read(scratch: Path, calls: Sequence[Call], live: Callable[[Entry], bool], no
 def run_calls(found: Sequence[Record], subjects: Mapping[str, float],
               undecided: list[str]) -> list[Call]:
     """Each Bash step of `found` as a call of its operator, with its output
-    once it ended, and the outcome of a merge call (`merge_outcome`)."""
+    once it ended, and the outcome of a merge call (`merge_outcome`) with
+    the paths that conflict in it (`call_conflicts`)."""
     out: list[Call] = []
     denied: set[str] = set()
     for r in found:
@@ -255,7 +257,8 @@ def run_calls(found: Sequence[Record], subjects: Mapping[str, float],
         error = e.close is not None and e.close.outcome is Outcome.FAILED
         merge = merge_outcome(e.operator, e.text, e.given, text, error, subjects, denied,
                               undecided)
-        out.append(Call(e.operator, e.given, Tool.BASH, {"command": e.text}, text, error, merge))
+        out.append(Call(e.operator, e.given, Tool.BASH, {"command": e.text}, text, error, merge,
+                        call_conflicts(merge, text)))
     return out
 
 

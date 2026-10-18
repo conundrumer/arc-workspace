@@ -15,7 +15,9 @@ records its decision on a line of its own below it; or once the
 coordinator gives it to review after its last line, as after the
 coordinator moves it back into `tickets/draft/` and revises it. A draft
 waits while an agent of the operators' whose agent id a line of its log
-gives runs.
+gives runs, and, where its last `filed` or `revised` line is a ticket
+analyst's that gives no agent id, while a ticket analyst of the operators'
+launched before that line runs.
 
 A draft waits for a ticket analyst where its log holds findings after its
 last `filed` or `revised` line, and no ticket reviewer or ticket analyst
@@ -235,6 +237,17 @@ def due(state: State) -> set[str]:
     return out | {t.number for t in [*ready, *waiting]}
 
 
+def analyst_writes(state: State, t: Ticket) -> bool:
+    """Whether the last `filed` or `revised` line of `t` is a ticket
+    analyst's with no agent id and a ticket analyst of the operators'
+    launched before that line still runs, which may be the one that wrote
+    it."""
+    i = last_index(t, FILED_OR_REVISED)
+    if i < 0 or t.log[i].agent != Role.TICKET_ANALYST or t.log[i].agent_id is not None:
+        return False
+    return any(a.pending and a.launched < t.log[i].time for a, _, _ in state.analysts())
+
+
 def draft_step(state: State, t: Ticket, ready: list[Ticket],
                waiting: list[Ticket], at: dict[str, float]) -> Step | None:
     """The step on the draft `t` alone, or None where it waits or joins
@@ -252,8 +265,9 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
             if not sent(state, a.agent_id, message):
                 return Send(a.agent_id, message, f"stop {t.number}")
     writers = {ln.agent_id for ln in t.log if ln.agent_id}
-    if any(a.pending for a in agents) or any(a.pending and a.agent_id in writers
-                                             for a in state.transcripts.agents):
+    if (any(a.pending for a in agents)
+            or any(a.pending and a.agent_id in writers for a in state.transcripts.agents)
+            or analyst_writes(state, t)):
         return None
     since = base(t)
     found = review_lines_after(t, since, Note.FINDING)

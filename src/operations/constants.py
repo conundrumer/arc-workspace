@@ -1,7 +1,8 @@
 """The values that both the operator's command and the scripts an agent
 runs hold: the address of the coordinator, the interval of the keep-alive
 timer, the bound on a stretch with no progress, the bound on a foreground
-Bash call's timeout, the bounds on a call of the command's `next`, the
+Bash call's timeout, the bound on a Bash step the command runs itself,
+the bounds on a call of the command's `next`, the
 harness's limit of concurrent subagents, the waits of the step journal
 (`journal.due`), and the cap on the rounds of each kind of review of a
 built change. This module
@@ -31,8 +32,12 @@ def stuck_reached(since: float, now: float) -> bool:
 
 FOREGROUND_MS = 240000
 """The bound `scripts/pending_wait_hook.py` holds a subagent's foreground
-Bash call's timeout to, and the longest run of a Bash step the command
-runs itself (`scripts/step_journal.py`)."""
+Bash call's timeout to."""
+
+RUN_SECONDS = 1200
+"""The longest run of a Bash step the command runs itself
+(`scripts/step_journal.py`): about three times the longest measured run
+of `scripts/merge_change.py`, 391 s."""
 
 BLOCK_SECONDS = (FOREGROUND_MS // 1000) - 30
 """The longest foreground block of the command's `next`, under the bound on

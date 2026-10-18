@@ -8,6 +8,7 @@ import re
 from controlled_markdown import form, mctx
 from engine.duration import FOOTER_RE
 from operations.merging import PREFIX, REFUSED, refusal_line, split_paths
+from operations.state import Merge
 from operations.worktrees import BASE
 
 CONFLICT = mctx("rebasing {branch} onto {onto} conflicts in {paths}; {outcome}")
@@ -49,6 +50,15 @@ def conflict_paths(output: str) -> tuple[str, ...] | None:
                                             "paths": r"(?P<paths>.*?)", "outcome": r""}),
                   output)
     return None if m is None else split_paths(m["paths"])
+
+
+def call_conflicts(merge: Merge | None, output: str | None) -> tuple[str, ...]:
+    """The paths that conflict in a merge call whose outcome is `merge` and
+    that printed `output`: those `conflict_paths` gives where `merge` is
+    `Merge.CONFLICT`, and none otherwise."""
+    if merge is not Merge.CONFLICT:
+        return ()
+    return conflict_paths(output or "") or ()
 
 
 def left_edits(output: str) -> bool:
