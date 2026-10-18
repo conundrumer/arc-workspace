@@ -308,13 +308,7 @@ def doc_stage(r: Reviewed) -> Step | Pause:
     include a doc editor."""
     if Role.DOC_EDITOR not in r.editors:
         return Pause.CLEAR
-    match doc_review(r.state, r.t, r.w, r.here, r.agents, r.launcher):
-        case False:
-            return Pause.CLEAR
-        case None:
-            return Pause.WAIT
-        case step:
-            return step
+    return doc_review(r.state, r.t, r.w, r.here, r.agents, r.launcher)
 
 
 def reviewing_stage(r: Reviewed) -> Step | Pause:
@@ -344,9 +338,10 @@ def editor_step(state: State, editor: str,
     which it writes before the call, at `State.now`. In place of the
     launch it gives a line: where `editor` is none of `LAUNCHING_EDITORS`
     an operator launched, `NO_OPERATOR`; where its report file is not
-    there, the line that has it write that file; where the change is past
-    its cost budget (`change_overrun.over_budget`), the line that says the
-    operator takes its next step; where an editor role of the change has
+    there, the line that has it write that file; where
+    `change_overrun.over_budget` gives a step, `Ended` or `Pause.WAIT`, as
+    on a change past its cost budget, the line that says the operator takes
+    its next step; where an editor role of the change has
     no agent in its worktree or another editor there ended with no report
     since its launch or its last resume, the line that says the operator
     launches the checks; where that step is none and a check `editor`
@@ -390,7 +385,8 @@ def editor_step(state: State, editor: str,
     at = mine[-1].reviewing if mine[-1].reviewing is not None else state.now
     agents = [as_ended(a, at, text, path) if a.agent_id == editor else a
               for a in of_change(state, t)]
-    if over_budget(state, t, w, agents) is not Pause.CLEAR:
+    if not isinstance(budget := over_budget(state, t, w, agents), Undecided) \
+            and budget is not Pause.CLEAR:
         return mctx("Change {number} is past its cost budget, so the operator takes its next "
                     "step: give your final reply.").format(number=t.number)
     here = editors_in(agents, w)

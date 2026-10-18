@@ -21,7 +21,7 @@ from operations.worktrees import BASE
 from solver.vocabulary import SOLVER_SUFFIX
 
 COMMITS = 300
-"""The commits of `master` read for After a batch, newest first."""
+"""The number of commits of `master` the state reads, newest first."""
 
 PROCESS_DIRS = PathSet(("prompts/agents/", "src/operations/"))
 ACCEPTED = "tests/gate/accepted"

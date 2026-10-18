@@ -33,7 +33,6 @@ follow."""
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Literal
 
 from controlled_markdown import mctx
 from operations import briefs, messages
@@ -44,7 +43,7 @@ from operations.handled import sent
 from operations.reports import at_cap, no_finding, shows_current
 from operations.roles import Role
 from operations.state import Agent, State, Ticket, last_reported
-from operations.steps import Launch, Send, Step, Undecided, agent_ids
+from operations.steps import Launch, Pause, Send, Step, Undecided, agent_ids
 
 
 def reviewers_of(agents: list[Agent], w: Path) -> list[Agent]:
@@ -63,25 +62,25 @@ def latest_reviewer(agents: list[Agent], w: Path) -> Agent | None:
 
 
 def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
-               agents: list[Agent], launcher: str) -> Step | None | Literal[False]:
+               agents: list[Agent], launcher: str) -> Step | Pause:
     """The step of the review of the change's documents, with `launcher`
-    as the launcher of each doc reviewer it launches, or False where it
-    has passed."""
+    as the launcher of each doc reviewer it launches, `Pause.WAIT` where it
+    waits on an agent, or `Pause.CLEAR` where it has passed."""
     r = latest_reviewer(agents, w)
     if r is None:
         return review_launch(state, t, w, here, launcher, 0.0)
     if r.pending:
-        return None
+        return Pause.WAIT
     reply = r.last_report
     if reply is not None and at_cap(r):
         judged = any(a.role is Role.TICKET_ANALYST and a.launched > reply.time
                      and briefs.on_cap_reply(a) and a.last_report is not None for a in agents)
-        return False if judged else None
+        return Pause.CLEAR if judged else Pause.WAIT
     if reply is not None and (late := [a for a in here if (rep := a.last_report) is not None
                                        and rep.time > reply.time]):
         return review_stale(state, t, w, here, r, reply.time, late, launcher)
     if reply is not None and no_finding(r):
-        return False
+        return Pause.CLEAR
     if reply is None:
         if r.unreported and not any(a.unreported for a in reviewers_of(agents, w)[:-1]):
             return review_launch(state, t, w, here, launcher, r.since)
@@ -90,7 +89,7 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
 
 
 def unreplied(state: State, t: Ticket, w: Path, here: list[Agent],
-              r: Agent, launcher: str) -> Step | Literal[False]:
+              r: Agent, launcher: str) -> Step | Pause:
     """The step on a review whose doc reviewer `r` has not replied since
     its editors ended. `steps.Undecided.reread` gives why its held step is
     marked."""
@@ -99,9 +98,9 @@ def unreplied(state: State, t: Ticket, w: Path, here: list[Agent],
 
 
 def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, since: float,
-                 late: list[Agent], launcher: str) -> Step | Literal[False]:
+                 late: list[Agent], launcher: str) -> Step | Pause:
     """The step on the reply at `since` of the doc reviewer `r`, which
-    precedes the last report of the editors `late`: False where it opens
+    precedes the last report of the editors `late`: `Pause.CLEAR` where it opens
     with `no finding stands` and `r` sent each of them a message or is a
     launch of theirs, since its reply reaches its launcher, or where it
     opens so and gives the change's worktree `w` in the state it is in,
@@ -110,7 +109,7 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
     gives."""
     if no_finding(r):
         if shows_current(r, w):
-            return False
+            return Pause.CLEAR
         messaged = state.transcripts.sent_by(r)
         if messaged is None:
             return Undecided(mctx("the transcript of doc reviewer {agent} of change {number} "
@@ -119,7 +118,7 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
         if isinstance(ids, Undecided):
             return ids
         if all(i in messaged or i == r.operator for i in ids):
-            return False
+            return Pause.CLEAR
     message = messages.review_again(since)
     if r.agent_id is not None and r not in state.transcripts.elsewhere \
             and not sent(state, r.agent_id, message):
@@ -128,14 +127,14 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
 
 
 def review_decided(state: State, t: Ticket, w: Path, here: list[Agent],
-                   hold: Hold, launcher: str) -> Step | Literal[False]:
+                   hold: Hold, launcher: str) -> Step | Pause:
     """The step on a review held on `hold`, by its decision:
-    False where the review passes."""
+    `Pause.CLEAR` where the review passes."""
     r = ruling(state, hold.text, hold.choices)
     if isinstance(r, Undecided):
         return r
     if r.choice is Decision.PASSES:
-        return False
+        return Pause.CLEAR
     return review_launch(state, t, w, here, launcher, r.time)
 
 

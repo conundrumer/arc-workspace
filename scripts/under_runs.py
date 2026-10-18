@@ -71,7 +71,8 @@ def under_outputs(entries: Iterable[Entry], calls: Collection[str]) -> dict[str,
 @dataclass(frozen=True)
 class Previous:
     """The previous call of `UNDER` on a run: its time, the agent id of the
-    operator that made it, and the agent ids its `LEFT_OPEN` line gives."""
+    operator that made it or that `next` gave the step to, and the agent ids
+    its `LEFT_OPEN` line gives."""
     time: float
     agent: str
     left: frozenset[str]

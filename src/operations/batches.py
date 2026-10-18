@@ -21,9 +21,9 @@ A standing doc review launches at any step where none runs and a change
 merged since `opened` of the standing doc reviews: where the head of
 `master` is not the commit the last one's brief gives. `master` only
 fast-forwards, so another head means a change merged after that launch,
-whichever session merged it. Where none was launched, it launches where
-a commit of `master` has a time after `opened`, and where the last one's
-brief gives no commit, after the session's start.
+whichever session merged it, and a last brief that gives no commit counts
+as one that gives another commit. Where none was launched, it launches
+where a commit of `master` has a time after the session's start.
 
 A standing doc review also launches at any step on an overdue reader: one
 that no tag records, or whose tag points at a commit older than
@@ -232,7 +232,7 @@ def standing_review(state: State) -> Step | None:
     past = STANDING.agents(state)
     if opened(state, past) is None:
         return None
-    if not past or briefs.standing_commit(past[-1].brief) is None:
+    if not past:
         due = any(c.time > state.started for c in state.git.commits)
     else:
         due = not at_head(state, past[-1])
