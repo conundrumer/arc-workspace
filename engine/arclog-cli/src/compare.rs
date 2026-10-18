@@ -167,9 +167,9 @@ fn compared(arguments: &Arguments, corpus: &CorpusSolver) -> Result<Vec<String>,
         format!("the checker refuses the concept case: {}", messages.join("; "))
     })?;
     let parameters = ParameterValues::stored(solver.arcdata.value());
-    let session = TaskSession::new(SessionBound { bytes: SESSION_BYTES });
+    let session = TaskSession::new(SessionBound { bytes: SESSION_BYTES }, Caps::PROVISIONAL);
     let constructions = Constructions::new(Vec::new(), registry).map_err(|fault| format!("no table of constructions: {fault:?}"))?;
-    let limits = Limits { caps: Caps::PROVISIONAL, deadline: None, cancellation: Cancellation::default() };
+    let limits = Limits { deadline: None, cancellation: Cancellation::default() };
     let evaluation = Evaluation { program: &program, task: &task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits };
     let start = Instant::now();
     let outputs = evaluation.outputs().map_err(|fault| format!("{key}: a fault of the run at {:?}: {}", fault.form, fault.message))?;

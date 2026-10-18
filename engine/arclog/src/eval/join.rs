@@ -38,21 +38,22 @@ pub struct Budget<'a> {
 }
 
 impl<'a> Budget<'a> {
-    /// A budget with no work and no rows counted, under `limits`, in
-    /// `session`.
+    /// A budget with no work and no rows counted, under `limits` and the
+    /// caps of `session`.
     pub fn new(limits: &'a Limits, session: &'a TaskSession) -> Self {
         Budget { limits, session, work: 0, rows: 0 }
     }
 
+    /// The caps of the session.
     pub fn caps(&self) -> Caps {
-        self.limits.caps
+        self.session.caps
     }
 
     /// Counts a batch of `bindings` tried, and checks the caps, the
     /// session's byte bound, the deadline and the cancellation.
     pub fn charge_work(&mut self, bindings: u64) -> Result<(), ReachedBound> {
         self.work += bindings;
-        let caps = self.limits.caps;
+        let caps = self.session.caps;
         if self.work > caps.work {
             return Err(ReachedBound::Work { cap: caps.work });
         }
@@ -72,7 +73,7 @@ impl<'a> Budget<'a> {
     /// Counts `rows` more rows held, and checks the row cap.
     pub fn charge_rows(&mut self, rows: u64) -> Result<(), ReachedBound> {
         self.rows += rows;
-        let cap = self.limits.caps.rows;
+        let cap = self.session.caps.rows;
         if self.rows > cap { Err(ReachedBound::Rows { cap }) } else { Ok(()) }
     }
 }

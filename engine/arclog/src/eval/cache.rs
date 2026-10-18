@@ -4,10 +4,11 @@
 //! session's byte bound.
 
 use super::pool::InFlight;
-use super::RelationValue;
+use super::{RelationValue, Stop};
+use crate::program::path::NodePath;
 use crate::relations::Relation;
 use crate::resolver::ResolvedContent;
-use crate::session::{RelationId, ResultKey, TaskSession};
+use crate::session::{CachedValue, RelationId, ResultKey, TaskSession};
 use crate::terms::Example;
 
 /// What an entry reads, from which its [`ResultKey`] is made: its clause's
@@ -22,8 +23,11 @@ pub struct EntryRequest<'a> {
     pub parameters: &'a [&'a Relation],
 }
 
-/// The value cached for `request` in `session`, if any.
-pub fn lookup(session: &TaskSession, request: &EntryRequest<'_>) -> Option<RelationValue> {
+/// The value cached for `request` in `session`, if any, made at `form`, the
+/// path in the requesting program of the clause that made the request: a
+/// stop the cache holds is given at `form`, so its diagnostic stands at a
+/// path of the requesting program.
+pub fn lookup(session: &TaskSession, request: &EntryRequest<'_>, form: &NodePath) -> Option<RelationValue> {
     let found = |relations: &[&Relation]| -> Option<Box<[RelationId]>> {
         relations.iter().map(|relation| session.results.find_id(relation)).collect()
     };
@@ -33,19 +37,21 @@ pub fn lookup(session: &TaskSession, request: &EntryRequest<'_>) -> Option<Relat
         example: request.example,
         parameters: found(request.parameters)?,
     };
-    session.results.get(&key)
+    let value = session.results.get(&key)?;
+    Some(value.map_stop(|bound| Stop { bound, form: form.clone() }))
 }
 
 /// Caches `value` for `request` in `session`, where its stop, if it holds
-/// one, is stored, and evicts the entries least recently used while the
-/// cache's bytes exceed its share of the session's byte bound.
+/// one, is stored: the entry holds the stop's bound and no form. Then
+/// evicts the entries least recently used while the cache's bytes exceed
+/// its share of the session's byte bound.
 pub fn store(session: &TaskSession, request: &EntryRequest<'_>, value: &RelationValue) {
     if let RelationValue::Stopped(stop) = value {
         if !stop.bound.is_stored() {
             return;
         }
     }
-    session.results.insert(key(session, request), value.clone());
+    session.results.insert(key(session, request), value.clone().map_stop(|stop| stop.bound));
     session.results.evict(cache_bytes_bound(session));
 }
 
@@ -79,6 +85,6 @@ pub fn cache_bytes_bound(session: &TaskSession) -> usize {
 
 /// The entries that the pool's threads compute, for a thread that asks for
 /// one of them to wait on.
-pub fn in_flight(session: &TaskSession) -> &InFlight<ResultKey, RelationValue> {
+pub fn in_flight(session: &TaskSession) -> &InFlight<ResultKey, CachedValue> {
     session.results.in_flight()
 }

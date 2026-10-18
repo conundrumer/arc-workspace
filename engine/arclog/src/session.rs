@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use crate::eval::pool::InFlight;
-use crate::eval::RelationValue;
+use crate::eval::{Caps, ReachedBound, RelationValue};
 use crate::hash::{StableHash, StableHashMap, StableHasher};
 use crate::relations::{Relation, RelationPart};
 use crate::terms::InternTable;
@@ -44,11 +44,16 @@ pub struct ResultKey {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct RelationId(u32);
 
+/// The value of a result-cache entry: a relation, `undefined`, or the
+/// bound of a stop, with no form.
+pub type CachedValue = RelationValue<ReachedBound>;
+
 /// The memo table of evaluated relations, keyed by content, bounded by bytes.
 /// Several threads read and write it at once through a shared reference.
-/// An entry holds a relation, `undefined`, or a stop whose
-/// [`crate::eval::ReachedBound::is_stored`] holds, and never a partial
-/// relation.
+/// An entry holds a relation, `undefined`, or a bound whose
+/// [`crate::eval::ReachedBound::is_stored`] holds, with no form, and never
+/// a partial relation. The cache holds no path of a program, since the
+/// programs that share an entry hold its clause at different paths.
 ///
 /// The cache holds each relation that an entry's key reads or that an
 /// entry's value is once, under its id, and counts its bytes once. A
@@ -62,7 +67,7 @@ pub struct ResultCache {
     found: AtomicU64,
     /// The entries that a thread of the pool computes, which a thread that
     /// asks for one of them waits for.
-    in_flight: InFlight<ResultKey, RelationValue>,
+    in_flight: InFlight<ResultKey, CachedValue>,
 }
 
 #[derive(Debug, Default)]
@@ -81,7 +86,7 @@ struct CacheState {
 
 #[derive(Debug)]
 struct Entry {
-    value: RelationValue,
+    value: CachedValue,
     /// The id of the value's relation, where the value is one.
     rows: Option<RelationId>,
     used: u64,
@@ -102,7 +107,7 @@ const UNPOISONED: &str = "a result cache that no panic poisoned";
 impl ResultCache {
     /// The value cached under `key`, if any. A value found counts as a use
     /// of its entry.
-    pub fn get(&self, key: &ResultKey) -> Option<RelationValue> {
+    pub fn get(&self, key: &ResultKey) -> Option<CachedValue> {
         let mut state = self.state.lock().expect(UNPOISONED);
         let value = state.touch(key)?;
         self.found.fetch_add(1, Ordering::Relaxed);
@@ -111,9 +116,9 @@ impl ResultCache {
 
     /// Caches `value` under `key`. A stop that is not stored is a fault of
     /// the caller, so this panics on one.
-    pub fn insert(&self, key: ResultKey, value: RelationValue) {
-        if let RelationValue::Stopped(stop) = &value {
-            assert!(stop.bound.is_stored(), "a stop at a bound that the cache stores");
+    pub fn insert(&self, key: ResultKey, value: CachedValue) {
+        if let RelationValue::Stopped(bound) = &value {
+            assert!(bound.is_stored(), "a stop at a bound that the cache stores");
         }
         self.state.lock().expect(UNPOISONED).insert(key, value);
     }
@@ -155,13 +160,13 @@ impl ResultCache {
     }
 
     /// The entries in flight on the pool's threads.
-    pub fn in_flight(&self) -> &InFlight<ResultKey, RelationValue> {
+    pub fn in_flight(&self) -> &InFlight<ResultKey, CachedValue> {
         &self.in_flight
     }
 }
 
 impl CacheState {
-    fn touch(&mut self, key: &ResultKey) -> Option<RelationValue> {
+    fn touch(&mut self, key: &ResultKey) -> Option<CachedValue> {
         let tick = self.tick();
         let entry = self.entries.get_mut(key)?;
         let last = std::mem::replace(&mut entry.used, tick);
@@ -191,7 +196,7 @@ impl CacheState {
         id
     }
 
-    fn insert(&mut self, key: ResultKey, value: RelationValue) {
+    fn insert(&mut self, key: ResultKey, value: CachedValue) {
         if self.entries.contains_key(&key) {
             return;
         }
@@ -350,7 +355,10 @@ fn entry_bytes(key: &ResultKey) -> usize {
         + std::mem::size_of_val(&*key.parameters)
 }
 
-/// The engine's state for one task: its result cache and its intern table.
+/// The engine's state for one task: its result cache, its intern table and
+/// the caps of its evaluations. The caps are fixed for the session, so each
+/// stop that the result cache stores at a cap holds for every later request
+/// of that entry in the session.
 /// The evaluations of the pool's threads share one session through a
 /// shared reference: the intern table stands behind a read-write lock,
 /// since interning writes it and reading a content reads it, and the
@@ -359,6 +367,8 @@ fn entry_bytes(key: &ResultKey) -> usize {
 pub struct TaskSession {
     pub intern: RwLock<InternTable>,
     pub results: ResultCache,
+    /// The caps of every evaluation in the session.
+    pub caps: Caps,
     /// The bound on the session's bytes, which the intern table's bytes
     /// count toward.
     pub bound: SessionBound,
@@ -379,9 +389,10 @@ pub struct ReachedSessionBound {
 }
 
 impl TaskSession {
-    /// A session with an empty intern table and an empty result cache.
-    pub fn new(bound: SessionBound) -> Self {
-        TaskSession { intern: RwLock::default(), results: ResultCache::default(), bound }
+    /// A session with an empty intern table and an empty result cache,
+    /// whose evaluations run at `caps`.
+    pub fn new(bound: SessionBound, caps: Caps) -> Self {
+        TaskSession { intern: RwLock::default(), results: ResultCache::default(), caps, bound }
     }
 
     /// Whether the session's bytes, the intern table's and the result
