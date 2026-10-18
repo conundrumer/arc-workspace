@@ -71,7 +71,7 @@ def background_ends(found: dict[str, Background],
         note_read(f)
     files = {call: f for call, f in outputs.items() if is_file(f)}
     for call, f in files.items():
-        if str(resolved(f)) in held_in(resolved(f).parent):
+        if str(resolved(f)) in open_files().paths:
             note_live()
             continue
         try:
@@ -81,33 +81,42 @@ def background_ends(found: dict[str, Background],
     for call, f in outputs.items():
         if call in files:
             continue
-        if str(resolved(f)) in held_gone():
+        if str(resolved(f)) in open_files().gone:
             note_live()
         else:
             ends[call] = last
     return ends
 
 
-def lsof_paths(args: list[str], what: str) -> frozenset[str]:
-    """The paths `lsof` prints for `args`, refused where it writes to stderr."""
+@dataclass(frozen=True)
+class OpenFiles:
+    """The paths of the files a process holds open, as `lsof` gives them,
+    and those of them with no link (`gone`)."""
+    paths: frozenset[str]
+    gone: frozenset[str]
+
+
+@state_cache(None)
+def open_files() -> OpenFiles:
+    """The files processes hold open, read once for each state, so each
+    reader of a run sees one state, and one `lsof` call serves every run;
+    refused where `lsof` writes to stderr."""
     # lsof exits 1 where it finds no open file as well as on a fault, so
     # only its stderr tells a fault.
-    out = subprocess.run(["lsof", "-F", "n", *args], capture_output=True, text=True)
+    out = subprocess.run(["lsof", "-n", "-P", "+L", "-F", "nk"], capture_output=True, text=True)
     if out.stderr.strip():
-        raise Refused(mctx("which files {what} a process holds open is unknown: "
-                           "lsof says {err}").format(what=what, err=out.stderr.strip()))
-    return frozenset(line[1:] for line in out.stdout.splitlines() if line.startswith("n"))
-
-
-@state_cache(None)
-def held_in(directory: Path) -> frozenset[str]:
-    """The paths of the files in `directory` that a process holds open, as
-    `lsof` gives them, read once for each state, so each reader of a run
-    sees one state, and one `lsof` call serves the runs of a session."""
-    return lsof_paths(["+d", str(directory)], mctx("in {directory}").format(directory=directory))
-
-
-@state_cache(None)
-def held_gone() -> frozenset[str]:
-    """The paths of the open files with no link, read once for each state."""
-    return lsof_paths(["+L1"], mctx("with no link"))
+        raise Refused(mctx("which files a process holds open is unknown: lsof says {err}").format(
+            err=out.stderr.strip()))
+    paths: set[str] = set()
+    gone: set[str] = set()
+    links: str | None = None
+    for line in out.stdout.splitlines():
+        if line.startswith("f"):
+            links = None
+        elif line.startswith("k"):
+            links = line[1:]
+        elif line.startswith("n"):
+            paths.add(line[1:])
+            if links == "0":
+                gone.add(line[1:])
+    return OpenFiles(frozenset(paths), frozenset(gone))

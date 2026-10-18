@@ -6,6 +6,7 @@ of a transcript by id, each read held for one state of the process
 
 import filecmp
 import os
+import zlib
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
@@ -162,7 +163,32 @@ def transcripts_of(agent: str) -> list[Path]:
 def agent_paths(dirs: tuple[Path, ...], agent: str) -> list[Path]:
     """`transcripts_of` the agent `agent` under `dirs`, held so that a read
     derived from them sees a change only where they change."""
-    return agent_transcripts_in(dirs).get(agent, [])
+    return agent_shard(dirs, shard_of(agent)).get(agent, [])
+
+
+SHARDS = 256
+"""The count of the parts `agent_shards` splits the agent index into."""
+
+
+def shard_of(agent: str) -> int:
+    """The part of the agent index that holds the agent `agent`."""
+    return zlib.crc32(agent.encode()) % SHARDS
+
+
+@state_cache(DERIVED)
+def agent_shards(dirs: tuple[Path, ...]) -> tuple[dict[str, list[Path]], ...]:
+    """`agent_transcripts_in` of `dirs`, split by `shard_of` its agent ids."""
+    out: tuple[dict[str, list[Path]], ...] = tuple({} for _ in range(SHARDS))
+    for agent, paths in agent_transcripts_in(dirs).items():
+        out[shard_of(agent)][agent] = paths
+    return out
+
+
+@state_cache(DERIVED)
+def agent_shard(dirs: tuple[Path, ...], shard: int) -> dict[str, list[Path]]:
+    """The part `shard` of `agent_shards` of `dirs`, held so that a new
+    agent runs again only the `agent_paths` reads of its part."""
+    return agent_shards(dirs)[shard]
 
 
 def mains_named(name: str) -> list[Path]:

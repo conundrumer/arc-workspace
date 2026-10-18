@@ -73,3 +73,45 @@ def test_fold(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     path.write_text(json.dumps(entries[1]) + "\n")
     assert spend(root) == pytest.approx(cost(entries[1:2]))
+
+
+def test_new_audit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A cost audit launched in a directory the record of the start was
+    listed with starts the window at the next call."""
+    monkeypatch.setattr(kept_reads, "_store", None)
+    kept_reads.open_store(tmp_path / "store.sqlite")
+    root = tmp_path / "projects"
+    agents = root / "session" / "subagents"
+    agents.mkdir(parents=True)
+
+    def run(agent: str, description: str, at: str) -> None:
+        (agents / f"agent-{agent}.meta.json").write_text(json.dumps({"description": description}))
+        (agents / f"agent-{agent}.jsonl").write_text(json.dumps(entry("m", at, 10)) + "\n")
+
+    run("a1", "op editor x", "2026-10-16T10:10:00Z")
+    new_process()
+    assert audit_window.window(root, epoch(START), []).start == epoch(START)
+    run("a2", "op cost-audit x", "2026-10-16T10:30:00Z")
+    new_process()
+    assert audit_window.window(root, epoch(START), []).start == epoch("2026-10-16T10:30:00Z")
+
+
+def test_audit_after_state_opened(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A cost audit launched after a state brought the held directory
+    listings up to date, and before that state's read of the window, starts
+    the window at a later call."""
+    monkeypatch.setattr(kept_reads, "_store", None)
+    kept_reads.open_store(tmp_path / "store.sqlite")
+    root = tmp_path / "projects"
+    agents = root / "session" / "subagents"
+    agents.mkdir(parents=True)
+    (agents / "agent-a1.meta.json").write_text(json.dumps({"description": "op editor x"}))
+    (agents / "agent-a1.jsonl").write_text(json.dumps(entry("m", "2026-10-16T10:10:00Z", 10)) + "\n")
+    new_process()
+    audit_window.window(root, epoch(START), [])
+    state_reads.new_state()
+    (agents / "agent-a2.meta.json").write_text(json.dumps({"description": "op cost-audit x"}))
+    (agents / "agent-a2.jsonl").write_text(json.dumps(entry("m", "2026-10-16T10:30:00Z", 10)) + "\n")
+    audit_window.window(root, epoch(START), [])
+    new_process()
+    assert audit_window.window(root, epoch(START), []).start == epoch("2026-10-16T10:30:00Z")

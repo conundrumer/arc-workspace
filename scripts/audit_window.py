@@ -8,11 +8,12 @@ Each `operate.py next` call is its own process, so both reads keep their
 records in the store of `kept_reads`, under the transcript directory for
 the start and under each transcript's path for its spend:
 
-- The record of the start holds the latest launch found, and the time at
-  which the last listing of the `.meta.json` files began. A call reads
-  only the `.meta.json` files modified at or after that time: a run's
-  `.meta.json` is written at its launch, so a cost audit launched after a
-  listing began is read at a later call.
+- The record of the start holds the latest launch found, and a time no
+  later than the read of each directory listing the last call used
+  (`state_reads.opened`). A call reads only the `.meta.json` files
+  modified at or after that time: a run's `.meta.json` is written at its
+  launch, so a cost audit launched after those listings were read is read
+  at a later call.
 - The record of a transcript (`Fold`) holds what its lines up to an offset
   gave. A call parses only the lines past that offset, and only those
   that hold a usage. One request's entries can fall on both sides of an
@@ -28,12 +29,13 @@ start, every `.meta.json` file is read."""
 
 import json
 import os
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import kept_reads
+import file_reads
+from state_reads import opened
 from agent_turns import first_time
 from token_prices import priced_requests, request_cost
 from transcript_entries import Refused, epoch, meta_path, own_range, snapshot, transcript_meta
@@ -55,8 +57,8 @@ USAGE = b'"usage"'
 @dataclass(frozen=True)
 class Start:
     """The record of the window's start: the launch of the latest cost
-    audit found, or None where none was, and the time at which the listing
-    that found it began."""
+    audit found, or None where none was, and a time no later than the read
+    of each directory listing of the call that found it."""
     found: float | None
     listed: float
 
@@ -110,22 +112,35 @@ class Listing:
     metas: dict[str, float]
 
 
-def listing(root: Path) -> Listing:
+def listing(root: Path, since: float) -> Listing:
+    """The transcripts under `root`, and its `.meta.json` files whose
+    directory was modified at or after `since`: a `.meta.json` file written
+    at or after `since` was made in such a directory. Each directory's
+    entries are those `file_reads.listed` gives, and a link to a directory is not
+    descended."""
     transcripts: dict[str, float] = {}
     metas: dict[str, float] = {}
     todo = [str(root)]
     while todo:
-        try:
-            found = list(os.scandir(todo.pop()))
-        except OSError:
-            continue
-        for e in found:
-            if e.is_dir(follow_symlinks=False):
-                todo.append(e.path)
-            elif e.name.endswith(TRANSCRIPT):
-                transcripts[e.path] = e.stat().st_mtime
-            elif e.name.endswith(META):
-                metas[e.path] = e.stat().st_mtime
+        directory = todo.pop()
+        stat = file_reads.stat_of(Path(directory))
+        fresh = stat is not None and stat[0] / 1e9 >= since
+        for e in file_reads.listed(Path(directory)):
+            if e.is_dir:
+                if not e.is_link:
+                    todo.append(os.path.join(directory, e.name))
+                continue
+            if e.name.endswith(TRANSCRIPT):
+                into = transcripts
+            elif fresh and e.name.endswith(META):
+                into = metas
+            else:
+                continue
+            path = os.path.join(directory, e.name)
+            try:
+                into[path] = os.stat(path).st_mtime
+            except OSError:
+                continue
     return Listing(transcripts, metas)
 
 
@@ -134,21 +149,23 @@ def window(root: Path, started: float, undecided: list[str]) -> AuditWindow:
     `started` where no cost audit under it launched, and the window's
     spend in dollars, with the `undecided` line of each request it counts
     nothing for."""
-    began = time.time()
-    listed = listing(root)
-    start = audit_start(root, listed, began)
+    began = opened()
+    held = recalled(START, str(root))
+    held = held if isinstance(held, Start) else Start(None, float("-inf"))
+    listed = listing(root, held.listed)
+    start = audit_start(root, held, listed, began)
     start = started if start is None else start
     spend = sum(transcript_spend(p, start, undecided)
                 for p in sorted(Path(p) for p, mtime in listed.transcripts.items() if mtime >= start))
     return AuditWindow(start, spend)
 
 
-def audit_start(root: Path, listed: Listing, began: float) -> float | None:
+def audit_start(root: Path, held: Start, listed: Listing, began: float) -> float | None:
     """The launch of the latest cost audit under `root`, kept across calls
-    as the record `Start`, where `began` is when `listed` began."""
-    held = recalled(START, str(root))
-    found, since = (held.found, held.listed) if isinstance(held, Start) else (None, float("-inf"))
-    for meta in sorted(m for m, mtime in listed.metas.items() if mtime >= since):
+    as the record `Start`, `held` before this call, where `began` is no
+    later than the read of each directory listing `listed` used."""
+    found = held.found
+    for meta in sorted(m for m, mtime in listed.metas.items() if mtime >= held.listed):
         path = Path(meta.removesuffix(META) + TRANSCRIPT)
         if str(path) not in listed.transcripts or meta_path(path) != Path(meta):
             continue

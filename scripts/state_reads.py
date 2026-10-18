@@ -18,6 +18,11 @@ import kept_reads
 _state = 0
 """The count of the states this process has opened (`new_state`)."""
 
+_opened = time.time()
+"""A time no later than the first read of each held source at this state:
+when `new_state` began to bring the sources up to date, or the import of
+this module before the first state."""
+
 
 class Held:
     """A held read: the read and its arguments (`read`, `call`), whether
@@ -109,6 +114,8 @@ def new_state() -> float:
         made = list(h.made)
         h.rest_on({})
         idle += [below for below in made if unused(below)]
+    global _opened
+    _opened = time.time()
     _marking = True
     try:
         for h in list(_held):
@@ -165,6 +172,11 @@ with the result it gave."""
 def state() -> int:
     """The count of the states this process has opened."""
     return _state
+
+
+def opened() -> float:
+    """A time no later than the read of each source this state holds."""
+    return _opened
 
 
 def in_read() -> bool:
