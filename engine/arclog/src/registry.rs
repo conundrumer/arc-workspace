@@ -174,6 +174,17 @@ pub enum ColumnType {
     Parameter(TypeParameter),
 }
 
+impl ColumnType {
+    /// The type the column gives its site in every read: that of a
+    /// `Fixed` or a `PoseOr` column.
+    pub fn fixed(&self) -> Option<&ValueType> {
+        match self {
+            ColumnType::Fixed(ty) | ColumnType::PoseOr(ty) => Some(ty),
+            ColumnType::Pose | ColumnType::SharedPose | ColumnType::Parameter(_) => None,
+        }
+    }
+}
+
 /// A declared column: its name and type.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Column {

@@ -321,10 +321,7 @@ impl MacroDerivation<'_, '_> {
             },
             None => self.lib.get(name)?,
         };
-        match &columns.iter().find(|c| &c.name == column)?.ty {
-            ColumnType::Fixed(ty) | ColumnType::PoseOr(ty) => Some(ty.clone()),
-            ColumnType::Pose | ColumnType::SharedPose | ColumnType::Parameter(_) => None,
-        }
+        columns.iter().find(|c| &c.name == column)?.ty.fixed().cloned()
     }
 }
 

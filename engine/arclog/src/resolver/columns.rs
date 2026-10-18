@@ -127,19 +127,19 @@ impl Columns {
 
     /// Writes the columns: each name, and each record's fields.
     pub(super) fn write(&self, out: &mut crate::program::canonical::CanonicalWriter) {
-        super::names::write_len(out, self.0.len());
+        out.len(self.0.len());
         for slot in self.0.iter() {
             match slot {
                 Slot::Column(name) => {
                     out.write(&[0]);
-                    super::names::write_column_name(out, name);
+                    out.column(name);
                 }
                 Slot::Record { name, fields } => {
                     out.write(&[1]);
-                    super::names::write_column_name(out, name);
-                    super::names::write_len(out, fields.len());
+                    out.column(name);
+                    out.len(fields.len());
                     for field in fields.iter() {
-                        super::names::write_column_name(out, field);
+                        out.column(field);
                     }
                 }
             }

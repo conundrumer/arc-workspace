@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use super::columns::{self, Columns, Place};
-use super::names::{combined, write_port, write_steps, ColumnsOf, Names, Own, Target, Writer};
+use super::names::{combined, write_output_path, ColumnsOf, Names, Own, Target, Writer};
 use super::{
     ColumnPosition, ConceptReads, DependencyGraph, DependencyKind, DependencyNode, ExamplePath, GraphNodeIndex,
     ResolvedProgram, Resolution, Side, Signature,
@@ -581,7 +581,7 @@ impl<'a> Builder<'a> {
         match kind {
             DependencyKind::Fact(fact) => AsWritten.write_name(&RelationRef::Fact(*fact), &mut tail),
             DependencyKind::InstanceInput { input: port, .. } | DependencyKind::InstanceOutput { output: port, .. } => {
-                write_port(&mut tail, port)
+                tail.port_step(port)
             }
             _ => {}
         }
@@ -721,7 +721,7 @@ impl<'a> Builder<'a> {
                 out.write(&[0]);
                 let content = self.names.contents[node.0 as usize].as_ref().expect("the content of each node");
                 out.write(&content.hash.0.to_le_bytes());
-                write_steps(&mut out, relation);
+                write_output_path(&mut out, relation);
             }
             Resolution::Lib(_) => out.write(&[1]),
             Resolution::Undefined(_) => out.write(&[2]),

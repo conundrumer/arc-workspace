@@ -57,9 +57,10 @@ impl SiteType {
     /// instance's site.
     fn of_column(ty: &ColumnType) -> Option<SiteType> {
         match ty {
-            ColumnType::Fixed(ty) | ColumnType::PoseOr(ty) => Some(SiteType::Fixed(ty.clone())),
             ColumnType::Parameter(parameter) => Some(SiteType::Parameter(parameter.clone())),
-            ColumnType::Pose | ColumnType::SharedPose => None,
+            ColumnType::Fixed(_) | ColumnType::PoseOr(_) | ColumnType::Pose | ColumnType::SharedPose => {
+                ty.fixed().cloned().map(SiteType::Fixed)
+            }
         }
     }
 

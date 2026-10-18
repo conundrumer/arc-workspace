@@ -88,7 +88,7 @@ impl CanonicalWriter {
         self.write(&n.to_le_bytes());
     }
 
-    pub(super) fn len(&mut self, n: usize) {
+    pub(crate) fn len(&mut self, n: usize) {
         self.int(u32::try_from(n).expect("a list of a node has fewer than 2^32 members"));
     }
 
@@ -96,7 +96,7 @@ impl CanonicalWriter {
         self.bytes.push(u8::from(flag));
     }
 
-    pub(super) fn text(&mut self, text: &str) {
+    pub(crate) fn text(&mut self, text: &str) {
         self.len(text.len());
         self.write(text.as_bytes());
     }
@@ -117,7 +117,7 @@ impl CanonicalWriter {
         }
     }
 
-    pub(super) fn declared(&mut self, name: &DeclaredName) {
+    pub(crate) fn declared(&mut self, name: &DeclaredName) {
         match name {
             DeclaredName::Written(text) => {
                 self.tag(Tag::Written);
@@ -130,7 +130,7 @@ impl CanonicalWriter {
         }
     }
 
-    pub(super) fn column(&mut self, name: &ColumnName) {
+    pub(crate) fn column(&mut self, name: &ColumnName) {
         match name {
             ColumnName::Written(text) => {
                 self.tag(Tag::Written);
@@ -141,6 +141,28 @@ impl CanonicalWriter {
                 self.int(*slot);
             }
         }
+    }
+
+    /// Writes the path of an output after its owner, which tells apart
+    /// the outputs of one node.
+    pub(crate) fn output_path(&mut self, path: &[OutputStep]) {
+        self.len(path.len());
+        for step in path {
+            match step {
+                OutputStep::Port(port) => self.port_step(port),
+                OutputStep::Part(part) => {
+                    self.tag(Tag::PartStep);
+                    self.declared(part);
+                }
+                OutputStep::Pose => self.tag(Tag::PoseStep),
+            }
+        }
+    }
+
+    /// Writes the port `port` as a step of an output's path names it.
+    pub(crate) fn port_step(&mut self, PortName(port): &PortName) {
+        self.tag(Tag::PortStep);
+        self.text(port);
     }
 
     pub(super) fn column_path(&mut self, path: &[ColumnName]) {
@@ -272,20 +294,7 @@ impl NameWriter for AsWritten {
                         out.declared(owner);
                     }
                 }
-                out.len(name.path.len());
-                for step in name.path.iter() {
-                    match step {
-                        OutputStep::Port(PortName(port)) => {
-                            out.tag(Tag::PortStep);
-                            out.text(port);
-                        }
-                        OutputStep::Part(part) => {
-                            out.tag(Tag::PartStep);
-                            out.declared(part);
-                        }
-                        OutputStep::Pose => out.tag(Tag::PoseStep),
-                    }
-                }
+                out.output_path(&name.path);
             }
             RelationRef::DefinedPort(PortName(port)) => {
                 out.tag(Tag::DefinedPort);

@@ -9,63 +9,15 @@ use crate::hash::StableHashMap;
 use crate::program::canonical::{AsWritten, Canonical, CanonicalForm, CanonicalWriter, NameWriter, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
-    Body, ColumnName, DeclaredName, Demonstrated, NameScope, Node, OutputOwner, OutputStep, Program, RelationRef,
+    Body, ColumnName, Demonstrated, NameScope, Node, OutputOwner, Program, RelationRef,
 };
 
-pub(super) fn write_len(out: &mut CanonicalWriter, len: usize) {
-    out.write(&u32::try_from(len).expect("a list of fewer than 2^32 members").to_le_bytes());
-}
-
-fn write_text(out: &mut CanonicalWriter, text: &str) {
-    write_len(out, text.len());
-    out.write(text.as_bytes());
-}
-
-fn write_declared(out: &mut CanonicalWriter, name: &DeclaredName) {
-    match name {
-        DeclaredName::Written(text) => {
-            out.write(&[0]);
-            write_text(out, text);
-        }
-        DeclaredName::Slot(slot) => {
-            out.write(&[1]);
-            out.write(&slot.to_le_bytes());
-        }
-    }
-}
-
-pub(super) fn write_column_name(out: &mut CanonicalWriter, name: &ColumnName) {
-    match name {
-        ColumnName::Written(text) => {
-            out.write(&[0]);
-            write_text(out, text);
-        }
-        ColumnName::Slot(slot) => {
-            out.write(&[1]);
-            out.write(&slot.to_le_bytes());
-        }
-    }
-}
-
-pub(super) fn write_port(out: &mut CanonicalWriter, port: &crate::program::PortName) {
-    out.write(&[0]);
-    write_text(out, &port.0);
-}
-
-/// Writes the path after the form's name of an output that `relation`
-/// reads, which tells apart the outputs of one node.
-pub(super) fn write_steps(out: &mut CanonicalWriter, relation: &RelationRef) {
-    let RelationRef::Output(output) = relation else { return };
-    write_len(out, output.path.len());
-    for step in output.path.iter() {
-        match step {
-            OutputStep::Port(port) => write_port(out, port),
-            OutputStep::Part(part) => {
-                out.write(&[1]);
-                write_declared(out, part);
-            }
-            OutputStep::Pose => out.write(&[2]),
-        }
+/// Writes the path of the output that `relation` reads, after the
+/// content of the node it resolves to, which tells apart the outputs of
+/// one node.
+pub(super) fn write_output_path(out: &mut CanonicalWriter, relation: &RelationRef) {
+    if let RelationRef::Output(output) = relation {
+        out.output_path(&output.path);
     }
 }
 
@@ -76,9 +28,9 @@ pub(super) fn combined(kind: u8, parts: impl IntoIterator<Item = Arc<[u8]>>, tai
     parts.sort();
     let mut out = CanonicalWriter::default();
     out.write(&[kind]);
-    write_len(&mut out, parts.len());
+    out.len(parts.len());
     for part in &parts {
-        write_len(&mut out, part.len());
+        out.len(part.len());
         out.write(part);
     }
     out.write(tail);
@@ -267,12 +219,12 @@ fn demonstrated_form(demonstrated: &Demonstrated, path: &NodePath, writer: &Writ
     let mut out = CanonicalWriter::default();
     let bare = Demonstrated { rules: Arc::from([]), ..demonstrated.clone() };
     bare.write_canonical(&mut out, &mut SearchBudget::new(), writer);
-    write_len(&mut out, demonstrated.rules.len());
+    out.len(demonstrated.rules.len());
     for (rule_path, rule) in super::demo_rules(demonstrated, path) {
         let scope = NameScope::DemoRule(rule_path.clone());
         let rule_writer = Writer { names: writer.names, scope: &scope, own: None };
         let form = written(NodeRef::DemoRule(rule), &rule_path, None, &rule_writer).expect("a rule has a canonical form");
-        write_len(&mut out, form.bytes.len());
+        out.len(form.bytes.len());
         out.write(&form.bytes);
     }
     out.finish()
@@ -306,28 +258,27 @@ impl NameWriter for Writer<'_> {
     fn write_name(&self, relation: &RelationRef, out: &mut CanonicalWriter) {
         if self.own(relation).is_some() {
             out.write(&[Mark::Own as u8]);
-            write_steps(out, relation);
-            return;
-        }
-        let target = match relation {
-            RelationRef::Declared(_) | RelationRef::Output(_) => self.names.find(self.scope, relation),
-            RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) => None,
-        };
-        match target.map(|target| &self.names.contents[target.node.0 as usize]) {
-            Some(Some(content)) => {
-                out.write(&[Mark::Content as u8]);
-                out.write(&content.hash.0.to_le_bytes());
-                write_steps(out, relation);
-            }
-            Some(None) => {
-                out.write(&[Mark::Open as u8]);
-                AsWritten.write_name(relation, out);
-            }
-            None => {
-                out.write(&[Mark::Written as u8]);
-                AsWritten.write_name(relation, out);
+        } else {
+            let target = match relation {
+                RelationRef::Declared(_) | RelationRef::Output(_) => self.names.find(self.scope, relation),
+                RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) => None,
+            };
+            match target.map(|target| &self.names.contents[target.node.0 as usize]) {
+                Some(Some(content)) => {
+                    out.write(&[Mark::Content as u8]);
+                    out.write(&content.hash.0.to_le_bytes());
+                }
+                Some(None) => {
+                    out.write(&[Mark::Open as u8]);
+                    return AsWritten.write_name(relation, out);
+                }
+                None => {
+                    out.write(&[Mark::Written as u8]);
+                    return AsWritten.write_name(relation, out);
+                }
             }
         }
+        write_output_path(out, relation);
     }
 
     /// Writes a column of the form's own relation by a mark that no
