@@ -98,7 +98,7 @@
     - The lib's code merged to `master` gets a review by a handbook agent other than its builder.
     - A finding blocks a built change only as [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) gives, and each kind of review of a built change runs at most a cap of rounds, at which a ticket analyst judges the findings that block the change.
     - A finding in a later round of the doc review, or by Checks in a round of the ticket review after one that checked the draft by Checks, falls only on text or a ground that changed since such an earlier round, or still stands from it.
-- Owner: the ticket reviewer for the `change` ticket, the item checker for the built change outside the lib and the solvers, the doc reviewer for the form of the documents and, by its trials, for the evidence of a reader's behavior, a standing doc review for the lines in force in the agents' documents, the design reviewer for the design of a built change to code, the code reviewer and the gate for the code, and the lib reviewer for the lib's code.
+- Owner: the ticket reviewer for the `change` ticket, the item checker for the built change outside the lib and the solvers, the doc reviewer for the form of the documents and, by its trials, for the evidence of a reader's behavior, a standing doc review for the lines in force in the agents' documents, the design reviewer for the design of a built change to code, the code reviewer, the gate at a merge and the batch gate at `master` for the code, and the lib reviewer for the lib's code.
 - Takes from: implementation and requirements. Gives to: merge.
 - How it can fail:
     - Each review adds cost to every change: the reviews a work product gets are set by its reader, and the design review by the change's editors, a code editor or the `handbook-expanded` agent.
@@ -127,7 +127,7 @@
     - Each merge passes the gate and the checks of [merge_change.py](scripts/merge_change.py).
     - A hotfix, a change merged with no ticket review or no review of the change, gets both after it merges.
     - A merge that fails or is denied reaches an agent that acts on it.
-- Owner: the operator, and the coordinator for a denied merge.
+- Owner: the operator, an after-merge agent for the steps and checks a change's ticket places after its merge, and the coordinator for a denied merge.
 - Takes from: verification. Gives to: validation.
 - How it can fail: the review of a hotfix is skipped because the hotfix works: that review is a step of the operator's command.
 
@@ -200,7 +200,7 @@
 ## Work products
 - A `request`: a ticket analyst writes the `change` tickets that serve it. Its reviews: the ticket reviewer's check of each requirement's trace to its spans or Grounds, and validation.
 - A `change` ticket with its design: a ticket analyst writes it, or a merge files a whole-document pass. Its review: a ticket reviewer's, before the build, or, for a whole-document pass, the doc review of its fixed text.
-- A built code change: a code editor builds it, and the `handbook-expanded` agent the part in the lib and the solvers. Its reviews: the item checker's check of its items outside the lib and the solvers, which the handbook judges, the design reviewer's judgment of its design before its merge, other than for a hotfix, the gate at its merge, the code review that follows its merge, and, for its part in the lib, the lib review that follows its merge.
+- A built code change: a code editor builds it, and the `handbook-expanded` agent the part in the lib and the solvers. Its reviews: the item checker's check of its items outside the lib and the solvers, which the handbook judges, the design reviewer's judgment of its design before its merge, other than for a hotfix, the gate at its merge, the batch gate's run at `master` after it, the code review that follows its merge, and, for its part in the lib, the lib review that follows its merge.
     * comment: The user's words, request 9-143, session 129de8fc, 2026-10-14T18:08:21Z: "ok file that item checkers do not apply to solver things since solver things require handbook to judge".
 - A built document change, the text of each `mctx` fragment a change adds or changes included: the doc editor builds it, from a code editor's draft for a fragment's text. Its reviews: the doc reviewer's, where it merges within its cost budget, or, where it merges past it, the `bug` tickets that a doc reviewer at work on it when its spend passes that budget files on its findings, the item checker's check of its items, and the `controlled_markdown` check.
 - A solver: the Create pass writes it, each Refine pass reconciles it with the latest report, and, once an `interference` ticket on its task closes, a `handbook-expanded` agent fixes in place what that closure leaves wrong in it. Its review: the transcript review of each pass that writes it.
