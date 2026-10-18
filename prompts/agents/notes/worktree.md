@@ -19,10 +19,12 @@
 ## worktree
 - The worktree of the change you work on is the one your brief gives, or, where the form of your brief gives none, the main tree.
 - Where your brief gives the number of your change's ticket, `uv run python scripts/file_ticket.py path <number>` prints that ticket's path.
+    + xref: scripts/file_ticket.py:SUBCOMMANDS
 - A later message may add a request to the change, and that request is part of what the change is to do.
 
 ## worktree-commands
 - Run each command in the worktree of your change, other than each call of `scripts/step.py` on your own checklist, which you run in the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints, and take each path in the repo from the worktree of your change, apart from a path under `tickets/`, which you take from the main tree.
+    + xref: scripts/step.py:main
     * comment: "each call of `scripts/step.py` on your own checklist" stays: code editor a4f7e3c9cc0837cd0, running `step.py code-editor write-the-code` in its worktree, whose `HEAD` lacked commits of master, got `no agent has a checklist` for a step its context gave (ticket 9-697, session 129de8fc). It stands right after the main clause, in the clause's own exception: with it in the line's last clause, doc editor ac084c67e1eab54c3 read "Run each command in the worktree" as covering it, and ran `step.py doc-editor ...` in its worktree (ticket 11-1326, session 2384db39, its answer of 2026-10-18).
 
 ## Re-invoked in another agent's worktree
@@ -39,6 +41,8 @@
 
 ## Gate
 - `uv run python scripts/gate.py <out-dir> [cmd ...]` is the gate: it runs the gate commands it is given on the fixed inputs under `tests/gate/` that `gate.py --help` lists, and compares their outputs with the accepted ones.
+    + xref: scripts/gate.py:main
 - Run it only to write the accepted gate outputs your brief lists and those a finding of your checks gives to update, with the commands whose outputs those are as `cmd` and a new directory under your scratch directory as `<out-dir>`.
     - Where your brief gives those outputs as the ones that a `DIFF` of the gate your items cause gives, run it with no `cmd` and with `--affected <base>`, where `<base>` is the commit `git merge-base HEAD master` prints in your worktree.
+        + xref: scripts/gate.py:main
 - Copy each of those outputs from `<out-dir>/gate/new/` to its accepted file under `tests/gate/accepted/`.

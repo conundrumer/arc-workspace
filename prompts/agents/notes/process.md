@@ -17,6 +17,7 @@
 ## Process assessment (life cycle model management)
 - Purpose: keep the agents' processes, as a whole, fit for [The user's goals](prompts/agents/notes/decisions.md#the-users-goals).
 - Principles: the third of those goals, and "Spend no run the work does not need", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
+    + xref: prompts/agents/notes/decisions.md#the-users-goals, prompts/agents/notes/decisions.md#the-users-preferences
 - Outcomes:
     - These notes give the owners of each process.
     - These notes give, for each kind of work product, the agent that acts on it and the reviews it gets.
@@ -57,6 +58,7 @@
 ## Design (design definition, architecture definition)
 - Purpose: decide the shape of a change's code and of its document lines, and how its parts fit, before they are written.
 - Principles: "Keep the process, the code and their semantics in their best state, with maintainable code", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences), DRY (one idea in one place), and make illegal states unrepresentable.
+    + xref: prompts/agents/notes/decisions.md#the-users-preferences
     * comment: The user's words, session 7fd429fb, 2026-10-13T14:46:25Z: "im curious if this could be part of a planning principle"; 14:47:10Z: "what about just poitnting at the core idea", the core idea being "Make illegal states unrepresentable"; 14:47:43Z, on reading the bare name as license for big refactors: "i dont expect that to happen but if it did i would welcome it". On the standard names, the user's words, session 7fd429fb, 2026-10-15T22:44:57Z: "Let’s try it. Principles are short and well known in training set"; 2026-10-16T02:19:36Z: "almost seems liek a regression".
 - Outcomes:
     - Each `change` that adds a mechanism to code has a design, made from reading the code, that gives the existing operations it uses or extends, and each new operation with its module.
@@ -87,6 +89,7 @@
 ## Verification
 - Purpose: confirm that each work product meets its requirements before it merges.
 - Principles: "check new agent-facing text against each agent it reaches before a pass runs on it", in [Decisions on the agents' documents](prompts/agents/notes/decisions.md#decisions-on-the-agents-documents).
+    + xref: prompts/agents/notes/decisions.md#decisions-on-the-agents-documents
 - Outcomes:
     - Each revision of a `change` ticket before the one at the operator's cap of ticket reviews is checked before the build: each requirement traces to the request's spans or Grounds and can be checked, each claim about the current state holds, and the Scope covers the design.
     - An agent other than its editor checks the built change against each requirement, for documents as for code, outside the lib and the solvers, which the handbook judges.
@@ -97,6 +100,7 @@
     - The lines in force in the agents' documents get a standing review, as the code in the tree gets the code review.
     - The lib's code merged to `master` gets a review by a handbook agent other than its builder.
     - A finding blocks a built change only as [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) gives, and each kind of review of a built change runs at most a cap of rounds, at which a ticket analyst judges the findings that block the change.
+        + xref: prompts/agents/notes/launching.md#findings-that-block-a-change
     - A finding in a later round of the doc review, or by Checks in a round of the ticket review after one that checked the draft by Checks, falls only on text or a ground that changed since such an earlier round, or still stands from it.
 - Owner: the ticket reviewer for the `change` ticket, the item checker for the built change outside the lib and the solvers, the doc reviewer for the form of the documents and, by its trials, for the evidence of a reader's behavior, a standing doc review for the lines in force in the agents' documents, the design reviewer for the design of a built change to code, the code reviewer, the gate at a merge and the batch gate at `master` for the code, and the lib reviewer for the lib's code.
 - Takes from: implementation and requirements. Gives to: merge.
@@ -107,6 +111,7 @@
     - Each review asks only for more code, so each change grows: a case counts only with an instance, a design review finds code to remove, and growth of a defect an open `refactor` ticket records blocks the change.
         * comment: The user's words, session 2384db39, 2026-10-18T12:12:07Z: "Rules written more than once." and "Work built before it's needed.": ticket 9-1350.
     - The standing review files many small findings: they go through the fault options of [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
+        + xref: prompts/agents/notes/decisions.md#the-users-preferences
 
 ## Validation
 - Purpose: confirm, after the merge, that the change meets the user's need in use.
@@ -115,6 +120,7 @@
     - For each change that serves a need the user stated, a run that exercises it shows the need met, or the need goes back to a ticket analyst.
     - A fault found in use is traced to the change, and to the requirement or the design that missed it.
 - Owner: the sweep of `uv run python scripts/file_ticket.py`, which an operator runs after a batch, and the ticket analyst, for a check that no command decides.
+    + xref: scripts/file_ticket.py:SUBCOMMANDS
 - Takes from: merge. Gives to: requirements, for a need not met.
 - How it can fail:
     - A check is placed on each change, and most never run: only a change that serves a need the user stated gets one.
@@ -123,8 +129,10 @@
 ## Merge (integration, transition)
 - Purpose: merge a verified change into `master` and make it live, with no change that skips verification.
 - Principles: "keep a merge's gate under a minute", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
+    + xref: prompts/agents/notes/decisions.md#the-users-preferences
 - Outcomes:
     - Each merge passes the gate and the checks of [merge_change.py](scripts/merge_change.py).
+        + xref: scripts/merge_change.py:merge_main
     - A hotfix, a change merged with no ticket review or no review of the change, gets both after it merges.
     - A merge that fails or is denied reaches an agent that acts on it.
 - Owner: the operator, an after-merge agent for the steps and checks a change's ticket places after its merge, and the coordinator for a denied merge.
@@ -134,10 +142,13 @@
 ## Quality assurance (quality assurance, incident management, problem management)
 - Purpose: check that the processes are followed and work, and find the cause of each fault and of each fault family.
 - Principles: the fault options and "Prefer simple mechanisms: watch an agent by reading what it does", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
+    + xref: prompts/agents/notes/decisions.md#the-users-preferences
 - Outcomes:
     - These notes give which review covers each run, so that no run gets two transcript reviews.
         - The checks during a run are those the module docstring of [monitor.py](src/operations/monitor.py) gives, and the batch profile at a batch's end is the one the brief that `batch_profile` in [briefs.py](src/operations/briefs.py) writes gives.
+            + xref: src/operations/monitor.py, src/operations/briefs.py:batch_profile
         - A solver pass gets a transcript review at its end, as the module docstring of [passes.py](src/operations/passes.py) gives, and the batch profile launches one on each other run its brief gives. A transcript review looks for what the brief that `transcript_review` in [briefs.py](src/operations/briefs.py) writes asks of it.
+            + xref: src/operations/passes.py, src/operations/briefs.py:transcript_review
     - A fault that recurs after a fix is taken as one family: its common cause is removed, and the fixes that removal makes redundant are listed.
 - Owner: the operator's checks, the batch profile and transcript reviews for the runs, and the ticket analyst for the causes.
 - Takes from: the runs of every process. Gives to: process assessment, the fault families, and every process, as `change` tickets.
@@ -146,10 +157,12 @@
 ## Measurement
 - Purpose: give each decision on cost or time a measured figure.
 - Principles: "recompute no output or measurement that a file already holds", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
+    + xref: prompts/agents/notes/decisions.md#the-users-preferences
 - Outcomes:
     - Each figure of cost or time in a decision cites the command that produced it.
     - The summed cost of each kind of step over a window, against what it finds, reaches a ticket with no word of the user.
 - Owner: the agent that gives the figure, and, for the summed cost, the cost audit, a `general-purpose` agent an operator launches once the spend of the project's runs since the latest cost audit passes a set amount, and, for each script's calls, [check_script_calls.py](scripts/check_script_calls.py), which an operator runs at each batch's end.
+    + xref: scripts/check_script_calls.py:main
 - Takes from: the transcripts, and the record of each script call under `.cache/script-calls/`. Gives to: each decision on cost or time.
 - How it can fail:
     - A cited figure rests on a wrong price table: the table cites its source and its date.
@@ -159,6 +172,7 @@
 ## Risk management
 - Purpose: find, before the build, how a design can fail, and decide what holds in each case.
 - Principles: "Think a design through for how it can fail before it is implemented", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
+    + xref: prompts/agents/notes/decisions.md#the-users-preferences
 - Outcomes: each way a design can fail, found before the build, that would lose work or leave an output wrong is a requirement that gives what holds in that case.
 - Owner: the ticket analyst, as it writes the design.
 - Takes from: design. Gives to: requirements.
@@ -167,6 +181,7 @@
 ## Work control (project assessment and control)
 - Purpose: see that work moves, and act when it stops.
 - Principles: "Pause or serialize agents only where the user agreed to it", in [Launching](prompts/agents/notes/launching.md#launching).
+    + xref: prompts/agents/notes/launching.md#launching
 - Outcomes:
     - Work with no step, or with a holder that is gone, reaches an agent that acts on it.
     - Each ticket has one live holder at most.
@@ -178,10 +193,12 @@
 ## Configuration management
 - Purpose: know what each change touches, and build each change after each change whose result it reads.
 - Principles: "Save token cost first and time second, and count about 30 minutes saved as worth about $5 of token cost", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
+    + xref: prompts/agents/notes/decisions.md#the-users-preferences
 - Outcomes:
     - A change is built after each change whose result its Design reads.
     - Each worktree belongs to one live change.
 - Owner: the ticket analyst for `depends-on`, and [merge_change.py](scripts/merge_change.py) for the worktrees.
+    + xref: scripts/merge_change.py:merge_main
 - Takes from: the Scopes. Gives to: merge.
 - How it can fail: two changes in flight at once that edit one part of a file may conflict in the rebase, and where they do, the later change's editor resolves them in its worktree.
 

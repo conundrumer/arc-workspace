@@ -30,6 +30,7 @@
 - Before you end your turn, and before your final reply, wait on each command of yours that runs in the background until its completion notification reaches you: run a foreground Bash call with a timeout of 240000 ms, whose until-loop gives up just under that timeout, and repeat the call.
     * comment: The cases this rule covers: a command you started that has not finished at the end of your turn; a command the harness moved to the background; a command whose completion notification your final reply waits on.
     - Lead its command with `: 'unattended-wait: <the command you wait on>';`. A command so led is exempt from the PreToolUse hook that blocks waits, unless that command reads the output file the harness gave a command of yours that runs in the background.
+        + xref: scripts/pending_wait_hook.py:main
     - Loop on the completion where you can observe it, and otherwise on the time alone.
     - Where a wait call that you started after the command completed ends with no notification of it, stop waiting on it.
 
@@ -44,16 +45,20 @@
 
 ## Background agents
 - Where the harness refuses an Agent call of yours with "Concurrent subagent limit reached", whatever the refusal's text says, wait about a minute and make that call again: run a foreground Bash call that runs `: 'unattended-wait: concurrent subagent limit'; sleep 60`. After ten refusals in a row of that call, treat it as denied, as [denied-calls](#denied-calls) gives.
+    + xref: prompts/agents/notes/commands.md#denied-calls
     * comment: Code editor `af224b57041f5ecc8` (ticket 9-788) ended `blocked` on this refusal, and ticket analysts `a907dcfa6dc70ff5d` (ticket 11-1085) and `af8ca0bd59f4bf834` (session `129de8fc`) stopped on it, each led by the text "Do not retry", though slots free within minutes.
 - When you end your turn while a command of yours runs on in the background and no agent you launched is running, the harness reports you to the session that launched you as stopped. It does not while an agent you launched is running.
 - While an agent you launched is running, no line of [waiting-on-commands](#waiting-on-commands) holds: run each command that can outlast the Bash call's default timeout in the background, and when no other work is ready, start your keep-alive timer, then end your turn with a line that gives each agent you launched and each command of yours that is still running, and run no other command to wait on them. The harness resumes you when an agent sends you a message, when one of them that no agent has resumed by SendMessage completes, or when a command of yours that runs in the background completes.
+    + xref: prompts/agents/notes/commands.md#waiting-on-commands
     * comment: The cases this rule covers: waiting while an agent you launched runs; the start of the keep-alive timer before you end your turn; waiting, once no agent you launched runs, on each command you ran in the background, which [waiting-on-commands](#waiting-on-commands) covers once this rule no longer holds.
     - Start your keep-alive timer, where you launched no agent in this turn whose brief asks only for a wait and then a reply, by running this command in the background, with your own agent id as `<agent id>`:
+        + xref: scripts/agent_timer.py:Kind.KEEP_ALIVE
         ```
         : 'unattended-wait: keep-alive timer'; uv run python scripts/agent_timer.py start keep-alive <agent id>
         ```
     - Where your keep-alive timer has completed 11 times in a row with no message and no other notification reaching you between, start it no more until one does. The runs of that command that complete together count as one completion.
 - Once no agent you launched is running, and before anything else, end your keep-alive timer: run `uv run python scripts/agent_timer.py stop keep-alive <agent id>`.
+    + xref: scripts/agent_timer.py:Action.STOP
     - Each start of that timer has completed once `pgrep -f 'agent_timer[.]py start keep-alive <agent id>'` prints nothing.
 - A notification that says an agent you launched has not reported yet means that agent has stopped without its report while background work of its own runs, and it counts as not running from then on. Until it reports, while no other agent you launched is running, wait on it in place of ending your turn, and call no SubagentHandback, also where the harness asks for your report: run a Bash call with a timeout of 240000 ms whose loop, on time alone, gives up just under that timeout, led by `: 'unattended-wait: <the agent id>, which has not reported yet';`, and repeat it.
     * comment: Two agents of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a` ended their turn after this notification, the harness demanded their report, and each handed back mid-batch: agent `aa217e04abc30c823`, lines 266 to 270, and agent `ad4b827e59837a39f`, lines 228 to 232.

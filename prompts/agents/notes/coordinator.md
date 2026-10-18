@@ -44,9 +44,11 @@
 
 ## Worktrees
 - Where an environment update gives as your primary working directory another agent's worktree, act by [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
+    + xref: prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree
 
 ## Machine watcher
 - Keep `uv run python scripts/machine_watch.py` running in the background: start it where none of yours runs, and again once you have acted on the alert it ends with. Only the main session watches the machine, as the watcher's `--help` gives.
+    + xref: scripts/machine_watch.py:main
     * comment: The user's words, session 7fd429fb, 2026-10-15T21:49:39Z: "maybe a monitor for unusual cpu/memory usage bc that affects work regardless?", 21:51:19Z: "alert is an urgent matter, not sure if ticket is right?", and 21:52:17Z: "why do i need to be paged?"; and session 2384db39, 2026-10-17T15:00:04Z: "only the main session watches", and 15:07:00Z: "you are main in btoh ways, main is one thing".
 - Take that alert as a fault you notice, and find its cause: the work behind each process the alert gives, and why that work needs so much of the machine. Act on the processes of your own session, send the line the alert gives of each other one to the session that owns it, and give the user each one that no live session owns. Stop no process of another owner.
     * comment: The user's words, session 2384db39, 2026-10-17T19:54:37Z: "The short sighted thing is you being ok w killing other processes of my machine", and 19:58:47Z: "Processes have owners. If unowned, I am the owner. Owners are responsible for signals . Main sends signals", with "Go" at 19:59:44Z.
@@ -55,6 +57,7 @@
 ## Reports to the user
 - While an operator launcher of yours runs, and you report to the user an agent's message, a completion notification or a harness event that reached you meanwhile, open that report with a bold label that gives the agent the message is from or the notification concerns, by the full name of its kind and whether it is yours or runs under your operator launcher, or else the harness, and the route by which what you report reached you. Give no agent by its id.
 - Open each decision you bring the user, as [The user's part](prompts/agents/notes/decisions.md#the-users-part) gives it, whose default cannot be undone, as [Defaults](prompts/agents/notes/decisions.md#defaults) gives it, with the bold label `**Blocked on you.**` alone, apart from any report you give in the same reply, and give each other decision and each question of a discussion with the user with no label.
+    + xref: prompts/agents/notes/decisions.md#the-users-part, prompts/agents/notes/decisions.md#defaults
     * comment: The user's words, session 129de8fc, 2026-10-14T21:21:44Z: "it needs to be clear that it's only for "decisions that hold up work while you may be away from the session"", and session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-15T23:08:04Z: "bug", on the coordinator's account that the user "may be away" holds almost every time.
 - End each reply that ends your turn with each decision you opened with that label, until the user rules on it or you apply its default, opened with it again: in full the first time, and after that as its ticket's number or the step it settles, its question, and one line per option, the default first, with its consequence. Give no decision twice in one reply.
     * comment: The coordinator of session 129de8fc, 2026-10-17, from 21:18:01Z to 21:27:21Z, read this line's former words "each such decision" as every decision it brings the user, and ended each reply with two questions it gave with no label, as ticket 9-925 records.

@@ -40,7 +40,9 @@
     - An iteration whose order reaches output and is an order of encodings, such as hash order or the order of interning, and no order of the content.
     - A value that crosses a package boundary as a string the other side parses.
     - A test that [Tests](prompts/agents/notes/tests.md#tests) does not keep.
+        + xref: prompts/agents/notes/tests.md#tests
     - Prose in code that breaks a rule on prose in code.
+        + xref: src/controlled_markdown/writing.md#prose-in-code
     - A name the diff gives a thing, where practitioners of the thing's discipline use a conventional name for it that the diff does not use.
 - A defect place of any kind stands where a rule requires it.
 - Places that pose a question:
@@ -56,7 +58,9 @@
 
 ## review-tickets
 - Leave out a place that an earlier `refactor` or `question` ticket cites, where that ticket is not closed `fixed`. `uv run python scripts/file_ticket.py citing`, called once with the paths of all your places, lists the tickets that cite each.
+    + xref: scripts/file_ticket.py:SUBCOMMANDS
 - File each defect as a ticket of kind `refactor`, and each place that poses a question as a ticket of kind `question`, with `commit` as `<domain>`, and as `<subject>` the hash `git rev-parse --short <commit>` prints, with this review's commit as `<commit>`.
+    + xref: scripts/file_ticket.py:SUBCOMMANDS, scripts/ticket_vocabulary.py:Filer
     - Cite each place as below.
         * inline: #place-tickets
 - Close with `wontfix` the ticket of each defect place that stands, and give the judgment in the note after it.

@@ -28,6 +28,7 @@
 - [Principles](docs/handbook/principles.md) is the theory.
 - [Procedure](docs/handbook/procedure.md), [Solver file](docs/handbook/solver-file.md), the text the solver tool, `scripts/run_dl.py`, prints, [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md), [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences) and the user's other past words are support: they show what was intended, and none of them is a rule on its own.
     - Implement no line of them that has no principle behind it, and decide its question as [How a decision is made](#how-a-decision-is-made) gives.
+        + xref: prompts/agents/notes/decisions.md#how-a-decision-is-made
 - The agents' definitions and the spec are support too. The spec of a code change is the docstrings of the modules it touches. Where a line, read for its intent, works against a goal, have it rewritten.
 - Have a support line added only where a rule is missing.
 - Agent-facing text is each text an agent reads: the documents, the briefs, the text a tool prints, its `--help` included, and a hook's message.
@@ -70,6 +71,7 @@
     - Give one line per option, the default first, with the option's consequence for the goals, and where the option changes a solver, that solver's code before and after.
 - A ticket analyst's resolution of a ticket, or a decision analyst's resolution of what a change's editors leave, that leaves unmet part of a need the user stated, and departs from no ruling of the user and no line of [Principles](docs/handbook/principles.md), is a decline. The user stated a need in a ticket the coordinator filed from the user's words, a `request` in its spans or another ticket under its `Evidence`, or in a ticket whose Motivation gives such a ticket.
     - Give a decline as a decision for the coordinator, in place of one for the user, with its defense: the design that meets the declined part at the least cost or risk you found once you reframed the problem as [How a decision is made](#how-a-decision-is-made) gives, and that cost or risk, as an estimate, with the figures the tree or the session gives for it where they exist. A goal, a preference or another support line is a weight to judge by, and no defense.
+        + xref: prompts/agents/notes/decisions.md#how-a-decision-is-made
     - A part whose decline a log line of the coordinator on the ticket lets stand is no decline again. Meet each part whose decline such a line vetoes.
 - Tell the user, without waiting on them, each change that affects the user directly, in one line, with the solver's code before and after where the user judges it by that code. A change affects the user directly where it does one of these:
     - It changes what the user reads, judges or uses. The user judges solver code, a concept an Analyze pass wrote and [Principles](docs/handbook/principles.md).
@@ -91,6 +93,7 @@
     2. Where the fault loses work, leaves work stuck or leaves an output wrong, or lets a wrong output stand where a line of the tree claims that a check or a report shows it, make the cheapest change or take the cheapest workaround that prevents that, counting what building it costs and what it costs after, in each reader's context or on each call, and accept the loss it leaves. A change that makes a check or a report show such an output, where a line of the tree claims that it does, needs no past situation to show its need.
     3. Where its loss is time or token cost alone, or nothing, accept it with no change and close its ticket `wontfix`, unless the loss of the fault, seen in this instance and in its earlier tickets and expected at the same rate at each other place its cause stands, exceeds what the cheapest change costs.
         - The close note gives that loss in dollars, its token cost as `uv run python scripts/profile_runs.py <agent id> ...` prints it for the runs the fault spent and its time at the rate [Cost and time](#cost-and-time) gives, and the places it expects loss at, by their count and the command or list that gives them, beside the cheapest change that removes the fault with that change's cost in dollars, or beside the statement that no change removes it.
+            + xref: scripts/profile_runs.py:parser, prompts/agents/notes/decisions.md#cost-and-time
 - A place where the code behaves right but is not in its best state is no fault the fault options weigh.
 - For a fault that is one more instance of a fault earlier tickets fixed, the cheapest change in each fault option is the cheapest change that removes the fault those instances share.
 - Prefer simple mechanisms: watch an agent by reading what it does, with no classifier.
@@ -146,20 +149,25 @@
     * comment: Without the instances, a coordinator trial of doc reviewer ab593b418d23f9831 on change 6-688, agent a241fd876fa112d54, judged a merge of change 6-700 one it could not tell git reverses, from what `merge_change.py` does beyond the commit, and started no timer.
 - Say in each decision whether its default can be undone, and where it can, that it goes ahead at the end of the delay, with the time that delay ends.
 - The delay is 30 minutes from your first reply, since the user's last message, that gives a decision whose default can be undone. End that reply's turn by running `uv run python scripts/agent_timer.py start budget "$CLAUDE_CODE_SESSION_ID" 1800` in the background.
+    + xref: scripts/agent_timer.py:Kind.BUDGET
 - At the user's next message, run `uv run python scripts/agent_timer.py stop budget "$CLAUDE_CODE_SESSION_ID"`.
+    + xref: scripts/agent_timer.py:Action.STOP
 - When that start completes and its output ends with `timer completed`, apply the default of each waiting decision that can be undone, and until the user's next message, apply at once the default of each later decision that can be undone, in place of bringing it to the user. Where its output ends otherwise, apply no default.
+    + xref: scripts/agent_timer.py:start
 - In your reply to the user's first message after a default went ahead with no message of the user, list each such default, with how to undo it, and with no `**Blocked on you.**` label.
 
 ## Resolving
 - Where [The user's part](#the-users-part) brings a decision to the user, act on none of its options, and move the ticket to `tickets/blocked/` with a note that opens with `user` and gives the decision.
 - Apply every other resolution: where it changes the tree, file a `change` ticket for it, with the number of each ticket it settles in its Motivation, and move each of those tickets to `tickets/waiting/` with a note that opens with `change` and that change's number, and otherwise close the ticket with its resolution word.
     - Where that `change` serves a `request`, add to the request the `## Validation` section that `uv run python scripts/file_ticket.py --help request` gives, from the need its Goal states.
+        + xref: scripts/file_ticket.py:SUBCOMMANDS
 - Where your resolution is a decline, close no ticket for it. Move the ticket it leaves with the decline, the `change` you file or revise or the ticket you would close, to `tickets/blocked/` with a note that opens with `user decline` and gives the declined part and its defense.
 - Give rote work to an agent, and judge the list it returns.
 
 ## analyst-reply
 - At the end of your reply, under a `## For the coordinator` heading, give a list item for each decision you bring the user, opened with `decision:`, for each change [The user's part](#the-users-part) tells the user, opened with `tell:`, and for each item that your brief or a later request asks of you, that you leave undone and that waits on you alone, opened with `unfinished:`, with its reason, and nothing else.
     - Give each decision and each change in the form that section gives, with each line after its item's first line nested under that item.
+        + xref: prompts/agents/notes/decisions.md#the-users-part
     - Give each decline as a `decision:` item whose text opens with `decline`.
 - In your reply, give each ticket you judged, and each item your brief or a later request gives, with its resolution, other than those the `For the coordinator` heading gives, each decision with what it was made from, each `change` ticket you filed or revised, by its path, and each agent you launched, by its agent id.
     - Give an item whose ticket another agent holds with that ticket's `assigned` log line, and an item that waits on the user with the log line that gives that wait.

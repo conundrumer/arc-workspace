@@ -12,6 +12,7 @@
 
 ## abridgement
 - `uv run python scripts/context.py section '<chapter>#<heading>'` prints a whole section.
+    + xref: src/handbook/context.py:section_text
     - The target of a link into `docs/handbook/` also works as the argument.
 
 ## citations
@@ -21,6 +22,7 @@
 ## lib-index
 - The lib below is an index.
 - `uv run python scripts/context.py section 'programs/lib/<module>.dl#<name>'` prints one declaration's interface.
+    + xref: src/handbook/context.py:section_text
 - `programs/lib/<module>.md` holds a whole module's interface, and `programs/lib.md` the top-level lib's.
 
 ## lib-interface

@@ -18,6 +18,7 @@
 ## Launching
 - Where a launch fails with its agent type not found, give the launch as unfinished, with the failure's text as its reason.
 - Give an agent a brief in the form the sections under [Briefs](prompts/agents/notes/launching.md#briefs) for its work give, where any does, and launch it as the agent type whose `description` links those sections: read each of those sections and each section they link. Restate neither a docstring of the code nor the agent's definition.
+    + xref: prompts/agents/notes/launching.md#briefs
 - Where a brief gives a scratch directory, give a new directory under the session's scratchpad directory.
 - Before you write the items or the Intent of an edit, read [An edit's items](prompts/agents/notes/launching.md#an-edits-items).
 - Before you give another agent a draft `change` ticket that you filed or revised, in your reply or otherwise, read [A draft's outcome](prompts/agents/notes/launching.md#a-drafts-outcome).
@@ -25,6 +26,7 @@
     * comment: The user's words, session 7fd429fb, 2026-10-16, on a fixed ratio of wall-clock to token cost: "that seems overly rigid", "also saves on context rot", and on the overhead: "that sounds right": ticket 6-1416.
     - Token cost is the list price of the tokens a run uses: each request's uncached input, cache writes, cache reads and output, each at its own price on the model that ran the request.
 - Take each token cost you give or write into a brief from `uv run python scripts/profile_runs.py <agent id>`, and give a repriced token cost, from its `--price-at <model>`, as repriced. Take each price you give from the price table of [token_prices.py](scripts/token_prices.py).
+    + xref: scripts/profile_runs.py:parser, scripts/token_prices.py
 - Resume an agent that the usage limit stopped by a message, in place of launching it again, where you launched it or the agent that launched it has given its final reply.
     * comment: The coordinator, on the user's "resume all agents", resumed the agents of a running operator itself, and their hand-backs reached it in place of their launchers (session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-18T17:56:22Z to 17:57:15Z). The user's words, 17:57:59Z: "bug. you sohuldn have known to tell the op to resume agents", and 17:58:44Z: "that doesn't make sense. the op would have also hit usage limit": ticket 11-1485.
 - Act on each item that an agent you launched gives as unfinished, by its reason:
@@ -38,6 +40,7 @@
     * comment: The user's words, session 129de8fc-2a0d-4d4d-b950-3a0194c762e2, 2026-10-18T18:46:46Z: "i mean why did you launch and not the op". Session 9's coordinator launched ticket analyst ad5167ab44fc0b88d at 2026-10-18T18:42:43Z on tickets 9-886 and 9-942, which it had not filed, under `Op pause.`, while its operator launcher ran: ticket 11-1523.
 - In your reply, give each item an agent you launched left unfinished that you have not finished, as unfinished with its reason.
 - A transcript review is a `general-purpose` agent that reviews a run's transcript, with the brief [A transcript review's brief](prompts/agents/notes/launching.md#a-transcript-reviews-brief) gives.
+    + xref: prompts/agents/notes/launching.md#a-transcript-reviews-brief
 - Pause or serialize agents only where the user agreed to it.
 
 ## An edit's items
@@ -52,8 +55,10 @@
 
 ### A transcript brief
 - A transcript brief is the output of `uv run python scripts/spans.py brief`, written to a file: the Goal, where it has one, then each message of the user and of the coordinator in each span, in full and in time order, then the Grounds. It is rendered from a `request`, or from the words of a span's first and last message with the Grounds on the command's stdin.
+    + xref: scripts/spans.py:brief
 - A brief that gives one gives that file's path, with the other parts its form gives.
 - Where an agent's documents give its brief's items or its Intent, the work the user's messages in those spans ask for, with what the Grounds add to it, stands for them.
+    + xref: prompts/agents/notes/launching.md#a-transcript-brief
     - The Goal guides how that agent reads those messages, and where it and a message of the user differ, the message rules.
 
 ### An editor's brief
@@ -61,10 +66,12 @@
 - It gives the accepted gate outputs under `tests/gate/accepted/` the editor may write, where its items change or add one, with a scratch directory.
 - Where an editor of its agent type that another session launched worked in that worktree before it, it gives the agent id and the scratch directory of the last such editor that left a report, and its latest report.
 - It gives the rounds the editor has of each review of the change that an item has it make. The editor makes at most that many rounds of such a review, and sorts its findings as [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) gives.
+    + xref: prompts/agents/notes/launching.md#findings-that-block-a-change
 
 ### An editor's report on a change
 - An editor's report on a change gives, for each item of its brief, and of each request a later message adds, that it gives as done, what shows it holds: a command it ran with the output that shows it, the line of a rendered context that states it, the check its ticket's Scope places after the merge where only that check can show it, or, where none of these can, the reason it holds.
 - It gives each finding of the last round of a review its brief gives that blocks the change as left for a decision, with a reason that opens with `at the round cap`, and each finding a later message gave that the editor left unfixed, with why it left it and whether a doc reviewer sent it.
+    + xref: src/operations/reports.py:AT_CAP
 
 ### A code editor's brief
 - A code editor's brief gives as well its tests directory.
@@ -74,9 +81,11 @@
 
 ### Items and files
 - The brief of a code editor or of a `handbook-expanded` editor, for a change that has no ticket and is no solver work, gives a transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it, and the files the editor may edit.
+    + xref: prompts/agents/notes/launching.md#a-transcript-brief
 
 ### A doc editor's brief
 - A doc editor's brief for a change with no ticket gives a transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it, whose Grounds give a Justification for each line to write that is to stop a reader's failure and each restatement or elaboration to keep: the reader that failed without that text and the situation where it failed.
+    + xref: prompts/agents/notes/launching.md#a-transcript-brief
 
 ### A ticket reviewer's brief
 - A ticket reviewer's brief gives the number of each ticket under `tickets/draft/` to review, and the agent id of the agent that launches it, where that is not the coordinator.
@@ -87,6 +96,7 @@
     - The process assessment.
 - With the tickets a solver pass filed, it gives the review of that pass's transcript, where one was made.
 - With a `request` that the coordinator filed on `op send`, it gives that request's transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it.
+    + xref: prompts/agents/notes/launching.md#a-transcript-brief
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### A draft analyst's brief
@@ -112,31 +122,49 @@
 - Where the change is past its cost budget, it gives that it is.
 - Where the check is the change's last review round, or the check after its review round cap, it gives that it is.
 - Where the change writes accepted gate outputs, it gives them, other than those a `run_dl.py` command writes where the change has the `handbook-expanded` agent.
+    + xref: src/gating/commands.py, src/operations/item_check.py:checked_outputs
 - Where the operator launches it, it gives the command whose output its final reply ends with.
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### An operator's brief
 - An operator's brief gives only lines in these forms, each on a line of its own:
     - `Op solve: <task id> ...`: a solver pipeline on each task, from Analyze, or from the pass that `from create` or `from refine` after its task id gives.
+        + xref: src/operations/directives.py
     - `Op run: <path>`: the solver pipelines that the run script at that path starts, and the open tickets the operator takes from then on, as `uv run python scripts/operate.py --help run` gives the script.
+        + xref: src/operations/directives.py, scripts/operate.py:main
     - `Op drafts to review: <number>, ...`: the draft `change` tickets to review.
+        + xref: src/operations/directives.py
     - `Op expedite: <number>, ...`: the tickets an `Op allow:` line with the same numbers gives. The operator releases, takes and settles each of them as it does its session's, and takes each `change` among them ahead of the other changes it may take.
+        + xref: src/operations/directives.py
     - `Op merged: <number>, ...`: the changes the coordinator merged itself.
+        + xref: src/operations/directives.py
     - `Op merge: <number>`: a `change` under `tickets/blocked/`, which the user's ruling has the operator merge.
+        + xref: src/operations/directives.py
     - `Op tickets are open.`
+        + xref: src/operations/directives.py
     - `Op allow: <number>, ...`: tickets of any session, and from each of them, and so on down each chain: each ticket a link, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, leads to from it, and, from a ticket that is not a `change`, each `change` whose Motivation gives its number. The operators of the session settle and take each of them under `Op scope: own.` and `Op pause.` too, with no priority over other work.
+        + xref: src/operations/directives.py, prompts/agents/notes/tickets.md#change-tickets
     - `Op scope: own.`, which also holds where no `Op scope:` line came: the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than what `Op pause.` admits, the session's line of work, and the judgment by a ticket analyst of the tickets of the second sub-item:
+        + xref: src/operations/directives.py
         - The requests and changes the session's coordinator filed, and from each of them, and so on down each chain: each ticket a link leads to from it, each `change` whose Motivation gives its number, and each question or validation filed on it.
         - Each ticket outside `tickets/closed/` whose title refers to a file that the commit that merged a `change` of the item above changed, or to a file of a commit that a coordinator's line in the log of a `request` of the item above gives, that a ticket analyst judged the session's line of work needs, as the line `own: <judgment>` in its log shows, and from each such ticket the tickets that the steps of the item above lead to. A ticket analyst judges each such ticket whose log holds neither an `own:` line nor a `not own:` line.
     - `Op scope: all.`: ends the limit of `Op scope: own.`.
+        + xref: src/operations/directives.py
     - `Op pause.`: the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than the tickets and changes an `Op allow:` or an `Op expedite:` line gives, and the work an operator of the session took and each `change` that work waits on, which they finish.
+        + xref: src/operations/directives.py
     - `Op resume.`: ends `Op pause.`.
+        + xref: src/operations/directives.py
     - `Op pace: <preset> [<argument> ...]` or `Op pace: <path>`: the usage pace, as `uv run python scripts/operate.py --help pace` gives it. Past that pace, the operators of the session admit only the tickets and changes an `Op allow:` or an `Op expedite:` line gives, and the work an operator of the session took and each `change` that work waits on.
+        + xref: src/operations/directives.py, src/operations/pacing.py, scripts/operate.py:main
     - `Op override: <task id> <pass> <override>`: an override that the brief of the next launch of that pass on that task gives.
+        + xref: src/operations/directives.py
     - `Op override: pass over <step key>`: passes over the solver pass whose step key it gives: that pass's task id and its pass, in the form `uv run python scripts/operate.py --help rulings` gives.
+        + xref: src/operations/directives.py, scripts/operate.py:main
     - `Op override: give again <step key>`: makes the step whose key it gives due again, past its retirement, its outcomes and a pass-over, in the form `uv run python scripts/operate.py --help rulings` gives.
+        + xref: src/operations/directives.py, scripts/operate.py:main
         * comment: The user's words, session 19c17548, 2026-10-17T13:59:40Z: "10-947 feels like would be better to have escape hatch for exceptions? Like you can modify op state or intervene or whatever", and 14:01:05Z: "2 The most robust thing": ticket 10-950.
     - `Op decision: <decision key> <choice>`: rules the held step that gives that decision key with one of the choices that step gives, as the whole rest of the line.
+        + xref: src/operations/directives.py
 - The operator gives each line of its brief or of a later message from the coordinator in no other form back to the coordinator as undecided.
 
 ### A code reviewer's brief
@@ -161,6 +189,7 @@
 
 ### A transcript review's brief
 - A transcript review's brief gives the run's agent id, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), the `<domain>` and `<subject>` [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects) gives a transcript review of that run, and `transcript-review` as `<agent>`. It has the review file a ticket of kind `delay` for each place where the run explored to find what a docstring or a document line could have led it to.
+    + xref: prompts/agents/notes/tickets.md#ticket-files, prompts/agents/notes/tickets.md#ticket-subjects
 
 ### Solver work
 - The agent's brief may give overrides, each labelled as an override: a judgment made in place of the agent's own.
@@ -170,10 +199,12 @@
 ### A solver work brief
 - Solver work is a solver pass, or an edit of a solver or of the lib for one task.
 - Where no `change` ticket gives solver work, its brief gives the task id, and, for work other than a pass, a transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it, or, for the fix of what the closure of an `interference` ticket on the task leaves wrong in its solver, that ticket, and no worktree. It gives no items, and no files but the solver and the witness file of such a fix, and the agent determines the rest.
+    + xref: prompts/agents/notes/launching.md#a-transcript-brief
 
 ### Writing a solver work brief
 - Read no solver to write a brief for solver work.
 - Solver work other than a pass, or than the fix of a solver after an `interference` ticket on its task closes, is a change, which an editor makes as it makes any other, whether or not a `change` ticket gives it. Where one does, its brief has the form [A change's brief](#a-changes-brief) gives.
+    + xref: prompts/agents/notes/launching.md#a-changes-brief
 
 ## Findings that block a change
 - A finding of a review of a built change before its merge blocks the change only where it is a defect in what an item of the change asks for, an edit that applies an item wrongly, or a defect that an edit made to fix an earlier finding of the change, or, in a design review, code the diff adds that writes a rule a second time, that no item of the change needs and that nothing but a test or an example calls, that is larger than the cases it serves need, or that adds to a defect an open `refactor` ticket records.
@@ -181,17 +212,24 @@
 
 ## Passes on a task
 - Before you launch a pass on a task whose claim you do not hold, claim the task: run `uv run python scripts/operate.py claim <task_id>`. Where it fails, launch no pass on that task.
+    + xref: scripts/operate_actions.py:OperateAction.CLAIM
 - Where that pass is an Analyze or a Create pass, set aside the task's earlier work: run `uv run python scripts/operate.py set-aside <task_id> analyze` before an Analyze pass, or `uv run python scripts/operate.py set-aside <task_id> create` before a Create pass.
+    + xref: scripts/operate_actions.py:OperateAction.SET_ASIDE
 - Once each pass you launch on the task for one request or one procedure has ended, or the harness or the permission classifier has refused the launch of such a pass while no other such pass runs, run `uv run python scripts/operate.py restore <task_id>`.
+    + xref: scripts/operate_actions.py:OperateAction.RESTORE
 
 ## Operators
 - Send each line you give an operator to your running operator launcher, and where none runs, launch a new operator launcher with it. Give it in a form [An operator's brief](#an-operators-brief) gives, with nothing else in that message.
+    + xref: prompts/agents/notes/launching.md#an-operators-brief
 - The final reply of an operator or of an operator launcher is the text from a line `final reply` on in a message to you.
 - When an operator launcher's final reply asks for a fresh operator launcher, launch one with a brief that gives each line of yours that reply gives, and no line where it gives none.
 - When an operator's message, or a paragraph of it, that opens with `undecided:` reaches you, send the operator again the line of yours it gives, in a form [An operator's brief](#an-operators-brief) gives.
+    + xref: prompts/agents/notes/launching.md#an-operators-brief
 - When an operator's message that opens with `for the coordinator:` reaches you, read the file it gives.
+    + xref: src/operations/steps.py:DECISION
 - Bring the user each `decision:` item that file or an operator's final reply gives, other than a decline, tell the user each `tell:` item, and act on each `unfinished:` item as on an item an agent you launched gives as unfinished.
 - Ask an operator for no message to you before its final reply, other than the messages that open with `for the coordinator:` or `undecided:`, which it sends as it goes.
+    + xref: src/operations/steps.py:DECISION, src/operations/steps.py:UNDECIDED
 - Send each draft `change` ticket that the reply of an agent you launched gives, and each `change` ticket you revise, to an operator in an `Op drafts to review: <number>` line.
 - Each time a `change` of your session comes to stand under `tickets/open/` with every ticket its `depends-on` gives under `tickets/closed/`, while no operator of your session holds it or runs its review, tell an operator that tickets are open.
 - Revise a `change` ticket that stands under `tickets/open/`, `tickets/assigned/`, `tickets/blocked/` or `tickets/waiting/` only once you have moved it back to `tickets/draft/`, with a log line whose note gives what you revise and on what ground.
@@ -199,6 +237,7 @@
 
 ## While the user gives feedback
 - Gather each request the user approves into a batch, and when the user pauses or asks you to send it, send the whole batch at once: give each request to the agent a line of your documents gives for its work, or else to the handbook agent whose description covers it, as the split line of [Launching](#launching) allows, with one brief per agent.
+    + xref: prompts/agents/notes/launching.md#launching
 - Where a request touches the files of a change that has not passed, send it to that change's editor with SendMessage. Add every other request to the batch.
 
 ## A draft's outcome
