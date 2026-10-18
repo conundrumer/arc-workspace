@@ -50,7 +50,7 @@ from solver.pair_runs import TaskSection
 from solver.group_runs import at_once
 from solver.per_case import parameter_reading, per_case, by_base, with_rows_at
 from solver.value_order import row_key
-from solver.vocabulary import IDENT
+from solver.vocabulary import IDENT, PARAMS_SCOPE
 
 ENUMERATION_LIMIT = 100
 """The joint candidate count a produce run may enumerate to settle
@@ -651,7 +651,8 @@ def _embedded(solver: Solver, runs: Runs) -> set[str]:
              if isinstance(f.where, AtLine) for uid in f.where.units}
     names = {p.name for p in solver.params.parameters if p.columns}
     return {u.head.relation.name for u in solver.program.units
-            if u.id in fired and not u.head.relation.instances
+            if u.id in fired and u.scope == PARAMS_SCOPE
+            and not u.head.relation.instances
             and u.head.relation.name in names}
 
 

@@ -222,13 +222,13 @@ def _singleton_axis(solver: Solver, unit: Unit) -> bool:
         "axis is written in a two-axis type, and the other axis takes a "
         "literal `1`.")
 def check_params_data(solver: Solver, runs: Runs) -> list[Finding]:
-    """A literal in a rule of `Params` other than `0`, and other than `1` in
-    a clause marked `@singleton-axis`. Serves the purest form."""
+    """A literal in a rule of `Params` or of a comp nested in it, other than
+    `0`, and other than `1` in a clause marked `@singleton-axis`. Serves the
+    purest form."""
     v = view(solver, runs)
     out: list[Finding] = []
     for u in v.own_units:
-        if v.comp_of(u.scope) != PARAMS or len(u.scope.components) != 1 \
-                or u.body is None:
+        if v.comp_of(u.scope) != PARAMS or u.body is None:
             continue
         axis = _singleton_axis(solver, u)
         for lit in (u.head, *u.body):
