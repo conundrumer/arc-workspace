@@ -66,7 +66,7 @@ struct Shared<T> {
 
 impl<T> Clone for Node<T> {
     fn clone(&self) -> Self {
-        todo!()
+        Node { shared: Arc::clone(&self.shared) }
     }
 }
 
@@ -79,12 +79,19 @@ impl<T: canonical::Canonical> Node<T> {
     /// Whether the search for the value's canonical form reached
     /// [`canonical::SEARCH_NODE_CAP`], which is an alert on the node.
     pub fn reached_search_cap(&self) -> bool {
-        todo!()
+        self.computed().1
     }
 
     /// The hash of the value's canonical form, as [`canonical`] gives it.
     pub fn canonical_hash(&self) -> StableHash {
-        todo!()
+        self.computed().0
+    }
+
+    fn computed(&self) -> (StableHash, bool) {
+        *self.shared.canonical_hash.get_or_init(|| {
+            let (form, reached) = canonical::form_of(&self.shared.value);
+            (form.hash, reached)
+        })
     }
 }
 
@@ -98,7 +105,8 @@ impl<T> Node<T> {
 impl<T: canonical::Canonical> PartialEq for Node<T> {
     /// Equality of canonical forms: equal hashes, then equal canonical forms.
     fn eq(&self, other: &Self) -> bool {
-        todo!()
+        Arc::ptr_eq(&self.shared, &other.shared)
+            || (self.canonical_hash() == other.canonical_hash() && self.value().canonical_eq(other.value()))
     }
 }
 
