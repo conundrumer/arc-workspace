@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use crate::program::{
     Alt, AltItem, Alts, AltsName, Arcdata, Body, Clause, ClauseKeyword, Conjunct, Form, InstanceName, Negated, Node,
-    OutputOwner, Program, ProgramRelation, RelationRef, RigidDetName,
+    OutputOwner, OutputStep, Program, ProgramRelation, RelationRef, RigidDetName,
 };
 
 /// A solver read from its two files: the claims, the tree of alts, the
@@ -130,7 +130,8 @@ impl Solver {
     /// restricted by the nesting of the blocks, less the `exclude` forms of
     /// the arcdata file where `exclusion` is [`Exclusion::WithoutExcluded`].
     /// A `DET_OR_RULE` or `RULE_OR_DET` line splits only the bases that read
-    /// its relation.
+    /// its relation, and a line on an input of an instance, `&canvas.extent`,
+    /// is read by that instance's `INIT` form.
     ///
     /// Where the arcdata file has a `representative` line that gives a case's
     /// name, the one name is that case's (`docs/arclog/arcdata.md#header`).
@@ -185,15 +186,18 @@ impl Solver {
     /// stands, with each `ALTS` form it reaches and its alt.
     fn walk<'a>(&'a self, chosen: &'a [AltsName]) -> Walk<'a> {
         let mut walk = Walk { chosen, placed: Vec::new(), points: Vec::new(), unchosen: None };
-        if let Some(representative) = &self.representative {
-            for (index, form) in representative.program.value().forms.iter().enumerate() {
-                if let Form::Claim(_) = form {
-                    walk.form(form, FileOwner::Representative, NodePath(Box::new([PathStep(index as u32)])), 0);
-                }
-            }
+        for (index, form) in self.representative_claims() {
+            walk.form(form, FileOwner::Representative, NodePath(Box::new([PathStep(index as u32)])), 0);
         }
         walk.forms(&self.program.value().forms, FileOwner::Solver, &NodePath::default(), 0);
         walk
+    }
+
+    /// The claims of the solver the `representative` line names, each with
+    /// its index among the forms of that solver's file.
+    fn representative_claims(&self) -> impl Iterator<Item = (usize, &Form)> {
+        let forms = self.representative.iter().flat_map(|r| r.program.value().forms.iter());
+        forms.enumerate().filter(|(_, form)| matches!(form, Form::Claim(_)))
     }
 
     /// The case of `name`, or the first `ALTS` form it reaches at which
@@ -203,14 +207,18 @@ impl Solver {
         if walk.unchosen.is_some() {
             return Err(UnknownCase { name });
         }
+        let mut other_readings = StableHashSet::default();
         let placed: Vec<Placed> = walk
             .placed
             .iter()
             .map(|p| match line_of(&p.form) {
                 Some(line) => {
                     let all = readings(line);
-                    let reading = all.iter().find(|(alt, _)| name.0.contains(alt)).unwrap_or(&all[0]).1;
-                    Placed { form: Form::Clause(Node::new(read_as(line, reading))), ..p.clone() }
+                    let (alt, reading) = all.iter().find(|(alt, _)| name.0.contains(alt)).unwrap_or(&all[0]);
+                    if *alt != all[0].0 {
+                        other_readings.insert(p.step);
+                    }
+                    Placed { form: Form::Clause(Node::new(read_as(line, *reading))), ..p.clone() }
                 }
                 None => p.clone(),
             })
@@ -221,7 +229,7 @@ impl Solver {
         let mut concept_determinations = Vec::new();
         for p in taken {
             let path = NodePath(Box::new([PathStep(forms.len() as u32)]));
-            if p.depth == 0 && matches!(&p.form, Form::Clause(c) if c.value().keyword == ClauseKeyword::Det) {
+            if p.depth == 0 && is_det(&p.form) && !other_readings.contains(&p.step) {
                 concept_determinations.push(path.clone());
             }
             origins.insert(path, (p.owner, p.path.clone()));
@@ -235,37 +243,35 @@ impl Solver {
         })
     }
 
-    /// The relations that some block of the solver derives at the program's
-    /// name scope, which a name that no block of a case derives resolves
-    /// among, as [`crate::resolver::resolve`] takes them. A name that a
+    /// The relations that some block of the solver's forms, or of the
+    /// claims of the solver its `representative` line names, derives at the
+    /// program's name scope, which a name that no block of a case derives
+    /// resolves among, as [`crate::resolver::resolve`] takes them. A name that a
     /// `DEMO_RULE` form declares is resolved within that form alone, as
     /// [`crate::program::NameScope`] gives, so the set leaves it out.
     pub fn derived_relations(&self) -> StableHashSet<ProgramRelation> {
         let mut derived = StableHashSet::default();
         let mut owners = StableHashSet::default();
         let mut outputs = Vec::new();
-        let mut programs = vec![&self.program];
-        programs.extend(self.representative.as_ref().map(|r| &r.program));
-        for program in programs {
-            for form in program.value().forms.iter() {
-                each_form(form, &mut |form| match derives(form) {
-                    Some(Derives::Relation(relation)) => {
-                        derived.insert(relation);
-                    }
-                    Some(Derives::Instance(name)) => {
-                        owners.insert(OutputOwner::Instance(name));
-                    }
-                    Some(Derives::RigidDet(name)) => {
-                        owners.insert(OutputOwner::RigidDet(name));
-                    }
-                    None => {}
-                });
-                each_read(NodeRef::from(form), &mut |relation| {
-                    if let RelationRef::Output(output) = relation {
-                        outputs.push(output.clone());
-                    }
-                });
-            }
+        let claims = self.representative_claims().map(|(_, form)| form);
+        for form in self.program.value().forms.iter().chain(claims) {
+            each_form(form, &mut |form| match derives(form) {
+                Some(Derives::Relation(relation)) => {
+                    derived.insert(relation);
+                }
+                Some(Derives::Instance(name)) => {
+                    owners.insert(OutputOwner::Instance(name));
+                }
+                Some(Derives::RigidDet(name)) => {
+                    owners.insert(OutputOwner::RigidDet(name));
+                }
+                None => {}
+            });
+            each_read(NodeRef::from(form), &mut |relation| {
+                if let RelationRef::Output(output) = relation {
+                    outputs.push(output.clone());
+                }
+            });
         }
         derived.extend(outputs.into_iter().filter(|o| owners.contains(&o.of)).map(ProgramRelation::Output));
         derived
@@ -377,10 +383,21 @@ impl<'a> Walk<'a> {
         }
     }
 
-    /// Whether a form of the walk other than `line` reads its relation.
+    /// Whether a form of the walk other than `line` reads its relation: an
+    /// atom that names it, or, for an input of an instance, the instance's
+    /// `INIT` form, which holds that input.
     fn read_elsewhere(&self, line: &Placed, clause: &Clause) -> bool {
         let relation = relation_of(&clause.derives);
         self.placed.iter().filter(|p| !std::ptr::eq(*p, line)).any(|p| {
+            if let (Form::Instance(instance), ProgramRelation::Output(output)) = (&p.form, &clause.derives) {
+                let instance = instance.value();
+                let inputs = instance.key.iter().flat_map(|key| key.value().inputs.iter()).chain(instance.inputs.iter());
+                if output.of == OutputOwner::Instance(instance.name.clone())
+                    && matches!(&output.path[..], [OutputStep::Port(port)] if inputs.clone().any(|input| input.value().name == *port))
+                {
+                    return true;
+                }
+            }
             let mut reads = false;
             each_read(NodeRef::from(&p.form), &mut |read| reads |= *read == relation);
             reads
@@ -467,31 +484,24 @@ fn readings(line: &Clause) -> Vec<(AltsName, Reading)> {
 }
 
 /// A line's clause in one reading: the stored reading a `DET`, and a
-/// derived reading a `RULE`. The body of a `DET_OR_RULE` line with
-/// proposers is the stored reading's, so a derived reading of it reads its
-/// proposer alone.
+/// derived reading a `RULE`. Each reading keeps the line's `ONE` marks and
+/// its columns. The line's body is the stored reading's on a `DET_OR_RULE`
+/// line and the derived reading's on a `RULE_OR_DET` line, as
+/// `docs/arclog/arclog.md#the-alts-form` gives, and the other reading holds
+/// no body.
 fn read_as(line: &Clause, reading: Reading) -> Clause {
-    match reading {
-        Reading::Stored => Clause { keyword: ClauseKeyword::Det, ..line.clone() },
+    let (keyword, proposers, owns_body) = match reading {
+        Reading::Stored => (ClauseKeyword::Det, line.proposers.clone(), line.keyword == ClauseKeyword::DetOrRule),
         Reading::Derived(proposer) => {
             let proposers = match proposer {
                 Some(index) => Arc::from([line.proposers[index].clone()]),
                 None => line.proposers.clone(),
             };
-            if line.keyword == ClauseKeyword::DetOrRule && !line.proposers.is_empty() {
-                Clause {
-                    keyword: ClauseKeyword::Rule,
-                    proposers,
-                    body: Node::new(Body { conjuncts: Arc::from([]) }),
-                    ones: Arc::from([]),
-                    columns: Arc::from([]),
-                    ..line.clone()
-                }
-            } else {
-                Clause { keyword: ClauseKeyword::Rule, proposers, ..line.clone() }
-            }
+            (ClauseKeyword::Rule, proposers, line.keyword == ClauseKeyword::RuleOrDet)
         }
-    }
+    };
+    let body = if owns_body { line.body.clone() } else { Node::new(Body { conjuncts: Arc::from([]) }) };
+    Clause { keyword, proposers, body, ..line.clone() }
 }
 
 /// What a form derives, by which a form of an alt takes the place of the
