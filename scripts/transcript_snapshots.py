@@ -95,14 +95,13 @@ class Snapshot:
         self.crc = 0
         last = b""
         for base, chunk in chunks:
-            self.crc = zlib.crc32(last, self.crc)
+            self.crc = cut_crc(last, self.size - len(last), self.size, self.crc)
             self.size = base + len(chunk)
             self.breaks_cr = self.breaks_cr or b"\r" in chunk
             line_starts(chunk, base, self.starts)
             last = chunk
         self.closed = last.endswith(b"\n") or not last
-        self.crc = zlib.crc32(memoryview(last)[:self.settled_end() - (self.size - len(last))],
-                              self.crc)
+        self.crc = cut_crc(last, self.size - len(last), self.settled_end(), self.crc)
         self.found: dict[str, frozenset[int]] = {}
         self.agent_ids: dict[str, tuple[int, ...]] | None = None
         self.generation = object()
@@ -151,7 +150,7 @@ class Snapshot:
         crc, end, size = 0, self.settled_end(), 0
         for base, chunk in line_chunks(lambda offset, length: read_at(self, offset, length),
                                        self.size):
-            crc = zlib.crc32(memoryview(chunk)[:max(0, end - base)], crc)
+            crc = cut_crc(chunk, base, end, crc)
             size = base + len(chunk)
             yield base, chunk
         if size != self.size or crc != self.crc:
@@ -236,7 +235,7 @@ class Snapshot:
                      for w, lines in self.found.items()}
         out.agent_ids = (None if self.agent_ids is None
                          else self.agent_ids_on(self.agent_ids, out, more))
-        out.crc = zlib.crc32(more[:out.settled_end() - offset], self.crc)
+        out.crc = cut_crc(more, offset, out.settled_end(), self.crc)
         return out
 
     def agent_ids_on(self, index: dict[str, tuple[int, ...]], out: "Snapshot",
@@ -258,11 +257,26 @@ def joined(index: dict[str, tuple[int, ...]], more: dict[str, tuple[int, ...]]) 
 
 
 SPAN = 1 << 18
-"""How many bytes `Snapshot.lines`, `line_chunks` and `prefix_crc` read at
+"""How many bytes `Snapshot.lines`, `line_chunks` and `span_crc` read at
 most in one read. Each read is a new buffer, and the peak memory of a
 process that reads a transcript of 90 MB grows with the size of its
 buffers: by about 100 MB at 4 MB each, and by about 12 MB at this
 size."""
+
+
+def cut_crc(chunk: bytes, base: int, end: int, crc: int) -> int:
+    """`crc` with the bytes of `chunk`, the bytes of a file from offset
+    `base`, before the offset `end` folded in."""
+    return zlib.crc32(memoryview(chunk)[:max(0, end - base)], crc)
+
+
+def span_crc(read: Callable[[int, int], bytes], start: int, end: int, crc: int = 0) -> int:
+    """`crc` with the bytes from offset `start` up to `end` that `read`,
+    given an offset and a length, gives of a file folded in, read `SPAN`
+    bytes at a time, in order."""
+    for k in range(start, end, SPAN):
+        crc = zlib.crc32(read(k, min(SPAN, end - k)), crc)
+    return crc
 
 
 def line_chunks(read: Callable[[int, int], bytes], end: int) -> Iterator[tuple[int, bytes]]:
@@ -406,8 +420,5 @@ def last_snapshot(path: Path) -> Snapshot:
 
 def prefix_crc(fh: BinaryIO, end: int) -> int:
     """The CRC-32 of the bytes of `fh` from where it stands up to `end`, an
-    offset, read `SPAN` bytes at a time."""
-    crc = 0
-    for k in range(fh.tell(), end, SPAN):
-        crc = zlib.crc32(fh.read(min(SPAN, end - k)), crc)
-    return crc
+    offset, by the reads of `fh` (`span_crc`), which leave it at `end`."""
+    return span_crc(lambda offset, length: fh.read(length), fh.tell(), end)

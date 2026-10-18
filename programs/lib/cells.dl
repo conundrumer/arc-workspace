@@ -333,9 +333,10 @@
         Lo = min K2 : { _place(Ky, _, _, K2) },
         Hi = max K2 : { _place(Ky, _, _, K2) }.
 
-    // The cell's place in the order: k1 first, k2 on a tie. Each k2 less
-    // the least is below the span's width, so places compare as the pairs
-    // (k1, k2) do.
+    // The cell's score: k1 times the span's width, plus k2 less the least
+    // k2. Each k2 less the least is below the span's width, so two cells'
+    // scores compare as their pairs (k1, k2) compare by k1 first and by k2
+    // on a tie.
     .decl _score(key: Key, p: Position, s: number)
     _score(Ky, P, K1 * (Hi - Lo + 1) + K2 - Lo) :-
         _place(Ky, P, K1, K2), _span(Ky, Lo, Hi).
@@ -361,7 +362,7 @@
     .decl last(key: Key, t: Position)
     last(Ky, P) :- _extremes.high(Ky, P, _).
 
-    // The places in use, ranked: two cells at adjacent ranks are next.
+    // The scores in use, ranked: two cells at adjacent ranks are next.
     .init _ordinal = Ordinal<Key>
     _ordinal.idx_set(Ky, S) :- _score(Ky, _, S).
 

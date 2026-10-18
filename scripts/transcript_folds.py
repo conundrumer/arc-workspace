@@ -3,7 +3,6 @@ last fold stopped (`fold`): each held in the process, and, where the
 process opened the store of `kept_reads`, kept there, so that a later
 process folds only the lines added since."""
 
-import zlib
 from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,7 +11,7 @@ from typing import Any
 import kept_reads
 from state_reads import canonical
 from transcript_entries import own_range, selected_lines
-from transcript_snapshots import SPAN, Entry, Snapshot, parse, read_at, snapshot
+from transcript_snapshots import Entry, Snapshot, parse, read_at, snapshot, span_crc
 
 
 @dataclass(frozen=True)
@@ -53,10 +52,7 @@ def crc_before(snap: Snapshot, end: int) -> int:
     `end`, which a whole line ends."""
     if end == snap.settled_end():
         return snap.crc
-    crc = 0
-    for k in range(0, end, SPAN):
-        crc = zlib.crc32(read_at(snap, k, min(SPAN, end - k)), crc)
-    return crc
+    return span_crc(lambda offset, length: read_at(snap, offset, length), 0, end)
 
 
 def folded_at(path: Path, snap: Snapshot, own: range, done: int) -> Folded:
