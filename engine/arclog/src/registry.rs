@@ -323,7 +323,8 @@ pub enum Macro {
 }
 
 /// What a cell instance is defined over: Connectivity over Quotient, Flood
-/// over Propagation, and CellDistance and Ray over Distance.
+/// over Propagation, CellDistance and Ray over Distance, and Division over
+/// ExtentDivisions with `divide`.
 #[derive(Clone, Debug)]
 pub enum CellDefinition {
     /// An `INIT` form of the underlying construction with its domain inputs
