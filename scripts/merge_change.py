@@ -27,7 +27,9 @@ The script then rebases the branches, in the order given, onto `master` as
 one stack: the first onto `master`, and each next one onto the one before
 it. It sets up the submodules of the top of the stack again, for the
 commits its branch records, and runs the checks there, on the changes as
-they will merge:
+they will merge, by `uv run python scripts/merge_steps.py checks`, so that
+the top of the stack's copy of `merge_steps.py` runs each check by the
+command line that tree's code gives:
 
     uv run python -m controlled_markdown check     always
     uv run python scripts/context.py --write       always
@@ -75,7 +77,9 @@ When every check passes, the script runs in the main tree
 `uv run python scripts/context.py context --keep-tree HEAD`, so that the
 readers' updates after the merge find the tree of the old `master` made,
 and goes on where it fails. It then fast-forwards `master` in the main tree
-to the top of the stack, and runs in the main tree
+to the top of the stack, and runs in the main tree, by
+`uv run python scripts/merge_steps.py after <out>` and so by the command
+lines of the new `master`,
 `uv run python scripts/context.py --write`,
 `uv run python scripts/document_pass.py` and
 `uv run python scripts/gate.py --adopt <out>`, with `<out>` the
@@ -179,8 +183,9 @@ A change refused before the stack is rebased is left out of the stack, and
 the others merge.
 
 It pushes nothing and moves no branch but `master` and the worktrees' own.
-It prints a line per step on stdout, and a refusal, and a wait for the
-merge lock with what its holder merges, on stderr. As each submodule
+It prints a line per step on stdout, and a refusal, a wait for the
+merge lock with what its holder merges, and the line that names each
+check as it starts, on stderr. As each submodule
 setup, commit, rebase, check, command in the main tree and removal of a
 worktree ends, it writes the step's step line (`engine.duration.STEP`),
 which says how long the step took, on stderr. Each line a check writes on
@@ -209,19 +214,20 @@ from handbook.paths import scripts_importable
 
 scripts_importable()
 
-from change_checks import (Check, merge_base, changed_outside_work,  # noqa: E402
-                           code_checks, failures, outside_work, run_in, said, timed)
+from change_checks import (merge_base, changed_outside_work,  # noqa: E402
+                           outside_work, run_in, said, timed)
 from change_worktree import carried, same_blobs  # noqa: E402
 from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, locked_update, SetupFailed)
 
-from operations.merging import (CONTEXT_WRITE, DOCUMENT_CHECKS, FAILED_LINE,  # noqa: E402
+from operations.merging import (FAILED_LINE,  # noqa: E402
                                 NOT_PUT_ON, PATHS_SEP, PREFIX, REFUSED, REFUSED_TREE, TOOL)
 from operations.merge_outcomes import CONFLICT, LEFT_AFTER, STAYS  # noqa: E402
 from operations.worktrees import BASE  # noqa: E402
 
-DOCUMENT_PASS = ("scripts/document_pass.py",)
-"""The command, after `uv run python`, that files a whole-document pass."""
+STEPS = ("scripts/merge_steps.py",)
+"""The command, after `uv run python`, that runs the checks or the steps
+after the fast-forward in the tree it runs in."""
 
 TREE_KEEP = ("scripts/context.py", "context", "--keep-tree", "HEAD")
 """The command, after `uv run python`, that makes the tree of the main
@@ -291,16 +297,13 @@ def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
     gives."""
     commits = checkout.git_out(tree, "rev-list", f"--max-count={NAMED_COMMITS}", f"{base}..HEAD").split()
     gate_out = tempfile.mkdtemp(prefix=GATE_PREFIX + "".join(f"{c[:8]}-" for c in commits))
-    gate = Check(("uv", "run", "python", "scripts/gate.py", "--affected", base, gate_out))
-    run_checks(tree, [*map(Check, DOCUMENT_CHECKS), gate, *code_checks(tree, main, base, touched)])
+    argv = ("uv", "run", "python", *STEPS, "checks", str(main), base, gate_out)
+    done = subprocess.run(argv, cwd=tree, env=checkout.tree_env(), stdout=subprocess.PIPE,
+                          text=True, input="".join(f"{p}\n" for p in sorted(touched)))
+    if done.returncode != 0:
+        raise Refused(done.stdout.strip() or mctx("{shown} exited with status {code}").format(
+            shown=" ".join(argv), code=done.returncode))
     return Path(gate_out)
-
-
-def run_checks(tree: Path, checks: Sequence[Check]) -> None:
-    """Run `checks` in `tree` concurrently, and refuse where any fails."""
-    failed = failures(tree, checks)
-    if failed:
-        raise Refused("\n".join(failed))
 
 
 def refuse_main_touched(main: Path, touched: Mapping[Path, frozenset[str]]) -> dict[str, str]:
@@ -699,16 +702,14 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
         raise Failed(f"fast-forwarding {BASE} failed; {top} is committed and "
                      f"rebased in {changes[-1].worktree}:\n{said(done)}")
 
-    for argv in (CONTEXT_WRITE, DOCUMENT_PASS,
-                 ("scripts/gate.py", "--adopt", str(gate_out))):
-        shown = " ".join(argv)
-        done = run_step(main, argv)
-        if done.returncode != 0:
-            raise Failed(mctx("{master} is fast-forwarded, and {shown} failed in {main}; the "
-                              "worktrees and branches of {branches} stay:").format(
-                master=BASE, shown=shown, main=main,
-                branches=", ".join(c.branch for c in changes)) + "\n" + said(done))
-        print(done.stdout, end="", flush=True)
+    argv = (*STEPS, "after", str(gate_out))
+    done = run_step(main, argv)
+    if done.returncode != 0:
+        raise Failed(mctx("{master} is fast-forwarded, and {shown} failed in {main}; the "
+                          "worktrees and branches of {branches} stay:").format(
+            master=BASE, shown=" ".join(argv), main=main,
+            branches=", ".join(c.branch for c in changes)) + "\n" + said(done))
+    print(done.stdout, end="", flush=True)
 
     failed: list[str] = []
     for c in changes:

@@ -221,11 +221,6 @@ def run_gate(argv: Sequence[str]) -> int:
                     help="write the dependency record a run wrote under the out-dir as the "
                          "machine's, file a ticket on each SLOW line, then write the counts "
                          "that run wrote as the machine's, and run no command")
-    # Kept only for master's `scripts/merge_change.py`, which passes them
-    # to this script, until bug 11-750 is fixed: `--adopt-record` is
-    # `--adopt`, and `--outputs-only` does nothing.
-    ap.add_argument("--adopt-record", action="store_true", dest="adopt", help=argparse.SUPPRESS)
-    ap.add_argument("--outputs-only", action="store_true", help=argparse.SUPPRESS)
     a = ap.parse_args(argv)
     if a.adopt:
         if a.cmds or a.affected is not None or a.record_deps or a.coverage \

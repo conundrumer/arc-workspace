@@ -9,8 +9,11 @@ its main-tree content where a pass edited it after the carry, which the
 merge refuses, and where the fast-forward fails after its removal, which
 writes it back; a carried file the change left as copied is in no
 commit. The merge makes the readers' tree of the old `master` before the
-fast-forward, and fast-forwards where that make fails."""
+fast-forward, and fast-forwards where that make fails. The checks run by
+the command lines of the tree they check, and take as a code path a
+source file the change deletes."""
 
+import io
 import os
 import subprocess
 from pathlib import Path
@@ -244,3 +247,53 @@ def test_the_tree_is_made_before_the_fast_forward_and_its_failure_merges(
     keep = " ".join(("uv", "run", "python", *merge_change.TREE_KEEP))
     assert steps[:2] == [keep, "merge"]
     assert (main / "p" / "u").read_text() == "edited"
+
+
+GATE = '''import argparse
+ap = argparse.ArgumentParser()
+ap.add_argument("--since")
+ap.add_argument("out")
+ap.parse_args()
+'''
+
+STEPS = '''import subprocess, sys
+assert sys.argv[1] == "checks" and sys.stdin.read() == "p\\n"
+done = subprocess.run([sys.executable, "scripts/gate.py", "--since", *sys.argv[3:]],
+                      capture_output=True, text=True)
+print(done.stderr, end="")
+sys.exit(done.returncode and 1)
+'''
+
+
+def test_the_checks_run_the_command_lines_of_the_tree_checked(merge_change, trees):
+    """A change whose gate takes `--since` in place of `--affected` passes
+    the checks, which its own `merge_steps.py` runs; the main tree's passes
+    `--affected`, which that gate refuses."""
+    main, worktree = trees
+    (worktree / "scripts").mkdir()
+    (worktree / "scripts" / "gate.py").write_text(GATE)
+    (worktree / "scripts" / "merge_steps.py").write_text(STEPS)
+    base = git(worktree, "rev-parse", "HEAD").strip()
+    merge_change.check(worktree, main, base, {"p"})
+    (worktree / "scripts" / "merge_steps.py").write_text(
+        STEPS.replace('"--since"', '"--affected"'))
+    with pytest.raises(merge_change.Refused, match="unrecognized arguments: --affected"):
+        merge_change.check(worktree, main, base, {"p"})
+
+
+def test_a_deleted_source_file_gets_the_code_checks(trees, monkeypatch):
+    """A source file `SOURCES` matches that the change deletes, standing
+    in the main tree alone, is a code path of the checks."""
+    main, worktree = trees
+    merge_steps, change_checks = script("merge_steps"), script("change_checks")
+    (main / "programs").mkdir()
+    (main / "programs" / "lib.dl").write_text("")
+    seen: list[set[str]] = []
+    monkeypatch.setattr(merge_steps, "code_checks",
+                        lambda tree, main, base, touched: seen.append(
+                            change_checks.code_paths(tree, main, touched)) or [])
+    monkeypatch.setattr(merge_steps, "failures", lambda tree, checks: [])
+    monkeypatch.chdir(worktree)
+    monkeypatch.setattr("sys.stdin", io.StringIO("programs/lib.dl\n"))
+    assert merge_steps.main(["checks", str(main), "HEAD", "out"]) == 0
+    assert seen == [{"programs/lib.dl"}]
