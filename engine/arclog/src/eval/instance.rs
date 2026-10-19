@@ -17,7 +17,7 @@
 use super::join::Budget;
 use super::ReachedBound;
 use crate::hash::StableHashMap;
-use crate::registry::{is_key, ComponentKind, LibEntry, LibName};
+use crate::registry::{ComponentKind, LibEntry, LibName};
 use crate::relations::RowSet;
 use crate::session::TaskSession;
 use crate::terms::TermId;
@@ -154,4 +154,3 @@ impl Constructions {
 mod init;
 
 pub use init::{evaluate_input, evaluate_instance};
-pub(in crate::eval) use init::rows_of;

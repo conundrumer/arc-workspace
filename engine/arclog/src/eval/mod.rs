@@ -22,6 +22,7 @@ pub mod cache;
 mod driver;
 pub mod examples;
 pub mod filters;
+pub mod init_form;
 pub mod instance;
 pub mod ir;
 pub mod join;

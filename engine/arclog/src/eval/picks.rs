@@ -311,9 +311,9 @@ fn column_index(driver: &super::driver::Driver<'_, '_>, form: &NodePath, shape: 
 }
 
 /// The rows of `value`, of `arity` columns, or the pick's value where it
-/// holds no rows, as [`super::instance::rows_of`] gives them.
+/// holds no rows, as [`super::init_form::rows_of`] gives them.
 fn rows_of(value: RelationValue, arity: usize, fault: &dyn Fn(String) -> RunFault) -> Outcome<Result<Vec<Row>, Pick>> {
-    Ok(match super::instance::rows_of(value, arity).map_err(fault)? {
+    Ok(match super::init_form::rows_of(value, arity).map_err(fault)? {
         Ok(rows) => Ok(rows),
         Err(RelationValue::Undefined) => Err(Pick::Undefined),
         Err(RelationValue::Stopped(stop)) => Err(Pick::Stopped(stop)),

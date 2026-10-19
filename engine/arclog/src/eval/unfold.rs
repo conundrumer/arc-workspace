@@ -19,17 +19,17 @@
 use std::sync::Arc;
 
 use super::examples::{self, ExampleScope};
-use super::ir::{self, ClauseIr};
+use super::init_form::{instance_at, key_groups, rows_of, InputClause, InstanceShape};
+use super::ir::ClauseIr;
 use super::join::{self, Budget};
 use super::{Evaluation, FormBodies, Outcome, ReachedBound, RelationValue, RunFault, Stop};
-use crate::check::instance_inputs::inputs_at;
 use crate::hash::{StableHashMap, StableHashSet};
-use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Body, InstanceInput, LabelId, OutputStep, PortName};
-use crate::registry::{Column, Component, LibEntry};
+use crate::program::path::NodePath;
+use crate::program::{OutputStep, PortName};
+use crate::registry::{is_key, Component, InputPort};
 use crate::relations::{Row, RowSet};
-use crate::terms::{Constant, Example, Term, TermId};
-use crate::types::{each_site_label, use_label, GraphRelation};
+use crate::terms::{Example, Term, TermId};
+use crate::types::GraphRelation;
 
 /// A state of an `Unfold` walk, on one key: its cursor and its three sets
 /// of items, each sorted, so that states of equal content are equal.
@@ -168,8 +168,8 @@ trait ReadsOutputs {
 }
 
 /// The state graph of the `Unfold` instance whose `INIT` form stands at
-/// `form`, on each of its keys, with the key's labels of the key clause, or
-/// no label where it has none; `output` is an output of the instance. The
+/// `form`, on each of its keys, with the key columns of the instance's
+/// output rows at that key; `output` is an output of the instance. The
 /// value of a body that is `undefined` or stopped is given in place of the
 /// graphs.
 pub fn unfold<'a>(
@@ -180,8 +180,9 @@ pub fn unfold<'a>(
     example: Option<Example>,
     budget: &mut Budget<'a>,
 ) -> Outcome<Result<Vec<(Row, StateGraph)>, RelationValue>> {
-    let shape = UnfoldForm::of(evaluation, form)?;
-    let run = Run { evaluation, bodies, shape: &shape, example, own: own_outputs(evaluation, output, example) };
+    let (instance, component) = instance_at(evaluation, form)?;
+    let shape = InstanceShape::of(evaluation, form, instance, component);
+    let run = Run { evaluation, bodies, form, shape: &shape, component, example, own: own_outputs(evaluation, output, example) };
     run.graphs(budget)
 }
 
@@ -251,8 +252,7 @@ pub fn evaluate_unfold<'a>(
     let arity = types.ok_or_else(|| RunFault { message: "the output's columns have no types".into(), form: form.clone() })?.len() as u16;
     let mut values = vec![vec![RowSet::empty(arity)]];
     for (key, graph) in &graphs {
-        let key = output_key(key);
-        let walks = match distinct_outputs(graph, &[which], &key, limit, budget) {
+        let walks = match distinct_outputs(graph, &[which], key, limit, budget) {
             Ok(walks) => walks,
             Err(bound) => return Ok(vec![RelationValue::Stopped(Stop { bound, form: form.clone() })]),
         };
@@ -328,12 +328,6 @@ impl ReadsOutputs for GivenReads {
     }
 }
 
-/// The positions of an output's `key` column for the key `key`: its
-/// labels, or one `Unit` for the one key of a form with no key clause.
-fn output_key(key: &[TermId]) -> Row {
-    if key.is_empty() { Box::from([Term::Constant(Constant::Unit).encode().expect("a Unit has a term id")]) } else { key.into() }
-}
-
 /// The states a walk reaches before it takes a branch: the starts, each
 /// marked reached and pending.
 fn initial_reach(graph: &StateGraph) -> (Vec<bool>, Vec<StateIndex>) {
@@ -386,75 +380,6 @@ fn extend(
     Ok(visit(&chosen))
 }
 
-/// What the `INIT` form of an `Unfold` instance gives its evaluation: its
-/// key body and key labels, and the inputs it writes with their paths and
-/// whether each stands in the key clause.
-struct UnfoldForm<'p> {
-    form: &'p NodePath,
-    component: &'p Component,
-    key_body: Option<(&'p Body, NodePath)>,
-    key_labels: Vec<LabelId>,
-    written: Vec<(NodePath, bool, &'p InstanceInput)>,
-}
-
-impl<'p> UnfoldForm<'p> {
-    fn of(evaluation: &Evaluation<'p>, form: &'p NodePath) -> Outcome<Self> {
-        let root = NodeRef::Program(evaluation.program.program.program.value());
-        let Some(NodeRef::Instance(instance)) = node_at(root, form) else { panic!("an `INIT` form at the form of a recursive instance") };
-        let Some(LibEntry::Component(component)) = evaluation.registry.entry(&instance.component) else {
-            return Err(RunFault { message: format!("the engine does not evaluate the component `{}`", instance.component.0).into(), form: form.clone() });
-        };
-        let key = instance.key.as_ref().map(|key| key.value());
-        let key_body = key.map(|key| (key.key.body.value(), form.child(0).child(0)));
-        let key_labels = key.map_or_else(Vec::new, |key| key.key.columns.iter().map(|column| column.label).collect());
-        let written = inputs_at(instance).into_iter().map(|(path, keyed, input)| (form.join(&path), keyed, input)).collect();
-        Ok(UnfoldForm { form, component, key_body, key_labels, written })
-    }
-
-    fn fault(&self, message: String) -> RunFault {
-        RunFault { message: message.into(), form: self.form.clone() }
-    }
-
-    /// The clause of `input` where the form writes it, whose columns are
-    /// the key's labels where the input stands in the key clause, then the
-    /// label of each head site in the order of the port's columns, with
-    /// whether it holds the key's labels.
-    fn compile(&self, evaluation: &Evaluation<'_>, input: UnfoldInput) -> Outcome<Option<(ClauseIr, bool)>> {
-        let port = input.port();
-        let declared = self.component.inputs.iter().find(|declared| declared.port.name == port);
-        let declared = declared.ok_or_else(|| self.fault(format!("the component declares no input `{}`", port.0)))?;
-        let Some((path, keyed, written)) = self.written.iter().find(|(_, _, written)| written.name == port) else { return Ok(None) };
-        let head = head_labels(written, &declared.port.columns).map_err(|message| self.fault(message))?;
-        let body = (written.body.value(), path.child(written.head.len() as u32));
-        let (parts, prefix): (Vec<(&Body, NodePath)>, &[LabelId]) = match (&self.key_body, keyed) {
-            (Some(key_body), true) => (vec![key_body.clone(), body], &self.key_labels),
-            _ => (vec![body], &[]),
-        };
-        let columns: Vec<LabelId> = prefix.iter().chain(&head).copied().collect();
-        let clause = ir::compile_instance_body(evaluation.program, self.form, &parts, &columns)
-            .map_err(|compile| self.fault(format!("input `{}` does not compile: {compile:?}", port.0)))?;
-        Ok(Some((clause, !prefix.is_empty())))
-    }
-}
-
-/// The label of each head site of `input` at the columns of `columns`
-/// other than `key`, each site one label.
-fn head_labels(input: &InstanceInput, columns: &[Column]) -> Result<Vec<LabelId>, String> {
-    let key = crate::resolver::columns::key();
-    let mut labels = Vec::new();
-    for column in columns.iter().filter(|column| column.name != key) {
-        let site = input.head.iter().find(|site| site.column == column.name);
-        let site = site.ok_or_else(|| format!("input `{}` writes no head site on column {:?}", input.name.0, column.name))?;
-        let mut at_site = Vec::new();
-        each_site_label(site, &mut Vec::new(), &mut |use_, _| at_site.extend(use_label(use_)));
-        match at_site[..] {
-            [label] => labels.push(label),
-            _ => return Err(format!("head site {:?} of input `{}` of `Unfold` holds other than one label", column.name, input.name.0)),
-        }
-    }
-    Ok(labels)
-}
-
 /// Each output of the instance, as its bodies read it, with the example of
 /// the driver's entry of that read.
 fn own_outputs(evaluation: &Evaluation<'_>, output: &GraphRelation, example: Option<Example>) -> Vec<(UnfoldOutput, (GraphRelation, Option<Example>))> {
@@ -469,21 +394,6 @@ fn own_outputs(evaluation: &Evaluation<'_>, output: &GraphRelation, example: Opt
             (which, (relation, on))
         })
         .collect()
-}
-
-/// A compiled input with the rows it gives where it reads no output, each
-/// with the key's labels first where it holds them.
-struct InputRows {
-    keyed: bool,
-    rows: Vec<Row>,
-}
-
-impl InputRows {
-    /// The rows at `key`, with the key's labels left out.
-    fn at<'r>(&'r self, key: &'r [TermId]) -> impl Iterator<Item = &'r [TermId]> + 'r {
-        let width = if self.keyed { key.len() } else { 0 };
-        self.rows.iter().filter(move |row| row[..width] == key[..width]).map(move |row| &row[width..])
-    }
 }
 
 /// The rows of one key of the inputs that read no output.
@@ -514,20 +424,25 @@ impl Group {
     }
 }
 
+/// The inputs of `Unfold` that read no output.
+const GIVEN: [UnfoldInput; 5] = [UnfoldInput::Start, UnfoldInput::InitialTaken, UnfoldInput::InitialUntaken, UnfoldInput::Conflict, UnfoldInput::Score];
+
 /// One evaluation of an `Unfold` instance.
 struct Run<'r, 'a> {
     evaluation: &'r Evaluation<'a>,
     bodies: &'r FormBodies<'r>,
-    shape: &'r UnfoldForm<'r>,
+    form: &'r NodePath,
+    shape: &'r InstanceShape<'r>,
+    component: &'r Component,
     example: Option<Example>,
     own: Vec<(UnfoldOutput, (GraphRelation, Option<Example>))>,
 }
 
 /// The bodies that read the outputs, each where the form writes it.
 struct Recursive {
-    step: Option<(ClauseIr, bool)>,
-    skip: Option<(ClauseIr, bool)>,
-    take: Option<(ClauseIr, bool)>,
+    step: Option<InputClause>,
+    skip: Option<InputClause>,
+    take: Option<InputClause>,
 }
 
 impl<'r, 'a> Run<'r, 'a> {
@@ -536,79 +451,84 @@ impl<'r, 'a> Run<'r, 'a> {
             Ok(groups) => groups,
             Err(value) => return Ok(Err(value)),
         };
-        let compile = |input| self.shape.compile(self.evaluation, input);
+        let compile = |input| self.compile(input);
         let recursive = Recursive { step: compile(UnfoldInput::Step)?, skip: compile(UnfoldInput::Skip)?, take: compile(UnfoldInput::Take)? };
         let reads = DriverReads { run: self, recursive: &recursive };
         let mut graphs = Vec::with_capacity(groups.len());
         for group in &groups {
             match graph(group, &reads, budget) {
-                Ok(graph) => graphs.push((group.key.clone(), graph)),
+                Ok(graph) => graphs.push((self.shape.output_key().columns(&group.key).into_owned().into(), graph)),
                 Err(Halt::Fault(fault)) => return Err(fault),
                 Err(Halt::Value(value)) => return Ok(Err(value)),
-                Err(Halt::Bound(bound)) => return Ok(Err(RelationValue::Stopped(Stop { bound, form: self.shape.form.clone() }))),
+                Err(Halt::Bound(bound)) => return Ok(Err(RelationValue::Stopped(Stop { bound, form: self.form.clone() }))),
             }
         }
         Ok(Ok(graphs))
     }
 
-    /// The rows of `clause` through the driver, or the value where it holds
-    /// no rows.
-    fn rows(&self, clause: &ClauseIr) -> Outcome<Result<Vec<Row>, RelationValue>> {
-        let relation = match self.bodies.relation(self.shape.form, clause, self.example)? {
-            RelationValue::Rows(relation) => relation,
-            other => return Ok(Err(other)),
-        };
-        let mut rows = Vec::new();
-        join::each_row(&relation, &mut |row| rows.push(row.into()));
-        Ok(Ok(rows))
+    /// A fault at the instance's form, with `message`.
+    fn fault(&self, message: String) -> RunFault {
+        RunFault { message: message.into(), form: self.form.clone() }
     }
 
-    /// The rows of the written input `input`, or none where the form does
-    /// not write it.
-    fn input_rows(&self, input: UnfoldInput) -> Outcome<Result<InputRows, RelationValue>> {
-        let Some((clause, keyed)) = self.shape.compile(self.evaluation, input)? else { return Ok(Ok(InputRows { keyed: false, rows: Vec::new() })) };
-        Ok(self.rows(&clause)?.map(|rows| InputRows { keyed, rows }))
+    /// The input `input` as the component declares it.
+    fn declared(&self, input: UnfoldInput) -> Outcome<&'r InputPort> {
+        let port = input.port();
+        let declared = self.component.inputs.iter().find(|declared| declared.port.name == port);
+        declared.ok_or_else(|| self.fault(format!("the component declares no input `{}`", port.0)))
+    }
+
+    /// The clause of `input` where the form writes it, each head site one
+    /// label.
+    fn compile(&self, input: UnfoldInput) -> Outcome<Option<InputClause>> {
+        let declared = self.declared(input)?;
+        let Some(clause) = self.shape.input_clause(self.evaluation, self.form, declared).map_err(|message| self.fault(message))? else { return Ok(None) };
+        if clause.width() != declared.port.columns.iter().filter(|column| !is_key(column)).count() {
+            return Err(self.fault(format!("a head site of input `{}` of `Unfold` holds other than one label", declared.port.name.0)));
+        }
+        Ok(Some(clause))
+    }
+
+    /// The rows of `clause`, of `arity` columns, through the driver, or the
+    /// value where it holds no rows.
+    fn rows(&self, clause: &ClauseIr, arity: usize) -> Outcome<Result<Vec<Row>, RelationValue>> {
+        rows_of(self.bodies.relation(self.form, clause, self.example)?, arity).map_err(|message| self.fault(message))
+    }
+
+    /// The rows of `input`, an input that reads no output, at each of
+    /// `keys`, each without the key's labels.
+    fn input_rows(&self, input: UnfoldInput, keys: &[Row]) -> Outcome<Result<Vec<RowSet>, RelationValue>> {
+        let Some(clause) = self.compile(input)? else {
+            let declared = self.declared(input)?;
+            let types = self.shape.port_types(&declared.port.columns).map_err(|message| self.fault(message))?;
+            return Ok(Ok(self.shape.unwritten(declared, &types, keys, self.evaluation).map_err(|message| self.fault(message))?));
+        };
+        Ok(self.rows(&clause.clause, clause.arity())?.map(|rows| clause.grouped(keys, rows)))
     }
 
     /// The key groups, each with its rows of the inputs that read no output.
     fn groups(&self) -> Outcome<Result<Vec<Group>, RelationValue>> {
-        let keys: Vec<Row> = match &self.shape.key_body {
-            Some(key_body) => {
-                let clause = ir::compile_instance_body(self.evaluation.program, self.shape.form, &[key_body.clone()], &self.shape.key_labels)
-                    .map_err(|compile| self.shape.fault(format!("the key body does not compile: {compile:?}")))?;
-                match self.rows(&clause)? {
-                    Ok(rows) => rows,
-                    Err(value) => return Ok(Err(value)),
-                }
-            }
-            None => vec![Row::default()],
-        };
-        let read = |input| self.input_rows(input);
-        let (start, taken, untaken, conflict) =
-            match (read(UnfoldInput::Start)?, read(UnfoldInput::InitialTaken)?, read(UnfoldInput::InitialUntaken)?, read(UnfoldInput::Conflict)?) {
-                (Ok(start), Ok(taken), Ok(untaken), Ok(conflict)) => (start, taken, untaken, conflict),
-                (Err(value), ..) | (_, Err(value), ..) | (_, _, Err(value), _) | (.., Err(value)) => return Ok(Err(value)),
-            };
-        let score_written = self.shape.written.iter().any(|(_, _, written)| written.name == UnfoldInput::Score.port());
-        let score = match read(UnfoldInput::Score)? {
-            Ok(score) => score,
+        let keys = match key_groups(self.evaluation, self.bodies, self.form, self.shape, self.example)? {
+            Ok(keys) => keys,
             Err(value) => return Ok(Err(value)),
         };
+        let mut read = Vec::with_capacity(GIVEN.len());
+        for input in GIVEN {
+            match self.input_rows(input, &keys)? {
+                Ok(rows) => read.push(rows),
+                Err(value) => return Ok(Err(value)),
+            }
+        }
+        let score_written = self.shape.writes(&UnfoldInput::Score.port());
         let groups = keys
             .into_iter()
-            .map(|key| {
+            .enumerate()
+            .map(|(at, key)| {
                 let rows = |input| -> Vec<&[TermId]> {
-                    let rows = match input {
-                        UnfoldInput::Start => &start,
-                        UnfoldInput::InitialTaken => &taken,
-                        UnfoldInput::InitialUntaken => &untaken,
-                        UnfoldInput::Conflict => &conflict,
-                        UnfoldInput::Score => &score,
-                        UnfoldInput::Step | UnfoldInput::Skip | UnfoldInput::Take => unreachable!("an input that reads no output"),
-                    };
-                    rows.at(&key).collect()
+                    let index = GIVEN.iter().position(|given| *given == input).expect("an input that reads no output");
+                    read[index][at].rows().collect()
                 };
-                Group::of(key.clone(), rows, score_written)
+                Group::of(key, rows, score_written)
             })
             .collect();
         Ok(Ok(groups))
@@ -617,20 +537,19 @@ impl<'r, 'a> Run<'r, 'a> {
     /// The second column of the rows that `body` gives at the key of
     /// `group` and the cursor of `state`, with the outputs read at `state`
     /// and `take`.
-    fn at_cursor(&self, group: &Group, state: &UnfoldState, take: &[TermId], body: &(ClauseIr, bool)) -> Outcome<Result<Vec<TermId>, RelationValue>> {
-        let (clause, keyed) = body;
-        let rows = self.with_state(group, state, take, || self.rows(clause))?;
-        let rows = match rows {
-            Ok(rows) => InputRows { keyed: *keyed, rows },
+    fn at_cursor(&self, group: &Group, state: &UnfoldState, take: &[TermId], body: &InputClause) -> Outcome<Result<Vec<TermId>, RelationValue>> {
+        let rows = match self.with_state(group, state, take, || self.rows(&body.clause, body.arity()))? {
+            Ok(rows) => rows,
             Err(value) => return Ok(Err(value)),
         };
-        Ok(Ok(rows.at(&group.key).filter(|row| row[0] == state.cursor).map(|row| row[1]).collect()))
+        let [at_key] = &body.grouped(std::slice::from_ref(&group.key), rows)[..] else { unreachable!("the rows of one key") };
+        Ok(Ok(at_key.rows().filter(|row| row[0] == state.cursor).map(|row| row[1]).collect()))
     }
 
     /// The value of `evaluate`, with each read of the instance's outputs
     /// reading the rows of `state` and `take` at the key of `group`.
     fn with_state<T>(&self, group: &Group, state: &UnfoldState, take: &[TermId], evaluate: impl FnOnce() -> T) -> T {
-        let key = output_key(&group.key);
+        let key = self.shape.output_key().columns(&group.key);
         let branch = Branch { take: take.into(), next: Box::default() };
         let values = &self.bodies.driver.values;
         for (which, entry) in &self.own {
