@@ -131,24 +131,6 @@ impl<'l> Writer<'l> {
                     }
                 }
             }
-            ParamValue::Derivation { derivation, rows } => {
-                self.put(t, "(");
-                self.put(t, &derivation.0);
-                for row in rows.iter() {
-                    self.put(t, "(");
-                    for field in row.iter() {
-                        self.put(t, "(");
-                        let ColumnName::Written(column) = &field.column else {
-                            panic!("a derivation's field is read from a file, which writes its column")
-                        };
-                        self.put(t, &format!("{}{column}", sp::COLUMN_MARK));
-                        self.value(t, &field.value);
-                        self.put(t, ")");
-                    }
-                    self.put(t, ")");
-                }
-                self.put(t, ")");
-            }
         }
     }
 

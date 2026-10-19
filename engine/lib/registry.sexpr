@@ -200,16 +200,6 @@
     (gap (key Key) (A Axis) (G number)))
   (outputs (tile (key Key) (P Position) (P_outer Position) (P_inner Position))))
 
-;; Derivations: docs/arclog/arcdata.md#params.
-(derivation Frame (fields (A Axis) (N number)) (columns (P Position))
-  (instances (frame Frame (extent (fields A N))))
-  (table frame cell))
-(derivation Division (fields (A Axis) (Count number) (Size number) (Gap number)) (columns (P Position) (P_outer Position) (P_inner Position))
-  (instances (outer Frame (extent (fields A Count)))
-    (inner Frame (extent (fields A Size)))
-    (tiles Tiling (outer (output outer cell)) (inner (output inner cell)) (gap (fields A Gap))))
-  (table tiles cell))
-
 ;; Constants: the #define lines of programs/lib/orientation.dl, in their order within each type, and the C4 constants of its c4_elem facts.
 (constants Dir DIR_T DIR_B DIR_L DIR_R)
 (constants Axis AXIS_V AXIS_H)
@@ -391,14 +381,12 @@
 
 ;; Proposers: the domain proposers of docs/arclog/arclog.md#program, then the components of programs/proposers.dl, each with the columns of its propose relation, apart from PanelCombine, whose columns are those of a set-keyed table, one row for each panel of each entry: the entry's id, the entry's output color, the panel's place in the arrangement's frame, and the color of the panel's cell.
 (proposer AxisDomain native (columns (A Axis)))
-(proposer BoxDomain native (columns (B Box)))
 (proposer ColorDomain native (columns (C Color)))
 (proposer D4Domain native (columns (D D4)))
 (proposer DiagAxisDomain native (columns (Da DiagAxis)))
 (proposer DiagDirDomain native (columns (D DiagDir)))
 (proposer DirDomain native (columns (D Dir)))
 (proposer NumberDomain native (columns (N number)))
-(proposer PositionDomain native (columns (P Position)))
 (proposer SenseDomain native (columns (S Sense)))
 (proposer SymDomain native (columns (S Sym)))
 (proposer ColorColorDomain native (columns (C_from Color) (C_to Color)))

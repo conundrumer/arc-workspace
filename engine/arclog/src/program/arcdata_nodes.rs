@@ -94,12 +94,6 @@ pub enum ParamValue {
     /// The rows of a relation with a Position column, written as grids: one
     /// [`GridRows`] per grid.
     Grids(Arc<[GridRows]>),
-    /// The values a table derives from, under the derivation's name: `Frame`
-    /// or `Division`.
-    Derivation {
-        derivation: crate::registry::LibName,
-        rows: Arc<[Arc<[DataField]>]>,
-    },
 }
 
 /// One grid of a `param` or `assign` form, with the values before it
@@ -110,15 +104,6 @@ pub enum ParamValue {
 pub struct GridRows {
     pub before: Arc<[DataValue]>,
     pub grid: Grid,
-}
-
-/// One value of a derivation's row, under its column's name: `(:A AXIS_V)`,
-/// `(:N 6)`, such as a frame's extent on one axis, or a tile count, tile
-/// size or gap.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct DataField {
-    pub column: ColumnName,
-    pub value: DataValue,
 }
 
 /// A value written in an arcdata file, held as the file writes it, with no

@@ -12,7 +12,6 @@ use std::sync::Arc;
 use crate::layout::SourcePlace;
 use crate::program::path::NodePath;
 use crate::program::*;
-use crate::registry::LibName;
 
 use super::arclog::{head_of, List, Reader, Record, R};
 use super::spelling::{self as sp, parse};
@@ -143,7 +142,7 @@ impl Reader {
     }
 
     /// The rows of a `param` form or an `assign` form, all of one kind: rows
-    /// of values, grids, or a derivation. `columns` gives the type that a
+    /// of values or grids. `columns` gives the type that a
     /// form writes for each column, `None` where no form writes one, and a
     /// column past its end counts as `None`.
     ///
@@ -151,11 +150,6 @@ impl Reader {
     /// `docs/arclog/arcdata.md#params` at the column after the grid's
     /// `before` values.
     pub(super) fn param_value(&mut self, rows: &[SExpr], columns: &[Option<TypeName>], record: &mut Record) -> R<ParamValue> {
-        if let [row] = rows {
-            if is_derivation(row) {
-                return self.derivation(row, record);
-            }
-        }
         if rows.first().is_some_and(is_grid_row) {
             let mut grids = Vec::new();
             for row in rows {
@@ -281,41 +275,6 @@ impl Reader {
         }
         record.token(list.close);
         Ok(Grid { rows: rows.into(), anchor })
-    }
-
-    /// `(Frame ((:A AXIS_V) (:N 6)) ...)`: the derivation's name, then one
-    /// list of fields per row.
-    fn derivation(&mut self, expr: &SExpr, record: &mut Record) -> R<ParamValue> {
-        let list = self.list(expr, "a derivation")?;
-        record.token(list.open);
-        let (name, place) = self.symbol(list.items.first(), "the derivation's name", list.place)?;
-        record.token(place);
-        let mut rows = Vec::new();
-        for item in &list.items[1..] {
-            let row = self.list(item, "a derivation's row")?;
-            record.token(row.open);
-            let mut fields = Vec::new();
-            for field in row.items {
-                let field_list = self.list(field, "a field")?;
-                record.token(field_list.open);
-                let (column, place) = self.symbol(field_list.items.first(), "a field's column", field_list.place)?;
-                let Some(column) = column.strip_prefix(sp::COLUMN_MARK) else {
-                    return self.refuse("a field's column is `:` and a name", place);
-                };
-                record.token(place);
-                let Some(value) = field_list.items.get(1) else {
-                    return self.refuse("the list lacks the field's value", field_list.place);
-                };
-                let value = self.value(value, record)?;
-                self.no_more(field_list.items, 2)?;
-                record.token(field_list.close);
-                fields.push(DataField { column: ColumnName::Written(column.into()), value });
-            }
-            record.token(row.close);
-            rows.push(fields.into());
-        }
-        record.token(list.close);
-        Ok(ParamValue::Derivation { derivation: LibName(name.into()), rows: rows.into() })
     }
 
     fn exclude(&mut self, items: &[SExpr], at: SourcePlace, record: &mut Record) -> R<Exclude> {
@@ -585,18 +544,4 @@ fn is_constant_name(text: &str) -> bool {
 fn is_grid_row(expr: &SExpr) -> bool {
     head_of(expr) == Some(sp::GRID)
         || matches!(expr, SExpr::List { items, .. } if items.last().is_some_and(|last| head_of(last) == Some(sp::GRID)))
-}
-
-/// Whether `expr` is a derivation: a name, then lists of fields, each field
-/// a list headed by a `:` column.
-fn is_derivation(expr: &SExpr) -> bool {
-    let SExpr::List { items, .. } = expr else { return false };
-    let [SExpr::Symbol { .. }, rows @ ..] = &items[..] else { return false };
-    !rows.is_empty()
-        && rows.iter().all(|row| match row {
-            SExpr::List { items: fields, .. } => fields.iter().all(|field| {
-                matches!(head_of(field), Some(column) if column.starts_with(sp::COLUMN_MARK))
-            }),
-            _ => false,
-        })
 }

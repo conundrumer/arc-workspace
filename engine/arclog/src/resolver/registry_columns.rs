@@ -1,6 +1,6 @@
 //! The columns that the registry declares for a lib relation, a relation
-//! macro, a proposer, a fixed derivation or a fact relation that a read
-//! names, with their types, and the component an `INIT` form names.
+//! macro, a proposer or a fact relation that a read names, with their
+//! types, and the component an `INIT` form names.
 
 use super::columns::Columns;
 use crate::program::{ColumnName, RelationRef};
@@ -49,19 +49,17 @@ pub(crate) fn lib_typed_columns<'r>(registry: &'r Registry, name: &LibName) -> O
     }
 }
 
-/// The columns of a proposer or a fixed derivation that a `DET` names,
-/// in the proposer's order.
+/// The columns of a proposer that a `DET` names, in the proposer's order.
 pub(crate) fn proposer_columns(registry: &Registry, name: &LibName) -> Option<Box<[ColumnName]>> {
     match registry.entry(name) {
         Some(LibEntry::Proposer(proposer)) => Some(proposer.columns.iter().map(|c| c.name.clone()).collect()),
-        _ => registry.derivation(name).map(|derivation| derivation.columns.iter().map(|c| c.name.clone()).collect()),
+        _ => None,
     }
 }
 
-/// Whether `name` is a proposer or a fixed derivation that a `DET` can
-/// name.
+/// Whether `name` is a proposer that a `DET` can name.
 pub(super) fn is_proposer(registry: &Registry, name: &LibName) -> bool {
-    matches!(registry.entry(name), Some(LibEntry::Proposer(_))) || registry.derivation(name).is_some()
+    matches!(registry.entry(name), Some(LibEntry::Proposer(_)))
 }
 
 /// The component an `INIT` form names: a construction, a detector or a

@@ -16,7 +16,6 @@ pub(super) struct FileReader {
     /// Each name that a form of the entries declares, a relation macro's and
     /// an arclog proposer's among them, which take their entries later.
     pub(super) declared: StableHashSet<LibName>,
-    pub(super) derivations: StableHashMap<LibName, Derivation>,
     pub(super) constants: StableHashMap<OrientationType, TypeConstants>,
     /// The names of the `C4` form, and its place.
     pub(super) c4: Option<(Box<[Box<str>]>, SourcePlace)>,
@@ -139,7 +138,6 @@ impl FileReader {
         let c4 = names.iter().filter_map(|name| d4.constant(OrientationType::D4, name)).collect();
         Ok(Registry {
             entries: self.entries,
-            derivations: self.derivations,
             constants: self.constants,
             c4: ConstantSet { constants: c4 },
             facts: self.facts,

@@ -641,11 +641,7 @@ impl<'a> Inference<'a> {
             return Some(ClauseColumns::Own(&clause.columns));
         }
         if let Some(proposer) = clause.proposers.first() {
-            let columns = match registry_columns::lib_typed_columns(self.registry, proposer) {
-                Some(columns) => columns,
-                None => &self.registry.derivation(proposer)?.columns,
-            };
-            return Some(ClauseColumns::Declared(columns));
+            return registry_columns::lib_typed_columns(self.registry, proposer).map(ClauseColumns::Declared);
         }
         let ProgramRelation::Output(output) = &clause.derives else { return None };
         let (OutputOwner::Instance(name), [OutputStep::Port(port)]) = (&output.of, &output.path[..]) else { return None };

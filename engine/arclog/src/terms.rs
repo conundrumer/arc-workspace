@@ -402,8 +402,7 @@ fn ident_columns(ty: &ValueType, start: usize, positions: &mut Vec<usize>) -> us
 /// check, for `param` rows and `assign` rows alike. `ty` is the type of the
 /// value's column: the one the `param` form writes, or, for a relation with
 /// no `param` form, such as a `RULE_OR_DET` relation, the one the type check
-/// infers. A field of a derivation's row takes the type that the registry's
-/// [`crate::registry::Derivation`] gives.
+/// infers.
 pub fn encode_data_value(
     value: &crate::program::DataValue,
     ty: &ValueType,
@@ -462,11 +461,8 @@ pub fn encode_data_value(
 /// alike, as `docs/arclog/arcdata.md#params` gives them. A grid's cell takes
 /// as its Position the cell in the grid's own frame, of the grid's row
 /// count and row length, and, in a grid with an anchor, as its Offset the
-/// translation from the anchor to the cell. A derivation's values give the
-/// rows of its fields, each typed as the registry's
-/// [`crate::registry::Derivation`] types it, in place of `types`, the
-/// columns of the table it derives. Each value takes its term ids from
-/// [`encode_data_value`].
+/// translation from the anchor to the cell. Each value takes its term ids
+/// from [`encode_data_value`].
 pub fn encode_param_value(
     value: &crate::program::ParamValue,
     types: &[ValueType],
@@ -525,29 +521,6 @@ pub fn encode_param_value(
                         rows.insert(row.into());
                     }
                 }
-            }
-        }
-        ParamValue::Derivation { derivation, rows: written } => {
-            let Some(declared) = registry.derivation(derivation) else {
-                panic!("a derivation the registry declares, as the checker gives it");
-            };
-            let fields: Vec<ValueType> = declared
-                .fields
-                .iter()
-                .map(|field| field.ty.fixed().cloned().expect("a derivation's field of a fixed type"))
-                .collect();
-            for row in written.iter() {
-                let mut ordered = Vec::with_capacity(declared.fields.len());
-                for field in declared.fields.iter() {
-                    match row.iter().find(|written| written.column == field.name) {
-                        Some(written) => ordered.push(written.value.clone()),
-                        None => {
-                            let value = DataValue::List(row.iter().map(|written| written.value.clone()).collect());
-                            return Err(DataValueError::NotOfType { value, ty: row_type(&fields) });
-                        }
-                    }
-                }
-                rows.insert(values(&ordered, &fields, table)?.into());
             }
         }
     }

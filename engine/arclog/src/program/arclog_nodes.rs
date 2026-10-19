@@ -108,8 +108,7 @@ pub enum OutputOwner {
 
 /// A clause form: its keyword, the relation's name, its proposers, its body
 /// and its `ONE` marks (`docs/arclog/arclog.md#program`). A `DET` that names
-/// a proposer, or a derivation in place of a proposer, as `(DET &frame
-/// Frame)`, has that name in `proposers`, and a `DET_OR_RULE` or
+/// a proposer has that name in `proposers`, and a `DET_OR_RULE` or
 /// `RULE_OR_DET` line holds its proposers, then the body of the reading that
 /// has clauses of its own.
 #[derive(Clone, Debug)]

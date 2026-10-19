@@ -242,7 +242,6 @@ pub(super) enum Tag {
     Param,
     Rows,
     Grids,
-    Derivation,
     Integer,
     Orientation,
     List,
@@ -524,18 +523,6 @@ pub(super) fn param_value(cx: &Context, out: &mut CanonicalWriter, value: &Param
                     data_value(out, value);
                 }
                 grid(out, &rows.grid);
-            }
-        }
-        ParamValue::Derivation { derivation, rows } => {
-            out.tag(Tag::Derivation);
-            cx.names.write_name(&RelationRef::Lib(derivation.clone()), out);
-            out.len(rows.len());
-            for row in rows.iter() {
-                out.len(row.len());
-                for field in row.iter() {
-                    out.name(&field.column);
-                    data_value(out, &field.value);
-                }
             }
         }
     }
