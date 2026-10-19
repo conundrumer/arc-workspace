@@ -6,11 +6,8 @@ script is run in.
     uv run python scripts/merge_steps.py after <gate-out>
 
 The `--help` of `merge_change.py` says which checks and steps these are,
-when it runs each form, and what `<base>` and `<gate-out>` are.
-`merge_change.py` runs the copy of this script that the tree holds, so each
-command line the checks and the steps run is the one that tree's code
-gives. A change that changes the command line of this script itself merges
-by the command line of `master`'s copy.
+when it runs each form, which copy of this script it runs, and what
+`<base>` and `<gate-out>` are.
 
 `checks` takes `<main>`, the main tree, and on stdin the paths the
 changes touch, one per line, and reads neither. It runs the checks

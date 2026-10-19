@@ -29,7 +29,11 @@ it. It sets up the submodules of the top of the stack again, for the
 commits its branch records, and runs the checks there, on the changes as
 they will merge, by `uv run python scripts/merge_steps.py checks`, so that
 the top of the stack's copy of `merge_steps.py` runs each check by the
-command line that tree's code gives:
+command line that tree's code gives. Where the changes touch
+`scripts/merge_steps.py`, the main tree's copy of it runs in its place, in
+the main tree's environment and with the top of the stack as its working
+directory, so that a change to that script's own command line merges by
+the command line of `master`'s copy. The checks are:
 
     uv run python -m controlled_markdown check
     uv run python scripts/context.py --write
@@ -276,10 +280,14 @@ system's 255 bytes."""
 def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
     """Run in `tree` the checks of changes from the commit `base`, or
     refuse; the gate's out-dir, named as the module docstring gives. `main`
-    and `touched`, the paths the changes touch, go to `merge_steps.py`."""
+    and `touched`, the paths the changes touch, go to `merge_steps.py`, and
+    `touched` picks the copy of it that runs, as the module docstring
+    gives."""
     commits = checkout.git_out(tree, "rev-list", f"--max-count={NAMED_COMMITS}", f"{base}..HEAD").split()
     gate_out = tempfile.mkdtemp(prefix=GATE_PREFIX + "".join(f"{c[:8]}-" for c in commits))
-    argv = ("uv", "run", "python", *STEPS, "checks", str(main), base, gate_out)
+    steps = (("--project", str(main), "python", str(main / STEPS[0])) if STEPS[0] in touched
+             else ("python", *STEPS))
+    argv = ("uv", "run", *steps, "checks", str(main), base, gate_out)
     done = subprocess.run(argv, cwd=tree, env=checkout.tree_env(), stdout=subprocess.PIPE,
                           text=True, input="".join(f"{p}\n" for p in sorted(touched)))
     if done.returncode != 0:

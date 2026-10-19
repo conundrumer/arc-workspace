@@ -10,7 +10,8 @@ merge refuses, and where the fast-forward fails after its removal, which
 writes it back; a copied file the change left as copied is in no
 commit. The merge makes the readers' tree of the old `master` before the
 fast-forward, and fast-forwards where that make fails. The checks run by
-the command lines of the tree they check, and refuse changes to `engine/`
+the command lines of the tree they check, by the main tree's copy of
+`merge_steps.py` where the changes touch it, and refuse changes to `engine/`
 where the engine does not compile."""
 
 import os
@@ -256,7 +257,7 @@ ap.parse_args()
 '''
 
 STEPS = '''import subprocess, sys
-assert sys.argv[1] == "checks" and sys.stdin.read() == "p\\n"
+assert sys.argv[1] == "checks" and sys.stdin.read().startswith("p\\n")
 done = subprocess.run([sys.executable, "scripts/gate.py", "--since", *sys.argv[3:]],
                       capture_output=True, text=True)
 print(done.stderr, end="")
@@ -277,6 +278,23 @@ def test_the_checks_run_the_command_lines_of_the_tree_checked(merge_change, tree
     (worktree / "scripts" / "merge_steps.py").write_text(
         STEPS.replace('"--since"', '"--affected"'))
     with pytest.raises(merge_change.Refused, match="unrecognized arguments: --affected"):
+        merge_change.check(worktree, main, base, {"p"})
+
+
+
+def test_a_change_to_merge_steps_is_checked_by_the_main_trees_copy(merge_change, trees):
+    """A change whose `merge_steps.py` refuses the command line
+    `merge_change.py` gives passes the checks, which the main tree's copy
+    runs in the worktree."""
+    main, worktree = trees
+    (worktree / "scripts").mkdir()
+    (worktree / "scripts" / "gate.py").write_text(GATE)
+    (worktree / "scripts" / "merge_steps.py").write_text('print("refused")\nraise SystemExit(1)\n')
+    (main / "scripts").mkdir()
+    (main / "scripts" / "merge_steps.py").write_text(STEPS)
+    base = git(worktree, "rev-parse", "HEAD").strip()
+    merge_change.check(worktree, main, base, {"p", "scripts/merge_steps.py"})
+    with pytest.raises(merge_change.Refused, match="refused"):
         merge_change.check(worktree, main, base, {"p"})
 
 
