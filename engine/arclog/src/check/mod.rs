@@ -4,8 +4,9 @@
 //! dependency graph instead.
 //!
 //! Each check has a form on a prefix, [`Check::check_prefix`], so that a
-//! decode can refuse a prefix that no completion passes. Until step 6 builds
-//! the prefix forms, each check's `check_prefix` gives
+//! decode can refuse a prefix that no completion passes. Until the step of the
+//! build order that `docs/engine/synthesis.md`, Synthesis, gives builds the
+//! prefix forms, each check's `check_prefix` gives
 //! [`PrefixResult::Undecided`].
 //!
 //! The checker stage writes the bodies of the checks, each in a submodule of
