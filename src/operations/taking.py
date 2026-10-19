@@ -55,9 +55,16 @@ def purview(state: State) -> frozenset[str]:
     """The tickets the operators release and take changes among: those
     `State.mine` gives, those the coordinator gives in a line to the operator `me`,
     and each ticket a chain of links reaches from one of those, with those
-    of `allowed`."""
-    return frozenset(reached(state, {n for n, t in state.tracker.tickets.items() if state.mine(t)}
-                             | named(state)) | allowed(state))
+    of `allowed`. A chain from the tickets `State.mine` gives steps to a
+    ticket only where `State.mine` gives it, its session is idle
+    (`SessionsRead.idle`), or it belongs to no session."""
+    def step(t: Ticket) -> list[str]:
+        return [n for n in links(t)
+                if (u := state.tracker.tickets.get(n)) is None or state.mine(u)
+                or u.session is None or u.session in state.sessions.idle]
+
+    own = closure(state, {n for n, t in state.tracker.tickets.items() if state.mine(t)}, step)
+    return frozenset(own | reached(state, named(state)) | allowed(state))
 
 
 def reached(state: State, start: set[str]) -> set[str]:
