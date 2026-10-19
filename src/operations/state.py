@@ -5,7 +5,7 @@ change `me` holds.
 """
 
 import re
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Hashable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from functools import cached_property, wraps
 from enum import Enum, StrEnum
@@ -893,3 +893,22 @@ memoized_by_transcripts = memo_in(lambda state: state.transcripts.memo)
 """For a function that reads, of its state, only `State.transcripts`: a
 state that `dataclasses.replace` derives and that keeps that read shares
 its results."""
+
+
+def kept_across_reads[*A, R](f: Callable[[*A], R]) -> Callable[[Hashable, *A], R]:
+    """A decorator for a function of parts of a state, such as a ticket's
+    log, called with a key before them: the result is held for the key
+    across the states of the process, and a later call with that key whose
+    parts are each the held one or equal to it takes the held result. A
+    read of a later state gives the same object for a part whose source
+    stands (`state_reads.state_cache` in `scripts/`), so that comparison
+    most often ends on identity."""
+    held: dict[Hashable, tuple[tuple[*A], R]] = {}
+
+    @wraps(f)
+    def kept(key: Hashable, *parts: *A) -> R:
+        entry = held.get(key)
+        if entry is None or entry[0] != parts:
+            entry = held[key] = (parts, f(*parts))
+        return entry[1]
+    return kept

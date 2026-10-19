@@ -123,19 +123,19 @@ PATHS = ["src/operations/taking.py", "README.md", "scripts/dependents.py",
 
 
 @pytest.mark.parametrize("title", TITLES)
-def test_the_pattern_judges_as_names_does_a_title_with_no_form_after_a_slash_or_dot(
+def test_referring_judges_as_names_does_a_title_with_no_form_after_a_slash_or_dot(
         title: str) -> None:
-    from ticketing.references import names, referring
+    from ticketing.references import Referring, names
     for path in PATHS:
-        assert (referring([path]).search(title) is not None) is names(title, path)
-    assert (referring(PATHS).search(title) is not None) is any(names(title, p) for p in PATHS)
+        assert Referring([path])(title) is names(title, path)
+    assert Referring(PATHS)(title) is any(names(title, p) for p in PATHS)
 
 
 def test_a_bare_module_name_refers_to_no_file() -> None:
-    from ticketing.references import names, referring
+    from ticketing.references import Referring, names
     title = "scripts/bottlenecks.py, `--help`: \"wait\" and \"wait span\" name two different spans"
     assert names(title, "scripts/spans.py")
-    assert referring(["scripts/spans.py"]).search(title) is None
+    assert not Referring(["scripts/spans.py"])(title)
 
 
 @pytest.mark.parametrize(("title", "path", "refers"), [
@@ -146,8 +146,8 @@ def test_a_bare_module_name_refers_to_no_file() -> None:
     ("`src/gating/__init__.py`: wrong", "src/gating/__init__.py", True),
 ])
 def test_a_form_after_a_slash_or_dot_is_another_file(title: str, path: str, refers: bool) -> None:
-    from ticketing.references import referring
-    assert (referring([path]).search(title) is not None) is refers
+    from ticketing.references import Referring
+    assert Referring([path])(title) is refers
 
 
 def test_a_change_touches_the_files_its_merging_commit_changed(tmp_path: Path) -> None:
@@ -165,3 +165,11 @@ def test_a_change_touches_the_files_its_merging_commit_changed(tmp_path: Path) -
     s = state(tmp_path, given, commits)
     assert touched(s, {"9-1"}) == {"src/ticketing/references.py"}
     assert touched(s, {"9-2"}) == frozenset()
+
+
+def test_a_value_kept_across_reads_is_computed_again_when_its_part_changes() -> None:
+    from operations.state import kept_across_reads
+    count = kept_across_reads(len)
+    assert count("9-1", ("a",)) == 1
+    assert count("9-1", ("a", "b")) == 2
+    assert count("9-2", ("a",)) == 1

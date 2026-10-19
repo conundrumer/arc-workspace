@@ -437,6 +437,7 @@ DROPPED = mctx("a pipeline of an earlier line runs on its task")
 """The reason a run's pipeline that `session` drops ended."""
 
 
+@memoized
 def running(state: State) -> list[Pipeline]:
     """The pipelines of `session` that run now."""
     return [p for p in session(state) if runs_at(state, p, state.now)]
@@ -523,6 +524,7 @@ def fixers(state: State, t: Ticket, since: float) -> list[Agent]:
     return [a for a in state.agents_of(Role.SOLVER_FIX, t.number) if a.launched >= since]
 
 
+@memoized
 def fixes(state: State) -> list[Fix]:
     """The `interference` tickets whose solver fix is due, in the tracker's
     order. The record that a fix is done is the line its agent writes on
@@ -559,6 +561,7 @@ def fixed_tasks(state: State) -> set[str]:
     return {f.task for f in fixes(state)} | {task for task, a in fix_agents(state) if a.pending}
 
 
+@memoized
 def releases(state: State) -> list[tuple[str, Agent]]:
     """Each task whose claim is to be released, with the fix agent that
     returned on it: the latest on its task, with no fix pending there, no
@@ -572,6 +575,7 @@ def releases(state: State) -> list[tuple[str, Agent]]:
             and not ran(state, release_command(task), a.launched)]
 
 
+@memoized
 def busy(state: State) -> set[str]:
     """The tasks a run's start waits on: each a pipeline of the session
     runs on, each whose solver fix is due or pending, and each whose fix's

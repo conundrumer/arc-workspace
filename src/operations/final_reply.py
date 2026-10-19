@@ -23,7 +23,7 @@ from operations.constants import COORDINATOR
 from operations.handled import sends_in
 from operations.journal import next_call
 from operations.printing import FINAL_REPLY, final_message, unfenced
-from operations.state import Agent, Call, State, Tool, memoized
+from operations.state import Agent, Call, State, Tool, kept_across_reads, memoized
 from operations.steps import Reply, Send
 
 
@@ -104,7 +104,10 @@ def own_calls(calls: Iterable[Call], parents: Mapping[str, str]) -> dict[str, Ow
 @memoized
 def operator_calls(state: State) -> dict[str, OwnCalls]:
     """`own_calls` of the calls of `state` to `State.parents`."""
-    return own_calls(state.transcripts.calls, state.parents)
+    return held_own_calls((), state.transcripts.calls, state.parents)
+
+
+held_own_calls = kept_across_reads(own_calls)
 
 
 def final_sends_in(calls: Iterable[Call], operator: str, to: str) -> list[Call]:

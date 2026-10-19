@@ -68,7 +68,7 @@ from operations import briefs, changes, messages, taking
 from operations.reports import Label, items_of, mislabeled
 from operations.passes import awaits_analyst
 from operations.roles import ANALYST_NAMES, Purpose, Role, analyst_subject, joined
-from operations.state import Agent, LogLine, State, Ticket
+from operations.state import Agent, LogLine, State, Ticket, kept_across_reads
 from ticketing.vocabulary import SETTLED, Status
 from operations.constants import COORDINATOR
 from operations.final_reply import carrier, nested, replies_by_operator, session_operator
@@ -113,14 +113,22 @@ def reopen(state: State) -> Step | None:
     for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order):
         if Exit.COORDINATOR_LINE not in exits(state, t).by:
             continue
-        run, wait = final_run(t)
-        start = run if wait is None else wait
-        lines = coordinator_lines(t.log[start + 1:])
-        if run < len(t.log) and lines:
+        line = reopening(t.number, t)
+        if line is not None:
             return Bash(log(t.number, Status.REOPENED, t.status,
-                            f"the coordinator's line of {lines[-1].time:.0f}: {lines[-1].note}",
-                            None), f"{t.number} reopen", occasion=str(lines[-1].time))
+                            f"the coordinator's line of {line.time:.0f}: {line.note}",
+                            None), f"{t.number} reopen", occasion=str(line.time))
     return None
+
+
+@kept_across_reads
+def reopening(t: Ticket) -> LogLine | None:
+    """The line of the coordinator's that `reopen` cites for `t`, None
+    where it gives none."""
+    run, wait = final_run(t)
+    start = run if wait is None else wait
+    lines = coordinator_lines(t.log[start + 1:])
+    return lines[-1] if run < len(t.log) and lines else None
 
 
 def later_lines(state: State) -> Step | None:

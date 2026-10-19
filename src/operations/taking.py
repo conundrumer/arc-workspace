@@ -27,7 +27,7 @@ which `drafts` reads as findings (`ticket_stall`). A change under `tickets/block
 line that came after its last move there."""
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import cache
 
 from controlled_markdown import form, mctx
@@ -39,13 +39,13 @@ from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.merging import merge_commit
 from operations.pacing import Pace
-from operations.state import State, Ticket, memoized
+from operations.state import LogLine, State, Ticket, kept_across_reads, memoized
 from operations.start_holds import past_pace
 from operations.steps import Bash, Step, Undecided
 from operations.tracker import closed, exits, final_run, wait_line
 from ticketing.exits import Exit
 from ticketing.links import link_targets
-from ticketing.references import referring
+from ticketing.references import Referring
 from ticketing.vocabulary import COORDINATOR, Domain, Kind, Status
 
 
@@ -238,7 +238,13 @@ def line_of_work(state: State) -> set[str]:
 def judged(state: State, pattern: re.Pattern[str]) -> set[str]:
     """The tickets a line of whose log has a note that `pattern` matches."""
     return {n for n, t in state.tracker.tickets.items()
-            if any(pattern.fullmatch(ln.note) for ln in t.log)}
+            if log_matches((n, pattern), t.log, pattern)}
+
+
+@kept_across_reads
+def log_matches(log: tuple[LogLine, ...], pattern: re.Pattern[str]) -> bool:
+    """Whether a line of `log` has a note that `pattern` matches."""
+    return any(pattern.fullmatch(ln.note) for ln in log)
 
 
 @memoized
@@ -254,7 +260,7 @@ def own_work(state: State) -> set[str]:
 def follow_ups(state: State) -> set[str]:
     """The tickets a ticket analyst judges for the session's line of work:
     each ticket outside `tickets/closed/` and outside `own_work` whose title
-    refers, as `references.referring` judges it, to a file of `touched` of
+    refers, as `references.Referring` judges it, to a file of `touched` of
     `line_of_work`, and whose log holds no line of the form `OWN` or
     `NOT_OWN`."""
     refers = title_refers(touched(state, line_of_work(state)))
@@ -265,20 +271,18 @@ def follow_ups(state: State) -> set[str]:
 
 @cache
 def title_refers(files: frozenset[str]) -> Callable[[str], bool]:
-    """Whether a title refers to a file of `files`, as the pattern
-    `references.referring` builds for them matches in it. The pattern is
-    built once for each set of files of a process, and each title judged
-    once against it, as each read gives `follow_ups` the same files and
-    titles again."""
-    pattern = referring(files)
+    """`references.Referring` of `files`, built once for each set of files
+    of a process, with each title judged once, as each read gives
+    `follow_ups` the same files and titles again."""
+    refers = Referring(files)
     seen: dict[str, bool] = {}
 
-    def refers(title: str) -> bool:
+    def judged_once(title: str) -> bool:
         if title not in seen:
-            seen[title] = pattern.search(title) is not None
+            seen[title] = refers(title)
         return seen[title]
 
-    return refers
+    return judged_once
 
 
 def judging(state: State) -> Callable[[str], bool]:
@@ -324,8 +328,13 @@ def filed_for(state: State) -> dict[str, list[Ticket]]:
     """The tickets that give each ticket's number, by that number: those
     of domain `change` or `ticket` whose subject is that number, and each
     `change` whose Motivation gives it."""
+    return held_filed_for((), state.tracker.tickets)
+
+
+@kept_across_reads
+def held_filed_for(tickets: Mapping[str, Ticket]) -> dict[str, list[Ticket]]:
     out: dict[str, list[Ticket]] = {}
-    for t in state.tracker.tickets.values():
+    for t in tickets.values():
         on = {t.subject} if t.domain in (Domain.CHANGE, Domain.TICKET) else set()
         if t.kind is Kind.CHANGE:
             on |= set(t.motivation)

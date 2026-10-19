@@ -45,7 +45,8 @@ from operations.constants import stuck_reached
 from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.roles import AGENT_ID
-from operations.state import Agent, DueEntry, State, Ticket, memoized, memoized_by_transcripts
+from operations.state import (Agent, DueEntry, State, Ticket, kept_across_reads, memoized,
+                              memoized_by_transcripts)
 from operations.steps import Bash, Step
 from operations.tracker import exits
 from ticketing.exits import Exit
@@ -110,8 +111,13 @@ def agents_of(state: State, number: str) -> tuple[Agent, ...]:
 def agents_by_ticket(state: State) -> Mapping[str, tuple[Agent, ...]]:
     """The agents of each ticket number their subject gives
     (`lineage.tickets`), in the order of `TranscriptsRead.agents`."""
+    return held_agents_by_ticket((), state.transcripts.agents)
+
+
+@kept_across_reads
+def held_agents_by_ticket(agents: tuple[Agent, ...]) -> Mapping[str, tuple[Agent, ...]]:
     out: dict[str, list[Agent]] = {}
-    for a in state.transcripts.agents:
+    for a in agents:
         for n in dict.fromkeys(lineage.tickets(a.role, a.subject)):
             out.setdefault(n, []).append(a)
     return {n: tuple(agents) for n, agents in out.items()}

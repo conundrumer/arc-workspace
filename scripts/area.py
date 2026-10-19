@@ -26,7 +26,7 @@ from dependents import Graph, Reach, conftests, module_of  # noqa: E402
 from kept_reads import named_modules  # noqa: E402
 
 from engine import checkout  # noqa: E402
-from ticketing.references import referring  # noqa: E402
+from ticketing.references import Referring  # noqa: E402
 
 from operations.state import Ticket  # noqa: E402
 from ticketing.vocabulary import Kind, Status  # noqa: E402
@@ -205,8 +205,8 @@ def namers(root: Path, paths: list[str], out: References) -> None:
     """Add to `out` the files of the tree, tracked or untracked and not
     ignored, whose lines name a path of `paths`."""
     listed = checkout.git_out(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
-    every = referring(paths)
-    each = {p: referring([p]) for p in paths}
+    every = Referring(paths)
+    each = {p: Referring([p]) for p in paths}
     for path in sorted(set(listed.split("\0")) - {"", *paths}):
         file = root / path
         if not file.is_file():
@@ -215,11 +215,11 @@ def namers(root: Path, paths: list[str], out: References) -> None:
             text = file.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
-        if every.search(text) is None:
+        if not every(text):
             continue
         for number, line in enumerate(text.splitlines(), 1):
-            for target, pattern in each.items():
-                if pattern.search(line):
+            for target, refers in each.items():
+                if refers(line):
                     out.at(path, target).names.append(number)
 
 
