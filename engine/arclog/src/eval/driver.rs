@@ -168,7 +168,7 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// join over `inputs`, or the stop of the join at a bound.
     fn join(&self, form: &NodePath, clause: &ClauseIr, inputs: &JoinInputs) -> RelationValue {
         let evaluation = self.evaluation;
-        let order = plan::variable_order(clause, &join::sizes(inputs));
+        let order = plan::variable_order(clause, &join::sizes(inputs), &[]);
         let mut budget = Budget::new(evaluation.limits, evaluation.session);
         let value = match join::join(clause, &order, inputs, evaluation.registry, &mut budget) {
             Ok(relation) => RelationValue::Rows(Arc::new(relation)),

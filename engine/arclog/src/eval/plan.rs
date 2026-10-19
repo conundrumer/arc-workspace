@@ -31,7 +31,12 @@ pub struct RelationSizes(pub Box<[Option<u64>]>);
 /// unions bind; a variable that stands only in a filter's body is the
 /// filter's own. A variable that an `=` binds from another stands directly
 /// after that other, as an algebra relation's output does.
-pub fn variable_order(clause: &ClauseIr, sizes: &RelationSizes) -> VariableOrder {
+///
+/// `outer` holds the variables of `clause` that its caller binds before the
+/// join. They count as grounded, so the inputs of a mode they satisfy are
+/// held, and they stand in no place of the order, as the join drops a bound
+/// variable from it.
+pub fn variable_order(clause: &ClauseIr, sizes: &RelationSizes, outer: &[Variable]) -> VariableOrder {
     let count = clause.variables.len();
     let mut size: Vec<Option<u64>> = vec![None; count];
     let mut bound = vec![false; count];
@@ -54,6 +59,9 @@ pub fn variable_order(clause: &ClauseIr, sizes: &RelationSizes) -> VariableOrder
             order.push(variable);
         }
     };
+    for variable in outer {
+        placed[usize::from(variable.0)] = true;
+    }
     let follow = |placed: &mut Vec<bool>, order: &mut Vec<Variable>, place: &mut dyn FnMut(Variable, &mut Vec<bool>, &mut Vec<Variable>)| loop {
         let before = order.len();
         for node in clause.nodes.iter() {

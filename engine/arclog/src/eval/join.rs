@@ -369,13 +369,14 @@ impl<'c> Search<'c> {
                 }
                 IrNode::Not(filter) | IrNode::Counterexample(filter) => {
                     let NodeInput::Clauses(bodies) = &inputs.0[node] else { panic!("the inputs of each filter's body") };
-                    filter_orders.insert(node, variable_order(&filter.body, &sizes(&bodies[0])));
+                    filter_orders.insert(node, variable_order(&filter.body, &sizes(&bodies[0]), &filter.outer));
                     checks[last].push(node);
                 }
                 IrNode::Or(union) => {
                     let NodeInput::Clauses(bodies) = &inputs.0[node] else { panic!("the inputs of each branch") };
                     for (branch, (body, inputs)) in union.branches.iter().zip(bodies.iter()).enumerate() {
-                        branch_orders.insert((node, branch), variable_order(body, &sizes(inputs)));
+                        let outer: Vec<Variable> = body.columns.iter().copied().filter(|c| !union.exported.contains(c)).collect();
+                        branch_orders.insert((node, branch), variable_order(body, &sizes(inputs), &outer));
                     }
                     unions.push(node);
                     checks[last].push(node);
