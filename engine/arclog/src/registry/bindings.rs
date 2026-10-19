@@ -47,6 +47,12 @@ pub(crate) fn binding_sites<'a>(init: &'a crate::program::Instance, inputs: &'a 
     sites
 }
 
+/// Each of `parameters` onto which none of `sites` projects, which is `Unit`
+/// (`docs/arclog/arclog.md#instance`).
+pub(crate) fn unbound<'p>(parameters: &'p [TypeParameter], sites: &[ParameterSites<'_>]) -> Vec<&'p TypeParameter> {
+    parameters.iter().filter(|parameter| sites.iter().all(|sites| sites.parameter != *parameter)).collect()
+}
+
 /// The type parameter of the `key` column of a component whose inputs are
 /// `inputs`, the column that the key clause binds, where it has one.
 pub(crate) fn key_parameter(inputs: &[InputPort]) -> Option<&TypeParameter> {

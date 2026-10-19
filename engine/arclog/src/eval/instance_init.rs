@@ -28,10 +28,12 @@ use crate::types::{each_site_label, use_label, FormTypes, GraphRelation, ValueTy
 /// rows gives that value to each output.
 ///
 /// The key clause's rows are the groups, and an instance with no key
-/// clause has one group, at the `Unit` key. A component whose inputs read
-/// its outputs, a task-structure component and a component the table of
-/// constructions lacks give a [`RunFault`] whose message gives the
-/// component.
+/// clause has one group, at the `Unit` key. A type parameter onto which no
+/// place of the form projects is `Unit`, and each row of an input or an
+/// output holds the one `Unit` term at each column of that parameter. A
+/// component whose inputs read its outputs, a task-structure component and
+/// a component the table of constructions lacks give a [`RunFault`] whose
+/// message gives the component.
 pub fn evaluate_instance<'a>(
     evaluation: &Evaluation<'a>,
     bodies: &FormBodies<'_>,
@@ -192,10 +194,10 @@ fn input_groups(
                 (Some(key_body), true) => (vec![key_body.clone(), body], &key_labels),
                 _ => (vec![body], &[]),
             };
-            let columns: Vec<LabelId> = prefix.iter().chain(&head).copied().collect();
+            let columns: Vec<LabelId> = prefix.iter().chain(head.iter().flatten()).copied().collect();
             let clause = ir::compile_instance_body(evaluation.program, form, &parts, &columns)
                 .map_err(|compile| fault(format!("input `{}` does not compile: {compile:?}", input.port.name.0)))?;
-            Ok(rows_of(bodies.relation(form, &clause, example)?, columns.len()).map_err(&fault)?.map(|rows| grouped(groups, prefix.len(), head.len(), rows)))
+            Ok(rows_of(bodies.relation(form, &clause, example)?, columns.len()).map_err(&fault)?.map(|rows| grouped(groups, prefix.len(), head.len(), rows.iter().map(|row| with_unit(prefix.len(), &head, row)).collect())))
         }
         None => match stored_input(evaluation, form, instance, &input.port.name) {
             Some(parameter) => {
@@ -255,6 +257,15 @@ fn stored_input(evaluation: &Evaluation<'_>, form: &NodePath, instance: &Instanc
     Some(GraphRelation { node: *parameter, output: None })
 }
 
+/// What an `INIT` form binds a type parameter of its component to: the
+/// labels of its binding, by which its types are given, with the fields of
+/// the record it is bound to, or `None` for one label, or `Unit`, where no
+/// place of the form projects onto it.
+enum Binding {
+    Labels { fields: Option<Box<[ColumnName]>>, labels: Vec<LabelId> },
+    Unit,
+}
+
 /// What an `INIT` form gives the evaluation of its instance: its key body
 /// and key columns, the inputs it writes with their paths, the types of
 /// its labels, and its binding of each type parameter of its component.
@@ -266,10 +277,8 @@ struct InstanceShape<'p> {
     /// the key clause.
     written: Vec<(NodePath, bool, &'p InstanceInput)>,
     types: &'p FormTypes,
-    /// The fields of the record each type parameter is bound to, or `None`
-    /// for one label, with the labels of its binding, by which its types
-    /// are given.
-    bindings: StableHashMap<&'p TypeParameter, (Option<Box<[ColumnName]>>, Vec<LabelId>)>,
+    /// The binding of each type parameter of the component.
+    bindings: StableHashMap<&'p TypeParameter, Binding>,
 }
 
 impl<'p> InstanceShape<'p> {
@@ -284,16 +293,21 @@ impl<'p> InstanceShape<'p> {
         let key_body = key.map(|key| (key.key.body.value(), form.child(instance.position(InstancePart::Key)).child(key.position(KeyClausePart::Body))));
         let key_columns = key.map_or_else(Vec::new, |key| key.key.columns.iter().map(|column| (column.name.clone(), column.label)).collect());
         let written = inputs_at(instance).into_iter().map(|(path, keyed, input)| (form.join(&path), keyed, input)).collect();
+        let sites = crate::registry::binding_sites(instance, &component.inputs);
         let mut bindings = StableHashMap::default();
-        for sites in crate::registry::binding_sites(instance, &component.inputs) {
+        for parameter in crate::registry::unbound(&component.type_parameters, &sites) {
+            bindings.insert(parameter, Binding::Unit);
+        }
+        for sites in &sites {
             let binding = match sites.binding {
-                crate::registry::ParameterSite::Key(_) => {
-                    let fields = key_columns.iter().map(|(name, _)| name.clone()).collect();
-                    (Some(fields), key_columns.iter().map(|(_, label)| *label).collect())
-                }
-                crate::registry::ParameterSite::Head { site, .. } => {
-                    (projection(site), site_labels(site).into_iter().map(|(_, label)| label).collect())
-                }
+                crate::registry::ParameterSite::Key(_) => Binding::Labels {
+                    fields: Some(key_columns.iter().map(|(name, _)| name.clone()).collect()),
+                    labels: key_columns.iter().map(|(_, label)| *label).collect(),
+                },
+                crate::registry::ParameterSite::Head { site, .. } => Binding::Labels {
+                    fields: projection(site),
+                    labels: site_labels(site).into_iter().map(|(_, label)| label).collect(),
+                },
             };
             bindings.insert(sites.parameter, binding);
         }
@@ -316,14 +330,19 @@ impl<'p> InstanceShape<'p> {
         self.types.label(label).cloned().ok_or_else(|| format!("the label {label:?} has no type"))
     }
 
+    /// The binding of `parameter`, a type parameter of the component.
+    fn binding(&self, parameter: &TypeParameter) -> &Binding {
+        self.bindings.get(parameter).expect("a binding of each type parameter of the component")
+    }
+
     /// The types of the row positions of `column`: its fixed type, or the
     /// types of its type parameter's binding.
     fn column_types(&self, column: &Column) -> Result<Vec<ValueType>, String> {
         match &column.ty {
-            ColumnType::Parameter(parameter) => {
-                let (_, labels) = self.bindings.get(parameter).ok_or_else(|| format!("the type parameter `{}` is bound by no site", parameter.0))?;
-                labels.iter().map(|&label| self.label_type(label)).collect()
-            }
+            ColumnType::Parameter(parameter) => match self.binding(parameter) {
+                Binding::Labels { labels, .. } => labels.iter().map(|&label| self.label_type(label)).collect(),
+                Binding::Unit => Ok(vec![ValueType::Unit]),
+            },
             ty => ty.fixed().cloned().map(|ty| vec![ty]).ok_or_else(|| format!("the column {:?} has no type of its own", column.name)),
         }
     }
@@ -366,10 +385,13 @@ impl<'p> InstanceShape<'p> {
 
     /// The fields of the record that the type parameter of `column` is
     /// bound to, or `None` for a column of a fixed type or of a parameter
-    /// bound to one label.
+    /// bound to one label or `Unit`.
     fn fields(&self, column: &Column) -> Option<&[ColumnName]> {
         match &column.ty {
-            ColumnType::Parameter(parameter) => self.bindings.get(parameter).and_then(|(fields, _)| fields.as_deref()),
+            ColumnType::Parameter(parameter) => match self.binding(parameter) {
+                Binding::Labels { fields, .. } => fields.as_deref(),
+                Binding::Unit => None,
+            },
             _ => None,
         }
     }
@@ -400,20 +422,31 @@ impl<'p> InstanceShape<'p> {
 
     /// The labels of the head sites of `input` at the row positions of
     /// `columns` other than `key`, a record's in the order of its binding's
-    /// fields.
-    fn head_labels(&self, input: &InstanceInput, columns: &[Column]) -> Result<Vec<LabelId>, String> {
+    /// fields, and `None` at the position of a column whose type parameter
+    /// is `Unit`, on which the input writes no site.
+    fn head_labels(&self, input: &InstanceInput, columns: &[Column]) -> Result<Vec<Option<LabelId>>, String> {
         let mut labels = Vec::new();
         for column in columns.iter().filter(|column| !is_key(column)) {
+            let fields = match &column.ty {
+                ColumnType::Parameter(parameter) => match self.binding(parameter) {
+                    Binding::Labels { fields, .. } => fields.as_deref(),
+                    Binding::Unit => {
+                        labels.push(None);
+                        continue;
+                    }
+                },
+                _ => None,
+            };
             let site = input.head.iter().find(|site| site.column == column.name);
             let site = site.ok_or_else(|| format!("input `{}` writes no head site on column {:?}", input.name.0, column.name))?;
             let at_site = site_labels(site);
-            match (self.fields(column), &at_site[..]) {
-                (None, [(_, label)]) => labels.push(*label),
+            match (fields, &at_site[..]) {
+                (None, [(_, label)]) => labels.push(Some(*label)),
                 (Some(fields), _) => {
                     for field in fields {
                         let found = at_site.iter().find(|(path, _)| path.last() == Some(field) && path.len() > 1);
                         let (_, label) = found.ok_or_else(|| format!("head site {:?} of input `{}` gives no label of field {field:?}", column.name, input.name.0))?;
-                        labels.push(*label);
+                        labels.push(Some(*label));
                     }
                 }
                 (None, _) => return Err(format!("head site {:?} of input `{}` holds other than one label", column.name, input.name.0)),
@@ -481,6 +514,22 @@ fn site_labels(site: &Site) -> Vec<(Vec<ColumnName>, LabelId)> {
     let mut labels = Vec::new();
     each_site_label(site, &mut Vec::new(), &mut |use_, path| labels.extend(use_label(use_).map(|label| (path.to_vec(), label))));
     labels
+}
+
+/// `row`, whose first `prefix` positions are a key's and whose others are
+/// the labels of `head` that are not `None`, with the one `Unit` term at each
+/// position of `head` that is `None`.
+fn with_unit(prefix: usize, head: &[Option<LabelId>], row: &Row) -> Row {
+    let unit = OutputKey::Unit.columns(&[]);
+    let (key, mut values) = (&row[..prefix], row[prefix..].iter());
+    let mut filled = key.to_vec();
+    for label in head {
+        filled.push(match label {
+            Some(_) => *values.next().expect("a row position for each label of the head"),
+            None => unit[0],
+        });
+    }
+    filled.into()
 }
 
 /// The rows of `value`, of `arity` columns, or the value where it holds no

@@ -21,7 +21,7 @@ use crate::program::{
     Atom, Body, ColumnName, Conjunct, DemoRule, Constraint, Form, Instance, LabelId, NameScope, Node, Operand, OutputOwner, OutputStep, PortName, ProgramRelation, RelationColumn, RelationRef, Site, SiteArg,
 };
 use crate::program::written_inputs;
-use crate::registry::{binding_sites, key_parameter, Column, ColumnType, Component, ParameterSite, Registry, TypeParameter};
+use crate::registry::{binding_sites, unbound, Column, ColumnType, Component, ParameterSite, Registry, TypeParameter};
 use crate::resolver::columns;
 use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
@@ -941,7 +941,8 @@ fn typed(types: &[(LabelId, Result<Option<ValueType>, LabelFault>)], label: Labe
 
 /// The type each parameter of `component` takes by `instance`'s binding
 /// (`docs/arclog/arclog.md#instance`), at the places that [`binding_sites`]
-/// gives, with `label` giving the type of each label of the instance.
+/// gives, with `label` giving the type of each label of the instance, and
+/// `Unit` for each parameter onto which no place projects.
 fn bind(instance: &Instance, component: &Component, label: &dyn Fn(LabelId) -> Option<ValueType>) -> StableHashMap<TypeParameter, ValueType> {
     let sites = binding_sites(instance, &component.inputs);
     let mut bindings = StableHashMap::default();
@@ -957,7 +958,7 @@ fn bind(instance: &Instance, component: &Component, label: &dyn Fn(LabelId) -> O
             bindings.insert(sites.parameter.clone(), ty);
         }
     }
-    if let Some(parameter) = key_parameter(&component.inputs).filter(|parameter| sites.iter().all(|sites| sites.parameter != *parameter)) {
+    for parameter in unbound(&component.type_parameters, &sites) {
         bindings.insert(parameter.clone(), ValueType::Unit);
     }
     bindings
