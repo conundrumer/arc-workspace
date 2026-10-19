@@ -267,7 +267,7 @@ impl CheckCache {
 /// checked program.
 #[derive(Clone, Debug)]
 pub struct CheckedProgram {
-    pub program: ResolvedProgram,
+    pub program: Arc<ResolvedProgram>,
     pub types: ProgramTypes,
     /// The alerts on the program, such as a body whose canonical form
     /// reached the search cap, which refuse nothing.
@@ -286,6 +286,17 @@ pub struct CheckedProgram {
 /// `program`.
 pub fn check_program(
     program: ResolvedProgram,
+    clauses: &SolverClauses,
+    registry: &Registry,
+    cache: &mut CheckCache,
+) -> Result<CheckedProgram, Vec<Diagnostic>> {
+    check_shared_program(Arc::new(program), clauses, registry, cache)
+}
+
+/// [`check_program`] over a program that others hold as well, such as a
+/// case program of [`crate::resolver::ResolvedCases`].
+pub fn check_shared_program(
+    program: Arc<ResolvedProgram>,
     clauses: &SolverClauses,
     registry: &Registry,
     cache: &mut CheckCache,

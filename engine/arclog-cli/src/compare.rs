@@ -14,26 +14,24 @@
 //! so the command runs from the root of the tree.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::OnceLock;
-use std::time::Instant;
 
-use arclog::check::{check_program, CheckCache, SolverClauses};
 use arclog::eval::instance::Constructions;
 use arclog::eval::join::each_row;
-use arclog::eval::{relation_of, Caps, Cancellation, Evaluation, GridValue, Limits, NoGridColumns, Outcome, ParameterValues, RelationValue};
-use arclog::harness::{read_corpus_solver, run_over_corpus, CorpusSolver, SolverResult};
+use arclog::eval::{relation_of, Evaluation, GridValue, NoGridColumns, RelationValue};
+use arclog::harness::{run_over_corpus, CorpusSolver, SolverResult};
 use arclog::program::{DeclaredName, ProgramRelation, RelationName};
 use arclog::registry::Registry;
-use arclog::resolver::{resolve, Side};
-use arclog::session::{SessionBound, TaskSession};
+use arclog::resolver::Side;
 use arclog::solver::CaseName;
-use arclog::task::{read_task, Grid, Task};
+use arclog::task::{Grid, Task};
 use arclog::hash::StableHashMap;
 use arclog::terms::{Constant, Example, Ident, Term};
 use serde_json::Value;
 
+use crate::concept_case::with_concept_case;
 use crate::select::{read_json, selected};
 
 const USAGE: &str = "usage: arclog-cli compare <snapshot-dir> <corpus-dir> <tasks-dir> [<task_id> ...] [--reads <name> ...]";
@@ -190,42 +188,6 @@ pub(crate) fn constructions() -> Result<&'static Constructions, String> {
         .get_or_init(|| arclog_constructions::constructions(Registry::get()).map_err(|fault| format!("no table of constructions: {fault:?}")))
         .as_ref()
         .map_err(Clone::clone)
-}
-
-/// The concept case of a solver, set up for its run at its stored `param`
-/// records, over the table of the lib's constructions.
-pub(crate) struct ConceptCase<'a> {
-    pub(crate) name: &'a CaseName,
-    pub(crate) evaluation: Evaluation<'a>,
-}
-
-impl ConceptCase<'_> {
-    /// The grid of each example of the run, and the run's seconds.
-    pub(crate) fn run(&self) -> (Outcome<Result<Box<[(Example, GridValue)]>, NoGridColumns>>, f64) {
-        let start = Instant::now();
-        let outputs = self.evaluation.outputs();
-        (outputs, start.elapsed().as_secs_f64())
-    }
-}
-
-/// What `body` gives on the concept case of the solver `id` of `corpus`,
-/// on its task in `tasks`, or the fault that stops the case's setup.
-pub(crate) fn with_concept_case<T>(corpus: &Path, tasks: &Path, id: &str, body: impl FnOnce(&ConceptCase<'_>) -> Result<T, String>) -> Result<T, String> {
-    let solver = read_corpus_solver(corpus, id).ok_or("the solver's files do not read")?;
-    let task = read_task(&tasks.join(format!("{id}.json"))).map_err(|error| format!("the task does not read: {error:?}"))?;
-    let registry = Registry::get();
-    let case = solver.concept_case();
-    let resolved = resolve(&case.program, None, &solver.derived_relations(), registry).value;
-    let clauses = SolverClauses::of(&solver, registry);
-    let program = check_program(resolved, &clauses, registry, &mut CheckCache::default()).map_err(|refusals| {
-        let messages: Vec<&str> = refusals.iter().map(|d| &*d.message).collect();
-        format!("the checker refuses the concept case: {}", messages.join("; "))
-    })?;
-    let parameters = ParameterValues::stored(solver.arcdata.value());
-    let session = TaskSession::new(SessionBound { bytes: SESSION_BYTES }, Caps::PROVISIONAL);
-    let limits = Limits { deadline: None, cancellation: Cancellation::default() };
-    let evaluation = Evaluation { program: &program, task: &task, parameters: &parameters, session: &session, registry, constructions: constructions()?, limits: &limits };
-    body(&ConceptCase { name: &case.name, evaluation })
 }
 
 /// Whether the engine's grid value agrees with Souffle's outcome: one

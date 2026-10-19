@@ -7,7 +7,7 @@ use std::path::Path;
 use arclog::eval::GridValue;
 use arclog::harness::{run_over_corpus, SolverResult};
 
-use crate::compare::with_concept_case;
+use crate::concept_case::with_concept_case;
 
 use super::last_panic;
 

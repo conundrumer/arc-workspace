@@ -20,7 +20,8 @@ use arclog::eval::{GridValue, NoGridColumns, ReachedBound, Stop};
 use arclog::harness::{run_over_corpus, SolverResult};
 use serde_json::Value;
 
-use crate::compare::{with_concept_case, Arguments};
+use crate::compare::Arguments;
+use crate::concept_case::with_concept_case;
 use crate::select::{read_json, selected};
 
 const USAGE: &str = "usage: arclog-cli speed <snapshot-dir> <corpus-dir> <tasks-dir> [<task_id> ...] [--reads <name> ...]";

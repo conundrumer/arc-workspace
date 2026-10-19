@@ -6,6 +6,7 @@
 
 mod check_diff;
 mod compare;
+mod concept_case;
 mod determinism;
 mod lib_compare;
 mod select;

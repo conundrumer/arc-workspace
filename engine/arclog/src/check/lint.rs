@@ -19,41 +19,31 @@
 
 use std::sync::Arc;
 
-use super::{check_program, CheckCache, SolverClauses};
+use super::{check_shared_program, CheckCache, SolverClauses};
 use crate::diagnostic::{Diagnostic, Location, Severity};
 use crate::hash::StableHashMap;
 use crate::layout::{FilePlace, SourceFile};
 use crate::program::path::NodePath;
 use crate::registry::Registry;
-use crate::resolver::{resolve, ConceptReads};
-use crate::solver::{Case, CaseName, Exclusion, FileOwner, Solver};
+use crate::resolver::{resolve_cases, ResolvedCase};
+use crate::solver::{Case, CaseName, FileOwner, Solver};
 
 /// The errors of every check over every case of `solver`, the excluded
 /// cases included, each once per place in the files. The diagnostics stand
 /// in the order of the first case each holds in, the concept case's first,
 /// and within a case in the order the resolver and the checks give them.
 pub fn lint(solver: &Solver, registry: &Registry) -> Vec<Diagnostic> {
-    let derived = solver.derived_relations();
-    let clauses = SolverClauses::of(solver, registry);
+    let cases = resolve_cases(solver, registry);
+    let clauses = SolverClauses::of_cases(&cases);
     let mut cache = CheckCache::default();
     let mut found = Found::default();
-    let concept_case = solver.concept_case();
-    let concept = resolve(&concept_case.program, None, &derived, registry);
-    let concept_diagnostics = concept.diagnostics;
-    let concept = Arc::new(concept.value);
-    for case in solver.cases(Exclusion::WithExcluded) {
-        let resolved = if case.name == concept_case.name {
-            crate::diagnostic::WithDiagnostics { value: (*concept).clone(), diagnostics: concept_diagnostics.clone() }
-        } else {
-            let reads = ConceptReads { concept: &concept, determinations: case.concept_determinations() };
-            resolve(&case.program, Some(reads), &derived, registry)
-        };
-        let mut diagnostics = resolved.diagnostics;
-        if let Err(refused) = check_program(resolved.value, &clauses, registry, &mut cache) {
+    for ResolvedCase { case, resolved } in cases.cases() {
+        let mut diagnostics = resolved.diagnostics.clone();
+        if let Err(refused) = check_shared_program(Arc::clone(&resolved.value), &clauses, registry, &mut cache) {
             diagnostics.extend(refused);
         }
         for diagnostic in diagnostics.into_iter().filter(|d| d.severity == Severity::Error) {
-            found.add(solver, &case, diagnostic);
+            found.add(solver, case, diagnostic);
         }
     }
     found.finish()

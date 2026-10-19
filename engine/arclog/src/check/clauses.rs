@@ -7,8 +7,8 @@ use crate::program::canonical::CanonicalWriter;
 use crate::program::path::NodePath;
 use crate::program::{DemonstratedPart, Form, ProgramRelation};
 use crate::registry::Registry;
-use crate::resolver::{ConceptReads, ResolvedProgram, Signature};
-use crate::solver::{Exclusion, FileOwner};
+use crate::resolver::{ResolvedCases, ResolvedProgram, Signature};
+use crate::solver::FileOwner;
 
 /// Every clause of each relation that a solver declares, across its blocks
 /// and so across its cases, with the case programs they were found in. A
@@ -58,21 +58,15 @@ impl SolverClauses {
     /// The clauses of each relation of `solver`, found in each case
     /// program of the solver.
     pub fn of(solver: &crate::solver::Solver, registry: &Registry) -> Self {
-        let derived = solver.derived_relations();
-        let concept_case = solver.concept_case();
-        let concept = Arc::new(crate::resolver::resolve(&concept_case.program, None, &derived, registry).value);
-        let cases: Vec<_> = solver.cases(Exclusion::WithExcluded).filter(|case| case.name != concept_case.name).collect();
-        let resolved: Vec<Arc<ResolvedProgram>> = cases
-            .iter()
-            .map(|case| {
-                let reads = ConceptReads { concept: &concept, determinations: case.concept_determinations() };
-                Arc::new(crate::resolver::resolve(&case.program, Some(reads), &derived, registry).value)
-            })
-            .collect();
+        Self::of_cases(&crate::resolver::resolve_cases(solver, registry))
+    }
+
+    /// The clauses of each relation of a solver, found in each case program
+    /// of `cases`, which the index holds by their `Arc`.
+    pub fn of_cases(cases: &ResolvedCases) -> Self {
         let mut found = ClausesFound::default();
-        found.add(concept, &|path| concept_case.file_path(path));
-        for (case, program) in cases.iter().zip(resolved) {
-            found.add(program, &|path| case.file_path(path));
+        for resolved in cases.resolved() {
+            found.add(Arc::clone(&resolved.resolved.value), &|path| resolved.case.file_path(path));
         }
         found.ordered()
     }

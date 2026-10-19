@@ -3,22 +3,21 @@
 
 use std::sync::Arc;
 
-use arclog::check::{check_program, CheckCache, CheckId, SolverClauses};
+use arclog::check::{check_shared_program, CheckCache, CheckId, SolverClauses};
 use arclog::diagnostic::{DiagnosticKind, Location};
 use arclog::program::path::{NodePath, PathStep};
 use arclog::read::read_solver;
 use arclog::registry::Registry;
-use arclog::resolver::{resolve, ConceptReads};
-use arclog::solver::Exclusion;
+use arclog::resolver::resolve_cases;
 
 /// The checks that refuse the program of `arclog`, each with where it
 /// refuses it.
 fn refusals(arclog: &str) -> Vec<(CheckId, Location)> {
     let solver = read_solver("rules", arclog, "", &|_| None).expect("the file reads").value;
     let registry = Registry::get();
-    let program = resolve(&solver.concept_case().program, None, &solver.derived_relations(), registry).value;
-    let clauses = SolverClauses::of(&solver, registry);
-    checks_refusing(program, &clauses, registry)
+    let cases = resolve_cases(&solver, registry);
+    let clauses = SolverClauses::of_cases(&cases);
+    checks_refusing(Arc::clone(&cases.concept().resolved.value), &clauses, registry)
 }
 
 /// The checks that refuse each case program of `arclog` other than the
@@ -26,24 +25,20 @@ fn refusals(arclog: &str) -> Vec<(CheckId, Location)> {
 fn case_refusing_checks(arclog: &str) -> Vec<CheckId> {
     let solver = read_solver("rules", arclog, "", &|_| None).expect("the file reads").value;
     let registry = Registry::get();
-    let derived = solver.derived_relations();
-    let concept_case = solver.concept_case();
-    let concept = Arc::new(resolve(&concept_case.program, None, &derived, registry).value);
-    let clauses = SolverClauses::of(&solver, registry);
-    let cases = solver.cases(Exclusion::WithExcluded).filter(|case| case.name != concept_case.name);
+    let cases = resolve_cases(&solver, registry);
+    let clauses = SolverClauses::of_cases(&cases);
+    let concept_name = &cases.concept().case.name;
     cases
-        .flat_map(|case| {
-            let reads = ConceptReads { concept: &concept, determinations: case.concept_determinations() };
-            let program = resolve(&case.program, Some(reads), &derived, registry).value;
-            checks_refusing(program, &clauses, registry)
-        })
+        .cases()
+        .filter(|resolved| &resolved.case.name != concept_name)
+        .flat_map(|resolved| checks_refusing(Arc::clone(&resolved.resolved.value), &clauses, registry))
         .map(|(check, _)| check)
         .collect()
 }
 
 /// The checks that refuse `program`, each with where it refuses it.
-fn checks_refusing(program: arclog::resolver::ResolvedProgram, clauses: &SolverClauses, registry: &Registry) -> Vec<(CheckId, Location)> {
-    match check_program(program, clauses, registry, &mut CheckCache::default()) {
+fn checks_refusing(program: Arc<arclog::resolver::ResolvedProgram>, clauses: &SolverClauses, registry: &Registry) -> Vec<(CheckId, Location)> {
+    match check_shared_program(program, clauses, registry, &mut CheckCache::default()) {
         Ok(_) => Vec::new(),
         Err(diagnostics) => diagnostics
             .into_iter()

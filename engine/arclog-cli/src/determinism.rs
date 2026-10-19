@@ -27,7 +27,8 @@ use arclog::resolver::{DependencyKind, GraphNodeIndex};
 use arclog::terms::{Example, Ident, Term};
 use arclog::types::GraphRelation;
 
-use crate::compare::{renaming_exists, with_concept_case, EngineLeaf, Leaf};
+use crate::compare::{renaming_exists, EngineLeaf, Leaf};
+use crate::concept_case::with_concept_case;
 
 const USAGE: &str = "usage: arclog-cli determinism <corpus-dir> <tasks-dir> <threads> [<task_id> ...]";
 

@@ -1,6 +1,6 @@
-//! Name resolution of a case program, and the dependency graph it gives. A
-//! relation that no block of the case derives resolves to an undefined
-//! relation.
+//! Name resolution of a case program, and the dependency graph it gives,
+//! and the resolution of each case of a solver. A relation that no block of
+//! the case derives resolves to an undefined relation.
 //!
 //! The registry and resolver stage writes the bodies.
 
@@ -408,6 +408,73 @@ pub fn resolve(
     registry: &Registry,
 ) -> WithDiagnostics<ResolvedProgram> {
     build::resolve(case, concept, scope, registry)
+}
+
+/// A case of a solver with its resolution and the diagnostics of that
+/// resolution.
+#[derive(Debug)]
+pub struct ResolvedCase {
+    pub case: crate::solver::Case,
+    pub resolved: WithDiagnostics<Arc<ResolvedProgram>>,
+}
+
+/// The resolution of each case of a solver, as [`resolve_cases`] gives it:
+/// the concept case's, with no [`ConceptReads`], and each other case's, with
+/// the [`ConceptReads`] of the concept case's resolution and the case's
+/// [`crate::solver::Case::concept_determinations`].
+#[derive(Debug)]
+pub struct ResolvedCases {
+    concept: ResolvedCase,
+    /// Whether [`crate::solver::Solver::cases`] gives the concept case,
+    /// which it does not where a `representative` line names another case.
+    concept_is_a_case: bool,
+    /// The cases of [`crate::solver::Solver::cases`] other than the concept
+    /// case, in its order.
+    others: Box<[ResolvedCase]>,
+}
+
+impl ResolvedCases {
+    /// The concept case and its resolution.
+    pub fn concept(&self) -> &ResolvedCase {
+        &self.concept
+    }
+
+    /// Each case that [`crate::solver::Solver::cases`] gives with
+    /// [`crate::solver::Exclusion::WithExcluded`], with its resolution, in
+    /// its order, the concept case first.
+    pub fn cases(&self) -> impl Iterator<Item = &ResolvedCase> {
+        self.concept_is_a_case.then_some(&self.concept).into_iter().chain(self.others.iter())
+    }
+
+    /// Each case resolved: the concept case, then each other case of
+    /// [`ResolvedCases::cases`].
+    pub fn resolved(&self) -> impl Iterator<Item = &ResolvedCase> {
+        std::iter::once(&self.concept).chain(self.others.iter())
+    }
+}
+
+/// Resolves the concept case of `solver`, and then each other case of
+/// [`crate::solver::Solver::cases`] with
+/// [`crate::solver::Exclusion::WithExcluded`], with the [`ConceptReads`] of
+/// the concept case's resolution, against
+/// [`crate::solver::Solver::derived_relations`].
+pub fn resolve_cases(solver: &crate::solver::Solver, registry: &Registry) -> ResolvedCases {
+    let scope = solver.derived_relations();
+    let concept_case = solver.concept_case();
+    let shared = |resolved: WithDiagnostics<ResolvedProgram>| WithDiagnostics { value: Arc::new(resolved.value), diagnostics: resolved.diagnostics };
+    let concept = shared(resolve(&concept_case.program, None, &scope, registry));
+    let mut concept_is_a_case = false;
+    let mut others = Vec::new();
+    for case in solver.cases(crate::solver::Exclusion::WithExcluded) {
+        if case.name == concept_case.name {
+            concept_is_a_case = true;
+            continue;
+        }
+        let reads = ConceptReads { concept: &concept.value, determinations: case.concept_determinations() };
+        let resolved = shared(resolve(&case.program, Some(reads), &scope, registry));
+        others.push(ResolvedCase { case, resolved });
+    }
+    ResolvedCases { concept: ResolvedCase { case: concept_case, resolved: concept }, concept_is_a_case, others: others.into() }
 }
 
 /// Each `DEMO_RULE` form of the `DEMONSTRATED` form at `path`, with its
