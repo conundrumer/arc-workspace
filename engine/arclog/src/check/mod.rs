@@ -37,7 +37,7 @@ use crate::resolver::{DependencyGraph, ResolvedProgram, Signature};
 use crate::types::{ProgramTypes, ValueType};
 
 mod clauses;
-pub use clauses::{ClauseEntry, FileScope, SolverClauses};
+pub use clauses::{ClauseEntry, FileScope, HeldClauses, SolverClauses};
 use clauses::{clause_signature, top_level_forms};
 
 /// The checks this step builds, those that evaluation needs.
@@ -55,19 +55,22 @@ pub enum CheckId {
     /// gives a fault. A label that only `(= *X 0)` gives a type takes the type of the instance
     /// input it stands at, or else the join, as
     /// [`crate::types::ValueType::join`] gives it, of the types that the
-    /// relation's other clauses give its column, each read from
-    /// [`SolverClauses`] and typed in the case program it stands in. Those
-    /// clauses may stand in other blocks, as an `ALT` that rederives the
-    /// relation, and so in other case programs; the check's [`CheckCacheKey`]
-    /// then holds their signatures. A clause whose label at that column is
+    /// relation's other clauses in the case program under check give its
+    /// column, each read from [`SolverClauses`] and typed in the case
+    /// program it was found in, and the check's [`CheckCacheKey`] holds
+    /// their signatures. A clause whose label at that column is
     /// itself one that only `(= *X 0)` gives a type adds no type. The check
     /// refuses the label where no type is above those types.
     ///
     /// The check refuses a clause that gives a column of its relation a
     /// type with no join, as [`crate::types::ValueType::join`] gives it,
-    /// with the types that the relation's other clauses in
-    /// [`SolverClauses`] give that column, each typed in the case program it
-    /// stands in, and its [`CheckCacheKey`] holds those clauses' signatures.
+    /// with the types that the relation's other clauses in the case program
+    /// under check give that column, each read from [`SolverClauses`] and
+    /// typed in the case program it was found in, and its [`CheckCacheKey`]
+    /// holds those clauses' signatures. A clause of the concept program that
+    /// an `ALT` rederives, and the clauses of two `ALT`s that each rederive
+    /// the relation, stand in no case program together, so the check joins
+    /// no types of theirs.
     /// The refusal stands at the clause's label at that column, or at the
     /// clause where it holds no columns, as a `DET` that gives a proposer
     /// and has no body. A column that the clause's label takes from the
@@ -307,6 +310,7 @@ pub fn check_shared_program(
         refused.extend(refusals.iter().map(|r| diagnostic(DiagnosticKind::Check(CheckId::Cycles), Severity::Error, r.message.clone(), r.at.clone())));
     }
     let mut alerts = Vec::new();
+    let held = HeldClauses::of(&program);
     let forms: Vec<TopLevelForm<'_>> = top_level_forms(&program)
         .map(|(path, form)| {
             let mut search = SearchBudget::new();
@@ -316,7 +320,7 @@ pub fn check_shared_program(
                 alerts.push(diagnostic(DiagnosticKind::Bound, Severity::Alert, message, path.clone()));
             }
             let mut signatures = read_signatures(&program, form, &path, &order).into_vec();
-            signatures.extend(types::type_clause_signatures(form, &order, clauses).cloned());
+            signatures.extend(types::type_clause_signatures(form, &order, clauses, &held).cloned());
             let untyped = labels_in_scopes(&order, &|_, _| None);
             TopLevelForm { path, form, order, canonical, signatures: signatures.into(), untyped }
         })

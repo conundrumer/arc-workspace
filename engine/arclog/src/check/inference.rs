@@ -13,7 +13,7 @@ use super::types::{
     column_type, component, declared_type, demo_rule, form_at, pose_of_fault, project, relation_columns, rule_scope_forms, scope_forms, site_value_type,
     try_map_labels, zero_typed_heads, PoseOr,
 };
-use super::{ClauseEntry, FileScope, Refusal, SolverClauses};
+use super::{ClauseEntry, HeldClauses, Refusal, SolverClauses};
 use crate::hash::StableHashMap;
 use crate::program::canonical::{form_scope_labels, scope_labels, CanonicalOrder, LabelScope};
 use crate::program::path::{NodePath, NodeRef};
@@ -284,8 +284,9 @@ pub(super) struct ClauseColumnReads {
     /// labels name a Pose type's key row.
     reads: RefCell<StableHashMap<(usize, NodePath, ColumnName, Arc<[RelationColumn]>), Option<ValueType>>>,
     /// A key is the relation, the signature of the clause that reads its
-    /// other clauses, the column, and the columns of that clause.
-    joins: RefCell<StableHashMap<(ProgramRelation, Signature, ColumnName, Arc<[RelationColumn]>), Result<Option<ValueType>, LabelFault>>>,
+    /// other clauses, the signatures of those other clauses, the column,
+    /// and the columns of that clause.
+    joins: RefCell<StableHashMap<(ProgramRelation, Signature, Box<[Signature]>, ColumnName, Arc<[RelationColumn]>), Result<Option<ValueType>, LabelFault>>>,
 }
 
 impl ClauseColumnReads {
@@ -303,18 +304,19 @@ impl ClauseColumnReads {
         cached_unless_cycle(&self.reads, (entry.program, entry.at.clone(), column.clone(), Arc::clone(reader)), cycle_reads, read)
     }
 
-    /// The join of the types that the clauses of `relation` other than the
-    /// clause of signature `own`, whose columns are `reader`, give
-    /// `column`, from `join`, kept as [`cached_unless_cycle`] gives.
+    /// The join of the types that the clauses of `relation` of signatures
+    /// `others`, read for the clause of signature `own`, whose columns are
+    /// `reader`, give `column`, from `join`, kept as
+    /// [`cached_unless_cycle`] gives.
     fn get_or_join(
         &self,
-        (relation, own): (&ProgramRelation, Signature),
+        (relation, own, others): (&ProgramRelation, Signature, Box<[Signature]>),
         column: &ColumnName,
         reader: &Arc<[RelationColumn]>,
         cycle_reads: &Cell<usize>,
         join: impl FnOnce() -> Result<Option<ValueType>, LabelFault>,
     ) -> Result<Option<ValueType>, LabelFault> {
-        cached_unless_cycle(&self.joins, (relation.clone(), own, column.clone(), Arc::clone(reader)), cycle_reads, join)
+        cached_unless_cycle(&self.joins, (relation.clone(), own, others, column.clone(), Arc::clone(reader)), cycle_reads, join)
     }
 }
 
@@ -382,6 +384,9 @@ pub(super) struct Inference<'a> {
     cases: &'a CaseInferences<'a>,
     /// The inference of [`ResolvedProgram::concept`].
     concept: Option<Rc<Inference<'a>>>,
+    /// The clauses `program` holds, over which a read of the relation's
+    /// other clauses runs.
+    held: HeldClauses,
     /// Each form inferred, or `None` while its inference runs, so that a
     /// read through a cycle of forms gives no type.
     forms: RefCell<StableHashMap<NodePath, Option<Rc<FormInference<'a>>>>>,
@@ -399,7 +404,7 @@ impl std::fmt::Debug for Inference<'_> {
 impl<'a> Inference<'a> {
     pub fn new(program: &'a ResolvedProgram, cases: &'a CaseInferences<'a>) -> Self {
         let concept = program.concept().map(|concept| cases.concept(concept));
-        Inference { program, registry: cases.registry, cases, concept, forms: RefCell::default(), signatures: RefCell::default() }
+        Inference { program, registry: cases.registry, cases, concept, held: HeldClauses::of(program), forms: RefCell::default(), signatures: RefCell::default() }
     }
 
     /// The signature of the clause at `path` of the program.
@@ -643,8 +648,9 @@ impl<'a> Inference<'a> {
     }
 
     /// The join of the types that the other clauses of the relation of
-    /// `clause`, the clause at `path`, in [`SolverClauses`] give its
-    /// `column`, each in the case program it was found in, or the fault of
+    /// `clause`, the clause at `path`, in [`SolverClauses`] that this
+    /// inference's case program holds give its `column`, each in the case
+    /// program it was found in, or the fault of
     /// two types with no join. A clause whose label at that column only
     /// `(= *X 0)` gives a type adds no type. A Pose type's key row names
     /// the labels of `clause`.
@@ -652,10 +658,11 @@ impl<'a> Inference<'a> {
         let own = self.signature(path);
         let reads = self.cases.clauses.column_reads();
         let cycle_reads = &self.cases.cycle_reads;
-        reads.get_or_join((&clause.derives, own.clone()), column, &clause.columns, cycle_reads, || {
+        let entries: Vec<&ClauseEntry> = self.cases.clauses.of_relation_in(&clause.derives, &self.held).filter(|entry| entry.signature != own).collect();
+        let others: Box<[Signature]> = entries.iter().map(|entry| entry.signature.clone()).collect();
+        reads.get_or_join((&clause.derives, own, others), column, &clause.columns, cycle_reads, || {
             let target = |column: &ColumnName| head_label(clause, column);
-            let entries = self.cases.clauses.of_relation(&FileScope::Program, &clause.derives).iter();
-            let types = entries.filter(|entry| entry.signature != own).filter_map(|entry| {
+            let types = entries.iter().filter_map(|entry| {
                 reads.get_or_read(entry, column, &clause.columns, cycle_reads, || {
                     let inference = self.cases.of(entry);
                     let Some(Form::Clause(other)) = form_at(inference.program.program.value(), &entry.at) else {

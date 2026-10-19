@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use super::inference::FormInference;
-use super::{Check, CheckId, CheckInput, CheckResult, FileScope, Prefix, PrefixResult, Refusal, SolverClauses};
+use super::{Check, CheckId, CheckInput, CheckResult, HeldClauses, Prefix, PrefixResult, Refusal, SolverClauses};
 use crate::hash::StableHashMap;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
@@ -281,11 +281,12 @@ fn given_columns(
 /// of the form, as [`CanonicalOrder::label_scopes`] gives them, in their
 /// order, where it has a head label that only `(= *X 0)` gives a type,
 /// those of the clauses of its
-/// relation, each relation's in the order [`SolverClauses`] gives.
-pub fn type_clause_signatures<'a>(form: &Form, order: &CanonicalOrder, clauses: &'a SolverClauses) -> impl Iterator<Item = &'a Signature> {
+/// relation, each relation's in the order [`SolverClauses`] gives. The
+/// clauses of a relation are those that the case program of `held` holds.
+pub fn type_clause_signatures<'a>(form: &Form, order: &CanonicalOrder, clauses: &'a SolverClauses, held: &'a HeldClauses) -> impl Iterator<Item = &'a Signature> {
     let mut signatures: Vec<&'a Signature> = Vec::new();
     let mut add = |clause: &crate::program::Clause| {
-        for entry in clauses.of_relation(&FileScope::Program, &clause.derives) {
+        for entry in clauses.of_relation_in(&clause.derives, held) {
             if !signatures.contains(&&entry.signature) {
                 signatures.push(&entry.signature);
             }

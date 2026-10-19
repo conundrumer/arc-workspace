@@ -1,6 +1,7 @@
 //! A label that only `(= *X 0)` gives a type takes, in each case of a
-//! solver, the join of the types that the relation's other clauses give its
-//! column, each clause typed in the case program it stands in.
+//! solver, the join of the types that the relation's other clauses in that
+//! case give its column, each clause typed in the case program it stands
+//! in.
 
 use std::sync::Arc;
 
@@ -33,7 +34,7 @@ const ARCLOG: &str = "
 ";
 
 #[test]
-fn a_zero_typed_label_takes_the_join_of_the_clauses_of_each_case() {
+fn a_zero_typed_label_takes_the_join_of_the_clauses_of_its_own_case() {
     let solver = read_solver("zero", ARCLOG, "", &|_| None).expect("the file reads").value;
     let registry = Registry::get();
     let cases = resolve_cases(&solver, registry);
@@ -55,5 +56,5 @@ fn a_zero_typed_label_takes_the_join_of_the_clauses_of_each_case() {
             zero_types.push(types.label(constraint.first.label).cloned());
         }
     }
-    assert_eq!(zero_types, vec![Some(ValueType::Dir8), Some(ValueType::Dir8)]);
+    assert_eq!(zero_types, vec![Some(ValueType::Dir), Some(ValueType::DiagDir)]);
 }

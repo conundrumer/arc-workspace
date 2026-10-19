@@ -193,3 +193,78 @@ fn a_det_with_a_proposer_and_no_body_is_refused_at_its_own_path() {
     let det = Location::Path(NodePath(Box::new([PathStep(1)])));
     assert!(refused.contains(&(CheckId::Types, det)), "{refused:?}");
 }
+
+/// The top-level forms at which the type check refuses each case program
+/// of `arclog` other than the concept program, in the order of the cases,
+/// with one [`CheckCache`] across the cases.
+fn case_type_refused_forms(arclog: &str) -> Vec<Vec<u32>> {
+    let solver = read_solver("rules", arclog, "", &|_| None).expect("the file reads").value;
+    let registry = Registry::get();
+    let cases = resolve_cases(&solver, registry);
+    let clauses = SolverClauses::of_cases(&cases);
+    let concept_name = &cases.concept().case.name;
+    let mut cache = CheckCache::default();
+    cases
+        .cases()
+        .filter(|resolved| &resolved.case.name != concept_name)
+        .map(|resolved| {
+            let program = Arc::clone(&resolved.resolved.value);
+            let Err(diagnostics) = check_shared_program(program, &clauses, registry, &mut cache) else { return Vec::new() };
+            let mut forms: Vec<u32> = diagnostics
+                .into_iter()
+                .filter(|diagnostic| diagnostic.kind == DiagnosticKind::Check(CheckId::Types))
+                .map(|diagnostic| match diagnostic.location {
+                    Location::Path(path) => path.0[0].0,
+                    Location::Places(places) => panic!("a refusal of a program with no file stands at a path, not at {places:?}"),
+                })
+                .collect();
+            forms.dedup();
+            forms
+        })
+        .collect()
+}
+
+#[test]
+fn a_column_that_two_alts_give_a_dir_and_a_d4_passes_in_each_case() {
+    let forms = case_type_refused_forms(
+        "
+(ALTS $turn \"what turns a cell\" $None
+  (ALT $Step
+    (RULE &turn
+      (input *P *Col)
+      (neighbor (:P P) *D (:Q *Q))))
+  (ALT $Pose
+    (RULE &turn
+      (input *P *Col)
+      (input *Q Col)
+      (d4_identity *D))))
+",
+    );
+    assert_eq!(forms, vec![Vec::<u32>::new(), Vec::new()]);
+}
+
+#[test]
+fn a_clause_that_two_alts_hold_is_refused_only_where_its_sibling_has_no_join() {
+    let forms = case_type_refused_forms(
+        "
+(RULE &cell
+  (input *P *Col))
+
+(ALTS $mixed \"what &mixed holds\" $None
+  (ALT $Colors
+    (RULE &mixed
+      (&cell (:Col *X)))
+    (RULE &mixed
+      (&cell (:P *Q) (:Col *X))))
+  (ALT $Numbers
+    (RULE &mixed
+      (&cell (:Col *X)))
+    (RULE &mixed
+      (&cell (:P *Q))
+      (frame_extent (:P Q) (:A *A) (:N *X)))))
+",
+    );
+    assert_eq!(forms.len(), 2, "{forms:?}");
+    assert!(forms[0].is_empty(), "{forms:?}");
+    assert_eq!(forms[1].len(), 2, "{forms:?}");
+}

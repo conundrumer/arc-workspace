@@ -18,7 +18,9 @@ use crate::solver::FileOwner;
 /// its representative's, the order of the [`crate::solver::FileOwner`]
 /// variants, and within a file in the order of their paths, the index of
 /// the top-level form, then the index among the children at each step. A
-/// synthesized program has one case, and its clauses are its own.
+/// synthesized program has one case, and its clauses are its own. A check
+/// of one case program reads only the clauses that program holds, as
+/// [`CheckId::Types`](super::CheckId::Types) gives.
 #[derive(Debug, Default)]
 pub struct SolverClauses {
     /// Each case program the clauses were found in, the concept program
@@ -78,6 +80,12 @@ impl SolverClauses {
         found.ordered()
     }
 
+    /// Each clause of `relation` in the program's name scope that the case
+    /// program of `held` holds, in the order of [`Self::of_relation`].
+    pub fn of_relation_in<'c>(&'c self, relation: &ProgramRelation, held: &'c HeldClauses) -> impl Iterator<Item = &'c ClauseEntry> {
+        self.of_relation(&FileScope::Program, relation).iter().filter(|entry| held.0.contains(&entry.signature))
+    }
+
     /// Each clause of `relation` in the name scope `scope`.
     pub fn of_relation(&self, scope: &FileScope, relation: &ProgramRelation) -> &[ClauseEntry] {
         self.clauses.get(&(scope.clone(), relation.clone())).map_or(&[], |entries| &entries[..])
@@ -91,6 +99,19 @@ impl SolverClauses {
     /// The column types read of these clauses so far.
     pub(super) fn column_reads(&self) -> &super::inference::ClauseColumnReads {
         &self.column_reads
+    }
+}
+
+/// The signatures of the top-level clauses of one case program, by which a
+/// read of [`SolverClauses`] keeps only the clauses that program holds.
+#[derive(Debug, Default)]
+pub struct HeldClauses(crate::hash::StableHashSet<Signature>);
+
+impl HeldClauses {
+    /// The signatures of the top-level clauses of `program`.
+    pub fn of(program: &ResolvedProgram) -> Self {
+        let clauses = top_level_forms(program).filter(|(_, form)| matches!(form, Form::Clause(_)));
+        HeldClauses(clauses.map(|(path, _)| clause_signature(program, &path)).collect())
     }
 }
 
