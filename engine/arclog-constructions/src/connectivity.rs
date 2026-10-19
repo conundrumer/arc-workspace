@@ -8,16 +8,15 @@
 
 use std::hash::Hash;
 
+use arclog::algebra::boxes::compose;
 use arclog::eval::ReachedBound;
 use arclog::eval::instance::{Construction, ConstructionContext, GroupInputs, GroupOutputs};
+use arclog::eval::join::Batch;
 use arclog::hash::{StableHashMap, StableHashSet};
 use arclog::program::ColumnName;
 use arclog::relations::{Row, RowSet};
 use arclog::terms::{Content, Margins, MemberSet, Term, TermId};
 use arclog::types::ValueType;
-
-/// The bindings a construction tries between two charges of its budget.
-const BATCH: u64 = 1024;
 
 /// The connected components of the group's nodes under its steps, the
 /// cardinals by default.
@@ -35,7 +34,7 @@ impl Construction for Connectivity {
         context: &mut ConstructionContext<'_, '_>,
     ) -> Result<GroupOutputs, ReachedBound> {
         let [node, step] = group.inputs else { panic!("Connectivity's inputs `node` and `step`") };
-        let mut work = Work::new();
+        let mut work = Batch::default();
         let (classes, adjacent) = components(&column(node), &column(step), &mut work, context)?;
         let component = identified(context, &group.types[0], &classes);
         let mut connected = RowSet::empty(2);
@@ -45,7 +44,7 @@ impl Construction for Connectivity {
                     connected.insert(p.iter().chain(q.iter()).copied().collect());
                 }
             }
-            work.charge(members.len() as u64 * members.len() as u64, context)?;
+            work.count(context.budget, members.len() as u64 * members.len() as u64)?;
         }
         rows_held(context, [&component, &connected, &adjacent])?;
         Ok(GroupOutputs { outputs: Box::new([component, connected, adjacent]) })
@@ -70,12 +69,12 @@ impl Construction for Quotient {
     ) -> Result<GroupOutputs, ReachedBound> {
         let [equivalent, edge] = group.inputs else { panic!("Quotient's inputs `equivalent` and `edge`") };
         let width = group.types[0].len() / 2;
-        let mut work = Work::new();
+        let mut work = Batch::default();
         let mut classes = UnionFind::default();
         for row in equivalent.rows().chain(edge.rows()) {
             let (a, b) = row.split_at(width);
             classes.union(Row::from(a), Row::from(b));
-            work.charge(1, context)?;
+            work.count(context.budget, 1)?;
         }
         let class = identified(context, &group.types[0][..width], &classes.classes());
         rows_held(context, [&class])?;
@@ -112,7 +111,7 @@ impl Construction for Propagation {
             joins.entry(a.clone()).or_default().push((b.clone(), c.clone()));
             joins.entry(b).or_default().push((a, c));
         }
-        let mut work = Work::new();
+        let mut work = Batch::default();
         let mut reached: StableHashSet<Row> = StableHashSet::default();
         let mut pending: Vec<Row> = source.rows().map(Row::from).collect();
         while let Some(n) = pending.pop() {
@@ -128,7 +127,7 @@ impl Construction for Propagation {
                 }
             }
             let tried = heads.get(&n).map_or(0, Vec::len) + joins.get(&n).map_or(0, Vec::len);
-            work.charge(1 + tried as u64, context)?;
+            work.count(context.budget, 1 + tried as u64)?;
         }
         let mut rows = RowSet::empty(width as u16);
         for n in reached {
@@ -166,7 +165,7 @@ impl Construction for Enclosure {
             let m = margins(p);
             [m.top, m.bottom, m.left, m.right].contains(&0)
         });
-        let mut work = Work::new();
+        let mut work = Batch::default();
         let open = flood(&cells, edge, &steps, &mut work, context)?;
         let closed: StableHashSet<TermId> = cells.difference(&open).copied().collect();
         let (classes, _) = components(&closed, &steps, &mut work, context)?;
@@ -194,7 +193,7 @@ impl Construction for Flood {
         let [node, source, step] = group.inputs else { panic!("Flood's inputs `node`, `source` and `step`") };
         let nodes = column(node);
         let steps = column(step);
-        let mut work = Work::new();
+        let mut work = Batch::default();
         let reached = flood(&nodes, column(source), &steps, &mut work, context)?;
         let mut rows = RowSet::empty(1);
         for p in reached {
@@ -210,7 +209,7 @@ impl Construction for Flood {
 fn components(
     nodes: &StableHashSet<TermId>,
     steps: &StableHashSet<TermId>,
-    work: &mut Work,
+    work: &mut Batch,
     context: &mut ConstructionContext<'_, '_>,
 ) -> Result<(Vec<Vec<Row>>, RowSet), ReachedBound> {
     let mut classes = UnionFind::default();
@@ -231,7 +230,7 @@ fn flood(
     nodes: &StableHashSet<TermId>,
     sources: impl IntoIterator<Item = TermId>,
     steps: &StableHashSet<TermId>,
-    work: &mut Work,
+    work: &mut Batch,
     context: &mut ConstructionContext<'_, '_>,
 ) -> Result<StableHashSet<TermId>, ReachedBound> {
     let mut reached = StableHashSet::default();
@@ -250,23 +249,17 @@ fn stepped(
     p: TermId,
     steps: &StableHashSet<TermId>,
     nodes: &StableHashSet<TermId>,
-    work: &mut Work,
+    work: &mut Batch,
     context: &mut ConstructionContext<'_, '_>,
 ) -> Result<Vec<TermId>, ReachedBound> {
-    work.charge(steps.len() as u64, context)?;
+    work.count(context.budget, steps.len() as u64)?;
     let from = margins(p);
     Ok(steps
         .iter()
         .filter_map(|&step| {
             let by = margins(step);
-            let to = Margins {
-                top: from.top.saturating_add(by.top),
-                bottom: from.bottom.saturating_add(by.bottom),
-                left: from.left.saturating_add(by.left),
-                right: from.right.saturating_add(by.right),
-            };
             // A Box no term id holds is no node.
-            Term::Box(to).encode().ok()
+            Term::Box(compose(from, by)).encode().ok()
         })
         .filter(|q| nodes.contains(q))
         .collect())
@@ -332,27 +325,6 @@ fn rows_held<const N: usize>(
     outputs: [&RowSet; N],
 ) -> Result<(), ReachedBound> {
     context.budget.charge_rows(outputs.iter().map(|rows| rows.len() as u64).sum())
-}
-
-/// The bindings tried since the last charge of the budget.
-struct Work {
-    pending: u64,
-}
-
-impl Work {
-    fn new() -> Self {
-        Work { pending: 0 }
-    }
-
-    /// Counts `bindings` tried, and charges the budget once a batch is
-    /// counted.
-    fn charge(&mut self, bindings: u64, context: &mut ConstructionContext<'_, '_>) -> Result<(), ReachedBound> {
-        self.pending += bindings;
-        if self.pending >= BATCH {
-            context.budget.charge_work(std::mem::take(&mut self.pending))?;
-        }
-        Ok(())
-    }
 }
 
 /// The classes of a union-find over the elements it is given.

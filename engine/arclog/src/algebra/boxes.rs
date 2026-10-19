@@ -76,7 +76,8 @@ box_relations! {
     Split => "split",
 }
 
-fn margin(m: Margins, edge: Edge) -> i32 {
+/// The margin of `m` at `edge`.
+pub fn margin(m: Margins, edge: Edge) -> i32 {
     match edge {
         Edge::Top => m.top,
         Edge::Bottom => m.bottom,
@@ -86,12 +87,29 @@ fn margin(m: Margins, edge: Edge) -> i32 {
 }
 
 /// The Box whose margin at each edge `at` gives.
-fn margins(at: impl Fn(Edge) -> i32) -> Margins {
+pub fn margins(at: impl Fn(Edge) -> i32) -> Margins {
     Margins { top: at(Edge::Top), bottom: at(Edge::Bottom), left: at(Edge::Left), right: at(Edge::Right) }
 }
 
-fn add(a: Margins, b: Margins) -> Margins {
+/// The Box of the `compose` relation: at each edge, the sum of `a`'s and
+/// `b`'s margins, saturating.
+pub fn compose(a: Margins, b: Margins) -> Margins {
     margins(|e| margin(a, e).saturating_add(margin(b, e)))
+}
+
+/// The part and the remainder of coordinate `t` among parts of side `side`
+/// with gap `gap` between them, as the `divide` relation gives them, or
+/// none where `t` is negative or falls in a gap, or the period
+/// `side + gap` is not positive.
+pub fn divide(t: i32, side: i32, gap: i32) -> Option<(i32, i32)> {
+    let (t, side, gap) = (i64::from(t), i64::from(side), i64::from(gap));
+    let period = side + gap;
+    if t < 0 || period <= 0 || t % period >= side {
+        return None;
+    }
+    let part = i32::try_from(t / period).expect("a part no greater than the coordinate");
+    let remainder = i32::try_from(t % period).expect("a remainder less than the side");
+    Some((part, remainder))
 }
 
 fn subtract(a: Margins, b: Margins) -> Margins {
@@ -211,7 +229,7 @@ impl Algebra for BoxRelation {
         let id = |column: usize| Id(c.input(column));
         let n = |k: i32| Id(number(k));
         match self {
-            BoxRelation::Compose => row(&[id(0), id(1), B(add(c.boxed(0), c.boxed(1)))])?,
+            BoxRelation::Compose => row(&[id(0), id(1), B(compose(c.boxed(0), c.boxed(1)))])?,
             BoxRelation::Relative => row(&[id(0), id(1), B(subtract(c.boxed(1), c.boxed(0)))])?,
             BoxRelation::EdgeInset => {
                 for d in each(0, ValueType::Dir) {
@@ -262,11 +280,7 @@ impl Algebra for BoxRelation {
                 }
             }
             BoxRelation::Divide => {
-                let (t, side, gap) = (i64::from(c.number(0)), i64::from(c.number(1)), i64::from(c.number(2)));
-                let period = side + gap;
-                if t >= 0 && period > 0 && t % period < side {
-                    let part = i32::try_from(t / period).expect("a part no greater than the count");
-                    let remainder = i32::try_from(t % period).expect("a remainder less than the side");
+                if let Some((part, remainder)) = divide(c.number(0), c.number(1), c.number(2)) {
                     row(&[id(0), id(1), id(2), n(part), n(remainder)])?;
                 }
             }
@@ -377,7 +391,7 @@ impl Algebra for BoxRelation {
             }
             BoxRelation::Jump => {
                 for d in each(1, ValueType::Dir8) {
-                    row(&[id(0), Id(d), id(2), B(add(c.boxed(0), jump_offset(edges(d), c.number(2))))])?;
+                    row(&[id(0), Id(d), id(2), B(compose(c.boxed(0), jump_offset(edges(d), c.number(2))))])?;
                 }
             }
             BoxRelation::JumpOffset => {
@@ -399,7 +413,7 @@ impl Algebra for BoxRelation {
             }
             BoxRelation::Neighbor => {
                 for d in each(1, ValueType::Dir8) {
-                    row(&[id(0), Id(d), B(add(c.boxed(0), jump_offset(edges(d), 1)))])?;
+                    row(&[id(0), Id(d), B(compose(c.boxed(0), jump_offset(edges(d), 1)))])?;
                 }
             }
             BoxRelation::Split => {

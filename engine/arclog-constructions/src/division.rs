@@ -6,6 +6,7 @@
 //! each axis apart, and composes the two axes' parts by adding their
 //! margins, as `programs/lib/box.dl` gives `compose`.
 
+use arclog::algebra::boxes::{compose, divide, margin, margins};
 use arclog::algebra::orientation::{Edge, Geometry};
 use arclog::eval::ReachedBound;
 use arclog::eval::instance::{Construction, ConstructionContext, GroupInputs, GroupOutputs};
@@ -245,27 +246,20 @@ impl Axis {
         [first, second]
     }
 
-    fn margin(self, mut p: Margins, edge: Edge) -> i32 {
-        *margin_at(&mut p, edge)
-    }
-
     /// The Box with margins `near` and `far` on this axis, and 0 on the
     /// other.
     fn only(self, near: i32, far: i32) -> Margins {
-        let mut p = ZERO;
-        *margin_at(&mut p, self.near) = near;
-        *margin_at(&mut p, self.far) = far;
-        p
+        margins(|e| if e == self.near { near } else if e == self.far { far } else { 0 })
     }
 
     /// `p` on this axis alone.
     fn along(self, p: Margins) -> Margins {
-        self.only(self.margin(p, self.near), self.margin(p, self.far))
+        self.only(margin(p, self.near), margin(p, self.far))
     }
 
     /// The extent of `p`'s frame on this axis.
     fn extent(self, p: Margins) -> i32 {
-        self.margin(p, self.near) + self.margin(p, self.far) + 1
+        margin(p, self.near) + margin(p, self.far) + 1
     }
 
     /// The numbers of the rows of `rows`, an input of an Axis column and a
@@ -291,16 +285,8 @@ impl Axis {
     /// part that no edge of the frame cuts: `stride` of `programs/lib/box.dl`
     /// on each margin.
     fn stride(self, p: Margins, k: i32, g: i32) -> Option<(Margins, Margins)> {
-        let period = i64::from(k) + i64::from(g);
-        let at = |t: i32| -> Option<(i32, i32)> {
-            let t = i64::from(t);
-            if t < 0 || period <= 0 || t % period >= i64::from(k) {
-                return None;
-            }
-            Some((i32::try_from(t / period).ok()?, i32::try_from(t % period).ok()?))
-        };
-        let (part_near, offset_near) = at(self.margin(p, self.near))?;
-        let (part_far, offset_far) = at(self.margin(p, self.far))?;
+        let (part_near, offset_near) = divide(margin(p, self.near), k, g)?;
+        let (part_far, offset_far) = divide(margin(p, self.far), k, g)?;
         let inner = self.only(offset_near, offset_far);
         (self.extent(inner) == k).then(|| (self.only(part_near, part_far), inner))
     }
@@ -310,33 +296,13 @@ impl Axis {
     /// `programs/lib_functors.cpp`.
     fn concat(self, o: Margins, i: Margins, g: i32) -> Margins {
         let period = self.extent(i) + g;
-        let at = |edge: Edge| self.margin(o, edge).saturating_mul(period).saturating_add(self.margin(i, edge));
+        let at = |edge: Edge| margin(o, edge).saturating_mul(period).saturating_add(margin(i, edge));
         self.only(at(self.near), at(self.far))
-    }
-}
-
-/// The margin of `p` at `edge`.
-fn margin_at(p: &mut Margins, edge: Edge) -> &mut i32 {
-    match edge {
-        Edge::Top => &mut p.top,
-        Edge::Bottom => &mut p.bottom,
-        Edge::Left => &mut p.left,
-        Edge::Right => &mut p.right,
     }
 }
 
 /// The Box of margins 0, the frame itself.
 const ZERO: Margins = Margins { top: 0, bottom: 0, left: 0, right: 0 };
-
-/// The Box whose margins are the sums of `a`'s and `b`'s.
-fn compose(a: Margins, b: Margins) -> Margins {
-    Margins {
-        top: a.top.saturating_add(b.top),
-        bottom: a.bottom.saturating_add(b.bottom),
-        left: a.left.saturating_add(b.left),
-        right: a.right.saturating_add(b.right),
-    }
-}
 
 fn position(id: TermId) -> Margins {
     match Term::decode(id, &ValueType::Box) {

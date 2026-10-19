@@ -8,16 +8,14 @@
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, VecDeque};
 
+use arclog::algebra::boxes::compose;
 use arclog::eval::ReachedBound;
 use arclog::eval::instance::{Construction, ConstructionContext, GroupInputs, GroupOutputs};
-use arclog::eval::join::Budget;
+use arclog::eval::join::{Batch, Budget};
 use arclog::hash::StableHashMap;
 use arclog::relations::{Row, RowSet};
 use arclog::terms::{Margins, Number, Term, TermId};
 use arclog::types::ValueType;
-
-/// The steps a search takes between two charges of its budget.
-const BATCH: u64 = 1024;
 
 /// The least cost from a source to each node, and every predecessor on a
 /// least-cost path.
@@ -75,16 +73,8 @@ impl Construction for CellDistance {
         for p in node.rows() {
             let from = margins(p[0]);
             for delta in step.rows() {
-                // The `compose` of the box algebra: the margins summed.
-                let to = margins(delta[0]);
-                let q = Margins {
-                    top: from.top + to.top,
-                    bottom: from.bottom + to.bottom,
-                    left: from.left + to.left,
-                    right: from.right + to.right,
-                };
                 // A sum outside a signed byte is a Box no node holds.
-                if let Ok(q) = Term::Box(q).encode()
+                if let Ok(q) = Term::Box(compose(from, margins(delta[0]))).encode()
                     && node.contains(&[q])
                 {
                     graph.edge(p, &[q], 1);
@@ -159,10 +149,10 @@ impl Graph {
         for (&(a, b), &cost) in &self.edges {
             out[a].push((b, cost));
         }
-        let mut search = Search { budget, steps: 0 };
+        let mut search = Search { budget, steps: Batch::default() };
         let unit = self.edges.values().all(|&cost| cost == 1) && self.starts.values().all(|&cost| cost == 0);
         let costs = if unit { search.breadth_first(&self.starts, &out)? } else { search.dijkstra(&self.starts, &out)? };
-        search.charge(0)?;
+        search.steps.finish(search.budget)?;
         let mut distance = RowSet::empty(self.width as u16 + 1);
         for (node, cost) in self.nodes.iter().zip(&costs) {
             if let Some(cost) = cost {
@@ -200,20 +190,10 @@ fn encode_number(cost: i64) -> TermId {
 /// A search over a graph's edges, counting its steps against the budget.
 struct Search<'s, 'a> {
     budget: &'s mut Budget<'a>,
-    steps: u64,
+    steps: Batch,
 }
 
 impl Search<'_, '_> {
-    /// Counts `steps` more steps, and charges the budget a batch once the
-    /// count reaches one, or the rest of the count where `steps` is zero.
-    fn charge(&mut self, steps: u64) -> Result<(), ReachedBound> {
-        self.steps += steps;
-        if self.steps >= BATCH || (steps == 0 && self.steps > 0) {
-            self.budget.charge_work(std::mem::take(&mut self.steps))?;
-        }
-        Ok(())
-    }
-
     /// The least cost of each node where every edge costs one and every
     /// source starts at zero.
     fn breadth_first(
@@ -230,7 +210,7 @@ impl Search<'_, '_> {
         while let Some(a) = queue.pop_front() {
             let next = costs[a].expect("a queued node has a cost") + 1;
             for &(b, _) in &out[a] {
-                self.charge(1)?;
+                self.steps.count(self.budget, 1)?;
                 if costs[b].is_none() {
                     costs[b] = Some(next);
                     queue.push_back(b);
@@ -260,7 +240,7 @@ impl Search<'_, '_> {
                 continue;
             }
             for &(b, step) in &out[a] {
-                self.charge(1)?;
+                self.steps.count(self.budget, 1)?;
                 let reached = cost + step;
                 if costs[b].is_none_or(|held| reached < held) {
                     costs[b] = Some(reached);

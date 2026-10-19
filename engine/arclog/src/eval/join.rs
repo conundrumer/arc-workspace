@@ -22,7 +22,7 @@ use crate::session::TaskSession;
 use crate::terms::{Constant, Number, Term, TermId};
 use crate::types::ValueType;
 
-/// The bindings a join tries between two charges of its budget.
+/// The bindings a [`Batch`] counts before it charges its budget.
 const BATCH: u64 = 1024;
 
 /// The counts of one evaluation against its caps and its other bounds: the
@@ -74,6 +74,32 @@ impl<'a> Budget<'a> {
         self.rows += rows;
         let cap = self.session.caps.rows;
         if self.rows > cap { Err(ReachedBound::Rows { cap }) } else { Ok(()) }
+    }
+}
+
+/// The bindings one search has tried and not yet charged to its budget.
+/// Each search holds its own, so no count passes from one join or
+/// construction to the next.
+#[derive(Debug, Default)]
+pub struct Batch {
+    pending: u64,
+}
+
+impl Batch {
+    /// Counts `bindings` more tried, and charges `budget` with the whole
+    /// count once it reaches a batch.
+    pub fn count(&mut self, budget: &mut Budget<'_>, bindings: u64) -> Result<(), ReachedBound> {
+        self.pending += bindings;
+        if self.pending >= BATCH {
+            budget.charge_work(std::mem::take(&mut self.pending))?;
+        }
+        Ok(())
+    }
+
+    /// Charges `budget` with the count not yet charged, at the end of the
+    /// search.
+    pub fn finish(&mut self, budget: &mut Budget<'_>) -> Result<(), ReachedBound> {
+        budget.charge_work(std::mem::take(&mut self.pending))
     }
 }
 
@@ -272,7 +298,7 @@ struct Search<'c> {
     /// The nodes of the unions.
     unions: Vec<usize>,
     binding: Vec<Option<TermId>>,
-    tried: u64,
+    tried: Batch,
     /// The rank from which no variable left in the order is projected,
     /// where the early stop of [`join_at`] begins.
     stop_from: usize,
@@ -351,7 +377,7 @@ impl<'c> Search<'c> {
             }
         }
         let stop_from = order.len() - order.iter().rev().take_while(|v| !clause.columns.contains(v)).count();
-        Search { clause, registry, inputs, order, atoms, checks, libs, filter_orders, branch_orders, unions, binding, tried: 0, stop_from }
+        Search { clause, registry, inputs, order, atoms, checks, libs, filter_orders, branch_orders, unions, binding, tried: Batch::default(), stop_from }
     }
 
     /// The rows of `projected` over each binding that passes every node.
@@ -375,7 +401,7 @@ impl<'c> Search<'c> {
         if self.passes(unbound, budget)? {
             self.step(0, &atoms, &mut cursors, projected, &mut rows, budget)?;
         }
-        budget.charge_work(self.tried % BATCH)?;
+        self.tried.finish(budget)?;
         Ok(rows)
     }
 
@@ -420,10 +446,7 @@ impl<'c> Search<'c> {
         let stops = early && self.clause.variables[usize::from(variable.0)].ty != ValueType::Ident;
         let mut passed = false;
         for value in candidates {
-            self.tried += 1;
-            if self.tried % BATCH == 0 {
-                budget.charge_work(BATCH)?;
-            }
+            self.tried.count(budget, 1)?;
             let saved: Vec<(usize, (&'t Index, usize))> = sources.iter().map(|&a| (a, cursors[a])).collect();
             let mut held = true;
             for &a in &sources {
