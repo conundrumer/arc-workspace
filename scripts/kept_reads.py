@@ -59,13 +59,15 @@ UNREADABLE = (pickle.UnpicklingError, EOFError, AttributeError, ImportError,
 
 
 _paths: dict[str, Path] = {}
-"""The one `Path` of each text that the records this process read give."""
+"""The one `Path` of each text that the records this process read, and the
+arguments of its reads, give."""
 
 
 def held_path(text: str) -> Path:
-    """The one `Path` of `text` among the records this process reads, so
-    that a path a record gives is the very object of the same path each
-    other record gives, and a lookup by it compares no text."""
+    """The one `Path` of `text` among the records this process reads and
+    the arguments its reads take, so that a path a record or a read's
+    argument gives is the very object of the same path each other one
+    gives, a lookup by it compares no text, and its text is made once."""
     found = _paths.get(text)
     if found is None:
         found = _paths[text] = Path(text)

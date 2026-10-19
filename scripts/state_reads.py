@@ -7,9 +7,10 @@ import importlib
 import inspect
 import time
 import uuid
-from collections.abc import Callable, Collection, Hashable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Collection, Hashable, Iterator, Mapping
 from enum import Enum
 from functools import wraps
+from itertools import chain
 from pathlib import Path
 from typing import Any, cast
 
@@ -33,7 +34,7 @@ followed by the result it gave, in one flat tuple (`made_of`)."""
 
 def made_of(frame: Mapping["Held", object]) -> Made:
     """The held reads of `frame`, each with the result it gave, as `Made`."""
-    return tuple(x for pair in frame.items() for x in pair)
+    return tuple(chain.from_iterable(frame.items()))
 
 
 def belows(made: Made) -> tuple["Held", ...]:
@@ -96,7 +97,7 @@ class Held:
 
     def recall(self) -> object:
         """The read's result at this state for its arguments."""
-        return self.read.run(self.call, self.positional)[0]
+        return self.read.run(self.call, self.positional).value
 
     def drop(self) -> None:
         """Drop this read from the held reads of its read."""
@@ -386,12 +387,11 @@ given any, its named ones as one `Named`, and each `Path` among them as its
 made (`split`)."""
 
 
-def call_of(args: tuple[Any, ...], kwargs: Iterable[tuple[str, Any]]) -> Call:
+def call_of(args: tuple[Any, ...], kwargs: Collection[tuple[str, Any]]) -> Call:
     """The `Call` of the arguments `args` and `kwargs`."""
-    named = sorted((k, as_key(v)) for k, v in kwargs)
-    if not named:
+    if not kwargs:
         return tuple(map(as_key, args))
-    return (*map(as_key, args), Named(named))
+    return (*map(as_key, args), Named(sorted((k, as_key(v)) for k, v in kwargs)))
 
 
 def split(call: Call) -> tuple[tuple[Any, ...], tuple[tuple[str, Any], ...]]:
@@ -420,8 +420,9 @@ def as_key(value: object) -> object:
 
 
 def as_argument(value: object) -> object:
-    """`value`, of a `Call`, as the read takes it."""
-    return Path(value) if type(value) is PathText else value
+    """`value`, of a `Call`, as the read takes it: a `PathText` as the one
+    `Path` of its text (`kept_reads.held_path`)."""
+    return kept_reads.held_path(value) if type(value) is PathText else value
 
 
 def arguments(call: Call) -> tuple[tuple[Any, ...], dict[str, Any]]:
@@ -439,10 +440,10 @@ class By(Enum):
     the one before keeps."""
 
 
-type RunWith = Callable[[Call, bool, tuple[Any, ...], dict[str, Any]],
-                        tuple[Any, tuple[str, ...]]]
+type RunWith = Callable[[Call, bool, tuple[Any, ...], dict[str, Any]], "Held"]
 """A read's run for its arguments, its `notes` passed by position or not,
-given as well as the read takes them: its result and `undecided` lines."""
+given as well as the read takes them: its held read, with its result and
+`undecided` lines at this state."""
 
 
 type Leaf = tuple[By, str, tuple[Any, ...], tuple[tuple[str, Any], ...], object]
@@ -453,6 +454,11 @@ name (`ReadInfo.name`), its arguments, and its stamp, result or version."""
 type Record = tuple[tuple[Leaf, ...], object, tuple[str, ...], str]
 """What the store keeps of a read for its arguments: the trace of the reads
 it rests on, its result, its `undecided` lines, and its version."""
+
+
+type StoreAt = tuple[kept_reads.Store, str]
+"""The open store, and the key in it of the `Record` of a read's
+arguments."""
 
 
 class ReadInfo:
@@ -472,25 +478,24 @@ class ReadInfo:
         self.run_with: RunWith | None = None
         self.held: dict[Hashable, Held] = {}
 
-    def run(self, call: Call, positional: bool) -> tuple[Any, tuple[str, ...]]:
+    def run(self, call: Call, positional: bool) -> Held:
         """The read's run for `call`, its `notes` passed by position or not:
-        its result and `undecided` lines."""
+        its held read, with its result and `undecided` lines at this
+        state."""
         assert self.run_with is not None
         return self.run_with(call, positional, *arguments(call))
 
-    def again(self, args: tuple[Any, ...], kwargs: tuple[tuple[str, Any], ...]) -> object:
-        """The read's result at this state for `args` and `kwargs`, its notes
-        dropped: the held result where it was brought up to date at this
-        state, reached as `at_state` reaches it (`reach`)."""
+    def again(self, args: tuple[Any, ...], kwargs: tuple[tuple[str, Any], ...]) -> Held:
+        """The held read of `args` and `kwargs`, its notes dropped, brought up
+        to date at this state, reached as `at_state` reaches it (`reach`)."""
         key = call_of(args, kwargs)
         hit = self.held.get(key)
         if hit is None or hit.state != _state:
             assert self.run_with is not None
             positional = self.notes_at is not None and len(args) >= self.notes_at
-            self.run_with(key, positional, args, dict(kwargs))
-            hit = self.held[key]
+            hit = self.run_with(key, positional, args, dict(kwargs))
         reach(hit)
-        return hit.value
+        return hit
 
 
 _reads: dict[str, ReadInfo] = {}
@@ -540,13 +545,12 @@ def holds(leaf: Leaf) -> bool:
     try:
         if by is By.STAMP:
             return same(stamp_now(name, args, kwargs), given)
-        info = read_named(name)
-        now = info.again(args, kwargs)
+        hit = read_named(name).again(args, kwargs)
     except Exception:
         return False
     if by is By.VERSION:
-        return info.held[call_of(args, kwargs)].version == given
-    return same(now, given)
+        return hit.version == given
+    return same(hit.value, given)
 
 
 def canonical(value: object) -> object:
@@ -611,16 +615,24 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
         held = info.held
         _reads[info.name] = info
 
-        def recalled(key: Call) -> tuple[Record | None, Made | None]:
-            """The record the store keeps for `key`, and where each read of
-            its trace `holds`, the held reads its check made."""
+        def store_key(key: Call) -> StoreAt | None:
+            """The open store and the key in it of the record of `key`, or
+            None where the read is not kept on disk, no store is open, or
+            `key` has no canonical form."""
             store = kept_reads.store()
             if kept is not Kept.DISK or store is None:
-                return None, None
+                return None
             try:
-                record: Record | None = store.held(info.name, repr(canonical(split(key))))
+                return store, repr(canonical(split(key)))
             except TypeError:
+                return None
+
+        def recalled(place: StoreAt | None) -> tuple[Record | None, Made | None]:
+            """The record the store keeps at `place`, a `store_key`, and where
+            each read of its trace `holds`, the held reads its check made."""
+            if place is None:
                 return None, None
+            record: Record | None = place[0].held(info.name, place[1])
             if record is None:
                 return None, None
             _frames.append({})
@@ -630,34 +642,29 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                 made = _frames.pop()
             return record, made_of(made) if good else None
 
-        def keep(key: Call, made: Made, value: object,
+        def keep(place: StoreAt | None, made: Made, value: object,
                  lines: tuple[str, ...], version: str | None) -> str | None:
-            """The version of `value` once it is kept for `key`, `version`
-            where one is given, or None where it is not kept."""
-            store = kept_reads.store()
-            if kept is not Kept.DISK or store is None:
-                return None
-            try:
-                name = repr(canonical(split(key)))
-            except TypeError:
+            """The version of `value` once it is kept at `place`, a `store_key`,
+            `version` where one is given, or None where it is not kept."""
+            if place is None:
                 return None
             version = version or uuid.uuid4().hex
-            kept_now = store.keep(info.name, name, (trace_of(made), value, lines, version))
+            kept_now = place[0].keep(info.name, place[1], (trace_of(made), value, lines, version))
             return version if kept_now else None
 
         def run_with(key: Call, positional: bool, args: tuple[Any, ...],
-                     kwargs: dict[str, Any]) -> tuple[Any, tuple[str, ...]]:
+                     kwargs: dict[str, Any]) -> Held:
             """`run` of `key`, whose arguments are `args` and `kwargs`."""
             hit = held.get(key)
             if hit is not None and unrun(hit):
                 hit.state = _state
-                return hit.value, hit.lines
+                return hit
             mark: Hashable = None
             stamped: Made = ()
             if hit is not None and derived:
                 if held_still(hit.made):
                     hit.state, hit.marked = _state, False
-                    return hit.value, hit.lines
+                    return hit
             elif not isinstance(stamp, Derived) and stamp is not None:
                 _frames.append({})
                 try:
@@ -667,10 +674,11 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                 if hit is not None and hit.mark == mark:
                     hit.state, hit.marked = _state, False
                     hit.rest_on(hit.made, stamped)
-                    return hit.value, hit.lines
+                    return hit
             entered = script_calls.enter()
             try:
-                record, made = recalled(key) if hit is None else (None, None)
+                place = store_key(key)
+                record, made = recalled(place) if hit is None else (None, None)
                 if record is not None and made is not None:
                     _, value, kept_lines, version = record
                 else:
@@ -688,7 +696,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                     kept_lines = tuple(lines)
                     before = (record[1], record[3]) if record is not None else (
                         (hit.value, hit.version) if hit is not None else None)
-                    version = keep(key, made, value, kept_lines,
+                    version = keep(place, made, value, kept_lines,
                                    before[1] if before is not None and same(value, before[0]) else None)
                 if hit is None:
                     hit = Held(info, key, positional)
@@ -700,7 +708,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                 hit.state, hit.mark, hit.value, hit.lines = _state, mark, value, kept_lines
                 hit.marked, hit.version = False, version
                 hit.rest_on(made if stamp is None or derived else (), stamped)
-                return value, hit.lines
+                return hit
             finally:
                 script_calls.leave(info.name, entered)
 
@@ -718,12 +726,11 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                 else:
                     sink = kwargs.pop(notes)
             key = call_of(args, kwargs.items())
-            value, lines = run_with(key, positional, args, kwargs)
-            hit = held[key]
+            hit = run_with(key, positional, args, kwargs)
             reach(hit)
             if sink is not None:
-                sink.extend(lines)
-            return value
+                sink.extend(hit.lines)
+            return cast(R, hit.value)
         info.run_with = run_with
         return at_state
     return hold
