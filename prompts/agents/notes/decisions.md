@@ -110,6 +110,8 @@
 - Choose a label for its use in deciding how to act on what it labels.
 
 #### Cost and time
+* comment: The user's words, session 2384db39, 2026-10-19T12:37:34Z: "I guess it's just one short sentence with one number? \"Week has $X\"?"
+- The weekly usage limit is about $8,400 of token cost at API prices, so $84 is 1% of it.
 - Save token cost first and time second, and count about 30 minutes saved as worth about $5 of token cost: split work that can run in parallel on disjoint files and run its parts at once, with no contention and no excess coordination between agents.
 
 #### Agents' choices
