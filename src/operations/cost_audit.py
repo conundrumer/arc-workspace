@@ -12,7 +12,7 @@ from operations.steps import Launch, Step, Undecided
 from operations.unbatched import COST_AUDIT
 
 
-AUDIT_AFTER = 200.0
+AUDIT_AFTER = 840.0
 """The spend, in dollars, of a cost audit's window at which it launches."""
 
 
