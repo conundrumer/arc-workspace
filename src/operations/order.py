@@ -26,7 +26,9 @@ the standing doc review and the review on an overdue reader
 a batch (`batches`); the
 messages and the tickets on the stalled tickets of the operators
 (`alerts.ticket_stalls`), so that a step that would end a stall comes
-before the message on it; and, last, the message to the coordinator on
+before the message on it; the message and the tickets on the tickets
+that wait on nothing that moves them (`unwaited`), after each step that
+would give such a ticket a party; and, last, the message to the coordinator on
 a held change whose wait is stuck (`alerts.stuck_waits`). A step that
 is a message an operator already sent is passed over, and so are an
 undecided step an operator already handled (`handled.repeated`) and a step
@@ -55,7 +57,7 @@ from dataclasses import replace
 from controlled_markdown import mctx
 from operations import (after_profile, alerts, assessment, batches, changes, concept_faults, cost_audit, decisions, drafts,
                         gate_launch, idle_changes, limit_resume, lineage, merging, monitor, passes, reviews, runs,
-                        standing_reviews, start_holds, ticket_stall, triage, taking, unbatched)
+                        standing_reviews, start_holds, ticket_stall, triage, taking, unbatched, unwaited)
 from operations.directives import (
     lines,
     passed,
@@ -326,7 +328,7 @@ LATE: tuple[Callable[[State], Step | None], ...] = (
     pipelines, cost_audit.audit, *reviews.PROCEDURES, standing_reviews.standing_review,
     standing_reviews.overdue_review, gate_launch.gate,
     assessment.assessment, after_profile.validation, after_profile.script_check, batches.step,
-    alerts.ticket_stalls, alerts.stuck_waits)
+    alerts.ticket_stalls, unwaited.step, alerts.stuck_waits)
 PROCEDURES = EARLY + LATE
 
 

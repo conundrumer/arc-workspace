@@ -68,14 +68,16 @@ WAITS_HELP = mctx("""
         - Each ticket that does not move gives why, the first of these that holds:
             - It waits on the user, since its last move into `tickets/blocked/`.
             - It has had no step since its last progress, while an operator's step is due on it.
+            - It waits on nothing that moves it: no agent of it is pending, each entry of its `depends-on` is closed, and none of its exits has a party that moves it.
             - It stands on a cycle of links, which it gives in order.
             - It stands under `tickets/draft/`.
             - The read of the tracker left it out.
             - It stands in a take's queue, as `uv run python scripts/file_ticket.py log --help-all` gives it, each ticket of its `depends-on` is closed, and the run scripts' `takes`, the `Op pause.` line, the `Op scope: own.` line or the usage pace holds it.
         - A ticket that gives no reason waits in turn.
-    - Where a change waits on its `depends-on`, its log has had no line for `STUCK_SECONDS`, and its paths hold a ticket that stands on a cycle, that a line of the user holds, or that waits on the user and is no entry of the change's own `depends-on` off a cycle, `next` sends the coordinator the change's paths, with the step to take.
+    - Where a change waits on its `depends-on`, its log has had no line for `STUCK_SECONDS`, and its paths hold a ticket that stands on a cycle, that a line of the user holds, that waits on nothing that moves it, or that waits on the user and is no entry of the change's own `depends-on` off a cycle, `next` sends the coordinator the change's paths, with the step to take.
         - It sends it once per change and set of such tickets after the change's last log line, or, where the paths reach a cycle of links through such a ticket, once per cycle after the last log line of the cycle's tickets, whichever change waits.
     - The message on a ticket that has had no step gives the paths of each change that waits on it.
+    - Where a ticket outside `tickets/closed/` has waited on nothing that moves it for `AGAIN_SECONDS`, `next` sends the coordinator a message on it once, with its log and its agents, and records it in a `bug` ticket; one message gives each such ticket that no earlier message gave.
     """)
 """The help on the paths of links and the message on them."""
 

@@ -811,7 +811,10 @@ class State:
     the time from which an operator's step has been due on it and the time
     of the last read that found it due (`DueEntry`), as the session's
     record of those times gives it (`ticket_stall.due_times`), and is
-    empty where that record is missing or unreadable."""
+    empty where that record is missing or unreadable. `unwaited_since`
+    holds, the same way, for each ticket, the time from which it has had
+    no agent pending and no exit with a party, and the time of the last
+    read that found it so (`unwaited.times`)."""
     me: str
     now: float
     session: str
@@ -838,6 +841,7 @@ class State:
     computed: Computed = field(default_factory=lambda: Computed())
     aside: frozenset[str] = frozenset()
     due_since: Mapping[str, DueEntry] = field(default_factory=dict)
+    unwaited_since: Mapping[str, DueEntry] = field(default_factory=dict)
 
     @cached_property
     def memo(self) -> dict[tuple[Any, ...], Any]:

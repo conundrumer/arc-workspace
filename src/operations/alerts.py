@@ -46,7 +46,9 @@ ticket is recorded the same way, in one `bug` ticket of its own kind
 message on a change whose paths hold a ticket that does not move goes to
 the coordinator as `scripts/operate.py --help alerts` gives it
 (`stuck_waits`). An idle held change (`idle_changes`) is recorded the
-same way, in one `bug` ticket of its own kind (`idle`). A kind's ticket
+same way, in one `bug` ticket of its own kind (`idle`), and so is a
+ticket that waits on nothing that moves it (`unwaited`), in one of the
+kind `unwaited`. A kind's ticket
 and its lines are on an agent, or, for
 that kind, on a ticket."""
 
@@ -156,6 +158,7 @@ class BugKind(Enum):
     STUCK = "stuck"
     TICKET_STALL = "ticket stall"
     IDLE = "idle"
+    UNWAITED = "unwaited"
 
 
 TICKETS = {
@@ -184,6 +187,11 @@ TICKETS = {
              "at work on it, and it waits on no clock, coordinator or usage limit"),
         mctx("The change stood with no agent and no step, and then a message on it went to "
              "the coordinator.")),
+    BugKind.UNWAITED: (
+        mctx("the wait of a ticket outside `tickets/closed/`: no agent worked on it, and it "
+             "waited on nothing that moves it"),
+        mctx("The ticket stood with no agent, no step due and no party it waits on, and then "
+             "a message on it went to the coordinator.")),
 }
 """The title and the `Impact` of the `bug` ticket of each kind that files one,
 by which the operator also finds that kind's ticket in the tracker."""
@@ -380,7 +388,7 @@ def waiting_paths(state: State, number: str, stalls: Mapping[str, float]) -> str
         change=r.number) + "\n" + waits.rendered(state, r) + "\n" for r in trees)
 
 
-def told(state: State, node: waits.Node, entries: Collection[str]) -> bool:
+def told(state: State, node: "waits.Node", entries: Collection[str]) -> bool:
     """Whether the mark of `node`, on the paths of a change whose open
     `depends-on` entries are `entries`, makes `next` send the coordinator
     the message of `stuck_waits`, as `--help alerts` of `operate.py` gives

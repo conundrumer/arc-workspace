@@ -1,10 +1,12 @@
 """The assembly of the state the operator's procedures read, from the reads
 of the ticket tracker, of git and the main worktree, and of the
 transcripts of the session's operators, and of the state the monitor's
-steps read (`monitor_reads`); and the session's record of the times from
-which an operator's step has been due on each ticket (`State.due_since`),
-a JSON object in the session's scratchpad (`DUE_SINCE`), read by
-`read_state` and written by `write_due_since`."""
+steps read (`monitor_reads`); and the session's records of the times from
+which an operator's step has been due on each ticket (`State.due_since`,
+in the file `DUE_SINCE`) and from which each ticket has waited on no party
+(`State.unwaited_since`, in the file `UNWAITED_SINCE`), each a JSON object
+in the session's scratchpad, read by `read_state` (`record_read`) and
+written by `write_record`."""
 
 import atexit
 import json
@@ -82,6 +84,10 @@ of it made, is one `me` ran `next` again before it made."""
 DUE_SINCE = "due-since.json"
 """The name of the file, in the session's scratchpad, that holds
 `State.due_since`."""
+
+UNWAITED_SINCE = "unwaited-since.json"
+"""The name of the file, in the session's scratchpad, that holds
+`State.unwaited_since`."""
 
 DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.CONSOLE, ReaderName.SURVEY,
                         ReaderName.WORKFLOW})
@@ -161,7 +167,8 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         readers=readers_read(),
         limit_lifted=lifted,
         sessions=sessions(tickets_dir, index, session, now, sessions_running),
-        journal=journal, listing=ops.listing, due_since=due_since_read(scratch(session)))
+        journal=journal, listing=ops.listing, due_since=record_read(scratch(session), DUE_SINCE),
+        unwaited_since=record_read(scratch(session), UNWAITED_SINCE))
     state = replace(state, journal=state.journal.since(given_again(state)))
     state = with_quiet_holders(state, holders.found, listing, running_work)
     computed_lines: list[str] = []
@@ -171,13 +178,12 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
                                undecided=tuple(watching))
 
 
-def due_since_read(here: Path) -> dict[str, DueEntry]:
-    """`State.due_since` as the file `DUE_SINCE` under `here` gives it, or
-    empty where that file is missing or holds no JSON object whose values
-    are each a pair of finite numbers, the time from which the step has
-    been due and the time of the last read that found it due."""
+def record_read(here: Path, name: str) -> dict[str, DueEntry]:
+    """The record the file `name` under `here` gives, or empty where that
+    file is missing or holds no JSON object whose values are each a pair of
+    finite numbers, the `since` and the `last` of a `DueEntry`."""
     try:
-        record = json.loads((here / DUE_SINCE).read_text())
+        record = json.loads((here / name).read_text())
     except (OSError, ValueError):
         return {}
     if not isinstance(record, dict) or not all(
@@ -189,11 +195,11 @@ def due_since_read(here: Path) -> dict[str, DueEntry]:
     return {n: DueEntry(float(v[0]), float(v[1])) for n, v in record.items()}
 
 
-def write_due_since(here: Path, times: Mapping[str, DueEntry]) -> None:
-    """Replaces the file `DUE_SINCE` under `here` with `times`, each entry
-    as the pair its `DueEntry` gives, at once."""
+def write_record(here: Path, name: str, times: Mapping[str, DueEntry]) -> None:
+    """Replaces the file `name` under `here` with `times`, each entry as the
+    pair its `DueEntry` gives, at once."""
     with staged(here, json.dumps({n: [e.since, e.last] for n, e in sorted(times.items())})) as tmp:
-        os.replace(tmp, here / DUE_SINCE)
+        os.replace(tmp, here / name)
 
 
 @dataclass(frozen=True)

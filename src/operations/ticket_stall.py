@@ -8,7 +8,8 @@ last progress and the time from which a step has been due on it
 exit of `tracker.exits` that an operator's step makes, read by the
 function that step selects its work by (`selection`); a ticket whose only
 exits are steps of no operator, or that such a function leaves out, waits
-by design and is not due, and so does a ticket whose step the usage pace
+by design and is not due (`unwaited` watches such a ticket that waits on
+no party), and so does a ticket whose step the usage pace
 holds (`start_holds.pace_holds`). A ticket
 that a live holder outside the session's own agent runs holds waits on
 that holder's work, a step of no operator, which the operators'
@@ -167,7 +168,13 @@ def due(state: State) -> frozenset[str]:
 def live_entries(state: State) -> dict[str, DueEntry]:
     """The entries of `State.due_since` whose last read that found the
     step due has not reached `STUCK_SECONDS` at `state.now`."""
-    return {n: e for n, e in state.due_since.items() if not stuck_reached(e.last, state.now)}
+    return live(state.due_since, state.now)
+
+
+def live(record: Mapping[str, DueEntry], now: float) -> dict[str, DueEntry]:
+    """The entries of `record` whose last read has not reached
+    `STUCK_SECONDS` at `now`."""
+    return {n: e for n, e in record.items() if not stuck_reached(e.last, now)}
 
 
 def due_times(state: State) -> dict[str, DueEntry]:
@@ -206,7 +213,7 @@ class Acting:
     that change."""
     state: State
     number: str
-    mark: waits.Mark | None
+    mark: "waits.Mark | None"
     entry: bool
 
     @property
@@ -229,7 +236,7 @@ class Acting:
         """Whether the mark makes `next` send the coordinator the paths of
         the change, as `--help alerts` of `operate.py` gives it."""
         match self.mark:
-            case waits.OnCycle() | waits.Held():
+            case waits.OnCycle() | waits.Held() | waits.Unwaited():
                 return True
             case waits.OnUser():
                 return not self.entry or waits.cycle(self.state, self.number) is not None

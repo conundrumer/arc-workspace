@@ -28,11 +28,11 @@ from controlled_markdown import mctx
 from file_reads import held_paths, stats_stand_but
 from relay_reads import LOCK_DIR, read_relay, session_id, wait_lock, wait_running
 from run_reads import agent_type
-from state_assembly import read_state, write_due_since
+from state_assembly import DUE_SINCE, UNWAITED_SINCE, read_state, write_record
 from state_reads import partial
 from transcripts import find
 
-from operations import briefs, order, plan, ticket_stall
+from operations import briefs, order, plan, ticket_stall, unwaited
 from operations.command_words import Action
 from operations.constants import BLOCK_SECONDS, LIMIT_SECONDS, WAIT_CAP
 from operations.pacing import Until
@@ -312,8 +312,9 @@ def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
     moves. A Bash step planned at a partial read (`state_reads.partial`)
     is the output, with no run, so the full read `waited` makes after it
     plans again and runs the Bash step it gives. After each read, it
-    writes the session's record of the times from which a step has been
-    due (`ticket_stall.due_times`) for the next read. Where a run has not
+    writes the session's records of the times from which a step has been
+    due (`ticket_stall.due_times`) and from which a ticket has waited on no
+    party (`unwaited.times`) for the next read. Where a run has not
     ended by `deadline`, the step is the wait."""
     here = tree_reads.scratch(session_id())
     while True:
@@ -333,11 +334,13 @@ def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
 
 
 def read_and_record(me: str, here: Path) -> tuple[State, MonitorState]:
-    """The state `read_state` gives `me`, once the record under `here` of
-    the times from which a step has been due (`ticket_stall.due_times`)
-    holds those of that state."""
+    """The state `read_state` gives `me`, once the records under `here` of
+    the times from which a step has been due (`ticket_stall.due_times`) and
+    from which a ticket has waited on no party (`unwaited.times`) hold
+    those of that state."""
     state, watch = read_state(me)
-    write_due_since(here, ticket_stall.due_times(state))
+    write_record(here, DUE_SINCE, ticket_stall.due_times(state))
+    write_record(here, UNWAITED_SINCE, unwaited.times(state))
     return state, watch
 
 

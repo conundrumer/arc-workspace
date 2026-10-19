@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from controlled_markdown import mctx
-from operations import taking
+from operations import taking, unwaited
 from operations.directives import paused
 from operations.pacing import Pace
 from operations.state import State, Ticket
@@ -39,6 +39,11 @@ class NoStep:
 
 
 @dataclass(frozen=True)
+class Unwaited:
+    since: float
+
+
+@dataclass(frozen=True)
 class OnCycle:
     tickets: tuple[str, ...]
     """The tickets of the cycle in the order of its links, from the marked
@@ -62,7 +67,7 @@ class Held:
     """The pace, where `by` is `Hold.PACE`."""
 
 
-type Mark = OnUser | NoStep | OnCycle | InDraft | NotRead | Held
+type Mark = OnUser | NoStep | Unwaited | OnCycle | InDraft | NotRead | Held
 
 
 def cycle(state: State, number: str) -> tuple[str, ...] | None:
@@ -114,6 +119,8 @@ def mark(state: State, number: str, stalls: Mapping[str, float]) -> Mark | None:
         return OnUser(taking.status_since(t))
     if number in stalls:
         return NoStep(stalls[number])
+    if (since := unwaited.unwaited(state).get(number)) is not None:
+        return Unwaited(since)
     if (c := cycle(state, number)) is not None:
         return OnCycle(c)
     if t.status is Status.DRAFT:
@@ -162,6 +169,9 @@ def mark_text(m: Mark) -> str:
             return mctx("{reason}, since {time}").format(reason=ON_USER, time=utc_stamp(since))
         case NoStep(since):
             return NO_STEP.format(time=utc_stamp(since))
+        case Unwaited(since):
+            return mctx("it waits on nothing that moves it, since {time}").format(
+                time=utc_stamp(since))
         case OnCycle(tickets):
             return mctx("it stands on the cycle of links {cycle}").format(
                 cycle=" → ".join([*tickets, tickets[0]]))

@@ -71,14 +71,14 @@ def test_an_unreadable_record_gives_no_due_times(tmp_path: Path,
     monkeypatch.syspath_prepend(str(checkout.scripts()))
     assembly = script("state_assembly")
     (tmp_path / assembly.DUE_SINCE).write_text('{"9-1": "x"')
-    assert assembly.due_since_read(tmp_path) == {}
+    assert assembly.record_read(tmp_path, assembly.DUE_SINCE) == {}
     (tmp_path / assembly.DUE_SINCE).write_text('{"9-1": "x"}')
-    assert assembly.due_since_read(tmp_path) == {}
+    assert assembly.record_read(tmp_path, assembly.DUE_SINCE) == {}
     (tmp_path / assembly.DUE_SINCE).write_text('{"9-1": 5.0}')
-    assert assembly.due_since_read(tmp_path) == {}
+    assert assembly.record_read(tmp_path, assembly.DUE_SINCE) == {}
     from operations.state import DueEntry
-    assembly.write_due_since(tmp_path, {"9-1": DueEntry(5.0, 6.0)})
-    assert assembly.due_since_read(tmp_path) == {"9-1": DueEntry(5.0, 6.0)}
+    assembly.write_record(tmp_path, assembly.DUE_SINCE, {"9-1": DueEntry(5.0, 6.0)})
+    assert assembly.record_read(tmp_path, assembly.DUE_SINCE) == {"9-1": DueEntry(5.0, 6.0)}
 
 
 def test_a_change_behind_the_head_of_the_take_is_not_stalled_at_the_read_where_it_reaches_it(
