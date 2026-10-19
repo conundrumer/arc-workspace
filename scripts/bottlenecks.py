@@ -40,10 +40,10 @@ HELP = mctx("""
     - Usage: `uv run python scripts/bottlenecks.py [--since <time>]`
     - The command reads the ticket tracker of the main tree and prints, for each cause below, a heading with the cause's sum and then its rows, the largest first.
     - `--since <time>`, with `<time>` in the form `{form}` in UTC, sets the window from that time to now: each span is cut to the window, and only the conflict lines in it count. With no `--since`, the window is the whole log.
-    - `depends-on` waits: one row per path that a `change` ticket's `## Scope` gives, with the hours changes waited on it and the number of changes that waited on it.
+    - `depends-on` waits: one row per path that a `change` ticket's `## Scope` gives, with the wall-clock hours in which a change waited on it and the number of changes that waited on it.
         - The paths a Scope gives are those `uv run python scripts/file_ticket.py --help-all` gives.
         - A `depends-on` wait is a span in which a `change` ticket stood in one of {queue} and a ticket its `depends-on` gives stood outside `tickets/closed/`, charged to each path both Scopes give, or to the row `{no_shared}` where they give none in common.
-        - The wait hours of a path are change-hours: the overlapping spans of one change count once, and those of different changes add up.
+        - The wait hours of a path are its wall-clock hours: the hours in which at least one change waited on the path, each hour counted once however many changes waited in it.
     - Rebase conflicts: each log line of a `change` ticket whose note opens with `{opening}` or `{rerun}`, charged to each path it gives, or to the row `{not_recorded}` where it gives none.
     - A status wait is a span of a ticket's log. It opens at a line that moves the ticket into `blocked` or `waiting`, or at a line whose note opens with what the ticket waits on while it stands there. It takes as its cause what that line's note opens with, as `uv run python scripts/file_ticket.py log --help` gives it: `user` or `change <number>`. It runs to the next line of the ticket's log that moves the ticket out of that status or whose note opens with what the ticket waits on.
     - Waits on the user: one row per ticket of any kind, with the hours of its status waits whose cause is `user`.
@@ -179,7 +179,7 @@ def conflict_counts(tickets: dict[str, Ticket], start: float) -> dict[str, int]:
 def dependency_waits(tickets: dict[str, Ticket], root: Path, window: Window,
                      undecided: list[str]
                      ) -> tuple[dict[str, tuple[float, int]], dict[str, float]]:
-    """Per file, the `depends-on` wait hours and the waiting changes, and
+    """Per file, the wall-clock `depends-on` wait hours and the waiting changes, and
     per change, the hours it stood untaken and ready, in `window`."""
     start, now = window
     scopes = {n: scope_paths(t, root) for n, t in sorted(tickets.items())}
@@ -202,7 +202,7 @@ def dependency_waits(tickets: dict[str, Ticket], root: Path, window: Window,
                 waits[p][n] += spans
         if free:
             ready[n] = hours(free)
-    return ({p: (sum(hours(s) for s in waits[p].values()),
+    return ({p: (hours([sp for s in waits[p].values() for sp in s]),
                  sum(1 for s in waits[p].values() if s)) for p in sorted(waits)},
             ready)
 
