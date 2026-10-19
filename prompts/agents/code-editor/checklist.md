@@ -35,6 +35,10 @@
 - Run `uv run python -m controlled_markdown xrefs $(git merge-base master HEAD)`, and judge each line it prints against the code your diff leaves. Edit a line that no longer holds where your brief gives that document, and otherwise give it in your report as unfinished.
     + xref: src/controlled_markdown/__main__.py:main
 
+# Run the document check
+* comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-19T21:30:38Z: "If it's fast then yes", which chose the coordinator option that has an editor check its worktree before it reports. Ticket 11-2379.
+- Run `uv run python -m controlled_markdown check` with no path, and fix each line it reports in a file your brief lets you edit. Give each other line in your report as unfinished.
+
 # Compare with the before side
 - This part applies where your brief asks for a comparison of outputs with what the tree before the change gives, the before side, on a change not for speed: [The before side](prompts/agents/code-editor/before-side.md).
 
