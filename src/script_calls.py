@@ -2,7 +2,9 @@
 tree: one JSON line per call, in a file per UTC day under
 `.cache/script-calls/` of the main tree. `sitecustomize` starts the record
 of a call, `record` writes its line at the call's end, and `read` gives the
-lines `scripts/check_script_calls.py` judges.
+lines `scripts/check_script_calls.py` judges. A line gives as well the
+reads of `scripts/state_reads.py` during whose run the call's peak rose
+most (`enter`, `leave`).
 
 Every call of a script of the main tree imports this module, so it imports
 no module that the interpreter's start has not imported but `resource`,
@@ -37,7 +39,7 @@ SUFFIX = ".jsonl"
 SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
 
 _LINE = ('{{"key": "{key}", "start": {start:.3f}, "wall": {wall:.3f}, "cpu": {cpu:.3f}, '
-         '"peak": {peak}, "session": "{session}"}}\n')
+         '"peak": {peak}, "session": "{session}", "lifts": [{lifts}]}}\n')
 
 _KIB = sys.platform != "darwin"
 """Whether `ru_maxrss` counts KiB, as on Linux, in place of bytes, as on
@@ -92,10 +94,46 @@ def cpu_seconds() -> float:
                                                  resource.getrusage(resource.RUSAGE_CHILDREN)))
 
 
-def _peak() -> int:
+def peak() -> int:
+    """The peak memory in bytes of this process and of its children it has
+    waited for."""
     rss = max(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
               resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
     return rss * 1024 if _KIB else rss
+
+
+LIFTS = 3
+"""How many reads a line gives in `lifts`."""
+
+_lifts: dict[str, int] = {}
+"""The rise of the peak credited to each read of this process, by the
+read's name, summed over its runs."""
+_credited = 0
+"""The sum of the rises credited to reads so far."""
+
+
+def enter() -> tuple[int, int]:
+    """The peak and the sum of the rises credited so far, at the start of
+    the run of a read, which `leave` takes at its end."""
+    return peak(), _credited
+
+
+def leave(name: str, entered: tuple[int, int]) -> None:
+    """Credits the read `name` with the rise of the peak since `entered`,
+    less the rises credited since then, which went to the reads whose runs
+    stand inside its run."""
+    global _credited
+    before, credited = entered
+    rise = peak() - before - (_credited - credited)
+    if rise > 0:
+        _lifts[name] = _lifts.get(name, 0) + rise
+        _credited += rise
+
+
+def lifts() -> list[tuple[str, int]]:
+    """The `LIFTS` reads of this process with the largest credits, each
+    with its credit, largest first."""
+    return sorted(_lifts.items(), key=lambda lift: (-lift[1], lift[0]))[:LIFTS]
 
 
 def day_file(records: str, t: float) -> str:
@@ -111,7 +149,8 @@ def record() -> None:
         return
     path, k, begun, clock = s
     line = _LINE.format(key=k, start=begun, wall=time.monotonic() - clock, cpu=cpu_seconds(),
-                        peak=_peak(), session=os.environ.get(SESSION_ENV, ""))
+                        peak=peak(), session=os.environ.get(SESSION_ENV, ""),
+                        lifts=", ".join(f'["{name}", {rise}]' for name, rise in lifts()))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
     try:
@@ -121,13 +160,14 @@ def record() -> None:
 
 
 class Call:
-    """One line of the record."""
-    __slots__ = ("key", "start", "wall", "cpu", "peak", "session")
+    """One line of the record. A line written before the record gave
+    `lifts` has none."""
+    __slots__ = ("key", "start", "wall", "cpu", "peak", "session", "lifts")
 
     def __init__(self, key: str, start: float, wall: float, cpu: float, peak: int,
-                 session: str) -> None:
-        self.key, self.start, self.wall, self.cpu, self.peak, self.session = (
-            key, start, wall, cpu, peak, session)
+                 session: str, lifts: tuple[tuple[str, int], ...] = ()) -> None:
+        self.key, self.start, self.wall, self.cpu, self.peak, self.session, self.lifts = (
+            key, start, wall, cpu, peak, session, lifts)
 
 
 def read(records: str, since: float) -> list[Call]:
@@ -139,7 +179,11 @@ def read(records: str, since: float) -> list[Call]:
     for name in sorted(os.listdir(records)) if os.path.isdir(records) else []:
         if name.endswith(SUFFIX) and name >= first:
             with open(os.path.join(records, name)) as f:
-                calls += [Call(**json.loads(text)) for text in f]
+                for text in f:
+                    line = json.loads(text)
+                    line["lifts"] = tuple((read_name, rise)
+                                          for read_name, rise in line.get("lifts", ()))
+                    calls.append(Call(**line))
     return sorted((c for c in calls if c.start >= since), key=lambda c: c.start)
 
 

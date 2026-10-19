@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import kept_reads
+import script_calls
 from kept_reads import PathText
 
 _state = 0
@@ -609,52 +610,56 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
             hit = held.get(key)
             if hit is not None and hit.state == _state:
                 return hit.value, hit.lines
-            mark: Hashable = None
-            stamped: Made = ()
-            if hit is not None and derived:
-                if (not hit.marked and not _marking) or held_still(hit.made):
-                    hit.state, hit.marked = _state, False
-                    return hit.value, hit.lines
-            elif not isinstance(stamp, Derived) and stamp is not None:
-                _frames.append({})
-                try:
-                    mark = stamp(*args, **kwargs)
-                finally:
-                    stamped = made_of(_frames.pop())
-                if hit is not None and hit.mark == mark:
-                    hit.state, hit.stamped = _state, stamped
-                    return hit.value, hit.lines
-            record, made = recalled(key) if hit is None else (None, None)
-            if record is not None and made is not None:
-                _, value, kept_lines, version = record
-            else:
-                lines: list[str] = []
-                if at is not None and notes is not None:
-                    if positional:
-                        args = (*args[:at], lines, *args[at:])
-                    else:
-                        kwargs = {**kwargs, notes: lines}
-                _frames.append({})
-                try:
-                    value = read(*args, **kwargs)
-                finally:
-                    made = made_of(_frames.pop())
-                kept_lines = tuple(lines)
-                before = (record[1], record[3]) if record is not None else (
-                    (hit.value, hit.version) if hit is not None else None)
-                version = keep(key, made, value, kept_lines,
-                               before[1] if before is not None and same(value, before[0]) else None)
-            if hit is None:
-                hit = Held(info, key, positional)
-                held[key] = hit
-            elif value is not hit.value and same(value, hit.value):
-                value = hit.value
-            elif value is not hit.value and hit.source:
-                mark_dependents(hit)
-            hit.state, hit.mark, hit.value, hit.lines = _state, mark, value, kept_lines
-            hit.stamped, hit.marked, hit.version = stamped, False, version
-            hit.rest_on(made if stamp is None or derived else ())
-            return value, hit.lines
+            entered = script_calls.enter()
+            try:
+                mark: Hashable = None
+                stamped: Made = ()
+                if hit is not None and derived:
+                    if (not hit.marked and not _marking) or held_still(hit.made):
+                        hit.state, hit.marked = _state, False
+                        return hit.value, hit.lines
+                elif not isinstance(stamp, Derived) and stamp is not None:
+                    _frames.append({})
+                    try:
+                        mark = stamp(*args, **kwargs)
+                    finally:
+                        stamped = made_of(_frames.pop())
+                    if hit is not None and hit.mark == mark:
+                        hit.state, hit.stamped = _state, stamped
+                        return hit.value, hit.lines
+                record, made = recalled(key) if hit is None else (None, None)
+                if record is not None and made is not None:
+                    _, value, kept_lines, version = record
+                else:
+                    lines: list[str] = []
+                    if at is not None and notes is not None:
+                        if positional:
+                            args = (*args[:at], lines, *args[at:])
+                        else:
+                            kwargs = {**kwargs, notes: lines}
+                    _frames.append({})
+                    try:
+                        value = read(*args, **kwargs)
+                    finally:
+                        made = made_of(_frames.pop())
+                    kept_lines = tuple(lines)
+                    before = (record[1], record[3]) if record is not None else (
+                        (hit.value, hit.version) if hit is not None else None)
+                    version = keep(key, made, value, kept_lines,
+                                   before[1] if before is not None and same(value, before[0]) else None)
+                if hit is None:
+                    hit = Held(info, key, positional)
+                    held[key] = hit
+                elif value is not hit.value and same(value, hit.value):
+                    value = hit.value
+                elif value is not hit.value and hit.source:
+                    mark_dependents(hit)
+                hit.state, hit.mark, hit.value, hit.lines = _state, mark, value, kept_lines
+                hit.stamped, hit.marked, hit.version = stamped, False, version
+                hit.rest_on(made if stamp is None or derived else ())
+                return value, hit.lines
+            finally:
+                script_calls.leave(info.name, entered)
 
         @wraps(read)
         def at_state(*given: P.args, **named: P.kwargs) -> R:
