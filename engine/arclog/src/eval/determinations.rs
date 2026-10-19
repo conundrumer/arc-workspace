@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use super::driver::Driver;
+use super::driver::{derivation, Driver};
 use super::join;
 use super::{Evaluation, Outcome, RelationValue, RunFault, Stop};
 use crate::check::CheckedProgram;
@@ -81,12 +81,13 @@ impl Evaluation<'_> {
     /// The candidates of the `DET` node `node`, task-wide, at the values
     /// these parameter values give the `DET`s its forms read.
     ///
-    /// A form whose body names no proposer gives one candidate, its rows; a
-    /// form by a proposer other than a domain proposer one, the proposer's
-    /// whole set of rows; and a form by a domain proposer one candidate per
-    /// row. A `DET` of several forms has the candidates that each of its
-    /// forms gives. A form with no body and no proposer is a fault of the
-    /// conversion.
+    /// A form derives by the rule of `derivation`, which `Driver::clause`
+    /// uses. A form with a body gives one candidate, its rows; a form with no
+    /// body, by the proposer that rule gives, one candidate of the proposer's
+    /// whole set of rows, or one candidate per row where the registry marks
+    /// that proposer domain. A `DET` of several forms has the candidates that
+    /// each of its forms gives. A form with no body and no proposer is a
+    /// fault of the conversion.
     pub fn candidates(&self, node: GraphNodeIndex) -> Outcome<Candidates> {
         let program = &self.program.program;
         assert!(is_det(program, node), "the node of a `DET`");
@@ -104,11 +105,7 @@ impl Evaluation<'_> {
                 return Err(fault);
             }
             let fault = |message: String| RunFault { message: message.into(), form: at.clone() };
-            let domain = match &clause.proposers[..] {
-                [] => false,
-                [proposer] => is_domain(self.registry, proposer),
-                _ => return Err(fault("a `DET` form that names several proposers".into())),
-            };
+            let domain = derivation(clause, at)?.is_some_and(|index| is_domain(self.registry, &clause.proposers[index]));
             let mut rows = match super::init_form::rows_of(driver.clause(at, None)?, types.len()).map_err(fault)? {
                 Ok(rows) => rows,
                 Err(RelationValue::Undefined) => return Ok(Candidates::Undefined),

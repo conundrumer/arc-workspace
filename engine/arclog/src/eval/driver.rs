@@ -358,7 +358,7 @@ impl FormBodies<'_> {
 /// as `crate::solver` reads a `DET_OR_RULE` or `RULE_OR_DET` line. A clause
 /// with no body and several proposers in any other reading, the stored
 /// reading of a line with several, is a fault.
-fn derivation(clause: &Clause, form: &NodePath) -> Outcome<Option<usize>> {
+pub(super) fn derivation(clause: &Clause, form: &NodePath) -> Outcome<Option<usize>> {
     if !clause.body.value().conjuncts.is_empty() || clause.proposers.is_empty() {
         return Ok(None);
     }
