@@ -2,8 +2,8 @@
 and the sheet of a ticket (`ticket_dashboard`), over the entries of a
 render (`dashboard_html.Rendered`): the words of a request, as the page's
 search box gives them in the URL's `q` parameter, the HTML of their hits,
-newest first and at most `LIMIT` of them, and the HTML of a ticket's
-sheet."""
+a ticket whose number is one of them first, then newest first, and at most
+`LIMIT` of them, and the HTML of a ticket's sheet."""
 
 from collections.abc import Mapping
 
@@ -34,19 +34,16 @@ def matched(n: str, e: Entry, words: tuple[str, ...]) -> bool:
 
 
 def results(entries: Mapping[str, Entry], words: tuple[str, ...]) -> str:
-    """The HTML of the hits of `words` among `entries`, in the tracker's
-    order, newest first, each a card that opens the ticket's sheet."""
+    """The HTML of the hits of `words` among `entries`, each a card that
+    opens the ticket's sheet: first an entry whose number, lowercased, is
+    one of `words`, then the others in the tracker's order, newest first."""
     if not words:
         return ""
-    out: list[str] = []
-    for n in reversed(list(entries)):
-        e = entries[n]
-        if matched(n, e, words):
-            out.append(tap(n, f'<span class="num">{esc(n)}</span> <span class="sh">{esc(e.phrase)}</span>'
-                              f'<div class="meta">{esc(e.status)}</div>', "card"))
-            if len(out) >= LIMIT:
-                break
-    return "".join(out) or '<div class="meta">No match</div>'
+    hits = [n for n in reversed(list(entries)) if matched(n, entries[n], words)]
+    hits.sort(key=lambda n: n.lower() not in words)
+    return "".join(tap(n, f'<span class="num">{esc(n)}</span> <span class="sh">{esc(entries[n].phrase)}</span>'
+                          f'<div class="meta">{esc(entries[n].status)}</div>', "card")
+                   for n in hits[:LIMIT]) or '<div class="meta">No match</div>'
 
 
 def log_line(ln: LogLine, now: float) -> str:

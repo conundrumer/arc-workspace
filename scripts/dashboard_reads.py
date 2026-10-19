@@ -1,14 +1,16 @@
 """The reads the ticket dashboard (`ticket_dashboard`) renders from: the
-recorded state of the main session's operator, and of a ticket its phrase,
+recorded states of the operators of each session, and of a ticket its phrase,
 the change it waits on, whether it is the user's and the stage of the work
 on it; and the time a usage window reaches 100% at its rate so far."""
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
 
-from idle_sessions import named_main
-from state_assembly import Shown, shown_read
+from idle_sessions import live, named_main
+from state_assembly import Shown, ShownAgent, ShownParty, Start, shown_read
+from ticket_numbers import indexed, indexes, parsed_number
 from tree_reads import scratch
 
 from operations.pacing import WINDOW_SECONDS, Usage, WindowName
@@ -21,18 +23,96 @@ OPEN = frozenset(Status) - {Status.CLOSED, Status.DRAFT}
 DAY = 86400.0
 
 STALE_RECORD = 600.0
-"""The age, in seconds, past which the operator's record reads as no
+"""The age, in seconds, past which an operator's record reads as no
 operator's read: a few minutes above the longest time between two full
 reads of `operate.py next` (`operate_loop.FALLBACK_SECONDS`)."""
 
 
-def operator_state(tickets: Path) -> Shown | str:
-    """The state the last read of the main session's operator recorded
-    (`state_assembly.write_shown`), or why there is none."""
-    session = named_main(tickets)
-    if session is None:
-        return "no main session is set (`file_ticket.py main`)"
-    return shown_read(scratch(session))
+@dataclass(frozen=True)
+class SessionRecord:
+    """The record of a read of a session's operator, with the session's
+    index, None where `ticket_numbers.indexes` gives the session none."""
+    index: int | None
+    shown: Shown
+
+
+@dataclass(frozen=True)
+class OperatorRecords:
+    """The records the page is rendered from: the main session's first,
+    then each other session's by index; and why the main session has none,
+    where it has none."""
+    records: tuple[SessionRecord, ...]
+    main_missing: str | None
+
+    def expedited(self) -> frozenset[str]:
+        """The tickets any record gives as expedited."""
+        return frozenset(n for r in self.records for n in r.shown.expedited)
+
+    def agents(self) -> dict[str, list[ShownAgent]]:
+        """The agents of every record, by the numbers of their tickets."""
+        out: dict[str, list[ShownAgent]] = {}
+        for r in self.records:
+            for a in r.shown.agents:
+                for n in a.tickets:
+                    out.setdefault(n, []).append(a)
+        return out
+
+    def unwaited(self) -> dict[str, float]:
+        """The tickets any record gives as waiting on nothing, each with
+        the earliest time a record gives it."""
+        out: dict[str, float] = {}
+        for r in self.records:
+            for n, at in r.shown.unwaited.items():
+                out[n] = min(at, out.get(n, at))
+        return out
+
+    def starts(self) -> list[Start]:
+        """The starts of the records in their order, each ticket once:
+        unheld where any record gives it unheld, and otherwise with the
+        hold of the record of its own session, or else of the first record
+        that gives it, the main session's where that one does."""
+        given: dict[str, list[tuple[int | None, ShownParty | None]]] = {}
+        for r in self.records:
+            for s in r.shown.starts:
+                given.setdefault(s.number, []).append((r.index, s.held))
+        out: list[Start] = []
+        for n, holds in given.items():
+            if any(h is None for _, h in holds):
+                out.append(Start(n, None))
+                continue
+            number = parsed_number(n)
+            own = None if number is None else number.session
+            out.append(Start(n, next((h for i, h in holds if i is not None and i == own), holds[0][1])))
+        return out
+
+
+def operator_records(tickets: Path, now: float) -> OperatorRecords:
+    """The records of the last reads of the operators of each session that
+    `ticket_numbers.indexes` gives (`state_assembly.write_shown`): the main
+    session's, or why it has none; each other session's whose time is
+    within `STALE_RECORD` of `now`, or whose session `idle_sessions.live`
+    gives as live; and none of another session whose record is missing or
+    does not parse."""
+    ids = indexes(tickets)
+    main = named_main(tickets)
+    records: list[SessionRecord] = []
+    missing: str | None = None
+    if main is None:
+        missing = "no main session is set (`file_ticket.py main`)"
+    else:
+        shown = shown_read(scratch(main))
+        if isinstance(shown, str):
+            missing = shown
+        else:
+            records.append(SessionRecord(indexed(ids, main), shown))
+    for i in sorted(ids):
+        for session in ids[i]:
+            if session == main:
+                continue
+            shown = shown_read(scratch(session))
+            if not isinstance(shown, str) and (now - shown.at <= STALE_RECORD or live(session, now)):
+                records.append(SessionRecord(i, shown))
+    return OperatorRecords(tuple(records), missing)
 
 
 def served_request(t: Ticket, all_: Mapping[str, Ticket], seen: frozenset[str] = frozenset()) -> Ticket | None:

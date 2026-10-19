@@ -1,6 +1,6 @@
 """The ticket dashboard: an HTTP server whose page gives an overseer of the
 operations, on a phone, from the main tree's tracker, the usage cache and
-the state the last read of the main session's operator recorded, what is
+the states the last reads of each session's operators recorded, what is
 moving, what is next and the week's pace, and updates itself in the
 browser as the tracker changes.
 
@@ -36,7 +36,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from dashboard_html import Rendered, page
-from dashboard_reads import operator_state
+from dashboard_reads import operator_records
 from dashboard_search import results, sheet, words
 from dashboard_template import EVENTS, SEARCH_ROUTE, TICKET_ROUTE
 from file_ticket import main_tickets
@@ -87,7 +87,7 @@ def render(tickets: Path) -> Rendered:
     an earlier render read it."""
     now = new_state()
     undecided: list[str] = []
-    return page(tickets, now, read(now, undecided), operator_state(tickets), undecided)
+    return page(tickets, now, read(now, undecided), operator_records(tickets, now), undecided)
 
 
 def accepts_gzip(header: str | None) -> bool:

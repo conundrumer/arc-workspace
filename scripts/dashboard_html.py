@@ -9,12 +9,12 @@ import json
 import re
 import time
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from dashboard_reads import (DAY, OPEN, STALE_RECORD, Stage, change_of, hits_full, phrase, stage,
-                             users)
+from dashboard_reads import (DAY, OPEN, STALE_RECORD, OperatorRecords, Stage, change_of, hits_full, phrase,
+                             stage, users)
 from dashboard_template import EVENTS, LAST_LOOK, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
 from state_assembly import ScriptAdmits, Shown, ShownAgent, ShownParty, Start
 from ticket_reads import read_tickets
@@ -137,15 +137,17 @@ class Rendered:
 @dataclass(frozen=True)
 class View:
     """What the sections of one render read: the tracker's tickets in its
-    order, the operator's record or why there is none, the usage, the
-    time, the tickets expedited, the pending agents by ticket number, and
-    the party that holds each ticket the operators start next."""
+    order, the records of the sessions' operators, the usage, the time, the
+    tickets expedited, the pending agents by ticket number, the tickets the
+    operators start next, and the party that holds each of them that one
+    holds."""
     all_: Mapping[str, Ticket]
-    state: Shown | str
+    records: OperatorRecords
     usage: Usage
     now: float
     expedited: frozenset[str]
     agents: Mapping[str, list[ShownAgent]]
+    starts: list[Start]
     holds: Mapping[str, ShownParty]
 
     def mine(self, t: Ticket) -> bool:
@@ -189,9 +191,21 @@ def usage_bar(usage: Usage, name: WindowName, label: str) -> str:
             f'<span class="uv{" w" if hot else ""}">{win.used_pct:.0f}%</span></div>')
 
 
+def per_session[T](v: View, value: Callable[[Shown], T]) -> list[tuple[str, T]]:
+    """The `value` of each record, led by its session's index and a space,
+    or the one value with an empty lead where every record gives it."""
+    given = [("main " if r.index is None else f"{r.index} ", value(r.shown)) for r in v.records.records]
+    return [("", given[0][1])] if given and all(x == given[0][1] for _, x in given) else given
+
+
 def strip(v: View, mine: int) -> str:
-    ops = "Ops: no record" if isinstance(v.state, str) else "Ops paused" if v.state.paused else "Ops running"
-    return (f'<div class="strip"><div class="r1">{ops} · {mine} in flight</div>'
+    states = per_session(v, lambda s: "paused" if s.paused else "running")
+    ops = ("Ops: no record" if not states else f"Ops {states[0][1]}" if len(states) == 1
+           else "Ops: " + ", ".join(f"{lead}{x}" for lead, x in states))
+    held = [lead.strip() for lead, h in per_session(v, lambda s: s.start_hold is not None) if h]
+    starts = ("" if not held else ' · <span class="w">agent starts held'
+              + ("" if held == [""] else f" ({esc(', '.join(held))})") + "</span>")
+    return (f'<div class="strip"><div class="r1">{ops} · {mine} in flight{starts}</div>'
             f'{usage_bar(v.usage, WindowName.SEVEN_DAY, "Week")}'
             f'{usage_bar(v.usage, WindowName.FIVE_HOUR, "5 h")}</div>')
 
@@ -201,15 +215,17 @@ def health(v: View, notes: list[str]) -> str:
     hold of agent starts, a stale record, no agent at work, and `notes`,
     the lines of the reads that did not decide."""
     out = [f'<div class="alert">⚠ {esc(n)}</div>' for n in notes]
-    if isinstance(v.state, str):
-        return "".join(out) + f'<div class="alert">⚠ {esc(v.state)}</div>'
+    if v.records.main_missing is not None:
+        out.append(f'<div class="alert">⚠ {esc(v.records.main_missing)}</div>')
+    if not v.records.records:
+        return "".join(out)
     out += [tap(n, f"⚠ <b>{esc(n)}</b> {esc(v.phrase(v.all_[n]))} · waits on nothing for {ago(v.now - since)}", "alert")
-           for n, since in v.state.unwaited.items() if n in v.all_ and v.mine(v.all_[n])]
-    if v.state.start_hold is not None:
-        out.append(f'<div class="alert">⏸ {esc(start_hold_text(v.state.start_hold, v.now))}</div>')
-    if v.now - v.state.at > STALE_RECORD:
-        out.append(f'<div class="alert">⚠ No operator has read the state since {clock(v.state.at, v.now)}</div>')
-    if not v.state.agents:
+            for n, since in v.records.unwaited().items() if n in v.all_ and v.mine(v.all_[n])]
+    out += [f'<div class="alert">⏸ {esc(lead)}{esc(start_hold_text(h, v.now))}</div>'
+            for lead, h in per_session(v, lambda s: s.start_hold) if h is not None]
+    out += [f'<div class="alert">⚠ {esc(lead)}No operator has read the state since {clock(at, v.now)}</div>'
+            for lead, at in per_session(v, lambda s: s.at if v.now - s.at > STALE_RECORD else None) if at is not None]
+    if not v.agents:
         out.append('<div class="alert">⚠ No agent is at work</div>')
     return "".join(out) or '<div class="ok">✓ All moving</div>'
 
@@ -258,9 +274,9 @@ def in_flight(v: View) -> tuple[str, int]:
 
 
 def up_next(v: View) -> str:
-    if isinstance(v.state, str):
-        return f'<div class="meta">{esc(v.state)}</div>'
-    starts = [s for s in v.state.starts if s.number in v.all_]
+    if not v.records.records:
+        return f'<div class="meta">{esc(v.records.main_missing)}</div>'
+    starts = [s for s in v.starts if s.number in v.all_]
     starts.sort(key=lambda s: not v.mine(v.all_[s.number]))
     first = [s for s in starts if s.held is None] + [s for s in starts if s.held not in (None, Hold.PAUSE)]
     paused = [s for s in starts if s.held is Hold.PAUSE]
@@ -316,8 +332,8 @@ def pace(v: View) -> str:
                 f' {ago(wk.resets_at - full)} before reset</span>')
     else:
         head = f"Week {wk.used_pct:.0f}% · on track: {wk.used_pct / max(wk.elapsed_pct, 1) * 100:.0f}% at reset"
-    line = ("no record" if isinstance(v.state, str) else
-            "default (five-hour, even)" if v.state.pace_line is None else v.state.pace_line)
+    lines = per_session(v, lambda s: "default (five-hour, even)" if s.pace_line is None else s.pace_line)
+    line = "; ".join(f"{lead}{x}" for lead, x in lines) or "no record"
     rows = [kv("Pace line", esc(line))]
     if fh is None:
         rows.append(kv("5-hour window", "no reading"))
@@ -335,7 +351,7 @@ def pace(v: View) -> str:
 
 def queue(v: View) -> str:
     open_ = [t for t in v.all_.values() if t.status in OPEN]
-    paused = 0 if isinstance(v.state, str) else sum(1 for s in v.state.starts if s.held is Hold.PAUSE)
+    paused = sum(1 for s in v.starts if s.held is Hold.PAUSE)
     by = Counter(v.mine(t) for t in open_)
     days = []
     for d in range(QUEUE_DAYS - 1, -1, -1):
@@ -367,18 +383,14 @@ def blocked(v: View) -> tuple[str, int]:
             + (body or '<div class="meta">Nothing waits on you.</div>') + "</details>"), len(rows)
 
 
-def page(tickets: Path, now: float, usage: Reading, state: Shown | str,
+def page(tickets: Path, now: float, usage: Reading, records: OperatorRecords,
          undecided: list[str]) -> Rendered:
     """The page at `now`, with the `undecided` lines of its reads."""
     read, unread = read_tickets(tickets)
     all_ = dict(sorted(read.items(), key=lambda kv: kv[1].order))
-    agents: dict[str, list[ShownAgent]] = {}
-    if not isinstance(state, str):
-        for a in state.agents:
-            for n in a.tickets:
-                agents.setdefault(n, []).append(a)
-    v = View(all_, state, usage.usage, now, frozenset(() if isinstance(state, str) else state.expedited),
-             agents, {} if isinstance(state, str) else {s.number: s.held for s in state.starts if s.held is not None})
+    starts = records.starts()
+    v = View(all_, records, usage.usage, now, records.expedited(), records.agents(), starts,
+             {s.number: s.held for s in starts if s.held is not None})
     flight, mine = in_flight(v)
     stuck, waits = blocked(v)
     sections = [

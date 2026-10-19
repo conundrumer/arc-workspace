@@ -15,7 +15,9 @@ TICKET_ROUTE = "/ticket"
 """The route of a ticket's sheet."""
 
 LAST_LOOK = "lastLook"
-"""The `localStorage` key of the time the browser last showed the page."""
+"""The key under which `localStorage` holds the time the browser last hid
+the page, and `sessionStorage` the time from which the tab's page counts
+Since you looked."""
 
 TEMPLATE = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Ops</title><style>
@@ -59,8 +61,11 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const clk=t=>new Date(t*1000).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
 let last=null;
-function look(){const now=Date.now()/1000;let v=null;try{v=localStorage.getItem('@LASTLOOK@')}catch(e){}
-last=v?+v:now-3*3600;try{localStorage.setItem('@LASTLOOK@',String(now))}catch(e){}}
+function look(load){const now=Date.now()/1000;let v=null;
+try{if(load&&performance.getEntriesByType('navigation')[0]?.type==='reload')v=sessionStorage.getItem('@LASTLOOK@')}catch(e){}
+try{if(!v)v=localStorage.getItem('@LASTLOOK@')}catch(e){}
+last=v?+v:now-3*3600;try{sessionStorage.setItem('@LASTLOOK@',String(last))}catch(e){}}
+function left(){try{localStorage.setItem('@LASTLOOK@',String(Date.now()/1000))}catch(e){}}
 function since(){const box=$('since');if(!box)return;const ev=JSON.parse($('events').textContent).filter(e=>e.t>last);
 $('sl').textContent='Since you looked \\u00b7 '+clk(last);
 const mine=ev.filter(e=>e.u);let h='';
@@ -83,7 +88,7 @@ let h;try{const r=await fetch('@SEARCH@?q='+encodeURIComponent(q),{cache:'no-sto
 catch(e){h='<div class="meta">'+esc('search failed: '+e)+'</div>'}
 if(n===asked)res.innerHTML=h}
 document.addEventListener('input',e=>{if(e.target.id==='q'){clearTimeout(timer);timer=setTimeout(search,250)}});
-look();since();
+look(true);since();
 let busy=false,again=false;
 async function update(){if(busy){again=true;return}busy=true;
 try{const r=await fetch('/',{cache:'no-store'});const d=new DOMParser().parseFromString(await r.text(),'text/html');
@@ -95,7 +100,8 @@ catch(e){}
 busy=false;if(again){again=false;update()}}
 let ev=null;
 function connect(){ev=new EventSource('@EVENTS@');ev.onmessage=()=>update()}
-document.addEventListener('visibilitychange',()=>{if(document.hidden){if(ev){ev.close();ev=null}}
-else{look();if(!ev){connect();update()}}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){left();if(ev){ev.close();ev=null}}
+else{look(false);if(!ev){connect();update()}}});
+window.addEventListener('pagehide',left);
 if(!document.hidden)connect();
 </script></body></html>"""
