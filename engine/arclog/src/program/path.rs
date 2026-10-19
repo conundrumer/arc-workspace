@@ -58,9 +58,9 @@
 //! form, a grid and an `output` form have no children.
 
 use super::{
-    Alt, AltItem, AltRecord, Alts, Arcdata, Atom, Block, Body, Choose, Claim, Clause, Conjunct, DemoRule, Demonstrated, DemonstratedPart,
-    Exclude, Form, Grid, Instance, InstanceInput, KeyClause, LabelUse, Negated, Node, Param, ParamValue, Program,
-    ProgramRelation, Representative, RigidDet, Site, SiteArg, Slug, Witness, WitnessOutput, WitnessRecord,
+    Alt, AltItem, AltRecord, Alts, Arcdata, Atom, Block, Body, Choose, ChoosePart, Claim, Clause, Conjunct, DemoRule, Demonstrated, DemonstratedPart,
+    Exclude, Form, Grid, Instance, InstanceInput, InstanceInputPart, InstancePart, KeyClause, KeyClausePart, LabelUse, Negated, Node, Param, ParamValue, Program,
+    ProgramRelation, Representative, RigidDet, RigidDetPart, Site, SiteArg, Slug, Witness, WitnessOutput, WitnessRecord,
 };
 
 /// One step of a path: the index of a node among its parent's children.
@@ -170,9 +170,6 @@ impl<'a> NodeRef<'a> {
         fn bodies<'b>(bodies: impl IntoIterator<Item = &'b Node<Body>>) -> Vec<NodeRef<'b>> {
             bodies.into_iter().map(|body| NodeRef::Body(body.value())).collect()
         }
-        fn inputs(inputs: &[Node<InstanceInput>]) -> impl Iterator<Item = NodeRef<'_>> {
-            inputs.iter().map(|input| NodeRef::InstanceInput(input.value()))
-        }
         match self {
             NodeRef::Program(program) => forms(&program.forms),
             NodeRef::Claim(claim) => claim.blocks().map(NodeRef::from).collect(),
@@ -200,25 +197,43 @@ impl<'a> NodeRef<'a> {
                 })
                 .collect(),
             NodeRef::Label(_) => Vec::new(),
-            NodeRef::Instance(instance) => {
-                let key = instance.key.iter().map(|key| NodeRef::KeyClause(key.value()));
-                key.chain(inputs(&instance.inputs)).collect()
-            }
-            NodeRef::KeyClause(clause) => bodies([&clause.key.body]).into_iter().chain(inputs(&clause.inputs)).collect(),
-            NodeRef::InstanceInput(input) => {
-                let mut children = sites(&input.head);
-                children.push(NodeRef::Body(input.body.value()));
-                children
-            }
-            NodeRef::Choose(choose) => {
-                let rows = choose.rows.iter().map(|rows| &rows.body);
-                bodies(rows.chain([&choose.from]).chain(choose.never.iter()))
-            }
-            NodeRef::RigidDet(rigid) => {
-                let clauses = bodies(rigid.key.iter().chain(rigid.instance.iter()).map(|clause| &clause.body));
-                let parts = rigid.parts.iter().map(|part| NodeRef::Atom(part.value()));
-                clauses.into_iter().chain(parts).collect()
-            }
+            NodeRef::Instance(instance) => instance
+                .parts()
+                .map(|part| match part {
+                    InstancePart::Key => NodeRef::KeyClause(instance.key.as_ref().expect("the key clause of a part").value()),
+                    InstancePart::Input(index) => NodeRef::InstanceInput(instance.inputs[index].value()),
+                })
+                .collect(),
+            NodeRef::KeyClause(clause) => clause
+                .parts()
+                .map(|part| match part {
+                    KeyClausePart::Body => NodeRef::Body(clause.key.body.value()),
+                    KeyClausePart::Input(index) => NodeRef::InstanceInput(clause.inputs[index].value()),
+                })
+                .collect(),
+            NodeRef::InstanceInput(input) => input
+                .parts()
+                .map(|part| match part {
+                    InstanceInputPart::Head(index) => NodeRef::Site(&input.head[index]),
+                    InstanceInputPart::Body => NodeRef::Body(input.body.value()),
+                })
+                .collect(),
+            NodeRef::Choose(choose) => choose
+                .parts()
+                .map(|part| match part {
+                    ChoosePart::For => NodeRef::Body(choose.rows.as_ref().expect("the `for` clause of a part").body.value()),
+                    ChoosePart::From => NodeRef::Body(choose.from.value()),
+                    ChoosePart::Never(index) => NodeRef::Body(choose.never[index].value()),
+                })
+                .collect(),
+            NodeRef::RigidDet(rigid) => rigid
+                .children()
+                .map(|part| match part {
+                    RigidDetPart::Key => NodeRef::Body(rigid.key.as_ref().expect("the `key` clause of a part").body.value()),
+                    RigidDetPart::Instance => NodeRef::Body(rigid.instance.as_ref().expect("the `instance` clause of a part").body.value()),
+                    RigidDetPart::Part(index) => NodeRef::Atom(rigid.parts[index].value()),
+                })
+                .collect(),
             NodeRef::Demonstrated(demonstrated) => demonstrated
                 .parts()
                 .map(|part| match part {

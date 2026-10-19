@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use super::columns;
+use super::column_sources;
 use crate::resolver::form_columns;
 use super::registry_columns;
 use std::collections::BTreeSet;
@@ -17,7 +17,7 @@ use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
     Atom, Clause, ClauseKeyword, Form, Instance, NameScope, OutputName, OutputOwner, OutputStep, PortName, ProgramRelation, RelationRef,
 };
-use crate::program::{DemonstratedPart, InstancePart};
+use crate::program::{DemonstratedPart, InstancePart, KeyClausePart};
 
 /// The node kind of a clause: a chosen relation where it has `ONE`
 /// marks, a parameter where it is a `DET` with none, and a clause
@@ -55,7 +55,7 @@ impl<'a> Builder<'a> {
 
     /// Records that the form at `form` gives `node` the relation of
     /// `listing`, at `output` where the form gives several relations.
-    pub(super) fn relate(&mut self, node: GraphNodeIndex, form: &NodePath, output: Option<Arc<[OutputStep]>>, listing: columns::Listing) {
+    pub(super) fn relate(&mut self, node: GraphNodeIndex, form: &NodePath, output: Option<Arc<[OutputStep]>>, listing: column_sources::Listing) {
         self.relations[node.0 as usize].push(FormRelation { form: form.clone(), output, listing });
     }
 
@@ -284,9 +284,10 @@ impl<'a> Builder<'a> {
                 if let Some(key) = &instance.key {
                     let key = key.value();
                     let key_path = path.child(instance.position(InstancePart::Key));
-                    readers.push((NodeRef::Body(key.key.body.value()), key_path.child(0), every.clone()));
+                    readers.push((NodeRef::Body(key.key.body.value()), key_path.child(key.position(KeyClausePart::Body)), every.clone()));
                     for (index, input) in key.inputs.iter().enumerate() {
-                        readers.push((NodeRef::InstanceInput(input.value()), key_path.child(1 + index as u32), vec![reader(&input.value().name)]));
+                        let at = key_path.child(key.position(KeyClausePart::Input(index)));
+                        readers.push((NodeRef::InstanceInput(input.value()), at, vec![reader(&input.value().name)]));
                     }
                 }
                 for (index, input) in instance.inputs.iter().enumerate() {

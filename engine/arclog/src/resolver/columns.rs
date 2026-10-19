@@ -1,14 +1,13 @@
-//! The columns of a relation's rows, as the sites of a read name them, and
-//! the source of each column path of a relation. The columns that the
-//! registry declares stand in [`super::registry_columns`], and the columns
-//! that each kind of form gives its relation in [`super::form_columns`].
+//! The columns of a relation's rows, as the sites of a read name them: the
+//! names of the columns, the slot of each column, and the place of each
+//! column path in a row. The source of each column path stands in
+//! [`super::column_sources`], the columns that the registry declares in
+//! [`super::registry_columns`], and the columns that each kind of form gives
+//! its relation in [`super::form_columns`].
 
 use super::ColumnPosition;
-use crate::program::path::{child_index, node_at, NodePath, NodeRef};
-use crate::program::{Choose, ColumnName, Demonstrated, Instance, InstanceInput, KeyBody, LabelId, RigidDet, Site, SiteArg};
-use crate::registry::ColumnType;
+use crate::program::{ColumnName, KeyBody, Site, SiteArg};
 use crate::relations::{ColumnGroup, ColumnIndex};
-use crate::types::{each_site_label, use_label};
 
 use crate::read::spelling::KEY;
 
@@ -167,104 +166,4 @@ pub(crate) fn projection(site: &Site) -> Option<Box<[ColumnName]>> {
 
 pub(super) fn key_fields(key: &KeyBody) -> Box<[ColumnName]> {
     key.columns.iter().map(|column| column.name.clone()).collect()
-}
-
-/// What gives the value at a column path of a relation.
-#[derive(Clone, Debug)]
-pub(super) enum Source {
-    /// A label that the form giving the relation writes at the path,
-    /// which the body at `body`, a path below the form, binds.
-    Label { label: LabelId, body: NodePath },
-    /// The column's declared type.
-    Declared(ColumnType),
-}
-
-/// A column path of a relation, from a column's name, with its source.
-pub(super) type Sourced = (Box<[ColumnName]>, Source);
-
-/// One slot of a relation's columns, with the source of each column
-/// path at it or below it.
-#[derive(Clone, Debug)]
-pub(super) struct Listed {
-    pub(super) slot: Slot,
-    pub(super) sources: Vec<Sourced>,
-}
-
-/// The slots of a relation's columns, in the order of its rows, each
-/// with its sources. The relation's [`Columns`] derive from it.
-#[derive(Clone, Debug)]
-pub(super) struct Listing(pub(super) Vec<Listed>);
-
-impl Listing {
-    pub(super) fn columns(&self) -> Columns {
-        Columns(self.0.iter().map(|listed| listed.slot.clone()).collect())
-    }
-
-    pub(super) fn sources(&self) -> impl Iterator<Item = &Sourced> + '_ {
-        self.0.iter().flat_map(|listed| listed.sources.iter())
-    }
-}
-
-/// `sources` below the column `column`.
-pub(super) fn below(column: &ColumnName, sources: impl IntoIterator<Item = Sourced>) -> Vec<Sourced> {
-    sources.into_iter().map(|(path, source)| (std::iter::once(column.clone()).chain(path).collect(), source)).collect()
-}
-
-/// The labels at the site `site`, each with its column path from the
-/// site's column, or with the site's column alone where `whole` holds,
-/// bound by the body at `body`.
-pub(super) fn site_sources(site: &Site, whole: bool, body: &NodePath) -> Vec<Sourced> {
-    let mut found = Vec::new();
-    each_site_label(site, &mut Vec::new(), &mut |use_, path| {
-        if let Some(label) = use_label(use_) {
-            let path: Box<[ColumnName]> = if whole { Box::from([site.column.clone()]) } else { path.into() };
-            found.push((path, Source::Label { label, body: body.clone() }));
-        }
-    });
-    found
-}
-
-/// The key clause of the form `form`, with the path below the form of
-/// the body whose `^` labels are its columns: the `key` of an `INIT`, a
-/// `DEMONSTRATED` or a `RIGID_DET` form, or the `for` of a `CHOOSE`
-/// form; none where the form has no key clause.
-pub(crate) fn key_clause(form: NodeRef<'_>) -> Option<(&KeyBody, NodePath)> {
-    let first = NodePath::default().child(0);
-    match form {
-        NodeRef::Instance(Instance { key: Some(key), .. }) | NodeRef::Demonstrated(Demonstrated { key: Some(key), .. }) => {
-            Some((&key.value().key, first.child(0)))
-        }
-        NodeRef::RigidDet(RigidDet { key: Some(key), .. }) | NodeRef::Choose(Choose { rows: Some(key), .. }) => Some((key, first)),
-        _ => None,
-    }
-}
-
-/// The sources of the fields of `key`, whose body is at `body`, each
-/// path from the field's name.
-pub(super) fn key_sources(key: &KeyBody, body: &NodePath) -> Vec<Sourced> {
-    key.columns.iter().map(|column| (Box::from([column.name.clone()]), Source::Label { label: column.label, body: body.clone() })).collect()
-}
-
-/// The `key` slot of the relation of a keyed form: the record of its key
-/// clause's fields, or one column where it has none.
-pub(super) fn key_listed(key: Option<(&KeyBody, NodePath)>) -> Listed {
-    match key {
-        Some((key, body)) => Listed { slot: Slot::of(&self::key(), Some(&key_fields(key))), sources: below(&self::key(), key_sources(key, &body)) },
-        None => Listed { slot: Slot::Column(self::key()), sources: Vec::new() },
-    }
-}
-
-/// The path below `form` of the body of `input`, an input of `form`
-/// written after the form's key clause or inside it.
-pub(super) fn input_body(form: NodeRef<'_>, input: &InstanceInput) -> NodePath {
-    let child = NodeRef::InstanceInput(input);
-    let path = match child_index(form, child) {
-        Some(index) => NodePath::default().child(index),
-        None => {
-            let key = NodePath::default().child(0);
-            let clause = node_at(form, &key).expect("the key clause of a form whose input stands inside it");
-            key.child(child_index(clause, child).expect("an input of the form, after its key clause or inside it"))
-        }
-    };
-    path.child(u32::try_from(input.head.len()).expect("a head of fewer than 2^32 sites"))
 }

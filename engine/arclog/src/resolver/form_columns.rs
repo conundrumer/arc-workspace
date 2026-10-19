@@ -5,14 +5,12 @@
 
 use std::sync::Arc;
 
-use super::columns::{
-    input_body, key_clause, key_fields, key_listed, key_sources, below, pose, projection, site_sources, Columns, Listed, Listing, Slot,
-    Source, Sourced,
-};
+use super::column_sources::{below, input_body, key_clause, key_listed, key_sources, site_sources, Listed, Listing, Source, Sourced};
+use super::columns::{key_fields, pose, projection, Columns, Slot};
 use crate::hash::StableHashMap;
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
-    Choose, ColumnName, DeclaredName, Demonstrated, Instance, InstanceName, OutputOwner, OutputStep, RelationColumn, RelationName, RelationRef,
+    Choose, ChoosePart, ColumnName, DeclaredName, Demonstrated, Instance, InstanceName, OutputOwner, OutputStep, RelationColumn, RelationName, RelationRef,
     RigidDet, RigidDetName, Site, SiteArg,
 };
 use crate::registry::{binding_sites, ColumnType, Component, ParameterSite, Port, TypeParameter};
@@ -166,7 +164,7 @@ fn bound_columns(form: NodeRef<'_>) -> Vec<(&RelationColumn, NodePath)> {
         NodeRef::Clause(clause) => clause.columns.iter().map(|column| (column, NodePath::default().child(0))).collect(),
         NodeRef::Choose(choose) => {
             let rows = key_clause(form).into_iter().flat_map(|(rows, body)| rows.columns.iter().map(move |column| (column, body.clone())));
-            let from = NodePath::default().child(u32::from(choose.rows.is_some()));
+            let from = NodePath::default().child(choose.position(ChoosePart::From));
             rows.chain(choose.candidate_columns.iter().map(|column| (column, from.clone()))).collect()
         }
         _ => Vec::new(),

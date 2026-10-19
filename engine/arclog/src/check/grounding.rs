@@ -10,8 +10,11 @@ use crate::grounding::{body_labels, conjunct_labels, each_label_use_at, grounded
 use crate::hash::StableHashSet;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Body, Conjunct, Form, InstanceInput, KeyClause, LabelId, LabelUse, Node, RelationColumn};
-use crate::resolver::columns;
+use crate::program::{
+    Body, ChoosePart, Conjunct, DemonstratedPart, Form, InstanceInput, InstanceInputPart, InstancePart, KeyClause, KeyClausePart, LabelId, LabelUse,
+    Node, RelationColumn, RigidDetPart,
+};
+use crate::resolver::column_sources;
 use crate::resolver::form_columns;
 use crate::registry::Registry;
 use crate::types::{use_label, ValueType};
@@ -130,35 +133,44 @@ pub(super) fn form_bodies(form: &Form) -> Vec<FormBody<'_>> {
 
 /// The bodies of the form `form`, in the order of their paths, each at its
 /// path relative to `form`. The key clause and its labels are those
-/// [`columns::key_clause`] gives, and the columns of a clause's body and of
+/// [`column_sources::key_clause`] gives, and the columns of a clause's body and of
 /// a `CHOOSE` form's `from` those [`form_columns::form_columns`] gives after the
 /// key's.
 pub(super) fn bodies(form: NodeRef<'_>) -> Vec<FormBody<'_>> {
     let at = NodePath::default();
-    let key = columns::key_clause(form);
+    let key = column_sources::key_clause(form);
     let key_labels = key.as_ref().map(|(key, _)| labels(&key.columns)).unwrap_or_default();
     let own_columns = || form_columns::form_columns(form).skip(key_labels.len()).map(|column| column.label).collect::<Vec<_>>();
     let mut out: Vec<FormBody<'_>> = key.iter().map(|(key, body)| plain(&key.body, body.clone(), &[], key_labels.clone())).collect();
-    let after_key = u32::from(key.is_some());
     match form {
         NodeRef::Clause(clause) => {
             let columns = if clause.body.value().conjuncts.is_empty() { Vec::new() } else { own_columns() };
             out.push(plain(&clause.body, at.child(0), &[], columns));
         }
-        NodeRef::Instance(instance) => keyed_inputs(instance.key.as_ref(), &instance.inputs, &key_labels, &mut out),
-        NodeRef::Demonstrated(demonstrated) => keyed_inputs(demonstrated.key.as_ref(), &demonstrated.inputs, &key_labels, &mut out),
+        NodeRef::Instance(instance) => {
+            let key = instance.key.as_ref().map(|key| (key, at.child(instance.position(InstancePart::Key))));
+            let inputs = instance.inputs.iter().enumerate().map(|(index, input)| (input, at.child(instance.position(InstancePart::Input(index)))));
+            keyed_inputs(key, inputs, &key_labels, &mut out);
+        }
+        NodeRef::Demonstrated(demonstrated) => {
+            let key = demonstrated.key.as_ref().map(|key| (key, at.child(demonstrated.position(DemonstratedPart::Key))));
+            let inputs = demonstrated.inputs.iter().enumerate();
+            let inputs = inputs.map(|(index, input)| (input, at.child(demonstrated.position(DemonstratedPart::Input(index)))));
+            keyed_inputs(key, inputs, &key_labels, &mut out);
+        }
         NodeRef::Choose(choose) => {
             let candidate = own_columns();
             let from_given = if choose.from_inside_for { key_labels.clone() } else { Vec::new() };
-            out.push(plain(&choose.from, at.child(after_key), &from_given, candidate.clone()));
+            out.push(plain(&choose.from, at.child(choose.position(ChoosePart::From)), &from_given, candidate.clone()));
             let never_given: Vec<LabelId> = key_labels.iter().chain(&candidate).copied().collect();
-            for (never, offset) in choose.never.iter().zip(after_key + 1..) {
-                out.push(FormBody { place: BodyPlace::Branch, ..plain(never, at.child(offset), &never_given, Vec::new()) });
+            for (index, never) in choose.never.iter().enumerate() {
+                let never_at = at.child(choose.position(ChoosePart::Never(index)));
+                out.push(FormBody { place: BodyPlace::Branch, ..plain(never, never_at, &never_given, Vec::new()) });
             }
         }
         NodeRef::RigidDet(rigid) => {
             if let Some(clause) = &rigid.instance {
-                out.push(plain(&clause.body, at.child(after_key), &key_labels, labels(&clause.columns)));
+                out.push(plain(&clause.body, at.child(rigid.position(RigidDetPart::Instance)), &key_labels, labels(&clause.columns)));
             }
         }
         _ => {}
@@ -174,26 +186,31 @@ fn plain<'a>(body: &'a Node<Body>, at: NodePath, given: &[LabelId], columns: Vec
     FormBody { at, body, place: BodyPlace::List, given: given.to_vec(), columns, fields: Vec::new() }
 }
 
-/// Pushes onto `out` the inputs of an `INIT` or a `DEMONSTRATED` form: each
-/// keyed input, with `key_labels`, the labels of the key, given, and each
-/// other input.
-fn keyed_inputs<'a>(key: Option<&'a Node<KeyClause>>, inputs: &'a [Node<InstanceInput>], key_labels: &[LabelId], out: &mut Vec<FormBody<'a>>) {
+/// Pushes onto `out` the inputs of an `INIT` or a `DEMONSTRATED` form, the
+/// key clause `key` and the inputs `inputs` after it each with its path
+/// below the form: each keyed input, with `key_labels`, the labels of the
+/// key, given, and each other input.
+fn keyed_inputs<'a>(
+    key: Option<(&'a Node<KeyClause>, NodePath)>,
+    inputs: impl Iterator<Item = (&'a Node<InstanceInput>, NodePath)>,
+    key_labels: &[LabelId],
+    out: &mut Vec<FormBody<'a>>,
+) {
     let input = |input: &'a Node<InstanceInput>, input_at: NodePath, given: &[LabelId]| FormBody {
-        at: input_at.child(input.value().head.len() as u32),
+        at: input_at.child(input.value().position(InstanceInputPart::Body)),
         body: &input.value().body,
         place: BodyPlace::Input(input.value(), input_at),
         given: given.to_vec(),
         columns: Vec::new(),
         fields: Vec::new(),
     };
-    let at = NodePath::default();
-    if let Some(key) = key {
-        for (keyed, offset) in key.value().inputs.iter().zip(1u32..) {
-            out.push(input(keyed, at.child(0).child(offset), key_labels));
+    if let Some((key, key_at)) = key {
+        for (index, keyed) in key.value().inputs.iter().enumerate() {
+            out.push(input(keyed, key_at.child(key.value().position(KeyClausePart::Input(index))), key_labels));
         }
     }
-    for (other, offset) in inputs.iter().zip(u32::from(key.is_some())..) {
-        out.push(input(other, at.child(offset), &[]));
+    for (other, other_at) in inputs {
+        out.push(input(other, other_at, &[]));
     }
 }
 

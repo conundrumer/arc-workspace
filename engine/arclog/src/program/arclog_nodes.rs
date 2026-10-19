@@ -383,8 +383,15 @@ impl Instance {
     /// The position of `part`, a part the form holds, among the children of
     /// the form, as [`Instance::parts`] orders them.
     pub fn position(&self, part: InstancePart) -> u32 {
-        self.parts().position(|own| own == part).expect("a part the form holds") as u32
+        position_among(self.parts(), part)
     }
+}
+
+/// The position of `part` among `parts`, the parts of one node in the order
+/// of its children, where `parts` holds it.
+fn position_among<P: PartialEq>(mut parts: impl Iterator<Item = P>, part: P) -> u32 {
+    let index = parts.position(|own| own == part).expect("a part the node holds");
+    u32::try_from(index).expect("a node of fewer than 2^32 children")
 }
 
 /// A key clause, `(key (<body>) <inputs>)`: its body, whose `^` labels are
@@ -394,6 +401,27 @@ impl Instance {
 pub struct KeyClause {
     pub key: KeyBody,
     pub inputs: Arc<[Node<InstanceInput>]>,
+}
+
+/// A part of a [`KeyClause`], by its index among the parts of its kind.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum KeyClausePart {
+    Body,
+    Input(usize),
+}
+
+impl KeyClause {
+    /// The parts of the clause in the order of its children: the body, then
+    /// the inputs.
+    pub fn parts(&self) -> impl Iterator<Item = KeyClausePart> + '_ {
+        std::iter::once(KeyClausePart::Body).chain((0..self.inputs.len()).map(KeyClausePart::Input))
+    }
+
+    /// The position of `part`, a part the clause holds, among the children
+    /// of the clause, as [`KeyClause::parts`] orders them.
+    pub fn position(&self, part: KeyClausePart) -> u32 {
+        position_among(self.parts(), part)
+    }
 }
 
 /// The inputs an `INIT` or a `DEMONSTRATED` form writes: the keyed
@@ -408,6 +436,28 @@ pub struct InstanceInput {
     pub name: PortName,
     pub head: Arc<[Site]>,
     pub body: Node<Body>,
+}
+
+/// A part of an [`InstanceInput`]: a head site, by its index among the
+/// head sites, or the body.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum InstanceInputPart {
+    Head(usize),
+    Body,
+}
+
+impl InstanceInput {
+    /// The parts of the input in the order of its children: the head sites,
+    /// then the body.
+    pub fn parts(&self) -> impl Iterator<Item = InstanceInputPart> + '_ {
+        (0..self.head.len()).map(InstanceInputPart::Head).chain([InstanceInputPart::Body])
+    }
+
+    /// The position of `part`, a part the input holds, among the children
+    /// of the input, as [`InstanceInput::parts`] orders them.
+    pub fn position(&self, part: InstanceInputPart) -> u32 {
+        position_among(self.parts(), part)
+    }
 }
 
 /// A `CHOOSE` form, as `docs/arclog/constraints.md#choose` gives.
@@ -426,6 +476,30 @@ pub struct Choose {
     pub never: Arc<[Node<Body>]>,
 }
 
+/// A part of a [`Choose`] form: the `for` clause, the `from` clause, or a
+/// `never` body, by its index among the `never` bodies.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ChoosePart {
+    For,
+    From,
+    Never(usize),
+}
+
+impl Choose {
+    /// The parts of the form in the order of its children: the `for`
+    /// clause, the `from` clause, then the `never` bodies.
+    pub fn parts(&self) -> impl Iterator<Item = ChoosePart> + '_ {
+        let rows = self.rows.iter().map(|_| ChoosePart::For);
+        rows.chain([ChoosePart::From]).chain((0..self.never.len()).map(ChoosePart::Never))
+    }
+
+    /// The position of `part`, a part the form holds, among the children of
+    /// the form, as [`Choose::parts`] orders them.
+    pub fn position(&self, part: ChoosePart) -> u32 {
+        position_among(self.parts(), part)
+    }
+}
+
 /// A `RIGID_DET` form, as `docs/arclog/rigid.md#form` gives.
 #[derive(Clone, Debug)]
 pub struct RigidDet {
@@ -437,6 +511,31 @@ pub struct RigidDet {
     /// The parts: each atom of the form, inside the `instance` clause where
     /// the form has one.
     pub parts: Arc<[Node<Atom>]>,
+}
+
+/// A child of a [`RigidDet`] form: the `key` clause, the `instance`
+/// clause, or a part, by its index among the parts.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RigidDetPart {
+    Key,
+    Instance,
+    Part(usize),
+}
+
+impl RigidDet {
+    /// The children of the form in their order: the `key` clause, the
+    /// `instance` clause, then the parts.
+    pub fn children(&self) -> impl Iterator<Item = RigidDetPart> + '_ {
+        let key = self.key.iter().map(|_| RigidDetPart::Key);
+        let instance = self.instance.iter().map(|_| RigidDetPart::Instance);
+        key.chain(instance).chain((0..self.parts.len()).map(RigidDetPart::Part))
+    }
+
+    /// The position of `part`, a child the form holds, among the children
+    /// of the form, as [`RigidDet::children`] orders them.
+    pub fn position(&self, part: RigidDetPart) -> u32 {
+        position_among(self.children(), part)
+    }
 }
 
 /// A `DEMONSTRATED` form, as `docs/arclog/arclog.md#demonstrated` gives.
@@ -471,7 +570,7 @@ impl Demonstrated {
     /// The position of `part`, a part the form holds, among the children of
     /// the form, as [`Demonstrated::parts`] orders them.
     pub fn position(&self, part: DemonstratedPart) -> u32 {
-        self.parts().position(|own| own == part).expect("a part the form holds") as u32
+        position_among(self.parts(), part)
     }
 
     /// The rule at `position` among the children of the form, where a rule

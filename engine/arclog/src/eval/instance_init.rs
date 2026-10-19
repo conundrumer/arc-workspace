@@ -11,7 +11,7 @@ use crate::eval::values::OutputKey;
 use crate::eval::{ir, Evaluation, FormBodies, Outcome, RelationValue, RunFault, Stop};
 use crate::hash::StableHashMap;
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Body, ColumnName, Instance, InstanceInput, InstancePart, LabelId, PortName, Site};
+use crate::program::{Body, ColumnName, Instance, InstanceInput, InstanceInputPart, InstancePart, KeyClausePart, LabelId, PortName, Site};
 use crate::registry::{Column, ColumnType, Component, ComponentKind, InputPort, LibEntry, TypeParameter};
 use crate::relations::{Row, RowSet};
 use crate::resolver::columns::projection;
@@ -79,7 +79,7 @@ pub fn evaluate_instance<'a>(
         let per_group = match shape.written(&input.port.name) {
             Some((input_path, keyed, written)) => {
                 let head = shape.head_labels(written, &input.port.columns).map_err(&fault)?;
-                let body = (written.body.value(), input_path.child(written.head.len() as u32));
+                let body = (written.body.value(), input_path.child(written.position(InstanceInputPart::Body)));
                 let (parts, prefix): (Vec<(&Body, NodePath)>, &[LabelId]) = match (&shape.key_body, keyed) {
                     (Some(key_body), true) => (vec![key_body.clone(), body], &key_labels),
                     _ => (vec![body], &[]),
@@ -201,7 +201,7 @@ impl<'p> InstanceShape<'p> {
         component: &'p Component,
     ) -> Self {
         let key = instance.key.as_ref().map(|key| key.value());
-        let key_body = key.map(|key| (key.key.body.value(), form.child(instance.position(InstancePart::Key)).child(0)));
+        let key_body = key.map(|key| (key.key.body.value(), form.child(instance.position(InstancePart::Key)).child(key.position(KeyClausePart::Body))));
         let key_columns = key.map_or_else(Vec::new, |key| key.key.columns.iter().map(|column| (column.name.clone(), column.label)).collect());
         let written = inputs_at(instance).into_iter().map(|(path, keyed, input)| (form.join(&path), keyed, input)).collect();
         let mut bindings = StableHashMap::default();

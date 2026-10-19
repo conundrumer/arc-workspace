@@ -509,6 +509,7 @@ fn demo_rules<'d>(
     rules.map(move |(index, rule)| (path.child(demonstrated.position(crate::program::DemonstratedPart::Rule(index))), rule.value()))
 }
 
+pub(crate) mod column_sources;
 pub(crate) mod columns;
 pub(crate) mod form_columns;
 pub(crate) mod registry_columns;

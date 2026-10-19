@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use super::super::columns;
+use super::super::{column_sources, columns};
 use super::super::registry_columns;
 use super::{Builder, ExamplePath, GraphNodeIndex, Resolution, Side};
 use crate::hash::StableHashMap;
@@ -188,8 +188,8 @@ impl Sides<'_, '_> {
                             continue;
                         }
                         let holds = match source {
-                            columns::Source::Declared(ty) => registry_columns::is_example(ty),
-                            columns::Source::Label { label, body } => {
+                            column_sources::Source::Declared(ty) => registry_columns::is_example(ty),
+                            column_sources::Source::Label { label, body } => {
                                 let body = relation.form.join(body);
                                 if !bound.contains_key(&body) {
                                     let labels = self.bound_examples(&relation.form, &body);
@@ -219,10 +219,10 @@ impl Sides<'_, '_> {
     /// Whether the key clause of the form at `form` holds a label that its
     /// body binds at a site that holds an Example: the `key` of an `INIT`, a
     /// `DEMONSTRATED` or a `RIGID_DET` form, or the `for` of a `CHOOSE`
-    /// form, as [`columns::key_clause`] gives it.
+    /// form, as [`column_sources::key_clause`] gives it.
     fn key_examples(&mut self, form: &NodePath) -> bool {
         let Some(at) = node_at(NodeRef::Program(self.builder.case.value()), form) else { return false };
-        let Some((key, body)) = columns::key_clause(at) else { return false };
+        let Some((key, body)) = column_sources::key_clause(at) else { return false };
         let bound = self.bound_examples(form, &form.join(&body));
         key.columns.iter().any(|column| bound.contains(&column.label))
     }

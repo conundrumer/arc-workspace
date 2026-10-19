@@ -8,8 +8,8 @@ use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refus
 use crate::grounding::body_labels;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Instance, InstanceInput, KeyBody, PortName};
-use crate::resolver::{columns, ResolvedProgram};
+use crate::program::{Instance, InstanceInput, InstancePart, KeyBody, KeyClausePart, PortName};
+use crate::resolver::{column_sources, columns, ResolvedProgram};
 use crate::types::{each_site_label, use_label};
 
 /// [`CheckId::InstanceInputs`].
@@ -103,7 +103,7 @@ fn group_fault<'a>(
         let Some((node, own)) = read.node(program, form) else { continue };
         reads_output |= own;
         let read_form = node_at(NodeRef::Program(program.program.value()), program.form_of(node));
-        let read_key = read_form.filter(|form| !matches!(form, NodeRef::Choose(_))).and_then(columns::key_clause);
+        let read_key = read_form.filter(|form| !matches!(form, NodeRef::Choose(_))).and_then(column_sources::key_clause);
         reads_key |= read_key.is_some_and(|(read_key, _)| in_scope(read_key)) && !read.atom.sites.iter().any(|site| site.column == columns::key());
     }
     reads_key |= body_labels(written.body.value()).iter().any(|label| key_labels.contains(label));
@@ -124,12 +124,13 @@ fn group_fault<'a>(
 /// first, each group in the order it is written.
 pub(crate) fn inputs_at(instance: &Instance) -> Vec<(NodePath, bool, &InstanceInput)> {
     let mut out = Vec::new();
-    let mut first = 0;
     if let Some(key) = &instance.key {
-        let key_path = NodePath::default().child(0);
-        out.extend(key.value().inputs.iter().zip(1u32..).map(|(input, index)| (key_path.child(index), true, input.value())));
-        first = 1;
+        let key = key.value();
+        let key_path = NodePath::default().child(instance.position(InstancePart::Key));
+        let keyed = key.inputs.iter().enumerate();
+        out.extend(keyed.map(|(index, input)| (key_path.child(key.position(KeyClausePart::Input(index))), true, input.value())));
     }
-    out.extend(instance.inputs.iter().zip(first..).map(|(input, index)| (NodePath::default().child(index), false, input.value())));
+    let others = instance.inputs.iter().enumerate();
+    out.extend(others.map(|(index, input)| (NodePath::default().child(instance.position(InstancePart::Input(index))), false, input.value())));
     out
 }

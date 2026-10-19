@@ -341,7 +341,7 @@ fn form_body<'p>(program: &'p CheckedProgram, clause: &NodePath) -> (&'p Body, N
             for site in input.head.iter() {
                 crate::types::each_site_label(site, &mut Vec::new(), &mut |use_, _| labels.extend(crate::types::use_label(use_)));
             }
-            (input.body.value(), clause.child(input.head.len() as u32), labels)
+            (input.body.value(), clause.child(input.position(crate::program::InstanceInputPart::Body)), labels)
         }
         _ => panic!("a clause or an instance input"),
     }

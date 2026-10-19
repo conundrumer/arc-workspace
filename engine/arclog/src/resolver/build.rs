@@ -9,7 +9,8 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use super::columns::{self, Columns};
+use super::column_sources;
+use super::columns::Columns;
 use super::registry_columns;
 use super::names::{ColumnsOf, Names, Target};
 use super::{
@@ -56,7 +57,7 @@ impl InstanceNodes<'_> {
 struct FormRelation {
     form: NodePath,
     output: Option<Arc<[OutputStep]>>,
-    listing: columns::Listing,
+    listing: column_sources::Listing,
 }
 
 /// An atom that a form of the case reads: its path, its name scope, and
