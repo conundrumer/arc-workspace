@@ -16,6 +16,7 @@ where the engine does not compile."""
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from types import SimpleNamespace
@@ -31,6 +32,16 @@ ENV = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
 @pytest.fixture(scope="module")
 def merge_change():
     return script("merge_change")
+
+
+@pytest.fixture(autouse=True)
+def no_refresh_of_this_session(merge_change, tmp_path: Path,
+                               monkeypatch: pytest.MonkeyPatch) -> None:
+    """The refresh locks a merge takes stand under `tmp_path`, and for no
+    session of the environment."""
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.setattr(sys.modules["refresh_locks"].checkout, "caches",
+                        lambda: tmp_path / "caches")
 
 
 def git(cwd: Path, *argv: str) -> str:

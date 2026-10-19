@@ -74,6 +74,22 @@ wrote stands as the dependency record of the new `master`, the gate's counts
 of instructions are adopted, and a ticket is filed on each `SLOW` line, as the
 gate's `--help` gives. It then removes each worktree and its branch.
 
+Before the first fast-forward of `master` of the call whose commits change
+a `.py` file, the script locks the refresh locks
+(`refresh_locks`) of the merging session, the one
+`CLAUDE_CODE_SESSION_ID` gives where the environment gives one, and of
+the live sessions, so that a state read of those sessions waits from then
+on in place of computing the reads that the new code made stale. Once the
+merge lock is released, where such a fast-forward succeeded, the script
+starts `uv run python scripts/kept_refresh.py` in the main tree, as a
+process in a session of its own that outlives the script, and hands it
+the locks, still held. That process writes the state reads of those
+sessions into the store of the kept reads, as its `--help` gives. The
+script waits for the merging session's part to end, up to a margin short
+of the bound on an operator's foreground Bash call from the script's
+start, and then ends with the rest of the refresh still running. Where no
+such fast-forward succeeded, the script releases the locks.
+
 `document_pass.py` reads the size of each document against its
 budget on the new `master`. Where some document stands past its budget
 and no whole-document pass stands outside `tickets/closed/`, it files one
@@ -183,6 +199,7 @@ a failed step, 2 when the call itself is malformed.
 
 import argparse
 import os
+import select
 import shutil
 import subprocess
 import sys
@@ -196,6 +213,8 @@ from pathlib import Path
 from controlled_markdown import mctx
 from engine import checkout, rwlock
 from engine.duration import footer
+from operations.constants import FOREGROUND_MS
+from script_calls import SESSION_ENV
 from handbook.paths import scripts_importable
 
 scripts_importable()
@@ -203,6 +222,7 @@ scripts_importable()
 from change_checks import (merge_base, changed_outside_work,  # noqa: E402
                            outside_work, run_in, said, timed)
 from change_worktree import carried, same_blobs  # noqa: E402
+from refresh_locks import MergeLocks  # noqa: E402
 from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, locked_update, SetupFailed)
 
@@ -210,6 +230,10 @@ from operations.merging import (FAILED_LINE,  # noqa: E402
                                 NOT_PUT_ON, PATHS_SEP, PREFIX, REFUSED, REFUSED_TREE, TOOL)
 from operations.merge_outcomes import CONFLICT, LEFT_AFTER, STAYS  # noqa: E402
 from operations.worktrees import BASE  # noqa: E402
+
+STARTED = time.monotonic()
+"""The start of the process, from which the bound on a foreground call
+runs."""
 
 STEPS = ("scripts/merge_steps.py",)
 """The command, after `uv run python`, that runs the checks or the steps
@@ -561,7 +585,7 @@ def unstack(change: Change) -> None:
     checkout.git_out(change.worktree, "reset", "-q", "--hard", change.committed)
 
 
-def merge_alone(main: Path, change: Change) -> None:
+def merge_alone(main: Path, change: Change, locks: MergeLocks) -> None:
     """Rebase the change's branch onto `master`, run the checks on it, and
     land it, or refuse."""
     onto = checkout.git_out(main, "rev-parse", BASE).strip()
@@ -575,7 +599,7 @@ def merge_alone(main: Path, change: Change) -> None:
         raise Refused(f"{exc}\n{change.branch} is moved back to {BASE}'s commit "
                       f"{onto[:12]}, and the change stands uncommitted in "
                       f"{change.worktree}" + REFUSED_TREE.format(tree=tree)) from exc
-    land(main, [change], gate_out)
+    land(main, [change], gate_out, locks)
 
 
 AGENT_LOCK = "claude agent "
@@ -671,9 +695,10 @@ def run_step(main: Path, argv: Sequence[str]) -> subprocess.CompletedProcess[str
         return run_in(main, ("uv", "run", "python", *argv))
 
 
-def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
+def land(main: Path, changes: Sequence[Change], gate_out: Path, locks: MergeLocks) -> None:
     """Merge `changes`, the stack the gate passed with its outputs in
-    `gate_out`, into `master` in the main tree `main`."""
+    `gate_out`, into `master` in the main tree `main`, with the refresh
+    locks `locks` taken before the fast-forward."""
     replaced = refuse_main_touched(main, {c.worktree: c.touched for c in changes})
     done = run_step(main, TREE_KEEP)
     if done.returncode != 0:
@@ -683,6 +708,7 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
     for p in sorted(replaced):
         (main / p).unlink()
     top = changes[-1].branch
+    locks.take(top)
     say(f"fast-forwarding {BASE} to {top}", flush=True)
     done = checkout.git(main, "merge", "--ff-only", "-q", top)
     if done.returncode != 0:
@@ -692,6 +718,7 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
             os.chmod(main / p, modes[p])
         raise Failed(f"fast-forwarding {BASE} failed; {top} is committed and "
                      f"rebased in {changes[-1].worktree}:\n{said(done)}")
+    locks.mark_landed()
 
     argv = (*STEPS, "after", str(gate_out))
     done = run_step(main, argv)
@@ -749,19 +776,44 @@ def merge(pairs: Sequence[tuple[Path, str]]) -> bool:
         holder = mctx("pid {pid}, since {since}, merging {branches}").format(
             pid=os.getpid(), since=time.strftime("%H:%M:%S"),
             branches=", ".join(c.branch for c in changes))
+        locks = MergeLocks(main, os.environ.get(SESSION_ENV))
         try:
             with rwlock.merge_lock(checkout.git_common_dir(main), holder):
                 say("holding the merge lock", flush=True)
-                return land_all(main, changes) and every
+                return land_all(main, changes, locks) and every
         except rwlock.MergeHeld as exc:
             for c in changes:
                 checkout.git_out(c.worktree, "reset", "-q", "--mixed", c.before)
             raise Refused(mctx("{exc} Each branch is moved back to the commit it stood on "
                                "before, and its change stands uncommitted in its "
                                "worktree.").format(exc=exc)) from exc
+        finally:
+            refresh_kept(locks)
 
 
-def land_all(main: Path, changes: Sequence[Change]) -> bool:
+REFRESH_MARGIN_SECONDS = 30
+"""The room the merge call leaves, past its wait for the merging
+session's refresh, under the bound on a foreground call."""
+
+
+def refresh_kept(locks: MergeLocks) -> None:
+    """Starts the refresh with `locks` (`MergeLocks.start`), where it starts
+    one, and waits for the merging session's refresh to end, up to
+    `REFRESH_MARGIN_SECONDS` short of the bound on a foreground call from
+    this process's start."""
+    proc = locks.start()
+    if proc is None:
+        return
+    say("refreshing the kept reads in the main tree", flush=True)
+    assert proc.stdout is not None
+    left = FOREGROUND_MS / 1000 - REFRESH_MARGIN_SECONDS - (time.monotonic() - STARTED)
+    with proc.stdout:
+        ready, _, _ = select.select([proc.stdout], [], [], max(left, 0))
+    if not ready:
+        say("the refresh of the kept reads goes on past the merge", flush=True)
+
+
+def land_all(main: Path, changes: Sequence[Change], locks: MergeLocks) -> bool:
     """Merge the committed `changes` into `master`: as one stack, or, where
     the stack is refused, one at a time. Whether every change merged."""
     if len(changes) > 1:
@@ -771,12 +823,12 @@ def land_all(main: Path, changes: Sequence[Change]) -> bool:
             say(mctx("the stack is refused, so the changes merge one "
                        "at a time:") + "\n" + str(exc), flush=True)
         else:
-            land(main, changes, gate_out)
+            land(main, changes, gate_out, locks)
             return True
     every = True
     for c in changes:
         try:
-            merge_alone(main, c)
+            merge_alone(main, c, locks)
         except Refused as exc:
             print_refusal(exc)
             every = False

@@ -32,6 +32,7 @@ from operator_reads import (
     joined,
 )
 from operator_transcript import OperatorRead, read_operator
+from refresh_locks import wait_free
 from relay_reads import session_id
 from run_reads import context_size, parent_id
 from run_scripts import pace_reads, read_runs
@@ -99,12 +100,16 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     Where the process has opened no store of `kept_reads`, the call opens
     the default store and writes the store's records at the process's
     exit, so the reads kept on disk are read from the store, not computed,
-    in any process that calls it."""
+    in any process that calls it. Before it opens it, it waits for the
+    session's refresh lock to be free (`refresh_locks.wait_free`), so that
+    the reads `scripts/kept_refresh.py` writes for the session are read, not
+    computed a second time."""
+    session = session_id()
     if kept_reads.store() is None:
+        wait_free(session)
         kept_reads.open_store()
         atexit.register(kept_reads.flush)
     opened = new_state()
-    session = session_id()
     main = main_tree()
     tickets_dir = main / "tickets"
     undecided: list[str] = []
