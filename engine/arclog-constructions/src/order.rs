@@ -7,6 +7,8 @@ use arclog::hash::{StableHashMap, StableHashSet};
 use arclog::relations::RowSet;
 use arclog::terms::{Margins, Number, Term, TermId};
 
+use crate::domain;
+
 /// An empty set for each output of the component, of the arity its rows
 /// take.
 fn empty_outputs(arities: &[usize]) -> Vec<RowSet> {
@@ -79,17 +81,13 @@ fn before_ranking<'r>(members: &StableHashSet<Element<'r>>, probes: &[Element<'r
 
 /// The ranking under the preorder that `score` induces: a member or a probe
 /// precedes another when its score is less, tied members share a rank, and
-/// a member with no score is related to no other.
-///
-/// Panics where an element has several scores, which the preorder of
-/// `docs/lib-spec.md#the-constructions` does not cover.
+/// a member with no score is related to no other. Each element has at most
+/// one score, as [`crate::domain`] checks.
 fn score_ranking<'r>(members: &StableHashSet<Element<'r>>, probes: &[Element<'r>], score: &'r RowSet, width: usize) -> Ranking<'r> {
     let mut scores: StableHashMap<Element<'r>, Number> = StableHashMap::default();
     for row in score.rows() {
         let (t, s) = row.split_at(width);
-        if scores.insert(t, Number(Term::decode_number(s[0]))).is_some() {
-            panic!("an Order whose `score` gives one element several scores");
-        }
+        scores.insert(t, Number(Term::decode_number(s[0])));
     }
     let mut levels: StableHashMap<Number, Vec<Element<'r>>> = StableHashMap::default();
     let mut unscored = Vec::new();
@@ -126,7 +124,8 @@ fn score_ranking<'r>(members: &StableHashSet<Element<'r>>, probes: &[Element<'r>
 /// the group's members under `before` or `score`, tied members sharing a
 /// rank and each tied member minimal or maximal.
 ///
-/// Panics where a group gives both `before` and `score` rows, which
+/// Panics where a group breaks its domain of [`crate::domain`]: both
+/// `before` and `score` rows, or an element with several scores, which
 /// `docs/lib-spec.md#the-constructions` does not cover.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Order;
@@ -142,13 +141,14 @@ impl Construction for Order {
         context: &mut ConstructionContext<'_, '_>,
     ) -> Result<GroupOutputs, ReachedBound> {
         let [member, before, score, probe] = group.inputs else { panic!("Order's four inputs") };
+        domain::check(Self::NAME, group.inputs);
         let width = usize::from(member.arity());
         let members: StableHashSet<Element<'_>> = member.rows().collect();
         let probes: Vec<Element<'_>> = probe.rows().filter(|t| !members.contains(t)).collect();
-        let ranking = match (before.is_empty(), score.is_empty()) {
-            (_, true) => before_ranking(&members, &probes, before, width),
-            (true, false) => score_ranking(&members, &probes, score, width),
-            (false, false) => panic!("an Order group with both `before` and `score` rows"),
+        let ranking = if score.is_empty() {
+            before_ranking(&members, &probes, before, width)
+        } else {
+            score_ranking(&members, &probes, score, width)
         };
         context.budget.charge_work((ranking.successors.len() + ranking.maximal.len() * ranking.minimal.len()) as u64)?;
         let [mut rank, mut dual_rank, mut minimal, mut maximal, mut successor, mut cyclic_successor]: [RowSet; 6] =

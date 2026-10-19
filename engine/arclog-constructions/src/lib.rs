@@ -9,8 +9,10 @@ pub mod agreement;
 pub mod connectivity;
 pub mod distance;
 pub mod division;
+pub mod domain;
 pub mod order;
 pub mod ray;
+pub mod wallpaper;
 
 use arclog::eval::instance::{Construction, Constructions, ConstructionsFault};
 use arclog::registry::Registry;
@@ -51,7 +53,7 @@ constructions! {
     agreement::Agreement,
     agreement::Periods,
     agreement::Occurrences,
-    agreement::Wallpaper,
+    wallpaper::Wallpaper,
     distance::Distance,
     distance::CellDistance,
     division::Division,

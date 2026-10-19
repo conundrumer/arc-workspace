@@ -19,6 +19,9 @@
 //! of an orientation constant. The kind of a column's values is `number`,
 //! `box` or `constant`.
 //!
+//! The rows of a component's inputs lie within the domain its construction
+//! admits, as [`arclog_constructions::domain`] gives it.
+//!
 //! An element of the Souffle lib that declares no input of the element's
 //! has a second inputs file, `<element>.souffle.json`, in which each such
 //! input holds no row.
@@ -28,11 +31,13 @@ use std::path::{Path, PathBuf};
 
 use arclog::algebra::geometry::Geometry;
 use arclog::program::ColumnName;
-use arclog::registry::{AlgebraRelation, Column, ColumnType, Component, LibEntry, LibName, Macro, Registry};
+use arclog::registry::{AlgebraRelation, Column, ColumnType, Component, LibEntry, LibName, Macro, Port, Registry};
 use arclog::terms::{Constant, Term, TermId};
 use arclog::types::ValueType;
+use arclog_constructions::domain::{self, Constraint};
 use serde_json::{json, Value};
 
+use super::components::is_key;
 use super::sources::fnv1a;
 
 /// The seed of the inputs, so that a run gives the same inputs each time.
@@ -145,16 +150,24 @@ impl Element<'_> {
                     let index = random.below(POOL);
                     pools[at].1[index].clone()
                 };
-                let inputs: Vec<Value> = component
+                let mut drawn: Vec<Vec<Vec<Value>>> = component
                     .inputs
                     .iter()
                     .map(|input| {
                         let rows: BTreeSet<String> = (0..ROWS)
                             .map(|_| Value::from(input.port.columns.iter().map(|c| pooled(&ty(c))).collect::<Vec<_>>()).to_string())
                             .collect();
-                        let rows: Vec<Value> = rows.iter().map(|row| serde_json::from_str(row).expect("a row as JSON")).collect();
-                        json!({ "port": &*input.port.name.0, "columns": columns_json(&input.port.columns, &ty), "rows": rows })
+                        rows.iter().map(|row| serde_json::from_str(row).expect("a row as JSON")).collect()
                     })
+                    .collect();
+                let ports: Vec<&Port> = component.inputs.iter().map(|input| &input.port).collect();
+                for constraint in domain::constraints(self.name()) {
+                    restrict(constraint, &ports, &mut drawn);
+                }
+                let inputs: Vec<Value> = ports
+                    .iter()
+                    .zip(drawn)
+                    .map(|(port, rows)| json!({ "port": &*port.name.0, "columns": columns_json(&port.columns, &ty), "rows": rows }))
                     .collect();
                 let outputs: Vec<Value> = component
                     .outputs
@@ -168,6 +181,69 @@ impl Element<'_> {
             }
         }
         out
+    }
+}
+
+/// The rows `rows` of each input of `ports` restricted to those that meet
+/// `constraint`: at inputs of which at most one holds rows, the rows of one
+/// of them at each key, each picked at as many keys as the others, give or
+/// take one; at a function, the first row of each value of its columns but
+/// the last; at a positive column, the rows with a positive value there;
+/// at an irreflexive input, the rows whose two halves differ.
+fn restrict(constraint: &Constraint, ports: &[&Port], rows: &mut [Vec<Vec<Value>>]) {
+    // The place in a row of `ports[input]` of its column `column` among
+    // those other than `key`.
+    let place = |input: usize, column: usize| {
+        ports[input].columns.iter().enumerate().filter(|(_, c)| !is_key(c)).nth(column).expect("a column of the input").0
+    };
+    match *constraint {
+        Constraint::Exclusive(of) => {
+            let key_of = |input: usize, row: &[Value]| ports[input].columns.iter().position(is_key).map(|at| row[at].clone());
+            let mut keys: Vec<Option<Value>> = Vec::new();
+            for &input in of {
+                for row in &rows[input] {
+                    let key = key_of(input, row);
+                    if !keys.contains(&key) {
+                        keys.push(key);
+                    }
+                }
+            }
+            let mut picked = vec![0usize; of.len()];
+            let mut kept: Vec<(Option<Value>, usize)> = Vec::new();
+            for key in keys {
+                let holding = (0..of.len()).filter(|&at| rows[of[at]].iter().any(|row| key_of(of[at], row) == key));
+                let at = holding.min_by_key(|&at| picked[at]).expect("a key of some input");
+                picked[at] += 1;
+                kept.push((key, of[at]));
+            }
+            for &input in of {
+                rows[input].retain(|row| kept.contains(&(key_of(input, row), input)));
+            }
+        }
+        Constraint::Function(input) => {
+            let last = place(input, ports[input].columns.iter().filter(|c| !is_key(c)).count() - 1);
+            let mut seen: Vec<Vec<Value>> = Vec::new();
+            rows[input].retain(|row| {
+                let leading: Vec<Value> = row.iter().enumerate().filter(|&(at, _)| at != last).map(|(_, value)| value.clone()).collect();
+                let first = !seen.contains(&leading);
+                if first {
+                    seen.push(leading);
+                }
+                first
+            });
+        }
+        Constraint::Positive { input, column } => {
+            let at = place(input, column);
+            rows[input].retain(|row| row[at].as_i64().is_some_and(|n| n > 0));
+        }
+        Constraint::Irreflexive(input) => {
+            let width = ports[input].columns.iter().filter(|c| !is_key(c)).count();
+            rows[input].retain(|row| {
+                let values: Vec<&Value> = (0..width).map(|column| &row[place(input, column)]).collect();
+                let (a, b) = values.split_at(width / 2);
+                a != b
+            });
+        }
     }
 }
 
@@ -304,4 +380,36 @@ pub(super) fn emptied_inputs(inputs: &Value, ports: &[String]) -> Value {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The engine runs each component whose construction admits less than
+    /// every row set on its generated inputs, so that the inputs meet each
+    /// constraint its construction checks, and the inputs give rows at each
+    /// input of a set of which at most one holds rows at a key.
+    #[test]
+    fn component_inputs_lie_within_their_domains() {
+        let mut checked = Vec::new();
+        for element in elements() {
+            let constraints = domain::constraints(element.name());
+            if constraints.is_empty() {
+                continue;
+            }
+            let inputs = element.inputs();
+            let subject = element.subject().expect("a construction of the engine");
+            assert!(subject.evaluated(&inputs).is_ok(), "{}: the engine's run on its inputs stops", element.name());
+            for constraint in constraints {
+                if let Constraint::Exclusive(of) = constraint {
+                    for &input in *of {
+                        assert!(!inputs["inputs"][input]["rows"].as_array().expect("rows").is_empty(), "{}: input {input} holds no row", element.name());
+                    }
+                }
+            }
+            checked.push(element.name().to_owned());
+        }
+        assert!(!checked.is_empty(), "no component with a domain");
+    }
 }

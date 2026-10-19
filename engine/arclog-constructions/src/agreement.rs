@@ -1,7 +1,7 @@
-//! Agreement, Periods, Occurrences and Wallpaper: comparisons of valued
-//! families under correspondences. Agreement's comparison is `compare`,
-//! and Periods, Occurrences and Wallpaper each test their candidates by it,
-//! as `docs/lib-spec.md#detectors` gives.
+//! Agreement, Periods and Occurrences: comparisons of valued families
+//! under correspondences. Agreement's comparison is `compare`, and Periods
+//! and Occurrences each test their candidates by it, as Wallpaper of
+//! [`crate::wallpaper`] does, as `docs/lib-spec.md#detectors` gives.
 //!
 //! Each reads the box algebra and the orientation algebra through
 //! [`arclog::algebra::algebra`], and reads no order of term ids, cells or
@@ -15,7 +15,7 @@ use arclog::eval::ReachedBound;
 use arclog::hash::{StableHashMap, StableHashSet};
 use arclog::registry::{LibName, Registry};
 use arclog::relations::{Row, RowSet};
-use arclog::terms::{Margins, Term, TermId};
+use arclog::terms::{Term, TermId};
 use arclog::types::ValueType;
 
 /// The mismatches and conflicts of two valued families under each
@@ -179,101 +179,18 @@ impl Construction for Occurrences {
     }
 }
 
-/// The isometries that fix a periodic valued set, each with every shift
-/// of its coset under the lattice.
-///
-/// The lattice holds the translations by a multiple of the period on each
-/// axis that has a `period` row, and by none on an axis that has none. A
-/// candidate is a transform with one coset, given by a shift along each
-/// axis less than the period and the frame's extent; a transform that is
-/// its own inverse is a candidate only where the candidate's square, a
-/// translation, lies in the lattice, or lies off both axes, where the
-/// cells decide. A candidate is one correspondence: each cell with each
-/// cell that some shift of the coset takes it onto. It is a symmetry where
-/// some cell goes onto another cell and none conflicts with its image.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Wallpaper;
-
-impl Construction for Wallpaper {
-    fn name(&self) -> &'static str {
-        Self::NAME
-    }
-
-    fn evaluate(
-        &self,
-        group: &GroupInputs<'_>,
-        context: &mut ConstructionContext<'_, '_>,
-    ) -> Result<GroupOutputs, ReachedBound> {
-        let [transform, cell, grid, period] = group.inputs else { panic!("Wallpaper's four inputs") };
-        let lib = Lib(context.registry);
-        let lattice = Lattice::of(period);
-        let grid: StableHashSet<TermId> = grid.rows().map(|row| row[0]).collect();
-        let mut cells = RowSet::empty(cell.arity());
-        for row in cell.rows().filter(|row| grid.contains(&row[0])) {
-            cells.insert(row.into());
-        }
-        let cells = Family::of(&cells, 1);
-        let mut by_class: StableHashMap<Class, Vec<TermId>> = StableHashMap::default();
-        for &p in &grid {
-            by_class.entry(lattice.class(p)).or_default().push(p);
-        }
-
-        let (mut symmetry, mut action) = (RowSet::empty(2), RowSet::empty(2));
-        for members in by_class.values() {
-            for &p in members {
-                for &q in members.iter().filter(|&&q| q != p) {
-                    action.insert([p, q].into());
-                }
-            }
-        }
-        let shifts = lib.cosets(&grid, &lattice)?;
-        for d in transform.rows() {
-            let d = d[0];
-            let involution = lib.inverse(d)? == d;
-            for &delta in &shifts {
-                context.budget.charge_work(1)?;
-                if involution && !lattice.admits_square(lib.compose(delta, lib.apply(d, delta)?)?) {
-                    continue;
-                }
-                let mut reach: Vec<(TermId, TermId, &[TermId])> = Vec::new();
-                for &p in &grid {
-                    let image = lib.apply(d, p)?;
-                    let landed = by_class.get(&lattice.class(lib.compose(image, delta)?));
-                    reach.push((p, image, landed.map_or(&[], Vec::as_slice)));
-                }
-                let pairs: Vec<([TermId; 1], [TermId; 1])> = reach
-                    .iter()
-                    .filter(|(p, _, _)| cells.values(&[*p]).is_some())
-                    .flat_map(|&(p, _, landed)| landed.iter().filter(|&&q| cells.values(&[q]).is_some()).map(move |&q| ([p], [q])))
-                    .collect();
-                let witnessed = pairs.iter().any(|(p, q)| p != q);
-                if !witnessed || compare(&cells, &cells, pairs.iter(), context.budget)?.conflict {
-                    continue;
-                }
-                for &(p, image, landed) in &reach {
-                    for &q in landed {
-                        action.insert([p, q].into());
-                        symmetry.insert([d, lib.relative(image, q)?].into());
-                    }
-                }
-            }
-        }
-        outputs(vec![symmetry, action], context.budget)
-    }
-}
-
 /// What Agreement's comparison found under one correspondence: whether some
 /// image lacks its source's value, and whether some image holds a value
 /// other than it.
 #[derive(Clone, Copy, Debug, Default)]
-struct Verdict {
-    mismatch: bool,
-    conflict: bool,
+pub(crate) struct Verdict {
+    pub(crate) mismatch: bool,
+    pub(crate) conflict: bool,
 }
 
 /// Agreement's comparison of `source` with `target` under one
 /// correspondence, given as its pairs of a source index and a target index.
-fn compare<I: AsRef<[TermId]>, J: AsRef<[TermId]>>(
+pub(crate) fn compare<I: AsRef<[TermId]>, J: AsRef<[TermId]>>(
     source: &Family,
     target: &Family,
     pairs: impl IntoIterator<Item = impl std::borrow::Borrow<(I, J)>>,
@@ -305,14 +222,14 @@ fn compare<I: AsRef<[TermId]>, J: AsRef<[TermId]>>(
 
 /// A valued family: the values at each index.
 #[derive(Debug, Default)]
-struct Family {
+pub(crate) struct Family {
     by_index: StableHashMap<Row, StableHashSet<Row>>,
 }
 
 impl Family {
     /// The family of `rows`, whose first `width` columns are the index and
     /// whose other columns are the value.
-    fn of(rows: &RowSet, width: usize) -> Family {
+    pub(crate) fn of(rows: &RowSet, width: usize) -> Family {
         let mut by_index: StableHashMap<Row, StableHashSet<Row>> = StableHashMap::default();
         for row in rows.rows() {
             let (index, value) = row.split_at(width);
@@ -322,7 +239,7 @@ impl Family {
     }
 
     /// The values at `index`, where the family has one.
-    fn values(&self, index: &[TermId]) -> Option<&StableHashSet<Row>> {
+    pub(crate) fn values(&self, index: &[TermId]) -> Option<&StableHashSet<Row>> {
         self.by_index.get(index)
     }
 
@@ -352,61 +269,8 @@ fn agreement_widths(types: &[Box<[ValueType]>]) -> (usize, usize) {
     }
 }
 
-/// The lattice class of a Box: on each axis, its margin from the top or the
-/// left edge, modulo the period where the axis has one, and the sum of its
-/// margins on that axis. Two Boxes are in one class where a translation of
-/// the lattice takes one onto the other.
-type Class = (i32, i32, i32, i32);
-
-/// The period of each axis, where it has one.
-#[derive(Clone, Copy, Debug)]
-struct Lattice {
-    vertical: Option<i32>,
-    horizontal: Option<i32>,
-}
-
-impl Lattice {
-    /// The lattice of the `period` rows `(A, K)`. An axis with more than
-    /// one row, or with a period that is not positive, is a fault.
-    fn of(period: &RowSet) -> Lattice {
-        let mut lattice = Lattice { vertical: None, horizontal: None };
-        for row in period.rows() {
-            let k = Term::decode_number(row[1]);
-            assert!(k > 0, "Wallpaper's period {k} is not positive");
-            let axis = if is_vertical(row[0]) { &mut lattice.vertical } else { &mut lattice.horizontal };
-            assert!(axis.replace(k).is_none(), "Wallpaper's two periods on one axis");
-        }
-        lattice
-    }
-
-    /// The period of `axis`, where it has one.
-    fn of_axis(&self, axis: TermId) -> Option<i32> {
-        if is_vertical(axis) { self.vertical } else { self.horizontal }
-    }
-
-    /// The class of the Box `x`.
-    fn class(&self, x: TermId) -> Class {
-        let m = Term::decode_box(x);
-        let residue = |margin: i32, period: Option<i32>| period.map_or(margin, |k| margin.rem_euclid(k));
-        (residue(m.top, self.vertical), m.top + m.bottom, residue(m.left, self.horizontal), m.left + m.right)
-    }
-
-    /// Whether the translation `s` lies in the lattice, or lies off both
-    /// axes.
-    fn admits_square(&self, s: TermId) -> bool {
-        let m = Term::decode_box(s);
-        let in_lattice = |shift: i32, period: Option<i32>| period.map_or(shift == 0, |k| shift % k == 0);
-        (m.top != 0 && m.left != 0) || (in_lattice(m.top, self.vertical) && in_lattice(m.left, self.horizontal))
-    }
-}
-
-/// Whether the Axis `axis` is the vertical one.
-fn is_vertical(axis: TermId) -> bool {
-    Geometry::get().axis_edges(axis).contains(Edge::Top)
-}
-
 /// The outputs `outputs`, each row of them counted against `budget`.
-fn outputs(outputs: Vec<RowSet>, budget: &mut Budget<'_>) -> Result<GroupOutputs, ReachedBound> {
+pub(crate) fn outputs(outputs: Vec<RowSet>, budget: &mut Budget<'_>) -> Result<GroupOutputs, ReachedBound> {
     budget.charge_rows(outputs.iter().map(|rows| rows.len() as u64).sum())?;
     Ok(GroupOutputs { outputs: outputs.into() })
 }
@@ -414,7 +278,7 @@ fn outputs(outputs: Vec<RowSet>, budget: &mut Budget<'_>) -> Result<GroupOutputs
 /// The relations of the lib these detectors read, evaluated through
 /// [`Algebra`] over the registry.
 #[derive(Clone, Copy)]
-struct Lib<'r>(&'r Registry);
+pub(crate) struct Lib<'r>(pub(crate) &'r Registry);
 
 impl Lib<'_> {
     /// Each row of the relation `name` that agrees with `bound`.
@@ -435,35 +299,35 @@ impl Lib<'_> {
     }
 
     /// The image of the Box `p` under the D4 element `d`.
-    fn apply(&self, d: TermId, p: TermId) -> Result<TermId, ReachedBound> {
+    pub(crate) fn apply(&self, d: TermId, p: TermId) -> Result<TermId, ReachedBound> {
         self.image("apply", &[Some(d), Some(p), None])
     }
 
     /// The Box `a` translated by `b`.
-    fn compose(&self, a: TermId, b: TermId) -> Result<TermId, ReachedBound> {
+    pub(crate) fn compose(&self, a: TermId, b: TermId) -> Result<TermId, ReachedBound> {
         self.image("compose", &[Some(a), Some(b), None])
     }
 
     /// The translation that takes the Box `base` onto `x`.
-    fn relative(&self, base: TermId, x: TermId) -> Result<TermId, ReachedBound> {
+    pub(crate) fn relative(&self, base: TermId, x: TermId) -> Result<TermId, ReachedBound> {
         self.image("relative", &[Some(base), Some(x), None])
     }
 
     /// The inverse of the D4 element `d`.
-    fn inverse(&self, d: TermId) -> Result<TermId, ReachedBound> {
+    pub(crate) fn inverse(&self, d: TermId) -> Result<TermId, ReachedBound> {
         self.image("d4_inverse", &[Some(d), None])
     }
 
     /// Each axis with each translation magnitude that the frame of the
     /// Position `p` admits on it.
-    fn sub_extents(&self, p: TermId) -> Result<Vec<(TermId, i32)>, ReachedBound> {
+    pub(crate) fn sub_extents(&self, p: TermId) -> Result<Vec<(TermId, i32)>, ReachedBound> {
         let rows = self.rows("sub_extent", &[Some(p), None, None])?;
         Ok(rows.iter().map(|row| (row[1], Term::decode_number(row[2]))).collect())
     }
 
     /// The translation by `k` along `axis`, toward its bottom or right
     /// edge.
-    fn translation(&self, axis: TermId, k: i32) -> Result<TermId, ReachedBound> {
+    pub(crate) fn translation(&self, axis: TermId, k: i32) -> Result<TermId, ReachedBound> {
         let geometry = Geometry::get();
         let edge = geometry.axis_edges(axis).each().find(|edge| matches!(edge, Edge::Bottom | Edge::Right)).expect("an axis with a bottom or a right edge");
         let toward = geometry.direction(Edges::of(&[edge])).expect("the Dir of an edge");
@@ -477,34 +341,5 @@ impl Lib<'_> {
             [row] => Ok(row[2]),
             rows => panic!("`split` gives {} rows at a Box and an axis", rows.len()),
         }
-    }
-
-    /// One shift of each coset of `lattice` that the frame of `grid`
-    /// admits: on each axis, zero, or, on an axis with a period, a
-    /// magnitude that the frame admits and that is less than the period,
-    /// toward the bottom or right edge.
-    fn cosets(&self, grid: &StableHashSet<TermId>, lattice: &Lattice) -> Result<Vec<TermId>, ReachedBound> {
-        let geometry = Geometry::get();
-        let mut along: StableHashMap<TermId, StableHashSet<i32>> =
-            geometry.domain(&ValueType::Axis).iter().map(|&axis| (axis, StableHashSet::from_iter([0]))).collect();
-        for &p in grid {
-            for (axis, k) in self.sub_extents(p)? {
-                if lattice.of_axis(axis).is_some_and(|period| k < period) {
-                    along.get_mut(&axis).expect("an axis of the domain").insert(k);
-                }
-            }
-        }
-        let zero = Term::Box(Margins { top: 0, bottom: 0, left: 0, right: 0 }).encode().expect("the zero translation");
-        let mut shifts = vec![zero];
-        for (axis, magnitudes) in along {
-            let mut next = Vec::with_capacity(shifts.len() * magnitudes.len());
-            for &shift in &shifts {
-                for &k in &magnitudes {
-                    next.push(self.compose(shift, self.translation(axis, k)?)?);
-                }
-            }
-            shifts = next;
-        }
-        Ok(shifts)
     }
 }

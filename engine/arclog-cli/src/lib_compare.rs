@@ -45,8 +45,8 @@ use std::process::ExitCode;
 use self::coverage::{covered, left_out_lines};
 use self::evaluation::{fork_line, image_differences, walk_differences};
 use self::free_choices::{split, SECTION};
-use self::inputs::{elements, emptied_inputs, inputs_path, write_json, Element};
-use self::records::{read_record, Record};
+use self::inputs::{elements, inputs_path, write_json, Element};
+use self::records::{read_record, Record, SouffleInputs};
 use self::solvers::compare_solvers;
 use self::sources::sources_digest;
 
@@ -116,14 +116,9 @@ impl Report {
             self.not_compared.push(format!("{name}: {message}"));
             return;
         }
-        let record = read_record(snapshot, element, &inputs, sources);
-        let emptied = match &record {
-            Record::Undeclared(ports) => ports.clone(),
-            _ => Vec::new(),
-        };
-        let souffle_inputs = (!emptied.is_empty()).then(|| emptied_inputs(&inputs, &emptied));
-        if let Some(souffle_inputs) = &souffle_inputs {
-            if let Err(message) = write_json(&inputs_path(snapshot, name, ".souffle"), souffle_inputs) {
+        let (record, souffle_inputs) = read_record(snapshot, element, &inputs, sources);
+        if let SouffleInputs::Emptied(emptied) = &souffle_inputs {
+            if let Err(message) = write_json(&inputs_path(snapshot, name, ".souffle"), emptied) {
                 self.not_compared.push(format!("{name}: {message}"));
                 return;
             }
@@ -144,14 +139,14 @@ impl Report {
         };
         let mut lines = Vec::new();
         let against_souffle = match record {
-            Record::Rows(souffle) => match souffle_inputs.as_ref().map_or(Ok(walks.clone()), |emptied| subject.evaluated(emptied)) {
+            Record::Rows(souffle) => match souffle_inputs.engine_walks(&subject, &walks) {
                 Ok(engine) => {
-                    if souffle_inputs.is_some() && engine.len() > 1 {
+                    if matches!(souffle_inputs, SouffleInputs::Emptied(_)) && engine.len() > 1 {
                         self.forks.push(fork_line(&subject, &inputs_path(snapshot, name, ".souffle"), &engine));
                     }
                     let mut covered_walks = Vec::new();
                     for walk in &engine {
-                        let (compared, outside) = covered(&subject, souffle_inputs.as_ref().unwrap_or(&inputs), walk, &souffle);
+                        let (compared, outside) = covered(&subject, souffle_inputs.inputs(), walk, &souffle);
                         covered_walks.push(compared);
                         if let Some(line) = outside.filter(|line| !self.not_compared.contains(line)) {
                             self.not_compared.push(line);
@@ -160,6 +155,9 @@ impl Report {
                     self.not_compared.extend(left_out_lines(&subject, &souffle));
                     let (plain, chosen) = split(&subject, &covered_walks);
                     lines.extend(walk_differences(&subject, "Souffle", &plain));
+                    if matches!(souffle_inputs, SouffleInputs::Emptied(_)) && !lines.is_empty() {
+                        lines.push(format!("{name}: its inputs against Souffle are {}", inputs_path(snapshot, name, ".souffle").display()));
+                    }
                     self.souffle_faults.extend(
                         walk_differences(&subject, "Souffle", &chosen).into_iter().map(|line| format!("{line}; the free choice of its Souffle form that {SECTION} records")),
                     );

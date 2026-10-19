@@ -6,7 +6,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::coverage::{orientation_type, Souffle};
-use super::evaluation::{Cell, Rows};
+use super::evaluation::{Cell, Rows, Subject, Walks};
 use super::inputs::{emptied_inputs, Element};
 
 /// The Souffle side of an element, as its record gives it.
@@ -28,18 +28,53 @@ pub(super) enum Record {
     NoSources(String),
 }
 
+/// The inputs the Souffle side of an element runs on.
+pub(super) enum SouffleInputs<'i> {
+    /// The element's inputs.
+    Given(&'i Value),
+    /// The element's inputs with each input its Souffle form does not
+    /// declare holding no row, the inputs of its second inputs file.
+    Emptied(Value),
+}
+
+impl SouffleInputs<'_> {
+    pub(super) fn inputs(&self) -> &Value {
+        match self {
+            SouffleInputs::Given(inputs) => inputs,
+            SouffleInputs::Emptied(inputs) => inputs,
+        }
+    }
+
+    /// The engine's walks of `subject` on these inputs, given `walks`, its
+    /// walks on the element's inputs, or the stop of its run.
+    pub(super) fn engine_walks(&self, subject: &Subject<'_>, walks: &Walks) -> Result<Walks, String> {
+        match self {
+            SouffleInputs::Given(_) => Ok(walks.clone()),
+            SouffleInputs::Emptied(emptied) => subject.evaluated(emptied),
+        }
+    }
+}
+
 /// The record of `element` whose inputs are `inputs`, made from the
-/// sources of the digest `sources`: that of its second inputs file where
-/// the record of `inputs` gives undeclared inputs and the second file has
-/// a record.
-pub(super) fn read_record(snapshot: &Path, element: &Element<'_>, inputs: &Value, sources: &Result<String, String>) -> Record {
+/// sources of the digest `sources`, with the inputs it was made from: the
+/// record of `inputs`, or, where that record gives undeclared inputs, the
+/// emptied inputs of its second inputs file, with their record where the
+/// second file has one.
+pub(super) fn read_record<'i>(
+    snapshot: &Path,
+    element: &Element<'_>,
+    inputs: &'i Value,
+    sources: &Result<String, String>,
+) -> (Record, SouffleInputs<'i>) {
     let name = element.name();
     let record = record_of(&snapshot.join(format!("{name}.json")), element, inputs, sources);
-    let Record::Undeclared(ports) = &record else { return record };
-    match record_of(&snapshot.join(format!("{name}.souffle.json")), element, &emptied_inputs(inputs, ports), sources) {
+    let Record::Undeclared(ports) = &record else { return (record, SouffleInputs::Given(inputs)) };
+    let emptied = emptied_inputs(inputs, ports);
+    let record = match record_of(&snapshot.join(format!("{name}.souffle.json")), element, &emptied, sources) {
         Record::Missing => record,
         second => second,
-    }
+    };
+    (record, SouffleInputs::Emptied(emptied))
 }
 
 pub(super) fn record_of(path: &Path, element: &Element<'_>, inputs: &Value, sources: &Result<String, String>) -> Record {
