@@ -562,7 +562,7 @@ The program form is the trace under these rewrites, each a rewrite on the one tr
 
 - delete the bracket and brace nodes
 - fold each echo into its site, `*[P]` to `*P`
-- delete the `END` and `OR` symbols
+- delete the `END`, `SKIP`, `ALSO` and `OR` symbols
 - move each projection's answer into its input's head list, as head sites
 - move each declared name into the head of the form that declared it
 
