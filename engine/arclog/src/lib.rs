@@ -1,6 +1,6 @@
 //! The core crate of the arclog engine: the interfaces and shared parts of
-//! step 1 of the engine's build order, Reader and checker, and of step 2,
-//! Evaluator and lib.
+//! step 1 of the engine's build order, Reader and checker, of step 2,
+//! Evaluator and lib, and of step 3, Cases and judge, for one case.
 //!
 //! The crate is unrelated to the Python package `engine` under
 //! `src/engine/`.
@@ -60,6 +60,20 @@
 //! step's `Cargo.toml` files do not give adds it to its own crate's
 //! `Cargo.toml`, with its reason, and to `engine/Cargo.lock`.
 //!
+//! ## Step 3
+//!
+//! Each change of step 3 writes the bodies of its own files, and edits a
+//! file of another change only at the lines its ticket's Scope gives. The
+//! files of each change:
+//!
+//! - the judge's comparison: [`judge`], [`judge::candidates`],
+//!   [`judge::solves`], and [`task::JudgedTask`] in [`task`]
+//! - the constraint module: `constraints`
+//! - the options of a pick: `eval::picks`
+//! - the models of a case: `eval::models`
+//! - the judged run: `judge::run`, and the subcommand `compare` of
+//!   `arclog-cli`
+//!
 //! A module whose functions take arguments holds
 //! `#![allow(unused_variables, dead_code)]` until its stage writes the bodies, since a
 //! `todo!()` body reads none of its arguments.
@@ -71,6 +85,7 @@ pub mod eval;
 pub mod grounding;
 pub mod harness;
 pub mod hash;
+pub mod judge;
 pub mod layout;
 pub mod program;
 pub mod read;

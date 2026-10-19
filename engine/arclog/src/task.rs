@@ -1,6 +1,7 @@
 //! A task: its train pairs and its test inputs, read from a task file of
 //! `data/tasks/`, and the rows of the fact relations `input`, `ex_input`
-//! and `ex_output` that it gives.
+//! and `ex_output` that it gives; and the judged task, each pair's given
+//! output and alt, which the judge reads from the same file.
 //!
 //! The examples of a task are its train pairs, then its test inputs, each
 //! at its position in the file, as [`crate::terms::Example`] numbers them.
@@ -71,40 +72,121 @@ pub enum TaskError {
     Malformed { path: PathBuf, message: Box<str> },
 }
 
-/// The task of the file at `path`.
-pub fn read_task(path: &Path) -> Result<Task, TaskError> {
-    let text = std::fs::read_to_string(path).map_err(|error| TaskError::Unreadable { path: path.to_owned(), error })?;
-    let malformed = |message: &str| TaskError::Malformed { path: path.to_owned(), message: message.into() };
-    let json: serde_json::Value = serde_json::from_str(&text).map_err(|error| malformed(&error.to_string()))?;
-    let grid = |value: &serde_json::Value| -> Result<Grid, TaskError> {
-        let rows = value.as_array().ok_or_else(|| malformed("a grid that is no list of rows"))?;
+/// The JSON of a task file, with the reader of its grids and pairs that
+/// [`read_task`] and [`read_judged_task`] share.
+struct TaskJson<'a> {
+    path: &'a Path,
+    json: serde_json::Value,
+}
+
+impl<'a> TaskJson<'a> {
+    fn read(path: &'a Path) -> Result<TaskJson<'a>, TaskError> {
+        let text = std::fs::read_to_string(path).map_err(|error| TaskError::Unreadable { path: path.to_owned(), error })?;
+        let json = serde_json::from_str(&text).map_err(|error| malformed(path, &error.to_string()))?;
+        Ok(TaskJson { path, json })
+    }
+
+    fn malformed(&self, message: &str) -> TaskError {
+        malformed(self.path, message)
+    }
+
+    fn grid(&self, value: &serde_json::Value) -> Result<Grid, TaskError> {
+        let rows = value.as_array().ok_or_else(|| self.malformed("a grid that is no list of rows"))?;
         let rows = rows
             .iter()
             .map(|row| {
-                let cells = row.as_array().ok_or_else(|| malformed("a row that is no list of cells"))?;
+                let cells = row.as_array().ok_or_else(|| self.malformed("a row that is no list of cells"))?;
                 cells
                     .iter()
                     .map(|cell| {
                         let digit = cell.as_u64().and_then(|d| u8::try_from(d).ok());
-                        digit.and_then(Color::from_digit).ok_or_else(|| malformed("a cell that is no color"))
+                        digit.and_then(Color::from_digit).ok_or_else(|| self.malformed("a cell that is no color"))
                     })
                     .collect::<Result<Box<[Color]>, TaskError>>()
             })
             .collect::<Result<Box<[Box<[Color]>]>, TaskError>>()?;
-        Grid::from_rows(rows).ok_or_else(|| malformed("a grid that is empty or has rows of unequal lengths"))
-    };
-    let pairs = |key: &str| -> Result<&Vec<serde_json::Value>, TaskError> {
-        json.get(key).and_then(|pairs| pairs.as_array()).ok_or_else(|| malformed(&format!("no list `{key}`")))
-    };
-    let field = |pair: &'_ serde_json::Value, key: &str| -> Result<Grid, TaskError> {
-        grid(pair.get(key).ok_or_else(|| malformed(&format!("a pair with no `{key}`")))?)
-    };
-    let train = pairs("train")?
+        Grid::from_rows(rows).ok_or_else(|| self.malformed("a grid that is empty or has rows of unequal lengths"))
+    }
+
+    fn pairs(&self, key: &str) -> Result<&[serde_json::Value], TaskError> {
+        let pairs = self.json.get(key).and_then(|pairs| pairs.as_array());
+        pairs.map(Vec::as_slice).ok_or_else(|| self.malformed(&format!("no list `{key}`")))
+    }
+
+    fn field(&self, pair: &serde_json::Value, key: &str) -> Result<Grid, TaskError> {
+        self.grid(pair.get(key).ok_or_else(|| self.malformed(&format!("a pair with no `{key}`")))?)
+    }
+
+    /// The pair's `alt`, where it has one.
+    fn alt(&self, pair: &serde_json::Value) -> Result<Option<Alt>, TaskError> {
+        let Some(alt) = pair.get("alt") else { return Ok(None) };
+        let kind = match alt.get("kind").and_then(|kind| kind.as_str()) {
+            Some("rule") => AltKind::Rule,
+            Some("tiebreak") => AltKind::Tiebreak,
+            _ => return Err(self.malformed("an alt whose kind is neither `rule` nor `tiebreak`")),
+        };
+        Ok(Some(Alt { kind, grid: self.field(alt, "grid")? }))
+    }
+}
+
+fn malformed(path: &Path, message: &str) -> TaskError {
+    TaskError::Malformed { path: path.to_owned(), message: message.into() }
+}
+
+/// The task of the file at `path`.
+pub fn read_task(path: &Path) -> Result<Task, TaskError> {
+    let file = TaskJson::read(path)?;
+    let train = file
+        .pairs("train")?
         .iter()
-        .map(|pair| Ok(TrainPair { input: field(pair, "input")?, output: field(pair, "output")? }))
+        .map(|pair| Ok(TrainPair { input: file.field(pair, "input")?, output: file.field(pair, "output")? }))
         .collect::<Result<Box<[TrainPair]>, TaskError>>()?;
-    let test = pairs("test")?.iter().map(|pair| field(pair, "input")).collect::<Result<Box<[Grid]>, TaskError>>()?;
+    let test = file.pairs("test")?.iter().map(|pair| file.field(pair, "input")).collect::<Result<Box<[Grid]>, TaskError>>()?;
     Ok(Task { train, test })
+}
+
+/// The kind of an alt output, as `docs/handbook/solver-file.md#alt-outputs`
+/// gives.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AltKind {
+    Rule,
+    Tiebreak,
+}
+
+/// The alt of a pair: its kind and its grid.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Alt {
+    pub kind: AltKind,
+    pub grid: Grid,
+}
+
+/// A pair as the judge reads it: its given output, and its alt where the
+/// file gives one.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct JudgedPair {
+    pub output: Grid,
+    pub alt: Option<Alt>,
+}
+
+/// The pairs of a task file as the judge reads them, as
+/// `docs/engine/cases.md#candidates` gives: the train pairs, then the test
+/// pairs, in the file's order.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct JudgedTask {
+    pub train: Box<[JudgedPair]>,
+    pub test: Box<[JudgedPair]>,
+}
+
+/// The judged task of the file at `path`.
+pub fn read_judged_task(path: &Path) -> Result<JudgedTask, TaskError> {
+    let file = TaskJson::read(path)?;
+    let section = |key: &str| {
+        file.pairs(key)?
+            .iter()
+            .map(|pair| Ok(JudgedPair { output: file.field(pair, "output")?, alt: file.alt(pair)? }))
+            .collect::<Result<Box<[JudgedPair]>, TaskError>>()
+    };
+    Ok(JudgedTask { train: section("train")?, test: section("test")? })
 }
 
 impl Task {
