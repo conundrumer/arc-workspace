@@ -51,14 +51,13 @@ its `sessionId`, its `pid`, and its `procStart`, the start of that process
 as `ps -o lstart=` prints it in UTC."""
 
 
-def running(reader: str) -> frozenset[str] | None:
-    """The ids of the sessions that run, by the process the harness's file
-    on each gives, which a session that waits on the user keeps. A process
-    counts only where it started when the file gives, so a `pid` another
-    process has taken since does not count. None where no such file gives
-    `reader`, which runs, or one of them is not readable or gives no
-    `procStart`, as then those files are not read."""
-    out: set[str] = set()
+def harness_processes() -> dict[int, str] | None:
+    """The `pid` of each process the harness's file `<pid>.json` gives that
+    runs, mapped to the `sessionId` of that file. A process counts only
+    where it started when the file gives, so a `pid` another process has
+    taken since does not count. None where a file is not readable or gives
+    no `procStart`."""
+    out: dict[int, str] = {}
     for d in project_dirs():
         for path in (d.parent / HARNESS_SESSIONS).glob("*.json"):
             try:
@@ -70,8 +69,19 @@ def running(reader: str) -> frozenset[str] | None:
             if "procStart" not in entry:
                 return None
             if process_started(entry["pid"]) == entry["procStart"].split():
-                out.add(entry["sessionId"])
-    return frozenset(out) if reader in out else None
+                out[entry["pid"]] = entry["sessionId"]
+    return out
+
+
+def running(reader: str) -> frozenset[str] | None:
+    """The ids of the sessions that run, by the process the harness's file
+    on each gives, which a session that waits on the user keeps. None where
+    `harness_processes` gives None, or `reader` is not among those
+    sessions."""
+    held = harness_processes()
+    if held is None or reader not in held.values():
+        return None
+    return frozenset(held.values())
 
 
 def process_started(pid: int) -> list[str] | None:

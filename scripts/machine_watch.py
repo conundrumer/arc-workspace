@@ -17,7 +17,7 @@ from controlled_markdown import mctx
 from gating.cpu import busy_seconds, busy_ticks
 import script_calls
 from file_ticket import main_tickets
-from idle_sessions import running, take_main
+from idle_sessions import harness_processes, running, take_main
 from ticket_numbers import session_id
 from tree_reads import main_tree
 from file_reads import names_in
@@ -69,14 +69,16 @@ def _ps(*args: str) -> list[str]:
 
 
 def processes() -> list[Process]:
-    """Each process of the machine, with the session id its environment
-    gives, or, where that gives none, that of its nearest ancestor whose
-    environment gives one."""
+    """Each process of the machine, with the session id of the nearest of
+    itself and its ancestors that is a running Claude Code session's
+    process, as the harness's file gives it, or whose environment gives a
+    session id; the harness's file wins for a process that has both."""
     sessions: dict[int, str] = {}
     for text in _ps("-Eww", "-axo", "pid=,command="):
         pid, _, rest = text.strip().partition(" ")
         if (m := SESSION.search(rest)) is not None:
             sessions[int(pid)] = m.group(1)
+    sessions |= harness_processes() or {}
     rows = [text.split(None, 5) for text in
             _ps("-ww", "-axo", "pid=,ppid=,rss=,%cpu=,etime=,command=")]
     parents = {int(row[0]): int(row[1]) for row in rows}
