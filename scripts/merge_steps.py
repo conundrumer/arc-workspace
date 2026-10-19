@@ -2,18 +2,17 @@
 it runs in the main tree after the fast-forward, run in the tree this
 script is run in.
 
-    uv run python scripts/merge_steps.py checks <main> <base> <gate-out>
+    uv run python scripts/merge_steps.py checks <base> <gate-out>
     uv run python scripts/merge_steps.py after <gate-out>
 
 The `--help` of `merge_change.py` says which checks and steps these are,
 when it runs each form, which copy of this script it runs, and what
 `<base>` and `<gate-out>` are.
 
-`checks` takes `<main>`, the main tree, and on stdin the paths the
-changes touch, one per line, and reads neither. It runs the checks
-concurrently. Each line that names a check as it starts, and each step
-line (`engine.duration.STEP`) a check writes, goes on stderr as it comes,
-and the output of each check that fails goes on stdout.
+`checks` runs the checks concurrently. Each line that names a check as it
+starts, and each step line (`engine.duration.STEP`) a check writes, goes
+on stderr as it comes, and the output of each check that fails goes on
+stdout.
 
 `after` runs the steps in order, stops at the first that fails, and prints
 the stdout of each step it runs. For a step that fails, it then prints the
@@ -78,7 +77,6 @@ def main(argv: Sequence[str]) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     forms = ap.add_subparsers(dest="form", required=True)
     on_checks = forms.add_parser("checks", help="run the checks on the changes")
-    on_checks.add_argument("main", type=Path, help="the main tree, which the checks do not read")
     on_checks.add_argument("base", help="the commit the changes stand on")
     on_checks.add_argument("gate_out", help="the gate's out-dir")
     on_after = forms.add_parser("after", help="run the steps after the fast-forward")

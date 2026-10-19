@@ -279,17 +279,17 @@ system's 255 bytes."""
 
 def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
     """Run in `tree` the checks of changes from the commit `base`, or
-    refuse; the gate's out-dir, named as the module docstring gives. `main`
-    and `touched`, the paths the changes touch, go to `merge_steps.py`, and
-    `touched` picks the copy of it that runs, as the module docstring
-    gives."""
+    refuse; the gate's out-dir, named as the module docstring gives.
+    `touched`, the paths the changes touch, picks the copy of
+    `merge_steps.py` that runs, as the module docstring gives, and `main`
+    is the main tree, where that copy is the main tree's."""
     commits = checkout.git_out(tree, "rev-list", f"--max-count={NAMED_COMMITS}", f"{base}..HEAD").split()
     gate_out = tempfile.mkdtemp(prefix=GATE_PREFIX + "".join(f"{c[:8]}-" for c in commits))
     steps = (("--project", str(main), "python", str(main / STEPS[0])) if STEPS[0] in touched
              else ("python", *STEPS))
-    argv = ("uv", "run", *steps, "checks", str(main), base, gate_out)
+    argv = ("uv", "run", *steps, "checks", base, gate_out)
     done = subprocess.run(argv, cwd=tree, env=checkout.tree_env(), stdout=subprocess.PIPE,
-                          text=True, input="".join(f"{p}\n" for p in sorted(touched)))
+                          text=True, stdin=subprocess.DEVNULL)
     if done.returncode != 0:
         raise Refused(done.stdout.strip() or mctx("{shown} exited with status {code}").format(
             shown=" ".join(argv), code=done.returncode))

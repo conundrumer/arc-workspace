@@ -257,8 +257,8 @@ ap.parse_args()
 '''
 
 STEPS = '''import subprocess, sys
-assert sys.argv[1] == "checks" and sys.stdin.read().startswith("p\\n")
-done = subprocess.run([sys.executable, "scripts/gate.py", "--since", *sys.argv[3:]],
+assert sys.argv[1] == "checks" and len(sys.argv) == 4
+done = subprocess.run([sys.executable, "scripts/gate.py", "--since", *sys.argv[2:]],
                       capture_output=True, text=True)
 print(done.stderr, end="")
 sys.exit(done.returncode and 1)
