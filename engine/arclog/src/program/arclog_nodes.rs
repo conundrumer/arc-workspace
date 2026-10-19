@@ -443,23 +443,26 @@ pub enum DemonstratedPart {
 }
 
 impl Demonstrated {
-    /// The position of `part` among the children of the form, as
-    /// [`crate::program::path::NodeRef::children`] orders them: the key
-    /// clause, the inputs, then the rules.
+    /// The parts of the form in the order of its children: the key clause,
+    /// the inputs, then the rules.
+    pub fn parts(&self) -> impl Iterator<Item = DemonstratedPart> + '_ {
+        let key = self.key.iter().map(|_| DemonstratedPart::Key);
+        key.chain((0..self.inputs.len()).map(DemonstratedPart::Input)).chain((0..self.rules.len()).map(DemonstratedPart::Rule))
+    }
+
+    /// The position of `part`, a part the form holds, among the children of
+    /// the form, as [`Demonstrated::parts`] orders them.
     pub fn position(&self, part: DemonstratedPart) -> u32 {
-        let inputs = u32::from(self.key.is_some());
-        match part {
-            DemonstratedPart::Key => 0,
-            DemonstratedPart::Input(index) => inputs + index as u32,
-            DemonstratedPart::Rule(index) => inputs + self.inputs.len() as u32 + index as u32,
-        }
+        self.parts().position(|own| own == part).expect("a part the form holds") as u32
     }
 
     /// The rule at `position` among the children of the form, where a rule
     /// stands there.
     pub fn rule_at(&self, position: u32) -> Option<&DemoRule> {
-        let index = position.checked_sub(self.position(DemonstratedPart::Rule(0)))?;
-        self.rules.get(index as usize).map(|rule| rule.value())
+        match self.parts().nth(position as usize)? {
+            DemonstratedPart::Rule(index) => Some(self.rules[index].value()),
+            DemonstratedPart::Key | DemonstratedPart::Input(_) => None,
+        }
     }
 }
 
@@ -491,6 +494,45 @@ pub struct Alts {
 pub struct Alt {
     pub name: AltsName,
     pub items: Arc<[AltItem]>,
+}
+
+/// A child of a claim, of an `ALTS` form or of an `ALT` block: a form or
+/// an `ALT` block.
+#[derive(Clone, Copy, Debug)]
+pub enum Block<'a> {
+    Form(&'a Form),
+    Alt(&'a Alt),
+}
+
+impl Claim {
+    /// The children of the claim, in their order: its forms.
+    pub fn blocks(&self) -> impl Iterator<Item = Block<'_>> {
+        self.forms.iter().map(Block::Form)
+    }
+}
+
+impl Alts {
+    /// The children of the form, in their order: its `ALT` blocks.
+    pub fn blocks(&self) -> impl Iterator<Item = Block<'_>> {
+        self.alts.iter().map(|alt| Block::Alt(alt.value()))
+    }
+}
+
+impl Alt {
+    /// The children of the block, in their order: its forms and its nested
+    /// `ALT` blocks.
+    pub fn blocks(&self) -> impl Iterator<Item = Block<'_>> {
+        self.items.iter().map(Block::from)
+    }
+}
+
+impl<'a> From<&'a AltItem> for Block<'a> {
+    fn from(item: &'a AltItem) -> Self {
+        match item {
+            AltItem::Form(form) => Block::Form(form),
+            AltItem::Alt(alt) => Block::Alt(alt.value()),
+        }
+    }
 }
 
 /// One item of an `ALT` block: a form, or a nested `ALT` block, which holds

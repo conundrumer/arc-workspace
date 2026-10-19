@@ -42,7 +42,7 @@ class WithoutLists:
 @dataclass(frozen=True)
 class WithoutAttributes:
     """A document's text without its attribute lines, which no render
-    shows, and which is not the text its file holds."""
+    shows. Its file holds those lines."""
 
     doc: Path
 

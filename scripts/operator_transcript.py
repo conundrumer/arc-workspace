@@ -89,9 +89,9 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
     that launched it, or from the coordinator where the parent is an
     operator launcher, is read as a message of the coordinator's."""
     merged = merge_subjects(path)
-    return replace(operator_read(aid, path, main, undecided,
-                                 frozenset((m, t) for m, t in subjects.items() if m in merged)),
-                   listing=agent_listing(path))
+    return listed(operator_read(aid, path, main, undecided,
+                                frozenset((m, t) for m, t in subjects.items() if m in merged)),
+                  path)
 
 
 def read_launches(aid: str, path: Path, main: Path, undecided: list[str]) -> OperatorRead:
@@ -99,7 +99,13 @@ def read_launches(aid: str, path: Path, main: Path, undecided: list[str]) -> Ope
     whose calls no step reads. It reads no call's outcome and gives no
     `Call`, and of each `Agent` call it reads only the filed text of its
     `prompt`, which is the brief of the agent that call launches."""
-    return replace(launch_read(aid, path, main, undecided), listing=agent_listing(path))
+    return listed(launch_read(aid, path, main, undecided), path)
+
+
+def listed(read: OperatorRead, path: Path) -> OperatorRead:
+    """`read` with the listing of the operator whose transcript is at
+    `path`."""
+    return replace(read, listing=agent_listing(path))
 
 
 type Uses = dict[str, tuple[float, dict[str, Any], str]]
@@ -220,21 +226,26 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
     """`read_operator`, with `subjects` as the pairs `commits` gives, those
     of `merge_subjects`."""
     read = lines_of(OperatorLines, aid, path)
-    messages = read.messages(aid, children_of(path, aid), undecided)
     calls, uses = calls_of(aid, path, read, commits, undecided)
-    launched, passes = launches_of(aid, path, main, uses, undecided)
-    return OperatorRead(launched, calls, tuple(messages), passes)
+    return built(aid, path, main, read, calls, uses, undecided)
 
 
 @state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
 def launch_read(aid: str, path: Path, main: Path, undecided: list[str]) -> OperatorRead:
     """`read_launches`, with no listing."""
     read = lines_of(LaunchingLines, aid, path)
-    messages = read.messages(aid, children_of(path, aid), undecided)
     uses = {call: (t, unfiled_call(aid, tool, inp, None, undecided)[0], tool)
             for call, (t, inp, tool) in read.uses.items()}
+    return built(aid, path, main, read, (), uses, undecided)
+
+
+def built(aid: str, path: Path, main: Path, read: LaunchingLines, calls: tuple[Call, ...],
+          uses: Uses, undecided: list[str]) -> OperatorRead:
+    """The read of the operator `aid` whose transcript at `path` gives
+    `read`, with `calls`, and with the launches of the calls of `uses`."""
+    messages = read.messages(aid, children_of(path, aid), undecided)
     launched, passes = launches_of(aid, path, main, uses, undecided)
-    return OperatorRead(launched, (), tuple(messages), passes)
+    return OperatorRead(launched, calls, tuple(messages), passes)
 
 
 def calls_of(aid: str, path: Path, read: OperatorLines, commits: frozenset[tuple[str, float]],

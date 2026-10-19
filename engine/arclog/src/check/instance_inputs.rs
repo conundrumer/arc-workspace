@@ -83,11 +83,10 @@ impl Check for InstanceInputsCheck {
 /// `docs/arclog/arclog.md#instance` gives: an input after the key clause
 /// that reads an output of its instance, and an input inside it that reads
 /// no key label and no output of its instance, a broadcast. A label at a head
-/// site of the input is a read of it, and a read with no key site of a
-/// relation keyed by labels of `key` joins on them
-/// (`docs/arclog/arclog.md:262`), so it is a read of them. A `CHOOSE`
-/// form's `for` labels are columns of its relation, which a read names at
-/// sites of their own, and give it no key column.
+/// site of the input is a read of it, and a read that joins on labels of
+/// `key` with no key site, as `docs/arclog/arclog.md#instance` gives, is a
+/// read of them. A `CHOOSE` form has no key column, so a read of one joins
+/// on no key.
 fn group_fault<'a>(
     program: &ResolvedProgram,
     form: &NodePath,

@@ -58,7 +58,7 @@
 //! form, a grid and an `output` form have no children.
 
 use super::{
-    Alt, AltItem, AltRecord, Alts, Arcdata, Atom, Body, Choose, Claim, Clause, Conjunct, DemoRule, Demonstrated,
+    Alt, AltItem, AltRecord, Alts, Arcdata, Atom, Block, Body, Choose, Claim, Clause, Conjunct, DemoRule, Demonstrated, DemonstratedPart,
     Exclude, Form, Grid, Instance, InstanceInput, KeyClause, LabelUse, Negated, Node, Param, ParamValue, Program,
     ProgramRelation, Representative, RigidDet, Site, SiteArg, Slug, Witness, WitnessOutput, WitnessRecord,
 };
@@ -135,9 +135,15 @@ impl<'a> From<&'a Form> for NodeRef<'a> {
 
 impl<'a> From<&'a AltItem> for NodeRef<'a> {
     fn from(item: &'a AltItem) -> Self {
-        match item {
-            AltItem::Form(form) => NodeRef::from(form),
-            AltItem::Alt(alt) => NodeRef::Alt(alt.value()),
+        NodeRef::from(Block::from(item))
+    }
+}
+
+impl<'a> From<Block<'a>> for NodeRef<'a> {
+    fn from(block: Block<'a>) -> Self {
+        match block {
+            Block::Form(form) => NodeRef::from(form),
+            Block::Alt(alt) => NodeRef::Alt(alt),
         }
     }
 }
@@ -169,14 +175,14 @@ impl<'a> NodeRef<'a> {
         }
         match self {
             NodeRef::Program(program) => forms(&program.forms),
-            NodeRef::Claim(claim) => forms(&claim.forms),
+            NodeRef::Claim(claim) => claim.blocks().map(NodeRef::from).collect(),
             NodeRef::DemoRule(rule) => forms(&rule.forms),
-            NodeRef::Alts(alts) => alts.alts.iter().map(|alt| NodeRef::Alt(alt.value())).collect(),
-            NodeRef::Alt(alt) => alt.items.iter().map(NodeRef::from).collect(),
+            NodeRef::Alts(alts) => alts.blocks().map(NodeRef::from).collect(),
+            NodeRef::Alt(alt) => alt.blocks().map(NodeRef::from).collect(),
             NodeRef::Clause(clause) => bodies([&clause.body]),
             NodeRef::Body(body) => body.conjuncts.iter().map(NodeRef::Conjunct).collect(),
             NodeRef::Conjunct(conjunct) => match conjunct {
-                Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => sites(&atom.value().sites),
+                Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)) => conjunct.atom().map_or_else(Vec::new, |atom| sites(&atom.value().sites)),
                 Conjunct::Not(Negated::Form(form)) => vec![NodeRef::Conjunct(form)],
                 Conjunct::Constraint(_) => Vec::new(),
                 Conjunct::Or(branches) => bodies(branches.iter()),
@@ -213,11 +219,14 @@ impl<'a> NodeRef<'a> {
                 let parts = rigid.parts.iter().map(|part| NodeRef::Atom(part.value()));
                 clauses.into_iter().chain(parts).collect()
             }
-            NodeRef::Demonstrated(demonstrated) => {
-                let key = demonstrated.key.iter().map(|key| NodeRef::KeyClause(key.value()));
-                let rules = demonstrated.rules.iter().map(|rule| NodeRef::DemoRule(rule.value()));
-                key.chain(inputs(&demonstrated.inputs)).chain(rules).collect()
-            }
+            NodeRef::Demonstrated(demonstrated) => demonstrated
+                .parts()
+                .map(|part| match part {
+                    DemonstratedPart::Key => NodeRef::KeyClause(demonstrated.key.as_ref().expect("the key clause of a part").value()),
+                    DemonstratedPart::Input(index) => NodeRef::InstanceInput(demonstrated.inputs[index].value()),
+                    DemonstratedPart::Rule(index) => NodeRef::DemoRule(demonstrated.rules[index].value()),
+                })
+                .collect(),
         }
     }
 }

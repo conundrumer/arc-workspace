@@ -34,7 +34,7 @@ use crate::types::{each_site_label, use_label, FormTypes, GraphRelation, ValueTy
 /// the one key label of its type is filled from the key, and otherwise
 /// holds no row. A component whose inputs read its outputs, a
 /// task-structure component and a component the table of constructions
-/// lacks give a [`RunFault`] that names the component.
+/// lacks give a [`RunFault`] whose message gives the component.
 pub fn evaluate_instance<'a>(
     evaluation: &Evaluation<'a>,
     bodies: &FormBodies<'_>,

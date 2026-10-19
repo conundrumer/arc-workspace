@@ -93,13 +93,15 @@ def held(state: State, t: Ticket) -> Held | None:
     ticket of its `depends-on` is closed."""
     if t.status not in UNTAKEN or not all(closed(state, d) for d in t.depends_on):
         return None
-    passes, admitted = taking.passing(state)
-    if not passes(t.number):
-        return Held(Hold.TAKES)
-    if not admitted(t.number) and not taking.scope_admits(state)(t.number):
-        return Held(Hold.PAUSE if paused(state) else Hold.OWN_SCOPE)
-    pace = taking.pace_held(state, [t.number])
-    return None if pace is None else Held(Hold.PACE, pace)
+    match taking.refusal(state)(t.number):
+        case taking.Refusal.TAKES:
+            return Held(Hold.TAKES)
+        case taking.Refusal.SCOPE:
+            return Held(Hold.PAUSE if paused(state) else Hold.OWN_SCOPE)
+        case taking.Refusal.PACE:
+            return Held(Hold.PACE, state.computed.pace)
+        case None:
+            return None
 
 
 def mark(state: State, number: str, stalls: Mapping[str, float]) -> Mark | None:

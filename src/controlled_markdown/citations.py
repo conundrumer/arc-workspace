@@ -1,8 +1,8 @@
-"""The checks of the documents a code file names: each path a string
-names stands in the tree, each citation of a docstring or a comment names
-its document by its path from the root of the tree, each citation in the
-engine names a file a commit of the tree takes, and each anchor of a
-citation names a heading of the cited file."""
+"""The checks of the documents a code file cites: each path that a string
+stands for stands in the tree, each citation of a docstring or a comment
+cites its document by its path from the root of the tree, each citation in
+the engine cites a file a commit of the tree takes, and each anchor of a
+citation refers to a heading of the cited file."""
 
 from __future__ import annotations
 
@@ -28,8 +28,9 @@ DOC_PATH_RE = re.compile(
 
 
 def _named_paths(path: Path, text: str):
-    """Every string a file holds that names a document, with its line. A
-    string holding a hole or a wildcard names a shape and is passed over."""
+    """Every string a file holds that stands for a document, with its line.
+    A string holding a hole or a wildcard stands for a shape and is passed
+    over."""
     def wanted(value: str, line: int):
         if "{" in value or "*" in value or not DOC_PATH_RE.match(value):
             return
@@ -48,8 +49,9 @@ JS_STRING_RE = re.compile(r"""(['"])((?:[^'"\\\n]|\\.)*?)\1""")
 
 
 def check_paths(path: Path, source: str, root: Path) -> None:
-    """Every document a file names by path stands in the tree. A name that
-    goes stale is a reference no reader can follow."""
+    """Every document a string of a file stands for by its path stands in
+    the tree. A path that goes stale is a reference no reader can
+    follow."""
     for line, value in _named_paths(path, path.read_text()):
         if not (root / value).exists():
             raise ControlledMarkdownError(
@@ -78,7 +80,7 @@ def _citations(path: Path) -> Iterator[tuple[int, str, str, str]]:
 
 def _anchor_fault(source: str, at: int, citation: str, name: str,
                   anchor: str, root: Path) -> ControlledMarkdownError | None:
-    """The fault of an anchor that names no heading of the cited file. The
+    """The fault of an anchor that refers to no heading of the cited file. The
     headings are read from the file's text, since a cited spec file stands
     outside the document set."""
     if anchor in {slug(heading) for _, _, heading in
@@ -90,9 +92,9 @@ def _anchor_fault(source: str, at: int, citation: str, name: str,
 
 def check_citations(path: Path, source: str, root: Path,
                     present: frozenset[str]) -> Iterator[ControlledMarkdownError]:
-    """Every citation a file of the engine holds names a file of `present`,
+    """Every citation a file of the engine holds cites a file of `present`,
     the files a commit of the tree takes, and its anchor, where it has one,
-    a heading of that file. A citation of a file a clone does not hold is
+    refers to a heading of that file. A citation of a file a clone does not hold is
     one no reader of the code can follow."""
     for at, citation, name, anchor in _citations(path):
         if name not in present:
@@ -106,9 +108,9 @@ def check_citations(path: Path, source: str, root: Path,
 
 def check_citation_anchors(path: Path, source: str,
                            root: Path) -> Iterator[ControlledMarkdownError]:
-    """Every anchor of a citation the file holds names a heading of the
+    """Every anchor of a citation the file holds refers to a heading of the
     cited file, where the tree holds that file. Code outside the engine
-    names untracked files by path on purpose, so a cited file that is
+    cites untracked files by path on purpose, so a cited file that is
     absent is passed over."""
     for at, citation, name, anchor in _citations(path):
         if anchor and (root / name).is_file() and (

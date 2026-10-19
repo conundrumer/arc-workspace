@@ -49,11 +49,7 @@ def context(aid: str) -> str:
 
 def search_rule(hook: dict[str, Any]) -> str | None:
     """The search rule the subagent of the input `hook` gets in its
-    context, where its `agent_type` is `SEARCHER`. Without it, five
-    `Explore` agents ran `grep -rn` over `.` for 3.4 to 5.4 minutes each,
-    where `git grep` took 0.06 s (tickets 11-469 and 11-711), and 19 of
-    24 agents whose brief gave no such rule ran 51 such calls (ticket
-    11-1448)."""
+    context, where its `agent_type` is `SEARCHER`, else None."""
     from controlled_markdown import mctx
 
     if hook.get("agent_type") != SEARCHER:

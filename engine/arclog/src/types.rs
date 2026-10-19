@@ -481,9 +481,8 @@ pub fn each_conjunct(body: &crate::program::Body, visit: &mut dyn FnMut(&crate::
 
 /// Visits each atom of `body` at any depth, a negated atom included.
 pub fn each_atom(body: &crate::program::Body, visit: &mut dyn FnMut(&crate::program::Atom)) {
-    use crate::program::{Conjunct, Negated};
     each_conjunct(body, &mut |conjunct| {
-        if let Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) = conjunct {
+        if let Some(atom) = conjunct.atom() {
             visit(atom.value());
         }
     });

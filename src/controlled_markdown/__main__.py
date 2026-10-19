@@ -6,8 +6,8 @@
     uv run python -m controlled_markdown xrefs <base> [paths...]
 
 `check` reports each file that fails to parse or is not in canonical form,
-each target of an `xref` attribute that names nothing, each script,
-module or path a backticked span names that the tree does not hold
+each target of an `xref` attribute that refers to nothing, each script,
+module or path a backticked span refers to that the tree does not hold
 (`controlled_markdown.xrefs`), and each line whose own words hold a form
 of `carry` of a document, of an `mctx` fragment, of a lib doc comment, or of a docstring or a comment of a
 Python file outside `tools/console/`, and exits 1 when any does. A run
@@ -16,7 +16,7 @@ inlined at. `fmt` rewrites each file in canonical form and prints the ones
 it changed. With no path, both read the set under
 `[tool.controlled_markdown]` in `pyproject.toml`, so the command that guards the
 documents is one word wherever it is written. `render` prints the first path as
-ordinary Markdown, with its includes resolved from the files they name, and it
+ordinary Markdown, with its includes resolved from the files they cite, and it
 takes its paths as given. `xrefs` prints, for each `xref` target, a file's
 path, `<path>:<name>` for a definition in a Python file or `<path>#<slug>`
 for a section of a document, whose lines the diff from the commit `base` to
@@ -29,8 +29,9 @@ its status, or exits 2 where the main tree holds no such module. With no
 path, in a linked worktree, it reads the main tree's copy of each document
 of the set `check` reads in the main tree, and the worktree's copy of each
 document of the worktree's set that the worktree's diff from `base` adds or
-changes. `check`, `fmt` and `render` run the copy they are called with. A path that names a directory
-stands for every `.md` file under it, and a path that names no file or directory is reported on one
+changes, and no copy at a path that diff deletes or renames away from.
+`check`, `fmt` and `render` run the copy they are called with. A path of a directory
+stands for every `.md` file under it, and a path at which no file or directory stands is reported on one
 line, with exit status 2. `-h` or `--help`, given as any argument, prints the
 usage and exits 0. A name in a message is relative to the current directory.
 """
@@ -43,6 +44,7 @@ import tomllib
 from pathlib import Path
 
 from checker.quoting import quote_rule_errors
+from engine import checkout
 
 from . import (
     ControlledMarkdownError,
@@ -96,30 +98,20 @@ def repo_root(start: Path | None = None) -> Path:
     return _table(start)[0]
 
 
-def main_tree(start: Path) -> Path:
-    """The main tree of the git repository that holds `start`: the parent of
-    its common git directory."""
-    common = subprocess.run(
-        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-        cwd=start, capture_output=True, text=True, check=True).stdout.strip()
-    return Path(common).parent.resolve()
-
-
 def run_in_main(args: list[str], package: Path) -> int | None:
     """Runs the main tree's copy of this package with `args`, where `package`,
     the folder of the running copy, is another one, and returns its exit
-    status; None where `package` is the main tree's copy. The environment
-    drops `VIRTUAL_ENV`, so the run takes the main tree's own environment."""
-    main = main_tree(package)
+    status; None where `package` is the main tree's copy. The run takes the
+    main tree's own environment (`checkout.tree_env`)."""
+    main = checkout.main_worktree(package)
     copy = main / "src" / "controlled_markdown"
     if package.resolve() == copy.resolve():
         return None
     if not (copy / "__main__.py").is_file():
         print(f"{main}: the main tree has no `src/controlled_markdown`", file=sys.stderr)
         return 2
-    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
     return subprocess.run(["uv", "run", "--project", str(main), "python", "-m",
-                           "controlled_markdown", *args], env=env).returncode
+                           "controlled_markdown", *args], env=checkout.tree_env()).returncode
 
 
 def changed_files(root: Path, base: str) -> set[str]:
@@ -135,12 +127,10 @@ def changed_files(root: Path, base: str) -> set[str]:
 
 
 def xrefs_documents(root: Path, base: str) -> list[Path]:
-    """The documents `xrefs` reads with no path: the set `check` reads, in a
-    linked worktree at `root` the main tree's copies, apart from the
-    worktree's copy of each document of its own set that its diff from
-    `base` adds or changes, and with no copy at a path the diff deletes
-    or renames away from."""
-    main = main_tree(root)
+    """The documents `xrefs` reads with no path, in the tree at `root`, as
+    the module docstring gives them, with `base` as the commit of the
+    diff."""
+    main = checkout.main_worktree(root)
     if main == root.resolve():
         return collect(configured(root))
     changed = changed_files(root, base)
@@ -345,57 +335,84 @@ def show_touched(base: str, paths: list[Path]) -> int:
     return 0
 
 
+def helped(argv: list[str], usage: str) -> bool:
+    """Whether `argv` asks for the usage, which it then prints."""
+    if {"-h", "--help"} & set(argv[1:]):
+        print(usage)
+        return True
+    return False
+
+
+def xrefs(argv: list[str], usage: str) -> int:
+    """The run of `xrefs` with the arguments `argv` gives, `usage` being
+    the text a malformed call prints."""
+    status = run_in_main(argv[1:], Path(__file__).parent)
+    if status is not None:
+        return status
+    if helped(argv, usage):
+        return 0
+    if not argv[2:]:
+        print(usage, file=sys.stderr)
+        return 2
+    base, names = argv[2], argv[3:]
+    if not names and not configured():
+        print(usage, file=sys.stderr)
+        return 2
+    try:
+        paths = collect(names) if names else xrefs_documents(repo_root(), base)
+    except FileNotFoundError as err:
+        print(f"{err.filename}: {err.strerror}", file=sys.stderr)
+        return 2
+    try:
+        return show_touched(base, paths)
+    except ControlledMarkdownError as err:
+        print(err, file=sys.stderr)
+        return 1
+
+
+def checked(paths: list[Path], whole: bool) -> int:
+    """The run of `check` on `paths`, `whole` saying they are the document
+    set."""
+    off = check(paths, whole)
+    if whole:
+        root = repo_root()
+        document_set = {p.resolve() for p in paths}
+        off += check_code(root, document_set)
+        off += check_handbook(root, document_set)
+    if off:
+        return 1
+    word = "document" if len(paths) == 1 else "documents"
+    print(f"check: {len(paths)} {word}, ok")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     usage = (f"usage: {argv[0]} check|fmt [paths...]\n"
              f"       {argv[0]} render <path> [paths...]\n"
              f"       {argv[0]} xrefs <base> [paths...]\n"
              f"an xref target: <path>, <path>:<name> or <path>#<slug>")
     if argv[1:2] == ["xrefs"]:
-        status = run_in_main(argv[1:], Path(__file__).parent)
-        if status is not None:
-            return status
-    if {"-h", "--help"} & set(argv[1:]):
-        print(usage)
+        return xrefs(argv, usage)
+    if helped(argv, usage):
         return 0
     command, names = (argv[1] if argv[1:] else ""), argv[2:]
-    if command not in ("check", "fmt", "render", "xrefs"):
+    if command not in ("check", "fmt", "render"):
         print(usage, file=sys.stderr)
         return 2
-    base = ""
-    if command == "xrefs":
-        if not names:
-            print(usage, file=sys.stderr)
-            return 2
-        base, names = names[0], names[1:]
     whole = not names
     if whole and (command == "render" or not configured()):
         print(usage, file=sys.stderr)
         return 2
-    if whole and command != "xrefs":
-        names = configured()
     try:
-        paths = (xrefs_documents(repo_root(), base) if whole and command == "xrefs"
-                 else collect(names))
+        paths = collect(configured() if whole else names)
     except FileNotFoundError as err:
         print(f"{err.filename}: {err.strerror}", file=sys.stderr)
         return 2
     try:
         if command == "check":
-            off = check(paths, whole)
-            if whole:
-                root = repo_root()
-                document_set = {p.resolve() for p in paths}
-                off += check_code(root, document_set)
-                off += check_handbook(root, document_set)
-            if off:
-                return 1
-            word = "document" if len(paths) == 1 else "documents"
-            print(f"check: {len(paths)} {word}, ok")
-            return 0
+            return checked(paths, whole)
         if command == "fmt":
             return fmt(paths)
-        if command == "xrefs":
-            return show_touched(base, paths)
         return show(paths)
     except ControlledMarkdownError as err:
         print(err, file=sys.stderr)

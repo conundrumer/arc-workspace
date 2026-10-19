@@ -1,5 +1,5 @@
 """The Claude config directory, which holds the user's settings, global
-`CLAUDE.md` and usage file."""
+`CLAUDE.md` and the usage cache `usage-api.json`."""
 
 import os
 from pathlib import Path

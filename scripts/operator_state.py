@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from filed_texts import gone_line
-from git_session_reads import given_lines
 from monitor_reads import watched
 from open_agents import Listed, quiet_since
 from agent_ends import ended_by, ended_elsewhere, stalled_reports
@@ -17,7 +16,6 @@ from operations.monitor import Watched
 from operations.plan import unknown_line
 from operations.state import (
     Agent,
-    Call,
     Report,
     Waits,
     Stuck,
@@ -114,17 +112,16 @@ def stuck_read(session: str, quiet: Mapping[str, float], now_watched: Sequence[W
             if q is not None}
 
 
-def undecided_lines(me: str, runs: list[tuple[str, Path]], calls: Sequence[Call],
-                    agents: Sequence[Agent], others: Sequence[Agent], took_up: frozenset[str],
-                    ended: Mapping[str, Report | None], undecided: list[str]) -> list[str]:
-    """The lines of `undecided` that `MonitorState.undecided` gives: each
-    on a run or an agent the read knows, that no final reply of an
-    earlier operator gave (`given_lines`), and whose text a step of `me`
-    still reads (`text_readers`) or is not gone."""
+def undecided_lines(me: str, runs: list[tuple[str, Path]], agents: Sequence[Agent],
+                    others: Sequence[Agent], took_up: frozenset[str],
+                    ended: Mapping[str, Report | None], ungiven: list[str]) -> list[str]:
+    """The lines of `ungiven`, the undecided lines that no final reply of
+    an earlier operator gave (`not_given`), that `MonitorState.undecided`
+    gives: each on a run or an agent the read knows, and whose text a step
+    of `me` still reads (`text_readers`) or is not gone."""
     known = {a.agent_id for a in (*agents, *others) if a.agent_id} | {aid for aid, _ in runs}
-    given = given_lines(runs, me, list(calls))
     readers = text_readers(me, took_up, ended, agents)
-    return [line for line in not_given(undecided, given)
+    return [line for line in ungiven
             if (where := line_where(line)) in known and (where in readers or not gone_line(line))]
 
 

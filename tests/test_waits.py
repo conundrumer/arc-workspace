@@ -50,12 +50,13 @@ def test_a_chain_whose_end_waits_on_the_user_reaches_the_coordinator_once(tmp_pa
 
 
 def test_a_cycle_reaches_the_coordinator_once_whichever_change_waits(tmp_path: Path) -> None:
-    from operations import waits
+    from operations.steps import Send
     tickets = tmp_path / "tickets"
     s = at(tmp_path, [ticket(tickets, "9-1", depends="9-2"), ticket(tickets, "9-2", depends="9-1")])
-    assert waits.mark(s, "9-1", {}) == waits.OnCycle(("9-1", "9-2"))
     first, again = sent_twice(s)
-    assert first is not None and again is None
+    assert isinstance(first, Send)
+    assert "- 9-1 (`tickets/approved/`): it stands on the cycle of links 9-1 → 9-2 → 9-1" in first.message
+    assert again is None
 
 
 def test_a_cycle_that_holds_a_wait_on_the_user_reaches_the_coordinator_once(
@@ -70,27 +71,34 @@ def test_a_cycle_that_holds_a_wait_on_the_user_reaches_the_coordinator_once(
 
 
 def test_a_ticket_two_paths_share_is_given_in_full_once(tmp_path: Path) -> None:
-    from operations import waits
+    from operations.steps import Send
     tickets = tmp_path / "tickets"
     s = at(tmp_path, [ticket(tickets, "9-1", depends="9-2, 9-3"),
                       ticket(tickets, "9-2", depends="9-4"), ticket(tickets, "9-3", depends="9-4"),
-                      ticket(tickets, "9-4")])
-    root = waits.paths(s, "9-1", {})
-    assert [n.number for n in waits.nodes(root)] == ["9-1", "9-2", "9-4", "9-3"]
-    assert root.below[1].below == (waits.Node("9-4", None, (), again=True),)
+                      ticket(tickets, "9-4", "blocked",
+                             more="2026-10-17T03:00:00Z blocked [operator]: user: decide\n")])
+    first, _ = sent_twice(s)
+    assert isinstance(first, Send)
+    assert "\n".join([
+        "- 9-1 (`tickets/approved/`)",
+        "    - 9-2 (`tickets/approved/`)",
+        "        - 9-4 (`tickets/blocked/`): it waits on the user, since 2026-10-17T03:00:00Z",
+        "    - 9-3 (`tickets/approved/`)",
+        "        - 9-4, given above"]) in first.message
 
 
 def test_a_chain_held_by_the_pause_reaches_the_coordinator_and_moves_no_change(
         tmp_path: Path) -> None:
-    from operations import waits
     from operations.state import Message
+    from operations.steps import Send
     from operations.ticket_stall import stall
     tickets = tmp_path / "tickets"
     s = at(tmp_path, [ticket(tickets, "9-1", depends="9-2"), ticket(tickets, "9-2")],
            messages=[Message("op", 1.0, None, "Op pause.")])
-    assert waits.mark(s, "9-2", {}) == waits.Held(waits.Hold.PAUSE)
     first, again = sent_twice(s)
-    assert first is not None and again is None
+    assert isinstance(first, Send)
+    assert "- 9-2 (`tickets/approved/`): the `Op pause.` line holds it" in first.message
+    assert again is None
     assert stall(s) is None
 
 

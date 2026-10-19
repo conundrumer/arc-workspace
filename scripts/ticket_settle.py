@@ -5,6 +5,7 @@ from collections.abc import Collection, Iterable
 from pathlib import Path
 
 from controlled_markdown import mctx
+from operations.state import acted_on
 from ticket_files import TicketName, listed_ticket_path, ticket_files, ticket_name, ticket_status
 from ticket_form import ticket_kind, title
 from ticket_log import read_ticket
@@ -33,8 +34,7 @@ def to_settle(tickets: Path, session: int, adopted: Collection[int],
     `session`, the indexes it adopts (`state.SessionsRead.adopted`) and
     the numbers `given`."""
     names = {p: ticket_name(p) for status in UNTAKEN for p in ticket_files(tickets, status)}
-    paths = {p for p, name in names.items() if name.number.session == session
-             or name.number.session in adopted}
+    paths = {p for p, name in names.items() if acted_on(name.number.session, session, adopted)}
     paths.update(p for p in (listed_ticket_path(tickets, number) for number in given) if p in names)
     numbers = [names[p].number for p in sorted(paths) if not settled_elsewhere(tickets, p, names[p])]
     return sorted(numbers, key=lambda number: number.order)

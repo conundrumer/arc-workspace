@@ -84,19 +84,15 @@ pub(crate) fn each_label_use_at(node: NodeRef<'_>, at: &NodePath, visit: &mut dy
 /// of its sites: an atom's, a negated atom's and a constraint's. A conjunct
 /// of another kind has no sites of its own.
 pub(crate) fn site_label_uses(conjunct: &Conjunct, visit: &mut dyn FnMut(LabelUse)) {
-    match conjunct {
-        Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
-            for site in atom.value().sites.iter() {
-                each_site_label(site, &mut Vec::new(), &mut |use_, _| visit(use_));
-            }
+    if let Some(atom) = conjunct.atom() {
+        for site in atom.value().sites.iter() {
+            each_site_label(site, &mut Vec::new(), &mut |use_, _| visit(use_));
         }
-        Conjunct::Constraint(constraint) => {
-            visit(constraint.first.into());
-            if let Some(second) = constraint_second(constraint) {
-                visit(second.into());
-            }
+    } else if let Conjunct::Constraint(constraint) = conjunct {
+        visit(constraint.first.into());
+        if let Some(second) = constraint_second(constraint) {
+            visit(second.into());
         }
-        Conjunct::Not(Negated::Form(_)) | Conjunct::Or(_) | Conjunct::If { .. } | Conjunct::All { .. } => {}
     }
 }
 

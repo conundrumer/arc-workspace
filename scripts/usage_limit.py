@@ -40,10 +40,8 @@ def usage_file() -> Path:
 
 
 class Limit(Enum):
-    """What a reading gives of the usage limit: in force (a fresh reading
-    with a window at `used_pct` 100 or more), lifted (a fresh reading
-    with each window under 100), or unknown (no fresh reading, or a window
-    it cannot read)."""
+    """What a reading gives of the usage limit: in force, lifted, or
+    unknown, as `--help next` of `operate.py` gives each."""
     IN_FORCE = "in force"
     LIFTED = "lifted"
     UNKNOWN = "unknown"

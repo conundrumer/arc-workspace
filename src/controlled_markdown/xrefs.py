@@ -1,16 +1,11 @@
 """The references from a document to code and to other documents: the
 definitions and sections a line declares in an `xref` attribute, and the
-scripts, modules and paths the backticked spans of a statement's text name,
-with the check that each resolves and the declarations whose target's lines
-a diff changes.
+scripts, modules and paths the backticked spans of a statement's text refer
+to, with the check that each resolves and the declarations whose target's
+lines a diff changes.
 
-An `xref` value is a list of targets separated by commas. A target is a path
-from the root of the tree; for a Python file, the path, `:` and the
-dotted name of a definition in it: a module-level `def`, `class`, `type`
-alias, assignment or annotated assignment, or such a name in the body of a
-class the name before it gives; or, for a document, the path, `#` and the
-slug of a heading in it, which gives that heading's section, its
-subsections included."""
+`src/controlled_markdown/writing.md#cross-references` gives the grammar of
+an `xref` value and of its targets."""
 
 from __future__ import annotations
 
@@ -187,7 +182,7 @@ def span(target: str, root: Path) -> tuple[int, int] | None:
 
 @dataclass(frozen=True)
 class CodeReference:
-    """What a statement's backticked span names, as `named` gives it: a
+    """What a statement's backticked span refers to, as `named` gives it: a
     script a command runs, a module, or a path token, with the paths from
     the root of the tree that each stand for it."""
 
@@ -223,8 +218,9 @@ def references(document: Node) -> Iterator[CodeReference]:
     """Each script or module a backticked span of a statement's text runs,
     and each path token of such a span under `PATH_ROOTS`, a trailing `/`
     read off. A token with a glob character, a colon or any other character
-    outside `PATH_TOKEN_RE` names no path, and `check_xrefs` resolves no
-    path that git ignores. A path a statement names twice is given once."""
+    outside `PATH_TOKEN_RE` stands for no path, and `check_xrefs` resolves
+    no path that git ignores. A path a statement holds twice is given
+    once."""
     for node in _walk(document):
         if node.kind not in (CONTENT, HEADING):
             continue

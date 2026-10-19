@@ -137,8 +137,13 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     others = elsewhere_agents(tickets, me, frozenset(runs.operators), main, undecided)
     transcripts = transcripts_read(ops, ends, late, stuck, others)
     took_up = taken_up(me, runs.operators, transcripts.calls, runs.parents)
-    watching.extend(undecided_lines(me, runs.runs, ops.calls, ends.agents, others.agents,
-                                    took_up, ends.ended, undecided))
+    given = given_lines(runs.runs, me, list(ops.calls))
+
+    def ungiven(lines: list[str]) -> list[str]:
+        return not_given(lines, given)
+
+    watching.extend(undecided_lines(me, runs.runs, ends.agents, others.agents, took_up,
+                                    ends.ended, ungiven(undecided)))
     index = session_index(tickets_dir, session)
     main_path = find(session)
     sessions_running = running(session)
@@ -161,7 +166,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     state = with_quiet_holders(state, holders.found, listing, running_work)
     computed_lines: list[str] = []
     state = replace(state, computed=computed_read(state, tickets_dir, computed_lines, usage))
-    watching.extend(not_given(computed_lines, given_lines(runs.runs, me, list(ops.calls))))
+    watching.extend(ungiven(computed_lines))
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(ends.stalled),
                                undecided=tuple(watching))
 

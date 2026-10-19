@@ -23,8 +23,8 @@ from operations.steps import Launch, Step, Undecided
 
 
 def procedure(of: Review) -> Callable[[State], Step | None]:
-    """The procedure of the review `of`: its step alone, which only an
-    operator of the main session gives."""
+    """The procedure of the review `of`. It gives the step of `review`,
+    and only an operator of the main session gives that step."""
     return main_only(lambda state: review(state, of))
 
 

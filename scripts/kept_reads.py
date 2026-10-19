@@ -272,13 +272,19 @@ def imports_of(source: bytes) -> list[Import]:
 
 def imports_in(tree: ast.AST) -> list[Import]:
     """Each `import` statement of the parsed `tree`, at any depth."""
-    out: list[Import] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            out.extend((0, a.name, ()) for a in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            out.append((node.level, node.module or "", tuple(a.name for a in node.names)))
-    return out
+    return [statement for node in ast.walk(tree) for statement in import_statements(node)]
+
+
+def import_statements(node: ast.AST) -> list[Import]:
+    """The `import` statements `node` makes: one per name of an `import`,
+    one for a `from` import, and none for any other node."""
+    match node:
+        case ast.Import(names=aliases):
+            return [(0, a.name, ()) for a in aliases]
+        case ast.ImportFrom(level=level, module=base, names=aliases):
+            return [(level, base or "", tuple(a.name for a in aliases))]
+        case _:
+            return []
 
 
 def module_file(name: str) -> Path | None:

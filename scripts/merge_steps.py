@@ -9,10 +9,10 @@ The `--help` of `merge_change.py` says which checks and steps these are,
 when it runs each form, which copy of this script it runs, and what
 `<base>` and `<gate-out>` are.
 
-`checks` runs the checks concurrently. Each line that names a check as it
-starts, and each step line (`engine.duration.STEP`) a check writes, goes
-on stderr as it comes, and the output of each check that fails goes on
-stdout.
+`checks` runs the checks concurrently. Each line that shows a check's
+name as it starts, and each step line (`engine.duration.STEP`) a check
+writes, goes on stderr as it comes, and the output of each check that
+fails goes on stdout.
 
 `after` runs the steps in order, stops at the first that fails, and prints
 the stdout of each step it runs. For a step that fails, it then prints the

@@ -271,17 +271,17 @@ def reported_step(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
     latest = latest_editors(here)
     if (hold := editor_unreported(t, latest)) is not None:
         return hold
-    reviewed = Reviewed(state, t, w, editors, here, latest,
-                        with_elsewhere(state, t.number, agents, REVIEWER_ROLES), launcher)
+    context = StageContext(state, t, w, editors, here, latest,
+                            with_elsewhere(state, t.number, agents, REVIEWER_ROLES), launcher)
     for stage in STAGES:
-        if (given := stage(reviewed)) is not Pause.CLEAR:
+        if (given := stage(context)) is not Pause.CLEAR:
             return given
     return Pause.CLEAR
 
 
 @dataclass(frozen=True)
-class Reviewed:
-    """What the review stages of the change `t` read: its editors
+class StageContext:
+    """The input of the review stages of the change `t`: its editors
     `editors`, those in its worktree `w` `here`, the latest of them
     `latest`, its agents with the reviewers of other sessions (`agents`),
     and the launcher of each check a stage launches."""
@@ -295,15 +295,15 @@ class Reviewed:
     launcher: str
 
 
-def design_stage(r: Reviewed) -> Step | Pause:
+def design_stage(r: StageContext) -> Step | Pause:
     return design_review(r.state, r.t, r.w, r.editors, r.here, r.agents, r.launcher)
 
 
-def leftover_stage(r: Reviewed) -> Step | Pause:
+def leftover_stage(r: StageContext) -> Step | Pause:
     return leftover(r.state, r.t, r.w, r.latest, r.agents, False, r.launcher)
 
 
-def doc_stage(r: Reviewed) -> Step | Pause:
+def doc_stage(r: StageContext) -> Step | Pause:
     """The step of the review of the change's documents, where its editors
     include a doc editor."""
     if Role.DOC_EDITOR not in r.editors:
@@ -311,12 +311,12 @@ def doc_stage(r: Reviewed) -> Step | Pause:
     return doc_review(r.state, r.t, r.w, r.here, r.agents, r.launcher)
 
 
-def reviewing_stage(r: Reviewed) -> Step | Pause:
+def reviewing_stage(r: StageContext) -> Step | Pause:
     """The hold of the merge while a design reviewer of the change runs."""
     return Pause.WAIT if reviewing(r.agents) else Pause.CLEAR
 
 
-STAGES: tuple[Callable[[Reviewed], Step | Pause], ...] = (
+STAGES: tuple[Callable[[StageContext], Step | Pause], ...] = (
     design_stage, leftover_stage, doc_stage, reviewing_stage)
 """The review stages of a change, in the order `reported_step` walks
 them: each gives its step, `Pause.WAIT`, or `Pause.CLEAR`, which goes on

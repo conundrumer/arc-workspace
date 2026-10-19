@@ -328,18 +328,24 @@ def in_read() -> bool:
     return bool(_frames)
 
 
+def unrun(held: Held) -> bool:
+    """Whether the read `held` gives its held result with no run at this
+    state: it is up to date at this state, or it is not marked and is
+    either a `DERIVED` read while no source is being brought up to date or
+    a source at a partial state (`partial`)."""
+    if held.state == _state:
+        return True
+    return not held.marked and (_brought is not None if held.source else not _marking)
+
+
 def held_still(made: Made) -> bool:
     """Whether each of the reads `made` gives, at this state, the very result
     it gave: a read gives its held result again where its stamp holds or
-    where what it reads anew equals it. A read up to date at this state, or
-    a `DERIVED` read that is not marked while no source is being brought up
-    to date, or a source that is not marked at a partial state (`partial`),
-    gives its held result with no run (`run`), so it is compared by that
-    result."""
+    where what it reads anew equals it. A read that `unrun` gives is
+    compared by its held result."""
     for below, value in pairs(made):
         below.reached = _state
-        if below.state == _state or not (
-                below.marked or (below.source and _brought is None) or _marking):
+        if unrun(below):
             if below.value is not value:
                 return False
             continue
@@ -643,14 +649,13 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                      kwargs: dict[str, Any]) -> tuple[Any, tuple[str, ...]]:
             """`run` of `key`, whose arguments are `args` and `kwargs`."""
             hit = held.get(key)
-            if hit is not None and (hit.state == _state or (
-                    _brought is not None and not derived and not hit.marked)):
+            if hit is not None and unrun(hit):
                 hit.state = _state
                 return hit.value, hit.lines
             mark: Hashable = None
             stamped: Made = ()
             if hit is not None and derived:
-                if (not hit.marked and not _marking) or held_still(hit.made):
+                if held_still(hit.made):
                     hit.state, hit.marked = _state, False
                     return hit.value, hit.lines
             elif not isinstance(stamp, Derived) and stamp is not None:

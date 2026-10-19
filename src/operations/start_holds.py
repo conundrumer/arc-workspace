@@ -3,6 +3,8 @@ each step that starts an agent's run (`starts_run`) is held, and so is
 each such step while the pace admits work and the running agents of the
 session's operators (`running`) number its cap or more (`hold`)."""
 
+from collections.abc import Callable
+
 from operations import pacing
 from operations.constants import SUBAGENT_LIMIT
 from operations.pacing import Capped, Pace, Until
@@ -62,7 +64,9 @@ def starts_run(state: State, step: Step) -> bool:
             return False
 
 
-def pace_holds(state: State, step: Step) -> bool:
-    """Whether the usage pace holds `step`: something holds agent starts
-    (`hold`) and `step` starts an agent's run (`starts_run`)."""
-    return hold(state) is not None and starts_run(state, step)
+def pace_holds(state: State, starts: Callable[[], bool]) -> bool:
+    """Whether the usage pace holds a step: something holds agent starts
+    (`hold`) and the step starts an agent's run, as `starts` gives it
+    (`starts_run`). `starts` runs only where something holds agent starts,
+    so a step is computed only where the pace can hold it."""
+    return hold(state) is not None and starts()

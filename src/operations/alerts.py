@@ -342,16 +342,32 @@ def ticket_stalls(state: State) -> Step | None:
     stalls = ticket_stall.stalled(state)
     for n, since in sorted(stalls.items()):
         t = state.tracker.tickets[n]
-        text = ticket_stall_text(state, t, since)
-        sent = Send(COORDINATOR, text + "\n" + waiting_paths(state, n, stalls) + FIND_STEP,
-                    f"ticket stall {n}", since)
-        if not repeated(sent, state):
-            return sent
-        s = ticket_step(state, BugKind.TICKET_STALL, Domain.TICKET, n, since,
-                        mctx("no progress since {time}").format(time=utc_stamp(since)), text)
+        sent = stall_message(state, t, since, waiting_paths(state, n, stalls), f"ticket stall {n}")
+        s = ticket_stall_step(state, sent, t, since, BugKind.TICKET_STALL,
+                              mctx("no progress since {time}").format(time=utc_stamp(since)))
         if s is not None:
             return s
     return None
+
+
+def stall_message(state: State, t: Ticket, since: float, paths: str, about: str,
+                  change: str | None = None) -> Send:
+    """The message to the coordinator on `t`, stalled since `since`:
+    `ticket_stall_text`, then `paths`, then `FIND_STEP`, with `about` and
+    `change` as `Send` gives them."""
+    return Send(COORDINATOR, ticket_stall_text(state, t, since) + "\n" + paths + FIND_STEP,
+                about, since, change=change)
+
+
+def ticket_stall_step(state: State, sent: Send, t: Ticket, since: float, kind: BugKind,
+                      line: str) -> Step | None:
+    """The step on `t`, stalled since `since`, whose message to the
+    coordinator is `sent`: `sent`, once after `since`, then the step
+    `ticket_step` gives on `t` for `kind` from that time, with `line`."""
+    if not repeated(sent, state):
+        return sent
+    return ticket_step(state, kind, Domain.TICKET, t.number, since, line,
+                       ticket_stall_text(state, t, since))
 
 
 def waiting_paths(state: State, number: str, stalls: Mapping[str, float]) -> str:
@@ -366,17 +382,10 @@ def waiting_paths(state: State, number: str, stalls: Mapping[str, float]) -> str
 
 def told(state: State, node: waits.Node, entries: Collection[str]) -> bool:
     """Whether the mark of `node`, on the paths of a change whose open
-    `depends-on` entries are `entries`, goes to the coordinator in the
-    message of `stuck_waits`: a cycle, a line of the user, or a wait on the
-    user of a ticket other than such an entry off a cycle, on which
-    `ticket_stall.stall` acts."""
-    match node.mark:
-        case waits.OnCycle() | waits.Held():
-            return True
-        case waits.OnUser():
-            return node.number not in entries or waits.cycle(state, node.number) is not None
-        case _:
-            return False
+    `depends-on` entries are `entries`, makes `next` send the coordinator
+    the message of `stuck_waits`, as `--help alerts` of `operate.py` gives
+    it (`ticket_stall.Acting.told`)."""
+    return ticket_stall.Acting(state, node.number, node.mark, node.number in entries).told
 
 
 STUCK_WAITS = mctx("Change {change} waits on its `depends-on`, and these tickets on its paths "
@@ -387,12 +396,9 @@ STUCK_STEP = mctx("Cut a link whose result the waiting change's Design does not 
 
 def stuck_waits(state: State) -> Step | None:
     """The first message to the coordinator on a change of
-    `taking.waiting` whose log has had no line for `STUCK_SECONDS` and
-    whose paths (`waits.paths`) hold a ticket that `told` gives: the
-    change's paths, with the step to take, once per change and set of such
-    tickets after the change's last log line, or, where the paths reach a
-    cycle (`waits.cycle`) through such a ticket, once per cycle after the
-    last log line of its tickets."""
+    `taking.waiting`, with its paths (`waits.paths`) and the step to take,
+    where and as often as `--help alerts` of `operate.py` gives that `next`
+    sends one."""
     found = taking.waiting(state)
     if not found:
         return None

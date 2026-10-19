@@ -13,8 +13,7 @@ use crate::program::{
 };
 
 /// Writes the path of the output that `relation` reads, after the
-/// content of the node it resolves to, which tells apart the outputs of
-/// one node.
+/// content of the node it resolves to.
 pub(super) fn write_output_path(out: &mut CanonicalWriter, relation: &RelationRef) {
     if let RelationRef::Output(output) = relation {
         out.output_path(&output.path);
@@ -277,6 +276,9 @@ impl NameWriter for Writer<'_> {
         write_output_path(out, relation);
     }
 
+    /// Writes a mark that holds no name, so that the resolved content of a
+    /// form holds no name of its own, as that of a clause holds no name of
+    /// the relation it derives.
     fn write_own(&self, _name: &DeclaredName, out: &mut CanonicalWriter) {
         out.write(&[Mark::Own as u8]);
     }

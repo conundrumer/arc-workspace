@@ -35,8 +35,10 @@ from operations.command_words import Action
 from operations.constants import BLOCK_SECONDS, LIMIT_SECONDS
 from operations.filing import filed, with_report
 from operations.printing import batch_line, key_line, listing_line, printed
+from operations.monitor import MonitorState
 from operations.roles import Role
-from operations.steps import Bash, EndTurn, Launch, ListingHold, Poll, Send, Step
+from operations.state import State
+from operations.steps import Bash, EndTurn, Launch, Poll, Send, Step
 
 POLL_SECONDS = 15
 FALLBACK_SECONDS = 90
@@ -66,8 +68,8 @@ def prepared(step: Step, scratch: Path) -> Step:
     match step:
         case Launch():
             return with_budget(with_report(step, scratch))
-        case EndTurn(ListingHold(held, _)) if (wait := step.wait) is not None:
-            return EndTurn(ListingHold(held, with_budget(with_report(wait, scratch))))
+        case EndTurn(hold) if hold is not None and (wait := step.wait) is not None:
+            return EndTurn(replace(hold, wait=with_budget(with_report(wait, scratch))))
         case _:
             return step
 
@@ -153,11 +155,9 @@ def block(me: str, action: Action,
         steps = (head,)
     if action is Action.NEXT:
         step_journal.give(scratch, [s for s in steps if isinstance(s, CALLS)], me, time.time())
-        match head:
-            case EndTurn(ListingHold(held, _)) if head.wait is not None:
-                step_journal.give_failed(scratch, held, me, time.time(), listing_line(held))
-            case _:
-                pass
+        if isinstance(head, EndTurn) and (hold := head.hold) is not None and head.wait is not None:
+            held = hold.launch
+            step_journal.give_failed(scratch, held, me, time.time(), listing_line(held))
     if len(steps) > 1:
         print(batch_line(steps, me, action))
     elif isinstance(head, CALLS):
@@ -193,76 +193,99 @@ def waited[T](me: str, out_at: Callable[[float], T], ready: Callable[[T], bool])
     """The first output `out_at` gives at a full read that `ready` holds
     for, or that a message reached `me` at since the last delivery to it,
     with whether such a message reached it, or else the output of the full
-    read at the deadline, `BLOCK_SECONDS` from the call. The call is the one
-    of `me` that runs (`single_instance`), and its watchdog (`arm_watchdog`)
-    is disarmed at its return.
-
-    A full read reads each held source again: at the first read, at most
-    `FALLBACK_SECONDS` after the last full read, before the deadline, and
-    after a partial read whose output would end the call. Between them,
-    the call waits on the file events of the paths whose stats it holds
-    (`file_events.Changes`), and a read that a change starts is a partial
-    read, which reads again only the stats of the paths that changed
-    (`file_reads.stats_stand_but`). A read starts no sooner than
-    `POLL_SECONDS`, nor `READ_SHARE` times the CPU seconds of the read (`cpu_seconds`)
-    before it, after that read's start. Where the stream does not start,
-    each read is a full read, `POLL_SECONDS` apart."""
+    read at the deadline, `BLOCK_SECONDS` from the call. `Reads` gives when
+    each read starts and which read it is. The call is the one of `me` that
+    runs (`single_instance`), and its watchdog (`arm_watchdog`) is disarmed
+    at its return."""
     single_instance(me)
     arm_watchdog(me)
-    deadline = time.monotonic() + BLOCK_SECONDS
+    reads = Reads(time.monotonic() + BLOCK_SECONDS)
     path = find(me)
     since = last_delivered(path)
-    changes: file_events.Changes | None = None
-    unwatched = False
     changed: set[str] | None = None
-    full_at = time.monotonic()
     while True:
         started, cpu = time.monotonic(), cpu_seconds()
-        if changed is None:
-            full_at = started
-            if changes is not None:
-                changes.take()
+        reads.start(started, changed)
         stats_stand_but(changed)
-        out = out_at(deadline)
+        out = out_at(reads.deadline)
         accepted = accepted_after(path, since, [])
         spent = cpu_seconds() - cpu
-        if ready(out) or accepted:
-            if changed is None:
-                break
-            changed = None
-            continue
-        if changed is None and time.monotonic() + POLL_SECONDS > deadline:
+        more, changed = reads.after(changed, ready(out) or accepted, started, spent)
+        if not more:
             break
-        if not unwatched and changed is None:
-            try:
-                if changes is None:
-                    changes = file_events.Changes(held_paths())
-                else:
-                    changes.watch(held_paths())
-            except file_events.Unwatched:
-                unwatched = True
-        if changes is None or unwatched:
-            time.sleep(POLL_SECONDS)
-            changed = None
-        else:
-            changed = next_read(changes, started, spent, full_at, deadline)
-    if changes is not None:
-        changes.close()
+    reads.close()
     signal.alarm(0)
     return out, accepted
 
 
-def next_read(changes: file_events.Changes, started: float, spent: float, full_at: float,
-              deadline: float) -> set[str] | None:
-    """Wait, as `waited` gives it, for the read after the one that started
-    at `started` and took `spent` CPU seconds, the last full read having
-    started at `full_at`, and give the paths that changed since the last
-    read for a partial read, or None for a full read."""
-    full_due = min(full_at + FALLBACK_SECONDS, deadline - POLL_SECONDS)
-    earliest = started + max(POLL_SECONDS, READ_SHARE * spent)
-    time.sleep(max(min(earliest, full_due) - time.monotonic(), 0))
-    changes.wait(full_due - time.monotonic())
-    return changes.take() if time.monotonic() < full_due else None
+class Reads:
+    """When each read of `waited` starts, and whether it is a full read,
+    which reads each held source again, or a partial read, which reads
+    again only the stats of the paths that changed
+    (`file_reads.stats_stand_but`).
+
+    A full read comes at the first read, at most `FALLBACK_SECONDS` after
+    the last full read, before the deadline, and after a partial read whose
+    output would end the call. Between them, the call waits on the file
+    events of the paths whose stats it holds (`file_events.Changes`), and a
+    read that a change starts is a partial read. A read starts no sooner
+    than `POLL_SECONDS`, nor `READ_SHARE` times the CPU seconds of the read
+    before it (`cpu_seconds`), after that read's start. Where the stream does not start,
+    each read is a full read, `POLL_SECONDS` apart."""
+
+    def __init__(self, deadline: float) -> None:
+        self.deadline = deadline
+        self.full_at = time.monotonic()
+        self.changes: file_events.Changes | None = None
+        self.unwatched = False
+
+    def start(self, at: float, changed: set[str] | None) -> None:
+        """Note the start at `at` of a read, a partial one of the paths
+        `changed`, or a full one where it is None."""
+        if changed is None:
+            self.full_at = at
+            if self.changes is not None:
+                self.changes.take()
+
+    def after(self, changed: set[str] | None, ends: bool, started: float,
+              spent: float) -> tuple[bool, set[str] | None]:
+        """Whether another read follows the read of the paths `changed`, a
+        full read where it is None, that started at `started`, took `spent`
+        CPU seconds, and whose output would end the call where `ends`; and,
+        once the wait for it is over, the paths of that read, or None for a
+        full read."""
+        if ends:
+            return changed is not None, None
+        if changed is None and time.monotonic() + POLL_SECONDS > self.deadline:
+            return False, None
+        if not self.unwatched and changed is None:
+            try:
+                if self.changes is None:
+                    self.changes = file_events.Changes(held_paths())
+                else:
+                    self.changes.watch(held_paths())
+            except file_events.Unwatched:
+                self.unwatched = True
+        if self.changes is None or self.unwatched:
+            time.sleep(POLL_SECONDS)
+            return True, None
+        return True, self.changed_paths(self.changes, started, spent)
+
+    def changed_paths(self, changes: file_events.Changes, started: float,
+                      spent: float) -> set[str] | None:
+        """Wait for the read after the one that started at `started` and
+        took `spent` CPU seconds, and give the paths that changed since the
+        last read for a partial read, or None for a full read."""
+        full_due = min(self.full_at + FALLBACK_SECONDS, self.deadline - POLL_SECONDS)
+        earliest = started + max(POLL_SECONDS, READ_SHARE * spent)
+        time.sleep(max(min(earliest, full_due) - time.monotonic(), 0))
+        changes.wait(full_due - time.monotonic())
+        return changes.take() if time.monotonic() < full_due else None
+
+    def close(self) -> None:
+        """Stop the wait on the file events."""
+        if self.changes is not None:
+            self.changes.close()
 
 
 def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
@@ -282,19 +305,26 @@ def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
     while True:
         if not ran(here, deadline):
             return (Poll(),), here
-        state, watch = read_state(me)
-        write_due_since(here, ticket_stall.due_times(state))
+        state, watch = read_and_record(me, here)
         step = plan.next_step(state, watch)
         if isinstance(step, Bash) and not partial():
             step_journal.start_run(here, step, me, state.main_tree, time.time())
             continue
         if isinstance(step, Launch) and step.reread:
-            state, watch = read_state(me)
-            write_due_since(here, ticket_stall.due_times(state))
+            state, watch = read_and_record(me, here)
             step = plan.next_step(state, watch)
         if isinstance(step, Launch):
             return order.batch(state, watch, step), here
         return (step,), here
+
+
+def read_and_record(me: str, here: Path) -> tuple[State, MonitorState]:
+    """The state `read_state` gives `me`, once the record under `here` of
+    the times from which a step has been due (`ticket_stall.due_times`)
+    holds those of that state."""
+    state, watch = read_state(me)
+    write_due_since(here, ticket_stall.due_times(state))
+    return state, watch
 
 
 def ran(scratch: Path, deadline: float) -> bool:

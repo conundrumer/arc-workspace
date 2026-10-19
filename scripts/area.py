@@ -23,7 +23,7 @@ from path_args import refuse_absolute  # noqa: E402
 from transcript_snapshots import Refused, print_refused  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 from dependents import Graph, Reach, conftests, module_of  # noqa: E402
-from kept_reads import named_modules  # noqa: E402
+from kept_reads import import_statements, named_modules  # noqa: E402
 
 from engine import checkout  # noqa: E402
 from ticketing.references import Referring  # noqa: E402
@@ -75,7 +75,7 @@ class Reference:
     """How one file of the tree bears on one `<path>`: the lines of its
     `import` statements and its loads, whether pytest loads the `<path>`
     as its `conftest.py`, each name of the `<path>`'s module it uses with
-    the lines it uses it on, and the lines of its text that name the
+    the lines it uses it on, and the lines of its text that refer to the
     `<path>`."""
 
     imports: list[int] = field(default_factory=list)
@@ -158,17 +158,15 @@ def uses_of(graph: Graph, path: str, tree: ast.Module, target: str, reference: R
     taken: dict[str, str] = {}
     bound: set[tuple[str, ...]] = set()
     for node in ast.walk(tree):
+        if isinstance(node, ast.Import | ast.ImportFrom) and any(
+                target in graph.import_edges(path, s) for s in import_statements(node)):
+            reference.imports.append(node.lineno)
         match node:
             case ast.Import(names=aliases):
                 for alias in aliases:
-                    if any(imports(n) for n in named_modules(module, Path(path), (0, alias.name, ()))):
-                        reference.imports.append(node.lineno)
                     if imports(alias.name):
                         bound.add((alias.asname,) if alias.asname else tuple(alias.name.split(".")))
             case ast.ImportFrom(level=level, module=base, names=aliases):
-                statement = (level, base or "", tuple(a.name for a in aliases))
-                if any(imports(n) for n in named_modules(module, Path(path), statement)):
-                    reference.imports.append(node.lineno)
                 resolved = named_modules(module, Path(path), (level, base or "", ()))
                 if not resolved:
                     continue
@@ -203,7 +201,7 @@ def dotted(expr: ast.expr) -> tuple[str, ...] | None:
 
 def namers(root: Path, paths: list[str], out: References) -> None:
     """Add to `out` the files of the tree, tracked or untracked and not
-    ignored, whose lines name a path of `paths`."""
+    ignored, whose lines refer to a path of `paths`."""
     listed = checkout.git_out(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
     every = Referring(paths)
     each = {p: Referring([p]) for p in paths}

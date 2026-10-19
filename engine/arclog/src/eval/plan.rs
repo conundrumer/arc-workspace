@@ -8,9 +8,9 @@
 //! output of an algebra relation directly after the inputs of the first of
 //! its modes that the order satisfies.
 
-use super::ir::{Argument, Arguments, ClauseIr, IrNode, Operand, Variable};
+use super::ir::{lib_algebra_relation, Argument, Arguments, ClauseIr, IrNode, Operand, Variable};
 use crate::program::ConstraintOp;
-use crate::registry::{AlgebraRelation, LibEntry, LibName, Macro, Registry};
+use crate::registry::{AlgebraRelation, LibName, Registry};
 use crate::terms::OrientationType;
 use crate::types::ValueType;
 
@@ -124,10 +124,7 @@ pub(super) fn variables_of(arguments: &Arguments) -> impl Iterator<Item = Variab
 
 /// The declaration of the algebra relation or relation macro `name`.
 pub(super) fn algebra_relation<'r>(registry: &'r Registry, name: &LibName) -> &'r AlgebraRelation {
-    match registry.entry(name) {
-        Some(LibEntry::Relation(relation)) | Some(LibEntry::Macro(Macro::Relation { relation, .. })) => relation,
-        _ => panic!("a lib atom of a checked clause reads an algebra relation or a relation macro"),
-    }
+    lib_algebra_relation(registry, name).expect("a lib atom of a checked clause reads an algebra relation or a relation macro")
 }
 
 /// Whether the columns of `arguments` whose variables `bound` holds, or

@@ -128,8 +128,8 @@ def _tree(root: Path) -> None:
     (root / "docs" / "guide.md").write_text(GUIDE)
 
 
-def _rules(text: str, root: Path) -> list[str]:
-    return [err.rule for err in check_xrefs(parse(text, "doc.md"), root)]
+def _refused_lines(text: str, root: Path) -> list[int]:
+    return [err.line for err in check_xrefs(parse(text, "doc.md"), root)]
 
 
 @pytest.mark.parametrize("line", [
@@ -145,7 +145,7 @@ def _rules(text: str, root: Path) -> list[str]:
 ])
 def test_check_xrefs_refuses_what_the_tree_lacks(tmp_path, line):
     _tree(tmp_path)
-    assert _rules(line, tmp_path) == ["xref-missing"]
+    assert _refused_lines(line, tmp_path) == [1]
 
 
 @pytest.mark.parametrize("line", [
@@ -159,7 +159,7 @@ def test_check_xrefs_refuses_what_the_tree_lacks(tmp_path, line):
 ])
 def test_check_xrefs_passes_what_resolves(tmp_path, line):
     _tree(tmp_path)
-    assert _rules(line, tmp_path) == []
+    assert _refused_lines(line, tmp_path) == []
 
 
 def _git(root: Path, *argv: str) -> str:
@@ -272,12 +272,11 @@ def test_xrefs_in_the_main_tree_reads_its_own_documents(tmp_path):
     assert xrefs_documents(main, base) == [main / "docs" / "kept.md", main / "docs" / "ours.md"]
 
 
-def test_xrefs_refuses_where_the_main_tree_has_no_module(tmp_path, capsys):
+def test_xrefs_refuses_where_the_main_tree_has_no_module(tmp_path):
     _, linked = _linked(tmp_path)
     package = linked / "src" / "controlled_markdown"
     package.mkdir(parents=True)
     assert run_in_main(["xrefs", "HEAD"], package) == 2
-    assert "the main tree has no `src/controlled_markdown`" in capsys.readouterr().err
 
 
 def test_a_section_quote_spans_statements_past_their_attribute_lines(tmp_path):

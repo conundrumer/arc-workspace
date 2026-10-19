@@ -88,38 +88,38 @@ def test_own_work_follows_the_line_of_work_and_its_judged_tickets(tmp_path: Path
     assert follow_ups(s) == {"9-8"}
 
 
-def test_a_follow_up_goes_to_an_analyst_under_own_scope_until_judged_not_own(
-        tmp_path: Path) -> None:
-    from dataclasses import replace
-    from operations.pacing import Until
-    from operations.state import Commit, Computed, Message
-    from operations.triage import selected
-    tickets = tmp_path / "tickets"
-    given = [
-        ticket(tickets, "9-1_change_x-fix_coordinator", "change", "x: the fix"),
-        ticket(tickets, "9-2_agent_a0000000000000001_code-reviewer", "bug",
-               "`src/operations/taking.py`: wrong"),
-        ticket(tickets, "9-3_agent_a0000000000000002_code-reviewer", "bug",
-               "`src/operations/taking.py`: slow",
-               more="2026-10-17T04:00:00Z new [ticket-analyst]: not own: no change of the line\n"),
-        ticket(tickets, "9-4_agent_a0000000000000003_code-reviewer", "bug", "`README.md`: stale"),
-    ]
-    commits = [Commit(MERGE, 0.0, frozenset(), "x: the fix", False,
-                      frozenset({"src/operations/taking.py"}))]
-    computed = Computed(to_settle=("9-2", "9-3", "9-4"), pace=Until(0.0))
-    own = replace(state(tmp_path, given, commits), computed=computed)
-    assert selected(own) == ["9-2"]
-    every = replace(state(tmp_path, given, commits,
-                          [Message("op", 1.0, None, "Op scope: all.")]), computed=computed)
-    assert selected(every) == ["9-2", "9-3", "9-4"]
-
-
 TITLES = ["`src/operations/taking.py`: wrong", "operations.taking: wrong", "taking.py is slow",
           "pretaking.py", "the tests are slow", "`tests/test_own_work.py`: flaky",
           "`README.md`: stale", "README.mdx", "dependents.py: x", "`scripts/dependents.py`: x",
           "scripts.dependents: x"]
 PATHS = ["src/operations/taking.py", "README.md", "scripts/dependents.py",
          "src/operations/__init__.py"]
+
+
+def test_an_analyst_before_a_not_own_judgment_settles_the_ticket_only_outside_the_scope(
+        tmp_path: Path) -> None:
+    """An analyst that ran on a ticket before a `not own:` line on it
+    counts as given the ticket while the scope leaves the ticket out, and
+    no longer once `Op scope: all.` admits it."""
+    from dataclasses import replace
+    from datetime import datetime
+    from operations.roles import Purpose, Role, analyst_subject
+    from operations.state import Agent, Computed, Message
+    from operations.triage import unsettled_open
+    tickets = tmp_path / "tickets"
+    given = [ticket(tickets, "9-3_agent_a0000000000000002_code-reviewer", "bug", "x: slow",
+                    more="2026-10-17T04:00:00Z new [ticket-analyst]: not own: no change of the line\n")]
+    launched = datetime.fromisoformat("2026-10-17T03:00:00+00:00").timestamp()
+    analyst = Agent("a0000000000000009", "op", Role.TICKET_ANALYST,
+                    analyst_subject(Purpose.TRIAGE, "9-3"), "", launched, launched, None, (), True)
+
+    def at(messages: tuple = ()):
+        s = state(tmp_path, given, messages=messages)
+        return replace(s, transcripts=replace(s.transcripts, agents=(analyst,)),
+                       computed=Computed(to_settle=("9-3",)))
+
+    assert unsettled_open(at()) == []
+    assert unsettled_open(at((Message("op", 1.0, None, "Op scope: all."),))) == ["9-3"]
 
 
 @pytest.mark.parametrize("title", TITLES)

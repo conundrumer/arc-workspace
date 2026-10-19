@@ -30,7 +30,7 @@ from collections.abc import Callable, Iterable, Iterator, Set
 from enum import Enum
 from pathlib import Path, PurePosixPath
 
-from kept_reads import imports_in, named_modules
+from kept_reads import Import, imports_in, named_modules
 
 from engine import checkout
 from ticketing.references import MODULE_ROOTS, module_names
@@ -106,16 +106,20 @@ class Graph:
         local = {str(here / p) for p in module_paths(name)} & self.paths
         return self.by_name.get(name, set()) | local
 
+    def import_edges(self, path: str, statement: Import) -> set[str]:
+        """The paths the `import` statement `statement` of the file at `path`
+        makes an edge to."""
+        return {p for name in named_modules(module_of(path), Path(path), statement)
+                for p in self.modules(name, path)}
+
     def edges(self, path: str, reach: Reach) -> Set[str]:
         """The paths the file at `path` has an edge to under `reach`."""
         tree = self.parse(path)
         if tree is None:
             return self.paths
         if path not in self.imported:
-            module = module_of(path)
             self.imported[path] = {p for statement in imports_in(tree)
-                                   for name in named_modules(module, Path(path), statement)
-                                   for p in self.modules(name, path)}
+                                   for p in self.import_edges(path, statement)}
         if reach is Reach.IMPORTS:
             return self.imported[path]
         return self.imported[path] | self.run_edges(tree, path)

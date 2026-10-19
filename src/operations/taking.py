@@ -17,9 +17,9 @@ ticket analyst judges that the line needs it (`follow_ups`, `judging`).
 While an
 `Op pause.` line stands (`directives.paused`), it takes only those of
 `held_work` and of `allowed`, and each other change waits for an
-`Op resume.` line. Past the usage pace (`pacing`), no change is taken and
-no untaken ticket admitted, and each step that starts an agent's run is held
-(`start_holds`).
+`Op resume.` line. The usage pace holds the take of a change, the
+admission of an untaken ticket and each step that starts an agent's run as
+`--help pace` of `operate.py` gives it (`start_holds`).
 
 A change that waits for a ticket that holds it up moves to
 `tickets/draft/` with a line whose note is `STALL_FINDING` on that ticket,
@@ -28,6 +28,7 @@ line that came after its last move there."""
 
 import re
 from collections.abc import Callable, Mapping
+from enum import Enum, auto
 from functools import cache
 
 from controlled_markdown import form, mctx
@@ -111,11 +112,39 @@ def expedited(state: State) -> set[str]:
     return served(state, {n for n, _ in numbers_in(session_lines(state), Directive.EXPEDITE)})
 
 
+class Refusal(Enum):
+    """What refuses to admit an untaken ticket, as `refusal` gives it."""
+    TAKES = auto()
+    """The `takes` of the run scripts (`passing`)."""
+    SCOPE = auto()
+    """The `Op pause.` and `Op scope:` lines (`scope_admits`)."""
+    PACE = auto()
+    """The usage pace (`past_pace`)."""
+
+
+@memoized
+def refusal(state: State) -> Callable[[str], Refusal | None]:
+    """What refuses to admit an untaken ticket, the first of `Refusal` that
+    does, or None where the operator may admit it."""
+    passes, held = passing(state)
+    clear = scope_admits(state)
+    past = past_pace(state)
+
+    def of(n: str) -> Refusal | None:
+        if not passes(n):
+            return Refusal.TAKES
+        if not held(n) and not clear(n):
+            return Refusal.SCOPE
+        return Refusal.PACE if past else None
+    return of
+
+
 @memoized
 def admits(state: State) -> Callable[[str], bool]:
-    """Whether the operator may admit an untaken ticket: one `gate` passes
-    with `scope_admits` as the tickets it admits."""
-    return gate(state, scope_admits(state))
+    """Whether the operator may admit an untaken ticket: `refusal` gives no
+    refusal of it."""
+    refused = refusal(state)
+    return lambda n: refused(n) is None
 
 
 def gate(state: State, clear: Callable[[str], bool]) -> Callable[[str], bool]:
@@ -219,17 +248,15 @@ NOT_OWN_LINE = re.compile(form(NOT_OWN, {"judgment": r".+"}))
 
 
 def own_step(state: State) -> Callable[[Ticket], list[str]]:
-    """The step of `own_work` from a ticket: to each ticket of its `links`
-    and to each ticket of `filed_for` of a kind of `FOLLOWS`."""
+    """The tickets that a step of `own_work` reaches from a ticket."""
     below = filed_for(state)
     return lambda t: [*links(t), *(f.number for f in below.get(t.number, ()) if f.kind in FOLLOWS)]
 
 
 @memoized
 def line_of_work(state: State) -> set[str]:
-    """Each `request` and `change` of `State.mine` whose filer is the
-    coordinator, and each ticket a chain of steps of `own_step` reaches
-    from one."""
+    """The session's line of work as the coordinator's own tickets give
+    it, with no ticket analyst's judgment."""
     return closure(state, {n for n, t in state.tracker.tickets.items()
                            if state.mine(t) and t.filer == COORDINATOR
                            and t.kind in (Kind.REQUEST, Kind.CHANGE)}, own_step(state))
@@ -286,9 +313,8 @@ def title_refers(files: frozenset[str]) -> Callable[[str], bool]:
 
 
 def judging(state: State) -> Callable[[str], bool]:
-    """Whether the operator may launch a ticket analyst to judge a ticket
-    of `follow_ups`: a ticket of `judge_scope` that `gate` passes with
-    `judge_scope` as the tickets it admits."""
+    """Whether the operator may launch a ticket analyst to judge whether
+    the session's line of work needs a ticket."""
     pending = judge_scope(state)
     passes = gate(state, pending)
     return lambda n: pending(n) and passes(n)

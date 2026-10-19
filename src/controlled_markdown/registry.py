@@ -43,7 +43,7 @@ class Registry:
         self.paths[name] = path
         self.paths.setdefault(document.source, path)
         rel = path or document.source or name
-        self.ids[document.source] = self._index(document, rel)
+        self.ids[document.source] = sections(document, rel)
         if file is not None:
             self.files[file] = document
             self.sources[document.source] = file
@@ -72,22 +72,24 @@ class Registry:
         against."""
         return self.sources.get(source)
 
-    def _index(self, node: Node, rel: str) -> dict[str, Node]:
-        """The sections under `node`, keyed by id: a heading's id is the slug
-        of its text."""
-        out: dict[str, Node] = {}
-        for child in _walk(node):
-            if child.kind != HEADING:
-                continue
-            ident = slug(child.text)
-            if not ident:
-                continue
-            if ident in out:
-                raise ControlledMarkdownError(child.source, child.line,
+
+def sections(node: Node, rel: str) -> dict[str, Node]:
+    """The sections under `node`, the document at the path `rel`, keyed by
+    id: a heading's id is the slug of its text, and a heading whose slug
+    is empty has none. A repeated id is refused."""
+    out: dict[str, Node] = {}
+    for child in _walk(node):
+        if child.kind != HEADING:
+            continue
+        ident = slug(child.text)
+        if not ident:
+            continue
+        if ident in out:
+            raise ControlledMarkdownError(child.source, child.line,
                                           Rule.ID_REPEAT,
                                           f"`{ident}` is already an id in {rel}")
-            out[ident] = child
-        return out
+        out[ident] = child
+    return out
 
 
 def _walk(node: Node):

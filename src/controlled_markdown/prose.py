@@ -113,7 +113,7 @@ def _carry_error(source: str, line: int,
 
 # The deprecated console, whose docstrings and comments `code_prose_lines`
 # passes over.
-DEPRECATED = checkout.ROOT / "tools" / "console"
+DEPRECATED = checkout.console()
 
 
 def code_prose_lines(path: Path) -> list[tuple[int, str]]:

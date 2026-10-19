@@ -228,12 +228,28 @@ impl Algebra for BoxRelation {
         };
         let id = |column: usize| Id(c.input(column));
         let n = |k: i32| Id(number(k));
+        // Each Dir `d` of column 0, with the box inset by `k1` at d's edge
+        // and by `k2` at the edge opposite it.
+        let axis_rows = |k1: i32, k2: i32| {
+            each(0, ValueType::Dir).into_iter().map(move |d| {
+                let b = margins(|e| if e == geometry.edge(d) { k1 } else if e == geometry.edge(d).opposite() { k2 } else { 0 });
+                [Id(d), id(1), id(2), B(b)]
+            })
+        };
+        // Each direction `d` of `ty` in column 0, with the box inset by `k`
+        // at d's edges.
+        let edge_rows = |ty: ValueType, k: i32| each(0, ty).into_iter().map(move |d| [Id(d), id(1), B(inset(edges(d), k))]);
+        // Whether `holds` holds of the margins of columns 0 and 1 at each edge.
+        let at_each_edge = |holds: fn(i32, i32) -> bool| {
+            let (a, b) = (c.boxed(0), c.boxed(1));
+            Edge::ALL.into_iter().all(|e| holds(margin(a, e), margin(b, e)))
+        };
         match self {
             BoxRelation::Compose => row(&[id(0), id(1), B(compose(c.boxed(0), c.boxed(1)))])?,
             BoxRelation::Relative => row(&[id(0), id(1), B(subtract(c.boxed(1), c.boxed(0)))])?,
             BoxRelation::EdgeInset => {
-                for d in each(0, ValueType::Dir) {
-                    row(&[Id(d), id(1), B(inset(edges(d), c.number(1)))])?;
+                for values in edge_rows(ValueType::Dir, c.number(1)) {
+                    row(&values)?;
                 }
             }
             BoxRelation::Margin => {
@@ -284,13 +300,13 @@ impl Algebra for BoxRelation {
                     row(&[id(0), id(1), id(2), n(part), n(remainder)])?;
                 }
             }
-            BoxRelation::Inside | BoxRelation::Interior => {
-                let (a, b) = (c.boxed(0), c.boxed(1));
-                let holds = |e: Edge| match self {
-                    BoxRelation::Inside => margin(a, e) >= margin(b, e),
-                    _ => margin(a, e) > margin(b, e),
-                };
-                if Edge::ALL.into_iter().all(holds) {
+            BoxRelation::Inside => {
+                if at_each_edge(|a, b| a >= b) {
+                    row(&[id(0), id(1)])?;
+                }
+            }
+            BoxRelation::Interior => {
+                if at_each_edge(|a, b| a > b) {
                     row(&[id(0), id(1)])?;
                 }
             }
@@ -369,24 +385,31 @@ impl Algebra for BoxRelation {
                     row(&[id(0), id(1), Id(a), n(extent(relative, geometry.axis_edges(a)))])?;
                 }
             }
-            BoxRelation::AxisInset | BoxRelation::AxisOutset => {
-                let sign = |k: i32| if *self == BoxRelation::AxisInset { k } else { k.saturating_neg() };
-                let (k1, k2) = (sign(c.number(1)), sign(c.number(2)));
-                for d in each(0, ValueType::Dir) {
-                    let b = margins(|e| if e == geometry.edge(d) { k1 } else if e == geometry.edge(d).opposite() { k2 } else { 0 });
-                    row(&[Id(d), id(1), id(2), B(b)])?;
+            BoxRelation::AxisInset => {
+                for values in axis_rows(c.number(1), c.number(2)) {
+                    row(&values)?;
+                }
+            }
+            BoxRelation::AxisOutset => {
+                for values in axis_rows(c.number(1).saturating_neg(), c.number(2).saturating_neg()) {
+                    row(&values)?;
                 }
             }
             BoxRelation::UniformInset => row(&[id(0), B(margins(|_| c.number(0)))])?,
             BoxRelation::UniformOutset => row(&[id(0), B(margins(|_| c.number(0).saturating_neg()))])?,
-            BoxRelation::CornerInset | BoxRelation::CornerOutset | BoxRelation::EdgeOutset => {
-                let (ty, k) = match self {
-                    BoxRelation::CornerInset => (ValueType::DiagDir, c.number(1)),
-                    BoxRelation::CornerOutset => (ValueType::DiagDir, c.number(1).saturating_neg()),
-                    _ => (ValueType::Dir, c.number(1).saturating_neg()),
-                };
-                for d in each(0, ty) {
-                    row(&[Id(d), id(1), B(inset(edges(d), k))])?;
+            BoxRelation::CornerInset => {
+                for values in edge_rows(ValueType::DiagDir, c.number(1)) {
+                    row(&values)?;
+                }
+            }
+            BoxRelation::CornerOutset => {
+                for values in edge_rows(ValueType::DiagDir, c.number(1).saturating_neg()) {
+                    row(&values)?;
+                }
+            }
+            BoxRelation::EdgeOutset => {
+                for values in edge_rows(ValueType::Dir, c.number(1).saturating_neg()) {
+                    row(&values)?;
                 }
             }
             BoxRelation::Jump => {

@@ -16,7 +16,7 @@ use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
     Atom, Body, Conjunct, ConstraintOp, FactRelation, LabelId, LabelUse, ProgramRelation, RelationRef, Site, SiteArg,
 };
-use crate::registry::{LibEntry, LibName, Macro, Mode, Registry};
+use crate::registry::{AlgebraRelation, LibEntry, LibName, Macro, Mode, Registry};
 use crate::relations::ColumnIndex;
 use crate::resolver::{DependencyKind, Resolution};
 use crate::terms::TermId;
@@ -307,9 +307,15 @@ fn form_types<'p>(program: &'p CheckedProgram, form: &NodePath) -> &'p FormTypes
 /// relation macro's, and none for every other relation.
 pub(crate) fn atom_modes<'r>(registry: &'r Registry, atom: &Atom) -> &'r [Mode] {
     let RelationRef::Lib(name) = &atom.relation else { return &[] };
+    lib_algebra_relation(registry, name).map_or(&[], |relation| &relation.modes)
+}
+
+/// The algebra relation of the lib entry `name`: that of an algebra
+/// relation or of a relation macro, and None for every other entry.
+pub(super) fn lib_algebra_relation<'r>(registry: &'r Registry, name: &LibName) -> Option<&'r AlgebraRelation> {
     match registry.entry(name) {
-        Some(LibEntry::Relation(relation)) | Some(LibEntry::Macro(Macro::Relation { relation, .. })) => &relation.modes,
-        _ => &[],
+        Some(LibEntry::Relation(relation)) | Some(LibEntry::Macro(Macro::Relation { relation, .. })) => Some(relation),
+        _ => None,
     }
 }
 

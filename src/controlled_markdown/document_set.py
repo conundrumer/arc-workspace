@@ -27,6 +27,7 @@ from controlled_markdown import (
     reference,
     resolve_reference,
 )
+from controlled_markdown.registry import sections
 
 
 def reached(entry: Path, registry: Registry) -> set[str]:
@@ -228,10 +229,9 @@ def target_of(path: str, file: Path | None, root: Path | None = None) -> Path:
 
 
 def section(document: Node, ident: str) -> Node | None:
-    """The last heading node of `document` whose slug is `ident`, with its
-    subtree, or None where no heading has that slug."""
-    found = [h for h in _walk(document) if h.kind == HEADING and slug(h.text) == ident]
-    return found[-1] if found else None
+    """The heading node of `document` whose id (`registry.sections`) is
+    `ident`, with its subtree, or None where no heading has that id."""
+    return sections(document, document.source).get(ident)
 
 
 def section_span(document: Node, heading: Node, length: int) -> tuple[int, int]:

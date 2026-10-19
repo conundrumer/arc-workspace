@@ -24,20 +24,18 @@ from operations import alerts, merging
 from operations.change_agents import elsewhere_on, launched_on
 from operations.constants import AGAIN_SECONDS, COORDINATOR
 from operations.directives import NUMBER
-from operations.handled import decided_by, held_aside, repeated
+from operations.handled import decided_by, held_aside
 from operations.journal import backoff
 from operations.state import State, Ticket
 from operations.steps import Send, Step, Undecided, key
 from operations.ticket_stall import progress
 from ticketing.times import utc_stamp
-from ticketing.vocabulary import Domain
 
 
 def message(state: State, t: Ticket, since: float) -> Send:
     """The message to the coordinator on the change `t`, idle since
     `since`."""
-    return Send(COORDINATOR, alerts.ticket_stall_text(state, t, since) + "\n" + alerts.FIND_STEP,
-                f"idle {t.number}", since, change=t.number)
+    return alerts.stall_message(state, t, since, "", f"idle {t.number}", change=t.number)
 
 
 def idle(state: State, t: Ticket, s: Step | None) -> float | None:
@@ -91,9 +89,6 @@ def step(state: State, t: Ticket, s: Step | None) -> Step | None:
     since = idle(state, t, s)
     if since is None:
         return None
-    sent = message(state, t, since)
-    if not repeated(sent, state):
-        return sent
-    return alerts.ticket_step(state, alerts.BugKind.IDLE, Domain.TICKET, t.number, since,
-                              mctx("idle since {time}").format(time=utc_stamp(since)),
-                              alerts.ticket_stall_text(state, t, since))
+    return alerts.ticket_stall_step(state, message(state, t, since), t, since,
+                                    alerts.BugKind.IDLE,
+                                    mctx("idle since {time}").format(time=utc_stamp(since)))

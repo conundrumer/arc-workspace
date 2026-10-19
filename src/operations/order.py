@@ -36,10 +36,10 @@ the step journal gives as in flight or retired (`journal.due`). A
 launch a procedure gives, other than that of a ticket analyst on a held
 step, is held where its chain of causes runs `lineage.DEPTH` launches of
 its kind deep (`lineage`), and so is a launch of an agent type the
-operator's agent listing lacks (`unlisted`). Past the usage pace, and
-while the running agents number the pace's cap or more, each step that
-starts an agent's run is held (`start_holds.pace_holds`), and its
-procedure gives its next step in its place, with the held step set aside
+operator's agent listing lacks (`unlisted`). Each step that the usage
+pace holds, as `--help pace` of `operate.py` gives it
+(`start_holds.pace_holds`), is held, and its procedure gives its next
+step in its place, with the held step set aside
 (`State.aside`). A launch comes with each
 launch the procedures
 give after it, with the launches before it made, up to the harness's
@@ -64,7 +64,7 @@ from operations.directives import (
 from operations import briefs
 from operations.pacing import Capped, Pace
 from operations.roles import PASSES, Purpose, Role, launch_parameters, launched_type
-from operations.state import Agent, Call, NotComputed, State, Tool, Waits
+from operations.state import Agent, Call, NotComputed, State, Tool, Waits, memoized
 from operations.handled import held_aside, repeated
 from operations.constants import COORDINATOR
 from operations.journal import BOUND, Due, due, failures
@@ -102,14 +102,29 @@ def placed(state: State, procedure: Callable[[State], Step | None]
     set aside, and the procedure read again."""
     waited: Undecided | None = None
     while True:
-        given = procedure(state)
-        if given is None or held_aside(state, given):
+        given, s, on = placed_given(state, procedure)
+        if given is None:
             return None, waited
-        s, on = place(state, given)
-        if s is None or not start_holds.pace_holds(state, s):
+        if s is None:
+            return s, on or waited
+        step = s
+        if not start_holds.pace_holds(state, lambda: start_holds.starts_run(state, step)):
             return s, on or waited
         waited = waited or on
         state = replace(state, aside=state.aside | {key(given)})
+
+
+@memoized
+def placed_given(state: State, procedure: Callable[[State], Step | None]
+                 ) -> tuple[Step | None, Step | None, Undecided | None]:
+    """The step `procedure` gives on `state`, None where it gives none or
+    `held_aside` holds it, with the step `place` gives for it and the
+    undecided step it waits on, the usage pace aside."""
+    given = procedure(state)
+    if given is None or held_aside(state, given):
+        return None, None, None
+    s, on = place(state, given)
+    return given, s, on
 
 
 def place(state: State, s: Step | None) -> tuple[Step | None, Undecided | None]:
@@ -184,11 +199,8 @@ def pace_held_step(state: State) -> Pace | Capped | None:
     if held is None:
         return None
     for procedure in PROCEDURES:
-        given = procedure(state)
-        if given is None or held_aside(state, given):
-            continue
-        s, _ = place(state, given)
-        if s is not None and start_holds.starts_run(state, s):
+        _, s, _ = placed_given(state, procedure)
+        if start_holds.pace_holds(state, lambda: s is not None and start_holds.starts_run(state, s)):
             return held
     return None
 

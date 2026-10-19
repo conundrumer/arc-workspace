@@ -2,10 +2,11 @@
 //! into the IR, the probe of a filter, and the early stop of a search over
 //! local labels.
 //!
-//! A negated atom, an `ALL`'s counterexample relation and an `IF` test are
-//! filters: each is probed once its outer variables are bound, with those
-//! bindings only, and none is evaluated alone, since a test that reads an
-//! algebra relation through outer labels is no finite relation.
+//! A negated atom, an `ALL`'s counterexample relation and the negated test
+//! of an `IF`'s else branch are filters: each is probed once its outer
+//! variables are bound, with those bindings only, and none is evaluated
+//! alone, since a test that reads an algebra relation through outer labels
+//! is no finite relation.
 //!
 //! Inside a filter or an `OR` branch, a label that the scope does not
 //! export is local: a variable of the clause's body that none of its
@@ -62,7 +63,7 @@ pub fn compile_all(
     counterexample.push(IrNode::Not(fails));
     let mut members = nested(builder);
     members.body(domain.value(), &domain_path)?;
-    let domain_outer = variables_of(builder, &labels_of(domain.value()).intersection(&around).copied().collect());
+    let domain_outer = variables_of(builder, &outer_of(domain.value(), &around));
     let mut empty = nested(builder);
     empty.push(IrNode::Not(filter(domain_outer.clone(), members)));
     builder.push(IrNode::Not(filter(domain_outer, empty)));
@@ -85,7 +86,7 @@ pub fn compile_if(
     let around = outer_labels(builder, path);
     let mut negated = nested(builder);
     negated.body(test.value(), &test_path)?;
-    let test_outer = variables_of(builder, &labels_of(test.value()).intersection(&around).copied().collect());
+    let test_outer = variables_of(builder, &outer_of(test.value(), &around));
     let branches = [
         Branch { lists: vec![(test, test_path.clone()), (then, then_path.clone())], negated: None },
         Branch { lists: vec![(otherwise, else_path.clone())], negated: Some((filter(test_outer, negated), test.value())) },
@@ -115,7 +116,7 @@ struct Branch<'b> {
 
 /// Adds to `builder`'s clause the union of `branches`. `around` holds the
 /// labels of the union that stand outside it, and `made` the labels made in
-/// its first branch that every later branch names. The union exports each
+/// its first branch that every later branch mentions. The union exports each
 /// of those labels that every branch grounds from the others, and a
 /// branch's columns are its labels among them.
 fn compile_union(
@@ -133,7 +134,7 @@ fn compile_union(
             labels.extend(labels_of(list.value()));
         }
         if let Some((_, test)) = &branch.negated {
-            labels.extend(labels_of(test).intersection(&around));
+            labels.extend(outer_of(test, &around));
         }
         let body = Body { conjuncts: branch.lists.iter().flat_map(|(list, _)| list.value().conjuncts.iter().cloned()).collect() };
         let exports: StableHashSet<LabelId> = shared.iter().copied().filter(|&label| grounds(builder, &body, &shared, label)).map(LabelId).collect();
@@ -219,6 +220,12 @@ fn outer_labels(builder: &IrBuilder<'_>, path: &NodePath) -> BTreeSet<u32> {
         set.insert(label.0);
     });
     inside.intersection(&outside).copied().collect()
+}
+
+/// The labels of `body` that also stand outside it, of `around`, the
+/// labels [`outer_labels`] gives for the path that encloses `body`.
+fn outer_of(body: &Body, around: &BTreeSet<u32>) -> BTreeSet<u32> {
+    labels_of(body).intersection(around).copied().collect()
 }
 
 /// The labels that stand in `body`, at any depth.

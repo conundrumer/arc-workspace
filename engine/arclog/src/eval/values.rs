@@ -55,7 +55,7 @@ impl ReachedBound {
         }
     }
 
-    /// The bound as a diagnostic's message names it.
+    /// The bound as a diagnostic's message describes it.
     fn describe(self) -> String {
         match self {
             ReachedBound::Work { cap } => format!("the work cap of {cap} bindings"),

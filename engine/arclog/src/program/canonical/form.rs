@@ -32,11 +32,9 @@ pub trait NameWriter {
     /// Writes `relation` into `out`.
     fn write_name(&self, relation: &super::RelationRef, out: &mut CanonicalWriter);
 
-    /// Writes `name`, the name that the form being written declares, into
-    /// `out`: an `INIT`, `CHOOSE`, `RIGID_DET` or `DEMONSTRATED` form's.
-    /// The resolver writes a mark that holds no name, so that the resolved
-    /// content of a form holds no name of its own, as that of a clause
-    /// holds no name of the relation it derives.
+    /// Writes into `out` the form of `name`, the name that the form being
+    /// written declares: an `INIT`, `CHOOSE`, `RIGID_DET` or `DEMONSTRATED`
+    /// form's.
     fn write_own(&self, name: &super::DeclaredName, out: &mut CanonicalWriter);
 
     /// Writes a column of `relation` into `out`: a column of a site, or a
@@ -153,7 +151,7 @@ impl CanonicalWriter {
         }
     }
 
-    /// Writes the port `port` as a step of an output's path names it.
+    /// Writes the port `port` as a step of an output's path.
     pub(crate) fn port_step(&mut self, PortName(port): &PortName) {
         self.tag(Tag::PortStep);
         self.text(port);

@@ -253,7 +253,7 @@
 - A heading's id is the slug of its text: lower case, each run of spaces as one hyphen, and every character other than a letter, a digit, an underscore, a space or a hyphen dropped.
     + xref: src/controlled_markdown/nodes.py:slug
     - Only a heading has an id. Two headings of one document with the same slug are an error, and renaming one of them settles it.
-        + xref: src/controlled_markdown/registry.py:Registry._index
+        + xref: src/controlled_markdown/registry.py:sections
 - The lines above the first heading are the document's lead, and they belong to the document.
     + xref: src/controlled_markdown/parser.py:parse
     - A `+ ` line there is an attribute of the document as a whole.

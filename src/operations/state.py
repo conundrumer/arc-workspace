@@ -5,7 +5,7 @@ change `me` holds.
 """
 
 import re
-from collections.abc import Callable, Hashable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Collection, Hashable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from functools import cached_property, wraps
 from enum import Enum, StrEnum
@@ -872,7 +872,15 @@ class State:
         """Whether the operators act on the tickets of the session index
         `session` as on tickets of the session: the session's own index
         or one it adopts."""
-        return session == self.tracker.index or session in self.sessions.adopted
+        return acted_on(session, self.tracker.index, self.sessions.adopted)
+
+
+def acted_on(session: int | None, own: int, adopted: Collection[int]) -> bool:
+    """Whether the operators of the session with the index `own`, which
+    adopts the indexes `adopted`, act on the tickets of the session index
+    `session` as on tickets of their session: the session's own index or
+    one it adopts."""
+    return session == own or session in adopted
 
 
 def memo_in[*A, R](held: Callable[[State], dict[tuple[Any, ...], Any]]

@@ -263,7 +263,7 @@ def check_take(text: str, agent_id: str) -> None:
 def links(path: Path, text: str, wait: TicketNumber | None) -> list[TicketNumber]:
     """The tickets a link leads to from the ticket at `path`, whose text is
     `text`, and which waits on the change `wait` where it stands under
-    `waiting`: `link_targets` of its `depends-on` and `wait`."""
+    `waiting`."""
     head = re.match(FRONT, text)
     if head is None:
         raise Refused(mctx("{path} has no front matter").format(path=path))
@@ -273,11 +273,10 @@ def links(path: Path, text: str, wait: TicketNumber | None) -> list[TicketNumber
 
 def check_cycle(tickets: Path, path: Path, number: TicketNumber, status: Status, source: Status,
                 note: str | None, text: str) -> None:
-    """Refuses a line into `status` from `source` with `note` that leaves
-    the ticket `number`, at `path`, whose text is `text`, on a cycle of links among
-    the tickets outside `tickets/closed/`, with the tickets of the
-    shortest such cycle in order. A line into `closed`, or into `draft`
-    from another status, is not refused."""
+    """Refuse the line into `status` from `source` with `note` for the
+    ticket `number`, at `path`, whose text is `text`, where the `--help`
+    of `ticket_log_command.py` gives that the command refuses it for a
+    cycle of links."""
     if status is Status.CLOSED or (status is Status.DRAFT and source is not Status.DRAFT):
         return
     wait = None

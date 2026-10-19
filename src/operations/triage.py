@@ -63,6 +63,8 @@ ticket and no main session runs an agent (`file_ticket.py main --help`),
 the session whose id `tickets/main-wanted` holds sends the coordinator once a `decision:` item that asks the user to pick
 a main (`main_wanted`)."""
 
+from collections.abc import Callable
+
 from controlled_markdown import mctx
 from operations import briefs, changes, messages, taking
 from operations.reports import Label, items_of, mislabeled
@@ -88,12 +90,12 @@ def given(state: State, number: str) -> bool:
     sent that event's line, judged the ticket as it stood before it. An
     analyst that no longer runs and was launched before the last line of
     the form `taking.NOT_OWN` on it is not counted where
-    `taking.scope_admits` admits it."""
+    `judged_apart` does not give it."""
     t = state.tracker.tickets[number]
     event = freed(t.log, t.kind, t.filed)
     line = event.line
     judged = max((ln.time for ln in t.log if taking.NOT_OWN_LINE.fullmatch(ln.note)), default=None)
-    if judged is not None and not taking.scope_admits(state)(number):
+    if judged is not None and judged_apart(state)(number):
         judged = None
     return any(number in nums and (judged is None or a.pending or a.launched > judged) and (
         a.pending or a.launched > event.time or (
@@ -156,25 +158,34 @@ def unsettled_open(state: State) -> list[str]:
             if not given(state, n) and not awaits_analyst(state, n)]
 
 
-def selected(state: State) -> list[str]:
-    """The tickets of `unsettled_open` that `taking.admits` and
-    `taking.scope_admits` admit, and those `taking.judging` gives."""
-    admitted = taking.admits(state)
+def judged_apart(state: State) -> Callable[[str], bool]:
+    """Whether a ticket analyst judges a ticket apart from the others: it
+    settles such a ticket only where it judges that the session's line of
+    work needs it. Those are the tickets `taking.scope_admits` does not
+    admit."""
     clear = taking.scope_admits(state)
+    return lambda n: not clear(n)
+
+
+def selected(state: State) -> list[str]:
+    """The tickets of `unsettled_open` that a ticket analyst may settle at
+    this read."""
+    admitted = taking.admits(state)
+    apart = judged_apart(state)
     judge = taking.judging(state)
-    return [n for n in unsettled_open(state) if (admitted(n) and clear(n)) or judge(n)]
+    return [n for n in unsettled_open(state) if (admitted(n) and not apart(n)) or judge(n)]
 
 
 def settle(state: State) -> Step | None:
     """The launch of a ticket analyst on the tickets of `selected`, which
-    settles those `taking.scope_admits` does not admit only where it judges
-    that the session's line of work needs them."""
+    settles those of `judged_apart` only where it judges that the session's
+    line of work needs them."""
     numbers = selected(state)
     if not numbers:
         return None
-    clear = taking.scope_admits(state)
+    apart = judged_apart(state)
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.TRIAGE, joined(numbers)),
-                  briefs.settle(numbers, [n for n in numbers if not clear(n)], state.me),
+                  briefs.settle(numbers, [n for n in numbers if apart(n)], state.me),
                   items=len(numbers),
                   occasion=str(max(state.tracker.tickets[n].last_time for n in numbers)))
 

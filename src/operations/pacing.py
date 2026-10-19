@@ -1,14 +1,15 @@
 """The usage pace: how fast the operators spend the account's usage, as
 `operate.py --help pace` gives it.
 
-An `Op pace:` line names one or more presets with their arguments (`PARSER`),
+An `Op pace:` line gives one or more presets with their arguments (`PARSER`),
 joined by `;` (`every`) and with `FIVE_HOUR` where none reads the `five_hour`
 window, or the path of a script that defines `paces` (`Script`), with
 `FIVE_HOUR` held under it as well (`with_five_hour`). With no such
 line, the pace is `DEFAULT`. A preset reads a `Usage` and gives the time
-from which it admits a ticket (`Until`), with, for `even` and `by`, the cap on
-the running agents of the session's operators (`cap`); a script gives whether
-it admits one now (`Scripted`); a reading that gives neither is
+from which it admits a step that starts an agent's run (`Until`), with, for
+`even` and `by`, the cap on the running agents of the session's operators
+(`cap`); a script gives whether it admits one now (`Scripted`); a reading
+that gives neither is
 `state.NotComputed`, under which the pace counts as past."""
 
 import argparse
@@ -67,9 +68,9 @@ class Usage:
 
 @dataclass(frozen=True)
 class Until:
-    """A preset's pace: it admits a ticket from `time` on, and, where `cap`
-    is given, starts agents only while fewer than `cap` agents of the
-    session's operators run."""
+    """A preset's pace: it admits a step that starts an agent's run from
+    `time` on, and, where `cap` is given, only while fewer than `cap`
+    agents of the session's operators run."""
     time: float
     cap: int | None = None
 
@@ -82,7 +83,8 @@ class Capped:
 
 @dataclass(frozen=True)
 class Scripted:
-    """A script's pace: whether its `paces` admits a ticket now."""
+    """A script's pace: whether its `paces` admits a step that starts an
+    agent's run now."""
     path: Path
     admits: bool
 
@@ -91,7 +93,7 @@ type Pace = Until | Scripted | NotComputed
 
 
 def admits(pace: Pace, now: float) -> bool:
-    """Whether `pace` admits a ticket at `now`."""
+    """Whether `pace` admits a step that starts an agent's run at `now`."""
     match pace:
         case Until(time):
             return time <= now

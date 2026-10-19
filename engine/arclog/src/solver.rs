@@ -16,7 +16,7 @@ use crate::resolver::SolverScope;
 use std::sync::Arc;
 
 use crate::program::{
-    written_inputs, Alt, AltItem, Alts, AltsName, Arcdata, Body, Clause, ClauseKeyword, ColumnName, DemoRule, Demonstrated, DemonstratedPart, Form, Instance,
+    written_inputs, Alt, Alts, AltsName, Block, Arcdata, Body, Clause, ClauseKeyword, ColumnName, DemoRule, Demonstrated, DemonstratedPart, Form, Instance,
     InstanceInput, InstanceName, KeyClause, Node, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationRef, RigidDetName,
 };
 
@@ -288,7 +288,7 @@ impl Solver {
             each_form(form, false, &mut |form, in_alt| {
                 if !in_alt {
                     concept.extend(derives(form));
-                    in_rules.extend(rule_forms(form).filter_map(derives));
+                    in_rules.extend(rule_derives(form));
                 }
             });
         }
@@ -657,7 +657,7 @@ fn rederived(placed: &[Placed]) -> Vec<Taken<'_>> {
     for (index, p) in placed.iter().enumerate().filter(|(_, p)| p.depth == 0) {
         let key = &keys[index];
         if keep[index] {
-            let rules: StableHashSet<Derives> = rule_forms(&p.form).filter_map(derives).collect();
+            let rules: StableHashSet<Derives> = rule_derives(&p.form).collect();
             taken.push(Taken { placed: p, in_rules: rederived_in(&rules) });
             in_rules.extend(rules);
             emitted[index] = true;
@@ -732,6 +732,11 @@ fn rule_forms(form: &Form) -> impl Iterator<Item = &Form> {
         _ => None,
     };
     demonstrated.into_iter().flat_map(|d| d.rules.iter().flat_map(|rule| rule.value().forms.iter()))
+}
+
+/// What the forms of the `DEMO_RULE` forms of `form` derive.
+fn rule_derives(form: &Form) -> impl Iterator<Item = Derives> + '_ {
+    rule_forms(form).filter_map(derives)
 }
 
 /// Adds to `named` the column names that the sites of each read in `form`
@@ -815,34 +820,24 @@ fn each_inner_form<'a>(block: Block<'a>, in_alt: bool, f: &mut dyn FnMut(&'a For
     }
 }
 
-/// A block of the descent through a program's claims, `ALTS` forms and
-/// `ALT` blocks.
-#[derive(Clone, Copy)]
-enum Block<'a> {
-    Form(&'a Form),
-    Alt(&'a Alt),
-}
-
 /// The blocks that `block` holds, each by its index among the children of
-/// `block`: the forms of a claim, the `ALT` blocks of an `ALTS` form, and
-/// the forms and the nested `ALT` blocks of an `ALT` block, each `ALT`
-/// block where `enter` admits it. Another form holds none.
+/// `block` (`Claim::blocks`, `Alts::blocks`, `Alt::blocks`), each `ALT`
+/// block where `enter` admits it. A form other than a claim or an `ALTS`
+/// form holds none.
 fn inner_blocks<'a>(block: Block<'a>, enter: &dyn Fn(&Alt) -> bool) -> Vec<(u32, Block<'a>)> {
-    let alt = |index: usize, alt: &'a Alt| enter(alt).then_some((index as u32, Block::Alt(alt)));
-    match block {
-        Block::Form(Form::Claim(claim)) => claim.value().forms.iter().enumerate().map(|(index, form)| (index as u32, Block::Form(form))).collect(),
-        Block::Form(Form::Alts(alts)) => alts.value().alts.iter().enumerate().filter_map(|(index, block)| alt(index, block.value())).collect(),
+    let blocks: Vec<Block<'a>> = match block {
+        Block::Form(Form::Claim(claim)) => claim.value().blocks().collect(),
+        Block::Form(Form::Alts(alts)) => alts.value().blocks().collect(),
         Block::Form(_) => Vec::new(),
-        Block::Alt(block) => block
-            .items
-            .iter()
-            .enumerate()
-            .filter_map(|(index, item)| match item {
-                AltItem::Form(form) => Some((index as u32, Block::Form(form))),
-                AltItem::Alt(nested) => alt(index, nested.value()),
-            })
-            .collect(),
-    }
+        Block::Alt(alt) => alt.blocks().collect(),
+    };
+    (0u32..)
+        .zip(blocks)
+        .filter(|(_, inner)| match inner {
+            Block::Form(_) => true,
+            Block::Alt(alt) => enter(alt),
+        })
+        .collect()
 }
 
 /// Calls `f` on the relation of each atom below `node`.

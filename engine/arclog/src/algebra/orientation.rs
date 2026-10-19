@@ -173,34 +173,38 @@ const AXES: [(&str, [&str; 2]); 4] = [
 /// `programs/lib_functors.cpp`'s `box_apply` moves the margins.
 const ELEMENTS: [(&str, D4Element); 8] = [
     ("D4_ID", D4Element::IDENTITY),
-    ("D4_CW", D4Element([Right, Left, Top, Bottom])),
-    ("D4_HT", D4Element([Bottom, Top, Right, Left])),
-    ("D4_CC", D4Element([Left, Right, Bottom, Top])),
-    ("D4_LR", D4Element([Top, Bottom, Right, Left])),
-    ("D4_TB", D4Element([Bottom, Top, Left, Right])),
-    ("D4_DG", D4Element([Left, Right, Top, Bottom])),
-    ("D4_AD", D4Element([Right, Left, Bottom, Top])),
+    ("D4_CW", D4_CW),
+    ("D4_HT", D4_HT),
+    ("D4_CC", D4_CC),
+    ("D4_LR", D4_LR),
+    ("D4_TB", D4_TB),
+    ("D4_DG", D4_DG),
+    ("D4_AD", D4_AD),
 ];
+
+const D4_CW: D4Element = D4Element([Right, Left, Top, Bottom]);
+const D4_HT: D4Element = D4Element([Bottom, Top, Right, Left]);
+const D4_CC: D4Element = D4Element([Left, Right, Bottom, Top]);
+const D4_LR: D4Element = D4Element([Top, Bottom, Right, Left]);
+const D4_TB: D4Element = D4Element([Bottom, Top, Left, Right]);
+const D4_DG: D4Element = D4Element([Left, Right, Top, Bottom]);
+const D4_AD: D4Element = D4Element([Right, Left, Bottom, Top]);
 
 const SENSES: [(&str, bool); 2] = [("SENSE_CW", true), ("SENSE_CC", false)];
 
 /// The subgroups of D4, each by elements that generate it.
-const SUBGROUPS: [(&str, &[&str]); 10] = [
+const SUBGROUPS: [(&str, &[D4Element]); 10] = [
     ("SYM_1", &[]),
-    ("SYM_LR", &["D4_LR"]),
-    ("SYM_TB", &["D4_TB"]),
-    ("SYM_HT", &["D4_HT"]),
-    ("SYM_DG", &["D4_DG"]),
-    ("SYM_AD", &["D4_AD"]),
-    ("SYM_BOX", &["D4_LR", "D4_TB"]),
-    ("SYM_X", &["D4_DG", "D4_AD"]),
-    ("SYM_C4", &["D4_CW"]),
-    ("SYM_D4", &["D4_CW", "D4_LR"]),
+    ("SYM_LR", &[D4_LR]),
+    ("SYM_TB", &[D4_TB]),
+    ("SYM_HT", &[D4_HT]),
+    ("SYM_DG", &[D4_DG]),
+    ("SYM_AD", &[D4_AD]),
+    ("SYM_BOX", &[D4_LR, D4_TB]),
+    ("SYM_X", &[D4_DG, D4_AD]),
+    ("SYM_C4", &[D4_CW]),
+    ("SYM_D4", &[D4_CW, D4_LR]),
 ];
-
-fn element_named(name: &str) -> D4Element {
-    ELEMENTS.iter().find(|(n, _)| *n == name).map(|&(_, x)| x).expect("a D4 element of `ELEMENTS`")
-}
 
 /// The meaning of the constant written `name`, or `None` where none of the
 /// lists above gives one.
@@ -226,7 +230,7 @@ fn meaning_of(name: &str) -> Option<Meaning> {
         grown = false;
         for &generator in generators.iter() {
             for x in members.clone() {
-                let product = element_named(generator).after(x);
+                let product = generator.after(x);
                 if !members.contains(&product) {
                     members.push(product);
                     grown = true;

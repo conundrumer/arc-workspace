@@ -37,6 +37,7 @@ time from which that ticket holds it up (`stall`)."""
 
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import assert_never
 
 from operations import changes, drafts, lineage, merging, start_holds, taking, triage, waits
@@ -70,10 +71,8 @@ def selection(state: State, e: Exit) -> set[str]:
             return {n for n in assigned(state)
                     if (h := state.tracker.tickets[n].holder) is None or not live_holder(state, h)}
         case Exit.HOLDER:
-            return {n for n in assigned(state)
-                    if not (changes.holds(t := state.tracker.tickets[n], state.me)
-                            and (s := changes.next_step(state, t)) is not None
-                            and start_holds.pace_holds(state, s))}
+            return {n for n in assigned(state) if not start_holds.pace_holds(
+                state, lambda: change_starts_run(state, state.tracker.tickets[n]))}
         case Exit.TAKE:
             return {t.number for t in taking.reach(state)}
         case Exit.TICKET_REVIEW:
@@ -87,13 +86,20 @@ def selection(state: State, e: Exit) -> set[str]:
             assert_never(e)
 
 
+def change_starts_run(state: State, t: Ticket) -> bool:
+    """Whether the step on the change `t` that the operator holds starts an
+    agent's run."""
+    return (changes.holds(t, state.me) and (s := changes.next_step(state, t)) is not None
+            and start_holds.starts_run(state, s))
+
+
 def review_held(state: State, number: str) -> bool:
     """Whether the usage pace holds the step of the review on the draft
     `number`: a draft that joins a group joins a launch."""
-    s = drafts.draft_step(state, state.tracker.tickets[number])
-    if isinstance(s, drafts.Joined):
-        return start_holds.hold(state) is not None
-    return s is not None and start_holds.pace_holds(state, s)
+    def starts() -> bool:
+        s = drafts.draft_step(state, state.tracker.tickets[number])
+        return isinstance(s, drafts.Joined) or (s is not None and start_holds.starts_run(state, s))
+    return start_holds.pace_holds(state, starts)
 
 
 def assigned(state: State) -> set[str]:
@@ -192,18 +198,50 @@ def stalled(state: State) -> Mapping[str, float]:
     return out
 
 
-def holding(state: State, u: Ticket, stalls: Mapping[str, float]) -> tuple[float, str] | None:
-    """The time from which `u` holds up the changes that wait on it, with
-    the reason, where it does: where `waits.mark` gives it `waits.OnUser`
-    or `waits.NoStep`, from that mark's time, with `stalls` as `stalled`
-    gives them."""
-    match waits.mark(state, u.number, stalls):
-        case waits.OnUser(since):
-            return since, waits.ON_USER
-        case waits.NoStep(since):
-            return since, waits.NO_STEP.format(time=utc_stamp(since))
-        case _:
+@dataclass(frozen=True)
+class Acting:
+    """How `stall` and the message of `alerts.stuck_waits` act on the
+    ticket `number`, on the paths of a waiting change, whose mark is
+    `mark`, where `entry` is whether it is an open `depends-on` entry of
+    that change."""
+    state: State
+    number: str
+    mark: waits.Mark | None
+    entry: bool
+
+    @property
+    def stall(self) -> tuple[float, str] | None:
+        """The time from which the ticket holds up the change, with the
+        reason, where `stall` acts on it: an entry whose mark is
+        `waits.OnUser` or `waits.NoStep`, from that mark's time."""
+        if not self.entry:
             return None
+        match self.mark:
+            case waits.OnUser(since):
+                return since, waits.ON_USER
+            case waits.NoStep(since):
+                return since, waits.NO_STEP.format(time=utc_stamp(since))
+            case _:
+                return None
+
+    @property
+    def told(self) -> bool:
+        """Whether the mark makes `next` send the coordinator the paths of
+        the change, as `--help alerts` of `operate.py` gives it."""
+        match self.mark:
+            case waits.OnCycle() | waits.Held():
+                return True
+            case waits.OnUser():
+                return not self.entry or waits.cycle(self.state, self.number) is not None
+            case _:
+                return False
+
+
+def holding(state: State, u: Ticket, stalls: Mapping[str, float]) -> tuple[float, str] | None:
+    """The time from which `u`, an entry of the `depends-on` of a waiting
+    change, holds up that change, with the reason, where it does
+    (`Acting.stall`), with `stalls` as `stalled` gives them."""
+    return Acting(state, u.number, waits.mark(state, u.number, stalls), True).stall
 
 
 def stall(state: State) -> Step | None:
