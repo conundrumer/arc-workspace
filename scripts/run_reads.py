@@ -13,6 +13,7 @@ from typing import Any, Protocol
 
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR as MAIN
+from operations.printed_forms import POLL_AGAIN
 from token_prices import request_input
 from file_reads import is_file
 from state_reads import DERIVED, Kept, state_cache
@@ -396,9 +397,10 @@ def repeated_runs(calls: list[tuple[str, str, float]], texts: Mapping[str, str],
     """The time of the last call of each run of `least` or more consecutive
     calls of `calls`, each a Bash call's id, command and start, with the same
     command and the same result text in `texts`, the text of each result by
-    its call (`result_texts`), other than a command led by `WAIT_LEAD` and a
-    call with no result."""
-    keys = [None if command.lstrip().startswith(WAIT_LEAD) else given
+    its call (`result_texts`), other than a command led by `WAIT_LEAD`, a call
+    whose result ends with `POLL_AGAIN`, and a call with no result."""
+    keys = [None if given is None or command.lstrip().startswith(WAIT_LEAD)
+            or given[1].strip().endswith(POLL_AGAIN) else given
             for (_, command, _), given in zip(calls, call_keys(calls, texts))]
     return [calls[last][2] for first, last in key_runs(keys) if last - first + 1 >= least]
 

@@ -15,7 +15,7 @@ from controlled_markdown import form, mctx
 from operations.command_words import Action, next_command
 from operations.filing import filed_line, split_message
 from operations.pacing import Capped, Pace, Scripted, Until
-from operations.printed_forms import SENT
+from operations.printed_forms import POLL_AGAIN, SENT
 from operations.roles import launch_parameters, launched_type
 from ticketing.times import utc_stamp
 from operations.steps import Bash, EndTurn, Launch, Poll, Reply, Send, Step, Undecided, key
@@ -221,8 +221,7 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
             line = filed_line(step, scratch) if rest else ""
             return send_text(to, "\n".join(part for part in (head, line) if part))
         case Poll(pace):
-            again = mctx("Run the command again: nothing is ready.")
-            return "\n".join([*([held] if (held := pace_line(pace)) else []), again])
+            return "\n".join([*([held] if (held := pace_line(pace)) else []), POLL_AGAIN])
         case EndTurn(hold):
             if hold is None:
                 return END_TURN

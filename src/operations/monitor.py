@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from controlled_markdown import mctx
 from operations.alerts import READING, REPEATS, STUCK_RULE, AlertKind, to_agent
 from operations.constants import STUCK_SECONDS
+from operations.printed_forms import POLL_AGAIN
 from operations.steps import Send, Step
 
 
@@ -51,7 +52,7 @@ def undecided(state: MonitorState) -> list[str]:
 
 ALERTS = mctx("""
     - `next` sends an agent that an operator of the session or the coordinator launched, whose work is open and that is no operator, an alert that gives the agent its step, once for each time one of these fires:
-        - `repeated`: {repeated}, other than a command led by `: 'unattended-wait:`.
+        - `repeated`: {repeated}, other than a command led by `: 'unattended-wait:` and a call whose output ends with the line "{poll_again}".
         - `stall`: {stall}.
     - After each alert it sends, the output of `next` gives the line `alert: <kind> <agent id>` on a line of its own.
     - The operator takes the final reply of a stalled agent as its report, sends the final reply of a stalled agent the coordinator launched to the coordinator once, and files a `bug` ticket on the stalled agent.
@@ -60,7 +61,7 @@ ALERTS = mctx("""
     - The operator sends the coordinator once, and records in a `bug` ticket, each agent that an operator of the session or the coordinator launched that is stuck: {stuck_rule}. The message gives the agent's own work that still runs. No alert goes to the agent.
     - An operator stops waiting on an agent or a holder that is stuck, and, where the operator waits on nothing else, gives its final reply with each such wait.
     """).format(stuck_rule=STUCK_RULE.format(stretch=mctx("the last {minutes} minutes").format(
-        minutes=STUCK_SECONDS // 60)), **{k.value: READING[k] for k in AlertKind})
+        minutes=STUCK_SECONDS // 60)), poll_again=POLL_AGAIN, **{k.value: READING[k] for k in AlertKind})
 """The alerts of `step`, which `scripts/operate.py --help alerts` gives."""
 
 

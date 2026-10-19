@@ -1,8 +1,9 @@
 """The forms of what the command prints or writes that a script reads back
 from a transcript: the key of a step (`STEP_KEY`), the line that gives the
 file a brief or a message is in (`FILED_LINE`), the name of a report file
-(`REPORT_NAME`), and the report of an agent that sent its final reply by
-SendMessage (`SENT_BY_MESSAGE`). They stand apart from the modules that
+(`REPORT_NAME`), the report of an agent that sent its final reply by
+SendMessage (`SENT_BY_MESSAGE`), and the last line of a poll
+(`POLL_AGAIN`). They stand apart from the modules that
 print them so that the import closure of a script that reads them, which
 `scripts/kept_reads.py` keys its records on, holds none of the code that
 plans a step."""
@@ -62,3 +63,7 @@ SendMessage to the agent `to`."""
 SENT_BY_MESSAGE = re.compile(
     r"\A" + form(SENT, {"to": rf"(?:{re.escape(COORDINATOR)}|{AGENT_ID})"}) + r"\Z")
 """The whole text of `SENT`, to the coordinator or to any agent."""
+
+
+POLL_AGAIN = mctx("Run the command again: nothing is ready.")
+"""The last line of what the command prints for a poll."""
