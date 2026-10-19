@@ -1,9 +1,9 @@
 //! Finding, within a program, a form, a `DEMO_RULE` form or the forms of a
-//! name scope by path, and the forms and the labels of a label scope.
+//! name scope by path, and the forms of a label scope.
 
-use crate::program::canonical::{canonical_labeling, shares_rule_scope, AsWritten, LabelScope, SearchBudget};
+use crate::program::canonical::shares_rule_scope;
 use crate::program::path::NodePath;
-use crate::program::{DemoRule, Form, LabelId, NameScope, Program};
+use crate::program::{DemoRule, Form, NameScope, Program};
 
 /// The form at `path` of `program`: a top-level form or a form of a
 /// `DEMO_RULE`.
@@ -27,11 +27,6 @@ pub(in crate::check) fn form_within<'p>(form: &'p Form, path: &NodePath) -> Opti
         };
     }
     Some(form)
-}
-
-/// The labels of `scope`, in the order of its canonical labeling.
-pub(in crate::check) fn scope_labels(scope: LabelScope<'_>) -> Vec<LabelId> {
-    canonical_labeling(scope, &AsWritten, &mut SearchBudget::new()).positions.iter().map(|(label, _)| *label).collect()
 }
 
 /// Each form of `rule` that stands in the rule's label scope, with its

@@ -394,6 +394,32 @@ pub(crate) fn form_scope(form: &Form) -> Option<LabelScope<'_>> {
     }
 }
 
+/// The labels of `scope`, in the order of their canonical labeling with
+/// each name as the file writes it.
+pub(crate) fn scope_labels(scope: LabelScope<'_>) -> Box<[LabelId]> {
+    canonical_labeling(scope, &AsWritten, &mut SearchBudget::new()).positions.iter().map(|(label, _)| *label).collect()
+}
+
+/// The labels of the scope of `form`, as [`form_scope`] gives it, as
+/// [`scope_labels`] gives them.
+pub(crate) fn form_scope_labels(form: &Form) -> &[LabelId] {
+    cache(form).scope_labels.get_or_init(|| form_scope(form).map(scope_labels).unwrap_or_default())
+}
+
+/// What the node of `form` keeps.
+pub(super) fn cache(form: &Form) -> &FormCache {
+    let cache = match form {
+        Form::Claim(node) => &node.shared.cache,
+        Form::Clause(node) => &node.shared.cache,
+        Form::Instance(node) => &node.shared.cache,
+        Form::Choose(node) => &node.shared.cache,
+        Form::RigidDet(node) => &node.shared.cache,
+        Form::Demonstrated(node) => &node.shared.cache,
+        Form::Alts(node) => &node.shared.cache,
+    };
+    cache.get_or_init(Box::default)
+}
+
 /// Whether the form at `index` of `rule` stands in the rule's label scope:
 /// a clause, `INIT`, `CHOOSE` or `RIGID_DET` form that no `ALT` gave it.
 pub(crate) fn shares_rule_scope(rule: &DemoRule, index: usize) -> bool {

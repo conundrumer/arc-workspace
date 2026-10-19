@@ -6,10 +6,10 @@ use std::sync::Arc;
 use super::columns::{Columns, Place};
 use super::GraphNodeIndex;
 use crate::hash::StableHashMap;
-use crate::program::canonical::{AsWritten, Canonical, CanonicalForm, CanonicalWriter, NameWriter, SearchBudget};
+use crate::program::canonical::{cached_write, AsWritten, Canonical, CanonicalForm, CanonicalWriter, NameWriter, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
-    Body, ColumnName, DeclaredName, Demonstrated, NameScope, Node, OutputOwner, Program, RelationRef,
+    Body, ColumnName, DeclaredName, Demonstrated, Form, NameScope, Node, OutputOwner, Program, RelationRef,
 };
 
 /// Writes the path of the output that `relation` reads, after the
@@ -163,7 +163,22 @@ impl Names {
             own = Own::of(node).or(own);
         }
         let writer = Writer { names: self, scope: &scope, own: own.as_ref() };
-        written(node, path, atom, &writer)
+        written_at(program.value(), node, path, atom, &writer)
+    }
+}
+
+/// The canonical form of `node`, at `path` of `program`, through `writer`,
+/// as [`written`] gives it, kept on the form's node through
+/// [`cached_write`] where `node` is a top-level form other than a
+/// `DEMONSTRATED` form, whose write reads names through `writer` alone.
+pub(super) fn written_at(program: &Program, node: NodeRef<'_>, path: &NodePath, atom: Option<&crate::program::Atom>, writer: &Writer<'_>) -> Option<CanonicalForm> {
+    let form = match &path.0[..] {
+        [top] => program.forms.get(top.0 as usize),
+        _ => None,
+    };
+    match form {
+        Some(form) if !matches!(form, Form::Demonstrated(_)) => Some(cached_write(form, writer, |names| written_through(node, atom, names).expect("a form has a canonical form"))),
+        _ => written(node, path, atom, writer),
     }
 }
 
@@ -174,6 +189,12 @@ pub(super) fn written(node: NodeRef<'_>, path: &NodePath, atom: Option<&crate::p
     if let NodeRef::Demonstrated(demonstrated) = node {
         return Some(demonstrated_form(demonstrated, path, writer));
     }
+    written_through(node, atom, writer)
+}
+
+/// The canonical form of `node`, a node other than a `DEMONSTRATED` form,
+/// through `writer`, as [`written`] gives it.
+fn written_through(node: NodeRef<'_>, atom: Option<&crate::program::Atom>, writer: &dyn NameWriter) -> Option<CanonicalForm> {
     let mut out = CanonicalWriter::default();
     let search = &mut SearchBudget::new();
     let out_ = &mut out;

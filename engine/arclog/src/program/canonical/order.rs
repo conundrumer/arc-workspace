@@ -38,13 +38,24 @@ impl CanonicalOrder {
 
     /// The canonical order of `form` and its canonical form under
     /// [`AsWritten`], from one write of `form`.
+    ///
+    /// The write runs on the first call for the node of `form`, which
+    /// caches its result; a search of each label scope starts with
+    /// [`super::SEARCH_NODE_CAP`] nodes whatever `search` holds, so the
+    /// result reads nothing of `search`, and sets its `reached` where a
+    /// search reached the cap.
     pub fn with_form(form: &Form, search: &mut SearchBudget) -> (Self, CanonicalForm) {
-        let mut cx = Context::new(search, &AsWritten);
-        cx.order = Some(Recorded::default());
-        let mut out = CanonicalWriter::default();
-        form_root(&mut cx, &mut out, form);
-        let recorded = cx.order.take().expect("the order is recorded");
-        (CanonicalOrder { lists: recorded.lists, labels: recorded.labels }, out.finish())
+        let (order, canonical, reached) = super::form::cache(form).order.get_or_init(|| {
+            let mut own = SearchBudget::new();
+            let mut cx = Context::new(&mut own, &AsWritten);
+            cx.order = Some(Recorded::default());
+            let mut out = CanonicalWriter::default();
+            form_root(&mut cx, &mut out, form);
+            let recorded = cx.order.take().expect("the order is recorded");
+            (CanonicalOrder { lists: recorded.lists, labels: recorded.labels }, out.finish(), own.reached)
+        });
+        search.reached |= *reached;
+        (order.clone(), canonical.clone())
     }
 
     /// The source path of the node at `canonical`, a path in canonical

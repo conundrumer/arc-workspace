@@ -68,6 +68,10 @@ struct Shared<T> {
     /// The hash of the value's canonical form, and whether its search
     /// reached [`canonical::SEARCH_NODE_CAP`], set on first use.
     canonical_hash: OnceLock<(StableHash, bool)>,
+    /// What the canonical form of the value gives where the value is a
+    /// form, [`canonical::FormCache`], made on its first use, so that a
+    /// node of another kind holds none.
+    cache: OnceLock<Box<canonical::FormCache>>,
 }
 
 impl<T> Clone for Node<T> {
@@ -79,7 +83,7 @@ impl<T> Clone for Node<T> {
 impl<T: canonical::Canonical> Node<T> {
     /// The node of `value`, which is immutable.
     pub fn new(value: T) -> Self {
-        Node { shared: Arc::new(Shared { value, canonical_hash: OnceLock::new() }) }
+        Node { shared: Arc::new(Shared { value, canonical_hash: OnceLock::new(), cache: OnceLock::new() }) }
     }
 
     /// Whether the search for the value's canonical form reached

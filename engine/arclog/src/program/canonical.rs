@@ -19,8 +19,8 @@
 //!
 //! The byte encoding of a form is in `form`, the graph of a label scope
 //! with its color refinement in `graph`, the one walk of a label scope's
-//! nodes that both take in `walk`, and the canonical order of a form in
-//! `order`. This module holds the search over that graph. Each module
+//! nodes that both take in `walk`, the canonical order of a form in
+//! `order`, and the writes a form's node caches in `replay`. This module holds the search over that graph. Each module
 //! writes a column path through the [`NameWriter`] of the write, so the
 //! edge labels of the graph and the bytes of the form name each column
 //! alike.
@@ -28,6 +28,7 @@
 mod form;
 mod graph;
 mod order;
+mod replay;
 mod walk;
 
 use super::path::{child_index, NodePath, NodeRef, PathStep};
@@ -38,8 +39,9 @@ use graph::*;
 use order::Recorded;
 
 pub use order::CanonicalOrder;
+pub(crate) use replay::cached_write;
 
-pub(crate) use form::{canonical_form, form_scope, prediction, relation_of, shares_rule_scope};
+pub(crate) use form::{canonical_form, form_scope_labels, prediction, relation_of, scope_labels, shares_rule_scope};
 pub use form::{canonical_hash, AsWritten, Canonical, CanonicalForm, CanonicalWriter, NameWriter};
 pub(in crate::program) use form::form_of;
 
@@ -72,6 +74,20 @@ impl Default for SearchBudget {
     fn default() -> Self {
         SearchBudget::new()
     }
+}
+
+/// What the canonical form of a form gives, kept on the form's node from
+/// its first use, so that each case program that holds the node, and each
+/// check of it, reads it once: the labels of its scope, as
+/// [`form_scope_labels`] gives them, and its canonical order and form, as
+/// [`CanonicalOrder::with_form`] gives them, with whether a search reached
+/// the cap; and its writes through name writers other than
+/// [`AsWritten`], as [`cached_write`] gives them.
+#[derive(Debug, Default)]
+pub(super) struct FormCache {
+    scope_labels: std::sync::OnceLock<Box<[LabelId]>>,
+    order: std::sync::OnceLock<(CanonicalOrder, CanonicalForm, bool)>,
+    writes: replay::WriteCache,
 }
 
 /// The canonical labeling of one scope: for each label of the scope, its

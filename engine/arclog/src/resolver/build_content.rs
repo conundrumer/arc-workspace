@@ -80,7 +80,7 @@ impl Builder<'_> {
             let writer = Writer { names: &self.names, scope, own: own.as_ref() };
             let bytes = match self.names.fixed.get(path) {
                 Some(content) => content.bytes.clone(),
-                None => super::super::names::written(form, path, None, &writer).expect("a form has a canonical form").bytes,
+                None => super::super::names::written_at(self.case.value(), form, path, None, &writer).expect("a form has a canonical form").bytes,
             };
             let columns = match form {
                 NodeRef::Clause(clause) => match self.concept_columns.get(path) {

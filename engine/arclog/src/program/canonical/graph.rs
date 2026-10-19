@@ -67,9 +67,8 @@ impl<'n> GraphBuilder<'n> {
     /// The graph as numbers: each vertex's initial color, as its rank among
     /// the colors, and each vertex's edges, by the rank of their labels.
     pub(super) fn colored(self) -> ColoredGraph {
-        let initial = ranks(&self.colors);
-        let edge_labels: Vec<Vec<u8>> = self.edges.iter().map(|(_, _, label)| label.clone()).collect();
-        let edge_ranks = ranks(&edge_labels);
+        let initial = ranks(self.colors.len(), |vertex| &self.colors[vertex]).0;
+        let edge_ranks = ranks(self.edges.len(), |edge| &self.edges[edge].2).0;
         let mut edges = vec![Vec::new(); self.colors.len()];
         for ((from, to, _), rank) in self.edges.iter().zip(edge_ranks) {
             edges[*from].push((rank, false, *to));
@@ -81,12 +80,21 @@ impl<'n> GraphBuilder<'n> {
     }
 }
 
-/// The rank of each value among the distinct values of `values`.
-pub(super) fn ranks<T: Ord + Clone>(values: &[T]) -> Vec<u32> {
-    let mut distinct = values.to_vec();
-    distinct.sort();
-    distinct.dedup();
-    values.iter().map(|v| distinct.binary_search(v).expect("a value of the list") as u32).collect()
+/// The rank of each of `len` values, the value of index `i` being
+/// `value(i)`, among the distinct values, and the number of distinct
+/// values.
+pub(super) fn ranks<T: Ord>(len: usize, value: impl Fn(usize) -> T) -> (Vec<u32>, u32) {
+    let mut order: Vec<usize> = (0..len).collect();
+    order.sort_unstable_by(|&a, &b| value(a).cmp(&value(b)));
+    let mut ranks = vec![0; len];
+    let mut rank = 0;
+    for (index, &at) in order.iter().enumerate() {
+        if index > 0 && value(at) != value(order[index - 1]) {
+            rank += 1;
+        }
+        ranks[at] = rank;
+    }
+    (ranks, if len == 0 { 0 } else { rank + 1 })
 }
 
 /// A scope's graph as numbers, which the search refines.
@@ -102,23 +110,32 @@ pub(super) struct ColoredGraph {
 impl ColoredGraph {
     /// 1-dimensional Weisfeiler–Leman refinement of `colors`, to its fixed
     /// point. Each new color keeps the order of the old ones.
+    ///
+    /// A vertex's new color is the rank of its signature among the distinct
+    /// signatures, a signature being its color and the sorted list of its
+    /// edges' labels, directions and far ends' colors. The signatures of a
+    /// round stand in one buffer, at the span of each vertex's edges.
     pub(super) fn refine(&self, colors: &mut Vec<u32>) {
+        let mut spans = Vec::with_capacity(self.edges.len());
+        let mut start = 0;
+        for edges in &self.edges {
+            spans.push(start..start + edges.len());
+            start += edges.len();
+        }
+        let mut around: Vec<(u32, bool, u32)> = Vec::with_capacity(start);
         let mut count = colors.iter().max().map_or(0, |c| c + 1);
         loop {
-            let signatures: Vec<(u32, Vec<(u32, bool, u32)>)> = (0..colors.len())
-                .map(|vertex| {
-                    let mut around: Vec<(u32, bool, u32)> =
-                        self.edges[vertex].iter().map(|(label, inward, other)| (*label, *inward, colors[*other])).collect();
-                    around.sort();
-                    (colors[vertex], around)
-                })
-                .collect();
-            *colors = ranks(&signatures);
-            let refined = colors.iter().max().map_or(0, |c| c + 1);
-            if refined == count {
+            around.clear();
+            for (edges, span) in self.edges.iter().zip(&spans) {
+                around.extend(edges.iter().map(|(label, inward, other)| (*label, *inward, colors[*other])));
+                around[span.clone()].sort_unstable();
+            }
+            let (refined, refined_count) = ranks(colors.len(), |vertex| (colors[vertex], &around[spans[vertex].clone()]));
+            *colors = refined;
+            if refined_count == count {
                 return;
             }
-            count = refined;
+            count = refined_count;
         }
     }
 

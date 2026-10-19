@@ -21,7 +21,7 @@ use crate::types::{
     each_conjunct, each_site_label, label_fault_message, use_label, AssemblyId, FormRelation, FormTypes,
     GraphRelation, KeyRow, LabelFault, ProgramTypes, ValueType,
 };
-pub(super) use within::{demo_rule, form_at, form_within, rule_scope_forms, scope_forms, scope_labels};
+pub(super) use within::{demo_rule, form_at, form_within, rule_scope_forms, scope_forms};
 use within::rule_within;
 
 mod within;

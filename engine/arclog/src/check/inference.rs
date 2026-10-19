@@ -10,12 +10,12 @@ use std::sync::Arc;
 
 use super::grounding::{bodies, BodyPlace};
 use super::types::{
-    column_type, component, declared_type, demo_rule, form_at, pose_of_fault, project, relation_columns, rule_scope_forms, scope_forms, scope_labels, site_value_type,
+    column_type, component, declared_type, demo_rule, form_at, pose_of_fault, project, relation_columns, rule_scope_forms, scope_forms, site_value_type,
     try_map_labels, zero_typed_heads, PoseOr,
 };
 use super::{ClauseEntry, FileScope, Refusal, SolverClauses};
 use crate::hash::StableHashMap;
-use crate::program::canonical::{form_scope, CanonicalOrder, LabelScope};
+use crate::program::canonical::{form_scope_labels, scope_labels, CanonicalOrder, LabelScope};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
     Atom, Body, ColumnName, Conjunct, DemoRule, Constraint, Form, Instance, LabelId, NameScope, Node, Operand, OutputOwner, OutputStep, PortName, ProgramRelation, RelationColumn, RelationRef, Site, SiteArg,
@@ -25,7 +25,7 @@ use crate::registry::{binding_sites, key_parameter, Column, ColumnType, Componen
 use crate::resolver::columns;
 use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
-use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram};
+use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Signature};
 use crate::types::{label_type, scope_list, use_label, AssemblyId, KeyRow, LabelFault, ValueType};
 
 /// The labels of a form's own scope, with the list each label's sites stand
@@ -272,21 +272,26 @@ impl<'a> FormInference<'a> {
 
 /// The type that each clause of a [`SolverClauses`] gives one of its
 /// columns, or that it adds no type, as [`Inference::other_clauses_type`]
-/// reads it for a clause of the same relation, kept over every
+/// reads it for a clause of the same relation, and the join of those types
+/// for each clause that reads them, kept over every
 /// [`super::check_program`] call on that value, so that the check of a
 /// solver infers each such read once, and not once per case program it
-/// checks, where the read meets no cycle of forms. A key is the clause, by its case program and its path there,
-/// the column, and the columns of the clause that reads it, whose head
-/// labels name a Pose type's key row.
+/// checks, where the read meets no cycle of forms.
 #[derive(Debug, Default)]
-pub(super) struct ClauseColumnReads(RefCell<StableHashMap<(usize, NodePath, ColumnName, Arc<[RelationColumn]>), Option<ValueType>>>);
+pub(super) struct ClauseColumnReads {
+    /// A key is the clause, by its case program and its path there, the
+    /// column, and the columns of the clause that reads it, whose head
+    /// labels name a Pose type's key row.
+    reads: RefCell<StableHashMap<(usize, NodePath, ColumnName, Arc<[RelationColumn]>), Option<ValueType>>>,
+    /// A key is the relation, the signature of the clause that reads its
+    /// other clauses, the column, and the columns of that clause.
+    joins: RefCell<StableHashMap<(ProgramRelation, Signature, ColumnName, Arc<[RelationColumn]>), Result<Option<ValueType>, LabelFault>>>,
+}
 
 impl ClauseColumnReads {
     /// The type that the clause of `entry` gives `column`, or `None` where
     /// it adds no type, read for a clause whose columns are `reader`, from
-    /// `read`. A read is kept unless `cycle_reads`, the count of reads
-    /// through a cycle of forms, grows while it runs, since its type then
-    /// depends on the forms whose inference runs.
+    /// `read`, kept as [`cached_unless_cycle`] gives.
     fn get_or_read(
         &self,
         entry: &ClauseEntry,
@@ -295,17 +300,38 @@ impl ClauseColumnReads {
         cycle_reads: &Cell<usize>,
         read: impl FnOnce() -> Option<ValueType>,
     ) -> Option<ValueType> {
-        let key = (entry.program, entry.at.clone(), column.clone(), Arc::clone(reader));
-        if let Some(found) = self.0.borrow().get(&key) {
-            return found.clone();
-        }
-        let before = cycle_reads.get();
-        let found = read();
-        if cycle_reads.get() == before {
-            self.0.borrow_mut().insert(key, found.clone());
-        }
-        found
+        cached_unless_cycle(&self.reads, (entry.program, entry.at.clone(), column.clone(), Arc::clone(reader)), cycle_reads, read)
     }
+
+    /// The join of the types that the clauses of `relation` other than the
+    /// clause of signature `own`, whose columns are `reader`, give
+    /// `column`, from `join`, kept as [`cached_unless_cycle`] gives.
+    fn get_or_join(
+        &self,
+        (relation, own): (&ProgramRelation, Signature),
+        column: &ColumnName,
+        reader: &Arc<[RelationColumn]>,
+        cycle_reads: &Cell<usize>,
+        join: impl FnOnce() -> Result<Option<ValueType>, LabelFault>,
+    ) -> Result<Option<ValueType>, LabelFault> {
+        cached_unless_cycle(&self.joins, (relation.clone(), own, column.clone(), Arc::clone(reader)), cycle_reads, join)
+    }
+}
+
+/// The value `map` keeps under `key`, or else the value of `read`, which
+/// it keeps there unless `cycle_reads`, the count of reads through a cycle
+/// of forms, grows while `read` runs, since the value then depends on the
+/// forms whose inference runs.
+fn cached_unless_cycle<K: std::hash::Hash + Eq, V: Clone>(map: &RefCell<StableHashMap<K, V>>, key: K, cycle_reads: &Cell<usize>, read: impl FnOnce() -> V) -> V {
+    if let Some(found) = map.borrow().get(&key) {
+        return found.clone();
+    }
+    let before = cycle_reads.get();
+    let found = read();
+    if cycle_reads.get() == before {
+        map.borrow_mut().insert(key, found.clone());
+    }
+    found
 }
 
 /// The inferences of the case programs of a [`SolverClauses`] that one
@@ -359,6 +385,9 @@ pub(super) struct Inference<'a> {
     /// Each form inferred, or `None` while its inference runs, so that a
     /// read through a cycle of forms gives no type.
     forms: RefCell<StableHashMap<NodePath, Option<Rc<FormInference<'a>>>>>,
+    /// The signature of each clause of the program read so far, by its
+    /// path, as [`super::clause_signature`] gives it.
+    signatures: RefCell<StableHashMap<NodePath, Signature>>,
 }
 
 impl std::fmt::Debug for Inference<'_> {
@@ -370,7 +399,13 @@ impl std::fmt::Debug for Inference<'_> {
 impl<'a> Inference<'a> {
     pub fn new(program: &'a ResolvedProgram, cases: &'a CaseInferences<'a>) -> Self {
         let concept = program.concept().map(|concept| cases.concept(concept));
-        Inference { program, registry: cases.registry, cases, concept, forms: RefCell::default() }
+        Inference { program, registry: cases.registry, cases, concept, forms: RefCell::default(), signatures: RefCell::default() }
+    }
+
+    /// The signature of the clause at `path` of the program.
+    fn signature(&self, path: &NodePath) -> Signature {
+        let mut signatures = self.signatures.borrow_mut();
+        signatures.entry(path.clone()).or_insert_with(|| super::clause_signature(self.program, path)).clone()
     }
 
     /// The inference of the concept program and the path there of `path`,
@@ -416,7 +451,7 @@ impl<'a> Inference<'a> {
     fn infer_new(&self, form: &'a Form, path: &NodePath) -> FormInference<'a> {
         let scope = ScopeBody::of(form, self.registry);
         let walk = FormWalk::of(form);
-        let labels: Vec<LabelId> = form_scope(form).map(scope_labels).unwrap_or_default();
+        let labels = form_scope_labels(form);
         let no_bindings = StableHashMap::default();
         let type_all = |bindings: &StableHashMap<TypeParameter, ValueType>, pose_or: PoseOr| -> Vec<(LabelId, Result<Option<ValueType>, LabelFault>)> {
             let reading = SiteReading { path, walk: &walk, component: scope.component, bindings, pose_or };
@@ -461,7 +496,7 @@ impl<'a> Inference<'a> {
     /// the rule.
     fn infer_rule(&self, rule: &'a DemoRule, path: &NodePath) -> FormInference<'a> {
         let mut labels: Vec<(LabelId, Result<Option<ValueType>, LabelFault>)> =
-            scope_labels(LabelScope::DemoRule(rule)).into_iter().map(|label| (label, Ok(None))).collect();
+            scope_labels(LabelScope::DemoRule(rule)).iter().map(|label| (*label, Ok(None))).collect();
         let mut given = Vec::new();
         for (index, _) in rule_scope_forms(rule) {
             let Some(inferred) = self.infer(&path.child(index)) else { continue };
@@ -614,24 +649,28 @@ impl<'a> Inference<'a> {
     /// `(= *X 0)` gives a type adds no type. A Pose type's key row names
     /// the labels of `clause`.
     fn other_clauses_type(&self, clause: &crate::program::Clause, path: &NodePath, column: &ColumnName) -> Result<Option<ValueType>, LabelFault> {
-        let own = super::clause_signature(self.program, path);
-        let target = |column: &ColumnName| head_label(clause, column);
-        let entries = self.cases.clauses.of_relation(&FileScope::Program, &clause.derives).iter();
-        let types = entries.filter(|entry| entry.signature != own).filter_map(|entry| {
-            self.cases.clauses.column_reads().get_or_read(entry, column, &clause.columns, &self.cases.cycle_reads, || {
-                let inference = self.cases.of(entry);
-                let Some(Form::Clause(other)) = form_at(inference.program.program.value(), &entry.at) else {
-                    unreachable!("an entry of a relation in the program's scope stands at a clause of the program it was found in")
-                };
-                let other = other.value();
-                let zero_typed = zero_typed_heads(other);
-                if other.columns.iter().any(|found| found.name == *column && zero_typed.contains(&found.label)) {
-                    return None;
-                }
-                inference.clause_column(&entry.at, other, &NameScope::Program, std::slice::from_ref(column), &target, PoseOr::Given)
-            })
-        });
-        join_types(types)
+        let own = self.signature(path);
+        let reads = self.cases.clauses.column_reads();
+        let cycle_reads = &self.cases.cycle_reads;
+        reads.get_or_join((&clause.derives, own.clone()), column, &clause.columns, cycle_reads, || {
+            let target = |column: &ColumnName| head_label(clause, column);
+            let entries = self.cases.clauses.of_relation(&FileScope::Program, &clause.derives).iter();
+            let types = entries.filter(|entry| entry.signature != own).filter_map(|entry| {
+                reads.get_or_read(entry, column, &clause.columns, cycle_reads, || {
+                    let inference = self.cases.of(entry);
+                    let Some(Form::Clause(other)) = form_at(inference.program.program.value(), &entry.at) else {
+                        unreachable!("an entry of a relation in the program's scope stands at a clause of the program it was found in")
+                    };
+                    let other = other.value();
+                    let zero_typed = zero_typed_heads(other);
+                    if other.columns.iter().any(|found| found.name == *column && zero_typed.contains(&found.label)) {
+                        return None;
+                    }
+                    inference.clause_column(&entry.at, other, &NameScope::Program, std::slice::from_ref(column), &target, PoseOr::Given)
+                })
+            });
+            join_types(types)
+        })
     }
 
     /// Where `clause`, a clause of `scope`, takes the columns of its
