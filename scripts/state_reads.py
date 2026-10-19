@@ -96,7 +96,6 @@ class Held:
 
     def recall(self) -> object:
         """The read's result at this state for its arguments."""
-        assert self.read.run is not None
         return self.read.run(self.call, self.positional)[0]
 
     def drop(self) -> None:
@@ -434,9 +433,10 @@ class By(Enum):
     the one before keeps."""
 
 
-type Run = Callable[[Call, bool], tuple[Any, tuple[str, ...]]]
-"""A read's run for its arguments, its `notes` passed by position or not:
-its result and `undecided` lines."""
+type RunWith = Callable[[Call, bool, tuple[Any, ...], dict[str, Any]],
+                        tuple[Any, tuple[str, ...]]]
+"""A read's run for its arguments, its `notes` passed by position or not,
+given as well as the read takes them: its result and `undecided` lines."""
 
 
 type Leaf = tuple[By, str, tuple[Any, ...], tuple[tuple[str, Any], ...], object]
@@ -452,9 +452,9 @@ it rests on, its result, its `undecided` lines, and its version."""
 class ReadInfo:
     """A `state_cache` read: its name, `module:qualname`, by which a trace
     gives it, its stamp, where its `notes` parameter stands, how it is
-    kept, the read as `state_cache` wraps it, the run of the read for a
-    held read's arguments (`Run`), and its held reads by their arguments."""
-    __slots__ = ("name", "stamp", "notes", "notes_at", "kept", "wrapped", "run", "held")
+    kept, the run of the read for a held read's arguments (`RunWith`), and
+    its held reads by their arguments."""
+    __slots__ = ("name", "stamp", "notes", "notes_at", "kept", "run_with", "held")
 
     def __init__(self, name: str, stamp: Callable[..., Hashable] | None | Derived,
                  notes: str | None, notes_at: int | None, kept: Kept | None) -> None:
@@ -463,26 +463,28 @@ class ReadInfo:
         self.notes = notes
         self.notes_at = notes_at
         self.kept = kept
-        self.wrapped: Callable[..., Any] | None = None
-        self.run: Run | None = None
+        self.run_with: RunWith | None = None
         self.held: dict[Hashable, Held] = {}
+
+    def run(self, call: Call, positional: bool) -> tuple[Any, tuple[str, ...]]:
+        """The read's run for `call`, its `notes` passed by position or not:
+        its result and `undecided` lines."""
+        assert self.run_with is not None
+        return self.run_with(call, positional, *arguments(call))
 
     def again(self, args: tuple[Any, ...], kwargs: tuple[tuple[str, Any], ...]) -> object:
         """The read's result at this state for `args` and `kwargs`, its notes
         dropped: the held result where it was brought up to date at this
         state, reached as `at_state` reaches it (`reach`)."""
-        hit = self.held.get(call_of(args, kwargs))
-        if hit is not None and hit.state == _state:
-            reach(hit)
-            return hit.value
-        named = dict(kwargs)
-        if self.notes is not None and self.notes_at is not None:
-            if len(args) >= self.notes_at:
-                args = (*args[:self.notes_at], [], *args[self.notes_at:])
-            else:
-                named[self.notes] = []
-        assert self.wrapped is not None
-        return self.wrapped(*args, **named)
+        key = call_of(args, kwargs)
+        hit = self.held.get(key)
+        if hit is None or hit.state != _state:
+            assert self.run_with is not None
+            positional = self.notes_at is not None and len(args) >= self.notes_at
+            self.run_with(key, positional, args, dict(kwargs))
+            hit = self.held[key]
+        reach(hit)
+        return hit.value
 
 
 _reads: dict[str, ReadInfo] = {}
@@ -637,9 +639,6 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
             kept_now = store.keep(info.name, name, (trace_of(made), value, lines, version))
             return version if kept_now else None
 
-        def run(key: Call, positional: bool) -> tuple[Any, tuple[str, ...]]:
-            return run_with(key, positional, *arguments(key))
-
         def run_with(key: Call, positional: bool, args: tuple[Any, ...],
                      kwargs: dict[str, Any]) -> tuple[Any, tuple[str, ...]]:
             """`run` of `key`, whose arguments are `args` and `kwargs`."""
@@ -648,24 +647,24 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                     _brought is not None and not derived and not hit.marked)):
                 hit.state = _state
                 return hit.value, hit.lines
+            mark: Hashable = None
+            stamped: Made = ()
+            if hit is not None and derived:
+                if (not hit.marked and not _marking) or held_still(hit.made):
+                    hit.state, hit.marked = _state, False
+                    return hit.value, hit.lines
+            elif not isinstance(stamp, Derived) and stamp is not None:
+                _frames.append({})
+                try:
+                    mark = stamp(*args, **kwargs)
+                finally:
+                    stamped = made_of(_frames.pop())
+                if hit is not None and hit.mark == mark:
+                    hit.state, hit.marked = _state, False
+                    hit.rest_on(hit.made, stamped)
+                    return hit.value, hit.lines
             entered = script_calls.enter()
             try:
-                mark: Hashable = None
-                stamped: Made = ()
-                if hit is not None and derived:
-                    if (not hit.marked and not _marking) or held_still(hit.made):
-                        hit.state, hit.marked = _state, False
-                        return hit.value, hit.lines
-                elif not isinstance(stamp, Derived) and stamp is not None:
-                    _frames.append({})
-                    try:
-                        mark = stamp(*args, **kwargs)
-                    finally:
-                        stamped = made_of(_frames.pop())
-                    if hit is not None and hit.mark == mark:
-                        hit.state, hit.marked = _state, False
-                        hit.rest_on(hit.made, stamped)
-                        return hit.value, hit.lines
                 record, made = recalled(key) if hit is None else (None, None)
                 if record is not None and made is not None:
                     _, value, kept_lines, version = record
@@ -720,8 +719,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
             if sink is not None:
                 sink.extend(lines)
             return value
-        info.wrapped = at_state
-        info.run = run
+        info.run_with = run_with
         return at_state
     return hold
 
