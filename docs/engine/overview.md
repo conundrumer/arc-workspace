@@ -51,15 +51,15 @@ The engine reads synthesized programs, solvers, and tasks. A task is the train p
 
 Each step is checked against the corpus and the Souffle solvers, as [verification.md](verification.md) gives. The design decisions whose cost every candidate and every case pays are in [performance.md](performance.md). An implementation detail that a scope doc gives, such as a data structure, an algorithm or a hash, is provisional until the engine is written and a benchmark measures it. Each scope doc gives the check that ends its step.
 
-Synthesis is built as early as it can be. The steps before [Synthesis](synthesis.md) build what a synthesized program reads, which is a program with one case and no `DEMONSTRATED` form, as [Inputs](#inputs) gives. The rest of [Cases and judge](cases.md), and [Tooling](tooling.md), come after it.
+Synthesis is built as early as it can be. The steps before [Synthesis](synthesis.md) build what a synthesized program reads, which is a program with one case and no `DEMONSTRATED` form, as [Inputs](#inputs) gives. The full run of every case comes after it, and then the step that refine needs.
 
 1. [Reader and checker](reader.md)
 2. [Evaluator and lib](evaluator.md)
 3. [Cases and judge](cases.md#one-case), for one case
 4. [Determination](determination.md)
 5. [Synthesis](synthesis.md)
-6. [Cases and judge](cases.md#every-case), for every case
-7. [Tooling](tooling.md)
+6. [Cases and judge](cases.md#every-case), the full run of every case
+7. [Refine](cases.md#refine-step), the witnesses and the case conditions of the judge, and [Tooling](tooling.md)
 
 The estimated size is 18,000 to 24,000 lines of Rust, and 1,000 to 2,000 lines of arclog for the proposers and the checks. The estimate is provisional: no measurement gives it.
 

@@ -1,8 +1,8 @@
 # Tooling
 
-The last step of the [build order](overview.md#build-order). It builds the CLI, the reports that refine passes read, and the checks over a solver's structure, written as arclog queries.
+The last step of the [build order](overview.md#build-order). It builds the [witnesses and the case conditions](cases.md#refine-step) of the judge, the CLI, the reports that refine passes read, and the checks over a solver's structure, written as arclog queries.
 
-The step ends when a refine pass runs on the engine, and the checks of the present lint have moved to the engine.
+The step ends when a refine pass runs on the engine, the checks of the present lint have moved to the engine, and the engine is at parity with Souffle on the witness outcomes and the case-condition reports, as [verification.md](verification.md) checks them, or the difference is reported as a fault, as the Principles requirement of [Requirements](overview.md#requirements) gives.
 
 ## Checks as queries
 

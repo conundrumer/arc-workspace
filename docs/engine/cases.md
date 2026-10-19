@@ -2,7 +2,7 @@
 
 It builds the models of a case on an input, from its `ONE` and `CHOOSE` forms, its open values, its `DEMONSTRATED` forms and its `Unfold` walks, and the judge of the solves relation, the case conditions and the witnesses. It rests on [constraints](../../docs/arclog/constraints.md) and on the handbook's [Cases](../../docs/handbook/solver-file.md#cases). Here solves is the handbook's fit, and hypothesis the handbook's model, as [Requirements](overview.md#requirements) gives.
 
-Two steps of the [build order](overview.md#build-order) build it, one before [Synthesis](synthesis.md) and one after it.
+Three steps of the [build order](overview.md#build-order) build it: one before [Synthesis](synthesis.md), and two after it.
 
 ## One case
 
@@ -12,14 +12,18 @@ Two steps of the [build order](overview.md#build-order) build it, one before [Sy
 
 ## Every case
 
-- The step after Synthesis builds the rest of this doc, and checks the parameters that [Determination](determination.md) leaves unchecked.
-- The step ends when the engine is at parity with Souffle on every solver outcome: each case's output on each pair, whether it solves the task, and the witness outcomes, as [verification.md](verification.md) checks them, or the difference is reported as a fault, as the Principles requirement of [Requirements](overview.md#requirements) gives.
+- The step after Synthesis runs every solver in full. It builds every case of a solver's `ALTS` forms, as [Cases](#cases) and [Models](#models) give, [Open values](#open-values) of every reading, the [`DEMONSTRATED`](#demonstrated) forms, and [Reports](#reports), and it checks the parameters that [Determination](determination.md) leaves unchecked.
+- The step ends when the engine is at parity with Souffle on each case's output on each pair and on whether it solves the task, as [verification.md](verification.md) checks them, or the difference is reported as a fault, as the Principles requirement of [Requirements](overview.md#requirements) gives.
+
+## Refine step
+
+- The step after the full run builds the rest of the judge: [Witnesses](#witnesses) and [Case conditions](#case-conditions), with the witnessed-case set that [Cases](#cases) gives. [Tooling](tooling.md) builds the rest of the step and gives its end check.
 
 ## Cases
 
 - A solver's cases are the product of its `ALTS` forms, restricted by the nesting of the blocks, less the combinations that the arcdata file's `exclude` forms leave out. A case's **base** is its choice at each `ALTS` form that the file writes: the concept case's answer or one of the form's alts. A `DET_OR_RULE` or `RULE_OR_DET` line splits only the bases that read its relation, so the cases of one base differ only in their readings at those lines. `cases()` of [Solvers](reader.md#solvers), built in [Reader and checker](reader.md), follows this rule, and gives a solver with a `representative` line the representative's cases, or the one case the line names.
 - Each case is one program, with no `Choice` column. The [result cache](evaluator.md#the-result-cache) shares the entries that the cases' relations hold in common.
-- The judge reports on the witnessed cases alone, as [Cases](../../docs/handbook/solver-file.md#cases) defines them. That set depends on each case's output on the pair inputs and the witness inputs, so the engine evaluates every included case on those inputs. The product is largest in af24b4cc, as [Alts structure](corpus-survey.md#alts-structure) gives.
+- The judge's checks of the [refine step](#refine-step) report on the witnessed cases alone, as [Cases](../../docs/handbook/solver-file.md#cases) defines them. That set depends on each case's output on the pair inputs and the witness inputs, so that step evaluates every included case on those inputs. The product is largest in af24b4cc, as [Alts structure](corpus-survey.md#alts-structure) gives.
 - The names of an `output` form expand to their cases as [Witness file](../../docs/handbook/solver-file.md#witness-file) gives.
 
 ## Models
