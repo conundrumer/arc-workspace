@@ -265,6 +265,8 @@
 - The determination relation of a parameter with a case column gives the rows of every case.
     + xref: src/checker/branches/checks.py:check_stored_assignment, src/checker/determination_plan.py:classify
 - A determination relation that mirrors no parameter is a helper and takes no parameter's name.
+- An `@open` parameter each of whose open values is a bijection between the values of its two columns other than the key that its `OpenValue` record names has the determination relation `<parameter>_pairs`. The `_pairs` relation has those two columns, and gives each pair of a value of one and a value of the other.
+    + xref: src/arclog_convert/open_orders.py, src/checker/lint/relations.py:_dead
 - A derived relation has no determination relation.
     + xref: src/checker/branches/checks.py:check_stored_assignment, src/solver/model.py:DerivedRelation.mirrored
 - When several determined parameters use an Ident for the same entity, their determination relations derive the same id for that entity.

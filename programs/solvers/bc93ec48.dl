@@ -239,4 +239,21 @@ paint([S, K, $Precedence(), T], Q, Col, [[V]]) :-
 
     .decl corner_target(c: DiagDir, c2: DiagDir)
     corner_target(C, C2) :- found_at(_, C, C2), !missed(C, C2).
+
+    // The count of the corners an order of precedence ranks.
+    .init corner_count = Tally<Unit, DiagDir>
+    corner_count.item($U(), C) :- diag_dir_elem(C).
+    corner_count.domain($U()).
+
+    // A line of one cell per corner, whose cells' distances to an edge are
+    // the ranks an order gives the corners.
+    .init rank_line = AxisFrame<Unit>
+    rank_line.extent($U(), A, N) :- corner_count.tally($U(), N), axis_elem(A).
+
+    .decl precedence_r(r: number)
+    precedence_r(R) :- rank_line.cell($U(), A, P), axis_of(D, A), dist(P, D, R).
+
+    // Each corner with each rank an order of precedence can give it.
+    .decl precedence_pairs(c: DiagDir, r: number)
+    precedence_pairs(C, R) :- diag_dir_elem(C), precedence_r(R).
 }

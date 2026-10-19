@@ -129,28 +129,42 @@ impl_choice([$Bridges($AnyPair(), $Cardinal()), $TileLevel(), $Unordered()]).
 impl_choice([$Bridges(L, Ds), T, $DrawnOver()]) :- line_pairs_choice(L), directions_choice(Ds), line_test_choice(T).
 impl_choice([$BboxOutline(), $TileLevel(), $DrawnOver()]).
 
-.decl ground(p: Position)
-ground(P) :- in(P, Col), params.bg(Col).
+.comp Parse<Key> {
+    .type KeyColor = [k: Key, col: Color]
 
-// The frame color is the one that meets the background.
-.decl frame_color(col: Color)
-frame_color(Col) :- in(P, Col), !params.bg(Col), neighbor(P, _, Q), ground(Q).
+    // The cells of each grid.
+    .decl cell(k: Key, p: Position, col: Color)
 
-// Each tile's interior, under its own id.
-// @claim tile-lattice
-.init core = Components<Color>
-core.node(Col, P) :- in(P, Col), !params.bg(Col), !frame_color(Col).
+    .decl ground(k: Key, p: Position)
+    ground(K, P) :- cell(K, P, Col), params.bg(Col).
 
-// The common interior color fills the most tiles; every other one is odd.
-// @claim common-interior
-.init tile_count = Mode<Unit, Color, Ident>
-tile_count.item($U(), Col, I) :- core.label(Col, _, I).
+    // The frame color is the one that meets the background.
+    .decl frame_color(k: Key, col: Color)
+    frame_color(K, Col) :- cell(K, P, Col), !params.bg(Col), neighbor(P, _, Q), ground(K, Q).
 
-.decl odd(col: Color)
-odd(Col) :- core.label(Col, _, _), !tile_count.mode($U(), Col).
+    // Each tile's interior, under its own id.
+    // @claim tile-lattice
+    .init core = Components<KeyColor>
+    core.node([K, Col], P) :- cell(K, P, Col), !params.bg(Col), !frame_color(K, Col).
+
+    // A cell of a tile's interior, with the tile's color and id.
+    .decl tile(k: Key, col: Color, p: Position, i: Ident)
+    tile(K, Col, P, I) :- core.label([K, Col], P, I).
+
+    // The common interior color fills the most tiles; every other one is odd.
+    // @claim common-interior
+    .init tile_count = Mode<Key, Color, Ident>
+    tile_count.item(K, Col, I) :- tile(K, Col, _, I).
+
+    .decl odd(k: Key, col: Color)
+    odd(K, Col) :- tile(K, Col, _, _), !tile_count.mode(K, Col).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
 
 .decl odd_tile(i: Ident, col: Color)
-odd_tile(I, Col) :- core.label(Col, _, I), odd(Col).
+odd_tile(I, Col) :- parse.tile($U(), Col, _, I), parse.odd($U(), Col).
 
 // The background cells each case paints, with each color that claims them.
 .decl paint(ch: Choice, p: Position, col: Color)
@@ -164,7 +178,7 @@ out(P, Col, [J, T, $Unordered()], [nil]) :- paint([J, T, $Unordered()], P, Col).
 
 // @claim bridge-odd-tiles
 .init tile_box = Bbox<Ident>
-tile_box.cell(I, P) :- core.label(Col, P, I), odd(Col).
+tile_box.cell(I, P) :- parse.tile($U(), Col, P, I), parse.odd($U(), Col).
 
 // --- $Bridges ---
 
@@ -190,15 +204,15 @@ line_pair(Ds, I1, I2, D) :-
 .decl span_tile(ds: Directions, col: Color, i: Ident, i2: Ident, p: Position)
 span_tile(Ds, Col, I1, I2, P) :-
     line_pair(Ds, I1, I2, D), axis4_of(D, A),
-    core.label(Col, Q1, I1), in(P, _), same_line(A, P, Q1), nearer(D, P, Q1),   // past the first
-    core.label(Col, Q2, I2), same_line(A, P, Q2), nearer(D, Q2, P).             // short of the second
+    parse.tile($U(), Col, Q1, I1), in(P, _), same_line(A, P, Q1), nearer(D, P, Q1),   // past the first
+    parse.tile($U(), Col, Q2, I2), same_line(A, P, Q2), nearer(D, Q2, P).             // short of the second
 
 // The pairs a case leaves unjoined.
 .decl blocked_tile(l: LinePairs, ds: Directions, i: Ident, i2: Ident)
 
 paint([$Bridges(L, Ds), $TileLevel(), O], P, Col) :-
     impl_choice([$Bridges(L, Ds), $TileLevel(), O]),
-    span_tile(Ds, Col, I1, I2, P), ground(P), !blocked_tile(L, Ds, I1, I2).
+    span_tile(Ds, Col, I1, I2, P), parse.ground($U(), P), !blocked_tile(L, Ds, I1, I2).
 
 // --- $Dir8Bridges & $TileLevel ---
 line_pair($Dir8Bridges(), I1, I2, D) :-
@@ -212,18 +226,18 @@ line_pair($Dir8Bridges(), I1, I2, D) :-
 // --- $BlockedByOdd & $TileLevel ---
 // A tile of another odd color lies between the two.
 blocked_tile($BlockedByOdd(), Ds, I1, I2) :-
-    span_tile(Ds, Col, I1, I2, P), in(P, Col2), odd(Col2), Col2 != Col.
+    span_tile(Ds, Col, I1, I2, P), in(P, Col2), parse.odd($U(), Col2), Col2 != Col.
 
 // --- $Bridges & $CellBetween ---
 
 .decl cell_key(k: Bridging)
-cell_key([L, Ds, Col]) :- impl_choice([$Bridges(L, Ds), $CellBetween(), _]), odd(Col).
+cell_key([L, Ds, Col]) :- impl_choice([$Bridges(L, Ds), $CellBetween(), _]), parse.odd($U(), Col).
 
 // @claim bridge-odd-tiles
 // @ignore dir: store — the case's Directions branch gives the cast directions
 .init cell_ray = Ray<Bridging>
 cell_ray.dir([L, Ds, Col], D) :- cell_key([L, Ds, Col]), bridge_dir(Ds, D).
-cell_ray.cell([L, Ds, Col], P) :- cell_key([L, Ds, Col]), ground(P).
+cell_ray.cell([L, Ds, Col], P) :- cell_key([L, Ds, Col]), parse.ground($U(), P).
 cell_ray.mark([L, Ds, Col], P) :- cell_key([L, Ds, Col]), in(P, Col).
 
 // A background cell with a cell of the color on each side along one line.
@@ -234,21 +248,21 @@ paint([$Bridges(L, Ds), $CellBetween(), O], P, Col) :-
 
 // --- $BlockedByOdd & $CellBetween ---
 cell_ray.blocked([$BlockedByOdd(), Ds, Col], P) :-
-    cell_key([$BlockedByOdd(), Ds, Col]), in(P, Col2), odd(Col2), Col2 != Col.
+    cell_key([$BlockedByOdd(), Ds, Col]), in(P, Col2), parse.odd($U(), Col2), Col2 != Col.
 
 // --- $BboxOutline ---
 
 // @claim bridge-odd-tiles
 .init color_box = Bbox<Color>
-color_box.cell(Col, P) :- odd(Col), in(P, Col).
+color_box.cell(Col, P) :- parse.odd($U(), Col), in(P, Col).
 
 // A background cell in the rectangle, in line with a tile on its d side.
 paint([$BboxOutline(), $TileLevel(), O], P, Col) :-
     impl_choice([$BboxOutline(), $TileLevel(), O]),
     color_box.box(Col, B_all), tile_box.box(I, B),
     dir_elem(D), same_dist(D, B, B_all),                    // a tile on the d side
-    axis_of(D, A_d), perp(A_d, A), core.label(Col, Q, I),
-    ground(P), same_line(A, P, Q), inside(P, B_all).
+    axis_of(D, A_d), perp(A_d, A), parse.tile($U(), Col, Q, I),
+    parse.ground($U(), P), same_line(A, P, Q), inside(P, B_all).
 
 // --- $DrawnOver ---
 
@@ -261,3 +275,29 @@ covered([J, T, $DrawnOver()], V, P, Col) :-
 out(P, Col, [J, T, $DrawnOver()], [[V]]) :-
     paint([J, T, $DrawnOver()], P, Col), params.draw_rank(V, _, _),
     !covered([J, T, $DrawnOver()], V, P, Col).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The colors each order of draw_rank ranks: the odd colors of every input.
+    .decl draw_rank_col(col: Color)
+    draw_rank_col(Col) :- parse.odd(_, Col).
+
+    // The count of the colors an order of draw_rank ranks.
+    .init color_count = Tally<Unit, Color>
+    color_count.item($U(), Col) :- draw_rank_col(Col).
+    color_count.domain($U()).
+
+    // A line of one cell per color, whose cells' distances to an edge are
+    // the ranks an order gives the colors.
+    .init rank_line = AxisFrame<Unit>
+    rank_line.extent($U(), A, N) :- color_count.tally($U(), N), axis_elem(A).
+
+    .decl draw_rank_r(r: number)
+    draw_rank_r(R) :- rank_line.cell($U(), A, P), axis_of(D, A), dist(P, D, R).
+
+    // Each color an order of draw_rank ranks, with each rank it can take.
+    .decl draw_rank_pairs(col: Color, r: number)
+    draw_rank_pairs(Col, R) :- draw_rank_col(Col), draw_rank_r(R).
+}

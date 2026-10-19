@@ -212,10 +212,12 @@ lit(Q, Col, $Loc(L, $Stamp(), F)) :-
     diag(L, Diag), params.mask_seated(Diag, Q), paint(Col, F).
 
 .decl impl_choice(ch: Choice)
+impl_choice($Pair()).
 impl_choice($Loc(L, R, F)) :- locate_choice(L), render_choice(R), paint_choice(F).
 
 out(P, Col, Ch) :- lit(P, Col, Ch).
-out(P, Col, Ch) :- impl_choice(Ch), params.canvas(P), !lit(P, _, Ch), params.bg(Col).
+out(P, Col, $Loc(L, R, F)) :-
+    impl_choice($Loc(L, R, F)), params.canvas(P), !lit(P, _, $Loc(L, R, F)), params.bg(Col).
 
 // --- $Pair ---
 // A cell of a grid, with its color.

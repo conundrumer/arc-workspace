@@ -59,6 +59,8 @@ from souffle.parser import parse  # noqa: E402
 from souffle.printer import term as souffle_term  # noqa: E402
 from souffle.printer import unit as souffle_unit  # noqa: E402
 from arclog_convert.literals import collect_vars  # noqa: E402
+from solver.vocabulary import order_pairs  # noqa: E402
+from arclog_convert.open_orders import keys_retyped as order_keys_retyped, orders as open_orders  # noqa: E402
 from arclog_convert.frame_reads import (  # noqa: E402
     Extent, FieldPlan, FrameRead, SingleAxisExtent, SquareExtent, field_plan, helpers_read)
 from arclog_convert.picks import rewrite as rewrite_picks  # noqa: E402
@@ -714,6 +716,9 @@ class Converter:
         self.case_types = self._case_types()
         self.open_params = self._open_params()
         self.open_types = self._open_types()
+        self.orders = open_orders(prog, self.open_params, self.types)
+        self.prog = prog = order_keys_retyped(prog, self.orders)
+        self.rels = {(r.scope.components, r.name): r for r in prog.relations}
         self.prog = prog = dc_replace(prog, units=tuple(self.open_eqs_dropped(u) for u in prog.units))
         self.prog = prog = self.open_carriers_dropped(prog)
         self.prog = prog = dc_replace(prog, units=tuple(u2 for u in prog.units for u2 in self.case_tested(u)))
@@ -3505,6 +3510,8 @@ class Solver:
                 for u in det_units.pop(r.name):
                     f = self.clause(u, "DET", ("Determine",), {}, name_scope=("Params",))
                     forms.append(f)
+            elif r.name in c.orders:
+                forms.append(self.order_form(r, amp, gloss))
             else:
                 verdict = self.plan().get(r.name)
                 types = [col.type.name for col in r.columns]
@@ -3539,7 +3546,8 @@ class Solver:
                 continue
             kt = keyed.get(r.name)
             columns = r.columns if kt is None else keyed_row(decls[kt.parent].columns, decls[kt.child].columns)
-            ts = [self.type_text(col.type.name) for col in columns if col.type.name not in c.case_types]
+            ts = [self.type_text(col.type.name) for col in columns
+                  if col.type.name not in c.case_types and col.type.name not in c.open_types]
             self.param_types[m.group(1)] = ts
             types = ts[0] if len(ts) == 1 else "(" + " ".join(ts) + ")"
             arcdata_params[i] = grid_param(text[:m.end()] + " " + types, ts, text[m.end():]) or \
@@ -3916,12 +3924,11 @@ class Solver:
     # ---- param lines
 
     def param_line(self, amp, r, facts, grids) -> str:
-        rows = []
-        for u in facts:
-            vals = []
-            for a in u.head.args:
-                vals.append(self.value_text(a))
-            rows.append("(" + " ".join(vals) + ")")
+        """The `param` form of `r`'s stored rows, with no column of an open
+        type, each row once."""
+        kept = [col.type.name not in self.c.open_types for col in r.columns]
+        rows = list(dict.fromkeys(
+            "(" + " ".join(self.value_text(a) for a, k in zip(u.head.args, kept) if k) + ")" for u in facts))
         if not grids:
             return f"(param {amp} " + " ".join(rows) + ")"
         lines = [f"(param {amp}"] + ["  " + r for r in rows]
@@ -3933,6 +3940,34 @@ class Solver:
             close(lines, "))" if keys else ")")
         close(lines, ")")
         return "\n".join(lines)
+
+    def order_form(self, r, amp: str, gloss: str) -> Form:
+        """The `DET` of the order parameter `r`: the rows of its `Determine`
+        relation of pairs (`solver.vocabulary.order_pairs`), and a `ONE` mark on
+        each value column, so that each order is one model."""
+        c = self.c
+        o = c.orders[r.name]
+        labels = [pascal(r.columns[i].name) for i in o.values]
+        pairs = order_pairs(r.name)
+        line = r.span.first if r.span else 0
+        if (("Determine",), pairs) not in c.rels:
+            f = Form([f"(DET {amp} (ONE))"], amp, set(), line=line)
+            f.marks = ["(ONE)"]
+            self.todo.add("no-det-order", f"{amp}: no Determine relation {pairs} gives the pairs of values "
+                          "of the order")
+            f.comments = [*(f";; {params_to_amp(g)}" for g in [gloss] if g), *self.todo.take()]
+            return f
+        name = c.rel_name(("Determine",), pairs)
+        body = [f"({name} {' '.join('*' + lab for lab in labels)})"]
+        marks = [f"(ONE {lab})" for lab in labels]
+        f = Form([f"(DET {amp}"] + ["  " + x for x in body + marks], amp, {name}, line=line)
+        close(f.lines, ")")
+        f.body = body
+        f.marks = marks
+        f.cols = labels
+        f.side = "DET"
+        f.comments = [f";; {params_to_amp(gloss)}"] if gloss else []
+        return f
 
     def keyed_param_line(self, amp, kt: KeyedTable, facts, grids) -> str:
         """The param of the set-keyed table `kt`: a row for each fact of its

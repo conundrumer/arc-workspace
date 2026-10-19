@@ -64,7 +64,7 @@ A grid's rows are of one length. Each cell gives one row: its position in the gr
 
 A frame of cells, or a frame cut into equal tiles, has no `param` form of its own: each of its fields comes from a `DET` that the program states, and a field's `param` form is that `DET`'s, as [Program](arclog.md#program) gives.
 
-Every `param` form stands at the top level. The arclog block that declares the parameter says which cases read it. The rows of an [open](arclog.md#open-values) parameter are its open values.
+Every `param` form stands at the top level. The arclog block that declares the parameter says which cases read it. The rows of an [open](arclog.md#open-values) parameter are its open values, except where its `DET` ends in `ONE` marks over a set of rows: the rows are then what those marks choose from, and each open value is one model of them.
 
 A `param` form and a witness's `output` forms are records of a run, not its source: a run whose determination or whose output set disagrees with the entry is a fault.
 

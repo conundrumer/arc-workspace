@@ -56,6 +56,7 @@ from solver.vocabulary import (
     DETERMINE,
     OUTPUT,
     PARAMS,
+    order_pairs,
 )
 
 # Shared views
@@ -190,10 +191,12 @@ def _claimed(solver: Solver, runs: Runs, category: Category) -> list[Finding]:
 
 
 def _dead(v: View, claims: dict[DeclId, Category]) -> list[Finding]:
+    pairs = {order_pairs(p.name) for p in v.solver.params.parameters if p.open}
     exempt = {d.id for d in v.program_relations()
               if (d.scope == TOP and d.name == OUTPUT.name)
               or (v.comp_of(d.scope) in (DETERMINE, PARAMS)
-                  and d.name in _determined(v))}
+                  and d.name in _determined(v))
+              or (v.comp_of(d.scope) == DETERMINE and d.name in pairs)}
     dead: set[DeclId] = set()
     changed = True
     while changed:

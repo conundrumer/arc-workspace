@@ -28,6 +28,15 @@ PARAMS_SCOPE = Scope((PARAMS,))
 """The scope of what `Params` declares and holds."""
 DETERMINE_SCOPE = Scope((DETERMINE,))
 """The scope of what `Determine` declares and holds."""
+
+
+def order_pairs(parameter: str) -> str:
+    """The `Determine` relation of the `@open` parameter `parameter` whose
+    rows are the pairs of values that each order of it ranks, with its
+    value columns under their names."""
+    return parameter + "_pairs"
+
+
 PARSE: Annotated[str,
     quotes("solver-file.md", "Parse",
            "A `.comp Parse<Key>` contains a derivation that the program and "
