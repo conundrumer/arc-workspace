@@ -67,7 +67,7 @@ The principles are to be published as a paper that presents them as a theory of 
     - The hypothesis is fixed, and the determination chooses only θ. It can give several values, and it is exact.
     - A learner chooses the hypothesis and returns one answer. An estimator implies noisy data and an approximate answer.
     - In Datalog, every clause does inference. Induction collides with the `induce` keyword, and fitting suggests optimizing a loss, where the determination is exact.
-    - "Determination" pairs with "undetermined", the word the handbook uses for what the pairs leave open.
+    - "Determination" pairs with "underdetermined", the word the handbook uses for what the pairs leave with several answers. Underdetermination, of a theory by its evidence, is the standard term in philosophy of science.
 - **open parameter**
     - Nearest standard term: non-identifiable parameter.
     - Rename it if the paper states results about identifiability. The matching term for the determination is then identification, as in an identification strategy in econometrics.
@@ -111,7 +111,7 @@ Each citation and definition needs to be checked against the source before the p
 ## Renames in arclog
 
 - **choice point** → **alts**
-    - arclog's `ALTS` form gives a property that the train pairs leave undetermined. The concept answers it one way, and each alt answers it another way.
+    - arclog's `ALTS` form gives a property that the train pairs underdetermine. The concept answers it one way, and each alt answers it another way.
     - "Choice" names an act that a solver also performs where it chooses among candidates, so it does not single out this construct. Once the concept case is the canonical answer, every other answer is an alternative to it.
 - **branch**, other than the concept branch → **alt**
     - The concept branch is the concept, not an alt.

@@ -121,8 +121,8 @@ impl Evaluation<'_> {
     /// Where several pairs solve every train pair and each two of them give
     /// equal grids on every input of the task, this gives the first of them
     /// by column position. Where two of them give different grids on an
-    /// input of the task, the grid columns are undetermined, and this gives a
-    /// [`RunFault`] at the form of `&output`, as an undetermined `DET` does.
+    /// input of the task, the grid columns are underdetermined, and this gives a
+    /// [`RunFault`] at the form of `&output`, as an underdetermined `DET` does.
     /// Where `&output` stops on a train pair, this gives that stop.
     pub fn grid_columns(&self) -> Outcome<Result<output::GridColumns, NoGridColumns>> {
         Driver::new(self).grid_columns()
@@ -396,7 +396,7 @@ impl<'e, 'a> Driver<'e, 'a> {
             for example in task.examples() {
                 let (a, b) = (self.grid(example, first)?, self.grid(example, other)?);
                 if !same_grid(&a, &b) {
-                    return Err(RunFault { message: "the grid columns of `&output` are undetermined".into(), form });
+                    return Err(RunFault { message: "the grid columns of `&output` are underdetermined".into(), form });
                 }
             }
         }

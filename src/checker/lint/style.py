@@ -37,7 +37,7 @@ from solver.vocabulary import (
 
 
 @quotes("principles.md", "Choice points and open parameters",
-        "**choice point**: an undetermined property whose possible answers "
+        "**choice point**: an underdetermined property whose possible answers "
         "are models represented by cases.")
 @quotes("solver-file.md", "Alt outputs",
         "The solver enumerates a tiebreak's resolutions through a trailing "

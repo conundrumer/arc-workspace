@@ -317,7 +317,7 @@ A `RIGID_DET` form, a rigid determination, compares the parts of one assembly ac
 
 ## Alts
 
-An `ALTS` form gives a property that the train pairs leave undetermined. The concept case answers it one way, and each alt is a hypothesis that answers it another way. The `OR` form joins its branches into one hypothesis; an `ALTS` form splits its alts into hypotheses.
+An `ALTS` form gives a property that the train pairs underdetermine. The concept case answers it one way, and each alt is a hypothesis that answers it another way. The `OR` form joins its branches into one hypothesis; an `ALTS` form splits its alts into hypotheses.
 
 Alts represent an ARC task's cases, and a solver session writes them. The language model emits none: a synthesized program takes no alt, so it is one case, and its stream holds no `INPUT`, `OUTPUT`, `ALTS` or `ALT` form.
 

@@ -131,7 +131,7 @@
     + xref: docs/handbook/principles.md#models-and-tasks
 
 ### Choice points and open parameters
-- **choice point**: an undetermined property whose possible answers are models represented by cases.
+- **choice point**: an underdetermined property whose possible answers are models represented by cases.
     + xref: src/checker/lint/style.py:check_choice_domain, docs/handbook/principles.md#models-and-tasks
     - A choice point stands at the concept, or under a branch when its property exists only with that branch.
         + xref: src/checker/lint/form/declared_types.py:check_unread_field
@@ -150,7 +150,7 @@
         - A branch's model takes that branch, and the concept branch at every other choice point it takes.
             + xref: src/checker/witness.py:check_verdict_denotes
         - A branch's cases are the cases that take it.
-- **open parameter**: an undetermined property whose possible answers are values of one parameter, with the program unchanged.
+- **open parameter**: an underdetermined property whose possible answers are values of one parameter, with the program unchanged.
     + xref: docs/handbook/principles.md#the-solvers-parts
     - **open values**: the values of that parameter that a reader of the concept could take, and that the pairs do not separate.
         + xref: src/checker/open_values.py:check_open_values
@@ -373,7 +373,7 @@
     + xref: docs/handbook/principles.md#models-and-tasks
 - A peer model that produces the other under some assignment is a separate case when it meets the conditions above.
     + xref: docs/handbook/principles.md#models-and-tasks
-- The pairs leave undetermined which model the task teaches.
+- The pairs underdetermine which model the task teaches.
 - Which model it teaches is then a choice point whose branches are those models.
     + xref: docs/handbook/principles.md#choice-points-and-open-parameters
     * comment

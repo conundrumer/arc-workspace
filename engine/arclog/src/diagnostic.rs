@@ -2,7 +2,7 @@
 //! reports an error once per place in the files, with the cases it holds
 //! in, so an error at a node that stands in several places is reported at
 //! each of them. The evaluator reports a run's faults, such as an
-//! undetermined parameter or a reached bound, as the same type.
+//! underdetermined parameter or a reached bound, as the same type.
 
 use crate::layout::FilePlace;
 use crate::program::path::NodePath;
