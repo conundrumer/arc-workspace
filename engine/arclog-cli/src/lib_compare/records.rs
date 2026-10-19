@@ -1,13 +1,17 @@
 //! The Souffle record of an inputs file, which `scripts/souffle_parity.py
 //! lib` writes.
 
+use std::ops::Deref;
 use std::path::Path;
 
+use arclog::registry::{Component, Registry};
+use arclog::terms::InternTable;
+use arclog::types::ValueType;
 use serde_json::Value;
 
 use super::coverage::{orientation_type, Souffle};
-use super::evaluation::{Cell, Rows, Subject, Walks};
-use super::inputs::{emptied_inputs, Element};
+use super::evaluation::{value_json, Cell, Rows, Subject, Walks};
+use super::inputs::{component_type, emptied_inputs, Element};
 
 /// The Souffle side of an element, as its record gives it.
 pub(super) enum Record {
@@ -34,7 +38,45 @@ pub(super) enum SouffleInputs<'i> {
     Given(&'i Value),
     /// The element's inputs with each input its Souffle form does not
     /// declare holding no row, the inputs of its second inputs file.
-    Emptied(Value),
+    Emptied(Emptied),
+}
+
+/// The inputs of an element's second inputs file, and the inputs they
+/// hold no row at, those the element's Souffle form does not declare.
+pub(super) struct Emptied {
+    inputs: Value,
+    ports: Vec<String>,
+}
+
+impl Deref for Emptied {
+    type Target = Value;
+
+    fn deref(&self) -> &Value {
+        &self.inputs
+    }
+}
+
+impl Emptied {
+    /// The inputs the engine runs on against the Souffle record: these
+    /// inputs, with each emptied input of `component` that has a default
+    /// holding its default rows, as an instance that writes no clause for
+    /// that input holds them.
+    fn defaulted(&self, component: &Component) -> Result<Value, String> {
+        let mut out = self.inputs.clone();
+        for input in out["inputs"].as_array_mut().into_iter().flatten() {
+            let Some(name) = input["port"].as_str().filter(|port| self.ports.iter().any(|p| p == port)) else { continue };
+            let port = component.inputs.iter().find(|i| i.port.name.0.as_ref() == name).ok_or_else(|| format!("{name} is no input of the component"))?;
+            let Some(default) = &port.default else { continue };
+            let types: Vec<ValueType> = port.port.columns.iter().map(component_type).collect();
+            let rows = default
+                .rows(&types, Registry::get(), &mut InternTable::default())
+                .map_err(|error| format!("the default rows of input `{name}` do not read: {error:?}"))?;
+            let mut rows: Vec<Value> = rows.iter().map(|row| row.iter().zip(&types).map(|(&id, ty)| value_json(id, ty)).collect()).collect();
+            rows.sort_by_key(Value::to_string);
+            input["rows"] = Value::from(rows);
+        }
+        Ok(out)
+    }
 }
 
 impl SouffleInputs<'_> {
@@ -50,7 +92,10 @@ impl SouffleInputs<'_> {
     pub(super) fn engine_walks(&self, subject: &Subject<'_>, walks: &Walks) -> Result<Walks, String> {
         match self {
             SouffleInputs::Given(_) => Ok(walks.clone()),
-            SouffleInputs::Emptied(emptied) => subject.evaluated(emptied),
+            SouffleInputs::Emptied(emptied) => match subject {
+                Subject::Component { component, .. } | Subject::Unfold { component, .. } => subject.evaluated(&emptied.defaulted(component)?),
+                Subject::Relation { .. } => subject.evaluated(emptied),
+            },
         }
     }
 }
@@ -69,7 +114,7 @@ pub(super) fn read_record<'i>(
     let name = element.name();
     let record = record_of(&snapshot.join(format!("{name}.json")), element, inputs, sources);
     let Record::Undeclared(ports) = &record else { return (record, SouffleInputs::Given(inputs)) };
-    let emptied = emptied_inputs(inputs, ports);
+    let emptied = Emptied { inputs: emptied_inputs(inputs, ports), ports: ports.clone() };
     let record = match record_of(&snapshot.join(format!("{name}.souffle.json")), element, &emptied, sources) {
         Record::Missing => record,
         second => second,
@@ -137,4 +182,30 @@ fn souffle(record: &Value, element: &Element<'_>, inputs: &Value) -> Option<Souf
         left_out.push((index(entry["port"].as_str()?)?, width));
     }
     Some(Souffle { parts, left_out, column_types: Vec::new() })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::inputs::elements;
+    use super::*;
+
+    /// The engine's walks of Boundary on its emptied inputs, which hold no
+    /// row at `dir`, are its walks on those inputs with `dir` holding the
+    /// cardinals, the default rows of `dir`.
+    #[test]
+    fn emptied_input_holds_its_default_rows() {
+        let element = elements().into_iter().find(|e| e.name() == "Boundary").expect("Boundary is a lib element");
+        let subject = element.subject().expect("a construction of the engine");
+        let inputs = element.inputs();
+        let emptied = Emptied { inputs: emptied_inputs(&inputs, &["dir".to_owned()]), ports: vec!["dir".to_owned()] };
+        let mut cardinals = emptied.inputs.clone();
+        for input in cardinals["inputs"].as_array_mut().into_iter().flatten() {
+            if input["port"] == "dir" {
+                input["rows"] = serde_json::json!([["DIR_T"], ["DIR_B"], ["DIR_L"], ["DIR_R"]]);
+            }
+        }
+        let walks = subject.evaluated(&inputs).expect("the engine's run on Boundary's inputs");
+        let engine = SouffleInputs::Emptied(emptied).engine_walks(&subject, &walks).expect("the engine's run on the emptied inputs");
+        assert_eq!(engine, subject.evaluated(&cardinals).expect("the engine's run on the cardinals"));
+    }
 }
