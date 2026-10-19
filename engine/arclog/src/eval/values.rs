@@ -29,12 +29,16 @@ impl Caps {
     /// The caps of every task session, set from the engine's counts on the
     /// corpus.
     ///
-    /// The work cap and the row cap are provisional. Each stands above the
-    /// largest count of one evaluation that `arclog-cli speed` gave over
-    /// `work/arclog/gen/` on 2026-10-19: 19 447 224 bindings tried, of
-    /// `981571dc`, and 270 336 rows held, of `52df9849`. Those counts are of
-    /// the 281 solvers of 953 whose concept case ran.
-    pub const PROVISIONAL: Caps = Caps { work: 1 << 32, rows: 1 << 24 };
+    /// The work cap and the row cap are each about twice the largest count
+    /// of one evaluation that `arclog-cli speed` gave over `work/arclog/gen/`
+    /// on 2026-10-19, in a run under a work cap of `1 << 32` and a row cap of
+    /// `1 << 24`: 474 894 549 bindings tried, of `c3fa4749`, and 995 900
+    /// rows held, of `b71a7747`. Those counts are of the 798 solvers of 953
+    /// that gave counts, each extreme of the corpus survey's runs among them.
+    /// They leave out the outliers: `ac0c5833`, whose 1 956 915 734 bindings
+    /// tried go with a Souffle run of 124 s, and `3ad05f52`, `c3f564a4` and
+    /// `ca8f78db`, whose runs stopped at the row cap of `1 << 24`.
+    pub const PROVISIONAL: Caps = Caps { work: 1 << 30, rows: 1 << 21 };
 }
 
 /// The bound an evaluation reached.
