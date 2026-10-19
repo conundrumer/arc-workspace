@@ -19,4 +19,4 @@
         + xref: prompts/agents/decision-analyst.md#the-users-part
     - Where a small, clear edit fixes it, give the editor that edit as a decision.
     - Where no such edit fixes it within the change, file a new `change` ticket with the item it breaks, and give that item in your reply as decided, with that ticket's number.
-- Where your brief gives the check after the change's review round cap, or the change as past its cost budget, give the editor no edit but the resolution of a rebase conflict: file a new `change` ticket with the item of each finding and each unfinished item it gives that you do not drop or bring to the user.
+- Where your brief gives the check after the change's review round cap, or the change as past its cost budget, give the editor, as a decision, each edit without which the change's merge is refused, a rebase conflict's resolution among them, and no other edit: file a new `change` ticket with the item of each finding and each unfinished item it gives that you do not drop, bring to the user or fix by such an edit.
