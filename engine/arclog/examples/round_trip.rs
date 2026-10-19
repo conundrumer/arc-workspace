@@ -1,7 +1,7 @@
 //! The end check of the reader and writer stage over the corpus: `cargo run
 //! --example round_trip -- <dir> <report>`, with `<dir>` the corpus
 //! directory, such as `work/arclog/gen/`, and `<report>` the Python lint's
-//! output over `<dir>`, read by [`arclog::harness::LintReport`].
+//! `--all` output over `<dir>`, read by [`arclog::harness::LintReport`].
 //!
 //! The run reads each solver of `<dir>`, its `.arclog` and `.arcdata` files,
 //! with [`arclog::read::read_solver`], through
@@ -176,8 +176,8 @@ fn main() -> ExitCode {
         eprintln!("usage: cargo run --profile tool --example round_trip -- <dir> <report>");
         return ExitCode::FAILURE;
     };
-    let report = match std::fs::read_to_string(report) {
-        Ok(text) => LintReport::parse(&text),
+    let report = match LintReport::read(Path::new(report)) {
+        Ok(report) => report,
         Err(error) => {
             eprintln!("{report}: {error}");
             return ExitCode::FAILURE;

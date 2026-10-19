@@ -1,7 +1,7 @@
 //! The end check of the registry and resolver stage over the corpus: `cargo
 //! run --example resolve -- <dir> <report>`, with `<dir>` the corpus
 //! directory, such as `work/arclog/gen/`, and `<report>` the Python lint's
-//! output over `<dir>`, read by [`arclog::harness::LintReport`]: the run
+//! `--all` output over `<dir>`, read by [`arclog::harness::LintReport`]: the run
 //! checks the files with no error in the report.
 //!
 //! Each file the lint passes reads and resolves. The run resolves each case
@@ -58,8 +58,8 @@ fn main() -> ExitCode {
         eprintln!("usage: cargo run --profile tool --example resolve -- <dir> <report>");
         return ExitCode::FAILURE;
     };
-    let report = match std::fs::read_to_string(report) {
-        Ok(text) => LintReport::parse(&text),
+    let report = match LintReport::read(Path::new(report)) {
+        Ok(report) => report,
         Err(error) => {
             eprintln!("{report}: {error}");
             return ExitCode::FAILURE;

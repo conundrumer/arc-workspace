@@ -1,7 +1,7 @@
 //! The end check of the checker stage, and of step 1, over the corpus:
 //! `cargo run --profile tool --example lint -- <dir> <report>`, with
 //! `<dir>` the corpus directory, such as `work/arclog/gen/`, and `<report>`
-//! the output of the Python lint over `<dir>`, read by
+//! the `--all` output of the Python lint over `<dir>`, read by
 //! [`arclog::harness::LintReport`].
 //!
 //! The run lints each solver of `<dir>` with
@@ -25,35 +25,44 @@ use arclog::check::lint::lint;
 use arclog::check::CheckId;
 use arclog::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use arclog::hash::StableHashMap;
-use arclog::harness::{print_ended, read_corpus_solver, require_optimized_build, run_over_corpus, CorpusSolver, LintError, LintReport, SolverResult};
+use arclog::harness::{print_ended, read_corpus_solver, require_optimized_build, run_over_corpus, CorpusSolver, LintCode, LintError, LintReport, SolverResult};
 use arclog::layout::SourceFile;
 use arclog::registry::Registry;
 
 /// The engine's check that gives the errors of the Python lint's code
 /// `code`, where the engine has that check.
-fn check_of(code: &str) -> Option<CheckId> {
+fn check_of(code: LintCode) -> Option<CheckId> {
+    use LintCode::*;
     Some(match code {
-        "syntax" | "form" | "clause" | "body" | "atom" | "site" | "label" | "constraint" | "not" | "or" | "if" | "all" => CheckId::Grammar,
-        "undeclared" | "relation" | "component" | "proposer-unknown" => CheckId::Scope,
-        "column" | "site-twice" => CheckId::SiteColumns,
-        "eq-make" | "eq-unexported" | "remade-export" => CheckId::MadeAndExportedLabels,
-        "safety" => CheckId::Safety,
-        "own-read" => CheckId::UnfoldReads,
-        "recursion" => CheckId::Cycles,
-        "init-order" | "input-twice" => CheckId::InstanceInputs,
-        "side" => CheckId::PooledAndLiftedReads,
-        _ => return None,
+        Syntax | Form | Clause | Body | Atom | Site | Label | Constraint | Not | Or | If | All => CheckId::Grammar,
+        Undeclared | Relation | Component | ProposerUnknown => CheckId::Scope,
+        Column | SiteTwice => CheckId::SiteColumns,
+        EqMake | EqUnexported | RemadeExport => CheckId::MadeAndExportedLabels,
+        Safety => CheckId::Safety,
+        OwnRead => CheckId::UnfoldReads,
+        Recursion => CheckId::Cycles,
+        InitOrder | InputTwice => CheckId::InstanceInputs,
+        Side => CheckId::PooledAndLiftedReads,
+        AltClaim | AltCols | AltCombination | AltSame | AltTail | Alts | AltsEmpty | Approximated | ArcdataHead | ArcdataName |
+        ArcdataOrder | Assign | BareInit | BroadcastInside | Choose | ChooseNoNever | ChooseOne | Claim | ClaimText | ClauseTwice |
+        ConceptEmpty | Count | CountPlace | Cycle | DemoRule | DetOrRule | Elide | EmptyGloss | EqMark | EqOrder | EqSameList | EqSite |
+        Exclude | FieldCase | FreshHere | GridLayout | HeadSite | HeadZero | Input | Instance | KeyForm | KeyLocal | KeySite | LabelClash |
+        Mark | Name | NeverReads | NoOutput | NotUndefined | One | OnePlace | OrImplied | OrLineTwice | Order | OutputTail | Param |
+        ParamGrid | ParamTypes | Parse | ParseHead | Proposer | RecordField | RecordPosition | Remade | Render | RenderHead | RenderPlace |
+        RepeatForm | Representative | Rigid | RigidPart | SceneAlts | SceneArclog | SceneBlock | SceneClaim | SceneForm | SceneParse |
+        ScenePick | SceneTaskSide | SharedCols | Spelling | StandsUnder | TopOrder | Unbound | Wildcard | Witness | WitnessId |
+        WitnessNoInput | WitnessNoSeparates | WitnessOther | WitnessRef | Zero | ZeroSite => return None,
     })
 }
 
 /// The errors that the Python lint misses, by the code it would give them
 /// and the task ids of the solvers it misses them in.
-const LINT_FAULTS: &[(&str, &[&str])] = &[
+const LINT_FAULTS: &[(LintCode, &[&str])] = &[
     // The lint gives no columns to a `DET_OR_RULE` line with no body, nor to
     // a `DET` with no body and no proposer, so it checks no site of a read
     // of their relations.
     (
-        "column",
+        LintCode::Column,
         &[
             "21897d95", "25094a63", "28a6681f", "351d6448", "71e489b6", "8e5a5113", "91714a58", "9b5080bb", "9d9215db", "9ddd00f0",
             "9def23fe", "a251c730", "a2d730bd", "a32d8b75", "a3325580", "a5f85a15", "a61f2674", "a64e4611", "a8d7556c", "aa300dc3",
@@ -66,7 +75,7 @@ const LINT_FAULTS: &[(&str, &[&str])] = &[
     // later branch names as named there, where another later branch does
     // not name it, so that the label is local to the first branch.
     (
-        "safety",
+        LintCode::Safety,
         &[
             "070dd51e", "0ca9ddb6", "0d87d2a6", "0f63c0b9", "1190bc91", "136b0064", "13713586", "16de56c4", "1f876c06", "28a6681f",
             "29700607", "29c11459", "2c608aff", "2ccd9fef", "35ab12c3", "3dc255db", "40853293", "4290ef0e", "505fff84", "538b439f",
@@ -79,7 +88,7 @@ const LINT_FAULTS: &[(&str, &[&str])] = &[
 /// Whether [`LINT_FAULTS`] gives that the Python lint misses the errors of
 /// `check` in the solver of `task_id`.
 fn missed(task_id: &str, check: CheckId) -> bool {
-    LINT_FAULTS.iter().any(|(code, task_ids)| check_of(code) == Some(check) && task_ids.contains(&task_id))
+    LINT_FAULTS.iter().any(|(code, task_ids)| check_of(*code) == Some(check) && task_ids.contains(&task_id))
 }
 
 /// An error at a place of a solver's files: the file, the line, and the
@@ -95,7 +104,7 @@ fn reported(solver: &CorpusSolver, report: &LintReport) -> std::io::Result<Place
     let files = [std::fs::canonicalize(&solver.arclog)?, std::fs::canonicalize(&solver.arcdata)?];
     let at = |error: &LintError| {
         let file = std::fs::canonicalize(&error.path).ok().filter(|file| files.contains(file))?;
-        Some(((file, error.line, check_of(&error.check)?), error.message.clone()))
+        Some(((file, error.line, check_of(error.check)?), error.message.clone()))
     };
     let mut places = Places::default();
     for (place, message) in report.errors.iter().filter_map(at) {
@@ -185,8 +194,8 @@ fn main() -> ExitCode {
         eprintln!("usage: cargo run --profile tool --example lint -- <dir> <report>");
         return ExitCode::FAILURE;
     };
-    let report = match std::fs::read_to_string(report) {
-        Ok(text) => LintReport::parse(&text),
+    let report = match LintReport::read(Path::new(report)) {
+        Ok(report) => report,
         Err(error) => {
             eprintln!("{report}: {error}");
             return ExitCode::FAILURE;
