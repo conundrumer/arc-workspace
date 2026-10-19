@@ -350,4 +350,34 @@ out(P, Col, Ch, [V]) :-
     // The train inputs' color that no train output shows.
     .decl marker(c: Color)
     marker(C) :- ex_in(E, _, C), train(E), !ex_out(_, _, C).
+
+    .type ExColor = [e: Example, col: Color]
+    .type ExSquare = [e: Example, s: Ident]
+    .type ExSquareCell = [e: Example, s: Ident, p_t: Position]
+
+    // The squares of the train inputs: the pieces of a color other than
+    // background and marker.
+    .init piece = Components<ExColor>
+    piece.node([E, Col], P) :- ex_in(E, P, Col), train(E), !background(Col), !marker(Col).
+
+    .init square_box = Bbox<ExSquare>
+    square_box.cell([E, S], P) :- piece.label([E, _], P, S).
+
+    // Cell P of square S's box, at P_t in the box's frame.
+    .decl box_cell(s: ExSquare, p: Position, p_t: Position)
+    box_cell([E, S], P, P_t) :- square_box.box([E, S], B), ex_in(E, P, _), crop(P, B, P_t).
+
+    // The square's cells at each place of its box.
+    .init ink = Tally<ExSquareCell, Position>
+    ink.domain([E, S, P_t]) :- box_cell([E, S], _, P_t).
+    ink.item([E, S, P_t], P) :- box_cell([E, S], P, P_t), piece.label([E, _], P, S).
+
+    // The count every square of every train input holds at each place.
+    .init shape = Unanimous<Position, number>
+    shape.item(P_t, N) :- ink.tally([_, _, P_t], N).
+
+    // @ignore: determine prediction — the test runs no step of the program: it
+    //  leaves out the pieces of the marker, which its own relation determines
+    .decl tile(p: Position, ink: number)
+    tile(P_t, N) :- shape.value(P_t, N).
 }

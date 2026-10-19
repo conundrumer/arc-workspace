@@ -318,20 +318,24 @@ hole(O, A, I, $GridFrame(), $StoredTile(), U, P) :-
     .decl period(n: number)
     period(N) :- gaps.low($U(), N).
 
-    // A hole's place in the cycle, counted from its object's box corner.
-    .decl hole_parity(k: number)
-    hole_parity(K) :-
+    // Each hole, in the frame each origin counts it in, with the corner it is
+    // counted from: its object's box, or the grid.
+    .decl hole_cell(r: Origin, d: DiagDir, p: Position)
+    hole_cell($ObjectCorner(), D, P_rel) :-
         hole(E, P, _), parse.object([E, Id], P), parse.box.box([E, Id], B), crop(P, B, P_rel),
-        params.anchor(D), corner_dist(P_rel, D, T),
-        params.period(N), stride(T, N, 0, _, K).
+        params.anchor(D).
+    hole_cell($GridFrame(), D, P) :- hole(_, P, _), params.grid_anchor(D).
 
-    // A hole's place in the cycle, counted from the grid corner.
-    // @ignore: common-subexpr — the count runs in the grid's frame here and in
-    //  each object's box in hole_parity
+    // A hole's place in the cycle under each origin.
+    .decl parity(r: Origin, k: number)
+    parity(R, K) :-
+        hole_cell(R, D, P), corner_dist(P, D, T), params.period(N), stride(T, N, 0, _, K).
+
+    .decl hole_parity(k: number)
+    hole_parity(K) :- parity($ObjectCorner(), K).
+
     .decl grid_hole_parity(k: number)
-    grid_hole_parity(K) :-
-        hole(_, P, _), params.grid_anchor(D), corner_dist(P, D, T),
-        params.period(N), stride(T, N, 0, _, K).
+    grid_hole_parity(K) :- parity($GridFrame(), K).
 
     // The extents of the boxes of the train inputs' objects.
     .init extents = Extremes<Unit>
@@ -341,4 +345,21 @@ hole(O, A, I, $GridFrame(), $StoredTile(), U, P) :-
 
     .decl min_extent(n: number)
     min_extent(N) :- extents.low($U(), N).
+
+    // The motif's frame: one period on each axis.
+    .init motif = Frame2D<Unit>
+    motif.extent($U(), A, N) :- period(N), axis_elem(A).
+
+    // The place in the motif that each hole falls on under each origin.
+    .decl motif_place(r: Origin, p_t: Position)
+    motif_place(R, P_t) :-
+        hole_cell(R, D, P), diag_dist(P, D, Ax, T1, T2),
+        period(N), stride(T1, N, 0, _, K1), stride(T2, N, 0, _, K2),   // folded into the motif
+        motif.cell($U(), P_t), diag_dist(P_t, D, Ax, K1, K2).
+
+    .decl tile(p: Position)
+    tile(P_t) :- motif_place($ObjectCorner(), P_t).
+
+    .decl grid_tile(p: Position)
+    grid_tile(P_t) :- motif_place($GridFrame(), P_t).
 }

@@ -213,4 +213,15 @@ out(P, Col, [S, $StoredShape(), F]) :-
 
     .decl frame_color(c: Color)
     frame_color(C) :- frame.value($U(), C).
+
+    // A train output's cell of a color other than the background.
+    .decl drawn(e: Example, p: Position)
+    drawn(E, P) :- ex_out(E, P, Col), !params.background(Col).
+
+    // A cell some train output does not draw.
+    .decl undrawn(p: Position)
+    undrawn(P) :- drawn(_, P), ex_out(E, _, _), !drawn(E, P).
+
+    .decl shape(p: Position)
+    shape(P) :- drawn(_, P), !undrawn(P).
 }

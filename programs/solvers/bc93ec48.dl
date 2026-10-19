@@ -203,3 +203,40 @@ covered(S, K, T, V, C, Q) :-
 
 paint([S, K, $Precedence(), T], Q, Col, [[V]]) :-
     copy(S, K, T, C, Q, Col), params.precedence(V, C, _), !covered(S, K, T, V, C, Q).
+
+.comp Determine {
+    .type ExColor = [e: Example, col: Color]
+    .type ExCorner = [e: Example, c: DiagDir]
+
+    // The one-color shapes of the train inputs.
+    .init piece = Components<ExColor>
+    piece.node([E, Col], P) :- ex_in(E, P, Col), ex_out(E, _, _), !params.background(Col).
+
+    // The shape that holds corner c's cell of a train input, with its color.
+    .decl held(ec: ExCorner, p: Position, col: Color)
+    held([E, C], P, Col) :-
+        piece.label([E, Col], Q, X), diag_dir_elem(C), box_corner(Q, ZERO, C),
+        piece.label([E, Col], P, X).
+
+    .init held_box = Bbox<ExCorner>
+    held_box.cell(Ec, P) :- held(Ec, P, _).
+
+    // Where each corner's shape stands in its train output.
+    .init found = Occurrences<ExCorner, Color>
+    found.cell([E, C], P, Col) :- held([E, C], _, _), ex_out(E, P, Col).
+    found.shape(Ec, P, Col) :- held(Ec, P, Col).
+
+    // A train output holds corner c's shape at a place whose box touches the
+    // two edges of corner c2.
+    .decl found_at(e: Example, c: DiagDir, c2: DiagDir)
+    found_at(E, C, C2) :-
+        found.occurrence([E, C], V), held_box.box([E, C], B), compose(V, B, B_out),
+        diag_dir_elem(C2), corner_dist(B_out, C2, 0).
+
+    // A corner some train input's shape at c does not reach in its output.
+    .decl missed(c: DiagDir, c2: DiagDir)
+    missed(C, C2) :- found_at(_, C, C2), held([E, C], _, _), !found_at(E, C, C2).
+
+    .decl corner_target(c: DiagDir, c2: DiagDir)
+    corner_target(C, C2) :- found_at(_, C, C2), !missed(C, C2).
+}

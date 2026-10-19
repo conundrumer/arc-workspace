@@ -372,4 +372,64 @@ fill([M, $RankBySize(), R], Id, V, Col) :-
     .decl frame_color(c: Color)
     frame_color(Col) :-
         changed(E, P, _), dir_elem(D), neighbor(P, D, Q), ex_in(E, Q, Col), ex_out(E, Q, Col).
+
+    .type ExObject = [e: Example, id: Ident]
+
+    // The holes of the train inputs: the cells each train pair changes.
+    .init hole = Components<Example>
+    hole.node(E, P) :- changed(E, P, _).
+
+    // The color each train output fills a hole with.
+    .decl hole_fill(h: ExObject, col: Color)
+    hole_fill([E, Id], Col) :- hole.label(E, P, Id), ex_out(E, P, Col).
+
+    .init hole_box = Bbox<ExObject>
+    hole_box.cell([E, Id], P) :- hole.label(E, P, Id).
+
+    // The extent of a hole's box along an axis.
+    .decl hole_side(h: ExObject, n: number)
+    hole_side([E, Id], N) :-
+        hole_box.box([E, Id], B), hole.label(E, P, Id), axis_elem(A), box_extent(B, P, A, N).
+
+    .decl fill_by_side(n: number, c: Color)
+    fill_by_side(N, Col) :- hole_side(H, N), hole_fill(H, Col).
+
+    .init hole_area = Tally<ExObject, Position>
+    hole_area.item([E, Id], P) :- hole.label(E, P, Id).
+
+    .decl fill_by_area(n: number, c: Color)
+    fill_by_area(N, Col) :- hole_area.tally(H, N), hole_fill(H, Col).
+
+    // The outlines of the train inputs: the objects of the frame color.
+    .init outline = Components8<Example>
+    outline.node(E, P) :- ex_in(E, P, Col), ex_out(E, _, _), frame_color(Col).
+
+    // The outline that borders each hole.
+    .decl border(e: Example, h: Ident, o: Ident)
+    border(E, Id, O) :-
+        hole.label(E, P, Id), dir_elem(D), neighbor(P, D, Q), outline.label(E, Q, O).
+
+    .init outline_box = Bbox<ExObject>
+    outline_box.cell([E, O], P) :- outline.label(E, P, O).
+
+    .decl fill_by_outline_side(n: number, c: Color)
+    fill_by_outline_side(N, Col) :-
+        border(E, Id, O), outline_box.box([E, O], B), outline.label(E, P, O),
+        axis_elem(A), box_extent(B, P, A, N), hole_fill([E, Id], Col).
+
+    .init outline_count = Tally<ExObject, Position>
+    outline_count.item([E, O], P) :- outline.label(E, P, O).
+
+    .decl fill_by_outline_count(n: number, c: Color)
+    fill_by_outline_count(N, Col) :-
+        border(E, Id, O), outline_count.tally([E, O], N), hole_fill([E, Id], Col).
+
+    // The rank of each hole's side among the sides of its train input's
+    // holes, largest first.
+    .init side_rank = Ordinal<Example>
+    side_rank.idx_set(E, N) :- hole_side([E, _], N).
+
+    .decl fill_by_rank(k: number, c: Color)
+    fill_by_rank(K, Col) :-
+        hole_side([E, Id], N), side_rank.rank_desc(E, N, K), hole_fill([E, Id], Col).
 }

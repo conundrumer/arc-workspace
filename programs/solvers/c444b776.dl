@@ -250,4 +250,13 @@ source([Pn, $MostDrawn()], P_tile) :- most_drawn.value(Pn, P_tile).
 
     .decl gap(g: number)
     gap(G) :- width.value($U(), G).
+
+    // The extent of every train input's panels on each axis.
+    .init extent = Unanimous<Axis, number>
+    extent.item(A, K) :-
+        ex.panel(E, P, P_tile, _), ex.tile_box.box([E, P_tile], B),
+        axis_elem(A), box_extent(B, P, A, K).
+
+    .decl panel_size(a: Axis, k: number)
+    panel_size(A, K) :- extent.value(A, K).
 }

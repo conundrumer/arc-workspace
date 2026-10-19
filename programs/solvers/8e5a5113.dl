@@ -150,4 +150,27 @@ out(P_grid, Col, $Lookup()) :-
     .decl tile_size(k: number)
     tile_size(Sz) :-
         in_parse.tile(_, _, _, P_intile), params.axis(A), axis_dim(P_intile, A, Sz).
+
+    // A train input's tile that holds a cell other than bg: its pattern.
+    .decl pattern_tile(e: Example, p_tile: Position)
+    pattern_tile(E, P_tile) :-
+        in_parse.tile(E, P_grid, P_tile, _), ex_in(E, P_grid, Col), !params.bg(Col),
+        ex_out(E, _, _).
+
+    // Each tile of a train output, against that input's pattern.
+    .init image = D4Map<TileK, Color>
+    image.src([E, P_tile], P_intile, Col) :-
+        out_cell(E, P_tile, _, _), pattern_tile(E, P_src),
+        in_parse.tile(E, P_grid, P_src, P_intile), ex_in(E, P_grid, Col).
+    image.dst([E, P_tile], P_intile, Col) :- out_cell(E, P_tile, P_intile, Col).
+
+    // A transform that some train output's tile does not show its pattern under.
+    .decl unshown(p_tile: Position, d: D4)
+    unshown(P_tile, D) :- image.mismatch([_, P_tile], D).
+
+    // @ignore: determine prediction — the test runs no step of the program: it
+    //  reads the transforms that take each input's pattern onto each tile of
+    //  its output
+    .decl tile_d4(p: Position, d: D4)
+    tile_d4(P_tile, D) :- out_cell(_, P_tile, _, _), d4_elem(D), !unshown(P_tile, D).
 }
