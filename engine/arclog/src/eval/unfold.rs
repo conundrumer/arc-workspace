@@ -1,5 +1,6 @@
 //! `Unfold`: its states, its rounds, the forks of a tied `score`, and the
-//! distinct outputs of its walks.
+//! distinct outputs of its walks, with the rows of the inputs that read
+//! the outputs from the bodies of the instance or given.
 //!
 //! A state is the cursor `t` with its `taken`, `untaken` and `excluded`
 //! sets. Each round evaluates the instance's `step`, `skip` and `take`
@@ -75,9 +76,9 @@ pub enum UnfoldOutput {
 }
 
 impl UnfoldOutput {
-    const ALL: [UnfoldOutput; 4] = [UnfoldOutput::Taken, UnfoldOutput::Untaken, UnfoldOutput::Excluded, UnfoldOutput::Take];
+    pub const ALL: [UnfoldOutput; 4] = [UnfoldOutput::Taken, UnfoldOutput::Untaken, UnfoldOutput::Excluded, UnfoldOutput::Take];
 
-    fn port(self) -> PortName {
+    pub fn port(self) -> PortName {
         let name = match self {
             UnfoldOutput::Taken => "taken",
             UnfoldOutput::Untaken => "untaken",
@@ -85,6 +86,11 @@ impl UnfoldOutput {
             UnfoldOutput::Take => "take",
         };
         PortName(name.into())
+    }
+
+    /// The output at `port`, a port of an output of `Unfold`.
+    pub fn of(port: &PortName) -> UnfoldOutput {
+        UnfoldOutput::ALL.into_iter().find(|candidate| candidate.port() == *port).expect("an output `Unfold` declares")
     }
 
     /// Adds to `rows` the rows of this output at `state` on `branch`, the
@@ -131,6 +137,36 @@ impl UnfoldInput {
     }
 }
 
+/// An input of `Unfold` that reads its outputs.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RecursiveInput {
+    Step,
+    Skip,
+    Take,
+}
+
+impl RecursiveInput {
+    fn input(self) -> UnfoldInput {
+        match self {
+            RecursiveInput::Step => UnfoldInput::Step,
+            RecursiveInput::Skip => UnfoldInput::Skip,
+            RecursiveInput::Take => UnfoldInput::Take,
+        }
+    }
+}
+
+/// The rows of the inputs that read the outputs, at a state of a walk.
+trait ReadsOutputs {
+    /// What ends the evaluation of a round: a bound reached, or what the
+    /// source of the rows gives in their place.
+    type Halt: From<ReachedBound>;
+
+    /// The second column of the rows of `input` at the key of `group` and
+    /// the cursor of `state`, with the outputs read at `state` and `take`,
+    /// or `None` where `input` has no rows to give.
+    fn at_cursor(&self, group: &Group, input: RecursiveInput, state: &UnfoldState, take: &[TermId]) -> Result<Option<Vec<TermId>>, Self::Halt>;
+}
+
 /// The state graph of the `Unfold` instance whose `INIT` form stands at
 /// `form`, on each of its keys, with the key's labels of the key clause, or
 /// no label where it has none; `output` is an output of the instance. The
@@ -149,31 +185,40 @@ pub fn unfold<'a>(
     run.graphs(budget)
 }
 
-/// The distinct values of `output` over the walks of `graph`, each the rows
-/// of the states along one walk, each state's once, with `key` before the
-/// cursor and the item of each row, and at most `limit` of them: the
-/// collection stops at the `limit`-th distinct value. Which values a stop
-/// leaves out follows the order of the term ids of the tied items.
+/// The distinct values of `outputs` over the walks of `graph`, each the
+/// rows of each output of `outputs` at the states along one walk, each
+/// state's once, with `key` before the cursor and the item of each row,
+/// and at most `limit` of them: the collection stops at the `limit`-th
+/// distinct value. Which values a stop leaves out follows the order of the
+/// term ids of the tied items.
 pub fn distinct_outputs(
     graph: &StateGraph,
-    output: UnfoldOutput,
+    outputs: &[UnfoldOutput],
     key: &[TermId],
     limit: usize,
     budget: &mut Budget<'_>,
-) -> Result<Vec<RowSet>, ReachedBound> {
+) -> Result<Vec<Vec<RowSet>>, ReachedBound> {
     let arity = (key.len() + 2) as u16;
-    let mut seen: StableHashSet<Vec<Row>> = StableHashSet::default();
+    let mut seen: StableHashSet<Vec<Vec<Row>>> = StableHashSet::default();
     let mut values = Vec::new();
     let mut visit = |chosen: &[Option<u32>]| {
-        let mut rows = RowSet::empty(arity);
+        let mut parts = vec![RowSet::empty(arity); outputs.len()];
         for ((state, branches), branch) in graph.states.iter().zip(&graph.branches).zip(chosen) {
             let Some(branch) = branch else { continue };
-            output.add_rows(key, state, &branches[*branch as usize], &mut rows);
+            for (output, rows) in outputs.iter().zip(&mut parts) {
+                output.add_rows(key, state, &branches[*branch as usize], rows);
+            }
         }
-        let mut sorted: Vec<Row> = rows.rows().map(Row::from).collect();
-        sorted.sort_by(|a, b| a.iter().map(|id| id.encoding()).cmp(b.iter().map(|id| id.encoding())));
-        if seen.insert(sorted) {
-            values.push(rows);
+        let content = parts
+            .iter()
+            .map(|rows| {
+                let mut sorted: Vec<Row> = rows.rows().map(Row::from).collect();
+                sorted.sort_by(|a, b| a.iter().map(|id| id.encoding()).cmp(b.iter().map(|id| id.encoding())));
+                sorted
+            })
+            .collect();
+        if seen.insert(content) {
+            values.push(parts);
         }
         values.len() < limit
     };
@@ -197,36 +242,90 @@ pub fn evaluate_unfold<'a>(
     budget: &mut Budget<'a>,
 ) -> Outcome<Vec<RelationValue>> {
     let Some([OutputStep::Port(port)]) = output.output.as_deref() else { panic!("an instance output read by its port") };
-    let which = UnfoldOutput::ALL.into_iter().find(|candidate| candidate.port() == *port).expect("an output `Unfold` declares");
+    let which = UnfoldOutput::of(port);
     let graphs = match unfold(evaluation, bodies, form, output, example, budget)? {
         Ok(graphs) => graphs,
         Err(value) => return Ok(vec![value]),
     };
     let types = evaluation.program.types.columns(output);
     let arity = types.ok_or_else(|| RunFault { message: "the output's columns have no types".into(), form: form.clone() })?.len() as u16;
-    let mut values = vec![RowSet::empty(arity)];
+    let mut values = vec![vec![RowSet::empty(arity)]];
     for (key, graph) in &graphs {
         let key = output_key(key);
-        let walks = match distinct_outputs(graph, which, &key, limit, budget) {
+        let walks = match distinct_outputs(graph, &[which], &key, limit, budget) {
             Ok(walks) => walks,
             Err(bound) => return Ok(vec![RelationValue::Stopped(Stop { bound, form: form.clone() })]),
         };
-        let mut combined = Vec::new();
-        'combine: for value in &values {
-            for walk in &walks {
-                let mut rows = value.clone();
-                for row in walk.rows() {
-                    rows.insert(row.into());
-                }
-                combined.push(rows);
-                if combined.len() == limit {
-                    break 'combine;
-                }
+        values = combine(&values, &walks, limit);
+    }
+    Ok(values.into_iter().flatten().map(|rows| RelationValue::Rows(Arc::new(join::one_part(rows)))).collect())
+}
+
+/// The values of the outputs of an `Unfold` instance of `component` over
+/// given rows: on each key of `keys`, the rows of each input of
+/// `component`, in the order of its inputs, each row without its key, the
+/// rows of the inputs that read the outputs fixed. One value per
+/// combination of one walk on each key, at most `limit`, each the rows of
+/// each output of `component`, in the order of its outputs, with the key
+/// before the cursor and the item.
+pub fn unfold_given(component: &Component, keys: &[(Row, Vec<RowSet>)], limit: usize, budget: &mut Budget<'_>) -> Result<Vec<Vec<RowSet>>, ReachedBound> {
+    let outputs: Vec<UnfoldOutput> = component.outputs.iter().map(|output| UnfoldOutput::of(&output.name)).collect();
+    let arity = keys.first().map_or(0, |(key, _)| key.len()) as u16 + 2;
+    let mut values = vec![vec![RowSet::empty(arity); outputs.len()]];
+    for (key, rows) in keys {
+        let given = |input: UnfoldInput| -> Vec<&[TermId]> {
+            let at = component.inputs.iter().position(|declared| declared.port.name == input.port());
+            at.map_or_else(Vec::new, |at| rows[at].rows().collect())
+        };
+        let group = Group::of(key.clone(), given, true);
+        let pairs = |input: RecursiveInput| given(input.input()).into_iter().map(|row| (row[0], row[1])).collect();
+        let reads = GivenReads { rows: [RecursiveInput::Step, RecursiveInput::Skip, RecursiveInput::Take].map(pairs) };
+        let graph = graph(&group, &reads, budget)?;
+        let walks = distinct_outputs(&graph, &outputs, key, limit, budget)?;
+        values = combine(&values, &walks, limit);
+    }
+    Ok(values)
+}
+
+/// Each value of `values` with each walk of `walks` added to it, output by
+/// output, at most `limit` of them: the values over one more key.
+fn combine(values: &[Vec<RowSet>], walks: &[Vec<RowSet>], limit: usize) -> Vec<Vec<RowSet>> {
+    let mut combined = Vec::new();
+    for value in values {
+        for walk in walks {
+            let parts = value
+                .iter()
+                .zip(walk)
+                .map(|(value, walk)| {
+                    let mut rows = value.clone();
+                    for row in walk.rows() {
+                        rows.insert(row.into());
+                    }
+                    rows
+                })
+                .collect();
+            combined.push(parts);
+            if combined.len() == limit {
+                return combined;
             }
         }
-        values = combined;
     }
-    Ok(values.into_iter().map(|rows| RelationValue::Rows(Arc::new(join::one_part(rows)))).collect())
+    combined
+}
+
+/// The given rows of `step`, `skip` and `take` on one key, each row its
+/// cursor and its second column, in the order of [`RecursiveInput`].
+struct GivenReads {
+    rows: [Vec<(TermId, TermId)>; 3],
+}
+
+impl ReadsOutputs for GivenReads {
+    type Halt = ReachedBound;
+
+    fn at_cursor(&self, _: &Group, input: RecursiveInput, state: &UnfoldState, _: &[TermId]) -> Result<Option<Vec<TermId>>, ReachedBound> {
+        let rows = &self.rows[input as usize];
+        Ok(Some(rows.iter().filter(|(cursor, _)| *cursor == state.cursor).map(|&(_, second)| second).collect()))
+    }
 }
 
 /// The positions of an output's `key` column for the key `key`: its
@@ -398,6 +497,23 @@ struct Group {
     score: Option<StableHashMap<(TermId, TermId), i32>>,
 }
 
+impl Group {
+    /// The group of `key`, from the rows `rows` gives of each input that
+    /// reads no output, at the key, each without the key's labels, with no
+    /// `score` where `score_written` is false.
+    fn of<'r>(key: Row, rows: impl Fn(UnfoldInput) -> Vec<&'r [TermId]>, score_written: bool) -> Group {
+        let items = |input| sorted(rows(input).into_iter().map(|row| row[0]));
+        Group {
+            start: items(UnfoldInput::Start).into_vec(),
+            taken: items(UnfoldInput::InitialTaken),
+            untaken: items(UnfoldInput::InitialUntaken),
+            conflict: rows(UnfoldInput::Conflict).into_iter().map(|row| (row[0], row[1])).collect(),
+            score: score_written.then(|| rows(UnfoldInput::Score).into_iter().map(|row| ((row[0], row[1]), number(row[2]))).collect()),
+            key,
+        }
+    }
+}
+
 /// One evaluation of an `Unfold` instance.
 struct Run<'r, 'a> {
     evaluation: &'r Evaluation<'a>,
@@ -422,11 +538,14 @@ impl<'r, 'a> Run<'r, 'a> {
         };
         let compile = |input| self.shape.compile(self.evaluation, input);
         let recursive = Recursive { step: compile(UnfoldInput::Step)?, skip: compile(UnfoldInput::Skip)?, take: compile(UnfoldInput::Take)? };
+        let reads = DriverReads { run: self, recursive: &recursive };
         let mut graphs = Vec::with_capacity(groups.len());
         for group in &groups {
-            match self.graph(group, &recursive, budget)? {
+            match graph(group, &reads, budget) {
                 Ok(graph) => graphs.push((group.key.clone(), graph)),
-                Err(value) => return Ok(Err(value)),
+                Err(Halt::Fault(fault)) => return Err(fault),
+                Err(Halt::Value(value)) => return Ok(Err(value)),
+                Err(Halt::Bound(bound)) => return Ok(Err(RelationValue::Stopped(Stop { bound, form: self.shape.form.clone() }))),
             }
         }
         Ok(Ok(graphs))
@@ -475,106 +594,24 @@ impl<'r, 'a> Run<'r, 'a> {
             Ok(score) => score,
             Err(value) => return Ok(Err(value)),
         };
-        let items = |rows: &InputRows, key: &[TermId]| -> Box<[TermId]> { sorted(rows.at(key).map(|row| row[0])) };
         let groups = keys
             .into_iter()
-            .map(|key| Group {
-                start: items(&start, &key).into_vec(),
-                taken: items(&taken, &key),
-                untaken: items(&untaken, &key),
-                conflict: conflict.at(&key).map(|row| (row[0], row[1])).collect(),
-                score: score_written.then(|| {
-                    score.at(&key).map(|row| ((row[0], row[1]), number(row[2]))).collect()
-                }),
-                key,
+            .map(|key| {
+                let rows = |input| -> Vec<&[TermId]> {
+                    let rows = match input {
+                        UnfoldInput::Start => &start,
+                        UnfoldInput::InitialTaken => &taken,
+                        UnfoldInput::InitialUntaken => &untaken,
+                        UnfoldInput::Conflict => &conflict,
+                        UnfoldInput::Score => &score,
+                        UnfoldInput::Step | UnfoldInput::Skip | UnfoldInput::Take => unreachable!("an input that reads no output"),
+                    };
+                    rows.at(&key).collect()
+                };
+                Group::of(key.clone(), rows, score_written)
             })
             .collect();
         Ok(Ok(groups))
-    }
-
-    /// The states of `group` and their branches, round by round from the
-    /// states of its starts.
-    fn graph(&self, group: &Group, recursive: &Recursive, budget: &mut Budget<'a>) -> Outcome<Result<StateGraph, RelationValue>> {
-        let mut graph = StateGraph::default();
-        let mut index: StableHashMap<UnfoldState, StateIndex> = StableHashMap::default();
-        let mut queue = Vec::new();
-        let mut reach = |state: UnfoldState, graph: &mut StateGraph, queue: &mut Vec<StateIndex>, budget: &mut Budget<'a>| -> Result<StateIndex, ReachedBound> {
-            if let Some(&at) = index.get(&state) {
-                return Ok(at);
-            }
-            budget.charge_rows(1)?;
-            let at = StateIndex(graph.states.len() as u32);
-            index.insert(state.clone(), at);
-            graph.states.push(state);
-            graph.branches.push(Box::default());
-            queue.push(at);
-            Ok(at)
-        };
-        let stopped = |bound| RelationValue::Stopped(Stop { bound, form: self.shape.form.clone() });
-        for &cursor in &group.start {
-            let state = UnfoldState { cursor, taken: group.taken.clone(), untaken: group.untaken.clone(), excluded: Box::default() };
-            let at = reach(state, &mut graph, &mut queue, budget).map_err(stopped);
-            match at {
-                Ok(at) => graph.starts.push(at),
-                Err(value) => return Ok(Err(value)),
-            }
-        }
-        while let Some(at) = queue.pop() {
-            if let Err(bound) = budget.charge_work(1) {
-                return Ok(Err(stopped(bound)));
-            }
-            let state = graph.states[at.0 as usize].clone();
-            let rounds = match self.round(group, recursive, &state)? {
-                Ok(rounds) => rounds,
-                Err(value) => return Ok(Err(value)),
-            };
-            let mut branches = Vec::with_capacity(rounds.len());
-            for (take, successors) in rounds {
-                let mut next = Vec::with_capacity(successors.len());
-                for successor in successors {
-                    match reach(successor, &mut graph, &mut queue, budget) {
-                        Ok(state) => next.push(state),
-                        Err(bound) => return Ok(Err(stopped(bound))),
-                    }
-                }
-                branches.push(Branch { take, next: next.into() });
-            }
-            graph.branches[at.0 as usize] = branches.into();
-        }
-        Ok(Ok(graph))
-    }
-
-    /// One round from `state`: for each of its takes, one per item of least
-    /// score where several tie, the states its `step` and `skip` rows reach.
-    fn round(&self, group: &Group, recursive: &Recursive, state: &UnfoldState) -> Outcome<Result<Vec<(Box<[TermId]>, Vec<UnfoldState>)>, RelationValue>> {
-        let written_take = match &recursive.take {
-            Some(take) => match self.at_cursor(group, state, &[], take)? {
-                Ok(items) => items,
-                Err(value) => return Ok(Err(value)),
-            },
-            None => Vec::new(),
-        };
-        let least = group.score.as_ref().map_or_else(Vec::new, |score| least_scored(score, state));
-        let takes: Vec<Box<[TermId]>> = match least.len() {
-            0 | 1 => vec![sorted(written_take.iter().chain(&least).copied())],
-            _ => least.iter().map(|&item| sorted(written_take.iter().copied().chain([item]))).collect(),
-        };
-        let mut rounds = Vec::with_capacity(takes.len());
-        for take in takes {
-            let mut successors = Vec::new();
-            for (body, stepped) in [(&recursive.step, true), (&recursive.skip, false)] {
-                let Some(body) = body else { continue };
-                let cursors = match self.at_cursor(group, state, &take, body)? {
-                    Ok(cursors) => cursors,
-                    Err(value) => return Ok(Err(value)),
-                };
-                for cursor in cursors {
-                    successors.push(if stepped { step(state, &take, &group.conflict, cursor) } else { UnfoldState { cursor, ..state.clone() } });
-                }
-            }
-            rounds.push((take, successors));
-        }
-        Ok(Ok(rounds))
     }
 
     /// The second column of the rows that `body` gives at the key of
@@ -607,6 +644,109 @@ impl<'r, 'a> Run<'r, 'a> {
         }
         value
     }
+}
+
+/// What ends a round of the driver's evaluation: a fault, a value that is
+/// not rows, or a bound reached.
+enum Halt {
+    Fault(RunFault),
+    Value(RelationValue),
+    Bound(ReachedBound),
+}
+
+impl From<ReachedBound> for Halt {
+    fn from(bound: ReachedBound) -> Self {
+        Halt::Bound(bound)
+    }
+}
+
+/// The rows of the inputs that read the outputs, through the driver, from
+/// the bodies the form writes.
+struct DriverReads<'x, 'r, 'a> {
+    run: &'x Run<'r, 'a>,
+    recursive: &'x Recursive,
+}
+
+impl ReadsOutputs for DriverReads<'_, '_, '_> {
+    type Halt = Halt;
+
+    fn at_cursor(&self, group: &Group, input: RecursiveInput, state: &UnfoldState, take: &[TermId]) -> Result<Option<Vec<TermId>>, Halt> {
+        let body = match input {
+            RecursiveInput::Step => &self.recursive.step,
+            RecursiveInput::Skip => &self.recursive.skip,
+            RecursiveInput::Take => &self.recursive.take,
+        };
+        let Some(body) = body else { return Ok(None) };
+        match self.run.at_cursor(group, state, take, body) {
+            Ok(Ok(rows)) => Ok(Some(rows)),
+            Ok(Err(value)) => Err(Halt::Value(value)),
+            Err(fault) => Err(Halt::Fault(fault)),
+        }
+    }
+}
+
+/// The states of `group` and their branches, round by round from the
+/// states of its starts, with the rows of the inputs that read the
+/// outputs from `reads`.
+fn graph<R: ReadsOutputs>(group: &Group, reads: &R, budget: &mut Budget<'_>) -> Result<StateGraph, R::Halt> {
+    let mut graph = StateGraph::default();
+    let mut index: StableHashMap<UnfoldState, StateIndex> = StableHashMap::default();
+    let mut queue = Vec::new();
+    let mut reach = |state: UnfoldState, graph: &mut StateGraph, queue: &mut Vec<StateIndex>, budget: &mut Budget<'_>| -> Result<StateIndex, ReachedBound> {
+        if let Some(&at) = index.get(&state) {
+            return Ok(at);
+        }
+        budget.charge_rows(1)?;
+        let at = StateIndex(graph.states.len() as u32);
+        index.insert(state.clone(), at);
+        graph.states.push(state);
+        graph.branches.push(Box::default());
+        queue.push(at);
+        Ok(at)
+    };
+    for &cursor in &group.start {
+        let state = UnfoldState { cursor, taken: group.taken.clone(), untaken: group.untaken.clone(), excluded: Box::default() };
+        let at = reach(state, &mut graph, &mut queue, budget)?;
+        graph.starts.push(at);
+    }
+    while let Some(at) = queue.pop() {
+        budget.charge_work(1)?;
+        let state = graph.states[at.0 as usize].clone();
+        let rounds = round(group, reads, &state)?;
+        let mut branches = Vec::with_capacity(rounds.len());
+        for (take, successors) in rounds {
+            let mut next = Vec::with_capacity(successors.len());
+            for successor in successors {
+                next.push(reach(successor, &mut graph, &mut queue, budget)?);
+            }
+            branches.push(Branch { take, next: next.into() });
+        }
+        graph.branches[at.0 as usize] = branches.into();
+    }
+    Ok(graph)
+}
+
+/// One round from `state`: for each of its takes, one per item of least
+/// score where several tie, the states its `step` and `skip` rows reach.
+fn round<R: ReadsOutputs>(group: &Group, reads: &R, state: &UnfoldState) -> Result<Vec<(Box<[TermId]>, Vec<UnfoldState>)>, R::Halt> {
+    let written_take = reads.at_cursor(group, RecursiveInput::Take, state, &[])?.unwrap_or_default();
+    let least = group.score.as_ref().map_or_else(Vec::new, |score| least_scored(score, state));
+    let takes: Vec<Box<[TermId]>> = match least.len() {
+        0 | 1 => vec![sorted(written_take.iter().chain(&least).copied())],
+        _ => least.iter().map(|&item| sorted(written_take.iter().copied().chain([item]))).collect(),
+    };
+    let mut rounds = Vec::with_capacity(takes.len());
+    for take in takes {
+        let mut successors = Vec::new();
+        for (input, stepped) in [(RecursiveInput::Step, true), (RecursiveInput::Skip, false)] {
+            let Some(cursors) = reads.at_cursor(group, input, state, &take)? else { continue };
+            for cursor in cursors {
+                successors.push(if stepped { step(state, &take, &group.conflict, cursor) } else { UnfoldState { cursor, ..state.clone() } });
+            }
+        }
+        rounds.push((take, successors));
+    }
+    Ok(rounds)
 }
 
 /// The untaken items of `state` of least score at its cursor.

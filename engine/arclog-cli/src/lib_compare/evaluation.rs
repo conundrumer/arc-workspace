@@ -3,10 +3,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::path::Path;
 
 use arclog::algebra::orientation::{D4Element, Edge, Geometry};
 use arclog::algebra::{algebra, Algebra};
 use arclog::eval::instance::Construction;
+use arclog::eval::unfold::UnfoldOutput;
 use arclog::registry::{AlgebraRelation, Component, LibName, Registry};
 use arclog::terms::{Color, Constant, Ident, Margins, Number, Term, TermId};
 use arclog::types::ValueType;
@@ -14,7 +16,7 @@ use serde_json::{json, Value};
 
 use crate::compare::{constructions, renaming_exists, EngineLeaf, Leaf};
 
-use super::components::constructed;
+use super::components::{constructed, unfolded, WALKS};
 use super::inputs::{column_text, component_type, constant_name, is_orientation, relation_type, Element};
 use super::last_panic;
 
@@ -25,6 +27,9 @@ impl Element<'_> {
             Element::Relation { name, relation } => {
                 let native = algebra(&LibName(name.clone())).ok_or("the engine does not evaluate it")?;
                 Ok(Subject::Relation { name, native, relation })
+            }
+            Element::Component { name, component } if component.inputs.iter().any(|input| input.reads_outputs) => {
+                Ok(Subject::Unfold { name, component })
             }
             Element::Component { name, component } => {
                 let construction = constructions()?.get(&LibName(name.clone())).ok_or("the engine has no construction of it")?;
@@ -45,6 +50,10 @@ pub(super) enum Cell {
 /// The rows of one mode of a relation or of one output of a component,
 /// each row once.
 pub(super) type Rows = Vec<Vec<Cell>>;
+
+/// The rows of each part of an element, one value per walk: one walk
+/// where the element's inputs give no fork.
+pub(super) type Walks = Vec<Vec<Rows>>;
 
 /// The cell of the term `id` of type `ty`.
 pub(super) fn cell(id: TermId, ty: &ValueType) -> Cell {
@@ -76,17 +85,19 @@ fn leaf(value: &Value) -> Leaf {
     value.as_i64().map_or_else(|| Leaf::Other(value.to_string().into()), Leaf::Number)
 }
 
-/// What the engine evaluates an element by: a relation's native form, or
-/// a component's construction.
+/// What the engine evaluates an element by: a relation's native form, a
+/// component's construction, or the walks of `Unfold` for a component
+/// whose inputs read its outputs.
 pub(super) enum Subject<'r> {
     Relation { name: &'r str, native: &'static dyn Algebra, relation: &'r AlgebraRelation },
     Component { name: &'r str, construction: &'static dyn Construction, component: &'r Component },
+    Unfold { name: &'r str, component: &'r Component },
 }
 
 impl Subject<'_> {
     pub(super) fn name(&self) -> &str {
         match self {
-            Subject::Relation { name, .. } | Subject::Component { name, .. } => name,
+            Subject::Relation { name, .. } | Subject::Component { name, .. } | Subject::Unfold { name, .. } => name,
         }
     }
 
@@ -95,17 +106,18 @@ impl Subject<'_> {
     pub(super) fn part(&self, index: usize) -> String {
         match self {
             Subject::Relation { .. } => format!("mode {index}"),
-            Subject::Component { component, .. } => format!("the output {}", component.outputs[index].name.0),
+            Subject::Component { component, .. } | Subject::Unfold { component, .. } => format!("the output {}", component.outputs[index].name.0),
         }
     }
 
     /// The engine's rows of each mode of a relation's inputs, or of each
-    /// output of a component's, or the stop of the run or the panic of an
-    /// evaluation the engine does not yet give.
-    pub(super) fn evaluated(&self, inputs: &Value) -> Result<Vec<Rows>, String> {
+    /// output of a component's on each walk, or the stop of the run or the
+    /// panic of an evaluation the engine does not yet give.
+    pub(super) fn evaluated(&self, inputs: &Value) -> Result<Walks, String> {
         let run = catch_unwind(AssertUnwindSafe(|| match self {
-            Subject::Relation { native, relation, .. } => evaluated(*native, relation, inputs),
-            Subject::Component { construction, component, .. } => constructed(*construction, component, inputs),
+            Subject::Relation { native, relation, .. } => evaluated(*native, relation, inputs).map(|rows| vec![rows]),
+            Subject::Component { construction, component, .. } => constructed(*construction, component, inputs).map(|rows| vec![rows]),
+            Subject::Unfold { component, .. } => unfolded(component, inputs),
         }));
         run.unwrap_or_else(|_| Err(format!("a panic at {}", last_panic())))
     }
@@ -122,7 +134,7 @@ impl Subject<'_> {
                     mode["rows"] = Value::from(probes);
                 }
             }
-            Subject::Component { component, .. } => {
+            Subject::Component { component, .. } | Subject::Unfold { component, .. } => {
                 for (input, port) in moved["inputs"].as_array_mut().into_iter().flatten().zip(&component.inputs) {
                     let types: Vec<ValueType> = port.port.columns.iter().map(component_type).collect();
                     let rows: Vec<Value> = input["rows"].as_array().into_iter().flatten().map(|row| image.row(row, &types)).collect();
@@ -137,7 +149,9 @@ impl Subject<'_> {
     pub(super) fn part_types(&self, index: usize) -> Vec<ValueType> {
         match self {
             Subject::Relation { relation, .. } => relation.columns.iter().map(relation_type).collect(),
-            Subject::Component { component, .. } => component.outputs[index].columns.iter().map(component_type).collect(),
+            Subject::Component { component, .. } | Subject::Unfold { component, .. } => {
+                component.outputs[index].columns.iter().map(component_type).collect()
+            }
         }
     }
 }
@@ -345,23 +359,118 @@ impl Image {
 }
 
 /// Each line on an image of the inputs whose rows are not the image of the
-/// rows of the inputs.
-pub(super) fn image_differences(subject: &Subject<'_>, inputs: &Value, rows: &[Rows]) -> Vec<String> {
+/// rows of the inputs. Where the inputs fork, the walks of the image are
+/// the images of the walks, each once, in any order, and the comparison
+/// leaves out inputs whose walks reach [`WALKS`], since which walks the
+/// limit keeps follows the order of term ids, which an image changes.
+pub(super) fn image_differences(subject: &Subject<'_>, inputs: &Value, walks: &[Vec<Rows>]) -> Vec<String> {
     let name = subject.name();
     let mut lines = Vec::new();
+    if walks.len() >= WALKS {
+        return lines;
+    }
     for image in Image::each() {
-        let expected: Vec<Rows> = rows
+        let other = format!("the rows' image under {}", image.name());
+        let expected: Vec<Vec<Rows>> = walks
             .iter()
-            .enumerate()
-            .map(|(index, part)| {
-                let types = subject.part_types(index);
-                part.iter().map(|row| image.cells(row, &types)).collect()
+            .map(|rows| {
+                rows.iter()
+                    .enumerate()
+                    .map(|(index, part)| {
+                        let types = subject.part_types(index);
+                        part.iter().map(|row| image.cells(row, &types)).collect()
+                    })
+                    .collect()
             })
             .collect();
         match subject.evaluated(&subject.moved(&image, inputs)) {
-            Ok(got) => lines.extend(differences(subject, &format!("the rows' image under {}", image.name()), &got, &expected)),
+            Ok(got) => match (&got[..], &expected[..]) {
+                ([got], [expected]) => lines.extend(differences(subject, &other, got, expected)),
+                _ => {
+                    let unmatched = expected.iter().filter(|want| !got.iter().any(|got| differences(subject, &other, got, want).is_empty())).count();
+                    if got.len() != expected.len() || unmatched > 0 {
+                        lines.push(format!(
+                            "{name}: against {other}, the engine gives {} walks, the image {}, of which {unmatched} are no walk the engine gives",
+                            got.len(),
+                            expected.len()
+                        ));
+                    }
+                }
+            },
             Err(message) => lines.push(format!("{name}: under {}, the engine's run stops: {message}", image.name())),
         }
     }
     lines
+}
+
+/// Each line on a difference between each walk of `engine` and the
+/// Souffle record's rows `expected`, over the rows [`reached`] keeps, each
+/// line led by its walk where there are several.
+pub(super) fn walk_differences(subject: &Subject<'_>, other: &str, engine: &[Vec<Rows>], expected: &[Rows]) -> Vec<String> {
+    let mut lines = Vec::new();
+    for (index, walk) in engine.iter().enumerate() {
+        let (walk, expected) = reached(subject, walk, expected);
+        let found = differences(subject, other, &walk, &expected);
+        match engine.len() {
+            1 => lines.extend(found),
+            n => lines.extend(found.into_iter().map(|line| format!("walk {} of {n}: {line}", index + 1))),
+        }
+    }
+    lines
+}
+
+/// The rows of `engine` and of the Souffle record's `souffle` that their
+/// comparison compares. For `Unfold`, a `take` row stands only at a key and
+/// cursor where a side holds a `taken`, `untaken` or `excluded` row, and
+/// the other outputs stand in full: the outputs of `Unfold` are the state
+/// along a walk, as the Unfold row of `docs/lib-spec.md` gives,
+/// while the `take` of Souffle's `Take` holds each given `take` row at
+/// every cursor, also at one that no walk reaches.
+fn reached(subject: &Subject<'_>, engine: &[Rows], souffle: &[Rows]) -> (Vec<Rows>, Vec<Rows>) {
+    let Subject::Unfold { component, .. } = subject else { return (engine.to_vec(), souffle.to_vec()) };
+    let outputs: Vec<UnfoldOutput> = component.outputs.iter().map(|output| UnfoldOutput::of(&output.name)).collect();
+    let held = |rows: &[Rows]| -> Vec<Vec<Cell>> {
+        outputs.iter().zip(rows).filter(|(output, _)| **output != UnfoldOutput::Take).flat_map(|(_, rows)| rows.iter().map(|row| row[..2].to_vec())).collect()
+    };
+    let reached: Vec<Vec<Cell>> = held(engine).into_iter().chain(held(souffle)).collect();
+    let keep = |rows: &[Rows]| -> Vec<Rows> {
+        outputs
+            .iter()
+            .zip(rows)
+            .map(|(output, rows)| match output {
+                UnfoldOutput::Take => rows.iter().filter(|row| reached.iter().any(|at| at[..] == row[..2])).cloned().collect(),
+                _ => rows.clone(),
+            })
+            .collect()
+    };
+    (keep(engine), keep(souffle))
+}
+
+/// The line that lists the fork of the inputs file `path` of `subject`
+/// into `walks`, with the rows of each part on each walk.
+pub(super) fn fork_line(subject: &Subject<'_>, path: &Path, walks: &[Vec<Rows>]) -> String {
+    let limit = if walks.len() >= WALKS { ", the limit" } else { "" };
+    let text = |row: &Vec<Cell>| {
+        let cells: Vec<String> = row
+            .iter()
+            .map(|cell| match cell {
+                Cell::Value(value) => value.to_string(),
+                Cell::Ident(ident) => format!("{ident:?}"),
+            })
+            .collect();
+        format!("[{}]", cells.join(","))
+    };
+    let walks: Vec<String> = walks
+        .iter()
+        .enumerate()
+        .map(|(index, parts)| {
+            let parts: Vec<String> = parts
+                .iter()
+                .enumerate()
+                .map(|(at, rows)| format!("{} {}", subject.part(at), rows.iter().map(text).collect::<Vec<_>>().join(" ")))
+                .collect();
+            format!("walk {}: {}", index + 1, parts.join("; "))
+        })
+        .collect();
+    format!("{}: the inputs {} fork into {} walks{limit}: {}", subject.name(), path.display(), walks.len(), walks.join(" | "))
 }

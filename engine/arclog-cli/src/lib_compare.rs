@@ -31,7 +31,7 @@ mod sources;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use self::evaluation::{differences, image_differences};
+use self::evaluation::{fork_line, image_differences, walk_differences};
 use self::inputs::{elements, emptied_inputs, inputs_path, write_json, Element};
 use self::records::{read_record, Record};
 use self::solvers::compare_solvers;
@@ -84,6 +84,9 @@ struct Report {
     not_compared: Vec<String>,
     /// Each line on a solver whose two forms differ.
     solvers: Vec<String>,
+    /// Each line on inputs whose walks give more than one set of outputs,
+    /// with the outputs of each walk.
+    forks: Vec<String>,
 }
 
 impl Report {
@@ -116,8 +119,8 @@ impl Report {
                 return;
             }
         };
-        let rows = match subject.evaluated(&inputs) {
-            Ok(rows) => rows,
+        let walks = match subject.evaluated(&inputs) {
+            Ok(walks) => walks,
             Err(message) => {
                 self.not_compared.push(format!("{name}: the engine's run stops: {message}"));
                 return;
@@ -125,9 +128,12 @@ impl Report {
         };
         let mut lines = Vec::new();
         let against_souffle = match record {
-            Record::Rows(souffle) => match souffle_inputs.as_ref().map_or(Ok(rows.clone()), |emptied| subject.evaluated(emptied)) {
+            Record::Rows(souffle) => match souffle_inputs.as_ref().map_or(Ok(walks.clone()), |emptied| subject.evaluated(emptied)) {
                 Ok(engine) => {
-                    lines.extend(differences(&subject, "Souffle", &engine, &souffle));
+                    if souffle_inputs.is_some() && engine.len() > 1 {
+                        self.forks.push(fork_line(&subject, &inputs_path(snapshot, name, ".souffle"), &engine));
+                    }
+                    lines.extend(walk_differences(&subject, "Souffle", &engine, &souffle));
                     true
                 }
                 Err(message) => {
@@ -165,7 +171,10 @@ impl Report {
                 false
             }
         };
-        lines.extend(image_differences(&subject, &inputs, &rows));
+        if walks.len() > 1 {
+            self.forks.push(fork_line(&subject, &path, &walks));
+        }
+        lines.extend(image_differences(&subject, &inputs, &walks));
         if !lines.is_empty() {
             self.differ.extend(lines);
             self.differ.push(format!("{name}: its inputs are {}", path.display()));
@@ -181,15 +190,19 @@ impl Report {
         for line in self.differ.iter().chain(&self.solvers) {
             println!("{line}");
         }
+        for line in &self.forks {
+            println!("fork: {line}");
+        }
         for line in &self.not_compared {
             println!("not compared: {line}");
         }
         println!("compared: {}", self.compared.join(", "));
         println!(
-            "{} elements compared the same, {} lines on elements that differ, {} solvers whose two forms differ, {} elements and solvers not compared",
+            "{} elements compared the same, {} lines on elements that differ, {} solvers whose two forms differ, {} inputs that fork, {} elements and solvers not compared",
             self.compared.len(),
             self.differ.len(),
             self.solvers.len(),
+            self.forks.len(),
             self.not_compared.len()
         );
         if self.differ.is_empty() && self.solvers.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
