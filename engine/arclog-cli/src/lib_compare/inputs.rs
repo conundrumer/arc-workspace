@@ -21,7 +21,7 @@
 //!
 //! An element of the Souffle lib that declares no input of the element's
 //! has a second inputs file, `<element>.souffle.json`, in which each such
-//! input holds no row, and the Souffle side runs that file.
+//! input holds no row.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

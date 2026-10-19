@@ -377,7 +377,7 @@ pub struct SolverScope {
     pub derived: crate::hash::StableHashSet<ProgramRelation>,
     /// The column names that the sites of the reads of each relation name
     /// across the solver's cases, as [`crate::solver::Solver::read_columns`]
-    /// gives them, which a `DET` of the relation keeps.
+    /// gives them.
     pub read_columns: crate::hash::StableHashMap<ProgramRelation, Vec<ColumnName>>,
 }
 

@@ -1,8 +1,7 @@
 //! The digest of the Souffle sources a record was made from.
 //!
 //! A record gives, as `sources`, the digest of the Souffle sources it was
-//! made from, and a record whose digest is not that of the present sources
-//! is not compared. The digest is 64-bit FNV-1a, as 16 lowercase hex
+//! made from. The digest is 64-bit FNV-1a, as 16 lowercase hex
 //! digits, over each source in turn: its path from the root of the tree,
 //! a 0 byte, its bytes and a 0 byte. The sources are `programs/lib.dl`,
 //! each `.dl` file of `programs/lib/` in the byte order of their names,
