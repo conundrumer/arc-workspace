@@ -30,7 +30,7 @@ The step of the [build order](overview.md#build-order) that builds it ends when 
 
 ## Proposers
 
-- A proposer is arclog text in `engine/lib/proposers.arclog`. Name resolution expands it as the body of the `DET` that names it.
+- A proposer written in arclog has its clause in `engine/lib/proposers.arclog`. Over the evidence it runs on, it gives the relation of a `DET` whose body is that clause, at the columns its `(columns ...)` form names in `engine/lib/registry.sexpr`.
 - On the derived reading of a `DET_OR_RULE` or `RULE_OR_DET` line, the proposer runs on each input, a pair's or a witness's, alone, with `ex_output` empty. Where it gives no value, each case that takes that reading is undefined on that input, as the `@derive` line of [Params](../../docs/handbook/solver-file.md#params) gives. Where it gives several values and the line has no `(ONE)`, the parameter takes those values, as that line gives too.
 - A domain proposer, as [Program](../../docs/arclog/arclog.md#program) gives it, is native: it enumerates the values of its type that the evidence gives, and reads no stored value. The evidence is the train inputs and outputs and the test inputs.
     - An orientation type: every value of the type.

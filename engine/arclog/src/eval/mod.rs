@@ -18,7 +18,9 @@
 //! bounds that the driver and the parts share. [`picks`] gives the options
 //! of a pick through the driver's way into the bodies, and [`models`]
 //! enumerates the models of a case on an input, through the driver.
-//! [`output`] reads a grid from a relation, for the judge.
+//! [`output`] reads a grid from a relation, for the judge. [`proposers`]
+//! gives the rows of a proposer over an evidence, which the driver reads for
+//! a clause that derives by a proposer.
 
 pub mod cache;
 mod driver;
@@ -34,6 +36,7 @@ pub mod output;
 pub mod picks;
 pub mod plan;
 pub mod pool;
+pub mod proposers;
 pub mod rigid;
 pub mod unfold;
 pub mod values;

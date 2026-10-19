@@ -9,11 +9,11 @@ use super::examples::{self, ExampleScope};
 use super::ir::{self, AtomSource, ClauseIr, IrNode};
 use super::join::{self, Budget, JoinInputs, NodeInput};
 use super::models::{self, Choice, Entry, Factor};
-use super::{cache, instance, plan, rigid};
+use super::{cache, instance, plan, proposers, rigid};
 use super::{Evaluation, Outcome, RelationValue, RunFault, Stop};
 use crate::hash::StableHashMap;
-use crate::program::path::NodePath;
-use crate::program::ProgramRelation;
+use crate::program::path::{node_at, NodePath, NodeRef};
+use crate::program::{Clause, ClauseKeyword, ProgramRelation};
 use crate::relations::{Relation, RowSet};
 use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::terms::Example;
@@ -123,8 +123,18 @@ impl<'e, 'a> Driver<'e, 'a> {
         Ok(RelationValue::Rows(union(relations)))
     }
 
-    /// The relation of the clause at `form` on `example`.
+    /// The relation of the clause at `form` on `example`: the rows of its
+    /// proposer where it has no body and derives by one, as [`derivation`]
+    /// gives, and otherwise its body's, by generic join.
     pub(super) fn clause(&self, form: &NodePath, example: Option<Example>) -> Outcome<RelationValue> {
+        let program = self.program();
+        let content = program.content(form).expect("the resolved content of each form");
+        if let NodeRef::Clause(written) = node_at(NodeRef::Program(program.program.value()), form).expect("the path of a form of the program") {
+            if let Some(index) = derivation(written, form)? {
+                let request = cache::EntryRequest { clause: &content, reads: &[], example, parameters: &[] };
+                return self.cached(form, &request, || self.proposed(form, written, index, example));
+            }
+        }
         let evaluation = self.evaluation;
         let clause = ir::compile_clause(evaluation.program, form)
             .map_err(|fault| RunFault { message: format!("the body does not compile: {fault:?}").into(), form: form.clone() })?;
@@ -134,33 +144,77 @@ impl<'e, 'a> Driver<'e, 'a> {
             Ok(inputs) => inputs,
             Err(value) => return Ok(value),
         };
-        let content = self.program().content(form).expect("the resolved content of each form");
         let read_refs: Vec<&Relation> = reads.iter().map(|r: &Arc<Relation>| &**r).collect();
         let parameter_refs: Vec<&Relation> = parameters.iter().map(|r: &Arc<Relation>| &**r).collect();
         let request = cache::EntryRequest { clause: &content, reads: &read_refs, example, parameters: &parameter_refs };
-        if let Some(value) = cache::lookup(evaluation.session, &request, form) {
+        self.cached(form, &request, || Ok(self.join(form, &clause, &inputs)))
+    }
+
+    /// The value the result cache holds for `request`, made at `form`, or,
+    /// where it holds none, the value of `compute`, which the cache then
+    /// stores. A fault of `compute` is given and not stored.
+    fn cached(&self, form: &NodePath, request: &cache::EntryRequest<'_>, compute: impl FnOnce() -> Outcome<RelationValue>) -> Outcome<RelationValue> {
+        let session = self.evaluation.session;
+        if let Some(value) = cache::lookup(session, request, form) {
             return Ok(value);
         }
         let mut own = None;
-        let key = cache::key(evaluation.session, &request);
-        let shared = cache::in_flight(evaluation.session).get_or_compute(key, || {
+        let key = cache::key(session, request);
+        let shared = cache::in_flight(session).get_or_compute(key, || {
             // A computation that ended since the lookup above stored the entry.
-            let value = match cache::lookup(evaluation.session, &request, form) {
-                Some(value) => value,
-                None => {
-                    let value = self.join(form, &clause, &inputs);
-                    cache::store(evaluation.session, &request, &value);
-                    value
-                }
+            let value = match cache::lookup(session, request, form) {
+                Some(value) => Ok(value),
+                None => compute().inspect(|value| cache::store(session, request, value)),
             };
-            let shared = cache::cached(&value);
+            let shared = value.as_ref().ok().and_then(cache::cached);
             own = Some(value);
             shared
         });
-        Ok(own.unwrap_or_else(|| {
+        own.unwrap_or_else(|| {
             let shared = shared.expect("a value from the computation another thread ended");
-            shared.map_stop(|bound| Stop { bound, form: form.clone() })
-        }))
+            Ok(shared.map_stop(|bound| Stop { bound, form: form.clone() }))
+        })
+    }
+
+    /// The relation of `clause`, at `form`, that derives by its proposer at
+    /// `index`: the proposer's rows over the task where `example` is `None`
+    /// and over that input alone where it is `Some`, each column at the
+    /// position of the clause's column that
+    /// [`crate::resolver::ResolvedProgram::proposer_columns`] maps it onto,
+    /// and `undefined` on an input where they are empty.
+    fn proposed(&self, form: &NodePath, clause: &Clause, index: usize, example: Option<Example>) -> Outcome<RelationValue> {
+        let program = self.program();
+        let fault = |message: &str| RunFault { message: message.into(), form: form.clone() };
+        let proposer = &clause.proposers[index];
+        let names = program.proposer_columns(form, index).ok_or_else(|| fault("the proposer's columns map onto no columns of the clause"))?;
+        let positions: Vec<Option<usize>> = names
+            .iter()
+            .enumerate()
+            .map(|(at, name)| match clause.columns.iter().find(|column| column.name == *name) {
+                None if clause.columns.is_empty() => Some(at),
+                found => found.and_then(|column| program.label_position(form, column.label)).map(|position| usize::from(position.0)),
+            })
+            .collect();
+        let evidence = example.map_or(proposers::Evidence::Task, proposers::Evidence::Input);
+        let relation = match proposers::rows(self.evaluation, proposer, evidence, form)? {
+            RelationValue::Rows(relation) => relation,
+            other => return Ok(other),
+        };
+        if example.is_some() && relation.is_empty() {
+            return Ok(RelationValue::Undefined);
+        }
+        let arity = positions.iter().flatten().count();
+        let mut rows = RowSet::empty(arity as u16);
+        join::each_row(&relation, &mut |row| {
+            let mut placed = vec![row[0]; arity];
+            for (&value, position) in row.iter().zip(&positions) {
+                if let Some(position) = position {
+                    placed[*position] = value;
+                }
+            }
+            rows.insert(placed.into());
+        });
+        Ok(RelationValue::Rows(Arc::new(join::one_part(rows))))
     }
 
     /// The relation of `clause`, a clause of the form at `form`, by generic
@@ -269,6 +323,23 @@ impl FormBodies<'_> {
             Ok(inputs) => Ok(driver.join(form, clause, &inputs)),
             Err(value) => Ok(value),
         }
+    }
+}
+
+/// The index of the proposer that `clause`, at `form`, derives by, where it
+/// has no body and names a proposer: its one proposer, or, in the derived
+/// reading by a proposer other than its line's first, the second it holds,
+/// as `crate::solver` reads a `DET_OR_RULE` or `RULE_OR_DET` line. A clause
+/// with no body and several proposers in any other reading, the stored
+/// reading of a line with several, is a fault.
+fn derivation(clause: &Clause, form: &NodePath) -> Outcome<Option<usize>> {
+    if !clause.body.value().conjuncts.is_empty() || clause.proposers.is_empty() {
+        return Ok(None);
+    }
+    match (clause.keyword, clause.proposers.len()) {
+        (_, 1) => Ok(Some(0)),
+        (ClauseKeyword::Rule, 2) => Ok(Some(1)),
+        _ => Err(RunFault { message: "a clause with no body that names several proposers derives by none of them".into(), form: form.clone() }),
     }
 }
 
