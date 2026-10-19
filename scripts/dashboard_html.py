@@ -113,6 +113,12 @@ def role_words(r: Role) -> str:
     return r.value.replace("-", " ")
 
 
+def at_work(w: list[ShownAgent], now: float) -> str:
+    """The words on the latest of the agents `w` at work."""
+    a = max(w, key=lambda a: a.launched)
+    return f"{role_words(a.role)} at work, {ago(now - a.launched)}"
+
+
 def tap(n: str, inner: str, cls: str = "row") -> str:
     """`inner` in an element whose tap opens the sheet of ticket `n`."""
     tag = "button" if cls == "card" else "div"
@@ -120,12 +126,22 @@ def tap(n: str, inner: str, cls: str = "row") -> str:
 
 
 @dataclass(frozen=True)
+class ChangeState:
+    """The change an open ticket waits on, and the words of its state as a
+    row of Active or Queued gives it (`change_state`)."""
+    change: Ticket
+    state: str
+
+
+@dataclass(frozen=True)
 class Entry:
-    """A ticket as the search and its sheet give it: its phrase and the
-    plain sentence on its status."""
+    """A ticket as the search and its sheet give it: its phrase, the plain
+    sentence on its status, and the change it waits on, where it waits on
+    one."""
     ticket: Ticket
     phrase: str
     status: str
+    change: ChangeState | None
 
 
 @dataclass(frozen=True)
@@ -172,8 +188,7 @@ class View:
             last = t.log[-1]
             return f"Done {clock(last.time, self.now)}" + ("" if last.resolution is None else f" · {last.resolution}")
         if w := self.working(t):
-            a = max(w, key=lambda a: a.launched)
-            return f"{role_words(a.role).capitalize()} at work, {ago(self.now - a.launched)}"
+            return at_work(w, self.now).capitalize()
         if (c := change_of(t, self.all_)) is not None:
             return f"Waiting on {c.number} ({self.phrase(c)})"
         if (h := self.holds.get(t.number)) is not None:
@@ -433,6 +448,33 @@ def session_name(s: int | None) -> str:
     return "No session" if s is None else f"S{s}"
 
 
+def held_label(k: Standing, by: int | None, s: int | None) -> str:
+    """The head of the group of a ticket of session `s` held as `k`, by a
+    ticket of session `by`."""
+    return ELSEWHERE_HEAD[k].format(session=session_name(by)) if by != s and k in ELSEWHERE_HEAD else HELD_HEAD[k]
+
+
+def change_state(v: View, st: Standings, t: Ticket) -> ChangeState | None:
+    """The change `t` waits on, where `t` is open and waits on one,
+    with the words of the change's state: the agent at work on it, next to
+    start, the ticket it waits on, or the head of its group of held
+    tickets."""
+    c = change_of(t, v.all_)
+    if t.status not in OPEN or c is None:
+        return None
+    k, root = st.state(c)
+    match k:
+        case Standing.WORKING:
+            words = at_work(st.agents(c), v.now)
+        case Standing.READY:
+            words = "next to start"
+        case Standing.WAITING:
+            words = f"after {root.number}"
+        case _:
+            words = held_label(k, root.session, c.session).lower()
+    return ChangeState(c, words)
+
+
 def queued(v: View, st: Standings) -> str:
     """The HTML of Queued: a tab for each session that filed a ticket shown
     and not at work, and in it, its operator's state, its tickets ready in
@@ -472,9 +514,8 @@ def queued(v: View, st: Standings) -> str:
         for t, k, root in items:
             if k in MOVING:
                 continue
-            elsewhere = root.session != s and k in ELSEWHERE_HEAD
-            label = ELSEWHERE_HEAD[k].format(session=session_name(root.session)) if elsewhere else HELD_HEAD[k]
-            groups.setdefault((list(HELD_HEAD).index(k), elsewhere, label), []).append((t, root))
+            groups.setdefault((list(HELD_HEAD).index(k), root.session != s and k in ELSEWHERE_HEAD,
+                               held_label(k, root.session, s)), []).append((t, root))
         for (_, _, label), xs in sorted(groups.items()):
             xs.sort(key=lambda x: (not v.mine(x[0]), x[0].number not in v.expedited, x[0].filed))
             rows = [row(v, t, stopped_bar(v, t) + ("" if root is t else f"<span>via {link(root.number)}</span>"))
@@ -599,7 +640,7 @@ def page(tickets: Path, now: float, usage: Reading, records: OperatorRecords,
             + json.dumps(events(v), separators=(",", ":")).replace("<", "\\u003c") + "</script></main>")
     text = filled(TEMPLATE, {"BODY": body, "EVENTS": EVENTS, "SEARCH": SEARCH_ROUTE, "TICKET": TICKET_ROUTE,
                              "LASTLOOK": LAST_LOOK, "TAB": TAB})
-    entries = {n: Entry(t, v.phrase(t), v.status(t)) for n, t in all_.items()}
+    entries = {n: Entry(t, v.phrase(t), v.status(t), change_state(v, st, t)) for n, t in all_.items()}
     return Rendered(text, entries, now)
 
 

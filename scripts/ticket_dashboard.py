@@ -8,8 +8,8 @@ browser as the tracker changes.
 
 serves GET alone, at four routes. `/` renders the page on each request, as
 one HTML document with its CSS and JavaScript inline: a strip at its top,
-and the sections Health, In flight, Up next, Since you looked, Pace,
-Queue, Find a ticket and Blocked, the last three of them folded. It keeps
+and the sections Health, Active, Queued, Since you looked, Pace, Queue,
+Find and Blocked, the last three of them folded. It keeps
 the search's entries of that render. `SEARCH_ROUTE` gives the HTML of the
 search's hits of the `q` parameter among the entries of the latest render,
 and `TICKET_ROUTE` the sheet of the ticket its `n` parameter gives; each
@@ -21,13 +21,21 @@ client is connected, that differs from the one of the last event and comes
 and replaces its content in place, and the page holds no stream while it
 is hidden. The server serves no ticket file, and writes no file.
 
+Where a file of a module the server loaded from the repo's `scripts/` or
+`src/` changes (`code_files`), the server stops taking requests, waits
+for those it serves other than streams, and runs itself again in its own
+process with the same arguments; the open page's `EventSource` connects
+again by its own retry.
+
 This module holds the server; `dashboard_reads` the reads the page is
 rendered from, `dashboard_html` the HTML of its sections, `dashboard_search`
 the search, and `dashboard_template` the page around its sections."""
 
 import argparse
 import gzip
+import os
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -52,6 +60,13 @@ MIN_EVENT = 15.0
 """The fewest seconds between two events of the stream to one client, so
 that renders do not run back to back while the tracker changes every few
 seconds."""
+
+
+WATCH = 1.0
+"""The seconds between two reads of the stamps of `code_files`."""
+
+ROOT = Path(__file__).resolve().parents[1]
+"""The root of the tree the server runs from."""
 
 
 type Stamp = tuple[str, int, int] | None
@@ -79,6 +94,19 @@ def fingerprint(tickets: Path) -> tuple[Stamp, ...]:
         if s is not Status.CLOSED and d.is_dir():
             out.extend(stamp(p) for p in sorted(d.iterdir()))
     return (*out, stamp(usage_file()))
+
+
+def code_files() -> list[Path]:
+    """The files of the modules loaded from `scripts/` and `src/` under
+    `ROOT`."""
+    dirs = (ROOT / "scripts", ROOT / "src")
+    found = {Path(f).resolve() for m in list(sys.modules.values())
+             if isinstance(f := getattr(m, "__file__", None), str)}
+    return sorted(p for p in found if any(p.is_relative_to(d) for d in dirs))
+
+
+def code_stamps(files: list[Path]) -> tuple[Stamp, ...]:
+    return tuple(stamp(p) for p in files)
 
 
 def render(tickets: Path) -> Rendered:
@@ -111,6 +139,28 @@ class Latest:
     rendered: Rendered | None = None
 
 
+class Serving:
+    """The count of the requests a server serves other than streams, and
+    the wait for none."""
+
+    def __init__(self) -> None:
+        self.count = 0
+        self.idle = threading.Condition()
+
+    def __enter__(self) -> None:
+        with self.idle:
+            self.count += 1
+
+    def __exit__(self, *_: object) -> None:
+        with self.idle:
+            self.count -= 1
+            self.idle.notify_all()
+
+    def wait_idle(self) -> None:
+        with self.idle:
+            self.idle.wait_for(lambda: self.count == 0)
+
+
 class Handler(BaseHTTPRequestHandler):
     """Serves `/`, `SEARCH_ROUTE`, `TICKET_ROUTE` and `EVENTS` of the tracker `tickets`, and
     nothing else. Each render runs on the one thread of `renderer`: the
@@ -119,6 +169,7 @@ class Handler(BaseHTTPRequestHandler):
     tickets: Path
     renderer: ThreadPoolExecutor
     latest: Latest
+    serving: Serving
 
     def rendered_now(self) -> Rendered:
         """A render on `renderer`, kept as the latest."""
@@ -133,16 +184,27 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         url = urlsplit(self.path)
-        match url.path:
+        if url.path == EVENTS:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.stream()
+            return
+        with self.serving:
+            self.serve_page(url.path, url.query)
+
+    def serve_page(self, path: str, query: str) -> None:
+        match path:
             case "/":
                 began = time.monotonic()
                 self.send_html(self.rendered_now().text, began)
             case p if p == SEARCH_ROUTE:
                 began = time.monotonic()
-                self.send_html(results(self.rendered_last().entries, words(parse_qs(url.query))), began)
+                self.send_html(results(self.rendered_last().entries, words(parse_qs(query))), began)
             case p if p == TICKET_ROUTE:
                 began = time.monotonic()
-                given = parse_qs(url.query).get("n")
+                given = parse_qs(query).get("n")
                 if given is None:
                     self.send_error(400, "no ticket number is given (`n`)")
                     return
@@ -152,12 +214,6 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_error(404, f"no ticket {n}")
                     return
                 self.send_html(sheet(e, time.time()), began)
-            case p if p == EVENTS:
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream")
-                self.send_header("Cache-Control", "no-store")
-                self.end_headers()
-                self.stream()
             case _:
                 self.send_error(404)
 
@@ -203,14 +259,24 @@ class Handler(BaseHTTPRequestHandler):
             return
 
 
-def serve(address: str, port: int, tickets: Path) -> ThreadingHTTPServer:
+def serve(address: str, port: int, tickets: Path, serving: Serving) -> ThreadingHTTPServer:
     """A server of `tickets` bound to `address` and `port`, not yet
-    serving."""
+    serving, that counts its requests in `serving`."""
     handler = type("Bound", (Handler,), {"tickets": tickets, "latest": Latest(),
-                                         "renderer": ThreadPoolExecutor(max_workers=1)})
+                                         "renderer": ThreadPoolExecutor(max_workers=1), "serving": serving})
     server = ThreadingHTTPServer((address, port), handler)
     server.daemon_threads = True
     return server
+
+
+def watch(server: ThreadingHTTPServer, files: list[Path], changed: threading.Event) -> None:
+    """Sets `changed` and stops `server` at the first read, every `WATCH`
+    seconds, of the stamps of `files` that differs from the first."""
+    first = code_stamps(files)
+    while code_stamps(files) == first:
+        time.sleep(WATCH)
+    changed.set()
+    server.shutdown()
 
 
 def main(argv: list[str]) -> int:
@@ -221,13 +287,22 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--tickets", type=Path, default=None,
                         help="the tracker to serve; the main tree's `tickets/` where not given")
     args = parser.parse_args(argv)
-    server = serve(args.address, args.port, args.tickets or main_tickets())
+    serving = Serving()
+    server = serve(args.address, args.port, args.tickets or main_tickets(), serving)
+    files = code_files()
+    changed = threading.Event()
+    threading.Thread(target=watch, args=(server, files, changed), daemon=True).start()
     print(f"serving http://{args.address}:{args.port}/", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        pass
-    return 0
+        return 0
+    if not changed.is_set():
+        return 0
+    serving.wait_idle()
+    server.server_close()
+    print("code changed: restarting", flush=True)
+    os.execv(sys.executable, [sys.executable, *sys.orig_argv[1:]])
 
 
 if __name__ == "__main__":

@@ -3,13 +3,14 @@ and the sheet of a ticket (`ticket_dashboard`), over the entries of a
 render (`dashboard_html.Rendered`): the words of a request, as the page's
 search box gives them in the URL's `q` parameter, the HTML of their hits,
 a ticket whose number is one of them first, then newest first, and at most
-`LIMIT` of them, and the HTML of a ticket's sheet."""
+`LIMIT` of them, and the HTML of a ticket's sheet, with the change it
+waits on."""
 
 from collections.abc import Mapping
 
 from dashboard_html import NOTE_WORDS, Entry, clock, cut, esc, tap
 
-from operations.state import LogLine
+from operations.state import LogLine, Ticket
 
 LIMIT = 8
 """The most hits a search gives."""
@@ -56,10 +57,18 @@ def log_line(ln: LogLine, now: float) -> str:
             ' <i class="more">more</i></div>')
 
 
+def lines(t: Ticket, now: float) -> str:
+    return "".join(log_line(ln, now) for ln in t.log[-SHEET_LINES:])
+
+
 def sheet(e: Entry, now: float) -> str:
     """The HTML of the sheet of `e`: its number and kind, its phrase, the
-    plain sentence on its status and its last `SHEET_LINES` log lines."""
-    t = e.ticket
-    lines = "".join(log_line(ln, now) for ln in t.log[-SHEET_LINES:])
+    change it waits on with the words of that change's state, or else
+    the plain sentence on its status, its last `SHEET_LINES` log lines, and
+    the last `SHEET_LINES` of that change's under its number."""
+    t, c = e.ticket, e.change
+    lead = e.status if c is None else f"Built as {c.change.number} · {c.state}"
+    tail = "" if c is None else f'<div class="gh">Change {esc(c.change.number)}</div>{lines(c.change, now)}'
     return (f'<div class="num">{esc(t.number)} · {esc(t.kind)}</div>'
-            f'<div class="sh" style="font-size:17px">{esc(e.phrase)}</div><div class="p">{esc(e.status)}</div>{lines}')
+            f'<div class="sh" style="font-size:17px">{esc(e.phrase)}</div><div class="p">{esc(lead)}</div>'
+            f'{lines(t, now)}{tail}')
