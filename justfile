@@ -12,3 +12,7 @@ console *args:
 # Swap the two accounts between the console's Claude home and yours. Stop the console first.
 swap:
     scripts/swap-accounts.sh
+
+# Serve the ticket dashboard at port 8787 on this machine's Tailscale IPv4 address.
+dashboard:
+    uv run python scripts/ticket_dashboard.py "$(/Applications/Tailscale.app/Contents/MacOS/Tailscale ip -4)" 8787
