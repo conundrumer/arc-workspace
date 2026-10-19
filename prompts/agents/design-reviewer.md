@@ -51,7 +51,8 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
     - A rule the diff writes that code outside the diff already states (DRY).
     - Code the diff adds that no item of the change needs and that nothing but a test or an example calls (YAGNI).
     - A defect that an open `refactor` ticket on a path of the diff records, and that the diff adds to.
-- Judge no other place on its maintainability, and no item of the change on whether it holds: the code review and the item checker judge those.
+- Judge no other place on its maintainability, no item of the change on whether it holds, and no code that a split moves out of a module, nor import line that the split changes, where an untaken `refactor` ticket whose title ends in `many ideas in one place` cites that module: the code review and the item checker judge those.
+    * comment: Observed failure: design reviewers filed a question on such a split for changes 9-1346 (9-1379), 9-1549 (9-1585), 11-726 (11-1304), 9-1446 (9-1486), 9-1692 (9-1701), 9-1685 (9-1702) and 9-1704 (9-1726). Ticket 9-1731.
 
 ## Findings
 * inline: notes/launching.md#findings-that-block-a-change
