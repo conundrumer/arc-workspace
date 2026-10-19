@@ -30,8 +30,9 @@ pub struct Caps {
 }
 
 impl Caps {
-    /// The caps of every task session, each set from the engine's counts on
-    /// the corpus.
+    /// The caps of every task session: the work cap, the row cap and the node
+    /// cap are each set from the engine's counts on the corpus, and the model
+    /// cap from the corpus survey's bound from Souffle's `out`.
     ///
     /// The work cap and the row cap are each about twice the largest count
     /// of one evaluation that `arclog-cli speed` gave over `work/arclog/gen/`
