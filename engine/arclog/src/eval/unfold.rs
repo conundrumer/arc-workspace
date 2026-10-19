@@ -186,79 +186,186 @@ pub fn unfold<'a>(
     run.graphs(budget)
 }
 
-/// The distinct values of `outputs` over the walks of `graph`, each the
-/// rows of each output of `outputs` at the states along one walk, each
-/// state's once, with `key` before the cursor and the item of each row,
-/// and at most `limit` of them: the collection stops at the `limit`-th
-/// distinct value. Which values a stop leaves out follows the order of the
-/// term ids of the tied items.
-pub fn distinct_outputs(
-    graph: &StateGraph,
-    outputs: &[UnfoldOutput],
-    key: &[TermId],
-    limit: usize,
-    budget: &mut Budget<'_>,
-) -> Result<Vec<Vec<RowSet>>, ReachedBound> {
-    let arity = (key.len() + 2) as u16;
-    let mut seen: StableHashSet<Vec<Vec<Row>>> = StableHashSet::default();
-    let mut values = Vec::new();
-    let mut visit = |chosen: &[Option<u32>]| {
-        let mut parts = vec![RowSet::empty(arity); outputs.len()];
-        for ((state, branches), branch) in graph.states.iter().zip(&graph.branches).zip(chosen) {
-            let Some(branch) = branch else { continue };
-            for (output, rows) in outputs.iter().zip(&mut parts) {
-                output.add_rows(key, state, &branches[*branch as usize], rows);
-            }
-        }
-        let content = parts
-            .iter()
-            .map(|rows| {
-                let mut sorted: Vec<Row> = rows.rows().map(Row::from).collect();
-                sorted.sort_by(|a, b| a.iter().map(|id| id.encoding()).cmp(b.iter().map(|id| id.encoding())));
-                sorted
-            })
-            .collect();
-        if seen.insert(content) {
-            values.push(parts);
-        }
-        values.len() < limit
-    };
-    let reached = initial_reach(graph);
-    extend(graph, vec![None; graph.states.len()], reached.0, reached.1, budget, &mut visit)?;
-    Ok(values)
+/// The walks of a state graph, one at a time, in the order of a depth-first
+/// search that takes the branches of a state in their order. A walk is the
+/// branch it takes at each state, `None` at a state it does not reach.
+struct Walks<'g> {
+    graph: &'g StateGraph,
+    /// The walks begun and not yet complete, the next to extend last.
+    partial: Vec<PartialWalk>,
 }
 
-/// The values of `output`, an output of the `Unfold` instance at `form`:
-/// one per distinct value over its walks, at most `limit`, so one value
-/// where no `score` ties, on `example`, or task-wide where it is `None`,
-/// with the instance's bodies evaluated through `bodies`. The walks of
-/// several keys combine, each value one walk on each key.
-pub fn evaluate_unfold<'a>(
-    evaluation: &Evaluation<'a>,
-    bodies: &FormBodies<'_>,
-    form: &NodePath,
-    output: &GraphRelation,
-    example: Option<Example>,
-    limit: usize,
-    budget: &mut Budget<'a>,
-) -> Outcome<Vec<RelationValue>> {
-    let Some([OutputStep::Port(port)]) = output.output.as_deref() else { panic!("an instance output read by its port") };
-    let which = UnfoldOutput::of(port);
-    let graphs = match unfold(evaluation, bodies, form, output, example, budget)? {
-        Ok(graphs) => graphs,
-        Err(value) => return Ok(vec![value]),
-    };
-    let types = evaluation.program.types.columns(output);
-    let arity = types.ok_or_else(|| RunFault { message: "the output's columns have no types".into(), form: form.clone() })?.len() as u16;
-    let mut values = vec![vec![RowSet::empty(arity)]];
-    for (key, graph) in &graphs {
-        let walks = match distinct_outputs(graph, &[which], key, limit, budget) {
-            Ok(walks) => walks,
-            Err(bound) => return Ok(vec![RelationValue::Stopped(Stop { bound, form: form.clone() })]),
-        };
-        values = combine(&values, &walks, limit);
+/// A walk begun: the branch it takes at each state it has left, the states
+/// it reached, and those it reached and has not yet left.
+#[derive(Clone)]
+struct PartialWalk {
+    chosen: Vec<Option<u32>>,
+    reached: Vec<bool>,
+    pending: Vec<StateIndex>,
+}
+
+impl PartialWalk {
+    /// Leaves `state` by its branch `index`.
+    fn take(&mut self, graph: &StateGraph, state: StateIndex, index: usize) {
+        self.chosen[state.0 as usize] = Some(index as u32);
+        for &next in graph.branches[state.0 as usize][index].next.iter() {
+            if !std::mem::replace(&mut self.reached[next.0 as usize], true) {
+                self.pending.push(next);
+            }
+        }
     }
-    Ok(values.into_iter().flatten().map(|rows| RelationValue::Rows(Arc::new(join::one_part(rows)))).collect())
+}
+
+impl<'g> Walks<'g> {
+    fn new(graph: &'g StateGraph) -> Self {
+        let (reached, pending) = initial_reach(graph);
+        Walks { graph, partial: vec![PartialWalk { chosen: vec![None; graph.states.len()], reached, pending }] }
+    }
+
+    /// The next complete walk, or `None` past the last. A walk that reaches
+    /// a state with no branch is no walk.
+    fn next(&mut self, budget: &mut Budget<'_>) -> Result<Option<Vec<Option<u32>>>, ReachedBound> {
+        'walks: while let Some(mut walk) = self.partial.pop() {
+            while let Some(state) = walk.pending.pop() {
+                budget.charge_work(1)?;
+                let count = self.graph.branches[state.0 as usize].len();
+                if count == 0 {
+                    continue 'walks;
+                }
+                for index in (1..count).rev() {
+                    let mut fork = walk.clone();
+                    fork.take(self.graph, state, index);
+                    self.partial.push(fork);
+                }
+                walk.take(self.graph, state, 0);
+            }
+            return Ok(Some(walk.chosen));
+        }
+        Ok(None)
+    }
+}
+
+/// The distinct values of some outputs over the walks of one key's state
+/// graph, found as they are asked for, each the rows of each output at the
+/// states along one walk, with the key before the cursor and the item.
+struct DistinctWalks<'g> {
+    walks: Walks<'g>,
+    outputs: &'g [UnfoldOutput],
+    key: Row,
+    seen: StableHashSet<Vec<Vec<Row>>>,
+    found: Vec<Vec<RowSet>>,
+}
+
+impl<'g> DistinctWalks<'g> {
+    fn new(graph: &'g StateGraph, outputs: &'g [UnfoldOutput], key: Row) -> Self {
+        DistinctWalks { walks: Walks::new(graph), outputs, key, seen: StableHashSet::default(), found: Vec::new() }
+    }
+
+    /// The distinct value at `index`, walking on until it is found, or
+    /// `None` where the walks give fewer distinct values.
+    fn get(&mut self, index: usize, budget: &mut Budget<'_>) -> Result<Option<&[RowSet]>, ReachedBound> {
+        let graph = self.walks.graph;
+        let arity = (self.key.len() + 2) as u16;
+        while self.found.len() <= index {
+            let Some(chosen) = self.walks.next(budget)? else { break };
+            let mut parts = vec![RowSet::empty(arity); self.outputs.len()];
+            for ((state, branches), branch) in graph.states.iter().zip(&graph.branches).zip(&chosen) {
+                let Some(branch) = branch else { continue };
+                for (output, rows) in self.outputs.iter().zip(&mut parts) {
+                    output.add_rows(&self.key, state, &branches[*branch as usize], rows);
+                }
+            }
+            let content = parts
+                .iter()
+                .map(|rows| {
+                    let mut sorted: Vec<Row> = rows.rows().map(Row::from).collect();
+                    sorted.sort_by(|a, b| a.iter().map(|id| id.encoding()).cmp(b.iter().map(|id| id.encoding())));
+                    sorted
+                })
+                .collect();
+            if self.seen.insert(content) {
+                self.found.push(parts);
+            }
+        }
+        Ok(self.found.get(index).map(|parts| &parts[..]))
+    }
+}
+
+/// The joint walks of an `Unfold` instance, one at a time: each one
+/// distinct value of the walks on each key, the first key the most
+/// significant, as the rows of each of some outputs at those walks, the
+/// union of the rows of each key.
+pub struct JointWalks<'g> {
+    keys: Vec<DistinctWalks<'g>>,
+    outputs: usize,
+    arity: u16,
+    /// The index of each key's value in the last joint walk given, `None`
+    /// before the first.
+    positions: Option<Vec<usize>>,
+    done: bool,
+}
+
+impl<'g> JointWalks<'g> {
+    /// The joint walks over `graphs`, the state graph of each key with the
+    /// key columns of the instance's output rows at that key, as [`unfold`]
+    /// gives them, of each output of [`UnfoldOutput::ALL`], in that order,
+    /// of `arity` columns.
+    pub fn of_instance(graphs: &'g [(Row, StateGraph)], arity: u16) -> Self {
+        JointWalks::new(graphs.iter().map(|(key, graph)| (graph, key.clone())), &UnfoldOutput::ALL, arity)
+    }
+
+    /// The joint walks over `keys`, the state graph of each key with the
+    /// columns that stand before the cursor in an output's rows, of each of
+    /// `outputs`, of `arity` columns.
+    fn new(keys: impl IntoIterator<Item = (&'g StateGraph, Row)>, outputs: &'g [UnfoldOutput], arity: u16) -> Self {
+        let keys = keys.into_iter().map(|(graph, key)| DistinctWalks::new(graph, outputs, key)).collect();
+        JointWalks { keys, outputs: outputs.len(), arity, positions: None, done: false }
+    }
+
+    /// The next joint walk, or `None` past the last.
+    pub fn next(&mut self, budget: &mut Budget<'_>) -> Result<Option<Vec<RowSet>>, ReachedBound> {
+        if self.done {
+            return Ok(None);
+        }
+        let advanced = match &mut self.positions {
+            None => {
+                let mut all = true;
+                for key in &mut self.keys {
+                    all &= key.get(0, budget)?.is_some();
+                }
+                self.positions = Some(vec![0; self.keys.len()]);
+                all
+            }
+            Some(positions) => advance(&mut self.keys, positions, budget)?,
+        };
+        if !advanced {
+            self.done = true;
+            return Ok(None);
+        }
+        let positions = self.positions.as_ref().expect("positions once the first joint walk is given");
+        let mut rows = vec![RowSet::empty(self.arity); self.outputs];
+        for (key, &position) in self.keys.iter().zip(positions) {
+            for (joint, part) in rows.iter_mut().zip(&key.found[position]) {
+                for row in part.rows() {
+                    joint.insert(row.into());
+                }
+            }
+        }
+        Ok(Some(rows))
+    }
+}
+
+/// Moves `positions` to the next joint walk: the last key that has a next
+/// distinct value takes it, and each key after it goes back to its first.
+fn advance(keys: &mut [DistinctWalks<'_>], positions: &mut [usize], budget: &mut Budget<'_>) -> Result<bool, ReachedBound> {
+    for at in (0..keys.len()).rev() {
+        if keys[at].get(positions[at] + 1, budget)?.is_some() {
+            positions[at] += 1;
+            positions[at + 1..].fill(0);
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// The values of the outputs of an `Unfold` instance of `component` over
@@ -271,7 +378,7 @@ pub fn evaluate_unfold<'a>(
 pub fn unfold_given(component: &Component, keys: &[(Row, Vec<RowSet>)], limit: usize, budget: &mut Budget<'_>) -> Result<Vec<Vec<RowSet>>, ReachedBound> {
     let outputs: Vec<UnfoldOutput> = component.outputs.iter().map(|output| UnfoldOutput::of(&output.name)).collect();
     let arity = keys.first().map_or(0, |(key, _)| key.len()) as u16 + 2;
-    let mut values = vec![vec![RowSet::empty(arity); outputs.len()]];
+    let mut graphs = Vec::with_capacity(keys.len());
     for (key, rows) in keys {
         let given = |input: UnfoldInput| -> Vec<&[TermId]> {
             let at = component.inputs.iter().position(|declared| declared.port.name == input.port());
@@ -280,37 +387,15 @@ pub fn unfold_given(component: &Component, keys: &[(Row, Vec<RowSet>)], limit: u
         let group = Group::of(key.clone(), given, true);
         let pairs = |input: RecursiveInput| given(input.input()).into_iter().map(|row| (row[0], row[1])).collect();
         let reads = GivenReads { rows: [RecursiveInput::Step, RecursiveInput::Skip, RecursiveInput::Take].map(pairs) };
-        let graph = graph(&group, &reads, budget)?;
-        let walks = distinct_outputs(&graph, &outputs, key, limit, budget)?;
-        values = combine(&values, &walks, limit);
+        graphs.push((graph(&group, &reads, budget)?, key.clone()));
+    }
+    let mut walks = JointWalks::new(graphs.iter().map(|(graph, key)| (graph, key.clone())), &outputs, arity);
+    let mut values = Vec::new();
+    while values.len() < limit {
+        let Some(value) = walks.next(budget)? else { break };
+        values.push(value);
     }
     Ok(values)
-}
-
-/// Each value of `values` with each walk of `walks` added to it, output by
-/// output, at most `limit` of them: the values over one more key.
-fn combine(values: &[Vec<RowSet>], walks: &[Vec<RowSet>], limit: usize) -> Vec<Vec<RowSet>> {
-    let mut combined = Vec::new();
-    for value in values {
-        for walk in walks {
-            let parts = value
-                .iter()
-                .zip(walk)
-                .map(|(value, walk)| {
-                    let mut rows = value.clone();
-                    for row in walk.rows() {
-                        rows.insert(row.into());
-                    }
-                    rows
-                })
-                .collect();
-            combined.push(parts);
-            if combined.len() == limit {
-                return combined;
-            }
-        }
-    }
-    combined
 }
 
 /// The given rows of `step`, `skip` and `take` on one key, each row its
@@ -339,45 +424,6 @@ fn initial_reach(graph: &StateGraph) -> (Vec<bool>, Vec<StateIndex>) {
         }
     }
     (reached, pending)
-}
-
-/// Extends a walk, whose branch at each state is `chosen`, by the states
-/// `pending` that it reached and has not yet left, forking at each state
-/// of several branches, and gives each complete walk to `visit` until it
-/// gives `false`. Gives whether to go on.
-fn extend(
-    graph: &StateGraph,
-    mut chosen: Vec<Option<u32>>,
-    mut reached: Vec<bool>,
-    mut pending: Vec<StateIndex>,
-    budget: &mut Budget<'_>,
-    visit: &mut dyn FnMut(&[Option<u32>]) -> bool,
-) -> Result<bool, ReachedBound> {
-    while let Some(state) = pending.pop() {
-        budget.charge_work(1)?;
-        let branches = &graph.branches[state.0 as usize];
-        let take = |chosen: &mut Vec<Option<u32>>, reached: &mut Vec<bool>, pending: &mut Vec<StateIndex>, index: usize| {
-            chosen[state.0 as usize] = Some(index as u32);
-            for &next in branches[index].next.iter() {
-                if !std::mem::replace(&mut reached[next.0 as usize], true) {
-                    pending.push(next);
-                }
-            }
-        };
-        if branches.len() == 1 {
-            take(&mut chosen, &mut reached, &mut pending, 0);
-            continue;
-        }
-        for index in 0..branches.len() {
-            let (mut chosen, mut reached, mut pending) = (chosen.clone(), reached.clone(), pending.clone());
-            take(&mut chosen, &mut reached, &mut pending, index);
-            if !extend(graph, chosen, reached, pending, budget, visit)? {
-                return Ok(false);
-            }
-        }
-        return Ok(true);
-    }
-    Ok(visit(&chosen))
 }
 
 /// Each output of the instance, as its bodies read it, with the example of

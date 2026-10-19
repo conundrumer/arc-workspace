@@ -15,7 +15,7 @@ use crate::solver::CaseName;
 use crate::task::Grid;
 use crate::terms::{Constant, ReachedMarginBound, Term, TermId};
 
-/// The two caps of an evaluation, both counts, so neither depends on the
+/// The caps of an evaluation, each a count, so none depends on the
 /// machine.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Caps {
@@ -23,11 +23,16 @@ pub struct Caps {
     pub work: u64,
     /// The rows the parts of a relation may hold.
     pub rows: u64,
+    /// The models of one case on one input.
+    pub models: u64,
+    /// The search nodes of one cluster of a pick.
+    pub nodes: u64,
 }
 
 impl Caps {
-    /// The caps of every task session, set from the engine's counts on the
-    /// corpus.
+    /// The caps of every task session. The work cap and the row cap are
+    /// set from the engine's counts on the corpus, and the model cap and the
+    /// node cap are as `docs/engine/cases.md#the-constraint-module` gives them.
     ///
     /// The work cap and the row cap are each about twice the largest count
     /// of one evaluation that `arclog-cli speed` gave over `work/arclog/gen/`
@@ -38,7 +43,7 @@ impl Caps {
     /// They leave out the outliers: `ac0c5833`, whose 1 956 915 734 bindings
     /// tried go with a Souffle run of 124 s, and `3ad05f52`, `c3f564a4` and
     /// `ca8f78db`, whose runs stopped at the row cap of `1 << 24`.
-    pub const PROVISIONAL: Caps = Caps { work: 1 << 30, rows: 1 << 21 };
+    pub const PROVISIONAL: Caps = Caps { work: 1 << 30, rows: 1 << 21, models: 1_000, nodes: 10_000 };
 }
 
 /// The bound an evaluation reached.
@@ -46,6 +51,8 @@ impl Caps {
 pub enum ReachedBound {
     Work { cap: u64 },
     Rows { cap: u64 },
+    Models { cap: u64 },
+    Nodes { cap: u64 },
     /// A Box with a margin outside a signed byte.
     Margin(ReachedMarginBound),
     SessionBytes(ReachedSessionBound),
@@ -54,15 +61,20 @@ pub enum ReachedBound {
 }
 
 impl ReachedBound {
-    /// Whether a stop at this bound is the same at every later request of
-    /// its entry, so the result cache stores it: a stop at a cap or at a
-    /// margin. A stop at the session's byte bound, at the deadline or by a
-    /// cancellation depends on the machine or the session's history, and is
-    /// stored nowhere.
+    /// Whether the result cache stores a stop at this bound: a stop at the
+    /// work cap, the row cap or a margin, which is the same at every later
+    /// request of its entry. A stop at the session's byte bound, at the
+    /// deadline or by a cancellation depends on the machine or the
+    /// session's history, and is stored nowhere. A stop at the model cap or
+    /// the node cap is stored nowhere either.
     pub fn is_stored(self) -> bool {
         match self {
             ReachedBound::Work { .. } | ReachedBound::Rows { .. } | ReachedBound::Margin(_) => true,
-            ReachedBound::SessionBytes(_) | ReachedBound::Deadline | ReachedBound::Cancelled => false,
+            ReachedBound::Models { .. }
+            | ReachedBound::Nodes { .. }
+            | ReachedBound::SessionBytes(_)
+            | ReachedBound::Deadline
+            | ReachedBound::Cancelled => false,
         }
     }
 
@@ -71,6 +83,8 @@ impl ReachedBound {
         match self {
             ReachedBound::Work { cap } => format!("the work cap of {cap} bindings"),
             ReachedBound::Rows { cap } => format!("the row cap of {cap} rows"),
+            ReachedBound::Models { cap } => format!("the model cap of {cap} models"),
+            ReachedBound::Nodes { cap } => format!("the node cap of {cap} search nodes"),
             ReachedBound::Margin(reached) => format!("a Box margin outside a signed byte, {:?}", reached.margins),
             ReachedBound::SessionBytes(reached) => {
                 format!("the session's byte bound of {} bytes, at {} bytes", reached.bound.bytes, reached.bytes)

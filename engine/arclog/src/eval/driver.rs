@@ -9,7 +9,8 @@ use super::examples::{self, ExampleScope};
 use super::ir::{self, AtomSource, ClauseIr, IrNode};
 use super::join::{self, Budget, JoinInputs, NodeInput};
 use super::lookup::output_relation;
-use super::{cache, instance, output, plan, rigid, unfold};
+use super::models::{self, Choice, Entry, Factor};
+use super::{cache, instance, output, plan, rigid};
 use super::{Evaluation, GridValue, NoGridColumns, Outcome, RelationValue, RunFault, Stop};
 use crate::hash::StableHashMap;
 use crate::program::path::NodePath;
@@ -19,15 +20,22 @@ use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::terms::Example;
 use crate::types::GraphRelation;
 
-/// The evaluation of the entries one request reaches, each entry once.
+/// The evaluation of the entries one request reaches, each entry once at
+/// the current model.
 pub(super) struct Driver<'e, 'a> {
     pub(super) evaluation: &'e Evaluation<'a>,
     pub(super) values: RefCell<StableHashMap<(GraphRelation, Option<Example>), RelationValue>>,
+    /// The choice of the current model at each factor set, as
+    /// [`models`] sets them.
+    pub(super) model: RefCell<StableHashMap<Entry, Choice>>,
+    /// In an enumeration of models, the factors met since [`models`] last
+    /// took them, in the order they were met; `None` outside one.
+    pub(super) met: RefCell<Option<Vec<Factor>>>,
 }
 
 impl<'e, 'a> Driver<'e, 'a> {
     pub(super) fn new(evaluation: &'e Evaluation<'a>) -> Self {
-        Driver { evaluation, values: RefCell::default() }
+        Driver { evaluation, values: RefCell::default(), model: RefCell::default(), met: RefCell::default() }
     }
 
     pub(super) fn program(&self) -> &'a crate::resolver::ResolvedProgram {
@@ -76,19 +84,10 @@ impl<'e, 'a> Driver<'e, 'a> {
                 let value = rigid::evaluate_assembly(evaluation, &self.bodies(), form, output, example, &mut budget);
                 recorded(&budget, value)
             }
-            DependencyKind::RecursiveInstance(_) => {
-                let values = unfold::evaluate_unfold(evaluation, &self.bodies(), form, relation, example, 2, &mut budget)?;
-                let value = match <[RelationValue; 1]>::try_from(values) {
-                    Ok([value]) => Ok(value),
-                    Err(_) => Err(RunFault {
-                        message: "the instance gives more than one value, so the case has more than one model".into(),
-                        form: form.clone(),
-                    }),
-                };
-                recorded(&budget, value)
-            }
-            DependencyKind::Chosen(_) | DependencyKind::Demonstrated(_) => Err(RunFault {
-                message: "a chosen or demonstrated relation, whose models this evaluation does not build".into(),
+            DependencyKind::RecursiveInstance(_) => models::walk_value(self, relation, example),
+            DependencyKind::Chosen(_) => models::pick_value(self, relation, example),
+            DependencyKind::Demonstrated(_) => Err(RunFault {
+                message: "a demonstrated relation, whose models this evaluation does not build".into(),
                 form: form.clone(),
             }),
             DependencyKind::Fact(_) => unreachable!("an atom reads a fact relation from the task"),
@@ -180,7 +179,7 @@ impl<'e, 'a> Driver<'e, 'a> {
     }
 
     /// The way into this driver of the forms over lib components.
-    fn bodies<'d>(&'d self) -> FormBodies<'d> {
+    pub(super) fn bodies<'d>(&'d self) -> FormBodies<'d> {
         FormBodies { driver: self }
     }
 
@@ -374,7 +373,7 @@ fn recorded(budget: &Budget<'_>, value: Outcome<RelationValue>) -> Outcome<Relat
 /// A stop at the byte bound, the deadline or a cancellation leaves counts
 /// that depend on the machine, a stop at a cap is the fault of its solver,
 /// and a stop at a margin leaves the counts of an evaluation cut short.
-fn record_whole<'v>(budget: &Budget<'_>, values: impl IntoIterator<Item = &'v RelationValue>) {
+pub(super) fn record_whole<'v>(budget: &Budget<'_>, values: impl IntoIterator<Item = &'v RelationValue>) {
     if values.into_iter().all(|value| matches!(value, RelationValue::Rows(_) | RelationValue::Undefined)) {
         budget.record();
     }

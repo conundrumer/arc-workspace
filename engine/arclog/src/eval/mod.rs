@@ -16,7 +16,8 @@
 //! independent entries in parallel, and [`lookup`] finds a relation of the
 //! program by its name. [`values`] holds the values and the
 //! bounds that the driver and the parts share. [`picks`] gives the options
-//! of a pick through the driver's way into the bodies.
+//! of a pick through the driver's way into the bodies, and [`models`]
+//! enumerates the models of a case on an input, through the driver.
 
 pub mod cache;
 mod driver;
@@ -27,6 +28,7 @@ pub mod instance;
 pub mod ir;
 pub mod join;
 pub mod lookup;
+pub mod models;
 pub mod output;
 pub mod picks;
 pub mod plan;
@@ -37,6 +39,7 @@ pub mod values;
 
 pub use driver::FormBodies;
 pub use lookup::{output_relation, relation_of};
+pub use models::ModelsEnd;
 pub use values::{Caps, Cancellation, GridValue, Limits, NoGridColumns, Outcome, ReachedBound, RelationValue, RunFault, Stop};
 
 use crate::check::CheckedProgram;
@@ -79,7 +82,8 @@ impl ParameterValues {
 }
 
 /// The evaluation of one checked case program at one set of parameter
-/// values on one task, in one task session, at the case's one model. Several evaluations, on
+/// values on one task, in one task session, at the case's one model, or, by
+/// [`Evaluation::models`], at each of its models. Several evaluations, on
 /// several threads, share the session and its result cache.
 #[derive(Clone, Copy, Debug)]
 pub struct Evaluation<'a> {
@@ -95,10 +99,10 @@ pub struct Evaluation<'a> {
 impl Evaluation<'_> {
     /// The value of `relation` on `example`, at the case's one model.
     ///
-    /// Where an `Unfold` instance that `relation` reads, at any depth, gives
-    /// more than one value, the case has more than one model, which this
-    /// evaluation does not build, so this gives a [`RunFault`] at that
-    /// instance's form, and [`Evaluation::output`] and
+    /// Where a pick or an `Unfold` instance that `relation` reads, at any
+    /// depth, has more than one model, the case has more than one model,
+    /// which [`Evaluation::models`] enumerates, so this gives a
+    /// [`RunFault`] at that form, and [`Evaluation::output`] and
     /// [`Evaluation::outputs`] give it through this.
     ///
     /// For a relation with no Example
