@@ -15,6 +15,7 @@ name = "arclog-cli"
 version = "0.1.0"
 dependencies = [
  "arclog",
+ "arclog-constructions",
  "serde_json",
 ]
 

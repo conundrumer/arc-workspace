@@ -2,8 +2,10 @@
 lib-compare` generates, which the engine's lib comparison compares with and
 which no check runs Souffle to make: one record per inputs file, beside the
 solver records (`parity.snapshot.parity_dir`), under the key of what its
-rows depend on (`lib_key`). The form of an inputs file is in the module
-comment of `engine/arclog-cli/src/lib_compare.rs`.
+rows depend on (`lib_key`), with the digest of the Souffle sources it was
+made from (`sources_digest`). The form of an inputs file is in the module
+comment of `engine/arclog-cli/src/lib_compare/inputs.rs`, and that of the
+digest in the module comment of `engine/arclog-cli/src/lib_compare/sources.rs`.
 
 An element's Souffle name, and the Souffle names of its columns or its
 relations, are the inverse of `REL` and `COMP` of
@@ -101,18 +103,46 @@ def lib_key(inputs: bytes) -> str:
     return h.hexdigest()
 
 
+FNV_OFFSET_BASIS = 0xCBF29CE484222325
+FNV_PRIME = 0x100000001B3
+
+
+def fnv1a64(data: bytes) -> str:
+    """64-bit FNV-1a of `data`, as 16 lowercase hex digits."""
+    h = FNV_OFFSET_BASIS
+    for byte in data:
+        h = ((h ^ byte) * FNV_PRIME) & 0xFFFFFFFFFFFFFFFF
+    return f"{h:016x}"
+
+
+def sources_digest() -> str:
+    """The digest of the present Souffle sources of the records."""
+    lib = checkout.programs() / "lib"
+    sources = [(f"programs/{LIB_FILE}", _lib_path())]
+    sources += [(f"programs/lib/{p.name}", p)
+                for p in sorted(lib.glob("*.dl"), key=lambda p: p.name.encode())]
+    sources.append(("work/arclog/libmap/__init__.py", libmap_path()))
+    return fnv1a64(b"".join(shown.encode() + b"\0" + path.read_bytes() + b"\0"
+                            for shown, path in sources))
+
+
 def write_all() -> list[Path]:
-    """Writes the record of each inputs file whose record's key differs
-    from its own, and gives the path of each record written."""
+    """Writes the record of each inputs file whose record's key or sources
+    digest differs from its own, and gives the path of each record
+    written."""
     written = []
+    sources = sources_digest()
     for path in sorted(inputs_dir().glob("*.json")):
         data = path.read_bytes()
         key = lib_key(data)
         out = lib_dir() / path.name
-        if out.exists() and json.loads(out.read_text()).get("key") == key:
-            continue
+        if out.exists():
+            old = json.loads(out.read_text())
+            if old.get("key") == key and old.get("sources") == sources:
+                continue
         inputs = json.loads(data)
-        out.write_text(json.dumps({"key": key, "inputs": inputs} | outcome(inputs)) + "\n")
+        record = {"key": key, "sources": sources, "inputs": inputs} | outcome(inputs)
+        out.write_text(json.dumps(record) + "\n")
         written.append(out)
     return written
 

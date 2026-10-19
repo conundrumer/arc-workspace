@@ -54,9 +54,10 @@ impl Color {
         (digit <= 9).then_some(Color(digit))
     }
 
-    /// The digit a task file writes for the color, for the crate's readers
-    /// and writers alone, so no code outside the crate orders colors by it.
-    pub(crate) fn digit(self) -> u8 {
+    /// The digit a task file writes for the color, for a reader or a writer
+    /// of task files. The digit is the file's notation, and no order of
+    /// colors.
+    pub fn digit(self) -> u8 {
         self.0
     }
 }

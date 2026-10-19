@@ -8,5 +8,8 @@ publish.workspace = true
 # The binary runs the core crate's reader, resolver, checker and evaluator
 # over solver files.
 arclog = { path = "../arclog" }
+# The table of the lib's constructions, which the concept cases and the lib
+# comparison's components are evaluated with.
+arclog-constructions = { path = "../arclog-constructions" }
 # The reader of the snapshot of the Souffle outcomes, whose files are JSON.
 serde_json = "1.0.154"

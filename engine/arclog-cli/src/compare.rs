@@ -14,14 +14,15 @@
 //! so the command runs from the root of the tree.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::OnceLock;
 use std::time::Instant;
 
 use arclog::check::{check_program, CheckCache, SolverClauses};
 use arclog::eval::instance::Constructions;
 use arclog::eval::join::each_row;
-use arclog::eval::{relation_of, Caps, Cancellation, Evaluation, GridValue, Limits, NoGridColumns, ParameterValues, RelationValue};
+use arclog::eval::{relation_of, Caps, Cancellation, Evaluation, GridValue, Limits, NoGridColumns, Outcome, ParameterValues, RelationValue};
 use arclog::harness::{read_corpus_solver, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::program::{DeclaredName, ProgramRelation, RelationName};
 use arclog::registry::Registry;
@@ -30,15 +31,15 @@ use arclog::session::{SessionBound, TaskSession};
 use arclog::solver::CaseName;
 use arclog::task::{read_task, Grid, Task};
 use arclog::hash::StableHashMap;
-use arclog::terms::{Color, Constant, Example, Ident, Term};
+use arclog::terms::{Constant, Example, Ident, Term};
 use serde_json::Value;
 
 use crate::select::{read_json, selected};
 
 const USAGE: &str = "usage: arclog-cli compare <snapshot-dir> <corpus-dir> <tasks-dir> [<task_id> ...] [--reads <name> ...]";
 
-/// The bound on the bytes of the task session of each solver's run.
-const SESSION_BYTES: usize = 1 << 32;
+/// The bound on the bytes of a task session of the engine's runs.
+pub(crate) const SESSION_BYTES: usize = 1 << 32;
 
 /// The subcommand on `args`, the arguments after its name.
 pub fn run(args: &[String]) -> ExitCode {
@@ -137,11 +138,87 @@ fn compare_solver(arguments: &Arguments, solver: &CorpusSolver) -> SolverResult 
 fn compared(arguments: &Arguments, corpus: &CorpusSolver) -> Result<Vec<String>, String> {
     let id = &corpus.task_id;
     let record = read_json(&arguments.snapshot.join(format!("{id}.json")))?;
-    let solver = read_corpus_solver(&arguments.corpus, id).ok_or("the solver's files do not read")?;
-    let task = read_task(&arguments.tasks.join(format!("{id}.json"))).map_err(|error| format!("the task does not read: {error:?}"))?;
+    with_concept_case(&arguments.corpus, &arguments.tasks, id, |case| {
+        let (key, case_record) = case_record(&record, case.name).ok_or("the snapshot has no record of the concept case")?;
+        let (outputs, seconds) = case.run();
+        let outputs = outputs.map_err(|fault| format!("{key}: a fault of the run at {:?}: {}", fault.form, fault.message))?;
+        let task = case.evaluation.task;
+        let mut lines = Vec::new();
+        let examples: Vec<(String, Example)> = task.examples().enumerate().map(|(index, example)| (pair_name(task, index), example)).collect();
+        let mut reruns: Vec<Option<Rerun>> = Vec::new();
+        for (index, (pair, _)) in examples.iter().enumerate() {
+            let got = outputs.as_ref().map(|grids| &grids[index].1);
+            let expected = case_record.get("pairs").and_then(|pairs| pairs.get(pair));
+            if agrees(got, expected) {
+                continue;
+            }
+            let mut line = format!("{key}, {pair}: the engine gives {}, Souffle {}", describe(got), expected.map_or("no outcome".to_owned(), Value::to_string));
+            while reruns.len() <= index {
+                reruns.push(rerun(id, key, &examples[reruns.len()].0));
+            }
+            let pairs: Option<Vec<PairRows<'_>>> = examples[..=index]
+                .iter()
+                .zip(&reruns)
+                .map(|((pair, example), rerun)| {
+                    let rerun = rerun.as_ref()?;
+                    let example = *example;
+                    let evaluation = &case.evaluation;
+                    let engine: Box<dyn Fn(&str) -> Option<Result<Vec<Vec<EngineLeaf>>, String>> + '_> =
+                        Box::new(move |name| engine_rows(evaluation, name, example, &rerun.orientation_constants));
+                    Some(PairRows { pair, rerun, engine })
+                })
+                .collect();
+            if let Some(comparison) = pairs.map(|pairs| first_difference(&pairs)) {
+                for relation in &comparison.not_compared {
+                    line.push_str(&format!("; {relation}"));
+                }
+                if let Some(difference) = comparison.difference {
+                    line.push_str(&format!("; {difference}"));
+                }
+            }
+            lines.push(line);
+        }
+        if let Some(souffle) = record.get("cpu_seconds").and_then(Value::as_f64) {
+            if seconds > souffle {
+                lines.push(format!("the engine runs {seconds:.3} s against Souffle's {souffle:.3} s"));
+            }
+        }
+        Ok(lines)
+    })
+}
+
+/// The table of the lib's constructions, built once.
+pub(crate) fn constructions() -> Result<&'static Constructions, String> {
+    static TABLE: OnceLock<Result<Constructions, String>> = OnceLock::new();
+    TABLE
+        .get_or_init(|| arclog_constructions::constructions(Registry::get()).map_err(|fault| format!("no table of constructions: {fault:?}")))
+        .as_ref()
+        .map_err(Clone::clone)
+}
+
+/// The concept case of a solver, set up for its run at its stored `param`
+/// records, over the table of the lib's constructions.
+pub(crate) struct ConceptCase<'a> {
+    pub(crate) name: &'a CaseName,
+    pub(crate) evaluation: Evaluation<'a>,
+}
+
+impl ConceptCase<'_> {
+    /// The grid of each example of the run, and the run's seconds.
+    pub(crate) fn run(&self) -> (Outcome<Result<Box<[(Example, GridValue)]>, NoGridColumns>>, f64) {
+        let start = Instant::now();
+        let outputs = self.evaluation.outputs();
+        (outputs, start.elapsed().as_secs_f64())
+    }
+}
+
+/// What `body` gives on the concept case of the solver `id` of `corpus`,
+/// on its task in `tasks`, or the fault that stops the case's setup.
+pub(crate) fn with_concept_case<T>(corpus: &Path, tasks: &Path, id: &str, body: impl FnOnce(&ConceptCase<'_>) -> Result<T, String>) -> Result<T, String> {
+    let solver = read_corpus_solver(corpus, id).ok_or("the solver's files do not read")?;
+    let task = read_task(&tasks.join(format!("{id}.json"))).map_err(|error| format!("the task does not read: {error:?}"))?;
     let registry = Registry::get();
     let case = solver.concept_case();
-    let (key, case_record) = case_record(&record, &case.name).ok_or("the snapshot has no record of the concept case")?;
     let resolved = resolve(&case.program, None, &solver.derived_relations(), registry).value;
     let clauses = SolverClauses::of(&solver, registry);
     let program = check_program(resolved, &clauses, registry, &mut CheckCache::default()).map_err(|refusals| {
@@ -150,53 +227,9 @@ fn compared(arguments: &Arguments, corpus: &CorpusSolver) -> Result<Vec<String>,
     })?;
     let parameters = ParameterValues::stored(solver.arcdata.value());
     let session = TaskSession::new(SessionBound { bytes: SESSION_BYTES }, Caps::PROVISIONAL);
-    let constructions = Constructions::new(Vec::new(), registry).map_err(|fault| format!("no table of constructions: {fault:?}"))?;
     let limits = Limits { deadline: None, cancellation: Cancellation::default() };
-    let evaluation = Evaluation { program: &program, task: &task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits };
-    let start = Instant::now();
-    let outputs = evaluation.outputs().map_err(|fault| format!("{key}: a fault of the run at {:?}: {}", fault.form, fault.message))?;
-    let seconds = start.elapsed().as_secs_f64();
-    let mut lines = Vec::new();
-    let examples: Vec<(String, Example)> = task.examples().enumerate().map(|(index, example)| (pair_name(&task, index), example)).collect();
-    let mut reruns: Vec<Option<Rerun>> = Vec::new();
-    for (index, (pair, _)) in examples.iter().enumerate() {
-        let got = outputs.as_ref().map(|grids| &grids[index].1);
-        let expected = case_record.get("pairs").and_then(|pairs| pairs.get(pair));
-        if agrees(got, expected) {
-            continue;
-        }
-        let mut line = format!("{key}, {pair}: the engine gives {}, Souffle {}", describe(got), expected.map_or("no outcome".to_owned(), Value::to_string));
-        while reruns.len() <= index {
-            reruns.push(rerun(id, key, &examples[reruns.len()].0));
-        }
-        let pairs: Option<Vec<PairRows<'_>>> = examples[..=index]
-            .iter()
-            .zip(&reruns)
-            .map(|((pair, example), rerun)| {
-                let rerun = rerun.as_ref()?;
-                let example = *example;
-                let evaluation = &evaluation;
-                let engine: Box<dyn Fn(&str) -> Option<Result<Vec<Vec<EngineLeaf>>, String>> + '_> =
-                    Box::new(move |name| engine_rows(evaluation, name, example, &rerun.orientation_constants));
-                Some(PairRows { pair, rerun, engine })
-            })
-            .collect();
-        if let Some(comparison) = pairs.map(|pairs| first_difference(&pairs)) {
-            for relation in &comparison.not_compared {
-                line.push_str(&format!("; {relation}"));
-            }
-            if let Some(difference) = comparison.difference {
-                line.push_str(&format!("; {difference}"));
-            }
-        }
-        lines.push(line);
-    }
-    if let Some(souffle) = record.get("cpu_seconds").and_then(Value::as_f64) {
-        if seconds > souffle {
-            lines.push(format!("the engine runs {seconds:.3} s against Souffle's {souffle:.3} s"));
-        }
-    }
-    Ok(lines)
+    let evaluation = Evaluation { program: &program, task: &task, parameters: &parameters, session: &session, registry, constructions: constructions()?, limits: &limits };
+    body(&ConceptCase { name: &case.name, evaluation })
 }
 
 /// Whether the engine's grid value agrees with Souffle's outcome: one
@@ -211,14 +244,9 @@ fn agrees(got: Result<&GridValue, &NoGridColumns>, expected: Option<&Value>) -> 
     }
 }
 
-/// The digit of `color`.
-fn digit(color: Color) -> u8 {
-    (0u8..=9).find(|&d| Color::from_digit(d) == Some(color)).expect("a color has a digit")
-}
-
 /// The grid as the snapshot writes it: a list of rows of digits.
 fn grid_json(grid: &Grid) -> Value {
-    Value::from(grid.rows().iter().map(|row| Value::from(row.iter().map(|&c| Value::from(digit(c))).collect::<Vec<_>>())).collect::<Vec<_>>())
+    Value::from(grid.rows().iter().map(|row| Value::from(row.iter().map(|&c| Value::from(c.digit())).collect::<Vec<_>>())).collect::<Vec<_>>())
 }
 
 /// What the engine gives on a pair, for a mismatch line.
@@ -317,7 +345,7 @@ fn first_difference(pairs: &[PairRows<'_>]) -> Comparison {
 /// One leaf of a row, as `scripts/souffle_parity.py rerun --json` writes
 /// a row: an integer, or another value by its JSON text.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
-enum Leaf {
+pub(crate) enum Leaf {
     Number(i64),
     Other(Box<str>),
 }
@@ -336,7 +364,7 @@ impl Leaf {
 /// Ident, which stands for Souffle's number of the same entity under a
 /// renaming that [`renaming_exists`] looks for.
 #[derive(Clone, PartialEq, Eq, Debug)]
-enum EngineLeaf {
+pub(crate) enum EngineLeaf {
     Written(Leaf),
     Ident(Ident),
 }
@@ -492,7 +520,7 @@ fn refine(sides: [&IdentRows; 2], mut classes: [Vec<usize>; 2]) -> [Vec<usize>; 
 /// of both sides, as [`refine`] gives, and, where a class holds more than
 /// one Ident of a side, pairs one engine Ident of a smallest such class with
 /// each Souffle Ident of that class in turn, and refines again.
-fn renaming_exists(relations: &[(&BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)]) -> bool {
+pub(crate) fn renaming_exists(relations: &[(&BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)]) -> bool {
     let engine = IdentRows::engine(relations);
     let Some(souffle) = IdentRows::souffle(relations) else { return false };
     if engine.idents != souffle.idents {
@@ -566,7 +594,7 @@ fn term_leaves(term: Term, registry: &Registry, constants: &BTreeMap<String, i64
         Term::Number(n) => vec![number(n.0.into())],
         Term::Box(m) => [m.top, m.bottom, m.left, m.right].into_iter().map(|n| number(n.into())).collect(),
         Term::Ident(ident) => vec![EngineLeaf::Ident(ident)],
-        Term::Constant(Constant::Color(color)) => vec![number(digit(color).into())],
+        Term::Constant(Constant::Color(color)) => vec![number(color.digit().into())],
         Term::Constant(Constant::Example(example)) => vec![number(example.index().into())],
         Term::Constant(Constant::Unit) => vec![],
         Term::Constant(Constant::Orientation(constant)) => {
