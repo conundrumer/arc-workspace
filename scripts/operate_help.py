@@ -235,6 +235,8 @@ PARTS = {
     """),
     HelpPart.REVIEW: mctx("""
     - `review` prints, to the code editor or the doc editor whose agent id it is given, which an operator of the session launched, the step `next` would give next on its change with that editor ended, where that step is the launch of a design reviewer, an item checker, a decision analyst or a doc reviewer, in the form of `next`'s, with the brief `next` gives that agent and the editor as its launcher.
+        - Where its call is not one that counts for the editor, it prints, with no block and no read of the state, the call in the form that counts and that the editor runs it in the foreground and does as it prints.
+            - A call counts where it is a command of its own, with no word such as `timeout` before it, and no other tool call follows it.
         - It takes as the editor's report the text of the report file the editor's brief gives.
             - Where that file does not exist, it prints that the editor writes it and then runs `review` again.
         - Where the change is past its cost budget, it prints instead that the operator takes the change's next step, and that the editor gives its final reply.

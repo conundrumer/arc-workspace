@@ -1,5 +1,6 @@
 """The `review` subcommand of `operate.py`: the step it prints for a code
-editor or a doc editor, as `--help review` gives it."""
+editor or a doc editor, as `--help review` gives it, or, for a call that
+`Agent.reviewing` does not count, the form of the call it counts."""
 
 import sys
 from pathlib import Path
@@ -9,7 +10,7 @@ from handbook.paths import console_importable, scripts_importable
 console_importable()
 scripts_importable()
 
-from operator_transcript import read_operator  # noqa: E402
+from operator_transcript import read_operator, reviewing_since  # noqa: E402
 from state_assembly import read_state  # noqa: E402
 from agent_reports import parent_type  # noqa: E402
 from run_reads import parent_id  # noqa: E402
@@ -22,21 +23,39 @@ from ticket_reads import read_ticket  # noqa: E402
 from filed_texts import written_report  # noqa: E402
 
 from operations import changes  # noqa: E402
+from operations.command_words import Action, next_command  # noqa: E402
 from operations.roles import LAUNCHING_EDITORS, Role  # noqa: E402
 from operations.steps import Launch, Poll, Step, Undecided  # noqa: E402
 from operate_loop import prepared, print_step, read_again, waited  # noqa: E402
+
+from controlled_markdown import mctx  # noqa: E402
+
+
+UNCOUNTED = mctx("This call is not counted as your `review` call. A `review` call counts only "
+                 "where its words stand as a command of their own, with no word such as "
+                 "`timeout` before them, and only while no other tool call follows it. "
+                 "Run `{command}` so, in a foreground Bash call, and do as it prints.")
+"""The line `review` prints for a call that `Agent.reviewing` does not count,
+with `command` the call that counts."""
 
 
 def review(editor: str) -> int:
     """Print the step `changes.editor_step` gives the editor `editor`,
     read again within `operate_loop.waited` while it is `steps.Poll`, and
     once more where a worktree or a file it reads is gone
-    (`operate_loop.read_again`)."""
+    (`operate_loop.read_again`).
+
+    Where `Agent.reviewing` of the editor, as its transcript stands when
+    the call starts, does not count the call, it prints `UNCOUNTED` instead,
+    with no block and no read of the state."""
     path = find(editor)
     parent = parent_id(path)
     kind = parent_type(path)
     if kind != Role.OPERATOR.agent_type:
         print(changes.NO_OPERATOR.format(agent=editor))
+        return 0
+    if reviewing_since(path, editor) is None:
+        print(UNCOUNTED.format(command=next_command(editor, Action.REVIEW)))
         return 0
     filed = change_filed(parent, editor)
 
