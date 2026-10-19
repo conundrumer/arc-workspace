@@ -5,8 +5,7 @@
 //! digits, over each source in turn: its path from the root of the tree,
 //! a 0 byte, its bytes and a 0 byte. The sources are `programs/lib.dl`,
 //! each `.dl` file of `programs/lib/` in the byte order of their names,
-//! and the libmap, the file `src/arclog_convert/libmap/__init__.py`, under
-//! the name `work/arclog/libmap/__init__.py`.
+//! and the libmap, the file `src/arclog_convert/libmap/__init__.py`.
 
 use std::path::{Path, PathBuf};
 
@@ -33,7 +32,7 @@ pub(super) fn sources_digest() -> Result<String, String> {
     names.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
     let mut sources: Vec<(String, PathBuf)> = vec![("programs/lib.dl".to_owned(), PathBuf::from("programs/lib.dl"))];
     sources.extend(names.into_iter().map(|name| (format!("programs/lib/{name}"), Path::new("programs/lib").join(name))));
-    sources.push(("work/arclog/libmap/__init__.py".to_owned(), PathBuf::from("src/arclog_convert/libmap/__init__.py")));
+    sources.push(("src/arclog_convert/libmap/__init__.py".to_owned(), PathBuf::from("src/arclog_convert/libmap/__init__.py")));
     let mut state = FNV_OFFSET_BASIS;
     for (shown, path) in sources {
         let bytes = std::fs::read(&path).map_err(|error| format!("the Souffle source {} cannot be read: {error}", path.display()))?;

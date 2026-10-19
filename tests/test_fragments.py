@@ -101,6 +101,7 @@ def write_cited_tree(tmp_path, citation):
 
 @pytest.mark.parametrize(("citation", "rule"), [
     ("docs/engine/reader.md", "path-missing"),
+    ("work/untracked.dl", "path-missing"),
     ("docs/spec.md#no-such-heading", "citation-anchor"),
 ])
 def test_a_citation_in_the_engine_names_a_present_heading(tmp_path, citation, rule):

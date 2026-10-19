@@ -123,7 +123,7 @@ def sources_digest() -> str:
     sources = [(f"programs/{LIB_FILE}", _lib_path())]
     sources += [(f"programs/lib/{p.name}", p)
                 for p in sorted(lib.glob("*.dl"), key=lambda p: p.name.encode())]
-    sources.append(("work/arclog/libmap/__init__.py", libmap_path()))
+    sources.append(("src/arclog_convert/libmap/__init__.py", libmap_path()))
     return fnv1a64(b"".join(shown.encode() + b"\0" + path.read_bytes() + b"\0"
                             for shown, path in sources))
 

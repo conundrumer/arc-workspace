@@ -59,9 +59,9 @@ def check_paths(path: Path, source: str, root: Path) -> None:
                 f"no file at `{value}`")
 
 
-# A citation in code: a document by its path from the root of the tree, and
-# a section of it by the slug of its heading.
-CITATION_RE = re.compile(r"(?:docs|work)/[\w./-]+\.md(?:#[\w-]+)?")
+# A citation in code: a file by its path from the root of the tree, whatever
+# its extension, and a section of a document by the slug of its heading.
+CITATION_RE = re.compile(r"(?:docs|work)/[\w./-]+\.\w+(?:#[\w-]+)?")
 
 
 def _citations(path: Path) -> Iterator[tuple[int, str, str, str]]:
