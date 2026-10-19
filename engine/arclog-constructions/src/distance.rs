@@ -14,8 +14,7 @@ use arclog::eval::instance::{Construction, ConstructionContext, GroupInputs, Gro
 use arclog::eval::join::{Batch, Budget};
 use arclog::hash::StableHashMap;
 use arclog::relations::{Row, RowSet};
-use arclog::terms::{Margins, Number, Term, TermId};
-use arclog::types::ValueType;
+use arclog::terms::{Term, TermId};
 
 /// The least cost from a source to each node, and every predecessor on a
 /// least-cost path.
@@ -41,13 +40,13 @@ impl Construction for Distance {
             graph.edge(&row[..width], &row[width..], 1);
         }
         for row in weight.rows() {
-            graph.edge(&row[..width], &row[width..2 * width], number(row[2 * width]));
+            graph.edge(&row[..width], &row[width..2 * width], i64::from(Term::decode_number(row[2 * width])));
         }
         for row in source.rows() {
             graph.start(row, 0);
         }
         for row in source_distance.rows() {
-            graph.start(&row[..width], number(row[width]));
+            graph.start(&row[..width], i64::from(Term::decode_number(row[width])));
         }
         graph.distances(context.budget)
     }
@@ -71,10 +70,10 @@ impl Construction for CellDistance {
         let [node, source, step] = group.inputs else { panic!("the three inputs of CellDistance") };
         let mut graph = Graph::new(1);
         for p in node.rows() {
-            let from = margins(p[0]);
+            let from = Term::decode_box(p[0]);
             for delta in step.rows() {
                 // A sum outside a signed byte is a Box no node holds.
-                if let Ok(q) = Term::Box(compose(from, margins(delta[0]))).encode()
+                if let Ok(q) = Term::Box(compose(from, Term::decode_box(delta[0]))).encode()
                     && node.contains(&[q])
                 {
                     graph.edge(p, &[q], 1);
@@ -86,18 +85,6 @@ impl Construction for CellDistance {
         }
         graph.distances(context.budget)
     }
-}
-
-/// The value of a `number` column.
-fn number(id: TermId) -> i64 {
-    let Term::Number(Number(n)) = Term::decode(id, &ValueType::Number) else { unreachable!("a number column") };
-    i64::from(n)
-}
-
-/// The margins of a Box column.
-fn margins(id: TermId) -> Margins {
-    let Term::Box(margins) = Term::decode(id, &ValueType::Box) else { unreachable!("a Box column") };
-    margins
 }
 
 /// The nodes of one key group by index, each edge at its least cost, and
@@ -156,7 +143,7 @@ impl Graph {
         let mut distance = RowSet::empty(self.width as u16 + 1);
         for (node, cost) in self.nodes.iter().zip(&costs) {
             if let Some(cost) = cost {
-                distance.insert(row(node, &[encode_number(*cost)]));
+                distance.insert(row(node, &[Term::encode_number(i32::try_from(*cost).expect("a least cost within a number"))]));
             }
         }
         let mut predecessor = RowSet::empty(2 * self.width as u16);
@@ -180,11 +167,6 @@ fn least(held: &mut i64, cost: i64) {
 /// The row of `head`'s columns followed by `tail`'s.
 fn row(head: &[TermId], tail: &[TermId]) -> Row {
     head.iter().chain(tail).copied().collect()
-}
-
-fn encode_number(cost: i64) -> TermId {
-    let n = i32::try_from(cost).expect("a least cost within a number");
-    Term::Number(Number(n)).encode().expect("a number encodes")
 }
 
 /// A search over a graph's edges, counting its steps against the budget.

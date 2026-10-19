@@ -6,21 +6,6 @@ use arclog::eval::instance::{Construction, ConstructionContext, GroupInputs, Gro
 use arclog::hash::{StableHashMap, StableHashSet};
 use arclog::relations::RowSet;
 use arclog::terms::{Margins, Number, Term, TermId};
-use arclog::types::ValueType;
-
-/// The term id of the count `n`.
-fn count(n: usize) -> TermId {
-    let n = i32::try_from(n).expect("a count of rows within an i32");
-    Term::Number(Number(n)).encode().expect("a number has a term id")
-}
-
-/// The number that `id` stands for at a `number` column.
-fn number(id: TermId) -> Number {
-    match Term::decode(id, &ValueType::Number) {
-        Term::Number(n) => n,
-        _ => unreachable!("a `number` column decodes to a number"),
-    }
-}
 
 /// An empty set for each output of the component, of the arity its rows
 /// take.
@@ -102,7 +87,7 @@ fn score_ranking<'r>(members: &StableHashSet<Element<'r>>, probes: &[Element<'r>
     let mut scores: StableHashMap<Element<'r>, Number> = StableHashMap::default();
     for row in score.rows() {
         let (t, s) = row.split_at(width);
-        if scores.insert(t, number(s[0])).is_some() {
+        if scores.insert(t, Number(Term::decode_number(s[0]))).is_some() {
             panic!("an Order whose `score` gives one element several scores");
         }
     }
@@ -171,8 +156,8 @@ impl Construction for Order {
                 .try_into()
                 .expect("six outputs");
         for &(t, r, d) in &ranking.ranks {
-            rank.insert(t.iter().copied().chain([count(r)]).collect());
-            dual_rank.insert(t.iter().copied().chain([count(d)]).collect());
+            rank.insert(t.iter().copied().chain([Term::encode_number(i32::try_from(r).expect("a count of rows within an i32"))]).collect());
+            dual_rank.insert(t.iter().copied().chain([Term::encode_number(i32::try_from(d).expect("a count of rows within an i32"))]).collect());
         }
         for &t in &ranking.minimal {
             minimal.insert(t.into());
@@ -211,10 +196,7 @@ impl Construction for BoundingBox {
     ) -> Result<GroupOutputs, ReachedBound> {
         let [cell] = group.inputs else { panic!("BoundingBox's one input") };
         let mut outputs = empty_outputs(&[1]);
-        let margins = cell.rows().map(|row| match Term::decode(row[0], &ValueType::Box) {
-            Term::Box(margins) => margins,
-            _ => unreachable!("a Box column decodes to a Box"),
-        });
+        let margins = cell.rows().map(|row| Term::decode_box(row[0]));
         let least = margins.reduce(|a, b| Margins {
             top: a.top.min(b.top),
             bottom: a.bottom.min(b.bottom),
@@ -245,7 +227,7 @@ impl Construction for Cardinality {
         let [member, domain] = group.inputs else { panic!("Cardinality's two inputs") };
         let mut outputs = empty_outputs(&[1]);
         if !member.is_empty() || !domain.is_empty() {
-            outputs[0].insert([count(member.len())].into());
+            outputs[0].insert([Term::encode_number(i32::try_from(member.len()).expect("a count of rows within an i32"))].into());
         }
         charged(outputs, input_rows(group), context)
     }
@@ -268,7 +250,7 @@ impl Construction for Excess {
         let [plus, minus] = group.inputs else { panic!("Excess's two inputs") };
         let mut outputs = empty_outputs(&[1]);
         if plus.len() > minus.len() {
-            outputs[0].insert([count(plus.len() - minus.len())].into());
+            outputs[0].insert([Term::encode_number(i32::try_from(plus.len() - minus.len()).expect("a count of rows within an i32"))].into());
         }
         charged(outputs, input_rows(group), context)
     }

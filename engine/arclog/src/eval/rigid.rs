@@ -290,8 +290,7 @@ fn label_type(types: &FormTypes, label: LabelId) -> Result<ValueType, String> {
 fn image<'v>(geometry: &'v Geometry, g: D4Element, values: &'v [TermId], types: &'v [ValueType]) -> impl Iterator<Item = TermId> + 'v {
     values.iter().zip(types).map(move |(&value, ty)| match ty {
         ValueType::Box => {
-            let Term::Box(margins) = Term::decode(value, ty) else { unreachable!("a Box column") };
-            Term::Box(apply(g, margins)).encode().expect("a Box's margins, moved among its edges, each fit a signed byte")
+            Term::Box(apply(g, Term::decode_box(value))).encode().expect("a Box's margins, moved among its edges, each fit a signed byte")
         }
         ValueType::Dir | ValueType::DiagDir | ValueType::Dir8 | ValueType::Axis | ValueType::DiagAxis | ValueType::Axis4 | ValueType::Sense => {
             geometry.under(g, value)

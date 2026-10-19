@@ -10,7 +10,7 @@
 use super::orientation::{Edge, Edges, Geometry};
 use super::Algebra;
 use crate::registry::Registry;
-use crate::terms::{Margins, Number, ReachedMarginBound, Term, TermId};
+use crate::terms::{Margins, ReachedMarginBound, Term, TermId};
 use crate::types::ValueType;
 
 /// Declares [`BoxRelation`] from its variants, each with its registry name,
@@ -161,17 +161,11 @@ impl Columns<'_> {
     }
 
     fn boxed(&self, column: usize) -> Margins {
-        match Term::decode(self.input(column), &ValueType::Box) {
-            Term::Box(m) => m,
-            _ => unreachable!("a Box column"),
-        }
+        Term::decode_box(self.input(column))
     }
 
     fn number(&self, column: usize) -> i32 {
-        match Term::decode(self.input(column), &ValueType::Number) {
-            Term::Number(Number(n)) => n,
-            _ => unreachable!("a number column"),
-        }
+        Term::decode_number(self.input(column))
     }
 
     /// The term id of `m` at the Box column `column`: where the column is
@@ -179,14 +173,10 @@ impl Columns<'_> {
     /// and otherwise `m` packed.
     fn out_box(&self, column: usize, m: Margins) -> Result<Option<TermId>, ReachedMarginBound> {
         match self.0[column] {
-            Some(value) => Ok((Term::decode(value, &ValueType::Box) == Term::Box(m)).then_some(value)),
+            Some(value) => Ok((Term::decode_box(value) == m).then_some(value)),
             None => Term::Box(m).encode().map(Some),
         }
     }
-}
-
-fn number(n: i32) -> TermId {
-    Term::Number(Number(n)).encode().expect("a number's term id")
 }
 
 /// A value of a row: a term id, or a Box computed for its column.
@@ -227,7 +217,7 @@ impl Algebra for BoxRelation {
             Ok(())
         };
         let id = |column: usize| Id(c.input(column));
-        let n = |k: i32| Id(number(k));
+        let n = |k: i32| Id(Term::encode_number(k));
         // Each Dir `d` of column 0, with the box inset by `k1` at d's edge
         // and by `k2` at the edge opposite it.
         let axis_rows = |k1: i32, k2: i32| {

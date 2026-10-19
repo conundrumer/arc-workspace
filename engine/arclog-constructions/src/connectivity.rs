@@ -162,7 +162,7 @@ impl Construction for Enclosure {
         let cells = column(cell);
         let steps = cardinals();
         let edge = cells.iter().copied().filter(|&p| {
-            let m = margins(p);
+            let m = Term::decode_box(p);
             [m.top, m.bottom, m.left, m.right].contains(&0)
         });
         let mut work = Batch::default();
@@ -253,22 +253,16 @@ fn stepped(
     context: &mut ConstructionContext<'_, '_>,
 ) -> Result<Vec<TermId>, ReachedBound> {
     work.count(context.budget, steps.len() as u64)?;
-    let from = margins(p);
+    let from = Term::decode_box(p);
     Ok(steps
         .iter()
         .filter_map(|&step| {
-            let by = margins(step);
+            let by = Term::decode_box(step);
             // A Box no term id holds is no node.
             Term::Box(compose(from, by)).encode().ok()
         })
         .filter(|q| nodes.contains(q))
         .collect())
-}
-
-/// The margins of `id`, a Position or an Offset.
-fn margins(id: TermId) -> Margins {
-    let Term::Box(margins) = Term::decode(id, &ValueType::Box) else { unreachable!("a Box decodes to a Box") };
-    margins
 }
 
 /// The four cardinal steps, as `step_offset` of `programs/lib/box.dl` gives

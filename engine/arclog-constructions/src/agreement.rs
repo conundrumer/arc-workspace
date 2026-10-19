@@ -15,7 +15,7 @@ use arclog::eval::ReachedBound;
 use arclog::hash::{StableHashMap, StableHashSet};
 use arclog::registry::{LibName, Registry};
 use arclog::relations::{Row, RowSet};
-use arclog::terms::{Margins, Number, Term, TermId};
+use arclog::terms::{Margins, Term, TermId};
 use arclog::types::ValueType;
 
 /// The mismatches and conflicts of two valued families under each
@@ -103,7 +103,7 @@ impl Construction for Periods {
             for pairs in lines.values() {
                 broken += usize::from(compare(&cells, &cells, pairs.iter(), context.budget)?.conflict);
             }
-            let row: Row = [axis, number(k)].into();
+            let row: Row = [axis, Term::encode_number(k)].into();
             if broken == 0 {
                 period.insert(row.clone());
                 if witnessed {
@@ -116,7 +116,7 @@ impl Construction for Periods {
             }
         }
         for (axis, k) in least {
-            fundamental.insert([axis, number(k)].into());
+            fundamental.insert([axis, Term::encode_number(k)].into());
         }
         outputs(vec![period, fundamental, approximate], context.budget)
     }
@@ -371,7 +371,7 @@ impl Lattice {
     fn of(period: &RowSet) -> Lattice {
         let mut lattice = Lattice { vertical: None, horizontal: None };
         for row in period.rows() {
-            let k = number_value(row[1]);
+            let k = Term::decode_number(row[1]);
             assert!(k > 0, "Wallpaper's period {k} is not positive");
             let axis = if is_vertical(row[0]) { &mut lattice.vertical } else { &mut lattice.horizontal };
             assert!(axis.replace(k).is_none(), "Wallpaper's two periods on one axis");
@@ -386,7 +386,7 @@ impl Lattice {
 
     /// The class of the Box `x`.
     fn class(&self, x: TermId) -> Class {
-        let m = margins(x);
+        let m = Term::decode_box(x);
         let residue = |margin: i32, period: Option<i32>| period.map_or(margin, |k| margin.rem_euclid(k));
         (residue(m.top, self.vertical), m.top + m.bottom, residue(m.left, self.horizontal), m.left + m.right)
     }
@@ -394,7 +394,7 @@ impl Lattice {
     /// Whether the translation `s` lies in the lattice, or lies off both
     /// axes.
     fn admits_square(&self, s: TermId) -> bool {
-        let m = margins(s);
+        let m = Term::decode_box(s);
         let in_lattice = |shift: i32, period: Option<i32>| period.map_or(shift == 0, |k| shift % k == 0);
         (m.top != 0 && m.left != 0) || (in_lattice(m.top, self.vertical) && in_lattice(m.left, self.horizontal))
     }
@@ -403,27 +403,6 @@ impl Lattice {
 /// Whether the Axis `axis` is the vertical one.
 fn is_vertical(axis: TermId) -> bool {
     Geometry::get().axis_edges(axis).contains(Edge::Top)
-}
-
-/// The margins of the Box `x`.
-fn margins(x: TermId) -> Margins {
-    match Term::decode(x, &ValueType::Box) {
-        Term::Box(m) => m,
-        _ => unreachable!("a Box column"),
-    }
-}
-
-/// The number `k` stands for.
-fn number_value(k: TermId) -> i32 {
-    match Term::decode(k, &ValueType::Number) {
-        Term::Number(Number(k)) => k,
-        _ => unreachable!("a number column"),
-    }
-}
-
-/// The term id of the number `k`.
-fn number(k: i32) -> TermId {
-    Term::Number(Number(k)).encode().expect("a number's term id")
 }
 
 /// The outputs `outputs`, each row of them counted against `budget`.
@@ -479,7 +458,7 @@ impl Lib<'_> {
     /// Position `p` admits on it.
     fn sub_extents(&self, p: TermId) -> Result<Vec<(TermId, i32)>, ReachedBound> {
         let rows = self.rows("sub_extent", &[Some(p), None, None])?;
-        Ok(rows.iter().map(|row| (row[1], number_value(row[2]))).collect())
+        Ok(rows.iter().map(|row| (row[1], Term::decode_number(row[2]))).collect())
     }
 
     /// The translation by `k` along `axis`, toward its bottom or right
@@ -488,7 +467,7 @@ impl Lib<'_> {
         let geometry = Geometry::get();
         let edge = geometry.axis_edges(axis).each().find(|edge| matches!(edge, Edge::Bottom | Edge::Right)).expect("an axis with a bottom or a right edge");
         let toward = geometry.direction(Edges::of(&[edge])).expect("the Dir of an edge");
-        self.image("jump_offset", &[Some(toward), Some(number(k)), None])
+        self.image("jump_offset", &[Some(toward), Some(Term::encode_number(k)), None])
     }
 
     /// The line of the Position `p` across `axis`: its margins on the edges

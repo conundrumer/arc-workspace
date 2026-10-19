@@ -29,7 +29,7 @@ pub fn read_grid(relation: &Relation, columns: GridColumns) -> Option<Grid> {
     let mut frame: Option<(usize, usize)> = None;
     let mut cells: Vec<Option<Color>> = Vec::new();
     for (position, colors) in index.entries() {
-        let Term::Box(margins) = Term::decode(position, &ValueType::Box) else { unreachable!("a Box decodes to a Box") };
+        let margins = Term::decode_box(position);
         let (row, column) = (usize::try_from(margins.top).ok()?, usize::try_from(margins.left).ok()?);
         let extent = (row + usize::try_from(margins.bottom).ok()? + 1, column + usize::try_from(margins.right).ok()? + 1);
         if *frame.get_or_insert(extent) != extent {

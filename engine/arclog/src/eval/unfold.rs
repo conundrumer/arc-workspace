@@ -29,7 +29,7 @@ use crate::program::{Body, InstanceInput, LabelId, OutputStep, PortName};
 use crate::registry::{Column, Component, LibEntry};
 use crate::relations::{Row, RowSet};
 use crate::terms::{Constant, Example, Term, TermId};
-use crate::types::{each_site_label, use_label, GraphRelation, ValueType};
+use crate::types::{each_site_label, use_label, GraphRelation};
 
 /// A state of an `Unfold` walk, on one key: its cursor and its three sets
 /// of items, each sorted, so that states of equal content are equal.
@@ -508,7 +508,7 @@ impl Group {
             taken: items(UnfoldInput::InitialTaken),
             untaken: items(UnfoldInput::InitialUntaken),
             conflict: rows(UnfoldInput::Conflict).into_iter().map(|row| (row[0], row[1])).collect(),
-            score: score_written.then(|| rows(UnfoldInput::Score).into_iter().map(|row| ((row[0], row[1]), number(row[2]))).collect()),
+            score: score_written.then(|| rows(UnfoldInput::Score).into_iter().map(|row| ((row[0], row[1]), Term::decode_number(row[2]))).collect()),
             key,
         }
     }
@@ -776,10 +776,3 @@ fn sorted(items: impl IntoIterator<Item = TermId>) -> Box<[TermId]> {
     items.into()
 }
 
-/// The number of a score's term id.
-fn number(id: TermId) -> i32 {
-    match Term::decode(id, &ValueType::Number) {
-        Term::Number(number) => number.0,
-        other => panic!("a score of type number, not {other:?}"),
-    }
-}

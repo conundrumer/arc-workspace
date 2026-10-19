@@ -12,8 +12,7 @@ use arclog::eval::instance::{Construction, ConstructionContext, GroupInputs, Gro
 use arclog::hash::{StableHashMap, StableHashSet};
 use arclog::registry::Registry;
 use arclog::relations::RowSet;
-use arclog::terms::{Margins, Number, Term, TermId};
-use arclog::types::ValueType;
+use arclog::terms::{Margins, Term, TermId};
 
 /// The straight path from each source toward each direction, each step
 /// onto a node, with its last cell.
@@ -41,13 +40,13 @@ impl Construction for Ray {
                 let mut p = origin;
                 let mut k = 0;
                 loop {
-                    ray.insert(Box::new([p, d, count(k), origin]));
+                    ray.insert(Box::new([p, d, Term::encode_number(i32::try_from(k).expect("a count within a number")), origin]));
                     match step(context.registry, node, p, offset) {
                         Some(q) => (p, k) = (q, k + 1),
                         None => break,
                     }
                 }
-                end.insert(Box::new([p, d, count(k), origin]));
+                end.insert(Box::new([p, d, Term::encode_number(i32::try_from(k).expect("a count within a number")), origin]));
                 context.budget.charge_work(k as u64 + 1)?;
             }
         }
@@ -79,13 +78,13 @@ impl Construction for Walk {
         for row in successor.rows() {
             next.entry(&row[..width]).or_default().push(&row[width..]);
         }
-        let bound = steps.rows().map(|row| number(row[0])).max().unwrap_or(0).max(0);
+        let bound = steps.rows().map(|row| Term::decode_number(row[0])).max().unwrap_or(0).max(0);
         let mut walk = RowSet::empty(2 * width as u16 + 1);
         for &start in next.keys() {
             let mut at: StableHashSet<&[TermId]> = [start].into_iter().collect();
             for n in 0..=bound {
                 for &p in &at {
-                    walk.insert(start.iter().chain([&count(n as usize)]).chain(p).copied().collect());
+                    walk.insert(start.iter().chain([&Term::encode_number(n)]).chain(p).copied().collect());
                 }
                 if n == bound {
                     break;
@@ -210,24 +209,8 @@ fn step_offset(registry: &Registry, d: TermId) -> TermId {
 /// The Box whose corner toward the top and the left is the Position `a`,
 /// and whose corner toward the bottom and the right is the Position `b`.
 fn span(a: TermId, b: TermId) -> TermId {
-    let (a, b) = (margins(a), margins(b));
+    let (a, b) = (Term::decode_box(a), Term::decode_box(b));
     let span = Margins { top: a.top, left: a.left, bottom: b.bottom, right: b.right };
     Term::Box(span).encode().expect("the box of two Positions")
 }
 
-fn margins(id: TermId) -> Margins {
-    let Term::Box(margins) = Term::decode(id, &ValueType::Box) else { unreachable!("a Position column") };
-    margins
-}
-
-/// The value of a `number` column.
-fn number(id: TermId) -> i32 {
-    let Term::Number(Number(n)) = Term::decode(id, &ValueType::Number) else { unreachable!("a number column") };
-    n
-}
-
-/// The term id of the count `n`.
-fn count(n: usize) -> TermId {
-    let n = i32::try_from(n).expect("a count within a number");
-    Term::Number(Number(n)).encode().expect("a number encodes")
-}

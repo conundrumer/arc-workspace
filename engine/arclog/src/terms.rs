@@ -218,14 +218,16 @@ pub enum Term {
 }
 
 /// `Term::encode` and `Term::decode` are the public way between a term and
-/// its id, which a construction of `arclog-constructions` takes.
+/// its id, which a construction of `arclog-constructions` takes, and
+/// `Term::decode_number`, `Term::decode_box` and `Term::encode_number` are the
+/// way for a `number` column, a Box column and a number.
 impl Term {
     /// The term id of the term.
     ///
     /// Fails only for a Box with a margin outside a signed byte.
     pub fn encode(self) -> Result<TermId, ReachedMarginBound> {
         let bits = match self {
-            Term::Number(Number(n)) => n as u32,
+            Term::Number(Number(n)) => Term::encode_number(n).0,
             Term::Constant(Constant::Color(color)) => u32::from(color.0),
             Term::Constant(Constant::Example(example)) => u32::from(example.0),
             Term::Constant(Constant::Orientation(constant)) => constant.encoding(),
@@ -252,11 +254,11 @@ impl Term {
             Term::Constant(Constant::Orientation(OrientationConstant::decode(bits, admitted)))
         };
         match ty {
-            ValueType::Number => Term::Number(Number(bits as i32)),
+            ValueType::Number => Term::Number(Number(Term::decode_number(id))),
             ValueType::Color => Term::Constant(Constant::Color(Color(bits as u8))),
             ValueType::Example => Term::Constant(Constant::Example(Example(bits as u16))),
             ValueType::Unit => Term::Constant(Constant::Unit),
-            ValueType::Box => Term::Box(Margins::unpack(bits)),
+            ValueType::Box => Term::Box(Term::decode_box(id)),
             ValueType::Ident => Term::Ident(Ident(bits)),
             ValueType::Pose(_) => Term::decode(id, &ValueType::D4),
             ValueType::Record(_) => panic!("a record's value takes one column per field"),
@@ -264,6 +266,21 @@ impl Term {
                 orientation_type.orientation_types().expect("each type of no other arm is an orientation type"),
             ),
         }
+    }
+
+    /// The number that `id` stands for at a `number` column.
+    pub fn decode_number(id: TermId) -> i32 {
+        id.0 as i32
+    }
+
+    /// The margins that `id` stands for at a Box column.
+    pub fn decode_box(id: TermId) -> Margins {
+        Margins::unpack(id.0)
+    }
+
+    /// The term id of the number `n`.
+    pub fn encode_number(n: i32) -> TermId {
+        TermId(n as u32)
     }
 }
 

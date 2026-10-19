@@ -12,7 +12,7 @@ use arclog::eval::ReachedBound;
 use arclog::eval::instance::{Construction, ConstructionContext, GroupInputs, GroupOutputs};
 use arclog::hash::StableHashSet;
 use arclog::relations::RowSet;
-use arclog::terms::{Margins, Number, Term, TermId};
+use arclog::terms::{Margins, Term, TermId};
 use arclog::types::ValueType;
 
 /// Equal parts per axis, by count or by side, with a gap.
@@ -30,7 +30,7 @@ impl Construction for Division {
         context: &mut ConstructionContext<'_, '_>,
     ) -> Result<GroupOutputs, ReachedBound> {
         let [cell, parts, side, gap] = group.inputs else { panic!("Division's four inputs") };
-        let cells: Vec<Margins> = cell.rows().map(|row| position(row[0])).collect();
+        let cells: Vec<Margins> = cell.rows().map(|row| Term::decode_box(row[0])).collect();
         let axes = Axis::pair().map(|axis| AxisParts {
             parts: axis.numbers(parts),
             sides: axis.numbers(side),
@@ -129,10 +129,10 @@ impl Construction for Tiling {
         let (gaps_first, gaps_second) = (first.gaps(gap), second.gaps(gap));
         let mut cell = RowSet::empty(3);
         for outer_row in outer.rows() {
-            let o = position(outer_row[0]);
+            let o = Term::decode_box(outer_row[0]);
             context.budget.charge_work((inner.len() * gaps_first.len() * gaps_second.len()) as u64 + 1)?;
             for inner_row in inner.rows() {
-                let i = position(inner_row[0]);
+                let i = Term::decode_box(inner_row[0]);
                 for &g_first in &gaps_first {
                     for &g_second in &gaps_second {
                         let p = compose(first.concat(o, i, g_first), second.concat(o, i, g_second));
@@ -198,7 +198,7 @@ impl Construction for ExtentDivisions {
         let [frame] = group.inputs else { panic!("ExtentDivisions' one input") };
         let mut division = RowSet::empty(4);
         for axis in Axis::each() {
-            let extents: StableHashSet<i32> = frame.rows().map(|row| axis.extent(position(row[0]))).collect();
+            let extents: StableHashSet<i32> = frame.rows().map(|row| axis.extent(Term::decode_box(row[0]))).collect();
             for &extent in &extents {
                 // The least gap, 1 - k, gives extent >= n + k - 1, so n is
                 // at most the extent, and the gap is at least 1 - extent.
@@ -206,7 +206,7 @@ impl Construction for ExtentDivisions {
                 for n in 2..=extent {
                     for g in (1 - extent)..extent {
                         let Some(k) = side_of(extent, n, g) else { continue };
-                        let row = [axis.id, number(n), number(k), number(g)];
+                        let row = [axis.id, Term::encode_number(n), Term::encode_number(k), Term::encode_number(g)];
                         if division.insert(row.into()) {
                             context.budget.charge_rows(1)?;
                         }
@@ -265,7 +265,7 @@ impl Axis {
     /// The numbers of the rows of `rows`, an input of an Axis column and a
     /// number column, on this axis.
     fn numbers(self, rows: &RowSet) -> Vec<i32> {
-        rows.rows().filter(|row| row[0] == self.id).map(|row| decode_number(row[1])).collect()
+        rows.rows().filter(|row| row[0] == self.id).map(|row| Term::decode_number(row[1])).collect()
     }
 
     /// The gaps of the rows of `rows` on this axis, or 0 where it has none.
@@ -303,24 +303,6 @@ impl Axis {
 
 /// The Box of margins 0, the frame itself.
 const ZERO: Margins = Margins { top: 0, bottom: 0, left: 0, right: 0 };
-
-fn position(id: TermId) -> Margins {
-    match Term::decode(id, &ValueType::Box) {
-        Term::Box(m) => m,
-        _ => unreachable!("a Position column"),
-    }
-}
-
-fn decode_number(id: TermId) -> i32 {
-    match Term::decode(id, &ValueType::Number) {
-        Term::Number(Number(n)) => n,
-        _ => unreachable!("a number column"),
-    }
-}
-
-fn number(n: i32) -> TermId {
-    Term::Number(Number(n)).encode().expect("a number's term id")
-}
 
 /// The term ids of `positions`, or the margin bound where one has a margin
 /// outside a byte.

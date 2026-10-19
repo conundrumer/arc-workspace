@@ -19,7 +19,7 @@ use crate::program::ConstraintOp;
 use crate::registry::Registry;
 use crate::relations::{ColumnIndex, ColumnOrder, Index, Relation, RelationPart, Row, RowSet};
 use crate::session::TaskSession;
-use crate::terms::{Constant, Number, Term, TermId};
+use crate::terms::{Constant, Term, TermId};
 use crate::types::ValueType;
 
 /// The bindings a [`Batch`] counts before it charges its budget.
@@ -620,17 +620,13 @@ impl<'c> Search<'c> {
             Operand::Variable(v) => self.binding[usize::from(v.0)].expect("a bound operand"),
             Operand::Zero => TermId::from_encoding(0),
         };
-        let number = |id: TermId| match Term::decode(id, &ValueType::Number) {
-            Term::Number(Number(n)) => n,
-            _ => unreachable!("a number decodes to a number"),
-        };
         match comparison.op {
             ConstraintOp::Eq => first == second,
             ConstraintOp::Ne => first != second,
-            ConstraintOp::Lt => number(first) < number(second),
-            ConstraintOp::Le => number(first) <= number(second),
-            ConstraintOp::Gt => number(first) > number(second),
-            ConstraintOp::Ge => number(first) >= number(second),
+            ConstraintOp::Lt => Term::decode_number(first) < Term::decode_number(second),
+            ConstraintOp::Le => Term::decode_number(first) <= Term::decode_number(second),
+            ConstraintOp::Gt => Term::decode_number(first) > Term::decode_number(second),
+            ConstraintOp::Ge => Term::decode_number(first) >= Term::decode_number(second),
         }
     }
 }
