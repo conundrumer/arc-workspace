@@ -731,10 +731,16 @@ BATCH_PROFILE = mctx("""
     """)
 
 
+# The cost of one transcript review in dollars: ticket 11-1885 measured 40
+# `Review run` runs for $3.35 and 17 reviews of item-checker runs for $1.34.
+REVIEW_COST = 0.08
+
+
 # "launch no further review": ticket 6-584 records a batch profile that
 # launched 14 transcript reviews after the filing crash was known.
 REVIEW = mctx("""
     - Launch a transcript review of each of these runs that is no solver work and of which the output of that `--each` call marks a message `past budget`, and of no other run: {reviewable}.
+    - Launch no transcript review of a run whose token cost, as that `--each` call prints it, is below ${cost:.2f}, the cost of a review. A run whose token cost that call gives as unknown keeps the review the other conditions give it.
     - Once a ticket filing of yours, or the reply of a review you launched, gives that a command the brief of a transcript review has it run failed, launch no further review.
     - A transcript review is a `general-purpose` agent, with `{model}` as the Agent call's `model`, and with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
     """)
@@ -752,7 +758,7 @@ def batch_profile(runs: list[str], reviewable: list[str], commit: str) -> str:
                                     deferred_titles=DEFERRED_TITLES)
     review = REVIEW.format(reviewable=", ".join(reviewable),
                            review_brief=mctx("the block below"), run=RUN,
-                           model=Role.TRANSCRIPT_REVIEW.model)
+                           model=Role.TRANSCRIPT_REVIEW.model, cost=REVIEW_COST)
     text = BATCH_PROFILE.format(runs=", ".join(runs), filing=filing, review=review,
                                 deferred_titles=DEFERRED_TITLES)
     brief = transcript_review(RUN, "agent", RUN, False, ())
