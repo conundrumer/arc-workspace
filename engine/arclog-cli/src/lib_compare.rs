@@ -13,16 +13,27 @@
 //! element's name. It starts no Souffle run, and runs from the root of the
 //! tree.
 //!
+//! The comparison with the Souffle record covers the rows inside the
+//! domain of the Souffle form, and lists the rest as not compared. A
+//! difference at a free choice of the Souffle lib that
+//! `docs/engine/equivariance.md#free-choices` records is a fault of the
+//! Souffle lib, which the command lists apart, and which gives no failure
+//! of the command.
+//!
 //! The modules: [`inputs`], the generation of each element's inputs file;
 //! [`records`], the Souffle record of an inputs file; [`sources`], the
 //! digest of the Souffle sources a record was made from; [`evaluation`],
 //! the engine's rows of an element and their comparison with the record
-//! and with their images; [`components`], the evaluation of a component
-//! over the key groups of its inputs; and [`solvers`], the comparison of
-//! each solver with its expanded form.
+//! and with their images; [`coverage`], what of the engine's rows the
+//! comparison with the record covers; [`free_choices`], the free choices
+//! of the Souffle lib the comparison gives as its faults; [`components`],
+//! the evaluation of a component over the key groups of its inputs; and
+//! [`solvers`], the comparison of each solver with its expanded form.
 
 mod components;
+mod coverage;
 mod evaluation;
+mod free_choices;
 mod inputs;
 mod records;
 mod solvers;
@@ -31,7 +42,9 @@ mod sources;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use self::coverage::{covered, left_out_lines};
 use self::evaluation::{fork_line, image_differences, walk_differences};
+use self::free_choices::{split, SECTION};
 use self::inputs::{elements, emptied_inputs, inputs_path, write_json, Element};
 use self::records::{read_record, Record};
 use self::solvers::compare_solvers;
@@ -84,6 +97,9 @@ struct Report {
     not_compared: Vec<String>,
     /// Each line on a solver whose two forms differ.
     solvers: Vec<String>,
+    /// Each line on a difference from the Souffle record at a free choice
+    /// of the Souffle lib that [`SECTION`] records as its fault.
+    souffle_faults: Vec<String>,
     /// Each line on inputs whose walks give more than one set of outputs,
     /// with the outputs of each walk.
     forks: Vec<String>,
@@ -100,7 +116,7 @@ impl Report {
             self.not_compared.push(format!("{name}: {message}"));
             return;
         }
-        let record = read_record(snapshot, name, &inputs, sources);
+        let record = read_record(snapshot, element, &inputs, sources);
         let emptied = match &record {
             Record::Undeclared(ports) => ports.clone(),
             _ => Vec::new(),
@@ -133,7 +149,20 @@ impl Report {
                     if souffle_inputs.is_some() && engine.len() > 1 {
                         self.forks.push(fork_line(&subject, &inputs_path(snapshot, name, ".souffle"), &engine));
                     }
-                    lines.extend(walk_differences(&subject, "Souffle", &engine, &souffle));
+                    let mut covered_walks = Vec::new();
+                    for walk in &engine {
+                        let (compared, outside) = covered(&subject, souffle_inputs.as_ref().unwrap_or(&inputs), walk, &souffle);
+                        covered_walks.push(compared);
+                        if let Some(line) = outside.filter(|line| !self.not_compared.contains(line)) {
+                            self.not_compared.push(line);
+                        }
+                    }
+                    self.not_compared.extend(left_out_lines(&subject, &souffle));
+                    let (plain, chosen) = split(&subject, &covered_walks);
+                    lines.extend(walk_differences(&subject, "Souffle", &plain));
+                    self.souffle_faults.extend(
+                        walk_differences(&subject, "Souffle", &chosen).into_iter().map(|line| format!("{line}; the free choice of its Souffle form that {SECTION} records")),
+                    );
                     true
                 }
                 Err(message) => {
@@ -193,16 +222,20 @@ impl Report {
         for line in &self.forks {
             println!("fork: {line}");
         }
+        for line in &self.souffle_faults {
+            println!("a fault of the Souffle lib: {line}");
+        }
         for line in &self.not_compared {
             println!("not compared: {line}");
         }
         println!("compared: {}", self.compared.join(", "));
         println!(
-            "{} elements compared the same, {} lines on elements that differ, {} solvers whose two forms differ, {} inputs that fork, {} elements and solvers not compared",
+            "{} elements compared the same, {} lines on elements that differ, {} solvers whose two forms differ, {} inputs that fork, {} lines on faults of the Souffle lib, {} lines on what is not compared",
             self.compared.len(),
             self.differ.len(),
             self.solvers.len(),
             self.forks.len(),
+            self.souffle_faults.len(),
             self.not_compared.len()
         );
         if self.differ.is_empty() && self.solvers.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }

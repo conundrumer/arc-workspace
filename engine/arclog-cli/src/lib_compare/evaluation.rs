@@ -55,6 +55,10 @@ pub(super) type Rows = Vec<Vec<Cell>>;
 /// where the element's inputs give no fork.
 pub(super) type Walks = Vec<Vec<Rows>>;
 
+/// The rows of each part of one walk on the two sides of a comparison: the
+/// engine's, and the other side's.
+pub(super) type Compared = (Vec<Rows>, Vec<Rows>);
+
 /// The cell of the term `id` of type `ty`.
 pub(super) fn cell(id: TermId, ty: &ValueType) -> Cell {
     match Term::decode(id, ty) {
@@ -403,15 +407,15 @@ pub(super) fn image_differences(subject: &Subject<'_>, inputs: &Value, walks: &[
     lines
 }
 
-/// Each line on a difference between each walk of `engine` and the
-/// Souffle record's rows `expected`, over the rows [`reached`] keeps, each
+/// Each line on a difference between the engine's rows and the Souffle
+/// record's on each walk of `walks`, over the rows [`reached`] keeps, each
 /// line led by its walk where there are several.
-pub(super) fn walk_differences(subject: &Subject<'_>, other: &str, engine: &[Vec<Rows>], expected: &[Rows]) -> Vec<String> {
+pub(super) fn walk_differences(subject: &Subject<'_>, other: &str, walks: &[Compared]) -> Vec<String> {
     let mut lines = Vec::new();
-    for (index, walk) in engine.iter().enumerate() {
+    for (index, (walk, expected)) in walks.iter().enumerate() {
         let (walk, expected) = reached(subject, walk, expected);
         let found = differences(subject, other, &walk, &expected);
-        match engine.len() {
+        match walks.len() {
             1 => lines.extend(found),
             n => lines.extend(found.into_iter().map(|line| format!("walk {} of {n}: {line}", index + 1))),
         }

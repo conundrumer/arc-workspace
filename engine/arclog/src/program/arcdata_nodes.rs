@@ -61,6 +61,11 @@ pub enum TypeName {
 }
 
 impl TypeName {
+    /// The type name that `text` spells, where it spells one.
+    pub fn named(text: &str) -> Option<TypeName> {
+        crate::read::spelling::parse(crate::read::spelling::TYPE_NAMES, text)
+    }
+
     /// The type the name stands for, `Box` for `Position` and `Offset`.
     pub fn value_type(self) -> crate::types::ValueType {
         use crate::types::ValueType;

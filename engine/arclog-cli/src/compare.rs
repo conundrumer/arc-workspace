@@ -25,7 +25,6 @@ use arclog::harness::{run_over_corpus, CorpusSolver, SolverResult};
 use arclog::program::{DeclaredName, ProgramRelation, RelationName};
 use arclog::registry::Registry;
 use arclog::resolver::Side;
-use arclog::solver::CaseName;
 use arclog::task::{Grid, Task};
 use arclog::hash::StableHashMap;
 use arclog::terms::{Constant, Example, Ident, Term};
@@ -100,22 +99,9 @@ impl Arguments {
     }
 }
 
-/// The snapshot's key of the case `name`: `concept` for the case of a
-/// solver with no `ALTS` form, and otherwise its alts joined by ` & `.
-fn case_key(name: &CaseName) -> BTreeSet<String> {
-    if name.0.is_empty() {
-        return BTreeSet::from(["concept".to_owned()]);
-    }
-    name.0.iter().map(|alt| alt.0.to_string()).collect()
-}
-
-/// The record of the case `name` in a solver's snapshot record, with its
-/// key there; a key names the same alts in any order.
-fn case_record<'r>(record: &'r Value, name: &CaseName) -> Option<(&'r str, &'r Value)> {
-    let wanted = case_key(name);
-    let cases = record.get("cases")?.as_object()?;
-    cases.iter().find(|(key, _)| key.split(" & ").map(str::to_owned).collect::<BTreeSet<_>>() == wanted).map(|(k, v)| (k.as_str(), v))
-}
+/// The snapshot's key of the concept case, whatever alts and line
+/// readings its name picks (`src/parity/snapshot.py`).
+const CONCEPT: &str = "concept";
 
 /// The pair names of the task's examples, as the snapshot writes them.
 fn pair_name(task: &Task, example: usize) -> String {
@@ -137,7 +123,8 @@ fn compared(arguments: &Arguments, corpus: &CorpusSolver) -> Result<Vec<String>,
     let id = &corpus.task_id;
     let record = read_json(&arguments.snapshot.join(format!("{id}.json")))?;
     with_concept_case(&arguments.corpus, &arguments.tasks, id, |case| {
-        let (key, case_record) = case_record(&record, case.name).ok_or("the snapshot has no record of the concept case")?;
+        let key = CONCEPT;
+        let case_record = record.get("cases").and_then(|cases| cases.get(key)).ok_or("the snapshot has no record of the concept case")?;
         let (outputs, seconds) = case.run();
         let outputs = outputs.map_err(|fault| format!("{key}: a fault of the run at {:?}: {}", fault.form, fault.message))?;
         let task = case.evaluation.task;

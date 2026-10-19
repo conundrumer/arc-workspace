@@ -94,10 +94,12 @@ def _lib() -> Program:
 
 def lib_key(inputs: bytes) -> str:
     """The hash of what the rows of the inputs file `inputs` depend on: its
-    bytes, the code and Souffle sources of a run (`cli.common.stamp`), the
-    Souffle binary, and the renames of the lib."""
+    bytes, the code and Souffle sources of a run (`cli.common.stamp`), this
+    module, which gives the form of the record, the Souffle binary, and the
+    renames of the lib."""
     h = hashlib.sha256(inputs)
     h.update(stamp().encode())
+    h.update(Path(__file__).read_bytes())
     h.update(binary_identity())
     h.update(libmap_path().read_bytes())
     return h.hexdigest()
@@ -148,10 +150,16 @@ def write_all() -> list[Path]:
 
 
 def outcome(inputs: Mapping[str, Any]) -> dict[str, Any]:
-    """The Souffle side of an inputs file: `rows`, each mode's rows or each
-    output's; `undeclared`, the inputs with rows that the Souffle form does
-    not declare; `no_souffle_form`; or `failure`, the kind of the failure
-    and its text."""
+    """The Souffle side of an inputs file: `rows`; `undeclared`, the inputs
+    with rows that the Souffle form does not declare; `no_souffle_form`; or
+    `failure`, the kind of the failure and its text.
+
+    A relation's `rows` are each mode's rows, beside `types`, the name of
+    the type the Souffle form declares at each column, by the column's
+    arclog name. A component's `rows` are the rows of each output that the
+    Souffle form holds at the output's width, by its port, beside
+    `left_out`, each other output's `port`, with `columns`, the width of
+    the Souffle form's relation, where it holds one."""
     match ElementKind(inputs["kind"]):
         case ElementKind.RELATION:
             return _relation(inputs)
@@ -215,7 +223,7 @@ def _relation(inputs: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(got, list):
             return got
         rows.append(_rows_out(([row[column[n]] for n in arclog] for row in got[0]), kinds))
-    return {"rows": rows}
+    return {"rows": rows, "types": {n: decl.columns[column[n]].type.name for n in arclog}}
 
 
 def _component(inputs: Mapping[str, Any]) -> dict[str, Any]:
@@ -233,27 +241,33 @@ def _component(inputs: Mapping[str, Any]) -> dict[str, Any]:
     undeclared = [i["port"] for i in inputs["inputs"] if i["rows"] and i["port"] not in souffle]
     if undeclared:
         return {"undeclared": undeclared}
-    lacking = [o["port"] for o in inputs["outputs"] if o["port"] not in souffle]
-    if lacking:
-        return {"failure": f"outputs: the Souffle form {names.souffle} has no relation of "
-                           f"{', '.join(lacking)}"}
     widths = [f"{p['port']} has {len(p['columns'])}, {souffle[p['port']]} "
               f"{len(declared[souffle[p['port']]].columns)}"
-              for p in (*inputs["inputs"], *inputs["outputs"])
+              for p in inputs["inputs"]
               if p["port"] in souffle
               and len(p["columns"]) != len(declared[souffle[p["port"]]].columns)]
     if widths:
         return {"failure": f"columns: of the Souffle form {names.souffle}: {'; '.join(widths)}"}
+    held = []
+    left_out = []
+    for o in inputs["outputs"]:
+        if o["port"] not in souffle:
+            left_out.append({"port": o["port"]})
+        elif len(o["columns"]) != len(columns := declared[souffle[o["port"]]].columns):
+            left_out.append({"port": o["port"], "columns": len(columns)})
+        else:
+            held.append(o)
     program = eng.lib_instance(_lib_path(), INSTANCE, names.souffle,
                                [TypeName((), t) for t in inputs["type_arguments"]])
     facts = {RelationName((INSTANCE,), souffle[i["port"]]): _rows_in(i["rows"])
              for i in inputs["inputs"] if i["port"] in souffle}
-    outs = [RelationName((INSTANCE,), souffle[o["port"]]) for o in inputs["outputs"]]
+    outs = [RelationName((INSTANCE,), souffle[o["port"]]) for o in held]
     got = _run(program, facts, outs)
     if not isinstance(got, list):
         return got
-    kinds = [[Kind(k) for _, k in o["columns"]] for o in inputs["outputs"]]
-    return {"rows": [_rows_out(rows, ks) for rows, ks in zip(got, kinds, strict=True)]}
+    return {"rows": {o["port"]: _rows_out(rows, [Kind(k) for _, k in o["columns"]])
+                     for o, rows in zip(held, got, strict=True)},
+            "left_out": left_out}
 
 
 def _run(program: Program | ParseFailure, facts: Mapping[RelationName, Rows],

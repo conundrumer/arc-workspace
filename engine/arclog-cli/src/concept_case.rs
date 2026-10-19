@@ -11,7 +11,6 @@ use arclog::harness::read_corpus_solver;
 use arclog::registry::Registry;
 use arclog::resolver::resolve_cases;
 use arclog::session::{SessionBound, TaskSession};
-use arclog::solver::CaseName;
 use arclog::task::read_task;
 use arclog::terms::Example;
 
@@ -20,7 +19,6 @@ use crate::compare::{constructions, SESSION_BYTES};
 /// The concept case of a solver, set up for its run at its stored `param`
 /// records, over the table of the lib's constructions.
 pub(crate) struct ConceptCase<'a> {
-    pub(crate) name: &'a CaseName,
     pub(crate) evaluation: Evaluation<'a>,
 }
 
@@ -50,5 +48,5 @@ pub(crate) fn with_concept_case<T>(corpus: &Path, tasks: &Path, id: &str, body: 
     let session = TaskSession::new(SessionBound { bytes: SESSION_BYTES }, Caps::PROVISIONAL);
     let limits = Limits { deadline: None, cancellation: Cancellation::default() };
     let evaluation = Evaluation { program: &program, task: &task, parameters: &parameters, session: &session, registry, constructions: constructions()?, limits: &limits };
-    body(&ConceptCase { name: &concept.case.name, evaluation })
+    body(&ConceptCase { evaluation })
 }
