@@ -14,8 +14,8 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 
-from dashboard_reads import (DAY, OPEN, STALE_RECORD, OperatorRecords, Stage, change_of, hits_full, logged,
-                             phrase, stage, users)
+from dashboard_reads import (DAY, OPEN, STALE_RECORD, OperatorRecords, Stage, change_of, hits_full,
+                             journal_work, logged, phrase, stage, users, Work)
 from dashboard_template import EVENTS, LAST_LOOK, SEARCH_ROUTE, TAB, TEMPLATE, TICKET_ROUTE
 from state_assembly import ScriptAdmits, Shown, ShownAgent, ShownParty, Start
 from ticket_reads import read_tickets
@@ -142,8 +142,9 @@ class View:
     """What the sections of one render read: the tracker's tickets in its
     order, the records of the sessions' operators, the usage, the time, the
     tickets expedited, the pending agents by ticket number, the tickets the
-    operators start next, and the party that holds each of them that one
-    holds."""
+    operators start next, the party that holds each of them that one
+    holds, and the work on each change the step journals record, by its
+    number (`dashboard_reads.journal_work`)."""
     all_: Mapping[str, Ticket]
     records: OperatorRecords
     usage: Usage
@@ -152,6 +153,7 @@ class View:
     agents: Mapping[str, list[ShownAgent]]
     starts: list[Start]
     holds: Mapping[str, ShownParty]
+    work: Mapping[str, list[Work]]
 
     def mine(self, t: Ticket) -> bool:
         return users(t, self.expedited)
@@ -369,11 +371,11 @@ def stage_bar(s: Stage, mark: Mark) -> str:
 
 
 def stopped_bar(v: View, t: Ticket) -> str:
-    """The stage bar of `t`, which no agent works on, from the work the log
-    of its change records (`dashboard_reads.logged`), where that work
+    """The stage bar of `t`, which no agent works on, from where the work
+    on its change stands (`dashboard_reads.logged`), where that work
     reached past Triage; else nothing."""
     c = change_of(t, v.all_)
-    w = None if c is None else logged(c)
+    w = None if c is None else logged(c, v.work.get(c.number, []))
     if w is None or w.stage is Stage.TRIAGE:
         return ""
     return stage_bar(w.stage, Mark.FINISHED if w.finished else Mark.STOPPED)
@@ -576,7 +578,7 @@ def page(tickets: Path, now: float, usage: Reading, records: OperatorRecords,
     all_ = dict(sorted(read.items(), key=lambda kv: kv[1].order))
     starts = records.starts()
     v = View(all_, records, usage.usage, now, records.expedited(), records.agents(), starts,
-             {s.number: s.held for s in starts if s.held is not None})
+             {s.number: s.held for s in starts if s.held is not None}, journal_work(tickets))
     st = Standings(v)
     work, working = active(v, st)
     stuck, waits = blocked(v)

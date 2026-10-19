@@ -1,21 +1,28 @@
 """The reads the ticket dashboard (`ticket_dashboard`) renders from: the
 recorded states of the operators of each session, and of a ticket its phrase,
 the change it waits on, whether it is the user's, the stage of the work
-on it and the work its change's log records; and the time a usage window reaches 100% at its rate so far."""
+on it and the work on its change, from the change's log and the sessions'
+step journals; and the time a usage window reaches 100% at its rate so far."""
 
-from collections.abc import Mapping
+import os
+from collections import Counter
+from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
 
 from idle_sessions import live, named_main
 from state_assembly import Shown, ShownAgent, ShownParty, Start, shown_read
+from step_journal import records
 from ticket_numbers import indexed, indexes, parsed_number
 from tree_reads import scratch
 
+from operations.filing import files_of
+from operations.journal import Outcome
 from operations.pacing import WINDOW_SECONDS, Usage, WindowName
-from operations.roles import Role
-from operations.state import Ticket
+from operations.printed_forms import REPORT_SUFFIX
+from operations.roles import BARE_BRIEFS, Role, described
+from operations.state import Ticket, Tool
 from operations.tracker import wait_line
 from ticketing.vocabulary import COORDINATOR, Kind, Status
 
@@ -196,33 +203,85 @@ ROLES: Mapping[str, Role] = {r.value: r for r in Role}
 
 
 @dataclass(frozen=True)
-class Logged:
-    """The work on a change that its log records: the furthest stage of
-    it, and whether the work of that stage finished."""
+class Work:
+    """A piece of the work on a change: its time, its stage, and whether
+    it finished."""
+    at: float
     stage: Stage
     finished: bool
 
 
-def logged(change: Ticket) -> Logged | None:
+def log_work(change: Ticket) -> list[Work]:
     """The work the log of `change` records. A line is work of the stage
     `ROLE_STAGE` gives the role its bracket names, and the first line, the
     filing, is work of Triage, whoever filed it; a line whose bracket names
-    no role is no work. A line finishes the work of its stage where it
-    moves `change` to another status than the line before it left it in,
-    as a review that approves a draft does, and the filing finishes Triage.
-    None where no line is work."""
-    found: Logged | None = None
+    no role is no work. A line finishes its work where it moves `change`
+    to another status than the line before it left it in, as a review that
+    approves a draft does, and the filing finishes its work."""
+    out: list[Work] = []
     before: Status | None = None
     for i, ln in enumerate(change.log):
         role = ROLES.get(ln.agent)
-        s = Stage.TRIAGE if i == 0 else None if role is None else ROLE_STAGE[role]
-        if s is not None:
-            moved = i == 0 or ln.status is not before
-            if found is None or s > found.stage:
-                found = Logged(s, moved)
-            elif s == found.stage and moved:
-                found = Logged(s, True)
+        if i == 0 or role is not None:
+            out.append(Work(ln.time, Stage.TRIAGE if role is None or i == 0 else ROLE_STAGE[role],
+                            i == 0 or ln.status is not before))
         before = ln.status
+    return out
+
+
+def reports(names: Set[str], digest: str) -> int:
+    """How many report files of the launches of the digest `digest` the
+    names `names` of a session's `operator-files` hold, in the order of
+    `filing.report_path`."""
+    n = 0
+    while f"{digest}{'' if n == 0 else f'-{n + 1}'}{REPORT_SUFFIX}" in names:
+        n += 1
+    return n
+
+
+def journal_work(tickets: Path) -> dict[str, list[Work]]:
+    """The launches of agents on changes that the step journal of each
+    session `ticket_numbers.indexes` gives records (`step_journal.records`),
+    by change number: each Agent call made or in flight whose description
+    gives a role with a report file (`roles.described`,
+    `roles.BARE_BRIEFS`), at the stage `ROLE_STAGE` gives that role,
+    finished where its report file is written: the `k`-th such launch of a
+    digest finishes with the `k`-th report file of that digest."""
+    out: dict[str, list[Work]] = {}
+    for session in (s for ids in indexes(tickets).values() for s in ids):
+        found = records(scratch(session))
+        files = files_of(scratch(session))
+        names = set(os.listdir(files)) if found and files.is_dir() else set()
+        launched: Counter[str] = Counter()
+        for r in found:
+            e = r.entry
+            change = e.change
+            d = None if e.tool is not Tool.AGENT or change is None else described(e.text)
+            if change is None or d is None or d.role in BARE_BRIEFS or (
+                    e.close is not None and e.close.outcome is Outcome.FAILED):
+                continue
+            launched[e.digest] += 1
+            out.setdefault(change, []).append(
+                Work(e.given, ROLE_STAGE[d.role], launched[e.digest] <= reports(names, e.digest)))
+    return out
+
+
+@dataclass(frozen=True)
+class Logged:
+    """Where the work on a change stands: the furthest stage of it, and
+    whether the last work of that stage finished."""
+    stage: Stage
+    finished: bool
+
+
+def logged(change: Ticket, work: Sequence[Work]) -> Logged | None:
+    """Where the work on `change` stands, from the work its log records
+    (`log_work`) and `work`, the other work on it, such as that of
+    `journal_work`; None where there is none."""
+    found: Logged | None = None
+    for w in sorted([*log_work(change), *work], key=lambda w: w.at):
+        if found is None or w.stage >= found.stage:
+            found = Logged(w.stage, w.finished)
     return found
 
 
