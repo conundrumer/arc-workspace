@@ -7,17 +7,24 @@
 //! with both times, and each solver whose run stops at a cap, with the cap
 //! and the form that reached it.
 //!
+//! It prints as well, for each solver run, the largest count of bindings
+//! tried and of rows held of any one of its evaluations that ended with no
+//! stop, and then the largest of each over the solvers run, the counts the
+//! caps are set from.
+//!
 //! Its arguments: the snapshot's directory, the corpus directory, the
 //! directory of the task files, then the task ids of the solvers to run,
 //! and `--reads <name>` for the solvers that the snapshot's `uses.json`
 //! gives for a lib name or a form keyword; every solver of the corpus where
 //! it is given none.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::process::ExitCode;
+use std::sync::Mutex;
 
 use arclog::eval::{GridValue, NoGridColumns, ReachedBound, Stop};
 use arclog::harness::{run_over_corpus, SolverResult};
+use arclog::session::Counts;
 use serde_json::Value;
 
 use crate::compare::Arguments;
@@ -39,9 +46,10 @@ pub fn run(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    let counts: Mutex<BTreeMap<String, Counts>> = Mutex::default();
     let report = run_over_corpus(&arguments.corpus, |solver| match &selected {
         Some(ids) if !ids.contains(&solver.task_id) => SolverResult::Pass,
-        _ => match timed(&arguments, &solver.task_id) {
+        _ => match timed(&arguments, &solver.task_id, &counts) {
             Ok(lines) if lines.is_empty() => SolverResult::Pass,
             Ok(lines) => SolverResult::Fail(lines),
             Err(line) => SolverResult::Fail(vec![line]),
@@ -59,6 +67,14 @@ pub fn run(args: &[String]) -> ExitCode {
             println!("{}: {line}", solver.task_id);
         }
     }
+    let counts = counts.into_inner().expect("a map of counts that no panic poisoned");
+    for (id, counts) in &counts {
+        println!("{id}: the largest counts of one evaluation: {} bindings tried, {} rows held", counts.work, counts.rows);
+    }
+    let largest = |count: fn(&Counts) -> u64| counts.iter().max_by_key(|(_, counts)| count(counts)).map(|(id, counts)| (count(counts), id));
+    if let (Some((work, work_id)), Some((rows, rows_id))) = (largest(|c| c.work), largest(|c| c.rows)) {
+        println!("the largest counts of the solvers run: {work} bindings tried, of {work_id}; {rows} rows held, of {rows_id}");
+    }
     let ran = selected.map_or(report.checked, |ids| ids.len());
     println!("{} of {ran} solvers run slower than Souffle, stop at a cap, or do not run", report.failures.len());
     if report.failures.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
@@ -74,11 +90,14 @@ pub(crate) fn slower(seconds: f64, record: &Value) -> Result<Option<String>, Str
 
 /// The lines of the run of the concept case of the solver `id`: its time
 /// against Souffle's, where it is slower, and each stop at a cap, once
-/// each; or the one line of the fault that stops it.
-fn timed(arguments: &Arguments, id: &str) -> Result<Vec<String>, String> {
+/// each; or the one line of the fault that stops it. Its session's largest
+/// counts go into `counts` under `id`, once the run ends.
+fn timed(arguments: &Arguments, id: &str, counts: &Mutex<BTreeMap<String, Counts>>) -> Result<Vec<String>, String> {
     let record = read_json(&arguments.snapshot.join(format!("{id}.json")))?;
     with_concept_case(&arguments.corpus, &arguments.tasks, id, |case| {
         let (outputs, seconds) = case.run();
+        let largest = case.evaluation.session.largest_counts();
+        counts.lock().expect("a map of counts that no panic poisoned").insert(id.to_owned(), largest);
         let mut lines: Vec<String> = slower(seconds, &record)?.into_iter().collect();
         let outputs = outputs.map_err(|fault| format!("a fault of the run at {:?}: {}", fault.form, fault.message))?;
         let stops: Vec<&Stop> = match &outputs {

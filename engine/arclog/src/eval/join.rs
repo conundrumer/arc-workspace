@@ -19,7 +19,7 @@ use crate::hash::StableHashMap;
 use crate::program::ConstraintOp;
 use crate::registry::Registry;
 use crate::relations::{ColumnIndex, ColumnOrder, Index, Relation, RelationPart, Row, RowSet};
-use crate::session::TaskSession;
+use crate::session::{Counts, TaskSession};
 use crate::terms::{Term, TermId};
 use crate::types::ValueType;
 
@@ -75,6 +75,12 @@ impl<'a> Budget<'a> {
         self.rows += rows;
         let cap = self.session.caps.rows;
         if self.rows > cap { Err(ReachedBound::Rows { cap }) } else { Ok(()) }
+    }
+
+    /// Records the budget's counts in its session, as
+    /// [`TaskSession::record_counts`] gives.
+    pub fn record(&self) {
+        self.session.record_counts(Counts { work: self.work, rows: self.rows });
     }
 }
 

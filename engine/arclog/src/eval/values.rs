@@ -28,6 +28,12 @@ pub struct Caps {
 impl Caps {
     /// The caps of every task session, set from the engine's counts on the
     /// corpus.
+    ///
+    /// The work cap and the row cap are provisional. Each stands above the
+    /// largest count of one evaluation that `arclog-cli speed` gave over
+    /// `work/arclog/gen/` on 2026-10-19: 19 447 224 bindings tried, of
+    /// `981571dc`, and 270 336 rows held, of `52df9849`. Those counts are of
+    /// the 281 solvers of 953 whose concept case ran.
     pub const PROVISIONAL: Caps = Caps { work: 1 << 32, rows: 1 << 24 };
 }
 

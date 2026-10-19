@@ -1,5 +1,5 @@
-//! The task session: the engine's state for one task, its result cache and
-//! its intern table.
+//! The task session: the engine's state for one task, its result cache,
+//! its intern table, and the largest counts of its evaluations.
 //!
 //! The result cache keys an entry by its content, a [`ResultKey`], and
 //! gives each relation it holds an id by its rows. It evicts the entries
@@ -372,6 +372,19 @@ pub struct TaskSession {
     /// The bound on the session's bytes, which the intern table's bytes
     /// count toward.
     pub bound: SessionBound,
+    /// The largest bindings tried of any one evaluation that ended with no
+    /// stop, an atomic maximum, so it does not depend on the order of the
+    /// threads.
+    largest_work: AtomicU64,
+    /// The largest rows held of any one such evaluation, an atomic maximum.
+    largest_rows: AtomicU64,
+}
+
+/// A count of bindings tried and a count of rows held.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Counts {
+    pub work: u64,
+    pub rows: u64,
 }
 
 /// The bound on a task session's bytes, which the intern table's and the
@@ -392,7 +405,7 @@ impl TaskSession {
     /// A session with an empty intern table and an empty result cache,
     /// whose evaluations run at `caps`.
     pub fn new(bound: SessionBound, caps: Caps) -> Self {
-        TaskSession { intern: RwLock::default(), results: ResultCache::default(), caps, bound }
+        TaskSession { intern: RwLock::default(), results: ResultCache::default(), caps, bound, largest_work: AtomicU64::new(0), largest_rows: AtomicU64::new(0) }
     }
 
     /// Whether the session's bytes, the intern table's and the result
@@ -401,5 +414,18 @@ impl TaskSession {
         let intern = self.intern.read().expect("an intern table that no panic poisoned").bytes();
         let bytes = intern + self.results.bytes();
         if bytes > self.bound.bytes { Err(ReachedSessionBound { bytes, bound: self.bound }) } else { Ok(()) }
+    }
+
+    /// Records the `counts` of one evaluation that ended with no stop, each
+    /// as the larger of it and the count the session holds.
+    pub fn record_counts(&self, counts: Counts) {
+        self.largest_work.fetch_max(counts.work, Ordering::Relaxed);
+        self.largest_rows.fetch_max(counts.rows, Ordering::Relaxed);
+    }
+
+    /// The largest counts of the session's evaluations that ended with no
+    /// stop.
+    pub fn largest_counts(&self) -> Counts {
+        Counts { work: self.largest_work.load(Ordering::Relaxed), rows: self.largest_rows.load(Ordering::Relaxed) }
     }
 }

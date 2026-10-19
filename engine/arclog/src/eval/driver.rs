@@ -52,12 +52,13 @@ impl<'e, 'a> Driver<'e, 'a> {
         let evaluation = self.evaluation;
         let program = self.program();
         let form = program.form_of(relation.node);
-        let budget = || Budget::new(evaluation.limits, evaluation.session);
+        let mut budget = Budget::new(evaluation.limits, evaluation.session);
         match &program.graph.nodes[relation.node.0 as usize].kind {
             DependencyKind::Clause(_) | DependencyKind::InstanceInput { .. } => self.clauses(relation.node, example),
             DependencyKind::Parameter(name) => self.parameter(relation, name),
             DependencyKind::InstanceOutput { .. } => {
-                let outputs = instance::evaluate_instance(evaluation, &self.bodies(), form, example, &mut budget())?;
+                let outputs = instance::evaluate_instance(evaluation, &self.bodies(), form, example, &mut budget)?;
+                record_whole(&budget, outputs.iter().map(|(_, value)| value));
                 let mut asked = None;
                 let mut values = self.values.borrow_mut();
                 for (output, value) in outputs {
@@ -71,17 +72,19 @@ impl<'e, 'a> Driver<'e, 'a> {
             }
             DependencyKind::RigidAssembly(_) => {
                 let output = relation.output.as_ref().and_then(|path| path.first()).expect("an output of the assembly");
-                rigid::evaluate_assembly(evaluation, &self.bodies(), form, output, example, &mut budget())
+                let value = rigid::evaluate_assembly(evaluation, &self.bodies(), form, output, example, &mut budget);
+                recorded(&budget, value)
             }
             DependencyKind::RecursiveInstance(_) => {
-                let values = unfold::evaluate_unfold(evaluation, &self.bodies(), form, relation, example, 2, &mut budget())?;
-                match <[RelationValue; 1]>::try_from(values) {
+                let values = unfold::evaluate_unfold(evaluation, &self.bodies(), form, relation, example, 2, &mut budget)?;
+                let value = match <[RelationValue; 1]>::try_from(values) {
                     Ok([value]) => Ok(value),
                     Err(_) => Err(RunFault {
                         message: "the instance gives more than one value, so the case has more than one model".into(),
                         form: form.clone(),
                     }),
-                }
+                };
+                recorded(&budget, value)
             }
             DependencyKind::Chosen(_) | DependencyKind::Demonstrated(_) => Err(RunFault {
                 message: "a chosen or demonstrated relation, whose models this evaluation does not build".into(),
@@ -167,10 +170,12 @@ impl<'e, 'a> Driver<'e, 'a> {
         let evaluation = self.evaluation;
         let order = plan::variable_order(clause, &join::sizes(inputs));
         let mut budget = Budget::new(evaluation.limits, evaluation.session);
-        match join::join(clause, &order, inputs, evaluation.registry, &mut budget) {
+        let value = match join::join(clause, &order, inputs, evaluation.registry, &mut budget) {
             Ok(relation) => RelationValue::Rows(Arc::new(relation)),
             Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
-        }
+        };
+        record_whole(&budget, [&value]);
+        value
     }
 
     /// The way into this driver of the forms over lib components.
@@ -351,4 +356,25 @@ fn union(mut relations: Vec<Arc<Relation>>) -> Arc<Relation> {
         });
     }
     Arc::new(join::one_part(rows))
+}
+
+/// `value`, the value of an evaluation under `budget`, once its session
+/// records the budget's counts where the evaluation ended whole, as
+/// [`record_whole`] gives. A fault records nothing.
+fn recorded(budget: &Budget<'_>, value: Outcome<RelationValue>) -> Outcome<RelationValue> {
+    if let Ok(whole) = &value {
+        record_whole(budget, [whole]);
+    }
+    value
+}
+
+/// Records the counts of `budget` in its session where its evaluation,
+/// which gave `values` and no fault, ended whole: where no value is a stop.
+/// A stop at the byte bound, the deadline or a cancellation leaves counts
+/// that depend on the machine, a stop at a cap is the fault of its solver,
+/// and a stop at a margin leaves the counts of an evaluation cut short.
+fn record_whole<'v>(budget: &Budget<'_>, values: impl IntoIterator<Item = &'v RelationValue>) {
+    if values.into_iter().all(|value| matches!(value, RelationValue::Rows(_) | RelationValue::Undefined)) {
+        budget.record();
+    }
 }
