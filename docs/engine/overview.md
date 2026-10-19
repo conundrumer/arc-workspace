@@ -43,7 +43,7 @@ The engine also meets these requirements:
 
 The engine reads synthesized programs, solvers, and tasks. A task is the train pairs and the test inputs that a program runs on.
 
-- A synthesized program is a token stream, as [Token stream](../../docs/arclog/arclog.md#token-stream) gives. It has one case, since it holds no alt, as [Alts](../../docs/arclog/arclog.md#alts) gives. It has no arcdata file.
+- A synthesized program is a token stream, as [Token stream](../../docs/arclog/arclog.md#token-stream) gives. It has one case, since it holds no alt, as [Alts](../../docs/arclog/arclog.md#alts) gives, and no `DEMONSTRATED` form. It may have an open parameter, as [Open parameters](synthesis.md#open-parameters) gives. It has no arcdata file.
 - A solver is read from its `.arclog` and `.arcdata` files, and never from a token stream. Each case of a solver is a program with one case, and that program has a token-stream form, as a synthesized program has.
 - A scene file is not an input, as [Scenes](#scenes) gives.
 
@@ -51,7 +51,7 @@ The engine reads synthesized programs, solvers, and tasks. A task is the train p
 
 Each step is checked against the corpus and the Souffle solvers, as [verification.md](verification.md) gives. The design decisions whose cost every candidate and every case pays are in [performance.md](performance.md). An implementation detail that a scope doc gives, such as a data structure, an algorithm or a hash, is provisional until the engine is written and a benchmark measures it. Each scope doc gives the check that ends its step.
 
-Synthesis is built as early as it can be. The steps before [Synthesis](synthesis.md) build what a synthesized program reads, which is a program with one case, no `DEMONSTRATED` form and no open parameter, as [Inputs](#inputs) gives. The rest of [Cases and judge](cases.md), and [Tooling](tooling.md), come after it.
+Synthesis is built as early as it can be. The steps before [Synthesis](synthesis.md) build what a synthesized program reads, which is a program with one case and no `DEMONSTRATED` form, as [Inputs](#inputs) gives. The rest of [Cases and judge](cases.md), and [Tooling](tooling.md), come after it.
 
 1. [Reader and checker](reader.md)
 2. [Evaluator and lib](evaluator.md)
