@@ -2,9 +2,10 @@
 //! derivation of a relation macro's modes both apply.
 
 use crate::hash::StableHashSet;
+use crate::program::path::{NodePath, NodeRef};
 use crate::program::{constraint_second, Atom, Body, Conjunct, Constraint, ConstraintOp, LabelId, LabelUse, Negated, Node, Operand, Site};
 use crate::registry::Mode;
-use crate::types::{each_conjunct, each_site_label, use_label, ValueType};
+use crate::types::{each_site_label, use_label, ValueType};
 
 /// The labels that `body` grounds where the labels of `grounded` are
 /// grounded, those of `grounded` included.
@@ -56,7 +57,27 @@ pub(crate) fn body_labels(body: &Body) -> StableHashSet<LabelId> {
 
 /// Visits each label use of `body`, at any depth, in source order.
 pub(crate) fn each_label_use(body: &Body, visit: &mut dyn FnMut(LabelUse)) {
-    each_conjunct(body, &mut |conjunct| site_label_uses(conjunct, visit));
+    each_label_use_at(NodeRef::Body(body), &NodePath::default(), &mut |_, use_| visit(use_));
+}
+
+/// Visits each label use of `node`, at `at`, at any depth, in source
+/// order, with its path: a use at a site at the path of its label, and a
+/// constraint's at the path of the constraint.
+pub(crate) fn each_label_use_at(node: NodeRef<'_>, at: &NodePath, visit: &mut dyn FnMut(&NodePath, LabelUse)) {
+    match node {
+        NodeRef::Label(use_) => visit(at, *use_),
+        NodeRef::Conjunct(Conjunct::Constraint(constraint)) => {
+            visit(at, constraint.first.into());
+            if let Some(second) = constraint_second(constraint) {
+                visit(at, second.into());
+            }
+        }
+        _ => {
+            for (child, index) in node.children().into_iter().zip(0u32..) {
+                each_label_use_at(child, &at.child(index), visit);
+            }
+        }
+    }
 }
 
 /// Visits each label use at the sites of `conjunct` itself, in the order
@@ -186,19 +207,31 @@ pub(crate) fn common_to_all(per_branch: impl IntoIterator<Item = StableHashSet<L
     branches.fold(first, |shared, branch| shared.into_iter().filter(|label| branch.contains(label)).collect())
 }
 
-/// The parts of a form, each a list of conjuncts: the branches of an `OR`,
-/// the test with the then and the else of an `IF`, and the two lists of an
-/// `ALL` together. A `NOT` of a form has that form's parts, and an atom and
-/// a constraint have none.
+/// The parts of a form, each a list of conjuncts: those [`parts_of`]
+/// gives, where a `NOT` of a form has that form's parts.
 fn parts(conjunct: &Conjunct) -> Vec<Vec<&Conjunct>> {
-    fn list<'c>(bodies: &[&'c Node<Body>]) -> Vec<&'c Conjunct> {
-        bodies.iter().flat_map(|body| body.value().conjuncts.iter()).collect()
-    }
     match conjunct {
-        Conjunct::Or(branches) => branches.iter().map(|branch| list(&[branch])).collect(),
-        Conjunct::If { test, then, otherwise } => vec![list(&[test, then]), list(&[otherwise])],
-        Conjunct::All { domain, body } => vec![list(&[domain, body])],
         Conjunct::Not(Negated::Form(form)) => parts(form),
+        _ => parts_of(conjunct, &NodePath::default()).into_iter().map(|part| part.into_iter().map(|(_, inner)| inner).collect()).collect(),
+    }
+}
+
+/// The conjuncts of `body`, at `at`, each with its path.
+pub(crate) fn list_of<'a>(body: &'a Body, at: &NodePath) -> Vec<(NodePath, &'a Conjunct)> {
+    body.conjuncts.iter().zip(0u32..).map(|(conjunct, index)| (at.child(index), conjunct)).collect()
+}
+
+/// The parts of `conjunct`, at `at`, each a list of conjuncts with their
+/// paths: the branches of an `OR`, the test with the then and the else of
+/// an `IF`, the two lists of an `ALL` together, and the inner form of a
+/// `NOT` as a list of its own. An atom and a constraint have none.
+pub(crate) fn parts_of<'a>(conjunct: &'a Conjunct, at: &NodePath) -> Vec<Vec<(NodePath, &'a Conjunct)>> {
+    let lists = |bodies: &[(&'a Node<Body>, u32)]| bodies.iter().flat_map(|(body, index)| list_of(body.value(), &at.child(*index))).collect();
+    match conjunct {
+        Conjunct::Or(branches) => branches.iter().zip(0u32..).map(|(branch, index)| lists(&[(branch, index)])).collect(),
+        Conjunct::If { test, then, otherwise } => vec![lists(&[(test, 0), (then, 1)]), lists(&[(otherwise, 2)])],
+        Conjunct::All { domain, body } => vec![lists(&[(domain, 0), (body, 1)])],
+        Conjunct::Not(Negated::Form(form)) => vec![vec![(at.child(0), &**form)]],
         Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)) | Conjunct::Constraint(_) => Vec::new(),
     }
 }

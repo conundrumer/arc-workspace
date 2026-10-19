@@ -1,16 +1,17 @@
 //! The grounding check, and the bodies of a form with their paths, which
 //! the check of the labels that `=` makes and that an `OR` or an `IF`
-//! exports reads too.
+//! exports and the type inference's scope of a form read too.
 
 use super::reads::forms_within;
 use super::types::result;
 use super::{Check, CheckId, CheckInput, CheckResult, LabelInScope, Prefix, PrefixResult, Refusal};
 use crate::eval::ir::atom_modes;
-use crate::grounding::{body_labels, conjunct_labels, grounded_labels};
+use crate::grounding::{body_labels, conjunct_labels, each_label_use_at, grounded_labels, list_of, parts_of};
 use crate::hash::StableHashSet;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{constraint_second, Body, Conjunct, Form, InstanceInput, KeyClause, LabelId, LabelUse, Negated, Node, RelationColumn};
+use crate::program::{Body, Conjunct, Form, InstanceInput, KeyClause, LabelId, LabelUse, Node, RelationColumn};
+use crate::resolver::columns;
 use crate::registry::Registry;
 use crate::types::{use_label, ValueType};
 
@@ -55,10 +56,8 @@ impl Check for GroundingCheck {
 pub(super) struct FormBody<'a> {
     /// The body's path relative to the top-level form.
     pub at: NodePath,
-    pub body: &'a Body,
-    /// The head of an instance input, at its path relative to the
-    /// top-level form.
-    pub head: Option<(&'a InstanceInput, NodePath)>,
+    pub body: &'a Node<Body>,
+    pub place: BodyPlace<'a>,
     /// The labels the body reads grounded from its context: the key's
     /// labels for a keyed input or an instance clause, and the row's and
     /// the candidate's for a `never` clause.
@@ -70,13 +69,33 @@ pub(super) struct FormBody<'a> {
     pub fields: Vec<LabelId>,
 }
 
+/// Where a body stands in the scope of its form.
+pub(super) enum BodyPlace<'a> {
+    /// In the form's own list, with the form's other bodies of this place.
+    List,
+    /// In a branch of its own, as a `never` clause.
+    Branch,
+    /// In a branch of its own, after the head of the instance input whose
+    /// body it is, at its path relative to the top-level form.
+    Input(&'a InstanceInput, NodePath),
+}
+
 impl FormBody<'_> {
+    /// The head of the instance input whose body this is, at its path
+    /// relative to the top-level form.
+    pub fn head(&self) -> Option<(&InstanceInput, &NodePath)> {
+        match &self.place {
+            BodyPlace::Input(input, at) => Some((input, at)),
+            BodyPlace::List | BodyPlace::Branch => None,
+        }
+    }
+
     /// The labels that stand outside the body in its context: those
     /// [`FormBody::given`], [`FormBody::columns`] and [`FormBody::fields`]
     /// hold, and the labels of the input's head.
     fn outside(&self) -> StableHashSet<LabelId> {
         let mut outside: StableHashSet<LabelId> = self.given.iter().chain(&self.columns).chain(&self.fields).copied().collect();
-        if let Some((input, at)) = &self.head {
+        if let Some((input, at)) = self.head() {
             each_head_use(input, at, &mut |_, use_| outside.extend(use_label(use_)));
         }
         outside
@@ -88,44 +107,53 @@ impl FormBody<'_> {
 pub(super) fn form_bodies(form: &Form) -> Vec<FormBody<'_>> {
     let mut out = Vec::new();
     for (at, node) in forms_within(form) {
-        let first = out.len();
-        match node {
-            NodeRef::Clause(clause) => out.push(plain(&clause.body, at.child(0), &[], labels(&clause.columns))),
-            NodeRef::Instance(instance) => keyed_bodies(instance.key.as_ref(), &instance.inputs, &at, &mut out),
-            NodeRef::Demonstrated(demonstrated) => keyed_bodies(demonstrated.key.as_ref(), &demonstrated.inputs, &at, &mut out),
-            NodeRef::Choose(choose) => {
-                let rows = choose.rows.as_ref().map(|rows| labels(&rows.columns)).unwrap_or_default();
-                let candidate = labels(&choose.candidate_columns);
-                let mut index = 0u32;
-                if let Some(key) = &choose.rows {
-                    out.push(plain(&key.body, at.child(index), &[], rows.clone()));
-                    index += 1;
-                }
-                let from_given = if choose.from_inside_for { rows.clone() } else { Vec::new() };
-                out.push(plain(&choose.from, at.child(index), &from_given, candidate.clone()));
-                let never_given: Vec<LabelId> = rows.iter().chain(&candidate).copied().collect();
-                for (never, offset) in choose.never.iter().zip(index + 1..) {
-                    out.push(plain(never, at.child(offset), &never_given, Vec::new()));
-                }
+        let fields = match at.0.split_last() {
+            Some((_, parent)) => match node_at(NodeRef::from(form), &NodePath(parent.into())) {
+                Some(NodeRef::DemoRule(rule)) => labels(&rule.fields),
+                _ => Vec::new(),
+            },
+            None => Vec::new(),
+        };
+        out.extend(bodies(node).into_iter().map(|body| FormBody { at: at.join(&body.at), place: match body.place {
+                BodyPlace::Input(input, head) => BodyPlace::Input(input, at.join(&head)),
+                place => place,
+            },
+            fields: fields.clone(), ..body }));
+    }
+    out
+}
+
+/// The bodies of the form `form`, in the order of their paths, each at its
+/// path relative to `form`. The key clause and its labels are those
+/// [`columns::key_clause`] gives, and the columns of a clause's body and of
+/// a `CHOOSE` form's `from` those [`columns::form_columns`] gives after the
+/// key's.
+pub(super) fn bodies(form: NodeRef<'_>) -> Vec<FormBody<'_>> {
+    let at = NodePath::default();
+    let key = columns::key_clause(form);
+    let key_labels = key.as_ref().map(|(key, _)| labels(&key.columns)).unwrap_or_default();
+    let own_columns = || columns::form_columns(form).skip(key_labels.len()).map(|column| column.label).collect::<Vec<_>>();
+    let mut out: Vec<FormBody<'_>> = key.iter().map(|(key, body)| plain(&key.body, body.clone(), &[], key_labels.clone())).collect();
+    let after_key = u32::from(key.is_some());
+    match form {
+        NodeRef::Clause(clause) => out.push(plain(&clause.body, at.child(0), &[], own_columns())),
+        NodeRef::Instance(instance) => keyed_inputs(instance.key.as_ref(), &instance.inputs, &key_labels, &mut out),
+        NodeRef::Demonstrated(demonstrated) => keyed_inputs(demonstrated.key.as_ref(), &demonstrated.inputs, &key_labels, &mut out),
+        NodeRef::Choose(choose) => {
+            let candidate = own_columns();
+            let from_given = if choose.from_inside_for { key_labels.clone() } else { Vec::new() };
+            out.push(plain(&choose.from, at.child(after_key), &from_given, candidate.clone()));
+            let never_given: Vec<LabelId> = key_labels.iter().chain(&candidate).copied().collect();
+            for (never, offset) in choose.never.iter().zip(after_key + 1..) {
+                out.push(FormBody { place: BodyPlace::Branch, ..plain(never, at.child(offset), &never_given, Vec::new()) });
             }
-            NodeRef::RigidDet(rigid) => {
-                let key = rigid.key.as_ref().map(|key| labels(&key.columns)).unwrap_or_default();
-                let mut index = 0u32;
-                if let Some(clause) = &rigid.key {
-                    out.push(plain(&clause.body, at.child(index), &[], key.clone()));
-                    index += 1;
-                }
-                if let Some(clause) = &rigid.instance {
-                    out.push(plain(&clause.body, at.child(index), &key, labels(&clause.columns)));
-                }
-            }
-            _ => {}
         }
-        if let Some((_, parent)) = at.0.split_last() {
-            if let Some(NodeRef::DemoRule(rule)) = node_at(NodeRef::from(form), &NodePath(parent.into())) {
-                out[first..].iter_mut().for_each(|body| body.fields = labels(&rule.fields));
+        NodeRef::RigidDet(rigid) => {
+            if let Some(clause) = &rigid.instance {
+                out.push(plain(&clause.body, at.child(after_key), &key_labels, labels(&clause.columns)));
             }
         }
+        _ => {}
     }
     out
 }
@@ -135,34 +163,29 @@ fn labels(columns: &[RelationColumn]) -> Vec<LabelId> {
 }
 
 fn plain<'a>(body: &'a Node<Body>, at: NodePath, given: &[LabelId], columns: Vec<LabelId>) -> FormBody<'a> {
-    FormBody { at, body: body.value(), head: None, given: given.to_vec(), columns, fields: Vec::new() }
+    FormBody { at, body, place: BodyPlace::List, given: given.to_vec(), columns, fields: Vec::new() }
 }
 
-/// The bodies of an `INIT` or a `DEMONSTRATED` form at `at`: its key
-/// body, each keyed input, with the key's labels given, and each other
-/// input.
-fn keyed_bodies<'a>(key: Option<&'a Node<KeyClause>>, inputs: &'a [Node<InstanceInput>], at: &NodePath, out: &mut Vec<FormBody<'a>>) {
-    let input = |input: &'a InstanceInput, input_at: NodePath, given: &[LabelId]| FormBody {
-        at: input_at.child(input.head.len() as u32),
-        body: input.body.value(),
-        head: Some((input, input_at)),
+/// Pushes onto `out` the inputs of an `INIT` or a `DEMONSTRATED` form: each
+/// keyed input, with `key_labels`, the labels of the key, given, and each
+/// other input.
+fn keyed_inputs<'a>(key: Option<&'a Node<KeyClause>>, inputs: &'a [Node<InstanceInput>], key_labels: &[LabelId], out: &mut Vec<FormBody<'a>>) {
+    let input = |input: &'a Node<InstanceInput>, input_at: NodePath, given: &[LabelId]| FormBody {
+        at: input_at.child(input.value().head.len() as u32),
+        body: &input.value().body,
+        place: BodyPlace::Input(input.value(), input_at),
         given: given.to_vec(),
         columns: Vec::new(),
         fields: Vec::new(),
     };
-    let mut index = 0u32;
+    let at = NodePath::default();
     if let Some(key) = key {
-        let key = key.value();
-        let key_at = at.child(0);
-        let key_labels = labels(&key.key.columns);
-        out.push(plain(&key.key.body, key_at.child(0), &[], key_labels.clone()));
-        for (keyed, offset) in key.inputs.iter().zip(1u32..) {
-            out.push(input(keyed.value(), key_at.child(offset), &key_labels));
+        for (keyed, offset) in key.value().inputs.iter().zip(1u32..) {
+            out.push(input(keyed, at.child(0).child(offset), key_labels));
         }
-        index = 1;
     }
-    for (other, offset) in inputs.iter().zip(index..) {
-        out.push(input(other.value(), at.child(offset), &[]));
+    for (other, offset) in inputs.iter().zip(u32::from(key.is_some())..) {
+        out.push(input(other, at.child(offset), &[]));
     }
 }
 
@@ -174,50 +197,10 @@ fn label_scope<'l>(labels: &'l [LabelInScope], at: &NodePath) -> Vec<&'l LabelIn
     labels.iter().filter(holds).filter(|entry| entry.scope.0.len() == depth).collect()
 }
 
-/// Visits each label use of `node`, at `at`, at any depth, in source
-/// order, with its path: a use at a site at the path of its label, and a
-/// constraint's at the path of the constraint.
-pub(super) fn each_use(node: NodeRef<'_>, at: &NodePath, visit: &mut dyn FnMut(&NodePath, LabelUse)) {
-    match node {
-        NodeRef::Label(use_) => visit(at, *use_),
-        NodeRef::Conjunct(Conjunct::Constraint(constraint)) => {
-            visit(at, constraint.first.into());
-            if let Some(second) = constraint_second(constraint) {
-                visit(at, second.into());
-            }
-        }
-        _ => {
-            for (child, index) in node.children().into_iter().zip(0u32..) {
-                each_use(child, &at.child(index), visit);
-            }
-        }
-    }
-}
-
 /// Visits each label use at the head sites of `input`, at `at`.
 pub(super) fn each_head_use(input: &InstanceInput, at: &NodePath, visit: &mut dyn FnMut(&NodePath, LabelUse)) {
     for (site, index) in input.head.iter().zip(0u32..) {
-        each_use(NodeRef::Site(site), &at.child(index), visit);
-    }
-}
-
-/// The conjuncts of `body`, at `at`, each with its path.
-pub(super) fn list_of<'a>(body: &'a Body, at: &NodePath) -> Vec<(NodePath, &'a Conjunct)> {
-    body.conjuncts.iter().zip(0u32..).map(|(conjunct, index)| (at.child(index), conjunct)).collect()
-}
-
-/// The parts of `conjunct`, at `at`, each a list of conjuncts with their
-/// paths: the branches of an `OR`, the test with the then and the else of
-/// an `IF`, the two lists of an `ALL` together, and the inner form of a
-/// `NOT` as a list of its own.
-pub(super) fn parts_of<'a>(conjunct: &'a Conjunct, at: &NodePath) -> Vec<Vec<(NodePath, &'a Conjunct)>> {
-    let lists = |bodies: &[(&'a Node<Body>, u32)]| bodies.iter().flat_map(|(body, index)| list_of(body.value(), &at.child(*index))).collect();
-    match conjunct {
-        Conjunct::Or(branches) => branches.iter().zip(0u32..).map(|(branch, index)| lists(&[(branch, index)])).collect(),
-        Conjunct::If { test, then, otherwise } => vec![lists(&[(test, 0), (then, 1)]), lists(&[(otherwise, 2)])],
-        Conjunct::All { domain, body } => vec![lists(&[(domain, 0), (body, 1)])],
-        Conjunct::Not(Negated::Form(form)) => vec![vec![(at.child(0), &**form)]],
-        Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)) | Conjunct::Constraint(_) => Vec::new(),
+        each_label_use_at(NodeRef::Site(site), &at.child(index), visit);
     }
 }
 
@@ -240,18 +223,18 @@ impl Walk<'_> {
         let given: StableHashSet<LabelId> = form_body.given.iter().copied().collect();
         let outside = form_body.outside();
         let mut found = Vec::new();
-        self.ordered(&list_of(form_body.body, &form_body.at), &given, &outside, &mut found);
-        let grounded = grounded_labels(form_body.body, &given, &outside, &|atom| atom_modes(self.registry, atom), self.types);
+        self.ordered(&list_of(form_body.body.value(), &form_body.at), &given, &outside, &mut found);
+        let grounded = grounded_labels(form_body.body.value(), &given, &outside, &|atom| atom_modes(self.registry, atom), self.types);
         let mut ungrounded = |at: &NodePath, use_: LabelUse| {
             if let Some(label) = use_label(use_).filter(|label| !grounded.contains(label)) {
                 found.push((label, "the body leaves the label ungrounded", at.clone()));
             }
         };
-        each_use(NodeRef::Body(form_body.body), &form_body.at, &mut ungrounded);
-        if let Some((input, at)) = &form_body.head {
+        each_label_use_at(NodeRef::Body(form_body.body.value()), &form_body.at, &mut ungrounded);
+        if let Some((input, at)) = form_body.head() {
             each_head_use(input, at, &mut ungrounded);
         }
-        let held = body_labels(form_body.body);
+        let held = body_labels(form_body.body.value());
         for &label in form_body.columns.iter().filter(|label| !grounded.contains(label) && !held.contains(label)) {
             found.push((label, "the body leaves the label of a column ungrounded", form_body.at.clone()));
         }
@@ -282,14 +265,14 @@ impl Walk<'_> {
                     let mut after_outside = outside.clone();
                     after_outside.extend(list_labels(list[i + 1..].iter().map(|(_, conjunct)| *conjunct)));
                     let after = self.ground(&list[..=i], given, &after_outside);
-                    each_use(NodeRef::Conjunct(conjunct), at, &mut |path, use_| {
+                    each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |path, use_| {
                         if let Some(label) = use_label(use_).filter(|label| !after.contains(label)) {
                             found.push((label, "no mode of the atom's relation has its columns grounded by the conjuncts written before it", path.clone()));
                         }
                     });
                 }
                 Conjunct::Not(_) | Conjunct::All { .. } => {
-                    each_use(NodeRef::Conjunct(conjunct), at, &mut |path, use_| {
+                    each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |path, use_| {
                         if let Some(label) = use_label(use_).filter(|label| around.contains(label) && !before.contains(label)) {
                             found.push((label, "the `NOT` or the `ALL` stands before the conjuncts that ground the label", path.clone()));
                         }

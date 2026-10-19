@@ -1,6 +1,7 @@
 //! The check of the labels that `=` makes and that an `OR` or an `IF` exports.
 
-use super::grounding::{each_head_use, each_use, form_bodies, list_of, parts_of, FormBody};
+use super::grounding::{each_head_use, form_bodies, FormBody};
+use crate::grounding::{each_label_use_at, list_of, parts_of};
 use super::types::result;
 use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
 use crate::hash::StableHashSet;
@@ -56,17 +57,17 @@ fn kept(body: &Body) -> Vec<LabelId> {
 
 /// Pushes onto `refused` each refusal of `form_body`.
 fn refusals(form_body: &FormBody<'_>, refused: &mut Vec<(&'static str, NodePath)>) {
-    let top = kept(form_body.body);
+    let top = kept(form_body.body.value());
     let visible: StableHashSet<LabelId> = form_body.given.iter().chain(&form_body.columns).chain(&form_body.fields).chain(&top).copied().collect();
-    list(&list_of(form_body.body, &form_body.at), &visible, refused);
-    each_use(NodeRef::Body(form_body.body), &form_body.at, &mut |at, use_| {
+    list(&list_of(form_body.body.value(), &form_body.at), &visible, refused);
+    each_label_use_at(NodeRef::Body(form_body.body.value()), &form_body.at, &mut |at, use_| {
         if let LabelUse::Key(label) = use_ {
             if !top.contains(&label) {
                 refused.push(("the key label is local to a form of the key body, so no atom at the key body's top level binds it", at.clone()));
             }
         }
     });
-    if let Some((input, at)) = &form_body.head {
+    if let Some((input, at)) = form_body.head() {
         each_head_use(input, at, &mut |at, use_| {
             if let LabelUse::Join(label) = use_ {
                 read(&visible, label, at, refused);
@@ -81,12 +82,12 @@ fn refusals(form_body: &FormBody<'_>, refused: &mut Vec<(&'static str, NodePath)
 fn list(list: &[(NodePath, &Conjunct)], visible: &StableHashSet<LabelId>, refused: &mut Vec<(&'static str, NodePath)>) {
     for (at, conjunct) in list {
         match conjunct {
-            Conjunct::Atom(_) | Conjunct::Constraint(_) => each_use(NodeRef::Conjunct(conjunct), at, &mut |at, use_| {
+            Conjunct::Atom(_) | Conjunct::Constraint(_) => each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |at, use_| {
                 if let LabelUse::Join(label) = use_ {
                     read(visible, label, at, refused);
                 }
             }),
-            Conjunct::Not(Negated::Atom(_)) => each_use(NodeRef::Conjunct(conjunct), at, &mut |at, use_| match use_ {
+            Conjunct::Not(Negated::Atom(_)) => each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |at, use_| match use_ {
                 LabelUse::Fresh(_) | LabelUse::Key(_) => refused.push(("a site of a `NOT` atom makes the label, where every site of the atom joins", at.clone())),
                 LabelUse::Join(label) => read(visible, label, at, refused),
                 LabelUse::Zero => {}

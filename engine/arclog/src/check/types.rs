@@ -6,12 +6,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use super::grounding::{bodies, BodyPlace};
 use super::{Check, CheckId, CheckInput, CheckResult, ClauseEntry, FileScope, Prefix, PrefixResult, Refusal, SolverClauses};
 use crate::hash::StableHashMap;
 use crate::program::canonical::{canonical_labeling, form_scope, shares_rule_scope, AsWritten, CanonicalOrder, LabelScope, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
-    Atom, Body, ColumnName, Conjunct, DemoRule, Constraint, ConstraintOp, Form, Instance, InstanceInput, LabelId, NameScope,
+    Atom, Body, ColumnName, Conjunct, DemoRule, Constraint, ConstraintOp, Form, Instance, LabelId, NameScope,
     Node, Operand, OutputOwner, OutputStep, PortName, ProgramRelation, RelationColumn, RelationRef, Site, SiteArg,
 };
 use crate::program::written_inputs;
@@ -549,59 +550,29 @@ impl<'a> ScopeBody<'a> {
     fn of(form: &'a Form, registry: &'a Registry) -> Self {
         let mut conjuncts: Vec<Conjunct> = Vec::new();
         let mut heads: Vec<LabelId> = Vec::new();
-        let list = |body: &Node<Body>, conjuncts: &mut Vec<Conjunct>| conjuncts.extend(body.value().conjuncts.iter().cloned());
-        let columns = |columns: &[RelationColumn], heads: &mut Vec<LabelId>| heads.extend(columns.iter().map(|column| column.label));
-        let inputs = |inputs: &mut dyn Iterator<Item = &InstanceInput>, conjuncts: &mut Vec<Conjunct>| {
-            for input in inputs {
-                let head = Atom { relation: RelationRef::DefinedPort(input.name.clone()), sites: input.head.clone() };
-                let branch = std::iter::once(Conjunct::Atom(Node::new(head))).chain(input.body.value().conjuncts.iter().cloned());
-                conjuncts.push(Conjunct::Or(Arc::from([Node::new(Body { conjuncts: branch.collect() })])));
+        for form_body in bodies(NodeRef::from(form)) {
+            match form_body.place {
+                BodyPlace::Input(input, _) => {
+                    let head = Atom { relation: RelationRef::DefinedPort(input.name.clone()), sites: input.head.clone() };
+                    let branch = std::iter::once(Conjunct::Atom(Node::new(head))).chain(input.body.value().conjuncts.iter().cloned());
+                    conjuncts.push(Conjunct::Or(Arc::from([Node::new(Body { conjuncts: branch.collect() })])));
+                }
+                BodyPlace::Branch => conjuncts.push(Conjunct::Or(Arc::from([form_body.body.clone()]))),
+                BodyPlace::List => {
+                    conjuncts.extend(form_body.body.value().conjuncts.iter().cloned());
+                    heads.extend(form_body.columns);
+                }
             }
-        };
+        }
         let (mut found_component, mut found_instance) = (None, None);
         match form {
-            Form::Clause(clause) => {
-                let clause = clause.value();
-                list(&clause.body, &mut conjuncts);
-                columns(&clause.columns, &mut heads);
-            }
             Form::Instance(instance) => {
                 let instance = instance.value();
-                if let Some(key) = &instance.key {
-                    list(&key.value().key.body, &mut conjuncts);
-                    columns(&key.value().key.columns, &mut heads);
-                }
-                inputs(&mut written_inputs(instance.key.as_ref(), &instance.inputs), &mut conjuncts);
                 found_component = component(registry, &instance.component);
                 found_instance = Some(instance);
             }
-            Form::Choose(choose) => {
-                let choose = choose.value();
-                if let Some(rows) = &choose.rows {
-                    list(&rows.body, &mut conjuncts);
-                    columns(&rows.columns, &mut heads);
-                }
-                list(&choose.from, &mut conjuncts);
-                columns(&choose.candidate_columns, &mut heads);
-                conjuncts.extend(choose.never.iter().map(|never| Conjunct::Or(Arc::from([never.clone()]))));
-            }
-            Form::RigidDet(rigid) => {
-                let rigid = rigid.value();
-                for clause in rigid.key.iter().chain(rigid.instance.iter()) {
-                    list(&clause.body, &mut conjuncts);
-                    columns(&clause.columns, &mut heads);
-                }
-                conjuncts.extend(rigid.parts.iter().map(|part| Conjunct::Atom(part.clone())));
-            }
-            Form::Demonstrated(demonstrated) => {
-                let demonstrated = demonstrated.value();
-                if let Some(key) = &demonstrated.key {
-                    list(&key.value().key.body, &mut conjuncts);
-                    columns(&key.value().key.columns, &mut heads);
-                }
-                inputs(&mut written_inputs(demonstrated.key.as_ref(), &demonstrated.inputs), &mut conjuncts);
-            }
-            Form::Claim(_) | Form::Alts(_) => {}
+            Form::RigidDet(rigid) => conjuncts.extend(rigid.value().parts.iter().map(|part| Conjunct::Atom(part.clone()))),
+            Form::Clause(_) | Form::Choose(_) | Form::Demonstrated(_) | Form::Claim(_) | Form::Alts(_) => {}
         }
         ScopeBody { body: Body { conjuncts: conjuncts.into() }, heads, component: found_component, instance: found_instance }
     }
