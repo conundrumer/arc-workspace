@@ -27,12 +27,31 @@ pub(super) fn combined(kind: u8, parts: impl IntoIterator<Item = Arc<[u8]>>, tai
     parts.sort();
     let mut out = CanonicalWriter::default();
     out.write(&[kind]);
+    write_parts(&mut out, &parts);
+    out.write(tail);
+    out.finish()
+}
+
+/// Writes the count of `parts`, then each part after its length.
+fn write_parts(out: &mut CanonicalWriter, parts: &[Arc<[u8]>]) {
     out.len(parts.len());
-    for part in &parts {
+    for part in parts {
         out.len(part.len());
         out.write(part);
     }
-    out.write(tail);
+}
+
+/// The form `form` followed by the names of `columns` in their order,
+/// each part written as [`write_parts`] writes it.
+fn with_columns(form: &CanonicalForm, columns: &Columns) -> CanonicalForm {
+    let names = columns.names().map(|name| {
+        let mut out = CanonicalWriter::default();
+        out.name(name);
+        out.finish().bytes
+    });
+    let parts: Vec<Arc<[u8]>> = std::iter::once(form.bytes.clone()).chain(names).collect();
+    let mut out = CanonicalWriter::default();
+    write_parts(&mut out, &parts);
     out.finish()
 }
 
@@ -117,6 +136,10 @@ pub(super) struct Names {
     /// The content of each form that resolves in the concept program,
     /// as [`super::ConceptReads`] gives, by its path.
     pub(super) fixed: StableHashMap<NodePath, CanonicalForm>,
+    /// The columns that the relation of each clause keeps, by the
+    /// clause's path, where its node keeps fewer columns than the clause
+    /// gives, as [`super::build`] gives them from the reads of the node.
+    pub(super) kept: StableHashMap<NodePath, Columns>,
 }
 
 impl Names {
@@ -139,16 +162,14 @@ impl Names {
         }
     }
 
-    /// The resolved content of the node at `path` of `program`.
+    /// The resolved content of the node at `path` of `program`, that of a
+    /// form as [`Names::form_content`] gives it.
     pub(super) fn content(&self, program: &Node<Program>, path: &NodePath) -> Option<CanonicalForm> {
         if path.0.is_empty() {
             let forms: Option<Vec<Arc<[u8]>>> = (0..program.value().forms.len())
                 .map(|index| self.content(program, &NodePath::top(index as u32)).map(|form| form.bytes))
                 .collect();
             return Some(combined(0, forms?, &[]));
-        }
-        if let Some(form) = self.fixed.get(path) {
-            return Some(form.clone());
         }
         let mut node = NodeRef::Program(program.value());
         let mut scope = NameScope::Program;
@@ -163,7 +184,22 @@ impl Names {
             own = Own::of(node).or(own);
         }
         let writer = Writer { names: self, scope: &scope, own: own.as_ref() };
-        written_at(program.value(), node, path, atom, &writer)
+        self.form_content(program.value(), node, path, atom, &writer)
+    }
+
+    /// The resolved content of `node`, at `path` of `program`, through
+    /// `writer`: its form in [`Names::fixed`], or else its form as
+    /// [`written_at`] gives it, followed by the columns that
+    /// [`Names::kept`] gives at `path`, where it gives them.
+    pub(super) fn form_content(&self, program: &Program, node: NodeRef<'_>, path: &NodePath, atom: Option<&crate::program::Atom>, writer: &Writer<'_>) -> Option<CanonicalForm> {
+        let form = match self.fixed.get(path) {
+            Some(form) => form.clone(),
+            None => written_at(program, node, path, atom, writer)?,
+        };
+        Some(match self.kept.get(path) {
+            Some(columns) => with_columns(&form, columns),
+            None => form,
+        })
     }
 }
 
