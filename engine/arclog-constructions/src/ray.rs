@@ -40,13 +40,13 @@ impl Construction for Ray {
                 let mut p = origin;
                 let mut k = 0;
                 loop {
-                    ray.insert(Box::new([p, d, Term::encode_number(i32::try_from(k).expect("a count within a number")), origin]));
+                    ray.insert(Box::new([p, d, Term::encode_count(k), origin]));
                     match step(context.registry, node, p, offset) {
                         Some(q) => (p, k) = (q, k + 1),
                         None => break,
                     }
                 }
-                end.insert(Box::new([p, d, Term::encode_number(i32::try_from(k).expect("a count within a number")), origin]));
+                end.insert(Box::new([p, d, Term::encode_count(k), origin]));
                 context.budget.charge_work(k as u64 + 1)?;
             }
         }

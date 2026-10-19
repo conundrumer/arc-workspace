@@ -156,8 +156,8 @@ impl Construction for Order {
                 .try_into()
                 .expect("six outputs");
         for &(t, r, d) in &ranking.ranks {
-            rank.insert(t.iter().copied().chain([Term::encode_number(i32::try_from(r).expect("a count of rows within an i32"))]).collect());
-            dual_rank.insert(t.iter().copied().chain([Term::encode_number(i32::try_from(d).expect("a count of rows within an i32"))]).collect());
+            rank.insert(t.iter().copied().chain([Term::encode_count(r)]).collect());
+            dual_rank.insert(t.iter().copied().chain([Term::encode_count(d)]).collect());
         }
         for &t in &ranking.minimal {
             minimal.insert(t.into());
@@ -227,7 +227,7 @@ impl Construction for Cardinality {
         let [member, domain] = group.inputs else { panic!("Cardinality's two inputs") };
         let mut outputs = empty_outputs(&[1]);
         if !member.is_empty() || !domain.is_empty() {
-            outputs[0].insert([Term::encode_number(i32::try_from(member.len()).expect("a count of rows within an i32"))].into());
+            outputs[0].insert([Term::encode_count(member.len())].into());
         }
         charged(outputs, input_rows(group), context)
     }
@@ -250,7 +250,7 @@ impl Construction for Excess {
         let [plus, minus] = group.inputs else { panic!("Excess's two inputs") };
         let mut outputs = empty_outputs(&[1]);
         if plus.len() > minus.len() {
-            outputs[0].insert([Term::encode_number(i32::try_from(plus.len() - minus.len()).expect("a count of rows within an i32"))].into());
+            outputs[0].insert([Term::encode_count(plus.len() - minus.len())].into());
         }
         charged(outputs, input_rows(group), context)
     }

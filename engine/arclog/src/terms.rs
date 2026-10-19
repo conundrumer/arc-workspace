@@ -219,8 +219,9 @@ pub enum Term {
 
 /// `Term::encode` and `Term::decode` are the public way between a term and
 /// its id, which a construction of `arclog-constructions` takes, and
-/// `Term::decode_number`, `Term::decode_box` and `Term::encode_number` are the
-/// way for a `number` column, a Box column and a number.
+/// `Term::decode_number`, `Term::decode_box`, `Term::encode_number` and
+/// `Term::encode_count` are the way for a `number` column, a Box column, a
+/// number and a count.
 impl Term {
     /// The term id of the term.
     ///
@@ -281,6 +282,14 @@ impl Term {
     /// The term id of the number `n`.
     pub fn encode_number(n: i32) -> TermId {
         TermId(n as u32)
+    }
+
+    /// The term id of the count `n`.
+    ///
+    /// Panics where `n` exceeds an `i32`.
+    pub fn encode_count(n: usize) -> TermId {
+        let n = i32::try_from(n).expect("a count within an i32");
+        Term::encode_number(n)
     }
 }
 
