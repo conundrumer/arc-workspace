@@ -9,20 +9,22 @@
 .type Choice =
     // The solid one-color rectangle that holds the most cells.
     Rect {}
-    // Every cell drawn thick: a cell of a one-color 2x2 square.
+    // Every cell drawn thick: a cell of a one-color square of side
+    // params.square_side.
   | Thick {}
 
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
+    .init helpers = ParamsHelpers
+
     .decl bg(c: Color) bg(0).
 
     // --- $Thick ---
-    // The 2x2 square a thick cell lies in.
+    // The side of the square a thick cell lies in.
+    .decl square_side(k: number) square_side(2).
     .decl square(p: Position)
-    GRID_MASK_2x2(square,
-        1, 1,
-        1, 1)
+    square(P) :- square_side(K), helpers.frame_pos([K, K], P).
 }
 
 .init params = Params
@@ -65,7 +67,7 @@ keep(P, Col, $Rect()) :- biggest.mode($U(), B), rect_cell(B, Col, P).
 
 // --- $Thick ---
 
-// The 2x2 squares of each color.
+// The squares of each color.
 .init block = Occurrences<Color, Unit>
 block.cell(Col, P, $U()) :- ink(P, Col).
 block.shape(Col, S, $U()) :- ink(_, Col), params.square(S).

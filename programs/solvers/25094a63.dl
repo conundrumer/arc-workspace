@@ -2,65 +2,32 @@
 // @draft
 // @keywords: stamp noise
 // input: solid monochrome rectangles in a noise field.
-// output: Wherever a footprint lands on cells that all share one color,
-//  those cells turn params.paint; the rest passes through. Overlapping
-//  seats cover a bigger rectangle whole, so a rectangle recolors exactly
-//  when it reaches the footprint's size on both axes.
+// output: Wherever a square footprint of side params.side lands on cells
+//  that all share one color, those cells turn params.paint; the rest passes
+//  through. Overlapping seats cover a bigger rectangle whole, so a rectangle
+//  recolors exactly when it reaches the footprint's size on both axes.
 
-// what the footprint is
-.type Choice =
-    // the footprint is a stored mask
-    Shape {}
-    // the footprint is a square of stored side, so the task marks the
-    // rectangles that are big enough
-  | Side {}
-
-.decl out(p: Position, col: Color, ch: Choice)
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl paint(col: Color) paint(4).
-
-    // --- $Shape ---
-    .decl shape(p: Position)
-    GRID_MASK_4x4(shape,
-        1, 1, 1, 1,
-        1, 1, 1, 1,
-        1, 1, 1, 1,
-        1, 1, 1, 1)
-
-    // --- $Side ---
     .decl side(k: number) side(4).
 }
 
 .init params = Params
 
-.decl impl_choice(ch: Choice)
-impl_choice($Shape()). impl_choice($Side()).
-
-// The footprint each model stamps.
-.decl footprint(ch: Choice, s: Position)
-
-// --- $Shape ---
-footprint($Shape(), S) :- params.shape(S).
-
-// --- $Side ---
+// The footprint.
 .init square = Frame2D<Unit>
 square.extent($U(), A, K) :- params.side(K), axis_elem(A).
 
-footprint($Side(), S) :- square.cell($U(), S).
-
-// --- shared ---
-
-// One key per case and color: a seated footprint is monochrome.
-.type Field = [ch: Choice, col: Color]
-
-.init occ = Occurrences<Field, Unit>
-occ.cell([Ch, Col], P, $U())  :- impl_choice(Ch), in(P, Col).
-occ.shape([Ch, Col], S, $U()) :- footprint(Ch, S), in(_, Col).
+// One key per color: a seated footprint is monochrome.
+.init occ = Occurrences<Color, Unit>
+occ.cell(Col, P, $U())  :- in(P, Col).
+occ.shape(Col, S, $U()) :- square.cell($U(), S), in(_, Col).
 
 // A seated footprint recolors every cell it covers.
-.decl covered(ch: Choice, p: Position)
-covered(Ch, P) :- occ.occurrence([Ch, _], M), footprint(Ch, S), compose(M, S, P).
+.decl covered(p: Position)
+covered(P) :- occ.occurrence(_, M), square.cell($U(), S), compose(M, S, P).
 
-out(P, Col, Ch) :- covered(Ch, P), params.paint(Col).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !covered(Ch, P).
+out(P, Col) :- covered(P), params.paint(Col).
+out(P, Col) :- in(P, Col), !covered(P).

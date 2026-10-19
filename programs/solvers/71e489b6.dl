@@ -3,22 +3,23 @@
 // @keywords: objects stamp noise enclose
 // input: solid figure and ground regions, with stray cells on each
 // output: A figure cell that the figure does not continue through is noise,
-//  and joins the ground. An input ground cell in no 2x2 block of ground is a
-//  hole, unless its thin cluster is a passage that joins the solid ground at
-//  two places. A hole keeps its color, and its eight neighbors take
-//  params.halo.
+//  and joins the ground. An input ground cell in no square block of ground
+//  of side params.square_side is a hole, unless its thin cluster is a
+//  passage that joins the solid ground at two places. A hole keeps its
+//  color, and its eight neighbors take params.halo.
 
 .decl out(p: Position, col: Color)
 
 .comp Params {
+    .init helpers = ParamsHelpers
+
     .decl ground(c: Color) ground(0).
     .decl halo(c: Color) halo(7).
 
-    // The 2x2 square a solid cell lies in.
+    // The side of the square a solid cell lies in.
+    .decl square_side(k: number) square_side(2).
     .decl square(p: Position)
-    GRID_MASK_2x2(square,
-        1, 1,
-        1, 1)
+    square(P) :- square_side(K), helpers.frame_pos([K, K], P).
 }
 
 .init params = Params
@@ -41,12 +42,12 @@ continued(P) :- figure_nbr(P, D1), figure_nbr(P, D2), D1 != D2.
 .decl ground(p: Position)
 ground(P) :- in(P, _), !continued(P).
 
-// The 2x2 blocks of ground.
+// The square blocks of ground.
 .init block = Occurrences<Unit, Unit>
 block.cell($U(), P, $U()) :- ground(P).
 block.shape($U(), S, $U()) :- params.square(S).
 
-// Ground in a 2x2 block of ground.
+// Ground in a square block of ground.
 .decl solid(p: Position)
 solid(P) :- block.occurrence($U(), M), params.square(S), compose(M, S, P).
 

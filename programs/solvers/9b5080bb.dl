@@ -15,8 +15,8 @@
 .type Choice =
     // @claim figure
     Majority {}
-    // @scene figure: a figure's body is its cells that lie in a 2×2 block of
-    //  the figure; the rectangle is the body's box, and the figure has
+    // @scene figure: a figure's body is its cells that lie in a square block
+    //  of the figure of side params.square_side; the rectangle is the body's box, and the figure has
     //  single-cell defects on its sides: a bump, a figure cell just outside
     //  a side, or a dent, a side cell the figure lacks
     // @witness narrow-dent: ordinary concept
@@ -33,12 +33,13 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
+    .init helpers = ParamsHelpers
+
     // --- $Body ---
-    // The 2×2 square a body cell lies in.
+    // The side of the square a body cell lies in.
+    .decl square_side(k: number) square_side(2).
     .decl square(p: Position)
-    GRID_MASK_2x2(square,
-        1, 1,
-        1, 1)
+    square(P) :- square_side(K), helpers.frame_pos([K, K], P).
 }
 
 .init params = Params
@@ -98,13 +99,13 @@ rect(Id, B, $Majority()) :- majority_rect.box(Id, B).
 
 // --- $Body ---
 
-// The 2×2 blocks of each figure.
+// The square blocks of each figure.
 // @claim figure
 .init block = Occurrences<Ident, Unit>
 block.cell(Id, P, $U()) :- figure(Id, P).
 block.shape(Id, S, $U()) :- figure(Id, _), params.square(S).
 
-// A figure cell in a 2×2 block of the figure.
+// A figure cell in a square block of the figure.
 .decl body(id: Ident, p: Position)
 body(Id, P) :- block.occurrence(Id, M), params.square(S), compose(M, S, P).
 
