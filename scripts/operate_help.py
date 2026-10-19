@@ -185,14 +185,14 @@ PARTS = {
         - While the pace of an `Op pace:` line of presets admits work, the running agents of the session's operators, the launches of a call of `next` included, number at most the pace's cap after that call: for each such preset, the larger of 1 and the ceiling of {subagents} times the slack over {band} percentage points, and at most {subagents}.
             - The slack is the number of percentage points by which the window's `used_pct` falls below the bound that the preset gives.
             - Where the running agents number the cap or more, `next` starts no agent's run, as past the pace.
-            - Under a script's pace, and with no `Op pace:` line, the cap is {subagents}, the harness's limit of concurrent subagents.
+            - With no `Op pace:` line, the cap is {subagents}, the harness's limit of concurrent subagents.
         - Where no step is ready and the pace holds back a step, `next` prints that the operator runs it again, with the time from which a preset's pace admits agent starts, with the path of the script whose pace holds them back, or with the cap that holds them back.
     - The pace reads the usage cache that `--help next` gives: for each of its windows, `used_pct`, `elapsed_pct` and the time it resets.
     - The presets:
         - `even [--factor F] [--window W]`, with F {factor} and W `{window}` by default: within the pace while the window's `used_pct` is at most F times its `elapsed_pct`.
         - `by <ISO 8601 time> [--window W]`, the time with its time zone and W `{window}` by default: within the pace while the window's `used_pct` is at most the percentage that has passed of the time from the window's start to the given time, and always from that time on.
         - `asap`: always within the pace.
-    - The pace `even --factor 1 --window five_hour` holds under each `Op pace:` line of presets, joined to them as `;` joins presets, unless one of them reads the `five_hour` window. With no `Op pace:` line, it is the pace.
+    - The pace `even --factor 1 --window five_hour` holds under each `Op pace:` line of presets, joined to them as `;` joins presets, unless one of them reads the `five_hour` window. It holds as well under each `Op pace: <path>` line, with its cap, while the script's `paces` gives `True`, and counts as past there where the usage cache holds no fresh reading of the `five_hour` window. With no `Op pace:` line, it is the pace.
     - Where the usage cache holds no reading of a preset's window fetched less than {stale} seconds ago, that preset's pace counts as past, and the coordinator gets a line that says so.
     - `Op pace: <path>` gives the Python script at `<path>`, absolute or relative to the main tree, which `next` loads at each read of the state.
         - It defines `paces(usage: Usage) -> bool`, with `Usage` from the module `operations.pacing`, which gives `True` where the pace admits agent starts now.

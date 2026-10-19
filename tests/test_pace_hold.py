@@ -97,3 +97,17 @@ def test_presets_joined_by_a_semicolon_admit_work_only_where_each_admits_it(tmp_
     assert hourly(usage(60.0, 0.0)) == Until(9000.0, 20)
     for line in ("even;;asap", "even; ", "even; x.py"):
         assert line_pace(line, tmp_path) is None
+
+
+def test_a_script_pace_that_admits_work_holds_the_five_hour_pace() -> None:
+    from pathlib import Path
+    from operations.constants import SUBAGENT_LIMIT
+    from operations.pacing import FIVE_HOUR, Scripted, Until, with_five_hour
+    path = Path("pace.py")
+    past, within = usage(90, 80), usage(50, 80)
+    held = with_five_hour(Scripted(path, True), past)
+    assert held == FIVE_HOUR(past)
+    assert isinstance(held, Until) and held.time > past.now
+    assert with_five_hour(Scripted(path, True), within) == Until(within.now, SUBAGENT_LIMIT)
+    assert with_five_hour(Scripted(path, False), past) == Scripted(path, False)
+    assert with_five_hour(Scripted(path, False), within) == Scripted(path, False)

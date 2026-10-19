@@ -3,7 +3,8 @@
 
 An `Op pace:` line names one or more presets with their arguments (`PARSER`),
 joined by `;` (`every`) and with `FIVE_HOUR` where none reads the `five_hour`
-window, or the path of a script that defines `paces` (`Script`). With no such
+window, or the path of a script that defines `paces` (`Script`), with
+`FIVE_HOUR` held under it as well (`with_five_hour`). With no such
 line, the pace is `DEFAULT`. A preset reads a `Usage` and gives the time
 from which it admits a ticket (`Until`), with, for `even` and `by`, the cap on
 the running agents of the session's operators (`cap`); a script gives whether
@@ -228,9 +229,20 @@ def every(presets: Sequence[Preset]) -> Preset:
 
 FIVE_HOUR: Preset = preset(["even", "--factor", "1", "--window", WindowName.FIVE_HOUR])
 """The pace an `Op pace:` line of presets holds where none of its presets reads
-the `five_hour` window."""
+the `five_hour` window, and an `Op pace: <path>` line holds with its script's
+(`with_five_hour`)."""
 
 DEFAULT: Preset = uncapped(FIVE_HOUR)
+
+
+def with_five_hour(given: Pace, usage: Usage) -> Pace:
+    """`FIVE_HOUR` at `usage` where `given` is a `Scripted` that admits, so
+    that its `Until` gives the time and the cap, or its `NotComputed` counts
+    the pace as past; `given` otherwise, so that a script that refuses stands
+    as itself."""
+    if isinstance(given, Scripted) and given.admits:
+        return FIVE_HOUR(usage)
+    return given
 
 
 def line_pace(rest: str, main_tree: Path) -> Preset | Path | None:

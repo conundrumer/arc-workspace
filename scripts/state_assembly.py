@@ -284,7 +284,7 @@ def computed_read(state: State, tickets_dir: Path, undecided: list[str],
         spent=spent, budgets=change_budgets(state, spent, tickets_dir, undecided),
         doc_budgets=doc_budgets(state, tickets_dir, undecided),
         run_starts=run_starts, run_takes=run_takes,
-        pace=(pace_reads(given_pace, usage) if isinstance(given_pace, Path)
+        pace=(pacing.with_five_hour(pace_reads(given_pace, usage), usage) if isinstance(given_pace, Path)
               else (given_pace or pacing.DEFAULT)(usage)),
         audit_window=audit_window_read(state, undecided))
 
