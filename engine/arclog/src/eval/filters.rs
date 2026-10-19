@@ -32,7 +32,7 @@ use crate::terms::TermId;
 /// Compiles a `NOT` at `path` into a [`super::ir::IrNode::Not`] of
 /// `builder`'s clause.
 pub fn compile_not(builder: &mut IrBuilder<'_>, negated: &Negated, path: &NodePath) -> Result<(), CompileFault> {
-    let mut inner = nested(builder);
+    let mut inner = nested(builder)?;
     match negated {
         Negated::Atom(atom) => inner.conjunct(&Conjunct::Atom(atom.clone()), path)?,
         Negated::Form(form) => inner.conjunct(form, &path.child(0))?,
@@ -55,16 +55,16 @@ pub fn compile_all(
 ) -> Result<(), CompileFault> {
     let (domain_path, body_path) = (path.child(0), path.child(1));
     let around = outer_labels(builder, path);
-    let mut fails = nested(builder);
+    let mut fails = nested(builder)?;
     fails.body(body.value(), &body_path)?;
     let fails = filter(variables_of(builder, &outer_labels(builder, &body_path)), fails);
-    let mut counterexample = nested(builder);
+    let mut counterexample = nested(builder)?;
     counterexample.body(domain.value(), &domain_path)?;
     counterexample.push(IrNode::Not(fails));
-    let mut members = nested(builder);
+    let mut members = nested(builder)?;
     members.body(domain.value(), &domain_path)?;
     let domain_outer = variables_of(builder, &outer_of(domain.value(), &around));
-    let mut empty = nested(builder);
+    let mut empty = nested(builder)?;
     empty.push(IrNode::Not(filter(domain_outer.clone(), members)));
     builder.push(IrNode::Not(filter(domain_outer, empty)));
     let outer = variables_of(builder, &around);
@@ -84,7 +84,7 @@ pub fn compile_if(
 ) -> Result<(), CompileFault> {
     let (test_path, then_path, else_path) = (path.child(0), path.child(1), path.child(2));
     let around = outer_labels(builder, path);
-    let mut negated = nested(builder);
+    let mut negated = nested(builder)?;
     negated.body(test.value(), &test_path)?;
     let test_outer = variables_of(builder, &outer_of(test.value(), &around));
     let branches = [
@@ -144,7 +144,7 @@ fn compile_union(
     let exported: BTreeSet<u32> = crate::grounding::common_to_all(per_branch).into_iter().map(|label| label.0).collect();
     let mut clauses = Vec::with_capacity(branches.len());
     for (branch, labels) in branches.iter().zip(&held) {
-        let mut clause = nested(builder);
+        let mut clause = nested(builder)?;
         for (list, path) in &branch.lists {
             clause.body(list.value(), path)?;
         }
@@ -198,7 +198,7 @@ pub fn probe(
 
 /// A builder of a clause nested in `builder`'s, over the variables of the
 /// same form.
-fn nested<'a>(builder: &IrBuilder<'a>) -> IrBuilder<'a> {
+fn nested<'a>(builder: &IrBuilder<'a>) -> Result<IrBuilder<'a>, CompileFault> {
     IrBuilder::new(builder.program, builder.form.clone())
 }
 

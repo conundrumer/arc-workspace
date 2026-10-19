@@ -582,7 +582,7 @@ impl<'a> Inference<'a> {
                 self.rigid_output(form_path, &output.path, path, &key_row)
             }
             DependencyKind::Demonstrated(_) => self.demonstrated_column(form_path, path),
-            DependencyKind::InstanceInput { .. } => None,
+            DependencyKind::InstanceInput { input, .. } => self.instance_input(form_path, input, path),
         }
     }
 
@@ -779,6 +779,15 @@ impl<'a> Inference<'a> {
         let inference = self.infer(at)?;
         let output = inference.component?.outputs.iter().find(|output| output.name == *port)?;
         port_column(&inference, output, path)
+    }
+
+    /// The type of the column at `path` of the input `port` of the `INIT`
+    /// form at `at`, its parameters bound as the form binds them. A type
+    /// that names labels of the form's scope gives none.
+    fn instance_input(&self, at: &NodePath, port: &PortName, path: &[ColumnName]) -> Option<ValueType> {
+        let inference = self.infer(at)?;
+        let input = inference.component?.inputs.iter().find(|input| input.port.name == *port)?;
+        port_column(&inference, &input.port, path)
     }
 
     /// The type of the column at `path` of the output `output`, the path

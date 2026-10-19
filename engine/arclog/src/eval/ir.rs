@@ -141,10 +141,12 @@ pub struct ClauseIr {
 
 /// A body that the IR cannot hold: a grounded subset of a body is
 /// required, and a subset that leaves a label ungrounded is refused with
-/// those labels.
+/// those labels; a form whose scope holds a label that the checked program
+/// gives no type is refused with that label.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum CompileFault {
     Ungrounded { labels: Box<[LabelId]> },
+    Untyped { label: LabelId },
 }
 
 /// The state of a compilation of one body: the variables given so far and
@@ -162,8 +164,9 @@ pub struct IrBuilder<'a> {
 }
 
 impl<'a> IrBuilder<'a> {
-    /// A builder over the body of the form at `form` of `program`.
-    pub fn new(program: &'a CheckedProgram, form: NodePath) -> Self {
+    /// A builder over the body of the form at `form` of `program`, or the
+    /// fault of a label of the form's scope that `program` gives no type.
+    pub fn new(program: &'a CheckedProgram, form: NodePath) -> Result<Self, CompileFault> {
         let (first, scope) = form.0.split_first().expect("the path of a form of the program");
         let top = &program.program.program.value().forms[first.0 as usize];
         let order = CanonicalOrder::of(top, &mut SearchBudget::new());
@@ -172,11 +175,11 @@ impl<'a> IrBuilder<'a> {
         let labels = order.label_scopes().into_iter().find(|(path, _)| *path == scope).map(|(_, labels)| labels.to_vec());
         let mut variables = vec![None; labels.as_ref().map_or(0, Vec::len)];
         for (label, position) in labels.into_iter().flatten() {
-            let ty = types.label(label).expect("a type for each label of a checked form").clone();
+            let ty = types.label(label).ok_or(CompileFault::Untyped { label })?.clone();
             variables[position as usize] = Some(VariableInfo { ty });
         }
         let variables = variables.into_iter().map(|info| info.expect("a label at each canonical position")).collect();
-        IrBuilder { program, form, order, variables, nodes: Vec::new() }
+        Ok(IrBuilder { program, form, order, variables, nodes: Vec::new() })
     }
 
     /// The variable of `label`: its canonical position in the form's scope.
@@ -423,7 +426,7 @@ pub fn compile_grounded(
         ungrounded.sort_by_key(|label| label.0);
         return Err(CompileFault::Ungrounded { labels: ungrounded.into() });
     }
-    let mut builder = IrBuilder::new(program, scope);
+    let mut builder = IrBuilder::new(program, scope)?;
     for (conjunct, path) in &conjuncts {
         builder.conjunct(conjunct, path)?;
     }

@@ -205,8 +205,10 @@ pub(crate) fn label_fault_message(fault: LabelFault) -> String {
 /// An `IF` gives the meet of its test's type with the join of its then and
 /// else lists' types, or, where the label is fresh in the test, the meet of
 /// its test's and its then's types (`docs/arclog/arclog.md#conditional`). A
-/// branch that gives the label no type gives the `OR` or the `IF`'s join
-/// none.
+/// branch of an `OR` that holds no label equal to the label takes no part in
+/// the `OR`'s join, and a branch that holds one and gives the label no type
+/// gives that join none. A then or an else list that gives the label no
+/// type gives the `IF`'s join none.
 ///
 /// A site is one label at an atom's site, at any depth of the site: a bare
 /// label at the site's column, a bare label at a column of a type
@@ -312,7 +314,14 @@ impl LabelWalk<'_> {
                 Ok(ty)
             }
             Conjunct::Not(Negated::Form(form)) => self.conjunct_type(form, pairs, class),
-            Conjunct::Or(branches) => join_branches(branches.iter().map(|branch| self.body_type(branch.value(), pairs))),
+            Conjunct::Or(branches) => {
+                let holds = |branch: &crate::program::Body| {
+                    let labels = crate::grounding::body_labels(branch);
+                    class.iter().any(|label| labels.contains(label))
+                };
+                let holding = branches.iter().filter(|branch| holds(branch.value()));
+                join_branches(holding.map(|branch| self.body_type(branch.value(), pairs)))
+            }
             Conjunct::If { test, then, otherwise } => {
                 let test_type = self.body_type(test.value(), pairs)?;
                 let then_type = self.body_type(then.value(), &with_constraints(pairs, test.value()))?;
