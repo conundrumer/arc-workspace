@@ -39,3 +39,29 @@ out(P_grid, Col, $Spin()) :-
     apply(R, P_anchor, P_tile),                          // tile carried from anchor
     apply(R, P_in, P_intile),                            // content under the same rotation
     concat_2d(P_tile, P_intile, 0, P_grid).              // recompose
+
+.comp Determine {
+    // The side of each example's input.
+    .decl side(e: Example, k: number)
+    side(E, K) :- ex_in(E, P, _), axis_elem(A), axis_dim(P, A, K).
+
+    // A train output's cell, in its tile of the input's side.
+    .decl tile_cell(e: Example, p_tile: Position, p_intile: Position, col: Color)
+    tile_cell(E, P_tile, P_intile, Col) :-
+        ex_out(E, P_grid, Col), side(E, K), divide_by_size_2d(P_grid, K, 0, P_tile, P_intile).
+
+    // A tile of a train output that shows the input turned.
+    .decl turned(e: Example, p_tile: Position)
+    turned(E, P_tile) :- tile_cell(E, P_tile, P, Col), !ex_in(E, P, Col).
+
+    // A tile of a train output that shows the input as it stands.
+    .decl shown(e: Example, p_tile: Position)
+    shown(E, P_tile) :- tile_cell(E, P_tile, _, _), !turned(E, P_tile).
+
+    // A tile some train output does not show the input in as it stands.
+    .decl missed(p_tile: Position)
+    missed(P_tile) :- shown(_, P_tile), ex_out(E, _, _), !shown(E, P_tile).
+
+    .decl anchor(p: Position)
+    anchor(P_tile) :- shown(_, P_tile), !missed(P_tile).
+}

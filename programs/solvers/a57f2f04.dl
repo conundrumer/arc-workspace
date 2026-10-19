@@ -396,7 +396,6 @@ fill($ComponentBbox(), Pn, P) :- parse.box.box(Pn, B), in(P, _), inside(P, B).
     parse.color([E, X], P, Col) :- parse.box.box([E, X], B), ex_in(E, P, Col), inside(P, B).
     parse.blank(Pn, Col) :- parse.box.box(Pn, _), params.blank(Col).
     parse.tile(Pn, B) :- parse.marks_box.box(Pn, B).
-    parse.scan(Pn, D, A) :- parse.box.box(Pn, _), diag_dir_elem(D), axis_elem(A).
 
     // The panel cell at the panel box's corner, in a panel that has a tile.
     .decl corner_cell(pn: ExPanel, d: DiagDir, p: Position)
@@ -426,15 +425,28 @@ fill($ComponentBbox(), Pn, P) :- parse.box.box(Pn, B), in(P, _), inside(P, B).
     added([E, X], Col) :-
         parse.color([E, X], P, C_in), ex_out(E, P, Col), Col != C_in.
 
+    // A train panel in a scan order: from corner d, along axis a first.
+    .type ExScan = [pn: ExPanel, d: DiagDir, a: Axis]
+
+    // Each train panel in each scan order of the type.
+    .decl panel_scan(s: ExScan)
+    panel_scan([Pn, D, A]) :- parse.box.box(Pn, _), diag_dir_elem(D), axis_elem(A).
+
+    // The panel's marks in each scan order.
+    .init scan_order = LexOrder<ExScan>
+    scan_order.corner([Pn, D, A], D) :- panel_scan([Pn, D, A]).
+    scan_order.axis([Pn, D, A], A) :- panel_scan([Pn, D, A]).
+    scan_order.cell([Pn, D, A], P) :- panel_scan([Pn, D, A]), parse.mark(Pn, P).
+
     // The orders whose first mark is of a color the output paints, per panel.
     .decl scan_shown(pn: ExPanel, d: DiagDir, a: Axis)
     scan_shown(Pn, D, A) :-
-        parse.scan_order.first([Pn, D, A], P), parse.color(Pn, P, Col), added(Pn, Col).
+        scan_order.first([Pn, D, A], P), parse.color(Pn, P, Col), added(Pn, Col).
 
     // An order some train panel's first mark does not find so.
     .decl scan_missed(d: DiagDir, a: Axis)
     scan_missed(D, A) :-
-        scan_shown(_, D, A), parse.scan_order.first([[E, X], D, A], _), ex_out(E, _, _),
+        scan_shown(_, D, A), scan_order.first([[E, X], D, A], _), ex_out(E, _, _),
         !scan_shown([E, X], D, A).
 
     .decl scan(d: DiagDir, a: Axis)
