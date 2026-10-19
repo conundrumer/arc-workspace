@@ -75,17 +75,17 @@ pub fn run(args: &[String]) -> ExitCode {
     if report.failures.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
 
-/// The arguments of the subcommand.
-struct Arguments {
-    snapshot: PathBuf,
-    corpus: PathBuf,
-    tasks: PathBuf,
-    task_ids: Vec<String>,
-    reads: Vec<String>,
+/// The arguments of the subcommand, which `speed` takes too.
+pub(crate) struct Arguments {
+    pub(crate) snapshot: PathBuf,
+    pub(crate) corpus: PathBuf,
+    pub(crate) tasks: PathBuf,
+    pub(crate) task_ids: Vec<String>,
+    pub(crate) reads: Vec<String>,
 }
 
 impl Arguments {
-    fn parse(args: &[String]) -> Option<Arguments> {
+    pub(crate) fn parse(args: &[String]) -> Option<Arguments> {
         let mut positional = Vec::new();
         let mut reads = Vec::new();
         let mut args = args.iter();
@@ -178,11 +178,7 @@ fn compared(arguments: &Arguments, corpus: &CorpusSolver) -> Result<Vec<String>,
             }
             lines.push(line);
         }
-        if let Some(souffle) = record.get("cpu_seconds").and_then(Value::as_f64) {
-            if seconds > souffle {
-                lines.push(format!("the engine runs {seconds:.3} s against Souffle's {souffle:.3} s"));
-            }
-        }
+        lines.extend(crate::speed::slower(seconds, &record).ok().flatten());
         Ok(lines)
     })
 }
