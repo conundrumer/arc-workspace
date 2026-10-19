@@ -19,10 +19,12 @@
 //! so the command runs from the root of the tree.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::ControlFlow;
 use std::process::ExitCode;
 use std::sync::Mutex;
 
 use arclog::eval::join::each_row;
+use arclog::eval::models::ModelsEnd;
 use arclog::eval::{relation_of, Evaluation, RelationValue};
 use arclog::harness::{require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::judge::run::{Found, JudgedRun};
@@ -30,10 +32,12 @@ use arclog::judge::solves::OutputSet;
 use arclog::program::path::{node_at, NodePath, NodeRef};
 use arclog::program::{ClauseKeyword, DeclaredName, Form, ProgramRelation, RelationName};
 use arclog::registry::Registry;
+use arclog::relations::Relation;
 use arclog::resolver::Side;
 use arclog::solver::FileOwner;
 use arclog::task::{Grid, Task};
 use arclog::terms::{Constant, Example, Term};
+use arclog::types::ValueType;
 use serde_json::Value;
 
 use crate::arguments::Arguments;
@@ -149,7 +153,7 @@ fn compared(arguments: &Arguments, corpus: &CorpusSolver, not_compared: &Mutex<B
                     let rerun = rerun.as_ref()?;
                     let example = *example;
                     let evaluation = &case.evaluation;
-                    let engine: Box<dyn Fn(&str) -> Option<Result<Vec<Vec<EngineLeaf>>, String>> + '_> =
+                    let engine: Box<dyn Fn(&str) -> Option<EngineRows> + '_> =
                         Box::new(move |name| engine_rows(evaluation, name, example, &rerun.orientation_constants));
                     Some(PairRows { pair, rerun, engine })
                 })
@@ -253,7 +257,7 @@ fn rerun(id: &str, case: &str, pair: &str) -> Option<Rerun> {
 struct PairRows<'a> {
     pair: &'a str,
     rerun: &'a Rerun,
-    engine: Box<dyn Fn(&str) -> Option<Result<Vec<Vec<EngineLeaf>>, String>> + 'a>,
+    engine: Box<dyn Fn(&str) -> Option<EngineRows> + 'a>,
 }
 
 /// What the comparison of the rows of the pairs gives: the first relation
@@ -272,7 +276,8 @@ struct Comparison {
 /// whose engine rows and Souffle rows hold different counts of leaves,
 /// as where the converter left a Souffle column out of the arclog
 /// relation, is not compared, and the comparison gives it with the two
-/// counts.
+/// counts. A relation whose rows differ between the case's models is not
+/// compared either, and the comparison gives it with that reason.
 fn first_difference(pairs: &[PairRows<'_>]) -> Comparison {
     let mut comparison = Comparison::default();
     let mut compared: Vec<(&BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)> = Vec::new();
@@ -281,8 +286,12 @@ fn first_difference(pairs: &[PairRows<'_>]) -> Comparison {
             let Some(rows) = engine(name) else { continue };
             let differs = |what: String| Some(format!("the first relation whose rows differ is {name} on {pair}: {what}"));
             let rows = match rows {
-                Ok(rows) => rows,
-                Err(text) => {
+                EngineRows::Rows(rows) => rows,
+                EngineRows::DifferBetweenModels => {
+                    comparison.not_compared.push(format!("{name} on {pair} is not compared: its rows differ between the case's models"));
+                    continue;
+                }
+                EngineRows::Fault(text) => {
                     comparison.difference = differs(format!("the engine gives {text}"));
                     return comparison;
                 }
@@ -359,30 +368,90 @@ fn same_without_idents(engine: &[Vec<EngineLeaf>], souffle: &BTreeSet<Vec<Leaf>>
     engine_masked == souffle_masked
 }
 
+/// What the engine gives for a relation on a pair.
+enum EngineRows {
+    /// The relation's rows, each the leaves Souffle's rerun writes for it,
+    /// the same at every model of the case.
+    Rows(Vec<Vec<EngineLeaf>>),
+    /// Two models of the case give the relation different rows, so Souffle's
+    /// one set of rows has nothing to compare with.
+    DifferBetweenModels,
+    /// A text for rows the engine cannot give.
+    Fault(String),
+}
+
 /// The engine's rows of the relation that `name` declares on `example`,
 /// each row the leaves Souffle's rerun writes for it, an orientation
 /// constant by the number `constants` gives its name; `None` where the
-/// program derives no relation of that name.
-fn engine_rows(evaluation: &Evaluation<'_>, name: &str, example: Example, constants: &BTreeMap<String, i64>) -> Option<Result<Vec<Vec<EngineLeaf>>, String>> {
+/// program derives no relation of that name. The rows are read at each
+/// model of the case: where two models give different rows as sets, the
+/// result is [`EngineRows::DifferBetweenModels`].
+fn engine_rows(evaluation: &Evaluation<'_>, name: &str, example: Example, constants: &BTreeMap<String, i64>) -> Option<EngineRows> {
     let program = evaluation.program;
     let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written(name.into())));
     let relation = relation_of(program, &declared)?;
     let on = (program.program.side(relation.node) == Side::PerInput).then_some(example);
-    let rows = match evaluation.relation(&relation, on) {
-        Ok(RelationValue::Rows(rows)) => rows,
-        Ok(other) => return Some(Err(format!("{other:?}"))),
-        Err(fault) => return Some(Err(fault.message.to_string())),
-    };
-    let Some(types) = program.types.columns(&relation) else { return Some(Err("rows whose columns have no types".to_owned())) };
+    let Some(types) = program.types.columns(&relation) else { return Some(EngineRows::Fault("rows whose columns have no types".to_owned())) };
+    let mut first: Option<Vec<Vec<EngineLeaf>>> = None;
+    let mut fault = None;
+    let mut differ = false;
+    let end = evaluation.models(&relation, on, &mut |value| {
+        let RelationValue::Rows(rows) = value else {
+            fault = Some(format!("{value:?}"));
+            return ControlFlow::Break(());
+        };
+        let rows = match model_leaves(evaluation, rows, types, constants) {
+            Ok(rows) => rows,
+            Err(text) => {
+                fault = Some(text);
+                return ControlFlow::Break(());
+            }
+        };
+        match &first {
+            None => first = Some(rows),
+            Some(kept) if same_rows(kept, &rows) => {}
+            Some(_) => {
+                differ = true;
+                return ControlFlow::Break(());
+            }
+        }
+        ControlFlow::Continue(())
+    });
+    match end {
+        Err(error) => return Some(EngineRows::Fault(error.message.to_string())),
+        Ok(ModelsEnd::Stopped(stop)) if !differ && fault.is_none() => return Some(EngineRows::Fault(format!("{stop:?}"))),
+        Ok(_) => {}
+    }
+    Some(match (fault, differ, first) {
+        (Some(text), _, _) => EngineRows::Fault(text),
+        (None, true, _) => EngineRows::DifferBetweenModels,
+        (None, false, Some(rows)) => EngineRows::Rows(rows),
+        (None, false, None) => EngineRows::Rows(Vec::new()),
+    })
+}
+
+/// The leaves of the rows of one model's value of a relation of column
+/// types `types`.
+fn model_leaves(
+    evaluation: &Evaluation<'_>,
+    rows: &Relation,
+    types: &[ValueType],
+    constants: &BTreeMap<String, i64>,
+) -> Result<Vec<Vec<EngineLeaf>>, String> {
     let mut written = Vec::new();
     let mut faults = BTreeSet::new();
-    each_row(&rows, &mut |row| match row.iter().zip(types).map(|(&id, ty)| term_leaves(Term::decode(id, ty), evaluation.registry, constants)).collect::<Result<Vec<_>, _>>() {
+    each_row(rows, &mut |row| match row.iter().zip(types).map(|(&id, ty)| term_leaves(Term::decode(id, ty), evaluation.registry, constants)).collect::<Result<Vec<_>, _>>() {
         Ok(leaves) => written.push(leaves.concat()),
         Err(text) => {
             faults.insert(text);
         }
     });
-    Some(faults.into_iter().next().map_or(Ok(written), Err))
+    faults.into_iter().next().map_or(Ok(written), Err)
+}
+
+/// Whether `a` and `b` hold the same rows, each row once.
+fn same_rows(a: &[Vec<EngineLeaf>], b: &[Vec<EngineLeaf>]) -> bool {
+    a.iter().all(|row| b.contains(row)) && b.iter().all(|row| a.contains(row))
 }
 
 /// The leaves Souffle's rerun writes for `term`: a number, a color's
@@ -430,7 +499,7 @@ mod tests {
     type Relations<'r> = [(&'r str, Vec<Vec<EngineLeaf>>)];
 
     fn on<'r>(pair: &'r str, rerun: &'r Rerun, relations: &'r Relations<'r>) -> PairRows<'r> {
-        PairRows { pair, rerun, engine: Box::new(move |name| relations.iter().find(|(n, _)| *n == name).map(|(_, rows)| Ok(rows.clone()))) }
+        PairRows { pair, rerun, engine: Box::new(move |name| relations.iter().find(|(n, _)| *n == name).map(|(_, rows)| EngineRows::Rows(rows.clone()))) }
     }
 
     fn written(row: &[i64]) -> Vec<EngineLeaf> {
@@ -498,6 +567,23 @@ mod tests {
         let comparison = first_difference(&[on("train 0", &souffle, &ours)]);
         assert_eq!(comparison.not_compared.len(), 1, "{comparison:?}");
         assert!(comparison.not_compared[0].contains("&out on train 0 is not compared"), "{comparison:?}");
+        assert!(comparison.difference.expect("a difference").contains("is &b on train 0:"));
+    }
+
+    #[test]
+    fn leaves_out_a_relation_whose_rows_differ_between_models() {
+        let souffle = rerun(&[("&out", &[&[1]]), ("&b", &[&[3]])]);
+        let pair = PairRows {
+            pair: "train 0",
+            rerun: &souffle,
+            engine: Box::new(|name| match name {
+                "&out" => Some(EngineRows::DifferBetweenModels),
+                _ => Some(EngineRows::Rows(vec![written(&[4])])),
+            }),
+        };
+        let comparison = first_difference(&[pair]);
+        assert_eq!(comparison.not_compared.len(), 1, "{comparison:?}");
+        assert!(comparison.not_compared[0].contains("&out on train 0 is not compared: its rows differ between the case's models"), "{comparison:?}");
         assert!(comparison.difference.expect("a difference").contains("is &b on train 0:"));
     }
 }
