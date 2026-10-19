@@ -22,7 +22,7 @@ use crate::layout::{FilePlace, Layout, SourceFile, SourcePlace};
 use crate::program::{Arcdata, Node, Program};
 use crate::solver::Solver;
 
-pub(crate) use self::arclog::head_of;
+pub(crate) use self::arclog::{head_of, is_type_parameter_column};
 use self::arclog::{Owners, Reader, Record};
 use self::labels::LabelScope;
 

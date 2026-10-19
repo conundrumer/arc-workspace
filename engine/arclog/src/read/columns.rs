@@ -24,7 +24,7 @@ fn push_new(out: &mut Vec<LabelId>, label: LabelId) {
 /// The labels a body keeps, in source order: each that a site or a `=` of
 /// its own list makes, and each that an `OR` or an `IF` of its own list
 /// exports, as `docs/arclog/arclog.md#disjunction` gives.
-pub(super) fn made_labels(body: &Body) -> Vec<LabelId> {
+pub(crate) fn made_labels(body: &Body) -> Vec<LabelId> {
     let mut out = Vec::new();
     for conjunct in body.conjuncts.iter() {
         match conjunct {
@@ -57,7 +57,7 @@ pub(crate) fn exports(first: &Body, later: &[&Body], out: &mut Vec<LabelId>) {
 
 
 /// The `^` labels of a key body, in order of appearance.
-pub(super) fn key_labels(body: &Body) -> Vec<LabelId> {
+pub(crate) fn key_labels(body: &Body) -> Vec<LabelId> {
     let mut out = Vec::new();
     each_label_use(body, &mut |use_| {
         if let LabelUse::Key(label) = use_ {
