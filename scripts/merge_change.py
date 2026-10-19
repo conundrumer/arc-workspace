@@ -227,8 +227,8 @@ from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, locked_update, SetupFailed)
 
 from operations.merging import (FAILED_LINE,  # noqa: E402
-                                MARKERS, MARKER_LINE, NOT_PUT_ON, PATHS_SEP, PREFIX, REFUSED,
-                                REFUSED_TREE, TOOL)
+                                MARKERS, MARKER_LINE, NO_CHANGE, NOT_PUT_ON, PATHS_SEP,
+                                PREFIX, REFUSED, REFUSED_TREE, TOOL)
 from operations.merge_outcomes import CONFLICT, LEFT_AFTER, STAYS  # noqa: E402
 from operations.worktrees import BASE  # noqa: E402
 
@@ -525,7 +525,7 @@ def commit(worktree: Path, message: str, main: Path, backup: Path) -> Change:
     base = merge_base(worktree)
     touched = set(changed_outside_work(worktree, base))
     if not touched:
-        raise Refused(f"{branch} holds no change against {BASE}")
+        raise Refused(NO_CHANGE.format(branch=branch, base=BASE))
     refuse_main_touched(main, {worktree: frozenset(touched)})
 
     set_up_submodules(worktree, main)

@@ -29,6 +29,11 @@ script's own forms and by `master` (`state.Merge`,
   (`NOT_PUT_ON`) hands the change to the coordinator, with a note that
   gives the call, the script's refusal line and the worktree, since no
   editor may move the branch;
+- a refusal because the change's branch holds no change against `master`
+  (`NO_CHANGE`) goes to a ticket analyst as a step the command cannot
+  place, and to no editor as a finding; no merge call on that worktree is
+  given again, whatever reports after the call, until the change comes
+  back to an operator (`came_back`);
 - a hand-off moves the change to `tickets/released/` and back to
   `tickets/assigned/` with the session id as its holder, which holds it
   live while the coordinator's session runs, so no operator takes it; the
@@ -59,10 +64,11 @@ script's own forms and by `master` (`state.Merge`,
   and the output that message gives holds the `master` commit of the
   first call.
 
-Once an agent launched on the change since its last move out of
-`tickets/draft/` (`change_agents.of_change`), or a ticket analyst launched
-on the step `handled.unmoved` gives for that finding, reports after the
-latest merge call, the merge call is given again.
+Other than after a `NO_CHANGE` refusal, once an agent launched on the
+change since its last move out of `tickets/draft/`
+(`change_agents.of_change`), or a ticket analyst launched on the step
+`handled.unmoved` gives for that finding, reports after the latest merge
+call, the merge call is given again.
 
 Once the change is merged, an agent runs the steps and checks its
 ticket's `after-merge` field gives, then the command closes each `refactor` ticket
@@ -91,7 +97,7 @@ from operations.state import (Agent, Call, Commit, LogLine, Merge, State, Ticket
                               memoized_by_transcripts)
 from operations.command_words import command_words
 from operations.handled import ask_again, decided_by, sent, unmoved
-from operations.steps import Bash, Launch, Send, Step, labeled
+from operations.steps import Bash, Launch, Send, Step, Undecided, labeled
 from operations.log_commands import log
 from operations.worktrees import WORKTREE
 from ticketing.vocabulary import MANY_IDEAS, Kind, Note, Resolution, Status
@@ -196,6 +202,14 @@ NOT_PUT_ON = mctx("the rebase is aborted, putting the change onto {onto}'s commi
 where it could not put the change onto `master`."""
 
 NOT_PUT = re.compile(form(NOT_PUT_ON, {"onto": r"\S+", "commit": r"[0-9a-f]+"}))
+
+NO_CHANGE = mctx("{branch} holds no change against {base}")
+"""The refusal of `scripts/merge_change.py` of a change whose branch
+holds no change against `master` outside the paths
+`change_checks.changed_outside_work` leaves out."""
+
+NO_CHANGE_LINE = re.compile("^" + re.escape(REFUSED)
+                            + form(NO_CHANGE, {"branch": r"\S+", "base": r"\S+"}) + "$", re.M)
 
 NOT_PUT_ON_NOTE = mctx("could not put the change onto `master`: {refusal}")
 """The outcome a `HANDED_OFF` note gives of a merge call that conflicts and
@@ -380,9 +394,11 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent],
     """The merge of the change in `w`, once its editors and its review have
     passed, again after a call that left the worktree with changes made
     after its commit or that a report of an agent on the change follows,
-    and the step on a failed merge call. A refusal or a conflict that no
-    agent of `latest` can take as a finding goes in the brief of the
-    editor that `staff` launches."""
+    and the step on a failed merge call. A `NO_CHANGE` refusal goes to a
+    ticket analyst (`Undecided`) until the change comes back to an
+    operator (`came_back`), whatever reports after it. A refusal or a
+    conflict that no agent of `latest` can take as a finding goes in the
+    brief of the editor that `staff` launches."""
     command = merge_command(t, w)
     calls = [c for c in merge_calls(state, t) if names_any(c, {str(w)})]
     last = calls[-1] if calls else None
@@ -392,6 +408,9 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent],
     reported = [r.time for a in [*of_change(state, t), *on_step]
                 if (r := a.last_report) is not None]
     at = f"{t.last_time} {max(reported, default=0.0)} {'' if last is None else last.time}"
+    empty = None if last is None else NO_CHANGE_LINE.search(last.result or "")
+    if last is not None and empty is not None and not came_back(t, last.time):
+        return Undecided(empty[0], change=t.number)
     if (last is None or (reported and max(reported) > last.time)
             or came_back(t, last.time)):
         return Bash(command, f"{t.number} merge {w}", occasion=at)
