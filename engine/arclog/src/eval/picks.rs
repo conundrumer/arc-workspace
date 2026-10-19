@@ -3,14 +3,16 @@
 //! `docs/engine/cases.md#the-constraint-module` gives them over
 //! `docs/arclog/constraints.md#one` and `docs/arclog/constraints.md#choose`.
 //!
-//! A clause with `ONE` marks gives its rows, and a `DET` with `(ONE)` the
-//! rows of its stored `param` record, each grouped by each mark's key. A
+//! A clause with `ONE` marks gives its rows, each grouped by each mark's
+//! key. A `DET` with `(ONE)` gives at stored values the rows of its stored
+//! `param` record, and at determined values its body's rows, or, where it
+//! names a proposer, the rows its open values give. A
 //! `CHOOSE` gives the `from` rows of each `for` row, grouped by row, and
 //! its `never` pairs. The options stand in the canonical order by content
 //! of `crate::terms::content_order`, so a stop at a cap does not depend
 //! on an encoding order.
 
-use super::{ir, FormBodies, Outcome, RelationValue, RunFault, Stop};
+use super::{ir, FormBodies, Outcome, ParameterSource, RelationValue, RunFault, Stop};
 use crate::hash::StableHashMap;
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Choose, ClauseKeyword, LabelId, ProgramRelation};
@@ -66,7 +68,11 @@ pub fn pick_options(bodies: &FormBodies<'_>, node: GraphNodeIndex, example: Opti
         let shape = node_at(root, at).expect("the path of a form of the program");
         match shape {
             NodeRef::Clause(clause) => {
-                let value = if clause.keyword == ClauseKeyword::Det {
+                let stored = matches!(evaluation.parameters.source(), ParameterSource::Stored(_));
+                if let Some(fault) = super::determinations::conversion_fault(clause, at).filter(|_| !stored) {
+                    return Err(fault);
+                }
+                let value = if clause.keyword == ClauseKeyword::Det && (stored || !clause.proposers.is_empty()) {
                     driver.parameter(&relation, &ProgramRelation::Declared(name.clone()))?
                 } else {
                     driver.clause(at, example)?

@@ -18,11 +18,14 @@
 //! bounds that the driver and the parts share. [`picks`] gives the options
 //! of a pick through the driver's way into the bodies, and [`models`]
 //! enumerates the models of a case on an input, through the driver.
+//! [`mod@determinations`] gives the `DET` nodes in dependency order and the
+//! candidates of each, which an evaluation at determined values reads.
 //! [`output`] reads a grid from a relation, for the judge. [`proposers`]
 //! gives the rows of a proposer over an evidence, which the driver reads for
 //! a clause that derives by a proposer.
 
 pub mod cache;
+pub mod determinations;
 mod driver;
 pub mod examples;
 pub mod filters;
@@ -41,6 +44,7 @@ pub mod rigid;
 pub mod unfold;
 pub mod values;
 
+pub use determinations::Candidates;
 pub use driver::FormBodies;
 pub use lookup::{output_relation, relation_of};
 pub use models::ModelsEnd;
@@ -50,38 +54,73 @@ use crate::check::CheckedProgram;
 use crate::hash::StableHashMap;
 use crate::program::{ParamValue, ProgramRelation};
 use crate::registry::Registry;
+use crate::relations::Relation;
+use std::sync::Arc;
 use crate::session::TaskSession;
 use crate::task::Task;
 use crate::terms::Example;
 use crate::types::GraphRelation;
 use driver::Driver;
 
-/// The values of the case program's parameters: the rows of each parameter
-/// as an arcdata file writes them, typed only when a clause reads them, by
-/// [`crate::terms::encode_param_value`].
-#[derive(Clone, Debug, Default)]
+/// The values of the case program's parameters, from one source, so a run
+/// reads either the stored records or the evidence and never a mix.
+#[derive(Clone, Debug)]
 pub struct ParameterValues {
-    values: StableHashMap<ProgramRelation, ParamValue>,
+    source: ParameterSource,
+}
+
+/// The source of the values of the case program's parameters.
+#[derive(Clone, Debug)]
+pub(super) enum ParameterSource {
+    /// The rows of each parameter as an arcdata file writes them, typed only
+    /// when a clause reads them, by [`crate::terms::encode_param_value`].
+    Stored(StableHashMap<ProgramRelation, ParamValue>),
+    /// The assignment that [`ParameterValues::determined`] takes.
+    Determined(StableHashMap<ProgramRelation, Arc<Relation>>),
+}
+
+impl Default for ParameterValues {
+    fn default() -> Self {
+        ParameterValues { source: ParameterSource::Stored(StableHashMap::default()) }
+    }
 }
 
 impl ParameterValues {
     /// The values of the solver's stored `param` records.
     pub fn stored(arcdata: &crate::program::Arcdata) -> Self {
         let values = arcdata.params.iter().map(|param| (param.value().name.clone(), param.value().value.clone())).collect();
-        ParameterValues { values }
+        ParameterValues { source: ParameterSource::Stored(values) }
     }
 
-    /// These values, with the values of each relation that a witness's
-    /// `assign` gives in the place of its stored values.
+    /// The values determined from the evidence at the assignment `rows`: the
+    /// rows of the chosen candidate of each `DET` with several candidates,
+    /// and of each `DET` with `(ONE)` that names a proposer the rows its open
+    /// values give. A `DET` that `rows` leaves out takes its one candidate.
+    pub fn determined(rows: impl IntoIterator<Item = (ProgramRelation, Arc<Relation>)>) -> Self {
+        ParameterValues { source: ParameterSource::Determined(rows.into_iter().collect()) }
+    }
+
+    /// These stored values, with the values of each relation that a
+    /// witness's `assign` gives in the place of its stored values. Values
+    /// determined from the evidence take no `assign`, so this panics on them.
     pub fn with_assigns(&self, assigns: &[(ProgramRelation, ParamValue)]) -> Self {
-        let mut values = self.values.clone();
+        let ParameterSource::Stored(values) = &self.source else { panic!("an `assign` over stored values") };
+        let mut values = values.clone();
         values.extend(assigns.iter().cloned());
-        ParameterValues { values }
+        ParameterValues { source: ParameterSource::Stored(values) }
     }
 
-    /// The written rows of `relation`, or `None` where no record gives it.
+    /// The written rows of `relation`, or `None` where no stored record
+    /// gives it, as at values determined from the evidence.
     pub fn get(&self, relation: &ProgramRelation) -> Option<&ParamValue> {
-        self.values.get(relation)
+        match &self.source {
+            ParameterSource::Stored(values) => values.get(relation),
+            ParameterSource::Determined(_) => None,
+        }
+    }
+
+    pub(super) fn source(&self) -> &ParameterSource {
+        &self.source
     }
 }
 

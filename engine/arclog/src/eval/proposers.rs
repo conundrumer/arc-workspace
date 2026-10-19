@@ -45,7 +45,7 @@ pub fn rows(evaluation: &Evaluation<'_>, proposer: &LibName, evidence: Evidence,
         }
     };
     match &declaration.kind {
-        ProposerKind::Native => {
+        ProposerKind::Native { .. } => {
             let grids = native::Grids {
                 inputs: task.train.iter().map(|pair| &pair.input).chain(task.test.iter()).collect(),
                 pairs: task.train.iter().map(|pair| (&pair.input, &pair.output)).collect(),

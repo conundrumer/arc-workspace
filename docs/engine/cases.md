@@ -49,7 +49,7 @@ A model of a case on an input is one choice at each of its picks, as [Semantics]
 - Reaching the node cap or the model cap is a stop at a bound: the case has no output on that input, the result cache does not store the stop, and the stop is an alert, as [Joins](evaluator.md#joins) and [Bounds](overview.md#requirements) give.
 - The module gives the models one at a time.
 - A cluster is enumerated where its chosen relation, as [One](../../docs/arclog/constraints.md#one) defines it, is an ancestor of `&output` in the case's dependency graph, over every read edge, a negated read included. A chosen relation, or the relation of a `DEMONSTRATED` form, that is no ancestor of `&output` takes its first model in the canonical order, since no output reads it.
-- A `DET` reads a chosen relation, or the relation of a `DEMONSTRATED` form, where that relation is an ancestor of the `DET` in the dependency graph, and it runs over that relation's models. The models of a pick that the `DET` reads lifted are the product of the pick's models on each example. Where the models give the `DET` more than one value, the engine reports an error.
+- A `DET` reads a chosen relation, or the relation of a `DEMONSTRATED` form, only where that relation has one model, on each example where the `DET` reads it lifted. Otherwise the engine reports an error that names the `DET` and the pick.
 
 ### Enumeration and its stops
 

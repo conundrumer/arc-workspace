@@ -9,8 +9,9 @@ use super::examples::{self, ExampleScope};
 use super::ir::{self, AtomSource, ClauseIr, IrNode};
 use super::join::{self, Budget, JoinInputs, NodeInput};
 use super::models::{self, Choice, Entry, Factor};
+use super::determinations::Candidates;
 use super::{cache, instance, plan, proposers, rigid};
-use super::{Evaluation, Outcome, RelationValue, RunFault, Stop};
+use super::{Evaluation, Outcome, ParameterSource, RelationValue, RunFault, Stop};
 use crate::hash::StableHashMap;
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Clause, ClauseKeyword, ProgramRelation};
@@ -30,11 +31,19 @@ pub(super) struct Driver<'e, 'a> {
     /// In an enumeration of models, the factors met since [`models`] last
     /// took them, in the order they were met; `None` outside one.
     pub(super) met: RefCell<Option<Vec<Factor>>>,
+    /// The `DET` node whose candidates this driver evaluates, outside any
+    /// enumeration of models, as [`Evaluation::candidates`] gives them.
+    pub(super) det: Option<GraphNodeIndex>,
 }
 
 impl<'e, 'a> Driver<'e, 'a> {
     pub(super) fn new(evaluation: &'e Evaluation<'a>) -> Self {
-        Driver { evaluation, values: RefCell::default(), model: RefCell::default(), met: RefCell::default() }
+        Driver { evaluation, values: RefCell::default(), model: RefCell::default(), met: RefCell::default(), det: None }
+    }
+
+    /// The driver of the candidates of the `DET` node `det`.
+    pub(super) fn reading_det(evaluation: &'e Evaluation<'a>, det: GraphNodeIndex) -> Self {
+        Driver { det: Some(det), ..Driver::new(evaluation) }
     }
 
     pub(super) fn program(&self) -> &'a crate::resolver::ResolvedProgram {
@@ -93,12 +102,29 @@ impl<'e, 'a> Driver<'e, 'a> {
         }
     }
 
-    /// The rows of a parameter at its stored values, typed by its columns.
+    /// The rows of the `DET` relation `name`: at stored values its stored
+    /// rows, typed by its columns; at determined values the rows the
+    /// assignment gives it, or else its one candidate.
     pub(super) fn parameter(&self, relation: &GraphRelation, name: &ProgramRelation) -> Outcome<RelationValue> {
         let evaluation = self.evaluation;
         let form = self.program().form_of(relation.node);
         let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
-        let value = evaluation.parameters.get(name).ok_or_else(|| fault("no stored record gives the parameter's rows".into()))?;
+        let stored = match evaluation.parameters.source() {
+            ParameterSource::Stored(stored) => stored,
+            ParameterSource::Determined(assigned) => {
+                if let Some(rows) = assigned.get(name) {
+                    return Ok(RelationValue::Rows(rows.clone()));
+                }
+                return match evaluation.candidates(relation.node)? {
+                    Candidates::Rows(mut candidates) if candidates.len() == 1 => Ok(RelationValue::Rows(candidates.pop().expect("one candidate"))),
+                    Candidates::Rows(candidates) if candidates.is_empty() => Err(fault("the `DET` has no candidate".into())),
+                    Candidates::Rows(_) => Err(fault("the assignment gives no value to a `DET` with several candidates".into())),
+                    Candidates::Undefined => Ok(RelationValue::Undefined),
+                    Candidates::Stopped(stop) => Ok(RelationValue::Stopped(stop)),
+                };
+            }
+        };
+        let value = stored.get(name).ok_or_else(|| fault("no stored record gives the parameter's rows".into()))?;
         let types = evaluation.program.types.columns(relation).ok_or_else(|| fault("the parameter's columns have no types".into()))?;
         let mut table = evaluation.session.intern.write().expect("an intern table that no panic poisoned");
         let rows = crate::terms::encode_param_value(value, types, evaluation.registry, &mut table)

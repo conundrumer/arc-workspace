@@ -17,6 +17,7 @@
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
+use super::determinations;
 use super::driver::{record_whole, Driver};
 use super::join::{self, Budget};
 use super::picks::{self, pick_options};
@@ -26,7 +27,7 @@ use crate::constraints;
 use crate::program::path::NodePath;
 use crate::program::OutputStep;
 use crate::relations::{Row, RowSet};
-use crate::resolver::GraphNodeIndex;
+use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::terms::Example;
 use crate::types::GraphRelation;
 
@@ -126,8 +127,14 @@ pub(super) fn pick_value(driver: &Driver<'_, '_>, relation: &GraphRelation, exam
         let arity = arity(driver, relation, form)?;
         Ok(Ok(Options::Pick { rows: options.rows, pick, arity }))
     };
-    let many = "the chosen relation has more than one model, which this evaluation does not enumerate";
-    let mut values = choice(driver, (relation.node, example), form, build, 1, many)?.0.into_vec();
+    let many = match driver.det {
+        Some(det) => {
+            let DependencyKind::Chosen(pick) = &driver.program().graph.nodes[relation.node.0 as usize].kind else { panic!("the node of a chosen relation") };
+            determinations::many_models(driver, det, pick)
+        }
+        None => "the chosen relation has more than one model, which this evaluation does not enumerate, and a `DET` reads a pick only where the pick has one model".into(),
+    };
+    let mut values = choice(driver, (relation.node, example), form, build, 1, &many)?.0.into_vec();
     Ok(values.pop().expect("the value of the chosen relation"))
 }
 

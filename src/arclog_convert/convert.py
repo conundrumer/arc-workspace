@@ -138,7 +138,7 @@ def proposer_columns() -> dict[str, list[Col]]:
         m = re.match(r"\s*\.decl propose\((.*)\)", line)
         if m and cur:
             out[cur] = [Col(pascal(n.strip()), t.strip(), False) for n, t in (x.split(":") for x in m.group(1).split(","))]
-    return out | registry_columns("proposer", "native")
+    return out | registry_columns("proposer", r"native(?: domain)?")
 
 
 def registry_columns(kind: str, between: str) -> dict[str, list[Col]]:

@@ -33,8 +33,9 @@
 //!   the same form, as `Unfold`'s `take` does: an instance's output of that
 //!   name, where the instance writes no clause for it, reads the input's
 //!   relation.
-//! - `(proposer <name> native (columns (<Column> <type>) ...))`: a native
-//!   proposer, such as a domain proposer.
+//! - `(proposer <name> native [domain] (columns (<Column> <type>) ...))`: a
+//!   native proposer, marked `domain` where it is a domain proposer, as
+//!   `docs/arclog/arclog.md#program` gives one.
 //! - `(proposer <name> arclog (columns <Label> ...))`: a proposer written
 //!   in arclog, whose clause stands in `engine/lib/proposers.arclog`. Its
 //!   columns are the labels the form names, in the order the form gives.
@@ -264,10 +265,11 @@ pub struct Proposer {
     pub kind: ProposerKind,
 }
 
-/// The kind of a proposer: native, or written in arclog with its clause.
+/// The kind of a proposer: native, a domain proposer or another, or written
+/// in arclog with its clause.
 #[derive(Clone, Debug)]
 pub enum ProposerKind {
-    Native,
+    Native { domain: bool },
     /// A proposer written in arclog and the body of its clause. Its columns
     /// are the labels its `(columns <Label> ...)` form names, in the order
     /// the form gives. Each is a label the clause keeps, and each other

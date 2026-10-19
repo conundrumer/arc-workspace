@@ -189,17 +189,19 @@ impl FileReader {
         Some(InputPort { port: Port { name, columns: columns.into() }, default, reads_outputs, explicit })
     }
 
-    /// `(proposer <name> native (columns ...))` or
+    /// `(proposer <name> native [domain] (columns ...))` or
     /// `(proposer <name> arclog (columns <Label> ...))`,
     /// after its head.
     fn proposer(&mut self, rest: &[SExpr], place: SourcePlace) -> Option<()> {
         let name = LibName(self.symbol(rest.first(), "the proposer's name", place)?.into());
         match self.symbol(rest.get(1), "the proposer's kind", place)? {
             NATIVE => {
-                let columns = self.columns(rest.get(2), COLUMNS, &[], place)?;
-                self.no_more(rest.get(3..).unwrap_or_default())?;
+                let domain = matches!(rest.get(2), Some(SExpr::Symbol { text, .. }) if &**text == DOMAIN);
+                let at = 2 + usize::from(domain);
+                let columns = self.columns(rest.get(at), COLUMNS, &[], place)?;
+                self.no_more(rest.get(at + 1..).unwrap_or_default())?;
                 if self.declare(&name, place) {
-                    self.entries.insert(name, LibEntry::Proposer(Proposer { columns, kind: ProposerKind::Native }));
+                    self.entries.insert(name, LibEntry::Proposer(Proposer { columns, kind: ProposerKind::Native { domain } }));
                 }
             }
             ARCLOG => {

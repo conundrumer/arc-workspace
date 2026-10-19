@@ -73,7 +73,7 @@ A model of a `CHOOSE` is a choice of one candidate for each row that has a candi
 
 A row with no candidate is absent from every model, and a key whose rows admit no joint choice has no model. A key with no model contributes no rows, and the program reads that as it reads any absence, with `NOT`: b1fc8b8e classifies ink as broken when no partition into the unit exists, and 446ef5d2 keeps the one candidate rectangle whose pieces pack it.
 
-A `DET` reads a chosen relation only where every model gives the same value, which in the corpus is where the pick has one model: 1a244afd's pairing.
+A `DET` reads a chosen relation only where the pick has one model, as 1a244afd's pairing has.
 
 ## The output set
 

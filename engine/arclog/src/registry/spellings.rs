@@ -19,6 +19,7 @@ pub(super) const DEFAULT: &str = "default";
 pub(super) const READS_OUTPUTS: &str = "reads-outputs";
 pub(super) const EXPLICIT: &str = "explicit";
 pub(super) const NATIVE: &str = "native";
+pub(super) const DOMAIN: &str = "domain";
 pub(super) const ARCLOG: &str = "arclog";
 pub(super) const POSE: &str = "Pose";
 pub(super) const SHARED_POSE: &str = "shared-pose";
