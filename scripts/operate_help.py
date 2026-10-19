@@ -37,6 +37,7 @@ USAGE = mctx("""
         uv run python scripts/operate.py restore <task id> [<reason>]
         uv run python scripts/operate.py release <task id>
         uv run python scripts/operate.py waits <ticket number>
+        uv run python scripts/operate.py bound [<tokens>|default]
         ```
     - Where `next`, `relay` or `review` is given the agent id of an agent other than the one its part of this help gives, it prints that the agent is none that form serves, and what that agent does.
     {parts}
@@ -46,6 +47,7 @@ USAGE = mctx("""
         - `<reason>` is the reason the task's pipeline stopped, or empty where that pipeline ran to its end, and `next` then takes that pipeline as ended with that reason.
     - `release` removes the task's claim.
     - `waits` prints the paths of links from a ticket, as `--help alerts` gives them, from the state `next` reads for the session.
+    - `bound` prints the context bound of an operator and an operator launcher in force, and its source, as `500000 override` or `100000 default`. Given `<tokens>`, a positive whole number, it first writes that number as the override, which holds for every session on the machine; given `default`, it first removes the override.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives.
     """)
 """The help the bare `--help` prints."""
@@ -225,7 +227,7 @@ PARTS = {
         - Its first step launches an operator whose brief is the launcher's brief.
         - Each later message of the coordinator's to the launcher goes, unchanged, to the operator of the launcher's that runs, or, where none runs or the one that runs sent the launcher its final reply, into the brief of the next operator it launches, which is the message `send` prints where no message waits.
         - Where an operator's final reply ends it for its context, it launches a fresh operator.
-            - Where the launcher's context is past the bound `context_bound_hook.py` gives, it sends the coordinator instead the launcher's final reply, which asks for a fresh operator launcher whose brief is that of the next operator, and gives it.
+            - Where the launcher's context is past the bound `uv run python scripts/operate.py bound` prints, it sends the coordinator instead the launcher's final reply, which asks for a fresh operator launcher whose brief is that of the next operator, and gives it.
         - Where an operator's final reply ends it for a wait, and no message of the coordinator's waits, it prints a call of `wait` in the background and that the launcher ends its turn, or, where that call runs, the end of the turn alone; once that call has completed, or once a message waits, it acts as after a final reply for the operator's context.
         - Where an operator ends with no final reply, it acts as after a final reply for the operator's context, unless the operator launched before it also ended with no final reply and each of the two ended within {idle} seconds of its launch.
         - It sends the coordinator any other final reply of an operator, and the end with no final reply that follows a quick end with none, after a line that gives that operator's agent id.

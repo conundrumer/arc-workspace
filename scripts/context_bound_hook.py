@@ -1,5 +1,6 @@
 """PreToolUse hook on Agent: denies the Agent call of an operator or an
-operator launcher subagent whose context is past `CONTEXT_BOUND` tokens, other than the launch of a
+operator launcher subagent whose context is past the bound in force
+(`context_bound`), other than the launch of a
 reply-only agent, a `general-purpose` agent on `haiku`. The denial gives the
 caller the call of `operate.py` that prints its calls (`ACTIONS`), which
 prints its end for its context.
@@ -9,6 +10,7 @@ hook cannot tell the caller's agent type or context, it allows the call and
 says why on stderr."""
 
 import sys
+from pathlib import Path
 from typing import Any
 
 from hook_entry import not_registered, run_pre_tool_use
@@ -23,9 +25,13 @@ ACTIONS: dict[str, Action] = {OPERATOR: Action.NEXT, OPERATOR_LAUNCHER: Action.R
 hooks hold to them."""
 OPERATORS = frozenset(ACTIONS)
 """The agent types that make only the calls their command prints."""
-CONTEXT_BOUND = 500_000
-"""Has no margin under it: the requests of a run's hand-over may go past
-it."""
+CONTEXT_BOUND = 100_000
+"""The bound in force where no override stands. Has no margin under it:
+the requests of a run's hand-over may go past it."""
+OVERRIDE = Path(".cache") / "context-bound"
+"""The file, under the main tree, that holds the bound that overrides
+`CONTEXT_BOUND` for every session on the machine, as one positive whole
+number of tokens."""
 REPLY_ONLY_TYPE = "general-purpose"
 
 
@@ -33,8 +39,39 @@ def bounded(agent_type: str) -> bool:
     return agent_type in OPERATORS
 
 
-def past_bound(context: int | None) -> bool:
-    return context is not None and context > CONTEXT_BOUND
+def tokens_of(text: str) -> int | None:
+    """The bound `text` gives as one positive whole number of tokens, or
+    None where it gives anything else."""
+    tokens = text.strip()
+    return int(tokens) if tokens.isdecimal() and int(tokens) > 0 else None
+
+
+def override_read(main_tree: Path) -> int | None:
+    """The bound the override file under `main_tree` holds, or None where
+    the file is absent. Where the file holds anything other than one
+    positive whole number, None, and says so on stderr."""
+    path = main_tree / OVERRIDE
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        return None
+    tokens = tokens_of(text)
+    if tokens is not None:
+        return tokens
+    print(f"{HOOK}: {path} holds no positive whole number, so the bound is "
+          f"{CONTEXT_BOUND:,}", file=sys.stderr)
+    return None
+
+
+def context_bound(main_tree: Path) -> int:
+    """The bound in force: the override under `main_tree`, or
+    `CONTEXT_BOUND` where none stands."""
+    override = override_read(main_tree)
+    return CONTEXT_BOUND if override is None else override
+
+
+def past_bound(context: int | None, bound: int) -> bool:
+    return context is not None and context > bound
 
 
 def reply_only(inp: dict[str, Any]) -> bool:
@@ -44,12 +81,12 @@ def reply_only(inp: dict[str, Any]) -> bool:
         and inp.get("model") == Model.HAIKU
 
 
-def past_reason(context: int, command: str) -> str:
+def past_reason(context: int, bound: int, command: str) -> str:
     from controlled_markdown import mctx
 
     return "\n".join([
         mctx("Blocked: your context is {context:,} tokens, past the bound of "
-             "{bound:,} tokens.").format(context=context, bound=CONTEXT_BOUND),
+             "{bound:,} tokens.").format(context=context, bound=bound),
         mctx("Run `{command}` again: it prints how you end.").format(command=command)])
 
 
@@ -59,6 +96,7 @@ def check(hook: dict[str, Any]) -> str | None:
     from operations.command_words import next_command
     from run_reads import caller_id, caller_type, context_size
     from entry_reads import entries_back
+    from tree_reads import main_tree
 
     tool, inp = hook["tool_name"], hook["tool_input"]
     if tool != "Agent":
@@ -75,12 +113,13 @@ def check(hook: dict[str, Any]) -> str | None:
         print(f"{HOOK}: allowed: no assistant entry of {path} gives usage, so "
               "the context is unknown", file=sys.stderr)
         return None
-    if not past_bound(context):
+    bound = context_bound(main_tree())
+    if not past_bound(context, bound):
         return None
     agent = caller_id(hook)
     if agent is None:
         raise ValueError(f"{HOOK}: the {kind} caller of {path} gives no agent id")
-    return past_reason(context, next_command(agent, ACTIONS[kind]))
+    return past_reason(context, bound, next_command(agent, ACTIONS[kind]))
 
 
 def main() -> int:

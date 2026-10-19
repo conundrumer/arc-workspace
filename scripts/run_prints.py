@@ -6,13 +6,14 @@ from collections.abc import Callable
 
 from agent_reports import Report
 from budgets import of_budget, past_budget
-from context_bound_hook import CONTEXT_BOUND, bounded, past_bound
+from context_bound_hook import bounded, context_bound, past_bound
 from controlled_markdown import mctx
 from open_agents import Listed, parent_reports
 from run_profile import clock, minutes, minutes_or_unknown, one_line
 from run_records import Run, Span
 from run_reads import MAIN
 from ticketing.times import utc_stamp
+from tree_reads import main_tree
 
 # The number of a listed agent's last calls that `--running` prints.
 RECENT_CALLS = 8
@@ -45,6 +46,7 @@ def latest_of(listed: Listed, over: Callable[[int], float | None],
 
 def print_running(agents: list[Listed], now: float, calls_since: float | None,
                   undecided: list[str]) -> None:
+    bound = context_bound(main_tree())
     for listed in agents:
         r = listed.run
         since = minutes_or_unknown(now - r.start if r.start is not None else None)
@@ -60,9 +62,9 @@ def print_running(agents: list[Listed], now: float, calls_since: float | None,
         self_text = minutes_or_unknown(self_time)
         note_unknown(r, undecided)
         context = f"{r.context:,}" if r.context is not None else "?"
-        past = "past " if past_bound(r.context) else ""
+        past = "past " if past_bound(r.context, bound) else ""
         mark = (" " + mctx("{past}bound {bound:,}").format(
-            past=past, bound=CONTEXT_BOUND) if bounded(r.agent_type) else "")
+            past=past, bound=bound) if bounded(r.agent_type) else "")
         print(f"{r.label} {r.agent_type}  parent {listed.parent}  {since}  "
               f"active {active}  self {self_text}  "
               f"context {context} tokens{mark}: {r.description}")

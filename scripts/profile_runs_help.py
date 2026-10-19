@@ -6,7 +6,7 @@ from enum import StrEnum
 from controlled_markdown import mctx
 from budgets import BUDGET_FACTOR, LOW_WAIT_PCT, MEDIAN_RUNS
 from command_labels import KNOWN, RUN_DL
-from context_bound_hook import CONTEXT_BOUND, OPERATOR
+from context_bound_hook import OPERATOR
 from open_agents import HUNG_FACTOR
 from run_prints import RECENT_CALLS
 from run_profile import COMMAND_WIDTH
@@ -215,7 +215,7 @@ PARTS = {
         - its active time, with the time of the message it is measured from and, where that message's period has ended, the time it ended;
         - its self time;
         - its context size in tokens, which is the input of its last request;
-            - for an agent of type `operator`, after its context size, `bound` and the operator's bound of {bound} tokens, led by `past` where its context is past that bound;
+            - for an agent of type `operator`, after its context size, `bound` and the bound in force, as `uv run python scripts/operate.py bound` prints it, in tokens, led by `past` where its context is past that bound;
         - its working directory, as its first entry gives it;
         - for an agent whose turn has ended, after `turn ended:`, the time its turn ended, which is the time of the last timestamped entry of its transcripts that ends a turn, as `--help runs` gives one, and the time since;
         - for an agent whose turn has ended, after `report to the parent:`, what one run prints there, as `--help one` gives it, from the same transcripts;
@@ -266,7 +266,7 @@ prints."""
 
 HELP_VALUES = dict(factor=BUDGET_FACTOR, median_runs=MEDIAN_RUNS,
                    low_wait_pct=LOW_WAIT_PCT, recent=RECENT_CALLS,
-                   width=COMMAND_WIDTH, bound=f"{CONTEXT_BOUND:,}",
+                   width=COMMAND_WIDTH,
                    iso_time=ISO_TIME, operator=OPERATOR,
                    general=GENERAL,
                    known=", ".join(f"`{label}`" for label in KNOWN.values()), run_dl=RUN_DL,

@@ -39,7 +39,7 @@ from operations.constants import (BLOCK_SECONDS, LIMIT_SECONDS, RUN_SECONDS, SUB
 from operations.task_work import release, restore, set_aside  # noqa: E402
 from operate_loop import block, operator_step, wait  # noqa: E402
 from operate_actions import (TASK_ID, OperateAction, claim_task, print_waits, relay_step,  # noqa: E402
-                             send_lines)
+                             send_lines, set_bound)
 from operate_help import PARTS, PURPOSES, USAGE, HelpPart  # noqa: E402
 from operate_review import review  # noqa: E402
 
@@ -61,6 +61,8 @@ def main(argv: list[str]) -> int:
     try:
         if argv == [OperateAction.SEND]:
             return send_lines(sys.stdin.read())
+        if argv == [OperateAction.BOUND]:
+            return set_bound([])
         args = parser.parse_args(argv)
         match OperateAction(args.action):
             case OperateAction.NEXT:
@@ -105,6 +107,10 @@ def main(argv: list[str]) -> int:
                 if args.rest or NUMBER.fullmatch(args.ident) is None:
                     parser.error(mctx("waits takes a ticket number alone"))
                 return print_waits(args.ident)
+            case OperateAction.BOUND:
+                if args.run is not None:
+                    parser.error(mctx("bound takes no {run_option}").format(run_option=runs.RUN_OPTION))
+                return set_bound([args.ident, *args.rest])
     except Refused as exc:
         print(f"operate: {exc}", file=sys.stderr)
         return 1

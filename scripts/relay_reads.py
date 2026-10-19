@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 from agent_turns import latest_time
-from context_bound_hook import past_bound
+from context_bound_hook import context_bound, past_bound
 from operator_transcript import read_operator
 from run_reads import context_size
 from transcripts import find, launched_find
@@ -54,7 +54,8 @@ def read_relay(me: str) -> tuple[Relay, Path]:
     relay = Relay(me, tuple(sorted((m for m in own.messages if m.sender is None),
                                    key=lambda m: m.time)),
                   tuple(runs), tuple(sorted(own.calls, key=lambda c: c.time)),
-                  past_bound(context_size(entries_back(path))), wait_running(me))
+                  past_bound(context_size(entries_back(path)), context_bound(main)),
+                  wait_running(me))
     return relay, scratch(session)
 
 

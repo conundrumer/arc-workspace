@@ -23,7 +23,7 @@ import kept_reads
 import step_journal
 from agent_turns import last_time
 from audit_window import window
-from context_bound_hook import past_bound
+from context_bound_hook import context_bound, past_bound
 from elsewhere_reads import editor_checks, elsewhere_agents
 from git_session_reads import given_lines, read_git, sessions, started
 from held_budgets import change_budgets, change_spend, doc_budgets
@@ -168,7 +168,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         transcripts_dir=main_path.parent, main_tree=main,
         scratch=scratch(session), operators=runs.operators, parents=runs.parents,
         open_operators=open_operators(runs.runs, me),
-        past_bound=bound_read(runs.runs, me),
+        past_bound=bound_read(runs.runs, me, main),
         open_holders=holders.open, session_holders=holders.session,
         tracker=TrackerRead(tickets, unread, index), transcripts=transcripts,
         git=tree, taken_up=took_up, held=read_held(tickets, me, tree),
@@ -322,9 +322,10 @@ def runs_read(session: str, me: str) -> RunsRead:
                     {aid: parent_id(p) for aid, p in runs})
 
 
-def bound_read(runs: list[tuple[str, Path]], me: str) -> bool:
-    """`State.past_bound` of the run of `me` in `runs`."""
-    return past_bound(context_size(entries_back(dict(runs)[me])))
+def bound_read(runs: list[tuple[str, Path]], me: str, main: Path) -> bool:
+    """`State.past_bound` of the run of `me` in `runs`, against the bound in
+    force under the main tree `main`."""
+    return past_bound(context_size(entries_back(dict(runs)[me])), context_bound(main))
 
 
 def readers_read() -> Deferred[tuple[Reader, ...]]:

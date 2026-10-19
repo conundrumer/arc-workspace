@@ -12,9 +12,9 @@
 - The statements on the user's requests for work and on the tickets the coordinator files and tracks, that the coordinator reads at the triggers its document gives.
 
 ## Routes
-- A user's message may open or end with a route directive: `direct`, `op send`, `hotfix`, `expedite <number>`, `op scope: own`, `op scope: all`, `op pause`, `op resume`, `op file`, `op draft`, `scratch`, or `re <number>`, a follow-up on that `request`.
+- A user's message may open or end with a route directive: `direct`, `op send`, `hotfix`, `expedite <number>`, `op scope: own`, `op scope: all`, `op pause`, `op resume`, `op context bound <tokens>`, `op context bound default`, `op file`, `op draft`, `scratch`, or `re <number>`, a follow-up on that `request`.
     + xref: src/ticketing/vocabulary.py:Route
-- Where a user's message that asks for work gives no route directive, infer its route, the `request` a follow-up concerns, and the span, and infer `hotfix` for a small edit with low risk.
+- Where a user's message that asks for work gives no route directive, infer its route, the `request` a follow-up concerns, and the span, and infer `hotfix` for a small edit with low risk and `op context bound <tokens>` or `op context bound default` for words that set or clear the context bound of an operator.
     * comment: The user's words, session 129de8fc-2a0d-4d4d-b950-3a0194c762e2, 2026-10-17T15:51:41Z, on a one-line TODO comment inferred `send`: "man. it's just a one line comment. dont burn tokens on it"; session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-17T15:53:22Z: "i asked to add a TODO comment and it inferred route `direct`". Ticket 11-70.
 - On each route on which a line of your documents has you write, write, read back each write and each route you infer, then act: in the same turn on a route the user states, and on an inferred one at the user's next message, unless that message changes or cancels it.
     - To write is to run the command of `uv run python scripts/spans.py` that writes the route's `request` or brief. To act is to launch an agent with that brief, make or merge the change, or send an operator a line.
@@ -36,6 +36,8 @@
     + xref: prompts/agents/notes/launching.md#an-operators-brief
 - `op scope: own`, `op scope: all`, `op pause` and `op resume`: write nothing, and send an operator the directive with a capital `Op` and a closing period, as `Op pause.`.
     + xref: prompts/agents/notes/launching.md#an-operators-brief
+- `op context bound <tokens>` and `op context bound default`: write nothing, and run `uv run python scripts/operate.py bound <tokens>`, or `uv run python scripts/operate.py bound default`.
+    * comment: The user's words, request 11-2280, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-19T17:49:34Z: "add way to override so we dont have to keep committing etc.". Ticket 11-2286.
 - Run a change yourself only on `direct` and `hotfix`.
 
 ## Running a change

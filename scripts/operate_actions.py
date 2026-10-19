@@ -1,7 +1,9 @@
 """The actions of `operate.py`, the steps of its `claim`, `start` and
-`relay` subcommands, the record of the lines of its `send`, and the
-output of its `waits`, as `operate.py --help` gives them."""
+`relay` subcommands, the record of the lines of its `send`, the output
+of its `waits`, and the context bound its `bound` sets and prints, as
+`operate.py --help` gives them."""
 
+import os
 import re
 import sys
 import time
@@ -9,10 +11,12 @@ from enum import StrEnum
 from pathlib import Path
 
 from arc import task
+from context_bound_hook import CONTEXT_BOUND, OVERRIDE, override_read, tokens_of
 from controlled_markdown import mctx
 from operator_reads import operator_runs
 from relay_reads import read_relay, session_id
 from state_assembly import read_state
+from ticket_numbers import staged
 from tree_reads import main_tree
 
 from operations import directives, relay, runs, ticket_stall, waits
@@ -39,6 +43,11 @@ class OperateAction(StrEnum):
     SEND = "send"
     WAITS = "waits"
     WAIT = WAIT_ACTION
+    BOUND = "bound"
+
+
+DEFAULT_BOUND = "default"
+"""The argument of `bound` that removes the override."""
 
 
 def claim_task(task_id: str) -> int:
@@ -93,4 +102,27 @@ def print_waits(number: str) -> int:
         return 1
     state, _ = read_state(operators[-1][0])
     print(waits.rendered(state, waits.paths(state, number, ticket_stall.stalled(state))))
+    return 0
+
+
+def set_bound(args: list[str]) -> int:
+    """Write the override the arguments `args` of `bound` give, or remove
+    it for `DEFAULT_BOUND`, then print the bound in force and its source;
+    fail on any other arguments."""
+    main = main_tree()
+    path = main / OVERRIDE
+    match args:
+        case []:
+            pass
+        case [word] if word == DEFAULT_BOUND:
+            path.unlink(missing_ok=True)
+        case [word] if (tokens := tokens_of(word)) is not None:
+            with staged(path.parent, f"{tokens}\n") as tmp:
+                os.replace(tmp, path)
+        case _:
+            print(mctx("operate: bound takes nothing, a positive whole number of tokens, "
+                       "or `{default}`").format(default=DEFAULT_BOUND), file=sys.stderr)
+            return 1
+    override = override_read(main)
+    print(f"{CONTEXT_BOUND} default" if override is None else f"{override} override")
     return 0
