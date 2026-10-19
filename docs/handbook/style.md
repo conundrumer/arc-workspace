@@ -11,9 +11,13 @@
 
 ### Identifiers
 - Variables use a single letter with an optional digit suffix, or leading-capital snake_case.
+    + xref: src/checker/lint/names.py:check_reserved_name, src/checker/lint/names.py:check_shadowed_type, src/checker/lint/names.py:check_lib_name
 - Macros: SCREAMING.
+    + xref: src/checker/lint/names.py:check_reserved_name, src/checker/lint/names.py:check_shadowed_type, src/checker/lint/names.py:check_lib_name
 - Types: PascalCase.
+    + xref: src/checker/lint/names.py:check_reserved_name, src/checker/lint/names.py:check_shadowed_type, src/checker/lint/names.py:check_lib_name
 - Relations: snake_case.
+    + xref: src/checker/lint/names.py:check_reserved_name, src/checker/lint/names.py:check_shadowed_type, src/checker/lint/names.py:check_lib_name
 
 ### Position frames
 - A Position is named for its coordinate frame.
@@ -61,8 +65,9 @@
 ## Params
 - **Shared parameters.**
     - A parameter that every case reads is declared above the case markers, and so are its facts when it has no case column.
+        + xref: src/solver/model.py:Unmarked, src/checker/lint/style.py:check_shared_read
     - A parameter that some case never reads goes under the marker of the cases that read it.
-        + xref: src/solver/model.py:Unmarked, src/checker/lint/form/case_type.py:check_case_marker, src/checker/lint/form/sections.py:check_case_section, src/checker/lint/form/sections.py:check_case_section_read
+        + xref: src/checker/lint/style.py:check_shared_read, src/checker/lint/form/case_type.py:check_case_marker, src/checker/lint/form/sections.py:check_case_section, src/checker/lint/form/sections.py:check_case_section_read
 - **Derived data.** A clause inside Params writes no value as a literal.
     + xref: src/checker/lint/bans.py:check_params_data
 - Facts are not column-aligned across a block.

@@ -273,7 +273,9 @@
 ## Alt outputs
 - A task JSON may give a pair alternate outputs in an alt, whose `kind` states how the outputs differ.
 - An alt with kind `rule` gives the pair a second candidate.
+    + xref: src/solver/pair_runs.py:AltKind
 - An alt with kind `tiebreak` gives resolutions within one candidate.
+    + xref: src/solver/pair_runs.py:AltKind
 - The solver enumerates a tiebreak's resolutions through a trailing `out` column of type `TiebreakResolution`.
     + xref: src/checker/lint/style.py:check_choice_domain, src/solver/outcome.py:Grids, src/solver/vocabulary.py:TIEBREAK_RESOLUTION
     - A case reads in that column each value.

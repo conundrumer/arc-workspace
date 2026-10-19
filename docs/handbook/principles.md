@@ -194,9 +194,11 @@
 - **verdict**: the annotator's judgment of the output that the generator would pair with the witness.
     + xref: src/checker/witness.py:check_entry_outputs, src/checker/witness.py:check_witness_lines, docs/handbook/principles.md#the-concept, docs/handbook/principles.md#choice-points-and-open-parameters
     - `concept`: the concept case's output.
+        + xref: src/solver/annotations.py:VerdictWord
     - the branch's name: the output of that branch's model.
+        + xref: src/solver/annotations.py:NamedVerdict
     - `any`: the output of any case defined on the witness.
-        + xref: src/solver/annotations.py:NamedVerdict, src/solver/annotations.py:VerdictWord
+        + xref: src/solver/annotations.py:VerdictWord
     - `other`: an output that no case produces.
         + xref: src/checker/witness.py:check_other_verdict, src/solver/annotations.py:VerdictWord
 
