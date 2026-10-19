@@ -17,8 +17,8 @@
 //! of the solver's files. A run starts no check whose result is stored at
 //! its keys, and two runs that overlap in time start one check for each
 //! result, by a lock file beside it. The base engine is `git archive` of
-//! the base's `engine/`, with `check_one.rs` of the checkout under check
-//! copied in, built once for each key in `.cache/check-diff/engines/`.
+//! the base's `engine/`, with the base's own `check_one.rs`, built once for
+//! each key in `.cache/check-diff/engines/`.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -423,7 +423,7 @@ fn current_files(root: &Path) -> Result<Files, String> {
 }
 
 /// The engine's files of the commit `rev`, as [`current_files`] gives them,
-/// with `check_one.rs` of the checkout at `root`, which the base build runs.
+/// at `rev`.
 fn base_files(root: &Path, rev: &str) -> Result<Files, String> {
     let listed = git(root, &["ls-tree", "-r", "-z", rev, "--", "engine"])?;
     let mut blobs = Vec::new();
@@ -431,15 +431,11 @@ fn base_files(root: &Path, rev: &str) -> Result<Files, String> {
         let entry = String::from_utf8_lossy(entry);
         let Some((meta, path)) = entry.split_once('\t') else { return Err(format!("`git ls-tree` gives the entry {entry}")) };
         let [_, kind, object] = meta.split(' ').collect::<Vec<_>>()[..] else { return Err(format!("`git ls-tree` gives the entry {entry}")) };
-        if kind == "blob" && (!path.starts_with("engine/arclog-cli/") || path == MANIFEST) {
+        if kind == "blob" && (!path.starts_with("engine/arclog-cli/") || path == MANIFEST || path == CHECK_ONE) {
             blobs.push((path.to_owned(), object.to_owned()));
         }
     }
-    let mut files: Files = blobs.iter().map(|(path, _)| path.clone()).zip(cat_blobs(root, blobs.iter().map(|(_, o)| o.as_str()))?.into_iter().map(Some)).collect();
-    let check_one = root.join(CHECK_ONE);
-    let bytes = std::fs::read(&check_one).map_err(|error| format!("{} does not read: {error}", check_one.display()))?;
-    files.insert(CHECK_ONE.to_owned(), Some(bytes));
-    Ok(files)
+    Ok(blobs.iter().map(|(path, _)| path.clone()).zip(cat_blobs(root, blobs.iter().map(|(_, o)| o.as_str()))?.into_iter().map(Some)).collect())
 }
 
 /// The bytes of each blob of `objects`, in their order, by `git cat-file
@@ -502,6 +498,7 @@ fn solver_files(corpus: &Path, task_id: &str) -> Files {
 
 /// The `check_one` of the base engine at `rev`, built in `dir`, which is
 /// made from `git archive` of `engine/` at `rev` where it does not stand.
+/// A `rev` that holds no `check_one.rs` fails the build.
 fn build_base(root: &Path, rev: &str, dir: &Path) -> Result<PathBuf, String> {
     if !dir.exists() {
         let engines = dir.parent().expect("an engine's directory stands in `engines/`");
@@ -519,9 +516,6 @@ fn build_base(root: &Path, rev: &str, dir: &Path) -> Result<PathBuf, String> {
         if !archive.wait().is_ok_and(|status| status.success()) {
             return Err(format!("`git archive {rev} engine` fails"));
         }
-        let bin = temporary.join("engine/arclog-cli/src/bin");
-        std::fs::create_dir_all(&bin).map_err(|error| format!("{} cannot be made: {error}", bin.display()))?;
-        std::fs::copy(root.join(CHECK_ONE), bin.join("check_one.rs")).map_err(|error| format!("{CHECK_ONE} cannot be copied: {error}"))?;
         if std::fs::rename(&temporary, dir).is_err() && dir.exists() {
             let _ = std::fs::remove_dir_all(&temporary);
         }

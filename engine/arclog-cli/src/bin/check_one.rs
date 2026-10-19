@@ -6,9 +6,6 @@
 //! the resolution of each case program, the concept case first, then of the
 //! check of each. Where the read is refused, it prints the read's lines,
 //! each line of the refusal led by `refused: `, and checks nothing.
-//!
-//! It depends on the `arclog` crate alone, since `check-diff` builds it in
-//! a copy of a base engine whose `arclog-cli` can differ from this one.
 
 use std::path::Path;
 use std::process::ExitCode;
