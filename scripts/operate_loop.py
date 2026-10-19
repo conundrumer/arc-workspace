@@ -28,7 +28,7 @@ from controlled_markdown import mctx
 from file_reads import held_paths, stats_stand_but
 from relay_reads import LOCK_DIR, read_relay, session_id, wait_lock, wait_running
 from run_reads import agent_type
-from state_assembly import DUE_SINCE, UNWAITED_SINCE, read_state, write_record
+from state_assembly import DUE_SINCE, UNWAITED_SINCE, read_state, write_record, write_shown
 from state_reads import partial
 from transcripts import find
 
@@ -314,7 +314,8 @@ def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
     plans again and runs the Bash step it gives. After each read, it
     writes the session's records of the times from which a step has been
     due (`ticket_stall.due_times`) and from which a ticket has waited on no
-    party (`unwaited.times`) for the next read. Where a run has not
+    party (`unwaited.times`) for the next read, and the record of the state
+    the ticket dashboard shows. Where a run has not
     ended by `deadline`, the step is the wait."""
     here = tree_reads.scratch(session_id())
     while True:
@@ -337,10 +338,12 @@ def read_and_record(me: str, here: Path) -> tuple[State, MonitorState]:
     """The state `read_state` gives `me`, once the records under `here` of
     the times from which a step has been due (`ticket_stall.due_times`) and
     from which a ticket has waited on no party (`unwaited.times`) hold
-    those of that state."""
+    those of that state, and the record of the state the ticket dashboard
+    shows (`state_assembly.Shown`) holds that state's."""
     state, watch = read_state(me)
     write_record(here, DUE_SINCE, ticket_stall.due_times(state))
     write_record(here, UNWAITED_SINCE, unwaited.times(state))
+    write_shown(here, state)
     return state, watch
 
 

@@ -4,9 +4,11 @@ transcripts of the session's operators, and of the state the monitor's
 steps read (`monitor_reads`); and the session's records of the times from
 which an operator's step has been due on each ticket (`State.due_since`,
 in the file `DUE_SINCE`) and from which each ticket has waited on no party
-(`State.unwaited_since`, in the file `UNWAITED_SINCE`), each a JSON object
-in the session's scratchpad, read by `read_state` (`record_read`) and
-written by `write_record`."""
+(`State.unwaited_since`, in the file `UNWAITED_SINCE`), read by `read_state`
+(`record_read`) and written by `write_record`, and of the state the ticket
+dashboard shows (`Shown`, in the file `SHOWN`), written by `write_shown`
+and read by `shown_read`, each a JSON object in the session's
+scratchpad."""
 
 import atexit
 import json
@@ -55,9 +57,9 @@ from usage_limit import read_usage
 from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
 from operations import pacing
-from operations.pacing import Usage
-from operations.directives import given_again, named, pace
-from operations.taking import allowed
+from operations.pacing import Scripted, Until, Usage
+from operations.directives import Directive, given_again, named, own_scope, pace, paused, session_lines
+from operations.taking import allowed, expedited
 from operations.monitor import MonitorState
 from operations.plan import taken_up
 from operations.state import (
@@ -69,6 +71,7 @@ from operations.state import (
     LateResume,
     NotComputed,
     Reader,
+    Spend,
     State,
     Stuck,
     TrackerRead,
@@ -89,6 +92,10 @@ DUE_SINCE = "due-since.json"
 UNWAITED_SINCE = "unwaited-since.json"
 """The name of the file, in the session's scratchpad, that holds
 `State.unwaited_since`."""
+
+SHOWN = "shown-state.json"
+"""The name of the file, in the session's scratchpad, that holds the
+`Shown` of the operator's last read of the state."""
 
 DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.CONSOLE, ReaderName.SURVEY,
                         ReaderName.WORKFLOW})
@@ -198,9 +205,102 @@ def record_read(here: Path, name: str) -> dict[str, DueEntry]:
 
 def write_record(here: Path, name: str, times: Mapping[str, DueEntry]) -> None:
     """Replaces the file `name` under `here` with `times`, each entry as the
-    pair its `DueEntry` gives, at once."""
-    with staged(here, json.dumps({n: [e.since, e.last] for n, e in sorted(times.items())})) as tmp:
+    pair its `DueEntry` gives."""
+    replaced(here, name, {n: [e.since, e.last] for n, e in sorted(times.items())})
+
+
+def replaced(here: Path, name: str, record: object) -> None:
+    """Replaces the file `name` under `here` with the JSON of `record`, at
+    once."""
+    with staged(here, json.dumps(record)) as tmp:
         os.replace(tmp, here / name)
+
+
+@dataclass(frozen=True)
+class ScriptAdmits:
+    """The pace of an `Op pace: <path>` line, as `Shown` keeps it: whether
+    the script admits a step that starts an agent's run."""
+    admits: bool
+
+
+type ShownPace = Until | ScriptAdmits | NotComputed
+
+
+@dataclass(frozen=True)
+class Shown:
+    """The values of a read of the state that the ticket dashboard shows:
+    the time of the read, the text of the `Op pace:` line in force, or None
+    where the pace is the default, the pace computed, whether the session
+    is paused and keeps to its own scope, the tickets expedited and
+    allowed, and the spend of each change the operator holds by its
+    dollars and its roles."""
+    at: float
+    pace_line: str | None
+    pace: ShownPace
+    paused: bool
+    own_scope: bool
+    expedited: tuple[str, ...]
+    allowed: tuple[str, ...]
+    spent: Mapping[str, tuple[float, tuple[str, ...]]]
+
+
+def shown(state: State) -> Shown:
+    """The `Shown` of `state`."""
+    lines = [ln.text for ln in session_lines(state) if ln.kind is Directive.PACE]
+    kept: ShownPace
+    match state.computed.pace:
+        case Scripted(_, admits):
+            kept = ScriptAdmits(admits)
+        case other:
+            kept = other
+    return Shown(state.now, lines[-1] if lines and pace(state) is not None else None, kept,
+                 paused(state), own_scope(state), tuple(sorted(expedited(state))),
+                 tuple(sorted(allowed(state))),
+                 {n: (s.dollars, tuple(sorted(s.by_role))) for n, s in sorted(state.computed.spent.items())})
+
+
+def write_shown(here: Path, state: State) -> None:
+    """Replaces the file `SHOWN` under `here` with the `Shown` of `state`."""
+    s = shown(state)
+    match s.pace:
+        case Until(at, cap):
+            pace_json: dict[str, object] = {"until": at, "cap": cap}
+        case ScriptAdmits(admits):
+            pace_json = {"script_admits": admits}
+        case NotComputed(why):
+            pace_json = {"not_computed": why}
+    replaced(here, SHOWN, {
+        "at": s.at, "pace_line": s.pace_line, "pace": pace_json, "paused": s.paused,
+        "own_scope": s.own_scope, "expedited": list(s.expedited), "allowed": list(s.allowed),
+        "spent": {n: {"dollars": d, "roles": list(r)} for n, (d, r) in s.spent.items()}})
+
+
+def shown_read(here: Path) -> Shown | str:
+    """The `Shown` the file `SHOWN` under `here` holds, or why there is
+    none: the file is missing, or does not hold the JSON `write_shown`
+    writes."""
+    try:
+        r = json.loads((here / SHOWN).read_text())
+    except OSError:
+        return f"no read of the state is recorded ({here / SHOWN} is missing)"
+    except ValueError as e:
+        return f"the record {here / SHOWN} does not parse: {e}"
+    try:
+        p = r["pace"]
+        kept: ShownPace
+        if "until" in p:
+            kept = Until(float(p["until"]), None if p["cap"] is None else int(p["cap"]))
+        elif "script_admits" in p:
+            kept = ScriptAdmits(bool(p["script_admits"]))
+        else:
+            kept = NotComputed(str(p["not_computed"]))
+        return Shown(float(r["at"]), None if r["pace_line"] is None else str(r["pace_line"]), kept,
+                     bool(r["paused"]), bool(r["own_scope"]), tuple(map(str, r["expedited"])),
+                     tuple(map(str, r["allowed"])),
+                     {str(n): (float(v["dollars"]), tuple(map(str, v["roles"])))
+                      for n, v in r["spent"].items()})
+    except (KeyError, TypeError, ValueError, AttributeError) as e:
+        return f"the record {here / SHOWN} does not hold a read of the state: {e!r}"
 
 
 @dataclass(frozen=True)
