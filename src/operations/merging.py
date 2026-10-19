@@ -29,12 +29,12 @@ script's own forms and by `master` (`state.Merge`,
   (`NOT_PUT_ON`) hands the change to the coordinator, with a note that
   gives the call, the script's refusal line and the worktree, since no
   editor may move the branch;
-- a hand-off moves the change to `tickets/open/` and back to
+- a hand-off moves the change to `tickets/released/` and back to
   `tickets/assigned/` with the session id as its holder, which holds it
   live while the coordinator's session runs, so no operator takes it; the
   command then sends the coordinator the note as an `unfinished:` item,
   once (`handoffs`). Once an operator takes the change from
-  `tickets/open/` after the hand-off, or a line moves it from
+  `tickets/released/` after the hand-off, or a line moves it from
   `tickets/blocked/` back to `tickets/assigned/` after the call, the merge
   call is given again;
 - a refusal whose output reports a `quotes` call a change to the documents
@@ -395,22 +395,22 @@ def hand_off(state: State, t: Ticket, command: str, w: Path, outcome: str) -> Ba
     merge call `command` on `w` gave `outcome`. The move back is refused
     where an operator took the change between the two moves."""
     note = HANDED_OFF.format(command=command, outcome=outcome, worktree=w)
-    return Bash(log(t.number, Status.OPEN, Status.ASSIGNED, note, None) + " && "
-                + log(t.number, Status.ASSIGNED, Status.OPEN, note, state.session),
+    return Bash(log(t.number, Status.RELEASED, Status.ASSIGNED, note, None) + " && "
+                + log(t.number, Status.ASSIGNED, Status.RELEASED, note, state.session),
                 f"{t.number} hand off", occasion=str(t.last_time))
 
 
 def came_back(t: Ticket, since: float) -> bool:
     """Whether the change `t` came back to an operator after `since` from a
     state off the merge path: a line moved it from `tickets/blocked/` back
-    to `tickets/assigned/`, or an operator took it from `tickets/open/`
+    to `tickets/assigned/`, or an operator took it from `tickets/released/`
     after a hand-off."""
     handed = False
     for prev, ln in zip(t.log, t.log[1:]):
         handed = handed or (ln.time > since and handed_off(ln))
         if ln.time > since and ln.status is Status.ASSIGNED and (
                 prev.status is Status.BLOCKED
-                or (handed and prev.status is Status.OPEN and not handed_off(ln))):
+                or (handed and prev.status is Status.RELEASED and not handed_off(ln))):
             return True
     return False
 

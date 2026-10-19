@@ -19,7 +19,8 @@ from operations.roles import AGENT_ID as AGENT_ID_FORM
 from ticketing.links import link_targets
 from ticketing.text import VALIDATION, heading
 from ticketing.times import stamp_time, utc_stamp
-from ticketing.vocabulary import WAIT_STATUSES, Domain, Kind, Note, Resolution, Status, Verdict, Wait, note_opening
+from ticketing.vocabulary import (ALLOW, UNTAKEN, WAIT_STATUSES, Domain, Kind, Note, Resolution, Status, Verdict, Wait,
+                                  note_opening, queued)
 from file_reads import file_text, stat_of
 from state_reads import state_cache
 from transcript_snapshots import Refused
@@ -56,7 +57,7 @@ DUPLICATE_OF_LINE = re.compile(DUPLICATE_OF.format(
 """The opening of a note of the form `DUPLICATE_OF`."""
 
 UNBLOCKED_BY = "{change} {number} closed {resolution}"
-"""The note of the line that moves into `open` a ticket that waits on a
+"""The note of the line that moves into `reopened` a ticket that waits on a
 change closed with another resolution, with that change's number and
 resolution."""
 
@@ -116,6 +117,17 @@ def log_line(status: Status, agent: str, agent_id: str | None, note: str | None)
     return f"{line}: {note}\n" if note else f"{line}\n"
 
 
+def is_allow(line: re.Match[str]) -> bool:
+    """Whether the log line `line` is an allow line (`vocabulary.ALLOW`)."""
+    return line["agent"] == ALLOW
+
+
+def allowers(lines: list[re.Match[str]]) -> tuple[str, ...]:
+    """The session ids of the allow lines among `lines`, each once, in the
+    order of their first lines."""
+    return tuple(dict.fromkeys(line["id"] for line in lines if is_allow(line) and line["id"]))
+
+
 def read_ticket(path: Path) -> str:
     """The text of the ticket at `path`, refused where its file moved after
     `ticket_path` found it."""
@@ -160,6 +172,12 @@ def check_line(status: Status, moves: bool, agent: str, agent_id: str | None,
     if agent_id is None and moves and status is Status.ASSIGNED:
         raise Refused(mctx("an `assigned` line takes your agent id, or the session id of a session "
                            "that takes the ticket itself, in `--id`"))
+    if agent == ALLOW and (moves or agent_id is None or not SESSION_ID.fullmatch(agent_id)
+                           or note != ALLOW or status in (Status.ASSIGNED, Status.CLOSED)):
+        raise Refused(mctx("an `{allow}` line has the note `{allow}`, moves nothing, takes the session "
+                           "id of the coordinator that writes it in `--id`, and stands on no ticket "
+                           "under `{assigned}` or `{closed}`").format(
+                               allow=ALLOW, assigned=Status.ASSIGNED, closed=Status.CLOSED))
     if note is not None and (not note.strip() or "\n" in note or "\r" in note):
         raise Refused(mctx("the note is not one line of text"))
     if moves and status is Status.CLOSED and resolution_of(note) is None:
@@ -315,12 +333,29 @@ def check_log(tickets: Path, path: Path, number: TicketNumber, status: Status, a
     if moves and status in WAIT_STATUSES:
         check_wait(tickets, status, note)
     text = read_ticket(path)
+    if moves and status in UNTAKEN:
+        check_queue(status, source, ticket_kind(text))
     headings = HEADING.findall(text)
     if not headings or headings[-1] != LOG:
         raise Refused(mctx("`{log}` is not the last section of {path}").format(log=LOG, path=path))
     if not moves and status is Status.ASSIGNED and agent_id:
         check_take(text, agent_id)
     check_cycle(tickets, path, number, status, source, note, text)
+
+
+def check_queue(status: Status, source: Status, kind: Kind | None) -> None:
+    """Refuses a move of a ticket of `kind` from `source` into the queue
+    status `status` other than the one `vocabulary.queued` gives."""
+    if source in UNTAKEN:
+        raise Refused(mctx("ticket stands under `{source}`, in a take's queue already").format(
+            source=source))
+    if kind is None:
+        raise Refused(mctx("the ticket gives no kind, which the status of its move into a take's "
+                           "queue depends on"))
+    expected = queued(source, kind)
+    if status is not expected:
+        raise Refused(mctx("a move of a `{kind}` from `{source}` into a take's queue goes into "
+                           "`{expected}`").format(kind=kind, source=source, expected=expected))
 
 
 def write_log(tickets: Path, path: Path, number: TicketNumber, status: Status, agent: str,
@@ -493,7 +528,7 @@ def unblock(tickets: Path, change: TicketNumber, agent: str, agent_id: str | Non
                     else:
                         to, line = Status.CLOSED, closed
                 else:
-                    to, line = Status.OPEN, opened
+                    to, line = Status.REOPENED, opened
                 moves.add(log_moves(tickets, ticket_name(path).number, to, agent, Status.WAITING,
                                     agent_id, line))
         except Moved:

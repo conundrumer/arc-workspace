@@ -74,7 +74,7 @@ gate's `--help` gives. It then removes each worktree and its branch.
 budget on the new `master`. Where some document stands past its budget
 and no whole-document pass stands outside `tickets/closed/`, it files one
 pass, a `change` for a doc editor on every document then past its budget,
-under `tickets/open/` with no ticket review, and the script prints its
+under `tickets/approved/` with no ticket review, and the script prints its
 path. A document that goes past its budget while a pass stands open gets
 the next pass, which the first merge after that pass closes files.
 

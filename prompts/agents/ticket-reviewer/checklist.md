@@ -21,7 +21,7 @@
     + xref: prompts/agents/ticket-reviewer/review.md#reviewing-a-draft
 
 # Leave or move each draft
-- Leave each draft of your brief with a finding or a suggestion under `tickets/draft/`, and move each other draft of your brief to `tickets/open/` with `uv run python scripts/file_ticket.py log`, in the form its `--help` gives.
+- Leave each draft of your brief with a finding or a suggestion under `tickets/draft/`, and move each other draft of your brief to `tickets/approved/` with `uv run python scripts/file_ticket.py log`, in the form its `--help` gives.
     + xref: scripts/file_ticket.py:SUBCOMMANDS
 
 # Reply

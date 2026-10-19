@@ -10,11 +10,11 @@ from ticket_form import ticket_kind, title
 from ticket_log import read_ticket
 from ticket_numbers import TicketNumber, ticket_number
 from ticketing.exits import Exit, exit_of
-from ticketing.vocabulary import Domain, Kind, Status
+from ticketing.vocabulary import UNTAKEN, Domain, Kind, Status
 from transcript_snapshots import Refused
 
 def settled_elsewhere(tickets: Path, path: Path, name: TicketName) -> bool:
-    """Whether the list of `to-settle` leaves out the open ticket at
+    """Whether the list of `to-settle` leaves out the untaken ticket at
     `path`, named `name`, refused where that command's help gives it
     refuses."""
     text = read_ticket(path)
@@ -23,7 +23,7 @@ def settled_elsewhere(tickets: Path, path: Path, name: TicketName) -> bool:
         raise Refused(mctx("{path} gives no kind in its front matter").format(path=path))
     on_open_change = (kind is Kind.QUESTION and name.domain is Domain.CHANGE and ticket_status(
         listed_ticket_path(tickets, ticket_number(name.subject))) is not Status.CLOSED)
-    exits = exit_of(Status.OPEN, kind, on_open_change=on_open_change, title=title(path, text))
+    exits = exit_of(ticket_status(path), kind, on_open_change=on_open_change, title=title(path, text))
     return Exit.TICKET_ANALYST not in exits.by
 
 
@@ -32,7 +32,7 @@ def to_settle(tickets: Path, session: int, adopted: Collection[int],
     """The numbers of the list of `to-settle`, for the session with index
     `session`, the indexes it adopts (`state.SessionsRead.adopted`) and
     the numbers `given`."""
-    names = {p: ticket_name(p) for p in ticket_files(tickets, Status.OPEN)}
+    names = {p: ticket_name(p) for status in UNTAKEN for p in ticket_files(tickets, status)}
     paths = {p for p, name in names.items() if name.number.session == session
              or name.number.session in adopted}
     paths.update(p for p in (listed_ticket_path(tickets, number) for number in given) if p in names)

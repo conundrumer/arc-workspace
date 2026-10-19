@@ -25,7 +25,7 @@ class Exit(StrEnum):
     """The ticket analyst of the open change a `question` is on."""
     HOLDER = "holder"
     RELEASE = "release"
-    """The move back to `tickets/open/` once the holder is not live."""
+    """The move to `tickets/released/` once the holder is not live."""
     COORDINATOR_MOVE = "coordinator move"
     """The coordinator's own move of a ticket that no procedure moves: a
     `request` the coordinator routes to `tickets/draft/`."""
@@ -39,7 +39,7 @@ class Exit(StrEnum):
 @dataclass(frozen=True)
 class Exits:
     """The steps that take a ticket out of its status, and whether its move
-    from that status into `tickets/open/` frees it for a fresh ticket
+    from that status into `tickets/reopened/` frees it for a fresh ticket
     analyst: an analyst launched before it was set aside judged it as it
     stood then."""
     by: frozenset[Exit]
@@ -54,7 +54,7 @@ def exit_of(status: Status, kind: Kind, *, on_open_change: bool, title: str) -> 
         case Status.DRAFT:
             return Exits(frozenset({Exit.TICKET_REVIEW if change else Exit.COORDINATOR_MOVE}),
                          frees=False)
-        case Status.OPEN:
+        case Status.NEW | Status.APPROVED | Status.REOPENED | Status.RELEASED:
             if change:
                 return Exits(frozenset({Exit.TAKE}), frees=False)
             if kind is Kind.REFACTOR and title.endswith(MANY_IDEAS):
@@ -103,7 +103,7 @@ def freed[L: Line](log: tuple[L, ...], kind: Kind, filed: float) -> Freed:
     that line has seen the move as well."""
     last = next((ln for ln in reversed(log) if ln.agent == COORDINATOR), None)
     moved = max((ln.time for before, ln in zip(log, log[1:])
-                 if ln.status is Status.OPEN and frees(before.status, kind)), default=filed)
+                 if ln.status is Status.REOPENED and frees(before.status, kind)), default=filed)
     if last is not None and last.time >= moved:
         return Freed(last.time, last)
     return Freed(moved, None)

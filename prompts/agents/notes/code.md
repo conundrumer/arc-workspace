@@ -66,7 +66,7 @@
 - Close with `wontfix` the ticket of each defect place that stands, and give the judgment in the note after it.
 
 ## review-reply
-- Your final reply goes to the agent that launched you, in at most six lines: the pattern that matches the names of the tickets you left under `tickets/open/`, and the count of tickets under each kind of place.
+- Your final reply goes to the agent that launched you, in at most six lines: the pattern that matches the names of the tickets you left under `tickets/new/`, and the count of tickets under each kind of place.
 
 ## place-tickets
 - Cite a place's target as every location of the place.

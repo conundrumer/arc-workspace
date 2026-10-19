@@ -5,6 +5,6 @@
         - What its final reply gives: [Reply](#reply).
 
 # Reply
-- Give in your final reply each ticket you moved to `tickets/open/`, and each finding and each suggestion by its ticket.
+- Give in your final reply each ticket you moved to `tickets/approved/`, and each finding and each suggestion by its ticket.
 - Give in it as well what [denied-calls](prompts/agents/notes/commands.md#denied-calls) gives.
     + xref: prompts/agents/notes/commands.md#denied-calls

@@ -39,7 +39,7 @@
 
 ## Changes
 - Before you launch a pass on a task, read [Passes on a task](prompts/agents/notes/launching.md#passes-on-a-task).
-- Before you send an operator a line, or move or revise a `change` ticket, and when an operator's message reaches you, the user rules on a `change` ticket, or a `change` of your session comes to stand under `tickets/open/`, read [Operators](prompts/agents/notes/launching.md#operators).
+- Before you send an operator a line, or move or revise a `change` ticket, and when an operator's message reaches you, the user rules on a `change` ticket, or a `change` of your session comes to stand untaken, read [Operators](prompts/agents/notes/launching.md#operators).
 - While the user gives feedback, read [While the user gives feedback](prompts/agents/notes/launching.md#while-the-user-gives-feedback).
 - Read [Making a change](prompts/agents/notes/changes.md#making-a-change) before you change the code or the documents, [Merging a change](prompts/agents/notes/changes.md#merging-a-change) before you merge a change, and [A denied merge](prompts/agents/notes/changes.md#a-denied-merge) where a merge call of a change is denied, yours or one an agent you launched gives.
 

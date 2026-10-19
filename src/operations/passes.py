@@ -21,7 +21,7 @@ reply. Where it wrote no such file with a `## Tickets filed` section, the
 pass gets `messages.PASS_RESEND` on its reply once. The pipeline stops
 where the pass still wrote no such file, once a ticket analyst on its last reply, quoted, as an
 undecided step was launched; where an `interference`
-ticket waits on the user; where one stands open once the ticket analyst
+ticket waits on the user; where one stands untaken or assigned once the ticket analyst
 returned; or where a ruling passes over its next pass. A ruling on a pass
 holds for each pipeline on its task unless the work set aside for an
 earlier pipeline on that task went back after the ruling and before the
@@ -54,7 +54,7 @@ from operations.directives import Line, Pipeline, lines, overrides, passed, pipe
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
 from operations.state import Agent, Call, Restore, State, Ticket, last_reported, memoized
-from ticketing.vocabulary import Domain, Kind, Resolution, Status
+from ticketing.vocabulary import UNTAKEN, Domain, Kind, Resolution, Status
 from operations.command_words import RUN_COMMAND, simple_commands
 from operations.handled import bash_calls, bash_calls_within, done, repeated, send_again
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids
@@ -195,7 +195,7 @@ def interference(state: State, p: Pipeline) -> str | bool:
             return mctx("interference ticket {number} waits on the user").format(number=t.number)
         given = [x for x, _, nums in state.analysts()
                  if t.number in nums and x.launched > t.filed]
-        if t.status in (Status.OPEN, Status.ASSIGNED) and given and not any(
+        if (t.status in UNTAKEN or t.status is Status.ASSIGNED) and given and not any(
                 x.pending for x in given):
             return mctx("the ticket analyst left interference ticket {number} open").format(
                 number=t.number)

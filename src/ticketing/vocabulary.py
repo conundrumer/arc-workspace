@@ -1,6 +1,7 @@
 """The ticket vocabulary that the ticket tools under `scripts/` and the
 operator's command (`operations`) share: the statuses a ticket moves
-between and the last line of a log that moves it into one, the
+between, the status of a move into a take's queue (`queued`) and the last
+line of a log that moves it into one, the
 resolutions it closes with, the domains of its subject, its kinds, the
 note of the line that files it and the route of a request, and the end
 of the title of a `refactor` ticket on a module that holds more than one subject. What
@@ -9,11 +10,23 @@ takes a ticket out of each status, `exits` gives."""
 import re
 from collections.abc import Sequence
 from enum import StrEnum
+from typing import assert_never
 
 class Status(StrEnum):
     """The directories under `tickets/` that a ticket's file moves between."""
     DRAFT = "draft"
-    OPEN = "open"
+    NEW = "new"
+    """A ticket other than a `change`, filed, that no agent has taken since."""
+    APPROVED = "approved"
+    """A `change` whose ticket review passed and that no agent has taken
+    since."""
+    REOPENED = "reopened"
+    """A ticket that a move from `blocked`, `waiting`, `deferred` or `closed`
+    set back for a take."""
+    RELEASED = "released"
+    """A ticket whose hold ended without a settling move, by its holder or
+    by the operator for a holder that is not live; it waits for its next
+    take with what its holder left, a change's worktree included."""
     ASSIGNED = "assigned"
     BLOCKED = "blocked"
     """A ticket that waits on the user."""
@@ -26,9 +39,45 @@ class Status(StrEnum):
     check."""
 
 
+UNTAKEN = (Status.NEW, Status.APPROVED, Status.REOPENED, Status.RELEASED)
+"""The statuses of a ticket that waits for a take, the statuses of a take's
+queue, in the order of `Status`."""
+
+
 SETTLED = (Status.CLOSED, Status.DEFERRED)
 """The statuses of a ticket that leaves its session's index out of the
 indexes in which no agent runs that the main session's operators read."""
+
+
+class Kind(StrEnum):
+    """What a ticket is."""
+    INTERFERENCE = "interference"
+    DELAY = "delay"
+    QUESTION = "question"
+    BUG = "bug"
+    PERFORMANCE = "performance"
+    REFACTOR = "refactor"
+    CHANGE = "change"
+    REQUEST = "request"
+    VALIDATION = "validation"
+    """The check of a `request`'s need, which `file_ticket.py log` files
+    as the request closes."""
+
+
+def queued(source: Status | None, kind: Kind) -> Status:
+    """The status of a move of a ticket of `kind` into a take's queue from
+    `source`, None at its filing."""
+    match source:
+        case Status.BLOCKED | Status.WAITING | Status.DEFERRED | Status.CLOSED:
+            return Status.REOPENED
+        case Status.ASSIGNED:
+            return Status.RELEASED
+        case None | Status.DRAFT:
+            return Status.APPROVED if kind is Kind.CHANGE else Status.NEW
+        case Status.NEW | Status.APPROVED | Status.REOPENED | Status.RELEASED:
+            raise ValueError(f"a ticket under `{source}` stands in a take's queue already")
+        case _:
+            assert_never(source)
 
 
 class Resolution(StrEnum):
@@ -60,21 +109,6 @@ class Domain(StrEnum):
     AGENT = "agent"
 
 
-class Kind(StrEnum):
-    """What a ticket is."""
-    INTERFERENCE = "interference"
-    DELAY = "delay"
-    QUESTION = "question"
-    BUG = "bug"
-    PERFORMANCE = "performance"
-    REFACTOR = "refactor"
-    CHANGE = "change"
-    REQUEST = "request"
-    VALIDATION = "validation"
-    """The check of a `request`'s need, which `file_ticket.py log` files
-    as the request closes."""
-
-
 PASS_KINDS = frozenset({Kind.INTERFERENCE, Kind.DELAY})
 EDITOR_KINDS = frozenset({Kind.QUESTION, Kind.BUG})
 REVIEW_KINDS = frozenset({Kind.BUG, Kind.PERFORMANCE})
@@ -85,6 +119,11 @@ DEFECT_SECTIONS = ("Impact", "Evidence")
 
 COORDINATOR = "coordinator"
 """The `<agent>` of the coordinator's tickets and log lines."""
+
+ALLOW = "allow"
+"""The `<agent>` and the note of an allow line: a line, with no move, whose
+id is the session id of the coordinator that wrote it, and which admits
+the ticket past that session's `Op pause.` and `Op scope: own.`."""
 
 class Wait(StrEnum):
     """What a ticket under `blocked` or `waiting` waits on, the word the

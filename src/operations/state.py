@@ -68,8 +68,10 @@ class Ticket:
     """A ticket of the tracker. `editors` is None where a `change` gives no
     `editors` field, `mechanical` is whether a `change` gives the
     `mechanical` field, `motivation` holds the ticket numbers its
-    `## Motivation` section gives, and `holder` is the holder
-    `file_ticket.py log --help-all` defines."""
+    `## Motivation` section gives, `log` holds the lines of its log other
+    than its allow lines, `allowers` the session ids of those allow lines,
+    each once, in the order of their first lines, and `holder` is the
+    holder `file_ticket.py log --help-all` defines."""
     number: str
     order: tuple[int, int]
     session: int | None
@@ -86,6 +88,7 @@ class Ticket:
     after_merge: str | None
     mechanical: bool
     log: tuple[LogLine, ...]
+    allowers: tuple[str, ...]
     holder: str | None
     path: Path
 

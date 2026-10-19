@@ -11,7 +11,7 @@ faults of the solver passes that ended (`concept_faults`); the request to a tick
 again; the decisions for the user, the changes handed to the coordinator
 (`merging.handoffs`), and the items of each ticket analyst's
 reply for the coordinator; the monitor's steps (`monitor`); the release
-of tickets; the move back to `tickets/open/` of the tickets the coordinator wrote on
+of tickets; the move to `tickets/reopened/` of the tickets the coordinator wrote on
 under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/`; the coordinator's later
 lines to the ticket analysts that run on their tickets; the ticket
 analysts on open tickets; the review of drafts; the changes, and for a

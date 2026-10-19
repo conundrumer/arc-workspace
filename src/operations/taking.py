@@ -1,4 +1,4 @@
-"""The release of tickets whose holder is not live, and the take of open
+"""The release of tickets whose holder is not live, and the take of untaken
 changes.
 
 The operators act on the tickets of the session and on those of the
@@ -9,8 +9,8 @@ idle, `idle_sessions.read_sessions` gives.
 While an `Op scope: own.` line stands, or no `Op scope:` line came
 (`directives.own_scope`), the operator takes, of the changes it would take
 under `Op scope: all.`, only those of `held_work`, so the work already held
-reaches its end, those of `allowed`, the tickets an `Op allow:` or an
-`Op expedite:` line gives, and those of `own_work`, the session's line of
+reaches its end, those of `allowed`, the tickets an allow line of the
+session gives, and those of `own_work`, the session's line of
 work, and each other change waits for an `Op scope: all.` line. A ticket
 whose title refers to a file that line changed is of it only once a
 ticket analyst judges that the line needs it (`follow_ups`, `judging`).
@@ -18,7 +18,7 @@ While an
 `Op pause.` line stands (`directives.paused`), it takes only those of
 `held_work` and of `allowed`, and each other change waits for an
 `Op resume.` line. Past the usage pace (`pacing`), no change is taken and
-no open ticket admitted, and each step that starts an agent's run is held
+no untaken ticket admitted, and each step that starts an agent's run is held
 (`start_holds`).
 
 A change that waits for a ticket that holds it up moves to
@@ -33,7 +33,7 @@ from functools import cache
 from controlled_markdown import form, mctx
 from operations import rank
 from operations.change_budget import TAKE_NOTE, budget_fields
-from operations.directives import (Directive, allow_named, named, NUMBER, numbers, numbers_in, own_scope,
+from operations.directives import (Directive, named, NUMBER, numbers, numbers_in, own_scope,
                                    paused, session_lines)
 from operations.final_reply import live_holder
 from operations.log_commands import log
@@ -113,7 +113,7 @@ def expedited(state: State) -> set[str]:
 
 @memoized
 def admits(state: State) -> Callable[[str], bool]:
-    """Whether the operator may admit an open ticket: one `gate` passes
+    """Whether the operator may admit an untaken ticket: one `gate` passes
     with `scope_admits` as the tickets it admits."""
     return gate(state, scope_admits(state))
 
@@ -173,23 +173,27 @@ def pace_held(state: State, numbers: list[str]) -> Pace | None:
 
 def taken_before(t: Ticket) -> bool:
     """Whether a line of `t`'s log moves it into `tickets/assigned/`, so
-    that taking it again is no new take: `release` moved it back to
-    `tickets/open/` from a holder that is not live."""
+    that taking it again is no new take: a hold that ended moved it to
+    `tickets/released/`."""
     return any(ln.status is Status.ASSIGNED for ln in t.log)
 
 
 def held_work(state: State) -> set[str]:
-    """The work held, with each change it waits on."""
+    """The work held, with each change it waits on: each change taken
+    before, each ticket under `tickets/released/`, and each `interference`
+    ticket not closed."""
     return reached(state, {n for n, t in state.tracker.tickets.items()
                            if (t.kind is Kind.CHANGE and taken_before(t))
+                           or t.status is Status.RELEASED
                            or (t.kind is Kind.INTERFERENCE and t.status is not Status.CLOSED)})
 
 
 def allowed(state: State) -> set[str]:
     """The tickets `Op pause.` admits past the work held, and `Op scope: own.`
-    past the session's line of work: those of `served` from the tickets of
-    `directives.allow_named`, and those of `expedited`."""
-    return served(state, allow_named(state)) | expedited(state)
+    past the session's line of work: those of `served` from the tickets
+    with an allow line of the operator's session (`Ticket.allowers`)."""
+    return served(state, {n for n, t in state.tracker.tickets.items()
+                          if state.session in t.allowers})
 
 
 COMMIT_WORD = re.compile(r"\b[0-9a-f]{7,40}\b")
@@ -335,14 +339,14 @@ RELEASED_LINE = re.compile(form(RELEASED, {"holder": r"\S+"}))
 
 
 def release(state: State) -> Step | None:
-    """The move back to `tickets/open/` of each ticket of `purview` under
+    """The move to `tickets/released/` of each ticket of `purview` under
     `tickets/assigned/` whose holder is not live (`live_holder`), in one
     command whose moves run apart (`moves`)."""
     released = {n: t for n in sorted(purview(state))
                 if (t := state.tracker.tickets.get(n)) is not None
                 and Exit.RELEASE in exits(state, t).by
                 and (t.holder is None or not live_holder(state, t.holder))}
-    return moves([log(n, Status.OPEN, Status.ASSIGNED,
+    return moves([log(n, Status.RELEASED, Status.ASSIGNED,
                       RELEASED.format(holder=t.holder or 'none'), None)
                   for n, t in released.items()], f"release {' '.join(released)}",
                  str(max((t.last_time for t in released.values()), default=0.0)))
@@ -368,7 +372,7 @@ def boosted(state: State) -> set[str]:
 
 
 def ready(state: State) -> list[Ticket]:
-    """The open changes of `purview` whose `depends-on` are closed."""
+    """The untaken changes of `purview` whose `depends-on` are closed."""
     return [t for t, awaited in awaiting(state) if not awaited]
 
 
@@ -398,7 +402,7 @@ def takeable(state: State) -> list[Ticket]:
 
 
 def waiting(state: State) -> list[tuple[str, list[str]]]:
-    """Each open `change` of `purview` not taken for its `depends-on`, with
+    """Each untaken `change` of `purview` not taken for its `depends-on`, with
     the tickets it waits for."""
     return [(t.number, awaited) for t, awaited in awaiting(state) if awaited]
 
@@ -462,7 +466,7 @@ def take(state: State) -> Step | None:
             return Undecided(mctx("the budget of change {number} is unknown").format(
                 number=t.number))
         note = TAKE_NOTE.format(**budget_fields(b))
-        commands.append(log(t.number, Status.ASSIGNED, Status.OPEN, note, state.me))
+        commands.append(log(t.number, Status.ASSIGNED, t.status, note, state.me))
         taken.append(t.number)
     if commands:
         return moves(commands, f"take {' '.join(taken)}", str(max(

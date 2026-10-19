@@ -15,7 +15,7 @@ from operations.briefs import questions_of
 from operations.directives import Decision
 from operations.reports import NO_FINDING, OPEN_LABELS, items_of
 from operations.state import Agent, State, Ticket
-from ticketing.vocabulary import Domain, Kind, Status
+from ticketing.vocabulary import UNTAKEN, Domain, Kind, Status
 
 
 LEFT_CHOICES = {
@@ -27,11 +27,11 @@ LEFT_CHOICES = {
 
 
 def open_questions(state: State, number: str) -> list[Ticket]:
-    """The open `question` tickets filed on the change `number`, in ticket
+    """The untaken or assigned `question` tickets filed on the change `number`, in ticket
     order."""
     return sorted((q for q in state.tracker.tickets.values() if q.kind is Kind.QUESTION
                    and q.domain is Domain.CHANGE and q.subject == number
-                   and q.status in (Status.OPEN, Status.ASSIGNED)), key=lambda q: q.order)
+                   and (q.status in UNTAKEN or q.status is Status.ASSIGNED)), key=lambda q: q.order)
 
 
 @dataclass(frozen=True)

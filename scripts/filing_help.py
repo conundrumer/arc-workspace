@@ -88,7 +88,7 @@ RULES = mctx("""
     - A session's index has a file under `tickets/{sessions}/`, named by the index, that holds the session's id.
         - A session forked from another takes the index of the session it was forked from, and the file then holds both ids, one per line.
     - The command reserves the ticket's number and names the ticket `{name_form}`.
-        - It writes the ticket in the main tree, under `tickets/draft/` for a `change`, where `case {full_flag}` gives for a `{delay}` that gives a case, and under `tickets/open/` for any other, with the filing time in the first line of its `## Log`.
+        - It writes the ticket in the main tree, under `tickets/draft/` for a `change`, where `case {full_flag}` gives for a `{delay}` that gives a case, and under `tickets/{new}/` for any other, with the filing time in the first line of its `## Log`.
     - Run from a worktree, the command files with the main tree's copy of `scripts/file_ticket.py`, and refuses where the main tree has none.
     - Each `<number>` in `depends-on` is the number of a ticket the ticket tracker holds.
     - The paths a section of a `change` gives are each path it gives with a `/` or at the root of the main tree, with no `:<line>` or `:<first>-<last>` after it, and the witness file of each solver it gives.

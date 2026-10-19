@@ -7,26 +7,22 @@ prefix `Op`, the word of its kind and a colon, past a list marker:
 - `Op run: <path>`, a run script, as `runs` gives it;
 - `Op drafts to review: <number>, ...`;
 - `Op expedite: <number>, ...`, for every operator of the session, and
-  the tickets an `Op allow:` line with those numbers reaches
+  the tickets a chain of links reaches from those numbers
   (`taking.expedited`);
-- `Op allow: <number>, ...`, the tickets that `Op scope: own.` and
-  `Op pause.` admit for every operator of the session, and the changes a
-  chain of links reaches from them, with each `change` whose Motivation
-  gives a reached ticket that is not a `change` (`taking.allowed`);
 - `Op merged: <number>, ...`, the changes the coordinator gives as merged;
 - `Op merge: <number>`, a change under `tickets/blocked/` whose merge that line rules;
 - `Op tickets are open.`, which leaves the scope as `own_scope` gives it;
-- `Op scope: own.`, under which no operator of the session settles an open
-  ticket or takes a change outside the work held, the tickets an
-  `Op allow:` or an `Op expedite:` line gives and the session's line of
+- `Op scope: own.`, under which no operator of the session settles an untaken
+  ticket or takes a change outside the work held, the tickets an allow
+  line of the session gives (`taking.allowed`) and the session's line of
   work (`taking.own_work`), other than the launch of a ticket analyst that
   judges whether that line needs a ticket whose title refers to a file
   the line changed (`taking.judging`), and `Op scope: all.`, which ends that limit,
   the last such line standing, and `Op scope: own.` where none came
   (`own_scope`);
-- `Op pause.`, after which no operator of the session settles an open
+- `Op pause.`, after which no operator of the session settles an untaken
   ticket or takes a change outside the work held and the tickets an
-  `Op allow:` or an `Op expedite:` line gives, and `Op resume.`, which ends
+  allow line of the session gives, and `Op resume.`, which ends
   the pause, the last such line standing (`paused`);
 - `Op pace: <preset> [<argument> ...]` or `Op pace: <path>`, the usage pace
   for every operator of the session (`pace`), as `pacing` gives it;
@@ -73,10 +69,10 @@ from operations.steps import (STEP_KEY, Step, Undecided, bare, decision_key, dig
 
 class Decision(StrEnum):
     """The choices an `Op decision:` line gives a held step (`ruling`): go on as though the step were passed, the
-    merge, the move to `tickets/open/`, or another agent on it."""
+    merge, the move to `tickets/approved/`, or another agent on it."""
     PASSES = "passes"
     MERGE = "merge"
-    OPEN = "open"
+    APPROVE = "approve"
     AGAIN = "again"
 
 
@@ -96,7 +92,6 @@ class Directive(StrEnum):
     RUN = "Op run"
     DRAFTS = "Op drafts to review"
     EXPEDITE = "Op expedite"
-    ALLOW = "Op allow"
     MERGED = "Op merged"
     MERGE = "Op merge"
     OPEN = "Op tickets are open"
@@ -210,11 +205,6 @@ def numbers(state: State, kind: Directive) -> list[tuple[str, float]]:
 def numbers_in(given: Iterable[Line], kind: Directive) -> list[tuple[str, float]]:
     return [(n, ln.message.time) for ln in given if ln.kind is kind
             for n in NUMBER.findall(ln.rest)]
-
-
-def allow_named(state: State) -> set[str]:
-    """The tickets an `Op allow:` line to any operator of the session gives."""
-    return {n for n, _ in numbers_in(session_lines(state), Directive.ALLOW)}
 
 
 @dataclass(frozen=True)
@@ -364,10 +354,9 @@ def held_on(what: str, choices: dict[Decision, str]) -> Undecided:
 
 
 def named(state: State) -> set[str]:
-    """The tickets the coordinator gives the operator in a line, and those
-    of `allow_named`."""
+    """The tickets the coordinator gives the operator in a line."""
     return {n for k in (Directive.EXPEDITE, Directive.DRAFTS, Directive.MERGE, Directive.MERGED)
-            for n, _ in numbers(state, k)} | allow_named(state)
+            for n, _ in numbers(state, k)}
 
 
 @dataclass(frozen=True)

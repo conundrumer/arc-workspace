@@ -215,7 +215,7 @@ def stall(state: State) -> Step | None:
             since, reason = held_up
             if not any(ln.time >= since and (m := taking.STALLED.match(ln.note)) is not None
                        and m["number"] == d for ln in t.log):
-                return Bash(log(n, Status.DRAFT, Status.OPEN,
+                return Bash(log(n, Status.DRAFT, t.status,
                                 taking.STALL_FINDING.format(number=d, reason=reason), state.me),
                             f"{n} stalled on {d}", occasion=str(since))
     return None

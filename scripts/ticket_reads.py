@@ -11,7 +11,7 @@ from ticket_files import listed_tickets, ticket_files, ticket_name
 from ticket_form import FRONT, depends_on, front_fields, list_items, section, section_head, title
 from state_reads import DERIVED, Kept, state_cache
 from file_reads import stat_of
-from ticket_log import (CLOSED_BY_LINE, DUPLICATE_OF_LINE, WAIT, Wait, holder_of,
+from ticket_log import (CLOSED_BY_LINE, DUPLICATE_OF_LINE, WAIT, Wait, allowers, holder_of, is_allow,
                         line_time, log_lines, resolution_of, waited, waited_change)
 from ticket_numbers import matched_number
 from transcript_snapshots import Refused
@@ -80,7 +80,7 @@ def ticket_of(path: Path, text: str, found: list[re.Match[str]]) -> Ticket:
     if head is None:
         raise Refused(mctx("{path} has no front matter").format(path=path))
     fields = dict(front_fields(head))
-    lines = tuple(log_line(m) for m in found)
+    lines = tuple(log_line(m) for m in found if not is_allow(m))
     if not lines:
         raise Refused(mctx("{path} has no log line").format(path=path))
     return Ticket(
@@ -93,6 +93,7 @@ def ticket_of(path: Path, text: str, found: list[re.Match[str]]) -> Ticket:
         editors=editors_field(fields),
         after_merge=fields.get("after-merge"), mechanical="mechanical" in fields,
         log=lines,
+        allowers=allowers(found),
         holder=holder_of(found), path=path)
 
 

@@ -37,7 +37,7 @@ waits for a ticket analyst as for findings. Where the log gives `CAP` review
 rounds with findings or suggestions since the line that filed the draft or
 last moved it into `tickets/draft/`, the analyst's brief gives its
 revision as the last, and once that revision is written, the command moves
-the draft to `tickets/open/`.
+the draft to `tickets/approved/`.
 
 Where the coordinator writes a line on a draft after an agent of the
 operators' was launched on it, as where it moves the draft back to revise
@@ -63,7 +63,7 @@ from operations.directives import Decision, Directive, named, numbers, ruling
 from operations.roles import ANALYST_NAMES, Purpose, Role, analyst_subject, joined, subjects
 from operations.reports import left_for_decision
 from operations.state import Agent, LogLine, State, Ticket
-from ticketing.vocabulary import Note, Status, last_move_into
+from ticketing.vocabulary import Note, Status, last_move_into, queued
 from operations.handled import repeated, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, decision_key
 from operations.log_commands import AGENT, log
@@ -341,11 +341,11 @@ def draft_step(state: State, t: Ticket) -> Step | Joined | None:
     what = mctx("ticket reviewer {agent} left draft {number} under `tickets/draft/` with "
                 "no finding").format(agent=reviewed[-1].agent_id, number=t.number)
     r = ruling(state, what, {Decision.AGAIN: mctx("launch another ticket reviewer on it"),
-                             Decision.OPEN: mctx("move it to `tickets/open/`")})
+                             Decision.APPROVE: mctx("move it to `tickets/approved/`")})
     if isinstance(r, Undecided):
         return r
-    if r.choice is Decision.OPEN:
-        return Bash(log(t.number, Status.OPEN, Status.DRAFT,
+    if r.choice is Decision.APPROVE:
+        return Bash(log(t.number, queued(Status.DRAFT, t.kind), Status.DRAFT,
                         f"opened by the decision {decision_key(what)}", None),
                     f"{t.number} open", occasion=str(t.last_time))
     return Joined(Group.READY, r.time)
@@ -363,8 +363,8 @@ def resumable(state: State, t: Ticket) -> Agent | None:
 
 def open_last(t: Ticket) -> Step:
     """The move of `t`, whose last revision is written, to
-    `tickets/open/`."""
-    return Bash(log(t.number, Status.OPEN, Status.DRAFT,
+    `tickets/approved/`."""
+    return Bash(log(t.number, queued(Status.DRAFT, t.kind), Status.DRAFT,
                     f"{Note.LAST_REVISION}: opens with no further ticket review", None),
                 f"{t.number} open", occasion=str(t.last_time))
 

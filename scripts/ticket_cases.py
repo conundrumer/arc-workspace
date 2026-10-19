@@ -34,14 +34,14 @@ CASE_RULES = mctx("""
         - A change's dollars are the token cost of the runs the line that closes it gives and of the runs under them, and its seconds are the wall time those runs cover.
     - A group is the `{delay}` tickets under `tickets/{deferred}/` with one `fix` and one key: the first file path in the target of the ticket's title, the text before its first `: `, or, where the target holds none, the whole target.
     - Filing a `{delay}` with a case:
-        - The ticket files under `tickets/{deferred}/` where the case's loss is below the threshold of its `fix`, and under `tickets/{open}/` otherwise.
-            - Where the case's cost or the threshold is unknown, it files under `tickets/{open}/`, with an `undecided` line on stderr.
+        - The ticket files under `tickets/{deferred}/` where the case's loss is below the threshold of its `fix`, and under `tickets/{new}/` otherwise.
+            - Where the case's cost or the threshold is unknown, it files under `tickets/{new}/`, with an `undecided` line on stderr.
         - `tickets/{deferred}/` holds at most {cap} `{delay}` tickets.
             - A filing that would put one more there first closes `{wontfix}` each ticket of the group with the lowest loss rate, its summed loss over the days since its first case, with the group's summed loss in each note.
     - Appending a case:
         - The command adds the text on stdin to the end of the ticket's `## Evidence`, and appends the case's log line, whatever the case's own loss.
-        - Where a request of the run has no price, the command moves the ticket to `tickets/{open}/`, and prints an `undecided` line on stderr.
-    - After each filing of a `{delay}` with a case and each appended case, and before a filing closes a group `{wontfix}`, the command moves each ticket of each group whose summed loss reaches the threshold of its `fix` or passes it to `tickets/{open}/`, with a log line that gives the group's key, its summed loss, the threshold and the numbers of its tickets, and prints each path it went to.
+        - Where a request of the run has no price, the command moves the ticket to `tickets/{reopened}/`, and prints an `undecided` line on stderr.
+    - After each filing of a `{delay}` with a case and each appended case, and before a filing closes a group `{wontfix}`, the command moves each ticket of each group whose summed loss reaches the threshold of its `fix` or passes it to `tickets/{reopened}/`, with a log line that gives the group's key, its summed loss, the threshold and the numbers of its tickets, and prints each path it went to.
         - Where the threshold of a group's `fix` is unknown, the command prints an `undecided` line on stderr, and moves the group's tickets there only where the group holds the ticket the call appends to.
     """)
 
@@ -60,10 +60,10 @@ SWEEP_RULES = mctx("""
         - Its section holds no `{exercised_field}` line, or the pattern of one of them matches, as Python's `re.search` does, a line of the run's transcript.
     - Where the ticket is exercised and its section holds a `{command_field}` line, the command runs that line's command from the main tree, for at most {seconds} seconds.
         - Where it exits 0, the ticket moves into `{closed}`, with the note `{validated} <command>`.
-        - Where it exits with another code, the ticket moves into `{open}`, with the note `{failed}: <command> exited <code>`, and where it runs past the time, with the note `{failed}: <command> timed out`.
-    - Where the ticket is exercised and its section holds no `{command_field}` line, it moves into `{open}`, with the note `{exercised}: <agent id> ...`, with the runs that meet both conditions.
-    - Where the ticket is not exercised, and the last line of its log that moves it into `{deferred}` is {days} days old or more, it moves into `{open}`, with the note `{unexercised}: no run matched since <time>`, with that line's time.
-    - Where a ticket's section holds more than one `{command_field}` line, or a pattern that does not compile or that the `{exercised_field}` line of `{invocation} --help` gives the sweep as refusing, or where its log holds no line that moves it into `{deferred}`, it moves into `{open}`, with the note `{failed}: <reason>`.
+        - Where it exits with another code, the ticket moves into `{reopened}`, with the note `{failed}: <command> exited <code>`, and where it runs past the time, with the note `{failed}: <command> timed out`.
+    - Where the ticket is exercised and its section holds no `{command_field}` line, it moves into `{reopened}`, with the note `{exercised}: <agent id> ...`, with the runs that meet both conditions.
+    - Where the ticket is not exercised, and the last line of its log that moves it into `{deferred}` is {days} days old or more, it moves into `{reopened}`, with the note `{unexercised}: no run matched since <time>`, with that line's time.
+    - Where a ticket's section holds more than one `{command_field}` line, or a pattern that does not compile or that the `{exercised_field}` line of `{invocation} --help` gives the sweep as refusing, or where its log holds no line that moves it into `{deferred}`, it moves into `{reopened}`, with the note `{failed}: <reason>`.
     - Where running the command of a `{command_field}` line would take the sweep past the timeout of a foreground Bash call, the command does not start it, and the ticket stays in `{deferred}` until the next sweep, with an `undecided` line on stderr.
     - The command refuses, and moves nothing, where a run it gives has no transcript, or none with a timestamped entry.
     """)
@@ -102,7 +102,7 @@ def case_command(tickets: Path, ref: str, agent: str, run: str, start: str,
     undecided: list[str] = []
     found = case_loss(run, start, end, undecided)
     if found.dollars is None:
-        status = Status.OPEN
+        status = Status.REOPENED
         note = mctx("case {run} {start} {end}: cost unknown").format(run=run, start=start, end=end)
     else:
         status, note = Status.DEFERRED, found.note

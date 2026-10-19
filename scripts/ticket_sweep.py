@@ -26,7 +26,7 @@ from tree_reads import main_tree
 
 UNEXERCISED_DAYS = 7
 """The days since its last move into `deferred` from which a `validation`
-ticket that no run exercised moves into `open`."""
+ticket that no run exercised moves into `reopened`."""
 
 COMMAND_SECONDS = 60
 """The seconds the sweep lets the command of a check run."""
@@ -110,10 +110,10 @@ def run_command(command: str) -> tuple[Status, str]:
         except subprocess.TimeoutExpired:
             os.killpg(process.pid, signal.SIGKILL)
             process.wait()
-            return Status.OPEN, TIMED_OUT.format(failed=Verdict.FAILED, command=command)
+            return Status.REOPENED, TIMED_OUT.format(failed=Verdict.FAILED, command=command)
     if code == 0:
         return Status.CLOSED, f"{VALIDATED} {command}"
-    return Status.OPEN, EXITED.format(failed=Verdict.FAILED, command=command, code=code)
+    return Status.REOPENED, EXITED.format(failed=Verdict.FAILED, command=command, code=code)
 
 
 class OutOfTime(Exception):
@@ -136,11 +136,11 @@ def judged(path: Path, text: str, runs: dict[str, GivenRun], now: float,
             raise OutOfTime
         return run_command(check.command)
     if by is not None:
-        return Status.OPEN, EXERCISED.format(exercised=Verdict.EXERCISED,
-                                             runs=" ".join(by))
+        return Status.REOPENED, EXERCISED.format(exercised=Verdict.EXERCISED,
+                                                 runs=" ".join(by))
     if now - since < UNEXERCISED_DAYS * 86400:
         return None
-    return Status.OPEN, UNEXERCISED.format(unexercised=Verdict.UNEXERCISED, time=utc_stamp(since))
+    return Status.REOPENED, UNEXERCISED.format(unexercised=Verdict.UNEXERCISED, time=utc_stamp(since))
 
 
 def sweep(tickets: Path, runs: list[str], undecided: list[str]) -> list[Path]:
@@ -161,7 +161,7 @@ def sweep(tickets: Path, runs: list[str], undecided: list[str]) -> list[Path]:
         except Moved:
             continue
         except Refused as e:
-            move = Status.OPEN, UNREAD.format(failed=Verdict.FAILED, reason=e)
+            move = Status.REOPENED, UNREAD.format(failed=Verdict.FAILED, reason=e)
         if move is None:
             continue
         try:

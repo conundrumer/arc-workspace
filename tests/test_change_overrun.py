@@ -11,7 +11,7 @@ from tests.conftest import script
 ME = "a00000000000000f1"
 EDITOR, CHECKER, REVIEWER = "a0000000000000001", "a0000000000000002", "a0000000000000003"
 LOG = ("## Log\n2026-10-17T02:14:06Z draft [ticket-analyst]: filed\n"
-       "2026-10-17T02:23:18Z open [ticket-reviewer ab225add95550521a]: reviewed\n"
+       "2026-10-17T02:23:18Z approved [ticket-reviewer ab225add95550521a]: reviewed\n"
        "2026-10-17T02:23:56Z assigned [operator {me}]: taking: budget 2.43 dollars, 1951 s\n"
        "2026-10-17T02:24:00Z assigned [operator {me}]: worktree {w}\n")
 TRIP = "2026-10-17T03:00:00Z"
@@ -43,10 +43,10 @@ def tickets(tmp_path: Path, w: Path):
     change.parent.mkdir(parents=True)
     change.write_text("---\nkind: change\neditors: code-editor\n---\n# x: y\n\n"
                       + LOG.format(me=ME, w=w))
-    trip = tmp_path / "tickets" / "open" / "9-2_change_9-1_operator.md"
+    trip = tmp_path / "tickets" / "new" / "9-2_change_9-1_operator.md"
     trip.parent.mkdir(parents=True)
     trip.write_text(f"---\nkind: performance\n---\n# change 9-1: past\n\n## Log\n"
-                    f"{TRIP} open [operator {ME}]: filed\n")
+                    f"{TRIP} new [operator {ME}]: filed\n")
     return reads.held_ticket(change), reads.held_ticket(trip)
 
 

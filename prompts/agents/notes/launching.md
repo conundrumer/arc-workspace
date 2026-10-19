@@ -35,7 +35,7 @@
     - Where a tool or a document stopped it otherwise, file that obstacle as a ticket of the kind that fits it, and send the item again once that ticket is closed, or at once by a way around the obstacle where one exists.
     - Where it needs a decision, act on it as that decision rules, once the decision is made.
 - Where the reply of an agent you launched gives items of its brief each as done or as unfinished, and gives an item you sent it as neither, send that item again, file its drop as a ticket, and leave finding the drop's cause to the ticket analyst that takes that ticket.
-- Launch a ticket analyst with each ticket the lines above have you file that still stands under `tickets/open/`, before you end your turn with no other work.
+- Launch a ticket analyst with each ticket the lines above have you file that still stands untaken, before you end your turn with no other work.
 - Launch a ticket analyst only where a line of your documents has you, and, while an operator launcher of yours runs, launch none, and tell an operator that tickets are open in place of each launch.
     * comment: The user's words, session 129de8fc-2a0d-4d4d-b950-3a0194c762e2, 2026-10-18T18:46:46Z: "i mean why did you launch and not the op". Session 9's coordinator launched ticket analyst ad5167ab44fc0b88d at 2026-10-18T18:42:43Z on tickets 9-886 and 9-942, which it had not filed, under `Op pause.`, while its operator launcher ran: ticket 11-1523.
 - In your reply, give each item an agent you launched left unfinished that you have not finished, as unfinished with its reason.
@@ -94,7 +94,7 @@
 
 ### A ticket analyst's brief
 - A ticket analyst's brief gives one of these:
-    - The tickets under `tickets/open/` to settle, some of which it may give to settle only where the session's line of work needs them.
+    - The untaken tickets to settle, some of which it may give to settle only where the session's line of work needs them.
     - The process assessment.
 - With the tickets a solver pass filed, it gives the review of that pass's transcript, where one was made.
 - With a `request` that the coordinator filed on `op send`, it gives that request's transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it.
@@ -104,7 +104,7 @@
 ### A draft analyst's brief
 - A draft analyst's brief gives one or more draft `change` tickets whose logs hold findings or suggestions.
     - With each draft that an operator's line moved past its cost budget, it gives that line, and what the last item checker launched on that draft before that line leaves for a decision, where it leaves something.
-    - With a draft whose next revision opens at its operator's cap of ticket reviews, it gives that this revision is the last: once it is written, the operator moves the draft to `tickets/open/` with no further ticket review, and the change's own review checks what the change writes.
+    - With a draft whose next revision opens at its operator's cap of ticket reviews, it gives that this revision is the last: once it is written, the operator moves the draft to `tickets/approved/` with no further ticket review, and the change's own review checks what the change writes.
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### A decision analyst's brief
@@ -132,11 +132,11 @@
 - An operator's brief gives only lines in these forms, each on a line of its own:
     - `Op solve: <task id> ...`: a solver pipeline on each task, from Analyze, or from the pass that `from create` or `from refine` after its task id gives.
         + xref: src/operations/directives.py
-    - `Op run: <path>`: the solver pipelines that the run script at that path starts, and the open tickets the operator takes from then on, as `uv run python scripts/operate.py --help run` gives the script.
+    - `Op run: <path>`: the solver pipelines that the run script at that path starts, and the untaken tickets the operator takes from then on, as `uv run python scripts/operate.py --help run` gives the script.
         + xref: src/operations/directives.py, scripts/operate.py:main
     - `Op drafts to review: <number>, ...`: the draft `change` tickets to review.
         + xref: src/operations/directives.py
-    - `Op expedite: <number>, ...`: the tickets an `Op allow:` line with the same numbers gives. The operator releases, takes and settles each of them as it does its session's, and takes each `change` among them ahead of the other changes it may take.
+    - `Op expedite: <number>, ...`: tickets of any session, and from each of them, and so on down each chain: each ticket a link, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, leads to from it, and, from a ticket that is not a `change`, each `change` whose Motivation gives its number. The operator releases and settles each of them as it does its session's, and takes each `change` among them ahead of the other changes it may take, where `Op scope: own.` and `Op pause.` admit it.
         + xref: src/operations/directives.py
     - `Op merged: <number>, ...`: the changes the coordinator merged itself.
         + xref: src/operations/directives.py
@@ -144,15 +144,13 @@
         + xref: src/operations/directives.py
     - `Op tickets are open.`
         + xref: src/operations/directives.py
-    - `Op allow: <number>, ...`: tickets of any session, and from each of them, and so on down each chain: each ticket a link, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, leads to from it, and, from a ticket that is not a `change`, each `change` whose Motivation gives its number. The operators of the session settle and take each of them under `Op scope: own.` and `Op pause.` too, with no priority over other work.
-        + xref: src/operations/directives.py, prompts/agents/notes/tickets.md#change-tickets
-    - `Op scope: own.`, which also holds where no `Op scope:` line came: the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than what `Op pause.` admits, the session's line of work, and the judgment by a ticket analyst of the tickets of the second sub-item:
+    - `Op scope: own.`, which also holds where no `Op scope:` line came: the operators of the session settle no untaken ticket and take no `change`, other than what `Op pause.` admits, the session's line of work, and the judgment by a ticket analyst of the tickets of the second sub-item:
         + xref: src/operations/directives.py
         - The requests and changes the session's coordinator filed, and from each of them, and so on down each chain: each ticket a link leads to from it, each `change` whose Motivation gives its number, and each question or validation filed on it.
         - Each ticket outside `tickets/closed/` whose title refers to a file that the commit that merged a `change` of the item above changed, or to a file of a commit that a coordinator's line in the log of a `request` of the item above gives, that a ticket analyst judged the session's line of work needs, as the line `own: <judgment>` in its log shows, and from each such ticket the tickets that the steps of the item above lead to. A ticket analyst judges each such ticket whose log holds neither an `own:` line nor a `not own:` line.
     - `Op scope: all.`: ends the limit of `Op scope: own.`.
         + xref: src/operations/directives.py
-    - `Op pause.`: the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than the tickets and changes an `Op allow:` or an `Op expedite:` line gives, and the work an operator of the session took and each `change` that work waits on, which they finish.
+    - `Op pause.`: the operators of the session settle no untaken ticket and take no `change`, other than the tickets whose log holds an `allow` line with the session's id, each with the tickets a chain of links reaches from it as `Op expedite:` gives a chain, and the work an operator of the session took and each `change` that work waits on, which they finish.
         + xref: src/operations/directives.py
     - `Op resume.`: ends `Op pause.`.
         + xref: src/operations/directives.py
@@ -233,8 +231,8 @@
 - Ask an operator for no message to you before its final reply, other than the messages that open with `for the coordinator:` or `undecided:`, which it sends as it goes.
     + xref: src/operations/steps.py:DECISION, src/operations/steps.py:UNDECIDED
 - Send each draft `change` ticket that the reply of an agent you launched gives, and each `change` ticket you revise, to an operator in an `Op drafts to review: <number>` line.
-- Each time a `change` of your session comes to stand under `tickets/open/` with every ticket its `depends-on` gives under `tickets/closed/`, while no operator of your session holds it or runs its review, tell an operator that tickets are open.
-- Revise a `change` ticket that stands under `tickets/open/`, `tickets/assigned/`, `tickets/blocked/` or `tickets/waiting/` only once you have moved it back to `tickets/draft/`, with a log line whose note gives what you revise and on what ground.
+- Each time a `change` of your session comes to stand untaken with every ticket its `depends-on` gives under `tickets/closed/`, while no operator of your session holds it or runs its review, tell an operator that tickets are open.
+- Revise a `change` ticket that stands untaken or under `tickets/assigned/`, `tickets/blocked/` or `tickets/waiting/` only once you have moved it back to `tickets/draft/`, with a log line whose note gives what you revise and on what ground.
 - Once the user rules on a draft `change` ticket under `tickets/blocked/`, move it back to `tickets/draft/` with the ruling in the note, revise it where the ruling needs that, and send it to an operator in an `Op drafts to review: <number>` line.
 
 ## While the user gives feedback

@@ -27,7 +27,7 @@ rate of the best of the tickets from which a chain of links
 (`taking.reached`) reaches it, and `OTHER` where none does.
 
 A ticket's class moves one step toward the first for each `AGE_DAYS` days
-since its last move into `tickets/open/`, never past the first. Within one
+since its last move into a take's queue (`vocabulary.UNTAKEN`), never past the first. Within one
 class and score, a ticket of the session's own index comes before one of
 an adopted session, and then the tracker's order."""
 
@@ -40,7 +40,7 @@ from operations import taking
 from operations.state import State, Ticket
 from ticketing import loss
 from ticketing.loss import Found
-from ticketing.vocabulary import ROUTED, SETTLED, Kind, Note, Resolution, Route, Status
+from ticketing.vocabulary import ROUTED, SETTLED, UNTAKEN, Kind, Note, Resolution, Route, Status
 
 AGE_DAYS = 7
 
@@ -96,11 +96,11 @@ def found(t: Ticket) -> list[Found]:
 
 
 def opened(t: Ticket) -> float:
-    """The time of `t`'s last move into `tickets/open/`."""
+    """The time of `t`'s last move into a status of `UNTAKEN`."""
     at = t.filed
     before: Status | None = None
     for ln in t.log:
-        if ln.status is Status.OPEN and before is not Status.OPEN:
+        if ln.status in UNTAKEN and before not in UNTAKEN:
             at = ln.time
         before = ln.status
     return at

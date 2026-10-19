@@ -1,4 +1,4 @@
-"""The ticket analysts the operator launches on open tickets, and the
+"""The ticket analysts the operator launches on untaken tickets, and the
 labeled items of their replies for the coordinator.
 
 The operator takes each `request` and `bug` from its first ticket analyst
@@ -15,11 +15,11 @@ stands (`directives.paused`), only with those of `taking.allowed`. A ticket
 goes to no second analyst while one runs on it, nor again once one
 returned, until the coordinator writes a line in its log after that analyst's launch, as where it records a decision of the
 user or the user's later words on it, or the ticket moves from
-`tickets/deferred/`, `tickets/blocked/` or `tickets/waiting/` into `tickets/open/` after it. A
+`tickets/deferred/`, `tickets/blocked/` or `tickets/waiting/` into `tickets/reopened/` after it. A
 ticket analyst that runs on the ticket gets the coordinator's line by
 message, and then counts as given it. A ticket other than a `change` that
 stands under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/` with such a line after the line that moved it there
-moves back to `tickets/open/` first. An analyst that no longer runs
+moves to `tickets/reopened/` first. An analyst that no longer runs
 and was launched before a ticket's last line of the form `taking.NOT_OWN`
 counts as given that ticket no longer once `taking.scope_admits` admits
 it.
@@ -103,12 +103,12 @@ def given(state: State, number: str) -> bool:
 
 
 def reopen(state: State) -> Step | None:
-    """The move to `tickets/open/` of a ticket other than a `change` that
+    """The move to `tickets/reopened/` of a ticket other than a `change` that
     stands under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/` with a line of the
     coordinator's after the line that moved it there, and after the last
     line since then whose note opens with a wait, citing that line. A
     `change` the user rules on comes back by an `Op merge:` or an `Op drafts to
-    review:` line instead, and one under `tickets/open/` is taken as a
+    review:` line instead, and one that stands untaken is taken as a
     fresh change."""
     for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order):
         if Exit.COORDINATOR_LINE not in exits(state, t).by:
@@ -117,7 +117,7 @@ def reopen(state: State) -> Step | None:
         start = run if wait is None else wait
         lines = coordinator_lines(t.log[start + 1:])
         if run < len(t.log) and lines:
-            return Bash(log(t.number, Status.OPEN, t.status,
+            return Bash(log(t.number, Status.REOPENED, t.status,
                             f"the coordinator's line of {lines[-1].time:.0f}: {lines[-1].note}",
                             None), f"{t.number} reopen", occasion=str(lines[-1].time))
     return None

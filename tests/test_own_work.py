@@ -17,25 +17,26 @@ from tests.conftest import script
 
 HASH = "abcdef12" + "0" * 32
 MERGE = "1234abcd" + "0" * 32
-LOG = "## Log\n2026-10-17T02:14:06Z open [{agent}]: filed\n{more}"
+LOG = "## Log\n2026-10-17T02:14:06Z {status} [{agent}]: filed\n{more}"
 
 
 def ticket(tickets: Path, name: str, kind: str, title: str, body: str = "", more: str = ""):
     from handbook.paths import scripts_importable
     scripts_importable()
-    path = tickets / "open" / f"{name}.md"
+    status = "approved" if kind == "change" else "new"
+    path = tickets / status / f"{name}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"---\nkind: {kind}\n---\n# {title}\n\n{body}"
-                    + LOG.format(agent=name.rsplit("_", 1)[1], more=more))
+                    + LOG.format(status=status, agent=name.rsplit("_", 1)[1], more=more))
     return script("ticket_reads").read_ticket(path)
 
 
-def state(tmp_path: Path, tickets=(), commits=(), messages=()):
+def state(tmp_path: Path, tickets=(), commits=(), messages=(), session: str = "s"):
     from operations.journal import Journal
     from operations.state import (GitRead, HeldRead, SessionsRead, State, TrackerRead,
                                   TranscriptsRead)
     return State(
-        me="op", now=1000.0, session="s", started=0.0, transcripts_dir=tmp_path,
+        me="op", now=1000.0, session=session, started=0.0, transcripts_dir=tmp_path,
         main_tree=tmp_path, scratch=tmp_path, operators=("op",),
         open_operators=frozenset(), past_bound=False, open_holders=frozenset(),
         session_holders=frozenset(), tracker=TrackerRead({t.number: t for t in tickets}, (), 9),
@@ -68,10 +69,10 @@ def test_own_work_follows_the_line_of_work_and_its_judged_tickets(tmp_path: Path
         ticket(tickets, "9-4_change_9-2_operator", "performance", "9-2: over budget"),
         ticket(tickets, "9-5_agent_a0000000000000001_code-reviewer", "bug",
                "`src/operations/taking.py`: wrong",
-               more="2026-10-17T04:00:00Z open [ticket-analyst]: own: 9-2 made it wrong\n"),
+               more="2026-10-17T04:00:00Z new [ticket-analyst]: own: 9-2 made it wrong\n"),
         ticket(tickets, "9-6_agent_a0000000000000002_code-reviewer", "bug", "an agent's run: slow"),
         ticket(tickets, "9-7_change_y-hotfix_coordinator", "request", "y: a hotfix",
-               more=f"2026-10-17T03:00:00Z open [coordinator]: merged at {HASH[:8]}; settles 9-7\n"),
+               more=f"2026-10-17T03:00:00Z new [coordinator]: merged at {HASH[:8]}; settles 9-7\n"),
         ticket(tickets, f"9-8_commit_{HASH}_code-reviewer", "refactor",
                "`scripts/hotfixed.py`: many ideas in one place"),
         ticket(tickets, "9-9_change_x-bug-fix_ticket-analyst", "change", "x: the bug's fix",
@@ -100,7 +101,7 @@ def test_a_follow_up_goes_to_an_analyst_under_own_scope_until_judged_not_own(
                "`src/operations/taking.py`: wrong"),
         ticket(tickets, "9-3_agent_a0000000000000002_code-reviewer", "bug",
                "`src/operations/taking.py`: slow",
-               more="2026-10-17T04:00:00Z open [ticket-analyst]: not own: no change of the line\n"),
+               more="2026-10-17T04:00:00Z new [ticket-analyst]: not own: no change of the line\n"),
         ticket(tickets, "9-4_agent_a0000000000000003_code-reviewer", "bug", "`README.md`: stale"),
     ]
     commits = [Commit(MERGE, 0.0, frozenset(), "x: the fix", False,

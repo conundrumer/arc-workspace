@@ -13,7 +13,7 @@ FILED = "2026-10-17T02:14:06Z"
 LATE = 1_900_000_000.0
 
 
-def ticket(tickets: Path, number: str, status: str = "open", depends: str = "",
+def ticket(tickets: Path, number: str, status: str = "approved", depends: str = "",
            more: str = ""):
     from handbook.paths import scripts_importable
     scripts_importable()
@@ -21,7 +21,7 @@ def ticket(tickets: Path, number: str, status: str = "open", depends: str = "",
     path.parent.mkdir(parents=True, exist_ok=True)
     field = f"depends-on: {depends}\n" if depends else ""
     path.write_text(f"---\nkind: change\n{field}---\n# x: change {number}\n\n"
-                    f"## Log\n{FILED} open [ticket-analyst]: filed\n{more}")
+                    f"## Log\n{FILED} draft [ticket-analyst]: filed\n{more}")
     return script("ticket_reads").read_ticket(path)
 
 

@@ -57,6 +57,15 @@
     * comment: Trial a7255e0c2ce99edd3, the `after-merge` agent of change 6-1020, ran none of the steps its Scope places after the merge, with this line as its reason. Trial ac04c8fcff1e01693 of the coordinator read this line as barring the closes of `request` tickets out of `tickets/deferred/` that change 9-212's Scope places at the merge.
 - A ticket under `tickets/blocked/` waits on the user, and one under `tickets/waiting/` on a change, as `uv run python scripts/file_ticket.py log --help` gives. No agent holds either.
     + xref: scripts/file_ticket.py:SUBCOMMANDS
+- A ticket under `tickets/new/`, `tickets/approved/`, `tickets/reopened/` or `tickets/released/` is untaken, and waits for a take:
+    - `new`: a ticket other than a `change`, filed.
+    - `approved`: a `change` whose ticket review passed.
+    - `reopened`: a ticket moved back from `blocked`, `waiting`, `deferred` or `closed`.
+    - `released`: a ticket that its holder, or the operator for a holder that is not live, released, with what the holder left, a `change`'s worktree included.
+    - `uv run python scripts/file_ticket.py log --help` gives which of the four a move goes into.
+        + xref: scripts/file_ticket.py:SUBCOMMANDS
+- A ticket whose log holds an `allow` line is admitted past the `Op pause.` and `Op scope: own.` of the coordinator's session that wrote the line, whatever status it stands in. `uv run python scripts/file_ticket.py allowed` lists the tickets that hold one.
+    + xref: scripts/file_ticket.py:SUBCOMMANDS
 - Make each transition, and write each other line of a ticket's log, with `uv run python scripts/file_ticket.py log`, in the form its `--help` gives, with your agent's name as `<agent>`.
     + xref: scripts/file_ticket.py:SUBCOMMANDS
 - Take a ticket with its transition to `assigned`, and leave alone each ticket whose transition the command refuses.
@@ -66,7 +75,7 @@
 - `tickets/` is in the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints, and in no other worktree. Git ignores it.
 - Where you look for a ticket that already exists, look among every session's tickets.
 - Where you read the titles of tickets, print the path and title of each with one `grep -m1 -H '^# '` call whose arguments are all those ticket files.
-- The directories `tickets/draft/`, `tickets/open/`, `tickets/deferred/`, `tickets/assigned/`, `tickets/blocked/`, `tickets/waiting/` and `tickets/closed/` are a ticket's statuses, and moving its file between them is its transition. `uv run python scripts/file_ticket.py path <number>` prints the path of the ticket with that number.
+- The directories `tickets/draft/`, `tickets/new/`, `tickets/approved/`, `tickets/reopened/`, `tickets/released/`, `tickets/deferred/`, `tickets/assigned/`, `tickets/blocked/`, `tickets/waiting/` and `tickets/closed/` are a ticket's statuses, and moving its file between them is its transition. `uv run python scripts/file_ticket.py path <number>` prints the path of the ticket with that number.
     + xref: scripts/file_ticket.py:SUBCOMMANDS
 - Read a ticket you do not edit with `uv run python scripts/file_ticket.py show <number> [<section> ...]`, with each section your step needs, and with none where it needs the whole ticket.
     + xref: scripts/file_ticket.py:SUBCOMMANDS

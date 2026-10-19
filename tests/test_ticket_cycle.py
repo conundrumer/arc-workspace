@@ -24,7 +24,7 @@ def cycle(tickets: Path) -> None:
     ticket(tickets, "draft", "1-1_change_a_coordinator.md", "1-2")
     ticket(tickets, "waiting", "1-2_change_b_coordinator.md", "",
            "2026-10-17T00:00:01Z waiting [ticket-analyst]: change 1-3: x")
-    ticket(tickets, "open", "1-3_change_c_coordinator.md", "1-1")
+    ticket(tickets, "approved", "1-3_change_c_coordinator.md", "1-1")
 
 
 def test_line_that_leaves_a_cycle_is_refused(tmp_path: Path) -> None:
@@ -34,7 +34,7 @@ def test_line_that_leaves_a_cycle_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "draft" / "1-1_change_a_coordinator.md"
     before = path.read_text()
     with pytest.raises(log.Refused, match="1-1 -> 1-2 -> 1-3 -> 1-1"):
-        log.log_moves(tmp_path, log.ticket_number("1-1"), log.Status.OPEN, "ticket-reviewer",
+        log.log_moves(tmp_path, log.ticket_number("1-1"), log.Status.APPROVED, "ticket-reviewer",
                       log.Status.DRAFT, None, "reviewed")
     assert path.read_text() == before
 
@@ -45,7 +45,7 @@ def test_closed_and_draft_moves_pass_on_a_cycle(tmp_path: Path, status: str, not
     log = script("ticket_log")
     cycle(tmp_path)
     moves = log.log_moves(tmp_path, log.ticket_number("1-3"), log.Status(status), "coordinator",
-                          log.Status.OPEN, None, note)
+                          log.Status.APPROVED, None, note)
     assert moves.moved[0] == tmp_path / status / "1-3_change_c_coordinator.md"
 
 
@@ -54,8 +54,8 @@ def test_closed_ticket_ends_the_walk(tmp_path: Path) -> None:
     log = script("ticket_log")
     cycle(tmp_path)
     (tmp_path / "closed").mkdir()
-    (tmp_path / "open" / "1-3_change_c_coordinator.md").rename(
+    (tmp_path / "approved" / "1-3_change_c_coordinator.md").rename(
         tmp_path / "closed" / "1-3_change_c_coordinator.md")
-    moves = log.log_moves(tmp_path, log.ticket_number("1-1"), log.Status.OPEN, "ticket-reviewer",
+    moves = log.log_moves(tmp_path, log.ticket_number("1-1"), log.Status.APPROVED, "ticket-reviewer",
                           log.Status.DRAFT, None, "reviewed")
     assert not moves.refused

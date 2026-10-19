@@ -4,7 +4,7 @@
     - Acts, each with its section: each step of its work, under the item of that step.
 
 # Settle the tickets
-- This part applies where your brief gives tickets under `tickets/open/` to settle: [Settling tickets](prompts/agents/ticket-analyst/tickets.md).
+- This part applies where your brief gives untaken tickets to settle: [Settling tickets](prompts/agents/ticket-analyst/tickets.md).
 
 ## Take the tickets
 - Take each ticket your brief gives to settle, other than one you leave untaken as [Settling tickets](prompts/agents/ticket-analyst/tickets.md#settling-tickets) gives, as [Tracking](prompts/agents/ticket-analyst.md#tracking) gives.

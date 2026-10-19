@@ -1,7 +1,8 @@
 """File a ticket under the main tree's `tickets/`, from the main tree or any
 worktree of it, print a ticket's path, make a ticket's transitions and
 write its log lines, sweep the tickets under `tickets/deferred/`, list
-the open tickets a ticket analyst settles, print a ticket or the sections
+the untaken tickets a ticket analyst settles and the tickets the coordinator
+allowed, print a ticket or the sections
 of it a reader names, and wait for a ticket to close. The `HELP` of
 `filing_help`, which `--help` prints, says how an agent files, `--help
 PART` prints the form of a kind, and each subcommand's own help, which its
@@ -40,6 +41,7 @@ from ticket_log_command import LOG_HELP, LOG_RULES, log_args, log_command  # noq
 from ticket_numbers import (SESSION_VAR, SESSIONS, TicketNumber, reserve, session_id,  # noqa: E402
                             session_index, ticket_number, write_new)
 from ticket_settle import to_settle  # noqa: E402
+from ticket_allows import ALLOWED_HELP, allowed_list  # noqa: E402
 from ticket_subjects import filed_subject  # noqa: E402
 from idle_sessions import MAIN, name_main, read_sessions  # noqa: E402
 from ticket_reads import editors_field  # noqa: E402
@@ -52,8 +54,8 @@ from ticketing.loss import SECOND_PRICE, loss  # noqa: E402
 from ticketing.text import SECTIONS, VALIDATION, heading  # noqa: E402
 from ticketing.times import TIME_FORM  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
-from ticketing.vocabulary import (DEFECT_SECTIONS, MANY_IDEAS, Domain, Kind,  # noqa: E402
-                                  Note, Resolution, Status, Verdict)
+from ticketing.vocabulary import (ALLOW, DEFECT_SECTIONS, MANY_IDEAS, UNTAKEN, Domain, Kind,  # noqa: E402
+                                  Note, Resolution, Status, Verdict, queued)
 from transcript_snapshots import Refused, print_refused  # noqa: E402
 from filing_help import FORM_PURPOSES, FORMS, HELP, RULES, FormPart  # noqa: E402
 from help_parts import part_lines, print_help  # noqa: E402
@@ -85,8 +87,8 @@ PATH_HELP = mctx("""
     """)
 
 TO_SETTLE_HELP = mctx("""
-    - The list holds each ticket under `tickets/open/` that your session filed or whose number the call gives.
-        - Where your session is the main session, as `{invocation} main --help` defines it, the list also holds each ticket under `tickets/open/` that a session in which no agent runs filed.
+    - The list holds each ticket that stands in one of {queue} that your session filed or whose number the call gives.
+        - Where your session is the main session, as `{invocation} main --help` defines it, the list also holds each ticket that stands in one of {queue} that a session in which no agent runs filed.
     - The command prints the number of each ticket the list holds, one per line, in the order of numbers, or `{empty}` where it holds none.
     """)
 
@@ -175,7 +177,7 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
     if (case is None) != (fix is None) or (case is not None and kind is not Kind.DELAY):
         raise Refused(mctx("a `{delay}` that gives a case gives `fix`, and only then").format(
             delay=Kind.DELAY))
-    status = Status.DRAFT if kind is Kind.CHANGE else Status.OPEN
+    status = Status.DRAFT if kind is Kind.CHANGE else queued(None, kind)
     found: Case | None = None
     undecided: list[str] = []
     limits = Thresholds(tickets, undecided)
@@ -433,9 +435,13 @@ SUBCOMMANDS = {
                              "and each `delay` there whose group reaches its threshold"),
                         " [<agent id> ...]", SWEEP_HELP, SWEEP_RULES, None,
                         lambda *given: sweep_command(main_tickets(), *given), True),
-    "to-settle": Subcommand(mctx("prints the open tickets an operator gives a ticket analyst to settle "
+    "to-settle": Subcommand(mctx("prints the untaken tickets an operator gives a ticket analyst to settle "
                                  "after a batch"),
                             " [<number> ...]", TO_SETTLE_HELP, TO_SETTLE_RULES, None, settle_command, False),
+    "allowed": Subcommand(mctx("prints the tickets the coordinator allowed, with the session ids of "
+                               "their allow lines"),
+                          "", ALLOWED_HELP, "", 0,
+                          lambda: "\n".join(allowed_list(main_tickets())) or EMPTY, False),
     "editors": Subcommand(mctx("adds an editor to a held change's `editors` field, with the "
                                "change's budget for its new `editors` set"),
                           " <number> <editor> <agent> <agent id>", EDITORS_HELP, EDITORS_RULES, 4,
@@ -494,7 +500,9 @@ def help_values() -> dict[str, str]:
                 unexercised=Verdict.UNEXERCISED, days=str(UNEXERCISED_DAYS),
                 seconds=str(COMMAND_SECONDS), exercised_field=EXERCISED_FIELD,
                 command_field=COMMAND_FIELD, agent_field=AGENT_FIELD, none_moved=NONE_MOVED,
-                assigned=Status.ASSIGNED, open=Status.OPEN, closed=Status.CLOSED, wontfix=Resolution.WONTFIX, changes=str(CHANGES), cap=str(CAP),
+                assigned=Status.ASSIGNED, closed=Status.CLOSED,
+                new=Status.NEW, approved=Status.APPROVED, reopened=Status.REOPENED, released=Status.RELEASED,
+                queue=ticked(UNTAKEN), allow=ALLOW, wontfix=Resolution.WONTFIX, changes=str(CHANGES), cap=str(CAP),
                 hour_price=f"{SECOND_PRICE * 3600:g}",
                 grounds=SECTIONS[Kind.CHANGE][-1], ground_seconds=str(GROUND_SECONDS), scope=heading(SCOPE), covered=COVERED,
                 subcommands="\n".join(SUBCOMMAND_LINE.format(

@@ -32,7 +32,7 @@
 - `op send`: file the `request` and launch a ticket analyst on it, with its transcript brief, and tell an operator so once the analyst replies.
 - `hotfix`: file the change's `request`, write its brief, and, as [Running a change](#running-a-change) gives, launch at once on a worktree the editors it needs, each with that brief, and merge the change.
     + xref: prompts/agents/notes/requests.md#running-a-change
-- `expedite <number>`: write nothing, send an operator `Op expedite: <number>`, and tell the user the tickets outside `tickets/closed/` that line gives, as [An operator's brief](prompts/agents/notes/launching.md#an-operators-brief) gives that line.
+- `expedite <number>`: write an `allow` line, as [Tracking](prompts/agents/notes/tickets.md#tracking) gives it, on each ticket of that number that stands outside `tickets/assigned/` and `tickets/closed/`, send an operator `Op expedite: <number>`, and tell the user the tickets outside `tickets/closed/` that line gives, as [An operator's brief](prompts/agents/notes/launching.md#an-operators-brief) gives that line.
     + xref: prompts/agents/notes/launching.md#an-operators-brief
 - `op scope: own`, `op scope: all`, `op pause` and `op resume`: write nothing, and send an operator the directive with a capital `Op` and a closing period, as `Op pause.`.
     + xref: prompts/agents/notes/launching.md#an-operators-brief
@@ -40,10 +40,10 @@
 
 ## Running a change
 - Before you act, take each ticket the change would settle that waits on no `change`.
-- Where a ticket the change would settle waits on a `change` or its take is refused, do not act: move each ticket you took to `tickets/open/` and the `request` to wait on that `change`, or else to `tickets/open/`.
+- Where a ticket the change would settle waits on a `change` or its take is refused, do not act: move each ticket you took to `tickets/released/` and the `request` to wait on that `change`, or else to `tickets/released/`.
 - Make and merge the change as [Changes](prompts/agents/notes/coordinator.md#changes) gives.
     + xref: prompts/agents/notes/coordinator.md#changes
-- Once a change you run is on `master`, write a line in its `request`'s log that gives its commit and the number of each ticket it settles, move the `request` and each ticket you took that is no `change` to `tickets/open/`, and leave held each `change` you took.
+- Once a change you run is on `master`, write a line in its `request`'s log that gives its commit and the number of each ticket it settles, move the `request` and each ticket you took that is no `change` to `tickets/released/`, and leave held each `change` you took.
 
 ## Tickets
 - File and track a ticket by [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Tracking](prompts/agents/notes/tickets.md#tracking) and [Change tickets](prompts/agents/notes/tickets.md#change-tickets).
@@ -62,10 +62,10 @@
 - Once you write on a ticket outside `tickets/draft/` by a line of this document, tell an operator that tickets are open before you end your turn with no other work, unless you hold that ticket, you filed it on `op send`, or you launch a ticket analyst with it.
 
 ## The user's words on a ticket
-- Where the user's later words bear on a `request` you filed, append their span to it with `uv run python scripts/spans.py append`, with the new goal where those words change the goal or state one. Send that span to each agent that holds the `request` or the `change` it waits on, and move the `request` to `tickets/open/` where it waits on a `change` that has not merged.
+- Where the user's later words bear on a `request` you filed, append their span to it with `uv run python scripts/spans.py append`, with the new goal where those words change the goal or state one. Send that span to each agent that holds the `request` or the `change` it waits on, and move the `request` to `tickets/reopened/` where it waits on a `change` that has not merged.
     + xref: scripts/spans.py:append
     - Where the `change` of that `request` has merged, file those words as a new `request` in place of the append, with a line under `Grounds` that gives the earlier one, and where those words withdraw the earlier `request`'s need, close it `wontfix` with the new `request`'s number.
-- Where the user rules on a ticket under `tickets/blocked/` that waits on the user and is no `change`, move it to `tickets/open/`, and record the ruling on it: as a span where it is a `request`, and otherwise in the note of the line that moves it.
+- Where the user rules on a ticket under `tickets/blocked/` that waits on the user and is no `change`, move it to `tickets/reopened/`, and record the ruling on it: as a span where it is a `request`, and otherwise in the note of the line that moves it.
 
 ## Waiting on a ticket
 - To learn when a ticket you wait on closes, run `uv run python scripts/file_ticket.py await-close <number> ...` in the background: its completion notification gives how the ticket closed.

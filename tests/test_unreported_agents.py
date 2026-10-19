@@ -12,7 +12,7 @@ from tests.test_change_overrun import worktree
 ME = "a00000000000000f1"
 FIRST, SECOND = "a0000000000000001", "a0000000000000002"
 CHANGE_LOG = ("## Log\n2026-10-17T02:14:06Z draft [ticket-analyst]: filed\n"
-              "2026-10-17T02:23:18Z open [ticket-reviewer ab225add95550521a]: reviewed\n"
+              "2026-10-17T02:23:18Z approved [ticket-reviewer ab225add95550521a]: reviewed\n"
               "2026-10-17T02:23:56Z assigned [operator {me}]: taking: budget 2.43 dollars, "
               "1951 s\n"
               "2026-10-17T02:24:00Z assigned [operator {me}]: worktree {w}\n")
@@ -113,7 +113,7 @@ def test_the_merge_closes_no_question_that_waits(tmp_path: Path) -> None:
     t = change(tmp_path, w)
     question = ticket(tmp_path, "waiting", "9-2_change_9-1_code-editor.md",
                       "---\nkind: question\n---\n# x: y?\n\n## Log\n"
-                      "2026-10-17T02:30:00Z open [code-editor]: filed\n"
+                      "2026-10-17T02:30:00Z new [code-editor]: filed\n"
                       "2026-10-17T02:31:00Z waiting [ticket-analyst]: change 9-3\n")
     commit = Commit("h" * 40, t.last_time + 100, frozenset(), t.title, False, frozenset())
     step = close(state(tmp_path, [t, question], [], w, [commit]), t, [])

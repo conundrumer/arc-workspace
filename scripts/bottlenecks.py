@@ -1,7 +1,7 @@
 """Print what held ready work up, by cause: per file that `change`
 tickets' Scopes name, the waits on `depends-on` links and the conflicts in
 a change's rebase; per ticket, the waits on the user and the hours a
-change stood open and ready; per change, the waits of other changes on it;
+change stood untaken and ready; per change, the waits of other changes on it;
 and beside each file, its churn. `HELP`, which `--help` prints, gives the
 usage form and the counting rules."""
 
@@ -30,7 +30,8 @@ from operations.state import LogLine, Ticket  # noqa: E402
 from operations.tracker import runs  # noqa: E402
 from operations.worktrees import BASE  # noqa: E402
 from ticketing.times import TIME_FORM, stamp_time, utc_stamp  # noqa: E402
-from ticketing.vocabulary import WAIT_STATUSES, Kind, Status  # noqa: E402
+from ticketing.vocabulary import UNTAKEN, WAIT_STATUSES, Kind, Status  # noqa: E402
+from ticket_vocabulary import ticked  # noqa: E402
 
 NO_SHARED_FILE = "(no shared file)"
 PATHS_NOT_RECORDED = "(paths not recorded)"
@@ -41,13 +42,13 @@ HELP = mctx("""
     - `--since <time>`, with `<time>` in the form `{form}` in UTC, sets the window from that time to now: each span is cut to the window, and only the conflict lines in it count. With no `--since`, the window is the whole log.
     - `depends-on` waits: one row per path that a `change` ticket's `## Scope` gives, with the hours changes waited on it and the number of changes that waited on it.
         - The paths a Scope gives are those `uv run python scripts/file_ticket.py --help-all` gives.
-        - A `depends-on` wait is a span in which a `change` ticket stood under `tickets/open/` and a ticket its `depends-on` gives stood outside `tickets/closed/`, charged to each path both Scopes give, or to the row `{no_shared}` where they give none in common.
+        - A `depends-on` wait is a span in which a `change` ticket stood in one of {queue} and a ticket its `depends-on` gives stood outside `tickets/closed/`, charged to each path both Scopes give, or to the row `{no_shared}` where they give none in common.
         - The wait hours of a path are change-hours: the overlapping spans of one change count once, and those of different changes add up.
     - Rebase conflicts: each log line of a `change` ticket whose note opens with `{opening}` or `{rerun}`, charged to each path it gives, or to the row `{not_recorded}` where it gives none.
     - A status wait is a span of a ticket's log. It opens at a line that moves the ticket into `blocked` or `waiting`, or at a line whose note opens with what the ticket waits on while it stands there. It takes as its cause what that line's note opens with, as `uv run python scripts/file_ticket.py log --help` gives it: `user` or `change <number>`. It runs to the next line of the ticket's log that moves the ticket out of that status or whose note opens with what the ticket waits on.
     - Waits on the user: one row per ticket of any kind, with the hours of its status waits whose cause is `user`.
     - Waits on another change: one row per change number, with the hours of the status waits of `change` tickets whose cause is `change <number>`.
-    - Ready and not taken: one row per `change` ticket, with the hours it stood under `tickets/open/` while each ticket its `depends-on` gives stood under `tickets/closed/`.
+    - Ready and not taken: one row per `change` ticket, with the hours it stood in one of {queue} while each ticket its `depends-on` gives stood under `tickets/closed/`.
     - Churn: with `--since`, each path row gives the number of commits of `master` that touch the path, or a file under it, in the window of the same length that ends at the window's start.
     """)
 
@@ -111,7 +112,7 @@ class Costs:
     """What held ready work up in a window, by cause: per file, the
     `depends-on` wait hours and the waiting changes, and the rebase
     conflicts; per
-    ticket, the hours it waited on the user and the hours it stood open and
+    ticket, the hours it waited on the user and the hours it stood untaken and
     ready; per change number, the hours other changes waited on it."""
     depends_on: dict[str, tuple[float, int]]
     conflicts: dict[str, int]
@@ -179,14 +180,14 @@ def dependency_waits(tickets: dict[str, Ticket], root: Path, window: Window,
                      undecided: list[str]
                      ) -> tuple[dict[str, tuple[float, int]], dict[str, float]]:
     """Per file, the `depends-on` wait hours and the waiting changes, and
-    per change, the hours it stood open and ready, in `window`."""
+    per change, the hours it stood untaken and ready, in `window`."""
     start, now = window
     scopes = {n: scope_paths(t, root) for n, t in sorted(tickets.items())}
     waits: dict[str, dict[str, list[Span]]] = defaultdict(lambda: defaultdict(list))
     ready: dict[str, float] = {}
     not_closed = frozenset(Status) - {Status.CLOSED}
     for n, t in changes(tickets):
-        waiting = clip(spans_in(t, frozenset({Status.OPEN}), now), start)
+        waiting = clip(spans_in(t, frozenset(UNTAKEN), now), start)
         free = waiting
         for d in t.depends_on:
             if d not in tickets:
@@ -233,7 +234,7 @@ def touching(commits: list[frozenset[str]], path: str) -> int:
 def main() -> int:
     help_text = textwrap.dedent(HELP).format(
         no_shared=NO_SHARED_FILE, opening=CONFLICT_OPENING, rerun=RERUN_OPENING,
-        not_recorded=PATHS_NOT_RECORDED, form=TIME_FORM)
+        not_recorded=PATHS_NOT_RECORDED, form=TIME_FORM, queue=ticked(UNTAKEN))
     ap = argparse.ArgumentParser(description=help_text,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--since", type=stamp_time)

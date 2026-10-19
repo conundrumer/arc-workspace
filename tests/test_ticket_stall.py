@@ -85,9 +85,9 @@ def test_a_change_behind_the_head_of_the_take_is_not_stalled_at_the_read_where_i
         tmp_path: Path) -> None:
     from operations import taking, ticket_stall
     from operations.constants import STUCK_SECONDS
-    released = TAKEN + f"{FILED} open [operator {ME}]: released\n"
-    tickets = {"open/9-1_change_x_ticket-analyst.md": released,
-               "open/9-2_change_x_ticket-analyst.md": released}
+    released = TAKEN + f"{FILED} released [operator {ME}]: released\n"
+    tickets = {"released/9-1_change_x_ticket-analyst.md": released,
+               "released/9-2_change_x_ticket-analyst.md": released}
     s = state(tmp_path, tickets)
     head, behind = (t.number for t in taking.batch(s))
     waits = state(tmp_path / "waits", tickets, [head])

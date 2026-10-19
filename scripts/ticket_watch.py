@@ -185,7 +185,7 @@ class Thresholds:
 
 def route(tickets: Path, agent: str, limits: Thresholds,
           own: TicketNumber | None) -> dict[TicketNumber, Path]:
-    """Moves to `open` the tickets of the deferred groups as `file_ticket.py
+    """Moves to `reopened` the tickets of the deferred groups as `file_ticket.py
     case --help-all` states, with `own` the ticket the call appends to, and
     returns the path each moved ticket went to."""
     moved: dict[TicketNumber, Path] = {}
@@ -203,7 +203,7 @@ def route(tickets: Path, agent: str, limits: Thresholds,
                         "{limit:.4f} dollars of `{fix}`").format(
                             group=w.named, total=total, limit=limit, fix=w.group.fix)
         for number in w.numbers:
-            moved[number] = log_moves(tickets, number, Status.OPEN, agent, Status.DEFERRED,
+            moved[number] = log_moves(tickets, number, Status.REOPENED, agent, Status.DEFERRED,
                                       None, note).moved[0]
     return moved
 

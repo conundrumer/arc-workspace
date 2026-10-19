@@ -20,7 +20,7 @@ from handbook.lib import LIB_SRC
 from handbook.paths import repo_label, scripts_importable
 from operations.roles import Role
 from ticketing.text import DESIGN, SECTIONS, ticket_text
-from ticketing.vocabulary import Domain, Kind, Status
+from ticketing.vocabulary import Domain, Kind, Status, queued
 
 scripts_importable()
 
@@ -63,7 +63,7 @@ SIZE = mctx("{text} {size} of {budget}")
 
 OPENED = mctx("opens with no ticket review: its text is fixed")
 """The note of the line that moves a pass from `tickets/draft/` to
-`tickets/open/`."""
+`tickets/approved/`."""
 
 
 def _ticked(path: Path) -> str:
@@ -111,14 +111,14 @@ def open_pass(tickets: Path) -> Path | None:
 
 def file_pass(tickets: Path, found: list[Size], commit: str) -> Path | None:
     """File the pass on each document of `found` past its budget under
-    `tickets/open/`, and give its path, where one stands so and no pass
+    `tickets/approved/`, and give its path, where one stands so and no pass
     stands outside `tickets/closed/`."""
     past = [s for s in found if s.standing is Standing.PAST]
     if not past or open_pass(tickets) is not None:
         return None
     path = file_ticket(tickets, Domain.CHANGE.value, SUBJECT, FILER, pass_text(past, commit))
-    return log_moves(tickets, ticket_name(path).number, Status.OPEN, FILER, Status.DRAFT,
-                     None, OPENED).moved[0]
+    return log_moves(tickets, ticket_name(path).number, queued(Status.DRAFT, Kind.CHANGE), FILER,
+                     Status.DRAFT, None, OPENED).moved[0]
 
 
 def main(argv: list[str]) -> None:

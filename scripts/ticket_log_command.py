@@ -19,6 +19,8 @@ LOG_HELP = mctx("""
     - A ticket waits on the change that the last line of its log whose note opens with what a ticket waits on gives as `{change} <number>`.
     - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
         - With `{duplicate}`, the note has the form `{duplicate_of}`, with `<number>` the number of the ticket it duplicates.
+    - A move into a take's queue, one of {queue}, goes into the one status its source gives: `{reopened}` from `{blocked}`, `{waiting}`, `{deferred}` or `closed`, `{released}` from `assigned`, and from `draft` `{approved}` for a `{change}` and `{new}` for any other kind.
+    - An allow line, which admits the ticket past the `Op pause.` and `Op scope: own.` of the coordinator's session, is a line with `{allow}` as `<agent>` and as `<note>`, `<status>` the same as `<current status>`, and the coordinator's session id in `--id`, on a ticket outside `assigned` and `closed`.
     - A line whose note opens with `{recurs} <number>` records a recurrence of the defect the ticket records, with `<number>` the number of a `{bug}` whose root cause is that defect.
     """)
 
@@ -36,10 +38,10 @@ LOG_RULES = mctx("""
         - The holder is the agent id or the session id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines.
             - Where none of them gives one, the ticket has no holder.
     - Where the line moves a `{change}` ticket into `closed`, the command also moves each ticket under `{waiting}` that waits on that change, and prints the path of each one it moved, one per line, after the change's own path.
-    - A `{change}` ticket that waits on it moves into `open`, with the note `{unblocked_by}`, whatever the change's resolution.
+    - A `{change}` ticket that waits on it moves into `{reopened}`, with the note `{unblocked_by}`, whatever the change's resolution.
     - Each other ticket that waits on it, where the change's resolution is `{fixed}` and a `{change}` outside `tickets/{closed}/` gives the ticket's number in its `Motivation`, stays under `{waiting}` and waits on the lowest-numbered such change, `<next>`, with the note `{waits_on_next}`.
     - Each other ticket that waits on it, where the change's resolution is `{fixed}` and no such change stands, moves into `closed`, with the note `{closed_by}`.
-    - Each other ticket that waits on it, where the change's resolution is another, moves into `open`, with the note `{unblocked_by}`.
+    - Each other ticket that waits on it, where the change's resolution is another, moves into `{reopened}`, with the note `{unblocked_by}`.
     - Each line that moves a ticket that waits on the change takes the `<agent>` and the `--id` of the call.
     - A ticket that waits on the change and that another call moves first, the command skips.
     - The command moves those tickets in the order of their file names.

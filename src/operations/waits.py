@@ -13,7 +13,7 @@ from operations.pacing import Pace
 from operations.state import State, Ticket
 from operations.tracker import blocked_on_user, closed
 from ticketing.times import utc_stamp
-from ticketing.vocabulary import Status
+from ticketing.vocabulary import UNTAKEN, Status
 
 
 ON_USER = mctx("it waits on the user")
@@ -89,9 +89,9 @@ def cycle(state: State, number: str) -> tuple[str, ...] | None:
 
 
 def held(state: State, t: Ticket) -> Held | None:
-    """The line of the user that holds `t` back, where `t` is open and each
+    """The line of the user that holds `t` back, where `t` is untaken and each
     ticket of its `depends-on` is closed."""
-    if t.status is not Status.OPEN or not all(closed(state, d) for d in t.depends_on):
+    if t.status not in UNTAKEN or not all(closed(state, d) for d in t.depends_on):
         return None
     passes, admitted = taking.passing(state)
     if not passes(t.number):

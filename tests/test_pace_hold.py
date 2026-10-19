@@ -14,7 +14,7 @@ def test_past_the_pace_a_launch_is_held_and_the_next_step_stands(tmp_path: Path)
     from operations.pacing import Until
     from operations.roles import Role
     from operations.steps import Bash, Launch
-    within = state(tmp_path, {"open/9-1_change_x_ticket-analyst.md": ""})
+    within = state(tmp_path, {"approved/9-1_change_x_ticket-analyst.md": ""})
     past = replace(within, computed=replace(within.computed, pace=Until(within.now + 60)))
     launch = Launch(Role.TICKET_REVIEWER, "9-1", "brief", occasion="1")
     move = Bash("true", "move", occasion="1")
@@ -53,7 +53,7 @@ def test_at_the_cap_a_launch_is_held_and_the_batch_stops(tmp_path: Path) -> None
     from operations.pacing import Until
     from operations.roles import Role
     from operations.steps import Bash, Launch
-    base = state(tmp_path, {"open/9-1_change_x_ticket-analyst.md": ""})
+    base = state(tmp_path, {"approved/9-1_change_x_ticket-analyst.md": ""})
     launch = Launch(Role.TICKET_REVIEWER, "9-1", "brief", occasion="1")
     move = Bash("true", "move", occasion="1")
 

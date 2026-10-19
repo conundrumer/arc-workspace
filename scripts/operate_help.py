@@ -68,7 +68,7 @@ WAITS_HELP = mctx("""
             - It stands on a cycle of links, which it gives in order.
             - It stands under `tickets/draft/`.
             - The read of the tracker left it out.
-            - It is open, each ticket of its `depends-on` is closed, and the run scripts' `takes`, the `Op pause.` line, the `Op scope: own.` line or the usage pace holds it.
+            - It stands in a take's queue, as `uv run python scripts/file_ticket.py log --help-all` gives it, each ticket of its `depends-on` is closed, and the run scripts' `takes`, the `Op pause.` line, the `Op scope: own.` line or the usage pace holds it.
         - A ticket that gives no reason waits in turn.
     - Where a change waits on its `depends-on`, its log has had no line for `STUCK_SECONDS`, and its paths hold a ticket that stands on a cycle, that a line of the user holds, or that waits on the user and is no entry of the change's own `depends-on` off a cycle, `next` sends the coordinator the change's paths, with the step to take.
         - It sends it once per change and set of such tickets after the change's last log line, or, where the paths reach a cycle of links through such a ticket, once per cycle after the last log line of the cycle's tickets, whichever change waits.
@@ -169,8 +169,8 @@ PARTS = {
                 - `waits_on`: the change it waits on, or None.
                 - `filed_by_run`: whether a pipeline of the run, running or ended, filed it.
                 - `reached_by_run`: whether a chain of `depends_on` and `waits_on` links reaches it from a ticket such a pipeline filed.
-            - From the line on, also once it is done, the operator launches a ticket analyst on an open ticket, and takes an open change, only where the `takes` of each run whose script defines one gives `True` for it.
-                - A ticket an `Op expedite:` line gives passes, and so does a change that an operator took before and that went back to `tickets/open/`.
+            - From the line on, also once it is done, the operator launches a ticket analyst on an untaken ticket, and takes an untaken change, only where the `takes` of each run whose script defines one gives `True` for it.
+                - A ticket an `Op expedite:` line gives passes, and so does a change that an operator took before and that went to `tickets/released/`.
     - A fault of a script that an `Op run:` or an `Op pace:` line gives is a load that fails, a call of one of its functions that raises or gives a result in no form this help or `--help pace` gives for it, or a load and calls that run past {script} seconds.
         - While a fault stands, the result of each call it touches is held back: a fault of a call touches that call, and a fault of the load or of the time touches each call.
         - With `starts` held back, the run starts nothing.
@@ -179,8 +179,8 @@ PARTS = {
     """),
     HelpPart.PACE: mctx("""
     - `next` reads a coordinator's line `Op pace: <preset> [<argument> ...]` or `Op pace: <path>` as the usage pace of each operator of the session, and the last line in one of these forms stands. An `Op pace:` line in neither form goes back to the coordinator and leaves the pace as it was.
-        - Past the pace, `next` starts no agent's run, of any line's work: it prints no launch, and no SendMessage call that resumes an agent of the operators whose run has ended or that the usage limit stopped. It takes no open ticket and no change. A SendMessage call to a running agent or to the coordinator, and each step that runs no agent, stand.
-        - While an `Op pause.` line stands, one call of `next` takes each change an `Op expedite:` line gives, each change that settles an `interference` ticket and each change an operator took before, and at most one other change, so that the pause is read again before each further take.
+        - Past the pace, `next` starts no agent's run, of any line's work: it prints no launch, and no SendMessage call that resumes an agent of the operators whose run has ended or that the usage limit stopped. It takes no untaken ticket and no change. A SendMessage call to a running agent or to the coordinator, and each step that runs no agent, stand.
+        - While an `Op pause.` line stands, one call of `next` takes each change an `Op expedite:` line gives that an allow line of the session admits, each change that settles an `interference` ticket and each change an operator took before, and at most one other change, so that the pause is read again before each further take.
         - While a pace that an `Op pace:` line gives as `even` or `by` admits work, the running agents of the session's operators, the launches of a call of `next` included, number at most the pace's cap after that call: the larger of 1 and the ceiling of {subagents} times the slack over {band} percentage points, and at most {subagents}.
             - The slack is the number of percentage points by which the window's `used_pct` falls below the bound that the preset gives.
             - Where the running agents number the cap or more, `next` starts no agent's run, as past the pace.

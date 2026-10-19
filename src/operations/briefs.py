@@ -352,12 +352,12 @@ def after_merge(number: str, items: str, head: str) -> str:
 
 
 REVIEW_DRAFTS = mctx("Review the drafts {numbers}.")
-SETTLE = mctx("Settle the tickets under `tickets/open/` {numbers}.")
+SETTLE = mctx("Settle the untaken tickets {numbers}.")
 JUDGE = mctx("Of these, settle each of {numbers} only where you judge that the session's line of "
              "work needs it.")
 REVISE = mctx("Revise each draft `change` ticket {numbers}, whose log holds findings or "
               "suggestions.")
-PASS_SETTLE = mctx("Settle the tickets under `tickets/open/` {numbers}, which the solver pass on "
+PASS_SETTLE = mctx("Settle the untaken tickets {numbers}, which the solver pass on "
                    "task {task} and the review of its transcript, agent {review}, filed, and "
                    "read that review's report by `python3 ~/.claude/skills/retrieve/"
                    "transcripts.py --help`.")
@@ -421,7 +421,7 @@ def revise_lines(numbers: list[str], last: list[str]) -> list[str]:
     if last:
         lines.append(mctx(
             "The revision of {last} is the last: once it is written, the operator moves the draft to "
-            "`tickets/open/` with no further ticket review, and the change's own review checks "
+            "`tickets/approved/` with no further ticket review, and the change's own review checks "
             "what the change writes.").format(
                 last=", ".join(last)))
     return lines

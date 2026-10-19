@@ -22,7 +22,7 @@ from ticket_log import log_moves  # noqa: E402
 from ticket_numbers import TicketNumber, session_id, ticket_number  # noqa: E402
 from ticketing.text import SECTIONS, heading, ticket_text  # noqa: E402
 from ticketing.times import TIME_FORM, stamp_time, utc_stamp  # noqa: E402
-from ticketing.vocabulary import COORDINATOR, ROUTE_NOTE, Domain, Kind, Note, Route, Status  # noqa: E402
+from ticketing.vocabulary import COORDINATOR, ROUTE_NOTE, Domain, Kind, Note, Route, Status, queued  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
 from transcripts import find  # noqa: E402
 from entry_reads import read_entries  # noqa: E402
@@ -212,7 +212,8 @@ def file_request(route: Route, inferred: bool, subject: str, title: str, goal: s
     path = file_ticket(tickets, Domain.CHANGE.value, subject, COORDINATOR, text,
                        filed=f"{Note.FILED}: {route_note}")
     number = ticket_name(path).number
-    path = move_routed(tickets, number, Route.DRAFT if inferred else route, Status.OPEN)
+    path = move_routed(tickets, number, Route.DRAFT if inferred else route,
+                       queued(None, Kind.REQUEST))
     return f"{path}\n\n{readback_prompt(route, goal, inferred)}"
 
 
@@ -221,7 +222,7 @@ def move_routed(tickets: Path, number: TicketNumber, route: Route, source: Statu
     `route` places it, as `HELP` gives, with the note `ROUTE_NOTE`, and
     returns its path."""
     to = (Status.DRAFT if route is Route.DRAFT else Status.ASSIGNED if route in HELD
-          else Status.OPEN)
+          else queued(Status.DRAFT, Kind.REQUEST))
     if to is source:
         return ticket_path(tickets, number)
     return log_moves(tickets, number, to, COORDINATOR, source,
