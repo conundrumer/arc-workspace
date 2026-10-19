@@ -329,11 +329,11 @@ impl<'a> Builder<'a> {
     /// Adds the edges of a clause on a port of an instance. The instance
     /// reads a clause on one of its inputs, as a `DET_OR_RULE` line on
     /// `&canvas.extent`, and a clause on one of its outputs, as a
-    /// `RULE_OR_DET` line on `&ring.value`, reads that output. A `DET` on a
-    /// port is the port's one source: on an input, the input's node reads
-    /// the `DET`'s parameter node, made where the `INIT` form writes no
-    /// clause of that input, and on an output, the `DET` reads nothing of
-    /// the instance.
+    /// `RULE_OR_DET` line on `&ring.value`, reads that output. For a `DET` on
+    /// a port, on an input the input's node reads the `DET`'s parameter
+    /// node, made where the `INIT` form writes no clause of that input, and
+    /// on an output the `DET` reads nothing of the instance, as
+    /// `docs/arclog/arclog.md#the-alts-form` gives.
     pub(super) fn read_instance_line(&mut self, clause: &Clause, node: GraphNodeIndex, scope: &NameScope) {
         let ProgramRelation::Output(output) = &clause.derives else { return };
         let (OutputOwner::Instance(name), [OutputStep::Port(port)]) = (&output.of, &output.path[..]) else { return };

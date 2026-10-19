@@ -289,29 +289,28 @@ impl LabelWalk<'_> {
         class: &[crate::program::LabelId],
     ) -> Result<Option<ValueType>, LabelFault> {
         use crate::program::{Conjunct, Negated};
-        if let Some(atom) = conjunct.atom() {
-            let atom = atom.value();
-            let mut ty = None;
-            for site in atom.sites.iter() {
-                let mut path = Vec::new();
-                let mut fault = None;
-                each_site_label(site, &mut path, &mut |use_, path| {
-                    if fault.is_some() || !use_label(use_).is_some_and(|l| class.contains(&l)) {
-                        return;
-                    }
-                    match meet(ty.take(), (self.site_type)(atom, path)) {
-                        Ok(met) => ty = met,
-                        Err(err) => fault = Some(err),
-                    }
-                });
-                if let Some(err) = fault {
-                    return Err(err);
-                }
-            }
-            return Ok(ty);
-        }
         match conjunct {
-            Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)) => unreachable!("the atom of the conjunct is typed above"),
+            Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
+                let atom = atom.value();
+                let mut ty = None;
+                for site in atom.sites.iter() {
+                    let mut path = Vec::new();
+                    let mut fault = None;
+                    each_site_label(site, &mut path, &mut |use_, path| {
+                        if fault.is_some() || !use_label(use_).is_some_and(|l| class.contains(&l)) {
+                            return;
+                        }
+                        match meet(ty.take(), (self.site_type)(atom, path)) {
+                            Ok(met) => ty = met,
+                            Err(err) => fault = Some(err),
+                        }
+                    });
+                    if let Some(err) = fault {
+                        return Err(err);
+                    }
+                }
+                Ok(ty)
+            }
             Conjunct::Not(Negated::Form(form)) => self.conjunct_type(form, pairs, class),
             Conjunct::Or(branches) => join_branches(branches.iter().map(|branch| self.body_type(branch.value(), pairs))),
             Conjunct::If { test, then, otherwise } => {

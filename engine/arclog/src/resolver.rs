@@ -32,14 +32,15 @@ pub enum DependencyKind {
     /// A relation a clause derives, an instance relation on a `RULE_OR_DET`
     /// line included.
     Clause(ProgramRelation),
-    /// An input of an instance: the input's clause in its `INIT` form, or,
-    /// where the case holds a `DET` of `&<instance>.<input>`, that `DET`'s
-    /// [`DependencyKind::Parameter`] node, which this node reads in place of
-    /// a clause and of the input's default rows.
+    /// An input of an instance. The node reads the input's clause in its
+    /// `INIT` form, or, where the case holds a `DET` of
+    /// `&<instance>.<input>`, that `DET`'s [`DependencyKind::Parameter`]
+    /// node, as `docs/arclog/arclog.md#the-alts-form` gives.
     InstanceInput { instance: InstanceName, input: PortName },
     /// An output of an instance. Where the case holds a `DET` of
     /// `&<instance>.<output>`, each read of that relation resolves to the
-    /// `DET`'s [`DependencyKind::Parameter`] node, and none to this node.
+    /// `DET`'s [`DependencyKind::Parameter`] node, and none to this node, as
+    /// `docs/arclog/arclog.md#the-alts-form` gives.
     InstanceOutput { instance: InstanceName, output: PortName },
     /// A parameter: a `DET` relation with no `ONE` mark, read as one node and
     /// never through its body, as a `DET` of the concept program is read in
@@ -48,10 +49,10 @@ pub enum DependencyKind {
     /// `docs/arclog/arclog.md#the-alts-form` gives it. Each read of the
     /// parameter's own `DET` bodies is an edge into the node, so a `DET` that
     /// reads a relation which depends on its own parameter makes a cycle.
-    /// A `DET` of a port of an instance, `&<instance>.<port>`, is that port's
-    /// one source in the case: each read of the relation resolves to this
-    /// node, and on an input the input's [`DependencyKind::InstanceInput`]
-    /// node reads it.
+    /// For a `DET` of a port of an instance, `&<instance>.<port>`, each read
+    /// of the relation resolves to this node, and on an input the input's
+    /// [`DependencyKind::InstanceInput`] node reads it, as
+    /// `docs/arclog/arclog.md#the-alts-form` gives.
     Parameter(ProgramRelation),
     /// A chosen relation: a `CHOOSE` form's, or a clause's with `ONE` marks,
     /// a `DET` with `(ONE)` included, which is a chosen relation at the task

@@ -72,12 +72,9 @@ pub enum Exclusion {
 /// [`crate::resolver::DependencyKind::Chosen`] for a `DET` that ends in
 /// `(ONE)`.
 ///
-/// A `DET_OR_RULE` or `RULE_OR_DET` line on a port of an instance,
-/// `&<instance>.<port>`, gives the port one source. A case that takes its
-/// derived reading holds no clause of the line where the line holds no
-/// proposer, so the instance derives the port. A case that takes its stored
-/// reading holds the line's `DET`, and, on an input, the instance's `INIT`
-/// form with that input left out.
+/// Of a `DET_OR_RULE` or `RULE_OR_DET` line on a port of an instance,
+/// `&<instance>.<port>`, a case holds what its reading of the line gives, as
+/// `docs/arclog/arclog.md#the-alts-form` gives it.
 #[derive(Clone, Debug)]
 pub struct Case {
     pub name: CaseName,
