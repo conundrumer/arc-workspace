@@ -5,7 +5,8 @@
 
 use std::sync::Arc;
 
-use super::super::columns::{form_columns, row_columns, Columns, Place};
+use super::super::columns::{Columns, Place};
+use super::super::form_columns::{form_columns, row_columns};
 use super::super::registry_columns;
 use super::super::names::{combined, Own, Writer};
 use super::Builder;

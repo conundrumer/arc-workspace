@@ -248,15 +248,16 @@ fn variables_of(builder: &mut IrBuilder<'_>, labels: &BTreeSet<u32>) -> Box<[Var
     variables.into()
 }
 
-/// The path of the clause or the instance input that holds `path`, whose
-/// body the clause of `builder` compiles.
+/// The path of the clause, the instance input, the key clause or the
+/// `RIGID_DET` form that holds `path`, whose body the clause of `builder`
+/// compiles.
 fn enclosing_form(builder: &IrBuilder<'_>, path: &NodePath) -> NodePath {
     let root = NodeRef::Program(builder.program.program.program.value());
     (1..path.0.len())
         .rev()
         .map(|depth| NodePath(path.0[..depth].into()))
-        .find(|prefix| matches!(node_at(root, prefix), Some(NodeRef::Clause(_) | NodeRef::InstanceInput(_))))
-        .expect("a filter stands in the body of a clause or of an instance input")
+        .find(|prefix| matches!(node_at(root, prefix), Some(NodeRef::Clause(_) | NodeRef::InstanceInput(_) | NodeRef::KeyClause(_) | NodeRef::RigidDet(_))))
+        .expect("a filter stands in the body of a clause, of an instance input, of a key clause or of a `RIGID_DET` form")
 }
 
 /// Calls `visit` on each label that stands in `node` at `at`, at any depth,

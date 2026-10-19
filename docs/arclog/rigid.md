@@ -70,7 +70,7 @@ If the instances of an assembly admit no common reading, the assembly has no val
 
 The form has two kinds of output:
 
-- `&marker.<part>` holds the key's columns, `:Pose`, and then the part's columns. At each D4 element `D`, it holds the image of the part's common reading under `D`. One pose read across several parts reads one placement of the whole assembly.
+- `&marker.<part>` holds the key's columns, `:Pose`, and then the part's columns, other than those at a label of the `instance` clause. At each D4 element `D`, it holds the image of the part's common reading under `D`. One pose read across several parts reads one placement of the whole assembly.
 - `&marker.pose` holds the key's columns, the instance's columns and then `:Pose`: the elements that take the common reading onto that instance's reading. An instance has several where the assembly has a symmetry.
 
 ## The pose

@@ -422,6 +422,7 @@ fn demo_rules<'d>(
 }
 
 pub(crate) mod columns;
+pub(crate) mod form_columns;
 pub(crate) mod registry_columns;
 
 mod names;

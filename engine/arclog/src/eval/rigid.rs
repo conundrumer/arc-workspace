@@ -4,6 +4,10 @@
 //!
 //! The stored record of a part, `&marker.<part>`, holds its common reading:
 //! the key's columns, where the form has a key, then the part's columns.
+//! A part's site that holds a bare label of the `instance` clause selects
+//! the part's rows at an instance and gives the part no column, so an
+//! instance's reading of the part is the part's rows at that instance's
+//! row, without those columns.
 
 use std::sync::Arc;
 
@@ -15,6 +19,7 @@ use crate::hash::{StableHashMap, StableHashSet};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Atom, Body, Conjunct, LabelId, Node, OutputName, OutputOwner, OutputStep, ProgramRelation, RigidDet};
 use crate::relations::{Row, RowSet};
+use crate::resolver::form_columns;
 use crate::terms::{Constant, Example, Term, TermId};
 use crate::types::{each_site_label, use_label, FormTypes, ValueType};
 
@@ -24,7 +29,9 @@ use crate::types::{each_site_label, use_label, FormTypes, ValueType};
 /// on `example`, or task-wide where it is `None`, with the form's bodies
 /// evaluated through `bodies`.
 ///
-/// A part's site that holds a label of the `instance` clause, a part whose
+/// A part's columns leave out each site that holds a bare label of the
+/// `instance` clause. A part's site that holds a label of the `instance`
+/// clause inside a term of other labels, a part whose
 /// stored record is absent or does not read at the part's column types,
 /// and an output step that more than one part's path begins with give a
 /// [`RunFault`].
@@ -47,7 +54,8 @@ pub fn evaluate_assembly(
 }
 
 /// One part of an assembly: its atom with its path, the labels of its
-/// sites in the order of its columns, and their types.
+/// sites that give it a column, in the order of its columns, and their
+/// types.
 struct Part<'p> {
     atom: &'p Node<Atom>,
     path: NodePath,
@@ -91,11 +99,11 @@ impl<'e, 'p> Assembly<'e, 'p> {
         let mut parts = Vec::with_capacity(rigid.parts.len());
         for (atom, index) in rigid.parts.iter().zip(clauses..) {
             let mut labels = Vec::new();
-            for site in atom.value().sites.iter() {
+            for site in atom.value().sites.iter().filter(|site| !form_columns::at_instance(rigid, site)) {
                 each_site_label(site, &mut Vec::new(), &mut |use_, _| labels.extend(use_label(use_)));
             }
             if labels.iter().any(|label| instance_labels.contains(label)) {
-                return Err(fault("a part's site holds a label of the `instance` clause, whose column `docs/arclog/rigid.md#semantics` gives no value in the part's output".into()));
+                return Err(fault("a part's site holds a label of the `instance` clause inside a term of other labels, whose column `docs/arclog/rigid.md#semantics` gives no value in the part's output".into()));
             }
             let types = typed(&labels)?;
             parts.push(Part { atom, path: form.child(index), labels, types });
@@ -130,7 +138,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
 
     /// The path after the form's name of `part`'s output.
     fn steps(&self, part: &Part<'_>) -> Vec<OutputStep> {
-        crate::resolver::columns::part_steps(&part.atom.value().relation).expect("a part that reads a relation")
+        form_columns::part_steps(&part.atom.value().relation).expect("a part that reads a relation")
     }
 
     /// The key columns of an output row at the key `key`: the key's columns,

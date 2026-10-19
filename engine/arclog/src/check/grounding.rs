@@ -12,6 +12,7 @@ use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Body, Conjunct, Form, InstanceInput, KeyClause, LabelId, LabelUse, Node, RelationColumn};
 use crate::resolver::columns;
+use crate::resolver::form_columns;
 use crate::registry::Registry;
 use crate::types::{use_label, ValueType};
 
@@ -130,13 +131,13 @@ pub(super) fn form_bodies(form: &Form) -> Vec<FormBody<'_>> {
 /// The bodies of the form `form`, in the order of their paths, each at its
 /// path relative to `form`. The key clause and its labels are those
 /// [`columns::key_clause`] gives, and the columns of a clause's body and of
-/// a `CHOOSE` form's `from` those [`columns::form_columns`] gives after the
+/// a `CHOOSE` form's `from` those [`form_columns::form_columns`] gives after the
 /// key's.
 pub(super) fn bodies(form: NodeRef<'_>) -> Vec<FormBody<'_>> {
     let at = NodePath::default();
     let key = columns::key_clause(form);
     let key_labels = key.as_ref().map(|(key, _)| labels(&key.columns)).unwrap_or_default();
-    let own_columns = || columns::form_columns(form).skip(key_labels.len()).map(|column| column.label).collect::<Vec<_>>();
+    let own_columns = || form_columns::form_columns(form).skip(key_labels.len()).map(|column| column.label).collect::<Vec<_>>();
     let mut out: Vec<FormBody<'_>> = key.iter().map(|(key, body)| plain(&key.body, body.clone(), &[], key_labels.clone())).collect();
     let after_key = u32::from(key.is_some());
     match form {

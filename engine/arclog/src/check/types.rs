@@ -14,7 +14,7 @@ use crate::program::{
     ColumnName, Conjunct, Constraint, ConstraintOp, Form, LabelId, NameScope, Operand, OutputStep, PortName, Site, SiteArg,
 };
 use crate::registry::{Column, ColumnType, Registry, TypeParameter};
-use crate::resolver::columns;
+use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, ResolvedProgram, Side, Signature};
 use crate::types::{
@@ -250,7 +250,7 @@ fn given_columns(
                 let labels = types.form(form).or(rule_scope)?;
                 let position = |label: LabelId| program.label_position(form, label).map(|position| position.0);
                 let mut slots: Vec<Option<ValueType>> = Vec::new();
-                for column in columns::form_columns(at) {
+                for column in form_columns::form_columns(at) {
                     let Some(index) = position(column.label) else { continue };
                     let index = usize::from(index);
                     let key_row = |key: &[LabelId]| Some(KeyRow::Columns(key.iter().map(|label| position(*label)).collect::<Option<_>>()?));

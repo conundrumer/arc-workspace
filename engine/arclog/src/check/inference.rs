@@ -23,6 +23,7 @@ use crate::program::{
 use crate::program::written_inputs;
 use crate::registry::{binding_sites, key_parameter, Column, ColumnType, Component, ParameterSite, Registry, TypeParameter};
 use crate::resolver::columns;
+use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram};
 use crate::types::{label_type, scope_list, use_label, AssemblyId, KeyRow, LabelFault, ValueType};
@@ -554,7 +555,7 @@ impl<'a> Inference<'a> {
             }
             DependencyKind::Chosen(name) => match form_at(self.program.program.value(), form_path)? {
                 Form::Choose(choose) => {
-                    let columns: Vec<&RelationColumn> = columns::form_columns(NodeRef::Choose(choose.value())).collect();
+                    let columns: Vec<&RelationColumn> = form_columns::form_columns(NodeRef::Choose(choose.value())).collect();
                     let (first, rest) = path.split_first()?;
                     let column = columns.iter().find(|column| column.name == *first)?;
                     let ty = project(&self.infer(form_path)?.label_under(column.label, pose_or)?, rest)?;
@@ -752,14 +753,14 @@ impl<'a> Inference<'a> {
             }
             Form::RigidDet(rigid) => {
                 let key_row = |key: &[RelationColumn]| Some(KeyRow::Columns((0..key.len() as u16).collect()));
-                for (output, names) in columns::rigid_outputs(rigid.value()) {
+                for (output, names) in form_columns::rigid_outputs(rigid.value()) {
                     let column = |name: &ColumnName| self.rigid_output(at, &output, std::slice::from_ref(name), &key_row);
                     let types = relation_columns(names.names(), &column);
                     relations.push((output, types));
                 }
             }
             Form::Demonstrated(demonstrated) => {
-                let names = columns::demonstrated_columns(demonstrated.value());
+                let names = form_columns::demonstrated_columns(demonstrated.value());
                 let column = |name: &ColumnName| self.demonstrated_column(at, std::slice::from_ref(name));
                 relations.push((Arc::from([]), relation_columns(names.names(), &column)));
             }
@@ -821,7 +822,7 @@ impl<'a> Inference<'a> {
             let column = rigid_value.instance.iter().flat_map(|instance| instance.columns.iter()).find(|column| column.name == *first)?;
             return local(project(&inference.label(column.label)?, rest)?);
         }
-        let part = rigid_value.parts.iter().find(|part| columns::part_steps(&part.value().relation).as_deref() == Some(output))?;
+        let part = rigid_value.parts.iter().find(|part| form_columns::part_steps(&part.value().relation).as_deref() == Some(output))?;
         local(self.site_type(inference.reading(PoseOr::Given), part.value(), path)?)
     }
 
@@ -842,7 +843,7 @@ impl<'a> Inference<'a> {
                 }
             }
         } else {
-            let value = columns::demonstrated_value(demonstrated)?;
+            let value = form_columns::demonstrated_value(demonstrated)?;
             site_value_type(value.head.iter().find(|site| site.column == *first)?, &label)?
         };
         try_map_labels(&project(&ty, rest)?, &|_| None)

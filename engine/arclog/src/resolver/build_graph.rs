@@ -5,6 +5,7 @@
 use std::sync::Arc;
 
 use super::columns;
+use crate::resolver::form_columns;
 use super::registry_columns;
 use std::collections::BTreeSet;
 
@@ -152,7 +153,7 @@ impl<'a> Builder<'a> {
                 let clause = clause.value();
                 let node = self.node(clause_kind(clause), scope, Some(&path));
                 self.form_node.insert(path.clone(), node);
-                self.relate(node, &path, None, columns::form_listing(NodeRef::Clause(clause)));
+                self.relate(node, &path, None, form_columns::form_listing(NodeRef::Clause(clause)));
                 pending.push((scope.clone(), relation_of(&clause.derives), Target { node, columns: ColumnsOf::OfNode }));
                 if !self.concept_forms.contains_key(&path) {
                     self.clauses.push((path, clause));
@@ -161,7 +162,7 @@ impl<'a> Builder<'a> {
             Form::Choose(choose) => {
                 let name = &choose.value().name;
                 let node = self.node(DependencyKind::Chosen(name.clone()), scope, Some(&path));
-                self.relate(node, &path, None, columns::form_listing(NodeRef::Choose(choose.value())));
+                self.relate(node, &path, None, form_columns::form_listing(NodeRef::Choose(choose.value())));
                 self.form_node.insert(path, node);
                 pending.push((scope.clone(), RelationRef::Declared(name.clone()), Target { node, columns: ColumnsOf::OfNode }));
             }
@@ -169,7 +170,7 @@ impl<'a> Builder<'a> {
                 let demonstrated = demonstrated.value();
                 let node = self.node(DependencyKind::Demonstrated(demonstrated.name.clone()), scope, Some(&path));
                 self.form_node.insert(path.clone(), node);
-                let listing = columns::demonstrated_listing(demonstrated);
+                let listing = form_columns::demonstrated_listing(demonstrated);
                 let columns = ColumnsOf::Fixed(listing.columns());
                 self.relate(node, &path, None, listing);
                 pending.push((scope.clone(), RelationRef::Declared(demonstrated.name.clone()), Target { node, columns }));
@@ -184,7 +185,7 @@ impl<'a> Builder<'a> {
                 let rigid = rigid.value();
                 let node = self.node(DependencyKind::RigidAssembly(rigid.name.clone()), scope, Some(&path));
                 self.form_node.insert(path.clone(), node);
-                for (steps, listing) in columns::rigid_listings(rigid) {
+                for (steps, listing) in form_columns::rigid_listings(rigid) {
                     let relation = RelationRef::Output(OutputName { of: OutputOwner::RigidDet(rigid.name.clone()), path: steps.clone() });
                     self.target(scope, relation, Target { node, columns: ColumnsOf::Fixed(listing.columns()) });
                     self.relate(node, &path, Some(steps), listing);
@@ -226,13 +227,13 @@ impl<'a> Builder<'a> {
                 outputs.push((output.name.clone(), node));
             }
         }
-        let bindings = columns::bindings(instance, component);
+        let bindings = form_columns::bindings(instance, component);
         let mut port_columns = StableHashMap::default();
         let relation = |port: &PortName| {
             RelationRef::Output(OutputName { of: OutputOwner::Instance(name.clone()), path: Arc::from([OutputStep::Port(port.clone())]) })
         };
         for input in component.inputs.iter() {
-            let columns = columns::port_columns(&input.port, &bindings).columns();
+            let columns = form_columns::port_columns(&input.port, &bindings).columns();
             let read = inputs.iter().find(|(port, _)| *port == input.port.name);
             if let Some((port, node)) = read.filter(|(port, _)| !component.outputs.iter().any(|output| output.name == *port)) {
                 self.target(scope, relation(port), Target { node: *node, columns: ColumnsOf::Fixed(columns.clone()) });
@@ -240,7 +241,7 @@ impl<'a> Builder<'a> {
             port_columns.insert(input.port.name.clone(), columns);
         }
         for (output, (port, node)) in component.outputs.iter().zip(&outputs) {
-            let listing = columns::port_columns(output, &bindings);
+            let listing = form_columns::port_columns(output, &bindings);
             let columns = listing.columns();
             self.target(scope, relation(port), Target { node: *node, columns: ColumnsOf::Fixed(columns.clone()) });
             port_columns.insert(port.clone(), columns);
