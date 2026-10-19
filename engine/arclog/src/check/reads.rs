@@ -2,7 +2,7 @@
 //! that the checks of reads share, and the decision of which relations of a
 //! checked program have an Example column.
 
-use super::types::{form_side, result};
+use super::types::result;
 use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
 use crate::hash::StableHashSet;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
@@ -32,7 +32,7 @@ impl Check for PooledAndLiftedReadsCheck {
         let mut refusals = Vec::new();
         for read in form_reads(input.form, input.path) {
             let Some((node, false)) = read.node(program, input.path) else { continue };
-            let Some(side) = form_side(program, &read.form) else { continue };
+            let Some(side) = program.form_side(&read.form) else { continue };
             let Some(message) = refused_read(program, side, node, read.atom) else { continue };
             let order = order.get_or_insert_with(|| CanonicalOrder::of(input.form, &mut SearchBudget::new()));
             refusals.push(Refusal { message: message.into(), at: order.canonical_path(&read.at) });
@@ -87,12 +87,12 @@ pub(super) struct FormRead<'a> {
 
 impl FormRead<'_> {
     /// The node of the graph that the read reads, where it reads one, with
-    /// whether the read's own form gives that node, as an `Unfold`
-    /// instance's read of its outputs does. `path` is the path in the
+    /// whether the read's own form is one of that node's forms, as an
+    /// `Unfold` instance's read of its outputs is. `path` is the path in the
     /// program of the form the check reads.
     pub(super) fn node(&self, program: &ResolvedProgram, path: &NodePath) -> Option<(GraphNodeIndex, bool)> {
         let Some(Resolution::Node(node)) = program.resolution(&path.join(&self.at)) else { return None };
-        Some((*node, program.form_of(*node) == &self.form))
+        Some((*node, program.forms_of(*node).contains(&self.form)))
     }
 }
 

@@ -192,6 +192,9 @@ pub struct ResolvedProgram {
     form_nodes: crate::hash::StableHashMap<NodePath, Box<[GraphNodeIndex]>>,
     /// The side of each node of the graph, by its index.
     sides: Box<[Side]>,
+    /// The side of each form whose reads the resolver resolves, by the
+    /// form's path.
+    form_sides: crate::hash::StableHashMap<NodePath, Side>,
     /// The columns of each node of the graph that hold an Example, by its
     /// index.
     examples: Box<[std::sync::Arc<[ExamplePath]>]>,
@@ -265,6 +268,13 @@ impl ResolvedProgram {
     /// what its bodies read.
     pub fn side(&self, node: GraphNodeIndex) -> Side {
         self.sides[node.0 as usize]
+    }
+
+    /// The side of the form at `form`, a form that gives no node of its own
+    /// included, by what its reads read, or `None` where `form` is the path
+    /// of no form whose reads the resolver resolves.
+    pub fn form_side(&self, form: &NodePath) -> Option<Side> {
+        self.form_sides.get(form).copied()
     }
 
     /// The columns that hold an Example of the relation of `node` of the

@@ -1,23 +1,23 @@
 //! The passes of [`super::resolve`]: the declarations of each scope, the reads and
 //! the graph, the content and the columns of each node, then the columns of
 //! each site. The declarations and the reads are in `graph`, the sides and
-//! the Example columns in `sides`, and the content and the columns of each
-//! node in `content`; each pass is a method of one builder, whose state this
-//! module holds.
+//! the Example columns in `sides`, the content and the columns of each
+//! node in `content`, and the columns of each site, the signatures, the
+//! proposers' columns and the resolved program in `sites`; each pass is a
+//! method of one builder, whose state this module holds.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use super::columns::{self, Columns, Place};
+use super::columns::{self, Columns};
 use super::registry_columns;
-use super::names::{write_output_path, ColumnsOf, Names, Target};
+use super::names::{ColumnsOf, Names, Target};
 use super::{
-    rebase, ColumnPosition, ConceptForms, ConceptReads, DependencyGraph, DependencyKind, DependencyNode, ExamplePath, GraphNodeIndex,
+    rebase, ColumnPosition, ConceptForms, ConceptReads, DependencyKind, DependencyNode, ExamplePath, GraphNodeIndex,
     ResolvedProgram, Resolution, Side, Signature, SolverScope,
 };
 use crate::diagnostic::{Diagnostic, WithDiagnostics};
 use crate::hash::{StableHashMap, StableHashSet};
-use crate::program::canonical::{AsWritten, CanonicalWriter, NameWriter};
 use crate::program::path::NodePath;
 use crate::program::{
     Atom, Clause, ColumnName, FactRelation, InstanceName, NameScope,
@@ -26,7 +26,6 @@ use crate::program::{
 use crate::program::LabelId;
 use crate::registry::{Component, Registry};
 use crate::relations::ColumnGroup;
-use sides::lifted;
 
 /// The nodes of one `INIT` form: the node that reads each input it
 /// writes or that a `DET` of the case stores, the node of each output, and
@@ -224,151 +223,10 @@ impl<'a> Builder<'a> {
         self.read_columns[node].as_ref().is_none_or(|names| names.contains(column))
     }
 
-    /// The position and the group of each site of each atom read, and
-    /// the signature of each name read.
-    fn sites(&mut self) {
-        let atoms = std::mem::take(&mut self.atoms);
-        for AtomRead { path, atom, scope, form } in &atoms {
-            let mut columns = self.names.columns(scope, &atom.relation).cloned();
-            if self.lifts(form, &self.resolutions[path]) {
-                columns = columns.map(|found| found.lifted());
-                self.lifted.insert(path.clone());
-            }
-            if let Some(columns) = &columns {
-                for (index, site) in atom.sites.iter().enumerate() {
-                    self.place_site(columns, site, path.child(index as u32));
-                }
-            }
-            let signature = self.signature(&self.resolutions[path], &atom.relation, columns.as_ref());
-            self.signatures.insert(path.clone(), signature);
-        }
-    }
-
-    /// Whether the form at `form` reads, in its lifted form
-    /// (`docs/arclog/arclog.md#program`), the relation a read that resolves
-    /// to `resolution` reads.
-    fn lifts(&self, form: &NodePath, resolution: &Resolution) -> bool {
-        let Resolution::Node(read) = resolution else { return false };
-        lifted(self.is_fact(*read), self.form_sides[form], self.sides[read.0 as usize])
-    }
-
     fn is_fact(&self, node: GraphNodeIndex) -> bool {
         matches!(self.nodes[node.0 as usize].kind, DependencyKind::Fact(_))
     }
 
-    fn place_site(&mut self, columns: &Columns, site: &crate::program::Site, path: NodePath) {
-        use crate::program::SiteArg;
-        match columns.place(std::slice::from_ref(&site.column)) {
-            Some(Place::Column(position)) => {
-                for (index, arg) in site.value.args.iter().enumerate() {
-                    if let SiteArg::NamedLabel { .. } = arg {
-                        self.positions.insert(path.child(index as u32), position);
-                    }
-                }
-                self.positions.insert(path, position);
-            }
-            Some(Place::Group(group)) => {
-                for (index, arg) in site.value.args.iter().enumerate() {
-                    let field = match arg {
-                        SiteArg::NamedLabel { name, .. } => name,
-                        SiteArg::Field(field) => &field.column,
-                        SiteArg::Label(_) => continue,
-                    };
-                    if let Some(Place::Field(position, group)) = columns.place(&[site.column.clone(), field.clone()]) {
-                        self.positions.insert(path.child(index as u32), position);
-                        self.groups.insert(path.child(index as u32), group);
-                    }
-                }
-                self.groups.insert(path, group);
-            }
-            Some(Place::Field(..)) | None => {}
-        }
-    }
-
-    /// The signature of a read of `relation` that resolves to
-    /// `resolution`: the content of what it resolves to, and its
-    /// columns.
-    fn signature(&self, resolution: &Resolution, relation: &RelationRef, columns: Option<&Columns>) -> Signature {
-        let mut out = CanonicalWriter::default();
-        match resolution {
-            Resolution::Node(node) => {
-                out.write(&[0]);
-                let content = self.names.contents[node.0 as usize].as_ref().expect("the content of each node");
-                out.write(&content.hash.0.to_le_bytes());
-                write_output_path(&mut out, relation);
-            }
-            Resolution::Lib(_) => out.write(&[1]),
-            Resolution::Undefined(_) => out.write(&[2]),
-            Resolution::Unresolved => out.write(&[3]),
-        }
-        if !matches!(resolution, Resolution::Node(_)) {
-            AsWritten.write_name(relation, &mut out);
-        }
-        match columns {
-            Some(columns) => {
-                out.write(&[1]);
-                columns.write(&mut out);
-            }
-            None => out.write(&[0]),
-        }
-        Signature(out.finish())
-    }
-
-    /// The stored parameter's column that each column of each proposer
-    /// of each clause stands for, by position: the clause's columns in
-    /// the order it gives them, or, with none, its first proposer's.
-    fn proposers(&mut self) {
-        for (path, clause) in std::mem::take(&mut self.clauses) {
-            let first = clause.proposers.first().and_then(|proposer| registry_columns::proposer_columns(self.registry, proposer));
-            let stored: Box<[ColumnName]> = if clause.columns.is_empty() {
-                first.unwrap_or_default()
-            } else {
-                clause.columns.iter().map(|column| column.name.clone()).collect()
-            };
-            for (index, proposer) in clause.proposers.iter().enumerate() {
-                if let Some(own) = registry_columns::proposer_columns(self.registry, proposer) {
-                    let mapped = own.iter().zip(stored.iter()).map(|(_, name)| name.clone()).collect();
-                    self.proposer_columns.insert((path.clone(), index), mapped);
-                }
-            }
-        }
-    }
-
-    fn finish(self, concept: Option<ConceptForms>) -> WithDiagnostics<ResolvedProgram> {
-        let graph = DependencyGraph {
-            nodes: self.nodes.into(),
-            reads: self.reads.into_iter().map(|reads| reads.into_iter().map(GraphNodeIndex).collect()).collect(),
-        };
-        let mut form_nodes: StableHashMap<NodePath, Vec<GraphNodeIndex>> = StableHashMap::default();
-        for (node, forms) in self.forms.iter().enumerate() {
-            for form in forms {
-                form_nodes.entry(form.clone()).or_default().push(GraphNodeIndex(node as u32));
-            }
-        }
-        let form_nodes = form_nodes.into_iter().map(|(form, nodes)| (form, Box::from(nodes))).collect();
-        let forms = self.forms.into_iter().map(Box::from).collect();
-        WithDiagnostics {
-            value: ResolvedProgram {
-                program: self.case.clone(),
-                graph,
-                forms,
-                form_nodes,
-                sides: self.sides.into(),
-                examples: self.examples.into(),
-                output_examples: self.output_examples,
-                resolutions: self.resolutions,
-                signatures: self.signatures,
-                positions: self.positions,
-                label_positions: self.label_positions,
-                groups: self.groups,
-                proposer_columns: self.proposer_columns,
-                lifted: self.lifted,
-                names: self.names,
-                concept,
-            },
-            diagnostics: self.diagnostics,
-        }
-    }
 }
 
 #[path = "build_content.rs"]
@@ -379,3 +237,6 @@ mod graph;
 
 #[path = "build_sides.rs"]
 mod sides;
+
+#[path = "build_sites.rs"]
+mod sites;

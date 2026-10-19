@@ -16,7 +16,7 @@ use crate::program::{
 use crate::registry::{Column, ColumnType, Registry, TypeParameter};
 use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
-use crate::resolver::{DependencyKind, GraphNodeIndex, ResolvedProgram, Side, Signature};
+use crate::resolver::{DependencyKind, GraphNodeIndex, ResolvedProgram, Signature};
 use crate::types::{
     each_conjunct, each_site_label, label_fault_message, use_label, AssemblyId, FormRelation, FormTypes,
     GraphRelation, KeyRow, LabelFault, ProgramTypes, ValueType,
@@ -428,13 +428,6 @@ pub(super) fn declared_type(columns: &[Column], path: &[ColumnName], pose_or: Po
 }
 
 pub(super) use registry_columns::component;
-
-/// The side of the form at `form` of `program`, the side of the first node
-/// of the dependency graph that the form gives, or `None` where it gives
-/// none.
-pub(super) fn form_side(program: &ResolvedProgram, form: &NodePath) -> Option<Side> {
-    program.nodes_of(form).first().map(|found| program.side(*found))
-}
 
 /// The type of the value at `site` of a head or of a read: its one bare
 /// label's type, or a record with a field per argument.
