@@ -62,3 +62,25 @@ window(B) :- mark(M), params.win_box(B_mark), compose(M, B_mark, B).
 
 out(P_inner, Col, $Window()) :-
     window(B), in(P, Col), crop(P, B, P_inner).   // a grid cell the window covers, seen from it
+
+.comp Determine {
+    // Where each train output stands in its input: the boxes at which every
+    // output cell lies on an input cell of its color.
+    .init found = Occurrences<Example, Color>
+    found.cell(E, P, Col) :- ex_in(E, P, Col).
+    found.shape(E, Q, Col) :- ex_out(E, Q, Col).
+
+    // A train output's box, as margins from that input's mark.
+    .decl seen(e: Example, b: Box)
+    seen(E, B_mark) :-
+        found.occurrence(E, B),
+        ex_in(E, M, Col), params.mark(Col),   // the mark's cell
+        relative(M, B, B_mark).
+
+    // A box some train output does not stand at.
+    .decl unseen(b: Box)
+    unseen(B_mark) :- seen(_, B_mark), ex_out(E, _, _), !seen(E, B_mark).
+
+    .decl win_box(b: Box)
+    win_box(B_mark) :- seen(_, B_mark), !unseen(B_mark).
+}
