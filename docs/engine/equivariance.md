@@ -110,13 +110,13 @@ Where the instances admit a common reading, each of its D4 images is one too, an
 - The lib relation `pose_difference(a, b, d)` gives the D4 element that takes the placement at pose a onto the placement at pose b. It is the one way from a Pose to a D4 value, and Γ moves it by conjugation, as the action above gives.
 - The checker refuses a Pose label at any other site. So `(d4_identity D)` and `(c4_elem D)` on a pose are type errors.
 
-The rule is the rule of [The pose](../../docs/arclog/rigid.md#the-pose). It costs one type check per site, and nothing at run time. In `gen/`, 9 files hold a `RIGID_DET`, and all 24 clauses that read one pass the rule. 3 of them, in 142ca369, 269e22fb and 3aa6fb7a, use `d4_elem`. No clause reads `.pose`.
+The rule is the rule of [The pose](../../docs/arclog/rigid.md#the-pose). It costs one type check per site, and nothing at run time. In `gen/`, every clause that reads a `RIGID_DET` passes the rule. 142ca369 and 269e22fb use `d4_elem` in a `RIGID_DET`. No clause reads `.pose`.
 
 ### Wallpaper's shift
 
 An isometry of a periodic set is a D4 element and a coset of shifts under the lattice. `symmetry` holds each shift of the coset under which some cell of the frame lands in the frame, and `action` holds each image under those shifts that lands in the frame, as the Wallpaper row of [Detectors](../../docs/lib-spec.md#detectors) gives. A coset is a set, so no member is chosen. The cost is at most the count of lattice translations inside the frame, per candidate.
 
-The Souffle form keeps the one member toward the bottom-right corner, `cells.dl:582-583`, which a reflection does not map onto the member it keeps. The lib comparison reports that difference as a fault of the Souffle lib. Two files of `gen/` read `action`, 0dfd9992 and abbfd121, each through a closure, and neither changes. No file reads `symmetry`.
+The Souffle form keeps the one member toward the bottom-right corner, `cells.dl:582-583`, which a reflection does not map onto the member it keeps. The lib comparison reports that difference as a fault of the Souffle lib. Three files of `gen/` read `action`, 0dfd9992, abbfd121 and c663677b, and none changes. No file reads `symmetry`.
 
 ## Determinism
 
@@ -129,7 +129,7 @@ The Souffle form keeps the one member toward the bottom-right corner, `cells.dl:
 
 | Gap | Where it shows |
 | --- | --- |
-| The action on a `RIGID_DET` part of type D4 or Sym: [Semantics](../../docs/arclog/rigid.md#semantics) leaves those types as they are, and Γ conjugates them | `rigid.md:85`; no part in `gen/` has such a column |
-| `.pose` where the assembly has a symmetry, so that an instance has several poses | the gap row of [determination.md](determination.md#known-gaps); no read of `.pose` in `gen/` |
+| The action on a `RIGID_DET` part of type D4 or Sym: [Semantics](../../docs/arclog/rigid.md#semantics) leaves those types as they are, and Γ conjugates them | `rigid.md:85`; 4522001f and ad38a9d0 have `RIGID_DET` forms with a part of type D4 |
+| `.pose` where the assembly has a symmetry, so that an instance has several poses | no read of `.pose` in `gen/` |
 | A native proposer carries the second and third obligations, and which proposers are native is open | the gap row of [determination.md](determination.md#known-gaps) |
 | A claim text that names an orientation constant, which the program does not read | b457fec5:7, "the DIR_T edge"; b6f77b65:3, "the DIAG_TL corner" |

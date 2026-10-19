@@ -38,7 +38,7 @@ The step of the [build order](overview.md#build-order) that builds it ends when 
 | Decision | Failure | What catches or bounds it |
 | --- | --- | --- |
 | Determination filtered by the train pairs over a product | many parameters with several candidates | dependency order with shared entries, and a cap that reports the parameters |
-| The Pose type | a read that sees no frame and that the rule refuses | `pose_difference` gives every relation between two poses; all 24 clauses of `gen/` that read a pose pass the rule |
+| The Pose type | a read that sees no frame and that the rule refuses | `pose_difference` gives every relation between two poses; every clause of `gen/` that reads a pose passes the rule |
 
 ## Known gaps
 
