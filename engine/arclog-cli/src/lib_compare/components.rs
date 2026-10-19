@@ -101,7 +101,7 @@ fn key_groups(component: &Component, inputs: &Value) -> Result<(Vec<Box<[ValueTy
 
 /// The session and the limits a component's evaluation runs in.
 fn bounds() -> (TaskSession, Limits) {
-    (TaskSession::new(SessionBound { bytes: SESSION_BYTES }, Caps::PROVISIONAL), Limits { deadline: None, cancellation: Cancellation::default() })
+    (TaskSession::new(SessionBound { bytes: SESSION_BYTES }, Caps::CORPUS), Limits { deadline: None, cancellation: Cancellation::default() })
 }
 
 /// The cells of `row`, a row of `output`.

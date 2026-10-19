@@ -74,7 +74,7 @@ fn run(dir: &Path, alt: &str) -> JudgedRun {
     let task = read_task(&task_path).expect("the task reads");
     let judged = read_judged_task(&task_path).expect("the task's pairs read");
     let parameters = ParameterValues::stored(solver.arcdata.value());
-    let session = TaskSession::new(SessionBound { bytes: 1 << 30 }, Caps::PROVISIONAL);
+    let session = TaskSession::new(SessionBound { bytes: 1 << 30 }, Caps::CORPUS);
     let limits = Limits { deadline: None, cancellation: Cancellation::default() };
     let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
     let evaluation = Evaluation { program: &program, task: &task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits };

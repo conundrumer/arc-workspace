@@ -55,7 +55,7 @@ pub(crate) fn with_concept_case<T>(corpus: &Path, tasks: &Path, id: &str, body: 
         format!("the checker refuses the concept case: {}", messages.join("; "))
     })?;
     let parameters = ParameterValues::stored(solver.arcdata.value());
-    let session = TaskSession::new(SessionBound { bytes: SESSION_BYTES }, Caps::PROVISIONAL);
+    let session = TaskSession::new(SessionBound { bytes: SESSION_BYTES }, Caps::CORPUS);
     let limits = Limits { deadline: None, cancellation: Cancellation::default() };
     let evaluation = Evaluation { program: &program, task: &task, parameters: &parameters, session: &session, registry, constructions: constructions()?, limits: &limits };
     body(&ConceptCase { evaluation, solver: &solver, case: &concept.case, judged: &judged })

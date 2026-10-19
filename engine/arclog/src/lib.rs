@@ -53,7 +53,7 @@
 //!   crate's module comment gives
 //! - `Unfold`: [`eval::unfold`]
 //! - parallelism and determinism: [`eval::pool`], the values of
-//!   [`eval::Caps::PROVISIONAL`], and the subcommands `determinism` and
+//!   [`eval::Caps::CORPUS`], and the subcommands `determinism` and
 //!   `speed` of `arclog-cli`
 //!
 //! No change of step 2 edits this file. A change that needs a crate this

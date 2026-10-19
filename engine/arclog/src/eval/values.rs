@@ -62,7 +62,7 @@ impl Caps {
     /// `abc82100`, each two D4 parameters of 8 open values, which give no
     /// count of their concept in the engine: `a2d730bd` stops at a fault of
     /// the run, and the rows of `abc82100` differ from its first relation on.
-    pub const PROVISIONAL: Caps = Caps { work: 1 << 30, rows: 1 << 21, models: 1 << 7, nodes: 1 << 5 };
+    pub const CORPUS: Caps = Caps { work: 1 << 30, rows: 1 << 21, models: 1 << 7, nodes: 1 << 5 };
 }
 
 /// The bound an evaluation reached.
