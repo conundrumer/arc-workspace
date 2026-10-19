@@ -6,7 +6,8 @@
 //! ids has one plan: variables in order of the smallest relation that
 //! binds them, ties in the order of their canonical positions, with each
 //! output of an algebra relation directly after the inputs of the first of
-//! its modes that the order satisfies.
+//! its modes that the order satisfies, and each export of a union that no
+//! atom or comparison binds after the columns its branches read.
 
 use super::ir::{Argument, Arguments, ClauseIr, IrNode, Operand, Variable};
 use crate::program::ConstraintOp;
@@ -25,7 +26,10 @@ pub struct RelationSizes(pub Box<[Option<u64>]>);
 
 /// The variable order of `clause` over relations of `sizes`. Each variable
 /// that an algebra relation binds stands after the inputs of the mode that
-/// binds it, so the order grounds every variable that the clause grounds.
+/// binds it, and each variable that a union exports, and no atom or
+/// comparison binds, after the columns that the branches of that union read
+/// from `clause`, so the order grounds every variable that the clause
+/// grounds.
 ///
 /// The variables ordered are those the clause's atoms, comparisons and
 /// unions bind; a variable that stands only in a filter's body is the
@@ -96,11 +100,50 @@ pub fn variable_order(clause: &ClauseIr, sizes: &RelationSizes, outer: &[Variabl
         place(variable, &mut placed, &mut order);
         follow(&mut placed, &mut order, &mut place);
     }
+    let dependencies = dependencies(clause);
+    let ready = |placed: &[bool]| {
+        (0..count).map(|v| Variable(v as u16)).find(|variable| {
+            !placed[usize::from(variable.0)]
+                && dependencies[usize::from(variable.0)].as_ref().is_some_and(|reads| reads.iter().all(|read| placed[usize::from(read.0)]))
+        })
+    };
+    while let Some(variable) = ready(&placed) {
+        place(variable, &mut placed, &mut order);
+        follow(&mut placed, &mut order, &mut place);
+    }
     for variable in (0..count).filter(|&v| bound[v]).map(|v| Variable(v as u16)) {
         place(variable, &mut placed, &mut order);
         follow(&mut placed, &mut order, &mut place);
     }
     VariableOrder(order.into())
+}
+
+/// The variables that each variable of `clause` waits on before the order
+/// places it, by the variable's index. A variable that an atom or a
+/// comparison binds waits on none. A variable that only unions bind waits
+/// on the columns that the branches of the first union that exports it read
+/// from `clause`, since the join takes its values from that union. A
+/// variable that only an algebra relation binds has `None`: the order places
+/// it once a mode of that relation holds.
+fn dependencies(clause: &ClauseIr) -> Vec<Option<Box<[Variable]>>> {
+    let mut dependencies: Vec<Option<Box<[Variable]>>> = vec![None; clause.variables.len()];
+    for node in clause.nodes.iter() {
+        if let IrNode::Atom(_) | IrNode::Comparison(_) = node {
+            for variable in bound_variables(node) {
+                dependencies[usize::from(variable.0)] = Some(Box::new([]));
+            }
+        }
+    }
+    for node in clause.nodes.iter() {
+        if let IrNode::Or(union) = node {
+            let reads: Box<[Variable]> =
+                union.branches.iter().flat_map(|branch| branch.columns.iter().copied()).filter(|column| !union.exported.contains(column)).collect();
+            for variable in union.exported.iter() {
+                dependencies[usize::from(variable.0)].get_or_insert_with(|| reads.clone());
+            }
+        }
+    }
+    dependencies
 }
 
 /// The variables that `node` binds in its enclosing clause: an atom's, a
