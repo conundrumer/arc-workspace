@@ -132,7 +132,7 @@ A derived relation's columns are its body's top-level `*` labels plus what its `
 
 - Keywords: the thinnest are DEMONSTRATED 5, RIGID_DET 9, APPROXIMATED 12, DEMO_RULE 13.
 - Components under 5: DemonstrationConsistency as INIT 1, ExtentDivisions 2, Wallpaper 2, Unfold 3.
-- Proposers: 41 of the 34 declared comps plus domains are used; DominantColor 543 uses. Under 5: BoxDomain 1, ColorColorDomain 1, NumberDirDomain 1, SepTileCountAxis 1, VanishedNewPairs 1, OutNewColor 2, Period 2, PositionDomain 2, DiagDirAxisDomain 3, ChangedPairs 4.
+- Proposers: 41 of the 34 declared comps plus domains are used; DominantColor 543 uses. Under 5: BoxDomain 1, since gone from 48d8fb45, ColorColorDomain 1, NumberDirDomain 1, SepTileCountAxis 1, VanishedNewPairs 1, OutNewColor 2, Period 2, PositionDomain 2, DiagDirAxisDomain 3, ChangedPairs 4.
 - Lib relations: 66 of 69 used. Under 5: corner_outset 1, sym_elem 1, axis_outset 2, d4_identity 2, corner_inset 3, edge_outset 3, reflection 4.
 - Param column-type tuples: 46 kinds under 5 uses, such as `Position Sym`, `Dir8 Dir8`, `number C4`, `Color Offset Color`, `Ident Dir8`.
 - Constraint operators are all common: `=` 685, `!=` 580, `<` 229, `>` 88, `<=` 71, `>=` 57.
@@ -236,6 +236,7 @@ The variable order of [Joins](evaluator.md#joins), simulated on 2026-10-17 on th
 `DET` and `DET_OR_RULE` forms with no body, by the proposers they name, in `gen/`, and the Souffle tooling's determination plans.
 
 - Domain proposers with no body per file, at the domain's size in a full task (Color 10, Number 30, Sym 16, Position 900, Box 216225): the largest products are 48d8fb45 `BoxDomain` 216225, ca8de6ea and 7fe24cdd `PositionDomain` 900, 4522001f 160, ba26e723 120; 5 files are over 100.
+- On 2026-10-18, no `DET` of `gen/` names `BoxDomain`: 48d8fb45's `win_box` states a body. Two name `PositionDomain`, 7fe24cdd `&anchor` and ed74f2f2 `&target_tile`, and ca8de6ea names none.
 - `uv run python scripts/run_dl.py determination-plan <stem>` gives the domain of the values the task admits: 48d8fb45 `win_box` 95 values, 7fe24cdd `anchor` 52, ba26e723 72 joint assignments; in ca8de6ea and 4522001f every such parameter has a determination relation.
 - The 8951 plans under `.cache/determination-plan/`, from every version of the Souffle solvers, with each covered line's `enumerable(n)` or `narrowed(n)` multiplied: product 1 in 3533 plans, 2 to 10 in 4178, 11 to 100 in 1240, and none over 100. The tool's `ENUMERATION_LIMIT` is 100 (`src/checker/determination_plan.py`). 83 plans report a product over it, up to 2258530576, and for those the solver adds determination relations until the product is under 100.
 

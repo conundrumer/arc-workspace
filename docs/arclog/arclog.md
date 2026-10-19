@@ -104,7 +104,7 @@ A clause form is its keyword, then the relation's name, then its body:
   (!= Col Col_in))
 ```
 
-A proposer's name, `DominantColor`, stands for its derivation, defined once beside the lib and expanded by the engine. The proposers stand apart from the lib because a proposer reads the task's grids directly, where a lib component is abstract over its inputs. Where the proposer gives several candidates, the determination keeps the ones at which the program solves every train pair. A domain proposer gives every value of the parameter's type that the task admits. A parameter whose value is a table that a fixed derivation gives names the derivation in place of a proposer, `(DET &frame Frame)` or `(DET &tile_decompose Division)`, and the [arcdata](arcdata.md#params) file holds the values the table derives from. The domain proposers are `AxisDomain`, `BoxDomain`, `ColorDomain`, `D4Domain`, `DiagAxisDomain`, `DiagDirDomain`, `DirDomain`, `NumberDomain`, `PositionDomain`, `SenseDomain` and `SymDomain`, one per type, and `ColorColorDomain`, `DiagDirAxisDomain` and `NumberDirDomain`, one per pair of types, for a parameter of two columns.
+A proposer's name, `DominantColor`, stands for its derivation, defined once beside the lib and expanded by the engine. The proposers stand apart from the lib because a proposer reads the task's grids directly, where a lib component is abstract over its inputs. A proposer other than a domain proposer gives one candidate: the whole set of its rows. A domain proposer gives every value of the parameter's type that the task admits, each a candidate of one row, and the determination keeps the candidates at which the program solves every train pair. So a parameter whose value holds several rows names no domain proposer, and its `DET` states a body. A frame of cells, or a frame cut into equal tiles, is an instance of a construction of the lib, such as `Frame` or `Division`, and each of its fields, such as an extent or a tile count, comes from a `DET` that the program states, by a proposer or a body, in a solver and in a decoded program alike. No field is a stored value. The domain proposers are `AxisDomain`, `ColorDomain`, `D4Domain`, `DiagAxisDomain`, `DiagDirDomain`, `DirDomain`, `NumberDomain`, `SenseDomain` and `SymDomain`, one per type, and `ColorColorDomain`, `DiagDirAxisDomain` and `NumberDirDomain`, one per pair of types, for a parameter of two columns.
 
 An `INIT` form is per input where its input bodies read as a `RULE` clause does, and task-wide where they read as a `DET` clause does. A determination becomes task-wide through a pooled read, or through an instance whose key holds no Example label, which pools over the examples, and its outputs then have no Example column. 009d5c81's `&key_out` holds the color of each class of examples whose keys share a pattern, at the example that shows it, and `&output` reads it pooled, `(&key_out Id (:C *Col))`.
 
@@ -458,18 +458,18 @@ A session records a value as open where another task in the family of the case's
 
 The language model emits tokens from these sets, each a closed set of ids:
 
-- control: `RULE` `DET` `INIT` `ONE` `CHOOSE` `RIGID_DET` `OR` `IF` `ALL` `END` `NOT` `*` `0` and the constraint operators
+- control: `RULE` `DET` `INIT` `ONE` `CHOOSE` `RIGID_DET` `OR` `IF` `ALL` `END` `NOT` `*` `^` `0` and the constraint operators. `^` marks a label of a key clause's body as a column of the key, as [Instance](#instance) gives, in an instance's `key`, a `CHOOSE`'s `for`, and a `RIGID_DET`'s `instance` and `key`, and the engine echoes the label after it as after `*`.
 - lib relations and components, one token each; proposers, one token each
 - fact relations: `input` `ex_input` `ex_output`
 - derived relations: the index the engine assigned at the declaration
 - column tokens: a relation's columns, which for a derived relation are the labels of its clause
 - labels: the variables of the current clause, in order of creation
 
-The engine emits the declaration of each derived relation, the declaration of each instance's or `CHOOSE` form's outputs, each input prompt, each column prompt of a projection, and the label echo after each `*`. The language model never emits a label it has not seen echoed, and never names a relation or a column with text.
+The engine emits the declaration of each derived relation, the declaration of each instance's or `CHOOSE` form's outputs, each input prompt, each column prompt of a projection, and the label echo after each `*` and `^`. It prompts each named clause of a form as it prompts an instance's inputs: an instance's `key`, a `CHOOSE`'s `for`, `from` and `never`, and a `RIGID_DET`'s `instance` and `key`. The language model never emits a label it has not seen echoed, and never names a relation or a column with text.
 
 The token sets are disjoint, so an atom's site list ends at the first token that is not a column token, and no separator exists.
 
-The language model emits `END` where a decision to stop exists: at the end of a body, after each projection's labels, at the end of an `OR` form, and after each list of an `IF` or `ALL` form. It emits `OR` between the branches of an `OR` form. The decoder admits `END` once the clause is grounded.
+The language model emits `END` where a decision to stop exists: at the end of a body, after each projection's labels, after the field sites of a site on a record-valued column, at the end of an `OR` form, after each list of an `IF` or `ALL` form, at the prompt of an optional clause or input, to decline it, and after each clause that may repeat, such as `never`, to end the repetition. It emits `OR` between the branches of an `OR` form. The decoder admits `END` at the end of a body once the clause is grounded. At the prompt of a required clause or input, the decoder refuses the `END` that would decline it, so no form lacks a required input and then waits on an end that the decoder never admits.
 
 ### Second spellings
 

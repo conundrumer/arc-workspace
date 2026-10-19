@@ -9,15 +9,15 @@ Each entry gives its evidence, or says that it is provisional.
 ### Deferred projection
 
 - A clause has no head: every variable of its body is a column of its relation, and a later read selects the columns it needs, as [Clause](../../docs/arclog/arclog.md#clause) gives.
-- **Cost:** a relation keeps every binding of its body's variables, where a head would keep only the distinct rows of the columns its readers need. A relation can hold many more rows than any of its reads, and its width is the count of its labels, up to 24.
-- **Evidence:** 13513 of the 18858 reads of a derived relation in `gen/` project, as [Columns](corpus-survey.md#columns) gives, so most relations carry columns that no reader reads. How many more rows that gives is not measured.
+- **Cost:** a relation keeps every binding of its body's variables, where a head would keep only the distinct rows of the columns its readers need. A relation can hold many more rows than any of its reads, and its width is the count of its labels.
+- **Evidence:** most reads of a derived relation in `gen/` project, as [Columns](corpus-survey.md#columns) gives, so most relations carry columns that no reader reads. How many more rows that gives is not measured.
 - **Proposal, provisional:** a relation is held in the factorized form of [Factorized bodies](synthesis.md#factorized-bodies), its parts each deduplicated, and a read projects the parts it reads. In a solver, every reader is known, so a relation also keeps only the columns some reader reads. In a decode, the readers are not known yet, so that projection waits until the relation is read.
 
 ### One program per case
 
 - Each case is its own program, with no `Choice` column, as [Cases](cases.md#cases) gives.
 - **Cost:** a solver costs its case count times one case, less what the result cache shares.
-- **Evidence:** af24b4cc has 9216 cases, and on one input of a57f2f04 57600 rows of `parse.copy` hold 900 distinct contents, as [Causes of the outliers](corpus-survey.md#causes-of-the-outliers) gives, so the cases' relations often hold the same rows.
+- **Evidence:** af24b4cc has the most cases, as [Alts structure](corpus-survey.md#alts-structure) gives, and on one input of a57f2f04 the rows of `parse.copy` hold far fewer distinct contents, as [Causes of the outliers](corpus-survey.md#causes-of-the-outliers) gives, so the cases' relations often hold the same rows.
 - **Proposal, provisional:** relations are hash-consed. Each relation gets the id of the hash of its rows when it is made, an entry's key is its clause with the ids of the relations it reads, and two equal results share one id. So the cases whose relations hold the same rows on an input share every entry downstream of those relations, and a lookup costs no hash of rows.
 
 ### Sets, not bags
@@ -30,7 +30,7 @@ Each entry gives its evidence, or says that it is provisional.
 
 - Two bodies equal up to the order of their atoms and the names of their labels are one value, as [Programs as values](reader.md#programs-as-values) gives.
 - **Cost:** a canonical labeling at each edit.
-- **Evidence:** in `gen/`, refinement alone settles 20081 of 20241 bodies, and the search reaches at most 13 nodes, as [Body symmetry](corpus-survey.md#body-symmetry) gives. Synthesized bodies are not measured.
+- **Evidence:** in `gen/`, refinement alone settles nearly every body, and the search stays small, as [Body symmetry](corpus-survey.md#body-symmetry) gives. Synthesized bodies are not measured.
 
 ### Checks on every prefix
 
@@ -48,7 +48,7 @@ Each entry gives its evidence, or says that it is provisional.
 
 - A case's output is one grid per model, and a parameter with several candidates is filtered by running the cases at each assignment, as [Models](cases.md#models) and [`DET`](determination.md#det) give.
 - **Cost:** a product of models or of assignments, each a run of the entries downstream of the choice.
-- **Evidence:** on the corpus, propagation alone solves every pick, and the largest product of a determination plan is 100, which the old tooling's limit shaped, as [Determination candidates](corpus-survey.md#determination-candidates) gives.
+- **Evidence:** on the corpus, propagation alone solves every pick, and the products of the determination plans stay under the old tooling's limit, which shaped them, as [Determination candidates](corpus-survey.md#determination-candidates) gives.
 
 ### No recursion
 

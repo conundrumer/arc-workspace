@@ -62,16 +62,7 @@ A relation with a Position column is given as a grid, one row per line:
 
 A grid's rows are of one length. Each cell gives one row: its position in the grid's frame, then its value. A relation with no column after the position marks its cells `1`. A `_` cell gives no row, and values before the grid fill the columns before the position. A grid of an Offset column marks one cell with `@`, as `@_` or `@1`, and a grid of a Position column marks none; a grid of a column that no form writes as Position or Offset may mark one cell or none. Each cell of a grid with a marked cell gives its offset from that cell in place of its position; the marked cell may be empty, as in 0ca9ddb6's `&template`.
 
-A parameter whose value is a table that a fixed derivation gives is written as the values the table derives from. A frame of cells is its extent on each axis, and a frame cut into equal tiles is the tile count, tile size and gap on each axis, under the name of the derivation:
-
-```
-(param &frame Position (Frame
-  ((:A AXIS_V) (:N 6))
-  ((:A AXIS_H) (:N 4))))
-(param &tile_decompose (Position Position Position) (Division
-  ((:A AXIS_V) (:Count 2) (:Size 6) (:Gap 1))
-  ((:A AXIS_H) (:Count 1) (:Size 4) (:Gap 0))))
-```
+A frame of cells, or a frame cut into equal tiles, has no `param` form of its own: each of its fields comes from a `DET` that the program states, and a field's `param` form is that `DET`'s, as [Program](arclog.md#program) gives.
 
 Every `param` form stands at the top level. The arclog block that declares the parameter says which cases read it. The rows of an [open](arclog.md#open-values) parameter are its open values.
 

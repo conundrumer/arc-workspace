@@ -2,42 +2,63 @@
 
 It builds the derivation of each stored parameter from the observed data, by `DET`, the proposers and `RIGID_DET`. It rests on [rigid](../../docs/arclog/rigid.md) for `RIGID_DET`.
 
-The step of the [build order](overview.md#build-order) that builds it ends when the determined values match the stored `param` records, as [verification.md](verification.md) checks them, for each parameter that no case with an open parameter or a `DEMONSTRATED` form reads. The other parameters are checked in [Every case](cases.md#every-case).
+The step of the [build order](overview.md#build-order) that builds it ends when the determined values match the stored `param` records, as [End check](#end-check) gives, for each parameter that no case with an open parameter or a `DEMONSTRATED` form reads, or the difference is reported as a fault, as the Principles requirement of [Requirements](overview.md#requirements) gives. The other parameters are checked in [Every case](cases.md#every-case).
 
 ## `DET`
 
 - The `DET` relations are determined in dependency order.
 - A `DET` whose body names no proposer and no domain is a determination by the solver's clauses: its rows are its value, and the train pairs filter none of them, as [determination](../../docs/handbook/principles.md#models-and-tasks) gives that kind.
-- A `DET` whose body gives several candidates, from a proposer or a domain, is filtered by the train pairs, as [determination](../../docs/handbook/principles.md#models-and-tasks) gives. The engine enumerates the assignments of these `DET` relations lazily, in dependency order. It runs each case that reads them on the train pairs at each assignment, and keeps, per case, the assignments at which that case solves every train pair. A train pair with two candidates is solved where the case solves either of them, as [Solves](cases.md#solves) gives: the stored assignment is one function of the evidence, and the split task is chosen after it, as [Cases](../../docs/handbook/principles.md#cases) gives Fit. `ex_output` holds the pair's given output. The result cache shares the entries that an assignment leaves unchanged.
-- A parameter that several cases read takes the values that every such case with an assignment that solves the train pairs admits, as [Parameters across cases](../../docs/handbook/principles.md#parameters-across-cases) gives.
-- A case's open values of a parameter are those that [Params](../../docs/handbook/solver-file.md#params) gives: the values under the case of its base that takes the concept case's reading at every `DET_OR_RULE` and `RULE_OR_DET` line.
-- A `DET` without `(ONE)` whose value differs across the assignments that solve the train pairs is an undetermined parameter, and the engine reports it as an error. With `(ONE)`, those values are its open values, as [Open values](cases.md#open-values) gives.
-- The product of candidates runs under a cap of 1000. The cap is provisional: the largest product of the corpus's determination plans is 100, as [Determination candidates](corpus-survey.md#determination-candidates) gives, but the old tooling's limit was 100 and the solvers whose plans passed it were changed, so the corpus's products show that limit. A domain proposer's candidates are those [Proposers](#proposers) gives. A product past the cap is an alert that names the parameters, as [Bounds](overview.md#requirements) gives.
+- A `DET` with no body and no proposer, `(DET &x)` or `(DET &x (ONE))`, gives no value. Such a form is a fault of the conversion, as each one under the converter's `TODO no-det-plan` comment is, and the engine reports it.
+- A `DET` by a proposer other than a domain proposer has one candidate, the proposer's whole set of rows, and a `DET` by a domain proposer has a candidate of one row per value, as [Program](../../docs/arclog/arclog.md#program) gives. A parameter whose value holds several rows and whose `DET` names a domain proposer is a fault of its solver, as a57f2f04's `&scan` is, which names `DiagDirAxisDomain` and holds every value of the pair type.
+- A `DET` whose body gives several candidates is filtered by the train pairs, as [determination](../../docs/handbook/principles.md#models-and-tasks) gives. The engine enumerates the assignments of these `DET` relations lazily, in dependency order. It runs each case that reads them on the train pairs at each assignment, as [Determination with no stored value](#determination-with-no-stored-value) gives, and keeps, per case, the assignments at which that case solves every train pair. A train pair with two candidates is solved where the case solves either of them, as [Solves](cases.md#solves) gives: the stored assignment is one function of the evidence, and the split task is chosen after it, as [Cases](../../docs/handbook/principles.md#cases) gives Fit. `ex_output` holds the pair's given output.
+- The filter runs on the cases that take the concept case's reading at every `DET_OR_RULE` and `RULE_OR_DET` line, one per [base](cases.md#cases), less the cases that an `exclude` form leaves out. A case that takes another reading at such a line reads its base's values of the other parameters, and the train pairs filter no value under it alone, as [Params](../../docs/handbook/solver-file.md#params) gives.
+- Where several of those cases read a parameter, the engine projects each case's set of kept joint assignments onto the parameters they share, intersects the projections, and restricts each case's set to the intersection, as [Parameters across cases](../../docs/handbook/principles.md#parameters-across-cases) gives. A parameter is judged undetermined after that restriction.
+- A case's open values of a parameter are those that [Params](../../docs/handbook/solver-file.md#params) gives: the values under its base's case that takes the concept case's reading at every line.
+- A `DET` without `(ONE)` whose value differs across the assignments that are left is an undetermined parameter, and the engine reports it as an error. With `(ONE)`, those values are its open values, as [Open values](cases.md#open-values) gives.
+- The product of candidates runs under a cap of 1000. The product counts the candidates of each `DET` that the relation being evaluated reads, task-wide. The cap applies to a solver's run, to each prefix of a decode, as [Decode interface](synthesis.md#decode-interface) gives, and to a run on Kaggle. The cap is provisional. Its evidence is in [Determination candidates](corpus-survey.md#determination-candidates): a domain over the cells of a full frame, or `ColorColorDomain`, gives a product near the cap, but the old tooling's limit was lower and the solvers whose plans passed it were changed, so the corpus's products show that limit. A product past the cap is an alert that names the parameters, as [Bounds](overview.md#requirements) gives. The model cap of [The constraint module](cases.md#the-constraint-module) is a cap of its own, per case and per input.
+
+## Determination with no stored value
+
+- A decoded program carries no stored value, and from this step a solver's run reads none either: each `DET` is determined from the evidence, and the run reads the determined values. The `param` records are records of a run and not its source, as [Params](../../docs/arclog/arcdata.md#params) gives, so [End check](#end-check) compares the determined values with them.
+- The meaning is one evaluation of the case per live assignment, through the result cache: an entry that reads no `DET` with several candidates is shared by every assignment, and an entry that reads one is computed per assignment. Under an assignment, each form reads as at one stored value:
+    - `NOT`, `ALL` and an `IF` test read the relation under that assignment, so a negated atom holds under each assignment at which the atom has no row.
+    - An instance's inputs are taken per assignment, and a construction runs once per assignment over them, so its outputs are per assignment.
+    - The models of a `ONE` or `CHOOSE` pick are built per input and per assignment, and the train pairs filter no model. A train pair is solved under an assignment only where its whole output set over the models is one of its candidates, as [Solves](cases.md#solves) gives.
+    - The grid-column search runs per assignment, as [Grid columns](cases.md#grid-columns) gives.
+- An assignment is dropped only by the consistency test, the filter of [`DET`](#det) at the train pairs. An empty relation under an assignment drops nothing, since a later `NOT` can read the empty relation.
+- A tagged form of that evaluation holds the rows of every live assignment in one relation, each row with the assignment it was derived under in an added column. A row derived from no such `DET` holds for every assignment, as the `nil` of the Souffle `OpenValue` column does. Where a body reads several such `DET`s, a row's assignment gives a value to each, and a join keeps the rows whose assignments agree on each `DET` that both sides read. A negated atom holds at a row under each of the row's assignments at which it has no row. The tagged form gives the rows of the evaluation per assignment. It is provisional: no measurement compares its cost with that of one evaluation per assignment.
 
 ## Proposers
 
 - A proposer is arclog text in `engine/lib/proposers.arclog`. Name resolution expands it as the body of the `DET` that names it.
-- On the derived reading of a `DET_OR_RULE` or `RULE_OR_DET` line, the proposer runs on each input, a pair's or a witness's, alone, with `ex_output` empty. Where it gives no value, each case that takes that reading is undefined on that input, as the `@derive` line of [Params](../../docs/handbook/solver-file.md#params) gives.
-- A domain proposer, as [Program](../../docs/arclog/arclog.md#program) gives it, is native: it enumerates the values of its type that the evidence gives, and reads no stored value.
+- On the derived reading of a `DET_OR_RULE` or `RULE_OR_DET` line, the proposer runs on each input, a pair's or a witness's, alone, with `ex_output` empty. Where it gives no value, each case that takes that reading is undefined on that input, as the `@derive` line of [Params](../../docs/handbook/solver-file.md#params) gives. Where it gives several values and the line has no `(ONE)`, the parameter takes those values, as that line gives too.
+- A domain proposer, as [Program](../../docs/arclog/arclog.md#program) gives it, is native: it enumerates the values of its type that the evidence gives, and reads no stored value. The evidence is the train inputs and outputs and the test inputs.
     - An orientation type: every value of the type.
-    - Color: the colors of the examples' inputs and of the train outputs.
-    - Number: 0 up to the largest extent of an example's grid.
-    - Position: the cells of the largest example grid's frame.
+    - Color: the colors of the grids of the evidence.
+    - Number: 0 up to the largest extent of a grid of the evidence.
     - A pair type: the product of its two domains.
-    - Box and Offset have no domain proposer, since no frame bounds them, and a `DET` of one states a body that gives its candidates. 48d8fb45's `win_box`, the one `DET` of `gen/` that names `BoxDomain`, is a fault of its solver.
+    - Box, Offset and Position have no domain proposer. No frame bounds a Box or an Offset, and a cell of the largest frame of the evidence is never a cell of a frame of tiles, as 7fe24cdd's `&anchor` and ed74f2f2's `&target_tile` are; the Souffle tooling took those cells from the frame of the stored record, which a determination from the evidence does not have. A `DET` of one of these types states a body that gives its candidates. The two `DET`s of `gen/` that name `PositionDomain`, 7fe24cdd's `&anchor` and ed74f2f2's `&target_tile`, are faults of their solvers.
 - Each other proposer whose derivation needs a form that a program bans, such as arithmetic, and that no lib relation gives, is native too, with its columns in the registry.
+- The fields of a frame of cells or of a frame cut into equal tiles come from `DET`s that the program states, as [Program](../../docs/arclog/arclog.md#program) gives. A converter's form that stores the fields, `(DET &x Frame)` or `(DET &x Division)`, as ed74f2f2's `&decompose_tiles` does, is a fault of the conversion.
 
 ## `RIGID_DET`
 
-- The engine computes `RIGID_DET` by the method of [Implementation](../../docs/arclog/rigid.md#implementation), with one instance's reading as the frame of each assembly.
+- The engine computes `RIGID_DET` by the method of [Implementation](../../docs/arclog/rigid.md#implementation). The frame of each assembly is the reading of its instance whose reading is least by content, in the canonical order of terms, so the frame depends on no order of encodings.
 - An assembly's instances are those its `instance` clause gives, and a form with none has one instance, as [rigid](../../docs/arclog/rigid.md) gives. The engine infers no instance from a part's columns: a part column the `instance` clause does not name is a column of the part.
 - No output observes that choice, as [Invariance](../../docs/handbook/principles.md#invariance) requires: the checker gives each `:Pose` column the type Pose, and refuses every read that would see the frame, as [The `RIGID_DET` frame](equivariance.md#the-rigid_det-frame) gives.
+- A record of an assembly's parts was written in Souffle's frame, so the parts compare with the records up to one D4 element, the same element for every part of the assembly.
+
+## End check
+
+- `arclog-cli determine <corpus-dir> <tasks-dir> [<task_id> ...]` determines the parameters of each solver given, or of every solver of the corpus, from its task's evidence, and compares each determined value with the solver's `param` rows. It prints each difference by solver and parameter.
+- Idents compare up to one renaming, as [Parallelism and determinism](evaluator.md#parallelism-and-determinism) gives, and the parts of a `RIGID_DET` assembly as [`RIGID_DET`](#rigid_det) gives. A `DET` with no body and no proposer, and each other fault of a solver or of the conversion that this doc names, is reported as that fault, and is not a difference.
 
 ## How each decision can fail
 
 | Decision | Failure | What catches or bounds it |
 | --- | --- | --- |
 | Determination filtered by the train pairs over a product | many parameters with several candidates | dependency order with shared entries, and a cap that reports the parameters |
+| The tagged form of the evaluation per assignment | its rows differ from those of one evaluation per assignment, at a negation or a construction | the end check, which reads the determined values |
 | The Pose type | a read that sees no frame and that the rule refuses | `pose_difference` gives every relation between two poses; every clause of `gen/` that reads a pose passes the rule |
 
 ## Known gaps

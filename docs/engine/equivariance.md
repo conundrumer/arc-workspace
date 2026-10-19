@@ -43,8 +43,8 @@ So equivariance follows from the checker's rules and the lib's definitions, and 
 - **Rule.** The type check refuses `<`, `<=`, `>` and `>=` on every type but `number`, as [Checker](reader.md#checker) gives. The grammar admits `0` as the one constant, as [Negation and constraints](../../docs/arclog/arclog.md#negation-and-constraints) gives.
 - **Enforced by:** the checker, in step 1 of the [build order](overview.md#build-order). The token mask runs the same checks.
 - **Cost:** one test per constraint atom when the program is checked. Nothing at run time.
-- **Corpus:** 479 order tests in 223 files of `gen/`, all on `number`. No clause body holds a constant of a task type.
-- **What the check needs:** the type of a label at a column of a component's type parameter. 10 of the 479 tests compare such labels, each bound to a number: 247ef758:186, 5d588b4d:92, 8abad3cf:76, 8dae5dfc:62, 9d9215db:148, abbfd121:494-506 and b457fec5:251. The checker takes the type through the instance's binding of the parameter.
+- **Corpus:** every order test of `gen/` is on `number`. No clause body holds a constant of a task type.
+- **What the check needs:** the type of a label at a column of a component's type parameter. Some of the tests compare such labels, each bound to a number, such as 247ef758:186, 5d588b4d:92, 8abad3cf:76, 8dae5dfc:62, 9d9215db:148, abbfd121:494-506 and b457fec5:251. The checker takes the type through the instance's binding of the parameter.
 
 ### Each lib element has no free choice, or its choice is a model
 
@@ -66,21 +66,21 @@ A survey of the lib, `programs/lib/` and `programs/proposers.dl` against `gen/`,
 
 ### Settled
 
-| Element | Choice | Readers in `gen/` | Resolution |
+| Element | Choice | A reader in `gen/` | Resolution |
 | --- | --- | --- | --- |
-| Ident values: `Quotient.class`, `Connectivity.component`, `Enclosure.enclosed` | the number of an id; Souffle takes the least term id, `sets.dl:121`, `sets.dl:144`, `cells.dl:384` | 58, 318 and 44 files | An Ident is interned by the content it labels, as [Terms](reader.md#terms) gives, and only equality on it reaches an output. Equality is kept by every bijection. |
-| Periods, inside | one translation per magnitude, toward the bottom-right corner, `cells.dl:507-514` | 19 files | An engine device behind the interface. The outputs pair the cells both ways, so they do not show the corner. The native form need not copy it. |
-| `CoverForcing`, `PlacementPruning`, `TiebreakResolutions` | term-id order and reading order, `constraints.dl:12`, `:38-43`, `:121-126`, `:187-214`, `:261` | none; `ONE` in 32 files and `CHOOSE` in 18 replace them | Every model, as [Semantics](../../docs/arclog/constraints.md#semantics) gives. |
-| Order under ties, `Unfold` under a score tie | none: tied members share a rank, `minimal` holds each of them, and the walk forks | 22 files read `successor` or `cyclic_successor`; `Unfold` in 19 | No choice. |
-| `PairDims` coordinates, read by the proposers `Period`, the `Sep*` proposers and `TileD4` | rows and columns counted from the top and left edges, `proposers.dl:16-30` | 2, 59 and 18 files | The results do not depend on the edge: `Period` reads differences, the separator lines of an exact fit are symmetric, and a tile is a box. The arclog text holds no literal, so it enumerates the edge. |
-| `PanelCombine` | `c1` is the top or left panel, `proposers.dl:432-455` | 20 files | The proposer gives each panel's place as a Position in the arrangement's frame, as the records already hold it, such as `&combine_member` in 0520fde7.arcdata. |
-| `TileD4`'s `swaps` | a literal set, `proposers.dl:401` | 18 files | The set is closed under conjugation, so every γ fixes it. |
-| Division by side | the edge that the tiles start from, where the extent leaves a remainder | 122 files | Division takes equal parts alone; the present functor refuses a remainder, `lib_functors.cpp:95`. |
+| Ident values: `Quotient.class`, `Connectivity.component`, `Enclosure.enclosed` | the number of an id; Souffle takes the least term id, `sets.dl:121`, `sets.dl:144`, `cells.dl:384` | 009d5c81, 00dbd492 and 00dbd492 | An Ident is interned by the content it labels, as [Terms](reader.md#terms) gives, and only equality on it reaches an output. Equality is kept by every bijection. |
+| Periods, inside | one translation per magnitude, toward the bottom-right corner, `cells.dl:507-514` | 017c7c7b | An engine device behind the interface. The outputs pair the cells both ways, so they do not show the corner. The native form need not copy it. |
+| `CoverForcing`, `PlacementPruning`, `TiebreakResolutions` | term-id order and reading order, `constraints.dl:12`, `:38-43`, `:121-126`, `:187-214`, `:261` | none; `ONE` and `CHOOSE` replace them, as in 28a6681f and 4cd1b7b2 | Every model, as [Semantics](../../docs/arclog/constraints.md#semantics) gives. |
+| Order under ties, `Unfold` under a score tie | none: tied members share a rank, `minimal` holds each of them, and the walk forks | `successor` in 00576224; `Unfold` in 3490cc26 | No choice. |
+| `PairDims` coordinates, read by the proposers `Period`, the `Sep*` proposers and `TileD4` | rows and columns counted from the top and left edges, `proposers.dl:16-30` | 695367ec, 0520fde7 and 00576224 | The results do not depend on the edge: `Period` reads differences, the separator lines of an exact fit are symmetric, and a tile is a box. The arclog text holds no literal, so it enumerates the edge. |
+| `PanelCombine` | `c1` is the top or left panel, `proposers.dl:432-455` | 0520fde7 | The proposer gives each panel's place as a Position in the arrangement's frame, as the records already hold it, such as `&combine_member` in 0520fde7.arcdata. |
+| `TileD4`'s `swaps` | a literal set, `proposers.dl:401` | 00576224 | The set is closed under conjugation, so every γ fixes it. |
+| Division by side | the edge that the tiles start from, where the extent leaves a remainder | 06df4c85 | Division takes equal parts alone; the present functor refuses a remainder, `lib_functors.cpp:95`. |
 | The order of the two attempts on a test input | which grid is the first | the Kaggle run | The score reads the attempts as a set, as [The output set](../../docs/arclog/constraints.md#the-output-set) gives. |
 
 ### Quotient's `representative`
 
-`representative` holds one member per class ([lib-spec.md](../../docs/lib-spec.md#the-constructions), the Quotient row). Souffle picks the member of least term id, `sets.dl:151`. Where the class members are examples, that is the first example. 14 files read it:
+`representative` holds one member per class ([lib-spec.md](../../docs/lib-spec.md#the-constructions), the Quotient row). Souffle picks the member of least term id, `sets.dl:151`. Where the class members are examples, that is the first example. These files read it:
 
 | File | Use | Does the pick reach an output | Members per class on the train pairs |
 | --- | --- | --- | --- |
@@ -130,6 +130,5 @@ The Souffle form keeps the one member toward the bottom-right corner, `cells.dl:
 | Gap | Where it shows |
 | --- | --- |
 | The action on a `RIGID_DET` part of type D4 or Sym: [Semantics](../../docs/arclog/rigid.md#semantics) leaves those types as they are, and Γ conjugates them | `rigid.md:85`; 4522001f and ad38a9d0 have `RIGID_DET` forms with a part of type D4 |
-| `.pose` where the assembly has a symmetry, so that an instance has several poses | no read of `.pose` in `gen/` |
-| A native proposer carries the second and third obligations, and which proposers are native is open | the gap row of [determination.md](determination.md#known-gaps) |
+| A native proposer carries the second and third obligations, and no command compares a native proposer with its definition | each proposer that `engine/lib/registry.sexpr` marks `native`, as [Proposers](determination.md#proposers) gives which are native |
 | A claim text that names an orientation constant, which the program does not read | b457fec5:7, "the DIR_T edge"; b6f77b65:3, "the DIAG_TL corner" |
