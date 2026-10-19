@@ -100,44 +100,52 @@ def placed(state: State, procedure: Callable[[State], Step | None]
     procedure whose step, as it gives it, `State.aside` holds gives no
     step. Which step the journal holds back or retires is as
     `scripts/operate.py --help journal` gives it (`journal.due`, `retire`).
+    A procedure that gives the step of one of several subjects passes over
+    a subject whose step `State.aside` holds (`held_aside`).
     A launch the operator's agent listing lacks (`unlisted`) gives no step
-    where it is due. A step the usage pace holds (`start_holds.pace_holds`) is
+    where it is due. A step the usage pace holds (`start_holds.pace_holds`),
+    and a step whose placed step the journal retired (`Due.RETIRED`), is
     set aside, and the procedure read again."""
     waited: Undecided | None = None
     while True:
-        given, s, on = placed_given(state, procedure)
+        given, s, on, retired = placed_given(state, procedure)
         if given is None:
             return None, waited
         if s is None:
-            return s, on or waited
-        step = s
-        if not start_holds.pace_holds(state, lambda: start_holds.starts_run(state, step)):
-            return s, on or waited
+            if not retired:
+                return s, on or waited
+        else:
+            step = s
+            if not start_holds.pace_holds(state, lambda: start_holds.starts_run(state, step)):
+                return s, on or waited
         waited = waited or on
         state = replace(state, aside=state.aside | {key(given)})
 
 
 @memoized
 def placed_given(state: State, procedure: Callable[[State], Step | None]
-                 ) -> tuple[Step | None, Step | None, Undecided | None]:
+                 ) -> tuple[Step | None, Step | None, Undecided | None, bool]:
     """The step `procedure` gives on `state`, None where it gives none or
-    `held_aside` holds it, with the step `place` gives for it and the
-    undecided step it waits on, the usage pace aside."""
+    `held_aside` holds it, with what `place` gives for it, the usage pace
+    aside."""
     given = procedure(state)
     if given is None or held_aside(state, given):
-        return None, None, None
-    s, on = place(state, given)
-    return given, s, on
+        return None, None, None, False
+    return given, *place(state, given)
 
 
-def place(state: State, s: Step | None) -> tuple[Step | None, Undecided | None]:
+def place(state: State, s: Step | None) -> tuple[Step | None, Undecided | None, bool]:
     """The step of `placed` for the step `s` its procedure gives, the
-    usage pace aside."""
+    usage pace aside, the undecided step it waits on, and whether the step
+    it placed is one the journal retired (`Due.RETIRED`), of which it gives
+    no step."""
     while s is not None:
         if isinstance(s, Launch):
             s = lineage.held(state, s)
+        if isinstance(s, Launch | Send | Bash) and due(state.journal, s, state.now) is Due.RETIRED:
+            return None, None, True
         if repeated(s, state):
-            return None, s if isinstance(s, Undecided) else None
+            return None, s if isinstance(s, Undecided) else None, False
         on = s if isinstance(s, Undecided) else None
         if on is not None:
             s = decisions.launch(state, on)
@@ -148,15 +156,17 @@ def place(state: State, s: Step | None) -> tuple[Step | None, Undecided | None]:
                 "procedure").format(key=key(s), line=ruling.text))
             continue
         if not isinstance(s, Launch | Send | Bash):
-            return s, None
+            return s, None, False
         match due(state.journal, s, state.now):
             case Due.GIVE:
-                return (None, None) if unlisted(state, s) else (s, None)
+                return (None, None, False) if unlisted(state, s) else (s, None, False)
             case Due.WAIT:
-                return None, on
+                return None, on, False
+            case Due.RETIRED:
+                return None, on, True
             case Due.RETIRE:
-                return retire(state, s), None
-    return None, None
+                return retire(state, s), None, False
+    return None, None, False
 
 
 def retire(state: State, step: Journaled) -> Bash:
@@ -167,8 +177,7 @@ def retire(state: State, step: Journaled) -> Bash:
     given = failures(state.journal.of(k))[-BOUND:]
     title = mctx("`scripts/operate.py next`: gives step {key} of `{origin}` {bound} times in "
                  "a row").format(key=k, origin=step.origin, bound=BOUND)
-    impact = mctx("`next` retired step {key}, which `{origin}` gives, for the session, and "
-                  "its procedure gives nothing in its place.").format(
+    impact = mctx("`next` retired step {key}, which `{origin}` gives, for the session.").format(
         key=k, origin=step.origin)
     evidence = "\n".join([mctx("The step as `next` gives it last:"), "```", repr(step), "```",
                           mctx("The times `next` gave it, as the journal gives them:"),
@@ -202,7 +211,7 @@ def pace_held_step(state: State) -> Pace | Capped | None:
     if held is None:
         return None
     for procedure in PROCEDURES:
-        _, s, _ = placed_given(state, procedure)
+        _, s, _, _ = placed_given(state, procedure)
         if start_holds.pace_holds(state, lambda: s is not None and start_holds.starts_run(state, s)):
             return held
     return None

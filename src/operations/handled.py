@@ -55,7 +55,7 @@ def repeated(step: Step, state: State) -> bool:
         case Send():
             return done(state, step) or bool(sendings(step, state))
         case Launch() | Bash():
-            return due(state.journal, step, state.now) is Due.WAIT
+            return due(state.journal, step, state.now) in {Due.WAIT, Due.RETIRED}
         case _:
             return False
 

@@ -51,7 +51,7 @@ from operations.roles import Purpose, Role, analyst_of, analyst_subject, describ
 from operations.state import Agent, State, Tool, Unread, own
 from operations.final_reply import failure, final_replies, session_operator
 from operations.nesting import nested
-from operations.handled import ask_again, decided_by, repeated
+from operations.handled import ask_again, decided_by, held_aside, repeated
 from operations.steps import Launch, Send, Step, Undecided, analyst_key, rulable
 from operations.tracker import closed
 
@@ -135,7 +135,12 @@ def returned(state: State) -> list[Agent]:
 def tickets_closed(state: State, a: Agent) -> bool:
     """Whether the step of `a`, an analyst on a held step, gives one ticket
     or more, each under `tickets/closed/`."""
-    numbers = briefs.step_tickets(a.brief)
+    return all_closed(state, briefs.step_tickets(a.brief))
+
+
+def all_closed(state: State, numbers: list[str]) -> bool:
+    """Whether `numbers` gives one ticket or more, each under
+    `tickets/closed/`."""
     return bool(numbers) and all(closed(state, n) for n in numbers)
 
 
@@ -147,7 +152,7 @@ def asks(state: State) -> Step | None:
         if a.agent_id is None or not rulable(a.brief) or decides(a):
             continue
         asked = ask_again(state, a.agent_id, [r.time for r in a.reports], messages.DECISION_FORM)
-        if isinstance(asked, Send):
+        if isinstance(asked, Send) and not held_aside(state, asked):
             return asked
     return None
 

@@ -62,3 +62,49 @@ def test_decision_sent_with_other_appended_text_goes_no_second_time(tmp_path: Pa
                  None, None, Close(Outcome.DONE, 151.0, ""))
     s = state(tmp_path, [t], [a], w)
     assert for_coordinator(replace(s, journal=Journal((done,)))) is None
+
+
+def test_a_retired_relay_gives_way_to_the_next_analysts(tmp_path: Path) -> None:
+    from dataclasses import replace
+    from operations.journal import Close, Entry, Journal, Outcome
+    from operations.order import placed
+    from operations.roles import Purpose, Role, analyst_subject
+    from operations.state import Agent as Launched, Report, Tool
+    from operations.steps import Send, retirement_key
+    from operations.triage import for_coordinator
+    from tests.test_unreported_agents import ME, state, ticket as filed
+    log = "\n## Log\n2026-10-17T02:14:06Z draft [ticket-analyst]: filed\n"
+    tickets = [filed(tmp_path, "draft", f"9-{n}_change_x_ticket-analyst.md",
+                     "---\nkind: change\neditors: code-editor\n---\n# x: y\n" + log)
+               for n in (1, 2)]
+    w = tmp_path / "main" / ".claude" / "worktrees" / "w"
+
+    def analyst(agent_id: str, n: int, at: float) -> Launched:
+        return Launched(agent_id, ME, Role.TICKET_ANALYST, analyst_subject(Purpose.DRAFT, f"9-{n}"),
+                        "", 10.0, 10.0, None,
+                        (Report(at, f"Done.\n\n## For the coordinator\n- decision: keep {n}\n"),),
+                        True)
+
+    s = state(tmp_path, tickets, [analyst("a0000000000000001", 1, 100.0),
+                                  analyst("a0000000000000002", 2, 200.0)], w)
+    first = for_coordinator(s)
+    assert isinstance(first, Send) and "keep 1" in first.message
+    retiring = Entry("r", "d", "o", ME, 150.0, Tool.BASH, None, "file the bug",
+                     retirement_key(first), None, Close(Outcome.DONE, 151.0, ""))
+    step, _ = placed(replace(s, journal=Journal((retiring,))), for_coordinator)
+    assert isinstance(step, Send) and "keep 2" in step.message
+
+
+def test_an_analyst_whose_tickets_all_stand_closed_gets_no_relay(tmp_path: Path) -> None:
+    from operations.roles import Purpose, Role, analyst_subject
+    from operations.state import Agent as Launched, Report
+    from operations.triage import for_coordinator
+    from tests.test_unreported_agents import ME, state, ticket as filed
+    t = filed(tmp_path, "closed", "9-1_change_x_ticket-analyst.md",
+              "---\nkind: change\neditors: code-editor\n---\n# x: y\n\n## Log\n"
+              "2026-10-17T02:14:06Z closed [ticket-analyst]: wontfix: x\n")
+    w = tmp_path / "main" / ".claude" / "worktrees" / "w"
+    a = Launched("a0000000000000001", ME, Role.TICKET_ANALYST, analyst_subject(Purpose.DRAFT, "9-1"),
+                 "", 10.0, 10.0, None,
+                 (Report(100.0, "Done.\n\n## For the coordinator\n- decision: keep 1\n"),), True)
+    assert for_coordinator(state(tmp_path, [t], [a], w)) is None

@@ -4,7 +4,7 @@ them."""
 
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR
-from operations.handled import sent, sent_with
+from operations.handled import held_aside, sent, sent_with
 from operations.roles import PASSES
 from operations.state import Agent, State
 from operations.steps import Send, Step
@@ -46,6 +46,7 @@ def step(state: State) -> Step | None:
         if not new:
             continue
         message = "\n".join([head, *new])
-        if not sent(state, COORDINATOR, message, head):
-            return Send(COORDINATOR, message, " ".join([head, *map(fault_key, new)]))
+        step = Send(COORDINATOR, message, " ".join([head, *map(fault_key, new)]))
+        if not sent(state, COORDINATOR, message, head) and not held_aside(state, step):
+            return step
     return None

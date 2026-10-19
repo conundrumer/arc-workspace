@@ -112,8 +112,11 @@ class Due(StrEnum):
     """What `next` does with a step its procedure gives."""
     GIVE = "give"
     WAIT = "wait"
-    """The step is in flight, done, retired or backing off after a
-    refusal (`refused`): its procedure gives nothing in its place."""
+    """The step is in flight, done or backing off after a refusal
+    (`refused`): its procedure gives nothing in its place."""
+    RETIRED = "retired"
+    """The step was retired (`retired`): it is set aside, and its procedure
+    read again (`order.placed`)."""
     RETIRE = "retire"
     """The step reached `BOUND`: it is retired, and its bug is filed."""
 
@@ -178,7 +181,9 @@ def due(journal: Journal, step: Journaled, now: float) -> Due:
     did."""
     entries = journal.of(key(step))
     retiring = retirement_key(step)
-    if retired(journal, retiring) or any(e.close is None for e in entries):
+    if retired(journal, retiring):
+        return Due.RETIRED
+    if any(e.close is None for e in entries):
         return Due.WAIT
     again = isinstance(step, Repeatable) and step.again
     if done_of(entries).count > (AGAIN_LIMIT if again else 0):

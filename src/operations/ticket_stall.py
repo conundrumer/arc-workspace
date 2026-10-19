@@ -52,6 +52,7 @@ from operations.parties import Hold, Holder, Party
 from operations.roles import AGENT_ID
 from operations.state import (Agent, DueEntry, State, Ticket, kept_across_reads, memoized,
                               memoized_by_transcripts)
+from operations.handled import held_aside
 from operations.steps import Bash, Step
 from operations.tracker import exits
 from ticketing.exits import Exit
@@ -306,7 +307,9 @@ def stall(state: State) -> Step | None:
             since, reason = held_up
             if not any(ln.time >= since and (m := taking.STALLED.match(ln.note)) is not None
                        and m["number"] == d for ln in t.log):
-                return Bash(log(n, Status.DRAFT, t.status,
+                step = Bash(log(n, Status.DRAFT, t.status,
                                 taking.STALL_FINDING.format(number=d, reason=reason), state.me),
                             f"{n} stalled on {d}", occasion=str(since))
+                if not held_aside(state, step):
+                    return step
     return None

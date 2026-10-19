@@ -83,9 +83,10 @@ from ticketing.vocabulary import SETTLED, Status
 from operations.constants import COORDINATOR
 from operations.final_reply import carrier, replies_by_operator, session_operator
 from operations.nesting import nested
-from operations.handled import repeated, sends_to, sent
+from operations.handled import held_aside, repeated, sends_to, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, body, labeled
 from operations.log_commands import AGENT, log
+from operations.decisions import all_closed
 from operations.tracker import blocked_on_user, coordinator_lines, exits, final_run
 from ticketing.exits import Exit, freed
 
@@ -143,10 +144,13 @@ def reopen(state: State) -> Step | None:
         if Exit.COORDINATOR_LINE not in exits(state, t).by:
             continue
         line = reopening(t.number, t)
-        if line is not None:
-            return Bash(log(t.number, Status.REOPENED, t.status,
-                            f"the coordinator's line of {line.time:.0f}: {line.note}",
-                            None), f"{t.number} reopen", occasion=str(line.time))
+        if line is None:
+            continue
+        step = Bash(log(t.number, Status.REOPENED, t.status,
+                        f"the coordinator's line of {line.time:.0f}: {line.note}",
+                        None), f"{t.number} reopen", occasion=str(line.time))
+        if not held_aside(state, step):
+            return step
     return None
 
 
@@ -173,8 +177,10 @@ def later_lines(state: State) -> Step | None:
                 continue
             for ln in coordinator_lines(t.log):
                 message = messages.later_line(n, ln.time, ln.note)
-                if ln.time > a.launched and not sent(state, a.agent_id, message):
-                    return Send(a.agent_id, message, f"{n} {ln.time}")
+                step = Send(a.agent_id, message, f"{n} {ln.time}")
+                if ln.time > a.launched and not sent(state, a.agent_id, message) and not held_aside(
+                        state, step):
+                    return step
     return None
 
 
@@ -277,7 +283,8 @@ def decisions(state: State) -> Step | None:
         key = decision_key(t.number, line.time)
         step = Send(COORDINATOR, labeled(key, mctx("- decision: {note}").format(note=line.note)),
                     key)
-        if by_ours and not carried(state, t, line) and not sent(state, step.to, step.message, key):
+        if by_ours and not carried(state, t, line) and not sent(
+                state, step.to, step.message, key) and not held_aside(state, step):
             return step
     return None
 
@@ -342,18 +349,22 @@ def for_coordinator(state: State) -> Step | None:
     what a change's editors leave go with the step that holds that change,
     and the line that rules it (`changes.left_decision`). It passes over an
     analyst with no agent id, of which `replied` gives none, so that the
-    type checker reads the agent id as known."""
+    type checker reads the agent id as known. It passes over an analyst
+    each ticket of whose subject stands under `tickets/closed/`
+    (`decisions.all_closed`), and an analyst whose message `held_aside` holds."""
     for a, purpose, nums, key in replied(state):
         items = items_of(a, [Label.DECISION])
-        if items is None or a.agent_id is None:
+        if items is None or a.agent_id is None or all_closed(state, nums):
             continue
         part = items
         if purpose is Purpose.CHANGE and (decision := changes.left_decision(a, nums[0])):
             part += "\n\n" + decision
         label = replies_of(a.agent_id)
-        if not any(label in e.text and sent_items(body(e.text), items)
-                   for e in sends_to(state, COORDINATOR)):
-            return Send(COORDINATOR, labeled(key, part), key)
+        send = Send(COORDINATOR, labeled(key, part), key)
+        if not held_aside(state, send) and not any(
+                label in e.text and sent_items(body(e.text), items)
+                for e in sends_to(state, COORDINATOR)):
+            return send
     return None
 
 

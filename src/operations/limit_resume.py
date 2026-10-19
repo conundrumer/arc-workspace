@@ -9,6 +9,7 @@ since the stop, so it gets none, and a later stop of an agent another agent
 resumed last is that agent's to resume, so it gets none either."""
 
 from controlled_markdown import mctx
+from operations.handled import held_aside
 from operations.state import State
 from operations.steps import Send, Step
 
@@ -24,6 +25,7 @@ def step(state: State) -> Step | None:
         return None
     for a in state.transcripts.agents:
         at = None if a.agent_id is None else state.transcripts.limited.get(a.agent_id)
-        if a.agent_id is not None and at is not None and lifted > at:
-            return Send(a.agent_id, RESUME, "resume", since=at)
+        if a.agent_id is not None and at is not None and lifted > at and not held_aside(
+                state, step := Send(a.agent_id, RESUME, "resume", since=at)):
+            return step
     return None

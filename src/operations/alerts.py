@@ -63,7 +63,7 @@ from operations.arrivals import arrived, received
 from operations.constants import COORDINATOR, stuck_reached
 from operations.roles import AGENT_ID
 from operations.state import Agent, LateResume, Message, Report, State, Stuck, Ticket
-from operations.handled import ask_again, repeated
+from operations.handled import ask_again, held_aside, repeated
 from operations.steps import Bash, Send, Step, Undecided
 from operations.log_commands import AGENT, file_ticket, log
 from ticketing.text import ticket_text
@@ -354,7 +354,7 @@ def ticket_stalls(state: State) -> Step | None:
         sent = stall_message(state, t, since, waiting_paths(state, n, stalls), f"ticket stall {n}")
         s = ticket_stall_step(state, sent, t, since, BugKind.TICKET_STALL,
                               mctx("no progress since {time}").format(time=utc_stamp(since)))
-        if s is not None:
+        if s is not None and not held_aside(state, s):
             return s
     return None
 
@@ -455,7 +455,7 @@ def late_resumes(state: State) -> Step | None:
         s = ticket_step(state, BugKind.LATE_RESUME, Domain.AGENT, agent, left[0].time, "; ".join(texts),
                         mctx("The resumes of {agent}, from its transcript:").format(agent=agent)
                         + "".join(f"\n- {t}" for t in texts))
-        if s is not None:
+        if s is not None and not held_aside(state, s):
             return s
     return None
 

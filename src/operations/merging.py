@@ -96,7 +96,7 @@ from operations.constants import COORDINATOR
 from operations.state import (Agent, Call, Commit, LogLine, Merge, State, Ticket, Tool,
                               memoized_by_transcripts)
 from operations.command_words import command_words
-from operations.handled import ask_again, decided_by, sent, unmoved
+from operations.handled import ask_again, decided_by, held_aside, sent, unmoved
 from operations.steps import Bash, Launch, Send, Step, Undecided, labeled
 from operations.log_commands import log
 from operations.worktrees import WORKTREE
@@ -484,7 +484,7 @@ def handoffs(state: State) -> Step | None:
         key = HANDED_OFF_KEY.format(number=t.number, time=f"{line.time:.0f}")
         step = Send(COORDINATOR, labeled(key, mctx("- unfinished: {note}").format(note=line.note)),
                     key)
-        if not sent(state, step.to, step.message, key):
+        if not sent(state, step.to, step.message, key) and not held_aside(state, step):
             return step
     return None
 

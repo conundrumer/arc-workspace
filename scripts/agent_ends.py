@@ -89,9 +89,9 @@ def ended_elsewhere(agents: list[Agent], me: str,
                     undecided: list[str]) -> dict[str, Report | None]:
     """For each pending agent of another operator whose work is no longer
     open, an agent whose report reaches no running operator, and whose
-    transcript is written (`transcripts.launched_find`), the final
-    reply in its transcript that `reply_to` gives after its launch, or
-    None."""
+    transcript is written (`transcripts.launched_find`), the report that
+    `reply_to` gives after its launch for it as no longer waiting
+    (`ended_with`), or None."""
     out: dict[str, Report | None] = {}
     for a in agents:
         if not a.pending or a.operator == me or a.agent_id is None or a.agent_id in out:
@@ -99,5 +99,5 @@ def ended_elsewhere(agents: list[Agent], me: str,
         path = launched_find(a.agent_id)
         if path is None or work_open(path, []):
             continue
-        out[a.agent_id] = reply_to(a, a.launched, undecided)
+        out[a.agent_id] = reply_to(ended_with(a, None), a.launched, undecided)
     return out
