@@ -458,7 +458,7 @@ A session records a value as open where another task in the family of the case's
 
 The language model emits tokens from these sets, each a closed set of ids:
 
-- control: `RULE` `DET` `INIT` `ONE` `CHOOSE` `RIGID_DET` `OR` `IF` `ALL` `END` `NOT` `*` `^` `0` and the constraint operators. `^` marks a label of a key clause's body as a column of the key, as [Instance](#instance) gives, in an instance's `key`, a `CHOOSE`'s `for`, and a `RIGID_DET`'s `instance` and `key`, and the engine echoes the label after it as after `*`.
+- control: `RULE` `DET` `INIT` `ONE` `CHOOSE` `RIGID_DET` `OR` `IF` `ALL` `END` `SKIP` `ALSO` `NOT` `*` `^` `0` and the constraint operators. `^` marks a label of a key clause's body as a column of the key, as [Instance](#instance) gives, in an instance's `key`, a `CHOOSE`'s `for`, and a `RIGID_DET`'s `instance` and `key`, and the engine echoes the label after it as after `*`.
 - lib relations and components, one token each; proposers, one token each
 - fact relations: `input` `ex_input` `ex_output`
 - derived relations: the index the engine assigned at the declaration
@@ -469,7 +469,11 @@ The engine emits the declaration of each derived relation, the declaration of ea
 
 The token sets are disjoint, so an atom's site list ends at the first token that is not a column token, and no separator exists.
 
-The language model emits `END` where a decision to stop exists: at the end of a body, after each projection's labels, after the field sites of a site on a record-valued column, at the end of an `OR` form, after each list of an `IF` or `ALL` form, at the prompt of an optional clause or input, to decline it, and after each clause that may repeat, such as `never`, to end the repetition. It emits `OR` between the branches of an `OR` form. The decoder admits `END` at the end of a body once the clause is grounded. At the prompt of a required clause or input, the decoder refuses the `END` that would decline it, so no form lacks a required input and then waits on an end that the decoder never admits.
+The language model emits `END` where a decision to stop exists: at the end of a body, after each projection's labels, after the field sites of a site on a record-valued column, at the end of an `OR` form, and after each list of an `IF` or `ALL` form. It emits `OR` between the branches of an `OR` form. The decoder admits `END` at the end of a body once the clause is grounded.
+
+The language model emits `SKIP` at the prompt of an optional clause or input, to decline it. At the prompt of a required clause or input, the decoder refuses `SKIP`, so no form lacks a required input and then waits on a decline that the decoder never admits.
+
+A clause that may repeat, such as `never`, is written as its first instance, then `ALSO` and the next instance, for each further repeat. The next prompt, or the `END` that closes the enclosing form, ends the run, so the repetition has no token of its own at its end.
 
 ### Second spellings
 
