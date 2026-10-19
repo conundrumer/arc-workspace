@@ -17,6 +17,7 @@ reached through `spends.budget` and `ticket_watch.watched`."""
 import argparse
 import html
 import json
+import os
 import re
 import sys
 import time
@@ -114,6 +115,7 @@ def operator_state(tickets: Path) -> State | str:
         operators = operator_runs(session, "")
         if not operators:
             return f"no operator of the main session {session} ran `next`"
+        os.environ["CLAUDE_CODE_SESSION_ID"] = session
         return read_state(operators[-1][0])[0]
     except Refused as e:
         return f"the operator's state does not read: {e}"
