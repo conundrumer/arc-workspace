@@ -208,7 +208,7 @@ impl<'a> Builder<'a> {
         let written: Vec<_> = crate::program::written_inputs(instance.key.as_ref(), &instance.inputs).collect();
         let mut inputs = Vec::new();
         let mut outputs = Vec::new();
-        if component.inputs.iter().any(|input| input.reads_outputs) {
+        if component.reads_outputs() {
             let node = self.node(DependencyKind::RecursiveInstance(name.clone()), scope, Some(&path));
             inputs.extend(written.iter().map(|input| (input.name.clone(), node)));
             outputs.extend(component.outputs.iter().map(|output| (output.name.clone(), node)));

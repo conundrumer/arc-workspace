@@ -28,7 +28,7 @@ impl Element<'_> {
                 let native = algebra(&LibName(name.clone())).ok_or("the engine does not evaluate it")?;
                 Ok(Subject::Relation { name, native, relation })
             }
-            Element::Component { name, component } if component.inputs.iter().any(|input| input.reads_outputs) => {
+            Element::Component { name, component } if component.reads_outputs() => {
                 Ok(Subject::Unfold { name, component })
             }
             Element::Component { name, component } => {

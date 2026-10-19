@@ -49,7 +49,7 @@ pub fn evaluate_instance<'a>(
     let name = &instance.component;
     let unevaluated = || fault(format!("the engine does not evaluate the component `{}`", name.0));
     let Some(LibEntry::Component(component)) = evaluation.registry.entry(name) else { return Err(unevaluated()) };
-    if component.kind == ComponentKind::TaskStructure || component.inputs.iter().any(|input| input.reads_outputs) {
+    if component.kind == ComponentKind::TaskStructure || component.reads_outputs() {
         return Err(unevaluated());
     }
     let construction = evaluation.constructions.get(name).ok_or_else(unevaluated)?;

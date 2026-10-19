@@ -258,6 +258,13 @@ pub struct Component {
     pub outputs: Box<[Port]>,
 }
 
+impl Component {
+    /// Whether an input of the component reads the instance's outputs.
+    pub fn reads_outputs(&self) -> bool {
+        self.inputs.iter().any(|input| input.reads_outputs)
+    }
+}
+
 /// A proposer, native or written in arclog, and its columns with their
 /// types.
 #[derive(Clone, Debug)]
