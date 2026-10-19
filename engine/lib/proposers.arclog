@@ -42,6 +42,11 @@
   (frame_extent P *A *N)
   (ALL ((ex_input (:E *E2) (:P *P2)))
        ((frame_extent (:P P2) A N))))
+(proposer ConstInDimAxis
+  (ex_input *E *P)
+  (frame_extent P *A *N)
+  (ALL ((ex_input (:E *E2) (:P *P2)))
+       ((frame_extent (:P P2) A N))))
 (proposer ConstOutDim
   (ex_output *E *P)
   (frame_extent P *A *N)
