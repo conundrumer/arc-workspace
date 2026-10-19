@@ -119,7 +119,7 @@ pub(super) fn constructed(construction: &dyn Construction, component: &Component
         let mut budget = Budget::new(&limits, &session);
         let mut context = ConstructionContext { session: &session, registry: Registry::get(), budget: &mut budget };
         let outputs = construction
-            .evaluate(&GroupInputs { inputs: &group, types: &types }, &mut context)
+            .evaluate(&GroupInputs { inputs: &group, types: &types, columns: &types }, &mut context)
             .map_err(|reached| format!("a stop at {reached:?}"))?;
         for ((output, rows), set) in component.outputs.iter().zip(&outputs.outputs).zip(&mut out) {
             let at = output.columns.iter().position(is_key);

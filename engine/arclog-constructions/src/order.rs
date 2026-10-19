@@ -2,7 +2,7 @@
 //! counts, sorts and minima.
 
 use arclog::eval::ReachedBound;
-use arclog::eval::instance::{Construction, ConstructionContext, GroupInputs, GroupOutputs};
+use arclog::eval::instance::{width, Construction, ConstructionContext, GroupInputs, GroupOutputs};
 use arclog::hash::{StableHashMap, StableHashSet};
 use arclog::relations::RowSet;
 use arclog::terms::{Margins, Number, Term, TermId};
@@ -287,8 +287,21 @@ impl Construction for Singleton {
     }
 }
 
+/// The sets of `rows`, the rows of the input at `input` of an Inclusion,
+/// whose columns are a set's id and a member: each id with its members.
+fn sets<'r>(group: &GroupInputs<'_>, input: usize, rows: &'r RowSet) -> StableHashMap<&'r [TermId], Vec<&'r [TermId]>> {
+    let mut sets: StableHashMap<&[TermId], Vec<&[TermId]>> = StableHashMap::default();
+    for row in rows.rows() {
+        let [id, member] = group.split(input, row)[..] else { panic!("an Inclusion input of two columns") };
+        sets.entry(id).or_default().push(member);
+    }
+    sets
+}
+
 /// Each observed set against the patterns, by counts over the pairs that
-/// share a member.
+/// share a member: an observed set is a superset of each pattern whose
+/// every member it holds, and equals each of those whose count of members
+/// is its own.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Inclusion;
 
@@ -299,9 +312,41 @@ impl Construction for Inclusion {
 
     fn evaluate(
         &self,
-        _group: &GroupInputs<'_>,
-        _context: &mut ConstructionContext<'_, '_>,
+        group: &GroupInputs<'_>,
+        context: &mut ConstructionContext<'_, '_>,
     ) -> Result<GroupOutputs, ReachedBound> {
-        todo!()
+        let [pattern, observed] = group.inputs else { panic!("Inclusion's two inputs") };
+        let patterns = sets(group, 0, pattern);
+        let observations = sets(group, 1, observed);
+        let mut by_member: StableHashMap<&[TermId], Vec<&[TermId]>> = StableHashMap::default();
+        for (&id, members) in &patterns {
+            for &member in members {
+                by_member.entry(member).or_default().push(id);
+            }
+        }
+        let id_width = |input: usize| width(&group.columns[input][0]);
+        let [mut superset, mut equal]: [RowSet; 2] =
+            empty_outputs(&[id_width(1) + id_width(0); 2]).try_into().expect("two outputs");
+        let mut work = 0;
+        for (&id, members) in &observations {
+            let mut shared: StableHashMap<&[TermId], usize> = StableHashMap::default();
+            for &member in members {
+                for &pattern in by_member.get(member).map_or(&[][..], Vec::as_slice) {
+                    work += 1;
+                    *shared.entry(pattern).or_default() += 1;
+                }
+            }
+            for (pattern, count) in shared {
+                let size = patterns[pattern].len();
+                if count == size {
+                    let row: Box<[TermId]> = id.iter().chain(pattern).copied().collect();
+                    if size == members.len() {
+                        equal.insert(row.clone());
+                    }
+                    superset.insert(row);
+                }
+            }
+        }
+        charged(vec![superset, equal], input_rows(group) + work, context)
     }
 }

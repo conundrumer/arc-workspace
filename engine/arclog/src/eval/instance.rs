@@ -19,17 +19,47 @@ use crate::hash::StableHashMap;
 use crate::registry::{is_key, ComponentKind, LibEntry, LibName};
 use crate::relations::RowSet;
 use crate::session::TaskSession;
+use crate::terms::TermId;
 use crate::types::ValueType;
 
 /// The rows of one key group of an instance: for each input of the
 /// component, in the order the registry declares its inputs, the rows of
-/// that input at the group's key, with the key's columns left out, and the
-/// type of each of those columns, the instance's binding of the component's
-/// type parameters.
+/// that input at the group's key, with the key's columns left out, the
+/// type of each of those row positions, and the type of each of the
+/// input's columns other than `key`, in the order of the port's columns.
+/// A column's type is its fixed type, or the instance's binding of the
+/// column's type parameter, a record whole with its field names, whose
+/// fields take a row position each.
 #[derive(Debug)]
 pub struct GroupInputs<'a> {
     pub inputs: &'a [RowSet],
     pub types: &'a [Box<[ValueType]>],
+    pub columns: &'a [Box<[ValueType]>],
+}
+
+impl GroupInputs<'_> {
+    /// `row`, a row of the input at `input`, split into the row positions
+    /// of each of the input's columns other than `key`.
+    pub fn split<'r>(&self, input: usize, row: &'r [TermId]) -> Vec<&'r [TermId]> {
+        let mut rest = row;
+        self.columns[input]
+            .iter()
+            .map(|ty| {
+                let (taken, after) = rest.split_at(width(ty));
+                rest = after;
+                taken
+            })
+            .collect()
+    }
+}
+
+/// The number of row positions a value of type `ty` takes: one for each
+/// field of a record, and one for a value of any other type.
+pub fn width(ty: &ValueType) -> usize {
+    match ty {
+        ValueType::Record(fields) => fields.iter().map(|(_, field)| width(field)).sum(),
+        _ => 1,
+    }
 }
 
 /// The rows a construction gives for one key group: for each output of the

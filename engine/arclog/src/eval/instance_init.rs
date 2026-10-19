@@ -73,6 +73,7 @@ pub fn evaluate_instance<'a>(
 
     let mut group_inputs: Vec<Vec<RowSet>> = vec![Vec::with_capacity(component.inputs.len()); groups.len()];
     let mut types = Vec::with_capacity(component.inputs.len());
+    let mut columns = Vec::with_capacity(component.inputs.len());
     for input in component.inputs.iter() {
         let input_types = shape.port_types(&input.port.columns).map_err(&fault)?;
         let per_group = match shape.written(&input.port.name) {
@@ -110,6 +111,7 @@ pub fn evaluate_instance<'a>(
             inputs.push(rows);
         }
         types.push(input_types);
+        columns.push(shape.port_column_types(&input.port.columns).map_err(&fault)?);
     }
 
     let widths: Vec<Vec<Option<usize>>> = component.outputs.iter().map(|output| shape.widths(&output.columns)).collect::<Result<_, _>>().map_err(&fault)?;
@@ -118,7 +120,7 @@ pub fn evaluate_instance<'a>(
     let mut rows: Vec<RowSet> = widths.iter().map(|widths| RowSet::empty(arity(widths) as u16)).collect();
     let mut context = ConstructionContext { session: evaluation.session, registry: evaluation.registry, budget };
     for (key, inputs) in groups.iter().zip(&group_inputs) {
-        let group = GroupInputs { inputs, types: &types };
+        let group = GroupInputs { inputs, types: &types, columns: &columns };
         let outputs = match construction.evaluate(&group, &mut context) {
             Ok(outputs) => outputs,
             Err(bound) => return Ok(each(RelationValue::Stopped(Stop { bound, form: form.clone() }))),
@@ -277,6 +279,31 @@ impl<'p> InstanceShape<'p> {
         key.into()
     }
 
+    /// The fields of the record that the type parameter of `column` is
+    /// bound to, or `None` for a column of a fixed type or of a parameter
+    /// bound to one label.
+    fn fields(&self, column: &Column) -> Option<&[ColumnName]> {
+        match &column.ty {
+            ColumnType::Parameter(parameter) => self.bindings.get(parameter).and_then(|(fields, _)| fields.as_deref()),
+            _ => None,
+        }
+    }
+
+    /// The type of each of `columns` other than `key`: its fixed type, the
+    /// type of the one label its type parameter is bound to, or the record
+    /// of its binding's fields, each field of the type of its label.
+    fn port_column_types(&self, columns: &[Column]) -> Result<Box<[ValueType]>, String> {
+        let column_type = |column: &Column| {
+            let types = self.column_types(column)?;
+            match self.fields(column) {
+                Some(fields) if fields.len() == types.len() => Ok(ValueType::Record(fields.iter().cloned().zip(types).collect())),
+                None if types.len() == 1 => Ok(types.into_iter().next().expect("one type")),
+                _ => Err(format!("the binding of column {:?} gives {} labels, which match no field of a record and no single label", column.name, types.len())),
+            }
+        };
+        columns.iter().filter(|column| !is_key(column)).map(column_type).collect()
+    }
+
     /// The types of the row positions of `columns` other than `key`.
     fn port_types(&self, columns: &[Column]) -> Result<Box<[ValueType]>, String> {
         let mut types = Vec::new();
@@ -295,11 +322,7 @@ impl<'p> InstanceShape<'p> {
             let site = input.head.iter().find(|site| site.column == column.name);
             let site = site.ok_or_else(|| format!("input `{}` writes no head site on column {:?}", input.name.0, column.name))?;
             let at_site = site_labels(site);
-            let fields = match &column.ty {
-                ColumnType::Parameter(parameter) => self.bindings.get(parameter).and_then(|(fields, _)| fields.as_deref()),
-                _ => None,
-            };
-            match (fields, &at_site[..]) {
+            match (self.fields(column), &at_site[..]) {
                 (None, [(_, label)]) => labels.push(*label),
                 (Some(fields), _) => {
                     for field in fields {
