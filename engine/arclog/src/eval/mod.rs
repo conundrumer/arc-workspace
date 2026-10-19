@@ -15,7 +15,8 @@
 //! grid, [`cache`] looks up and stores entries, and [`pool`] runs
 //! independent entries in parallel, and [`lookup`] finds a relation of the
 //! program by its name. [`values`] holds the values and the
-//! bounds that the driver and the parts share.
+//! bounds that the driver and the parts share. [`picks`] gives the options
+//! of a pick through the driver's way into the bodies.
 
 pub mod cache;
 mod driver;
@@ -26,6 +27,7 @@ pub mod ir;
 pub mod join;
 pub mod lookup;
 pub mod output;
+pub mod picks;
 pub mod plan;
 pub mod pool;
 pub mod rigid;

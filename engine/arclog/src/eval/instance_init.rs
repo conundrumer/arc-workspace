@@ -377,7 +377,7 @@ fn site_labels(site: &Site) -> Vec<(Vec<ColumnName>, LabelId)> {
 
 /// The rows of `value`, of `arity` columns, or the value where it holds no
 /// rows.
-fn rows_of(value: RelationValue, arity: usize) -> Result<Result<Vec<Row>, RelationValue>, String> {
+pub(in crate::eval) fn rows_of(value: RelationValue, arity: usize) -> Result<Result<Vec<Row>, RelationValue>, String> {
     let RelationValue::Rows(relation) = value else { return Ok(Err(value)) };
     if relation.arity() as usize != arity {
         return Err(format!("a body gives {} columns, where {arity} are read", relation.arity()));

@@ -333,13 +333,8 @@ fn form_body<'p>(program: &'p CheckedProgram, clause: &NodePath) -> (&'p Body, N
     let root = NodeRef::Program(program.program.program.value());
     match node_at(root, clause).expect("the path of a form of the program") {
         NodeRef::Clause(form) => {
-            let mut columns: Vec<(u16, LabelId)> = form
-                .columns
-                .iter()
-                .filter_map(|column| Some((program.program.label_position(clause, column.label)?.0, column.label)))
-                .collect();
-            columns.sort_by_key(|(position, _)| *position);
-            (form.body.value(), clause.child(0), columns.into_iter().map(|(_, label)| label).collect())
+            let columns = relation_columns(&program.program, clause, NodeRef::Clause(form));
+            (form.body.value(), clause.child(0), columns)
         }
         NodeRef::InstanceInput(input) => {
             let mut labels = Vec::new();
@@ -350,6 +345,17 @@ fn form_body<'p>(program: &'p CheckedProgram, clause: &NodePath) -> (&'p Body, N
         }
         _ => panic!("a clause or an instance input"),
     }
+}
+
+/// The labels of the columns of the relation of the form `shape` at `form`,
+/// a clause or a `CHOOSE` form, in the order of the relation's columns:
+/// the order of their positions, a label of no column of the node left out.
+pub(crate) fn relation_columns(program: &crate::resolver::ResolvedProgram, form: &NodePath, shape: NodeRef<'_>) -> Vec<LabelId> {
+    let mut columns: Vec<(u16, LabelId)> = crate::resolver::form_columns::form_columns(shape)
+        .filter_map(|column| Some((program.label_position(form, column.label)?.0, column.label)))
+        .collect();
+    columns.sort_by_key(|(position, _)| *position);
+    columns.into_iter().map(|(_, label)| label).collect()
 }
 
 /// The IR of the conjuncts at `kept`, indexes into the body of the form at

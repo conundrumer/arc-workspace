@@ -21,7 +21,7 @@ use crate::types::GraphRelation;
 
 /// The evaluation of the entries one request reaches, each entry once.
 pub(super) struct Driver<'e, 'a> {
-    evaluation: &'e Evaluation<'a>,
+    pub(super) evaluation: &'e Evaluation<'a>,
     pub(super) values: RefCell<StableHashMap<(GraphRelation, Option<Example>), RelationValue>>,
 }
 
@@ -30,7 +30,7 @@ impl<'e, 'a> Driver<'e, 'a> {
         Driver { evaluation, values: RefCell::default() }
     }
 
-    fn program(&self) -> &'a crate::resolver::ResolvedProgram {
+    pub(super) fn program(&self) -> &'a crate::resolver::ResolvedProgram {
         &self.evaluation.program.program
     }
 
@@ -92,7 +92,7 @@ impl<'e, 'a> Driver<'e, 'a> {
     }
 
     /// The rows of a parameter at its stored values, typed by its columns.
-    fn parameter(&self, relation: &GraphRelation, name: &ProgramRelation) -> Outcome<RelationValue> {
+    pub(super) fn parameter(&self, relation: &GraphRelation, name: &ProgramRelation) -> Outcome<RelationValue> {
         let evaluation = self.evaluation;
         let form = self.program().form_of(relation.node);
         let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
@@ -122,7 +122,7 @@ impl<'e, 'a> Driver<'e, 'a> {
     }
 
     /// The relation of the clause at `form` on `example`.
-    fn clause(&self, form: &NodePath, example: Option<Example>) -> Outcome<RelationValue> {
+    pub(super) fn clause(&self, form: &NodePath, example: Option<Example>) -> Outcome<RelationValue> {
         let evaluation = self.evaluation;
         let clause = ir::compile_clause(evaluation.program, form)
             .map_err(|fault| RunFault { message: format!("the body does not compile: {fault:?}").into(), form: form.clone() })?;

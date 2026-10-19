@@ -397,6 +397,60 @@ fn ident_columns(ty: &ValueType, start: usize, positions: &mut Vec<usize>) -> us
     }
 }
 
+/// The canonical order by content of two values of the columns `types`, one
+/// type per column, as `docs/engine/cases.md#the-constraint-module` gives
+/// it: column by column, a term by its encoding and an Ident by its
+/// content in `table`, which is the order by which a writer numbers Idents
+/// (`docs/engine/reader.md#terms`). An Ident read from a file comes before
+/// every set, in the order of its written number. Two sets compare member
+/// by member, each set's members in this order, from the inside out, and a
+/// set that is a prefix of the other comes first.
+pub(crate) fn content_order(types: &[ValueType], a: &[TermId], b: &[TermId], table: &InternTable) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    for ((ty, x), y) in types.iter().zip(a).zip(b) {
+        let order = match ty {
+            ValueType::Ident if x != y => ident_order(Ident(x.0), Ident(y.0), table),
+            _ => x.0.cmp(&y.0),
+        };
+        if order != Ordering::Equal {
+            return order;
+        }
+    }
+    Ordering::Equal
+}
+
+/// The order of two Idents by their contents, as [`content_order`] gives it.
+fn ident_order(a: Ident, b: Ident, table: &InternTable) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    match (table.content(a), table.content(b)) {
+        (Content::FromFile { written: x, .. }, Content::FromFile { written: y, .. }) => x.0.cmp(&y.0),
+        (Content::FromFile { .. }, Content::Set(_)) => Ordering::Less,
+        (Content::Set(_), Content::FromFile { .. }) => Ordering::Greater,
+        (Content::Set(x), Content::Set(y)) => {
+            let mut types = Vec::new();
+            column_types(&x.member, &mut types);
+            let mut xs: Vec<&[TermId]> = x.each().collect();
+            let mut ys: Vec<&[TermId]> = y.each().collect();
+            xs.sort_by(|m, n| content_order(&types, m, n, table));
+            ys.sort_by(|m, n| content_order(&types, m, n, table));
+            xs.iter()
+                .zip(&ys)
+                .map(|(m, n)| content_order(&types, m, n, table))
+                .find(|order| *order != Ordering::Equal)
+                .unwrap_or_else(|| xs.len().cmp(&ys.len()))
+        }
+    }
+}
+
+/// Adds to `types` the type of each column a value of type `ty` takes: a
+/// record's fields side by side in field order, at every depth.
+fn column_types(ty: &ValueType, types: &mut Vec<ValueType>) {
+    match ty {
+        ValueType::Record(fields) => fields.iter().for_each(|(_, field)| column_types(field, types)),
+        _ => types.push(ty.clone()),
+    }
+}
+
 /// The term ids of `value` at a column of type `ty`: one term id, or, at a
 /// record's column group, one per field, so a value written as a list is
 /// read into the same columns. A Color's digit, a number and a

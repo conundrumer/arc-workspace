@@ -123,3 +123,4 @@ impl Constructions {
 mod init;
 
 pub use init::evaluate_instance;
+pub(in crate::eval) use init::rows_of;
