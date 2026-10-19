@@ -9,6 +9,7 @@ import re
 from functools import cache
 from pathlib import Path
 
+import arclog_convert
 from engine import ParseFailure, checkout
 from parity.snapshot import parity_dir
 from solver.readers import proposer_names, proposers_program
@@ -38,7 +39,7 @@ def gen_dir() -> Path:
 
 def signature_path() -> Path:
     """The signature of the lib the converter writes against."""
-    return checkout.work() / "arclog" / "lib-signature.dl"
+    return arclog_convert.signature()
 
 
 def uses_path() -> Path:

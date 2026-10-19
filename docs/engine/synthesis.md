@@ -37,7 +37,7 @@ The step ends when each of these holds, or the difference is reported as a fault
 
 ## Checks moved from the lint
 
-The checks of `work/arclog/lint.py` that move to the engine in this step are the checks of the language that [Checker](reader.md#checker) does not build in step 1, by the code the lint reports:
+The checks of `src/arclog_convert/lint.py` that move to the engine in this step are the checks of the language that [Checker](reader.md#checker) does not build in step 1, by the code the lint reports:
 
 - `=` and `0`: `head-zero`, `zero`, `zero-site`, `eq-order`, `eq-site`, `eq-mark`, `eq-same-list`.
 - Labels and marks: `mark`, `remade`, `fresh-here`.

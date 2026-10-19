@@ -48,7 +48,7 @@ addopts = "-ra -n 8 --maxschedchunk=1"
 
 [tool.pyright]
 include = ["src", "scripts", "tests"]
-exclude = ["**/__pycache__", ".venv", "data", "archive", "tests/scratch"]
+exclude = ["**/__pycache__", ".venv", "data", "archive", "tests/scratch", "src/arclog_convert"]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
 venvPath = "."

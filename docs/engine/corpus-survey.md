@@ -1,6 +1,6 @@
 # Corpus survey
 
-A survey of the 904 `.arclog` and 904 `.arcdata` files under `work/arclog/gen/` on 2026-10-15, and of the tasks under `data/tasks/`. The engine design of [overview.md](overview.md) rests on these numbers. The script is one pass over the s-expressions, about 1 s, with column names from `work/arclog/lib-signature.dl`.
+A survey of the 904 `.arclog` and 904 `.arcdata` files under `work/arclog/gen/` on 2026-10-15, and of the tasks under `data/tasks/`. The engine design of [overview.md](overview.md) rests on these numbers. The script is one pass over the s-expressions, about 1 s, with column names from `src/arclog_convert/lib-signature.dl`.
 
 ## Forms
 

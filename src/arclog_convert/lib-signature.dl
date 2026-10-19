@@ -1,0 +1,327 @@
+// The interface of the lib the converter emits: each constant, type,
+// public component and public relation, with no clause. A relation marked
+// `// @extensional` is one the caller supplies, and a component's
+// extensional relations stand in the order the converter emits its inputs.
+
+.type Color <: number
+.type Dir <: number
+.type Axis <: number
+.type DiagDir <: number
+.type DiagAxis <: number
+.type D4 <: number
+.type Sym <: number
+.type Sense <: number
+.type C4 <: D4
+.type Dir8 = Dir | DiagDir
+.type Axis4 = Axis | DiagAxis
+.type Ident <: number
+.type Example <: number
+.type Box = [t: number, b: number, l: number, r: number]
+.type Position = Box
+.type Offset = Box
+.type Unit = U {}
+.decl in(p: Position, col: Color)  // @extensional
+.decl ex_in(e: Example, p: Position, col: Color)  // @extensional
+.decl ex_out(e: Example, p: Position, col: Color)  // @extensional
+
+.comp Cardinality<Key, Member> {
+    .decl member(key: Key, m: Member)  // @extensional
+    .decl domain(key: Key)  // @extensional
+    .decl size(key: Key, n: number)
+}
+
+.comp Excess<Key, Member> {
+    .decl plus(key: Key, m: Member)  // @extensional
+    .decl minus(key: Key, m: Member)  // @extensional
+    .decl excess(key: Key, n: number)
+}
+
+.comp Singleton<Key, Val> {
+    .decl member(key: Key, v: Val)  // @extensional
+    .decl value(key: Key, v: Val)
+    .decl plural(key: Key)
+}
+
+.comp Inclusion<Key, Pat, Member> {
+    .decl pattern(pattern: Pat, m: Member)  // @extensional
+    .decl observed(observed: Key, m: Member)  // @extensional
+    .decl superset(observed: Key, pattern: Pat)
+    .decl equal(observed: Key, pattern: Pat)
+}
+
+.comp Quotient<T> {
+    .decl equivalent(a: T, b: T)  // @extensional
+    .decl edge(a: T, b: T)  // @extensional
+    .decl representative(a: T, b: T)
+    .decl class(a: T, id: Ident)
+}
+
+.comp DemonstrationConsistency<Key, Demonstrated, Object, Index, Value> {
+    .decl value(key: Key, o: Object, i: Index, v: Value)  // @extensional
+    .decl prediction(key: Key, c: Demonstrated, o: Object, i: Index, v: Value)  // @extensional
+    .decl demonstration(key: Key, o: Object, o2: Object)  // @extensional
+    .decl counterexample(key: Key, c: Demonstrated, o: Object, o2: Object)
+    .decl consistent(key: Key, c: Demonstrated, o: Object, o2: Object)
+    .decl unconfirmed(key: Key, c: Demonstrated)
+    .decl confirmed(key: Key, c: Demonstrated)
+}
+
+.comp Order<Key, T> {
+    .decl member(key: Key, t: T)  // @extensional
+    .decl before(key: Key, a: T, b: T)  // @extensional
+    .decl score(key: Key, t: T, s: number)  // @extensional
+    .decl probe(key: Key, t: T)  // @extensional
+    .decl rank(key: Key, t: T, r: number)
+    .decl dual_rank(key: Key, t: T, r: number)
+    .decl minimal(key: Key, t: T)
+    .decl maximal(key: Key, t: T)
+    .decl successor(key: Key, a: T, b: T)
+    .decl cyclic_successor(key: Key, a: T, b: T)
+}
+
+.comp Distance<Key, Node> {
+    .decl edge(key: Key, a: Node, b: Node)  // @extensional
+    .decl weight(key: Key, a: Node, b: Node, w: number)  // @extensional
+    .decl source(key: Key, n: Node)  // @extensional
+    .decl source_distance(key: Key, n: Node, k: number)  // @extensional
+    .decl distance(key: Key, n: Node, k: number)
+    .decl predecessor(key: Key, b: Node, a: Node)
+}
+
+.comp Propagation<Key, Node> {  // @construction
+    .decl source(key: Key, n: Node)  // @extensional
+    .decl edge(key: Key, a: Node, b: Node)  // @extensional
+    .decl join(key: Key, a: Node, b: Node, c: Node)  // @extensional
+    .decl reached(key: Key, n: Node)
+}
+
+.comp Walk<Key, T> {
+    .decl successor(key: Key, p: T, p_next: T)  // @extensional
+    .decl steps(key: Key, n: number)  // @extensional
+    .decl walk(key: Key, p0: T, n: number, p: T)
+}
+
+.comp Unfold<Key, T, Item> {
+    .decl start(key: Key, t: T)  // @extensional
+    .decl initial_taken(key: Key, item: Item)  // @extensional
+    .decl initial_untaken(key: Key, item: Item)  // @extensional
+    .decl conflict(key: Key, item: Item, item2: Item)  // @extensional
+    .decl score(key: Key, t: T, item: Item, s: number)  // @extensional
+    .decl step(key: Key, t: T, t2: T)  // @extensional
+    .decl skip(key: Key, t: T, t2: T)  // @extensional
+    .decl take(key: Key, t: T, item: Item)  // @extensional
+    .decl taken(key: Key, t: T, item: Item)
+    .decl untaken(key: Key, t: T, item: Item)
+    .decl excluded(key: Key, t: T, item: Item)
+}
+#define DIR_T 10
+#define DIR_B 11
+#define DIR_L 12
+#define DIR_R 13
+#define AXIS_V 20
+#define AXIS_H 21
+#define DIAG_TL 30
+#define DIAG_TR 31
+#define DIAG_BL 32
+#define DIAG_BR 33
+#define DAXIS_DG 40
+#define DAXIS_AD 41
+#define D4_ID 50
+#define D4_CW 51
+#define D4_HT 52
+#define D4_CC 53
+#define D4_LR 54
+#define D4_TB 55
+#define D4_DG 56
+#define D4_AD 57
+#define SENSE_CW 60
+#define SENSE_CC 61
+#define SYM_1   70
+#define SYM_LR  71
+#define SYM_TB  72
+#define SYM_HT  73
+#define SYM_DG  74
+#define SYM_AD  75
+#define SYM_BOX 76
+#define SYM_X   77
+#define SYM_C4  78
+#define SYM_D4  79
+.decl dir_elem(d: Dir)
+.decl axis_elem(a: Axis)
+.decl diag_dir_elem(d: DiagDir)
+.decl diag_axis_elem(da: DiagAxis)
+.decl dir8_elem(d: Dir8)
+.decl axis4_elem(a: Axis4)
+.decl d4_elem(d: D4)
+.decl c4_elem(d: C4)
+.decl sense_elem(s: Sense)
+.decl sym_elem(s: Sym)
+.decl sym_member(s: Sym, d: D4)
+.decl axis_of(d: Dir, a: Axis)
+.decl diag_axis_of(d: DiagDir, da: DiagAxis)
+.decl axis4_of(d: Dir8, a: Axis4)
+.decl corner_dir(c: DiagDir, a: Axis, d: Dir)
+.decl diag_dirs(d: DiagDir, a: Axis, d1: Dir, d2: Dir)
+.decl opposite(d: Dir, opp: Dir)
+.decl diag_opposite(d: DiagDir, opp: DiagDir)
+.decl dir8_opposite(d: Dir8, d2: Dir8)
+.decl perp(a: Axis, a2: Axis)
+.decl diag_perp(da: DiagAxis, da2: DiagAxis)
+.decl perp_dir(d: Dir, d2: Dir)
+.decl axis_inversion(a: Axis4, t: D4)
+.decl reflection(a: Axis4, t: D4)
+.decl turn(s: Sense, d: Dir, d2: Dir)
+.decl c4_turn(s: Sense, t: C4)
+.decl d4_inverse(d: D4, d_inv: D4)
+.decl d4_compose(a: D4, b: D4, c: D4)
+.decl d4_identity(d: D4)
+#define ZERO [0, 0, 0, 0]
+.decl compose(a: Box, b: Box, c: Box) inline
+.decl relative(base: Box, x: Box, x_rel: Box) inline
+.decl inside(a: Box, b: Box) inline
+.decl interior(a: Box, b: Box) inline
+.decl margin(b: Box, d: Dir, k: number) inline
+.decl dist_pair(p: Box, d: Dir, k: number, k2: number) inline
+.decl diag_dist(p: Box, diag: DiagDir, a: Axis, k1: number, k2: number) inline
+.decl corner_dist(p: Box, diag: DiagDir, k: number) inline
+.decl split(p: Box, a: Axis, along: Box, across: Box) inline
+.decl frame_extent(p: Position, a: Axis, n: number) inline
+.decl axis_extents(p: Position, a: Axis, n1: number, n2: number) inline
+.decl sub_extent(p: Position, a: Axis, k: number) inline
+.decl box_extent(b: Box, p: Position, a: Axis, n: number) inline
+.decl edge_inset(d: Dir, k: number, b: Box) inline
+.decl corner_inset(diag: DiagDir, k: number, b: Box) inline
+.decl axis_inset(d: Dir, k1: number, k2: number, b: Box) inline
+.decl uniform_inset(k: number, b: Box) inline
+.decl edge_outset(d: Dir, k: number, b: Box) inline
+.decl corner_outset(diag: DiagDir, k: number, b: Box) inline
+.decl axis_outset(d: Dir, k1: number, k2: number, b: Box) inline
+.decl uniform_outset(k: number, b: Box) inline
+.decl jump_offset(d: Dir8, k: number, v: Offset) inline
+.decl step_offset(d: Dir8, v: Offset) inline
+.decl neighbor(p: Box, d: Dir8, q: Box) inline
+.decl jump(p: Box, d: Dir8, k: number, q: Box) inline
+.decl apply(d: D4, p: Box, p_out: Box) inline
+.decl apply_dir(d: D4, dir: Dir, dir_out: Dir)
+.decl apply_diag_dir(d: D4, dir: DiagDir, dir_out: DiagDir)
+.decl apply_dir8(d: D4, dir: Dir8, dir_out: Dir8)
+.decl gap(d: Dir8, p: Position, q: Position, k: number) inline
+.decl divide(t: number, side: number, gap: number, part: number, remainder: number) inline
+.decl frame_offset(p: Position, a: Axis, k: number, v: Offset) inline
+.decl same_dist(d: Dir, p1: Box, p2: Box) inline
+.decl same_line(a: Axis4, p: Position, q: Position) inline
+.decl nearer(d: Dir8, p: Position, q: Position) inline
+.decl same_corner(d: DiagDir, p1: Box, p2: Box) inline
+.decl same_slab(d: Dir, p1: Position, p2: Position) inline
+.decl centered(p: Box) inline
+
+.comp Frame<Key> {
+    .decl extent(key: Key, a: Axis, n: number)  // @extensional
+    .decl cell(key: Key, p: Position)
+}
+
+.comp Division<Key> {
+    .decl cell(key: Key, p: Position)  // @extensional
+    .decl parts(key: Key, a: Axis, n: number)  // @extensional
+    .decl side(key: Key, a: Axis, k: number)  // @extensional
+    .decl gap(key: Key, a: Axis, g: number)  // @extensional
+    .decl tile(key: Key, p: Position, p_outer: Position, p_inner: Position)
+}
+
+.comp Tiling<Key> {
+    .decl outer(key: Key, p: Position)  // @extensional
+    .decl inner(key: Key, p: Position)  // @extensional
+    .decl gap(key: Key, a: Axis, g: number)  // @extensional
+    .decl cell(key: Key, p_outer: Position, p_inner: Position, p: Position)
+}
+
+.comp BoundingBox<Key> {
+    .decl cell(key: Key, p: Box)  // @extensional
+    .decl box(key: Key, b: Box)
+}
+
+.comp Outlines<Key> {
+    .decl node(key: Key, p: Position)  // @extensional
+    .decl box(key: Key, b: Box)
+}
+
+.comp Connectivity<Key> {
+    .decl node(key: Key, p: Position)  // @extensional
+    .decl step(delta: Offset)  // @extensional
+    .decl component(key: Key, p: Position, id: Ident)
+    .decl connected(key: Key, p: Position, q: Position)
+    .decl adjacent(key: Key, p: Position, q: Position)
+}
+
+.comp Ray<Key> {
+    .decl source(key: Key, p: Position)  // @extensional
+    .decl node(key: Key, p: Position)  // @extensional
+    .decl dir(key: Key, d: Dir8)  // @extensional
+    .decl ray(key: Key, p: Position, d: Dir8, k: number, origin: Position)
+    .decl end(key: Key, p: Position, d: Dir8, k: number, origin: Position)
+}
+
+.comp Flood<Key> {
+    .decl node(key: Key, p: Position)  // @extensional
+    .decl source(key: Key, p: Position)  // @extensional
+    .decl step(delta: Offset)  // @extensional
+    .decl reached(key: Key, p: Position)
+}
+
+.comp CellDistance<Key> {
+    .decl node(key: Key, p: Position)  // @extensional
+    .decl source(key: Key, p: Position)  // @extensional
+    .decl step(delta: Offset)  // @extensional
+    .decl distance(key: Key, p: Position, k: number)
+    .decl predecessor(key: Key, q: Position, p: Position)
+}
+
+.comp Boundary<Key> {
+    .decl cell(key: Key, p: Position)  // @extensional
+    .decl dir(d: Dir8)  // @extensional
+    .decl boundary(key: Key, p: Position)
+    .decl exposed(key: Key, p: Position, d: Dir8)
+}
+
+.comp Agreement<Key, Corr, Index, Val> {
+    .decl source(key: Key, i: Index, v: Val)  // @extensional
+    .decl target(key: Key, i: Index, v: Val)  // @extensional
+    .decl correspondence(key: Key, m: Corr, i: Index, j: Index)  // @extensional
+    .decl mismatch(key: Key, m: Corr)
+    .decl conflict(key: Key, m: Corr)
+}
+
+.comp Enclosure<Key> {
+    .decl cell(key: Key, p: Position)  // @extensional
+    .decl enclosed(key: Key, p: Position, id: Ident)
+}
+
+.comp Periods<Key, Val> {
+    .decl cell(key: Key, p: Position, v: Val)  // @extensional
+    .decl period(key: Key, a: Axis, k: number)
+    .decl fundamental_period(key: Key, a: Axis, k: number)
+    .decl approximate_period(key: Key, a: Axis, k: number)
+}
+
+.comp ExtentDivisions<Key> {
+    .decl frame(key: Key, p: Position)  // @extensional
+    .decl division(key: Key, a: Axis, n: number, k: number, g: number)
+}
+
+.comp Wallpaper<Key, Val> {
+    .decl transform(d: D4)  // @extensional
+    .decl cell(key: Key, p: Position, v: Val)  // @extensional
+    .decl grid(key: Key, p: Position)  // @extensional
+    .decl period(key: Key, a: Axis, k: number)  // @extensional
+    .decl symmetry(key: Key, d: D4, delta: Offset)
+    .decl action(key: Key, p: Position, q: Position)
+}
+
+.comp Occurrences<Key, Val> {
+    .decl cell(key: Key, p: Position, v: Val)  // @extensional
+    .decl shape(key: Key, p: Position, v: Val)  // @extensional
+    .decl transform(d: D4)  // @extensional
+    .decl candidate(key: Key, d: D4, p: Position)
+    .decl occurrence(key: Key, d: D4, p: Position)
+}
+

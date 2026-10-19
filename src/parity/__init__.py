@@ -1,6 +1,6 @@
 """The arclog names of a solver's Souffle relations and cases, which the
 stored Souffle outcomes are keyed by (`parity.snapshot`) and a rerun prints
-by (`parity.rerun`): the name map `work/arclog/convert.py` writes for each
+by (`parity.rerun`): the name map `arclog_convert.convert` writes for each
 solver it converts, under `work/arclog/names/`."""
 
 import json

@@ -7,12 +7,11 @@ comment of `engine/arclog-cli/src/lib_compare.rs`.
 
 An element's Souffle name, and the Souffle names of its columns or its
 relations, are the inverse of `REL` and `COMP` of
-`work/arclog/libmap/__init__.py`; a name that neither renames is its own
+`arclog_convert.libmap`; a name that neither renames is its own
 Souffle name. A Souffle column's name is matched with an arclog column by
 its first letter in capitals."""
 
 import hashlib
-import importlib.util
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -21,6 +20,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
+from arclog_convert import libmap
 from cli.common import LIMITS, engine, stamp
 from engine import ParseFailure, Program, RelationName, Scope, Tuples, checkout
 from engine.engine import LIB_PROBE, LIB_ROWS, lib_domain
@@ -68,24 +68,14 @@ class Renames:
 
 
 def libmap_path() -> Path:
-    """The renames of the lib, in the main worktree."""
-    return checkout.work() / "arclog" / "libmap" / "__init__.py"
-
-
-@cache
-def _libmap() -> Any:
-    path = libmap_path()
-    spec = importlib.util.spec_from_file_location("libmap", path)
-    assert spec is not None and spec.loader is not None, path
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    """The renames of the lib."""
+    return Path(libmap.__file__)
 
 
 def renames(element: str, component: bool) -> Renames:
     """The Souffle name of the arclog element `element`, and its parts'
     renames."""
-    table = _libmap().COMP if component else _libmap().REL
+    table = libmap.COMP if component else libmap.REL
     for souffle, renamed in table.items():
         if renamed.name == element:
             return Renames(souffle, renamed.parts)
