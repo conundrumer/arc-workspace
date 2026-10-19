@@ -1,6 +1,7 @@
-"""Watch the machine's free memory and CPU, and exit with the largest
-processes once either stays in trouble. `HELP`, which `--help` prints,
-gives the trouble and what the watcher prints."""
+"""Watch the machine's free memory and CPU, and write an alert with the
+largest processes each time either stays in trouble. `HELP`, which
+`--help` prints, gives the trouble and the alert. The alert files of a
+session are read back by `alert_files`."""
 
 import argparse
 import os
@@ -8,6 +9,7 @@ import re
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +19,9 @@ import script_calls
 from file_ticket import main_tickets
 from idle_sessions import running, take_main
 from ticket_numbers import session_id
+from tree_reads import main_tree
+from file_reads import names_in
+from ticketing.times import utc_stamp
 
 SAMPLE_SECONDS = 30
 LOW_MEMORY = 10
@@ -24,20 +29,21 @@ MEMORY_SAMPLES = 2
 BUSY_CPU = 90
 CPU_SAMPLES = 10
 TOP = 10
+ALERTS = Path(".cache") / "machine-alerts"
+SUFFIX = ".txt"
 
 HELP = mctx("""
     - The usage form:
         ```
         uv run python scripts/machine_watch.py
         ```
-    - The command samples the machine every {sample} s, and exits 0 once trouble holds: free memory under {low}% of the machine's for {memory} samples in a row, or the machine's CPU over {busy}% busy for {cpu} samples in a row.
-        - Trouble that holds at the first sample counts only after a sample without it.
-    - On trouble it prints the trouble that held, then the {top} largest processes by resident memory and the {top} largest by CPU, each with its pid, parent pid, resident memory, CPU percent, elapsed time, session id and command line.
-        - A process's session id is the one its own environment gives, or, where that gives none, that of its nearest ancestor whose environment gives one.
+    - The command samples the machine every {sample} s, and runs until it is stopped. Trouble is free memory under {low}% of the machine's for {memory} samples in a row, or the machine's CPU over {busy}% busy for {cpu} samples in a row.
+        - Trouble that holds at the first sample, or that held at the last alert, counts only after a sample without it.
+    - On trouble it writes an alert, which gives the trouble that held and the {top} largest processes by resident memory and the {top} largest by CPU, to a new file `{alerts}/<session id>/<time>{suffix}` of the main tree, the session id being the watcher's own and the time the UTC time of the trouble.
     - Only the watcher of the main session samples, as `uv run python scripts/file_ticket.py main --help-all` gives that session. The watcher of another session keeps running, and samples from the first sample time at which its session is the main.
     - It kills no process and notifies no one.
     """).format(sample=SAMPLE_SECONDS, low=LOW_MEMORY, memory=MEMORY_SAMPLES, busy=BUSY_CPU,
-            cpu=CPU_SAMPLES, top=TOP)
+            cpu=CPU_SAMPLES, top=TOP, alerts=ALERTS, suffix=SUFFIX)
 
 SESSION = re.compile(rf"(?:^|\s){script_calls.SESSION_ENV}=(\S+)")
 NO_SESSION = "-"
@@ -119,7 +125,10 @@ class Trouble:
         elif not now:
             self.armed = True
         self.run = self.run + 1 if now else 0
-        return self.armed and self.run >= self.samples
+        if self.armed and self.run >= self.samples:
+            self.armed = False
+            return True
+        return False
 
 
 def cpus() -> int:
@@ -133,9 +142,10 @@ def troubles() -> tuple[Trouble, Trouble]:
     return Trouble(MEMORY_SAMPLES), Trouble(CPU_SAMPLES)
 
 
-def watch() -> str:
-    """Samples until a trouble counts, and returns what held."""
-    session, tickets = session_id(), main_tickets()
+def watch(session: str) -> Iterator[str]:
+    """Samples with no end, and gives what held each time a trouble
+    counts."""
+    tickets = main_tickets()
     memory, cpu = troubles()
     ticks, at = busy_ticks(), time.monotonic()
     while True:
@@ -156,7 +166,7 @@ def watch() -> str:
             if hot:
                 held.append(mctx("CPU {busy:.0f}% busy, over {limit}% for {n} samples in a row").format(
                     busy=busy, limit=BUSY_CPU, n=CPU_SAMPLES))
-            return "; ".join(held)
+            yield "; ".join(held)
 
 
 def report(trouble: str, found: list[Process]) -> str:
@@ -167,11 +177,25 @@ def report(trouble: str, found: list[Process]) -> str:
                       mctx("largest by CPU:"), *(p.line() for p in by_cpu)])
 
 
+def alert_dir(main: Path, session: str) -> Path:
+    return main / ALERTS / session
+
+
+def alert_files(main: Path, session: str) -> tuple[Path, ...]:
+    """The alert files the watcher of `session` wrote under the main tree
+    `main`, in time order."""
+    folder = alert_dir(main, session)
+    return tuple(folder / n for n in sorted(names_in(folder)) if n.endswith(SUFFIX))
+
+
 def main(argv: list[str]) -> int:
     argparse.ArgumentParser(description=HELP, formatter_class=argparse.RawDescriptionHelpFormatter,
                             usage=argparse.SUPPRESS).parse_args(argv)
-    trouble = watch()
-    print(report(trouble, processes()), flush=True)
+    session = session_id()
+    folder = alert_dir(main_tree(), session)
+    for trouble in watch(session):
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / f"{utc_stamp(time.time())}{SUFFIX}").write_text(report(trouble, processes()) + "\n")
     return 0
 
 

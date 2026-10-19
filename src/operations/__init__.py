@@ -28,7 +28,9 @@ The modules keep these rules:
 
 Modules: `state` (what the command reads), `roles` (the agents launched
 and their descriptions), `directives` (the coordinator's lines), `tracker`
-(the reads of a ticket's log), `log_commands` (the calls that write
+(the reads of a ticket's log), `line_store` (the store of the lines
+`operate.py send` records), `arrivals` (the messages that arrived at the
+session's operators), `log_commands` (the calls that write
 it), `worktrees` (the worktree of a change), `steps` (the calls printed
 and their keys), `command_words` (the words of a Bash command, and the
 call of the command), `filing` (the files the command writes for a printed
@@ -54,7 +56,8 @@ solver pipelines), `runs` (the pipelines a run script starts),
 `occasions` (the rules the launches no batch holds share with After a
 batch), `standing_reviews` (the standing doc reviews), `gate_launch`
 (the gate), `assessment` (the process assessment), `cost_audit` (the
-cost audit), `unbatched` (the kinds of launch no batch holds),
+cost audit), `load_check` (the load check of an alert of the machine
+watcher), `unbatched` (the kinds of launch no batch holds),
 `after_profile` (the sweep and the script check after a profile launch),
 `under_reads` (the read of `profile_runs.py --under`), `reviews` (the
 code review and the lib review), `main_session` (the launches only the

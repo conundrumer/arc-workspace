@@ -31,7 +31,7 @@ prefix `Op`, the word of its kind and a colon, past a list marker:
   `passed_over`, `given_again`, `overrides`).
 
 The coordinator gives these lines by `operate.py send`, which records them
-in the session's store (`state.stored_messages`) and refuses a line
+in the session's store (`line_store`) and refuses a line
 `undecided` holds for. A line of the coordinator's in no such form, a
 ruling among them, that reaches an operator goes back to the coordinator
 once as undecided, since only its writer knows what it meant.
@@ -67,6 +67,7 @@ from pathlib import Path
 
 from arc.task import TASK_ID
 from controlled_markdown import mctx
+from operations.arrivals import arrived, received
 from operations.constants import WAKE
 from operations.reports import LIST_MARKER
 from operations.pacing import Preset, line_pace
@@ -151,14 +152,15 @@ class Forms(Enum):
 def lines(state: State) -> tuple[Line, ...]:
     """Each non-blank line the coordinator gave the operator `me`, in the
     order the messages arrived."""
-    return tuple(parsed(state.received, state.arrived))
+    return tuple(parsed(received(state), arrived(state)))
 
 
 @memoized_by_transcripts
 def session_lines(state: State) -> tuple[Line, ...]:
     """Each non-blank line the coordinator gave any operator of the
     session, in the order the messages arrived."""
-    return tuple(parsed(state.arrived, state.arrived))
+    every = arrived(state)
+    return tuple(parsed(every, every))
 
 
 def parsed(messages: Iterable[Message], arrived: Sequence[Message]) -> list[Line]:

@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterable
 
 from controlled_markdown import mctx
 from operations import change_take, changes, decisions, drafts, passes, runs, taking, triage
+from operations.arrivals import received
 from operations.directives import NUMBER, TASK, Directive, Line, Pipeline, lines
 from operations.final_reply import ending_step, final_sends, final_text, first_line, nested
 from operations.handled import repeated, sends_to
@@ -26,7 +27,7 @@ def ending(state: State, text: str) -> Step:
     reached it and after the last final send of each operator of
     `State.taken_up`, then the reply."""
     parent = state.parents[state.me]
-    since = max([*(m.time for m in state.received),
+    since = max([*(m.time for m in received(state)),
                  *(sends[-1].time for o in state.taken_up if (sends := final_sends(state, o)))],
                 default=0.0)
     return ending_step(parent, text, since, any(

@@ -4,8 +4,6 @@ session's operators, and those of the operators of another session on a
 change `me` holds.
 """
 
-import json
-import os
 import re
 from collections.abc import Callable, Collection, Hashable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -325,47 +323,13 @@ class Message:
     is None, or otherwise from the
     agent `sender`, which that operator did not launch. `stored` holds for
     a line of the coordinator's that `operate.py send` recorded in the
-    store (`stored_messages`), read as a message of the coordinator's to
-    the operator `recipient` gives, at the time of its record."""
+    store (`line_store`), read as a message of the coordinator's to the
+    operator `arrivals.recipient` gives, at the time of its record."""
     operator: str
     time: float
     sender: str | None
     text: str
     stored: bool = False
-
-
-STORE = Path(".cache") / "op-lines"
-"""The directory, under the main tree, of the store of the lines
-`operate.py send` records: one file per session, named by its id, of one
-JSON object per line, with the line's `time` and `text`."""
-
-
-def store_file(main_tree: Path, session: str) -> Path:
-    return main_tree / STORE / f"{session}.jsonl"
-
-
-def record_lines(main_tree: Path, session: str, texts: Sequence[str], time: float) -> None:
-    """Append `texts` to the session's store, each with `time`, in one
-    write, so that the lines of two calls at once do not mix."""
-    path = store_file(main_tree, session)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = "".join(json.dumps({"time": time, "text": t}) + "\n" for t in texts).encode()
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
-    try:
-        os.write(fd, data)
-    finally:
-        os.close(fd)
-
-
-def recorded_lines(main_tree: Path, session: str) -> list[tuple[float, str]]:
-    """The lines of the session's store, each with the time of its record,
-    in the order of their records, or none where the store has no file."""
-    try:
-        raw = store_file(main_tree, session).read_text()
-    except FileNotFoundError:
-        return []
-    return [(float(d["time"]), str(d["text"])) for row in raw.splitlines() if row.strip()
-            for d in [json.loads(row)]]
 
 
 @dataclass(frozen=True)
@@ -832,15 +796,16 @@ class State:
     them whose run is of the session: its main transcript, or a run under
     that transcript's session directory. `tracker` is the read of the
     ticket tracker, `held` is the read of the changes `me` holds, and `git` the read of
-    git and the main tree. `received` holds the messages that reached `me`
-    or an operator it takes up the lines of (`taken_up`, as
-    `plan.taken_up` gives it). `started` is the time of the session's
+    git and the main tree. `taken_up` holds the operators `me` takes up
+    the lines of, as `plan.taken_up` gives it. `started` is the time of the session's
     start, and `transcripts_dir` the directory that holds the session's
     transcript. `readers` holds the readers a standing doc
     review rotates over, read at its first use, in the order `context.py contexts` lists them.
     `limit_lifted` is the time of the reading of the usage limit that
     gives it as lifted, or None where the reading gives it in force, as
-    `usage_limit.read_usage` gives it. `sessions` is the read of the
+    `usage_limit.read_usage` gives it. `machine_alerts` holds the paths of
+    the alert files that the machine watcher of `session` wrote under
+    `main_tree`, in time order (`scripts/machine_watch.py`). `sessions` is the read of the
     tracker's sessions, and `computed` the values computed over the
     reads. `aside` holds the keys (`steps.key`) of the steps that
     `order.batch` set aside on this state, each as its procedure gave it,
@@ -877,6 +842,7 @@ class State:
     listing: frozenset[str] | None
     readers: Deferred[tuple[Reader, ...]] = field(default_factory=lambda: Deferred(tuple))
     limit_lifted: float | None = None
+    machine_alerts: tuple[Path, ...] = ()
     parents: Mapping[str, str] = field(default_factory=dict)
     computed: Computed = field(default_factory=lambda: Computed())
     aside: frozenset[str] = frozenset()
@@ -888,19 +854,6 @@ class State:
         """The results `memoized` holds for this state, by function and
         arguments."""
         return {}
-
-    @property
-    def arrived(self) -> list[Message]:
-        """`transcripts.messages` and the lines of the session's store
-        (`stored_messages`), in the order they arrived."""
-        return sorted([*self.transcripts.messages, *stored_messages(self)], key=lambda m: m.time)
-
-    @property
-    def received(self) -> list[Message]:
-        """The messages that reached `me`, its brief included, or an
-        operator of `taken_up`, the lines of the store `recipient` gives
-        either included, in the order they arrived."""
-        return [m for m in self.arrived if m.operator == self.me or m.operator in self.taken_up]
 
     def agents_of(self, role: Role | None = None, subject: str | None = None) -> list[Agent]:
         return [a for a in self.transcripts.agents
@@ -978,53 +931,3 @@ def kept_across_reads[*A, R](f: Callable[[*A], R]) -> Callable[[Hashable, *A], R
             entry = held[key] = (parts, f(*parts))
         return entry[1]
     return kept
-
-
-@memoized_by_transcripts
-def stored_messages(state: State) -> tuple[Message, ...]:
-    """Each line of the session's store, read once for each read of the
-    transcripts, as a message of the coordinator's to the operator
-    `recipient` gives at the time of its record."""
-    spans = operator_spans(state)
-    return tuple(Message(recipient(state, spans, t), t, None, text, stored=True)
-                 for t, text in recorded_lines(state.main_tree, state.session))
-
-
-@dataclass(frozen=True)
-class Span:
-    """The time of an operator's launch, the time of its first message of
-    `TranscriptsRead.messages`, its brief, and the time of its last call,
-    or of its launch where it made none."""
-    launched: float
-    last_call: float
-
-
-def operator_spans(state: State) -> dict[str, Span]:
-    """The `Span` of each operator of `State.operators` that has a
-    message."""
-    ops = set(state.operators)
-    launched: dict[str, float] = {}
-    for m in state.transcripts.messages:
-        if m.operator in ops:
-            launched[m.operator] = min(launched.get(m.operator, m.time), m.time)
-    last = dict(launched)
-    for c in state.transcripts.calls:
-        if c.operator in last:
-            last[c.operator] = max(last[c.operator], c.time)
-    return {o: Span(t, last[o]) for o, t in launched.items()}
-
-
-def recipient(state: State, spans: Mapping[str, Span], time: float) -> str:
-    """The operator a line of the coordinator's recorded at `time` goes to,
-    as it would in a message to the running operator launcher at that
-    time: of the operators of `State.operators` with a span in `spans`,
-    the one launched last at or before `time` that ran at `time`, or,
-    where none ran, the first one launched after it, or `me` where
-    neither is one. An operator ran at `time` where it is `me`, its work
-    is open, or its last call is at or after `time`."""
-    known = [o for o in state.operators if o in spans]
-    ran = [o for o in known if spans[o].launched <= time
-           and (o == state.me or o in state.open_operators or spans[o].last_call >= time)]
-    if ran:
-        return ran[-1]
-    return next((o for o in known if spans[o].launched > time), state.me)

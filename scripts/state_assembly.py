@@ -26,6 +26,7 @@ from elsewhere_reads import editor_checks, elsewhere_agents
 from git_session_reads import given_lines, read_git, sessions, started
 from held_budgets import change_budgets, change_spend, doc_budgets
 from idle_sessions import running
+from machine_watch import alert_files
 from monitor_reads import late_resumes
 from open_agents import running_agents, work_open
 from operator_reads import (
@@ -165,7 +166,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         tracker=TrackerRead(tickets, unread, index), transcripts=transcripts,
         git=tree, taken_up=took_up, held=read_held(tickets, me, tree),
         readers=readers_read(),
-        limit_lifted=lifted,
+        limit_lifted=lifted, machine_alerts=alert_files(main, session),
         sessions=sessions(tickets_dir, index, session, now, sessions_running),
         journal=journal, listing=ops.listing, due_since=record_read(scratch(session), DUE_SINCE),
         unwaited_since=record_read(scratch(session), UNWAITED_SINCE))

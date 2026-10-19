@@ -17,7 +17,7 @@ from tree_reads import main_tree
 
 from operations import directives, relay, runs, ticket_stall, waits
 from operations.constants import WAKE
-from operations.state import record_lines
+from operations.line_store import record_lines
 from operations.command_words import Action
 from operations.printing import WAIT_ACTION
 from operations.steps import Step

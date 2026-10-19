@@ -168,7 +168,7 @@ def given(state: State, ln: Line) -> Starts:
 
 def run_lines(lines: Iterable[Line]) -> list[Line]:
     """The `Op run:` lines of `lines`. A run stands while its line is among
-    the lines the operator received (`state.State.received`)."""
+    the lines the operator received (`arrivals.received`)."""
     return [ln for ln in lines if ln.kind is Directive.RUN and ln.rest]
 
 

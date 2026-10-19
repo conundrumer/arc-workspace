@@ -39,6 +39,7 @@ class Role(StrEnum):
     BATCH_PROFILE = "batch-profile"
     GATE = "gate"
     COST_AUDIT = "cost-audit"
+    LOAD_CHECK = "load-check"
     AFTER_MERGE = "after-merge"
     LISTING_WAIT = "listing-wait"
     OPERATOR = "operator"
@@ -70,7 +71,8 @@ def document_model(agent_type: str) -> Model | None:
 GENERAL = "general-purpose"
 
 GENERAL_ROLES = frozenset({Role.TRANSCRIPT_REVIEW, Role.BATCH_PROFILE, Role.GATE,
-                           Role.AFTER_MERGE, Role.COST_AUDIT, Role.LISTING_WAIT})
+                           Role.AFTER_MERGE, Role.COST_AUDIT, Role.LISTING_WAIT,
+                           Role.LOAD_CHECK})
 """The roles no agent document gives, whose brief gives their work."""
 
 TYPED_ROLES: dict[Role, str] = {Role.SOLVER_FIX: Role.HANDBOOK_EXPANDED.value}
@@ -78,6 +80,7 @@ TYPED_ROLES: dict[Role, str] = {Role.SOLVER_FIX: Role.HANDBOOK_EXPANDED.value}
 another role, where that role's own word is not an agent type."""
 
 GENERAL_MODELS: dict[Role, Model] = {Role.GATE: Model.SONNET,
+                                     Role.LOAD_CHECK: Model.SONNET,
                                      Role.TRANSCRIPT_REVIEW: Model.HAIKU,
                                      Role.LISTING_WAIT: Model.HAIKU}
 """The model a launch of a role in `GENERAL_ROLES` gives, where the model it

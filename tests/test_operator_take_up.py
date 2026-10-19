@@ -50,7 +50,8 @@ def test_an_operator_does_not_end_for_a_later_one_that_has_given_its_final_reply
 def test_a_stored_line_holds_for_the_next_operator_from_the_main_tree_alone(
         tmp_path: Path) -> None:
     from operations.directives import paused
-    from operations.state import Message, record_lines
+    from operations.line_store import record_lines
+    from operations.state import Message
     record_lines(tmp_path, "s", ["Op pause."], 50.0)
     s = operator_state(tmp_path, LATE, (EARLY, LATE), (),
                        messages=(Message(EARLY, 10.0, None, "brief"),

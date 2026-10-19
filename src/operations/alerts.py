@@ -59,6 +59,7 @@ from enum import Enum
 
 from controlled_markdown import mctx
 from operations import change_take, messages, ticket_stall, waits
+from operations.arrivals import arrived, received
 from operations.constants import COORDINATOR, stuck_reached
 from operations.roles import AGENT_ID
 from operations.state import Agent, LateResume, Message, Report, State, Stuck, Ticket
@@ -463,12 +464,12 @@ def step(state: State) -> Step | None:
     """The first step the alerts and the other agents' messages give the
     operator `me`."""
     launched = {a.agent_id for a in state.transcripts.agents if a.agent_id}
-    for m in state.arrived:
+    for m in arrived(state):
         if m.sender is None or m.sender in launched or m.operator != state.me:
             continue
         alert = parsed(m)
         if alert is None:
-            replies = [x.time for x in state.received if x.sender == m.sender and x.time <= m.time]
+            replies = [x.time for x in received(state) if x.sender == m.sender and x.time <= m.time]
             asked = ask_again(state, m.sender, replies, messages.ALERT_FORM)
             if asked is False:
                 continue
