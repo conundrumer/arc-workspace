@@ -25,6 +25,7 @@ pub struct SolverClauses {
     /// first.
     programs: Box<[Arc<ResolvedProgram>]>,
     clauses: crate::hash::StableHashMap<(FileScope, ProgramRelation), Box<[ClauseEntry]>>,
+    column_reads: super::inference::ClauseColumnReads,
 }
 
 /// One clause of a relation in [`SolverClauses`]. A clause that stands in
@@ -91,6 +92,11 @@ impl SolverClauses {
     /// The case program `entry` was found in.
     pub fn program(&self, entry: &ClauseEntry) -> &ResolvedProgram {
         &self.programs[entry.program]
+    }
+
+    /// The column types read of these clauses so far.
+    pub(super) fn column_reads(&self) -> &super::inference::ClauseColumnReads {
+        &self.column_reads
     }
 }
 
@@ -160,7 +166,7 @@ impl ClausesFound {
                 (key, entries.into_boxed_slice())
             })
             .collect();
-        SolverClauses { programs: self.programs.into(), clauses }
+        SolverClauses { programs: self.programs.into(), clauses, column_reads: Default::default() }
     }
 }
 

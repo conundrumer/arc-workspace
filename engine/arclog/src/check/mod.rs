@@ -14,6 +14,7 @@
 
 pub mod grammar;
 pub mod grounding;
+mod inference;
 pub mod instance_inputs;
 pub mod labels;
 pub mod lint;
@@ -119,7 +120,7 @@ pub struct Scope<'a> {
     pub clauses: &'a SolverClauses,
     /// The inference of the labels of `program`, over the case programs of
     /// `clauses`, that the checks of one [`check_program`] call share.
-    inference: &'a types::Inference<'a>,
+    inference: &'a inference::Inference<'a>,
 }
 
 /// A check's input: one node, its path, and its scope.
@@ -312,8 +313,8 @@ pub fn check_program(
     let key = |check: CheckId, canonical_form: CanonicalForm, signatures: Box<[Signature]>| CheckCacheKey { check, canonical_form, signatures };
     let mut refused_by_form = vec![Vec::new(); forms.len()];
     let form_types: Vec<Arc<types::ScopeTypes>> = {
-        let cases = types::CaseInferences::new(clauses, registry);
-        let inference = types::Inference::new(&program, &cases);
+        let cases = inference::CaseInferences::new(clauses, registry);
+        let inference = inference::Inference::new(&program, &cases);
         let scope = |labels| Scope { program: &program, registry, labels, clauses, inference: &inference };
         let form_types: Vec<Arc<types::ScopeTypes>> = forms
             .iter()
