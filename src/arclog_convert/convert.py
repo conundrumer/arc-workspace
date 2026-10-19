@@ -58,6 +58,9 @@ from engine.program import ComparisonOperator  # noqa: E402
 from souffle.parser import parse  # noqa: E402
 from souffle.printer import term as souffle_term  # noqa: E402
 from souffle.printer import unit as souffle_unit  # noqa: E402
+from arclog_convert.literals import collect_vars  # noqa: E402
+from arclog_convert.frame_reads import (  # noqa: E402
+    Extent, FieldPlan, FrameRead, SingleAxisExtent, SquareExtent, field_plan, helpers_read)
 from arclog_convert.picks import rewrite as rewrite_picks  # noqa: E402
 from arclog_convert import libmap  # noqa: E402
 from arclog_convert.libmap import box as libmap_box, rename as libmap_rename, rewrite as libmap_rewrite  # noqa: E402
@@ -553,137 +556,6 @@ def derived_param(amp: str, rows: list[list[str]], proposer: str | None) -> str 
     if proposer:
         return "\n".join([f"(param {amp} ({proposer}", *("  " + r for r in rows_text)]) + "))"
     return f"(param {amp} " + " ".join(rows_text) + ")"
-
-
-@dataclass(frozen=True)
-class SquareExtent:
-    """The atoms of a clause, each of a parameter, over `label`, a frame's
-    extent on both axes."""
-
-    atoms: tuple[AtomLiteral, ...]
-    label: str
-
-
-@dataclass(frozen=True)
-class AxisExtent:
-    """The atoms of one parameter of an axis and an extent, at `AXIS_V` and
-    at `AXIS_H`, that give a frame's extent on each axis."""
-
-    atoms: tuple[AtomLiteral, AtomLiteral]
-
-
-type Extent = SquareExtent | AxisExtent
-
-
-@dataclass(frozen=True)
-class FrameRead:
-    """A read of `helpers.frame_pos`: the frame's extent, and the term of
-    its cell."""
-
-    extent: Extent
-    cell: Variable | Wildcard
-
-
-@dataclass(frozen=True)
-class TilingRead:
-    """A read of `helpers.tile_pos`: the extents of the outer and the inner
-    frame, the gap (None for a gap of 0), and the terms of the cell, its
-    outer position and its inner position."""
-
-    outer: Extent
-    inner: Extent
-    gap: Extent | None
-    cells: tuple[Variable | Wildcard, Variable | Wildcard, Variable | Wildcard]
-
-
-@dataclass(frozen=True)
-class FieldPlan:
-    """A table's one clause, whose one read of `helpers` gives a frame or a
-    tiled frame of extents that parameters give, and the clause's other
-    literals."""
-
-    unit: Unit
-    read: FrameRead | TilingRead
-    rest: tuple
-
-
-def helpers_read(u: Unit) -> int | None:
-    """The index of `u`'s one body atom of `helpers`; None where it has
-    none or several."""
-    hs = [i for i, l in enumerate(u.body or ()) if isinstance(l, AtomLiteral)
-          and l.atom.relation.instances == ("helpers",)]
-    return hs[0] if len(hs) == 1 else None
-
-
-def field_plan(us: list[Unit], params: set[str]) -> FieldPlan | None:
-    """The plan of a table whose one clause reads one `helpers.frame_pos` or
-    `helpers.tile_pos`, with each extent an `Extent` over the parameters
-    `params`; None otherwise. An atom of an extent stays among the other
-    literals where a label of it is read elsewhere in the clause."""
-    if len(us) != 1:
-        return None
-    u = us[0]
-    body = list(u.body or ())
-    h = helpers_read(u)
-    if h is None or body[h].negated:
-        return None
-    a = body[h].atom
-    others = [l for j, l in enumerate(body) if j != h]
-
-    def vars_of(lits) -> set[str]:
-        out: set[str] = set()
-        collect_vars(list(lits), out)
-        return out
-
-    def of_param(l) -> bool:
-        return isinstance(l, AtomLiteral) and not l.negated and not l.atom.relation.instances \
-            and l.atom.relation.name in params
-
-    def extent(d) -> Extent | None:
-        if not isinstance(d, RecordTerm) or len(d.args) != 2:
-            return None
-        x, y = d.args
-        if isinstance(x, Variable) and x == y:
-            bs = tuple(l for l in others if of_param(l) and vars_of([l]) == {x.name})
-            return SquareExtent(bs, x.name) if bs else None
-        if not (isinstance(x, Variable) and isinstance(y, Variable)):
-            return None
-
-        def at(axis: str, v: Variable) -> AtomLiteral | None:
-            got = [l for l in others if of_param(l) and l.atom.args == (DefinedName(axis), v)]
-            return got[0] if len(got) == 1 else None
-        av, ah = at("AXIS_V", x), at("AXIS_H", y)
-        if av is None or ah is None or av.atom.relation != ah.atom.relation:
-            return None
-        return AxisExtent((av, ah))
-
-    def zero(d) -> bool:
-        return isinstance(d, RecordTerm) and all(isinstance(t, NumberTerm) and t.value == 0 for t in d.args)
-
-    def position(t) -> Variable | Wildcard | None:
-        return t if isinstance(t, (Variable, Wildcard)) else None
-
-    read: FrameRead | TilingRead
-    if a.relation.name == "frame_pos" and len(a.args) == 2:
-        e, p = extent(a.args[0]), position(a.args[1])
-        if e is None or p is None:
-            return None
-        read, used = FrameRead(e, p), e.atoms
-    elif a.relation.name == "tile_pos" and len(a.args) == 6:
-        outer, inner = extent(a.args[0]), extent(a.args[1])
-        gap = None if zero(a.args[2]) else extent(a.args[2])
-        p, po, pi = (position(t) for t in a.args[3:])
-        if outer is None or inner is None or (gap is None and not zero(a.args[2])) \
-                or p is None or po is None or pi is None:
-            return None
-        read = TilingRead(outer, inner, gap, (p, po, pi))
-        used = outer.atoms + inner.atoms + (gap.atoms if gap else ())
-    else:
-        return None
-    rest = [l for l in others if not any(l is x for x in used)]
-    elsewhere = vars_of(rest) | vars_of([AtomLiteral(u.head, False)])
-    kept = [l for l in others if any(l is x for x in used) and vars_of([l]) & elsewhere]
-    return FieldPlan(u, read, tuple(kept + rest))
 
 
 def head_renames(u: Unit, r) -> dict[str, str]:
@@ -3479,7 +3351,7 @@ class Solver:
             if u.scope.components == ("Params",) and u.head.relation.name in helper_derived:
                 continue
             collect(u.body or (), u.scope.components == ("Params",))
-        # a table whose clause reads a frame or a tiled frame of extents
+        # a table whose clauses `field_plan` takes, a frame or a tiled frame of extents
         # that parameters give: instances over those parameters' DETs; else
         # one whose clauses read a frame of a stored extent: a Frame2D or
         # AxisFrame instance; and the sources of each stay
@@ -3949,9 +3821,13 @@ class Solver:
 
         def extent(ext: Extent, value: str) -> tuple[list[str], set[str]]:
             # the rows (A <value>) of the extent, an axis and its value on that axis
-            if isinstance(ext, SquareExtent):
+            if isinstance(ext, (SquareExtent, SingleAxisExtent)):
                 w = ClauseWriter(c, ("Params",), {}, {ext.label: value})
-                return ["(axis_elem *A)", *w.lits(ext.atoms, {"A"})], set(w.reads)
+                if isinstance(ext, SquareExtent):
+                    return ["(axis_elem *A)", *w.lits(ext.atoms, {"A"})], set(w.reads)
+                # the axis the parameter holds; a Frame gives the other axis the extent 1
+                at = Atom(ext.axis.atom.relation, (Variable("A"),), 0)
+                return w.lits([AtomLiteral(at, False), *ext.atoms], set()), set(w.reads)
             w = ClauseWriter(c, ("Params",), {}, {})
             at = Atom(ext.atoms[0].atom.relation, (Variable("A"), Variable(value)), 0)
             return w.lits([AtomLiteral(at, False)], set()), set(w.reads)
@@ -6665,29 +6541,6 @@ def inlined(prog, names: frozenset[str], lib: Lib):
         units.append(u)
     rels = tuple(r for r in prog.relations if r.name not in names)
     return dc_replace(prog, units=tuple(units), relations=rels)
-
-
-def collect_vars(lits, out: set[str]) -> None:
-    def term(t):
-        if isinstance(t, Variable):
-            out.add(t.name)
-        for a in getattr(t, "args", ()) or ():
-            term(a)
-        for x in ("lhs", "rhs", "arg", "term", "expr"):
-            if hasattr(t, x) and getattr(t, x) is not None and not isinstance(getattr(t, x), str):
-                term(getattr(t, x))
-        if isinstance(t, Aggregate):
-            collect_vars(t.body, out)
-    for l in lits:
-        if isinstance(l, AtomLiteral):
-            for a in l.atom.args:
-                term(a)
-        elif isinstance(l, Comparison):
-            term(l.lhs)
-            term(l.rhs)
-        elif isinstance(l, Disjunction):
-            for b in l.branches:
-                collect_vars(b, out)
 
 
 MERGES: Counter[str] = Counter()
