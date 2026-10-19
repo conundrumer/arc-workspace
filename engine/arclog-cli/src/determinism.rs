@@ -20,10 +20,9 @@ use std::sync::Mutex;
 use arclog::eval::examples::{scope_of, ExampleScope};
 use arclog::eval::join::each_row;
 use arclog::eval::pool::Pool;
-use arclog::eval::{relation_of, Evaluation, RelationValue};
+use arclog::eval::{output_relation, Evaluation, RelationValue};
 use arclog::hash::StableHashMap;
 use arclog::harness::{run_over_corpus, SolverResult};
-use arclog::program::{DeclaredName, ProgramRelation, RelationName};
 use arclog::resolver::{DependencyKind, GraphNodeIndex};
 use arclog::terms::{Example, Ident, Term};
 use arclog::types::GraphRelation;
@@ -138,8 +137,7 @@ fn observe(corpus: &Path, tasks: &Path, id: &str, threads: usize) -> Result<Vec<
 /// another.
 fn entries(evaluation: &Evaluation<'_>) -> Vec<Entry> {
     let program = evaluation.program;
-    let output = ProgramRelation::Declared(RelationName(DeclaredName::Written("&output".into())));
-    let Some(output) = relation_of(program, &output) else { return Vec::new() };
+    let Some(output) = output_relation(program) else { return Vec::new() };
     let graph = &program.program.graph;
     let mut reached = BTreeSet::from([output.node.0]);
     let mut next = VecDeque::from([output.node]);

@@ -13,7 +13,8 @@
 //! relation per example and its lifted form, [`instance`], [`rigid`] and
 //! [`unfold`] evaluate the forms over lib components, [`output`] reads the
 //! grid, [`cache`] looks up and stores entries, and [`pool`] runs
-//! independent entries in parallel. [`values`] holds the values and the
+//! independent entries in parallel, and [`lookup`] finds a relation of the
+//! program by its name. [`values`] holds the values and the
 //! bounds that the driver and the parts share.
 
 pub mod cache;
@@ -22,6 +23,7 @@ pub mod filters;
 pub mod instance;
 pub mod ir;
 pub mod join;
+pub mod lookup;
 pub mod output;
 pub mod plan;
 pub mod pool;
@@ -37,7 +39,7 @@ use std::sync::Arc;
 use crate::check::CheckedProgram;
 use crate::hash::StableHashMap;
 use crate::program::path::NodePath;
-use crate::program::{DeclaredName, ParamValue, ProgramRelation, RelationName};
+use crate::program::{ParamValue, ProgramRelation};
 use crate::registry::Registry;
 use crate::relations::{Relation, RowSet};
 use crate::resolver::{DependencyKind, GraphNodeIndex};
@@ -45,6 +47,7 @@ use crate::session::TaskSession;
 use crate::task::Task;
 use crate::terms::Example;
 use crate::types::GraphRelation;
+pub use lookup::{output_relation, relation_of};
 use examples::ExampleScope;
 use ir::{AtomSource, ClauseIr, IrNode};
 use join::{Budget, JoinInputs, NodeInput};
@@ -350,8 +353,7 @@ impl<'e, 'a> Driver<'e, 'a> {
 
     /// The relation of `&output`.
     fn output_relation(&self) -> GraphRelation {
-        let output = ProgramRelation::Declared(RelationName(DeclaredName::Written("&output".into())));
-        relation_of(self.evaluation.program, &output).expect("a checked case program derives `&output`")
+        output_relation(self.evaluation.program).expect("a checked case program derives `&output`")
     }
 
     /// The grid of `&output` on `example` by `columns`.
@@ -430,16 +432,6 @@ impl FormBodies<'_> {
 /// `None`.
 fn scope_at(example: Option<Example>) -> ExampleScope {
     if example.is_some() { ExampleScope::PerExample } else { ExampleScope::TaskWide }
-}
-
-/// The relation that a clause derives or a parameter stores as `name` in
-/// `program`, or `None` where no clause or parameter gives it.
-pub fn relation_of(program: &CheckedProgram, name: &ProgramRelation) -> Option<GraphRelation> {
-    let node = program.program.graph.nodes.iter().position(|node| match &node.kind {
-        DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => relation == name,
-        _ => false,
-    })?;
-    Some(GraphRelation { node: GraphNodeIndex(node as u32), output: None })
 }
 
 /// Whether two grid values give one grid, or are both `undefined`.
