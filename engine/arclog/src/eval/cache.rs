@@ -46,13 +46,20 @@ pub fn lookup(session: &TaskSession, request: &EntryRequest<'_>, form: &NodePath
 /// evicts the entries least recently used while the cache's bytes exceed
 /// its share of the session's byte bound.
 pub fn store(session: &TaskSession, request: &EntryRequest<'_>, value: &RelationValue) {
-    if let RelationValue::Stopped(stop) = value {
-        if !stop.bound.is_stored() {
-            return;
-        }
-    }
-    session.results.insert(key(session, request), value.clone().map_stop(|stop| stop.bound));
+    let Some(value) = cached(value) else {
+        return;
+    };
+    session.results.insert(key(session, request), value);
     session.results.evict(cache_bytes_bound(session));
+}
+
+/// The value the cache holds for `value`, its stop's bound with no form, or
+/// `None` where `value` stops at a bound that is not stored.
+pub fn cached(value: &RelationValue) -> Option<CachedValue> {
+    match value {
+        RelationValue::Stopped(stop) if !stop.bound.is_stored() => None,
+        _ => Some(value.clone().map_stop(|stop| stop.bound)),
+    }
 }
 
 /// The key of `request`, each relation it reads by its id.

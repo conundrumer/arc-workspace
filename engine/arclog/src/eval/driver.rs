@@ -129,9 +129,26 @@ impl<'e, 'a> Driver<'e, 'a> {
         if let Some(value) = cache::lookup(evaluation.session, &request, form) {
             return Ok(value);
         }
-        let value = self.join(form, &clause, &inputs);
-        cache::store(evaluation.session, &request, &value);
-        Ok(value)
+        let mut own = None;
+        let key = cache::key(evaluation.session, &request);
+        let shared = cache::in_flight(evaluation.session).get_or_compute(key, || {
+            // A computation that ended since the lookup above stored the entry.
+            let value = match cache::lookup(evaluation.session, &request, form) {
+                Some(value) => value,
+                None => {
+                    let value = self.join(form, &clause, &inputs);
+                    cache::store(evaluation.session, &request, &value);
+                    value
+                }
+            };
+            let shared = cache::cached(&value);
+            own = Some(value);
+            shared
+        });
+        Ok(own.unwrap_or_else(|| {
+            let shared = shared.expect("a value from the computation another thread ended");
+            shared.map_stop(|bound| Stop { bound, form: form.clone() })
+        }))
     }
 
     /// The relation of `clause`, a clause of the form at `form`, by generic
