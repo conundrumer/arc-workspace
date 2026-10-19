@@ -6,7 +6,8 @@
 //! digits, over each source in turn: its path from the root of the tree,
 //! a 0 byte, its bytes and a 0 byte. The sources are `programs/lib.dl`,
 //! each `.dl` file of `programs/lib/` in the byte order of their names,
-//! and `work/arclog/libmap/__init__.py` of the main worktree.
+//! and the libmap, the file `src/arclog_convert/libmap/__init__.py`, under
+//! the name `work/arclog/libmap/__init__.py`.
 
 use std::path::{Path, PathBuf};
 
@@ -31,29 +32,15 @@ pub(super) fn sources_digest() -> Result<String, String> {
         }
     }
     names.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
-    let libmap = "work/arclog/libmap/__init__.py";
     let mut sources: Vec<(String, PathBuf)> = vec![("programs/lib.dl".to_owned(), PathBuf::from("programs/lib.dl"))];
     sources.extend(names.into_iter().map(|name| (format!("programs/lib/{name}"), Path::new("programs/lib").join(name))));
-    sources.push((libmap.to_owned(), main_worktree()?.join(libmap)));
+    sources.push(("work/arclog/libmap/__init__.py".to_owned(), PathBuf::from("src/arclog_convert/libmap/__init__.py")));
     let mut state = FNV_OFFSET_BASIS;
     for (shown, path) in sources {
         let bytes = std::fs::read(&path).map_err(|error| format!("the Souffle source {} cannot be read: {error}", path.display()))?;
         state = fnv1a(state, shown.bytes().chain([0]).chain(bytes).chain([0]));
     }
     Ok(format!("{state:016x}"))
-}
-
-/// The main worktree: the directory that holds the common git directory.
-pub(super) fn main_worktree() -> Result<PathBuf, String> {
-    let out = std::process::Command::new("git")
-        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
-        .output()
-        .map_err(|error| format!("git does not run: {error}"))?;
-    if !out.status.success() {
-        return Err(format!("git rev-parse fails: {}", String::from_utf8_lossy(&out.stderr).trim()));
-    }
-    let common = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
-    common.parent().map(Path::to_path_buf).ok_or_else(|| format!("{} has no parent", common.display()))
 }
 
 #[cfg(test)]
