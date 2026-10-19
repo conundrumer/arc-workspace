@@ -2,8 +2,9 @@
 its CSS, in one column with a light and a dark scheme, the sheet of a
 ticket, and the script that fills Since you looked from the time the
 browser keeps, asks the server for the search's hits and for a ticket's
-sheet, and updates the page on an event of the stream while the page is
-shown; with the routes that script requests."""
+sheet, shows the tab of Queued the user last chose, and updates the page
+on an event of the stream while the page is shown; with the routes that
+script requests."""
 
 EVENTS = "/events"
 """The route of the Server-Sent Events stream."""
@@ -18,6 +19,10 @@ LAST_LOOK = "lastLook"
 """The key under which `localStorage` holds the time the browser last hid
 the page, and `sessionStorage` the time from which the tab's page counts
 Since you looked."""
+
+TAB = "queueTab"
+"""The key under which `localStorage` holds the session of the tab of
+Queued the user last chose."""
 
 TEMPLATE = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Ops</title><style>
@@ -37,8 +42,6 @@ h2{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute
 .card,.alert{display:block;width:100%;text-align:left;font:inherit;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 8px;overflow-wrap:anywhere}
 .alert{border-color:var(--warn);color:var(--warn)}.ok{color:var(--ok);padding:4px 0}
 .num{color:var(--mute);font-variant-numeric:tabular-nums}.sh{font-weight:600}.star{color:#d9a200;margin-right:4px}
-.steps{display:flex;gap:3px;margin:8px 0 4px}.st{flex:1;font-size:10px;text-align:center;padding:2px 0;border-radius:3px;background:var(--line);color:var(--mute)}
-.st.done{background:color-mix(in srgb,var(--ok) 25%,transparent);color:var(--ink)}.st.now{background:var(--now);color:#fff;font-weight:600}
 .meta{color:var(--mute);font-size:13px}
 details{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:8px}
 summary{cursor:pointer;font-weight:600}details .row{padding:6px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}
@@ -52,6 +55,28 @@ input{width:100%;font:inherit;font-size:16px;padding:10px 12px;border:1px solid 
 .sheet{position:fixed;inset:auto 0 0 0;max-height:75vh;overflow:auto;background:var(--card);border-top:1px solid var(--line);border-radius:14px 14px 0 0;padding:16px;box-shadow:0 -8px 30px rgba(0,0,0,.2);transform:translateY(100%);transition:transform .2s;z-index:5;visibility:hidden;overflow-wrap:anywhere}
 .sheet.on{transform:none;visibility:visible}.sheet .p{font-weight:600;margin:6px 0 10px}.sheet .lg{font-size:13px;color:var(--mute);border-top:1px solid var(--line);padding:6px 0}.lg .more{color:var(--acc);font-style:normal;cursor:pointer}
 .x{float:right;border:0;background:none;font-size:20px;color:var(--mute)}
+.wl{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:10px}
+.wr{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:baseline;padding:9px 12px 9px 9px;border-top:1px solid var(--line);border-left:3px solid transparent;cursor:pointer}
+.wr.ld{grid-template-columns:auto auto 1fr auto}.wr:first-child{border-top:0}.wr.me{border-left-color:var(--acc)}
+.wn{color:var(--mute);font-variant-numeric:tabular-nums;font-size:13px}
+.wq{color:var(--mute);font-variant-numeric:tabular-nums;font-size:13px;min-width:12px;text-align:right}
+.wp{min-width:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ws{color:var(--mute);font-size:13px;white-space:nowrap;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.ws a{color:var(--acc);text-decoration:none}
+.mb{display:flex;gap:2px}.mb b{width:10px;height:4px;border-radius:2px;background:var(--line)}
+.mb b.d{background:var(--mute);opacity:.55}.mb b.n{background:var(--now)}.mb b.x{background:none;box-shadow:inset 0 0 0 1.5px #d9a200}
+.tabs{display:flex;gap:6px;overflow-x:auto;margin:0 0 10px;padding-bottom:2px}
+.tab{flex:0 0 auto;font:inherit;font-size:13px;padding:6px 10px;border-radius:16px;border:1px solid var(--line);background:var(--card);color:var(--ink);white-space:nowrap}
+.tab.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}.tab small{opacity:.7}
+.pane{display:none}.pane.on{display:block}
+.sh2{font-size:13px;color:var(--mute);margin:0 0 8px}
+.gh{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--mute);margin:12px 0 6px}
+.wl details{border:0;border-radius:0;margin:0;padding:0;background:none}
+.wl summary{padding:9px 12px;border-top:1px solid var(--line);color:var(--mute);font-weight:400;font-size:13px}
+details.grp{background:none;border:0;padding:0;margin:0}
+details.grp>summary{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--mute);margin:12px 0 6px;font-weight:400}
+.key{color:var(--mute);font-size:12px;margin-top:2px;display:flex;gap:12px;flex-wrap:wrap}
+.key i{display:inline-block;width:3px;height:12px;background:var(--acc);vertical-align:-2px;margin-right:4px}
 .w{color:var(--warn);font-weight:600}.scrim{position:fixed;inset:0;background:rgba(0,0,0,.3);display:none;z-index:4}.scrim.on{display:block}
 </style></head><body>
 <div id="live">@BODY@</div>
@@ -81,21 +106,26 @@ catch(e){h='<div class="meta">'+esc('load failed: '+e)+'</div>'}
 if(shown===n)sc.innerHTML=h}
 function shut(){shown=null;sheet.classList.remove('on');scrim.classList.remove('on')}
 scrim.onclick=shut;$('x').onclick=shut;
-document.addEventListener('click',e=>{const g=e.target.closest('.lg'),m=g&&g.querySelector('.more');if(m){const s=g.querySelectorAll('span');s.forEach(x=>x.hidden=!x.hidden);m.textContent=s[1].hidden?'more':'less';return}const t=e.target.closest('.tk');if(t){e.preventDefault();open(t.dataset.n)}});
+function tab(){let k=null;try{k=localStorage.getItem('@TAB@')}catch(e){}
+const tabs=document.querySelectorAll('.tab');if(!tabs.length)return;
+if(!k||!document.querySelector('.tab[data-s="'+k+'"]'))k=tabs[0].dataset.s;
+tabs.forEach(t=>t.classList.toggle('on',t.dataset.s===k));
+document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.dataset.s===k))}
+document.addEventListener('click',e=>{const b=e.target.closest('.tab');if(b){try{localStorage.setItem('@TAB@',b.dataset.s)}catch(x){}tab();return}const g=e.target.closest('.lg'),m=g&&g.querySelector('.more');if(m){const s=g.querySelectorAll('span');s.forEach(x=>x.hidden=!x.hidden);m.textContent=s[1].hidden?'more':'less';return}const t=e.target.closest('.tk');if(t){e.preventDefault();open(t.dataset.n)}});
 let asked=0,timer=null;
 async function search(){const q=$('q').value.trim(),n=++asked,res=$('res');if(!q){res.innerHTML='';return}
 let h;try{const r=await fetch('@SEARCH@?q='+encodeURIComponent(q),{cache:'no-store'});h=await r.text();if(!r.ok)h='<div class="meta">'+esc('search failed: '+r.status)+'</div>'}
 catch(e){h='<div class="meta">'+esc('search failed: '+e)+'</div>'}
 if(n===asked)res.innerHTML=h}
 document.addEventListener('input',e=>{if(e.target.id==='q'){clearTimeout(timer);timer=setTimeout(search,250)}});
-look(true);since();
+look(true);since();tab();
 let busy=false,again=false;
 async function update(){if(busy){again=true;return}busy=true;
 try{const r=await fetch('/',{cache:'no-store'});const d=new DOMParser().parseFromString(await r.text(),'text/html');
 const open=[...document.querySelectorAll('#live details')].map(x=>x.open),q=$('q').value,x=window.scrollX,y=window.scrollY;
 $('live').replaceWith(d.getElementById('live'));
 document.querySelectorAll('#live details').forEach((el,i)=>{if(open[i])el.open=true});
-$('q').value=q;since();if(q)search();window.scrollTo(x,y)}
+$('q').value=q;since();tab();if(q)search();window.scrollTo(x,y)}
 catch(e){}
 busy=false;if(again){again=false;update()}}
 let ev=null;
