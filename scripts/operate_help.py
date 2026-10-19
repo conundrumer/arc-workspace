@@ -179,19 +179,20 @@ PARTS = {
     """),
     HelpPart.PACE: mctx("""
     - `next` reads a coordinator's line `Op pace: <preset> [<argument> ...]` or `Op pace: <path>` as the usage pace of each operator of the session, and the last line in one of these forms stands. An `Op pace:` line in neither form goes back to the coordinator and leaves the pace as it was.
+        - In the first form, presets joined by `;`, such as `Op pace: even --window five_hour; by 2026-10-21T20:00:00-04:00`, give one pace: within it where each preset's pace is, and its cap is the smallest of the presets' caps.
         - Past the pace, `next` starts no agent's run, of any line's work: it prints no launch, and no SendMessage call that resumes an agent of the operators whose run has ended or that the usage limit stopped. It takes no untaken ticket and no change. A SendMessage call to a running agent or to the coordinator, and each step that runs no agent, stand.
         - While an `Op pause.` line stands, one call of `next` takes each change an `Op expedite:` line gives that an allow line of the session admits, each change that settles an `interference` ticket and each change an operator took before, and at most one other change, so that the pause is read again before each further take.
-        - While a pace that an `Op pace:` line gives as `even` or `by` admits work, the running agents of the session's operators, the launches of a call of `next` included, number at most the pace's cap after that call: the larger of 1 and the ceiling of {subagents} times the slack over {band} percentage points, and at most {subagents}.
+        - While the pace of an `Op pace:` line of presets admits work, the running agents of the session's operators, the launches of a call of `next` included, number at most the pace's cap after that call: for each such preset, the larger of 1 and the ceiling of {subagents} times the slack over {band} percentage points, and at most {subagents}.
             - The slack is the number of percentage points by which the window's `used_pct` falls below the bound that the preset gives.
             - Where the running agents number the cap or more, `next` starts no agent's run, as past the pace.
-            - Under any other pace, and with no `Op pace:` line, the cap is {subagents}, the harness's limit of concurrent subagents.
+            - Under a script's pace, and with no `Op pace:` line, the cap is {subagents}, the harness's limit of concurrent subagents.
         - Where no step is ready and the pace holds back a step, `next` prints that the operator runs it again, with the time from which a preset's pace admits agent starts, with the path of the script whose pace holds them back, or with the cap that holds them back.
     - The pace reads the usage cache that `--help next` gives: for each of its windows, `used_pct`, `elapsed_pct` and the time it resets.
     - The presets:
         - `even [--factor F] [--window W]`, with F {factor} and W `{window}` by default: within the pace while the window's `used_pct` is at most F times its `elapsed_pct`.
         - `by <ISO 8601 time> [--window W]`, the time with its time zone and W `{window}` by default: within the pace while the window's `used_pct` is at most the percentage that has passed of the time from the window's start to the given time, and always from that time on.
         - `asap`: always within the pace.
-    - With no `Op pace:` line, the pace is `even --factor 1 --window five_hour`.
+    - The pace `even --factor 1 --window five_hour` holds under each `Op pace:` line of presets, joined to them as `;` joins presets, unless one of them reads the `five_hour` window. With no `Op pace:` line, it is the pace.
     - Where the usage cache holds no reading of a preset's window fetched less than {stale} seconds ago, that preset's pace counts as past, and the coordinator gets a line that says so.
     - `Op pace: <path>` gives the Python script at `<path>`, absolute or relative to the main tree, which `next` loads at each read of the state.
         - It defines `paces(usage: Usage) -> bool`, with `Usage` from the module `operations.pacing`, which gives `True` where the pace admits agent starts now.

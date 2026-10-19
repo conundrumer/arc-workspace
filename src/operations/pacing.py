@@ -1,9 +1,10 @@
 """The usage pace: how fast the operators spend the account's usage, as
 `operate.py --help pace` gives it.
 
-An `Op pace:` line names a preset with its arguments (`PARSER`) or the path
-of a script that defines `paces` (`Script`). With no such line, the pace
-is `DEFAULT`. A preset reads a `Usage` and gives the time
+An `Op pace:` line names one or more presets with their arguments (`PARSER`),
+joined by `;` (`every`) and with `FIVE_HOUR` where none reads the `five_hour`
+window, or the path of a script that defines `paces` (`Script`). With no such
+line, the pace is `DEFAULT`. A preset reads a `Usage` and gives the time
 from which it admits a ticket (`Until`), with, for `even` and `by`, the cap on
 the running agents of the session's operators (`cap`); a script gives whether
 it admits one now (`Scripted`); a reading that gives neither is
@@ -12,7 +13,7 @@ it admits one now (`Scripted`); a reading that gives neither is
 import argparse
 import math
 import shlex
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
@@ -38,9 +39,8 @@ WINDOW_SECONDS: Mapping[WindowName, int] = {
 }
 """The length of each window of the usage cache a preset may read."""
 
-EVEN_FACTOR = 2.0
-"""The default of `even --factor`: the account's two Claude Code accounts
-spend twice an even spread of one."""
+EVEN_FACTOR = 1.0
+"""The default of `even --factor`."""
 
 DEFAULT_WINDOW = WindowName.SEVEN_DAY
 
@@ -173,7 +173,8 @@ type Preset = Callable[[Usage], Pace]
 def parser() -> tuple[Parser, frozenset[str]]:
     """The parser of an `Op pace:` line's presets, whose defaults are the
     presets' defaults, with the presets' names. Each preset's parse gives
-    as `build` the function that makes its `Preset` from the parse."""
+    as `build` the function that makes its `Preset` from the parse, and as
+    `window` the window that preset reads."""
     p = Parser(prog="Op pace:", add_help=False)
     presets = p.add_subparsers(dest="preset", required=True, parser_class=Parser)
     e = presets.add_parser("even", add_help=False)
@@ -184,17 +185,23 @@ def parser() -> tuple[Parser, frozenset[str]]:
     b.add_argument("end", type=iso_time)
     b.add_argument("--window", type=WindowName, choices=list(WindowName), default=DEFAULT_WINDOW)
     b.set_defaults(build=lambda a: lambda u: by(u, a.end, a.window))
-    presets.add_parser("asap", add_help=False).set_defaults(build=lambda a: asap)
+    presets.add_parser("asap", add_help=False).set_defaults(build=lambda a: asap, window=None)
     return p, frozenset(presets.choices)
 
 
 PARSER, PRESETS = parser()
 
 
+def preset_window(words: list[str]) -> tuple[Preset, WindowName | None]:
+    """The preset `words` give, with the window it reads, None for `asap`;
+    `LineError` where they give none."""
+    args = PARSER.parse_args(words)
+    return args.build(args), args.window
+
+
 def preset(words: list[str]) -> Preset:
     """The preset `words` give; `LineError` where they give none."""
-    args = PARSER.parse_args(words)
-    return args.build(args)
+    return preset_window(words)[0]
 
 
 def uncapped(given: Preset) -> Preset:
@@ -205,24 +212,52 @@ def uncapped(given: Preset) -> Preset:
     return read
 
 
-DEFAULT: Preset = uncapped(preset(["even", "--factor", "1", "--window", WindowName.FIVE_HOUR]))
+def every(presets: Sequence[Preset]) -> Preset:
+    """The preset that admits a ticket where each of `presets` admits one:
+    from the latest of their times, with the smallest of their caps, or, where
+    one of them gives no `Until`, with that one's pace."""
+    def read(usage: Usage) -> Pace:
+        paces = [given(usage) for given in presets]
+        untils = [pace for pace in paces if isinstance(pace, Until)]
+        if len(untils) < len(paces):
+            return next(pace for pace in paces if not isinstance(pace, Until))
+        caps = [u.cap for u in untils if u.cap is not None]
+        return Until(max(u.time for u in untils), min(caps, default=None))
+    return read
+
+
+FIVE_HOUR: Preset = preset(["even", "--factor", "1", "--window", WindowName.FIVE_HOUR])
+"""The pace an `Op pace:` line of presets holds where none of its presets reads
+the `five_hour` window."""
+
+DEFAULT: Preset = uncapped(FIVE_HOUR)
 
 
 def line_pace(rest: str, main_tree: Path) -> Preset | Path | None:
     """The preset or the script path an `Op pace:` line's text after the colon
     gives, a relative path taken from `main_tree`, or None where it is in
     neither form."""
+    lexer = shlex.shlex(rest, posix=True, punctuation_chars=";")
+    lexer.whitespace_split = True
     try:
-        words = shlex.split(rest)
+        words = list(lexer)
     except ValueError:
         return None
     if not words:
         return None
     if words[0] in PRESETS:
+        groups: list[list[str]] = [[]]
+        for word in words:
+            if word == ";":
+                groups.append([])
+            else:
+                groups[-1].append(word)
         try:
-            return preset(words)
+            given = [preset_window(group) for group in groups]
         except LineError:
             return None
+        five_hour = [] if any(w is WindowName.FIVE_HOUR for _, w in given) else [FIVE_HOUR]
+        return every([p for p, _ in given] + five_hour)
     if len(words) != 1:
         return None
     path = Path(words[0])

@@ -69,3 +69,31 @@ def test_at_the_cap_a_launch_is_held_and_the_batch_stops(tmp_path: Path) -> None
     for _ in range(25):
         uncapped = order.made(uncapped, launch)
     assert order.placed(uncapped, procedure)[0] == launch
+
+
+
+def test_presets_joined_by_a_semicolon_admit_work_only_where_each_admits_it(tmp_path: Path) -> None:
+    from operations.pacing import Until, Usage, Window, admits, line_pace
+    from operations.state import NotComputed
+    joined = line_pace("even --window five_hour; by 1970-01-01T05:00:00+00:00 --window seven_day", tmp_path)
+    assert callable(joined)
+
+    def usage(five: float, seven: float) -> Usage:
+        return Usage(9000.0, {"five_hour": Window(five, 50.0, 18000.0),
+                              "seven_day": Window(seven, 0.0, 7 * 86400.0)})
+
+    assert joined(usage(45.0, 0.0)) == Until(9000.0, 10)
+    assert joined(usage(40.0, 45.0)) == Until(9000.0, 10)
+    for past in (usage(60.0, 0.0), usage(40.0, 60.0)):
+        assert not admits(joined(past), 9000.0)
+        assert admits(joined(past), 10800.0)
+    assert isinstance(joined(Usage(9000.0, {"five_hour": Window(40.0, 50.0, 18000.0)})), NotComputed)
+    weekly = line_pace("by 1970-01-01T05:00:00+00:00 --window seven_day", tmp_path)
+    assert callable(weekly)
+    assert not admits(weekly(usage(60.0, 0.0)), 9000.0)
+    assert weekly(usage(45.0, 0.0)) == Until(9000.0, 10)
+    hourly = line_pace("even --factor 2 --window five_hour", tmp_path)
+    assert callable(hourly)
+    assert hourly(usage(60.0, 0.0)) == Until(9000.0, 20)
+    for line in ("even;;asap", "even; ", "even; x.py"):
+        assert line_pace(line, tmp_path) is None
