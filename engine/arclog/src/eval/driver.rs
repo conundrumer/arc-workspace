@@ -146,7 +146,7 @@ impl<'e, 'a> Driver<'e, 'a> {
                 other => return Ok(other),
             }
         }
-        Ok(RelationValue::Rows(union(relations)))
+        Ok(RelationValue::Rows(join::union(relations)))
     }
 
     /// The relation of the clause at `form` on `example`: the rows of its
@@ -208,7 +208,7 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// position of the clause's column that
     /// [`crate::resolver::ResolvedProgram::proposer_columns`] maps it onto,
     /// and `undefined` on an input where they are empty.
-    fn proposed(&self, form: &NodePath, clause: &Clause, index: usize, example: Option<Example>) -> Outcome<RelationValue> {
+    pub(super) fn proposed(&self, form: &NodePath, clause: &Clause, index: usize, example: Option<Example>) -> Outcome<RelationValue> {
         let program = self.program();
         let fault = |message: &str| RunFault { message: message.into(), form: form.clone() };
         let proposer = &clause.proposers[index];
@@ -373,22 +373,6 @@ pub(super) fn derivation(clause: &Clause, form: &NodePath) -> Outcome<Option<usi
 /// `None`.
 fn scope_at(example: Option<Example>) -> ExampleScope {
     if example.is_some() { ExampleScope::PerExample } else { ExampleScope::TaskWide }
-}
-
-/// The union of `relations`, of one arity: the one relation where there is
-/// one, and otherwise their rows in one part.
-fn union(mut relations: Vec<Arc<Relation>>) -> Arc<Relation> {
-    if relations.len() == 1 {
-        return relations.pop().expect("one relation");
-    }
-    let arity = relations.first().expect("a node with a form").arity();
-    let mut rows = RowSet::empty(arity);
-    for relation in &relations {
-        join::each_row(relation, &mut |row| {
-            rows.insert(row.into());
-        });
-    }
-    Arc::new(join::one_part(rows))
 }
 
 /// `value`, the value of an evaluation under `budget`, once its session

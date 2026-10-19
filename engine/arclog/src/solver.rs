@@ -159,6 +159,19 @@ impl Solver {
         }
     }
 
+    /// The names of `case_names(exclusion)` that take, at each
+    /// `DET_OR_RULE` and `RULE_OR_DET` line they reach, the line's first
+    /// reading, the concept case's: one name per base, the cases whose train
+    /// pairs filter the values of a `DET`, as
+    /// `docs/engine/determination.md#det` gives.
+    pub fn base_case_names(&self, exclusion: Exclusion) -> Vec<CaseName> {
+        let takes_first = |name: &CaseName| {
+            let walk = self.walk(&name.0);
+            walk.placed.iter().filter_map(|placed| line_of(&placed.form)).all(|line| !readings(line)[1..].iter().any(|(alt, _)| name.0.contains(alt)))
+        };
+        self.case_names(exclusion).into_iter().filter(takes_first).collect()
+    }
+
     /// Every name of the product, the concept case's first: for each base,
     /// the product of the readings of each line that the base reads, each
     /// name in the order of the forms in the file.

@@ -208,6 +208,22 @@ pub fn one_part(rows: RowSet) -> Relation {
     Relation::from_parts(arity, Box::new([RelationPart { columns, rows }]))
 }
 
+/// The union of `relations`, of one arity: the one relation where there is
+/// one, and otherwise their rows in one part.
+pub fn union(mut relations: Vec<Arc<Relation>>) -> Arc<Relation> {
+    if relations.len() == 1 {
+        return relations.pop().expect("one relation");
+    }
+    let arity = relations.first().expect("a relation to unite").arity();
+    let mut rows = RowSet::empty(arity);
+    for relation in &relations {
+        each_row(relation, &mut |row| {
+            rows.insert(row.into());
+        });
+    }
+    Arc::new(one_part(rows))
+}
+
 /// The sizes of the relations of `inputs`, for [`variable_order`].
 pub fn sizes(inputs: &JoinInputs) -> RelationSizes {
     RelationSizes(

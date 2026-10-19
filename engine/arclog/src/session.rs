@@ -301,7 +301,7 @@ fn times(a: u64, b: u64) -> u64 {
 /// Whether `a` and `b` hold the same rows. Where their parts split the
 /// columns alike, the parts' rows are compared; otherwise each row of `a`
 /// is looked up in `b`'s parts.
-fn same_rows(a: &Relation, b: &Relation) -> bool {
+pub(crate) fn same_rows(a: &Relation, b: &Relation) -> bool {
     if std::ptr::eq(a, b) {
         return true;
     }
