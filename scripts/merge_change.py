@@ -227,7 +227,8 @@ from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, locked_update, SetupFailed)
 
 from operations.merging import (FAILED_LINE,  # noqa: E402
-                                NOT_PUT_ON, PATHS_SEP, PREFIX, REFUSED, REFUSED_TREE, TOOL)
+                                MARKERS, MARKER_LINE, NOT_PUT_ON, PATHS_SEP, PREFIX, REFUSED,
+                                REFUSED_TREE, TOOL)
 from operations.merge_outcomes import CONFLICT, LEFT_AFTER, STAYS  # noqa: E402
 from operations.worktrees import BASE  # noqa: E402
 
@@ -252,13 +253,6 @@ ABORTED = mctx("the rebase is aborted and the worktree is as it was:")
 PUT_ON = mctx("the rebase is aborted, and {branch} is moved to {onto}'s commit {commit}, "
               "with the change uncommitted in {worktree} and each of those paths that still "
               "conflicts as git's 3-way merge left it:")
-
-MARKERS = mctx("`git diff --check` reports a leftover conflict marker in the change of {branch}, "
-               "so the index is put back as it was and nothing is committed:")
-
-MARKER_LINE = "leftover conflict marker"
-"""The end of a line of `git diff --check` that reports a conflict
-marker."""
 
 UNMERGED_NONE = mctx("the rebase of {branch} onto {onto} fails with no unmerged path; the "
                      "rebase is aborted and the worktree is as it was:")

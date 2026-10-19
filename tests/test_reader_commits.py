@@ -138,9 +138,10 @@ def test_subagents(tmp_path: Path) -> None:
     assert "context agent operator" in out["additionalContext"]
     assert record(main, OPERATOR_ID).read_text() == both(head())
     aged(delivered(main, OPERATOR_ID), 1)
-    agent = command("PreToolUse", "Agent", "context_bound_hook")
-    assert run(agent, call(main, "Agent", {"subagent_type": "operator"}, OPERATOR_ID)) == ""
-    assert run(agent, call(main, "Agent", {"subagent_type": "operator"}, GENERAL_ID)) == ""
+    agent = command("PreToolUse", "Agent", "joined_hooks")
+    reply = {"subagent_type": "general-purpose", "model": "haiku"}
+    assert run(agent, call(main, "Agent", reply, OPERATOR_ID)) == ""
+    assert run(agent, call(main, "Agent", reply, GENERAL_ID)) == ""
     assert record(main, GENERAL_ID).read_text() == both(head())
 
 
@@ -280,7 +281,7 @@ def test_subagent_first_update_from_held_texts(tmp_path: Path) -> None:
     assert record(main, OPERATOR_ID).read_text() == both(head())
 
 
-GIVES_UPDATE = ("pending_wait_hook", "context_bound_hook", "reader_update_hook")
+GIVES_UPDATE = ("pending_wait_hook", 'joined_hooks.py" agent', "reader_update_hook")
 """The PreToolUse hooks that give the caller its update."""
 
 
@@ -386,7 +387,7 @@ def test_a_call_whose_command_starts_within_the_bound_is_denied(
                              f'exec {shutil.which("uv")} "$@"')
     monkeypatch.setenv("PATH", f"{slow}:{os.environ['PATH']}")
     for cmd, tool in [(command("PreToolUse", "Bash|Monitor"), "Bash"),
-                      (command("PreToolUse", "Agent", "context_bound_hook"), "Agent"),
+                      (command("PreToolUse", "Agent", "joined_hooks"), "Agent"),
                       (command("PreToolUse", "^(?!(Bash|Monitor|Agent)$).*",
                                "reader_update_hook"), "Edit")]:
         delivered(main).touch()

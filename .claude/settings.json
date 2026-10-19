@@ -61,11 +61,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "HOOK_STARTED=$(perl -MTime::HiRes=time -le 'print time') uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/context_bound_hook.py\""
-          },
-          {
-            "type": "command",
-            "command": "uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/printed_launch_hook.py\""
+            "command": "HOOK_STARTED=$(perl -MTime::HiRes=time -le 'print time') uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/joined_hooks.py\" agent"
           }
         ]
       },
@@ -74,15 +70,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/operator_stop_hook.py\" pre-tool-use"
-          },
-          {
-            "type": "command",
-            "command": "uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/checklist_walk_hook.py\""
-          },
-          {
-            "type": "command",
-            "command": "uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/report_file_hook.py\""
+            "command": "uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/joined_hooks.py\" handback"
           }
         ]
       },

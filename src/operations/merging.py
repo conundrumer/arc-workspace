@@ -43,8 +43,14 @@ script's own forms and by `master` (`state.Merge`,
 - any other refusal goes as a finding of its checks to the change's doc
   editor, where the change has one and the check its refusal line gives
   as failed is a check of the documents (`DOCUMENT_CHECKS`), or each path
-  its rebase conflicts in is a document (`documents_only`), and
+  its rebase conflicts in, or each path it reports a leftover conflict
+  marker in (`marker_paths`), is a document (`documents_only`), and
   otherwise to the change's first editor;
+- a refusal or a conflict that no agent of the change's editors can take
+  as a finding, as where the change passed from an operator of another
+  session and no editor of it has an agent in the worktree, goes in the
+  brief of the editor that `changes.staff_editor` launches for the first
+  role with none;
 - two refusals that give one tree (`REFUSED_TREE`) give one finding
   message, with the output of the first refused merge call on that
   worktree that gives that tree. Whether two refusals give one message
@@ -66,7 +72,7 @@ the change (`change_holds.open_questions`), then the change's own ticket."""
 
 import re
 import shlex
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from functools import cache
 from pathlib import Path
 
@@ -199,12 +205,34 @@ PATHS_SEP = ", "
 """What stands between two paths of `RERUN_CONFLICT`, of `CONFLICT_NOTE`
 and of the `CONFLICT` refusal of `scripts/merge_change.py`."""
 
+MARKERS = mctx("`git diff --check` reports a leftover conflict marker in the change of {branch}, "
+               "so the index is put back as it was and nothing is committed:")
+"""The refusal of a change whose staged change holds a leftover conflict
+marker, followed by one line of `git diff --check` for each marker."""
+
+MARKER_LINE = "leftover conflict marker"
+"""The end of a line of `git diff --check` that reports a conflict
+marker."""
+
+MARKED = re.compile(form(REFUSED + MARKERS, {"branch": r"\S+"}), re.M)
+
 DOCUMENT_SUFFIX = ".md"
 """The suffix of a document's path."""
 
 
 def documents_only(paths: Iterable[str]) -> bool:
     return all(p.endswith(DOCUMENT_SUFFIX) for p in paths)
+
+
+def marker_paths(output: str) -> tuple[str, ...] | None:
+    """The paths whose lines of `git diff --check` report a leftover
+    conflict marker, where `output`, what a merge call printed, holds the
+    refusal `MARKERS`, or None where it holds not."""
+    m = MARKED.search(output)
+    if m is None:
+        return None
+    lines = output[m.end():].splitlines()
+    return tuple(dict.fromkeys(ln.rsplit(":", 2)[0] for ln in lines if ln.endswith(MARKER_LINE)))
 
 
 def split_paths(text: str) -> tuple[str, ...]:
@@ -263,9 +291,9 @@ def merge_messages(command: str) -> list[str] | None:
 
 def names_any(call: Call, paths: set[str]) -> bool:
     """Whether a word of the call of `merge_change.py` that the Bash call
-    `call` runs holds any of `paths`."""
-    return any(p in w for w in merge_words(call.command) or ()
-               for p in paths)
+    `call` runs is any of `paths`, with a trailing `/` of the word
+    stripped: a call on `change-11-512` names no worktree `change-11-51`."""
+    return any(w.rstrip("/") in paths for w in merge_words(call.command) or ())
 
 
 def log_worktrees(t: Ticket) -> set[str]:
@@ -312,7 +340,13 @@ def merged(state: State, t: Ticket) -> bool:
     return merge_commit(state, t) is not None
 
 
-def merge(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
+type Staff = Callable[[str | None], Step | None]
+"""The launch of an editor for a role of the change with none
+(`changes.staff_editor`), with the finding of a refused merge in its
+brief, where one is given."""
+
+
+def merge(state: State, t: Ticket, w: Path, latest: list[Agent], staff: Staff) -> Step | None:
     """The line that gives the change's agent-running time since its take,
     where none follows that take and that time reads; then, for each code
     editor whose latest report holds a `split:` item that `reports.SPLIT`
@@ -338,14 +372,17 @@ def merge(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
                 return None
             case True:
                 pass
-    return merge_steps(state, t, w, latest)
+    return merge_steps(state, t, w, latest, staff)
 
 
-def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
+def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent],
+                staff: Staff) -> Step | None:
     """The merge of the change in `w`, once its editors and its review have
     passed, again after a call that left the worktree with changes made
     after its commit or that a report of an agent on the change follows,
-    and the step on a failed merge call."""
+    and the step on a failed merge call. A refusal or a conflict that no
+    agent of `latest` can take as a finding goes in the brief of the
+    editor that `staff` launches."""
     command = merge_command(t, w)
     calls = [c for c in merge_calls(state, t) if names_any(c, {str(w)})]
     last = calls[-1] if calls else None
@@ -377,9 +414,10 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
                 return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED, CONFLICT_NOTE.format(
                     conflict=Note.CONFLICT, paths=PATHS_SEP.join(last.conflicts)), state.me),
                             f"{t.number} conflict", occasion=str(last.time))
-            return message
+            return message or unreceived(t, last, calls, latest, quotes, staff)
         case Merge.REFUSED:
-            return refused(state, t, w, last, latest, quotes) or message
+            return (refused(state, t, w, last, latest, quotes) or message
+                    or unreceived(t, last, calls, latest, quotes, staff))
         case Merge.LEFT_EDITS:
             return Bash(command, f"{t.number} merge {w}", occasion=at)
         case Merge.MERGED:
@@ -498,12 +536,23 @@ def finding(t: Ticket, last: Call, calls: list[Call], latest: list[Agent],
                 f"merge finding {t.number} {last.time}")
 
 
+def unreceived(t: Ticket, last: Call, calls: list[Call], latest: list[Agent],
+               quotes: list[re.Match[str]], staff: Staff) -> Step | None:
+    """The launch of an editor with the finding on the refusal `last` in
+    its brief, where `last` is no `quotes` refusal and no agent of `latest`
+    takes the finding (`finding_recipient`), or None."""
+    if quotes or finding_recipient(last, latest) is not None:
+        return None
+    return staff(messages.merge_finding(t.number, finding_output(last, calls)))
+
+
 def finding_recipient(last: Call, latest: list[Agent]) -> Agent | None:
     """The agent of `latest` that the finding on the refused merge call
     `last` goes to."""
+    marked = marker_paths(last.result or "")
     on_documents = (documents_failed(last.result or "")
-                    or (last.merge is Merge.CONFLICT
-                        and documents_only(last.conflicts)))
+                    or (last.merge is Merge.CONFLICT and documents_only(last.conflicts))
+                    or (bool(marked) and documents_only(marked or ())))
     docs = [a for a in latest if a.role is Role.DOC_EDITOR] if on_documents else []
     return docs[0] if docs else latest[0] if latest else None
 

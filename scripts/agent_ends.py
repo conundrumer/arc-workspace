@@ -5,8 +5,9 @@ ended with them."""
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
+from file_reads import stat_read
 from final_replies import final_reply
-from filed_texts import filed_report, report_file, report_text
+from filed_texts import filed_report, report_file, report_text, written_report
 from open_agents import work_open
 from transcripts import find, launched_find
 
@@ -20,13 +21,31 @@ def reply_since(agent: str, since: float) -> Report | None:
     return r if r is not None and r.time > since else None
 
 
+def written_reply(a: Agent, since: float) -> Report | None:
+    """The report of `a`, which no longer waits, that its report file
+    gives where that file was last written after `since`: the file's
+    text, at its write time, whatever its last turn ended with."""
+    if a.pending or a.report_file is None:
+        return None
+    found = stat_read(a.report_file)
+    if found is None or not found.is_file or found.mtime <= since:
+        return None
+    text = written_report(a.report_file)
+    return None if text is None else Report(found.mtime, text, a.report_file)
+
+
 def reply_to(a: Agent, since: float, undecided: list[str]) -> Report | None:
-    """The final reply in the transcript of `a` after `since`, where its
+    """The report of `a` that its report file gives where it was last
+    written after `since` and `a` no longer waits (`written_reply`), else
+    the final reply in the transcript of `a` after `since`, where its
     operator launched or last resumed it itself, so that reply went to
     that operator, or where it is the path of a report file alone
     (`filed_texts.report_file`), whichever agent it went to, read from
     that file, or None. A reply whose file is gone keeps the path as its
     text."""
+    written = written_reply(a, since)
+    if written is not None:
+        return written
     r = reply_since(a.agent_id, since) if a.agent_id else None
     path = report_file(r.text) if r is not None else None
     if r is None or path is None:

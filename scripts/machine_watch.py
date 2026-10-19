@@ -33,6 +33,7 @@ HELP = mctx("""
     - The command samples the machine every {sample} s, and exits 0 once trouble holds: free memory under {low}% of the machine's for {memory} samples in a row, or the machine's CPU over {busy}% busy for {cpu} samples in a row.
         - Trouble that holds at the first sample counts only after a sample without it.
     - On trouble it prints the trouble that held, then the {top} largest processes by resident memory and the {top} largest by CPU, each with its pid, parent pid, resident memory, CPU percent, elapsed time, session id and command line.
+        - A process's session id is the one its own environment gives, or, where that gives none, that of its nearest ancestor whose environment gives one.
     - Only the watcher of the main session samples, as `uv run python scripts/file_ticket.py main --help-all` gives that session. The watcher of another session keeps running, and samples from the first sample time at which its session is the main.
     - It kills no process and notifies no one.
     """).format(sample=SAMPLE_SECONDS, low=LOW_MEMORY, memory=MEMORY_SAMPLES, busy=BUSY_CPU,
@@ -63,18 +64,33 @@ def _ps(*args: str) -> list[str]:
 
 def processes() -> list[Process]:
     """Each process of the machine, with the session id its environment
-    gives."""
+    gives, or, where that gives none, that of its nearest ancestor whose
+    environment gives one."""
     sessions: dict[int, str] = {}
     for text in _ps("-Eww", "-axo", "pid=,command="):
         pid, _, rest = text.strip().partition(" ")
         if (m := SESSION.search(rest)) is not None:
             sessions[int(pid)] = m.group(1)
-    found: list[Process] = []
-    for text in _ps("-ww", "-axo", "pid=,ppid=,rss=,%cpu=,etime=,command="):
-        pid, ppid, rss, cpu, elapsed, command = text.split(None, 5)
-        found.append(Process(int(pid), int(ppid), int(rss), float(cpu), elapsed,
-                             sessions.get(int(pid), NO_SESSION), command))
-    return found
+    rows = [text.split(None, 5) for text in
+            _ps("-ww", "-axo", "pid=,ppid=,rss=,%cpu=,etime=,command=")]
+    parents = {int(row[0]): int(row[1]) for row in rows}
+    return [Process(int(pid), int(ppid), int(rss), float(cpu), elapsed,
+                    nearest_session(int(pid), sessions, parents), command)
+            for pid, ppid, rss, cpu, elapsed, command in rows]
+
+
+def nearest_session(pid: int, sessions: dict[int, str], parents: dict[int, int]) -> str:
+    """The session id of `pid`, or of its nearest ancestor by `parents`
+    that has one in `sessions`, or `NO_SESSION`."""
+    seen: set[int] = set()
+    while pid not in seen:
+        if pid in sessions:
+            return sessions[pid]
+        seen.add(pid)
+        if pid not in parents:
+            break
+        pid = parents[pid]
+    return NO_SESSION
 
 
 def free_memory() -> float:

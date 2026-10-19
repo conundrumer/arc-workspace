@@ -197,8 +197,8 @@ def unbounded(_: Hook) -> str:
 def main(args: list[str]) -> int:
     b = bounds(*args) if len(args) == 2 else None
     if b is None:
-        return run_pre_tool_use(HOOK, unbounded)
-    return run_pre_tool_use(HOOK, lambda hook: check(hook, b))
+        return run_pre_tool_use(HOOK, [unbounded])
+    return run_pre_tool_use(HOOK, [lambda hook: check(hook, b)])
 
 
 if __name__ == "__main__":

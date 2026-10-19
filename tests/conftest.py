@@ -22,8 +22,15 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def script(name: str) -> ModuleType:
     """The script `scripts/<name>.py`, loaded from its path: `scripts/` is no
-    package."""
-    spec = importlib.util.spec_from_file_location(name, checkout.scripts() / f"{name}.py")
+    package. A script already in `sys.modules` under `name` that was loaded
+    from the same path is returned, so a test process holds one module
+    object for each script, as a real process does. A test that needs a
+    fresh module reloads it with `importlib.reload`."""
+    path = checkout.scripts() / f"{name}.py"
+    loaded = sys.modules.get(name)
+    if loaded is not None and getattr(loaded, "__file__", None) == str(path):
+        return loaded
+    spec = importlib.util.spec_from_file_location(name, path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module

@@ -114,7 +114,7 @@ def check(hook: Hook) -> str | None:
 
 
 def main() -> int:
-    return run_pre_tool_use(HOOK, check)
+    return run_pre_tool_use(HOOK, [check])
 
 
 if __name__ == "__main__":

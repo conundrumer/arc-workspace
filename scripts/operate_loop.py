@@ -17,6 +17,7 @@ from collections.abc import Callable
 import file_events
 import script_calls
 import step_journal
+import ticket_log
 import tree_reads
 from accepted_messages import accepted_after
 from agent_deliveries import last_delivered
@@ -169,15 +170,16 @@ def block(me: str, action: Action,
 
 def read_again[T](out_at: Callable[[float], T]) -> Callable[[float], T]:
     """`out_at`, which reads the state and plans, called again once where
-    a call raises `FileNotFoundError`: the second call lists the worktrees
-    and their files again, so it reads no worktree or file that a merge
-    removed after the first call listed it. A second `FileNotFoundError` is
-    raised, so a worktree that git still lists with its directory gone ends
+    a call raises `FileNotFoundError` or `ticket_log.Moved`: the second call
+    lists the worktrees and their files again, so it reads no worktree or
+    file that a merge removed, and no ticket file that another call moved,
+    after the first call listed it. A second `FileNotFoundError` or `Moved`
+    is raised, so a worktree that git still lists with its directory gone ends
     the command."""
     def again(deadline: float) -> T:
         try:
             return out_at(deadline)
-        except FileNotFoundError:
+        except (FileNotFoundError, ticket_log.Moved):
             return out_at(deadline)
     return again
 

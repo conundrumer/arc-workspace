@@ -171,9 +171,12 @@ class Agent:
     stopped it where it has not run since, leaves it waiting, as
     `Waits.STILL_RUNNING` and `Waits.LIMITED` give.
     Where a sign ends it and no report of it reached that operator since
-    its launch or its last resume, the final reply in its transcript, where
-    it gives one after them and it went to that operator or is the path of
-    a report file alone, read from that file, ends its `reports`.
+    its launch or its last resume, its report file (`report_file`), where
+    that file was last written after them, gives its report, whatever its
+    turn ended with, with the file's text at its write time; otherwise the
+    final reply in its transcript, where it gives one after them and it
+    went to that operator or is the path of a report file alone, read from
+    that file, ends its `reports`.
     It no longer waits either where it is in `TranscriptsRead.stalled`, or
     is an agent of another operator whose work is no longer open, and
     the final reply in its transcript, where it gives one and it went to

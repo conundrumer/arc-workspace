@@ -88,6 +88,7 @@ until an `Op decision:` line rules it with one of the choices the step gives
 (`directives.ruling`)."""
 
 import shlex
+from functools import partial
 from collections.abc import Callable
 from pathlib import Path
 from dataclasses import dataclass, replace
@@ -197,6 +198,41 @@ def revised_since_worktree(t: Ticket) -> bool:
     return last_index(t, (Note.FILED, Note.REVISED)) > given
 
 
+def staff_editor(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
+                 agents: list[Agent], finding: str | None = None) -> Step | None:
+    """The launch of the first editor role of `editors` with no editor
+    among `agents` in the worktree `w`, with `finding`, the message that
+    gives a refused merge's output (`messages.merge_finding`), in its
+    brief where it is given, or None where every role has an editor, or an
+    editor of the role runs in another session or needs a decision first."""
+    here = editors_in(agents, w)
+    if not (missing := unstaffed(editors, here)):
+        return None
+    theirs = editors_in(elsewhere_on(state, t.number), w)
+    free = [r for r in missing if not any(a.pending and a.role is r for a in theirs)]
+    if not free:
+        return None
+    role = free[0]
+    drafters = drafter_ids(here)
+    if isinstance(drafters, Undecided):
+        return drafters
+    part = briefs.part_taken(role, len(editors) > 1)
+    known = settled(state, t, role, part)
+    before = editor_before([a for a in theirs
+                            if a.role is role and briefs.part_of(a) is part])
+    if before is not None:
+        known = with_before(known, before[0])
+    editor = part if isinstance(part, briefs.EditorPart) else briefs.DocEditor(
+        part, state.held.fragments.get(w, ()), tuple(drafters))
+    occasion = worktree_occasion(t, w)
+    return Launch(role, t.number, briefs.editor(
+        editor, t.number, w,
+        editor_scratch(t.number, role, state.scratch), state.me, known,
+        before=None if before is None else briefs.Before(before[0].agent_id, before[1]),
+        finding=finding),
+        model=t.model(role), occasion=occasion if finding is None else f"{occasion} {finding}")
+
+
 def carry(state: State, t: Ticket) -> Step | None:
     """The next step on the change `t` the operator holds, or None where it
     waits on an agent."""
@@ -209,12 +245,13 @@ def carry(state: State, t: Ticket) -> Step | None:
     w = worktree(t, state)
     if w is None or revised_since_worktree(t):
         return Bash(make_worktree(t.number, state.me), f"{t.number} worktree", occasion=str(t.last_time))
+    staff = partial(staff_editor, state, t, w, editors, agents)
     match over_budget(state, t, w, agents):
         case Ended(ended):
             latest = list(ended)
             match leftover(state, t, w, latest, agents, True, state.me):
                 case Pause.CLEAR:
-                    return merging.merge(state, t, w, latest)
+                    return merging.merge(state, t, w, latest, staff)
                 case Pause.WAIT:
                     return None
                 case left:
@@ -226,33 +263,13 @@ def carry(state: State, t: Ticket) -> Step | None:
         case step:
             return step
     here = editors_in(agents, w)
-    if missing := unstaffed(editors, here):
-        theirs = editors_in(elsewhere_on(state, t.number), w)
-        free = [r for r in missing if not any(a.pending and a.role is r for a in theirs)]
-        if not free:
-            return None
-        role = free[0]
-        drafters = drafter_ids(here)
-        if isinstance(drafters, Undecided):
-            return drafters
-        part = briefs.part_taken(role, len(editors) > 1)
-        known = settled(state, t, role, part)
-        before = editor_before([a for a in theirs
-                                if a.role is role and briefs.part_of(a) is part])
-        if before is not None:
-            known = with_before(known, before[0])
-        editor = part if isinstance(part, briefs.EditorPart) else briefs.DocEditor(
-            part, state.held.fragments.get(w, ()), tuple(drafters))
-        return Launch(role, t.number, briefs.editor(
-            editor, t.number, w,
-            editor_scratch(t.number, role, state.scratch), state.me, known,
-            before=None if before is None else briefs.Before(before[0].agent_id, before[1])),
-            model=t.model(role), occasion=worktree_occasion(t, w))
+    if unstaffed(editors, here):
+        return staff_editor(state, t, w, editors, agents)
     if any(a.pending for a in here):
         return None
     match reported_step(state, t, w, editors, here, agents, state.me):
         case Pause.CLEAR:
-            return merging.merge(state, t, w, latest_editors(here))
+            return merging.merge(state, t, w, latest_editors(here), staff)
         case Pause.WAIT:
             return None
         case step:

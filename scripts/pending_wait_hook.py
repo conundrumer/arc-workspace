@@ -115,7 +115,7 @@ def check(hook: dict[str, Any]) -> str | None:
 def main() -> int:
     from reader_delivery import reader_update
 
-    return run_pre_tool_use(HOOK, check, reader_update)
+    return run_pre_tool_use(HOOK, [check], reader_update)
 
 
 if __name__ == "__main__":

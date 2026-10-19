@@ -198,7 +198,8 @@ def part_of(agent: Agent) -> Part:
 
 
 def editor(editor: EditorPart | DocEditor, number: str, worktree: Path, scratch: Path,
-           operator: str, settled: "Settled", before: Before | None = None) -> str:
+           operator: str, settled: "Settled", before: Before | None = None,
+           finding: str | None = None) -> str:
     """The brief of the editor `editor` of the change `number`, in the
     change's worktree `worktree`, with what the agents before it settled
     (`settled_lines`), and the rounds it has of a review an item has it
@@ -206,7 +207,9 @@ def editor(editor: EditorPart | DocEditor, number: str, worktree: Path, scratch:
     launched. A doc editor's brief gives its fragments, and the
     agent ids of the change's code editors. `before` gives the last editor
     of the role in that worktree that an operator of another session
-    launched, where there is one, whose latest report that block gives."""
+    launched, where there is one, whose latest report that block gives.
+    `finding` is the finding of a refused merge that the editor is
+    launched for, which follows the launcher's line, or None."""
     part = editor.part if isinstance(editor, DocEditor) else editor
     lines = [read_ticket(number)]
     if part.line is not None:
@@ -226,6 +229,8 @@ def editor(editor: EditorPart | DocEditor, number: str, worktree: Path, scratch:
     lines.append(LAUNCHER.format(operator=operator))
     if before is not None:
         lines.append(BEFORE.format(agent=before.agent, scratch=before.scratch))
+    if finding is not None:
+        lines.append(finding)
     return "\n".join(lines + settled_lines(settled))
 
 

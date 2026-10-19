@@ -22,7 +22,7 @@ def main() -> int:
         case []:
             return run_context(HOOK, reader_update)
         case [arg] if arg == PRE_TOOL_USE:
-            return run_pre_tool_use(HOOK, lambda _: None, reader_update)
+            return run_pre_tool_use(HOOK, [], reader_update)
         case args:
             raise SystemExit(mctx("{hook}: takes no argument or `{pre}`, and is "
                                   "given `{given}`").format(

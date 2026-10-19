@@ -74,7 +74,7 @@ def main() -> int:
     if not args:
         return run_subagent_stop(HOOK, check)
     if args == [PRE_TOOL_USE]:
-        return run_pre_tool_use(HOOK, check)
+        return run_pre_tool_use(HOOK, [check])
     from controlled_markdown import mctx
 
     raise SystemExit(mctx("{hook}: usage: operator_stop_hook.py [{pre}]").format(

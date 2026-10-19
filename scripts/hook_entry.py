@@ -6,9 +6,9 @@ and it prints the hook's failure text and the error on stderr. A hook runs
 in a fresh process with `scripts/` on the path, so this module imports only
 the standard library.
 
-A PreToolUse hook runs two parts, each of which fails open alone: its check,
-which gives the reason to deny the call or None, and the update of the
-caller's documents, which gives the text the caller gets in its context or
+A PreToolUse hook runs two parts, each of which fails open alone: its checks,
+each of which gives the reason to deny the call or None, and the update of
+the caller's documents, which gives the text the caller gets in its context or
 None (`reader_delivery.reader_update`). Claude Code reads one output of a
 hook, and puts its `additionalContext` in the caller's context whether or
 not the output denies the call, so the entry prints one output that holds
@@ -34,7 +34,8 @@ import json
 import os
 import sys
 import time
-from collections.abc import Callable
+from functools import partial
+from collections.abc import Callable, Iterable, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from typing import Any, NamedTuple
 
@@ -128,16 +129,26 @@ def no_update(_: Hook) -> AbstractContextManager[Update | None]:
     return nullcontext(None)
 
 
+def joined(reasons: Iterable[str | None]) -> str | None:
+    """The reasons of `reasons` that are given, one to a line, or None
+    where none is."""
+    given = [r for r in reasons if r is not None]
+    return "\n".join(given) if given else None
+
+
 def run_pre_tool_use(
-        hook: str, check: Callable[[Hook], str | None],
+        hook: str, checks: Sequence[Callable[[Hook], str | None]],
         update: Callable[[Hook], AbstractContextManager[Update | None]] = no_update) -> int:
-    """Run the PreToolUse hook `hook` on the input on stdin: `check` gives
-    the reason to deny the call, and `update` the caller's update, inside a
-    block that the printed output ends."""
+    """Run the PreToolUse hook `hook` on the input on stdin: each of
+    `checks`, in order, gives the reason to deny the call or None, and the
+    call is denied with the reasons of all that give one, which Claude
+    Code shows as one hook's output; `update` gives the caller's update,
+    inside a block that the printed output ends. A check that raises
+    fails open alone, as the module docstring gives."""
     data = run_part(hook, CHECK_FAILED, lambda: json.loads(sys.stdin.read()))
     if data is None:
         return 0
-    reason = run_part(hook, CHECK_FAILED, lambda: check(data))
+    reason = joined(run_part(hook, CHECK_FAILED, partial(check, data)) for check in checks)
     given = False
     try:
         with update(data) as given_update:
