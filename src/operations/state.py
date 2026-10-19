@@ -67,7 +67,8 @@ class Unread:
 class Ticket:
     """A ticket of the tracker. `editors` is None where a `change` gives no
     `editors` field, `mechanical` is whether a `change` gives the
-    `mechanical` field, `motivation` holds the ticket numbers its
+    `mechanical` field, whose condition the `change` form of `FORMS` in
+    `filing_help` gives, `motivation` holds the ticket numbers its
     `## Motivation` section gives, `log` holds the lines of its log other
     than its allow lines, `allowers` the session ids of those allow lines,
     each once, in the order of their first lines, and `holder` is the
