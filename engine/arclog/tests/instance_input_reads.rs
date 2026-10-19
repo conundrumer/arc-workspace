@@ -42,7 +42,7 @@ fn a_clause_reads_the_keyed_input_of_an_instance() {
     let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
     let limits = Limits { deadline: None, cancellation: Cancellation::default() };
     let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
-    let evaluation = Evaluation { program: &program, task: &task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits };
+    let evaluation = Evaluation { program: &program, concept: None, task: &task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits };
     let rows = |name: &str| {
         let relation = relation_of(&program, &ProgramRelation::Declared(RelationName(DeclaredName::Written(format!("&{name}").into())))).expect("the relation");
         match evaluation.relation(&relation, Some(Example::at(0))) {

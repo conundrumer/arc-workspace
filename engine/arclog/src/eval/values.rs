@@ -33,9 +33,10 @@ pub struct Caps {
 }
 
 impl Caps {
-    /// The caps of every task session: the binding cap, the row cap and the node
-    /// cap are each set from the engine's counts on the corpus, and the model
-    /// cap from the corpus survey's bound from Souffle's `out`.
+    /// The caps of every task session: the binding cap, the row cap, the
+    /// node cap and the assignment cap are each set from the engine's counts
+    /// on the corpus, and the model cap from the corpus survey's bound from
+    /// Souffle's `out`.
     ///
     /// The binding cap and the row cap are each about twice the largest count
     /// of one evaluation that `arclog-cli speed` gave over `work/arclog/gen/`
@@ -66,9 +67,14 @@ impl Caps {
     /// count of their concept in the engine: `a2d730bd` stops at a fault of
     /// the run, and the rows of `abc82100` differ from its first relation on.
     ///
-    /// The assignment cap is the provisional default of
-    /// `docs/engine/determination.md#det`.
-    pub const CORPUS: Caps = Caps { bindings: 1 << 30, rows: 1 << 21, models: 1 << 7, nodes: 1 << 5, assignments: 1000 };
+    /// The assignment cap is the least power of two above twice the largest
+    /// count that `arclog-cli determine` gave over the base cases of
+    /// `work/arclog/gen/` on 2026-10-19, in a run under an assignment cap of
+    /// `1 << 16`: 81 joint assignments of one case, of `d511f180`. Those
+    /// counts are of the 939 solvers of 953 whose determination ran to its
+    /// end before the run's bound of 30 minutes; the next largest are 72, of
+    /// `ba26e723`, and 64, of `abc82100`.
+    pub const CORPUS: Caps = Caps { bindings: 1 << 30, rows: 1 << 21, models: 1 << 7, nodes: 1 << 5, assignments: 1 << 8 };
 }
 
 /// The bound an evaluation reached.

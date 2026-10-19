@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use crate::check::CheckedProgram;
-use crate::eval::determinations::determinations;
+use crate::eval::determinations::{det_relation, determinations};
 use crate::eval::instance::Constructions;
 use crate::eval::join::{each_row, one_part, union};
 use crate::eval::{output_relation, Domain, Evaluation, Limits, ParameterValues, ReachedBound, RunFault, Stop};
@@ -43,9 +43,12 @@ pub struct DeterminedCase<'a> {
 }
 
 impl DeterminedCase<'_> {
-    fn evaluation<'p>(&'p self, program: &'p CheckedProgram, parameters: &'p ParameterValues) -> Evaluation<'p> {
+    /// The evaluation of the case at `parameters`, with the concept program
+    /// where the case program takes forms from it.
+    pub fn evaluation<'p>(&'p self, parameters: &'p ParameterValues) -> Evaluation<'p> {
         Evaluation {
-            program,
+            program: self.program,
+            concept: self.program.program.concept().is_some().then_some(self.concept),
             task: self.task,
             parameters,
             session: self.session,
@@ -126,9 +129,7 @@ impl Determination {
 }
 
 /// A `DET` that a case reads, as its walk takes it.
-struct Det<'a> {
-    /// The program the `DET`'s forms are evaluated in, and its node there.
-    program: &'a CheckedProgram,
+struct Det {
     node: GraphNodeIndex,
     relation: ProgramRelation,
     /// Whether it ends in `(ONE)`.
@@ -178,13 +179,7 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
                 picks.insert(relation);
                 continue;
             }
-            let in_concept = program.concept_path(program.form_of(node)).is_some();
-            let (source, node) = if in_concept {
-                (case.concept, det_node(case.concept, &relation).expect("the concept program holds each `DET` a case takes from it"))
-            } else {
-                (case.program, node)
-            };
-            dets.push(Det { program: source, node, relation, open });
+            dets.push(Det { node, relation, open });
         }
         let holds_demonstrated = program.graph.nodes.iter().any(|node| matches!(node.kind, DependencyKind::Demonstrated(_)));
         if holds_demonstrated {
@@ -237,7 +232,7 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
 /// dependency order of its `DET`s.
 struct Walk<'w, 'a> {
     case: &'w DeterminedCase<'a>,
-    dets: &'w [Det<'a>],
+    dets: &'w [Det],
     output: &'w GraphRelation,
     train: &'w [PairCandidates<'w>],
     /// The complete assignments reached.
@@ -254,7 +249,7 @@ impl Walk<'_, '_> {
     fn descend(&mut self, at: usize, assigned: &mut Vec<(ProgramRelation, Arc<Relation>)>) -> Result<(), End> {
         let parameters = ParameterValues::determined(assigned.clone());
         let Some(det) = self.dets.get(at) else {
-            let evaluation = self.case.evaluation(self.case.program, &parameters);
+            let evaluation = self.case.evaluation(&parameters);
             self.count += 1;
             let cap = self.case.session.caps.assignments;
             if self.count > cap {
@@ -271,11 +266,11 @@ impl Walk<'_, '_> {
             return Ok(());
         };
         if det.open {
-            if let Some(fault) = keyed_one(det.program, det.node) {
+            if let Some(fault) = keyed_one(self.case.program, det.node) {
                 return Err(End::Fault(fault));
             }
         }
-        let domain = match self.case.evaluation(det.program, &parameters).domain(det.node).map_err(End::Fault)? {
+        let domain = match self.case.evaluation(&parameters).domain(det.node).map_err(End::Fault)? {
             Domain::Rows(rows) if det.open => one_row_each(&rows),
             Domain::Rows(rows) => rows,
             Domain::Undefined => return self.descend(at + 1, assigned),
@@ -387,21 +382,4 @@ fn reached(program: &crate::resolver::ResolvedProgram, root: GraphNodeIndex) -> 
         stack.extend(graph.reads[node.0 as usize].iter().copied());
     }
     seen
-}
-
-/// The relation of a `DET` node of kind `kind`, and whether it ends in
-/// `(ONE)`, or `None` for a node of another kind.
-fn det_relation(kind: &DependencyKind) -> Option<(ProgramRelation, bool)> {
-    match kind {
-        DependencyKind::Parameter(relation) => Some((relation.clone(), false)),
-        DependencyKind::Chosen(name) => Some((ProgramRelation::Declared(name.clone()), true)),
-        _ => None,
-    }
-}
-
-/// The node of the `DET` of `relation` in `program`.
-fn det_node(program: &CheckedProgram, relation: &ProgramRelation) -> Option<GraphNodeIndex> {
-    let mut nodes = program.program.graph.nodes.iter();
-    let at = nodes.position(|node| det_relation(&node.kind).is_some_and(|(found, _)| found == *relation))?;
-    Some(GraphNodeIndex(at as u32))
 }

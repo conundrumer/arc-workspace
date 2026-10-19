@@ -15,7 +15,7 @@ use super::join;
 use super::{Evaluation, Outcome, RelationValue, RunFault, Stop};
 use crate::check::CheckedProgram;
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Clause, ClauseKeyword, DeclaredName, ProgramRelation, RelationName};
+use crate::program::{Clause, ClauseKeyword, DeclaredName, OutputOwner, OutputStep, ProgramRelation, RelationName};
 use crate::registry::{LibEntry, Proposer, ProposerKind, Registry};
 use crate::relations::{Relation, Row, RowSet};
 use crate::resolver::{DependencyKind, GraphNodeIndex};
@@ -77,9 +77,43 @@ fn is_det(program: &crate::resolver::ResolvedProgram, node: GraphNodeIndex) -> b
     }
 }
 
+/// The relation of a `DET` node of kind `kind`, and whether it ends in
+/// `(ONE)`, or `None` for a node of another kind.
+pub fn det_relation(kind: &DependencyKind) -> Option<(ProgramRelation, bool)> {
+    match kind {
+        DependencyKind::Parameter(relation) => Some((relation.clone(), false)),
+        DependencyKind::Chosen(name) => Some((ProgramRelation::Declared(name.clone()), true)),
+        _ => None,
+    }
+}
+
+/// The node of the `DET` of `relation` in `program`, or `None` where no
+/// `DET` of `program` gives it.
+pub fn det_node(program: &CheckedProgram, relation: &ProgramRelation) -> Option<GraphNodeIndex> {
+    let mut nodes = program.program.graph.nodes.iter();
+    let at = nodes.position(|node| det_relation(&node.kind).is_some_and(|(found, _)| found == *relation))?;
+    Some(GraphNodeIndex(at as u32))
+}
+
+impl<'a> Evaluation<'a> {
+    /// The evaluation of the concept program at these parameter values, and
+    /// its node of the `DET` of `node`, where `node` is a `DET` node whose
+    /// forms the case program takes from the concept program; `None` for
+    /// any other node.
+    pub(super) fn in_concept(&self, node: GraphNodeIndex) -> Option<(Evaluation<'a>, GraphNodeIndex)> {
+        let concept = self.concept?;
+        let program = &self.program.program;
+        program.concept_path(program.form_of(node))?;
+        let (relation, _) = det_relation(&program.graph.nodes[node.0 as usize].kind)?;
+        let at = det_node(concept, &relation).expect("the concept program holds each `DET` a case takes from it");
+        Some((Evaluation { program: concept, concept: None, ..*self }, at))
+    }
+}
+
 impl Evaluation<'_> {
     /// The domain of the `DET` node `node`, task-wide, at the values
-    /// these parameter values give the `DET`s its forms read.
+    /// these parameter values give the `DET`s its forms read. A `DET` that
+    /// the case program takes from the concept program is evaluated there.
     ///
     /// A form derives by the rule of `derivation`, which `Driver::clause`
     /// uses. A form with a body gives one value, its rows; a form with no
@@ -94,6 +128,9 @@ impl Evaluation<'_> {
     pub fn domain(&self, node: GraphNodeIndex) -> Outcome<Domain> {
         let program = &self.program.program;
         assert!(is_det(program, node), "the node of a `DET`");
+        if let Some((concept, node)) = self.in_concept(node) {
+            return concept.domain(node);
+        }
         let relation = GraphRelation { node, output: None };
         let types = self.program.types.columns(&relation).ok_or_else(|| RunFault {
             message: "the `DET`'s columns have no types".into(),
@@ -162,10 +199,7 @@ impl Evaluation<'_> {
 pub(super) fn conversion_fault(clause: &Clause, form: &NodePath) -> Option<RunFault> {
     let empty = clause.keyword == ClauseKeyword::Det && clause.proposers.is_empty() && clause.body.value().conjuncts.is_empty();
     empty.then(|| {
-        let name = match &clause.derives {
-            ProgramRelation::Declared(name) => spelled(name),
-            ProgramRelation::Output(output) => format!("{output:?}"),
-        };
+        let name = relation_spelled(&clause.derives);
         let written = if clause.ones.is_empty() { format!("(DET {name})") } else { format!("(DET {name} (ONE))") };
         RunFault { message: format!("`{written}` has no body and no proposer, so it gives no value: a fault of the conversion").into(), form: form.clone() }
     })
@@ -183,10 +217,34 @@ pub(super) fn many_models(driver: &Driver<'_, '_>, det: GraphNodeIndex, pick: &R
 
 /// `name` as a file writes it, or its slot.
 fn spelled(name: &RelationName) -> String {
-    match &name.0 {
+    declared_spelled(&name.0)
+}
+
+/// `name` as a file writes it, or its slot.
+fn declared_spelled(name: &DeclaredName) -> String {
+    match name {
         DeclaredName::Written(text) => text.to_string(),
         DeclaredName::Slot(slot) => format!("slot {slot}"),
     }
+}
+
+/// `relation` as a file writes it, `&marker.glyph` for an output, with a
+/// slot for a name a decode gives no text.
+pub fn relation_spelled(relation: &ProgramRelation) -> String {
+    let output = match relation {
+        ProgramRelation::Declared(name) => return spelled(name),
+        ProgramRelation::Output(output) => output,
+    };
+    let owner = match &output.of {
+        OutputOwner::Instance(name) => declared_spelled(&name.0),
+        OutputOwner::RigidDet(name) => declared_spelled(&name.0),
+    };
+    let steps = output.path.iter().map(|step| match step {
+        OutputStep::Port(port) => port.0.to_string(),
+        OutputStep::Part(part) => declared_spelled(part).trim_start_matches('&').to_owned(),
+        OutputStep::Pose => "pose".to_owned(),
+    });
+    std::iter::once(owner).chain(steps).collect::<Vec<_>>().join(".")
 }
 
 /// Whether the registry marks the proposer `name` as a type-domain proposer.

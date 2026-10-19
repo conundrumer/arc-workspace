@@ -358,7 +358,7 @@ fn label_type(types: &FormTypes, label: LabelId) -> Result<ValueType, String> {
 
 /// The image under `g` of `values`, whose columns take `types`, each value
 /// acted on by its type, as `docs/arclog/rigid.md#semantics` gives.
-fn image<'v>(geometry: &'v Geometry, g: D4Element, values: &'v [TermId], types: &'v [ValueType]) -> impl Iterator<Item = TermId> + 'v {
+pub fn image<'v>(geometry: &'v Geometry, g: D4Element, values: &'v [TermId], types: &'v [ValueType]) -> impl Iterator<Item = TermId> + 'v {
     values.iter().zip(types).map(move |(&value, ty)| match ty {
         ValueType::Box => {
             Term::Box(apply(g, Term::decode_box(value))).encode().expect("a Box's margins, moved among its edges, each fit a signed byte")

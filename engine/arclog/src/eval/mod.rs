@@ -131,6 +131,11 @@ impl ParameterValues {
 #[derive(Clone, Copy, Debug)]
 pub struct Evaluation<'a> {
     pub program: &'a CheckedProgram,
+    /// The checked concept program, in which each `DET` that the case
+    /// program takes from it is evaluated, as [`crate::solver::Case`]
+    /// gives; `None` for a program that takes none, such as the concept
+    /// case's.
+    pub concept: Option<&'a CheckedProgram>,
     pub task: &'a Task,
     pub parameters: &'a ParameterValues,
     pub session: &'a TaskSession,

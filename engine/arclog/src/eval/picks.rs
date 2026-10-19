@@ -47,10 +47,14 @@ pub enum Pick {
 
 /// The options of the chosen relation of `node` on `example`, or task-wide
 /// where `example` is `None`, with `bodies` evaluating the bodies of its
-/// forms.
+/// forms, or, for a `DET` that the case program takes from the concept
+/// program, the options of that `DET` in the concept program.
 pub fn pick_options(bodies: &FormBodies<'_>, node: GraphNodeIndex, example: Option<Example>) -> Outcome<Pick> {
     let driver = bodies.driver;
     let evaluation = driver.evaluation;
+    if let Some((concept, node)) = evaluation.in_concept(node) {
+        return pick_options(&super::driver::Driver::new(&concept).bodies(), node, example);
+    }
     let program = driver.program();
     let DependencyKind::Chosen(name) = &program.graph.nodes[node.0 as usize].kind else {
         panic!("the node of a chosen relation")

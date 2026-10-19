@@ -33,7 +33,7 @@ fn domain_fault(solver: &str, name: &str, colors: &[u8]) -> bool {
     let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
     let limits = Limits { deadline: None, cancellation: Cancellation::default() };
     let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
-    let evaluation = Evaluation { program: &program, task: &task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits };
+    let evaluation = Evaluation { program: &program, concept: None, task: &task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits };
     let relation = relation_of(&program, &ProgramRelation::Declared(RelationName(DeclaredName::Written(format!("&{name}").into())))).expect("the relation");
     let outcome: Outcome<_> = evaluation.domain(relation.node);
     outcome.is_err()

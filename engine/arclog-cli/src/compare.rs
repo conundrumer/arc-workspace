@@ -31,18 +31,17 @@ use arclog::judge::run::{Found, JudgedRun};
 use arclog::judge::solves::OutputSet;
 use arclog::program::path::{node_at, NodePath, NodeRef};
 use arclog::program::{ClauseKeyword, DeclaredName, Form, ProgramRelation, RelationName};
-use arclog::registry::Registry;
 use arclog::relations::Relation;
 use arclog::resolver::Side;
 use arclog::solver::FileOwner;
 use arclog::task::{Grid, Task};
-use arclog::terms::{Constant, Example, Term};
+use arclog::terms::{Example, Term};
 use arclog::types::ValueType;
 use serde_json::Value;
 
 use crate::arguments::Arguments;
 use crate::concept_case::{with_concept_case, ConceptCase};
-use crate::renaming::{renaming_exists, EngineLeaf, Leaf};
+use crate::renaming::{renaming_exists, same_without_idents, term_leaves, EngineLeaf, Leaf};
 use crate::select::{read_json, selected};
 
 const USAGE: &str = "usage: arclog-cli compare <snapshot-dir> <corpus-dir> <tasks-dir> [<task_id> ...] [--reads <name> ...]";
@@ -347,27 +346,6 @@ impl Rerun {
     }
 }
 
-/// Whether `engine` and `souffle` hold rows of equal leaves at each place
-/// that holds no Ident in the engine's row, each row once.
-fn same_without_idents(engine: &[Vec<EngineLeaf>], souffle: &BTreeSet<Vec<Leaf>>) -> bool {
-    let masked = |row: &[EngineLeaf]| row.iter().map(|leaf| match leaf {
-        EngineLeaf::Written(leaf) => Some(leaf.clone()),
-        EngineLeaf::Ident(_) => None,
-    }).collect::<Vec<_>>();
-    let mut engine_masked: Vec<Vec<Option<Leaf>>> = engine.iter().map(|row| masked(row)).collect();
-    engine_masked.sort();
-    let Some(first) = engine.first() else { return souffle.is_empty() };
-    if souffle.iter().any(|row| row.len() != first.len()) {
-        return false;
-    }
-    let mut souffle_masked: Vec<Vec<Option<Leaf>>> = souffle
-        .iter()
-        .map(|row| row.iter().zip(first).map(|(leaf, at)| matches!(at, EngineLeaf::Written(_)).then(|| leaf.clone())).collect())
-        .collect();
-    souffle_masked.sort();
-    engine_masked == souffle_masked
-}
-
 /// What the engine gives for a relation on a pair.
 enum EngineRows {
     /// The relation's rows, each the leaves Souffle's rerun writes for it,
@@ -440,7 +418,7 @@ fn model_leaves(
 ) -> Result<Vec<Vec<EngineLeaf>>, String> {
     let mut written = Vec::new();
     let mut faults = BTreeSet::new();
-    each_row(rows, &mut |row| match row.iter().zip(types).map(|(&id, ty)| term_leaves(Term::decode(id, ty), evaluation.registry, constants)).collect::<Result<Vec<_>, _>>() {
+    each_row(rows, &mut |row| match row.iter().zip(types).map(|(&id, ty)| term_leaves(Term::decode(id, ty), evaluation.registry, &|name| souffle_number(name, constants))).collect::<Result<Vec<_>, _>>() {
         Ok(leaves) => written.push(leaves.concat()),
         Err(text) => {
             faults.insert(text);
@@ -449,32 +427,15 @@ fn model_leaves(
     faults.into_iter().next().map_or(Ok(written), Err)
 }
 
+/// The leaf of the orientation constant `name` in Souffle's rerun: its
+/// number in `constants`.
+fn souffle_number(name: &str, constants: &BTreeMap<String, i64>) -> Result<Leaf, String> {
+    constants.get(name).map(|&n| Leaf::Number(n)).ok_or_else(|| format!("the orientation constant {name}, which the rerun gives no number"))
+}
+
 /// Whether `a` and `b` hold the same rows, each row once.
 fn same_rows(a: &[Vec<EngineLeaf>], b: &[Vec<EngineLeaf>]) -> bool {
     a.iter().all(|row| b.contains(row)) && b.iter().all(|row| a.contains(row))
-}
-
-/// The leaves Souffle's rerun writes for `term`: a number, a color's
-/// digit, an example's index and a Box's margins as numbers, an
-/// orientation constant as its number in `constants`, an Ident as itself,
-/// and Unit as no leaf. Where the converter left a leaf of a Souffle
-/// relation out of its arclog relation, the two sides' rows hold
-/// different counts of leaves, and [`first_difference`] does not compare
-/// them.
-fn term_leaves(term: Term, registry: &Registry, constants: &BTreeMap<String, i64>) -> Result<Vec<EngineLeaf>, String> {
-    let number = |n: i64| EngineLeaf::Written(Leaf::Number(n));
-    Ok(match term {
-        Term::Number(n) => vec![number(n.0.into())],
-        Term::Box(m) => [m.top, m.bottom, m.left, m.right].into_iter().map(|n| number(n.into())).collect(),
-        Term::Ident(ident) => vec![EngineLeaf::Ident(ident)],
-        Term::Constant(Constant::Color(color)) => vec![number(color.digit().into())],
-        Term::Constant(Constant::Example(example)) => vec![number(example.index().into())],
-        Term::Constant(Constant::Unit) => vec![],
-        Term::Constant(Constant::Orientation(constant)) => {
-            let name = registry.constant_name(constant);
-            vec![number(*constants.get(name).ok_or_else(|| format!("the orientation constant {name}, which the rerun gives no number"))?)]
-        }
-    })
 }
 
 #[cfg(test)]

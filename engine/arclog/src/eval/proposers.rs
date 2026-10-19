@@ -76,7 +76,7 @@ impl ArclogProposer {
     /// `evaluation`, each fault and stop at `form`.
     fn rows(&self, evaluation: &Evaluation<'_>, task: &Task, form: &NodePath) -> Outcome<RelationValue> {
         let parameters = ParameterValues::default();
-        let inner = Evaluation { program: &self.program, task, parameters: &parameters, ..*evaluation };
+        let inner = Evaluation { program: &self.program, concept: None, task, parameters: &parameters, ..*evaluation };
         let value = Driver::new(&inner).clause(&self.form, None).map_err(|fault| RunFault { form: form.clone(), ..fault })?;
         Ok(match value {
             RelationValue::Rows(relation) => {

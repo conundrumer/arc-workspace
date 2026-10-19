@@ -1,20 +1,22 @@
 //! The concept case of a solver of the corpus, checked and set up for its
 //! run on its task at its stored `param` records, which `compare`,
-//! `lib-compare`, `speed` and `determinism` run.
+//! `lib-compare`, `speed` and `determinism` run, and the parts of that
+//! setup that `determine` shares for each base case: the read of the solver
+//! and its task, the check of a case, and the session and limits of a run.
 
 use std::path::Path;
 use std::time::Instant;
 
-use arclog::check::{check_shared_program, CheckCache, SolverClauses};
+use arclog::check::{check_shared_program, CheckCache, CheckedProgram, SolverClauses};
 use arclog::eval::{output_relation, Caps, Cancellation, Evaluation, Limits, Outcome, ParameterValues};
 use arclog::harness::read_corpus_solver;
 use arclog::judge::candidates::World;
 use arclog::judge::run::{judged_run, Depth, JudgedRun};
 use arclog::registry::Registry;
-use arclog::resolver::resolve_cases;
+use arclog::resolver::{resolve_cases, ResolvedCase};
 use arclog::session::{SessionBound, TaskSession};
 use arclog::solver::{Case, Solver};
-use arclog::task::{read_judged_task, read_task, JudgedTask};
+use arclog::task::{read_judged_task, read_task, JudgedTask, Task};
 
 use crate::engine_run::{constructions, SESSION_BYTES};
 
@@ -39,24 +41,56 @@ impl ConceptCase<'_> {
     }
 }
 
-/// What `body` gives on the concept case of the solver `id` of `corpus`,
-/// on its task in `tasks`, or the fault that stops the case's setup.
-pub(crate) fn with_concept_case<T>(corpus: &Path, tasks: &Path, id: &str, body: impl FnOnce(&ConceptCase<'_>) -> Result<T, String>) -> Result<T, String> {
+/// A solver of the corpus with its task, as a run reads it and as the
+/// judge reads its pairs.
+pub(crate) struct CorpusTask {
+    pub(crate) solver: std::sync::Arc<Solver>,
+    pub(crate) task: Task,
+    pub(crate) judged: JudgedTask,
+}
+
+/// The solver `id` of `corpus` with its task in `tasks`, or the fault that
+/// stops its read.
+pub(crate) fn read_corpus_task(corpus: &Path, tasks: &Path, id: &str) -> Result<CorpusTask, String> {
     let solver = read_corpus_solver(corpus, id).ok_or("the solver's files do not read")?;
     let path = tasks.join(format!("{id}.json"));
     let task = read_task(&path).map_err(|error| format!("the task does not read: {error:?}"))?;
     let judged = read_judged_task(&path).map_err(|error| format!("the task's pairs do not read: {error:?}"))?;
+    Ok(CorpusTask { solver, task, judged })
+}
+
+/// The checked program of `case`, one of the cases whose clauses `clauses`
+/// index, or the checker's refusal of `what`, the case as a line names it.
+pub(crate) fn check_case(case: &ResolvedCase, clauses: &SolverClauses, cache: &mut CheckCache, what: &str) -> Result<CheckedProgram, String> {
+    check_shared_program(std::sync::Arc::clone(&case.resolved.value), clauses, Registry::get(), cache).map_err(|refusals| {
+        let messages: Vec<&str> = refusals.iter().map(|d| &*d.message).collect();
+        format!("the checker refuses {what}: {}", messages.join("; "))
+    })
+}
+
+/// The task session of a run over the corpus, under the corpus's caps.
+pub(crate) fn corpus_session() -> TaskSession {
+    TaskSession::new(SessionBound { bytes: SESSION_BYTES }, Caps::CORPUS)
+}
+
+/// The limits of a run over the corpus: no deadline, and a cancellation
+/// that nothing cancels.
+pub(crate) fn corpus_limits() -> Limits {
+    Limits { deadline: None, cancellation: Cancellation::default() }
+}
+
+/// What `body` gives on the concept case of the solver `id` of `corpus`,
+/// on its task in `tasks`, or the fault that stops the case's setup.
+pub(crate) fn with_concept_case<T>(corpus: &Path, tasks: &Path, id: &str, body: impl FnOnce(&ConceptCase<'_>) -> Result<T, String>) -> Result<T, String> {
+    let CorpusTask { solver, task, judged } = read_corpus_task(corpus, tasks, id)?;
     let registry = Registry::get();
     let cases = resolve_cases(&solver, registry);
     let clauses = SolverClauses::of_cases(&cases);
     let concept = cases.concept();
-    let program = check_shared_program(std::sync::Arc::clone(&concept.resolved.value), &clauses, registry, &mut CheckCache::default()).map_err(|refusals| {
-        let messages: Vec<&str> = refusals.iter().map(|d| &*d.message).collect();
-        format!("the checker refuses the concept case: {}", messages.join("; "))
-    })?;
+    let program = check_case(concept, &clauses, &mut CheckCache::default(), "the concept case")?;
     let parameters = ParameterValues::stored(solver.arcdata.value());
-    let session = TaskSession::new(SessionBound { bytes: SESSION_BYTES }, Caps::CORPUS);
-    let limits = Limits { deadline: None, cancellation: Cancellation::default() };
-    let evaluation = Evaluation { program: &program, task: &task, parameters: &parameters, session: &session, registry, constructions: constructions()?, limits: &limits };
+    let session = corpus_session();
+    let limits = corpus_limits();
+    let evaluation = Evaluation { program: &program, concept: None, task: &task, parameters: &parameters, session: &session, registry, constructions: constructions()?, limits: &limits };
     body(&ConceptCase { evaluation, solver: &solver, case: &concept.case, judged: &judged })
 }
