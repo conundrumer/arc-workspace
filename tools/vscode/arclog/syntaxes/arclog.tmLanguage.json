@@ -1,0 +1,279 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "arclog",
+  "scopeName": "source.arclog",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#string"
+    },
+    {
+      "include": "#claim-head"
+    },
+    {
+      "include": "#init-head"
+    },
+    {
+      "include": "#det-head"
+    },
+    {
+      "include": "#proposer"
+    },
+    {
+      "include": "#derived-name"
+    },
+    {
+      "include": "#relation"
+    },
+    {
+      "include": "#alts-name"
+    },
+    {
+      "include": "#alt"
+    },
+    {
+      "include": "#column"
+    },
+    {
+      "include": "#mark"
+    },
+    {
+      "include": "#form"
+    },
+    {
+      "include": "#logic"
+    },
+    {
+      "include": "#one"
+    },
+    {
+      "include": "#clause"
+    },
+    {
+      "include": "#input-head"
+    },
+    {
+      "include": "#constant"
+    },
+    {
+      "include": "#constraint"
+    },
+    {
+      "include": "#operator"
+    },
+    {
+      "include": "#record"
+    },
+    {
+      "include": "#wildcard"
+    },
+    {
+      "include": "#number"
+    },
+    {
+      "include": "#lib-relation"
+    },
+    {
+      "include": "#label"
+    },
+    {
+      "include": "#word"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.double-semicolon.arclog",
+      "match": ";;.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.arclog",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.arclog",
+          "match": "\\\\."
+        },
+        {
+          "name": "entity.name.function.relation.arclog",
+          "match": "&[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)*"
+        },
+        {
+          "name": "entity.name.type.alt.arclog",
+          "match": "\\$[A-Za-z_][A-Za-z0-9_]*"
+        }
+      ]
+    },
+    "claim-head": {
+      "comment": "A claim: its kind and its slug.",
+      "match": "(?<=\\()(INPUT|OUTPUT)(\\s+)([a-z][a-z0-9]*(?:-[a-z0-9]+)*)",
+      "captures": {
+        "1": {
+          "name": "storage.type.form.arclog"
+        },
+        "3": {
+          "name": "entity.name.section.claim.arclog"
+        }
+      }
+    },
+    "init-head": {
+      "comment": "An instance: its name and its component.",
+      "match": "(?<=\\()(INIT)(\\s+)(&[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)*)(\\s+)([A-Z][A-Za-z0-9_]*)",
+      "captures": {
+        "1": {
+          "name": "storage.type.form.arclog"
+        },
+        "3": {
+          "name": "entity.name.function.relation.arclog"
+        },
+        "5": {
+          "name": "support.class.component.arclog"
+        }
+      }
+    },
+    "det-head": {
+      "comment": "A determination by a proposer: its name and the proposer.",
+      "match": "(?<=\\()(DET)(\\s+)(&[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)*)(\\s+)([A-Z][A-Za-z0-9_]*)(?=\\s*[()])",
+      "captures": {
+        "1": {
+          "name": "storage.type.form.arclog"
+        },
+        "3": {
+          "name": "entity.name.function.relation.arclog"
+        },
+        "5": {
+          "name": "support.class.proposer.arclog"
+        }
+      }
+    },
+    "proposer": {
+      "comment": "The proposer that closes a DET_OR_RULE or RULE_OR_DET, after its gloss.",
+      "match": "(?<=\\\")(\\s+)([A-Z][A-Za-z0-9_]*)(?=\\s*\\))",
+      "captures": {
+        "2": {
+          "name": "support.class.proposer.arclog"
+        }
+      }
+    },
+    "derived-name": {
+      "comment": "A name that fixes an alt of a relation or a parameter: the relation, then the alt.",
+      "match": "(?<=[\\s(])([$&]?[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)*)(=)(?:(\\$[A-Za-z_][A-Za-z0-9_]*)|([A-Z][A-Za-z0-9_]*))",
+      "captures": {
+        "1": {
+          "name": "entity.name.function.relation.arclog"
+        },
+        "2": {
+          "name": "keyword.operator.assignment.arclog"
+        },
+        "3": {
+          "name": "entity.name.type.alt.arclog"
+        },
+        "4": {
+          "name": "support.class.proposer.arclog"
+        }
+      }
+    },
+    "relation": {
+      "comment": "A relation the program declares.",
+      "name": "entity.name.function.relation.arclog",
+      "match": "&[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)*"
+    },
+    "alt": {
+      "comment": "An alt: a constructor of its alts' ADT.",
+      "name": "entity.name.type.alt.arclog",
+      "match": "\\$[A-Za-z_][A-Za-z0-9_]*"
+    },
+    "column": {
+      "comment": "A site's column.",
+      "match": "(?<=\\()(:)([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": {
+          "name": "support.type.property-name.column.arclog punctuation.definition.column.arclog"
+        },
+        "2": {
+          "name": "support.type.property-name.column.arclog"
+        }
+      }
+    },
+    "mark": {
+      "comment": "A fresh label, * in a body and ^ in a key clause.",
+      "match": "([*^])([A-Za-z_][A-Za-z0-9_]*)?",
+      "captures": {
+        "1": {
+          "name": "storage.modifier.mark.arclog"
+        },
+        "2": {
+          "name": "entity.name.variable.fresh.arclog"
+        }
+      }
+    },
+    "form": {
+      "name": "storage.type.form.arclog",
+      "match": "(?<=\\()(?:INPUT|OUTPUT|RULE_OR_DET|DET_OR_RULE|RULE|DET|INIT|CHOOSE|RIGID_DET|ALTS|ALT|DEMONSTRATED|DEMO_RULE|APPROXIMATED)(?=[\\s)]|$)"
+    },
+    "clause": {
+      "comment": "A clause of a form: a key clause, an instance clause, and a choice's clauses.",
+      "name": "keyword.other.clause.arclog",
+      "match": "(?<=\\()(?:key|instance|for|from|never)(?=[\\s)]|$)"
+    },
+    "constant": {
+      "name": "variable.other.constant.arclog",
+      "match": "\\b(?:[A-Z][A-Z0-9]*_[A-Z0-9_]+|ZERO)\\b"
+    },
+    "operator": {
+      "name": "keyword.operator.comparison.arclog",
+      "match": "(?<=[\\s(])(?:!=|<=|>=|=|<|>)(?=[\\s)]|$)"
+    },
+    "number": {
+      "name": "constant.numeric.arclog",
+      "match": "(?<![A-Za-z0-9_.&$*^-])-?[0-9]+(?:\\.[0-9]+)?(?![A-Za-z0-9_])"
+    },
+    "lib-relation": {
+      "comment": "A lib or fact relation at the head of an atom.",
+      "name": "support.function.lib.arclog",
+      "match": "(?<=\\()[a-z][A-Za-z0-9_]*"
+    },
+    "label": {
+      "name": "variable.other.label.arclog",
+      "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+    },
+    "word": {
+      "name": "variable.other.arclog",
+      "match": "\\b[a-z][A-Za-z0-9_]*\\b"
+    },
+    "constraint": {
+      "comment": "A comparison at the head of a list: a constraint form, as NOT is.",
+      "name": "keyword.control.constraint.arclog",
+      "match": "(?<=\\()(?:!=|<=|>=|=|<|>)(?=[\\s)]|$)"
+    },
+    "record": {
+      "name": "punctuation.definition.record.arclog",
+      "match": "[{}\\[\\],]"
+    },
+    "wildcard": {
+      "name": "variable.language.wildcard.arclog",
+      "match": "(?<![A-Za-z0-9_])_(?![A-Za-z0-9_])"
+    },
+    "logic": {
+      "name": "keyword.control.logic.arclog",
+      "match": "(?<=\\()(?:OR|IF|ALL|NOT|END)(?=[\\s)]|$)"
+    },
+    "input-head": {
+      "comment": "An input of an instance, whose head sites follow as a list.",
+      "name": "entity.name.function.member.arclog",
+      "match": "(?<=\\()[a-z][A-Za-z0-9_]*(?=\\s+\\((?![:&a-z]))"
+    },
+    "alts-name": {
+      "comment": "The name of an ALTS form: the ADT of its alts.",
+      "name": "entity.name.type.alts.arclog",
+      "match": "(?<=\\(ALTS )\\$[A-Za-z_][A-Za-z0-9_]*"
+    },
+    "one": {
+      "comment": "A ONE mark: a constraint on the models of its relation, as a comparison is.",
+      "name": "keyword.control.constraint.arclog",
+      "match": "(?<=\\()ONE(?=[\\s)]|$)"
+    }
+  }
+}

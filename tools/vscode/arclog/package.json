@@ -1,0 +1,65 @@
+{
+  "name": "arclog",
+  "displayName": "arclog, arcdata and arcscene",
+  "description": "Syntax highlighting for arclog, arcdata and arcscene s-expression files.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "arclog",
+        "aliases": [
+          "arclog"
+        ],
+        "extensions": [
+          ".arclog",
+          ".arcschema"
+        ],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "arcdata",
+        "aliases": [
+          "arcdata"
+        ],
+        "extensions": [
+          ".arcdata"
+        ],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "arcscene",
+        "aliases": [
+          "arcscene"
+        ],
+        "extensions": [
+          ".arcscene"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "arclog",
+        "scopeName": "source.arclog",
+        "path": "./syntaxes/arclog.tmLanguage.json"
+      },
+      {
+        "language": "arcdata",
+        "scopeName": "source.arcdata",
+        "path": "./syntaxes/arcdata.tmLanguage.json"
+      },
+      {
+        "language": "arcscene",
+        "scopeName": "source.arcscene",
+        "path": "./syntaxes/arcscene.tmLanguage.json"
+      }
+    ]
+  }
+}

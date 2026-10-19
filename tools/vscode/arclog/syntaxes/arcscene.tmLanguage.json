@@ -1,0 +1,156 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "arcscene",
+  "scopeName": "source.arcscene",
+  "patterns": [
+    {
+      "include": "#form-level"
+    }
+  ],
+  "repository": {
+    "form-level": {
+      "comment": "The positions where a form stands: the top level, and directly under a claim block, an ALTS, an ALT or a RIGID.",
+      "patterns": [
+        {
+          "include": "source.arclog#comment"
+        },
+        {
+          "include": "source.arclog#string"
+        },
+        {
+          "include": "#container"
+        },
+        {
+          "include": "#rigid"
+        },
+        {
+          "include": "#constraint"
+        },
+        {
+          "include": "#render"
+        },
+        {
+          "include": "#list"
+        },
+        {
+          "include": "source.arclog"
+        }
+      ]
+    },
+    "container": {
+      "comment": "A claim block, an ALTS or an ALT: arclog's forms, whose children stand at form level.",
+      "begin": "\\((?=(?:INPUT|OUTPUT|ALTS|ALT)(?=[\\s)]|$))",
+      "end": "\\)",
+      "patterns": [
+        {
+          "include": "#form-level"
+        }
+      ]
+    },
+    "rigid": {
+      "comment": "A RIGID container: it groups declarations that one D4 element moves together.",
+      "begin": "(\\()(RIGID)(?=[\\s)]|$)",
+      "beginCaptures": {
+        "2": {
+          "name": "storage.type.form.arcscene"
+        }
+      },
+      "end": "\\)",
+      "patterns": [
+        {
+          "include": "#form-level"
+        }
+      ]
+    },
+    "constraint": {
+      "comment": "An ALL form that stands as a form, outside a clause: a constraint on the instance.",
+      "begin": "(\\()(ALL)(?=[\\s)]|$)",
+      "beginCaptures": {
+        "2": {
+          "name": "keyword.control.constraint.arcscene"
+        }
+      },
+      "end": "\\)",
+      "patterns": [
+        {
+          "include": "#clause-level"
+        }
+      ]
+    },
+    "render": {
+      "comment": "A RENDER form: its target, its head sites, then its body over the scene side.",
+      "begin": "(\\()(RENDER)(?=[\\s)]|$)",
+      "beginCaptures": {
+        "2": {
+          "name": "storage.type.form.arcscene"
+        }
+      },
+      "end": "\\)",
+      "patterns": [
+        {
+          "include": "#task-side"
+        },
+        {
+          "include": "#clause-level"
+        }
+      ]
+    },
+    "list": {
+      "begin": "\\(",
+      "end": "\\)",
+      "patterns": [
+        {
+          "include": "#clause-level"
+        }
+      ]
+    },
+    "clause-level": {
+      "patterns": [
+        {
+          "include": "source.arclog#comment"
+        },
+        {
+          "include": "source.arclog#string"
+        },
+        {
+          "include": "#parse"
+        },
+        {
+          "include": "#any"
+        },
+        {
+          "include": "#builtin"
+        },
+        {
+          "include": "#task-side"
+        },
+        {
+          "include": "#list"
+        },
+        {
+          "include": "source.arclog"
+        }
+      ]
+    },
+    "parse": {
+      "comment": "A parse clause of a declaration.",
+      "name": "keyword.other.clause.arcscene",
+      "match": "(?<=\\()parse(?=[\\s)]|$)"
+    },
+    "any": {
+      "comment": "An ANY mark: a constraint on the models of its CHOOSE, as arclog's ONE mark is.",
+      "name": "keyword.control.constraint.arclog",
+      "match": "(?<=\\()ANY(?=[\\s)]|$)"
+    },
+    "builtin": {
+      "comment": "A built-in relation: a set of values the driver supplies.",
+      "name": "support.function.builtin.arcscene",
+      "match": "(?<=\\()(?:ex|color|number|ident)(?=[\\s)]|$)"
+    },
+    "task-side": {
+      "comment": "A task-side relation, at the head of an atom or as a RENDER target.",
+      "name": "support.function.task-side.arcscene",
+      "match": "(?<=\\(|\\(RENDER\\s)(?:ex_input|ex_output)(?=[\\s)]|$)"
+    }
+  }
+}

@@ -1,0 +1,3372 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "arcdata",
+  "scopeName": "source.arcdata",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#string"
+    },
+    {
+      "include": "#color-rows"
+    },
+    {
+      "include": "#color-param"
+    },
+    {
+      "include": "#grid-form"
+    },
+    {
+      "include": "#named-form"
+    },
+    {
+      "include": "#column"
+    },
+    {
+      "include": "#head-keyword"
+    },
+    {
+      "include": "#derived-name"
+    },
+    {
+      "include": "#reference"
+    },
+    {
+      "include": "#alts-name"
+    },
+    {
+      "include": "#alt"
+    },
+    {
+      "include": "#value-word"
+    },
+    {
+      "include": "#derivation"
+    },
+    {
+      "include": "#type-name"
+    },
+    {
+      "include": "#constant"
+    },
+    {
+      "include": "#number"
+    },
+    {
+      "include": "#label"
+    },
+    {
+      "include": "#word"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.double-semicolon.arcdata",
+      "match": ";;.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.arcdata",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.arcdata",
+          "match": "\\\\."
+        },
+        {
+          "name": "entity.name.function.relation.arcdata",
+          "match": "&[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)*"
+        },
+        {
+          "name": "entity.name.type.alt.arcdata",
+          "match": "\\$[A-Za-z_][A-Za-z0-9_]*"
+        }
+      ]
+    },
+    "named-form": {
+      "match": "(\\()(witness|approximated|relaxed|representative)(\\s+)([A-Za-z0-9][A-Za-z0-9_-]*)(?![.=A-Za-z0-9_-])",
+      "captures": {
+        "1": {
+          "name": "punctuation.section.arcdata"
+        },
+        "2": {
+          "name": "storage.type.form.arcdata"
+        },
+        "4": {
+          "name": "entity.name.section.arcdata"
+        }
+      }
+    },
+    "head-keyword": {
+      "name": "storage.type.form.arcdata",
+      "match": "(?<=\\()(?:param|open|exclude|approximated|alts|alt|witness|output|input|grid|representative|relaxed|separates|assign|concept)(?=[\\s)]|$)"
+    },
+    "derived-name": {
+      "comment": "A name that fixes an alt of a relation or a parameter: the relation, then the alt.",
+      "match": "(?<=[\\s(])([$&]?[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)*)(=)(?:(stored|derived)|(\\$[A-Za-z_][A-Za-z0-9_]*)|([A-Z][A-Za-z0-9_]*))",
+      "captures": {
+        "1": {
+          "name": "entity.name.function.relation.arcdata"
+        },
+        "2": {
+          "name": "keyword.operator.assignment.arcdata"
+        },
+        "3": {
+          "name": "constant.language.alt.arcdata"
+        },
+        "4": {
+          "name": "entity.name.type.alt.arcdata"
+        },
+        "5": {
+          "name": "support.class.proposer.arcdata"
+        }
+      }
+    },
+    "reference": {
+      "name": "entity.name.function.relation.arcdata",
+      "match": "&[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)*"
+    },
+    "alt": {
+      "name": "entity.name.type.alt.arcdata",
+      "match": "\\$[A-Za-z_][A-Za-z0-9_]*",
+      "comment": "An alt: a constructor of its alts' ADT."
+    },
+    "value-word": {
+      "name": "constant.language.verdict.arcdata",
+      "match": "\\b(?:ordinary|variant|borderline|foreign|concept|any|other|undefined)\\b"
+    },
+    "constant": {
+      "name": "variable.other.constant.arcdata",
+      "match": "\\b(?:[A-Z][A-Z0-9]*_[A-Z0-9_]+|ZERO)\\b"
+    },
+    "number": {
+      "name": "constant.numeric.arcdata",
+      "match": "(?<![A-Za-z0-9_.&$-])-?[0-9]+(?![A-Za-z0-9_])"
+    },
+    "label": {
+      "name": "variable.other.label.arcdata",
+      "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+    },
+    "word": {
+      "name": "variable.other.arcdata",
+      "match": "\\b[a-z][A-Za-z0-9_-]*\\b"
+    },
+    "grid-row": {
+      "begin": "\\((?=[0-9_@]+(?: [0-9_@]+)*\\))",
+      "end": "\\)",
+      "patterns": [
+        {
+          "match": "0",
+          "name": "constant.numeric.arc.0"
+        },
+        {
+          "match": "1",
+          "name": "constant.numeric.arc.1"
+        },
+        {
+          "match": "2",
+          "name": "constant.numeric.arc.2"
+        },
+        {
+          "match": "3",
+          "name": "constant.numeric.arc.3"
+        },
+        {
+          "match": "4",
+          "name": "constant.numeric.arc.4"
+        },
+        {
+          "match": "5",
+          "name": "constant.numeric.arc.5"
+        },
+        {
+          "match": "6",
+          "name": "constant.numeric.arc.6"
+        },
+        {
+          "match": "7",
+          "name": "constant.numeric.arc.7"
+        },
+        {
+          "match": "8",
+          "name": "constant.numeric.arc.8"
+        },
+        {
+          "match": "9",
+          "name": "constant.numeric.arc.9"
+        },
+        {
+          "match": "@",
+          "name": "keyword.operator.anchor.arcdata"
+        },
+        {
+          "match": "_",
+          "name": "constant.numeric.arc.0.blank.arcdata"
+        }
+      ]
+    },
+    "alts-name": {
+      "comment": "The name of an ALTS form: the ADT of its alts.",
+      "name": "entity.name.type.alts.arcdata",
+      "match": "(?<=\\(alts )\\$[A-Za-z_][A-Za-z0-9_]*"
+    },
+    "grid-form": {
+      "begin": "(?<=\\()(grid)(?=[\\s)]|$)",
+      "beginCaptures": {
+        "1": {
+          "name": "storage.type.form.arcdata"
+        }
+      },
+      "end": "(?=\\))",
+      "patterns": [
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#grid-row"
+        }
+      ]
+    },
+    "color-param": {
+      "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(Color)(?=[\\s)])",
+      "beginCaptures": {
+        "1": {
+          "name": "storage.type.form.arcdata"
+        },
+        "2": {
+          "name": "entity.name.function.relation.arcdata"
+        },
+        "3": {
+          "name": "support.type.arcdata"
+        }
+      },
+      "end": "^(?=\\S)",
+      "patterns": [
+        {
+          "match": "\\b0\\b",
+          "name": "constant.numeric.arc.0"
+        },
+        {
+          "match": "\\b1\\b",
+          "name": "constant.numeric.arc.1"
+        },
+        {
+          "match": "\\b2\\b",
+          "name": "constant.numeric.arc.2"
+        },
+        {
+          "match": "\\b3\\b",
+          "name": "constant.numeric.arc.3"
+        },
+        {
+          "match": "\\b4\\b",
+          "name": "constant.numeric.arc.4"
+        },
+        {
+          "match": "\\b5\\b",
+          "name": "constant.numeric.arc.5"
+        },
+        {
+          "match": "\\b6\\b",
+          "name": "constant.numeric.arc.6"
+        },
+        {
+          "match": "\\b7\\b",
+          "name": "constant.numeric.arc.7"
+        },
+        {
+          "match": "\\b8\\b",
+          "name": "constant.numeric.arc.8"
+        },
+        {
+          "match": "\\b9\\b",
+          "name": "constant.numeric.arc.9"
+        }
+      ]
+    },
+    "type-name": {
+      "match": "\\b(?:Color|Axis|Dir|DiagDir|DiagAxis|Dir8|Axis4|D4|C4|Sym|Sense|Ident|Example|number|unsigned|float|symbol|Position|Box|Offset|Pose)\\b",
+      "name": "support.type.arcdata"
+    },
+    "color-rows": {
+      "patterns": [
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\((?!Color\\b)\\w+\\s+Color\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\(Color\\s+(?!Color\\b)\\w+\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\(Color\\s+Color\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((\\d)\\s+(\\d)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\((?!Color\\b)\\w+\\s+(?!Color\\b)\\w+\\s+Color\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((?:\\([^()]*\\)|[^\\s()]+)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\((?!Color\\b)\\w+\\s+Color\\s+(?!Color\\b)\\w+\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\((?!Color\\b)\\w+\\s+Color\\s+Color\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\s+(\\d)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\(Color\\s+(?!Color\\b)\\w+\\s+(?!Color\\b)\\w+\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\(Color\\s+(?!Color\\b)\\w+\\s+Color\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\(Color\\s+Color\\s+(?!Color\\b)\\w+\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((\\d)\\s+(\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\(Color\\s+Color\\s+Color\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((\\d)\\s+(\\d)\\s+(\\d)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "3": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\((?!Color\\b)\\w+\\s+(?!Color\\b)\\w+\\s+(?!Color\\b)\\w+\\s+Color\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((?:\\([^()]*\\)|[^\\s()]+)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\((?!Color\\b)\\w+\\s+(?!Color\\b)\\w+\\s+Color\\s+(?!Color\\b)\\w+\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((?:\\([^()]*\\)|[^\\s()]+)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\((?!Color\\b)\\w+\\s+(?!Color\\b)\\w+\\s+Color\\s+Color\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((?:\\([^()]*\\)|[^\\s()]+)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\s+(\\d)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\((?!Color\\b)\\w+\\s+Color\\s+(?!Color\\b)\\w+\\s+(?!Color\\b)\\w+\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\((?!Color\\b)\\w+\\s+Color\\s+(?!Color\\b)\\w+\\s+Color\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\((?!Color\\b)\\w+\\s+Color\\s+Color\\s+(?!Color\\b)\\w+\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\s+(\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\((?!Color\\b)\\w+\\s+Color\\s+Color\\s+Color\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\s+(\\d)\\s+(\\d)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "3": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\(Color\\s+(?!Color\\b)\\w+\\s+(?!Color\\b)\\w+\\s+(?!Color\\b)\\w+\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\(Color\\s+(?!Color\\b)\\w+\\s+(?!Color\\b)\\w+\\s+Color\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\(Color\\s+(?!Color\\b)\\w+\\s+Color\\s+(?!Color\\b)\\w+\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\(Color\\s+(?!Color\\b)\\w+\\s+Color\\s+Color\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\s+(\\d)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "3": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\(Color\\s+Color\\s+(?!Color\\b)\\w+\\s+(?!Color\\b)\\w+\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((\\d)\\s+(\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\(Color\\s+Color\\s+(?!Color\\b)\\w+\\s+Color\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((\\d)\\s+(\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\s+(\\d)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "3": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\(Color\\s+Color\\s+Color\\s+(?!Color\\b)\\w+\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((\\d)\\s+(\\d)\\s+(\\d)\\s+(?:\\([^()]*\\)|[^\\s()]+)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "3": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "begin": "(?<=\\()(param)\\s+(&[\\w.]+)\\s+(\\(Color\\s+Color\\s+Color\\s+Color\\))",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.form.arcdata"
+            },
+            "2": {
+              "name": "entity.name.function.relation.arcdata"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-name"
+                }
+              ]
+            }
+          },
+          "end": "^(?=\\S)",
+          "patterns": [
+            {
+              "include": "#column"
+            },
+            {
+              "match": "\\((\\d)\\s+(\\d)\\s+(\\d)\\s+(\\d)\\)",
+              "captures": {
+                "1": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "2": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "3": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                },
+                "4": {
+                  "patterns": [
+                    {
+                      "match": "0",
+                      "name": "constant.numeric.arc.0"
+                    },
+                    {
+                      "match": "1",
+                      "name": "constant.numeric.arc.1"
+                    },
+                    {
+                      "match": "2",
+                      "name": "constant.numeric.arc.2"
+                    },
+                    {
+                      "match": "3",
+                      "name": "constant.numeric.arc.3"
+                    },
+                    {
+                      "match": "4",
+                      "name": "constant.numeric.arc.4"
+                    },
+                    {
+                      "match": "5",
+                      "name": "constant.numeric.arc.5"
+                    },
+                    {
+                      "match": "6",
+                      "name": "constant.numeric.arc.6"
+                    },
+                    {
+                      "match": "7",
+                      "name": "constant.numeric.arc.7"
+                    },
+                    {
+                      "match": "8",
+                      "name": "constant.numeric.arc.8"
+                    },
+                    {
+                      "match": "9",
+                      "name": "constant.numeric.arc.9"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "include": "#value-word"
+            },
+            {
+              "include": "#constant"
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        }
+      ]
+    },
+    "derivation": {
+      "match": "(?<=\\()[A-Z][a-z0-9]+(?:[A-Z0-9][a-z0-9]*)+(?=[\\s)]|$)",
+      "name": "support.class.proposer.arcdata"
+    },
+    "column": {
+      "match": "(?<=\\()(:[A-Za-z]\\w*)(?=[\\s)])",
+      "captures": {
+        "1": {
+          "name": "support.type.property-name.column.arcdata"
+        }
+      }
+    }
+  }
+}
