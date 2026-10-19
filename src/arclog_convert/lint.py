@@ -369,7 +369,8 @@ class Linter:
                     if not (isinstance(x, Sym) and known and x.text in known[0]):
                         self.err(m.line, "one", f"(ONE ...): {flat(x)} is no column of {f.items[1].text}")
             self.stored.add(f.items[1].text)
-            self.declare(f.items[1].text, set(), "DET", f.line)
+            # the relation of a line with no body has its first proposer's columns
+            self.declare(f.items[1].text, set(known[0]) if known else set(), "DET", f.line)
         elif h == "INIT":
             self.init(f, alt)
         elif h == "CHOOSE":

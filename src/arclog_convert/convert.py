@@ -158,6 +158,11 @@ DET_COLS = PROPOSER_COLS | DERIVATION_COLS
 type ColMismatch = dict[str, tuple[list[Col], list[Col]]]
 
 
+def derive_proposer(rest: str) -> str:
+    """The proposer an `@derive` line gives, from the text after its directive."""
+    return rest.split(":")[0].strip()
+
+
 def domain_proposer(types: list[str]) -> str:
     """The domain proposer of a value of `types`."""
     return "".join(pascal(t) for t in types) + "Domain"
@@ -3304,7 +3309,7 @@ class Solver:
         params_decls = [r for r in prog.relations if r.scope.components == ("Params",)]
         # the proposers of each parameter's @derive lines
         self.derive_props = {r.name: list(dict.fromkeys(
-            rest.split(":")[0].strip() for d, rest, _ in directives(self.comments_above(r.span.first)) if d == "derive"))
+            derive_proposer(rest) for d, rest, _ in directives(self.comments_above(r.span.first)) if d == "derive"))
             for r in params_decls if r.span}
         self.many = {n for n, ps in self.derive_props.items() if len(ps) > 1}
 
@@ -3396,7 +3401,10 @@ class Solver:
                 prop = helper_det[r.name][0]
                 name = libmap.DERIVATIONS[prop] if prop else None
             elif any(d == "derive" for d, _, _ in ds):
-                continue   # a DET_OR_RULE: the stored side's columns, the Params declaration's
+                if r.name in c.cand_params:
+                    continue   # a DET_OR_RULE with a body: the columns its body's labels give
+                # a DET_OR_RULE with no body: its first proposer's columns
+                name = self.derive_props[r.name][0]
             elif r.name in c.cand_params:
                 name = domain_proposer(types)
             else:
@@ -3467,7 +3475,7 @@ class Solver:
             under = None   # the proposer of the @derive line an @ignore line stands under
             for d, rest, _ in ds:
                 if d == "derive":
-                    under = rest.split(":")[0].strip()
+                    under = derive_proposer(rest)
                 elif d == "ignore":
                     arcdata_excludes.extend(self.ignore_line(r.name, rest, concept, under))
                 else:
@@ -3485,7 +3493,7 @@ class Solver:
                     arcdata_params.append(self.keyed_param_line(amp, kt, param_facts, grid_params))
                 continue
             if derives:
-                props = list(dict.fromkeys(d.split(":")[0].strip() for d in derives))
+                props = self.derive_props[r.name]
                 if r.name in c.cand_params:
                     # the stored reading: the candidates the examples show, kept by the program's fit
                     lab = pascal(r.columns[0].name)
@@ -5901,13 +5909,13 @@ class Solver:
         for amp, derives, side, dl_name in derive_points + self.store_points:
             out.append(f"(alts {amp}")
             # one derived side per proposer where the line gives several
-            props = list(dict.fromkeys(d.split(":")[0].strip() for d in derives))
+            props = list(dict.fromkeys(map(derive_proposer, derives)))
             many = side == "Derived" and len(props) > 1
             for p_ in (props if many else [None]):
                 alt = f"{amp}={p_}" if many else f"{amp}=${side}"
                 out.append(f"  (alt {alt}")
                 for d in derives:
-                    prop = d.split(":")[0].strip()
+                    prop = derive_proposer(d)
                     if many and prop != p_:
                         continue
                     rest = d.split(":", 1)[1].strip() if ":" in d else ""

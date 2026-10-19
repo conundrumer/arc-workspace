@@ -375,7 +375,7 @@ A `DET_OR_RULE` or `RULE_OR_DET` line is an `ALTS` form on its relation, whose r
 
 A line with several proposers has a derived reading per proposer, each an alt of its own: `&tile_size=$Stored`, then `&tile_size=ConstInDim`, `&tile_size=SepTileDim`, `&tile_size=TileCount` and `&tile_size=TileDim`.
 
-The relation's columns are the stored parameter's, as the concept case's reading gives them, and each proposer's columns map onto them by position. A `DET` that names one proposer, with no stored reading, has that proposer's columns: `(DET &bg ChangedColor)` is read as `(&bg (:C *C))`.
+A line with no body has its first proposer's columns, in every reading, and each other proposer's columns map onto them by position. A `DET` that names one proposer, with no stored reading, has that proposer's columns: `(DET &bg ChangedColor)` is read as `(&bg (:C *C))`.
 
 ```
 (DET_OR_RULE &marker_max_side "The longest side a marker's box may have." SepTileCount TileCount

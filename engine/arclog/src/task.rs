@@ -207,8 +207,9 @@ impl Task {
 
     /// The rows of `fact`, typed as [`crate::registry::Registry::fact_columns`]
     /// gives: `input` on `example`, a cell's Position in the input's frame
-    /// and its Color, and `ex_input` and `ex_output`, task-wide, the same
-    /// over each train pair with its Example first. `example` is `Some` for
+    /// and its Color, and, task-wide with the Example first, `ex_input` the
+    /// same over the input of each example, train and test, and `ex_output`
+    /// over the output of each train pair. `example` is `Some` for
     /// `input` alone, and any other pairing is a fault of the caller, so
     /// this panics on one.
     pub fn fact_rows(&self, fact: FactRelation, example: Option<Example>) -> Relation {
@@ -224,9 +225,13 @@ impl Task {
                 }
             }
             (FactRelation::ExInput | FactRelation::ExOutput, None) => {
-                for (pair, index) in self.train.iter().zip(0u16..) {
-                    let grid = if fact == FactRelation::ExInput { &pair.input } else { &pair.output };
-                    let example = encode(Term::Constant(Constant::Example(Example::at(index))));
+                let grids: Box<dyn Iterator<Item = (Example, &Grid)>> = if fact == FactRelation::ExInput {
+                    Box::new(self.examples().map(|example| (example, self.input(example))))
+                } else {
+                    Box::new(self.train.iter().zip(0u16..).map(|(pair, index)| (Example::at(index), &pair.output)))
+                };
+                for (example, grid) in grids {
+                    let example = encode(Term::Constant(Constant::Example(example)));
                     for (position, color) in grid.cells() {
                         rows.insert(Box::new([example, encode(Term::Box(position)), encode(Term::Constant(Constant::Color(color)))]));
                     }
