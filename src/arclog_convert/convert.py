@@ -167,6 +167,17 @@ def covered_proposer(verdict: tuple[str, ...] | None, types: list[str]) -> str |
     return domain_proposer(types) if verdict[1] in ("domain", "position-domain") else verdict[1]
 
 
+def plan_proposer(verdict: tuple[str, ...] | None, types: list[str], open_value: bool) -> str | None:
+    """The proposer a parameter's DET names by its plan verdict: the one
+    `covered_proposer` gives; or, for an open parameter the plan leaves
+    `undecided`, the domain proposer of `types` where one is defined, whose
+    values the fit keeps as the parameter's open values."""
+    if verdict and verdict[0] == "undecided":
+        prop = domain_proposer(types)
+        return prop if open_value and prop in PROPOSER_COLS else None
+    return covered_proposer(verdict, types)
+
+
 @dataclass(frozen=True)
 class KeyedTable:
     """A set-keyed table, held in Souffle as two parameters joined by an id
@@ -542,6 +553,144 @@ def derived_param(amp: str, rows: list[list[str]], proposer: str | None) -> str 
     if proposer:
         return "\n".join([f"(param {amp} ({proposer}", *("  " + r for r in rows_text)]) + "))"
     return f"(param {amp} " + " ".join(rows_text) + ")"
+
+
+@dataclass(frozen=True)
+class SquareExtent:
+    """The atoms of a clause, each of a parameter, over `label`, a frame's
+    extent on both axes."""
+
+    atoms: tuple[AtomLiteral, ...]
+    label: str
+
+
+@dataclass(frozen=True)
+class AxisExtent:
+    """The atoms of one parameter of an axis and an extent, at `AXIS_V` and
+    at `AXIS_H`, that give a frame's extent on each axis."""
+
+    atoms: tuple[AtomLiteral, AtomLiteral]
+
+
+type Extent = SquareExtent | AxisExtent
+
+
+@dataclass(frozen=True)
+class FrameRead:
+    """A read of `helpers.frame_pos`: the frame's extent, and the term of
+    its cell."""
+
+    extent: Extent
+    cell: Variable | Wildcard
+
+
+@dataclass(frozen=True)
+class TilingRead:
+    """A read of `helpers.tile_pos`: the extents of the outer and the inner
+    frame, the gap (None for a gap of 0), and the terms of the cell, its
+    outer position and its inner position."""
+
+    outer: Extent
+    inner: Extent
+    gap: Extent | None
+    cells: tuple[Variable | Wildcard, Variable | Wildcard, Variable | Wildcard]
+
+
+@dataclass(frozen=True)
+class FieldPlan:
+    """A table's one clause, whose one read of `helpers` gives a frame or a
+    tiled frame of extents that parameters give, and the clause's other
+    literals."""
+
+    unit: Unit
+    read: FrameRead | TilingRead
+    rest: tuple
+
+
+def helpers_read(u: Unit) -> int | None:
+    """The index of `u`'s one body atom of `helpers`; None where it has
+    none or several."""
+    hs = [i for i, l in enumerate(u.body or ()) if isinstance(l, AtomLiteral)
+          and l.atom.relation.instances == ("helpers",)]
+    return hs[0] if len(hs) == 1 else None
+
+
+def field_plan(us: list[Unit], params: set[str]) -> FieldPlan | None:
+    """The plan of a table whose one clause reads one `helpers.frame_pos` or
+    `helpers.tile_pos`, with each extent an `Extent` over the parameters
+    `params`; None otherwise. An atom of an extent stays among the other
+    literals where a label of it is read elsewhere in the clause."""
+    if len(us) != 1:
+        return None
+    u = us[0]
+    body = list(u.body or ())
+    h = helpers_read(u)
+    if h is None or body[h].negated:
+        return None
+    a = body[h].atom
+    others = [l for j, l in enumerate(body) if j != h]
+
+    def vars_of(lits) -> set[str]:
+        out: set[str] = set()
+        collect_vars(list(lits), out)
+        return out
+
+    def of_param(l) -> bool:
+        return isinstance(l, AtomLiteral) and not l.negated and not l.atom.relation.instances \
+            and l.atom.relation.name in params
+
+    def extent(d) -> Extent | None:
+        if not isinstance(d, RecordTerm) or len(d.args) != 2:
+            return None
+        x, y = d.args
+        if isinstance(x, Variable) and x == y:
+            bs = tuple(l for l in others if of_param(l) and vars_of([l]) == {x.name})
+            return SquareExtent(bs, x.name) if bs else None
+        if not (isinstance(x, Variable) and isinstance(y, Variable)):
+            return None
+
+        def at(axis: str, v: Variable) -> AtomLiteral | None:
+            got = [l for l in others if of_param(l) and l.atom.args == (DefinedName(axis), v)]
+            return got[0] if len(got) == 1 else None
+        av, ah = at("AXIS_V", x), at("AXIS_H", y)
+        if av is None or ah is None or av.atom.relation != ah.atom.relation:
+            return None
+        return AxisExtent((av, ah))
+
+    def zero(d) -> bool:
+        return isinstance(d, RecordTerm) and all(isinstance(t, NumberTerm) and t.value == 0 for t in d.args)
+
+    def position(t) -> Variable | Wildcard | None:
+        return t if isinstance(t, (Variable, Wildcard)) else None
+
+    read: FrameRead | TilingRead
+    if a.relation.name == "frame_pos" and len(a.args) == 2:
+        e, p = extent(a.args[0]), position(a.args[1])
+        if e is None or p is None:
+            return None
+        read, used = FrameRead(e, p), e.atoms
+    elif a.relation.name == "tile_pos" and len(a.args) == 6:
+        outer, inner = extent(a.args[0]), extent(a.args[1])
+        gap = None if zero(a.args[2]) else extent(a.args[2])
+        p, po, pi = (position(t) for t in a.args[3:])
+        if outer is None or inner is None or (gap is None and not zero(a.args[2])) \
+                or p is None or po is None or pi is None:
+            return None
+        read = TilingRead(outer, inner, gap, (p, po, pi))
+        used = outer.atoms + inner.atoms + (gap.atoms if gap else ())
+    else:
+        return None
+    rest = [l for l in others if not any(l is x for x in used)]
+    elsewhere = vars_of(rest) | vars_of([AtomLiteral(u.head, False)])
+    kept = [l for l in others if any(l is x for x in used) and vars_of([l]) & elsewhere]
+    return FieldPlan(u, read, tuple(kept + rest))
+
+
+def head_renames(u: Unit, r) -> dict[str, str]:
+    """Each variable of `u`'s head renamed to the column of `r`, its
+    relation's declaration, that it stands at, where the names differ."""
+    cols = [pascal(col.name) for col in r.columns]
+    return {t.name: cols[k] for k, t in enumerate(u.head.args) if isinstance(t, Variable) and t.name != cols[k]}
 
 
 def mask_param(amp: str, rows: list[list[str]]) -> str | None:
@@ -3330,19 +3479,25 @@ class Solver:
             if u.scope.components == ("Params",) and u.head.relation.name in helper_derived:
                 continue
             collect(u.body or (), u.scope.components == ("Params",))
-        # a table no proposer gives, whose clauses read a frame of a stored
-        # extent: a Frame2D or AxisFrame instance, and its sources stay
+        # a table whose clause reads a frame or a tiled frame of extents
+        # that parameters give: instances over those parameters' DETs; else
+        # one whose clauses read a frame of a stored extent: a Frame2D or
+        # AxisFrame instance; and the sources of each stay
+        fielded: dict[str, FieldPlan] = {}
         framed: dict[str, tuple[str, list, list]] = {}
         for name in helper_derived:
-            if derived_param("&" + name, helper_rows.get(name, []), "Frame2D") is not None:
+            fields = field_plan(param_rules.get(name, []), param_names)
+            if fields is not None:
+                fielded[name] = fields
                 continue
             got = self.frame_plan(param_rules.get(name, []))
             if got is not None:
                 framed[name] = got
+        instanced = framed.keys() | fielded.keys()
         helper_inputs: set[str] = set()
         for u in prog.units:
             if u.scope.components == ("Params",) and u.head.relation.name in helper_derived \
-                    and u.head.relation.name not in framed:
+                    and u.head.relation.name not in instanced:
                 collect_into = set()
                 for l in u.body or ():
                     if isinstance(l, AtomLiteral) and not l.atom.relation.instances:
@@ -3358,7 +3513,7 @@ class Solver:
         for r in params_decls:
             ds = directives(self.comments_above(r.span.first)) if r.span else []
             types = [col.type.name for col in r.columns]
-            if r.name in helper_derived and r.name not in dropped and r.name not in framed:
+            if r.name in helper_derived and r.name not in dropped and r.name not in instanced:
                 helper_det[r.name] = self.helper_derivation(
                     c.rel_name(("Params",), r.name), param_rules.get(r.name, []), helper_rows.get(r.name, []))
                 prop = helper_det[r.name][0]
@@ -3368,7 +3523,7 @@ class Solver:
             elif r.name in c.cand_params:
                 name = domain_proposer(types)
             else:
-                name = covered_proposer(self.plan().get(r.name), types)
+                name = plan_proposer(self.plan().get(r.name), types, r.name in c.open_params)
                 if name in PROPOSER_COLS:
                     covered[r.name] = name
             if name in DET_COLS:
@@ -3388,6 +3543,9 @@ class Solver:
             if r.name in dropped:
                 det_units.pop(r.name, None)
                 continue
+            if r.name in fielded:
+                forms.extend(self.field_forms(r, fielded[r.name]))
+                continue
             if r.name in framed:
                 forms.extend(self.frame_forms(r, framed[r.name]))
                 continue
@@ -3400,6 +3558,8 @@ class Solver:
                 f = Form([f"(DET {amp}{' ' + prop if prop else ''})"], amp, set(), line=r.span.first if r.span else 0)
                 if prop is None:
                     self.todo.add("no-det-proposer", f"{amp}: no proposer gives the table")
+                else:
+                    self.todo.add("stored-fields", f"{amp}: the {libmap.DERIVATIONS[prop]} fields are stored")
                 f.comments = [*(f";; {params_to_amp(g)}" for g in [gloss] if g), *self.todo.take()]
                 forms.append(f)
                 arcdata_params.append(record or mask_param(amp, rows) or
@@ -3476,7 +3636,7 @@ class Solver:
             else:
                 verdict = self.plan().get(r.name)
                 types = [col.type.name for col in r.columns]
-                prop = covered_proposer(verdict, types)
+                prop = plan_proposer(verdict, types, r.name in c.open_params)
                 if prop:
                     f = Form([f"(DET {amp} {prop})"], amp, set(), line=r.span.first if r.span else 0)
                     f.comments = [f";; {params_to_amp(gloss)}"] if gloss else []
@@ -3484,8 +3644,11 @@ class Solver:
                     f = Form([f"(DET {amp})"], amp, set(), line=r.span.first if r.span else 0)
                     kind = "no-det-rigid" if r.name.startswith("_rigid_") else \
                         "no-det-relation" if verdict and verdict[0] == "write" else \
-                        "no-det-plan" if verdict is None else "no-det-" + verdict[0]
-                    self.todo.add(kind, f"{amp}: " + (" ".join(verdict[1:]) if verdict else "the plan gives no verdict"))
+                        "no-det-plan" if verdict is None or verdict[0] == "undecided" else "no-det-" + verdict[0]
+                    why = "the plan gives no verdict" if verdict is None else \
+                        "the plan leaves it undecided, and no domain proposer gives its value" \
+                        if verdict[0] == "undecided" else " ".join(verdict[1:])
+                    self.todo.add(kind, f"{amp}: {why}")
                     f.comments = [*(f";; {params_to_amp(g)}" for g in [gloss] if g), *self.todo.take()]
                 forms.append(f)
             if r.name in param_facts or r.name in grid_params:
@@ -3676,15 +3839,14 @@ class Solver:
         clause, as Frame2D; or a 1-wide frame along each axis, one clause per
         axis that names the axis in its head, as AxisFrame. None otherwise."""
         def split_unit(u):
-            hs = [i for i, l in enumerate(u.body or ()) if isinstance(l, AtomLiteral)
-                  and l.atom.relation.instances == ("helpers",)]
-            if len(hs) != 1:
+            h = helpers_read(u)
+            if h is None:
                 return None
-            a = u.body[hs[0]].atom
+            a = u.body[h].atom
             if a.relation.name != "frame_pos" or not isinstance(a.args[0], RecordTerm) \
                     or len(a.args[0].args) != 2 or not isinstance(a.args[1], Variable):
                 return None
-            return hs[0], list(a.args[0].args), a.args[1].name
+            return h, list(a.args[0].args), a.args[1].name
         parts = [split_unit(u) for u in us]
         if not us or any(x is None for x in parts):
             return None
@@ -3737,10 +3899,7 @@ class Solver:
         c.wrote(f"{inst}.cell", Written(("Params",), "helpers.frame_pos", False))
         u, n, p, bs, rest = units[0][:5]
         cols = [pascal(col.name) for col in r.columns]
-        ren: dict[str, str] = {}
-        for k, t in enumerate(u.head.args):
-            if isinstance(t, Variable) and t.name != cols[k]:
-                ren[t.name] = cols[k]
+        ren = head_renames(u, r)
         N, P = ren.get(n, n), ren.get(p, p)
         A = cols[axis_col] if axis_col is not None else "A"
         taken = {N, P}
@@ -3772,10 +3931,80 @@ class Solver:
         f2.comments = [f";; {params_to_amp(gloss)}"] if gloss else []
         return [f1, f2]
 
+    def field_forms(self, r, plan: FieldPlan) -> list[Form]:
+        """The frame instance of each extent of the plan's read, the Tiling
+        instance over the outer and the inner frame where it reads a tiled
+        frame, and the table's DET over the cells; each extent reads the
+        DETs of its parameters."""
+        c = self.c
+        u = plan.unit
+        line = r.span.first if r.span else 0
+        amp = c.rel_name(("Params",), r.name)
+        forms: list[Form] = []
+
+        def instance(suffix: str) -> str:
+            # each instance stands for the `helpers` instance the clause reads
+            c.made[(("Params",), r.name + suffix)] = Written(("Params",), "helpers", True)
+            return c.rel_name(("Params",), r.name + suffix)
+
+        def extent(ext: Extent, value: str) -> tuple[list[str], set[str]]:
+            # the rows (A <value>) of the extent, an axis and its value on that axis
+            if isinstance(ext, SquareExtent):
+                w = ClauseWriter(c, ("Params",), {}, {ext.label: value})
+                return ["(axis_elem *A)", *w.lits(ext.atoms, {"A"})], set(w.reads)
+            w = ClauseWriter(c, ("Params",), {}, {})
+            at = Atom(ext.atoms[0].atom.relation, (Variable("A"), Variable(value)), 0)
+            return w.lits([AtomLiteral(at, False)], set()), set(w.reads)
+
+        def frame(suffix: str, ext: Extent) -> str:
+            inst = instance(suffix)
+            body, reads = extent(ext, "N")
+            lines = [f"(INIT {inst} Frame2D", "  (extent (A N)", *("    " + l for l in body)]
+            close(lines, "))")
+            forms.append(Form(lines, inst, reads, line=line))
+            return inst
+
+        if isinstance(plan.read, FrameRead):
+            inst = frame("_frame", plan.read.extent)
+            c.wrote(f"{inst}.cell", Written(("Params",), "helpers.frame_pos", False))
+            read, cells = f"{inst}.cell", [("P", plan.read.cell)]
+        else:
+            outer, inner = frame("_outer", plan.read.outer), frame("_inner", plan.read.inner)
+            inst = instance("_tiling")
+            lines = [f"(INIT {inst} Tiling", "  (outer (P)", f"    ({outer}.cell *P))",
+                     "  (inner (P)", f"    ({inner}.cell *P))"]
+            reads = {outer, inner}
+            if plan.read.gap is not None:
+                body, got = extent(plan.read.gap, "G")
+                lines += ["  (gap (A G)", *("    " + l for l in body)]
+                reads |= got
+            close(lines, "))" if plan.read.gap is not None else ")")
+            forms.append(Form(lines, inst, reads, line=line))
+            c.wrote(f"{inst}.cell", Written(("Params",), "helpers.tile_pos", False))
+            read = f"{inst}.cell"
+            cells = list(zip(("P", "P_outer", "P_inner"), plan.read.cells))
+        w = ClauseWriter(c, ("Params",), {}, head_renames(u, r))
+        bound: set[str] = set()
+        sites = []
+        for col, t in cells:
+            if isinstance(t, Wildcard):
+                continue
+            label = w.label(t.name)
+            mark = "" if label in bound else "*"
+            bound.add(label)
+            sites.append(mark + label if label == col else f"(:{col} {mark}{label})")
+        dl = [f"(DET {amp}", f"  ({read} {' '.join(sites)})", *("  " + l for l in w.lits(plan.rest, bound))]
+        close(dl, ")")
+        f = Form(dl, amp, set(w.reads) | {inst}, line=line)
+        cm = self.comments_above(r.span.first) if r.span else []
+        gloss = " ".join(t for d, t, _ in directives(cm) if d == "")
+        f.comments = [f";; {params_to_amp(gloss)}"] if gloss else []
+        return [*forms, f]
+
     def plan(self) -> dict[str, tuple[str, ...]]:
         """The determination plan's verdict on each parameter, from its
         output under plan/: ("covered", proposer, verdict),
-        ("write",), or ("determined",)."""
+        ("write",), ("determined",), or ("undecided",)."""
         if hasattr(self, "_plan"):
             return self._plan
         out: dict[str, tuple[str, ...]] = {}
@@ -3787,7 +4016,8 @@ class Solver:
                     section = ("covered" if line.startswith("the value is covered") else
                                "overlimit" if line.startswith("over the enumeration limit") else
                                "write" if line.startswith("write a determination") else
-                               "determined" if line.startswith("determined") else None)
+                               "determined" if line.startswith("determined") else
+                               "undecided" if line.startswith("undecided") else None)
                     continue
                 if section is None:
                     continue
