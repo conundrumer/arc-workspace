@@ -18,7 +18,7 @@ The engine docs and `gen/` are untracked, so a worktree does not hold them. Read
 - **Solver.** The `Solver` tree, and `cases()` returning case programs on demand.
 - **Registry.** The format of the tracked lib file under `engine/lib/`, and the type it loads into at compile time.
 - **Resolver.** Name resolution of a case program, and the dependency graph it gives.
-- **Checker.** A check's input (a node and its scope), its result, the diagnostic type that the lint and the evaluator share, and the check cache's key. The interface admits a prefix form of each check, which step 6 builds; this stage builds none.
+- **Checker.** A check's input (a node and its scope), its result, the diagnostic type that the lint and the evaluator share, and the check cache's key. The interface admits a prefix form of each check, which [Synthesis](synthesis.md) builds; this stage builds none.
 - **Harness.** The test harness that runs a check over every pair of `gen/`, which each later stage's end check uses.
 
 ## Rules

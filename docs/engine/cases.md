@@ -1,13 +1,23 @@
 # Cases and judge
 
-Step 3 of the [build order](overview.md#build-order). It builds the models of a case on an input, from its `ONE` and `CHOOSE` forms, its open values, its `DEMONSTRATED` forms and its `Unfold` walks, and the judge of the solves relation, the case conditions and the witnesses. It rests on [constraints](../../docs/arclog/constraints.md) and on the handbook's [Cases](../../docs/handbook/solver-file.md#cases). Here solves is the handbook's fit, and hypothesis the handbook's model, as [Requirements](overview.md#requirements) gives.
+It builds the models of a case on an input, from its `ONE` and `CHOOSE` forms, its open values, its `DEMONSTRATED` forms and its `Unfold` walks, and the judge of the solves relation, the case conditions and the witnesses. It rests on [constraints](../../docs/arclog/constraints.md) and on the handbook's [Cases](../../docs/handbook/solver-file.md#cases). Here solves is the handbook's fit, and hypothesis the handbook's model, as [Requirements](overview.md#requirements) gives.
 
-The step ends when the engine is at parity with Souffle on every solver outcome: each case's output on each pair, whether it solves the task, and the witness outcomes, as [verification.md](verification.md) checks them, or the difference is reported as a fault, as the Principles requirement of [Requirements](overview.md#requirements) gives.
+Two steps of the [build order](overview.md#build-order) build it, one before [Synthesis](synthesis.md) and one after it.
+
+## One case
+
+- The step before Synthesis builds what a synthesized program reads: one case, with no open parameter and no `DEMONSTRATED` form. It builds [Models](#models), and [Candidates](#candidates), [Solves](#solves) and [Grid columns](#grid-columns) of the judge.
+- The step ends when each solver's concept case that reads no open parameter and no `DEMONSTRATED` form, at the stored `param` records, gives the solves outcome that Souffle gives, as [verification.md](verification.md) checks it, or the difference is reported as a fault, as the Principles requirement of [Requirements](overview.md#requirements) gives.
+
+## Every case
+
+- The step after Synthesis builds the rest of this doc, and checks the parameters that [Determination](determination.md) leaves unchecked.
+- The step ends when the engine is at parity with Souffle on every solver outcome: each case's output on each pair, whether it solves the task, and the witness outcomes, as [verification.md](verification.md) checks them, or the difference is reported as a fault, as the Principles requirement of [Requirements](overview.md#requirements) gives.
 
 ## Cases
 
-- A solver's cases are the product of its `ALTS` forms, restricted by the nesting of the blocks, less the combinations that the arcdata file's `exclude` forms leave out. A `DET_OR_RULE` or `RULE_OR_DET` line splits only the bases that read its relation. `cases()` of [Solvers](reader.md#solvers), built in step 1, follows this rule, and gives a solver with a `representative` line the representative's cases, or the one case the line names.
-- Each case is one program, with no `Choice` column. The [result cache](evaluator.md#the-result-cache) of step 2 shares the entries that the cases' relations hold in common.
+- A solver's cases are the product of its `ALTS` forms, restricted by the nesting of the blocks, less the combinations that the arcdata file's `exclude` forms leave out. A `DET_OR_RULE` or `RULE_OR_DET` line splits only the bases that read its relation. `cases()` of [Solvers](reader.md#solvers), built in [Reader and checker](reader.md), follows this rule, and gives a solver with a `representative` line the representative's cases, or the one case the line names.
+- Each case is one program, with no `Choice` column. The [result cache](evaluator.md#the-result-cache) shares the entries that the cases' relations hold in common.
 - The judge reports on the witnessed cases alone, as [Cases](../../docs/handbook/solver-file.md#cases) defines them. That set depends on each case's output on the pair inputs and the witness inputs, so the engine evaluates every included case on those inputs. The product reaches 9216 cases in one file, af24b4cc.
 - The names of an `output` form expand to their cases as [Witness file](../../docs/handbook/solver-file.md#witness-file) gives.
 
@@ -107,7 +117,7 @@ The judge checks the [case conditions](../../docs/handbook/principles.md#cases) 
 
 | Decision | Failure | What catches or bounds it |
 | --- | --- | --- |
-| Every case evaluated to find the witnessed cases | a product of 9216 cases on each pair and witness input | the entries the cases share, computed once by step 2's cache; a case differs from another only at the entries its alts rederive and those that read them |
+| Every case evaluated to find the witnessed cases | a product of 9216 cases on each pair and witness input | the entries the cases share, computed once by the result cache; a case differs from another only at the entries its alts rederive and those that read them |
 | Models enumerated as a product | a pick with many models that reach the output | clusters solved one by one; clusters that no output reads fixed to one model; the stops; the model cap. In the corpus, the largest count measured is 64; the covers of the nine `CoverForcing` solvers are unique or absent, as [Evidence](../../docs/arclog/constraints.md#evidence) gives, and the other `CHOOSE` forms and the `DEMONSTRATED` forms are not measured |
 | Open-world candidates on Kaggle | a train pair whose tie the data does not show refuses a program that states the tie | the relaxed reading of [Solves](#solves), in the judge and in determination |
 | Grid columns found by the train pairs | several column pairs match, or none | an error where they disagree on an input; undefined where none matches; one search per content of `&output` |
@@ -121,4 +131,3 @@ The judge checks the [case conditions](../../docs/handbook/principles.md#cases) 
 | --- | --- |
 | An open value that is a set of rows: a model of `(ONE)` keeps one row per value of its key, so a parameter whose open values are whole sets of rows, as [Params](../../docs/handbook/solver-file.md#params) allows, has no encoding | of the 42 parameters of [Open values and constraint search](corpus-survey.md#open-values-and-constraint-search), 40 hold 2 to 8 rows of single values; b7f8a4d8 `&draw_rank` and bc93ec48 `&precedence` hold 24 open values of 4 rows each, keyed by an Ident column that a bare `(ONE)` reads as one row |
 | What Equivalence, Subsumption and the witness checks read for a case with an open parameter: Principles use M_open for the solves test alone | every solver with a `(ONE)` parameter; the judge reports `undecided` there |
-| Under which split task a train pair with two candidates is read by the determination's filter, and so which split task the stored assignment is determined under | pairs with a `rule` alt |

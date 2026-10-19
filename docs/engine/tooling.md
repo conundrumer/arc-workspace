@@ -1,6 +1,6 @@
 # Tooling
 
-Step 5 of the [build order](overview.md#build-order). It builds the CLI, the reports that refine passes read, and the checks over a solver's structure, written as arclog queries.
+The last step of the [build order](overview.md#build-order). It builds the CLI, the reports that refine passes read, and the checks over a solver's structure, written as arclog queries.
 
 The step ends when a refine pass runs on the engine, and the checks of the present lint have moved to the engine.
 

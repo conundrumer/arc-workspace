@@ -1,14 +1,18 @@
 # Synthesis
 
-Step 6 of the [build order](overview.md#build-order), built when synthesis work starts. It builds token ids and the vocabulary, the decoder and its token mask, the event log and the trace, entries in the result cache for parts of a body, the Python package, the wheel, and a run on Kaggle. It rests on [Token stream](../../docs/arclog/arclog.md#token-stream) and [Trace form](../../docs/arclog/arclog.md#trace-form).
+The step of the [build order](overview.md#build-order) after [Determination](determination.md). It builds token ids and the vocabulary, the decoder and its token mask, the prefix forms of the checks and the checks of the language that [Checker](reader.md#checker) leaves to the Python lint, the event log and the trace, entries in the result cache for parts of a body, the Python package, the wheel, and a run on Kaggle. It rests on [Token stream](../../docs/arclog/arclog.md#token-stream) and [Trace form](../../docs/arclog/arclog.md#trace-form).
 
-The step ends when the decoder admits every case program of `gen/` in full, and one program runs on Kaggle.
+The step ends when the decoder admits in full every case program of `gen/` that holds no `DEMONSTRATED` form, and one program runs on Kaggle.
 
 ## Token mask
 
 - One automaton, `Decoder`, reads the token stream of a program. Its state is the partial program so far and the clause in progress.
 - `Decoder::new(session, lib)` starts a decode over a task session.
 - `admissible()` gives the token mask: the tokens that may come next. A token is in the mask when every check of [Checker](reader.md#checker) holds on the partial program with that token.
+- A check's prefix form refuses at the token where a refusal can no longer be undone:
+    - The grammar, the scope, a site's columns, the pose rule, the pooled and lifted reads, the reads of an `Unfold` instance, an instance's input order, the type meet and the join over branches each refuse at the token that breaks them. A meet only narrows as sites are added, and a join only widens.
+    - A missing instance input, the labels that an `OR` or an `IF` exports, and the checks of a `CHOOSE` form are decided at their form's `END`, so the mask can withhold only that `END`.
+    - A label whose type is still undecided, such as one that only `(= *X 0)` types, is refused by the order rule and counted as grounded only once a site gives it a type. Each relation of a decode has one clause, so a top-level `(= *X 0)` in a `RULE` or a `DET` is refused at its constraint.
 - `step(token)` advances the state, and gives the tokens that the engine emits after that token: declarations, input prompts, column prompts and label echoes, as [Token stream](../../docs/arclog/arclog.md#token-stream) gives.
 - The vocabulary has fixed slots: the control tokens, the lib relations and components, the proposers, the fact relations, and then one relation slot, one column slot and one label slot per index, up to a cap. The caps are the survey's maxima with headroom: in the survey, one program has at most 101 declarations and 24 columns, and one clause at most 24 labels.
 
@@ -16,6 +20,11 @@ The step ends when the decoder admits every case program of `gen/` in full, and 
 
 - At any token, the decode can ask for the rows and counts of the body so far on every example. The result cache gives them from the body's entries. The caller chooses whether to ask after each clause, each atom or each site.
 - When a clause ends, the engine finds the [grid columns](../../docs/arclog/constraints.md#the-output-set) of the new relation, and reports whether the relation, read as `&output`, is consistent with the task's observed data, as [Terms for the paper](../../docs/paper-terms.md#new-terms) defines consistent. The test is the one of [Solves](cases.md#solves) for a run on Kaggle, with the [open-world candidates](cases.md#candidates) of a Kaggle run. A relation whose grid columns are undetermined, as [Grid columns](cases.md#grid-columns) gives, is not consistent.
+- A relation that reads a `DET` with several candidates holds the rows of every live assignment at once, each row with the assignment it was derived under in an added column. A row derived from no such `DET` holds for every assignment, as the `nil` of the Souffle `OpenValue` column does. Where a body reads several such `DET`s, a row's assignment gives a value to each, and a join keeps the rows whose assignments agree on each `DET` that both sides read. A later atom narrows the live assignments by the rows it keeps. At a clause's end, the consistency test runs per live assignment, and the relation, read as `&output`, keeps the assignments under which it solves every train pair: those are the values that the filter of [`DET`](determination.md#det) gives a program whose `&output` it is.
+- A `ONE` or a `CHOOSE` form whose rows are not all written is evaluated as its plain body, whose rows bound the rows of each of its models. No clause reads the pick before the form ends, since a clause reads only relations declared before it. At its `END`, its models enter its relation's rows as an added column, as an assignment does.
+- The live assignments and models of a prefix run under a cap of 100. The cap is provisional: no determination plan of the corpus has a product over 100, and the largest count of models measured is 64, as [Determination candidates](corpus-survey.md#determination-candidates) and [Open values and constraint search](corpus-survey.md#open-values-and-constraint-search) give. A prefix that reaches the cap is stopped, and the event log records the stop, so the language model narrows the determination by a more specific body.
+- A candidate whose `&output` holds more than one live assignment of a `DET` without `(ONE)`, or whose grid columns are undetermined, is not consistent, and the event log records which. A synthesized program leaves nothing open, as [Inputs](overview.md#inputs) gives. For a solver, both are errors, as [`DET`](determination.md#det) and [Grid columns](cases.md#grid-columns) give.
+- The row cap of a decode is no lower than the largest part that a body of `gen/` needs: abbfd121's orbit cell pairs, 256038 rows, by [Runs](corpus-survey.md#runs). An extension of a prefix whose part reached the cap is evaluated from its own reads, as [The result cache](evaluator.md#the-result-cache) gives, since a site added to a positive atom can bring the part under the cap.
 - `fork()` is cheap. The state is a persistent data structure and the cache is shared, so a beam of decodes costs the states alone.
 - A batch form steps many decodes at once on the thread pool.
 
@@ -43,11 +52,8 @@ The step ends when the decoder admits every case program of `gen/` in full, and 
 
 - maturin builds `arclog-py` as an abi3 wheel for Python 3.12 and later, which covers the local 3.12 and Kaggle's 3.13. The probe under `work/kaggle-probe/` installed such a wheel offline. The wheel ships in a Kaggle dataset.
 - The notebook loads the task, runs the program, and gives at most two attempts per test input, under a deadline per candidate with cancellation.
+- A decoded program carries no stored value. Its run determines each `DET` from the evidence, as every determination is, and a run in the task session of its decode reuses that session's entries.
 
 ## Known gaps
 
-| Gap | Where it shows |
-| --- | --- |
-| How a decode step evaluates a prefix that holds a `ONE` or `CHOOSE` form whose rows are not all written yet | each of the 18 `CHOOSE` forms and 42 `(ONE)` parameters of `gen/` |
-| A decoded program's `DET` values exist in the task session and in no arcdata file: where the Kaggle run keeps them | the Python interface |
-| Whether the search prunes the extensions of a prefix whose part reached the row cap, as against evaluating each one from its own reads, and how low the cap can be set | on Souffle's rows, 7 of 8718 corpus bodies have a prefix over 10^5 rows and a full body under 1/100 of it, and none over 10^6, by [Prefix sizes](corpus-survey.md#prefix-sizes); those counts take a cross product of two parts whole, which the parts of [Relations](reader.md#relations) do not hold, so the largest part of each prefix is smaller. The cap is no lower than the largest part a corpus body needs, at least abbfd121's orbit cell pairs, 256038 rows, by [Runs](corpus-survey.md#runs). Settled by the largest part of each written prefix and of each full body, which the probe's rows give |
+None.

@@ -19,7 +19,7 @@ These requirements are in order of priority. The order settles a conflict betwee
 2. **Fidelity to the corpus.** Every solver of `gen/` gives the outcomes that its arcdata file records. The Souffle solvers are the test oracle until the corpus moves to arclog. Where a Souffle outcome departs from Principles, Principles rule, and the engine reports the difference as a fault of the solver or of the Souffle lib.
 3. **Errors found by the engine.** The checker refuses what the language refuses. A run that disagrees with a record is reported as a fault.
 4. **Speed on the corpus.** A refine pass over every solver runs no slower than on Souffle.
-5. **Throughput of the synthesis loop.** Many candidate programs per second on one task, with the provisional target of [Proposals for the synthesis loop](performance.md#proposals-for-the-synthesis-loop). The candidates on one task share cached work, such as the parse of the inputs and the lib instances over them. A program prefix is evaluated as far as it goes, so a decode is pruned early. The last step of [Build order](#build-order) builds the synthesis loop, and the earlier steps keep it possible.
+5. **Throughput of the synthesis loop.** Many candidate programs per second on one task, with the provisional target of [Proposals for the synthesis loop](performance.md#proposals-for-the-synthesis-loop). The candidates on one task share cached work, such as the parse of the inputs and the lib instances over them. A program prefix is evaluated as far as it goes, so a decode is pruned early. [Synthesis](synthesis.md) builds the synthesis loop, and the steps before it keep it possible.
 
 The engine also meets these requirements:
 
@@ -51,12 +51,15 @@ The engine reads synthesized programs, solvers, and tasks. A task is the train p
 
 Each step is checked against the corpus and the Souffle solvers, as [verification.md](verification.md) gives. The design decisions whose cost every candidate and every case pays are in [performance.md](performance.md). An implementation detail that a scope doc gives, such as a data structure, an algorithm or a hash, is provisional until the engine is written and a benchmark measures it. Each scope doc gives the check that ends its step.
 
+Synthesis is built as early as it can be. The steps before [Synthesis](synthesis.md) build what a synthesized program reads, which is a program with one case, no `DEMONSTRATED` form and no open parameter, as [Inputs](#inputs) gives. The rest of [Cases and judge](cases.md), and [Tooling](tooling.md), come after it.
+
 1. [Reader and checker](reader.md)
 2. [Evaluator and lib](evaluator.md)
-3. [Cases and judge](cases.md)
+3. [Cases and judge](cases.md#one-case), for one case
 4. [Determination](determination.md)
-5. [Tooling](tooling.md)
-6. [Synthesis](synthesis.md), built when synthesis work starts
+5. [Synthesis](synthesis.md)
+6. [Cases and judge](cases.md#every-case), for every case
+7. [Tooling](tooling.md)
 
 The estimated size is 18,000 to 24,000 lines of Rust, and 1,000 to 2,000 lines of arclog for the proposers and the checks. The estimate is provisional: no measurement gives it.
 
