@@ -32,7 +32,10 @@ form:
 
 - Its `decision:` items reach the coordinator once, as they arise, by a
   message that opens with `steps.DECISION`, read back by the analyst's
-  agent id and the reply's time in any message to the coordinator.
+  agent id (`replies_of`) and the text of those items in any message to
+  the coordinator, and not by the reply's time, so that the same items
+  read from a later reply, or from the same reply at another time, go
+  out no second time.
 - Its `tell:` items reach the coordinator together, in the final reply of
   the operator that gives that reply (`final_reply.carrier`).
 - Its `unfinished:` items, and its items that open with a label with no
@@ -74,7 +77,7 @@ from operations.state import Agent, LogLine, State, Ticket, kept_across_reads
 from ticketing.vocabulary import SETTLED, Status
 from operations.constants import COORDINATOR
 from operations.final_reply import carrier, nested, replies_by_operator, session_operator
-from operations.handled import repeated, sent
+from operations.handled import repeated, sends_to, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, labeled
 from operations.log_commands import AGENT, log
 from operations.tracker import blocked_on_user, coordinator_lines, exits, final_run
@@ -274,19 +277,23 @@ def replied(state: State) -> list[tuple[Agent, Purpose, list[str], str]]:
 def for_coordinator(state: State) -> Step | None:
     """The `decision:` items of the part of a ticket analyst's reply for the
     coordinator, in one message, sent once, read back by the analyst's
-    agent id and its reply's time in any message to the coordinator. The
-    items of an analyst on what a change's editors leave go with the step
-    that holds that change, and the line that rules it
-    (`changes.left_decision`)."""
+    agent id (`replies_of`) in the opening line of any message to the
+    coordinator and the text it sends as the whole of the rest of that
+    message (`steps.labeled`), and not by the reply's time. The items of an analyst on
+    what a change's editors leave go with the step that holds that change,
+    and the line that rules it (`changes.left_decision`). It passes over an
+    analyst with no agent id, of which `replied` gives none, so that the
+    type checker reads the agent id as known."""
     for a, purpose, nums, key in replied(state):
         part = items_of(a, [Label.DECISION])
-        if part is None:
+        if part is None or a.agent_id is None:
             continue
         if purpose is Purpose.CHANGE and (decision := changes.left_decision(a, nums[0])):
             part += "\n\n" + decision
-        step = Send(COORDINATOR, labeled(key, part), key)
-        if not sent(state, step.to, step.message, key):
-            return step
+        label = replies_of(a.agent_id)
+        if not any(label in e.text and e.text.partition("\n")[2] == part
+                   for e in sends_to(state, COORDINATOR)):
+            return Send(COORDINATOR, labeled(key, part), key)
     return None
 
 
