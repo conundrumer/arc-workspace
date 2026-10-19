@@ -10,12 +10,12 @@ use std::sync::Arc;
 
 use super::grounding::{bodies, BodyPlace};
 use super::types::{
-    column_type, component, declared_type, demo_rule, form_within, pose_of_fault, project, relation_columns, rule_scope_forms, site_value_type,
+    column_type, component, declared_type, demo_rule, form_at, pose_of_fault, project, relation_columns, rule_scope_forms, scope_forms, scope_labels, site_value_type,
     try_map_labels, zero_typed_heads, PoseOr,
 };
 use super::{ClauseEntry, FileScope, Refusal, SolverClauses};
 use crate::hash::StableHashMap;
-use crate::program::canonical::{canonical_labeling, form_scope, AsWritten, CanonicalOrder, LabelScope, SearchBudget};
+use crate::program::canonical::{form_scope, CanonicalOrder, LabelScope};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
     Atom, Body, ColumnName, Conjunct, DemoRule, Constraint, Form, Instance, LabelId, NameScope, Node, Operand, OutputOwner, OutputStep, PortName, ProgramRelation, RelationColumn, RelationRef, Site, SiteArg,
@@ -914,31 +914,6 @@ fn bind(instance: &Instance, component: &Component, label: &dyn Fn(LabelId) -> O
         bindings.insert(parameter.clone(), ValueType::Unit);
     }
     bindings
-}
-
-/// The form at `path` of `program`: a top-level form or a form of a
-/// `DEMO_RULE`.
-fn form_at<'p>(program: &'p crate::program::Program, path: &NodePath) -> Option<&'p Form> {
-    let (first, rest) = path.0.split_first()?;
-    form_within(program.forms.get(first.0 as usize)?, &NodePath(rest.into()))
-}
-
-/// The labels of `scope`, in the order of its canonical labeling.
-fn scope_labels(scope: LabelScope<'_>) -> Vec<LabelId> {
-    canonical_labeling(scope, &AsWritten, &mut SearchBudget::new()).positions.iter().map(|(label, _)| *label).collect()
-}
-
-/// Each form that declares names in `scope`, with its path: the top-level
-/// forms for the program, and a `DEMO_RULE`'s forms for its scope.
-fn scope_forms<'p>(program: &'p crate::program::Program, scope: &NameScope) -> Vec<(NodePath, &'p Form)> {
-    let (forms, at) = match scope {
-        NameScope::Program => (&program.forms[..], NodePath::default()),
-        NameScope::DemoRule(rule) => match demo_rule(program, rule) {
-            Some(found) => (&found.forms[..], rule.clone()),
-            None => return Vec::new(),
-        },
-    };
-    forms.iter().zip(0u32..).map(|(form, index)| (at.child(index), form)).collect()
 }
 
 /// The label that `atom` gives the field `field` of its site on the column

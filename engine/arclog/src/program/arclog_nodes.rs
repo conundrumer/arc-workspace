@@ -474,7 +474,46 @@ pub struct DemoRule {
     /// Edits: [`crate::program::Node::apply`].
     pub fields: Arc<[RelationColumn]>,
     pub text: Option<Text>,
-    pub forms: Arc<[Form]>,
+    pub forms: RuleForms,
+}
+
+/// The forms of a `DEMO_RULE`, in order, each with whether an `ALT` of the
+/// concept program gave it to the rule of a case program. A form an `ALT`
+/// gave is a label scope of its own, as [`crate::program::LabelId`] gives
+/// scopes.
+#[derive(Clone, Debug)]
+pub struct RuleForms {
+    forms: Arc<[Form]>,
+    from_alt: Arc<[bool]>,
+}
+
+impl RuleForms {
+    /// The forms a file writes in the rule, of which an `ALT` gave none.
+    pub fn written(forms: Arc<[Form]>) -> RuleForms {
+        let from_alt = forms.iter().map(|_| false).collect();
+        RuleForms { forms, from_alt }
+    }
+
+    /// Whether an `ALT` gave the form at `index` to the rule.
+    pub fn from_alt(&self, index: usize) -> bool {
+        self.from_alt[index]
+    }
+}
+
+/// Each form, with whether an `ALT` gave it to the rule.
+impl FromIterator<(Form, bool)> for RuleForms {
+    fn from_iter<I: IntoIterator<Item = (Form, bool)>>(iter: I) -> RuleForms {
+        let (forms, from_alt): (Vec<Form>, Vec<bool>) = iter.into_iter().unzip();
+        RuleForms { forms: forms.into(), from_alt: from_alt.into() }
+    }
+}
+
+impl std::ops::Deref for RuleForms {
+    type Target = [Form];
+
+    fn deref(&self) -> &[Form] {
+        &self.forms
+    }
 }
 
 /// An `ALTS` form, as `docs/arclog/arclog.md#the-alts-form` gives: its

@@ -395,13 +395,14 @@ pub(crate) fn form_scope(form: &Form) -> Option<LabelScope<'_>> {
     }
 }
 
-/// Whether `form`, a form of a `DEMO_RULE`, stands in the rule's label
-/// scope.
-pub(crate) fn shares_rule_scope(form: &Form) -> bool {
-    match form {
+/// Whether the form at `index` of `rule` stands in the rule's label scope:
+/// a clause, `INIT`, `CHOOSE` or `RIGID_DET` form that no `ALT` gave it.
+pub(crate) fn shares_rule_scope(rule: &DemoRule, index: usize) -> bool {
+    let kind = match &rule.forms[index] {
         Form::Clause(_) | Form::Instance(_) | Form::Choose(_) | Form::RigidDet(_) => true,
         Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) => false,
-    }
+    };
+    kind && !rule.forms.from_alt(index)
 }
 
 /// Writes a form that is a label scope of its own, as

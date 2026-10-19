@@ -274,7 +274,7 @@ pub(super) fn demo_rule<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, rule: &'a
     sink.len(rule.forms.len());
     for (index, form) in rule.forms.iter().enumerate() {
         sink.child(NodeRef::DemoRule(rule), NodeRef::from(form), |sink| match form {
-            _ if !shares_rule_scope(form) => sink.own_scope(form),
+            _ if !shares_rule_scope(rule, index) => sink.own_scope(form),
             Form::Clause(clause) => self::clause(sink, at, index, clause.value()),
             Form::Instance(instance) => self::instance(sink, at, index, instance.value()),
             Form::Choose(choose) => self::choose(sink, at, index, choose.value()),

@@ -95,7 +95,9 @@ pub struct Text(pub Box<str>);
 /// A label, local to its scope. A scope is a form that stands in a program,
 /// a claim or an `ALT`, apart from a `DEMONSTRATED` form, whose key clause
 /// and inputs are one scope and each of whose `DEMO_RULE` forms, with its
-/// fields and its forms, is one scope. A label that one site of the scope
+/// fields and its own forms, is one scope. A form that an `ALT` gives a
+/// `DEMO_RULE` of a case program is a scope of its own, as it is in its
+/// `ALT`. A label that one site of the scope
 /// makes is the same id at each site of the scope that joins it: an
 /// `INIT`'s key labels in its keyed inputs, a `RIGID_DET` key's labels in
 /// its instance clause and parts, and a `DEMO_RULE`'s field labels in its

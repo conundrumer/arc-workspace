@@ -685,6 +685,8 @@ struct Taken<'p> {
     /// `DEMO_RULE` form of the form derives, in the order of the walk. In
     /// each such `DEMO_RULE` form, they take the place of its first form that
     /// derives that thing, and its other forms that derive it are left out.
+    /// Each keeps the label ids of its `ALT`, and is a label scope of its
+    /// own in the rule.
     in_rules: Vec<&'p Placed>,
 }
 
@@ -700,23 +702,23 @@ impl Taken<'_> {
         let mut origins = Vec::new();
         let rules = demonstrated.rules.iter().enumerate().map(|(index, rule)| {
             let step = demonstrated.position(DemonstratedPart::Rule(index));
-            let mut forms: Vec<(Form, (FileOwner, NodePath))> = Vec::new();
+            let mut forms: Vec<(Form, bool, (FileOwner, NodePath))> = Vec::new();
             let mut placed_keys = StableHashSet::default();
             for (at, form) in rule.value().forms.iter().enumerate() {
                 let key = derives(form);
                 let alts: Vec<&Placed> = self.in_rules.iter().copied().filter(|p| key.is_some() && derives(&p.form) == key).collect();
                 if alts.is_empty() {
-                    forms.push((form.clone(), (self.placed.owner, self.placed.path.child(step).child(at as u32))));
+                    forms.push((form.clone(), false, (self.placed.owner, self.placed.path.child(step).child(at as u32))));
                 } else if placed_keys.insert(key) {
-                    forms.extend(alts.into_iter().map(|p| (p.form.clone(), (p.owner, p.path.clone()))));
+                    forms.extend(alts.into_iter().map(|p| (p.form.clone(), true, (p.owner, p.path.clone()))));
                 }
             }
             if placed_keys.is_empty() {
                 return rule.clone();
             }
             let rule_path = NodePath::default().child(step);
-            origins.extend(forms.iter().enumerate().map(|(at, (_, origin))| (rule_path.child(at as u32), origin.clone())));
-            let forms = forms.into_iter().map(|(form, _)| form).collect();
+            origins.extend(forms.iter().enumerate().map(|(at, (_, _, origin))| (rule_path.child(at as u32), origin.clone())));
+            let forms = forms.into_iter().map(|(form, from_alt, _)| (form, from_alt)).collect();
             Node::new(DemoRule { forms, ..rule.value().clone() })
         });
         let rules = rules.collect();

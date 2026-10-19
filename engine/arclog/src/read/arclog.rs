@@ -965,7 +965,7 @@ impl Reader {
         record.token(list.close);
         record.labels = scope.names();
         self.save(path, record);
-        Ok(Node::new(DemoRule { name: DemoRuleName(name), fields: relation_columns(&fields, &scope), text, forms: forms.into() }))
+        Ok(Node::new(DemoRule { name: DemoRuleName(name), fields: relation_columns(&fields, &scope), text, forms: RuleForms::written(forms.into()) }))
     }
 
     /// The body of a registry definition, `exprs`, read in `scope`.

@@ -1,16 +1,17 @@
 //! The type check, the two functions through which it hands its types to
-//! [`super::check_program`], and the helpers that it and the inference of
-//! a case program's label types share.
+//! [`super::check_program`], the helpers that it and the inference of a
+//! case program's label types share, and, in its module `within`, the
+//! lookups of forms and label scopes that they read.
 
 use std::sync::Arc;
 
 use super::inference::FormInference;
 use super::{Check, CheckId, CheckInput, CheckResult, FileScope, Prefix, PrefixResult, Refusal, SolverClauses};
 use crate::hash::StableHashMap;
-use crate::program::canonical::{shares_rule_scope, CanonicalOrder, SearchBudget};
+use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
-    ColumnName, Conjunct, DemoRule, Constraint, ConstraintOp, Form, LabelId, NameScope, Operand, OutputStep, PortName, Site, SiteArg,
+    ColumnName, Conjunct, Constraint, ConstraintOp, Form, LabelId, NameScope, Operand, OutputStep, PortName, Site, SiteArg,
 };
 use crate::registry::{Column, ColumnType, Registry, TypeParameter};
 use crate::resolver::columns;
@@ -20,6 +21,10 @@ use crate::types::{
     each_conjunct, each_site_label, label_fault_message, use_label, AssemblyId, FormRelation, FormTypes,
     GraphRelation, KeyRow, LabelFault, ProgramTypes, ValueType,
 };
+pub(super) use within::{demo_rule, form_at, form_within, rule_scope_forms, scope_forms, scope_labels};
+use within::rule_within;
+
+mod within;
 
 /// [`CheckId::Types`].
 pub struct TypesCheck;
@@ -429,42 +434,6 @@ pub(super) use registry_columns::component;
 pub(super) fn form_side(program: &ResolvedProgram, form: &NodePath) -> Option<Side> {
     let mut nodes = (0..program.graph.nodes.len() as u32).map(GraphNodeIndex);
     nodes.find(|found| program.form_of(*found) == form).map(|found| program.side(found))
-}
-
-/// The form at `path`, a path relative to `form`: `form` itself at the
-/// empty path, or a form of a `DEMO_RULE` within it.
-pub(super) fn form_within<'p>(form: &'p Form, path: &NodePath) -> Option<&'p Form> {
-    let mut form = form;
-    let mut steps = path.0.iter();
-    while let Some(step) = steps.next() {
-        form = match form {
-            Form::Demonstrated(demonstrated) => {
-                let rule = demonstrated.value().rule_at(step.0)?;
-                rule.forms.get(steps.next()?.0 as usize)?
-            }
-            _ => return None,
-        };
-    }
-    Some(form)
-}
-
-/// Each form of `rule` that stands in the rule's label scope, with its
-/// index among the rule's forms.
-pub(super) fn rule_scope_forms(rule: &DemoRule) -> impl Iterator<Item = (u32, &Form)> {
-    (0u32..).zip(rule.forms.iter()).filter(|(_, form)| shares_rule_scope(form))
-}
-
-/// The `DEMO_RULE` form at `path` of `program`.
-pub(super) fn demo_rule<'p>(program: &'p crate::program::Program, path: &NodePath) -> Option<&'p crate::program::DemoRule> {
-    let (first, rest) = path.0.split_first()?;
-    rule_within(program.forms.get(first.0 as usize)?, &NodePath(rest.into()))
-}
-
-/// The `DEMO_RULE` form at `path`, a path relative to `form`.
-fn rule_within<'p>(form: &'p Form, path: &NodePath) -> Option<&'p crate::program::DemoRule> {
-    let (rule, prefix) = path.0.split_last()?;
-    let Form::Demonstrated(demonstrated) = form_within(form, &NodePath(prefix.into()))? else { return None };
-    demonstrated.value().rule_at(rule.0)
 }
 
 /// The type of the value at `site` of a head or of a read: its one bare
