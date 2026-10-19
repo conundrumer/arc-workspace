@@ -30,9 +30,8 @@ pub struct Caps {
 }
 
 impl Caps {
-    /// The caps of every task session. The work cap and the row cap are
-    /// set from the engine's counts on the corpus, and the model cap and the
-    /// node cap are as `docs/engine/cases.md#the-constraint-module` gives them.
+    /// The caps of every task session, each set from the engine's counts on
+    /// the corpus.
     ///
     /// The work cap and the row cap are each about twice the largest count
     /// of one evaluation that `arclog-cli speed` gave over `work/arclog/gen/`
@@ -43,7 +42,26 @@ impl Caps {
     /// They leave out the outliers: `ac0c5833`, whose 1 956 915 734 bindings
     /// tried go with a Souffle run of 124 s, and `3ad05f52`, `c3f564a4` and
     /// `ca8f78db`, whose runs stopped at the row cap of `1 << 24`.
-    pub const PROVISIONAL: Caps = Caps { work: 1 << 30, rows: 1 << 21, models: 1_000, nodes: 10_000 };
+    ///
+    /// The node cap is about twice the largest count that `arclog-cli
+    /// compare` gave over the concept cases of `work/arclog/gen/` on
+    /// 2026-10-19, in a run under a model cap of 1 000 000 and a node cap of
+    /// 10 000 000: 14 search nodes of one cluster, of `9f8de559`, whose
+    /// largest count of models of one case on one input is 8, the largest of
+    /// that run. Those counts are of the 840 solvers of 953 whose concept
+    /// case ran to its end. Of the others, 88 stopped at a fault of the run
+    /// or at the work cap or the row cap, 19 faulted before the run, and 6
+    /// hold a `DEMONSTRATED` form, so are not compared. The counts leave out
+    /// the outlier `97a05b5b`, whose 4 147 798 search nodes for its one model
+    /// go with an engine run of 22.6 s against Souffle's 0.7 s.
+    ///
+    /// The model cap is about twice 64, the bound of the models per case per
+    /// input that `docs/engine/corpus-survey.md#open-values-and-constraint-search`
+    /// gives from Souffle's `out`. That bound covers `a2d730bd` and
+    /// `abc82100`, each two D4 parameters of 8 open values, which give no
+    /// count of their concept in the engine: `a2d730bd` stops at a fault of
+    /// the run, and the rows of `abc82100` differ from its first relation on.
+    pub const PROVISIONAL: Caps = Caps { work: 1 << 30, rows: 1 << 21, models: 1 << 7, nodes: 1 << 5 };
 }
 
 /// The bound an evaluation reached.
