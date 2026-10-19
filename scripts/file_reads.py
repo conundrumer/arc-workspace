@@ -8,7 +8,7 @@ from collections.abc import Callable, Collection, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from state_reads import arguments, held_calls, in_read, stand_next, state, state_cache
+from state_reads import brought_up, held_calls, in_read, stand_next, state, state_cache
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,15 +29,23 @@ _stats: dict[str, FileStat | None] = {}
 where there is no file."""
 
 _stats_at = 0
-"""The state whose stats `_stats` holds."""
+"""The state whose stats `_stats` holds, each read at it or, where it is
+a partial one, at a state before it."""
 
 
 def state_stat(path: str) -> FileStat | None:
     """The stat of `path`, None where there is no file, read once for each
-    state, as the reads of one state see one state."""
+    state, as the reads of one state see one state. At a partial state
+    (`stats_stand_but`), the stat of a path outside its changed paths
+    stands as the state before read it."""
     global _stats_at
     if _stats_at != state():
-        _stats.clear()
+        changed = brought_up(stat_read)
+        if changed is not None and _stats_at == state() - 1:
+            for call in changed:
+                _stats.pop(str(call[0]), None)
+        else:
+            _stats.clear()
         _stats_at = state()
     if path in _stats:
         return _stats[path]
@@ -73,19 +81,21 @@ def stat_read(path: Path) -> FileStat | None:
     return state_stat(str(path))
 
 
-def held_paths() -> list[Path]:
-    """The path of each stat this process holds (`stat_read`)."""
-    return [arguments(call)[0][0] for call in held_calls(stat_read)]
+def held_paths() -> list[str]:
+    """The path of each stat this process holds (`stat_read`), as text."""
+    return [str(call[0]) for call in held_calls(stat_read)]
 
 
 def stats_stand_but(changed: Collection[str] | None) -> None:
-    """Take, at the next state, the held stat of each path outside `changed`
-    as it was, with no read, so the reads of that state see a change only
-    of the files of `changed`; where `changed` is None, read each again."""
+    """Make the next state a partial one, where `changed` is given: the held
+    stat of each path of `changed` alone is read again, and each other held
+    stat stands as it was, so the reads of that state see a change only of
+    the files of `changed` (`state_reads.stand_next`); where `changed` is
+    None, read each again."""
     if changed is None:
         stand_next(None)
     else:
-        stand_next((stat_read, lambda call: str(call[0]) not in changed))
+        stand_next((stat_read, [(path,) for path in changed]))
 
 
 def is_file(path: Path) -> bool:

@@ -85,3 +85,30 @@ def test_a_change_a_partial_state_leaves_out_reaches_the_next_full_state(tmp_pat
     state_reads.new_state()
     assert above(p, q) == (False, 2)
     assert not state_reads.partial()
+
+
+def size(path: Path) -> int | None:
+    found = file_reads.state_stat(str(path))
+    return None if found is None else found.size
+
+
+def test_a_stat_a_partial_state_leaves_out_reaches_the_next_full_state(tmp_path: Path) -> None:
+    """A stat read outside a held read (`file_reads.state_stat`) at a
+    partial state is read again for a path that changed, and the next
+    state that reads each stat again sees a change of the others."""
+    p, q = tmp_path / "p.txt", tmp_path / "q.txt"
+    write(p, "a", 1)
+    write(q, "a", 1)
+    state_reads.new_state()
+    assert size(p) == 1
+    assert size(q) == 1
+
+    write(p, "a b", 2)
+    write(q, "a b", 2)
+    file_reads.stats_stand_but({str(q)})
+    state_reads.new_state()
+    assert size(q) == 3
+
+    file_reads.stats_stand_but(None)
+    state_reads.new_state()
+    assert size(p) == 3

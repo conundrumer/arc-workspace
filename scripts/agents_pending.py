@@ -8,8 +8,9 @@ from pathlib import Path
 from agent_reports import Sign, can_report, entry_signs, latest_sign
 from run_reads import is_prompt, notified, run_sessions
 from state_reads import DERIVED, Kept, state_cache
-from transcript_entries import epoch, named_lines, own_range
-from transcript_snapshots import Entry, parse, snapshot
+from transcript_entries import epoch
+from transcript_folds import fold
+from transcript_snapshots import Entry
 from agent_launches import Launch, launched
 from agent_resumes import note_latest
 from session_changes import agents_facts
@@ -94,21 +95,24 @@ SIGN_WORDS = frozenset({"<task-notification>", "<agent-message from="})
 def sign_entries(path: Path) -> tuple[SignEntry, ...]:
     """The `SignEntry` of each entry of the transcript at `path` that may
     give a notification or a sign (`may_sign`) and gives one of an id of
-    the form of an agent id. Only the lines that hold the opening of a
-    notification or of a message from an agent (`SIGN_WORDS`) are read,
-    each parsed for it alone, so that a read of every transcript of a
-    session holds no entry."""
-    snap = snapshot(path)
-    out: list[SignEntry] = []
-    for i in named_lines(snap, own_range(path), SIGN_WORDS):
-        for e in parse(snap.line(i)):
-            if not may_sign(e):
-                continue
-            told = tuple(v for v in notified(e) if re.fullmatch(AGENT_ID, v))
-            signs = tuple((v, sign) for v, sign in entry_signs(e) if re.fullmatch(AGENT_ID, v))
-            if told or signs:
-                out.append(SignEntry(epoch(e["timestamp"]), told, signs))
-    return tuple(out)
+    the form of an agent id (`add_sign`). Only the lines that hold the
+    opening of a notification or of a message from an agent (`SIGN_WORDS`)
+    are read, each parsed for it alone, so that a read of every transcript
+    of a session holds no entry, and of those, as a fold
+    (`transcript_folds.fold`), only the lines added since the last read."""
+    return tuple(fold(add_sign, list[SignEntry], path, [path], SIGN_WORDS))
+
+
+def add_sign(out: list[SignEntry], _path: Path, _line: int, entry: Entry) -> None:
+    """Add to `out` the `SignEntry` of `entry`, where it may give a
+    notification or a sign (`may_sign`) and gives one of an id of the form
+    of an agent id."""
+    if not may_sign(entry):
+        return
+    told = tuple(v for v in notified(entry) if re.fullmatch(AGENT_ID, v))
+    signs = tuple((v, sign) for v, sign in entry_signs(entry) if re.fullmatch(AGENT_ID, v))
+    if told or signs:
+        out.append(SignEntry(epoch(entry["timestamp"]), told, signs))
 
 
 def may_sign(entry: Entry) -> bool:

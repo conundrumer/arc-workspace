@@ -8,7 +8,6 @@ import os
 import sys
 import threading
 from collections.abc import Iterable
-from pathlib import Path
 
 LATENCY_SECONDS = 0.5
 """How long the stream holds an event to send it with the ones after it."""
@@ -86,7 +85,7 @@ class Changes:
     directory and an event adds, removes or renames an entry of it. Events
     of other paths are dropped."""
 
-    def __init__(self, paths: Iterable[Path]) -> None:
+    def __init__(self, paths: Iterable[str]) -> None:
         self._cs, self._cf, self._libc = frameworks()
         self._real: dict[str, str] = {}
         self._watched: dict[str, str] = {}
@@ -98,12 +97,11 @@ class Changes:
         self._roots: list[str] = []
         self.watch(paths)
 
-    def watch(self, paths: Iterable[Path]) -> None:
+    def watch(self, paths: Iterable[str]) -> None:
         """Watch `paths` in place of the paths watched before, and start the
         stream again where they lie outside its directories."""
         watched: dict[str, str] = {}
-        for p in paths:
-            text = str(p)
+        for text in paths:
             parent, name = os.path.split(text)
             real = self._real.get(parent)
             if real is None:

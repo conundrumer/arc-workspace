@@ -7,7 +7,7 @@ import importlib
 import inspect
 import time
 import uuid
-from collections.abc import Callable, Hashable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Collection, Hashable, Iterable, Iterator, Mapping
 from enum import Enum
 from functools import wraps
 from pathlib import Path
@@ -54,8 +54,8 @@ class Held:
     result and `undecided` lines, the version of its result in the store of
     `kept_reads`, where it is kept there (`Kept.DISK`), the held reads its
     last run made (`made`) with the result each gave it, the held reads
-    whose last run made it (`dependents`, None where no held read has
-    rested on it, the one such read itself where it is the only one), and
+    whose last run or stamp made it (`dependents`, None where no held read
+    has rested on it, the one such read itself where it is the only one), and
     whether a source it rests on gave another result since it
     was last checked (`marked`). A held read is a source (`source`) where
     its stamp is not `DERIVED`."""
@@ -87,7 +87,8 @@ class Held:
         return self.read.held.get(self.call) is self
 
     def above(self) -> tuple["Held", ...]:
-        """The held reads whose last run made this one (`dependents`)."""
+        """The held reads whose last run or stamp made this one
+        (`dependents`)."""
         found = self.dependents
         if found is None:
             return ()
@@ -102,15 +103,22 @@ class Held:
         """Drop this read from the held reads of its read."""
         self.read.held.pop(self.call)
 
-    def rest_on(self, made: Made) -> None:
+    def rest_on(self, made: Made, stamped: Made) -> None:
         """Replace the reads this one rests on, and their reverse edges, by
-        `made`."""
-        if belows(made) != belows(self.made):
-            for below in belows(self.made):
+        `made`, the reads of its last run, and `stamped`, those of its
+        stamp."""
+        before = self.rests_on()
+        after = belows(made) + belows(stamped)
+        if after != before:
+            for below in before:
                 below.lose(self)
-            for below in belows(made):
+            for below in after:
                 below.gain(self)
-        self.made = made
+        self.made, self.stamped = made, stamped
+
+    def rests_on(self) -> tuple["Held", ...]:
+        """The held reads its last run and its stamp made."""
+        return belows(self.made) + belows(self.stamped)
 
     def gain(self, above: "Held") -> None:
         """Add `above` to the held reads that rest on this one."""
@@ -142,14 +150,16 @@ def all_held() -> list[Held]:
 _marking = False
 """Whether the sources are being brought up to date at this state."""
 
-_stands: "tuple[ReadInfo, Callable[[Call], bool]] | None" = None
-"""A read and a test of its arguments: each held read of that read whose
-arguments the test holds for is taken as up to date at the state being
-opened, with no run (`stand_next`)."""
+_stands: "tuple[ReadInfo, Collection[Call]] | None" = None
+"""A read and the arguments of some of its held reads, which alone the
+next state brings up to date (`stand_next`)."""
 
-_partial = False
-"""Whether `bring_up` let some held source stand at the state `new_state`
-opened last (`partial`)."""
+_brought: "tuple[ReadInfo, Collection[Call]] | None" = None
+"""Where the state `new_state` opened last is a partial one (`partial`),
+the read and the arguments `stand_next` gave for it (`brought_up`)."""
+
+_full = 0
+"""The last state `new_state` opened that is not a partial one."""
 
 _marked_late: list[Held] = []
 """Each held read marked after a read reached it at this state, whose
@@ -162,56 +172,84 @@ def new_state() -> float:
     changed, and as held where it did not.
 
     The records the last state kept are written to the store first
-    (`kept_reads`). Each held read that no read reached at the last state
-    and no held read rests on is dropped. Each held source is then brought up to date, each
-    after the sources it rests on, and each one whose result is not its
-    held one marks each held read that rests on it, transitively, apart from
-    the sources `stand_next` gives."""
-    global _state, _marking, _stands, _partial
+    (`kept_reads`). At a full state, each held read that no read reached
+    since the last full state and no held read rests on is dropped, and
+    each held source is then brought up to date, each after the sources it
+    rests on. Each one whose result is not its held one marks each held
+    read that rests on it, transitively.
+
+    At a partial state, which `stand_next` gives, only the held reads it
+    gives are brought up to date so, with no walk over the other held
+    reads, and each other held source that no change marks stands as held
+    where a read reaches it (`partial`)."""
+    global _state, _marking, _stands, _brought, _full, _opened
     kept_reads.flush()
-    last = _state
     _state += 1
     late = list(_marked_late)
     _marked_late.clear()
     for below in late:
         mark_dependents(below)
+    _brought, _stands = _stands, None
+    if _brought is None:
+        drop_unused(_full)
+        _full = _state
+    _opened = time.time()
+    _marking = True
+    try:
+        if _brought is None:
+            for h in all_held():
+                bring_up(h)
+        else:
+            info, calls = _brought
+            for h in [h for call in calls if (h := info.held.get(call)) is not None]:
+                h.marked = True
+                bring_up(h)
+    finally:
+        _marking = False
+    return time.time()
+
+
+def drop_unused(since: int) -> None:
+    """Drop each held read that no read reached since the state `since`
+    and no held read rests on, and then each read it rested on that is
+    left so."""
     def unused(h: Held) -> bool:
-        return h.held() and h.reached != last and h.dependents is None
+        return h.held() and h.reached < since and h.dependents is None
     idle = [h for h in all_held() if unused(h)]
     while idle:
         h = idle.pop()
         if not unused(h):
             continue
         h.drop()
-        made = belows(h.made)
-        h.rest_on(())
-        idle += [below for below in made if unused(below)]
-    global _opened
-    _opened = time.time()
-    _marking = True
-    _partial = False
-    try:
-        for h in all_held():
-            bring_up(h)
-    finally:
-        _marking = False
-        _stands = None
-    return time.time()
+        below = h.rests_on()
+        h.rest_on((), ())
+        idle += [b for b in below if unused(b)]
 
 
-def stand_next(stands: tuple[Callable[..., Any], Callable[["Call"], bool]] | None) -> None:
-    """Take, at the next state `new_state` opens, where `stands` gives a
-    `state_cache` read and a test of its arguments, each held read of that
-    read whose arguments the test holds for as up to date, with its held
-    result and no run; where it gives none, bring up each held source."""
+def stand_next(stands: tuple[Callable[..., Any], Collection["Call"]] | None) -> None:
+    """Make the next state `new_state` opens a partial one, where `stands`
+    gives a `state_cache` read and the arguments of some of its held
+    reads: those alone are brought up to date at it. Where it gives none,
+    the next state brings up each held source."""
     global _stands
     _stands = None if stands is None else (_reads[name_of(stands[0])], stands[1])
 
 
 def partial() -> bool:
     """Whether the state `new_state` opened last is a partial one: one at
-    which `stand_next` let some held source stand."""
-    return _partial
+    which each held source outside the reads `stand_next` gave, and that
+    no change of those reads marks, stands as held."""
+    return _brought is not None
+
+
+def brought_up(read: Callable[..., Any]) -> Collection["Call"] | None:
+    """The arguments `stand_next` gave of the `state_cache` read `read`,
+    where the state `new_state` opened last is a partial one that brought
+    up to date only the held reads of `read` with them, or None where it
+    is a full one."""
+    if _brought is None:
+        return None
+    return _brought[1] if _brought[0] is _reads[name_of(read)] else ()
 
 
 def held_calls(read: Callable[..., Any]) -> list["Call"]:
@@ -228,12 +266,7 @@ def bring_up(source: Held) -> None:
     """Bring the held source `source` up to date at this state, after each
     source it rests on: a source whose read fails stays as held, and marks
     each held read that rests on it."""
-    global _partial
     if not source.source or source.state == _state or not source.held():
-        return
-    if _stands is not None and source.read is _stands[0] and _stands[1](source.call):
-        source.state = _state
-        _partial = True
         return
     for below in belows(source.made):
         bring_up(below)
@@ -301,11 +334,13 @@ def held_still(made: Made) -> bool:
     it gave: a read gives its held result again where its stamp holds or
     where what it reads anew equals it. A read up to date at this state, or
     a `DERIVED` read that is not marked while no source is being brought up
-    to date, gives its held result with no run (`run`), so it is compared
-    by that result."""
+    to date, or a source that is not marked at a partial state (`partial`),
+    gives its held result with no run (`run`), so it is compared by that
+    result."""
     for below, value in pairs(made):
         below.reached = _state
-        if below.state == _state or not (below.marked or below.source or _marking):
+        if below.state == _state or not (
+                below.marked or (below.source and _brought is None) or _marking):
             if below.value is not value:
                 return False
             continue
@@ -532,9 +567,10 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
     them within a state. A read with nothing to stamp, `stamp` None, runs
     again at each new state. A read whose stamp is `DERIVED` runs again
     where a `state_cache` read it made in its last run gives another result
-    (`held_still`).
+    (`held_still`). At a partial state (`partial`), a source that no change
+    marks gives its held result with no run.
 
-    `new_state` brings each held source up to date and marks the reads
+    `new_state` brings the held sources up to date and marks the reads
     that rest on one that changed. A `DERIVED` read that is not marked
     gives its held result with no check of the reads it made, unless the
     sources are being brought up to date; one that is marked checks them.
@@ -608,7 +644,9 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                      kwargs: dict[str, Any]) -> tuple[Any, tuple[str, ...]]:
             """`run` of `key`, whose arguments are `args` and `kwargs`."""
             hit = held.get(key)
-            if hit is not None and hit.state == _state:
+            if hit is not None and (hit.state == _state or (
+                    _brought is not None and not derived and not hit.marked)):
+                hit.state = _state
                 return hit.value, hit.lines
             entered = script_calls.enter()
             try:
@@ -625,7 +663,8 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                     finally:
                         stamped = made_of(_frames.pop())
                     if hit is not None and hit.mark == mark:
-                        hit.state, hit.stamped = _state, stamped
+                        hit.state, hit.marked = _state, False
+                        hit.rest_on(hit.made, stamped)
                         return hit.value, hit.lines
                 record, made = recalled(key) if hit is None else (None, None)
                 if record is not None and made is not None:
@@ -655,8 +694,8 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                 elif value is not hit.value and hit.source:
                     mark_dependents(hit)
                 hit.state, hit.mark, hit.value, hit.lines = _state, mark, value, kept_lines
-                hit.stamped, hit.marked, hit.version = stamped, False, version
-                hit.rest_on(made if stamp is None or derived else ())
+                hit.marked, hit.version = False, version
+                hit.rest_on(made if stamp is None or derived else (), stamped)
                 return value, hit.lines
             finally:
                 script_calls.leave(info.name, entered)
