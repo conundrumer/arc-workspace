@@ -206,6 +206,12 @@ def labeled(key: str, body: str) -> str:
     return mctx("{label} {key}:").format(label=DECISION, key=key) + "\n" + body
 
 
+def body(message: str) -> str:
+    """The body of a message `labeled` wrote: the text after its opening
+    line."""
+    return message.partition("\n")[2]
+
+
 def unread_line(line: str) -> Send:
     """The message that gives the coordinator back its line `line`, in no
     form the command reads."""
