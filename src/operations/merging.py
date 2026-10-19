@@ -70,8 +70,8 @@ change since its last move out of `tickets/draft/`
 `handled.unmoved` gives for that finding, reports after the latest merge
 call, the merge call is given again.
 
-Once the change is merged, an agent runs the steps and checks its
-ticket's `after-merge` field gives, then the command closes each `refactor` ticket
+Once the change is merged, an agent runs the steps and checks of each item
+of its ticket's Scope that opens `After the merge`, then the command closes each `refactor` ticket
 on a module a code editor of the change reports it split, or logs the part
 the report gives as left unsplit, then each open `question` ticket filed on
 the change (`change_holds.open_questions`), then the change's own ticket."""

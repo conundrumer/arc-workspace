@@ -49,7 +49,8 @@ from operations.directives import reply_decisions
 from operations.reports import Label, items_of
 from operations.roles import Purpose, Role, analyst_of, analyst_subject, described
 from operations.state import Agent, State, Tool, Unread, own
-from operations.final_reply import failure, final_replies, nested, session_operator
+from operations.final_reply import failure, final_replies, session_operator
+from operations.nesting import nested
 from operations.handled import ask_again, decided_by, repeated
 from operations.steps import Launch, Send, Step, Undecided, analyst_key, rulable
 from operations.tracker import closed

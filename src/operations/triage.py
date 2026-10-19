@@ -81,7 +81,8 @@ from operations.roles import ANALYST_NAMES, Purpose, Role, analyst_subject, join
 from operations.state import Agent, LogLine, State, Ticket, kept_across_reads, memoized
 from ticketing.vocabulary import SETTLED, Status
 from operations.constants import COORDINATOR
-from operations.final_reply import carrier, nested, replies_by_operator, session_operator
+from operations.final_reply import carrier, replies_by_operator, session_operator
+from operations.nesting import nested
 from operations.handled import repeated, sends_to, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, body, labeled
 from operations.log_commands import AGENT, log

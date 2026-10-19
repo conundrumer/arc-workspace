@@ -86,8 +86,7 @@ VALIDATES = "validates"
 DEPENDS_ON = "depends-on"
 """The field that gives the tickets whose close a ticket waits on."""
 
-FIELDS = {Kind.CHANGE: frozenset({DEPENDS_ON, "editors", "after-merge",
-                                       "mechanical"}),
+FIELDS = {Kind.CHANGE: frozenset({DEPENDS_ON, "editors", "mechanical"}),
           Kind.DELAY: frozenset({"fix"}),
           Kind.REQUEST: frozenset({DEPENDS_ON}),
           Kind.VALIDATION: frozenset({VALIDATES})}

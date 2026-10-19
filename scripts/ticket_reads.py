@@ -16,13 +16,18 @@ from ticket_log import (CLOSED_BY_LINE, DUPLICATE_OF_LINE, WAIT, Wait, allowers,
 from ticket_numbers import matched_number
 from transcript_snapshots import Refused
 
+from operations.reports import TOP_ITEM, section_items
 from operations.roles import Role, editors_of
 from operations.state import LogLine, Ticket, Unread
-from ticketing.text import SECTIONS
+from ticketing.text import SECTIONS, heading
 from ticketing.vocabulary import TICKET_NUMBER, Domain, Kind, Status
 
 
-_, MOTIVATION, _, _ = SECTIONS[Kind.CHANGE]
+_, MOTIVATION, SCOPE, _ = SECTIONS[Kind.CHANGE]
+
+AFTER_MERGE = re.compile(rf"{TOP_ITEM.pattern}After the merge")
+"""The opening of the item of a change's Scope that gives its steps and
+checks at or after its merge, by the `change` form of `filing_help.FORMS`."""
 
 CITED_NUMBER = re.compile(rf"(?<![\w.:-]){TICKET_NUMBER.pattern}(?![\w:-]|\.\d)")
 """A ticket number in a ticket's prose, apart from the parts of a date, a
@@ -58,6 +63,14 @@ def motivation(text: str) -> tuple[str, ...]:
     return tuple(str(matched_number(m)) for m in CITED_NUMBER.finditer(section(text, MOTIVATION)))
 
 
+def after_merge(text: str) -> str | None:
+    """Each top-level item of the `## Scope` section of a ticket's `text`
+    that `AFTER_MERGE` opens, with the lines nested under it, in their
+    order, or None where that section holds no such item."""
+    items = [i for i in section_items(text, heading(SCOPE)) if AFTER_MERGE.match(i)]
+    return "\n".join(items) if items else None
+
+
 def read_ticket(path: Path) -> Ticket:
     text = path.read_text()
     return ticket_of(path, text, log_lines(text))
@@ -90,7 +103,7 @@ def ticket_of(path: Path, text: str, found: list[re.Match[str]]) -> Ticket:
         depends_on=tuple(depends_on(fields)),
         motivation=motivation(text),
         editors=editors_field(fields),
-        after_merge=fields.get("after-merge"), mechanical="mechanical" in fields,
+        after_merge=after_merge(text), mechanical="mechanical" in fields,
         log=lines,
         allowers=allowers(found),
         holder=holder_of(found), path=path)

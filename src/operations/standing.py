@@ -9,7 +9,8 @@ from controlled_markdown import mctx
 from operations import change_take, changes, decisions, drafts, passes, runs, taking, triage
 from operations.arrivals import received
 from operations.directives import NUMBER, TASK, Directive, Line, Pipeline, lines
-from operations.final_reply import ending_step, final_sends, final_text, first_line, nested
+from operations.final_reply import ending_step, final_sends, final_text, first_line
+from operations.nesting import nested
 from operations.handled import repeated, sends_to
 from operations.journal import BOUND
 from operations.roles import Role

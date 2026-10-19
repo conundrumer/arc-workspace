@@ -238,11 +238,6 @@ def ending_step(to: str, text: str, since: float, sent: bool) -> Send | Reply:
                                        commanded=to != COORDINATOR)
 
 
-def nested(text: str) -> list[str]:
-    """The lines of `text`, nested under an item of the final reply."""
-    return [f"    {ln}".rstrip() for ln in text.strip().splitlines()]
-
-
 def failure(c: Call) -> str:
     """The first line of the result of the failed call `c`."""
     reason = (c.result or "").strip().splitlines()

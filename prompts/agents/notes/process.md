@@ -191,11 +191,11 @@
 - How it can fail: work that is slow and not stuck is escalated: the trigger is the absence of a step, and not time alone.
 
 ## Configuration management
-- Purpose: know what each change touches, and build each change after each change whose result it reads.
+- Purpose: know what each change touches, and build each change after each change it needs merged first.
 - Principles: "Save token cost first and time second, and count about 30 minutes saved as worth about $5 of token cost", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
     + xref: prompts/agents/notes/decisions.md#the-users-preferences
 - Outcomes:
-    - A change is built after each change whose result its Design reads.
+    - A change is built after each change it needs merged first: its edit builds on that change's code, or a check of its Scope cannot pass without it. A check that files each difference it finds as a ticket passes without it.
     - Each worktree belongs to one live change.
 - Owner: the ticket analyst for `depends-on`, and [merge_change.py](scripts/merge_change.py) for the worktrees.
     + xref: scripts/merge_change.py:merge_main

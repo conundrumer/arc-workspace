@@ -85,7 +85,7 @@
     - A namespace takes its existing name, with `-` in place of `_`: a package under `src/`, a script under `scripts/` without `.py`, `lib`, `solver-<task_id>`, `witnesses`, `handbook`, `agents`, `notes`, `tickets` or `tests`.
 - Give each `change` you file or revise each front matter field that `uv run python scripts/file_ticket.py --help change` gives a `change` only under a condition, where the change meets that condition, and leave the field out of it where the change does not.
     + xref: scripts/file_ticket.py:SUBCOMMANDS
-- Give in the `depends-on` of each `change` you file or revise each `change` outside `tickets/closed/` whose result its Design reads, whatever its status and whenever it was filed.
+- Give in the `depends-on` of each `change` you file or revise each `change` outside `tickets/closed/` that it needs merged first, whatever its status and whenever it was filed: its edit builds on that change's code, or a check of its Scope cannot pass without it. A check that files each difference it finds as a ticket passes without it.
 - A part of a file is the innermost section of a document, or the innermost definition in code, that holds an edited line, in a file git does not ignore, and the new sections at one place are one part.
 - When you revise a ticket under `tickets/draft/`, write a log line with `draft` as its status and `revised` as its note.
     + xref: scripts/file_ticket.py:SUBCOMMANDS

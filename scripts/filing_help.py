@@ -61,8 +61,9 @@ of `{parts}`."""
 FORMS = {
     FormPart.CHANGE: mctx("""
         - A `change` takes `kind: change` and `editors: <editor>, <editor>`, with each editor whose part, as [Making a change](prompts/agents/notes/changes.md#making-a-change) gives it, holds a file of its Scope, among {editors}.
-            - It may add `depends-on: <number>, <number>`, `after-merge: <the steps and checks its Scope places at or after the merge>` and `mechanical: {mechanical}` to the front matter.
+            - It may add `depends-on: <number>, <number>` and `mechanical: {mechanical}` to the front matter.
             - It gives `mechanical` where its Intent and its `Design` settle each choice of the code editor's part other than how the code is written.
+            - It places the steps and checks it gives at or after its merge in one item of its Scope that opens `After the merge`.
             - It has `# <title>` as its title, and the sections {change_sections} in place of {defect_headings}.
             - Where it adds a mechanism to code, it has a `{design}` section after `## Intent` that gives the existing operations the change uses or extends and each new operation with its module.
             - Where it adds or changes a rule or a fact in the agent-facing documents, it has that section.
