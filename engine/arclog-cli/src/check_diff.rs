@@ -13,8 +13,10 @@
 //!
 //! Each check runs `check_one` in a child process whose CPU time is limited
 //! to [`BOUND_SECONDS`], and its result is stored in `.cache/check-diff/`
-//! of the main worktree, under the key of the engine's sources and the key
-//! of the solver's files. A run starts no check whose result is stored at
+//! of the main worktree, under the key of the engine's files and the key
+//! of the solver's files. The engine key hashes the code of each Rust
+//! source, with its comments left out ([`code_of`]), and the bytes of each
+//! other engine file. A run starts no check whose result is stored at
 //! its keys, and two runs that overlap in time start one check for each
 //! result, by a lock file beside it. The base engine is `git archive` of
 //! the base's `engine/`, with the base's own `check_one.rs`, built once for
@@ -406,6 +408,139 @@ fn key_of(files: &Files, rest: &[u8]) -> String {
     format!("{:032x}", hasher.finish128().0)
 }
 
+/// The text of the Rust source `bytes` with each comment (line, block and
+/// doc comments) replaced by one space, the whitespace at the end of each
+/// line removed, and each line that the replacement made blank dropped with
+/// its newline. A line blank in the source stays, and the layout of the code
+/// is kept. The text of each string, raw string, byte string, C string and
+/// char literal is kept whole. A source that does not lex gives its bytes.
+fn code_of(bytes: &[u8]) -> Vec<u8> {
+    lex_code(bytes).unwrap_or_else(|| bytes.to_vec())
+}
+
+/// [`code_of`] of a source that lexes, `None` of one that does not.
+fn lex_code(src: &[u8]) -> Option<Vec<u8>> {
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b >= 0x80;
+    let mut out: Vec<u8> = Vec::with_capacity(src.len());
+    // Whether each line of `out`, by index, holds a replaced comment.
+    let mut commented = vec![false];
+    // Whether each line of `out`, by index, ends inside a literal.
+    let mut held = vec![false];
+    let mut i = 0;
+    // Copies `src[i..end]` to `out`, tracking its newlines.
+    let copy = |out: &mut Vec<u8>, commented: &mut Vec<bool>, held: &mut Vec<bool>, literal: bool, from: usize, end: usize| {
+        for &b in &src[from..end] {
+            out.push(b);
+            if b == b'\n' {
+                *held.last_mut().expect("held has a line") = literal;
+                held.push(false);
+                commented.push(false);
+            }
+        }
+    };
+    while i < src.len() {
+        let b = src[i];
+        let next = src.get(i + 1).copied();
+        if b == b'/' && next == Some(b'/') {
+            while i < src.len() && src[i] != b'\n' {
+                i += 1;
+            }
+            out.push(b' ');
+            *commented.last_mut()? = true;
+        } else if b == b'/' && next == Some(b'*') {
+            let mut depth = 1;
+            i += 2;
+            while depth > 0 {
+                match (src.get(i)?, src.get(i + 1)) {
+                    (b'/', Some(b'*')) => {
+                        depth += 1;
+                        i += 2;
+                    }
+                    (b'*', Some(b'/')) => {
+                        depth -= 1;
+                        i += 2;
+                    }
+                    _ => i += 1,
+                }
+            }
+            out.push(b' ');
+            *commented.last_mut()? = true;
+        } else if b == b'"' {
+            let mut end = i + 1;
+            while *src.get(end)? != b'"' {
+                end += if src[end] == b'\\' { 2 } else { 1 };
+            }
+            copy(&mut out, &mut commented, &mut held, true, i, end + 1);
+            i = end + 1;
+        } else if b == b'\'' {
+            // A char literal, or the tick of a lifetime.
+            let end = if next? == b'\\' {
+                let mut end = i + 3;
+                while *src.get(end)? != b'\'' {
+                    end += 1;
+                }
+                Some(end)
+            } else {
+                let width = match next? {
+                    0..=0x7f => 1,
+                    0xc0..=0xdf => 2,
+                    0xe0..=0xef => 3,
+                    _ => 4,
+                };
+                (src.get(i + 1 + width) == Some(&b'\'')).then_some(i + 1 + width)
+            };
+            let stop = end.map_or(i + 1, |end| end + 1);
+            copy(&mut out, &mut commented, &mut held, true, i, stop);
+            i = stop;
+        } else if is_ident(b) {
+            let mut end = i;
+            while end < src.len() && is_ident(src[end]) {
+                end += 1;
+            }
+            let mut stop = end;
+            if matches!(&src[i..end], b"r" | b"br" | b"cr") && matches!(src.get(end), Some(b'#' | b'"')) {
+                let hashes = src[end..].iter().take_while(|&&b| b == b'#').count();
+                if src.get(end + hashes) == Some(&b'"') {
+                    let mut close = vec![b'"'];
+                    close.resize(hashes + 1, b'#');
+                    let body = end + hashes + 1;
+                    let at = src[body..].windows(close.len()).position(|w| w == &close[..])?;
+                    stop = body + at + close.len();
+                }
+            }
+            copy(&mut out, &mut commented, &mut held, stop != end, i, stop);
+            i = stop;
+        } else {
+            copy(&mut out, &mut commented, &mut held, false, i, i + 1);
+            i += 1;
+        }
+    }
+    let mut code = Vec::with_capacity(out.len());
+    let mut lines = out.split(|b| *b == b'\n').enumerate().peekable();
+    while let Some((n, line)) = lines.next() {
+        let trimmable = !held.get(n).copied().unwrap_or(false);
+        let kept = line.len() - if trimmable { line.iter().rev().take_while(|b| matches!(**b, b' ' | b'\t' | b'\r')).count() } else { 0 };
+        if kept == 0 && commented[n] {
+            continue;
+        }
+        code.extend_from_slice(&line[..kept]);
+        if lines.peek().is_some() {
+            code.push(b'\n');
+        }
+    }
+    Some(code)
+}
+
+/// The bytes that the key hashes for the file at `path`: [`code_of`] of a
+/// Rust source, the bytes of another file.
+fn keyed_bytes(path: &str, bytes: Vec<u8>) -> Vec<u8> {
+    if path.ends_with(".rs") {
+        code_of(&bytes)
+    } else {
+        bytes
+    }
+}
+
 /// The engine's files of the checkout at `root`: each file under `engine/`
 /// that git tracks or does not ignore, less `arclog-cli` but its manifest
 /// and `check_one.rs`, where it stands.
@@ -415,7 +550,7 @@ fn current_files(root: &Path) -> Result<Files, String> {
     let mut files = Files::new();
     for path in paths.chain([MANIFEST.to_owned(), CHECK_ONE.to_owned()]) {
         if let Ok(bytes) = std::fs::read(root.join(&path)) {
-            files.insert(path, Some(bytes));
+            files.insert(path.clone(), Some(keyed_bytes(&path, bytes)));
         }
     }
     Ok(files)
@@ -434,7 +569,12 @@ fn base_files(root: &Path, rev: &str) -> Result<Files, String> {
             blobs.push((path.to_owned(), object.to_owned()));
         }
     }
-    Ok(blobs.iter().map(|(path, _)| path.clone()).zip(cat_blobs(root, blobs.iter().map(|(_, o)| o.as_str()))?.into_iter().map(Some)).collect())
+    Ok(blobs.iter().map(|(path, _)| path.clone()).zip(cat_blobs(root, blobs.iter().map(|(_, o)| o.as_str()))?)
+        .map(|(path, bytes)| {
+            let bytes = keyed_bytes(&path, bytes);
+            (path, Some(bytes))
+        })
+        .collect())
 }
 
 /// The bytes of each blob of `objects`, in their order, by `git cat-file
@@ -545,7 +685,55 @@ fn build_check_one(engine: &Path) -> Result<PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{key_of, solver_files};
+    use super::{code_of, key_of, solver_files};
+
+    fn same(a: &str, b: &str) {
+        assert_eq!(code_of(a.as_bytes()), code_of(b.as_bytes()), "{a:?} against {b:?}");
+    }
+
+    fn differ(a: &str, b: &str) {
+        assert_ne!(code_of(a.as_bytes()), code_of(b.as_bytes()), "{a:?} against {b:?}");
+    }
+
+    /// A comment that fills a line or ends one leaves the code unchanged.
+    #[test]
+    fn comments_that_fill_or_end_a_line_leave_the_code() {
+        same("fn f() {\n    1\n}\n", "// c\nfn f() {\n    // c\n    1 // c\n    /// d\n}\n//! e\n");
+        same("a\nb\n", "a\n/* x /* nested */ y */\nb\n");
+        same("a\nb\n", "a\n/**\n * doc\n */\nb /*! d */\n");
+        same("a\nb\n", "a\n\t/* c */\nb\n");
+    }
+
+    /// A change of a token, of layout, or of a literal changes the code.
+    #[test]
+    fn code_changes_move_the_result() {
+        differ("a b\n", "a c\n");
+        differ("    a\n", "  a\n");
+        differ("a\nb\n", "a b\n");
+        differ("a\n\nb\n", "a\nb\n");
+        differ("let s = \"//x\";\n", "let s = \"//y\";\n");
+        differ("let s = r#\"/*x\"#;\n", "let s = r#\"/*y\"#;\n");
+        differ("let c = '\"'; // \"\n", "let c = '\\''; // \"\n");
+        differ("fn f<'a>(x: &'a u8) {}\n", "fn f<'b>(x: &'a u8) {}\n");
+        differ("a b\n", "ab\n");
+        differ("let s = \"a  \nb\";\n", "let s = \"a\nb\";\n");
+        differ("let s = r\"a\r\nb\";\n", "let s = r\"a\nb\";\n");
+    }
+
+    /// A comment between two tokens keeps them apart, and changes the line.
+    #[test]
+    fn a_comment_between_tokens_on_a_line() {
+        differ("a/**/b\n", "ab\n");
+        differ("a /* c */ b\n", "a b\n");
+    }
+
+    /// Comment marks inside literals are text, and a lifetime starts no literal.
+    #[test]
+    fn literals_hold_comment_marks() {
+        assert_eq!(code_of(b"let s = \"// x\"; // c\nlet r = br##\"/* \"# \"##;\n"), b"let s = \"// x\";\nlet r = br##\"/* \"# \"##;\n");
+        assert_eq!(code_of(b"fn f<'a>(x: &'a u8) {} // c\n"), b"fn f<'a>(x: &'a u8) {}\n");
+        assert_eq!(code_of(b"/* open"), b"/* open");
+    }
 
     /// A solver's key changes when a file of the solver its
     /// `representative` line names changes, so its stored result is
