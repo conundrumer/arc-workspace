@@ -71,8 +71,9 @@ class Ticket:
     `filing_help` gives, `motivation` holds the ticket numbers its
     `## Motivation` section gives, `log` holds the lines of its log other
     than its allow lines, `allowers` the session ids of those allow lines,
-    each once, in the order of their first lines, and `holder` is the
-    holder `file_ticket.py log --help-all` defines."""
+    each once, in the order of their first lines, `holder` is the
+    holder `file_ticket.py log --help-all` defines, and `goal` is the text
+    of its `## Goal` section, None where it has none."""
     number: str
     order: tuple[int, int]
     session: int | None
@@ -92,6 +93,7 @@ class Ticket:
     allowers: tuple[str, ...]
     holder: str | None
     path: Path
+    goal: str | None = None
 
     @property
     def last_time(self) -> float:

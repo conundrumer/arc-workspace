@@ -11,7 +11,7 @@ from operations.roles import EDITORS
 from ticket_files import ticket_path
 from ticket_numbers import ticket_number
 from ticket_vocabulary import filer_kinds, ticked
-from ticketing.text import DESIGN, HEADING_MARK, heading, kind_sections
+from ticketing.text import DESIGN, HEADING_MARK, SECTIONS, heading, kind_sections
 from ticketing.vocabulary import Kind
 from transcript_snapshots import Refused
 
@@ -182,6 +182,15 @@ def given_paths(text: str, name: str, root: Path) -> frozenset[str]:
 def section(text: str, name: str) -> str:
     start, end = bounds(text, name)
     return text[start:end].strip("\n")
+
+
+GOAL = SECTIONS[Kind.REQUEST][0]
+
+
+def goal(text: str) -> str | None:
+    """The `## Goal` section of a ticket's `text`, or None where it holds
+    none, as a request filed before requests held one does."""
+    return section(text, GOAL) if section_head(text, GOAL) is not None else None
 
 
 def without_section(text: str, name: str) -> str:

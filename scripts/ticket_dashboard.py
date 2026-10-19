@@ -1,25 +1,25 @@
-"""The ticket dashboard: an HTTP server whose page gives, from the main
-tree's tracker, the spend records, the usage cache and the state the last
-read of the main session's operator recorded, the answers to the user's
-questions on tickets, and updates itself in the browser as the tracker
-changes.
+"""The ticket dashboard: an HTTP server whose page gives an overseer of the
+operations, on a phone, from the main tree's tracker, the usage cache and
+the state the last read of the main session's operator recorded, what is
+moving, what is next and the week's pace, and updates itself in the
+browser as the tracker changes.
 
     uv run python scripts/ticket_dashboard.py <address> <port>
 
-serves GET alone, at three routes. `/` renders the page on each request, as
-one HTML document with its CSS and JavaScript inline, and keeps the
-search's entries of that render. `SEARCH_ROUTE` gives the HTML of the
-search's matches among the entries of the latest render, and renders the
-page first where none has run. The server gzips the body of each where the
-request accepts it. `EVENTS` is a Server-Sent Events stream that sends an
+serves GET alone, at four routes. `/` renders the page on each request, as
+one HTML document with its CSS and JavaScript inline: a strip at its top,
+and the sections Health, In flight, Up next, Since you looked, Pace,
+Queue, Find a ticket and Blocked, the last three of them folded. It keeps
+the search's entries of that render. `SEARCH_ROUTE` gives the HTML of the
+search's hits of the `q` parameter among the entries of the latest render,
+and `TICKET_ROUTE` the sheet of the ticket its `n` parameter gives; each
+renders the page first where none has run. The server gzips the body of
+each where the request accepts it. `EVENTS` is a Server-Sent Events stream that sends an
 event at the first read of `fingerprint`, every `POLL` seconds while the
 client is connected, that differs from the one of the last event and comes
 `MIN_EVENT` seconds or more after it; on that event the page fetches `/`
 and replaces its content in place, and the page holds no stream while it
-is hidden. The server serves no ticket file, and writes no file but the
-spend records under `tickets/spends/` that `spends.change_spend` writes for
-settled changes, reached through `spends.budget` and
-`ticket_watch.watched`.
+is hidden. The server serves no ticket file, and writes no file.
 
 This module holds the server; `dashboard_reads` the reads the page is
 rendered from, `dashboard_html` the HTML of its sections, `dashboard_search`
@@ -37,10 +37,9 @@ from urllib.parse import parse_qs, urlsplit
 
 from dashboard_html import Rendered, page
 from dashboard_reads import operator_state
-from dashboard_search import query, results
-from dashboard_template import EVENTS, SEARCH_ROUTE
+from dashboard_search import results, sheet, words
+from dashboard_template import EVENTS, SEARCH_ROUTE, TICKET_ROUTE
 from file_ticket import main_tickets
-from spends import SPENDS
 from state_reads import new_state
 from usage_limit import read, usage_file
 
@@ -71,15 +70,15 @@ def stamp(path: Path) -> Stamp:
 def fingerprint(tickets: Path) -> tuple[Stamp, ...]:
     """The stamps of each status directory of `tickets`, of each ticket file
     outside `tickets/closed/` (a log line appended to a file changes its
-    time and not its directory's), of `tickets/spends/` and of the usage
-    cache. The page answers a change of it with a render."""
+    time and not its directory's) and of the usage cache. The page answers
+    a change of it with a render."""
     out: list[Stamp] = []
     for s in Status:
         d = tickets / s.value
         out.append(stamp(d))
         if s is not Status.CLOSED and d.is_dir():
             out.extend(stamp(p) for p in sorted(d.iterdir()))
-    return (*out, stamp(tickets / SPENDS), stamp(usage_file()))
+    return (*out, stamp(usage_file()))
 
 
 def render(tickets: Path) -> Rendered:
@@ -113,7 +112,7 @@ class Latest:
 
 
 class Handler(BaseHTTPRequestHandler):
-    """Serves `/`, `SEARCH_ROUTE` and `EVENTS` of the tracker `tickets`, and
+    """Serves `/`, `SEARCH_ROUTE`, `TICKET_ROUTE` and `EVENTS` of the tracker `tickets`, and
     nothing else. Each render runs on the one thread of `renderer`: the
     reads it makes keep a SQLite store (`kept_reads`) that only the thread
     that opened it may use."""
@@ -127,6 +126,11 @@ class Handler(BaseHTTPRequestHandler):
         self.latest.rendered = r
         return r
 
+    def rendered_last(self) -> Rendered:
+        """The latest render, or a render now where none has run."""
+        r = self.latest.rendered
+        return self.rendered_now() if r is None else r
+
     def do_GET(self) -> None:
         url = urlsplit(self.path)
         match url.path:
@@ -135,13 +139,19 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_html(self.rendered_now().text, began)
             case p if p == SEARCH_ROUTE:
                 began = time.monotonic()
-                try:
-                    q = query(parse_qs(url.query))
-                except ValueError as e:
-                    self.send_error(400, str(e))
+                self.send_html(results(self.rendered_last().entries, words(parse_qs(url.query))), began)
+            case p if p == TICKET_ROUTE:
+                began = time.monotonic()
+                given = parse_qs(url.query).get("n")
+                if given is None:
+                    self.send_error(400, "no ticket number is given (`n`)")
                     return
-                r = self.latest.rendered
-                self.send_html(results((self.rendered_now() if r is None else r).entries, q), began)
+                n = given[-1]
+                e = self.rendered_last().entries.get(n)
+                if e is None:
+                    self.send_error(404, f"no ticket {n}")
+                    return
+                self.send_html(sheet(e, time.time()), began)
             case p if p == EVENTS:
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")

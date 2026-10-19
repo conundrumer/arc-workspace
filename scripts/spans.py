@@ -17,7 +17,8 @@ from file_ticket import Call, file_ticket, main_tickets, run  # noqa: E402
 from run_reads import blocks, message_text  # noqa: E402
 from senders import Origin, origin  # noqa: E402
 from ticket_files import ticket_name, ticket_path, ticket_status  # noqa: E402
-from ticket_form import DEPENDS_ON, bounds, check_depends_on, list_items, section, section_head, with_field  # noqa: E402
+import ticket_form  # noqa: E402
+from ticket_form import DEPENDS_ON, GOAL, bounds, check_depends_on, list_items, section, section_head, with_field  # noqa: E402
 from ticket_log import log_moves  # noqa: E402
 from ticket_numbers import TicketNumber, session_id, ticket_number  # noqa: E402
 from ticketing.text import SECTIONS, heading, ticket_text  # noqa: E402
@@ -31,7 +32,7 @@ from transcript_snapshots import Entry, Refused  # noqa: E402
 
 INVOCATION = "uv run python scripts/spans.py"
 
-GOAL, TRANSCRIPT, GROUNDS = SECTIONS[Kind.REQUEST]
+_, TRANSCRIPT, GROUNDS = SECTIONS[Kind.REQUEST]
 
 
 ROUTES = ticked(r.value for r in Route)
@@ -264,12 +265,6 @@ def spans_of(text: str) -> list[Span]:
     return spans
 
 
-def request_goal(text: str) -> str | None:
-    """The goal of a request's `text`, or None where it holds no goal
-    section, as a request filed before requests held one does."""
-    return section(text, GOAL) if section_head(text, GOAL) is not None else None
-
-
 def with_goal(text: str, goal: str) -> str:
     if section_head(text, GOAL) is not None:
         start, end = bounds(text, GOAL)
@@ -290,7 +285,7 @@ def brief(*args: str) -> str:
     route = None if named is None else route_of(named)
     if len(rest) == 1:
         text = ticket_path(main_tickets(), ticket_number(rest[0])).read_text()
-        goal, spans, grounds = request_goal(text), spans_of(text), section(text, GROUNDS)
+        goal, spans, grounds = ticket_form.goal(text), spans_of(text), section(text, GROUNDS)
     elif len(rest) == 3 and route is not None:
         goal = check_goal(rest[2])
         spans, grounds = [resolve_span(rest[0], rest[1])], grounds_lines()
@@ -326,9 +321,9 @@ def append(inferred: bool, route: Route | None, goal: str | None, depends: str |
     moved = log_moves(tickets, ref, status, COORDINATOR, status, None,
                       SPAN_NOTE.format(span=span.line())).moved[0]
     if route is None:
-        return f"{moved}\n\n{readback_prompt(FollowUp(ref), request_goal(text), inferred)}"
+        return f"{moved}\n\n{readback_prompt(FollowUp(ref), ticket_form.goal(text), inferred)}"
     moved = move_routed(tickets, ref, route, Status.DRAFT)
-    return f"{moved}\n\n{readback_prompt(route, request_goal(text), inferred)}"
+    return f"{moved}\n\n{readback_prompt(route, ticket_form.goal(text), inferred)}"
 
 
 def marked(args: tuple[str, ...]) -> tuple[bool, list[str]]:

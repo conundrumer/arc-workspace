@@ -8,7 +8,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from ticket_files import listed_tickets, ticket_files, ticket_name
-from ticket_form import FRONT, depends_on, front_fields, list_items, section, section_head, title
+from ticket_form import FRONT, depends_on, front_fields, goal, list_items, section, section_head, title
 from state_reads import DERIVED, Kept, state_cache
 from file_reads import stat_of
 from ticket_log import (CLOSED_BY_LINE, DUPLICATE_OF_LINE, WAIT, Wait, allowers, holder_of, is_allow,
@@ -106,7 +106,7 @@ def ticket_of(path: Path, text: str, found: list[re.Match[str]]) -> Ticket:
         after_merge=after_merge(text), mechanical="mechanical" in fields,
         log=lines,
         allowers=allowers(found),
-        holder=holder_of(found), path=path)
+        holder=holder_of(found), path=path, goal=goal(text))
 
 
 def read_tickets(tickets: Path) -> tuple[dict[str, Ticket], tuple[Unread, ...]]:
