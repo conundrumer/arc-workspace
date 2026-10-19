@@ -29,7 +29,7 @@ How each step of the [build order](overview.md#build-order) is checked against t
 ## Build speed
 
 - The constructions are in a crate of their own, as [Crates](overview.md#crates) gives.
-- Agent loops use `cargo check`, the engine's tests a debug build, and each corpus run a build under the incremental `tool` profile, as `cargo run --profile tool -p arclog-cli -- <subcommand>` gives. A debug build refuses a corpus run.
+- Agent loops use `cargo check`, the engine's tests a debug build, and each corpus run a build under the incremental `tool` profile, as `cargo run --profile tool -p arclog-cli -- <subcommand>` in `engine/` gives. A debug build refuses a corpus run.
 - Each agent that builds in parallel has its own Cargo target directory, since Cargo locks a target directory while it builds. Each such agent owns one construction or one step.
 - The corpus run is the check. The engine's tests are the kinds that [Tests](../../prompts/agents/notes/tests.md#tests) keeps, such as a reader or a check that must refuse wrong input.
 
