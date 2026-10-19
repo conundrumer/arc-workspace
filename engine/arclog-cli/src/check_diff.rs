@@ -530,10 +530,14 @@ fn build_base(root: &Path, rev: &str, dir: &Path) -> Result<PathBuf, String> {
 }
 
 /// The `check_one` of the engine workspace `engine`, once `cargo build`
-/// under [`PROFILE`] has built it there.
+/// under [`PROFILE`] has built it into the directory `engine/target`,
+/// whatever Cargo target directory the caller's environment sets.
 fn build_check_one(engine: &Path) -> Result<PathBuf, String> {
+    let target_dir = engine.join("target");
     let built = Command::new("cargo")
         .arg("build")
+        .arg("--target-dir")
+        .arg(&target_dir)
         .args(profile_config().iter().flat_map(|setting| ["--config", setting]))
         .args(["--profile", PROFILE, "-p", "arclog-cli", "--bin", "check_one"])
         .current_dir(engine)
@@ -543,7 +547,7 @@ fn build_check_one(engine: &Path) -> Result<PathBuf, String> {
     if !built.success() {
         return Err(format!("`check_one` does not build in {}", engine.display()));
     }
-    Ok(engine.join("target").join(PROFILE).join("check_one"))
+    Ok(target_dir.join(PROFILE).join("check_one"))
 }
 
 #[cfg(test)]
