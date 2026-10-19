@@ -216,7 +216,8 @@ def unread_line(line: str) -> Send:
     """The message that gives the coordinator back its line `line`, in no
     form the command reads."""
     return Send(COORDINATOR, mctx("{opening} a line of the coordinator's in no form the "
-                                  "command reads: {line}").format(opening=UNDECIDED, line=line),
+                                  "command reads: {line} Give it again by `uv run python "
+                                  "scripts/operate.py send`.").format(opening=UNDECIDED, line=line),
                 line)
 
 

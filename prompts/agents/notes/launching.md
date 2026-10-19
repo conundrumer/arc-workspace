@@ -129,7 +129,7 @@
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### An operator's brief
-- An operator's brief gives only lines in these forms, each on a line of its own:
+- Each line the coordinator gives the operators is in one of these forms, each on a line of its own:
     - `Op solve: <task id> ...`: a solver pipeline on each task, from Analyze, or from the pass that `from create` or `from refine` after its task id gives.
         + xref: src/operations/directives.py
     - `Op run: <path>`: the solver pipelines that the run script at that path starts, and the untaken tickets the operator takes from then on, as `uv run python scripts/operate.py --help run` gives the script.
@@ -165,7 +165,6 @@
         * comment: The user's words, session 19c17548, 2026-10-17T13:59:40Z: "10-947 feels like would be better to have escape hatch for exceptions? Like you can modify op state or intervene or whatever", and 14:01:05Z: "2 The most robust thing": ticket 10-950.
     - `Op decision: <decision key> <choice>`: rules the held step that gives that decision key with one of the choices that step gives, as the whole rest of the line.
         + xref: src/operations/directives.py
-- The operator gives each line of its brief or of a later message from the coordinator in no other form back to the coordinator as undecided.
 
 ### A code reviewer's brief
 - A code reviewer's brief gives the earlier code review's baseline, as a `code-review/<n>` tag, this code review's number and a scratch directory.
@@ -219,12 +218,10 @@
     + xref: scripts/operate_actions.py:OperateAction.RESTORE
 
 ## Operators
-- Send each line you give an operator to your running operator launcher, and where none runs, launch a new operator launcher with it. Give it in a form [An operator's brief](#an-operators-brief) gives, with nothing else in that message.
-    + xref: prompts/agents/notes/launching.md#an-operators-brief
+- Give each line you give an operator by `uv run python scripts/operate.py send`, with the lines on its stdin, each in a form [An operator's brief](#an-operators-brief) gives, and then do what its output gives. The command refuses each line in no such form and records no line of that call.
+    + xref: prompts/agents/notes/launching.md#an-operators-brief, scripts/operate.py:main
 - The final reply of an operator or of an operator launcher is the text from a line `final reply` on in a message to you.
-- When an operator launcher's final reply asks for a fresh operator launcher, launch one with a brief that gives each line of yours that reply gives, and no line where it gives none.
-- When an operator's message, or a paragraph of it, that opens with `undecided:` reaches you, send the operator again the line of yours it gives, in a form [An operator's brief](#an-operators-brief) gives.
-    + xref: prompts/agents/notes/launching.md#an-operators-brief
+- When an operator's message, or a paragraph of it, that opens with `undecided:` reaches you, give again the line of yours it gives, as the first line of this section has you give a line.
 - When an operator's message that opens with `for the coordinator:` reaches you, read the file it gives.
     + xref: src/operations/steps.py:DECISION
 - Bring the user each `decision:` item that file or an operator's final reply gives, other than a decline, tell the user each `tell:` item, and act on each `unfinished:` item as on an item an agent you launched gives as unfinished.

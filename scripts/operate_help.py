@@ -16,6 +16,7 @@ class HelpPart(StrEnum):
     RULINGS = "rulings"
     RUN = "run"
     PACE = "pace"
+    SEND = "send"
     RELAY = "relay"
     REVIEW = "review"
     WAIT = "wait"
@@ -29,6 +30,7 @@ USAGE = mctx("""
         uv run python scripts/operate.py relay <agent id>
         uv run python scripts/operate.py review <agent id>
         uv run python scripts/operate.py wait <agent id>
+        uv run python scripts/operate.py send
         uv run python scripts/operate.py start --run <run> <task id> <pass> ...
         uv run python scripts/operate.py claim <task id>
         uv run python scripts/operate.py set-aside <task id> analyze|create
@@ -54,6 +56,7 @@ PURPOSES = {
     HelpPart.RULINGS: mctx("the forms of the rulings `next` applies"),
     HelpPart.RUN: mctx("the `Op run:` line and the run script `next` reads"),
     HelpPart.PACE: mctx("the `Op pace:` line, which sets the usage pace within which `next` starts agents"),
+    HelpPart.SEND: mctx("how `send` records the coordinator's lines for the operators"),
     HelpPart.RELAY: mctx("what `relay` prints"),
     HelpPart.REVIEW: mctx("what `review` prints"),
     HelpPart.WAIT: mctx("how `wait` blocks"),
@@ -207,18 +210,26 @@ PARTS = {
         - `usage.now` is the time in seconds since the epoch, and `usage.windows` maps the name of each window of which the usage cache holds a reading fetched less than {stale} seconds ago to a `Window` with `used_pct`, `elapsed_pct` and `resets_at`, the last in seconds since the epoch.
         - With `paces` held back by a fault of the script, as `--help run` gives it, the pace counts as past.
     """),
+    HelpPart.SEND: mctx("""
+    - `send` records each non-blank line of its stdin, with the time of the call, in the session's store, under `.cache/op-lines/` of the main tree, for the operators of the session.
+        - Each line is in a form the brief of an operator gives, as [An operator's brief](prompts/agents/notes/launching.md#an-operators-brief) gives it.
+        - Where any line is in no form `next` reads, or is a ruling, an `Op pace:`, an `Op scope:`, an `Op pause` or an `Op resume` line in no fixed form, it records no line, prints the lines it refused, and fails.
+        - Otherwise it prints the message that the coordinator sends alone to its running operator launcher, or, where none runs, gives as the brief of a new operator launcher.
+    - `next` reads each recorded line as a line of the coordinator's to the operator of the session that ran at the time of its record, or, where none ran, to the next operator launched.
+    - After the session's first recorded line, `next` reads each line of a message of the coordinator's, other than the message `send` prints, as in no form, and gives it back to the coordinator once as undecided.
+    """),
     HelpPart.RELAY: mctx("""
     - `relay` prints the next step of the operator launcher whose agent id it is given, in the forms of `next`.
-        - Where an operator of the launcher's runs and no line of the coordinator's waits for it, it prints at once, with no block, that the launcher ends its turn with no call.
+        - Where an operator of the launcher's runs and no message of the coordinator's waits for it, it prints at once, with no block, that the launcher ends its turn with no call.
             - Where a message to the launcher waits that the harness accepted during the call, as the block of `next` reads one, it prints instead that the launcher runs the command again.
         - Its first step launches an operator whose brief is the launcher's brief.
-        - Each later message of the coordinator's to the launcher goes, unchanged, to the operator of the launcher's that runs, or, where none runs or the one that runs sent the launcher its final reply, into the brief of the next operator it launches.
+        - Each later message of the coordinator's to the launcher goes, unchanged, to the operator of the launcher's that runs, or, where none runs or the one that runs sent the launcher its final reply, into the brief of the next operator it launches, which is the message `send` prints where no message waits.
         - Where an operator's final reply ends it for its context, it launches a fresh operator.
-            - Where the launcher's context is past the bound `context_bound_hook.py` gives, it sends the coordinator instead the launcher's final reply, which asks for a fresh operator launcher whose brief is the lines that wait for a next operator, and gives them.
-        - Where an operator's final reply ends it for a wait, and no line of the coordinator's waits, it prints a call of `wait` in the background and that the launcher ends its turn, or, where that call runs, the end of the turn alone; once that call has completed, or once a line waits, it acts as after a final reply for the operator's context.
+            - Where the launcher's context is past the bound `context_bound_hook.py` gives, it sends the coordinator instead the launcher's final reply, which asks for a fresh operator launcher whose brief is that of the next operator, and gives it.
+        - Where an operator's final reply ends it for a wait, and no message of the coordinator's waits, it prints a call of `wait` in the background and that the launcher ends its turn, or, where that call runs, the end of the turn alone; once that call has completed, or once a message waits, it acts as after a final reply for the operator's context.
         - Where an operator ends with no final reply, it acts as after a final reply for the operator's context, unless the operator launched before it also ended with no final reply and each of the two ended within {idle} seconds of its launch.
         - It sends the coordinator any other final reply of an operator, and the end with no final reply that follows a quick end with none, after a line that gives that operator's agent id.
-            - It then prints the launcher's final reply, unless a line of the coordinator's waits for a next operator.
+            - It then prints the launcher's final reply, unless a message of the coordinator's waits for a next operator.
     """),
     HelpPart.REVIEW: mctx("""
     - `review` prints, to the code editor or the doc editor whose agent id it is given, which an operator of the session launched, the step `next` would give next on its change with that editor ended, where that step is the launch of a design reviewer, an item checker, a decision analyst or a doc reviewer, in the form of `next`'s, with the brief `next` gives that agent and the editor as its launcher.

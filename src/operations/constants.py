@@ -80,3 +80,11 @@ WAIT_CAP = 1800
 REVIEW_ROUNDS = 3
 """The cap on the rounds of each kind of review of a built change since its
 last move out of `tickets/draft/`."""
+
+
+WAKE = "The coordinator recorded lines for the operators' command."
+"""The whole text of each message of the coordinator's to an operator
+launcher after `operate.py send` recorded its lines, and of the brief
+the relay gives the next operator and a fresh operator launcher: a text
+the command reads as no line (`directives.message_lines`), which ends
+the block of `next` as any message does."""

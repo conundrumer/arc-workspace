@@ -38,7 +38,8 @@ from operations.constants import (BLOCK_SECONDS, LIMIT_SECONDS, RUN_SECONDS, SUB
                                   WAIT_CAP, WAIT_SECONDS_IDLE)
 from operations.task_work import release, restore, set_aside  # noqa: E402
 from operate_loop import block, operator_step, wait  # noqa: E402
-from operate_actions import TASK_ID, OperateAction, claim_task, print_waits, relay_step  # noqa: E402
+from operate_actions import (TASK_ID, OperateAction, claim_task, print_waits, relay_step,  # noqa: E402
+                             send_lines)
 from operate_help import PARTS, PURPOSES, USAGE, HelpPart  # noqa: E402
 from operate_review import review  # noqa: E402
 
@@ -58,6 +59,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("action", choices=list(OperateAction))
     runs.add_arguments(parser)
     try:
+        if argv == [OperateAction.SEND]:
+            return send_lines(sys.stdin.read())
         args = parser.parse_args(argv)
         match OperateAction(args.action):
             case OperateAction.NEXT:
@@ -96,6 +99,8 @@ def main(argv: list[str]) -> int:
                     parser.error(mctx("restore takes a task id and, optionally, the reason its pipeline stopped"))
                 restore(main_tree(), args.ident, args.rest[0] if args.rest else None)
                 return 0
+            case OperateAction.SEND:
+                parser.error(mctx("send takes its lines on its stdin alone"))
             case OperateAction.WAITS:
                 if args.rest or NUMBER.fullmatch(args.ident) is None:
                     parser.error(mctx("waits takes a ticket number alone"))

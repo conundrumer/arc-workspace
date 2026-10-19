@@ -30,9 +30,17 @@ prefix `Op`, the word of its kind and a colon, past a list marker:
   `scripts/operate.py --help rulings` gives, which the command applies (`ruling`,
   `passed_over`, `given_again`, `overrides`).
 
-A line of the coordinator's in no such form, a ruling among them, goes
-back to the coordinator once as undecided, since only its writer knows
-what it meant.
+The coordinator gives these lines by `operate.py send`, which records them
+in the session's store (`state.stored_messages`) and refuses a line
+`undecided` holds for. A line of the coordinator's in no such form, a
+ruling among them, that reaches an operator goes back to the coordinator
+once as undecided, since only its writer knows what it meant.
+
+A line of a message of the coordinator's, not of the store, takes its
+kind only where that message arrived before the session's first line of
+the store (`sent_from`); after it, each such line other than
+`constants.WAKE` is in no form. The command reads `constants.WAKE` as no
+line in any message.
 
 A line in a bare form, one of these forms with no prefix and the word of
 its kind capitalized (`BARE`), takes its kind only in a message that
@@ -52,13 +60,14 @@ over a change from an earlier one continues it by the rulings the earlier
 one received."""
 
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum, StrEnum
 from pathlib import Path
 
 from arc.task import TASK_ID
 from controlled_markdown import mctx
+from operations.constants import WAKE
 from operations.reports import LIST_MARKER
 from operations.pacing import Preset, line_pace
 from operations.roles import PASSES, Purpose, Role
@@ -130,26 +139,51 @@ class Line:
     rest: str
 
 
+class Forms(Enum):
+    """The forms in which a line of a message takes its kind: the prefixed
+    and the bare forms, the prefixed forms alone, or none."""
+    BARE = "bare"
+    PREFIXED = "prefixed"
+    NONE = "none"
+
+
 @memoized
 def lines(state: State) -> tuple[Line, ...]:
     """Each non-blank line the coordinator gave the operator `me`, in the
     order the messages arrived."""
-    return tuple(parsed(state.received, cutoff(state.arrived)))
+    return tuple(parsed(state.received, state.arrived))
 
 
 @memoized_by_transcripts
 def session_lines(state: State) -> tuple[Line, ...]:
     """Each non-blank line the coordinator gave any operator of the
     session, in the order the messages arrived."""
-    return tuple(parsed(state.arrived, cutoff(state.arrived)))
+    return tuple(parsed(state.arrived, state.arrived))
 
 
-def parsed(messages: Iterable[Message], before: float | None) -> list[Line]:
-    """The lines of the coordinator's messages among `messages`, a bare
-    line with its kind where its message arrived before `before`, or
-    `before` is None."""
+def parsed(messages: Iterable[Message], arrived: Sequence[Message]) -> list[Line]:
+    """The lines of the coordinator's messages among `messages`, each in
+    the forms `forms_of` gives its message among `arrived`, the session's
+    messages in the order they arrived."""
+    before, sent = cutoff(arrived), sent_from(arrived)
     return [ln for m in messages if m.sender is None
-            for ln in message_lines(m, before is None or m.time < before)]
+            for ln in message_lines(m, forms_of(m, before, sent))]
+
+
+def forms_of(m: Message, before: float | None, sent: float | None) -> Forms:
+    """The forms a line of `m` takes its kind in: none where `m` is no line
+    of the store and arrived at or after `sent`, the bare forms as well
+    where it arrived before `before` or `before` is None, and the prefixed
+    forms alone otherwise."""
+    if not m.stored and sent is not None and m.time >= sent:
+        return Forms.NONE
+    return Forms.BARE if before is None or m.time < before else Forms.PREFIXED
+
+
+def sent_from(arrived: Iterable[Message]) -> float | None:
+    """The time of the first line of the store among `arrived`, or None
+    where none came."""
+    return next((m.time for m in arrived if m.stored), None)
 
 
 def cutoff(arrived: Iterable[Message]) -> float | None:
@@ -157,27 +191,29 @@ def cutoff(arrived: Iterable[Message]) -> float | None:
     the session's messages in the order they arrived, with a line in a
     prefixed form, or None where none came."""
     return next((m.time for m in arrived if m.sender is None
-                 if any(ln.kind is not None for ln in message_lines(m, False))), None)
+                 if any(ln.kind is not None for ln in message_lines(m, Forms.PREFIXED))), None)
 
 
-def message_lines(m: Message, bare: bool) -> list[Line]:
-    """Each non-blank line of `m`, with its kind where it is in a form the
-    command reads, a bare form among them where `bare`."""
+def message_lines(m: Message, forms: Forms) -> list[Line]:
+    """Each non-blank line of `m` other than `constants.WAKE`, with its kind
+    where it is in one of `forms`."""
     out: list[Line] = []
     for raw in m.text.splitlines():
-        if not raw.strip():
+        if not raw.strip() or raw.strip() == WAKE:
             continue
         match = LINE.match(raw)
-        kind = None if match is None else kind_of(match["kind"], bare)
+        kind = None if match is None else kind_of(match["kind"], forms)
         rest = "" if match is None or kind is None else match["rest"] or ""
         out.append(Line(m, kind, raw.strip(), rest))
     return out
 
 
-def kind_of(word: str, bare: bool) -> Directive | None:
+def kind_of(word: str, forms: Forms) -> Directive | None:
+    if forms is Forms.NONE:
+        return None
     if word in Directive:
         return Directive(word)
-    return BARE.get(word) if bare else None
+    return BARE.get(word) if forms is Forms.BARE else None
 
 
 def step_decisions(state: State) -> list[Line]:
@@ -191,8 +227,8 @@ def step_decisions(state: State) -> list[Line]:
 
 def reply_decisions(a: Agent, r: Report) -> list[Line]:
     """The `Op override:` and `Op decision:` lines of the reply `r` of `a`."""
-    return [ln for ln in message_lines(Message(a.operator, r.time, a.agent_id, r.text),
-                                       bare(a.brief))
+    forms = Forms.BARE if bare(a.brief) else Forms.PREFIXED
+    return [ln for ln in message_lines(Message(a.operator, r.time, a.agent_id, r.text), forms)
             if ln.kind in RULINGS and ruling_form(ln) is not None]
 
 
@@ -383,11 +419,22 @@ def pipelines(given: Iterable[Line]) -> list[Pipeline]:
 
 
 def unread(state: State) -> list[Line]:
-    """The coordinator's lines in no form the command reads, rulings,
-    `Op pace:` and `Op scope:` lines in no fixed form, and `Op pause:` and
-    `Op resume:` lines with text after the colon, among them."""
-    return [ln for ln in lines(state)
-            if ln.kind is None or ln.kind in RULINGS and ruling_form(ln) is None
-            or ln.kind is Directive.PACE and line_pace(ln.rest, state.main_tree) is None
+    """The coordinator's lines to the operator that `undecided` holds for."""
+    return [ln for ln in lines(state) if undecided(ln, state.main_tree)]
+
+
+def undecided(ln: Line, main_tree: Path) -> bool:
+    """Whether `ln` is in no form the command reads, or is a ruling, an
+    `Op pace:` or an `Op scope:` line in no fixed form, or an `Op pause:` or
+    `Op resume:` line with text after the colon."""
+    return (ln.kind is None or ln.kind in RULINGS and ruling_form(ln) is None
+            or ln.kind is Directive.PACE and line_pace(ln.rest, main_tree) is None
             or ln.kind is Directive.SCOPE and line_scope(ln.rest) is None
-            or ln.kind in PAUSE_LINES and bool(ln.rest)]
+            or ln.kind in PAUSE_LINES and bool(ln.rest))
+
+
+def refused(texts: Iterable[str], main_tree: Path) -> list[str]:
+    """The lines among `texts` that `operate.py send` refuses: each that
+    `undecided` holds for, read as a line of the store."""
+    m = Message("", 0.0, None, "\n".join(texts), stored=True)
+    return [ln.text for ln in message_lines(m, Forms.PREFIXED) if undecided(ln, main_tree)]

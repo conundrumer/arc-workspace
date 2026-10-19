@@ -1,34 +1,38 @@
 """The next step of an operator launcher (`next_step`), from what its own
 transcript and those of the operators it launched give (`Relay`).
 
-The launcher's first operator takes the launcher's brief. Each later line
-of the coordinator's goes to the operator that runs when it reaches the
-launcher, or, where none runs, to the brief of the next operator the
-launcher launches, each distinct text once. While an operator runs and no line of the
-coordinator's waits for it, the launcher ends its turn, and the operator's
-end or the coordinator's next line resumes it. Once an operator's final text reaches the launcher, a
+The coordinator gives the operators its lines by `operate.py send`, which
+records them in the session's store, and sends the launcher
+`constants.WAKE` alone (`directives`). The launcher's first operator takes
+the launcher's brief. Each later message of the coordinator's goes to the
+operator that runs when it reaches the launcher, or, where none runs, to
+the brief of the next operator the launcher launches, each distinct text
+once, and that brief is `constants.WAKE` where no message waits. While an
+operator runs and no message of the coordinator's waits for it, the
+launcher ends its turn, and the operator's end or the coordinator's next
+message resumes it. Once an operator's final text reaches the launcher, a
 text that opens with `final_reply.FOR_CONTEXT` gives the launch of the next
 operator, or, past the launcher's bound, the launcher's final reply, which
-asks the coordinator for a fresh operator launcher whose brief is the lines
-of the coordinator's that wait for the next operator, each distinct text once, and gives them.
-A text that opens with `final_reply.FOR_WAIT` gives, while no line of the
+asks the coordinator for a fresh operator launcher whose brief is that of
+the next operator, and gives it.
+A text that opens with `final_reply.FOR_WAIT` gives, while no message of the
 coordinator's waits, the launcher's call of the command's `wait` in the
 background and the end of its turn (`steps.Wait`), and, once that call has
-completed or a line waits, the step as after `FOR_CONTEXT`. An operator's
+completed or a message waits, the step as after `FOR_CONTEXT`. An operator's
 end with no final reply gives the step as after `FOR_CONTEXT` too, other
 than where the operator launched before it also ended with none and each
 of the two ended within `WAIT_SECONDS_IDLE` of its launch. Any other text,
 and an operator's end with none in that case, goes to the coordinator,
 after a line that gives the operator's agent id, and the launcher then
-gives its final reply, unless a line of the coordinator's waits for the
+gives its final reply, unless a message of the coordinator's waits for the
 next operator, which gives the next operator's launch, or, past the
 launcher's bound, the final reply that asks for a fresh operator launcher
-whose brief is those lines."""
+whose brief is that of the next operator."""
 
 from dataclasses import dataclass
 
 from controlled_markdown import mctx
-from operations.constants import COORDINATOR, WAIT_SECONDS_IDLE
+from operations.constants import COORDINATOR, WAIT_SECONDS_IDLE, WAKE
 from operations.final_reply import ending_step, for_context, for_wait
 from operations.printing import final_message, wait_command
 from operations.handled import sends_in
@@ -67,10 +71,8 @@ class Relay:
     wait_runs: bool
 
 
-FRESH_LAUNCHER = mctx("I ended for my context: launch a fresh operator launcher with no lines, "
-                      "which takes up from the state.")
-WITH_HELD = mctx("I ended for my context: launch a fresh operator launcher whose brief is the "
-                 "lines below, which reached no operator.")
+FRESH_LAUNCHER = mctx("I ended for my context: launch a fresh operator launcher whose brief is "
+                      "the text below.")
 CARRIED = mctx("Operator {operator} ended with the final reply below.")
 NO_REPLY = mctx("Operator {operator} ended with no final reply.")
 
@@ -106,13 +108,19 @@ def ending(relay: Relay, text: str) -> Step:
                        sent(relay, COORDINATOR, final_message(text), since))
 
 
-def after(relay: Relay, run: Run, brief: str) -> Step:
-    """The step after the end of the operator `run`, where the brief `brief`
-    waits for the next operator: its launch, or, past the launcher's bound,
-    the launcher's final reply that gives `brief`."""
+def after(relay: Relay, lines: list[Message]) -> Step:
+    """The step after the end of an operator, where `lines` wait for the
+    next operator: its launch with the brief `brief` gives, or, past the
+    launcher's bound, the launcher's final reply that gives that brief."""
     if not relay.past_bound:
-        return operator_launch(relay, brief)
-    return ending(relay, "\n".join([WITH_HELD.format(operator=run.agent_id), brief]))
+        return operator_launch(relay, brief(lines))
+    return ending(relay, "\n".join([FRESH_LAUNCHER, brief(lines)]))
+
+
+def brief(lines: list[Message]) -> str:
+    """The brief of the next operator, where `lines` wait for it: each
+    distinct text of `lines` once, or `constants.WAKE` where none waits."""
+    return "\n".join(dict.fromkeys(m.text for m in lines)) or WAKE
 
 
 def waited_since(relay: Relay, since: float) -> bool:
@@ -134,7 +142,6 @@ def next_step(relay: Relay) -> Step:
         return operator_launch(relay, relay.lines[0].text)
     run = relay.runs[-1]
     lines = waiting(relay)
-    brief = "\n".join(dict.fromkeys(m.text for m in lines))
     if run.pending and run.final is None:
         if not lines:
             return EndTurn()
@@ -148,13 +155,11 @@ def next_step(relay: Relay) -> Step:
         if not waited_since(relay, run.ended):
             return Wait(relay.me)
     if run.final is not None and (for_context(run.final) or for_wait(run.final)):
-        if relay.past_bound and not lines:
-            return ending(relay, FRESH_LAUNCHER)
-        return after(relay, run, brief)
+        return after(relay, lines)
     if run.final is None and not (len(relay.runs) > 1 and quick(run) and quick(relay.runs[-2])):
-        return after(relay, run, brief)
+        return after(relay, lines)
     carried = (CARRIED.format(operator=run.agent_id) + "\n" + run.final if run.final is not None
                else NO_REPLY.format(operator=run.agent_id))
     if not sent(relay, COORDINATOR, carried, run.launched):
         return Send(COORDINATOR, carried, f"carried {run.agent_id}")
-    return after(relay, run, brief) if lines else Reply(COORDINATOR)
+    return after(relay, lines) if lines else Reply(COORDINATOR)
