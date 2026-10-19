@@ -1,6 +1,6 @@
 //! The resolver refuses a `DET` that names a lib name the registry declares
 //! no proposer of, such as `Division` or `PositionDomain`, as a name that
-//! names nothing visible, and resolves a `DET` that names a domain
+//! names nothing visible, and resolves a `DET` that names a type-domain
 //! proposer.
 
 use arclog::layout::SourceFile;
@@ -30,7 +30,7 @@ fn a_det_that_names_position_domain_is_refused_as_an_unresolved_name() {
 }
 
 #[test]
-fn a_det_that_names_a_domain_proposer_resolves() {
+fn a_det_that_names_a_type_domain_proposer_resolves() {
     let messages = resolver_messages("(DET &axis AxisDomain)\n");
     assert!(messages.is_empty(), "{messages:?}");
 }

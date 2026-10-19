@@ -10,7 +10,7 @@ use crate::check::CheckedProgram;
 use crate::eval::determinations::determinations;
 use crate::eval::instance::Constructions;
 use crate::eval::join::{each_row, one_part, union};
-use crate::eval::{output_relation, Candidates, Evaluation, Limits, ParameterValues, ReachedBound, RunFault, Stop};
+use crate::eval::{output_relation, Domain, Evaluation, Limits, ParameterValues, ReachedBound, RunFault, Stop};
 use crate::hash::StableHashSet;
 use crate::program::path::{node_at, NodeRef};
 use crate::program::{ClauseKeyword, ProgramRelation};
@@ -83,8 +83,8 @@ pub enum CaseOutcome {
     Solved,
     /// The case holds a `DEMONSTRATED` form, and is not run.
     Demonstrated,
-    /// The case stopped at a bound, the candidate cap or a bound of a run,
-    /// with the parameters of several candidates it read.
+    /// The case stopped at a bound, the assignment cap or a bound of a run,
+    /// with the parameters of several values in a domain it read.
     Stopped { stop: Stop, parameters: Vec<ProgramRelation> },
     /// A fault of a run, or underdetermined grid columns at an assignment
     /// the case keeps.
@@ -243,23 +243,23 @@ struct Walk<'w, 'a> {
     /// The complete assignments reached.
     count: u64,
     kept: Vec<Kept>,
-    /// The `DET`s met with several candidates, in the order met.
+    /// The `DET`s met with several values in the domain, in the order met.
     branching: Vec<ProgramRelation>,
 }
 
 impl Walk<'_, '_> {
     /// Each assignment that extends `assigned`, the values of the `DET`s
-    /// before `at`, with the candidates of each later `DET` at the values
+    /// before `at`, with the domain of each later `DET` at the values
     /// before it.
     fn descend(&mut self, at: usize, assigned: &mut Vec<(ProgramRelation, Arc<Relation>)>) -> Result<(), End> {
         let parameters = ParameterValues::determined(assigned.clone());
         let Some(det) = self.dets.get(at) else {
             let evaluation = self.case.evaluation(self.case.program, &parameters);
             self.count += 1;
-            let cap = self.case.session.caps.candidates;
+            let cap = self.case.session.caps.assignments;
             if self.count > cap {
                 let form = self.dets.last().map_or_else(|| self.case.program.program.form_of(self.output.node), |det| self.case.program.program.form_of(det.node));
-                return Err(End::Stop(Stop { bound: ReachedBound::Candidates { cap }, form: form.clone() }));
+                return Err(End::Stop(Stop { bound: ReachedBound::Assignments { cap }, form: form.clone() }));
             }
             let fault = match grid_columns(&evaluation, self.output, self.train) {
                 Ok(Found::Columns(_)) => None,
@@ -275,17 +275,17 @@ impl Walk<'_, '_> {
                 return Err(End::Fault(fault));
             }
         }
-        let candidates = match self.case.evaluation(det.program, &parameters).candidates(det.node).map_err(End::Fault)? {
-            Candidates::Rows(rows) if det.open => one_row_each(&rows),
-            Candidates::Rows(rows) => rows,
-            Candidates::Undefined => return self.descend(at + 1, assigned),
-            Candidates::Stopped(stop) => return Err(End::Stop(stop)),
+        let domain = match self.case.evaluation(det.program, &parameters).domain(det.node).map_err(End::Fault)? {
+            Domain::Rows(rows) if det.open => one_row_each(&rows),
+            Domain::Rows(rows) => rows,
+            Domain::Undefined => return self.descend(at + 1, assigned),
+            Domain::Stopped(stop) => return Err(End::Stop(stop)),
         };
-        if candidates.len() > 1 && !self.branching.contains(&det.relation) {
+        if domain.len() > 1 && !self.branching.contains(&det.relation) {
             self.branching.push(det.relation.clone());
         }
-        for candidate in candidates {
-            assigned.push((det.relation.clone(), candidate));
+        for value in domain {
+            assigned.push((det.relation.clone(), value));
             let walked = self.descend(at + 1, assigned);
             assigned.pop();
             walked?;
@@ -335,16 +335,16 @@ fn agree(a: &Kept, b: &Kept) -> bool {
     a.values.iter().all(|(name, value)| b.values.iter().filter(|(other, _)| other == name).all(|(_, other)| same_rows(value, other)))
 }
 
-/// Each row of each of `candidates` as a candidate of its own, the
-/// candidates of a `DET` with `(ONE)` that names a proposer, in the order
-/// of `candidates`, each row once.
-fn one_row_each(candidates: &[Arc<Relation>]) -> Vec<Arc<Relation>> {
+/// Each row of each of `domain` as a value of its own, the
+/// domain of a `DET` with `(ONE)` that names a proposer, in the order
+/// of `domain`, each row once.
+fn one_row_each(domain: &[Arc<Relation>]) -> Vec<Arc<Relation>> {
     let mut split: Vec<Arc<Relation>> = Vec::new();
-    for candidate in candidates {
+    for value in domain {
         let mut rows: Vec<Row> = Vec::new();
-        each_row(candidate, &mut |row| rows.push(row.into()));
+        each_row(value, &mut |row| rows.push(row.into()));
         for row in rows {
-            let mut set = RowSet::empty(candidate.arity());
+            let mut set = RowSet::empty(value.arity());
             set.insert(row);
             let one = Arc::new(one_part(set));
             if !split.iter().any(|seen| same_rows(seen, &one)) {
@@ -362,7 +362,7 @@ fn names_proposer(program: &crate::resolver::ResolvedProgram, node: GraphNodeInd
 }
 
 /// The fault of a `(ONE)` with a key on a `DET` form of `node` that names a
-/// proposer, whose candidates are one row each of its proposer's rows.
+/// proposer, whose domain is one row each of its proposer's rows.
 fn keyed_one(program: &CheckedProgram, node: GraphNodeIndex) -> Option<RunFault> {
     let program = &program.program;
     let root = NodeRef::Program(program.program.value());

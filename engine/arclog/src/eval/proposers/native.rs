@@ -1,6 +1,6 @@
 //! The native proposers: one function per proposer that the registry marks
 //! `native`, chosen by the proposer's name, each over the grids of an
-//! evidence. The domain proposers give the values of their columns' types
+//! evidence. The type-domain proposers give the values of their columns' types
 //! that `docs/engine/determination.md#proposers` gives; each other proposer
 //! is the port of its component in `programs/proposers.dl`, whose
 //! `propose` relation gives its rows.
@@ -171,7 +171,7 @@ impl Axes {
     }
 }
 
-/// A domain proposer: the product of the domains of its columns' types,
+/// A type-domain proposer: the product of the domains of its columns' types,
 /// each as `docs/engine/determination.md#proposers` gives it.
 fn domain(proposer: &Proposer, grids: &Grids<'_>, registry: &Registry) -> Rows {
     let all = || grids.inputs.iter().copied().chain(grids.pairs.iter().map(|(_, output)| *output));
@@ -187,8 +187,8 @@ fn domain(proposer: &Proposer, grids: &Grids<'_>, registry: &Registry) -> Rows {
                 let largest = all().map(|grid| height(grid).max(width(grid))).max();
                 largest.map_or_else(Vec::new, |largest| (0..=largest).map(count).collect())
             }
-            ColumnType::Fixed(ty) => geometry::domain(registry, ty).expect("a domain proposer's column of an orientation type"),
-            other => panic!("a domain proposer's column of the type {other:?}"),
+            ColumnType::Fixed(ty) => geometry::domain(registry, ty).expect("a type-domain proposer's column of an orientation type"),
+            other => panic!("a type-domain proposer's column of the type {other:?}"),
         })
         .collect();
     columns.iter().fold(std::iter::once(Vec::new()).collect::<Vec<Vec<TermId>>>(), |rows, values| {

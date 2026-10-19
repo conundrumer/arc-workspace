@@ -648,7 +648,7 @@ impl InternTable {
     /// Frees each entry whose Ident `held` lacks and that no kept entry's
     /// content holds: it keeps each Ident in `held`, and each member of a set
     /// of Idents that a kept entry's content holds, at every depth. `held` is
-    /// every Ident that a cached relation, a decode state or an event log
+    /// every Ident that a cached relation, a decode state or a trace
     /// holds. A freed number is not given again in the session.
     pub fn free_unheld(&mut self, held: &crate::hash::StableHashSet<Ident>) {
         let mut kept = vec![false; self.contents.len()];

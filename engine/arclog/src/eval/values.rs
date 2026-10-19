@@ -29,7 +29,7 @@ pub struct Caps {
     pub nodes: u64,
     /// The joint assignments of the `DET`s of one case that a determination
     /// tries, as `docs/engine/determination.md#det` gives.
-    pub candidates: u64,
+    pub assignments: u64,
 }
 
 impl Caps {
@@ -66,9 +66,9 @@ impl Caps {
     /// count of their concept in the engine: `a2d730bd` stops at a fault of
     /// the run, and the rows of `abc82100` differ from its first relation on.
     ///
-    /// The candidate cap is the provisional default of
+    /// The assignment cap is the provisional default of
     /// `docs/engine/determination.md#det`.
-    pub const CORPUS: Caps = Caps { work: 1 << 30, rows: 1 << 21, models: 1 << 7, nodes: 1 << 5, candidates: 1000 };
+    pub const CORPUS: Caps = Caps { work: 1 << 30, rows: 1 << 21, models: 1 << 7, nodes: 1 << 5, assignments: 1000 };
 }
 
 /// The bound an evaluation reached.
@@ -78,7 +78,7 @@ pub enum ReachedBound {
     Rows { cap: u64 },
     Models { cap: u64 },
     Nodes { cap: u64 },
-    Candidates { cap: u64 },
+    Assignments { cap: u64 },
     /// A Box with a margin outside a signed byte.
     Margin(ReachedMarginBound),
     SessionBytes(ReachedSessionBound),
@@ -92,13 +92,13 @@ impl ReachedBound {
     /// request of its entry. A stop at the session's byte bound, at the
     /// deadline or by a cancellation depends on the machine or the
     /// session's history, and is stored nowhere. A stop at the model cap,
-    /// the node cap or the candidate cap is stored nowhere either.
+    /// the node cap or the assignment cap is stored nowhere either.
     pub fn is_stored(self) -> bool {
         match self {
             ReachedBound::Work { .. } | ReachedBound::Rows { .. } | ReachedBound::Margin(_) => true,
             ReachedBound::Models { .. }
             | ReachedBound::Nodes { .. }
-            | ReachedBound::Candidates { .. }
+            | ReachedBound::Assignments { .. }
             | ReachedBound::SessionBytes(_)
             | ReachedBound::Deadline
             | ReachedBound::Cancelled => false,
@@ -112,7 +112,7 @@ impl ReachedBound {
             ReachedBound::Rows { cap } => format!("the row cap of {cap} rows"),
             ReachedBound::Models { cap } => format!("the model cap of {cap} models"),
             ReachedBound::Nodes { cap } => format!("the node cap of {cap} search nodes"),
-            ReachedBound::Candidates { cap } => format!("the candidate cap of {cap} joint assignments"),
+            ReachedBound::Assignments { cap } => format!("the assignment cap of {cap} joint assignments"),
             ReachedBound::Margin(reached) => format!("a Box margin outside a signed byte, {:?}", reached.margins),
             ReachedBound::SessionBytes(reached) => {
                 format!("the session's byte bound of {} bytes, at {} bytes", reached.bound.bytes, reached.bytes)

@@ -1,5 +1,5 @@
 //! The work-stealing thread pool over independent entries: examples, cases,
-//! candidates and models.
+//! values of a `DET`'s domain and models.
 //!
 //! A thread that asks for an entry another thread is computing blocks
 //! until that computation ends, and runs no other task of the pool while

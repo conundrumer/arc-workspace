@@ -127,7 +127,7 @@ The Souffle form compares the margin of the one side toward the bottom-right cor
 - A relation is a set of rows. Each clause and each lib element is a function from sets of rows to a set of rows. With no free choice, each relation is a function of the program, the parameters and the grids.
 - So the thread count, the join order, the order in which the constraint module gives the models, and the order of the train pairs do not enter any row. No rule needs to sort.
 - An Ident is the one value in which an encoding shows. Its number depends on the order of interning, and a writer numbers Idents by their contents, as [Terms](reader.md#terms) gives, so the text is the same from run to run.
-- A writer gives a set in a fixed order of the encodings: the arcdata writer, the trace, and the two attempts on Kaggle. That order is the form of the file, and no relation reads it.
+- A writer gives a set in a fixed order of the encodings: the arcdata writer, the trace form's writer, and the two attempts on Kaggle. That order is the form of the file, and no relation reads it.
 
 ## Known gaps
 

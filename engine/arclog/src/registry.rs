@@ -34,7 +34,7 @@
 //!   name, where the instance writes no clause for it, reads the input's
 //!   relation.
 //! - `(proposer <name> native [domain] (columns (<Column> <type>) ...))`: a
-//!   native proposer, marked `domain` where it is a domain proposer, as
+//!   native proposer, marked `domain` where it is a type-domain proposer, as
 //!   `docs/arclog/arclog.md#program` gives one.
 //! - `(proposer <name> arclog (columns <Label> ...))`: a proposer written
 //!   in arclog, whose clause stands in `engine/lib/proposers.arclog`. Its
@@ -265,7 +265,7 @@ pub struct Proposer {
     pub kind: ProposerKind,
 }
 
-/// The kind of a proposer: native, a domain proposer or another, or written
+/// The kind of a proposer: native, a type-domain proposer or another, or written
 /// in arclog with its clause.
 #[derive(Clone, Debug)]
 pub enum ProposerKind {
@@ -422,7 +422,7 @@ impl Registry {
         &names[index]
     }
 
-    /// The constants of `ty`, for a domain proposer and for `<ty>_elem`.
+    /// The constants of `ty`, for a type-domain proposer and for `<ty>_elem`.
     pub fn constants_of(&self, ty: OrientationType) -> &ConstantSet {
         &self.type_constants(ty).set
     }

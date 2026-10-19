@@ -1,6 +1,6 @@
 # Performance
 
-The design decisions whose cost the engine pays on every candidate of a synthesis loop and on every case of a solver, and the proposals that bound that cost. A decision here is part of the language or of the engine's semantics, and the scope docs build on it. How the scope docs implement a decision, such as the join algorithm, the form of an index, the hash and the thread pool, is provisional until the engine is written and a benchmark measures it.
+The design decisions whose cost the engine pays on every candidate program of a synthesis loop and on every case of a solver, and the proposals that bound that cost. A decision here is part of the language or of the engine's semantics, and the scope docs build on it. How the scope docs implement a decision, such as the join algorithm, the form of an index, the hash and the thread pool, is provisional until the engine is written and a benchmark measures it.
 
 Each entry gives its evidence, or says that it is provisional.
 
@@ -36,7 +36,7 @@ Each entry gives its evidence, or says that it is provisional.
 
 - The token mask runs every check on each partial program, as [Checker](reader.md#checker) gives.
 - **Cost:** a check per token for each token that may come next.
-- **Evidence:** none measured. The check cache serves a form shared by cases or candidates once.
+- **Evidence:** none measured. The check cache serves a form shared by cases or candidate programs once.
 
 ### The grid columns at each clause's end
 
@@ -46,9 +46,9 @@ Each entry gives its evidence, or says that it is provisional.
 
 ### Models of `ONE`, `CHOOSE` and `DEMONSTRATED`, and determination by the train pairs
 
-- A case's output is one grid per model, and a parameter with several candidates is filtered by running the cases at each assignment, as [Models](cases.md#models) and [`DET`](determination.md#det) give.
+- A case's output is one grid per model, and a parameter whose `DET`'s domain holds several values is filtered by running the cases at each assignment, as [Models](cases.md#models) and [`DET`](determination.md#det) give.
 - **Cost:** a product of models or of assignments, each a run of the entries downstream of the choice.
-- **Evidence:** on the corpus, propagation alone solves every pick, and the products of the determination plans stay under the old tooling's limit, which shaped them, as [Determination candidates](corpus-survey.md#determination-candidates) gives.
+- **Evidence:** on the corpus, propagation alone solves every pick, and the products of the determination plans stay under the old tooling's limit, which shaped them, as [`DET` domains](corpus-survey.md#det-domains) gives.
 
 ### No recursion
 
@@ -60,5 +60,5 @@ Each entry gives its evidence, or says that it is provisional.
 Each of these is provisional.
 
 - **Target.** The engine's work per token stays below the language model's time per token, so a decode waits on the language model and not on the engine. The benchmark decodes every case program of `gen/` as a token stream and records the engine's time per token. The target is set when the language model and its decode rate are chosen.
-- **Indexes of new relations.** Each candidate's new relation is new, so a join's trie over it is built again at each step. An index over a relation that extends an indexed one by a semi-join can be built from the parent's.
+- **Indexes of new relations.** Each candidate program's new relation is new, so a join's trie over it is built again at each step. An index over a relation that extends an indexed one by a semi-join can be built from the parent's.
 - **The Python boundary.** The batch form, which steps many decodes in one call, is the main path, since a call per token per decode across pyo3 can cost more than the engine's work on that token.

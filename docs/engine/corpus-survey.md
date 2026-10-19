@@ -256,11 +256,11 @@ An algebra check applies once its labels are bound, and a function once the inpu
 
 Inputs: the rows of Prefix sizes, over the bodies of Join shapes of the 953 `.arclog` files of `work/arclog/gen/`. Computed on 2026-10-19.
 
-## Determination candidates
+## `DET` domains
 
-`DET` and `DET_OR_RULE` forms with no body, by the proposers they name, in `gen/`, and the Souffle tooling's determination plans. A file's product multiplies, over its forms with no body that name a domain proposer, the largest domain among the proposers a form names, at the domain's size in a task of 30×30 grids.
+`DET` and `DET_OR_RULE` forms with no body, by the proposers they name, in `gen/`, and the Souffle tooling's determination plans. A file's product multiplies, over its forms with no body that name a type-domain proposer, the size of the largest `DET`'s domain that a proposer the form names gives, in a task of 30×30 grids.
 
-- The largest products of domain proposers with no body per file: baf41dbf 300, a32d8b75 128, ba26e723 120, c62e2108 120, 239be575 100; 4 files are over 100.
+- The largest products of type-domain proposers with no body per file: baf41dbf 300, a32d8b75 128, ba26e723 120, c62e2108 120, 239be575 100; 4 files are over 100.
 - The forms with no body that name `BoxDomain` or `PositionDomain`: none.
 - The 20318 plans under `.cache/determination-plan/`, from every version of the Souffle solvers, with each covered line's `enumerable(n)` or `narrowed(n)` multiplied: product 1 in 8078, 2 to 10 in 9509, 11 to 100 in 2727, over 100 in 4. The tool's `ENUMERATION_LIMIT` is 100. 86 plans report a product over it, up to 2258530576.
 

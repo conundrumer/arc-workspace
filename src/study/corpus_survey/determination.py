@@ -1,4 +1,4 @@
-"""The Determination candidates section: the `DET` and `DET_OR_RULE`
+"""The `DET` domains section: the `DET` and `DET_OR_RULE`
 forms of `gen/` with no body, by the domains of the proposers they name,
 and the determination plans the Souffle tooling keeps."""
 
@@ -18,7 +18,7 @@ from study.corpus_survey.trees import head, is_list, is_sym
 DOMAINS = {"AxisDomain": 2, "DiagAxisDomain": 2, "SenseDomain": 2, "DirDomain": 4, "DiagDirDomain": 4,
            "D4Domain": 8, "ColorDomain": 10, "NumberDomain": 30, "SymDomain": 16,
            "PositionDomain": 900, "BoxDomain": 216225}
-"""The size of the domain of each domain proposer in a task of 30×30
+"""The size of the domain of each type-domain proposer in a task of 30×30
 grids: a number up to 30, a position of 900 cells, a box of a 30×30
 grid."""
 
@@ -69,9 +69,9 @@ def determination() -> str:
             f"{lo} to {hi} in {sum(1 for x in products if lo <= x <= hi)}" for lo, hi in BINS]
     bins.append(f"over {BINS[-1][1]} in {sum(1 for x in products if x > BINS[-1][1])}")
     return body(
-        mctx("`DET` and `DET_OR_RULE` forms with no body, by the proposers they name, in `gen/`, and the Souffle tooling's determination plans. A file's product multiplies, over its forms with no body that name a domain proposer, the largest domain among the proposers a form names, at the domain's size in a task of 30×30 grids."),
+        mctx("`DET` and `DET_OR_RULE` forms with no body, by the proposers they name, in `gen/`, and the Souffle tooling's determination plans. A file's product multiplies, over its forms with no body that name a type-domain proposer, the size of the largest `DET`'s domain that a proposer the form names gives, in a task of 30×30 grids."),
         items([
-            mctx("The largest products of domain proposers with no body per file: {top}; {n} files are over 100.")
+            mctx("The largest products of type-domain proposers with no body per file: {top}; {n} files are over 100.")
             .format(top=", ".join(f"{s} {per[s]}" for s in top), n=sum(1 for v in per.values() if v > 100)),
             mctx("The forms with no body that name {wide}: {forms}.")
             .format(wide=" or ".join(f"`{w}`" for w in WIDE), forms=", ".join(wide) if wide else "none"),
@@ -81,4 +81,4 @@ def determination() -> str:
         ran(c.files() + ", and the plans of `.cache/determination-plan/`"))
 
 
-DETERMINATION = Section("Determination candidates", 2, False, determination)
+DETERMINATION = Section("`DET` domains", 2, False, determination)

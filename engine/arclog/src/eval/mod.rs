@@ -19,7 +19,7 @@
 //! of a pick through the driver's way into the bodies, and [`models`]
 //! enumerates the models of a case on an input, through the driver.
 //! [`mod@determinations`] gives the `DET` nodes in dependency order and the
-//! candidates of each, which an evaluation at determined values reads.
+//! domain of each, which an evaluation at determined values reads.
 //! [`output`] reads a grid from a relation, for the judge. [`proposers`]
 //! gives the rows of a proposer over an evidence, which the driver reads for
 //! a clause that derives by a proposer.
@@ -44,7 +44,7 @@ pub mod rigid;
 pub mod unfold;
 pub mod values;
 
-pub use determinations::Candidates;
+pub use determinations::Domain;
 pub use driver::FormBodies;
 pub use lookup::{output_relation, relation_of};
 pub use models::ModelsEnd;
@@ -93,9 +93,9 @@ impl ParameterValues {
     }
 
     /// The values determined from the evidence at the assignment `rows`: the
-    /// rows of the chosen candidate of each `DET` with several candidates,
+    /// rows of the chosen value of each `DET` with several values in its domain,
     /// and of each `DET` with `(ONE)` that names a proposer the rows its open
-    /// values give. A `DET` that `rows` leaves out takes its one candidate.
+    /// values give. A `DET` that `rows` leaves out takes its one value.
     pub fn determined(rows: impl IntoIterator<Item = (ProgramRelation, Arc<Relation>)>) -> Self {
         ParameterValues { source: ParameterSource::Determined(rows.into_iter().collect()) }
     }

@@ -1,11 +1,11 @@
 //! The determinations of a case program from the evidence, as
 //! `docs/engine/determination.md#det` gives them: the `DET` nodes in
-//! dependency order, and the candidates of each, which an evaluation at
+//! dependency order, and the domain of each, which an evaluation at
 //! determined values reads.
 //!
 //! A `DET` reads a pick, or the relation of a `DEMONSTRATED` form, only
 //! where that relation has one model, on each example where the read is
-//! lifted, so the candidates are computed outside any enumeration of
+//! lifted, so the domains are computed outside any enumeration of
 //! models.
 
 use std::sync::Arc;
@@ -21,11 +21,11 @@ use crate::relations::{Relation, Row, RowSet};
 use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::types::GraphRelation;
 
-/// The candidates of a `DET`, or the value of a read of its forms that is
+/// The domain of a `DET`, or the value of a read of its forms that is
 /// `undefined` or stopped, as [`super::picks::Pick`] gives a pick's.
 #[derive(Clone, Debug)]
-pub enum Candidates {
-    /// Each candidate as rows of the `DET`'s relation, each once, in the
+pub enum Domain {
+    /// Each value in the domain as rows of the `DET`'s relation, each once, in the
     /// canonical order by content of `crate::terms::content_order`.
     Rows(Vec<Arc<Relation>>),
     Undefined,
@@ -78,20 +78,20 @@ fn is_det(program: &crate::resolver::ResolvedProgram, node: GraphNodeIndex) -> b
 }
 
 impl Evaluation<'_> {
-    /// The candidates of the `DET` node `node`, task-wide, at the values
+    /// The domain of the `DET` node `node`, task-wide, at the values
     /// these parameter values give the `DET`s its forms read.
     ///
     /// A form derives by the rule of `derivation`, which `Driver::clause`
-    /// uses. A form with a body gives one candidate, its rows; a form with no
-    /// body, by the proposer that rule gives, one candidate of the proposer's
-    /// whole set of rows, or one candidate per row where the registry marks
-    /// that proposer domain. A `DET` form with no body that names several
+    /// uses. A form with a body gives one value, its rows; a form with no
+    /// body, by the proposer that rule gives, one value of the proposer's
+    /// whole set of rows, or one value per row where the registry marks
+    /// that proposer type-domain. A `DET` form with no body that names several
     /// proposers, the stored reading of a `DET_OR_RULE` line with several,
-    /// gives the candidates of each proposer by that rule, its rows mapped by
+    /// gives the domain of each proposer by that rule, its rows mapped by
     /// position onto the relation's columns. A `DET` of several forms has the
-    /// candidates that each of its forms gives. A form with no body and no
+    /// values that each of its forms gives as its domain. A form with no body and no
     /// proposer is a fault of the conversion.
-    pub fn candidates(&self, node: GraphNodeIndex) -> Outcome<Candidates> {
+    pub fn domain(&self, node: GraphNodeIndex) -> Outcome<Domain> {
         let program = &self.program.program;
         assert!(is_det(program, node), "the node of a `DET`");
         let relation = GraphRelation { node, output: None };
@@ -120,8 +120,8 @@ impl Evaluation<'_> {
             for (value, domain) in sources {
                 let mut rows = match super::init_form::rows_of(value?, types.len()).map_err(fault)? {
                     Ok(rows) => rows,
-                    Err(RelationValue::Undefined) => return Ok(Candidates::Undefined),
-                    Err(RelationValue::Stopped(stop)) => return Ok(Candidates::Stopped(stop)),
+                    Err(RelationValue::Undefined) => return Ok(Domain::Undefined),
+                    Err(RelationValue::Stopped(stop)) => return Ok(Domain::Stopped(stop)),
                     Err(RelationValue::Rows(_)) => unreachable!("a value that holds no rows"),
                 };
                 {
@@ -133,7 +133,7 @@ impl Evaluation<'_> {
             }
             kept = Some(match kept {
                 None => found,
-                Some(kept) => kept.into_iter().filter(|candidate| found.contains(candidate)).collect(),
+                Some(kept) => kept.into_iter().filter(|value| found.contains(value)).collect(),
             });
         }
         let mut kept = kept.expect("a `DET` node with a form");
@@ -145,14 +145,14 @@ impl Evaluation<'_> {
             });
         }
         kept.dedup();
-        let candidates = kept.into_iter().map(|rows| {
+        let values = kept.into_iter().map(|rows| {
             let mut set = RowSet::empty(types.len() as u16);
             for row in rows {
                 set.insert(row);
             }
             Arc::new(join::one_part(set))
         });
-        Ok(Candidates::Rows(candidates.collect()))
+        Ok(Domain::Rows(values.collect()))
     }
 }
 
@@ -189,7 +189,7 @@ fn spelled(name: &RelationName) -> String {
     }
 }
 
-/// Whether the registry marks the proposer `name` as a domain proposer.
+/// Whether the registry marks the proposer `name` as a type-domain proposer.
 fn is_domain(registry: &Registry, name: &crate::registry::LibName) -> bool {
     matches!(registry.entry(name), Some(LibEntry::Proposer(Proposer { kind: ProposerKind::Native { domain: true }, .. })))
 }

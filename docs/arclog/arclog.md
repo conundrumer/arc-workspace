@@ -7,7 +7,7 @@ A solver is two files. `<task_id>.arclog` holds the task's claims and structure:
 The stream has two renderings, and both are projections of it:
 
 - The **program form** shows the program to a solver reader.
-- The **trace form** shows one decode of the stream to a reader debugging the synthesis: the program with the engine's turns, and on request the language model's alternatives at each decision.
+- The **trace form** shows one decode of the stream to a reader debugging the synthesis: the program with the engine's forced tokens, and on request the language model's top-k tokens at each decision.
 
 Both are stored as s-expressions, read by one fixed reader. An infix view of the program form is printed on request and is never stored or parsed.
 
@@ -104,7 +104,7 @@ A clause form is its keyword, then the relation's name, then its body:
   (!= Col Col_in))
 ```
 
-A proposer's name, `DominantColor`, stands for its derivation, defined once beside the lib. The proposers stand apart from the lib because a proposer reads the task's grids directly, where a lib component is abstract over its inputs. A proposer other than a domain proposer gives one candidate: the whole set of its rows. A domain proposer gives every value of the parameter's type that the task admits, each a candidate of one row, and the determination keeps the candidates at which the program solves every train pair. So a parameter whose value holds several rows names no domain proposer, and its `DET` states a body. A frame of cells, or a frame cut into equal tiles, is an instance of a construction of the lib, such as `Frame` or `Division`, and each of its fields, such as an extent or a tile count, comes from a `DET` that the program states, by a proposer or a body, in a solver and in a decoded program alike. No field is a stored value. The domain proposers are `AxisDomain`, `ColorDomain`, `D4Domain`, `DiagAxisDomain`, `DiagDirDomain`, `DirDomain`, `NumberDomain`, `SenseDomain` and `SymDomain`, one per type, and `ColorColorDomain`, `DiagDirAxisDomain` and `NumberDirDomain`, one per pair of types, for a parameter of two columns.
+A proposer's name, `DominantColor`, stands for its derivation, defined once beside the lib. The proposers stand apart from the lib because a proposer reads the task's grids directly, where a lib component is abstract over its inputs. A proposer other than a type-domain proposer gives its `DET`'s domain one value: the whole set of its rows. A type-domain proposer gives its `DET`'s domain every value of the parameter's type that the task admits, each of one row, and the determination keeps the values of that domain at which the program solves every train pair. So a parameter whose value holds several rows names no type-domain proposer, and its `DET` states a body. A frame of cells, or a frame cut into equal tiles, is an instance of a construction of the lib, such as `Frame` or `Division`, and each of its fields, such as an extent or a tile count, comes from a `DET` that the program states, by a proposer or a body, in a solver and in a decoded program alike. No field is a stored value. The type-domain proposers are `AxisDomain`, `ColorDomain`, `D4Domain`, `DiagAxisDomain`, `DiagDirDomain`, `DirDomain`, `NumberDomain`, `SenseDomain` and `SymDomain`, one per type, and `ColorColorDomain`, `DiagDirAxisDomain` and `NumberDirDomain`, one per pair of types, for a parameter of two columns.
 
 An `INIT` form is per input where its input bodies read as a `RULE` clause does, and task-wide where they read as a `DET` clause does. A determination becomes task-wide through a pooled read, or through an instance whose key holds no Example label, which pools over the examples, and its outputs then have no Example column. 009d5c81's `&key_out` holds the color of each class of examples whose keys share a pattern, at the example that shows it, and `&output` reads it pooled, `(&key_out Id (:C *Col))`, so `&key_out` has no Example column: `&output` reads it with no `E`.
 
@@ -289,7 +289,7 @@ The instance's outputs are read as `<name>.<output>`, with the key's columns fir
       (&claim.untaken (:t B) (:item B)))))
 ```
 
-`Unfold` is the one component whose inputs read its outputs. Its inputs that bind the type parameters, `start`, `initial_taken` and `initial_untaken`, come first with `conflict` and `score`, and the engine declares `taken`, `untaken` and `excluded` once they are bound, before it prompts `step`, `skip` and `take`; a `take` input with no clause takes the item of least `score`. In those three bodies, every site of an atom of an output joins, so the body grounds through its other atoms, and the recursion filters a finite set. No other input reads an output of its instance.
+`Unfold` is the one component whose inputs read its outputs. Its inputs that bind the type parameters, `start`, `initial_taken` and `initial_untaken`, come first with `conflict` and `score`, and the engine declares `taken`, `untaken` and `excluded` once they are bound, before it emits the names of `step`, `skip` and `take`; a `take` input with no clause takes the item of least `score`. In those three bodies, every site of an atom of an output joins, so the body grounds through its other atoms, and the recursion filters a finite set. No other input reads an output of its instance.
 
 ## Constraints
 
@@ -465,15 +465,15 @@ The language model emits tokens from these sets, each a closed set of ids:
 - column tokens: a relation's columns, which for a derived relation are the labels of its clause
 - labels: the variables of the current clause, in order of creation
 
-The engine emits the declaration of each derived relation, the declaration of each instance's or `CHOOSE` form's outputs, each input prompt, each column prompt of a projection, and the label echo after each `*` and `^`. It prompts each named clause of a form as it prompts an instance's inputs: an instance's `key`, a `CHOOSE`'s `for`, `from` and `never`, and a `RIGID_DET`'s `instance` and `key`. The language model never emits a label it has not seen echoed, and never names a relation or a column with text.
+The engine emits the declaration of each derived relation, the declaration of each instance's or `CHOOSE` form's outputs, each input name, each column name of a projection, and the label echo after each `*` and `^`. It emits the name of each named clause of a form as it emits the names of an instance's inputs: an instance's `key`, a `CHOOSE`'s `for`, `from` and `never`, and a `RIGID_DET`'s `instance` and `key`. The language model never emits a label it has not seen echoed, and never names a relation or a column with text.
 
 The token sets are disjoint, so an atom's site list ends at the first token that is not a column token, and no separator exists.
 
 The language model emits `END` where a decision to stop exists: at the end of a body, after each projection's labels, after the field sites of a site on a record-valued column, at the end of an `OR` form, and after each list of an `IF` or `ALL` form. It emits `OR` between the branches of an `OR` form. The decoder admits `END` at the end of a body once the clause is grounded.
 
-The language model emits `SKIP` at the prompt of an optional clause or input, to decline it. At the prompt of a required clause or input, the decoder refuses `SKIP`, so no form lacks a required input and then waits on a decline that the decoder never admits.
+The language model emits `SKIP` after the name of an optional clause or input, to decline it. After the name of a required clause or input, the decoder refuses `SKIP`, so no form lacks a required input and then waits on a decline that the decoder never admits.
 
-A clause that may repeat, such as `never`, is written as its first instance, then `ALSO` and the next instance, for each further repeat. The next prompt, or the `END` that closes the enclosing form, ends the run, so the repetition has no token of its own at its end.
+A clause that may repeat, such as `never`, is written as its first instance, then `ALSO` and the next instance, for each further repeat. The next name the engine emits, or the `END` that closes the enclosing form, ends the run, so the repetition has no token of its own at its end.
 
 ### Second spellings
 
@@ -509,7 +509,7 @@ In a keyword, an underscore joins a modifier to a base form, so `X_Y` is a kind 
 
 ## Trace form
 
-The trace is the program's tree with the engine's turns in brackets, in the stream's order. Every other symbol is the language model's. A site is `(:Col *[P])` at a fresh label, the `*` the language model's and the echo the engine's, or `(:Col P)` at a join.
+The trace form is the program's tree with the engine's forced tokens in brackets, in the stream's order. Every other symbol is a generated token, one the language model emits. A site is `(:Col *[P])` at a fresh label, the `*` the language model's and the echo the engine's, or `(:Col P)` at a join.
 
 ```
 (RULE (input *[P] *[Col])
@@ -535,17 +535,17 @@ The trace is the program's tree with the engine's turns in brackets, in the stre
 [&prior]
 ```
 
-The bracket's content says which turn it is:
+The bracket's content says which kind of forced token it holds:
 
 - a relation after a clause's `END` is its declaration, `[&fg]`
 - the output relations after an instance's last input, `[&comps.component &comps.connected &comps.adjacent]`
-- an input's name before its body is the input prompt, `[node]`
-- an input's name with a column is the column prompt, `[node P]`, and the list that follows is the language model's answer, `(END)` for an empty projection
+- an input's name alone, before its body, is the input name, `[node]`
+- an input's name with a column is the column name, `[node P]`, and the list that follows is the language model's answer, `(END)` for an empty projection
 - a label after `*` is its echo, `[P]`
 
-A clause's `END` is the language model's, and its declaration follows it as a sibling. An instance has no `END` from the language model: it ends when the engine has no input left to prompt, and its declaration sits inside it.
+A clause's `END` is the language model's, and its declaration follows it as a sibling. An instance has no `END` from the language model: it ends when the engine has emitted the name of each input, and its declaration sits inside it.
 
-A renderer flag adds the language model's alternatives after a symbol, in braces, each with its probability. The braces attach to the symbol whose decision they show:
+A renderer flag adds the language model's top-k tokens after a symbol, in braces, each with its probability. The braces attach to the symbol whose decision they show:
 
 ```
 (RULE (input *[P] (:Col *{* .94 P .06}[Col]))
@@ -554,11 +554,11 @@ A renderer flag adds the language model's alternatives after a symbol, in braces
       END{END .83 &covered .11})
 ```
 
-The braces also show the decoder's constraints: a column that admits no fresh label has no `*` among its alternatives, and `END` is absent until the clause is grounded.
+The braces also show the decoder's constraints: a column that admits no fresh label has no `*` among its top-k tokens, and `END` is absent until the clause is grounded.
 
-### From trace to program
+### From trace form to program form
 
-The program form is the trace under these rewrites, each a rewrite on the one tree:
+The program form is the trace form under these rewrites, each a rewrite on the one tree:
 
 - delete the bracket and brace nodes
 - fold each echo into its site, `*[P]` to `*P`

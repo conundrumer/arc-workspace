@@ -9,7 +9,7 @@ use super::examples::{self, ExampleScope};
 use super::ir::{self, AtomSource, ClauseIr, IrNode};
 use super::join::{self, Budget, JoinInputs, NodeInput};
 use super::models::{self, Choice, Entry, Factor};
-use super::determinations::Candidates;
+use super::determinations::Domain;
 use super::{cache, instance, plan, proposers, rigid};
 use super::{Evaluation, Outcome, ParameterSource, RelationValue, RunFault, Stop};
 use crate::hash::StableHashMap;
@@ -31,8 +31,8 @@ pub(super) struct Driver<'e, 'a> {
     /// In an enumeration of models, the factors met since [`models`] last
     /// took them, in the order they were met; `None` outside one.
     pub(super) met: RefCell<Option<Vec<Factor>>>,
-    /// The `DET` node whose candidates this driver evaluates, outside any
-    /// enumeration of models, as [`Evaluation::candidates`] gives them.
+    /// The `DET` node whose domain this driver evaluates, outside any
+    /// enumeration of models, as [`Evaluation::domain`] gives it.
     pub(super) det: Option<GraphNodeIndex>,
 }
 
@@ -41,7 +41,7 @@ impl<'e, 'a> Driver<'e, 'a> {
         Driver { evaluation, values: RefCell::default(), model: RefCell::default(), met: RefCell::default(), det: None }
     }
 
-    /// The driver of the candidates of the `DET` node `det`.
+    /// The driver of the domain of the `DET` node `det`.
     pub(super) fn reading_det(evaluation: &'e Evaluation<'a>, det: GraphNodeIndex) -> Self {
         Driver { det: Some(det), ..Driver::new(evaluation) }
     }
@@ -104,7 +104,7 @@ impl<'e, 'a> Driver<'e, 'a> {
 
     /// The rows of the `DET` relation `name`: at stored values its stored
     /// rows, typed by its columns; at determined values the rows the
-    /// assignment gives it, or else its one candidate.
+    /// assignment gives it, or else its one value.
     pub(super) fn parameter(&self, relation: &GraphRelation, name: &ProgramRelation) -> Outcome<RelationValue> {
         let evaluation = self.evaluation;
         let form = self.program().form_of(relation.node);
@@ -115,12 +115,12 @@ impl<'e, 'a> Driver<'e, 'a> {
                 if let Some(rows) = assigned.get(name) {
                     return Ok(RelationValue::Rows(rows.clone()));
                 }
-                return match evaluation.candidates(relation.node)? {
-                    Candidates::Rows(mut candidates) if candidates.len() == 1 => Ok(RelationValue::Rows(candidates.pop().expect("one candidate"))),
-                    Candidates::Rows(candidates) if candidates.is_empty() => Err(fault("the `DET` has no candidate".into())),
-                    Candidates::Rows(_) => Err(fault("the assignment gives no value to a `DET` with several candidates".into())),
-                    Candidates::Undefined => Ok(RelationValue::Undefined),
-                    Candidates::Stopped(stop) => Ok(RelationValue::Stopped(stop)),
+                return match evaluation.domain(relation.node)? {
+                    Domain::Rows(mut values) if values.len() == 1 => Ok(RelationValue::Rows(values.pop().expect("one value in the domain"))),
+                    Domain::Rows(values) if values.is_empty() => Err(fault("the `DET` has an empty domain".into())),
+                    Domain::Rows(_) => Err(fault("the assignment gives no value to a `DET` with several values in its domain".into())),
+                    Domain::Undefined => Ok(RelationValue::Undefined),
+                    Domain::Stopped(stop) => Ok(RelationValue::Stopped(stop)),
                 };
             }
         };

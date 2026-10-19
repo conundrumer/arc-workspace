@@ -164,7 +164,7 @@ def derive_proposer(rest: str) -> str:
 
 
 def domain_proposer(types: list[str]) -> str:
-    """The domain proposer of a value of `types`."""
+    """The type-domain proposer of a value of `types`."""
     return "".join(pascal(t) for t in types) + "Domain"
 
 
@@ -180,7 +180,7 @@ def covered_proposer(verdict: tuple[str, ...] | None, types: list[str]) -> str |
 def plan_proposer(verdict: tuple[str, ...] | None, types: list[str], open_value: bool) -> str | None:
     """The proposer a parameter's DET names by its plan verdict: the one
     `covered_proposer` gives; or, for an open parameter the plan leaves
-    `undecided`, the domain proposer of `types` where one is defined, whose
+    `undecided`, the type-domain proposer of `types` where one is defined, whose
     values the fit keeps as the parameter's open values."""
     if verdict and verdict[0] == "undecided":
         prop = domain_proposer(types)
@@ -3533,7 +3533,7 @@ class Solver:
                         "no-det-relation" if verdict and verdict[0] == "write" else \
                         "no-det-plan" if verdict is None or verdict[0] == "undecided" else "no-det-" + verdict[0]
                     why = "the plan gives no verdict" if verdict is None else \
-                        "the plan leaves it undecided, and no domain proposer gives its value" \
+                        "the plan leaves it undecided, and no type-domain proposer gives its value" \
                         if verdict[0] == "undecided" else " ".join(verdict[1:])
                     self.todo.add(kind, f"{amp}: {why}")
                     f.comments = [*(f";; {params_to_amp(g)}" for g in [gloss] if g), *self.todo.take()]

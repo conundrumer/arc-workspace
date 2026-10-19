@@ -1,8 +1,8 @@
-//! The candidates of a `DET` from the evidence refuse a `DET` that reads a
+//! The domain of a `DET` from the evidence refuses a `DET` that reads a
 //! pick of more than one model, and a `DET` with no body and no proposer.
 //! The determination reports a `DET` without `(ONE)` that keeps two values
 //! as underdetermined, and stops a case whose joint assignments pass the
-//! candidate cap.
+//! assignment cap.
 
 use arclog::check::{check_program, CheckCache, SolverClauses};
 use arclog::eval::instance::Constructions;
@@ -17,10 +17,10 @@ use arclog::session::{SessionBound, TaskSession};
 use arclog::task::{Grid, JudgedPair, JudgedTask, Task, TrainPair};
 use arclog::terms::Color;
 
-/// Whether the candidates of the `DET` of `&<name>` in `solver`, at
+/// Whether the domain of the `DET` of `&<name>` in `solver`, at
 /// determined values, on a task of one train pair of one row of the colors
 /// `colors`, are a fault.
-fn candidates_fault(solver: &str, name: &str, colors: &[u8]) -> bool {
+fn domain_fault(solver: &str, name: &str, colors: &[u8]) -> bool {
     let solver = read_solver("determination", solver, "", &|_| None).unwrap_or_else(|error| panic!("{error:?}")).value;
     let registry = Registry::get();
     let case = solver.concept_case();
@@ -35,7 +35,7 @@ fn candidates_fault(solver: &str, name: &str, colors: &[u8]) -> bool {
     let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
     let evaluation = Evaluation { program: &program, task: &task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits };
     let relation = relation_of(&program, &ProgramRelation::Declared(RelationName(DeclaredName::Written(format!("&{name}").into())))).expect("the relation");
-    let outcome: Outcome<_> = evaluation.candidates(relation.node);
+    let outcome: Outcome<_> = evaluation.domain(relation.node);
     outcome.is_err()
 }
 
@@ -43,17 +43,17 @@ const READS_A_PICK: &str = "(CHOOSE &pick\n  (from (input *P *Col)))\n(DET &x\n 
 
 #[test]
 fn a_det_that_reads_a_pick_of_two_models_is_refused() {
-    assert!(candidates_fault(READS_A_PICK, "x", &[1, 2]), "the pick has a model per cell, and the `DET` reads it");
+    assert!(domain_fault(READS_A_PICK, "x", &[1, 2]), "the pick has a model per cell, and the `DET` reads it");
 }
 
 #[test]
 fn a_det_that_reads_a_pick_of_one_model_is_kept() {
-    assert!(!candidates_fault(READS_A_PICK, "x", &[1]), "the pick has one model");
+    assert!(!domain_fault(READS_A_PICK, "x", &[1]), "the pick has one model");
 }
 
 #[test]
 fn a_det_with_no_body_and_no_proposer_is_refused() {
-    assert!(candidates_fault("(DET &x)\n", "x", &[1]), "`(DET &x)` gives no value");
+    assert!(domain_fault("(DET &x)\n", "x", &[1]), "`(DET &x)` gives no value");
 }
 
 /// `&<name>` as a program relation.
@@ -96,9 +96,9 @@ fn a_det_without_one_that_keeps_two_values_is_underdetermined() {
 }
 
 #[test]
-fn a_product_past_the_candidate_cap_stops_and_names_the_parameters() {
-    let found = determination(&copies_input(&["a", "b"]), &[1, 2], Caps { candidates: 3, ..Caps::CORPUS });
+fn a_product_past_the_assignment_cap_stops_and_names_the_parameters() {
+    let found = determination(&copies_input(&["a", "b"]), &[1, 2], Caps { assignments: 3, ..Caps::CORPUS });
     let [(_, CaseOutcome::Stopped { stop, parameters }, _)] = &found.cases[..] else { panic!("one stopped case: {found:?}") };
-    assert_eq!(stop.bound, ReachedBound::Candidates { cap: 3 });
+    assert_eq!(stop.bound, ReachedBound::Assignments { cap: 3 });
     assert_eq!(parameters, &[declared("a"), declared("b")]);
 }
