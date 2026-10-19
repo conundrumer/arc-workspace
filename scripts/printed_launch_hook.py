@@ -8,9 +8,10 @@ editor's launch of a check of its change to the launch `operate.py
 review` last printed to it (`EDITOR_LAUNCHES`).
 
 The printed launches are read from the result of the last call of `next`
-in the caller's own transcript (`printing.printed_launches`). Where that
-result gives no whole launch, or a parameter of the call differs from
-each printed one, the denial gives what the operator calls instead,
+in the caller's own transcript (`printing.printed_launches`). Where the last
+call of `next` that stands as a command of its own, with no word such as
+`timeout` before it, printed no whole launch, or a parameter of the call
+differs from each printed one, the denial gives what the operator calls instead,
 against the printed launch with the call's description, or else the
 last. A printed `run_in_background` is compared only where the call input gives it: the
 harness gives the hook a `tool_input` with no `run_in_background`, though
@@ -130,14 +131,17 @@ def first_at(hook: dict[str, Any], records: str, agent: str, call: str) -> bool:
     return True
 
 
-def no_launch_reason(command: str, action: Action) -> str:
+def no_launch_reason(command: str) -> str:
     from controlled_markdown import mctx
 
     return "\n".join([
-        mctx("Blocked: the last result of `{command}` gives no whole launch."),
-        mctx("Make only the launch that `{action}` prints, and run `{action}` with no "
-             "pipe."),
-    ]).format(command=command, action=action)
+        mctx("Blocked: the last call of `{command}` that the hook counts printed no "
+             "whole launch."),
+        mctx("The hook counts a call of `{command}` only where its words stand as a "
+             "command of their own, with no word such as `timeout` before them."),
+        mctx("Run `{command}` that way, with no pipe, and make only the launch it "
+             "prints."),
+    ]).format(command=command)
 
 
 def differ_reason(command: str, diffs: list[tuple[str, str | None, str | None]]) -> str:
@@ -171,7 +175,7 @@ def check(hook: dict[str, Any]) -> str | None:
     launches = [] if found is None else printed_launches(found[1])
     whole = [p for p in launches if p is not None]
     if not whole:
-        return no_launch_reason(command, caller.action)
+        return no_launch_reason(command)
     diffs = [differing(p, inp) for p in whole]
     if not all(diffs):
         return None
