@@ -44,7 +44,7 @@ HELP = mctx("""
     - `<time>` is a UTC time, as `2026-10-15T21:49:39Z`.
     - The record holds a line for each call of a script under `scripts/` of the main tree, with the call's key: the script's file name, and its first argument where that is a bare word, as in `operate.py next`.
     - A key with at least {frequent} calls in the {days} days before `<time>` is judged, by its calls since `<time>` against those earlier calls.
-    - The command files a `performance` ticket on a judged key where the median CPU seconds of its recent calls exceeds {cpu_ratio} times the 25th percentile of its earlier calls by at least {cpu_margin:.0f} s, or the largest peak memory of its recent calls exceeds {peak_ratio} times the median peak memory of its earlier calls by at least {peak_margin} MB.
+    - The command files a `performance` ticket on a judged key where the median CPU seconds of its recent calls exceeds {cpu_ratio} times the 25th percentile of its earlier calls by at least {cpu_margin:.0f} s and exceeds the median CPU seconds of its earlier calls by at least {cpu_margin:.0f} s, or the largest peak memory of its recent calls exceeds {peak_ratio} times the median peak memory of its earlier calls by at least {peak_margin} MB and exceeds the largest peak memory of its earlier calls by at least {peak_margin} MB.
         - It files none on a key where a ticket outside `tickets/closed/` has the same text before the first `: ` of its title as the ticket it would file.
     - It deletes the record of each day more than {days} days old, and prints the path of each ticket it filed, or `no ticket filed`.
     """).format(frequent=FREQUENT, days=script_calls.WINDOW_SECONDS // DAY, cpu_ratio=script_calls.CPU_RATIO,
@@ -82,14 +82,16 @@ def judged(key: str, recent: list[Call], earlier: list[Call]) -> str | None:
     cpu = statistics.median(c.cpu for c in recent)
     usual_peak = statistics.median(c.peak for c in earlier)
     peak = max(c.peak for c in recent)
-    if script_calls.grew(cpu, usual_cpu, script_calls.CPU_MARGIN):
+    if (script_calls.grew(cpu, usual_cpu, script_calls.CPU_MARGIN)
+            and cpu >= statistics.median(c.cpu for c in earlier) + script_calls.CPU_MARGIN):
         name = mctx("{subject}: the median CPU time of its recent calls is {n:.1f} times "
                     "the 25th percentile CPU time of its earlier calls").format(
             subject=subject_of(key), n=ratio(cpu, usual_cpu))
         impact_text = mctx("Each call of `scripts/{key}` takes more of the machine than its usual calls "
                            "took, which the work of every session on the machine goes without.").format(key=key)
         slowest = largest(recent, lambda c: c.cpu)
-    elif peak >= PEAK_RATIO * usual_peak + PEAK_MARGIN:
+    elif (peak >= PEAK_RATIO * usual_peak + PEAK_MARGIN
+          and peak >= max(c.peak for c in earlier) + PEAK_MARGIN):
         name = mctx("{subject}: a recent call took {n:.1f} times the median peak memory "
                     "of its earlier calls").format(subject=subject_of(key), n=ratio(peak, usual_peak))
         impact_text = mctx("A recent call of `scripts/{key}` took more memory than its usual calls "
