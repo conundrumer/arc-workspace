@@ -222,7 +222,7 @@ def test_start_diff_from_an_earlier_launch_of_the_type(tmp_path: Path, digest: A
     assert HELD_HEAD in text and "A line that the tree no longer holds." in text
     assert record(main, OPERATOR_ID).read_text() == f"{head()}\n{digest(stale())}\n"
     given(transcript_of(main, OPERATOR_ID), *stale())
-    read = command("PreToolUse", "^(?!(Bash|Monitor|Agent)$).*", "reader_update_hook")
+    read = command("PreToolUse", "^(?!(Bash|Monitor|Agent|SubagentHandback|SendMessage)$).*", "reader_update_hook")
     hook = call(main, "Read", {"file_path": str(checkout.ROOT / "CLAUDE.md")}, OPERATOR_ID)
     assert run(read, hook) == ""
     assert record(main, OPERATOR_ID).read_text() == both(head())
@@ -281,7 +281,8 @@ def test_subagent_first_update_from_held_texts(tmp_path: Path) -> None:
     assert record(main, OPERATOR_ID).read_text() == both(head())
 
 
-GIVES_UPDATE = ("pending_wait_hook", 'joined_hooks.py" agent', "reader_update_hook")
+GIVES_UPDATE = ("pending_wait_hook", 'joined_hooks.py" agent', 'joined_hooks.py" handback',
+                'joined_hooks.py" send', "reader_update_hook")
 """The PreToolUse hooks that give the caller its update."""
 
 
@@ -388,7 +389,7 @@ def test_a_call_whose_command_starts_within_the_bound_is_denied(
     monkeypatch.setenv("PATH", f"{slow}:{os.environ['PATH']}")
     for cmd, tool in [(command("PreToolUse", "Bash|Monitor"), "Bash"),
                       (command("PreToolUse", "Agent", "joined_hooks"), "Agent"),
-                      (command("PreToolUse", "^(?!(Bash|Monitor|Agent)$).*",
+                      (command("PreToolUse", "^(?!(Bash|Monitor|Agent|SubagentHandback|SendMessage)$).*",
                                "reader_update_hook"), "Edit")]:
         delivered(main).touch()
         out = json.loads(run(cmd, call(main, tool, {})))["hookSpecificOutput"]
@@ -427,7 +428,7 @@ def test_one_pre_tool_use_update_on_each_tool() -> None:
 
 def test_pre_tool_use_form_on_other_tools(tmp_path: Path) -> None:
     main = session(tmp_path)
-    read = command("PreToolUse", "^(?!(Bash|Monitor|Agent)$).*", "reader_update_hook")
+    read = command("PreToolUse", "^(?!(Bash|Monitor|Agent|SubagentHandback|SendMessage)$).*", "reader_update_hook")
     record(main, "main").parent.mkdir(parents=True)
     record(main, "main").write_text(both(BEFORE))
     hook = call(main, "Edit", {"file_path": str(checkout.ROOT / "CLAUDE.md")})
@@ -465,7 +466,7 @@ def test_a_call_that_changes_nothing_runs_with_its_update(tmp_path: Path) -> Non
     the bound of that delivery a `Grep` call runs, and a `Bash` call is
     denied."""
     main = session(tmp_path)
-    other = command("PreToolUse", "^(?!(Bash|Monitor|Agent)$).*", "reader_update_hook")
+    other = command("PreToolUse", "^(?!(Bash|Monitor|Agent|SubagentHandback|SendMessage)$).*", "reader_update_hook")
     record(main, "main").parent.mkdir(parents=True)
     record(main, "main").write_text(both(BEFORE))
     hook = call(main, "Read", {"file_path": str(checkout.ROOT / "CLAUDE.md")})

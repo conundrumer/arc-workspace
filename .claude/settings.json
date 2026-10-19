@@ -70,7 +70,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/joined_hooks.py\" handback"
+            "command": "HOOK_STARTED=$(perl -MTime::HiRes=time -le 'print time') uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/joined_hooks.py\" handback"
           }
         ]
       },
@@ -79,12 +79,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/printed_send_hook.py\""
+            "command": "HOOK_STARTED=$(perl -MTime::HiRes=time -le 'print time') uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/joined_hooks.py\" send"
           }
         ]
       },
       {
-        "matcher": "^(?!(Bash|Monitor|Agent)$).*",
+        "matcher": "^(?!(Bash|Monitor|Agent|SubagentHandback|SendMessage)$).*",
         "hooks": [
           {
             "type": "command",
