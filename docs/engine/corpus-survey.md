@@ -31,7 +31,7 @@ Count of list nodes with the head, and the number of files with at least one.
 
 ## Alts structure
 
-Here an `ALTS` form includes each `DET_OR_RULE` line, which gives 1 + its proposers cases, and each `RULE_OR_DET` line, which gives 2. The cases of a scope are the product of its `ALTS` forms, with an `ALTS` form giving the concept branch's nested cases plus the sum of each alt's.
+Here an `ALTS` form includes each `DET_OR_RULE` and `RULE_OR_DET` line. The cases of a file are the cases that [Cases](cases.md#cases) gives, where such a line splits only the bases that read its relation, less the excluded ones: on 2026-10-19, the cases that the file's record in the snapshot `.cache/parity/` holds. The script is `case_counts.py` in the directory of [Open values and constraint search](#open-values-and-constraint-search), `python3 case_counts.py` from the repo root.
 
 | measure | value |
 | --- | --- |
@@ -39,17 +39,17 @@ Here an `ALTS` form includes each `DET_OR_RULE` line, which gives 1 + its propos
 | `ALTS` forms per file, max | 13 (ae3edfdc) |
 | ALTS nesting depth, max | 3 (a48eeaf7); 53 files at depth 2 or more |
 | combination ALT blocks | 52 |
-| cases per file | median 2; max 9216 (af24b4cc), then b2bc3ffd 3240, ae3edfdc 2560, ac0c5833 1920, a416fc5b 1440, aa300dc3 1152, a1aa0c1e 1080, a09f6c25 768 |
+| cases per file | median 2; max 1177 (b2bc3ffd), then a1aa0c1e 1080, a416fc5b 884, b10624e5 768, af24b4cc 736, ae3edfdc 640, ac3e2b04 576, aa300dc3 528 |
 | files with excludes | 48; 336 excludes; max 46 per file (a2d730bd) |
 
 | cases | files |
 | --- | --- |
 | 1 | 297 |
-| 2 | 316 |
-| 3–4 | 150 |
-| 5–8 | 50 |
-| 9–16 | 17 |
-| 17–64 | 26 |
+| 2 | 321 |
+| 3–4 | 151 |
+| 5–8 | 58 |
+| 9–16 | 26 |
+| 17–64 | 52 |
 | more than 64 | 48 |
 
 ## Instances
@@ -253,10 +253,10 @@ Declaration forms per file, a relation that more than one block derives, and suc
 
 | stem | cases | forms | relations | rederived | with another column set |
 | --- | --- | --- | --- | --- | --- |
-| af24b4cc | 9216 | 54 | 46 | 4 | 2 |
-| b2bc3ffd | 3240 | 39 | 26 | 8 | 3 |
-| ae3edfdc | 2560 | 36 | 26 | 7 | 1 |
-| ac0c5833 | 1920 | 50 | 38 | 9 | 3 |
+| af24b4cc | 736 | 54 | 46 | 4 | 2 |
+| b2bc3ffd | 1177 | 39 | 26 | 8 | 3 |
+| ae3edfdc | 640 | 36 | 26 | 7 | 1 |
+| ac0c5833 | 428 | 50 | 38 | 9 | 3 |
 | a32d8b75 | | 161 | 145 | 15 | 11 |
 
 - 399 files have a relation rederived with another column set.

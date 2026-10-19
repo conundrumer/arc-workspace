@@ -12,8 +12,12 @@ Three steps of the [build order](overview.md#build-order) build it: one before [
 
 ## Every case
 
-- The step after Synthesis runs every solver in full. It builds every case of a solver's `ALTS` forms, as [Cases](#cases) and [Models](#models) give, [Open values](#open-values) of every reading, the [`DEMONSTRATED`](#demonstrated) forms, and [Reports](#reports), and it checks the parameters that [Determination](determination.md) leaves unchecked.
-- The step ends when the engine is at parity with Souffle on each case's output on each pair and on whether it solves the task, as [verification.md](verification.md) checks them, or the difference is reported as a fault, as the Principles requirement of [Requirements](overview.md#requirements) gives.
+- The step after Synthesis runs every solver in full. It builds every case of a solver's `ALTS` forms, as [Cases](#cases) and [Models](#models) give, [Open values](#open-values) of every reading, the [`DEMONSTRATED`](#demonstrated) forms, and [Reports](#reports). Each case runs at the values that [Determination with no stored value](determination.md#determination-with-no-stored-value) gives.
+- The step ends when the engine is at parity with Souffle on each case's output on each pair and on whether it solves the task, as [verification.md](verification.md) checks them, or the difference is reported as a fault, as the Principles requirement of [Requirements](overview.md#requirements) gives. The check has these parts:
+    - `arclog-cli determine`, as [End check](determination.md#end-check) gives, compares the determined values of the parameters that a case with a `DEMONSTRATED` form reads, such as 351d6448's `&time_corner`.
+    - `arclog-cli compare`, run over every case, compares each case's output on each pair with the snapshot's record of the case. A case with an open parameter is compared by its output set, as [Open values](#open-values) gives. The snapshot keys a case by the name that `case_name` of `src/parity/__init__.py` gives it, and an engine case maps to that key by the same rule, from its `CaseName` of `engine/arclog/src/solver.rs`. The check reports each case that only one of the two sets holds, and the rerun of [Mismatch report](verification.md#mismatch-report) takes the snapshot's name.
+    - A difference in a determined value is reported before the differences in output that it causes.
+    - The run's time per solver is compared with Souffle's time in the snapshot, as the Speed requirement of [Requirements](overview.md#requirements) gives, and each solver that runs slower is reported.
 
 ## Refine step
 
@@ -21,16 +25,16 @@ Three steps of the [build order](overview.md#build-order) build it: one before [
 
 ## Cases
 
-- A solver's cases are the product of its `ALTS` forms, restricted by the nesting of the blocks, less the combinations that the arcdata file's `exclude` forms leave out. A case's **base** is its choice at each `ALTS` form that the file writes: the concept case's answer or one of the form's alts. A `DET_OR_RULE` or `RULE_OR_DET` line splits only the bases that read its relation, so the cases of one base differ only in their readings at those lines. `cases()` of [Solvers](reader.md#solvers), built in [Reader and checker](reader.md), follows this rule, and gives a solver with a `representative` line the representative's cases, or the one case the line names.
+- A solver's cases are the product of its `ALTS` forms, restricted by the nesting of the blocks, less the combinations that the arcdata file's `exclude` forms leave out. An `exclude` form that leaves out the concept case, as 4522001f's `(exclude ($Pair))` does, is a fault of its solver, and the engine reports it, since [Cases](../../docs/handbook/principles.md#cases) has the concept case as a case. A case's **base** is its choice at each `ALTS` form that the file writes: the concept case's answer or one of the form's alts. A `DET_OR_RULE` or `RULE_OR_DET` line splits only the bases that read its relation, so the cases of one base differ only in their readings at those lines. `cases()` of [Solvers](reader.md#solvers), built in [Reader and checker](reader.md), follows this rule, and gives a solver with a `representative` line the representative's cases, or the one case the line names.
 - Each case is one program, with no `Choice` column. The [result cache](evaluator.md#the-result-cache) shares the entries that the cases' relations hold in common.
-- The judge's checks of the [refine step](#refine-step) report on the witnessed cases alone, as [Cases](../../docs/handbook/solver-file.md#cases) defines them. That set depends on each case's output on the pair inputs and the witness inputs, so that step evaluates every included case on those inputs. The product is largest in af24b4cc, as [Alts structure](corpus-survey.md#alts-structure) gives.
-- The names of an `output` form expand to their cases as [Witness file](../../docs/handbook/solver-file.md#witness-file) gives.
+- The judge's checks of the [refine step](#refine-step) report on the witnessed cases alone, as [Cases](../../docs/handbook/solver-file.md#cases) defines them. That set depends on each case's output on the pair inputs and the witness inputs, so that step evaluates every included case on those inputs. [Alts structure](corpus-survey.md#alts-structure) gives the counts of cases per solver.
+- In the refine step, the names of an `output` form expand to their cases as [Witness file](../../docs/handbook/solver-file.md#witness-file) gives.
 
 ## Models
 
-A model of a case on an input is one choice at each of its picks, as [Semantics](../../docs/arclog/constraints.md#semantics) gives, one open value of each open parameter it reads, and one joint walk of each `Unfold` instance whose `score` ties, as [Lib](evaluator.md#lib) gives. A joint walk of an instance is one walk at each of its keys, and its outputs are the facts along those walks, so the instance's factor is the product over its keys of each key's walks. The case's models are the product of these factors.
+A model of a case on an input is one choice at each of its picks, as [Semantics](../../docs/arclog/constraints.md#semantics) gives, one open value of each open parameter it reads, one confirmed rule at each key of each `DEMONSTRATED` form it reads, as [`DEMONSTRATED`](#demonstrated) gives, and one joint walk of each `Unfold` instance whose `score` ties, as [Lib](evaluator.md#lib) gives. A joint walk of an instance is one walk at each of its keys, and its outputs are the facts along those walks, so the instance's factor is the product over its keys of each key's walks. The case's models are the product of these factors.
 
-- The picks are solved in dependency order. A pick, or an `Unfold` instance, that reads another pick, as an ancestor in the case's [dependency graph](reader.md#the-dependency-graph), gets its options and its clusters once per model of each pick it reads, since each chosen relation holds the rows of one model of the program, as [Semantics](../../docs/arclog/constraints.md#semantics) gives. In b7cb93ac, `&ties` reads the `CHOOSE` `&pruning`, so the options of `&ties` are the rows of its clause at one model of `&pruning`.
+- The picks and the `DEMONSTRATED` forms are solved in dependency order. A pick, a `DEMONSTRATED` form or an `Unfold` instance that reads a pick or a `DEMONSTRATED` form, as an ancestor in the case's [dependency graph](reader.md#the-dependency-graph), is built once per model of each one it reads, since each chosen relation, and the relation of each `DEMONSTRATED` form, holds the rows of one model of the program, as [Semantics](../../docs/arclog/constraints.md#semantics) gives. In b7cb93ac, `&ties` reads the `CHOOSE` `&pruning`, so the options of `&ties` are the rows of its clause at one model of `&pruning`.
 
 ### The constraint module
 
@@ -41,11 +45,11 @@ A model of a case on an input is one choice at each of its picks, as [Semantics]
     - a forced option excludes the other options of each of its groups, and each option that forms a `never` pair with it;
     - a group with no option left leaves the cluster with no model.
 - The module visits clusters, options and values in a canonical order by content, with Idents ordered by their contents as a writer numbers them, as [Terms](reader.md#terms) gives, so a stop at a cap does not depend on an encoding order. The node cap is provisional: the corpus gives no search size, as [Open values and constraint search](corpus-survey.md#open-values-and-constraint-search) gives.
-- The models of one case on one input run under a cap of 10^3, which is the default of the model cap of [Decode settings](synthesis.md#decode-settings). The cap is provisional, and its evidence is in [Open values and constraint search](corpus-survey.md#open-values-and-constraint-search).
+- The models of one case on one input, its `DEMONSTRATED` choices included, run under a cap of 10^3, which is the default of the model cap of [Decode settings](synthesis.md#decode-settings). The cap is provisional, and its evidence is in [Open values and constraint search](corpus-survey.md#open-values-and-constraint-search).
 - Reaching the node cap or the model cap is a stop at a bound: the case has no output on that input, the result cache stores the stop as it stores a stop at the work cap or the row cap, and the stop is an alert, as [Joins](evaluator.md#joins) and [Bounds](overview.md#requirements) give.
 - The module gives the models one at a time.
-- A cluster is enumerated where its chosen relation, as [One](../../docs/arclog/constraints.md#one) defines it, is an ancestor of `&output` in the case's dependency graph, over every read edge, a negated read included. A chosen relation that is no ancestor of `&output` takes its first model in the search order, since no output reads it.
-- A `DET` reads a chosen relation where that relation is an ancestor of the `DET` in the dependency graph, and it runs over that relation's models. The models of a pick that the `DET` reads lifted are the product of the pick's models on each example. Where the models give the `DET` more than one value, the engine reports an error.
+- A cluster is enumerated where its chosen relation, as [One](../../docs/arclog/constraints.md#one) defines it, is an ancestor of `&output` in the case's dependency graph, over every read edge, a negated read included. A chosen relation, or the relation of a `DEMONSTRATED` form, that is no ancestor of `&output` takes its first model in the canonical order, since no output reads it.
+- A `DET` reads a chosen relation, or the relation of a `DEMONSTRATED` form, where that relation is an ancestor of the `DET` in the dependency graph, and it runs over that relation's models. The models of a pick that the `DET` reads lifted are the product of the pick's models on each example. Where the models give the `DET` more than one value, the engine reports an error.
 
 ### Enumeration and its stops
 
@@ -54,7 +58,7 @@ A model of a case on an input is one choice at each of its picks, as [Semantics]
     - a train pair under closed-world candidates: at a grid outside the pair's candidates, or once the grids lie in two different candidates;
     - a train pair under open-world candidates: at the third distinct grid, or at the second where neither grid is the given output;
     - a test pair: at the third distinct grid;
-    - a witness input: at the first grid outside every grid that the witness's `output` forms record.
+    - a witness input, in the refine step: at the first grid outside every grid that the witness's `output` forms record.
 - An undefined grid stops each of these too, except on a witness input whose record holds `undefined`.
 - The walks of an `Unfold` instance are enumerated lazily, as the other models are, under the same stops. A stop counts distinct grids, and not distinct sets of output facts, since two joint walks whose facts differ can give one grid.
 - An enumeration that stops early gives the output `outside`: three or more grids or undefined on a test input, and outside the candidates or the record on the others. Every comparison of the judge treats `outside` as different from every output, itself included. Whether an enumeration stops early does not depend on the order of the models, so no comparison does. An early stop is not a stop at a bound, as [Reports](#reports) gives.
@@ -63,16 +67,17 @@ A model of a case on an input is one choice at each of its picks, as [Semantics]
 ## Open values
 
 - A parameter has open values under one of three readings:
-    - A `DET` whose body ends in `(ONE)` is a chosen relation, task-wide as [Program](../../docs/arclog/arclog.md#program) gives, and the constraint module solves it. Its models are its open values.
+    - A `DET` whose body ends in `ONE` marks is a chosen relation, task-wide as [Program](../../docs/arclog/arclog.md#program) gives, and the constraint module solves it. Its models are its open values.
     - A `DET` by a proposer or a domain with `(ONE)` keeps the values that the train pairs leave, as [`DET`](determination.md#det) gives, and those are its open values.
     - On the derived reading of a `DET_OR_RULE` line with `(ONE)`, each value the proposer gives on the input is a model, as [Open values](../../docs/arclog/arclog.md#open-values) gives, per input.
 - The open values that M_open uses are those left after the intersection across cases of [`DET`](determination.md#det).
-- M_open, as [Open parameters](../../docs/handbook/principles.md#open-parameters) gives, is used by the solves test alone, as [Cases](../../docs/handbook/principles.md#cases) gives. So the output is undefined where the case is undefined at some open value, in that test alone. Where a case condition or a witness check compares an output of a case with an open parameter, the judge reports the comparison `undecided`, as [Known gaps](#known-gaps) gives.
+- M_open, as [Open parameters](../../docs/handbook/principles.md#open-parameters) gives, is used by the solves test alone, as [Cases](../../docs/handbook/principles.md#cases) gives. So the output is undefined where the case is undefined at some open value, in that test alone.
+- Outside the solves test, the output of a case with an open parameter is the set of grids over its models that [Models](#models) gives, which the snapshot records. [Every case](#every-case) compares that set, and the witnesses and the case conditions of the [refine step](#refine-step) read it.
 
 ## `DEMONSTRATED`
 
 - For each `DEMO_RULE`, the engine evaluates `&prediction` once per input, an entry that holds every key. At each key, a demonstration `(o, o2)` confirms the rule where the rule's prediction rows for `o` at that key, by `i` and `v`, equal the `value` rows of `o2`, as [Demonstrated](../../docs/arclog/arclog.md#demonstrated) gives. The cost per input is the rules' evaluations, then one comparison of row sets per rule, key and demonstration.
-- A key with no confirmed rule holds no prediction.
+- A key with no demonstration, or with no confirmed rule, holds no prediction, as [Demonstrated](../../docs/arclog/arclog.md#demonstrated) gives.
 - Each choice of one confirmed rule per key is one model, as [Demonstrated choice](../../docs/handbook/solver-file.md#demonstrated-choice) gives. Rules whose predictions at a key are equal give one model there, since the relation has no rule column.
 - A rule with fields stands for one rule per value that its clauses bind for the field.
 
@@ -98,7 +103,7 @@ A model of a case on an input is one choice at each of its picks, as [Semantics]
 - The search takes the relation it tests as an argument, since synthesis tests each `RULE` relation, as [Program](../../docs/arclog/arclog.md#program) gives, and it reads the train candidates of `JudgedTask`, as [Candidates](#candidates) gives. It replaces the search of step 2, `Evaluation::grid_columns`, which compares one grid per train pair with `pair.output`.
 - The search runs once per content of the relation's entry and of the train candidates, and its result is cached with the entry, so the cases whose `&output` holds the same rows share it. Its cost is the Position columns times the Color columns, times the train pairs' models.
 - Where no pair matches, the case has no grid columns, and it is undefined on every input.
-- Where more than one pair matches, and two of them give different outputs on an input of the task or of the witnesses, the grid columns are underdetermined. The engine reports it as an error, as it reports an underdetermined `DET` in [`DET`](determination.md#det). At synthesis time a program has no witnesses, so the test reads the task's inputs alone.
+- Where more than one pair matches, and two of them give different outputs on an input of the task, or, in the refine step, of the witnesses, the grid columns are underdetermined. The engine reports it as an error, as it reports an underdetermined `DET` in [`DET`](determination.md#det). At synthesis time a program has no witnesses, so the test reads the task's inputs alone.
 - During a determination, the search runs at each assignment, as [Determination with no stored value](determination.md#determination-with-no-stored-value) gives. Underdetermined grid columns are an error only at an assignment that the determination keeps. At any other assignment, the assignment does not solve the train pairs.
 
 ### Witnesses
@@ -124,7 +129,7 @@ The judge checks the [case conditions](../../docs/handbook/principles.md#cases) 
 
 - A case stopped at a bound has no output on that input, and the judge reports the stop as a fault, as [Joins](evaluator.md#joins) gives. It is not the output `outside` of an enumeration that stops early.
 - A report names the case, the pair or the witness, and the cause, in the file's names.
-- Per input, the judge's work past the evaluation of the cases is linear in the cases: one interned output per case, the enumeration up to its stop, and the comparisons over the distinct vectors. The Speed requirement of [Requirements](overview.md#requirements) is checked by the corpus run's time per solver against Souffle's, as in step 2.
+- Per input, the judge's work past the evaluation of the cases is linear in the cases: one interned output per case, the enumeration up to its stop, and, in the refine step, the comparisons over the distinct vectors.
 
 ## How each decision can fail
 
@@ -140,7 +145,4 @@ The judge checks the [case conditions](../../docs/handbook/principles.md#cases) 
 
 ## Known gaps
 
-| Gap | Where it shows |
-| --- | --- |
-| An open value that is a set of rows: a model of `(ONE)` keeps one row per value of its key, so a parameter whose open values are whole sets of rows, as [Params](../../docs/handbook/solver-file.md#params) allows, has no encoding | most parameters of [Open values and constraint search](corpus-survey.md#open-values-and-constraint-search) hold rows of single values; b7f8a4d8 `&draw_rank` and bc93ec48 `&precedence` hold open values of several rows each, keyed by an Ident column that a bare `(ONE)` reads as one row |
-| What Equivalence, Subsumption and the witness checks read for a case with an open parameter: Principles use M_open for the solves test alone | every solver with a `(ONE)` parameter; the judge reports `undecided` there |
+None.
