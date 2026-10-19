@@ -9,10 +9,12 @@ from collections.abc import Mapping
 
 from dashboard_html import NOTE_WORDS, Entry, clock, cut, esc, tap
 
+from operations.state import LogLine
+
 LIMIT = 8
 """The most hits a search gives."""
 
-SHEET_LINES = 4
+SHEET_LINES = 6
 """The most log lines a ticket's sheet gives."""
 
 
@@ -47,11 +49,20 @@ def results(entries: Mapping[str, Entry], words: tuple[str, ...]) -> str:
     return "".join(out) or '<div class="meta">No match</div>'
 
 
+def log_line(ln: LogLine, now: float) -> str:
+    """The HTML of the log line `ln`: its time, status and note, where the
+    note is cut, with the cut and the full note and a label that expands it."""
+    head = f"{esc(clock(ln.time, now))} · {esc(ln.status)} · "
+    if len(ln.note.split()) <= NOTE_WORDS:
+        return f'<div class="lg">{head}{esc(ln.note)}</div>'
+    return (f'<div class="lg">{head}<span>{esc(cut(ln.note, NOTE_WORDS))}</span><span hidden>{esc(ln.note)}</span>'
+            ' <i class="more">more</i></div>')
+
+
 def sheet(e: Entry, now: float) -> str:
     """The HTML of the sheet of `e`: its number and kind, its phrase, the
     plain sentence on its status and its last `SHEET_LINES` log lines."""
     t = e.ticket
-    lines = "".join(f'<div class="lg">{esc(clock(ln.time, now))} · {esc(ln.status)} · {esc(cut(ln.note, NOTE_WORDS))}</div>'
-                    for ln in t.log[-SHEET_LINES:])
+    lines = "".join(log_line(ln, now) for ln in t.log[-SHEET_LINES:])
     return (f'<div class="num">{esc(t.number)} · {esc(t.kind)}</div>'
             f'<div class="sh" style="font-size:17px">{esc(e.phrase)}</div><div class="p">{esc(e.status)}</div>{lines}')

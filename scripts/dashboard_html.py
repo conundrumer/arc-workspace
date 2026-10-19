@@ -174,21 +174,26 @@ class View:
         return STATUS_WORDS[t.status]
 
 
+def usage_bar(usage: Usage, name: WindowName, label: str) -> str:
+    """The HTML of one row of the strip: `label`, a bar of the used share of
+    window `name`, hot where the use is ahead of the elapsed time, with a tick
+    at the elapsed share, and the used percent."""
+    win = usage.windows.get(name)
+    if win is None:
+        return (f'<div class="ub"><span class="ul">{esc(label)}</span><div class="bar"></div>'
+                '<span class="uv">–</span></div>')
+    hot = win.used_pct > win.elapsed_pct
+    return (f'<div class="ub"><span class="ul">{esc(label)}</span>'
+            f'<div class="bar"><i{' class="hot"' if hot else ""} style="width:{min(100, win.used_pct):.0f}%"></i>'
+            f'<b style="left:{min(100, win.elapsed_pct):.0f}%"></b></div>'
+            f'<span class="uv{" w" if hot else ""}">{win.used_pct:.0f}%</span></div>')
+
+
 def strip(v: View, mine: int) -> str:
     ops = "Ops: no record" if isinstance(v.state, str) else "Ops paused" if v.state.paused else "Ops running"
-    wk = v.usage.windows.get(WindowName.SEVEN_DAY)
-    held = not isinstance(v.state, str) and v.state.start_hold is not None
-    if wk is None:
-        bar, line = "", "Week: the usage cache gives no reading"
-    else:
-        full = hits_full(v.usage, WindowName.SEVEN_DAY)
-        bar = (f'<div class="bar"><i style="width:{min(100, wk.used_pct):.0f}%"></i>'
-               f'<b style="left:{min(100, wk.elapsed_pct):.0f}%"></b></div>')
-        line = (f"Week {wk.used_pct:.0f}% used, {wk.elapsed_pct:.0f}% elapsed"
-                + ("" if full is None else f' · <span class="w">hits 100% {clock(full, v.now)}</span>'))
-    line += ' · <span class="w">agent starts held</span>' if held else ""
-    return (f'<div class="strip"><div class="r1">{ops} · {mine} in flight</div>{bar}'
-            f'<div class="r2">{line}</div></div>')
+    return (f'<div class="strip"><div class="r1">{ops} · {mine} in flight</div>'
+            f'{usage_bar(v.usage, WindowName.SEVEN_DAY, "Week")}'
+            f'{usage_bar(v.usage, WindowName.FIVE_HOUR, "5 h")}</div>')
 
 
 def health(v: View, notes: list[str]) -> str:

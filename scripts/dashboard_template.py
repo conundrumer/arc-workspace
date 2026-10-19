@@ -24,8 +24,11 @@ TEMPLATE = """<!doctype html><html><head><meta charset="utf-8">
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 -apple-system,system-ui,sans-serif}
 main{max-width:560px;margin:0 auto;padding:0 16px 40px}
 .strip{position:sticky;top:0;z-index:2;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 16px}
-.strip .r1{font-weight:600}.strip .r2{color:var(--mute);font-size:13px}
-.bar{height:6px;background:var(--line);border-radius:3px;position:relative;margin:6px 0 2px}
+.strip .r1{font-weight:600}
+.ub{display:flex;align-items:center;gap:8px;margin-top:6px}.ul{width:34px;font-size:12px;color:var(--mute)}
+.uv{width:34px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums}
+.bar{flex:1;height:6px;background:var(--line);border-radius:3px;position:relative}
+.bar i.hot{background:var(--warn)}
 .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--acc)}
 .bar b{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
 h2{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin:22px 0 8px}
@@ -45,7 +48,7 @@ summary{cursor:pointer;font-weight:600}details .row{padding:6px 0;border-top:1px
 input{width:100%;font:inherit;font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
 #res{margin-top:8px}#res .card{padding:8px 12px}
 .sheet{position:fixed;inset:auto 0 0 0;max-height:75vh;overflow:auto;background:var(--card);border-top:1px solid var(--line);border-radius:14px 14px 0 0;padding:16px;box-shadow:0 -8px 30px rgba(0,0,0,.2);transform:translateY(100%);transition:transform .2s;z-index:5;visibility:hidden;overflow-wrap:anywhere}
-.sheet.on{transform:none;visibility:visible}.sheet .p{font-weight:600;margin:6px 0 10px}.sheet .lg{font-size:13px;color:var(--mute);border-top:1px solid var(--line);padding:6px 0}
+.sheet.on{transform:none;visibility:visible}.sheet .p{font-weight:600;margin:6px 0 10px}.sheet .lg{font-size:13px;color:var(--mute);border-top:1px solid var(--line);padding:6px 0}.lg .more{color:var(--acc);font-style:normal;cursor:pointer}
 .x{float:right;border:0;background:none;font-size:20px;color:var(--mute)}
 .w{color:var(--warn);font-weight:600}.scrim{position:fixed;inset:0;background:rgba(0,0,0,.3);display:none;z-index:4}.scrim.on{display:block}
 </style></head><body>
@@ -73,7 +76,7 @@ catch(e){h='<div class="meta">'+esc('load failed: '+e)+'</div>'}
 if(shown===n)sc.innerHTML=h}
 function shut(){shown=null;sheet.classList.remove('on');scrim.classList.remove('on')}
 scrim.onclick=shut;$('x').onclick=shut;
-document.addEventListener('click',e=>{const t=e.target.closest('.tk');if(t){e.preventDefault();open(t.dataset.n)}});
+document.addEventListener('click',e=>{const g=e.target.closest('.lg'),m=g&&g.querySelector('.more');if(m){const s=g.querySelectorAll('span');s.forEach(x=>x.hidden=!x.hidden);m.textContent=s[1].hidden?'more':'less';return}const t=e.target.closest('.tk');if(t){e.preventDefault();open(t.dataset.n)}});
 let asked=0,timer=null;
 async function search(){const q=$('q').value.trim(),n=++asked,res=$('res');if(!q){res.innerHTML='';return}
 let h;try{const r=await fetch('@SEARCH@?q='+encodeURIComponent(q),{cache:'no-store'});h=await r.text();if(!r.ok)h='<div class="meta">'+esc('search failed: '+r.status)+'</div>'}
