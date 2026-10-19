@@ -62,7 +62,11 @@ pub(super) struct FormBody<'a> {
     /// labels for a keyed input or an instance clause, and the row's and
     /// the candidate's for a `never` clause.
     pub given: Vec<LabelId>,
-    /// The labels of the columns that the body gives.
+    /// The labels of the columns that the body gives. A clause of no
+    /// conjuncts, as a case's reading of a `DET_OR_RULE` or `RULE_OR_DET`
+    /// line takes it, gives its columns from its proposers or from its
+    /// stored parameter (`docs/arclog/arclog.md#the-alts-form`), and its
+    /// body gives none.
     pub columns: Vec<LabelId>,
     /// The labels of the fields of the `DEMO_RULE` whose scope the body's
     /// form stands in, which its forms read.
@@ -136,7 +140,10 @@ pub(super) fn bodies(form: NodeRef<'_>) -> Vec<FormBody<'_>> {
     let mut out: Vec<FormBody<'_>> = key.iter().map(|(key, body)| plain(&key.body, body.clone(), &[], key_labels.clone())).collect();
     let after_key = u32::from(key.is_some());
     match form {
-        NodeRef::Clause(clause) => out.push(plain(&clause.body, at.child(0), &[], own_columns())),
+        NodeRef::Clause(clause) => {
+            let columns = if clause.body.value().conjuncts.is_empty() { Vec::new() } else { own_columns() };
+            out.push(plain(&clause.body, at.child(0), &[], columns));
+        }
         NodeRef::Instance(instance) => keyed_inputs(instance.key.as_ref(), &instance.inputs, &key_labels, &mut out),
         NodeRef::Demonstrated(demonstrated) => keyed_inputs(demonstrated.key.as_ref(), &demonstrated.inputs, &key_labels, &mut out),
         NodeRef::Choose(choose) => {

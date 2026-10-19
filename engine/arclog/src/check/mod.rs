@@ -41,7 +41,7 @@ pub use clauses::{ClauseEntry, FileScope, SolverClauses};
 use clauses::{clause_signature, top_level_forms};
 
 /// The checks this step builds, those that evaluation needs.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum CheckId {
     /// The grammar: an s-expression that matches no node kind.
     Grammar,
