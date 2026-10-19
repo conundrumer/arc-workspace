@@ -80,6 +80,7 @@
 
 pub mod algebra;
 pub mod check;
+pub mod constraints;
 pub mod diagnostic;
 pub mod eval;
 pub mod grounding;

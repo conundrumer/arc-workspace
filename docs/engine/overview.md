@@ -83,5 +83,5 @@ Each scope doc has a table of known gaps. A gap is a part of the design that the
 - The engine keeps these properties for a scene engine:
     - A render is a clause program whose fact relations are the scene's.
     - `ex_input` can be a derived relation.
-    - The interface of the constraint module gives enumeration and sampling, and the first model.
+    - The interface of the constraint module gives enumeration and the first model, and a scene engine adds sampling over the same input.
 - Nothing else is kept for scenes.
