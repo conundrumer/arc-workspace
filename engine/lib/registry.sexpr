@@ -201,8 +201,14 @@
   (outputs (tile (key Key) (P Position) (P_outer Position) (P_inner Position))))
 
 ;; Derivations: docs/arclog/arcdata.md#params.
-(derivation Frame (fields (A Axis) (N number)) (columns (P Position)))
-(derivation Division (fields (A Axis) (Count number) (Size number) (Gap number)) (columns (P Position) (P_outer Position) (P_inner Position)))
+(derivation Frame (fields (A Axis) (N number)) (columns (P Position))
+  (instances (frame Frame (extent (fields A N))))
+  (table frame cell))
+(derivation Division (fields (A Axis) (Count number) (Size number) (Gap number)) (columns (P Position) (P_outer Position) (P_inner Position))
+  (instances (outer Frame (extent (fields A Count)))
+    (inner Frame (extent (fields A Size)))
+    (tiles Tiling (outer (output outer cell)) (inner (output inner cell)) (gap (fields A Gap))))
+  (table tiles cell))
 
 ;; Constants: the #define lines of programs/lib/orientation.dl, in their order within each type, and the C4 constants of its c4_elem facts.
 (constants Dir DIR_T DIR_B DIR_L DIR_R)

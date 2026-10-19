@@ -247,22 +247,132 @@ impl FileReader {
         true
     }
 
-    /// `(derivation <Name> (fields ...) (columns ...))`, after its head.
+    /// `(derivation <Name> (fields ...) (columns ...) (instances ...) (table ...))`,
+    /// after its head.
     fn derivation(&mut self, rest: &[SExpr], place: SourcePlace) -> Option<()> {
         let name = LibName(self.symbol(rest.first(), "the derivation's name", place)?.into());
         let fields = self.columns(rest.get(1), FIELDS, &[], place)?;
         let columns = self.columns(rest.get(2), COLUMNS, &[], place)?;
-        self.no_more(rest.get(3..).unwrap_or_default())?;
+        let mut earlier: Vec<(&str, Component)> = Vec::new();
+        let mut instances = Vec::new();
+        for expr in self.headed(rest.get(3), INSTANCES, place)? {
+            let (instance_name, component, instance) = self.derivation_instance(expr, &fields, &earlier)?;
+            if earlier.iter().any(|(earlier_name, _)| *earlier_name == instance_name) {
+                return self.unknown(format!("the derivation has two instances `{instance_name}`"), expr.place());
+            }
+            earlier.push((instance_name, component));
+            instances.push(instance);
+        }
+        let written_table = self.headed(rest.get(4), TABLE, place)?;
+        let table = self.instance_output(written_table, &earlier, &columns.iter().map(|c| c.name.clone()).collect::<Vec<_>>(), place)?;
+        self.no_more(rest.get(5..).unwrap_or_default())?;
         match self.derivations.entry(name) {
             std::collections::hash_map::Entry::Occupied(entry) => {
                 let message = format!("`{}` is declared by two `derivation` forms", entry.key().0);
                 self.fault(CheckId::Scope, message, place);
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Derivation { fields, columns });
+                entry.insert(Derivation { fields, columns, instances: instances.into(), table });
             }
         }
         Some(())
+    }
+
+    /// Gives a fault of scope at `place`, and `None`.
+    fn unknown<T>(&mut self, message: impl Into<Box<str>>, place: SourcePlace) -> Option<T> {
+        self.fault(CheckId::Scope, message, place);
+        None
+    }
+
+    /// `(<instance> <Component> (<input> <source>) ...)`, an instance of a
+    /// derivation whose fields are `fields`, after the instances `earlier`:
+    /// its name, its component and the instance.
+    fn derivation_instance<'e>(
+        &mut self,
+        expr: &'e SExpr,
+        fields: &[Column],
+        earlier: &[(&str, Component)],
+    ) -> Option<(&'e str, Component, DerivationInstance)> {
+        let place = expr.place();
+        let SExpr::List { items, .. } = expr else {
+            return self.refuse("an instance of a derivation is a list", place);
+        };
+        let instance_name = self.symbol(items.first(), "the instance's name", place)?;
+        let component_name = LibName(self.symbol(items.get(1), "the instance's component", place)?.into());
+        let Some(LibEntry::Component(component)) = self.entries.get(&component_name) else {
+            return self.unknown(format!("`{}` is no component that an earlier form declares", component_name.0), place);
+        };
+        let component = component.clone();
+        let mut inputs: Vec<Option<InputSource>> = vec![None; component.inputs.len()];
+        for written in items.get(2..).unwrap_or_default() {
+            let SExpr::List { items: pair, .. } = written else {
+                return self.refuse("an input of an instance is `(<input> <source>)`", written.place());
+            };
+            let [port, source] = &pair[..] else {
+                return self.refuse("an input of an instance is `(<input> <source>)`", written.place());
+            };
+            let port_name = PortName(self.symbol(Some(port), "the input's name", written.place())?.into());
+            let Some(index) = component.inputs.iter().position(|input| input.port.name == port_name) else {
+                return self.unknown(format!("`{}` is no input of `{}`", port_name.0, component_name.0), port.place());
+            };
+            if inputs[index].is_some() {
+                return self.unknown(format!("the instance gives the input `{}` twice", port_name.0), written.place());
+            }
+            let wanted: Vec<ColumnName> = keyless_names(&component.inputs[index].port.columns);
+            inputs[index] = Some(self.input_source(source, fields, earlier, &wanted)?);
+        }
+        Some((instance_name, component, DerivationInstance { component: component_name, inputs: inputs.into() }))
+    }
+
+    /// `(fields <Field> ...)` or `(output <instance> <output>)`, the source
+    /// of an input whose columns other than `key` are `wanted`.
+    fn input_source(&mut self, expr: &SExpr, fields: &[Column], earlier: &[(&str, Component)], wanted: &[ColumnName]) -> Option<InputSource> {
+        let place = expr.place();
+        if let Some(named) = headed(expr, FIELDS) {
+            if named.len() != wanted.len() {
+                return self.unknown(format!("the `({FIELDS} ...)` form gives {} fields for {} columns", named.len(), wanted.len()), place);
+            }
+            let mut positions = Vec::with_capacity(named.len());
+            for field in named {
+                let text = self.symbol(Some(field), "a field", place)?;
+                let column = ColumnName::Written(text.into());
+                let Some(position) = fields.iter().position(|f| f.name == column) else {
+                    return self.unknown(format!("`{text}` is no field of the derivation"), field.place());
+                };
+                positions.push(position);
+            }
+            return Some(InputSource::Fields(positions.into()));
+        }
+        match headed(expr, OUTPUT) {
+            Some(rest) => self.instance_output(rest, earlier, wanted, place).map(InputSource::Output),
+            None => self.refuse(format!("a source of an input is a `({FIELDS} ...)` or an `({OUTPUT} ...)` form"), place),
+        }
+    }
+
+    /// `<instance> <output>`, an output of one of the instances `earlier`,
+    /// at its columns `wanted`.
+    fn instance_output(&mut self, items: &[SExpr], earlier: &[(&str, Component)], wanted: &[ColumnName], place: SourcePlace) -> Option<InstanceOutput> {
+        let [instance, output] = items else {
+            return self.refuse("the form holds an instance and one of its outputs", place);
+        };
+        let instance_name = self.symbol(Some(instance), "an instance", place)?;
+        let output_name = PortName(self.symbol(Some(output), "an output", place)?.into());
+        let Some(instance) = earlier.iter().position(|(name, _)| *name == instance_name) else {
+            return self.unknown(format!("`{instance_name}` is no earlier instance of the derivation"), place);
+        };
+        let component = &earlier[instance].1;
+        let Some(output) = component.outputs.iter().position(|port| port.name == output_name) else {
+            return self.unknown(format!("`{}` is no output of the instance `{instance_name}`", output_name.0), place);
+        };
+        let names = keyless_names(&component.outputs[output].columns);
+        let mut columns = Vec::with_capacity(wanted.len());
+        for column in wanted {
+            let Some(position) = names.iter().position(|name| name == column) else {
+                return self.unknown(format!("the output `{}` of `{instance_name}` has no column {column:?}", output_name.0), place);
+            };
+            columns.push(position);
+        }
+        Some(InstanceOutput { instance, output, columns: columns.into() })
     }
 
     /// `(constants <type> <NAME> ...)` or `(constants C4 <NAME> ...)`, after
@@ -312,6 +422,11 @@ impl FileReader {
         }
         Some(())
     }
+}
+
+/// The names of `columns` other than `key`, in their order.
+fn keyless_names(columns: &[Column]) -> Vec<ColumnName> {
+    keyless(columns).map(|column| column.name.clone()).collect()
 }
 
 /// Whether the last of `items` is the symbol `mark`, which it then drops

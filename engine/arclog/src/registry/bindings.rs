@@ -51,7 +51,7 @@ pub(crate) fn binding_sites<'a>(init: &'a crate::program::Instance, inputs: &'a 
 /// `inputs`, the column that the key clause binds, where it has one.
 pub(crate) fn key_parameter(inputs: &[InputPort]) -> Option<&TypeParameter> {
     inputs.iter().find_map(|input| {
-        let column = input.port.columns.iter().find(|c| c.name == ColumnName::Written(crate::read::spelling::KEY.into()))?;
+        let column = input.port.columns.iter().find(|c| is_key(c))?;
         match &column.ty {
             ColumnType::Parameter(parameter) => Some(parameter),
             _ => None,

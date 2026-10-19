@@ -42,10 +42,18 @@
 //!   clause is projected away. Each column has the type that
 //!   [`macro_column_types`] gives a relation macro's column whose label is
 //!   the column's, over the clause.
-//! - `(derivation <Name> (fields (<Field> <type>) ...) (columns (<Column> <type>) ...))`:
-//!   a fixed derivation of a table, its row's fields and the table's columns.
-//!   A derivation may share its name with a component, as `Frame` and
-//!   `Division` do.
+//! - `(derivation <Name> (fields (<Field> <type>) ...) (columns (<Column> <type>) ...) (instances <instance> ...) (table <instance> <output>))`:
+//!   a fixed derivation of a table, its row's fields, the table's columns,
+//!   the instances its table is evaluated by, in their order of evaluation,
+//!   and the output of one of them that is the table. An `<instance>` is
+//!   `(<instance> <Component> (<input> <source>) ...)`, its component one
+//!   that an earlier form declares, and a `<source>` is `(fields <Field> ...)`,
+//!   a field for each column of the input other than `key`, in the input's
+//!   order, or `(output <instance> <output>)`, an output of an earlier
+//!   instance that has each column of the input other than `key`. An input
+//!   the instance gives no source holds its default rows. Each column of
+//!   the derivation is a column of the table's output. A derivation may
+//!   share its name with a component, as `Frame` and `Division` do.
 //! - `(constants <type> <NAME> ...)`: the constants of an orientation type,
 //!   and `(constants C4 <NAME> ...)`: the D4 constants that are C4, the
 //!   rotations.
@@ -153,6 +161,16 @@ impl ColumnType {
 pub struct Column {
     pub name: ColumnName,
     pub ty: ColumnType,
+}
+
+/// Whether `column` is the `key` column of its port.
+pub fn is_key(column: &Column) -> bool {
+    column.name == crate::resolver::columns::key()
+}
+
+/// The columns of `columns` other than `key`.
+pub fn keyless(columns: &[Column]) -> impl Iterator<Item = &Column> + '_ {
+    columns.iter().filter(|column| !is_key(column))
 }
 
 /// A mode of an algebra relation: the columns whose labels must be grounded
@@ -276,6 +294,41 @@ pub enum LibEntry {
 pub struct Derivation {
     pub fields: Box<[Column]>,
     pub columns: Box<[Column]>,
+    /// The instances its table is evaluated by, each after the instances
+    /// whose outputs its inputs read.
+    pub instances: Box<[DerivationInstance]>,
+    /// The output that is the table, at the derivation's columns.
+    pub table: InstanceOutput,
+}
+
+/// An instance of a derivation's evaluation, with no key: its component,
+/// and the source of each of its inputs, in the order the component
+/// declares its inputs, `None` for an input that holds its default rows.
+#[derive(Clone, Debug)]
+pub struct DerivationInstance {
+    pub component: LibName,
+    pub inputs: Box<[Option<InputSource>]>,
+}
+
+/// The rows of an input of a derivation's instance.
+#[derive(Clone, Debug)]
+pub enum InputSource {
+    /// The stored rows at these fields, by their places among the
+    /// derivation's fields, one per column of the input other than `key`.
+    Fields(Box<[usize]>),
+    /// The rows of an output of an earlier instance.
+    Output(InstanceOutput),
+}
+
+/// An output of a derivation's instance at some columns: the instance's
+/// place among the derivation's instances, the output's place among the
+/// component's outputs, and, for each column, its place among the output's
+/// columns other than `key`.
+#[derive(Clone, Debug)]
+pub struct InstanceOutput {
+    pub instance: usize,
+    pub output: usize,
+    pub columns: Box<[usize]>,
 }
 
 /// A lib name that the lib defines from other lib names, with its
