@@ -8,7 +8,7 @@ task whose solver pipeline has yet to launch its own ticket analyst, which
 `passes` gives that ticket. While an `Op scope: own.` line stands, or no
 `Op scope:` line came (`directives.own_scope`), it launches one only with
 the tickets of `taking.allowed` and of `taking.own_work`, and with those
-of `taking.follow_ups` that `taking.judging` gives, whose brief has the
+of `taking.follow_ups` that `admission.judging` gives, whose brief has the
 analyst settle each only where it judges that the session's line of work
 needs it; and while an `Op pause.` line
 stands (`directives.paused`), only with those of `taking.allowed`. A ticket
@@ -21,8 +21,11 @@ message, and then counts as given it. A ticket other than a `change` that
 stands under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/` with such a line after the line that moved it there
 moves to `tickets/reopened/` first. An analyst that no longer runs
 and was launched before a ticket's last line of the form `taking.NOT_OWN`
-counts as given that ticket no longer once `taking.scope_admits` admits
-it.
+counts as given that ticket no longer once `admission.scope_admits` admits
+it. A ticket of the list that the command launches no analyst with waits
+on the hold that keeps it out, on the analysts it was given to that run,
+or, where none of them runs, on the coordinator's line that the final
+reply asks for (`party`).
 
 The coordinator gets from a ticket analyst's reply only what goes to the
 user. Where that reply ends with the part for the coordinator
@@ -67,14 +70,15 @@ ticket and no main session runs an agent (`file_ticket.py main --help`),
 the session whose id `tickets/main-wanted` holds sends the coordinator once a `decision:` item that asks the user to pick
 a main (`main_wanted`)."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 from controlled_markdown import mctx
-from operations import briefs, changes, messages, taking
+from operations import admission, briefs, changes, messages, taking
 from operations.reports import Label, items_of, mislabeled
+from operations.parties import Agents, ByExit, Hold, Party
 from operations.passes import awaits_analyst
 from operations.roles import ANALYST_NAMES, Purpose, Role, analyst_subject, joined
-from operations.state import Agent, LogLine, State, Ticket, kept_across_reads
+from operations.state import Agent, LogLine, State, Ticket, kept_across_reads, memoized
 from ticketing.vocabulary import SETTLED, Status
 from operations.constants import COORDINATOR
 from operations.final_reply import carrier, nested, replies_by_operator, session_operator
@@ -90,22 +94,40 @@ GIVEN = (Purpose.TRIAGE, Purpose.PASS)
 
 
 def given(state: State, number: str) -> bool:
-    """An analyst launched before the event that freed `number`, and not
-    sent that event's line, judged the ticket as it stood before it. An
-    analyst that no longer runs and was launched before the last line of
-    the form `taking.NOT_OWN` on it is not counted where
-    `judged_apart` does not give it."""
+    """Whether an analyst was given the ticket `number` (`given_to`)."""
+    return bool(given_to(state, number))
+
+
+def given_to(state: State, number: str) -> list[Agent]:
+    """The analysts given the ticket `number`: each launched before the
+    event that freed it, and not sent that event's line, judged the ticket
+    as it stood before it. An analyst that no longer runs and was launched
+    before the last line of the form `taking.NOT_OWN` on it is not counted
+    where `judged_apart` does not give it."""
     t = state.tracker.tickets[number]
     event = freed(t.log, t.kind, t.filed)
     line = event.line
     judged = max((ln.time for ln in t.log if taking.NOT_OWN_LINE.fullmatch(ln.note)), default=None)
     if judged is not None and judged_apart(state)(number):
         judged = None
-    return any(number in nums and (judged is None or a.pending or a.launched > judged) and (
-        a.pending or a.launched > event.time or (
-            a.agent_id is not None and line is not None
-            and sent(state, a.agent_id, messages.later_line(number, line.time, line.note))))
-        for a, purpose, nums in state.analysts() if purpose in GIVEN)
+    return [a for a, purpose, nums in state.analysts()
+            if purpose in GIVEN and number in nums
+            and (judged is None or a.pending or a.launched > judged) and (
+                a.pending or a.launched > event.time or (
+                    a.agent_id is not None and line is not None
+                    and sent(state, a.agent_id, messages.later_line(number, line.time, line.note))))]
+
+
+def given_party(state: State, number: str) -> Party | None:
+    """The party the ticket `number` waits on where an analyst was given
+    it: the analysts of `given_to` that run, or, where none of them runs,
+    the coordinator's line that the final reply asks for (`unsettled`);
+    None where no analyst was given it."""
+    found = given_to(state, number)
+    if not found:
+        return None
+    running = tuple(a for a in found if a.pending)
+    return Agents(running) if running else ByExit(Exit.COORDINATOR_LINE)
 
 
 def reopen(state: State) -> Step | None:
@@ -165,19 +187,45 @@ def unsettled_open(state: State) -> list[str]:
 def judged_apart(state: State) -> Callable[[str], bool]:
     """Whether a ticket analyst judges a ticket apart from the others: it
     settles such a ticket only where it judges that the session's line of
-    work needs it. Those are the tickets `taking.scope_admits` does not
+    work needs it. Those are the tickets `admission.scope_admits` does not
     admit."""
-    clear = taking.scope_admits(state)
+    clear = admission.scope_admits(state)
     return lambda n: not clear(n)
+
+
+@memoized
+def selection(state: State) -> tuple[tuple[str, ...], Mapping[str, Hold]]:
+    """The tickets of `unsettled_open` that a ticket analyst may settle at
+    this read, and each other ticket of it, by number, with the hold that
+    keeps it out: that of `admission.judge_hold` for a ticket of
+    `judged_apart`, and that of `admission.refusal` for any other."""
+    refused = admission.refusal(state)
+    judge = admission.judge_hold(state)
+    apart = judged_apart(state)
+    out: list[str] = []
+    held: dict[str, Hold] = {}
+    for n in unsettled_open(state):
+        h = (judge if apart(n) else refused)(n)
+        if h is None:
+            out.append(n)
+        else:
+            held[n] = h
+    return tuple(out), held
 
 
 def selected(state: State) -> list[str]:
     """The tickets of `unsettled_open` that a ticket analyst may settle at
-    this read."""
-    admitted = taking.admits(state)
-    apart = judged_apart(state)
-    judge = taking.judging(state)
-    return [n for n in unsettled_open(state) if (admitted(n) and not apart(n)) or judge(n)]
+    this read (`selection`)."""
+    return list(selection(state)[0])
+
+
+def party(state: State, number: str) -> Party | None:
+    """The party the ticket `number`, of the tickets `selected` leaves out,
+    waits on: the hold of `selection`, or `given_party`; None where
+    neither names one, as for a ticket a solver pipeline awaits
+    (`passes.awaits_analyst`)."""
+    held = selection(state)[1].get(number)
+    return held if held is not None else given_party(state, number)
 
 
 def settle(state: State) -> Step | None:

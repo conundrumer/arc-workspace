@@ -4,28 +4,19 @@ on them, which gives why it does not move (`mark`), as
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import Enum
 
 from controlled_markdown import mctx
 from operations import taking, unwaited
-from operations.directives import paused
 from operations.pacing import Pace
+from operations.parties import Hold
 from operations.state import State, Ticket
-from operations.tracker import blocked_on_user, closed
+from operations.tracker import blocked_on_user, closed, exits
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import UNTAKEN, Status
 
 
 ON_USER = mctx("it waits on the user")
 NO_STEP = mctx("it has had no step since {time}")
-
-
-class Hold(Enum):
-    """The lines of the user that hold an open ticket back."""
-    TAKES = mctx("the run scripts' `takes`")
-    PAUSE = mctx("the `Op pause.` line")
-    OWN_SCOPE = mctx("the `Op scope: own.` line")
-    PACE = mctx("the usage pace")
 
 
 @dataclass(frozen=True)
@@ -94,19 +85,15 @@ def cycle(state: State, number: str) -> tuple[str, ...] | None:
 
 
 def held(state: State, t: Ticket) -> Held | None:
-    """The line of the user that holds `t` back, where `t` is untaken and each
-    ticket of its `depends-on` is closed."""
+    """The hold that keeps `t` back, where `t` is untaken, each ticket of
+    its `depends-on` is closed, and the party an exit of it waits on
+    (`unwaited.named`) is the usage pace or a line of the user."""
     if t.status not in UNTAKEN or not all(closed(state, d) for d in t.depends_on):
         return None
-    match taking.refusal(state)(t.number):
-        case taking.Refusal.TAKES:
-            return Held(Hold.TAKES)
-        case taking.Refusal.SCOPE:
-            return Held(Hold.PAUSE if paused(state) else Hold.OWN_SCOPE)
-        case taking.Refusal.PACE:
-            return Held(Hold.PACE, state.computed.pace)
-        case None:
-            return None
+    for e in sorted(exits(state, t).by):
+        if isinstance(p := unwaited.named(state, t, e), Hold):
+            return Held(p, state.computed.pace if p is Hold.PACE else None)
+    return None
 
 
 def mark(state: State, number: str, stalls: Mapping[str, float]) -> Mark | None:

@@ -6,7 +6,7 @@ holds what it gave (`state.Computed.run_starts`).
 
 A run script's `takes`, which `scripts/operate.py --help run` gives,
 reads a `RunTicket`; the state holds what it gave
-(`state.Computed.run_takes`), and `taking.admits` applies it.
+(`state.Computed.run_takes`), and `admission.admits` applies it.
 
 A run's pipelines are the calls of `operate.py start` that an operator of
 the session made with the run's `RUN_OPTION`, which its step gives, each

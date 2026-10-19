@@ -58,7 +58,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from controlled_markdown import mctx
-from operations import messages, taking, ticket_stall, waits
+from operations import change_take, messages, ticket_stall, waits
 from operations.constants import COORDINATOR, stuck_reached
 from operations.roles import AGENT_ID
 from operations.state import Agent, LateResume, Message, Report, State, Stuck, Ticket
@@ -379,10 +379,10 @@ def ticket_stall_step(state: State, sent: Send, t: Ticket, since: float, kind: B
 
 
 def waiting_paths(state: State, number: str, stalls: Mapping[str, float]) -> str:
-    """The paths (`waits.paths`) of each change of `taking.waiting` that
+    """The paths (`waits.paths`) of each change of `change_take.waiting` that
     reach ticket `number`, each under a line that leads them, or the empty
     text where none reaches it."""
-    roots = [waits.paths(state, n, stalls) for n, _ in taking.waiting(state)]
+    roots = [waits.paths(state, n, stalls) for n, _ in change_take.waiting(state)]
     trees = [r for r in roots if any(x.number == number for x in waits.nodes(r))]
     return "".join(mctx("The paths of links from change {change}, which waits on it:").format(
         change=r.number) + "\n" + waits.rendered(state, r) + "\n" for r in trees)
@@ -404,10 +404,10 @@ STUCK_STEP = mctx("Cut a link whose result the waiting change's Design does not 
 
 def stuck_waits(state: State) -> Step | None:
     """The first message to the coordinator on a change of
-    `taking.waiting`, with its paths (`waits.paths`) and the step to take,
+    `change_take.waiting`, with its paths (`waits.paths`) and the step to take,
     where and as often as `--help alerts` of `operate.py` gives that `next`
     sends one."""
-    found = taking.waiting(state)
+    found = change_take.waiting(state)
     if not found:
         return None
     stalls = ticket_stall.stalled(state)

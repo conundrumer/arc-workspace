@@ -19,7 +19,8 @@ coordinator moves it back into `tickets/draft/` and revises it. A draft
 waits while an agent of the operators' whose agent id a line of its log
 gives runs, and, where its last `filed` or `revised` line is a ticket
 analyst's that gives no agent id, while a ticket analyst of the operators'
-launched before that line runs.
+launched before that line runs; those agents are the party it waits on
+(`writing`).
 
 A draft waits for a ticket analyst where its log holds findings after its
 last `filed` or `revised` line and after the last line that moves it out
@@ -61,6 +62,7 @@ from operations.change_budget import OVERRUN_FINDING, left_draft
 from operations.taking import STALLED, purview
 from operations.directives import Decision, Directive, named, numbers, ruling
 from operations.roles import ANALYST_NAMES, Purpose, Role, analyst_subject, joined, subjects
+from operations.parties import Agents
 from operations.reports import left_for_decision
 from operations.state import Agent, LogLine, State, Ticket
 from ticketing.vocabulary import Note, Status, last_move_into, queued
@@ -253,15 +255,32 @@ def due(state: State) -> set[str]:
             if (s := draft_step(state, t)) is not None and not isinstance(s, Undecided)}
 
 
-def analyst_writes(state: State, t: Ticket) -> bool:
-    """Whether the last `filed` or `revised` line of `t` is a ticket
-    analyst's with no agent id and a ticket analyst of the operators'
-    launched before that line still runs, which may be the one that wrote
-    it."""
+def analyst_writers(state: State, t: Ticket) -> list[Agent]:
+    """The ticket analysts of the operators' launched before the last
+    `filed` or `revised` line of `t` that still run, where that line is a
+    ticket analyst's with no agent id, and none otherwise."""
     i = last_index(t, FILED_OR_REVISED)
     if i < 0 or t.log[i].agent not in ANALYST_NAMES or t.log[i].agent_id is not None:
-        return False
-    return any(a.pending and a.launched < t.log[i].time for a, _, _ in state.analysts())
+        return []
+    return [a for a, _, _ in state.analysts() if a.pending and a.launched < t.log[i].time]
+
+
+def log_writers(t: Ticket) -> set[str]:
+    """The agent ids the lines of `t`'s log give."""
+    return {ln.agent_id for ln in t.log if ln.agent_id}
+
+
+def writing(state: State, t: Ticket) -> Agents | None:
+    """The agents the draft `t` waits on, or None where it waits on none:
+    the pending agents of `on`, the pending agents of the operators' whose
+    agent id a line of its log gives, and those of `analyst_writers`."""
+    writers = log_writers(t)
+    running = [*(a for a in on(state, t) if a.pending),
+               *(a for a in state.transcripts.agents if a.pending and a.agent_id in writers),
+               *analyst_writers(state, t)]
+    if not running:
+        return None
+    return Agents(tuple(running))
 
 
 class Group(Enum):
@@ -290,7 +309,8 @@ def alone(state: State, t: Ticket) -> Step | None:
 
 def draft_step(state: State, t: Ticket) -> Step | Joined | None:
     """The step on the draft `t` alone, the group it joins, or None where
-    it waits."""
+    it waits: on the agents of `writing`, or, with no party, for a
+    `filed` or `revised` line or an `Op drafts to review:` line."""
     agents = on(state, t)
     last_line = t.log[-1]
     for a in agents:
@@ -299,11 +319,9 @@ def draft_step(state: State, t: Ticket) -> Step | Joined | None:
             message = messages.stop_work(t.number)
             if not sent(state, a.agent_id, message):
                 return Send(a.agent_id, message, f"stop {t.number}")
-    writers = {ln.agent_id for ln in t.log if ln.agent_id}
-    if (any(a.pending for a in agents)
-            or any(a.pending and a.agent_id in writers for a in state.transcripts.agents)
-            or analyst_writes(state, t)):
+    if writing(state, t) is not None:
         return None
+    writers = log_writers(t)
     since = findings_start(t)
     found = review_lines_after(t, since, Note.FINDING)
     stated = operator_finding(t, since) is not None or coordinator_found(t, since)

@@ -17,7 +17,7 @@ prefix `Op`, the word of its kind and a colon, past a list marker:
   line of the session gives (`taking.allowed`) and the session's line of
   work (`taking.own_work`), other than the launch of a ticket analyst that
   judges whether that line needs a ticket whose title refers to a file
-  the line changed (`taking.judging`), and `Op scope: all.`, which ends that limit,
+  the line changed (`admission.judging`), and `Op scope: all.`, which ends that limit,
   the last such line standing, and `Op scope: own.` where none came
   (`own_scope`);
 - `Op pause.`, after which no operator of the session settles an untaken
@@ -81,7 +81,7 @@ OP = "Op "
 
 class Scope(StrEnum):
     """The tickets an `Op scope:` line has the operators take: the
-    session's line of work, as `taking.scope_admits` gives it, the scope
+    session's line of work, as `admission.scope_admits` gives it, the scope
     where no such line came, or every open ticket."""
     OWN = "own"
     ALL = "all"

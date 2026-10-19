@@ -5,8 +5,10 @@ A ticket of `taking.purview` outside `tickets/closed/` is a candidate
 (`candidates`) where, at a read of the state, no agent of it is pending
 (`ticket_stall.agents_of`), no entry of its `depends-on` stands outside
 `tickets/closed/`, and none of its exits (`tracker.exits`) has a party
-that moves it at that read (`party`). The check reads only these, and no
-cause that left the ticket so.
+that moves it at that read (`party`): an operator's step due on it by
+that exit, or the party the step logic names where it gives no such step
+(`named`), where that party stands (`parties.stands`). The check reads
+only these, and no cause that left the ticket so.
 
 The time from which a candidate has stood so is the time of the first
 read of the state, by an operator of the session, of those since which
@@ -26,10 +28,10 @@ by `step`."""
 from collections.abc import Mapping
 
 from controlled_markdown import mctx
-from operations import alerts, drafts, taking, ticket_stall, triage, waits
+from operations import alerts, taking, ticket_stall
 from operations.constants import AGAIN_SECONDS, COORDINATOR
-from operations.final_reply import live_holder
 from operations.handled import repeated
+from operations.parties import ByExit, OnTicket, Party, stands
 from operations.state import DueEntry, State, Ticket, memoized
 from operations.steps import Send, Step
 from operations.tracker import closed, exits, wait_line
@@ -42,43 +44,41 @@ OPENING = mctx("Ticket {number} waits on nothing that moves it:")
 ticket, by which `told` finds that part in a message sent."""
 
 
-def stepped(state: State, e: Exit) -> set[str]:
-    """The tickets on which the operator's step that makes `e` is due, or
-    is held by the usage pace: `ticket_stall.selection`, with the changes
-    of `taking.takeable` for `TAKE` and the drafts of `drafts.due` for
-    `TICKET_REVIEW`."""
-    match e:
-        case Exit.TAKE:
-            return ticket_stall.selection(state, e) | {u.number for u in taking.takeable(state)}
-        case Exit.TICKET_REVIEW:
-            return set(drafts.due(state))
-        case _:
-            return ticket_stall.selection(state, e)
+def due(state: State, t: Ticket, e: Exit) -> bool:
+    """Whether an operator's step is due on `t` by the exit `e`
+    (`ticket_stall.selection`)."""
+    return t.number in ticket_stall.selection(state, e)
 
 
-def party(state: State, t: Ticket, e: Exit, selections: dict[Exit, set[str]]) -> bool:
-    """Whether the exit `e` of `t` has a party that moves `t` at the read
-    that gave `state`, with `selections` the tickets of `stepped` by exit,
-    computed so far."""
+def named(state: State, t: Ticket, e: Exit) -> Party | None:
+    """The party the exit `e` of `t` waits on where no operator's step is
+    due on `t` by `e` (`ticket_stall.selection`), as the step logic names
+    it (`ticket_stall.party`): for `CHANGE_CLOSE`, the change the last
+    wait line gives; for `COORDINATOR_LINE`, the coordinator, outside
+    `tickets/waiting/`; for any other exit no operator's step makes, the
+    party of that exit. None where a step is due or none is named."""
+    if due(state, t, e):
+        return None
     match e:
-        case Exit.TAKE | Exit.TICKET_ANALYST | Exit.TICKET_REVIEW | Exit.RELEASE:
-            if e not in selections:
-                selections[e] = stepped(state, e)
-            if t.number in selections[e]:
-                return True
-            return e in (Exit.TAKE, Exit.TICKET_ANALYST) and (
-                waits.held(state, t) is not None or triage.given(state, t.number))
-        case Exit.HOLDER:
-            return t.holder is not None and (live_holder(state, t.holder)
-                                             or t.holder in state.transcripts.limited)
+        case Exit.TAKE | Exit.TICKET_ANALYST | Exit.TICKET_REVIEW | Exit.RELEASE | Exit.HOLDER:
+            return ticket_stall.party(state, e, t)
         case Exit.CHANGE_CLOSE:
             line = wait_line(t)
-            return line is not None and line.on_change is not None and not closed(
-                state, line.on_change)
+            return None if line is None or line.on_change is None else OnTicket(line.on_change)
         case Exit.COORDINATOR_LINE:
-            return t.status is not Status.WAITING
+            return None if t.status is Status.WAITING else ByExit(e)
         case Exit.CHANGE_ANALYST | Exit.MERGE | Exit.COORDINATOR_MOVE | Exit.MERGE_LINE | Exit.SWEEP:
-            return True
+            return ByExit(e)
+
+
+def party(state: State, t: Ticket, e: Exit) -> bool:
+    """Whether the exit `e` of `t` has a party that moves `t` at the read
+    that gave `state`: an operator's step due on it by `e`, or the party
+    of `named` where it stands (`parties.stands`)."""
+    if due(state, t, e):
+        return True
+    p = named(state, t, e)
+    return p is not None and stands(state, p)
 
 
 @memoized
@@ -86,7 +86,6 @@ def candidates(state: State) -> frozenset[str]:
     """The tickets of `taking.purview` outside `tickets/closed/` with no
     agent pending, no open entry of their `depends-on`, and no exit with a
     party at the read that gave `state`."""
-    selections: dict[Exit, set[str]] = {}
     out: set[str] = set()
     for n in sorted(taking.purview(state)):
         t = state.tracker.tickets.get(n)
@@ -96,7 +95,7 @@ def candidates(state: State) -> frozenset[str]:
             continue
         if not all(closed(state, d) for d in t.depends_on):
             continue
-        if not any(party(state, t, e, selections) for e in sorted(exits(state, t).by)):
+        if not any(party(state, t, e) for e in sorted(exits(state, t).by)):
             out.add(n)
     return frozenset(out)
 

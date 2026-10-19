@@ -704,7 +704,7 @@ class Computed:
     tickets of `taking.allowed`, keeping only the tickets that
     `tracker.tickets` holds. `spent` gives, for each
     change `me` holds, the spend of the agents `change_agents.of_change` gives
-    for it. `budgets` gives the budget of each change of `taking.takeable`,
+    for it. `budgets` gives the budget of each change of `change_take.takeable`,
     taken at `State.now`, and of each held change whose spend passes
     the budget its take gives, taken at the line that gives that budget
     (`change_budget.Take`). `doc_budgets` gives, for each held change where

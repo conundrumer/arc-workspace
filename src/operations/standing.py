@@ -6,7 +6,7 @@ procedures wait on, which `holding` gives."""
 from collections.abc import Callable, Iterable
 
 from controlled_markdown import mctx
-from operations import changes, decisions, drafts, passes, runs, taking, triage
+from operations import change_take, changes, decisions, drafts, passes, runs, taking, triage
 from operations.directives import NUMBER, TASK, Directive, Line, Pipeline, lines
 from operations.final_reply import ending_step, final_sends, final_text, first_line, nested
 from operations.handled import repeated, sends_to
@@ -202,7 +202,7 @@ def stands(state: State, head: str, step: Step | None) -> tuple[str, bool]:
 def final(state: State, held: set[str]) -> str:
     """The operator's final reply: what stands at its end."""
     out = reply_lines(state, held)
-    for n, deps in taking.waiting(state):
+    for n, deps in change_take.waiting(state):
         waited = ", ".join(deps)
         out.append("- " + mctx("Change {n} not taken: it waits for {waited}").format(
             n=n, waited=waited))

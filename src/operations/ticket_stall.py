@@ -8,9 +8,10 @@ last progress and the time from which a step has been due on it
 exit of `tracker.exits` that an operator's step makes, read by the
 function that step selects its work by (`selection`); a ticket whose only
 exits are steps of no operator, or that such a function leaves out, waits
-by design and is not due (`unwaited` watches such a ticket that waits on
-no party), and so does a ticket whose step the usage pace
-holds (`start_holds.pace_holds`). A ticket
+by design and is not due, and so does a ticket whose step the usage pace
+holds (`start_holds.pace_holds`). The party such a ticket waits on is the
+one that function names where it leaves it out (`party`), and `unwaited`
+watches such a ticket whose party does not stand. A ticket
 that a live holder outside the session's own agent runs holds waits on
 that holder's work, a step of no operator, which the operators'
 transcripts do not show and which that holder's own session watches, and
@@ -41,11 +42,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import assert_never
 
-from operations import changes, drafts, lineage, merging, start_holds, taking, triage, waits
+from operations import (change_take, changes, drafts, lineage, merging, start_holds, taking, triage,
+                        waits)
 from operations.change_budget import TAKEN
 from operations.constants import stuck_reached
 from operations.final_reply import live_holder
 from operations.log_commands import log
+from operations.parties import Hold, Holder, Party
 from operations.roles import AGENT_ID
 from operations.state import (Agent, DueEntry, State, Ticket, kept_across_reads, memoized,
                               memoized_by_transcripts)
@@ -62,6 +65,7 @@ def held_outside_session(state: State, t: Ticket) -> bool:
                  or t.holder not in state.session_holders))
 
 
+@memoized
 def selection(state: State, e: Exit) -> set[str]:
     """The tickets on which the step that makes `e` is due, as the function
     that step selects its work by gives them, less those whose step the
@@ -75,7 +79,7 @@ def selection(state: State, e: Exit) -> set[str]:
             return {n for n in assigned(state) if not start_holds.pace_holds(
                 state, lambda: change_starts_run(state, state.tracker.tickets[n]))}
         case Exit.TAKE:
-            return {t.number for t in taking.reach(state)}
+            return {t.number for t in change_take.reach(state)}
         case Exit.TICKET_REVIEW:
             return {n for n in drafts.due(state) if not review_held(state, n)}
         case Exit.TICKET_ANALYST:
@@ -85,6 +89,42 @@ def selection(state: State, e: Exit) -> set[str]:
             return set()
         case _:
             assert_never(e)
+
+
+def party(state: State, e: Exit, t: Ticket) -> Party | None:
+    """The party that `t`, which `selection` of `e` leaves out, waits on,
+    as the function that step selects its work by names it, or None where
+    it names none or no operator's step makes `e`: the holder of a ticket
+    the release or the holder's step leaves out, or the usage pace where
+    it holds the holder's step (`HOLDER`); the party of
+    `change_take.left` (`TAKE`); the usage pace where it holds the review
+    of a draft on which a step is due (`review_held`), and otherwise the
+    agents of `drafts.writing` on a draft given to the operators
+    (`TICKET_REVIEW`); and that of `triage.party` (`TICKET_ANALYST`)."""
+    match e:
+        case Exit.RELEASE:
+            return holder(t)
+        case Exit.HOLDER:
+            return Hold.PACE if t.number in assigned(state) else holder(t)
+        case Exit.TAKE:
+            return change_take.left(state).get(t.number)
+        case Exit.TICKET_REVIEW:
+            if t.number in drafts.due(state):
+                return Hold.PACE
+            return (drafts.writing(state, t)
+                    if any(d.number == t.number for d in drafts.drafts(state)) else None)
+        case Exit.TICKET_ANALYST:
+            return triage.party(state, t.number)
+        case (Exit.MERGE | Exit.CHANGE_ANALYST | Exit.COORDINATOR_MOVE | Exit.COORDINATOR_LINE
+              | Exit.MERGE_LINE | Exit.CHANGE_CLOSE | Exit.SWEEP):
+            return None
+        case _:
+            assert_never(e)
+
+
+def holder(t: Ticket) -> Holder | None:
+    """The holder of `t`, where it has one."""
+    return None if t.holder is None else Holder(t.holder)
 
 
 def change_starts_run(state: State, t: Ticket) -> bool:
@@ -236,7 +276,7 @@ class Acting:
         """Whether the mark makes `next` send the coordinator the paths of
         the change, as `--help alerts` of `operate.py` gives it."""
         match self.mark:
-            case waits.OnCycle() | waits.Held() | waits.Unwaited():
+            case waits.OnCycle() | waits.Unwaited():
                 return True
             case waits.OnUser():
                 return not self.entry or waits.cycle(self.state, self.number) is not None
@@ -256,7 +296,7 @@ def stall(state: State) -> Step | None:
     waits for a ticket that `holding` gives, where no line of its log
     since the time `holding` gives gives `taking.STALL_FINDING` on it."""
     stalls = stalled(state)
-    for n, deps in taking.waiting(state):
+    for n, deps in change_take.waiting(state):
         t = state.tracker.tickets[n]
         for d in deps:
             u = state.tracker.tickets.get(d)

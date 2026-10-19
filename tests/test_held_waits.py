@@ -17,7 +17,7 @@ import pytest
 from handbook.paths import scripts_importable
 from operations.briefs import QUESTIONS
 from operations.change_holds import questions_given
-from operations.drafts import analyst_writes
+from operations.drafts import analyst_writers
 from operations.state import Agent, State, Ticket
 from tests.conftest import script
 
@@ -44,7 +44,7 @@ def test_draft_waits_on_analyst_that_may_have_filed_it(launched: float, pending:
     analyst = SimpleNamespace(launched=launched, pending=pending)
     state = cast(State, SimpleNamespace(analysts=lambda: [(analyst, None, [])]))
     t = cast(Ticket, SimpleNamespace(log=[line(20.0, "ticket-analyst", None, "filed")]))
-    assert analyst_writes(state, t) is waits
+    assert bool(analyst_writers(state, t)) is waits
 
 
 def test_coordinator_finding_sends_the_draft_to_an_analyst(tmp_path: Path) -> None:

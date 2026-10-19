@@ -1,49 +1,35 @@
-"""The release of tickets whose holder is not live, and the take of untaken
-changes.
+"""The tickets the operators act on (`purview`), the work held and the
+session's line of work, and the release of tickets whose holder is not
+live.
 
 The operators act on the tickets of the session and on those of the
 sessions `SessionsRead.adopted` gives, as `State.mine` gives them. Which session
 is the main one, `file_ticket.py main --help` states; which sessions are
 idle, `idle_sessions.read_sessions` gives.
 
-While an `Op scope: own.` line stands, or no `Op scope:` line came
-(`directives.own_scope`), the operator takes, of the changes it would take
-under `Op scope: all.`, only those of `held_work`, so the work already held
-reaches its end, those of `allowed`, the tickets an allow line of the
-session gives, and those of `own_work`, the session's line of
-work, and each other change waits for an `Op scope: all.` line. A ticket
-whose title refers to a file that line changed is of it only once a
-ticket analyst judges that the line needs it (`follow_ups`, `judging`).
-While an
-`Op pause.` line stands (`directives.paused`), it takes only those of
-`held_work` and of `allowed`, and each other change waits for an
-`Op resume.` line. The usage pace holds the take of a change, the
-admission of an untaken ticket and each step that starts an agent's run as
-`--help pace` of `operate.py` gives it (`start_holds`).
+The work already held (`held_work`), the tickets an allow line of the
+session gives (`allowed`) and the session's line of work (`own_work`) are
+what the `Op pause.` and `Op scope:` lines admit, as `admission` gives
+it. A ticket whose title refers to a file that line changed is of it only
+once a ticket analyst judges that the line needs it (`follow_ups`,
+`admission.judging`).
 
 A change that waits for a ticket that holds it up moves to
 `tickets/draft/` with a line whose note is `STALL_FINDING` on that ticket,
-which `drafts` reads as findings (`ticket_stall`). A change under `tickets/blocked/` is taken back on an `Op merge:`
-line that came after its last move there."""
+which `drafts` reads as findings (`ticket_stall`)."""
 
 import re
 from collections.abc import Callable, Mapping
-from enum import Enum, auto
 from functools import cache
 
 from controlled_markdown import form, mctx
-from operations import rank
-from operations.change_budget import TAKE_NOTE, budget_fields
-from operations.directives import (Directive, named, NUMBER, numbers, numbers_in, own_scope,
-                                   paused, session_lines)
+from operations.directives import Directive, named, NUMBER, numbers_in, session_lines
 from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.merging import merge_commit
-from operations.pacing import Pace
 from operations.state import LogLine, State, Ticket, kept_across_reads, memoized
-from operations.start_holds import past_pace
-from operations.steps import Bash, Step, Undecided
-from operations.tracker import closed, exits, final_run, wait_line
+from operations.steps import Bash, Step
+from operations.tracker import exits, final_run, wait_line
 from ticketing.exits import Exit
 from ticketing.links import link_targets
 from ticketing.references import Referring
@@ -117,94 +103,6 @@ def expedited(state: State) -> set[str]:
     the others, so that an expedite outlives the operator it was sent
     to."""
     return served(state, {n for n, _ in numbers_in(session_lines(state), Directive.EXPEDITE)})
-
-
-class Refusal(Enum):
-    """What refuses to admit an untaken ticket, as `refusal` gives it."""
-    TAKES = auto()
-    """The `takes` of the run scripts (`passing`)."""
-    SCOPE = auto()
-    """The `Op pause.` and `Op scope:` lines (`scope_admits`)."""
-    PACE = auto()
-    """The usage pace (`past_pace`)."""
-
-
-@memoized
-def refusal(state: State) -> Callable[[str], Refusal | None]:
-    """What refuses to admit an untaken ticket, the first of `Refusal` that
-    does, or None where the operator may admit it."""
-    passes, held = passing(state)
-    clear = scope_admits(state)
-    past = past_pace(state)
-
-    def of(n: str) -> Refusal | None:
-        if not passes(n):
-            return Refusal.TAKES
-        if not held(n) and not clear(n):
-            return Refusal.SCOPE
-        return Refusal.PACE if past else None
-    return of
-
-
-@memoized
-def admits(state: State) -> Callable[[str], bool]:
-    """Whether the operator may admit an untaken ticket: `refusal` gives no
-    refusal of it."""
-    refused = refusal(state)
-    return lambda n: refused(n) is None
-
-
-def gate(state: State, clear: Callable[[str], bool]) -> Callable[[str], bool]:
-    """Whether the operator may launch work on a ticket: one `unpaced`
-    passes with `clear`, while the usage pace admits one
-    (`Computed.pace`)."""
-    rule = unpaced(state, clear)
-    past = past_pace(state)
-    return lambda n: not past and rule(n)
-
-
-def unpaced(state: State, clear: Callable[[str], bool]) -> Callable[[str], bool]:
-    """Whether the lines other than `Op pace:` admit a ticket that `clear`
-    admits: one `passing` passes, of `held_work` or of `allowed` always,
-    and any other that `clear` admits."""
-    passes, held = passing(state)
-    return lambda n: passes(n) and (held(n) or clear(n))
-
-
-@memoized
-def scope_admits(state: State) -> Callable[[str], bool]:
-    """Whether the `Op pause.` and `Op scope:` lines admit a ticket: one of
-    `allowed` while an `Op pause.` line stands; otherwise, while
-    `directives.own_scope` holds, one of `allowed` or of `own_work`, and
-    any where it does not."""
-    if paused(state):
-        return allowed(state).__contains__
-    if not own_scope(state):
-        return lambda _: True
-    return (allowed(state) | own_work(state)).__contains__
-
-
-@memoized
-def passing(state: State) -> tuple[Callable[[str], bool], Callable[[str], bool]]:
-    """Whether the `takes` of the run scripts admit a ticket, with those of
-    `expedited`, every ticket where no script defines `takes`, and whether
-    it is one of `held_work` or of `allowed`."""
-    admitted = state.computed.admitted()
-    runs = None if admitted is None else set(admitted) | expedited(state)
-    held = held_work(state) | allowed(state)
-    return (lambda n: runs is None or n in runs), held.__contains__
-
-
-def pace_held(state: State, numbers: list[str]) -> Pace | None:
-    """The pace, where it alone holds back one of `numbers`: one `admits`
-    or `judging` would pass but for the pace."""
-    if not past_pace(state):
-        return None
-    clear = unpaced(state, scope_admits(state))
-    pending = judge_scope(state)
-    judge = unpaced(state, pending)
-    return (state.computed.pace if any(clear(n) or (pending(n) and judge(n)) for n in numbers)
-            else None)
 
 
 def taken_before(t: Ticket) -> bool:
@@ -319,22 +217,6 @@ def title_refers(files: frozenset[str]) -> Callable[[str], bool]:
     return judged_once
 
 
-def judging(state: State) -> Callable[[str], bool]:
-    """Whether the operator may launch a ticket analyst to judge whether
-    the session's line of work needs a ticket."""
-    pending = judge_scope(state)
-    passes = gate(state, pending)
-    return lambda n: pending(n) and passes(n)
-
-
-def judge_scope(state: State) -> Callable[[str], bool]:
-    """Whether a ticket is one of `follow_ups` while `directives.own_scope`
-    holds and no `Op pause.` line stands."""
-    if not own_scope(state) or paused(state):
-        return lambda _: False
-    return follow_ups(state).__contains__
-
-
 def touched(state: State, numbers: set[str]) -> frozenset[str]:
     """The files the tickets `numbers` edited: of a `change`, the files of
     its `merging.merge_commit`, none where it has none; of a `request`, the files of each commit of `GitRead.commits`
@@ -402,53 +284,6 @@ def moves(commands: list[str], about: str, occasion: str) -> Bash | None:
     return Bash(" ; ".join(commands), about, occasion=occasion) if commands else None
 
 
-def boosted(state: State) -> set[str]:
-    """The changes that settle an `interference` ticket, which the
-    operator takes ahead of the others."""
-    out: set[str] = set()
-    for t in state.tracker.tickets.values():
-        line = wait_line(t) if t.kind is Kind.INTERFERENCE else None
-        if line is not None and line.on_change is not None:
-            out.add(line.on_change)
-    return out
-
-
-def ready(state: State) -> list[Ticket]:
-    """The untaken changes of `purview` whose `depends-on` are closed."""
-    return [t for t, awaited in awaiting(state) if not awaited]
-
-
-def awaiting(state: State) -> list[tuple[Ticket, list[str]]]:
-    """Each ticket of `purview` that `Exit.TAKE` takes out of its status,
-    with the tickets of its `depends-on` that are not closed."""
-    return [(t, [d for d in t.depends_on if not closed(state, d)]) for n in sorted(purview(state))
-            if (t := state.tracker.tickets.get(n)) is not None and Exit.TAKE in exits(state, t).by]
-
-
-def lead(state: State) -> set[str]:
-    """The changes the operator takes ahead of the others."""
-    return boosted(state) | expedited(state)
-
-
-def takeable(state: State) -> list[Ticket]:
-    """The changes of `ready` that `admits` passes or that were taken
-    before, `lead` first, then in rank order (`rank.ranking`); none past
-    the usage pace."""
-    if past_pace(state):
-        return []
-    first = lead(state)
-    admitted = admits(state)
-    key = rank.ranking(state)
-    return sorted((t for t in ready(state) if admitted(t.number) or taken_before(t)),
-                  key=lambda t: (t.number not in first, key(t)))
-
-
-def waiting(state: State) -> list[tuple[str, list[str]]]:
-    """Each untaken `change` of `purview` not taken for its `depends-on`, with
-    the tickets it waits for."""
-    return [(t.number, awaited) for t, awaited in awaiting(state) if awaited]
-
-
 STALL_FINDING = mctx("finding: {number} holds up this change: {reason}")
 """The note of the line that moves to `tickets/draft/` a change that waits
 for the ticket `number`, which holds it up for `reason`."""
@@ -462,62 +297,3 @@ def status_since(t: Ticket) -> float:
     filed where no line of its log moves it there."""
     start, _ = final_run(t)
     return t.log[start].time if start < len(t.log) else t.filed
-
-
-def batch(state: State) -> list[Ticket]:
-    """The changes of `takeable` that one step of `take` takes, as `take`
-    gives them."""
-    free = not paused(state)
-    first = lead(state)
-    out: list[Ticket] = []
-    paced = False
-    for t in takeable(state):
-        if t.number in first or taken_before(t):
-            out.append(t)
-        elif free or not paced:
-            out.append(t)
-            paced = True
-    return out
-
-
-@memoized
-def reach(state: State) -> tuple[Ticket, ...]:
-    """The changes of `batch` that one step of `take` acts on: each before
-    the first whose budget `Computed.budgets` does not give, or, where the
-    first of `batch` has no budget, that change alone."""
-    out: list[Ticket] = []
-    for t in batch(state):
-        if t.number not in state.computed.budgets:
-            return tuple(out or [t])
-        out.append(t)
-    return tuple(out)
-
-
-def take(state: State) -> Step | None:
-    """The take of each change of `takeable`, in its order, up to the first
-    whose budget `Computed.budgets` does not give (`reach`), or, where the
-    first has no budget, `Undecided` on it. Where an `Op pause.` line
-    stands, a step takes, of the changes neither of `lead` nor
-    `taken_before`, only the first, so that the pause is read again before
-    each further take."""
-    commands: list[str] = []
-    taken: list[str] = []
-    for t in reach(state):
-        b = state.computed.budgets.get(t.number)
-        if b is None:
-            return Undecided(mctx("the budget of change {number} is unknown").format(
-                number=t.number))
-        note = TAKE_NOTE.format(**budget_fields(b))
-        commands.append(log(t.number, Status.ASSIGNED, t.status, note, state.me))
-        taken.append(t.number)
-    if commands:
-        return moves(commands, f"take {' '.join(taken)}", str(max(
-            state.tracker.tickets[n].last_time for n in taken)))
-    for n, time in numbers(state, Directive.MERGE):
-        t = state.tracker.tickets.get(n)
-        if (t is not None and Exit.MERGE_LINE in exits(state, t).by
-                and time > status_since(t)):
-            return Bash(log(n, Status.ASSIGNED, Status.BLOCKED,
-                            "taking: the coordinator's `Op merge:` line rules the merge", state.me),
-                        f"{n} merge line", occasion=str(time))
-    return None

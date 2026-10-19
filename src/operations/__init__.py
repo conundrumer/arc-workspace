@@ -41,7 +41,7 @@ with the scripts an agent runs), `briefs` (the briefs the launches give),
 reading of a brief's or a message's text back),
 `triage` (ticket analysts on open tickets, and the labeled items of their
 replies for the coordinator), `decisions` (ticket analysts on undecided
-steps), `drafts` (the review of draft changes), `taking` (the release of tickets, the take of open changes, and the tickets a ticket analyst judges for the session's line of work), `start_holds` (the hold of agent starts under the usage pace), `changes`
+steps), `drafts` (the review of draft changes), `taking` (the tickets the operators act on, the work held and the session's line of work, and the release of tickets), `admission` (the admission of an untaken ticket under the lines of the user and the usage pace), `change_take` (the take of untaken changes), `parties` (the party an open ticket waits on, and whether it stands), `start_holds` (the hold of agent starts under the usage pace), `changes`
 (a change the operator holds, from its take to its merge), `change_agents` (the agents of a change),
 `item_check` (the launch of a change's item checker), `change_fragments`
 (the doc editor of a change's `mctx` fragments), `change_overrun` (a

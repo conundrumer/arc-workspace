@@ -119,7 +119,8 @@ from operations.handled import answered, held_aside, repeated, sent, unmoved
 from operations.steps import (Bash, Launch, Pause, Poll, Repeatable, Send, Step, Undecided,
                               agent_ids, key, retirement_key, served)
 from operations.log_commands import AGENT
-from operations.taking import RELEASED_LINE, take
+from operations.change_take import take
+from operations.taking import RELEASED_LINE
 from operations.tracker import last_index
 from operations.worktrees import WORKTREE, worktree
 from ticketing.times import utc_stamp

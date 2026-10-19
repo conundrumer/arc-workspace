@@ -34,7 +34,7 @@ launched before it in the session has open work and is not stuck
 that operator has given its final reply (`taken_up`), a ticket
 file the read of the tracker left out may still be written
 (`decisions.writing`), the usage pace alone holds back an open
-ticket (`taking.pace_held`), the pace or its cap holds a step (`order.pace_held_step`), or
+ticket (`admission.pace_held`), the pace or its cap holds a step (`order.pace_held_step`), or
 a step waits after the harness refused it at its limit of concurrent
 subagents (`journal.backing_off`), the agent runs the command again, which blocks in the foreground first,
 until its calls in a row have found no step ready for `WAIT_SECONDS_IDLE`: then, where an
@@ -47,7 +47,7 @@ its text (`standing.ending`), with each stuck agent or holder it waited on."""
 from collections.abc import Iterable, Mapping, Sequence
 
 from controlled_markdown import mctx
-from operations import decisions, monitor, triage, taking
+from operations import admission, change_take, decisions, monitor, triage, taking
 from operations.state import Call, State
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Status
@@ -150,8 +150,8 @@ def ready_step(state: State, watch: monitor.MonitorState) -> Step:
     held = lacked(state)
     if held is not None:
         return EndTurn(ListingHold(held, listing_wait(state, held)))
-    pace = taking.pace_held(state, [*triage.unsettled_open(state),
-                                    *(t.number for t in taking.ready(state))])
+    pace = admission.pace_held(state, [*triage.unsettled_open(state),
+                                    *(t.number for t in change_take.ready(state))])
     if pace is None:
         pace = pace_held_step(state)
     stuck = state.transcripts.stuck

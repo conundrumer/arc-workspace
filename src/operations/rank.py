@@ -1,5 +1,5 @@
 """The rank of an open change, in which the operators take open changes
-(`taking.takeable`), the highest first, computed from the tracker at each
+(`change_take.takeable`), the highest first, computed from the tracker at each
 read and never written to a file. The tickets a change serves have a
 standing of their own, from which the change takes its rank.
 

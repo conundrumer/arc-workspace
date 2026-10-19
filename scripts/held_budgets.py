@@ -5,7 +5,7 @@ from pathlib import Path
 
 from spends import budget, spend
 
-from operations import change_agents, change_budget, change_fragments, changes, taking
+from operations import change_agents, change_budget, change_fragments, change_take, changes
 from operations.roles import Role, launched_type
 from operations.state import Budget, Spend, State, Ticket
 from operations.worktrees import worktree
@@ -28,8 +28,8 @@ def change_spend(state: State, undecided: list[str]) -> dict[str, Spend]:
 
 def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
                    undecided: list[str]) -> dict[str, Budget]:
-    """The budgets `Computed.budgets` gives, each change of `taking.ready`
-    standing for those of `taking.takeable`, which reads the `Computed`
+    """The budgets `Computed.budgets` gives, each change of `change_take.ready`
+    standing for those of `change_take.takeable`, which reads the `Computed`
     values this read has not yet given."""
     known: dict[tuple[frozenset[str], float], Budget | None] = {}
 
@@ -42,7 +42,7 @@ def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
         return known[key]
 
     out: dict[str, Budget] = {}
-    for t in taking.ready(state):
+    for t in change_take.ready(state):
         if (b := of(t, state.now)) is not None:
             out[t.number] = b
     for t in changes.held(state):

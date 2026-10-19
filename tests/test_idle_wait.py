@@ -177,7 +177,7 @@ def test_the_fresh_operator_releases_the_change_of_an_operator_that_ended_with_n
     closes its work, it leaves `open_holders` (`profile_runs.py --help
     running`), the fresh operator `LATE` releases its change, and, from
     the state after that release, takes it."""
-    from operations import taking
+    from operations import change_take, taking
     from operations.steps import Bash
     from tests.test_ticket_stall import FILED, state
     taken = f"{FILED} assigned [operator {EARLY}]: taking: budget 1 dollars, 100 s\n"
@@ -196,5 +196,5 @@ def test_the_fresh_operator_releases_the_change_of_an_operator_that_ended_with_n
     after = replace(after, me=LATE, operators=(EARLY, LATE),
                     parents={EARLY: LAUNCHER, LATE: LAUNCHER},
                     open_holders=frozenset({LATE}), session_holders=frozenset({EARLY, LATE}))
-    took = taking.take(after)
+    took = change_take.take(after)
     assert isinstance(took, Bash) and "9-1" in took.command and LATE in took.command

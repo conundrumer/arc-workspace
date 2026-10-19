@@ -103,7 +103,7 @@ class Poll:
     the command again at once, until its calls in a row have found nothing
     ready for `constants.WAIT_SECONDS_IDLE`, past which an operator's `next`
     gives `Wait` or its final reply in place of it (`plan.next_step`). `pace` is the usage pace where it alone
-    holds back an open ticket (`taking.pace_held`), or what holds a step
+    holds back an open ticket (`admission.pace_held`), or what holds a step
     (`order.pace_held_step`), or None."""
     pace: Pace | Capped | None = None
 
