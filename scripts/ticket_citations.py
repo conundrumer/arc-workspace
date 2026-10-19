@@ -50,8 +50,14 @@ class Names:
 
 
 def names_of(main: Path, name: str) -> Names:
-    known = {name} | {line for line in checkout.git_out(
-        main, "log", "--follow", "--name-only", "--format=", "master", "--", name).splitlines() if line}
+    """`name` with the paths it had before on `master`, where it is the
+    path of a file: it holds a `/` and `main` holds no directory at it. A
+    word, or a directory, has no earlier paths: `git log --follow` on a
+    directory gives every file that ever stood under it."""
+    known = {name}
+    if "/" in name and not (main / name).is_dir():
+        known |= {line for line in checkout.git_out(
+            main, "log", "--follow", "--name-only", "--format=", "master", "--", name).splitlines() if line}
     return Names(name, tuple((n, word_forms(n)) for n in sorted(known)))
 
 
