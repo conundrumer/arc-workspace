@@ -2,9 +2,9 @@
 its CSS, in one column with a light and a dark scheme, the sheet of a
 ticket, and the script that fills Since you looked from the time the
 browser keeps, asks the server for the search's hits and for a ticket's
-sheet, shows the tab of Queued the user last chose, and updates the page
-on an event of the stream while the page is shown; with the routes that
-script requests."""
+sheet, shows in each set of tabs the tab the user last chose in it, and
+updates the page on an event of the stream while the page is shown; with
+the routes that script requests."""
 
 EVENTS = "/events"
 """The route of the Server-Sent Events stream."""
@@ -20,9 +20,13 @@ LAST_LOOK = "lastLook"
 the page, and `sessionStorage` the time from which the tab's page counts
 Since you looked."""
 
-TAB = "queueTab"
+QUEUED_TAB = "queueTab"
 """The key under which `localStorage` holds the session of the tab of
 Queued the user last chose."""
+
+DONE_TAB = "doneTab"
+"""The key under which `localStorage` holds the session of the tab of Done
+the user last chose."""
 
 TEMPLATE = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Ops</title><style>
@@ -58,7 +62,7 @@ input{width:100%;font:inherit;font-size:16px;padding:10px 12px;border:1px solid 
 .wl{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:10px}
 .wr{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:baseline;padding:9px 12px 9px 9px;border-top:1px solid var(--line);border-left:3px solid transparent;cursor:pointer}
 .wr.ld{grid-template-columns:auto auto 1fr auto}.wr:first-child{border-top:0}.wr.me{border-left-color:var(--acc)}
-.wn{color:var(--mute);font-variant-numeric:tabular-nums;font-size:13px}
+.wn{color:var(--mute);font-variant-numeric:tabular-nums;font-size:13px}.wn small{display:block;font-size:11px;opacity:.75}
 .wq{color:var(--mute);font-variant-numeric:tabular-nums;font-size:13px;min-width:12px;text-align:right}
 .wp{min-width:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .ws{color:var(--mute);font-size:13px;white-space:nowrap;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
@@ -93,11 +97,10 @@ last=v?+v:now-3*3600;try{sessionStorage.setItem('@LASTLOOK@',String(last))}catch
 function left(){try{localStorage.setItem('@LASTLOOK@',String(Date.now()/1000))}catch(e){}}
 function since(){const box=$('since');if(!box)return;const ev=JSON.parse($('events').textContent).filter(e=>e.t>last);
 $('sl').textContent='Since you looked \\u00b7 '+clk(last);
-const mine=ev.filter(e=>e.u);let h='';
-for(const k of ['merged','filed']){const xs=mine.filter(e=>e.k===k);if(!xs.length)continue;
-h+=`<details><summary>${xs.length} of yours ${k}</summary>`+xs.map(e=>`<div class="row tk" data-n="${esc(e.n)}"><span class="num">${esc(e.n)}</span> ${esc(e.s)} <span class="meta">\\u00b7 ${clk(e.t)}</span></div>`).join('')+'</details>'}
-const others=ev.filter(e=>!e.u),om=others.filter(e=>e.k==='merged').length,of=others.length-om;
-if(others.length)h+=`<div class="meta">Others: ${om} merged, ${of} filed</div>`;
+let h='';
+for(const k of ['merged','filed']){const xs=ev.filter(e=>e.k===k);if(!xs.length)continue;
+const rows=xs.map(e=>`<div class="wr tk${e.u?' me':''}" data-n="${esc(e.n)}"><span class="wn">${esc(e.n)}</span><span class="wp">${esc(e.s)}</span><span class="ws">${clk(e.t)}</span></div>`),rest=rows.slice(@SHOWN@);
+h+=`<div class="gh">${xs.length} ${k}</div><div class="wl">`+rows.slice(0,@SHOWN@).join('')+(rest.length?`<details><summary>${rest.length} more \\u203a</summary>`+rest.join('')+'</details>':'')+'</div>'}
 box.innerHTML=h||'<div class="meta">Nothing new.</div>'}
 const sheet=$('sheet'),scrim=$('scrim'),sc=$('sc');let shown=null;
 async function open(n){shown=n;sc.innerHTML='<div class="meta">Loading '+esc(n)+'</div>';sheet.classList.add('on');scrim.classList.add('on');
@@ -106,12 +109,12 @@ catch(e){h='<div class="meta">'+esc('load failed: '+e)+'</div>'}
 if(shown===n)sc.innerHTML=h}
 function shut(){shown=null;sheet.classList.remove('on');scrim.classList.remove('on')}
 scrim.onclick=shut;$('x').onclick=shut;
-function tab(){let k=null;try{k=localStorage.getItem('@TAB@')}catch(e){}
-const tabs=document.querySelectorAll('.tab');if(!tabs.length)return;
-if(!k||!document.querySelector('.tab[data-s="'+k+'"]'))k=tabs[0].dataset.s;
+function tab(){document.querySelectorAll('.tset').forEach(set=>{let k=null;try{k=localStorage.getItem(set.dataset.key)}catch(e){}
+const tabs=set.querySelectorAll('.tab');if(!tabs.length)return;
+if(!k||!set.querySelector('.tab[data-s="'+k+'"]'))k=tabs[0].dataset.s;
 tabs.forEach(t=>t.classList.toggle('on',t.dataset.s===k));
-document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.dataset.s===k))}
-document.addEventListener('click',e=>{const b=e.target.closest('.tab');if(b){try{localStorage.setItem('@TAB@',b.dataset.s)}catch(x){}tab();return}const g=e.target.closest('.lg'),m=g&&g.querySelector('.more');if(m){const s=g.querySelectorAll('span');s.forEach(x=>x.hidden=!x.hidden);m.textContent=s[1].hidden?'more':'less';return}const t=e.target.closest('.tk');if(t){e.preventDefault();open(t.dataset.n)}});
+set.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.dataset.s===k))})}
+document.addEventListener('click',e=>{const b=e.target.closest('.tab');if(b){try{localStorage.setItem(b.closest('.tset').dataset.key,b.dataset.s)}catch(x){}tab();return}const g=e.target.closest('.lg'),m=g&&g.querySelector('.more');if(m){const s=g.querySelectorAll('span');s.forEach(x=>x.hidden=!x.hidden);m.textContent=s[1].hidden?'more':'less';return}const t=e.target.closest('.tk');if(t){e.preventDefault();open(t.dataset.n)}});
 let asked=0,timer=null;
 async function search(){const q=$('q').value.trim(),n=++asked,res=$('res');if(!q){res.innerHTML='';return}
 let h;try{const r=await fetch('@SEARCH@?q='+encodeURIComponent(q),{cache:'no-store'});h=await r.text();if(!r.ok)h='<div class="meta">'+esc('search failed: '+r.status)+'</div>'}

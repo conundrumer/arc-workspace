@@ -6,6 +6,7 @@ the template of `dashboard_template`, with the search's entries of each ticket k
 
 import html
 import json
+import math
 import re
 import time
 from collections import Counter
@@ -16,7 +17,7 @@ from pathlib import Path
 
 from dashboard_reads import (DAY, OPEN, STALE_RECORD, OperatorRecords, Stage, change_of, hits_full,
                              journal_work, logged, phrase, stage, users, Work)
-from dashboard_template import EVENTS, LAST_LOOK, SEARCH_ROUTE, TAB, TEMPLATE, TICKET_ROUTE
+from dashboard_template import DONE_TAB, EVENTS, LAST_LOOK, QUEUED_TAB, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
 from state_assembly import ScriptAdmits, Shown, ShownAgent, ShownParty, Start
 from ticket_reads import read_tickets
 from usage_limit import Reading
@@ -42,6 +43,20 @@ GROUP_SHOWN = 6
 MERGED_NOTE = "merged"
 """The opening of the note of a log line that gives a released ticket's
 change as merged."""
+
+DONE_SECONDS = DAY
+"""How far back Done reads the closes."""
+
+LIST_SHOWN = 8
+"""The most rows a tab of Done, or a list of Since you looked, gives above
+its fold."""
+
+CLOSE_WORDS: Mapping[Resolution | None, str] = {
+    Resolution.FIXED: "Fixed", Resolution.DUPLICATE: "Duplicate",
+    Resolution.CANNOT_REPRODUCE: "Can't reproduce", Resolution.WONTFIX: "Won't fix",
+    Resolution.INVALID: "Invalid", None: "Closed"}
+"""The words of each resolution a close gives, and of a close that gives
+none."""
 
 SINCE_SECONDS = 2 * DAY
 """How far back Since you looked reads the tracker."""
@@ -117,6 +132,10 @@ def at_work(w: list[ShownAgent], now: float) -> str:
     """The words on the latest of the agents `w` at work."""
     a = max(w, key=lambda a: a.launched)
     return f"{role_words(a.role)} at work, {ago(now - a.launched)}"
+
+
+def capitalized(text: str) -> str:
+    return text[:1].upper() + text[1:]
 
 
 def tap(n: str, inner: str, cls: str = "row") -> str:
@@ -325,6 +344,16 @@ class Standings:
         whose Motivation gives `t`."""
         return [*self.v.working(t), *(a for x in self.motivated.get(t.number, []) for a in self.v.working(x))]
 
+    def change(self, t: Ticket) -> Ticket | None:
+        """The change the row of `t` gives its state from: the change `t`
+        waits on, else of the open changes whose Motivation gives `t`, the
+        one an agent started on last, else the first."""
+        c = change_of(t, self.v.all_)
+        if c is not None:
+            return c
+        xs = [x for x in self.motivated.get(t.number, []) if x.kind is Kind.CHANGE]
+        return max(xs, key=lambda x: max((a.launched for a in self.v.working(x)), default=-math.inf), default=None)
+
     def blocker(self, t: Ticket) -> Ticket | None:
         """The first open ticket `depends-on` of `t` gives, else the open
         change `t` waits on."""
@@ -396,13 +425,14 @@ def stopped_bar(v: View, t: Ticket) -> str:
     return stage_bar(w.stage, Mark.FINISHED if w.finished else Mark.STOPPED)
 
 
-def row(v: View, t: Ticket, right: str, lead: int | None = None) -> str:
-    """The row of `t`, led by `lead` where it is given, with `right` at its
-    end."""
+def row(v: View, t: Ticket, right: str, change: Ticket | None, lead: int | None = None) -> str:
+    """The row of `t`, led by `lead` where it is given, with the number of
+    `change`, the change its state comes from, under its own, and `right`
+    at its end."""
     star = '<span class="star">★</span>' if t.number in v.expedited else ""
-    p = v.phrase(t)
+    under = "" if change is None else f"<small>{esc(change.number)}</small>"
     return tap(t.number, ("" if lead is None else f'<span class="wq">{lead}</span>')
-               + f'<span class="wn">{esc(t.number)}</span><span class="wp">{star}{esc(p[:1].upper() + p[1:])}</span>'
+               + f'<span class="wn">{esc(t.number)}{under}</span><span class="wp">{star}{esc(capitalized(v.phrase(t)))}</span>'
                f'<span class="ws">{right}</span>', "wr" + ("" if lead is None else " ld") + (" me" if v.mine(t) else ""))
 
 
@@ -425,7 +455,7 @@ def active(v: View, st: Standings) -> tuple[str, int]:
     rows.sort(key=lambda r: r[0])
     if not rows:
         return '<div class="meta">Nothing is being worked on.</div>', 0
-    return '<div class="wl">' + "".join(row(v, t, r) for _, t, r in rows) + "</div>", len(rows)
+    return '<div class="wl">' + "".join(row(v, t, r, st.change(t)) for _, t, r in rows) + "</div>", len(rows)
 
 
 def session_line(st: Standings, s: int | None) -> str:
@@ -475,6 +505,23 @@ def change_state(v: View, st: Standings, t: Ticket) -> ChangeState | None:
     return ChangeState(c, words)
 
 
+def folded(rows: list[str], shown: int) -> str:
+    """`rows` in a list, the first `shown` of them open and the rest under
+    a fold."""
+    rest = rows[shown:]
+    more = "" if not rest else f"<details><summary>{len(rest)} more ›</summary>{''.join(rest)}</details>"
+    return f'<div class="wl">{"".join(rows[:shown])}{more}</div>'
+
+
+def tab_set(key: str, panes: list[tuple[int | None, str, str]]) -> str:
+    """A tab for each session of `panes`, with its word, over its pane's
+    HTML; the browser keeps the tab last chosen under `key`."""
+    tabs = "".join(f'<button class="tab" data-s="{s}">{session_name(s)} <small>{esc(word)}</small></button>'
+                   for s, word, _ in panes)
+    return (f'<div class="tset" data-key="{esc(key)}"><div class="tabs">{tabs}</div>'
+            + "".join(f'<div class="pane" data-s="{s}">{body}</div>' for s, _, body in panes) + "</div>")
+
+
 def queued(v: View, st: Standings) -> str:
     """The HTML of Queued: a tab for each session that filed a ticket shown
     and not at work, and in it, its operator's state, its tickets ready in
@@ -495,9 +542,7 @@ def queued(v: View, st: Standings) -> str:
                                          st.position.get(t.number, len(st.position)), t.filed))
 
     keys = sorted(sessions, key=lambda s: (s not in st.live, s in st.paused, -len(sessions[s])))
-    tabs = "".join(f'<button class="tab" data-s="{s}">{session_name(s)} <small>{tab_word(st, s)}</small></button>'
-                   for s in keys)
-    panes = ""
+    panes: list[tuple[int | None, str, str]] = []
     for s in keys:
         items = sessions[s]
         ready = ordered([t for t, k, _ in items if k is Standing.READY])
@@ -505,10 +550,10 @@ def queued(v: View, st: Standings) -> str:
         body = f'<div class="sh2">{esc(session_line(st, s))}</div>'
         if ready:
             body += ('<div class="gh">Next</div><div class="wl">'
-                     + "".join(row(v, t, stopped_bar(v, t), i + 1) for i, t in enumerate(ready)) + "</div>")
+                     + "".join(row(v, t, stopped_bar(v, t), st.change(t), i + 1) for i, t in enumerate(ready)) + "</div>")
         if waiting:
             body += ('<div class="gh">Waiting</div><div class="wl">'
-                     + "".join(row(v, t, f"{stopped_bar(v, t)}<span>after {link(st.state(t)[1].number)}</span>") for t in waiting)
+                     + "".join(row(v, t, f"{stopped_bar(v, t)}<span>after {link(st.state(t)[1].number)}</span>", st.change(t)) for t in waiting)
                      + "</div>")
         groups: dict[tuple[int, bool, str], list[tuple[Ticket, Ticket]]] = {}
         for t, k, root in items:
@@ -518,22 +563,52 @@ def queued(v: View, st: Standings) -> str:
                                held_label(k, root.session, s)), []).append((t, root))
         for (_, _, label), xs in sorted(groups.items()):
             xs.sort(key=lambda x: (not v.mine(x[0]), x[0].number not in v.expedited, x[0].filed))
-            rows = [row(v, t, stopped_bar(v, t) + ("" if root is t else f"<span>via {link(root.number)}</span>"))
+            rows = [row(v, t, stopped_bar(v, t) + ("" if root is t else f"<span>via {link(root.number)}</span>"),
+                        st.change(t))
                     for t, root in xs]
-            inner = '<div class="wl">' + "".join(rows[:GROUP_SHOWN])
-            if rows[GROUP_SHOWN:]:
-                inner += f"<details><summary>{len(rows) - GROUP_SHOWN} more ›</summary>" + "".join(rows[GROUP_SHOWN:]) + "</details>"
+            inner = folded(rows, GROUP_SHOWN)
             opened = " open" if label == HELD_HEAD[Standing.ON_HOLD] or any(v.mine(t) for t, _ in xs) else ""
-            body += f'<details class="grp"{opened}><summary>{esc(label)} · {len(xs)}</summary>{inner}</div></details>'
-        panes += f'<div class="pane" data-s="{s}">{body}</div>'
-    return f'<div class="tabs">{tabs}</div>{panes}'
+            body += f'<details class="grp"{opened}><summary>{esc(label)} · {len(xs)}</summary>{inner}</details>'
+        panes.append((s, tab_word(st, s), body))
+    return tab_set(QUEUED_TAB, panes)
+
+
+def done(v: View) -> str:
+    """The HTML of Done: a tab for each session that filed a ticket closed
+    in the last `DONE_SECONDS`, with the count of its closes, and in it
+    those tickets newest first, each with how and when it closed. A
+    closed ticket whose merge closed one of them (`LogLine.closed_by`), or
+    whose Motivation gives one of them, shows as that one, with its number
+    under that one's."""
+    closes = {t.number: ln for t in v.all_.values() if t.status is Status.CLOSED
+              and (ln := t.log[-1]).status is Status.CLOSED and v.now - ln.time <= DONE_SECONDS}
+    within = {n: v.all_[n] for n in closes}
+    waited = {ln.closed_by for ln in closes.values() if ln.closed_by is not None}
+    shown = sorted((t for n, t in within.items() if n not in waited and not any(m in closes for m in t.motivation)),
+                   key=lambda t: -closes[t.number].time)
+    if not shown:
+        return '<div class="meta">Nothing closed in the last day.</div>'
+    sessions: dict[int | None, list[Ticket]] = {}
+    for t in shown:
+        sessions.setdefault(t.session, []).append(t)
+
+    def change(t: Ticket) -> Ticket | None:
+        by = closes[t.number].closed_by
+        c = None if by is None else v.all_.get(by)
+        return c if c is not None else next((x for x in within.values() if x.kind is Kind.CHANGE
+                                             and t.number in x.motivation), None)
+
+    def right(t: Ticket) -> str:
+        ln = closes[t.number]
+        return f"{CLOSE_WORDS[ln.resolution]} · {clock(ln.time, v.now)}"
+    return tab_set(DONE_TAB, [(s, str(len(ts)), folded([row(v, t, right(t), change(t)) for t in ts], LIST_SHOWN))
+                              for s, ts in sessions.items()])
 
 
 def events(v: View) -> list[dict[str, object]]:
     """The filings and the merges of the last `SINCE_SECONDS`, newest
-    first, each with whether its ticket is the user's, and the number and
-    phrase of a ticket of the user's, which the page lists, where it
-    counts the others."""
+    first, each with its ticket's number and phrase and whether the ticket
+    is the user's."""
     found: list[tuple[float, str, Ticket]] = []
     for t in v.all_.values():
         if v.now - t.filed <= SINCE_SECONDS:
@@ -542,8 +617,8 @@ def events(v: View) -> list[dict[str, object]]:
             found.extend((ln.time, "merged", t) for ln in t.log if ln.status is Status.CLOSED
                          and ln.resolution is Resolution.FIXED and v.now - ln.time <= SINCE_SECONDS)
     found.sort(key=lambda e: -e[0])
-    return [{"t": round(at), "k": kind, "n": t.number, "u": True, "s": v.phrase(t)} if v.mine(t)
-            else {"t": round(at), "k": kind, "u": False} for at, kind, t in found]
+    return [{"t": round(at), "k": kind, "n": t.number, "u": v.mine(t), "s": capitalized(v.phrase(t))}
+            for at, kind, t in found]
 
 
 def kv(k: str, val: str) -> str:
@@ -626,8 +701,8 @@ def page(tickets: Path, now: float, usage: Reading, records: OperatorRecords,
     sections = [
         ("health", "Health", health(v, [*undecided, *(f"unread: {u.path}: {u.why}" for u in unread)])),
         ("active", "Active", work),
-        ("queued", "Queued", queued(v, st)
-         + '<div class="key"><span><i></i>filed by you</span><span>★ expedited</span></div>'),
+        ("queued", "Queued", queued(v, st)),
+        ("done", "Done", done(v) + '<div class="key"><span><i></i>filed by you</span><span>★ expedited</span></div>'),
         ("sl", "Since you looked", '<div id="since"></div>'),
         ("pace", "Pace", pace(v)), ("queue", "Queue", queue(v)),
         ("find", "Find",
@@ -639,7 +714,7 @@ def page(tickets: Path, now: float, usage: Reading, records: OperatorRecords,
             + '<script type="application/json" id="events">'
             + json.dumps(events(v), separators=(",", ":")).replace("<", "\\u003c") + "</script></main>")
     text = filled(TEMPLATE, {"BODY": body, "EVENTS": EVENTS, "SEARCH": SEARCH_ROUTE, "TICKET": TICKET_ROUTE,
-                             "LASTLOOK": LAST_LOOK, "TAB": TAB})
+                             "LASTLOOK": LAST_LOOK, "SHOWN": str(LIST_SHOWN)})
     entries = {n: Entry(t, v.phrase(t), v.status(t), change_state(v, st, t)) for n, t in all_.items()}
     return Rendered(text, entries, now)
 

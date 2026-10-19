@@ -67,7 +67,7 @@ def sheet(e: Entry, now: float) -> str:
     the plain sentence on its status, its last `SHEET_LINES` log lines, and
     the last `SHEET_LINES` of that change's under its number."""
     t, c = e.ticket, e.change
-    lead = e.status if c is None else f"Built as {c.change.number} · {c.state}"
+    lead = e.status if c is None else f"Work on {c.change.number} · {c.state}"
     tail = "" if c is None else f'<div class="gh">Change {esc(c.change.number)}</div>{lines(c.change, now)}'
     return (f'<div class="num">{esc(t.number)} · {esc(t.kind)}</div>'
             f'<div class="sh" style="font-size:17px">{esc(e.phrase)}</div><div class="p">{esc(lead)}</div>'
