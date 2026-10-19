@@ -1,14 +1,23 @@
-//! A `RIGID_DET` assembly at its stored records: its outputs
-//! `&marker.<part>` and `&marker.pose`, as `docs/arclog/rigid.md#semantics`
-//! gives.
+//! A `RIGID_DET` assembly: its outputs `&marker.<part>` and
+//! `&marker.pose`, as `docs/arclog/rigid.md#semantics` gives, computed from
+//! its instances' readings by the method of
+//! `docs/arclog/rigid.md#implementation`.
 //!
-//! The stored record of a part, `&marker.<part>`, holds its common reading:
-//! the key's columns, where the form has a key, then the part's columns.
+//! An assembly's instances are the rows of its `instance` clause, and a form
+//! with none has one instance at each key. An instance's reading is its
+//! rows of each part, in the form's order of parts. At each key, the frame,
+//! the common reading of the key's instances, is the reading of the instance
+//! whose reading is least by content, as `docs/engine/determination.md#rigid_det`
+//! gives, so the frame depends on no order of encodings. Where some instance
+//! has no D4 element that takes its key's frame onto its reading at every
+//! part at once, the assembly has no value, and each output is `undefined`.
+//!
 //! A part's site that holds a bare label of the `instance` clause selects
 //! the part's rows at an instance and gives the part no column, so an
 //! instance's reading of the part is the part's rows at that instance's
 //! row, without those columns.
 
+use std::cmp::Ordering;
 use std::sync::Arc;
 
 use super::join::{self, Budget};
@@ -18,7 +27,7 @@ use crate::algebra::boxes::apply;
 use crate::algebra::geometry::{D4Element, Geometry};
 use crate::hash::{StableHashMap, StableHashSet};
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Atom, Body, Conjunct, LabelId, Node, OutputName, OutputOwner, OutputStep, ProgramRelation, RigidDet};
+use crate::program::{Atom, Body, Conjunct, LabelId, Node, OutputStep, RigidDet};
 use crate::relations::{Row, RowSet};
 use crate::resolver::form_columns;
 use crate::terms::{Example, Term, TermId};
@@ -32,9 +41,7 @@ use crate::types::{each_site_label, use_label, FormTypes, ValueType};
 ///
 /// A part's columns leave out each site that holds a bare label of the
 /// `instance` clause. A part's site that holds a label of the `instance`
-/// clause inside a term of other labels, a part whose
-/// stored record is absent or does not read at the part's column types,
-/// and an output step that more than one part's path begins with give a
+/// clause inside a term of other labels, and an output step that more than one part's path begins with give a
 /// [`RunFault`].
 pub fn evaluate_assembly(
     evaluation: &Evaluation<'_>,
@@ -49,7 +56,7 @@ pub fn evaluate_assembly(
     let assembly = Assembly::of(evaluation, form, rigid)?;
     let rows = match output {
         OutputStep::Pose => assembly.poses(bodies, example, budget)?,
-        step => assembly.placements(assembly.part(step)?, budget)?,
+        step => assembly.placements(assembly.part(step)?, bodies, example, budget)?,
     };
     Ok(rows.map_or_else(|value| value, |rows| RelationValue::Rows(Arc::new(join::one_part(rows)))))
 }
@@ -64,15 +71,27 @@ struct Part<'p> {
     types: Vec<ValueType>,
 }
 
+/// An instance of an assembly: its row of the key and instance clauses,
+/// and its reading, its rows of each part in the order of the parts.
+struct Instance {
+    row: Row,
+    reading: Vec<RowSet>,
+}
+
+/// What [`Assembly::solve`] gives: each key's frame, a reading in the order
+/// of the parts, and each instance's row with its D4 elements.
+struct Solution {
+    frames: StableHashMap<Row, Vec<RowSet>>,
+    poses: Vec<(Row, Vec<TermId>)>,
+}
+
 /// What a `RIGID_DET` form gives the evaluation of its assembly: its key
 /// and instance clauses with their paths and labels, and its parts.
 struct Assembly<'e, 'p> {
     evaluation: &'e Evaluation<'p>,
     form: &'e NodePath,
-    rigid: &'p RigidDet,
     key: Option<(&'p Body, NodePath)>,
     key_labels: Vec<LabelId>,
-    key_types: Vec<ValueType>,
     instance: Option<(&'p Body, NodePath)>,
     instance_labels: Vec<LabelId>,
     parts: Vec<Part<'p>>,
@@ -109,8 +128,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
             let types = typed(&labels)?;
             parts.push(Part { atom, path: form.child(index), labels, types });
         }
-        let key_types = typed(&key_labels)?;
-        Ok(Assembly { evaluation, form, rigid, key, key_labels, key_types, instance, instance_labels, parts })
+        Ok(Assembly { evaluation, form, key, key_labels, instance, instance_labels, parts })
     }
 
     fn fault(&self, message: String) -> RunFault {
@@ -127,9 +145,10 @@ impl<'e, 'p> Assembly<'e, 'p> {
         OutputKey::of(self.key.is_some().then_some(self.key_labels.len()))
     }
 
-    /// The one part whose output's path begins with `step`.
-    fn part(&self, step: &OutputStep) -> Outcome<&Part<'p>> {
-        let mut found = self.parts.iter().filter(|part| self.steps(part).first() == Some(step));
+    /// The index among the parts of the one part whose output's path
+    /// begins with `step`.
+    fn part(&self, step: &OutputStep) -> Outcome<usize> {
+        let mut found = self.parts.iter().enumerate().filter(|(_, part)| self.steps(part).first() == Some(step)).map(|(index, _)| index);
         match (found.next(), found.next()) {
             (Some(part), None) => Ok(part),
             (Some(_), Some(_)) => Err(self.fault(format!("more than one part's output begins with the step {step:?}"))),
@@ -142,62 +161,20 @@ impl<'e, 'p> Assembly<'e, 'p> {
         form_columns::part_steps(&part.atom.value().relation).expect("a part that reads a relation")
     }
 
-    /// The common reading of `part` from its stored record, by key: each
-    /// key's rows of the part's columns.
-    fn common_reading(&self, part: &Part<'_>) -> Outcome<StableHashMap<Row, RowSet>> {
-        let evaluation = self.evaluation;
-        let name = ProgramRelation::Output(OutputName { of: OutputOwner::RigidDet(self.rigid.name.clone()), path: self.steps(part).into() });
-        let value = evaluation.parameters.get(&name).ok_or_else(|| self.fault("no stored record gives a part's common reading".into()))?;
-        let types: Vec<ValueType> = self.key_types.iter().chain(&part.types).cloned().collect();
-        let mut table = evaluation.session.intern.write().expect("an intern table that no panic poisoned");
-        let rows = crate::terms::encode_param_value(value, &types, evaluation.registry, &mut table)
-            .map_err(|error| self.fault(format!("a part's stored rows do not read at its column types: {error:?}")))?;
-        let mut by_key: StableHashMap<Row, RowSet> = StableHashMap::default();
-        for row in rows {
-            let (key, values) = row.split_at(self.key_labels.len());
-            by_key.entry(key.into()).or_insert_with(|| RowSet::empty(part.labels.len() as u16)).insert(values.into());
-        }
-        Ok(by_key)
-    }
-
-    /// The rows of `&marker.<part>`: at each key, at each D4 element, the
-    /// image of the part's common reading under it, or the value of a stop.
-    fn placements(&self, part: &Part<'_>, budget: &mut Budget<'_>) -> Outcome<Result<RowSet, RelationValue>> {
-        let geometry = Geometry::get();
-        let elements = geometry.domain(&ValueType::D4);
-        let mut rows = RowSet::empty((self.output_key().width() + 1 + part.labels.len()) as u16);
-        for (key, reading) in self.common_reading(part)? {
-            if let Err(bound) = budget.charge_rows((elements.len() * reading.len()) as u64) {
-                return Ok(Err(self.stopped(bound)));
-            }
-            for &element in elements {
-                let g = geometry.element(element);
-                for values in reading.rows() {
-                    let mut row = self.output_key().columns(&key).into_owned();
-                    row.push(element);
-                    row.extend(image(geometry, g, values, &part.types));
-                    rows.insert(row.into());
-                }
-            }
-        }
-        Ok(Ok(rows))
-    }
-
-    /// The rows of `&marker.pose`: for each instance, each D4 element that
-    /// takes the common reading onto the instance's reading at every part
-    /// at once, or the value of a body of the form that is `undefined` or
-    /// stopped, or of a stop.
-    fn poses(&self, bodies: &FormBodies<'_>, example: Option<Example>, budget: &mut Budget<'_>) -> Outcome<Result<RowSet, RelationValue>> {
+    /// The instances of the assembly, each with its reading of each part,
+    /// in the order of the parts, or the value of a body of the form that
+    /// is `undefined` or stopped.
+    fn readings(&self, bodies: &FormBodies<'_>, example: Option<Example>) -> Outcome<Result<Vec<Instance>, RelationValue>> {
         let prefix: Vec<LabelId> = self.key_labels.iter().chain(&self.instance_labels).copied().collect();
         let clauses: Vec<&(&Body, NodePath)> = self.key.iter().chain(&self.instance).collect();
-        let instances = match clauses.is_empty() {
+        let rows = match clauses.is_empty() {
             true => vec![Row::default()],
             false => match self.rows(bodies, &clauses, None, &prefix, example)? {
                 Ok(rows) => rows,
                 Err(value) => return Ok(Err(value)),
             },
         };
-        let mut readings: Vec<(StableHashMap<Row, RowSet>, StableHashMap<Row, RowSet>)> = Vec::with_capacity(self.parts.len());
+        let mut by_part: Vec<StableHashMap<Row, RowSet>> = Vec::with_capacity(self.parts.len());
         for part in &self.parts {
             let columns: Vec<LabelId> = prefix.iter().chain(&part.labels).copied().collect();
             let rows = match self.rows(bodies, &clauses, Some(part), &columns, example)? {
@@ -209,34 +186,129 @@ impl<'e, 'p> Assembly<'e, 'p> {
                 let (at, values) = row.split_at(prefix.len());
                 by_instance.entry(at.into()).or_insert_with(|| RowSet::empty(part.labels.len() as u16)).insert(values.into());
             }
-            readings.push((self.common_reading(part)?, by_instance));
+            by_part.push(by_instance);
+        }
+        Ok(Ok(rows
+            .into_iter()
+            .map(|row| {
+                let reading = self.parts.iter().zip(&mut by_part).map(|(part, by_instance)| by_instance.remove(&row).unwrap_or_else(|| RowSet::empty(part.labels.len() as u16))).collect();
+                Instance { row, reading }
+            })
+            .collect()))
+    }
+
+    /// The order by content of two readings of the assembly: part by part,
+    /// in the order of the parts, each part's rows in the order of
+    /// [`crate::terms::set_order`].
+    fn reading_order(&self, a: &[RowSet], b: &[RowSet], table: &crate::terms::InternTable) -> Ordering {
+        for ((part, a), b) in self.parts.iter().zip(a).zip(b) {
+            let order = crate::terms::set_order(&part.types, a.rows(), b.rows(), table);
+            if order.is_ne() {
+                return order;
+            }
+        }
+        Ordering::Equal
+    }
+
+    /// The assembly's frames and poses: at each key, the reading of the
+    /// instance at that key whose reading is least by
+    /// [`Assembly::reading_order`], and for each instance, the D4 elements
+    /// that take its key's frame onto its reading at every part at once;
+    /// or `undefined`, where some instance has no such element, or the
+    /// value of a body of the form that is `undefined` or stopped, or of a
+    /// stop.
+    fn solve(&self, bodies: &FormBodies<'_>, example: Option<Example>, budget: &mut Budget<'_>) -> Outcome<Result<Solution, RelationValue>> {
+        let instances = match self.readings(bodies, example)? {
+            Ok(instances) => instances,
+            Err(value) => return Ok(Err(value)),
+        };
+        let mut frames: StableHashMap<Row, Vec<RowSet>> = StableHashMap::default();
+        {
+            let table = self.evaluation.session.intern.read().expect("an intern table that no panic poisoned");
+            let mut least: StableHashMap<&[TermId], &Instance> = StableHashMap::default();
+            for instance in &instances {
+                let key = &instance.row[..self.key_labels.len()];
+                let frame = least.entry(key).or_insert(instance);
+                if self.reading_order(&instance.reading, &frame.reading, &table).is_lt() {
+                    *frame = instance;
+                }
+            }
+            frames.extend(least.into_iter().map(|(key, instance)| (key.into(), instance.reading.clone())));
         }
         let geometry = Geometry::get();
         let elements = geometry.domain(&ValueType::D4);
-        let mut rows = RowSet::empty((self.output_key().width() + self.instance_labels.len() + 1) as u16);
-        for instance in &instances {
+        let mut poses = Vec::with_capacity(instances.len());
+        for instance in instances {
             if let Err(bound) = budget.charge_work(elements.len() as u64) {
                 return Ok(Err(self.stopped(bound)));
             }
-            let (key, at) = instance.split_at(self.key_labels.len());
+            let frame = &frames[&instance.row[..self.key_labels.len()]];
+            let found: Vec<TermId> = elements
+                .iter()
+                .copied()
+                .filter(|&element| {
+                    let g = geometry.element(element);
+                    self.parts.iter().zip(frame).zip(&instance.reading).all(|((part, frame), observed)| {
+                        let images: StableHashSet<Row> = frame.rows().map(|values| image(geometry, g, values, &part.types).collect()).collect();
+                        images.len() == observed.len() && observed.rows().all(|values| images.contains(values))
+                    })
+                })
+                .collect();
+            if found.is_empty() {
+                return Ok(Err(RelationValue::Undefined));
+            }
+            poses.push((instance.row, found));
+        }
+        Ok(Ok(Solution { frames, poses }))
+    }
+
+    /// The rows of `&marker.<part>`: at each key, at each D4 element, the
+    /// image under it of the key's frame at the part, or the value of
+    /// [`Assembly::solve`] where it gives no solution.
+    fn placements(&self, part: usize, bodies: &FormBodies<'_>, example: Option<Example>, budget: &mut Budget<'_>) -> Outcome<Result<RowSet, RelationValue>> {
+        let solution = match self.solve(bodies, example, budget)? {
+            Ok(solution) => solution,
+            Err(value) => return Ok(Err(value)),
+        };
+        let part_types = &self.parts[part].types;
+        let geometry = Geometry::get();
+        let elements = geometry.domain(&ValueType::D4);
+        let mut rows = RowSet::empty((self.output_key().width() + 1 + part_types.len()) as u16);
+        for (key, frame) in &solution.frames {
+            let reading = &frame[part];
+            if let Err(bound) = budget.charge_rows((elements.len() * reading.len()) as u64) {
+                return Ok(Err(self.stopped(bound)));
+            }
             for &element in elements {
                 let g = geometry.element(element);
-                let takes = self.parts.iter().zip(&readings).all(|(part, (common, observed))| {
-                    let images: StableHashSet<Row> = common
-                        .get(key)
-                        .into_iter()
-                        .flat_map(|common| common.rows())
-                        .map(|values| image(geometry, g, values, &part.types).collect())
-                        .collect();
-                    let observed = observed.get(&instance[..]);
-                    images.len() == observed.map_or(0, RowSet::len) && observed.into_iter().flat_map(|o| o.rows()).all(|values| images.contains(values))
-                });
-                if takes {
+                for values in reading.rows() {
                     let mut row = self.output_key().columns(key).into_owned();
-                    row.extend_from_slice(at);
                     row.push(element);
+                    row.extend(image(geometry, g, values, part_types));
                     rows.insert(row.into());
                 }
+            }
+        }
+        Ok(Ok(rows))
+    }
+
+    /// The rows of `&marker.pose`: for each instance, each D4 element that
+    /// takes its key's frame onto the instance's reading at every part at
+    /// once, or the value of [`Assembly::solve`] where it gives no
+    /// solution.
+    fn poses(&self, bodies: &FormBodies<'_>, example: Option<Example>, budget: &mut Budget<'_>) -> Outcome<Result<RowSet, RelationValue>> {
+        let solution = match self.solve(bodies, example, budget)? {
+            Ok(solution) => solution,
+            Err(value) => return Ok(Err(value)),
+        };
+        let mut rows = RowSet::empty((self.output_key().width() + self.instance_labels.len() + 1) as u16);
+        for (instance, elements) in &solution.poses {
+            let (key, at) = instance.split_at(self.key_labels.len());
+            for &element in elements {
+                let mut row = self.output_key().columns(key).into_owned();
+                row.extend_from_slice(at);
+                row.push(element);
+                rows.insert(row.into());
             }
         }
         Ok(Ok(rows))

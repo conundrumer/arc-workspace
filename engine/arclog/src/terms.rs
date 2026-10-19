@@ -429,17 +429,24 @@ fn ident_order(a: Ident, b: Ident, table: &InternTable) -> std::cmp::Ordering {
         (Content::Set(x), Content::Set(y)) => {
             let mut types = Vec::new();
             column_types(&x.member, &mut types);
-            let mut xs: Vec<&[TermId]> = x.each().collect();
-            let mut ys: Vec<&[TermId]> = y.each().collect();
-            xs.sort_by(|m, n| content_order(&types, m, n, table));
-            ys.sort_by(|m, n| content_order(&types, m, n, table));
-            xs.iter()
-                .zip(&ys)
-                .map(|(m, n)| content_order(&types, m, n, table))
-                .find(|order| *order != Ordering::Equal)
-                .unwrap_or_else(|| xs.len().cmp(&ys.len()))
+            set_order(&types, x.each(), y.each(), table)
         }
     }
+}
+
+/// The order of two sets of rows whose columns take `types`: each set's
+/// rows sorted by [`content_order`] and compared row by row, a set that is
+/// a prefix of the other first.
+pub(crate) fn set_order<'r>(
+    types: &[ValueType],
+    a: impl Iterator<Item = &'r [TermId]>,
+    b: impl Iterator<Item = &'r [TermId]>,
+    table: &InternTable,
+) -> std::cmp::Ordering {
+    let (mut a, mut b): (Vec<&[TermId]>, Vec<&[TermId]>) = (a.collect(), b.collect());
+    a.sort_by(|x, y| content_order(types, x, y, table));
+    b.sort_by(|x, y| content_order(types, x, y, table));
+    a.iter().zip(&b).map(|(x, y)| content_order(types, x, y, table)).find(|order| order.is_ne()).unwrap_or_else(|| a.len().cmp(&b.len()))
 }
 
 /// Adds to `types` the type of each column a value of type `ty` takes: a
