@@ -16,7 +16,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use arclog::harness::{read_corpus_solver, run_over_corpus, CorpusSolver, SolverResult};
+use arclog::harness::{read_corpus_solver, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::program::path::{node_at, NodePath, NodeRef, PathStep};
 use arclog::solver::{Exclusion, FileOwner, Solver};
 
@@ -47,6 +47,9 @@ fn check(dir: &Path, solver: &CorpusSolver) -> SolverResult {
 }
 
 fn main() -> ExitCode {
+    if let Err(code) = require_optimized_build() {
+        return code;
+    }
     let Some(dir) = std::env::args().nth(1).map(PathBuf::from) else {
         eprintln!("usage: cases <dir>");
         return ExitCode::FAILURE;

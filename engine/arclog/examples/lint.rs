@@ -1,7 +1,8 @@
 //! The end check of the checker stage, and of step 1, over the corpus:
-//! `cargo run --example lint -- <dir> <report>`, with `<dir>` the corpus
-//! directory, such as `work/arclog/gen/`, and `<report>` the output of the
-//! Python lint over `<dir>`, read by [`arclog::harness::LintReport`].
+//! `cargo run --profile tool --example lint -- <dir> <report>`, with
+//! `<dir>` the corpus directory, such as `work/arclog/gen/`, and `<report>`
+//! the output of the Python lint over `<dir>`, read by
+//! [`arclog::harness::LintReport`].
 //!
 //! The run lints each solver of `<dir>` with
 //! [`arclog::harness::run_over_corpus`], prints each difference from the
@@ -24,7 +25,7 @@ use arclog::check::lint::lint;
 use arclog::check::CheckId;
 use arclog::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use arclog::hash::StableHashMap;
-use arclog::harness::{read_corpus_solver, run_over_corpus, CorpusSolver, LintError, LintReport, SolverResult};
+use arclog::harness::{read_corpus_solver, require_optimized_build, run_over_corpus, CorpusSolver, LintError, LintReport, SolverResult};
 use arclog::layout::SourceFile;
 use arclog::registry::Registry;
 
@@ -176,9 +177,12 @@ fn check(dir: &Path, solver: &CorpusSolver, report: &LintReport) -> SolverResult
 }
 
 fn main() -> ExitCode {
+    if let Err(code) = require_optimized_build() {
+        return code;
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [dir, report] = &args[..] else {
-        eprintln!("usage: cargo run --example lint -- <dir> <report>");
+        eprintln!("usage: cargo run --profile tool --example lint -- <dir> <report>");
         return ExitCode::FAILURE;
     };
     let report = match std::fs::read_to_string(report) {

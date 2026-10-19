@@ -23,11 +23,11 @@ use std::process::ExitCode;
 use std::sync::Mutex;
 
 use arclog::eval::{GridValue, NoGridColumns, ReachedBound, Stop};
-use arclog::harness::{run_over_corpus, SolverResult};
+use arclog::harness::{require_optimized_build, run_over_corpus, SolverResult};
 use arclog::session::Counts;
 use serde_json::Value;
 
-use crate::compare::Arguments;
+use crate::arguments::Arguments;
 use crate::concept_case::with_concept_case;
 use crate::select::{read_json, selected};
 
@@ -35,6 +35,9 @@ const USAGE: &str = "usage: arclog-cli speed <snapshot-dir> <corpus-dir> <tasks-
 
 /// The subcommand on `args`, the arguments after its name.
 pub fn run(args: &[String]) -> ExitCode {
+    if let Err(code) = require_optimized_build() {
+        return code;
+    }
     let Some(arguments) = Arguments::parse(args) else {
         eprintln!("{USAGE}");
         return ExitCode::from(2);

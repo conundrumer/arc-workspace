@@ -23,7 +23,7 @@ use arclog::terms::TermId;
 use arclog::types::ValueType;
 use serde_json::Value;
 
-use crate::compare::SESSION_BYTES;
+use crate::engine_run::SESSION_BYTES;
 
 use super::evaluation::{cell, insert, term_id, Cell, Rows};
 use super::inputs::component_type;

@@ -3,6 +3,8 @@ name = "arclog-cli"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+# `cargo run -p arclog-cli` runs the subcommands' binary, not `check_one`.
+default-run = "arclog-cli"
 
 [dependencies]
 # The binary runs the core crate's reader, resolver, checker and evaluator

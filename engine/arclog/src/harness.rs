@@ -12,6 +12,7 @@
 use std::any::Any;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// One solver of the corpus: its task id and its two files.
@@ -142,6 +143,20 @@ pub struct CorpusReport {
     /// Each solver the check failed on, with the check's report on it, in
     /// the order of their task ids.
     pub failures: Vec<(CorpusSolver, Vec<String>)>,
+}
+
+/// The refusal of a corpus run on a build without optimization: on such a
+/// build, it prints the refusal to stderr and gives the exit code 2 of a
+/// usage error. Each corpus run calls it before it reads its arguments, and
+/// exits with the code it gives. [`run_over_corpus`] does not call it, as
+/// the tests, which run on a debug build, call that function.
+pub fn require_optimized_build() -> Result<(), ExitCode> {
+    if cfg!(debug_assertions) {
+        eprintln!("a corpus run needs an optimized build: run it with `cargo run --profile tool` in place of `cargo run`");
+        Err(ExitCode::from(2))
+    } else {
+        Ok(())
+    }
 }
 
 /// Runs `check` over every solver of `dir`, on as many threads as the

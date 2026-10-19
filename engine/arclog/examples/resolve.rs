@@ -13,7 +13,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use arclog::diagnostic::{Diagnostic, Location};
-use arclog::harness::{read_corpus_solver, run_over_corpus, CorpusSolver, LintReport, SolverResult};
+use arclog::harness::{read_corpus_solver, require_optimized_build, run_over_corpus, CorpusSolver, LintReport, SolverResult};
 use arclog::registry::Registry;
 use arclog::resolver::resolve_cases;
 use arclog::solver::{Case, Solver};
@@ -50,9 +50,12 @@ fn check(dir: &Path, solver: &CorpusSolver, report: &LintReport) -> SolverResult
 }
 
 fn main() -> ExitCode {
+    if let Err(code) = require_optimized_build() {
+        return code;
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [dir, report] = &args[..] else {
-        eprintln!("usage: cargo run --example resolve -- <dir> <report>");
+        eprintln!("usage: cargo run --profile tool --example resolve -- <dir> <report>");
         return ExitCode::FAILURE;
     };
     let report = match std::fs::read_to_string(report) {

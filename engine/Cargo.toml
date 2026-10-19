@@ -9,3 +9,10 @@ members = ["arclog", "arclog-constructions", "arclog-cli", "arclog-py"]
 version = "0.1.0"
 edition = "2024"
 publish = false
+
+# The profile of the corpus runs: the release profile's optimization, with
+# incremental compilation, so a rebuild after an edit compiles again only
+# what the edit changed.
+[profile.tool]
+inherits = "release"
+incremental = true

@@ -14,7 +14,7 @@ use arclog::session::{SessionBound, TaskSession};
 use arclog::task::read_task;
 use arclog::terms::Example;
 
-use crate::compare::{constructions, SESSION_BYTES};
+use crate::engine_run::{constructions, SESSION_BYTES};
 
 /// The concept case of a solver, set up for its run at its stored `param`
 /// records, over the table of the lib's constructions.

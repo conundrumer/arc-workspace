@@ -42,6 +42,8 @@ mod sources;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use arclog::harness::require_optimized_build;
+
 use self::coverage::{covered, left_out_lines};
 use self::evaluation::{fork_line, image_differences, walk_differences};
 use self::free_choices::{split, SECTION};
@@ -57,6 +59,9 @@ const SOUFFLE_CALL: &str = "uv run python scripts/souffle_parity.py lib";
 
 /// The subcommand on `args`, the arguments after its name.
 pub fn run(args: &[String]) -> ExitCode {
+    if let Err(code) = require_optimized_build() {
+        return code;
+    }
     let [snapshot, corpus, expanded, tasks] = args else {
         eprintln!("{USAGE}");
         return ExitCode::from(2);

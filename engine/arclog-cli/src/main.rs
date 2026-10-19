@@ -4,11 +4,14 @@
 //! The first argument names a subcommand, and each subcommand stands in a
 //! file of its own, which reads the arguments after its name.
 
+mod arguments;
 mod check_diff;
 mod compare;
 mod concept_case;
 mod determinism;
+mod engine_run;
 mod lib_compare;
+mod renaming;
 mod select;
 mod speed;
 

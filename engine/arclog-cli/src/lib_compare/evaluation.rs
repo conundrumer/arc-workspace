@@ -14,7 +14,8 @@ use arclog::terms::{Color, Constant, Ident, Margins, Number, Term, TermId};
 use arclog::types::ValueType;
 use serde_json::{json, Value};
 
-use crate::compare::{constructions, renaming_exists, EngineLeaf, Leaf};
+use crate::engine_run::constructions;
+use crate::renaming::{renaming_exists, EngineLeaf, Leaf};
 
 use super::components::{constructed, unfolded, WALKS};
 use super::inputs::{column_text, component_type, constant_name, is_orientation, relation_type, Element};

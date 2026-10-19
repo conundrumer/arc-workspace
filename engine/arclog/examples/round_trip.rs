@@ -32,7 +32,7 @@ use std::sync::Mutex;
 
 use arclog::diagnostic::{Diagnostic, Location};
 use arclog::harness::{run_over_corpus, CorpusSolver, LintReport, SolverResult};
-use arclog::harness::read_corpus_solver;
+use arclog::harness::{read_corpus_solver, require_optimized_build};
 use arclog::layout::{Layout, SourceFile};
 use arclog::program::path::{DataNodeRef, NodePath, NodeRef};
 use arclog::read::read_solver;
@@ -168,9 +168,12 @@ fn round_trip(dir: &Path, solver: &CorpusSolver, report: &LintReport, read_with_
 }
 
 fn main() -> ExitCode {
+    if let Err(code) = require_optimized_build() {
+        return code;
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [dir, report] = &args[..] else {
-        eprintln!("usage: cargo run --example round_trip -- <dir> <report>");
+        eprintln!("usage: cargo run --profile tool --example round_trip -- <dir> <report>");
         return ExitCode::FAILURE;
     };
     let report = match std::fs::read_to_string(report) {

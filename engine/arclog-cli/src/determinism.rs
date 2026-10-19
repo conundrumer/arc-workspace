@@ -22,18 +22,21 @@ use arclog::eval::join::each_row;
 use arclog::eval::pool::Pool;
 use arclog::eval::{output_relation, Evaluation, RelationValue};
 use arclog::hash::StableHashMap;
-use arclog::harness::{run_over_corpus, SolverResult};
+use arclog::harness::{require_optimized_build, run_over_corpus, SolverResult};
 use arclog::resolver::{DependencyKind, GraphNodeIndex};
 use arclog::terms::{Example, Ident, Term};
 use arclog::types::GraphRelation;
 
-use crate::compare::{renaming_exists, EngineLeaf, Leaf};
+use crate::renaming::{renaming_exists, EngineLeaf, Leaf};
 use crate::concept_case::with_concept_case;
 
 const USAGE: &str = "usage: arclog-cli determinism <corpus-dir> <tasks-dir> <threads> [<task_id> ...]";
 
 /// The subcommand on `args`, the arguments after its name.
 pub fn run(args: &[String]) -> ExitCode {
+    if let Err(code) = require_optimized_build() {
+        return code;
+    }
     let Some(arguments) = Arguments::parse(args) else {
         eprintln!("{USAGE}");
         return ExitCode::from(2);

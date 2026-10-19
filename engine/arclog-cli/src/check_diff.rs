@@ -43,14 +43,13 @@ const USAGE: &str = "usage: arclog-cli check-diff <corpus-dir> [<task_id> ...] [
 /// The limit on the CPU time of each check.
 const BOUND_SECONDS: u64 = 30;
 
-/// The cargo profile `check_one` builds under: the release profile's
-/// optimization, with incremental compilation, so a rebuild after an edit
-/// compiles again only what the edit changed.
+/// The cargo profile `check_one` builds under, the `tool` profile of the
+/// workspace manifest.
 const PROFILE: &str = "tool";
 
-/// The `--config` settings that define [`PROFILE`]. They stand here, not in
-/// a manifest, so a base engine whose manifest lacks the profile builds
-/// under it too. The engine key hashes them, as the code the profile
+/// The `--config` settings that define [`PROFILE`]: those of the `tool`
+/// profile of the workspace manifest. They stand here as well, so a base
+/// engine whose manifest lacks the profile builds under it too. The engine key hashes them, as the code the profile
 /// generates bears on which checks reach [`BOUND_SECONDS`].
 fn profile_config() -> [String; 2] {
     [format!("profile.{PROFILE}.inherits=\"release\""), format!("profile.{PROFILE}.incremental=true")]
