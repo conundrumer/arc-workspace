@@ -102,43 +102,45 @@ def read_launches(aid: str, path: Path, main: Path, undecided: list[str]) -> Ope
     return replace(launch_read(aid, path, main, undecided), listing=agent_listing(path))
 
 
+type Uses = dict[str, tuple[float, dict[str, Any], str]]
+"""Each call of an operator, by the id of its use, with its time, its
+input and its tool."""
+
+
+def use_of(stamp: str, b: dict[str, Any]) -> tuple[float, dict[str, Any], str]:
+    """The time, the input and the tool of the use `b` of an entry whose
+    time is `stamp`, as `Uses` gives them."""
+    return epoch(stamp), b.get("input") or {}, b.get("name", "")
+
+
 @dataclass
-class OperatorLines:
-    """What `lines_of` reads of an operator's entries, for an operator
-    whose parent is `parent` and whose run spans `sessions`: each call with
-    its time, input and tool, the text of each call's result and whether
-    it is an error, the task and output file of each call the harness ran
-    or moved to the background, the status each notification gives each
-    id, and each prompt that has a time, by its line, with its time,
+class LaunchingLines:
+    """What `lines_of` reads of an operator's entries for `launch_read`,
+    for an operator whose parent is `parent` and whose run spans
+    `sessions`: each call of the `Agent` tool with its time, input and
+    tool, and each prompt that has a time, by its line, with its time,
     whether it is from the operator's parent, and whether it is from the
     coordinator. A prompt's text is read at each read, as the files it
     gives may change."""
     parent: str
     sessions: list[Path]
-    uses: dict[str, tuple[float, dict[str, Any], str]] = field(default_factory=dict)
-    results: dict[str, tuple[str | None, bool]] = field(default_factory=dict)
-    moved: dict[str, tuple[str, Path | None]] = field(default_factory=dict)
-    tasks: dict[str, TaskStatus | None] = field(default_factory=dict)
+    uses: Uses = field(default_factory=dict)
     prompts: list[tuple[Path, int, float, bool, bool]] = field(default_factory=list)
 
     def step(self, p: Path, i: int, e: Entry) -> None:
-        """Add the entry `e` of line `i` of the transcript at `p`. The first
-        prompt is the operator's brief, from its parent."""
+        """Add the entry `e` of line `i` of the transcript at `p`."""
         stamp = e.get("timestamp")
         if e.get("type") == "assistant" and stamp:
             for b in blocks(e, "tool_use"):
-                self.uses[b.get("id", "")] = (epoch(stamp), b.get("input") or {},
-                                              b.get("name", ""))
-        elif e.get("type") == "user":
-            result = e.get("toolUseResult")
-            for call, b, text in tool_results(e):
-                self.results[call] = (text, bool(b.get("is_error")))
-                if isinstance(result, dict) and result.get(BACKGROUND_TASK):
-                    self.moved[call] = (str(result[BACKGROUND_TASK]), output_file(b))
-        if e.get("type") != "assistant":
-            for n in notifications(e):
-                for v in n.ids:
-                    self.tasks[v] = n.status
+                if b.get("name") == Tool.AGENT:
+                    self.uses[b.get("id", "")] = use_of(stamp, b)
+        self.add_prompt(p, i, e)
+
+    def add_prompt(self, p: Path, i: int, e: Entry) -> None:
+        """Add the entry `e` of line `i` of the transcript at `p`, where it
+        is a prompt that has a time. The first prompt is the operator's
+        brief, from its parent."""
+        stamp = e.get("timestamp")
         if stamp and is_prompt(e):
             direct = origin(e)[1] is Origin.COORDINATOR
             briefed = not self.prompts or direct or sender(
@@ -163,6 +165,36 @@ class OperatorLines:
         return out
 
 
+@dataclass
+class OperatorLines(LaunchingLines):
+    """What `lines_of` reads of an operator's entries for `operator_read`:
+    what `LaunchingLines` reads, with each call of any tool, the text of
+    each call's result and whether it is an error, the task and output file
+    of each call the harness ran or moved to the background, and the status
+    each notification gives each id."""
+    results: dict[str, tuple[str | None, bool]] = field(default_factory=dict)
+    moved: dict[str, tuple[str, Path | None]] = field(default_factory=dict)
+    tasks: dict[str, TaskStatus | None] = field(default_factory=dict)
+
+    def step(self, p: Path, i: int, e: Entry) -> None:
+        """Add the entry `e` of line `i` of the transcript at `p`."""
+        stamp = e.get("timestamp")
+        if e.get("type") == "assistant" and stamp:
+            for b in blocks(e, "tool_use"):
+                self.uses[b.get("id", "")] = use_of(stamp, b)
+        elif e.get("type") == "user":
+            result = e.get("toolUseResult")
+            for call, b, text in tool_results(e):
+                self.results[call] = (text, bool(b.get("is_error")))
+                if isinstance(result, dict) and result.get(BACKGROUND_TASK):
+                    self.moved[call] = (str(result[BACKGROUND_TASK]), output_file(b))
+        if e.get("type") != "assistant":
+            for n in notifications(e):
+                for v in n.ids:
+                    self.tasks[v] = n.status
+        self.add_prompt(p, i, e)
+
+
 type MadeCall = tuple[Call, bool]
 """A `Call` as `calls_of` made it from a use, with whether the operator's
 last merge call of the use's command, up to the use's own, was denied."""
@@ -173,15 +205,12 @@ _calls_made: Makes[MadeCall] = Makes()
 use, with the commits they were made from as the further key."""
 
 
-type Uses = dict[str, tuple[float, dict[str, Any], str]]
-"""Each call of an operator, by the id of its use, with its time, its
-input and its tool."""
-
-
-def lines_of(aid: str, path: Path) -> OperatorLines:
+def lines_of[L: LaunchingLines](lines: type[L], aid: str, path: Path) -> L:
+    """What `lines` reads of the entries of the operator `aid` whose
+    transcript is at `path`, by the fold of its step."""
     parent = parent_id(path)
     sessions = run_sessions(path)
-    return fold(OperatorLines.step, lambda: OperatorLines(parent, sessions),
+    return fold(lines.step, lambda: lines(parent, sessions),
                 (aid, path, parent, tuple(sessions)), chain(path))
 
 
@@ -190,7 +219,7 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
                   commits: frozenset[tuple[str, float]]) -> OperatorRead:
     """`read_operator`, with `subjects` as the pairs `commits` gives, those
     of `merge_subjects`."""
-    read = lines_of(aid, path)
+    read = lines_of(OperatorLines, aid, path)
     messages = read.messages(aid, children_of(path, aid), undecided)
     calls, uses = calls_of(aid, path, read, commits, undecided)
     launched, passes = launches_of(aid, path, main, uses, undecided)
@@ -200,10 +229,9 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
 @state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
 def launch_read(aid: str, path: Path, main: Path, undecided: list[str]) -> OperatorRead:
     """`read_launches`, with no listing."""
-    read = lines_of(aid, path)
+    read = lines_of(LaunchingLines, aid, path)
     messages = read.messages(aid, children_of(path, aid), undecided)
-    uses = {call: (t, unfiled_call(aid, tool, inp, None, undecided)[0] if tool == Tool.AGENT
-                   else inp, tool)
+    uses = {call: (t, unfiled_call(aid, tool, inp, None, undecided)[0], tool)
             for call, (t, inp, tool) in read.uses.items()}
     launched, passes = launches_of(aid, path, main, uses, undecided)
     return OperatorRead(launched, (), tuple(messages), passes)
