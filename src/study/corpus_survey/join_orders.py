@@ -13,7 +13,6 @@ import time
 from collections import Counter
 from enum import StrEnum
 from multiprocessing import Pool
-from pathlib import Path
 from typing import Any
 
 from controlled_markdown import mctx
@@ -21,13 +20,10 @@ from study.corpus_survey import algebra, kept
 from study.corpus_survey.bodies import CLAUSES, Kind, is_const, strip
 from study.corpus_survey.corpus import bodies_of, corpus
 from study.corpus_survey.joins import computed_keys, join
-from study.corpus_survey.prefix import CODE as PREFIX_CODE
 from study.corpus_survey.prefix import WORKERS, stem_of
 from study.corpus_survey.section import Section, body, items, ran, table
 from study.corpus_survey.simulation import OVER, Entry, Eval, Mark, Query, Status, classify, text
 
-HERE = Path(__file__).parent
-CODE = (*PREFIX_CODE, HERE / "join_orders.py", HERE / "joins.py")
 MAXDP = 9
 """The most variables of a body whose best order is searched."""
 BIG = OVER + 1
@@ -357,7 +353,7 @@ def simulate_stem(name: str) -> list[dict[str, Any]]:
 
 def kept_simulation(name: str) -> list[dict[str, Any]]:
     c = corpus()
-    return kept.kept("join-orders", kept.solver_key(name, CODE, [c.gen / f"{name}.arclog"]), lambda: simulate_stem(name))
+    return kept.kept("join-orders", kept.solver_key(name, [c.gen / f"{name}.arclog"]), lambda: simulate_stem(name))
 
 
 def capped(r: dict[str, Any]) -> bool:

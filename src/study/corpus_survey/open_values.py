@@ -6,7 +6,6 @@ solvers of the most open values and of those whose `out` holds a
 import math
 from collections import Counter, defaultdict
 from functools import cache
-from pathlib import Path
 
 from arc.task import load as load_task
 from controlled_markdown import mctx
@@ -112,7 +111,7 @@ def stems_run() -> list[str]:
     one whose `out` holds a `TiebreakResolution` column."""
     chosen = largest(open_products())
     for s in corpus().stems:
-        if s not in chosen and kept.kept(SECTION, {**kept.solver_key(s, CODE), "part": "tie"}, lambda s=s: has_tie(s)):
+        if s not in chosen and kept.kept(SECTION, {**kept.solver_key(s), "part": "tie"}, lambda s=s: has_tie(s)):
             chosen.append(s)
     return chosen
 
@@ -123,11 +122,10 @@ def has_tie(stem: str) -> bool:
 
 
 SECTION = "models-per-case-per-input"
-CODE = (Path(__file__), Path(__file__).with_name("solver_runs.py"))
 
 
 def models_section() -> str:
-    got = {s: kept.kept(SECTION, kept.solver_key(s, CODE), lambda s=s: models(s)) for s in stems_run()}
+    got = {s: kept.kept(SECTION, kept.solver_key(s), lambda s=s: models(s)) for s in stems_run()}
     rows = []
     for s, r in got.items():
         per = r.get("inputs", {})

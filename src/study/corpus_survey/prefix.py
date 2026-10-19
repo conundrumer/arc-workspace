@@ -5,7 +5,6 @@ least largest prefix over every order the modes allow."""
 
 import time
 from multiprocessing import Pool
-from pathlib import Path
 from typing import Any
 
 from arclog_convert.convert import ALGEBRA_MODES
@@ -29,9 +28,6 @@ from study.corpus_survey.simulation import (
 )
 from study.corpus_survey.solver_runs import dump
 
-HERE = Path(__file__).parent
-DUMP_CODE = (HERE / "solver_runs.py",)
-CODE = (*DUMP_CODE, HERE / "simulation.py", HERE / "algebra.py", HERE / "prefix.py", HERE / "bodies.py", HERE / "trees.py")
 LIMIT = 10.0
 """The seconds one count may take before it is `timeout`."""
 REORDERED = 10_000
@@ -48,7 +44,7 @@ def rows(stem: str) -> dict[str, Any]:
     """The kept dump of `stem` (`solver_runs.dump`)."""
     c = corpus()
     read = {str(a[0])[1:] for b in bodies_of(c, stem) for a in deep_atoms(b.items) if str(a[0]).startswith("&")}
-    return kept.kept("prefix-sizes", {**kept.solver_key(stem, DUMP_CODE, [c.gen / f"{stem}.arclog"]), "part": "rows"},
+    return kept.kept("prefix-sizes", {**kept.solver_key(stem, [c.gen / f"{stem}.arclog"]), "part": "rows"},
                      lambda: dump(stem, read))
 
 
@@ -198,7 +194,7 @@ def measure_stem(name: str) -> list[dict[str, Any]]:
 
 def kept_measure(name: str) -> list[dict[str, Any]]:
     c = corpus()
-    return kept.kept("prefix-sizes", kept.solver_key(name, CODE, [c.gen / f"{name}.arclog"]),
+    return kept.kept("prefix-sizes", kept.solver_key(name, [c.gen / f"{name}.arclog"]),
                      lambda: measure_stem(name))
 
 

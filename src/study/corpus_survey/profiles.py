@@ -26,8 +26,6 @@ from study.corpus_survey.forms import instances
 from study.corpus_survey.section import Section, body, items, ran, table
 from study.corpus_survey.shapes import joined, shaped
 
-HERE = Path(__file__).parent
-CODE = (HERE / "profiles.py",)
 BOX = re.compile(r"\[(-?\d+), (-?\d+), (-?\d+), (-?\d+)\]")
 FACT_RELATIONS = frozenset({"in", "ex_in", "ex_out"})
 IDENT_COMPONENTS = frozenset({"Connectivity", "Quotient", "Enclosure"})
@@ -195,7 +193,7 @@ def summary(stem: str) -> dict[str, Any]:
 
 
 def kept_summary(stem: str) -> dict[str, Any]:
-    return kept.kept("runs", kept.solver_key(stem, CODE), lambda: summary(stem))
+    return kept.kept("runs", kept.solver_key(stem), lambda: summary(stem))
 
 
 def summaries() -> dict[str, dict[str, Any]]:

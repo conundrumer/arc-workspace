@@ -6,6 +6,7 @@ changed."""
 import hashlib
 import json
 from collections.abc import Callable, Sequence
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -28,11 +29,27 @@ def files_key(files: Sequence[Path]) -> str:
     return h.hexdigest()
 
 
-def solver_key(stem: str, code: Sequence[Path], files: Sequence[Path] = ()) -> dict[str, Any]:
+ROOT = checkout.ROOT
+
+
+def tree_files() -> list[Path]:
+    """Every file under `src/` and `engine/lib/`, sorted, leaving out
+    `__pycache__`."""
+    return sorted(p for top in ("src", "engine/lib") for p in (ROOT / top).rglob("*")
+                  if p.is_file() and "__pycache__" not in p.parts)
+
+
+@cache
+def tree_key() -> str:
+    """The `files_key` of `tree_files()`, computed once per run."""
+    return files_key(tree_files())
+
+
+def solver_key(stem: str, files: Sequence[Path] = ()) -> dict[str, Any]:
     """What an intermediate of a run of the solver `stem` is computed
     from: what its snapshot record depends on (`parity.snapshot.record_key`),
-    the modules `code` that compute it, and `files`."""
-    return {"solver": record_key(stem), "code": files_key(code), "files": files_key(files)}
+    every file under `src/` and `engine/lib/` (`tree_key`), and `files`."""
+    return {"solver": record_key(stem), "code": tree_key(), "files": files_key(files)}
 
 
 def kept(section: str, key: dict[str, Any], make: Callable[[], Any]) -> Any:
