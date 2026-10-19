@@ -23,7 +23,7 @@ use std::process::ExitCode;
 use std::sync::Mutex;
 
 use arclog::eval::{ReachedBound, Stop};
-use arclog::harness::{require_optimized_build, run_over_corpus, SolverResult};
+use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, SolverResult};
 use arclog::judge::solves::OutputSet;
 use arclog::session::Counts;
 use serde_json::Value;
@@ -58,7 +58,7 @@ pub fn run(args: &[String]) -> ExitCode {
             Ok(lines) => SolverResult::Fail(lines),
             Err(line) => SolverResult::Fail(vec![line]),
         },
-    });
+    }, print_ended);
     let report = match report {
         Ok(report) => report,
         Err(error) => {
@@ -66,11 +66,6 @@ pub fn run(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    for (solver, lines) in &report.failures {
-        for line in lines {
-            println!("{}: {line}", solver.task_id);
-        }
-    }
     let counts = counts.into_inner().expect("a map of counts that no panic poisoned");
     for (id, counts) in &counts {
         println!("{id}: the largest counts of one evaluation: {} bindings tried, {} rows held", counts.bindings, counts.rows);

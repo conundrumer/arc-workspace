@@ -16,7 +16,7 @@ fn a_panic_on_one_solver_fails_that_solver_and_the_run_reports_the_others() {
         "a" => panic!("the form at a does not evaluate"),
         "b" => SolverResult::Fail(vec!["b fails".to_owned()]),
         _ => SolverResult::Pass,
-    });
+    }, |_, _| ());
     std::fs::remove_dir_all(&dir).unwrap();
     let report = report.unwrap();
     assert_eq!(report.checked, 3);

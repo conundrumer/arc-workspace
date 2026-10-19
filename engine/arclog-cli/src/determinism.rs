@@ -22,7 +22,7 @@ use arclog::eval::join::each_row;
 use arclog::eval::pool::Pool;
 use arclog::eval::{output_relation, Evaluation, RelationValue};
 use arclog::hash::StableHashMap;
-use arclog::harness::{require_optimized_build, run_over_corpus, SolverResult};
+use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, SolverResult};
 use arclog::resolver::{DependencyKind, GraphNodeIndex};
 use arclog::terms::{Example, Ident, Term};
 use arclog::types::GraphRelation;
@@ -54,7 +54,7 @@ pub fn run(args: &[String]) -> ExitCode {
                 SolverResult::Pass
             }
         }
-    });
+    }, print_ended);
     let report = match report {
         Ok(report) => report,
         Err(error) => {
@@ -66,11 +66,6 @@ pub fn run(args: &[String]) -> ExitCode {
     not_compared.sort();
     for line in &not_compared {
         println!("{line}");
-    }
-    for (solver, lines) in &report.failures {
-        for line in lines {
-            println!("{}: {line}", solver.task_id);
-        }
     }
     let ran = if arguments.task_ids.is_empty() { report.checked } else { arguments.task_ids.len() };
     println!(

@@ -184,7 +184,7 @@ fn main() -> ExitCode {
         }
     };
     let read_with_diagnostics = Mutex::new(Vec::new());
-    let result = run_over_corpus(Path::new(dir), |solver| round_trip(Path::new(dir), solver, &report, &read_with_diagnostics));
+    let result = run_over_corpus(Path::new(dir), |solver| round_trip(Path::new(dir), solver, &report, &read_with_diagnostics), |_, _| ());
     let corpus = match result {
         Ok(corpus) => corpus,
         Err(error) => {

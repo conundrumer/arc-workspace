@@ -26,7 +26,7 @@ use std::sync::Mutex;
 use arclog::eval::join::each_row;
 use arclog::eval::models::ModelsEnd;
 use arclog::eval::{relation_of, Evaluation, RelationValue};
-use arclog::harness::{require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
+use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::judge::run::{Found, JudgedRun};
 use arclog::judge::solves::OutputSet;
 use arclog::program::path::{node_at, NodePath, NodeRef};
@@ -66,7 +66,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let report = run_over_corpus(&arguments.corpus, |solver| match &selected {
         Some(ids) if !ids.contains(&solver.task_id) => SolverResult::Pass,
         _ => compare_solver(&arguments, solver, &not_compared),
-    });
+    }, print_ended);
     let report = match report {
         Ok(report) => report,
         Err(error) => {
@@ -74,11 +74,6 @@ pub fn run(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    for (solver, lines) in &report.failures {
-        for line in lines {
-            println!("{}: {line}", solver.task_id);
-        }
-    }
     let not_compared = not_compared.into_inner().expect("a map that no panic poisoned");
     for (id, reason) in &not_compared {
         println!("{id}: {CONCEPT}: not compared: {reason}");

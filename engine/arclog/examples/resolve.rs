@@ -13,7 +13,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use arclog::diagnostic::{Diagnostic, Location};
-use arclog::harness::{read_corpus_solver, require_optimized_build, run_over_corpus, CorpusSolver, LintReport, SolverResult};
+use arclog::harness::{print_ended, read_corpus_solver, require_optimized_build, run_over_corpus, CorpusSolver, LintReport, SolverResult};
 use arclog::registry::Registry;
 use arclog::resolver::resolve_cases;
 use arclog::solver::{Case, Solver};
@@ -66,17 +66,12 @@ fn main() -> ExitCode {
         }
     };
     let dir = Path::new(dir);
-    match run_over_corpus(dir, |solver| check(dir, solver, &report)) {
+    match run_over_corpus(dir, |solver| check(dir, solver, &report), print_ended) {
         Err(error) => {
             eprintln!("{}: {error:?}", dir.display());
             ExitCode::FAILURE
         }
         Ok(corpus) => {
-            for (solver, lines) in &corpus.failures {
-                for line in lines {
-                    println!("{}: {line}", solver.task_id);
-                }
-            }
             println!("{} solvers, {} fail", corpus.checked, corpus.failures.len());
             if corpus.failures.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
         }

@@ -40,7 +40,7 @@ pub(super) fn compare_solvers(corpus: &Path, expanded: &Path, tasks: &Path) -> R
             found.lock().expect("no check panics holding the lock").insert(id.clone(), line);
         }
         SolverResult::Pass
-    })
+    }, |_, _| ())
     .map_err(|error| format!("the corpus does not read: {error:?}"))?;
     let found = found.into_inner().expect("no check panics holding the lock");
     let (differ, not_compared): (Vec<_>, Vec<_>) = found.into_values().partition(Result::is_ok);

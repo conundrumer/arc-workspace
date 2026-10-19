@@ -10,6 +10,7 @@
 //! bodies.
 
 use std::any::Any;
+use std::io::Write;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -162,9 +163,13 @@ pub fn require_optimized_build() -> Result<(), ExitCode> {
 /// Runs `check` over every solver of `dir`, on as many threads as the
 /// machine has, and gives the report over them. A panic of `check` on a
 /// solver is a failure of that solver, whose report is the panic's message.
-pub fn run_over_corpus<F>(dir: &Path, check: F) -> Result<CorpusReport, CorpusError>
+/// As the check of a solver ends, the worker that ran it calls `ended` with
+/// that solver and its result, so a run that stops before its last solver
+/// ends has passed `ended` the result of each solver that ended.
+pub fn run_over_corpus<F, E>(dir: &Path, check: F, ended: E) -> Result<CorpusReport, CorpusError>
 where
     F: Fn(&CorpusSolver) -> SolverResult + Sync,
+    E: Fn(&CorpusSolver, &SolverResult) + Sync,
 {
     let solvers = corpus_solvers(dir)?;
     let next = AtomicUsize::new(0);
@@ -177,8 +182,10 @@ where
                     loop {
                         let index = next.fetch_add(1, Ordering::Relaxed);
                         let Some(solver) = solvers.get(index) else { break done };
-                        let result = catch_unwind(AssertUnwindSafe(|| check(solver)));
-                        done.push((index, result.unwrap_or_else(|payload| SolverResult::Fail(vec![panic_line(&*payload)]))));
+                        let result = catch_unwind(AssertUnwindSafe(|| check(solver)))
+                            .unwrap_or_else(|payload| SolverResult::Fail(vec![panic_line(&*payload)]));
+                        ended(solver, &result);
+                        done.push((index, result));
                     }
                 })
             })
@@ -194,6 +201,22 @@ where
         })
         .collect();
     Ok(CorpusReport { checked: solvers.len(), failures })
+}
+
+/// The `ended` of [`run_over_corpus`] for a corpus run that prints its
+/// failures: it prints each line of a failure of `solver` to stdout as
+/// `<task_id>: <line>`, then flushes stdout, so each line stands in the
+/// output once the solver has ended, and then prints `<task_id>: ended` to
+/// stderr, whatever the result.
+pub fn print_ended(solver: &CorpusSolver, result: &SolverResult) {
+    if let SolverResult::Fail(lines) = result {
+        let mut out = std::io::stdout().lock();
+        for line in lines {
+            writeln!(out, "{}: {line}", solver.task_id).expect("stdout takes a failure line");
+        }
+        out.flush().expect("stdout takes a failure line");
+    }
+    eprintln!("{}: ended", solver.task_id);
 }
 
 /// The line that reports a panic whose payload is `payload`: its message,

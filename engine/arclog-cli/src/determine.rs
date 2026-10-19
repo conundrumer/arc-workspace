@@ -22,7 +22,7 @@ use arclog::eval::join::{each_row, union};
 use arclog::eval::rigid::image;
 use arclog::eval::{RelationValue, RunFault};
 use arclog::hash::StableHashMap;
-use arclog::harness::{require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
+use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::judge::candidates::World;
 use arclog::judge::determination::{determine, CaseOutcome, DeterminedCase, Determination, Parameter};
 use arclog::program::{OutputOwner, ParamValue, ProgramRelation, RigidDetName};
@@ -56,7 +56,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let report = run_over_corpus(&corpus, |solver| match &selected {
         Some(ids) if !ids.contains(&solver.task_id) => SolverResult::Pass,
         _ => determine_solver(&corpus, &tasks, solver, &differing),
-    });
+    }, print_ended);
     let report = match report {
         Ok(report) => report,
         Err(error) => {
@@ -64,11 +64,6 @@ pub fn run(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    for (solver, lines) in &report.failures {
-        for line in lines {
-            println!("{}: {line}", solver.task_id);
-        }
-    }
     let differing = differing.into_inner().expect("a set that no panic poisoned").len();
     let determined = selected.map_or(report.checked, |ids| ids.len());
     let faulted = report.failures.len() - differing;

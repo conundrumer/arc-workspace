@@ -16,7 +16,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use arclog::harness::{read_corpus_solver, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
+use arclog::harness::{print_ended, read_corpus_solver, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::program::path::{node_at, NodePath, NodeRef, PathStep};
 use arclog::solver::{Exclusion, FileOwner, Solver};
 
@@ -54,17 +54,12 @@ fn main() -> ExitCode {
         eprintln!("usage: cases <dir>");
         return ExitCode::FAILURE;
     };
-    match run_over_corpus(&dir, |solver| check(&dir, solver)) {
+    match run_over_corpus(&dir, |solver| check(&dir, solver), print_ended) {
         Err(error) => {
             eprintln!("{error:?}");
             ExitCode::FAILURE
         }
         Ok(report) => {
-            for (solver, lines) in &report.failures {
-                for line in lines {
-                    println!("{}: {line}", solver.task_id);
-                }
-            }
             println!("{} solvers, {} fail", report.checked, report.failures.len());
             if report.failures.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
         }
