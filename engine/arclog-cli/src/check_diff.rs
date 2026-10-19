@@ -40,8 +40,7 @@ use crate::select::{read_json, selected};
 
 const USAGE: &str = "usage: arclog-cli check-diff <corpus-dir> [<task_id> ...] [--reads <name> ...] [--base <rev>]";
 
-/// The limit on the CPU time of each check. The engine key hashes it, so a
-/// result stored as unfinished is the result of its keys.
+/// The limit on the CPU time of each check.
 const BOUND_SECONDS: u64 = 30;
 
 /// The cargo profile `check_one` builds under: the release profile's

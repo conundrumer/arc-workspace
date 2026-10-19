@@ -1,7 +1,6 @@
 //! `check_one <corpus-dir> <task_id>`: the engine checker's diagnostics on
 //! one solver of the corpus, one line each, `<kind:?> <message> at
-//! <location:?>`, for `arclog-cli check-diff`, which runs it in a child
-//! process so that it can end a check at its bound.
+//! <location:?>`, for `arclog-cli check-diff`.
 //!
 //! It prints each diagnostic of the read of the solver's two files, then of
 //! the resolution of each case program, the concept case first, then of the
