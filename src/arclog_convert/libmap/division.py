@@ -14,12 +14,12 @@ The hoist of a site:
   the others are grounded. Where no atom grounds a variable so, an inline
   lib atom grounds it once the variables of one of its modes are grounded
   (`_modes`); a variable of an orientation type there counts as grounded,
-  since arclog grounds each label of a positive atom, and the `ground`
+  since arclog binds each label of a positive atom, and the `ground`
   form adds its `*_elem` atom.
 - An elem atom an input's body copies, such as `axis_elem(A)`, leaves the
   instance's inputs where, in each input that holds it, another positive
   atom holds its variable at a column of the elem's own type, since arclog
-  grounds each label of a positive atom; the `ground` form keeps it.
+  binds each label of a positive atom; the `ground` form keeps it.
 - A position input, `cell`, `outer` or `inner`, takes a projection of its
   atoms: the read gives the position, and a position input may hold more
   positions than the clause reads, since the instance's output at a

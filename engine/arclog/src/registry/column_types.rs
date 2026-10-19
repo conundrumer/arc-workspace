@@ -37,11 +37,11 @@ pub struct MacroDeclarations {
 /// this gives it. Any other site gives no type.
 ///
 /// The modes are the minimal sets of the columns, other than an orientation
-/// type's, whose labels, taken as grounded, let [`grounded_labels`] ground
+/// type's, whose labels, taken as bound, let [`bound_labels`] bind
 /// every label of the definition, with the labels of all the columns as the
 /// labels outside the definition. An atom of a lib relation takes the modes
 /// that `modes` gives it, and an atom of another macro of `macros` the modes
-/// this gives it. Where the empty set grounds the definition, the macro has
+/// this gives it. Where the empty set binds the definition, the macro has
 /// no mode, as a relation over a finite domain has none.
 ///
 /// `lib` holds the columns of each lib name that a form other than a
@@ -55,7 +55,7 @@ pub struct MacroDeclarations {
 /// have an empty meet, or whose branches give types with no join, over the
 /// list of the label's scope that `crate::types::scope_list` gives, the
 /// definition for a column's label; a column whose label stands at no site
-/// that gives a type; or a definition that no set of the columns grounds.
+/// that gives a type; or a definition that no set of the columns binds.
 /// A macro that reads a macro with a fault takes no declaration, and gives
 /// no diagnostic of its own for it.
 pub fn macro_column_types(
@@ -212,19 +212,19 @@ impl MacroDerivation<'_, '_> {
     }
 
     /// The modes of `m`, as [`macro_column_types`] gives them, or `None`
-    /// with a diagnostic where no set of its columns grounds its definition.
+    /// with a diagnostic where no set of its columns binds its definition.
     /// `label_types` holds the type of each label of the definition that has
-    /// one. A set that holds a column of an orientation type grounds what the
-    /// set without it grounds, so no mode holds one.
+    /// one. A set that holds a column of an orientation type binds what the
+    /// set without it binds, so no mode holds one.
     fn modes_of(&mut self, m: &RelationMacro<'_>, label_types: &StableHashMap<LabelId, ValueType>) -> Option<Box<[Mode]>> {
         let definition_labels = body_labels(m.definition);
         let column_labels: StableHashSet<LabelId> = m.columns.iter().map(|(_, label)| *label).collect();
         let label_types = |label: LabelId| label_types.get(&label).cloned();
         let atom_modes = |atom: &Atom| self.atom_modes(atom);
         let columns: Vec<usize> = (0..m.columns.len()).collect();
-        let grounds = |set: &[usize]| {
-            let grounded: StableHashSet<LabelId> = set.iter().map(|&c| m.columns[c].1).collect();
-            let reached = grounded_labels(m.definition, &grounded, &column_labels, &atom_modes, &label_types);
+        let binds = |set: &[usize]| {
+            let bound: StableHashSet<LabelId> = set.iter().map(|&c| m.columns[c].1).collect();
+            let reached = bound_labels(m.definition, &bound, &column_labels, &atom_modes, &label_types);
             definition_labels.iter().all(|label| reached.contains(label))
         };
         let mut found: Vec<Vec<usize>> = Vec::new();
@@ -233,7 +233,7 @@ impl MacroDerivation<'_, '_> {
                 if found.iter().any(|mode| mode.iter().all(|c| set.contains(c))) {
                     continue;
                 }
-                if grounds(&set) {
+                if binds(&set) {
                     found.push(set);
                 }
             }
@@ -242,11 +242,11 @@ impl MacroDerivation<'_, '_> {
             }
         }
         if found.is_empty() {
-            let message = format!("no set of the columns of the macro `{}` grounds every label of its definition", m.name.0);
-            self.diagnostics.push(crate::read::check_error(CheckId::Grounding, message, m.place));
+            let message = format!("no set of the columns of the macro `{}` binds every label of its definition", m.name.0);
+            self.diagnostics.push(crate::read::check_error(CheckId::Safety, message, m.place));
             return None;
         }
-        let modes = found.into_iter().map(|set| Mode { grounded: set.into_iter().map(|c| m.columns[c].0.clone()).collect() });
+        let modes = found.into_iter().map(|set| Mode { bound: set.into_iter().map(|c| m.columns[c].0.clone()).collect() });
         Some(modes.collect())
     }
 

@@ -331,7 +331,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
             .flat_map(|(body, path)| body.conjuncts.iter().zip(0u32..).map(move |(conjunct, index)| (conjunct, path.child(index))))
             .chain(atom.iter().map(|(conjunct, path)| (conjunct, path.clone())))
             .collect();
-        let clause = ir::compile_grounded(self.evaluation.program, self.form, conjuncts, columns)
+        let clause = ir::compile_safe(self.evaluation.program, self.form, conjuncts, columns)
             .map_err(|compile| self.fault(format!("a body of the form does not compile: {compile:?}")))?;
         let relation = match bodies.relation(self.form, &clause, example)? {
             RelationValue::Rows(relation) => relation,

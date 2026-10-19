@@ -33,7 +33,7 @@ const BATCH: u64 = 1024;
 pub struct Budget<'a> {
     limits: &'a Limits,
     session: &'a TaskSession,
-    work: u64,
+    bindings: u64,
     rows: u64,
 }
 
@@ -41,7 +41,7 @@ impl<'a> Budget<'a> {
     /// A budget with no work and no rows counted, under `limits` and the
     /// caps of `session`.
     pub fn new(limits: &'a Limits, session: &'a TaskSession) -> Self {
-        Budget { limits, session, work: 0, rows: 0 }
+        Budget { limits, session, bindings: 0, rows: 0 }
     }
 
     /// The caps of the session.
@@ -52,10 +52,10 @@ impl<'a> Budget<'a> {
     /// Counts a batch of `bindings` tried, and checks the caps, the
     /// session's byte bound, the deadline and the cancellation.
     pub fn charge_work(&mut self, bindings: u64) -> Result<(), ReachedBound> {
-        self.work += bindings;
+        self.bindings += bindings;
         let caps = self.session.caps;
-        if self.work > caps.work {
-            return Err(ReachedBound::Work { cap: caps.work });
+        if self.bindings > caps.bindings {
+            return Err(ReachedBound::Bindings { cap: caps.bindings });
         }
         if self.rows > caps.rows {
             return Err(ReachedBound::Rows { cap: caps.rows });
@@ -80,7 +80,7 @@ impl<'a> Budget<'a> {
     /// Records the budget's counts in its session, as
     /// [`TaskSession::record_counts`] gives.
     pub fn record(&self) {
-        self.session.record_counts(Counts { work: self.work, rows: self.rows });
+        self.session.record_counts(Counts { bindings: self.bindings, rows: self.rows });
     }
 }
 

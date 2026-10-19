@@ -1,4 +1,4 @@
-//! The order rule of the type check, its rule on the join of a relation's
+//! The comparison typing rule of the type check, its rule on the join of a relation's
 //! column types, and the pose rule each refuse a file that breaks them.
 
 use std::sync::Arc;

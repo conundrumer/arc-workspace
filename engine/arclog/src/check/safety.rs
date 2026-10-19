@@ -1,4 +1,4 @@
-//! The grounding check, and the bodies of a form with their paths, which
+//! The safety check, and the bodies of a form with their paths, which
 //! the check of the labels that `=` makes and that an `OR` or an `IF`
 //! exports and the type inference's scope of a form read too.
 
@@ -6,7 +6,7 @@ use super::reads::forms_within;
 use super::types::result;
 use super::{Check, CheckId, CheckInput, CheckResult, LabelInScope, Prefix, PrefixResult, Refusal};
 use crate::eval::ir::atom_modes;
-use crate::grounding::{body_labels, conjunct_labels, each_label_use_at, grounded_labels, list_of, parts_of};
+use crate::safety::{body_labels, conjunct_labels, each_label_use_at, bound_labels, list_of, parts_of};
 use crate::hash::StableHashSet;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
@@ -19,21 +19,21 @@ use crate::resolver::form_columns;
 use crate::registry::Registry;
 use crate::types::{use_label, ValueType};
 
-/// [`CheckId::Grounding`].
-pub struct GroundingCheck;
+/// [`CheckId::Safety`].
+pub struct SafetyCheck;
 
-impl Check for GroundingCheck {
+impl Check for SafetyCheck {
     fn id(&self) -> CheckId {
-        CheckId::Grounding
+        CheckId::Safety
     }
 
     /// Refuses each label of a body of the form that the body leaves
-    /// ungrounded: one pass over each list in its written order, each prefix
-    /// grounded by [`crate::grounding::grounded_labels`], with the modes of
+    /// unbound: one pass over each list in its written order, each prefix
+    /// bound by [`crate::safety::bound_labels`], with the modes of
     /// the algebra relations and relation macros. A label is refused at its first use
     /// in the body, or at the site of an atom that no mode of its relation
-    /// grounds from the conjuncts written before it, or at a `NOT` or an
-    /// `ALL` written before the conjuncts that ground its outer label.
+    /// binds from the conjuncts written before it, or at a `NOT` or an
+    /// `ALL` written before the conjuncts that bind its outer label.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let registry = input.scope.registry;
         let mut refused: Vec<(&'static str, NodePath)> = Vec::new();
@@ -62,7 +62,7 @@ pub(super) struct FormBody<'a> {
     pub at: NodePath,
     pub body: &'a Node<Body>,
     pub place: BodyPlace<'a>,
-    /// The labels the body reads grounded from its context: the key's
+    /// The labels the body reads bound from its context: the key's
     /// labels for a keyed input or an instance clause, and the row's and
     /// the candidate's for a `never` clause.
     pub given: Vec<LabelId>,
@@ -249,57 +249,57 @@ impl Walk<'_> {
         let outside = form_body.outside();
         let mut found = Vec::new();
         self.ordered(&list_of(form_body.body.value(), &form_body.at), &given, &outside, &mut found);
-        let grounded = grounded_labels(form_body.body.value(), &given, &outside, &|atom| atom_modes(self.registry, atom), self.types);
-        let mut ungrounded = |at: &NodePath, use_: LabelUse| {
-            if let Some(label) = use_label(use_).filter(|label| !grounded.contains(label)) {
-                found.push((label, "the body leaves the label ungrounded", at.clone()));
+        let bound = bound_labels(form_body.body.value(), &given, &outside, &|atom| atom_modes(self.registry, atom), self.types);
+        let mut check_use = |at: &NodePath, use_: LabelUse| {
+            if let Some(label) = use_label(use_).filter(|label| !bound.contains(label)) {
+                found.push((label, "the body leaves the label unbound", at.clone()));
             }
         };
-        each_label_use_at(NodeRef::Body(form_body.body.value()), &form_body.at, &mut ungrounded);
+        each_label_use_at(NodeRef::Body(form_body.body.value()), &form_body.at, &mut check_use);
         if let Some((input, at)) = form_body.head() {
-            each_head_use(input, at, &mut ungrounded);
+            each_head_use(input, at, &mut check_use);
         }
         let held = body_labels(form_body.body.value());
-        for &label in form_body.columns.iter().filter(|label| !grounded.contains(label) && !held.contains(label)) {
-            found.push((label, "the body leaves the label of a column ungrounded", form_body.at.clone()));
+        for &label in form_body.columns.iter().filter(|label| !bound.contains(label) && !held.contains(label)) {
+            found.push((label, "the body leaves the label of a column unbound", form_body.at.clone()));
         }
         let mut seen = StableHashSet::default();
         found.into_iter().filter(|(label, _, _)| seen.insert(*label)).map(|(_, message, at)| (message, at)).collect()
     }
 
-    /// The labels that the conjuncts of `list` ground from `given`, with
+    /// The labels that the conjuncts of `list` bind from `given`, with
     /// `outside` the labels that stand outside them.
-    fn ground(&self, list: &[(NodePath, &Conjunct)], given: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>) -> StableHashSet<LabelId> {
+    fn bind(&self, list: &[(NodePath, &Conjunct)], given: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>) -> StableHashSet<LabelId> {
         let body = Body { conjuncts: list.iter().map(|(_, conjunct)| (*conjunct).clone()).collect() };
-        grounded_labels(&body, given, outside, &|atom| atom_modes(self.registry, atom), self.types)
+        bound_labels(&body, given, outside, &|atom| atom_modes(self.registry, atom), self.types)
     }
 
     /// Pushes onto `found` each label that `list`, in its written order,
-    /// uses before the conjuncts written before it ground it, from `given`,
+    /// uses before the conjuncts written before it bind it, from `given`,
     /// with `outside` the labels that stand outside `list`, and so for the
     /// parts of each of its forms.
     fn ordered(&self, list: &[(NodePath, &Conjunct)], given: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>, found: &mut Vec<(LabelId, &'static str, NodePath)>) {
         for (i, (at, conjunct)) in list.iter().enumerate() {
             let mut from = outside.clone();
             from.extend(list_labels(list[i..].iter().map(|(_, conjunct)| *conjunct)));
-            let before = self.ground(&list[..i], given, &from);
+            let before = self.bind(&list[..i], given, &from);
             let mut around = outside.clone();
             around.extend(list_labels(list.iter().enumerate().filter(|&(k, _)| k != i).map(|(_, (_, conjunct))| *conjunct)));
             match conjunct {
                 Conjunct::Atom(atom) if !atom_modes(self.registry, atom.value()).is_empty() => {
                     let mut after_outside = outside.clone();
                     after_outside.extend(list_labels(list[i + 1..].iter().map(|(_, conjunct)| *conjunct)));
-                    let after = self.ground(&list[..=i], given, &after_outside);
+                    let after = self.bind(&list[..=i], given, &after_outside);
                     each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |path, use_| {
                         if let Some(label) = use_label(use_).filter(|label| !after.contains(label)) {
-                            found.push((label, "no mode of the atom's relation has its columns grounded by the conjuncts written before it", path.clone()));
+                            found.push((label, "no mode of the atom's relation has its columns bound by the conjuncts written before it", path.clone()));
                         }
                     });
                 }
                 Conjunct::Not(_) | Conjunct::All { .. } => {
                     each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |path, use_| {
                         if let Some(label) = use_label(use_).filter(|label| around.contains(label) && !before.contains(label)) {
-                            found.push((label, "the `NOT` or the `ALL` stands before the conjuncts that ground the label", path.clone()));
+                            found.push((label, "the `NOT` or the `ALL` stands before the conjuncts that bind the label", path.clone()));
                         }
                     });
                 }

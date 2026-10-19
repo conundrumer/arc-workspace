@@ -1,7 +1,7 @@
 //! The check of the labels that `=` makes and that an `OR` or an `IF` exports.
 
-use super::grounding::{each_head_use, form_bodies, FormBody};
-use crate::grounding::{each_label_use_at, list_of, parts_of};
+use super::safety::{each_head_use, form_bodies, FormBody};
+use crate::safety::{each_label_use_at, list_of, parts_of};
 use super::types::result;
 use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
 use crate::hash::StableHashSet;

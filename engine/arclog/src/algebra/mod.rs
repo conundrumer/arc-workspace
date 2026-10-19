@@ -55,7 +55,7 @@ pub fn algebra(name: &LibName) -> Option<&'static dyn Algebra> {
 /// is bound by its finite domain, so a mode never lists one.
 pub fn satisfied_mode(relation: &AlgebraRelation, bound: &[bool]) -> Option<usize> {
     let is_bound = |name: &crate::program::ColumnName| relation.columns.iter().position(|column| column.name == *name).is_some_and(|i| bound[i]);
-    relation.modes.iter().position(|mode| mode.grounded.iter().all(is_bound))
+    relation.modes.iter().position(|mode| mode.bound.iter().all(is_bound))
 }
 
 /// The declaration of the algebra relation or relation macro `name`.

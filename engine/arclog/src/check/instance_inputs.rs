@@ -5,7 +5,7 @@
 use super::reads::{form_reads, forms_within, FormRead};
 use super::types::{component, result};
 use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
-use crate::grounding::body_labels;
+use crate::safety::body_labels;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Instance, InstanceInput, InstancePart, KeyBody, KeyClausePart, PortName};

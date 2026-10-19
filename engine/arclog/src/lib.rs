@@ -17,13 +17,13 @@
 //!   [`harness`], and the example `round_trip`
 //! - registry and resolver: [`registry`], [`resolver`], the files of
 //!   `engine/lib/`, the example `resolve`, and the test `registry_file`;
-//!   the derivation of a macro's modes applies [`grounding`]
+//!   the derivation of a macro's modes applies [`safety`]
 //! - `cases()`: [`solver`], and the example `cases`
 //! - programs as values: [`program`] and its submodules
 //! - checker: [`types`], [`diagnostic`], [`check`] and its submodules,
-//!   [`grounding`], which its grounding check applies, the
+//!   [`safety`], which its safety check applies, the
 //!   example `lint`, and the tests under `engine/arclog/tests/` that feed a
-//!   check a file that breaks it, such as the order rule's and the pose
+//!   check a file that breaks it, such as the comparison typing rule's and the pose
 //!   rule's
 //!
 //! A stage adds a submodule only under a module of its own. No stage edits
@@ -85,7 +85,7 @@ pub mod check;
 pub mod constraints;
 pub mod diagnostic;
 pub mod eval;
-pub mod grounding;
+pub mod safety;
 pub mod harness;
 pub mod hash;
 pub mod judge;

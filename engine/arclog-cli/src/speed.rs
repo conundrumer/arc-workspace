@@ -73,11 +73,11 @@ pub fn run(args: &[String]) -> ExitCode {
     }
     let counts = counts.into_inner().expect("a map of counts that no panic poisoned");
     for (id, counts) in &counts {
-        println!("{id}: the largest counts of one evaluation: {} bindings tried, {} rows held", counts.work, counts.rows);
+        println!("{id}: the largest counts of one evaluation: {} bindings tried, {} rows held", counts.bindings, counts.rows);
     }
     let largest = |count: fn(&Counts) -> u64| counts.iter().max_by_key(|(_, counts)| count(counts)).map(|(id, counts)| (count(counts), id));
-    if let (Some((work, work_id)), Some((rows, rows_id))) = (largest(|c| c.work), largest(|c| c.rows)) {
-        println!("the largest counts of the solvers run: {work} bindings tried, of {work_id}; {rows} rows held, of {rows_id}");
+    if let (Some((bindings, bindings_id)), Some((rows, rows_id))) = (largest(|c| c.bindings), largest(|c| c.rows)) {
+        println!("the largest counts of the solvers run: {bindings} bindings tried, of {bindings_id}; {rows} rows held, of {rows_id}");
     }
     let ran = selected.map_or(report.checked, |ids| ids.len());
     println!("{} of {ran} solvers run slower than Souffle, stop at a cap, or do not run", report.failures.len());
@@ -107,7 +107,7 @@ fn timed(arguments: &Arguments, id: &str, counts: &Mutex<BTreeMap<String, Counts
         let stops: Vec<&Stop> = run.pairs.iter().filter_map(|pair| if let OutputSet::Stopped(stop) = &pair.set { Some(stop) } else { None }).collect();
         let at_caps: BTreeSet<String> = stops
             .into_iter()
-            .filter(|stop| matches!(stop.bound, ReachedBound::Work { .. } | ReachedBound::Rows { .. }))
+            .filter(|stop| matches!(stop.bound, ReachedBound::Bindings { .. } | ReachedBound::Rows { .. }))
             .map(|stop| format!("the run stops at {:?} at the form {:?}", stop.bound, stop.form))
             .collect();
         lines.extend(at_caps);

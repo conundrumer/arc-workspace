@@ -238,7 +238,7 @@ class Linter:
         structure(self, forms)
         if not self.scene:
             cycles(self, self.placed)
-            grounding(self, forms)
+            safety(self, forms)
         for name, clauses in self.zero_cols.items():
             for x, line in clauses[0].items():
                 if all(x in z for z in clauses):
@@ -2580,7 +2580,7 @@ def lint_group(paths: list[Path]) -> list[tuple[Path, list]]:
     return out
 
 
-# ---------------------------------------------------------------- grounding
+# ---------------------------------------------------------------- safety
 
 BODY_FORMS = {"RULE", "DET", "DET_OR_RULE", "RULE_OR_DET", "RIGID_DET"}
 
@@ -2633,15 +2633,15 @@ def outer_labels(forms) -> set[str]:
     return {bare_label(t) for t in toks} - made
 
 
-class Grounded:
-    """The labels grounded so far, closed under the `=` pairs seen."""
+class BoundLabels:
+    """The labels bound so far, closed under the `=` pairs seen."""
 
     def __init__(self, names=(), eqs=()):
         self.names = set(names)
         self.eqs = list(eqs)
 
-    def copy(self) -> "Grounded":
-        return Grounded(self.names, self.eqs)
+    def copy(self) -> "BoundLabels":
+        return BoundLabels(self.names, self.eqs)
 
     def add(self, labels) -> None:
         self.names |= {bare_label(t) for t in labels if not is_const(t)}
@@ -2665,8 +2665,8 @@ class Grounded:
         self.close()
 
 
-def mode_gap(a: L, g: Grounded) -> str | None:
-    """None where one mode of an algebra atom has its columns given and grounded, else why not."""
+def mode_gap(a: L, g: BoundLabels) -> str | None:
+    """None where one mode of an algebra atom has its columns given and bound, else why not."""
     cols: dict[str, list[str]] = {}
     for s in a.items[1:]:
         for path, tok in site_pairs(s):
@@ -2679,18 +2679,18 @@ def mode_gap(a: L, g: Grounded) -> str | None:
             return None
         if best is None:
             best = ", ".join(f"{c} is left out" for c in miss) + (", " if miss and loose else "") \
-                + ", ".join(f"{c} is not grounded" for c in loose)
+                + ", ".join(f"{c} is not bound" for c in loose)
     return best
 
 
-def ground_items(items, g: Grounded, found: list[tuple[int, str]]) -> None:
+def bind_items(items, g: BoundLabels, found: list[tuple[int, str]]) -> None:
     """The items of one list in written order; `found` takes each break of the rule."""
     for it in items:
         if not isinstance(it, L):
             continue
         h = it.head
         if h is None:
-            ground_items(it.items, g, found)
+            bind_items(it.items, g, found)
         elif h in OPS:
             sides = [form_labels(x) if isinstance(x, L) else ([] if is_const(x.text) else [x.text])
                      for x in it.items[1:] if isinstance(x, (Sym, L))]
@@ -2702,22 +2702,22 @@ def ground_items(items, g: Grounded, found: list[tuple[int, str]]) -> None:
             inner = [x for x in it.items[1:] if isinstance(x, L)]
             late = sorted(outer_labels(inner) - g.names - {t for t in outer_labels(inner) if is_const(t)})
             if late:
-                found.append((it.line, f"NOT stands before the atoms that ground {', '.join(late)}"))
-            ground_items(inner, g.copy(), found)
+                found.append((it.line, f"NOT stands before the atoms that bind {', '.join(late)}"))
+            bind_items(inner, g.copy(), found)
         elif h == "ALL":
             parts = [x for x in it.items[1:] if isinstance(x, L)]
             late = sorted(t for t in outer_labels(parts) if not g.has(t))
             if late:
-                found.append((it.line, f"ALL stands before the atoms that ground {', '.join(late)}"))
+                found.append((it.line, f"ALL stands before the atoms that bind {', '.join(late)}"))
             inner = g.copy()
             for p in parts:
-                ground_items(p.items, inner, found)
+                bind_items(p.items, inner, found)
         elif h == "OR":
             outs = []
             for b in it.items[1:]:
                 if isinstance(b, L):
                     gb = g.copy()
-                    ground_items(b.items, gb, found)
+                    bind_items(b.items, gb, found)
                     outs.append(gb.names)
             if outs:
                 g.names |= set.intersection(*outs)
@@ -2726,24 +2726,24 @@ def ground_items(items, g: Grounded, found: list[tuple[int, str]]) -> None:
             parts = [x for x in it.items[1:] if isinstance(x, L)]
             if len(parts) == 3:
                 gt = g.copy()
-                ground_items(parts[0].items, gt, found)
+                bind_items(parts[0].items, gt, found)
                 gth = gt.copy()
-                ground_items(parts[1].items, gth, found)
+                bind_items(parts[1].items, gth, found)
                 ge = g.copy()
-                ground_items(parts[2].items, ge, found)
+                bind_items(parts[2].items, ge, found)
                 g.names |= gth.names & ge.names
                 g.close()
         else:
             if h in ALGEBRA_MODES and h in LIB.top:
                 why = mode_gap(it, g)
                 if why:
-                    found.append((it.line, f"{flat(it)}: no mode of {h} is given and grounded by the atoms "
+                    found.append((it.line, f"{flat(it)}: no mode of {h} is given and bound by the atoms "
                                   f"before it ({why})"))
             g.add(t for s in it.items[1:] for _, t in site_pairs(s))
 
 
 def bodies_of(forms, keys=()):
-    """(line, name, items, grounded labels) of each body in the forms."""
+    """(line, name, items, bound labels) of each body in the forms."""
     out: list[tuple[int, str, list, set[str]]] = []
 
     def inputs(f: L, xs, key_labels) -> None:
@@ -2790,17 +2790,17 @@ def bodies_of(forms, keys=()):
     return out
 
 
-def grounding(lt: Linter, forms) -> None:
+def safety(lt: Linter, forms) -> None:
     """In each body, in written order, an algebra relation atom has a mode
-    whose columns the atoms before it ground, over the `=` classes, with 0
-    grounded; a NOT and an ALL stand after the atoms that ground their
+    whose columns the atoms before it bind, over the `=` classes, with 0
+    bound; a NOT and an ALL stand after the atoms that bind their
     outer labels."""
     for line, name, items, labels in bodies_of(forms):
         found: list[tuple[int, str]] = []
-        ground_items(items, Grounded(labels), found)
+        bind_items(items, BoundLabels(labels), found)
         if found:
             more = f" (and {len(found) - 1} more)" if len(found) > 1 else ""
-            lt.err(found[0][0], "ground", f"{name}: {found[0][1]}{more}")
+            lt.err(found[0][0], "safety", f"{name}: {found[0][1]}{more}")
 
 
 def main(argv: list[str]) -> None:

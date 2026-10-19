@@ -139,7 +139,7 @@ A derived relation's columns are the labels of its clause, as written, so `&open
 
 A constraint is an operator over two labels: `(= A B)`, `(!= A B)`, `(< A B)`, `(<= A B)`, `(> A B)`, `(>= A B)`. `=` may make its first label, and has these rules:
 
-- `(= *X Y)` makes X equal to Y, and `(= *X 0)` makes X equal to `0`. X is grounded through the `=` class. Only the first label is made: `(= Y *X)` is a second spelling, and the decoder blocks it.
+- `(= *X Y)` makes X equal to Y, and `(= *X 0)` makes X equal to `0`. X is bound through the `=` class. Only the first label is made: `(= Y *X)` is a second spelling, and the decoder blocks it.
 - `=` makes a label in the first branch of an `OR` or in the then of an `IF`, and only a label that the form exports, so every later branch names X, as [Disjunction](#disjunction) gives. In a later branch, an else, a test, a list of an `ALL` form, or the top level of a body, `(= *X Y)` would only rename Y, so the decoder blocks it there, and it blocks a `=`-made label that the form does not export.
 - At the top level of a body, `(= *X 0)` makes a column whose value is `0` in that clause. It stands only where the column cannot be dropped: in an input of an instance, whose columns the component fixes, and in a clause of a relation that another clause, in its block or in another block, gives a varying value at that column, as an `ALT` that rederives the relation can. Where the column is `0` in every clause of the relation, the relation drops the column, and the decoder blocks the `=`. It blocks `(= *X 0)` in a later branch, an else, a test and a list of an `ALL` form, as it blocks `(= *X Y)`.
 - Y in `(= *X Y)` is not a label that a site of the same list made. That site could have made X. In a branch of a union, X may be a label the `OR` exports where Y is made in that branch, since no site there can make X.
@@ -149,7 +149,7 @@ A constraint is an operator over two labels: `(= A B)`, `(!= A B)`, `(< A B)`, `
 
 `0` also stands as a site's label, on a column of a number, a `Box`, a `Position` or an `Offset`, and its type is the column's. The site joins the column to zero, as `dist(P, D, 0)` does in the Souffle solvers, where a `0` counts nothing that is present: `(margin (:B P) D (:K 0))` reads a cell with no cell between it and edge D, and `(same_corner (:D C) (:P1 P) (:P2 0))` a cell at corner C of the whole frame. `(= K 0)` on a label that a site of the same list made is then a second spelling, and the decoder blocks it, as the rules above give. `0` is never made, so no site holds `*0` or `^0`, and no head site holds it.
 
-A clause ends once every variable is grounded: each label's class holds a site with a positive atom, or `0`, where `=` spreads grounding both ways.
+A clause ends once it is safe. The safety condition is that each label's class holds a site with a positive atom, or `0`, where `=` spreads binding both ways.
 
 ### Disjunction
 
@@ -208,7 +208,7 @@ A test that reads a lib relation with a mode satisfies the mode through outer la
 
 An `ALL` form holds two lists of atoms: the domain, then what each member of the domain must satisfy. It holds at a binding of the outer labels when the domain has a member there and no member fails the body. A binding with no member fails it: "every member of an empty set" is no claim about the input.
 
-A label fresh inside the form, in either list, is per member and local to the form. A label joined from outside is an outer label of the form. `ALL` grounds nothing outside itself: the clause grounds its outer labels through its own positive atoms, and the decoder admits the form's end once the form's own labels are grounded. The body may hold `OR`, `NOT` and `ALL` forms, and the domain is any atoms.
+A label fresh inside the form, in either list, is per member and local to the form. A label joined from outside is an outer label of the form. `ALL` binds nothing outside itself: the clause binds its outer labels through its own positive atoms, and the decoder admits the form's end once the form's own labels are bound. The body may hold `OR`, `NOT` and `ALL` forms, and the domain is any atoms.
 
 The form compiles to a counterexample relation and its negation, with the domain repeated as the existence test:
 
@@ -237,7 +237,7 @@ An `INIT` form is the instance's name, the component, then its key clause where 
 
 The key clause is `(key (<body>) <inputs>)`. A label marked `^` in its body is a column of the key, and the key's columns are those labels in order of appearance. A key is a record of those labels, a key of one label as well, so a site names its fields by projection: on the key `^Col`, `(:key Col)` reads the field as `Col`, and `(:key (:Col Col1))` reads it as `Col1`; a label in the body with no mark is local to the body. The inputs inside the key clause are keyed, and the key's labels are in scope in them. An input that reads no key label and no output of its instance holds for every key, a broadcast, and stands after the key clause. Each group keeps the component's declared order. An input whose every column is a key label of its type, and whose body would be empty, is not written: the engine fills it from the key, and the solver writes it only when the key has two labels of one type. The fill does not apply to an input the component marks as written explicitly. An instance with no key clause has the `Unit` key.
 
-An input is a list whose head is the input's name, then one list of its head sites, then its body. The body is a sequence of atoms under the clause's grounding rule. A head site projects labels the body or the key made onto a column of the input, so no head site carries `*`, and no head site holds `0`: where the column's value is `0`, the body makes the site's label with `(= *X 0)`, as `(gap (G) (= *G 0))` does. A label on no head site is existential. An input with no clause holds the lib's rows alone, and an input whose clause a stored reading takes holds the `DET`'s rows.
+An input is a list whose head is the input's name, then one list of its head sites, then its body. The body is a sequence of atoms under the clause's safety condition. A head site projects labels the body or the key made onto a column of the input, so no head site carries `*`, and no head site holds `0`: where the column's value is `0`, the body makes the site's label with `(= *X 0)`, as `(gap (G) (= *G 0))` does. A label on no head site is existential. An input with no clause holds the lib's rows alone, and an input whose clause a stored reading takes holds the `DET`'s rows.
 
 ```
 (INIT &bbox BoundingBox
@@ -289,7 +289,7 @@ The instance's outputs are read as `<name>.<output>`, with the key's columns fir
       (&claim.untaken (:t B) (:item B)))))
 ```
 
-`Unfold` is the one component whose inputs read its outputs. Its inputs that bind the type parameters, `start`, `initial_taken` and `initial_untaken`, come first with `conflict` and `score`, and the engine declares `taken`, `untaken` and `excluded` once they are bound, before it emits the names of `step`, `skip` and `take`; a `take` input with no clause takes the item of least `score`. In those three bodies, every site of an atom of an output joins, so the body grounds through its other atoms, and the recursion filters a finite set. No other input reads an output of its instance.
+`Unfold` is the one component whose inputs read its outputs. Its inputs that bind the type parameters, `start`, `initial_taken` and `initial_untaken`, come first with `conflict` and `score`, and the engine declares `taken`, `untaken` and `excluded` once they are bound, before it emits the names of `step`, `skip` and `take`; a `take` input with no clause takes the item of least `score`. In those three bodies, every site of an atom of an output joins, so the body binds its labels through its other atoms, and the recursion filters a finite set. No other input reads an output of its instance.
 
 ## Constraints
 
@@ -469,7 +469,7 @@ The engine emits the declaration of each derived relation, the declaration of ea
 
 The token sets are disjoint, so an atom's site list ends at the first token that is not a column token, and no separator exists.
 
-The language model emits `END` where a decision to stop exists: at the end of a body, after each projection's labels, after the field sites of a site on a record-valued column, at the end of an `OR` form, and after each list of an `IF` or `ALL` form. It emits `OR` between the branches of an `OR` form. The decoder admits `END` at the end of a body once the clause is grounded.
+The language model emits `END` where a decision to stop exists: at the end of a body, after each projection's labels, after the field sites of a site on a record-valued column, at the end of an `OR` form, and after each list of an `IF` or `ALL` form. It emits `OR` between the branches of an `OR` form. The decoder admits `END` at the end of a body once the clause is safe.
 
 The language model emits `SKIP` after the name of an optional clause or input, to decline it. After the name of a required clause or input, the decoder refuses `SKIP`, so no form lacks a required input and then waits on a decline that the decoder never admits.
 
@@ -554,7 +554,7 @@ A renderer flag adds the language model's top-k tokens after a symbol, in braces
       END{END .83 &covered .11})
 ```
 
-The braces also show the decoder's constraints: a column that admits no fresh label has no `*` among its top-k tokens, and `END` is absent until the clause is grounded.
+The braces also show the decoder's constraints: a column that admits no fresh label has no `*` among its top-k tokens, and `END` is absent until the clause is safe.
 
 ### From trace form to program form
 

@@ -375,7 +375,7 @@ pub struct TaskSession {
     /// The largest bindings tried of any one evaluation that ended with no
     /// stop, an atomic maximum, so it does not depend on the order of the
     /// threads.
-    largest_work: AtomicU64,
+    largest_bindings: AtomicU64,
     /// The largest rows held of any one such evaluation, an atomic maximum.
     largest_rows: AtomicU64,
 }
@@ -383,7 +383,7 @@ pub struct TaskSession {
 /// A count of bindings tried and a count of rows held.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct Counts {
-    pub work: u64,
+    pub bindings: u64,
     pub rows: u64,
 }
 
@@ -405,7 +405,7 @@ impl TaskSession {
     /// A session with an empty intern table and an empty result cache,
     /// whose evaluations run at `caps`.
     pub fn new(bound: SessionBound, caps: Caps) -> Self {
-        TaskSession { intern: RwLock::default(), results: ResultCache::default(), caps, bound, largest_work: AtomicU64::new(0), largest_rows: AtomicU64::new(0) }
+        TaskSession { intern: RwLock::default(), results: ResultCache::default(), caps, bound, largest_bindings: AtomicU64::new(0), largest_rows: AtomicU64::new(0) }
     }
 
     /// Whether the session's bytes, the intern table's and the result
@@ -419,13 +419,13 @@ impl TaskSession {
     /// Records the `counts` of one evaluation that ended with no stop, each
     /// as the larger of it and the count the session holds.
     pub fn record_counts(&self, counts: Counts) {
-        self.largest_work.fetch_max(counts.work, Ordering::Relaxed);
+        self.largest_bindings.fetch_max(counts.bindings, Ordering::Relaxed);
         self.largest_rows.fetch_max(counts.rows, Ordering::Relaxed);
     }
 
     /// The largest counts of the session's evaluations that ended with no
     /// stop.
     pub fn largest_counts(&self) -> Counts {
-        Counts { work: self.largest_work.load(Ordering::Relaxed), rows: self.largest_rows.load(Ordering::Relaxed) }
+        Counts { bindings: self.largest_bindings.load(Ordering::Relaxed), rows: self.largest_rows.load(Ordering::Relaxed) }
     }
 }

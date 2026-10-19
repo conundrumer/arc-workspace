@@ -141,13 +141,13 @@ pub struct ClauseIr {
     pub columns: Box<[Variable]>,
 }
 
-/// A body that the IR cannot hold: a grounded subset of a body is
-/// required, and a subset that leaves a label ungrounded is refused with
+/// A body that the IR cannot hold: a safe subset of a body is
+/// required, and a subset that leaves a label unbound is refused with
 /// those labels; a form whose scope holds a label that the checked program
 /// gives no type is refused with that label.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum CompileFault {
-    Ungrounded { labels: Box<[LabelId]> },
+    Unbound { labels: Box<[LabelId]> },
     Untyped { label: LabelId },
 }
 
@@ -375,13 +375,13 @@ pub(crate) fn relation_columns(program: &crate::resolver::ResolvedProgram, form:
 /// The IR of the conjuncts at `kept`, indexes into the body of the form at
 /// `clause`, as [`compile_clause`] gives a whole body. The relation's
 /// columns are the form's columns whose labels the kept conjuncts hold.
-/// Where the kept conjuncts leave a label ungrounded, as
-/// [`crate::grounding::grounded_labels`] gives grounding, this refuses them
+/// Where the kept conjuncts leave a label unbound, as
+/// [`crate::safety::bound_labels`] gives the bound labels, this refuses them
 /// with those labels.
 pub fn compile_conjuncts(program: &CheckedProgram, clause: &NodePath, kept: &[u32]) -> Result<ClauseIr, CompileFault> {
     let (body, body_path, columns) = form_body(program, clause);
     let conjuncts = kept.iter().map(|&index| (&body.conjuncts[index as usize], body_path.child(index))).collect();
-    compile_grounded(program, clause, conjuncts, &columns)
+    compile_safe(program, clause, conjuncts, &columns)
 }
 
 /// The IR of the bodies `bodies` of the `INIT` form at `instance`, each with
@@ -390,7 +390,7 @@ pub fn compile_conjuncts(program: &CheckedProgram, clause: &NodePath, kept: &[u3
 /// key's labels, or a keyed input's body joined with the key body, whose
 /// columns are the key's labels and then the input's. A label of `columns`
 /// that no body holds is no column of the relation. Where the bodies leave
-/// a label ungrounded, this refuses them with those labels, as
+/// a label unbound, this refuses them with those labels, as
 /// [`compile_conjuncts`] does.
 pub fn compile_instance_body(
     program: &CheckedProgram,
@@ -402,7 +402,7 @@ pub fn compile_instance_body(
         .iter()
         .flat_map(|(body, path)| body.conjuncts.iter().zip(0u32..).map(|(conjunct, index)| (conjunct, path.child(index))))
         .collect();
-    compile_grounded(program, instance, conjuncts, columns)
+    compile_safe(program, instance, conjuncts, columns)
 }
 
 /// The types of the labels of the scope that holds the labels of the form
@@ -413,8 +413,8 @@ pub fn label_types<'p>(program: &'p CheckedProgram, form: &NodePath) -> &'p Form
 
 /// The IR of `conjuncts`, each with its path, of the form at `form`, whose
 /// relation's columns are those of `columns` that the conjuncts hold.
-/// Refuses the conjuncts where they leave a label ungrounded.
-pub fn compile_grounded(
+/// Refuses the conjuncts where they leave a label unbound.
+pub fn compile_safe(
     program: &CheckedProgram,
     form: &NodePath,
     conjuncts: Vec<(&Conjunct, NodePath)>,
@@ -424,18 +424,18 @@ pub fn compile_grounded(
     let types = form_types(program, &scope);
     let subset = Body { conjuncts: conjuncts.iter().map(|(conjunct, _)| (*conjunct).clone()).collect() };
     let registry = Registry::get();
-    let grounded = crate::grounding::grounded_labels(
+    let bound = crate::safety::bound_labels(
         &subset,
         &StableHashSet::default(),
         &StableHashSet::default(),
         &|atom| atom_modes(registry, atom),
         &|label| types.label(label).cloned(),
     );
-    let held = crate::grounding::body_labels(&subset);
-    let mut ungrounded: Vec<LabelId> = held.iter().copied().filter(|label| !grounded.contains(label)).collect();
-    if !ungrounded.is_empty() {
-        ungrounded.sort_by_key(|label| label.0);
-        return Err(CompileFault::Ungrounded { labels: ungrounded.into() });
+    let held = crate::safety::body_labels(&subset);
+    let mut unbound_labels: Vec<LabelId> = held.iter().copied().filter(|label| !bound.contains(label)).collect();
+    if !unbound_labels.is_empty() {
+        unbound_labels.sort_by_key(|label| label.0);
+        return Err(CompileFault::Unbound { labels: unbound_labels.into() });
     }
     let compiled = Compiled {
         conjuncts: conjuncts.iter().map(|(_, path)| path.clone()).collect(),

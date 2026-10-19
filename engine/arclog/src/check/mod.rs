@@ -13,7 +13,7 @@
 //! its own.
 
 pub mod grammar;
-pub mod grounding;
+pub mod safety;
 mod inference;
 pub mod instance_inputs;
 pub mod labels;
@@ -49,7 +49,7 @@ pub enum CheckId {
     Scope,
     /// The columns of each site.
     SiteColumns,
-    /// The type check, the order rule included. The check gives each label of
+    /// The type check, the comparison typing rule included. The check gives each label of
     /// a body the type that [`crate::types::label_type`] gives it over the
     /// list of the label's scope, and refuses the label where that function
     /// gives a fault. A label that only `(= *X 0)` gives a type takes the type of the instance
@@ -81,9 +81,9 @@ pub enum CheckId {
     PoseRule,
     /// The labels that `=` makes and that an `OR` or an `IF` exports.
     MadeAndExportedLabels,
-    /// Grounding. The check grounds each body by
-    /// [`crate::grounding::grounded_labels`].
-    Grounding,
+    /// Safety. The check binds each body by
+    /// [`crate::safety::bound_labels`].
+    Safety,
     /// The rule of an `Unfold` instance's reads of its outputs.
     UnfoldReads,
     /// Cycles of the dependency graph.
@@ -366,7 +366,7 @@ pub fn check_shared_program(
             let input = CheckInput { form: at.form, path: &at.path, scope: scope(labels) };
             for check in checks().iter().filter(|check| check.id() != CheckId::Types) {
                 let canonical_form = match check.id() {
-                    CheckId::Grounding => with_written_order(at.form, &at.canonical, &at.order),
+                    CheckId::Safety => with_written_order(at.form, &at.canonical, &at.order),
                     _ => at.canonical.clone(),
                 };
                 let check_key = key(check.id(), canonical_form, at.signatures.clone());
@@ -515,7 +515,7 @@ pub fn checks() -> &'static [&'static dyn Check] {
         &types::TypesCheck,
         &pose::PoseRuleCheck,
         &labels::MadeAndExportedLabelsCheck,
-        &grounding::GroundingCheck,
+        &safety::SafetyCheck,
         &unfold_reads::UnfoldReadsCheck,
         &instance_inputs::InstanceInputsCheck,
         &reads::PooledAndLiftedReadsCheck,

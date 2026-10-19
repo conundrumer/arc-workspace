@@ -37,7 +37,7 @@ fn check_of(code: &str) -> Option<CheckId> {
         "undeclared" | "relation" | "component" | "proposer-unknown" => CheckId::Scope,
         "column" | "site-twice" => CheckId::SiteColumns,
         "eq-make" | "eq-unexported" | "remade-export" => CheckId::MadeAndExportedLabels,
-        "ground" => CheckId::Grounding,
+        "safety" => CheckId::Safety,
         "own-read" => CheckId::UnfoldReads,
         "recursion" => CheckId::Cycles,
         "init-order" | "input-twice" => CheckId::InstanceInputs,
@@ -66,7 +66,7 @@ const LINT_FAULTS: &[(&str, &[&str])] = &[
     // later branch names as named there, where another later branch does
     // not name it, so that the label is local to the first branch.
     (
-        "ground",
+        "safety",
         &[
             "070dd51e", "0ca9ddb6", "0d87d2a6", "0f63c0b9", "1190bc91", "136b0064", "13713586", "16de56c4", "1f876c06", "28a6681f",
             "29700607", "29c11459", "2c608aff", "2ccd9fef", "35ab12c3", "3dc255db", "40853293", "4290ef0e", "505fff84", "538b439f",

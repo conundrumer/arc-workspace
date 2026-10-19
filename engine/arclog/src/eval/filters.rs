@@ -117,7 +117,7 @@ struct Branch<'b> {
 /// Adds to `builder`'s clause the union of `branches`. `around` holds the
 /// labels of the union that stand outside it, and `made` the labels made in
 /// its first branch that every later branch mentions. The union exports each
-/// of those labels that every branch grounds from the others, and a
+/// of those labels that every branch binds from the others, and a
 /// branch's columns are its labels among them.
 fn compile_union(
     builder: &mut IrBuilder<'_>,
@@ -137,11 +137,11 @@ fn compile_union(
             labels.extend(outer_of(test, &around));
         }
         let body = Body { conjuncts: branch.lists.iter().flat_map(|(list, _)| list.value().conjuncts.iter().cloned()).collect() };
-        let exports: StableHashSet<LabelId> = shared.iter().copied().filter(|&label| grounds(builder, &body, &shared, label)).map(LabelId).collect();
+        let exports: StableHashSet<LabelId> = shared.iter().copied().filter(|&label| binds(builder, &body, &shared, label)).map(LabelId).collect();
         held.push(labels);
         per_branch.push(exports);
     }
-    let exported: BTreeSet<u32> = crate::grounding::common_to_all(per_branch).into_iter().map(|label| label.0).collect();
+    let exported: BTreeSet<u32> = crate::safety::common_to_all(per_branch).into_iter().map(|label| label.0).collect();
     let mut clauses = Vec::with_capacity(branches.len());
     for (branch, labels) in branches.iter().zip(&held) {
         let mut clause = nested(builder)?;
@@ -159,17 +159,17 @@ fn compile_union(
     Ok(())
 }
 
-/// Whether `body`, the conjuncts of one branch, grounds `label` where every
-/// other label of `shared` is grounded, as
-/// [`crate::grounding::grounded_labels`] gives grounding.
-fn grounds(builder: &IrBuilder<'_>, body: &Body, shared: &BTreeSet<u32>, label: u32) -> bool {
+/// Whether `body`, the conjuncts of one branch, binds `label` where every
+/// other label of `shared` is bound, as
+/// [`crate::safety::bound_labels`] gives the bound labels.
+fn binds(builder: &IrBuilder<'_>, body: &Body, shared: &BTreeSet<u32>, label: u32) -> bool {
     let given: StableHashSet<LabelId> = shared.iter().filter(|&&other| other != label).map(|&other| LabelId(other)).collect();
     let outside: StableHashSet<LabelId> = shared.iter().map(|&other| LabelId(other)).collect();
     let types = builder.program.types.form(&builder.form).expect("the label types of each scope of a checked program");
     let registry = Registry::get();
     let modes = |atom: &crate::program::Atom| super::ir::atom_modes(registry, atom);
     let types = |label: LabelId| types.label(label).cloned();
-    crate::grounding::grounded_labels(body, &given, &outside, &modes, &types).contains(&LabelId(label))
+    crate::safety::bound_labels(body, &given, &outside, &modes, &types).contains(&LabelId(label))
 }
 
 /// The conjunct kinds this file compiles, for the dispatch of
@@ -233,7 +233,7 @@ fn outer_of(body: &Body, around: &BTreeSet<u32>) -> BTreeSet<u32> {
 
 /// The labels that stand in `body`, at any depth.
 fn labels_of(body: &Body) -> BTreeSet<u32> {
-    crate::grounding::body_labels(body).into_iter().map(|label| label.0).collect()
+    crate::safety::body_labels(body).into_iter().map(|label| label.0).collect()
 }
 
 /// The labels that a form with its first list `first` and its later lists

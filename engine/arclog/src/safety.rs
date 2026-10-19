@@ -1,4 +1,4 @@
-//! The grounding of the labels of a body, which the grounding check and the
+//! The labels of a body that are bound, which the safety check and the
 //! derivation of a relation macro's modes both apply.
 
 use crate::hash::StableHashSet;
@@ -7,45 +7,45 @@ use crate::program::{constraint_second, Atom, Body, Conjunct, Constraint, Constr
 use crate::registry::Mode;
 use crate::types::{each_site_label, use_label, ValueType};
 
-/// The labels that `body` grounds where the labels of `grounded` are
-/// grounded, those of `grounded` included.
+/// The labels that `body` binds where the labels of `bound` are
+/// bound, those of `bound` included.
 ///
 /// The rule is the clause's, as `docs/arclog/arclog.md#negation-and-constraints`,
 /// `docs/arclog/arclog.md#disjunction`, `docs/arclog/arclog.md#conditional`
 /// and `docs/arclog/arclog.md#universal` give it, and the order of the
 /// conjuncts plays no part in it:
 ///
-/// - A positive atom grounds every label at its sites where `modes` gives its
+/// - A positive atom binds every label at its sites where `modes` gives its
 ///   relation no mode, and otherwise once the labels at the sites of the
-///   columns of one of its modes are grounded. A site of `0` counts as
-///   grounded, and a column at which the atom has no site does not.
+///   columns of one of its modes are bound. A site of `0` counts as
+///   bound, and a column at which the atom has no site does not.
 /// - A negated atom, a `NOT` of a form, an `ALL` form and a constraint other
-///   than `=` ground no label outside themselves.
-/// - `(= X Y)` grounds each of its labels once the other is grounded, and
-///   `(= X 0)` grounds X.
-/// - An `OR` grounds the labels that each of its branches grounds, and an
-///   `IF` the labels that its test with its then and its else each ground.
-/// - A label to which `types` gives an orientation type counts as grounded.
+///   than `=` bind no label outside themselves.
+/// - `(= X Y)` binds each of its labels once the other is bound, and
+///   `(= X 0)` binds X.
+/// - An `OR` binds the labels that each of its branches binds, and an
+///   `IF` the labels that its test with its then and its else each bind.
+/// - A label to which `types` gives an orientation type counts as bound.
 ///
 /// A label that stands only in parts of a form, the branches of an `OR`, the
 /// test with the then of an `IF` and its else, or the two lists of an `ALL`
 /// together, and that `outside` does not hold, is local to each part that
-/// holds it. It is grounded where every part that holds it grounds it from
-/// the labels grounded outside the form, so a part that holds it only in a
-/// negated atom or a constraint other than `=` leaves it ungrounded. `outside` holds the labels that stand in
+/// holds it. It is bound where every part that holds it binds it from
+/// the labels bound outside the form, so a part that holds it only in a
+/// negated atom or a constraint other than `=` leaves it unbound. `outside` holds the labels that stand in
 /// the body's context outside the body: a clause's head labels, or a
 /// relation macro's column labels. Each of them is an outer label of each
-/// form of `body` where it stands, so a form grounds it for the body only by
+/// form of `body` where it stands, so a form binds it for the body only by
 /// the rule above for that form, and never as a label local to a part.
-pub fn grounded_labels<'m>(
+pub fn bound_labels<'m>(
     body: &Body,
-    grounded: &StableHashSet<LabelId>,
+    bound: &StableHashSet<LabelId>,
     outside: &StableHashSet<LabelId>,
     modes: &dyn Fn(&Atom) -> &'m [Mode],
     types: &dyn Fn(LabelId) -> Option<ValueType>,
 ) -> StableHashSet<LabelId> {
     let list: Vec<&Conjunct> = body.conjuncts.iter().collect();
-    Walk { modes, types }.grounded(&list, grounded, outside)
+    Walk { modes, types }.bound_in(&list, bound, outside)
 }
 
 /// Each label that stands in `body`, at any depth.
@@ -102,12 +102,12 @@ struct Walk<'a, 'm> {
 }
 
 impl Walk<'_, '_> {
-    /// The labels of the conjuncts `list` grounded from `outer`: those that
+    /// The labels that are bound in the conjuncts `list` from `outer`: those that
     /// [`Walk::exported`] gives, and each label that stands only in parts of
     /// a form of `list`, and in none of the labels `outside` holds, where
-    /// every part that holds it grounds it.
-    fn grounded(&self, list: &[&Conjunct], outer: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>) -> StableHashSet<LabelId> {
-        let mut grounded = self.exported(list, outer);
+    /// every part that holds it binds it.
+    fn bound_in(&self, list: &[&Conjunct], outer: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>) -> StableHashSet<LabelId> {
+        let mut bound = self.exported(list, outer);
         let mut local = Vec::new();
         for (i, conjunct) in list.iter().enumerate() {
             let mut around = outside.clone();
@@ -118,7 +118,7 @@ impl Walk<'_, '_> {
                     let mut held = StableHashSet::default();
                     part.iter().for_each(|inner| conjunct_labels(inner, &mut held));
                     held.retain(|label| !around.contains(label));
-                    (self.grounded(part, &grounded, &around), held)
+                    (self.bound_in(part, &bound, &around), held)
                 })
                 .collect();
             for (_, held) in &per_part {
@@ -127,76 +127,76 @@ impl Walk<'_, '_> {
                 }));
             }
         }
-        grounded.extend(local);
-        grounded
+        bound.extend(local);
+        bound
     }
 
-    /// The labels that the conjuncts `list` ground for the scope around
+    /// The labels that the conjuncts `list` bind for the scope around
     /// them, from `outer`, its orientation labels and the labels of `outer`
     /// included.
     fn exported(&self, list: &[&Conjunct], outer: &StableHashSet<LabelId>) -> StableHashSet<LabelId> {
         let mut labels = StableHashSet::default();
         list.iter().for_each(|conjunct| conjunct_labels(conjunct, &mut labels));
-        let mut grounded = outer.clone();
-        grounded.extend(labels.into_iter().filter(|&label| (self.types)(label).as_ref().is_some_and(is_orientation)));
+        let mut bound = outer.clone();
+        bound.extend(labels.into_iter().filter(|&label| (self.types)(label).as_ref().is_some_and(is_orientation)));
         loop {
-            let before = grounded.len();
+            let before = bound.len();
             for conjunct in list {
-                self.ground(conjunct, &mut grounded);
+                self.bind(conjunct, &mut bound);
             }
-            if grounded.len() == before {
-                return grounded;
+            if bound.len() == before {
+                return bound;
             }
         }
     }
 
-    /// Adds to `grounded` the labels that `conjunct` grounds from it.
-    fn ground(&self, conjunct: &Conjunct, grounded: &mut StableHashSet<LabelId>) {
+    /// Adds to `bound` the labels that `conjunct` binds from it.
+    fn bind(&self, conjunct: &Conjunct, bound: &mut StableHashSet<LabelId>) {
         match conjunct {
             Conjunct::Atom(atom) => {
                 let atom = atom.value();
-                if self.mode_holds(atom, grounded) {
-                    atom.sites.iter().for_each(|site| site_labels(site, grounded));
+                if self.mode_holds(atom, bound) {
+                    atom.sites.iter().for_each(|site| site_labels(site, bound));
                 }
             }
             Conjunct::Constraint(Constraint { op: ConstraintOp::Eq, first, second }) => match second {
                 Operand::Zero => {
-                    grounded.insert(first.label);
+                    bound.insert(first.label);
                 }
                 Operand::Label(second) => {
-                    if grounded.contains(&first.label) || grounded.contains(&second.label) {
-                        grounded.extend([first.label, second.label]);
+                    if bound.contains(&first.label) || bound.contains(&second.label) {
+                        bound.extend([first.label, second.label]);
                     }
                 }
             },
             Conjunct::Constraint(_) | Conjunct::Not(_) | Conjunct::All { .. } => {}
             Conjunct::Or(_) | Conjunct::If { .. } => {
-                let shared = common_to_all(parts(conjunct).into_iter().map(|part| self.exported(&part, grounded)));
-                grounded.extend(shared);
+                let shared = common_to_all(parts(conjunct).into_iter().map(|part| self.exported(&part, bound)));
+                bound.extend(shared);
             }
         }
     }
 
-    /// Whether `atom` grounds its labels where `grounded` are grounded: its
+    /// Whether `atom` binds its labels where `bound` are bound: its
     /// relation has no mode, or every label at the sites of one mode's
-    /// columns is grounded.
-    fn mode_holds(&self, atom: &Atom, grounded: &StableHashSet<LabelId>) -> bool {
+    /// columns is bound.
+    fn mode_holds(&self, atom: &Atom, bound: &StableHashSet<LabelId>) -> bool {
         let modes = (self.modes)(atom);
         modes.is_empty()
             || modes.iter().any(|mode| {
-                mode.grounded.iter().all(|column| {
+                mode.bound.iter().all(|column| {
                     atom.sites.iter().find(|site| &site.column == column).is_some_and(|site| {
                         let mut labels = StableHashSet::default();
                         site_labels(site, &mut labels);
-                        labels.iter().all(|label| grounded.contains(label))
+                        labels.iter().all(|label| bound.contains(label))
                     })
                 })
             })
     }
 }
 
-/// The labels that an `OR` or an `IF` grounds, from `per_branch`, the labels
-/// each of its branches grounds: those that every branch grounds.
+/// The labels that an `OR` or an `IF` binds, from `per_branch`, the labels
+/// each of its branches binds: those that every branch binds.
 pub(crate) fn common_to_all(per_branch: impl IntoIterator<Item = StableHashSet<LabelId>>) -> StableHashSet<LabelId> {
     let mut branches = per_branch.into_iter();
     let first = branches.next().expect("an `OR` or an `IF` has a branch");
@@ -255,7 +255,7 @@ fn site_labels(site: &Site, labels: &mut impl Extend<LabelId>) {
     each_site_label(site, &mut Vec::new(), &mut |use_, _| labels.extend(use_label(use_)));
 }
 
-/// Whether `ty` is an orientation type, whose label counts as grounded.
+/// Whether `ty` is an orientation type, whose label counts as bound.
 fn is_orientation(ty: &ValueType) -> bool {
     ty.orientation_types().is_some()
 }
@@ -266,43 +266,43 @@ mod tests {
     use crate::layout::SourceFile;
     use crate::read::{read_body, read_sexprs};
 
-    /// The number of labels of the body `text` that [`grounded_labels`]
-    /// leaves ungrounded, where no label is grounded before and no
+    /// The number of labels of the body `text` that [`bound_labels`]
+    /// leaves unbound, where no label is bound before and no
     /// relation has a mode.
-    fn ungrounded(text: &str) -> usize {
+    fn unsafe_count(text: &str) -> usize {
         let (exprs, _) = read_sexprs(text, SourceFile::Arclog).expect("the body parses");
         let (body, _) = read_body(&exprs).expect("the body reads");
         let body = body.value();
         let none = StableHashSet::default();
-        let grounded = grounded_labels(body, &none, &none, &|_| &[], &|_| None);
-        body_labels(body).iter().filter(|label| !grounded.contains(label)).count()
+        let bound = bound_labels(body, &none, &none, &|_| &[], &|_| None);
+        body_labels(body).iter().filter(|label| !bound.contains(label)).count()
     }
 
     #[test]
-    fn a_label_in_two_branches_that_both_ground_it_is_grounded() {
-        assert_eq!(ungrounded("(input (:P *Q) *Col) (OR ((input *P Col)) ((input (:P Q) Col)) ((input P Col)))"), 0);
-        assert_eq!(ungrounded("(&a *Z) (OR ((&r *X)) ((&s *X)) ((&t Z)))"), 0);
+    fn a_label_in_two_branches_that_both_bind_it_is_bound() {
+        assert_eq!(unsafe_count("(input (:P *Q) *Col) (OR ((input *P Col)) ((input (:P Q) Col)) ((input P Col)))"), 0);
+        assert_eq!(unsafe_count("(&a *Z) (OR ((&r *X)) ((&s *X)) ((&t Z)))"), 0);
     }
 
     #[test]
     fn a_label_of_another_conjunct_is_left_to_the_export_rule() {
-        assert_eq!(ungrounded("(NOT (&u *X)) (OR ((&r X)) ((&s X)) ((&t *Y)))"), 1);
+        assert_eq!(unsafe_count("(NOT (&u *X)) (OR ((&r X)) ((&s X)) ((&t *Y)))"), 1);
     }
 
     #[test]
-    fn a_branch_that_holds_the_label_only_in_a_negated_atom_or_a_comparison_leaves_it_ungrounded() {
-        assert_eq!(ungrounded("(OR ((NOT (&s *X))) ((&r X)))"), 1);
-        assert_eq!(ungrounded("(&a *Z) (OR ((< *X Z)) ((&r X)))"), 1);
+    fn a_branch_that_holds_the_label_only_in_a_negated_atom_or_a_comparison_leaves_it_unsafe() {
+        assert_eq!(unsafe_count("(OR ((NOT (&s *X))) ((&r X)))"), 1);
+        assert_eq!(unsafe_count("(&a *Z) (OR ((< *X Z)) ((&r X)))"), 1);
     }
 
     #[test]
-    fn a_label_in_the_then_and_the_else_of_an_if_is_grounded_where_both_ground_it() {
-        assert_eq!(ungrounded("(&a *Z) (IF ((&p Z)) ((&q *X)) ((&r X)))"), 0);
-        assert_eq!(ungrounded("(&a *Z) (IF ((&p Z)) ((&q *X)) ((NOT (&r X))))"), 1);
+    fn a_label_in_the_then_and_the_else_of_an_if_is_bound_where_both_bind_it() {
+        assert_eq!(unsafe_count("(&a *Z) (IF ((&p Z)) ((&q *X)) ((&r X)))"), 0);
+        assert_eq!(unsafe_count("(&a *Z) (IF ((&p Z)) ((&q *X)) ((NOT (&r X))))"), 1);
     }
 
     #[test]
-    fn a_label_that_the_first_list_of_an_all_makes_is_grounded_for_the_second() {
-        assert_eq!(ungrounded("(ALL ((&r *X)) ((&s X)))"), 0);
+    fn a_label_that_the_first_list_of_an_all_makes_is_bound_for_the_second() {
+        assert_eq!(unsafe_count("(ALL ((&r *X)) ((&s X)))"), 0);
     }
 }

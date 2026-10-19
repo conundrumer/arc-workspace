@@ -28,8 +28,8 @@ pub struct RelationSizes(pub Box<[Option<u64>]>);
 /// that an algebra relation binds stands after the inputs of the mode that
 /// binds it, and each variable that a union exports, and no atom or
 /// comparison binds, after the columns that the branches of that union read
-/// from `clause`, so the order grounds every variable that the clause
-/// grounds.
+/// from `clause`, so the order binds every variable that the clause
+/// binds.
 ///
 /// The variables ordered are those the clause's atoms, comparisons and
 /// unions bind; a variable that stands only in a filter's body is the
@@ -37,7 +37,7 @@ pub struct RelationSizes(pub Box<[Option<u64>]>);
 /// after that other, as an algebra relation's output does.
 ///
 /// `outer` holds the variables of `clause` that its caller binds before the
-/// join. They count as grounded, so the inputs of a mode they satisfy are
+/// join. They count as bound, so the inputs of a mode they satisfy are
 /// held, and they stand in no place of the order, as the join drops a bound
 /// variable from it.
 pub fn variable_order(clause: &ClauseIr, sizes: &RelationSizes, outer: &[Variable]) -> VariableOrder {

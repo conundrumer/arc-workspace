@@ -18,7 +18,7 @@
 //! - `(relation <name> (columns (<Column> <type>) ...) (modes (<Column> ...) ...))`:
 //!   an algebra relation, the group relations and `pose_difference`
 //!   included. Each mode lists the columns, other than an orientation
-//!   type's, that must be grounded for the relation to ground the others; a
+//!   type's, that must be bound for the relation to bind the others; a
 //!   relation over a finite domain has no `modes` form, and no mode is empty.
 //! - `(component <name> <construction|detector|task-structure> (type-parameters <t> ...)
 //!   (inputs (<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [explicit]) ...)
@@ -84,7 +84,7 @@
 #![allow(unused_variables, dead_code)]
 
 use crate::check::CheckId;
-use crate::grounding::{body_labels, grounded_labels, own_labels};
+use crate::safety::{body_labels, bound_labels, own_labels};
 use crate::hash::{StableHashMap, StableHashSet};
 use crate::layout::{SourceFile, SourcePlace};
 use crate::program::{
@@ -156,11 +156,11 @@ pub fn is_key(column: &Column) -> bool {
     column.name == crate::resolver::columns::key()
 }
 
-/// A mode of an algebra relation: the columns whose labels must be grounded
-/// for its other columns to be grounded.
+/// A mode of an algebra relation: the columns whose labels must be bound
+/// for its other columns to be bound.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Mode {
-    pub grounded: Box<[ColumnName]>,
+    pub bound: Box<[ColumnName]>,
 }
 
 /// An algebra relation, a relation of the box algebra or the orientation
@@ -199,7 +199,7 @@ pub struct InputPort {
     pub default: Option<DefaultRows>,
     /// Whether the input reads the instance's outputs, as `Unfold`'s `step`,
     /// `skip` and `take` do, through atoms whose every variable another atom
-    /// of the clause grounds.
+    /// of the clause binds.
     pub reads_outputs: bool,
     /// Whether the input, which then has no default, holds no row where
     /// the instance writes no clause for it, so that the engine does not

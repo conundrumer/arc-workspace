@@ -222,13 +222,13 @@ pub fn label_type(
 pub(crate) fn scope_list(list: &crate::program::Body, label: crate::program::LabelId) -> &crate::program::Body {
     let holds = |conjunct: &crate::program::Conjunct| {
         let mut labels = crate::hash::StableHashSet::default();
-        crate::grounding::conjunct_labels(conjunct, &mut labels);
+        crate::safety::conjunct_labels(conjunct, &mut labels);
         labels.contains(&label)
     };
     let mut holders = list.conjuncts.iter().filter(|conjunct| holds(conjunct));
     let (Some(conjunct), None) = (holders.next(), holders.next()) else { return list };
     let mut own = Vec::new();
-    crate::grounding::own_labels(conjunct, &mut own);
+    crate::safety::own_labels(conjunct, &mut own);
     if own.contains(&label) {
         return list;
     }
@@ -245,7 +245,7 @@ pub(crate) fn scope_list(list: &crate::program::Body, label: crate::program::Lab
         Conjunct::All { domain, body } => vec![(domain.value(), false), (body.value(), false)],
         Conjunct::Atom(_) | Conjunct::Not(_) | Conjunct::Constraint(_) => Vec::new(),
     };
-    let mut holding = parts.into_iter().filter(|(part, _)| crate::grounding::body_labels(part).contains(&label));
+    let mut holding = parts.into_iter().filter(|(part, _)| crate::safety::body_labels(part).contains(&label));
     match (holding.next(), holding.next()) {
         (Some((part, true)), None) => scope_list(part, label),
         _ => list,
@@ -364,7 +364,7 @@ impl LabelWalk<'_> {
             Conjunct::Not(Negated::Form(form)) => self.conjunct_type(form, pairs, class, here),
             Conjunct::Or(branches) => {
                 let holds = |branch: &crate::program::Body| {
-                    let labels = crate::grounding::body_labels(branch);
+                    let labels = crate::safety::body_labels(branch);
                     class.iter().any(|label| labels.contains(label))
                 };
                 let holding = branches.iter().filter(|branch| holds(branch.value()));

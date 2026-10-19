@@ -107,16 +107,16 @@ impl FileReader {
             if names.is_empty() {
                 return self.refuse("a mode is not empty", *place);
             }
-            let mut grounded = Vec::new();
+            let mut bound = Vec::new();
             for name in names.iter() {
                 let text = self.symbol(Some(name), "a mode's column", *place)?;
                 let column = ColumnName::Written(text.into());
                 if !columns.iter().any(|c| c.name == column) {
                     return self.refuse(format!("`{text}` is no column of the relation"), name.place());
                 }
-                grounded.push(column);
+                bound.push(column);
             }
-            modes.push(Mode { grounded: grounded.into() });
+            modes.push(Mode { bound: bound.into() });
         }
         Some(modes.into())
     }

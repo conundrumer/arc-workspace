@@ -236,7 +236,7 @@ fn never_pairs(
             return Err(fault("the `from` body reads no candidate relation".into()));
         };
         let body = (never.value(), form.child(index));
-        let mut labels: Vec<LabelId> = crate::grounding::body_labels(never.value()).into_iter().collect();
+        let mut labels: Vec<LabelId> = crate::safety::body_labels(never.value()).into_iter().collect();
         labels.sort_by_key(|label| label.0);
         let whole = ir::compile_instance_body(checked, form, &[body.clone()], &labels)
             .map_err(|compile| fault(format!("a `never` body does not compile: {compile:?}")))?;

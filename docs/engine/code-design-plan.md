@@ -23,7 +23,7 @@ The engine docs and `gen/` are untracked, so a worktree does not hold them. Read
 
 ## Rules
 
-- Equivariance holds by construction, as [equivariance.md](equivariance.md) gives: a term type that the order rule of [Checker](reader.md#checker) keeps from `<` implements no public order, and no lib interface makes a free choice.
+- Equivariance holds by construction, as [equivariance.md](equivariance.md) gives: a term type that the comparison typing rule of [Checker](reader.md#checker) keeps from `<` implements no public order, and no lib interface makes a free choice.
 - The interfaces implement the docs and reopen none of their decisions. Where a doc leaves an interface open, or a doc line is wrong, report it to the coordinator and edit no engine doc.
 - Each crate dependency gives its reason in `Cargo.toml`.
 - Each name and doc comment uses a conventional or precise term, qualified where the bare term would be ambiguous, such as `canonical_hash` for the hash of a canonical form. A term the arclog docs or the handbook define, such as site, label or case, keeps its defined sense. No name is invented jargon.

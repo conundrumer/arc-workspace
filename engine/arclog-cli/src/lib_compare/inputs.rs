@@ -112,7 +112,7 @@ impl Element<'_> {
                 let modes: Vec<Vec<usize>> = if relation.modes.is_empty() {
                     vec![Vec::new()]
                 } else {
-                    relation.modes.iter().map(|mode| mode.grounded.iter().map(|c| column_index(relation, c)).collect()).collect()
+                    relation.modes.iter().map(|mode| mode.bound.iter().map(|c| column_index(relation, c)).collect()).collect()
                 };
                 let modes: Vec<Value> = modes
                     .iter()

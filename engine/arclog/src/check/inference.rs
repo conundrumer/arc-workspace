@@ -8,7 +8,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use super::grounding::{bodies, BodyPlace};
+use super::safety::{bodies, BodyPlace};
 use super::types::{
     column_type, component, declared_type, demo_rule, form_at, pose_of_fault, project, relation_columns, rule_scope_forms, scope_forms, site_value_type,
     try_map_labels, zero_typed_heads, PoseOr,

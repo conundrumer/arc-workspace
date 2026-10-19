@@ -258,7 +258,7 @@ LIB_DL = ROOT / "programs" / "lib.dl"
 SIGNATURE = arclog_signature()
 
 # The modes of the algebra relations, each a set of columns whose labels must
-# be grounded before an atom of the relation grounds the rest. A column of an
+# be bound before an atom of the relation binds the rest. A column of an
 # orientation type is in no mode: an atom enumerates it.
 ALGEBRA_MODES: dict[str, list[set[str]]] = {
     "compose": [{"a", "b"}], "relative": [{"base", "x"}], "inside": [{"a", "b"}], "interior": [{"a", "b"}],
@@ -678,7 +678,7 @@ class Converter:
         self.made: dict[tuple[tuple[str, ...], str], Written] = {}
         # each arclog name this pass writes, with each thing it was written from
         self.written: dict[str, list[Written]] = {}
-        self.ungrounded: set[str] = set()   # the relations with a clause whose body no order grounds
+        self.unsafe: set[str] = set()   # the relations with a clause whose body no order makes safe
         self.col_mismatch: ColMismatch = {}
         self.lib = lib
         self.sig = sig   # the lib the output is written in: a name the expansions write that `lib` lacks
@@ -2416,7 +2416,7 @@ class ClauseWriter:
         self.nested: set[str] = set()
         self.drop_neg: frozenset[str] = getattr(conv, "cur_empty", frozenset())
         self.clause_vars: set[str] = set()   # the labels of the lists written so far
-        self.stuck = False   # a top-level body whose algebra atoms no order grounds
+        self.stuck = False   # a top-level body whose algebra atoms no order makes safe
 
     def label(self, v: str) -> str:
         return self.rename.get(v, v)
@@ -2706,15 +2706,15 @@ class ClauseWriter:
         else:
             (self.top_neg if negated else self.top_pos).add(n)
 
-    def lits(self, lits, bound: set[str], grounded: set[str] | None = None) -> list[str]:
+    def lits(self, lits, bound: set[str], bound_before: set[str] | None = None) -> list[str]:
         """`bound` holds the labels already written, which a later site names
-        without `*`; `grounded` holds the labels the atoms before ground, where
+        without `*`; `bound_before` holds the labels the atoms before bind, where
         that is fewer, as in a later branch of an `OR`."""
         vs: set[str] = set()
         collect_vars(list(lits), vs)
         self.clause_vars |= {self.label(v) for v in vs}
         out: list[str] = []
-        for l in self.reorder(list(lits), bound if grounded is None else grounded):
+        for l in self.reorder(list(lits), bound if bound_before is None else bound_before):
             out.extend(self.lit(l, bound))
         return out
 
@@ -2758,7 +2758,7 @@ class ClauseWriter:
             got = algebra_modes(l)
             if got is not None:
                 name, cols, args = got
-                return any(all(pascal(c) in cols and grounded(args[cols.index(pascal(c))], B) for c in m)
+                return any(all(pascal(c) in cols and is_bound(args[cols.index(pascal(c))], B) for c in m)
                            for m in ALGEBRA_MODES[name])
             return True
 
@@ -2775,7 +2775,7 @@ class ClauseWriter:
                     return False
             return True
 
-        def grounded(t, B: set[str]) -> bool:
+        def is_bound(t, B: set[str]) -> bool:
             return not isinstance(t, Wildcard) and vs(t) <= B
 
         def algebra_modes(l):
@@ -2809,7 +2809,7 @@ class ClauseWriter:
         unbound = mentioned - everything
         B |= unbound
         everything |= unbound
-        # A body whose algebra atoms no order grounds, such as an `inline`
+        # A body whose algebra atoms no order makes safe, such as an `inline`
         # helper's, keeps its written order.
         rem, B3, moved = list(lits), set(B), True
         while moved:
@@ -4148,7 +4148,7 @@ class Solver:
         except Dead:
             return None
         if w.stuck:
-            c.ungrounded.add(u.head.relation.name)
+            c.unsafe.add(u.head.relation.name)
         # a top-level `(= *X Y)` left where a disjunction kept one branch is
         # a rename: Y's site makes X
         cols_here = {n for n, _ in head_cols}
@@ -4368,7 +4368,7 @@ class Solver:
                     if vs and vs <= kset:
                         idx.append(i)
                 # an algebra atom whose labels the other key atoms do not all
-                # ground stays with the member atoms
+                # bind stays with the member atoms
                 texts = {}
                 for i in idx:
                     probe = ClauseWriter(c, scope, lsub, ren, own_inst=key)
@@ -4379,8 +4379,8 @@ class Solver:
                 def labels(t: str) -> set[str]:
                     return set(re.findall(r"(?<![(:\w&.])[*^]?([A-Z]\w*)", t))
                 algebra = {i for i in idx if (m := re.match(r"\((\w+)", texts[i])) and m.group(1) in ALGEBRA_MODES}
-                ground = set().union(set(), *(labels(texts[i]) for i in idx if i not in algebra))
-                idx = [i for i in idx if i not in algebra or labels(texts[i]) <= ground]
+                bound_by_members = set().union(set(), *(labels(texts[i]) for i in idx if i not in algebra))
+                idx = [i for i in idx if i not in algebra or labels(texts[i]) <= bound_by_members]
                 return ren, idx
 
             groups = {}
@@ -7289,9 +7289,9 @@ def convert_one(stem: str) -> tuple[str, str | None, str | None, Counter, Counte
     try:
         s = Solver(stem, lib, sig, todo)
         arclog, arcdata = s.run()
-        # an `inline` helper whose body no order grounds is no relation: its
+        # an `inline` helper whose body no order makes safe is no relation: its
         # body stands at each call
-        stuck = frozenset(r.name for r in s.c.prog.relations if Qualifier.INLINE in r.qualifiers) & s.c.ungrounded
+        stuck = frozenset(r.name for r in s.c.prog.relations if Qualifier.INLINE in r.qualifiers) & s.c.unsafe
         if stuck:
             MERGES.clear()
             MERGES_UNMERGED.clear()

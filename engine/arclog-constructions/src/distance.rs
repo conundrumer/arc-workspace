@@ -205,7 +205,7 @@ impl Search<'_, '_> {
     /// The least cost of each node by Dijkstra's search. A node whose cost
     /// falls after it is taken is taken again, so a negative cost gives the
     /// least cost where no cycle has a negative sum, and a cycle that has one
-    /// runs to the work cap.
+    /// runs to the binding cap.
     fn dijkstra(
         &mut self,
         starts: &StableHashMap<usize, i64>,

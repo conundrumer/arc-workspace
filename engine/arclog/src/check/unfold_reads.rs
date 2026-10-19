@@ -21,7 +21,7 @@ impl Check for UnfoldReadsCheck {
     /// own instance, as `docs/lib-spec.md#construction` gives: a read in an
     /// input that [`crate::registry::InputPort::reads_outputs`] does not
     /// mark, or in the key clause's body, and a read in a marked input with
-    /// a site that makes a label, since another atom of the clause grounds
+    /// a site that makes a label, since another atom of the clause binds
     /// each label of such a read.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let program = input.scope.program;
@@ -41,7 +41,7 @@ impl Check for UnfoldReadsCheck {
             let message = if !marked {
                 "the read is of an output of its own instance, which only an input that reads the instance's outputs, as `Unfold`'s `step`, `skip` and `take`, makes"
             } else if makes {
-                "a site of a read of an output of its own instance makes a label, where each site joins a label that another atom of the clause grounds"
+                "a site of a read of an output of its own instance makes a label, where each site joins a label that another atom of the clause binds"
             } else {
                 continue;
             };

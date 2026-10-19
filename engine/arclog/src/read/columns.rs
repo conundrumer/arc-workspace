@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::program::*;
 
 use super::labels::LabelScope;
-use crate::grounding::{body_labels, each_label_use, site_label_uses};
+use crate::safety::{body_labels, each_label_use, site_label_uses};
 
 /// The columns of a relation the program declares, which `labels` give.
 pub(super) fn relation_columns(labels: &[LabelId], scope: &LabelScope) -> Arc<[RelationColumn]> {

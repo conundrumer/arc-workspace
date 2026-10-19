@@ -20,7 +20,7 @@ use crate::terms::{Constant, ReachedMarginBound, Term, TermId};
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Caps {
     /// The bindings a clause's join, or a native construction, may try.
-    pub work: u64,
+    pub bindings: u64,
     /// The rows the parts of a relation may hold.
     pub rows: u64,
     /// The models of one case on one input.
@@ -33,13 +33,13 @@ pub struct Caps {
 }
 
 impl Caps {
-    /// The caps of every task session: the work cap, the row cap and the node
+    /// The caps of every task session: the binding cap, the row cap and the node
     /// cap are each set from the engine's counts on the corpus, and the model
     /// cap from the corpus survey's bound from Souffle's `out`.
     ///
-    /// The work cap and the row cap are each about twice the largest count
+    /// The binding cap and the row cap are each about twice the largest count
     /// of one evaluation that `arclog-cli speed` gave over `work/arclog/gen/`
-    /// on 2026-10-19, in a run under a work cap of `1 << 32` and a row cap of
+    /// on 2026-10-19, in a run under a binding cap of `1 << 32` and a row cap of
     /// `1 << 24`: 474 894 549 bindings tried, of `c3fa4749`, and 995 900
     /// rows held, of `b71a7747`. Those counts are of the 798 solvers of 953
     /// that gave counts, each extreme of the corpus survey's runs among them.
@@ -54,7 +54,7 @@ impl Caps {
     /// largest count of models of one case on one input is 8, the largest of
     /// that run. Those counts are of the 840 solvers of 953 whose concept
     /// case ran to its end. Of the others, 88 stopped at a fault of the run
-    /// or at the work cap or the row cap, 19 faulted before the run, and 6
+    /// or at the binding cap or the row cap, 19 faulted before the run, and 6
     /// hold a `DEMONSTRATED` form, so are not compared. The counts leave out
     /// the outlier `97a05b5b`, whose 4 147 798 search nodes for its one model
     /// go with an engine run of 22.6 s against Souffle's 0.7 s.
@@ -68,13 +68,13 @@ impl Caps {
     ///
     /// The assignment cap is the provisional default of
     /// `docs/engine/determination.md#det`.
-    pub const CORPUS: Caps = Caps { work: 1 << 30, rows: 1 << 21, models: 1 << 7, nodes: 1 << 5, assignments: 1000 };
+    pub const CORPUS: Caps = Caps { bindings: 1 << 30, rows: 1 << 21, models: 1 << 7, nodes: 1 << 5, assignments: 1000 };
 }
 
 /// The bound an evaluation reached.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ReachedBound {
-    Work { cap: u64 },
+    Bindings { cap: u64 },
     Rows { cap: u64 },
     Models { cap: u64 },
     Nodes { cap: u64 },
@@ -88,14 +88,14 @@ pub enum ReachedBound {
 
 impl ReachedBound {
     /// Whether the result cache stores a stop at this bound: a stop at the
-    /// work cap, the row cap or a margin, which is the same at every later
+    /// binding cap, the row cap or a margin, which is the same at every later
     /// request of its entry. A stop at the session's byte bound, at the
     /// deadline or by a cancellation depends on the machine or the
     /// session's history, and is stored nowhere. A stop at the model cap,
     /// the node cap or the assignment cap is stored nowhere either.
     pub fn is_stored(self) -> bool {
         match self {
-            ReachedBound::Work { .. } | ReachedBound::Rows { .. } | ReachedBound::Margin(_) => true,
+            ReachedBound::Bindings { .. } | ReachedBound::Rows { .. } | ReachedBound::Margin(_) => true,
             ReachedBound::Models { .. }
             | ReachedBound::Nodes { .. }
             | ReachedBound::Assignments { .. }
@@ -108,7 +108,7 @@ impl ReachedBound {
     /// The bound as a diagnostic's message describes it.
     fn describe(self) -> String {
         match self {
-            ReachedBound::Work { cap } => format!("the work cap of {cap} bindings"),
+            ReachedBound::Bindings { cap } => format!("the binding cap of {cap} bindings"),
             ReachedBound::Rows { cap } => format!("the row cap of {cap} rows"),
             ReachedBound::Models { cap } => format!("the model cap of {cap} models"),
             ReachedBound::Nodes { cap } => format!("the node cap of {cap} search nodes"),
