@@ -9,7 +9,6 @@
 //! [`arclog::harness::run_over_corpus`], prints each failure by task id, and
 //! exits nonzero where a solver fails or the directory is a fault.
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -60,12 +59,8 @@ fn check(dir: &Path, solver: &CorpusSolver, report: &LintReport) -> SolverResult
     let Some(read) = read_corpus_solver(dir, &solver.task_id) else {
         return SolverResult::Fail(vec!["the solver's files do not read".to_owned()]);
     };
-    let each = || faults(&read);
-    match catch_unwind(AssertUnwindSafe(each)) {
-        Ok(faults) if faults.is_empty() => SolverResult::Pass,
-        Ok(faults) => SolverResult::Fail(faults),
-        Err(_) => SolverResult::Fail(vec!["the resolution of a case panicked".to_owned()]),
-    }
+    let faults = faults(&read);
+    if faults.is_empty() { SolverResult::Pass } else { SolverResult::Fail(faults) }
 }
 
 fn main() -> ExitCode {

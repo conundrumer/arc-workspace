@@ -13,7 +13,6 @@
 //! that [`arclog::solver::Case::file_path`] gives and the walk of
 //! [`arclog::program::path::node_at`] reaches no node at in that file.
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -43,11 +42,8 @@ fn check(dir: &Path, solver: &CorpusSolver) -> SolverResult {
     let Some(read) = read_corpus_solver(dir, &solver.task_id) else {
         return SolverResult::Fail(vec!["the solver's files do not read".to_owned()]);
     };
-    match catch_unwind(AssertUnwindSafe(|| faults(&read))) {
-        Ok(faults) if faults.is_empty() => SolverResult::Pass,
-        Ok(faults) => SolverResult::Fail(faults),
-        Err(_) => SolverResult::Fail(vec!["the build of a case panicked".to_owned()]),
-    }
+    let faults = faults(&read);
+    if faults.is_empty() { SolverResult::Pass } else { SolverResult::Fail(faults) }
 }
 
 fn main() -> ExitCode {

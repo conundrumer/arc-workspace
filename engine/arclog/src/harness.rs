@@ -9,6 +9,8 @@
 //! have no example of their own: the other stages' end checks run their
 //! bodies.
 
+use std::any::Any;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -143,7 +145,8 @@ pub struct CorpusReport {
 }
 
 /// Runs `check` over every solver of `dir`, on as many threads as the
-/// machine has, and gives the report over them.
+/// machine has, and gives the report over them. A panic of `check` on a
+/// solver is a failure of that solver, whose report is the panic's message.
 pub fn run_over_corpus<F>(dir: &Path, check: F) -> Result<CorpusReport, CorpusError>
 where
     F: Fn(&CorpusSolver) -> SolverResult + Sync,
@@ -159,7 +162,8 @@ where
                     loop {
                         let index = next.fetch_add(1, Ordering::Relaxed);
                         let Some(solver) = solvers.get(index) else { break done };
-                        done.push((index, check(solver)));
+                        let result = catch_unwind(AssertUnwindSafe(|| check(solver)));
+                        done.push((index, result.unwrap_or_else(|payload| SolverResult::Fail(vec![panic_line(&*payload)]))));
                     }
                 })
             })
@@ -175,4 +179,14 @@ where
         })
         .collect();
     Ok(CorpusReport { checked: solvers.len(), failures })
+}
+
+/// The line that reports a panic whose payload is `payload`: its message,
+/// where the payload is a `&str` or a `String`.
+fn panic_line(payload: &(dyn Any + Send)) -> String {
+    let message = payload.downcast_ref::<&str>().copied().or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+    match message {
+        Some(message) => format!("the check panicked: {message}"),
+        None => "the check panicked, with a payload that is not a message".to_owned(),
+    }
 }
