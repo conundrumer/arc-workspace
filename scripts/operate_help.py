@@ -18,6 +18,7 @@ class HelpPart(StrEnum):
     PACE = "pace"
     RELAY = "relay"
     REVIEW = "review"
+    WAIT = "wait"
     ALERTS = "alerts"
 
 
@@ -27,6 +28,7 @@ USAGE = mctx("""
         uv run python scripts/operate.py next <agent id>
         uv run python scripts/operate.py relay <agent id>
         uv run python scripts/operate.py review <agent id>
+        uv run python scripts/operate.py wait <agent id>
         uv run python scripts/operate.py start --run <run> <task id> <pass> ...
         uv run python scripts/operate.py claim <task id>
         uv run python scripts/operate.py set-aside <task id> analyze|create
@@ -54,6 +56,7 @@ PURPOSES = {
     HelpPart.PACE: mctx("the `Op pace:` line, which sets the usage pace within which `next` starts agents"),
     HelpPart.RELAY: mctx("what `relay` prints"),
     HelpPart.REVIEW: mctx("what `review` prints"),
+    HelpPart.WAIT: mctx("how `wait` blocks"),
     HelpPart.ALERTS: mctx("the alerts `next` sends, the paths of links from a ticket, and the messages it sends the coordinator on waits and on concept faults"),
 }
 """What each part of the help gives."""
@@ -101,6 +104,9 @@ PARTS = {
         - Where no other step is ready and a launch it would give is of an agent type that the operator's agent listing lacks and whose rendered definition `.claude/agents/<agent type>.md` stands in the main tree, it prints the launch of an agent whose end resumes the operator, unless one such runs, then that the operator ends its turn.
         - Where no step is ready, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
             - The block also ends, and it prints that the operator runs it again, once a message to the operator waits that the harness accepted after the latest `user` entry of the operator's transcript before the call.
+        - Where its calls in a row have found no step ready for {idle} seconds or more, from the start of the first of them, it prints, in place of that the operator runs it again:
+            - Where an agent the operator launched is pending, or a call of `wait` by the operator runs, that the operator ends its turn, after a call of `wait` in the background where none runs.
+            - Otherwise the final reply for a wait, which hands the operator's lines to the operator launched after it.
         - Where it has printed no step {limit} seconds after it started, it prints that the operator runs it again, and ends.
         - A call of `next` or `relay` ends each call of either for the same agent id that runs.
     - Before the call it prints, `next` prints that step's key, on a line that gives the command to run after the call, and before several launches, one line that gives each launch's key, in their order, and the command to run after them.
@@ -207,7 +213,9 @@ PARTS = {
         - Each later message of the coordinator's to the launcher goes, unchanged, to the operator of the launcher's that runs, or, where none runs or the one that runs sent the launcher its final reply, into the brief of the next operator it launches.
         - Where an operator's final reply ends it for its context, it launches a fresh operator.
             - Where the launcher's context is past the bound `context_bound_hook.py` gives, it sends the coordinator instead the launcher's final reply, which asks for a fresh operator launcher whose brief is the lines that wait for a next operator, and gives them.
-        - It sends the coordinator any other final reply of an operator, and an operator's end with no final reply, after a line that gives that operator's agent id.
+        - Where an operator's final reply ends it for a wait, and no line of the coordinator's waits, it prints a call of `wait` in the background and that the launcher ends its turn, or, where that call runs, the end of the turn alone; once that call has completed, or once a line waits, it acts as after a final reply for the operator's context.
+        - Where an operator ends with no final reply, it acts as after a final reply for the operator's context, unless the operator launched before it also ended with no final reply and each of the two ended within {idle} seconds of its launch.
+        - It sends the coordinator any other final reply of an operator, and the end with no final reply that follows a quick end with none, after a line that gives that operator's agent id.
             - It then prints the launcher's final reply, unless a line of the coordinator's waits for a next operator.
     """),
     HelpPart.REVIEW: mctx("""
@@ -222,6 +230,12 @@ PARTS = {
         - Where that step is none and an agent the editor launched has not given its final reply, it prints that the editor waits on each such agent, and runs `review` again each time one of them gives its final reply.
         - Otherwise it prints that the editor gives its final reply.
         - It reads the state as the editor's operator's `next` reads it.
+    """),
+    HelpPart.WAIT: mctx("""
+    - `wait` blocks for the operator whose agent id it is given, or, for an operator launcher's, for the last operator that launcher launched, and prints nothing: its caller runs `next` or `relay` again once it completes.
+        - It reads the state as that operator's `next` reads it, and blocks as the block of `next` does, until a step is ready other than that the operator runs `next` again and its final reply for a wait, the pace's hold on the operator's steps ends, or {cap} seconds pass.
+        - Where the pace holds the operator's steps until a time, the block ends by that time.
+        - Where a call of `wait` for the same agent id runs, it ends at once.
     """),
     HelpPart.ALERTS: ALERTS + "\n" + WAITS_HELP + "\n" + concept_faults.HELP,
 }

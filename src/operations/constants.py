@@ -68,6 +68,15 @@ BACKOFF_CAP = 960
 """The longest wait after a launch the harness refused at
 `SUBAGENT_LIMIT`."""
 
+WAIT_SECONDS_IDLE = 300
+"""How long an operator's calls of `next` in a row find no step ready
+before it waits with its turn ended or gives its final reply for a wait
+(`plan.next_step`), and the bound on the time from an operator's launch to
+its end that counts the end as quick (`relay.next_step`)."""
+
+WAIT_CAP = 1800
+"""The longest run of the command's `wait`."""
+
 REVIEW_ROUNDS = 3
 """The cap on the rounds of each kind of review of a built change since its
 last move out of `tickets/draft/`."""

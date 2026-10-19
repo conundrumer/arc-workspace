@@ -36,24 +36,30 @@ file the read of the tracker left out may still be written
 (`decisions.writing`), the usage pace alone holds back an open
 ticket (`taking.pace_held`), the pace or its cap holds a step (`order.pace_held_step`), or
 a step waits after the harness refused it at its limit of concurrent
-subagents (`journal.backing_off`), the agent runs the command again, which blocks in the foreground first. Otherwise the
+subagents (`journal.backing_off`), the agent runs the command again, which blocks in the foreground first,
+until its calls in a row have found no step ready for `WAIT_SECONDS_IDLE`: then, where an
+agent it launched is pending, it waits with its turn ended (`steps.Wait`), and otherwise it
+gives its final reply for a wait (`final_reply.FOR_WAIT`), whose lines a fresh operator takes
+up. Otherwise the
 agent gives its final reply, after the message that sends its parent
 its text (`standing.ending`), with each stuck agent or holder it waited on."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 from controlled_markdown import mctx
 from operations import decisions, monitor, triage, taking
 from operations.state import Call, State
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Status
-from operations.journal import backing_off
-from operations.final_reply import (FOR_CONTEXT, FOR_LATER, ended, hands_over, hands_to,
+from operations.constants import WAIT_SECONDS_IDLE
+from operations.journal import backing_off, next_call
+from operations.printing import printed_idle
+from operations.final_reply import (FOR_CONTEXT, FOR_LATER, FOR_WAIT, ended, hands_over, hands_to,
                                     live_holder, own_calls, sent_final_text, split_at,
                                     takes_up)
 from operations.standing import ending, final, holding, reply_lines
 from operations.order import EARLY, LATE, first, lacked, listing_wait, monitor_step, pace_held_step
-from operations.steps import EndTurn, ListingHold, Poll, Step
+from operations.steps import EndTurn, ListingHold, Poll, Step, Wait
 
 
 def elsewhere(state: State) -> list[str]:
@@ -78,11 +84,52 @@ def unknown_line(line: str) -> str:
     return f"- {line}"
 
 
-def next_step(state: State, watch: monitor.MonitorState) -> Step:
+def unknown_lines(watch: monitor.MonitorState) -> list[str]:
+    """The lines of a final reply that give each line `monitor.undecided`
+    gives."""
+    return [unknown_line(line) for line in dict.fromkeys(monitor.undecided(watch))]
+
+
+def next_step(state: State, watch: monitor.MonitorState, waiting: bool = False) -> Step:
     """The operator's next step, where `watch` is the state the monitor's
-    steps read. Each reply gives, after its lines, each line
+    steps read and `waiting` is whether a call of the command's `wait` by
+    `me` runs: the step `ready_step` gives, other than where it is `Poll`
+    and the calls of `next` by `me` in a row have found no step ready for
+    `WAIT_SECONDS_IDLE` (`idle_since`). There, where an agent `me`
+    launched is pending or `waiting` holds, the step is `Wait`, with the
+    call where `waiting` does not hold, and otherwise the final reply
+    for a wait (`FOR_WAIT`). Each reply gives, after its lines, each line
     `monitor.undecided` gives."""
-    unknown = [unknown_line(line) for line in dict.fromkeys(monitor.undecided(watch))]
+    step = ready_step(state, watch)
+    since = idle_since(state.transcripts.calls, state.me)
+    if not isinstance(step, Poll) or since is None or state.now - since < WAIT_SECONDS_IDLE:
+        return step
+    if waiting or any(a.pending for a in state.transcripts.agents if a.operator == state.me):
+        return Wait(state.me, call=not waiting)
+    return ending(state, FOR_WAIT + "\n" + "\n".join([*reply_lines(state, holding(state)),
+                                                      *unknown_lines(watch)]))
+
+
+def idle_since(calls: Iterable[Call], me: str) -> float | None:
+    """The time of the first of the calls of `next` by `me` with a result,
+    in a row back from the last, whose results print that nothing is
+    ready (`printing.printed_idle`), or None where the last result prints
+    a step."""
+    since = None
+    for c in sorted((c for c in calls if next_call(c, me) and c.result is not None),
+                    key=lambda c: c.time, reverse=True):
+        if not printed_idle(c.result or ""):
+            break
+        since = c.time
+    return since
+
+
+def ready_step(state: State, watch: monitor.MonitorState) -> Step:
+    """The operator's next step as the module docstring gives it, where
+    `watch` is the state the monitor's steps read, with no wait for
+    nothing ready (`next_step`). Each reply gives, after its lines, each
+    line `monitor.undecided` gives."""
+    unknown = unknown_lines(watch)
     later = [o for o in split_at(state.operators, state.me)[1] if o in state.open_operators
              and (not ended(state, o) or state.me in taken_up(o, state.operators,
                                                              state.transcripts.calls,

@@ -1,7 +1,8 @@
 """The check `pending_wait_hook` runs on the Bash call of an agent of a type
 of `context_bound_hook.ACTIONS`, which makes only the calls its command
 prints; the command runs each Bash step itself. It denies a call that is not
-that command alone (`command_words.only_command`), and a call of that command
+that command alone (`command_words.only_command`) or the background Bash
+call the last result of that command prints (`printing.printed_bash`), and a call of that command
 where the last result of that command prints a call of any tool, and the
 transcript holds, after that result, no call of that tool and no message or notification that reached
 the caller (`run_reads.is_prompt`). A call another hook denied counts as
@@ -27,8 +28,12 @@ DENIALS = "printed-call-denials"
 def printed_call(result: str) -> tuple[Tool, str] | None:
     """The tool and the text of the call `result`, a result of the command,
     prints, or None where it prints no call."""
-    from operations.printing import PROMPT, launch_text, printed_launch, printed_send, send_text
+    from operations.printing import (BACKGROUND_BASH, PROMPT, launch_text, printed_bash,
+                                     printed_launch, printed_send, send_text)
 
+    bash = printed_bash(result)
+    if bash is not None:
+        return Tool.BASH, BACKGROUND_BASH.format(command=bash)
     launch = printed_launch(result)
     if launch is not None:
         fields = {k: v for k, v in launch.items() if k != PROMPT}
@@ -94,6 +99,7 @@ def check(hook: dict[str, Any]) -> str | None:
     """The reason to deny the Bash call `hook` gives where the module
     docstring has it denied, and None otherwise."""
     from operations.command_words import only_command
+    from operations.printing import printed_bash
     from printed_launch_hook import first_at, operator_next
     from run_reads import caller_transcript
 
@@ -103,6 +109,8 @@ def check(hook: dict[str, Any]) -> str | None:
     found = caller.found
     printed = None if found is None else printed_call(found[1])
     text = str(hook["tool_input"]["command"])
+    if found is not None and text.strip() == printed_bash(found[1]):
+        return None
     if only_command(text, caller.agent, caller.action):
         if found is None or printed is None:
             return None

@@ -10,49 +10,61 @@ end or the coordinator's next line resumes it. Once an operator's final text rea
 text that opens with `final_reply.FOR_CONTEXT` gives the launch of the next
 operator, or, past the launcher's bound, the launcher's final reply, which
 asks the coordinator for a fresh operator launcher whose brief is the lines
-of the coordinator's that wait for the next operator, each distinct text once, and gives them; any other text, and an
-operator's end with none, goes to the coordinator, after a line that gives
-the operator's agent id, and the launcher then gives its final reply,
-unless a line of the coordinator's waits for the next operator, which gives
-the next operator's launch, or, past the launcher's bound, the final reply
-that asks for a fresh operator launcher whose brief is those lines."""
+of the coordinator's that wait for the next operator, each distinct text once, and gives them.
+A text that opens with `final_reply.FOR_WAIT` gives, while no line of the
+coordinator's waits, the launcher's call of the command's `wait` in the
+background and the end of its turn (`steps.Wait`), and, once that call has
+completed or a line waits, the step as after `FOR_CONTEXT`. An operator's
+end with no final reply gives the step as after `FOR_CONTEXT` too, other
+than where the operator launched before it also ended with none and each
+of the two ended within `WAIT_SECONDS_IDLE` of its launch. Any other text,
+and an operator's end with none in that case, goes to the coordinator,
+after a line that gives the operator's agent id, and the launcher then
+gives its final reply, unless a line of the coordinator's waits for the
+next operator, which gives the next operator's launch, or, past the
+launcher's bound, the final reply that asks for a fresh operator launcher
+whose brief is those lines."""
 
 from dataclasses import dataclass
 
 from controlled_markdown import mctx
-from operations.constants import COORDINATOR
-from operations.final_reply import ending_step, for_context
-from operations.printing import final_message
+from operations.constants import COORDINATOR, WAIT_SECONDS_IDLE
+from operations.final_reply import ending_step, for_context, for_wait
+from operations.printing import final_message, wait_command
 from operations.handled import sends_in
 from operations.roles import Role
-from operations.state import Call, Message
-from operations.steps import EndTurn, Launch, Reply, Send, Step
+from operations.state import Call, Message, Tool
+from operations.steps import EndTurn, Launch, Reply, Send, Step, Wait
 
 
 @dataclass(frozen=True)
 class Run:
     """An operator the launcher launched: its agent id, the time of its
     launch, whether its end has not reached the launcher (`Agent.pending`),
-    and the text of the final reply that the last message by which it
+    the text of the final reply that the last message by which it
     sent the launcher its final reply gives (`final_reply.final_sends`,
-    `final_reply.final_text`), or None where it sent none."""
+    `final_reply.final_text`), or None where it sent none, and the time of
+    its end: the time of the last timestamped entry of its transcript
+    (`agent_turns.latest_time`), or of its launch where it has none."""
     agent_id: str | None
     launched: float
     pending: bool
     final: str | None
+    ended: float
 
 
 @dataclass(frozen=True)
 class Relay:
     """What the launcher `me` reads: the coordinator's messages to it, its
     brief first, in the order they arrived, the operators it launched, in
-    the order of their launch, its own calls, and whether its context is
-    past its bound."""
+    the order of their launch, its own calls, whether its context is
+    past its bound, and whether a call of the command's `wait` by it runs."""
     me: str
     lines: tuple[Message, ...]
     runs: tuple[Run, ...]
     calls: tuple[Call, ...]
     past_bound: bool
+    wait_runs: bool
 
 
 FRESH_LAUNCHER = mctx("I ended for my context: launch a fresh operator launcher with no lines, "
@@ -103,6 +115,20 @@ def after(relay: Relay, run: Run, brief: str) -> Step:
     return ending(relay, "\n".join([WITH_HELD.format(operator=run.agent_id), brief]))
 
 
+def waited_since(relay: Relay, since: float) -> bool:
+    """Whether the launcher made a call of the command's `wait` after
+    `since`."""
+    return any(c.time > since and c.tool == Tool.BASH
+               and str(c.input.get("command", "")).strip() == wait_command(relay.me)
+               for c in relay.calls)
+
+
+def quick(run: Run) -> bool:
+    """Whether `run` ended with no final reply within `WAIT_SECONDS_IDLE`
+    of its launch."""
+    return not run.pending and run.final is None and run.ended - run.launched < WAIT_SECONDS_IDLE
+
+
 def next_step(relay: Relay) -> Step:
     if not relay.runs:
         return operator_launch(relay, relay.lines[0].text)
@@ -116,9 +142,16 @@ def next_step(relay: Relay) -> Step:
             raise ValueError(f"the running operator launched at {run.launched} has no known "
                              "agent id")
         return Send(run.agent_id, lines[0].text, "line", since=lines[0].time, commanded=True)
-    if run.final is not None and for_context(run.final):
+    if run.final is not None and for_wait(run.final) and not lines:
+        if relay.wait_runs:
+            return Wait(relay.me, call=False)
+        if not waited_since(relay, run.ended):
+            return Wait(relay.me)
+    if run.final is not None and (for_context(run.final) or for_wait(run.final)):
         if relay.past_bound and not lines:
             return ending(relay, FRESH_LAUNCHER)
+        return after(relay, run, brief)
+    if run.final is None and not (len(relay.runs) > 1 and quick(run) and quick(relay.runs[-2])):
         return after(relay, run, brief)
     carried = (CARRIED.format(operator=run.agent_id) + "\n" + run.final if run.final is not None
                else NO_REPLY.format(operator=run.agent_id))

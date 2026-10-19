@@ -1,8 +1,7 @@
 """The operator's command line: its actions, of which `next` and `relay`
-run the loop of `operate_loop`, `review` is `operate_review`'s, `waits`
-prints the paths of `operations.waits`, and the other subcommands are
-`operate_actions`', and its help, which
-`operate_help` holds. Run with a copy other than the main tree's,
+run the loop of `operate_loop`, `wait` is `operate_loop`'s, `review` is
+`operate_review`'s, and the other subcommands are `operate_actions`', and
+its help, which `operate_help` holds. Run with a copy other than the main tree's,
 `review` runs the main tree's copy (`tree_reads.run_in_main`).
 
 Each fact the command reads is in the tracker, in git, under `work/`, in
@@ -30,33 +29,18 @@ from transcript_snapshots import Refused  # noqa: E402
 from tree_reads import main_tree, run_in_main  # noqa: E402
 from help_parts import print_help  # noqa: E402
 
-from operations import journal, pacing, runs, ticket_stall, waits  # noqa: E402
+from operations import journal, pacing, runs  # noqa: E402
 from operations.directives import NUMBER  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
 from operations.roles import Role  # noqa: E402
-from operations.constants import BLOCK_SECONDS, LIMIT_SECONDS, RUN_SECONDS, SUBAGENT_LIMIT  # noqa: E402
+from operations.constants import (BLOCK_SECONDS, LIMIT_SECONDS, RUN_SECONDS, SUBAGENT_LIMIT,  # noqa: E402
+                                  WAIT_CAP, WAIT_SECONDS_IDLE)
 from operations.task_work import release, restore, set_aside  # noqa: E402
-from operate_loop import block, operator_step  # noqa: E402
-from operate_actions import TASK_ID, OperateAction, claim_task, relay_step  # noqa: E402
+from operate_loop import block, operator_step, wait  # noqa: E402
+from operate_actions import TASK_ID, OperateAction, claim_task, print_waits, relay_step  # noqa: E402
 from operate_help import PARTS, PURPOSES, USAGE, HelpPart  # noqa: E402
 from operate_review import review  # noqa: E402
-from relay_reads import session_id  # noqa: E402
-from operator_reads import operator_runs  # noqa: E402
-from state_assembly import read_state  # noqa: E402
-
-def print_waits(number: str) -> int:
-    """Print the paths of links from ticket `number` (`waits.paths`), from
-    the state `next` reads for the session's latest operator, or fail
-    where no operator of the session ran `next`."""
-    operators = operator_runs(session_id(), "")
-    if not operators:
-        print(mctx("operate: no operator of the session ran `next`"), file=sys.stderr)
-        return 1
-    state, _ = read_state(operators[-1][0])
-    print(waits.rendered(state, waits.paths(state, number, ticket_stall.stalled(state))))
-    return 0
-
 
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("--help", "-h"):
@@ -68,7 +52,8 @@ def main(argv: list[str]) -> int:
                               write=round(WRITE_SECONDS), stale=USAGE_STALE, rate_limit=RATE_LIMIT,
                               script=runs.SCRIPT_SECONDS, factor=f"{pacing.EVEN_FACTOR:g}",
                               window=pacing.DEFAULT_WINDOW, subagents=SUBAGENT_LIMIT,
-                              band=f"{pacing.BAND_PCT:g}"))
+                              band=f"{pacing.BAND_PCT:g}", idle=WAIT_SECONDS_IDLE,
+                              cap=WAIT_CAP))
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=list(OperateAction))
     runs.add_arguments(parser)
@@ -79,6 +64,10 @@ def main(argv: list[str]) -> int:
                 return block(args.ident, Action.NEXT, lambda deadline: operator_step(args.ident, deadline))
             case OperateAction.RELAY:
                 return block(args.ident, Action.RELAY, lambda deadline: relay_step(args.ident, deadline))
+            case OperateAction.WAIT:
+                if args.rest:
+                    parser.error(mctx("wait takes an agent id alone"))
+                return wait(args.ident)
             case OperateAction.REVIEW:
                 if args.rest:
                     parser.error(mctx("review takes an agent id alone"))

@@ -1,7 +1,7 @@
 """The operator's final reply: the text of the message that sends it
 (`final_text`, `sent_final_text`), whose form `printing.final_message`
 gives, whether that text ends the operator for
-its context (`for_context`) or hands its lines to the operator launched
+its context (`for_context`) or for a wait (`for_wait`) or hands its lines to the operator launched
 after it (`hands_over`) or to one operator by name (`hands_to`), the calls that sent its text to its parent
 (`final_sends`), the calls of each operator (`OwnCalls`), whether an operator has ended (`ended`), which of two
 operators continues the lines one hands the other (`takes_up`), whether a holder
@@ -30,6 +30,13 @@ from operations.steps import Reply, Send
 FOR_CONTEXT = mctx("I ended for my context: launch a fresh operator with no lines, which "
                    "takes up from the state each line below that stands unfinished.")
 
+FOR_WAIT = mctx("I ended for a wait: nothing is ready. Launch a fresh operator once a step may "
+                "be ready, which takes up from the state each line below that stands "
+                "unfinished.")
+"""The first line of the final reply of an operator that found no step
+ready over its calls of `next` in a row for `constants.WAIT_SECONDS_IDLE`,
+with no agent of its own pending."""
+
 FOR_LATER = mctx("Operator {operator} continues the work, and takes up from the state each "
                  "line below that stands unfinished.")
 """The first line of the final reply of an operator that ends because a
@@ -57,11 +64,17 @@ def for_context(text: str) -> bool:
     return first_line(text) == FOR_CONTEXT
 
 
+def for_wait(text: str) -> bool:
+    """Whether the final reply whose text is `text` ends the operator for
+    a wait."""
+    return first_line(text) == FOR_WAIT
+
+
 def hands_over(text: str) -> bool:
     """Whether the final reply whose text is `text` hands the operator's
     lines to the operator launched after it: its first line is
-    `FOR_CONTEXT` or has the form of `FOR_LATER`."""
-    return for_context(text) or re.fullmatch(form(FOR_LATER, {"operator": r"\S+"}),
+    `FOR_CONTEXT` or `FOR_WAIT`, or has the form of `FOR_LATER`."""
+    return for_context(text) or for_wait(text) or re.fullmatch(form(FOR_LATER, {"operator": r"\S+"}),
                                               first_line(text)) is not None
 
 

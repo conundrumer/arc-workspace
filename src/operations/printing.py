@@ -12,13 +12,13 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from controlled_markdown import form, mctx
-from operations.command_words import Action, next_command
+from operations.command_words import RUN_COMMAND, Action, next_command
 from operations.filing import filed_line, split_message
 from operations.pacing import Capped, Pace, Scripted, Until
 from operations.printed_forms import POLL_AGAIN, SENT
 from operations.roles import launch_parameters, launched_type
 from ticketing.times import utc_stamp
-from operations.steps import Bash, EndTurn, Launch, Poll, Reply, Send, Step, Undecided, key
+from operations.steps import Bash, EndTurn, Launch, Poll, Reply, Send, Step, Undecided, Wait, key
 
 
 FINAL_REPLY = mctx("final reply")
@@ -55,11 +55,42 @@ def listing_line(held: Launch) -> str:
     return END_TURN_LISTING.format(agent_type=launched_type(held.role, held.subject))
 
 
+END_TURN_WAIT = mctx("End your turn with no other call: the completion of the `wait` call, a "
+                     "message, or the end of an agent you launched resumes you.")
+"""The line of an end of turn for a wait (`steps.Wait`)."""
+
+
 def printed_end_turn(text: str) -> bool:
     """Whether `text`, a result of the command, prints the end of the
-    agent's turn (`END_TURN`, `END_TURN_LISTING`)."""
-    return printed_line(re.escape(END_TURN) + "|" + form(END_TURN_LISTING, {"agent_type": r"\S+"}),
-                        text)
+    agent's turn (`END_TURN`, `END_TURN_LISTING`, `END_TURN_WAIT`)."""
+    return printed_line("|".join([re.escape(END_TURN), re.escape(END_TURN_WAIT),
+                                  form(END_TURN_LISTING, {"agent_type": r"\S+"})]), text)
+
+
+def printed_idle(text: str) -> bool:
+    """Whether `text`, a result of the command, prints that nothing is
+    ready: the line `POLL_AGAIN`, or the end of a turn for a wait."""
+    return printed_line(re.escape(POLL_AGAIN) + "|" + re.escape(END_TURN_WAIT), text)
+
+
+WAIT_ACTION = "wait"
+"""The action of the command that blocks until a step may be ready."""
+
+BACKGROUND_BASH = "\n".join([mctx("call Bash"), mctx("run_in_background: true"),
+                             mctx("command: {command}")])
+
+
+def wait_command(agent: str) -> str:
+    """The command of the call of `wait` for the agent `agent`."""
+    return f"{RUN_COMMAND} {WAIT_ACTION} {agent}"
+
+
+def printed_bash(text: str) -> str | None:
+    """The command of the background Bash call that `text`, a result of
+    the command, prints, or None where it prints none."""
+    found = re.search("^" + form(BACKGROUND_BASH, {"command": r"(?P<command>[^\n]+)"}) + "$",
+                      text, re.MULTILINE)
+    return None if found is None else found["command"]
 
 
 KEY_LINE = mctx("Step key {key}: after the call below, run `{command}`.")
@@ -228,6 +259,9 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
             line = listing_line(hold.launch)
             wait = step.wait
             return line if wait is None else printed(wait, agent, scratch) + "\n" + line
+        case Wait(waiting, call):
+            made = [BACKGROUND_BASH.format(command=wait_command(waiting))] if call else []
+            return "\n".join([*made, END_TURN_WAIT])
         case Reply(to):
             return REPLY_TEXT.format(to=to)
         case Undecided():

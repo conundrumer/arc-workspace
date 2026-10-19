@@ -2,7 +2,8 @@
 state, as `state_assembly` assembles it, and prints the next step of the
 operator's procedures, which the package `operations` computes, within
 the block and the guards that `operate.py --help next` gives (`waited`),
-which `review` waits within too."""
+which `review` waits within too, and the block of `operate.py wait`
+(`wait`), which prints nothing."""
 
 import fcntl
 import math
@@ -25,7 +26,7 @@ from budgets import budget_of
 from context_bound_hook import ACTIONS
 from controlled_markdown import mctx
 from file_reads import held_paths, stats_stand_but
-from relay_reads import session_id
+from relay_reads import LOCK_DIR, read_relay, session_id, wait_lock, wait_running
 from run_reads import agent_type
 from state_assembly import read_state, write_due_since
 from state_reads import partial
@@ -33,13 +34,14 @@ from transcripts import find
 
 from operations import briefs, order, plan, ticket_stall
 from operations.command_words import Action
-from operations.constants import BLOCK_SECONDS, LIMIT_SECONDS
+from operations.constants import BLOCK_SECONDS, LIMIT_SECONDS, WAIT_CAP
+from operations.pacing import Until
 from operations.filing import filed, with_report
 from operations.printing import batch_line, key_line, listing_line, printed
 from operations.monitor import MonitorState
 from operations.roles import Role
 from operations.state import State
-from operations.steps import Bash, EndTurn, Launch, Poll, Send, Step
+from operations.steps import Bash, EndTurn, Launch, Poll, Send, Step, Wait
 
 POLL_SECONDS = 15
 FALLBACK_SECONDS = 90
@@ -50,7 +52,6 @@ READ_SHARE = 10
 read before it, after that read's start (`waited`)."""
 CALLS = (Launch, Send)
 """The steps after whose call the operator runs `next` again."""
-LOCK_DIR = Path("/tmp")
 
 
 def with_budget(step: Launch) -> Launch:
@@ -151,7 +152,7 @@ def block(me: str, action: Action,
         return 0
     (steps, scratch), accepted = waited(me, read_again(step_at), lambda out: not isinstance(out[0][0], Poll))
     head = steps[0]
-    if isinstance(head, EndTurn) and accepted:
+    if isinstance(head, EndTurn | Wait) and accepted:
         head = Poll()
         steps = (head,)
     if action is Action.NEXT:
@@ -195,33 +196,44 @@ def waited[T](me: str, out_at: Callable[[float], T], ready: Callable[[T], bool])
     """The first output `out_at` gives at a full read that `ready` holds
     for, or that a message reached `me` at since the last delivery to it,
     with whether such a message reached it, or else the output of the full
-    read at the deadline, `BLOCK_SECONDS` from the call. `Reads` gives when
-    each read starts and which read it is. The call is the one of `me` that
-    runs (`single_instance`), and its watchdog (`arm_watchdog`) is disarmed
-    at its return."""
+    read at the deadline, `BLOCK_SECONDS` from the call (`watched`). The
+    call is the one of `me` that runs (`single_instance`), and its watchdog
+    (`arm_watchdog`) is disarmed at its return."""
     single_instance(me)
     arm_watchdog(me)
-    reads = Reads(time.monotonic() + BLOCK_SECONDS)
     path = find(me)
     since = last_delivered(path)
+
+    def read(deadline: float) -> tuple[T, bool]:
+        return out_at(deadline), accepted_after(path, since, [])
+
+    out, accepted = watched(read, lambda o: ready(o[0]) or o[1], BLOCK_SECONDS)
+    signal.alarm(0)
+    return out, accepted
+
+
+def watched[T](out_at: Callable[[float], T], ready: Callable[[T], bool], seconds: float) -> T:
+    """The first output `out_at` gives at a full read that `ready` holds
+    for, or else the output of the full read at the deadline, `seconds`
+    from the call. `Reads` gives when each read starts and which read it
+    is."""
+    reads = Reads(time.monotonic() + seconds)
     changed: set[str] | None = None
     while True:
         started, cpu = time.monotonic(), cpu_seconds()
         reads.start(started, changed)
         stats_stand_but(changed)
         out = out_at(reads.deadline)
-        accepted = accepted_after(path, since, [])
         spent = cpu_seconds() - cpu
-        more, changed = reads.after(changed, ready(out) or accepted, started, spent)
+        more, changed = reads.after(changed, ready(out), started, spent)
         if not more:
             break
     reads.close()
-    signal.alarm(0)
-    return out, accepted
+    return out
 
 
 class Reads:
-    """When each read of `waited` starts, and whether it is a full read,
+    """When each read of `watched` starts, and whether it is a full read,
     which reads each held source again, or a partial read, which reads
     again only the stats of the paths that changed
     (`file_reads.stats_stand_but`).
@@ -308,13 +320,13 @@ def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
         if not ran(here, deadline):
             return (Poll(),), here
         state, watch = read_and_record(me, here)
-        step = plan.next_step(state, watch)
+        step = plan.next_step(state, watch, wait_running(me))
         if isinstance(step, Bash) and not partial():
             step_journal.start_run(here, step, me, state.main_tree, time.time())
             continue
         if isinstance(step, Launch) and step.reread:
             state, watch = read_and_record(me, here)
-            step = plan.next_step(state, watch)
+            step = plan.next_step(state, watch, wait_running(me))
         if isinstance(step, Launch):
             return order.batch(state, watch, step), here
         return (step,), here
@@ -340,3 +352,35 @@ def ran(scratch: Path, deadline: float) -> bool:
 
 
 RUN_POLL_SECONDS = 1.0
+
+
+def wait(me: str) -> int:
+    """Block, as `operate.py --help wait` gives it, for the operator `me`,
+    or, where `me` is an operator launcher, for the last operator it
+    launched, while holding the lock of `wait_lock` for `me`; where
+    another call holds that lock, or the launcher launched no operator
+    with a known agent id, return at once."""
+    fd = os.open(wait_lock(me), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return 0
+    operator = me
+    if agent_type(find(me)) == serving(Action.RELAY):
+        runs = read_relay(me)[0].runs
+        operator = runs[-1].agent_id if runs else None
+    if operator is None:
+        return 0
+
+    def ready_at(_deadline: float) -> Step:
+        state, watch = read_state(operator)
+        return plan.ready_step(state, watch)
+
+    first = ready_at(0.0)
+    if not isinstance(first, Poll):
+        return 0
+    seconds = float(WAIT_CAP)
+    if isinstance(first.pace, Until):
+        seconds = min(seconds, first.pace.time - time.time())
+    watched(ready_at, lambda s: not isinstance(s, Poll) or s.pace != first.pace, seconds)
+    return 0

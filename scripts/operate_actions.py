@@ -1,5 +1,6 @@
-"""The actions of `operate.py`, and the steps of its `claim`, `start` and
-`relay` subcommands, as `operate.py --help` gives them."""
+"""The actions of `operate.py`, the steps of its `claim`, `start` and
+`relay` subcommands, and the output of its `waits`, as `operate.py --help`
+gives them."""
 
 import re
 import sys
@@ -7,11 +8,15 @@ from enum import StrEnum
 from pathlib import Path
 
 from arc import task
+from controlled_markdown import mctx
+from operator_reads import operator_runs
 from relay_reads import read_relay, session_id
+from state_assembly import read_state
 from tree_reads import main_tree
 
-from operations import relay, runs
+from operations import relay, runs, ticket_stall, waits
 from operations.command_words import Action
+from operations.printing import WAIT_ACTION
 from operations.steps import Step
 from operations.task_work import CLAIM_HELD, claim
 
@@ -29,6 +34,7 @@ class OperateAction(StrEnum):
     RELEASE = "release"
     REVIEW = Action.REVIEW
     WAITS = "waits"
+    WAIT = WAIT_ACTION
 
 
 def claim_task(task_id: str) -> int:
@@ -44,3 +50,16 @@ def claim_task(task_id: str) -> int:
 def relay_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
     found, scratch = read_relay(me)
     return (relay.next_step(found),), scratch
+
+
+def print_waits(number: str) -> int:
+    """Print the paths of links from ticket `number` (`waits.paths`), from
+    the state `next` reads for the session's latest operator, or fail
+    where no operator of the session ran `next`."""
+    operators = operator_runs(session_id(), "")
+    if not operators:
+        print(mctx("operate: no operator of the session ran `next`"), file=sys.stderr)
+        return 1
+    state, _ = read_state(operators[-1][0])
+    print(waits.rendered(state, waits.paths(state, number, ticket_stall.stalled(state))))
+    return 0

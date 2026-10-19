@@ -100,7 +100,9 @@ class Bash(Repeatable):
 @dataclass(frozen=True)
 class Poll:
     """Nothing is ready by the end of the command's block: the agent runs
-    the command again at once. `pace` is the usage pace where it alone
+    the command again at once, until its calls in a row have found nothing
+    ready for `constants.WAIT_SECONDS_IDLE`, past which an operator's `next`
+    gives `Wait` or its final reply in place of it (`plan.next_step`). `pace` is the usage pace where it alone
     holds back an open ticket (`taking.pace_held`), or what holds a step
     (`order.pace_held_step`), or None."""
     pace: Pace | Capped | None = None
@@ -128,6 +130,16 @@ class EndTurn:
     def wait(self) -> Launch | None:
         """The launch it makes before it ends, or None."""
         return None if self.hold is None else self.hold.wait
+
+
+@dataclass(frozen=True)
+class Wait:
+    """The agent `agent` makes a call of the command's `wait` in the
+    background, where `call`, as no such call of its own runs, and then
+    ends its turn: the completion of that call, a message, or the end of
+    an agent it launched resumes it."""
+    agent: str
+    call: bool = True
 
 
 @dataclass(frozen=True)
@@ -268,7 +280,7 @@ def analyst_key(step: Undecided) -> str:
     return decision_key((step if old is None else old).what)
 
 
-type Step = Launch | Send | Undecided | Bash | Poll | EndTurn | Reply
+type Step = Launch | Send | Undecided | Bash | Poll | EndTurn | Wait | Reply
 
 
 class Pause(Enum):

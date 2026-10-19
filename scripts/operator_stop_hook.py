@@ -5,7 +5,7 @@ the text of its final reply (`printing.printed_reply`), or prints a
 SendMessage call (`printing.printed_send`), which the operator has still to
 make, and the reason tells it to run `next` again. An operator launcher
 is held the same way to the result of `operate.py relay`
-(`context_bound_hook.ACTIONS`), which also lets it stop where that result
+(`context_bound_hook.ACTIONS`). Either may also stop where that result
 is the end of its turn (`printing.printed_end_turn`).
 
 The SubagentHandback call is held to the same condition as the stop, so no
