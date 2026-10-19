@@ -46,18 +46,18 @@ CASE_RULES = mctx("""
     """)
 
 SWEEP_HELP = mctx("""
-    - `<agent id> ...` are the runs of the batch the last profile launch closed, none where that batch has none.
+    - `<agent id> ...` are the runs of the batch the last profile launch closed, and the session's operators, its operator launchers and its main run, by its session id.
     - For each `{validation_kind}` ticket under `tickets/{deferred}/`, in the order of numbers, the command checks its `{validation}` section against those runs, and moves it out of `{deferred}` where the check decides it.
     - The command then routes the `{delay}` tickets under `tickets/{deferred}/` as `{invocation} case {full_flag}` gives.
     - It prints the path of each ticket it moved, one per line, or `{none_moved}` where it moved none.
     """)
 
 SWEEP_RULES = mctx("""
-    - The command checks a `{validation_kind}` ticket only against the given runs that started at or after the last line of the ticket's log that moves it into `{deferred}`.
-        - Where no given run did, the ticket is not exercised, whether or not its section holds an `{exercised_field}` line.
+    - The command checks a `{validation_kind}` ticket only against the lines of the given runs timestamped at or after the last line of the ticket's log that moves it into `{deferred}`.
+        - Where no given run holds such a line, the ticket is not exercised, whether or not its section holds an `{exercised_field}` line.
     - A ticket is exercised where one of those runs meets both conditions below.
         - Its section holds no `{agent_field}` line, or the run's agent type is one that such a line gives: `main` for a session's main run, and for a subagent's, the `agentType` of its `.meta.json`.
-        - Its section holds no `{exercised_field}` line, or the pattern of one of them matches, as Python's `re.search` does, a line of the run's transcript.
+        - Its section holds no `{exercised_field}` line, or the pattern of one of them matches, as Python's `re.search` does, one of those lines of the run.
     - Where the ticket is exercised and its section holds a `{command_field}` line, the command runs that line's command from the main tree, for at most {seconds} seconds.
         - Where it exits 0, the ticket moves into `{closed}`, with the note `{validated} <command>`.
         - Where it exits with another code, the ticket moves into `{reopened}`, with the note `{failed}: <command> exited <code>`, and where it runs past the time, with the note `{failed}: <command> timed out`.
@@ -65,7 +65,7 @@ SWEEP_RULES = mctx("""
     - Where the ticket is not exercised, and the last line of its log that moves it into `{deferred}` is {days} days old or more, it moves into `{reopened}`, with the note `{unexercised}: no run matched since <time>`, with that line's time.
     - Where a ticket's section holds more than one `{command_field}` line, or a pattern that does not compile or that the `{exercised_field}` line of `{invocation} --help` gives the sweep as refusing, or where its log holds no line that moves it into `{deferred}`, it moves into `{reopened}`, with the note `{failed}: <reason>`.
     - Where running the command of a `{command_field}` line would take the sweep past the timeout of a foreground Bash call, the command does not start it, and the ticket stays in `{deferred}` until the next sweep, with an `undecided` line on stderr.
-    - The command refuses, and moves nothing, where a run it gives has no transcript, or none with a timestamped entry.
+    - The command refuses, and moves nothing, where a run it gives has no transcript.
     """)
 
 NONE_MOVED = mctx("no ticket moved")

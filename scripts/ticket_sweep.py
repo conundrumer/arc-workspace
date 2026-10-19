@@ -1,5 +1,8 @@
 """The sweep of the `validation` tickets under `tickets/deferred/`, whose
-rules `file_ticket.py sweep --help-all` states."""
+rules `file_ticket.py sweep --help-all` states: a ticket is checked
+against the lines of the given runs timestamped at or after its last move
+into `deferred`, so the sweep reads each run from its end back to the
+oldest such move."""
 
 import os
 import signal
@@ -8,7 +11,6 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent_turns import first_time
 from controlled_markdown import mctx
 from engine import checkout
 from operations.constants import FOREGROUND_MS
@@ -20,7 +22,7 @@ from run_reads import agent_type
 from ticketing.vocabulary import Kind, Status, Verdict, last_move_into
 from validation_checks import AGENT_FIELD, COMMAND_FIELD, EXERCISED_FIELD, Check, check_of
 from transcripts import chain, find
-from transcript_entries import own_range
+from transcript_entries import epoch, own_range
 from transcript_snapshots import Refused, snapshot
 from tree_reads import main_tree
 
@@ -49,29 +51,39 @@ SWEEP_MARGIN = 30
 commands of checks."""
 
 
+type TimedLine = tuple[float, str]
+"""A line of a run's own whose entry gives a `timestamp`, with that time."""
+
+
 @dataclass(frozen=True)
 class GivenRun:
-    """A run given to the sweep."""
-    start: float
-    lines: list[str]
+    """A run given to the sweep, with its timestamped own lines from a time
+    on, in their order."""
+    lines: list[TimedLine]
     agent_type: str | None
 
+    def since(self, since: float) -> "GivenRun":
+        """The run with its lines at or after `since` alone."""
+        return GivenRun([(t, line) for t, line in self.lines if t >= since], self.agent_type)
 
-def given_run(run: str) -> GivenRun:
-    """The run `run`, read once for the sweep. Refuses a run whose
-    transcripts hold no timestamped entry."""
+
+def given_run(run: str, since: float) -> GivenRun:
+    """The run `run`, read once for the sweep, with its own lines
+    timestamped at or after `since`, read from its last line back to the
+    first timestamped line before `since`."""
     path = find(run)
-    start = first_time(path)
-    if start is None:
-        raise Refused(mctx("{run} has no timestamped entry").format(run=run))
-    return GivenRun(start, [line for p in chain(path) for line in own_lines(p)],
-                    agent_type(path))
-
-
-def own_lines(path: Path) -> list[str]:
-    """The lines of the transcript at `path` that are its run's own."""
-    snap = snapshot(path)
-    return [snap.line(i).decode() for i in own_range(path)]
+    back: list[TimedLine] = []
+    for p in reversed(chain(path)):
+        snap = snapshot(p)
+        for i in reversed(own_range(p)):
+            times = [e["timestamp"] for e in snap.entry(i) if e.get("timestamp")]
+            if not times:
+                continue
+            t = epoch(times[0])
+            if t < since:
+                return GivenRun(back[::-1], agent_type(path))
+            back.append((t, snap.line(i).decode()))
+    return GivenRun(back[::-1], agent_type(path))
 
 
 def exercisers(check: Check, runs: dict[str, GivenRun]) -> list[str] | None:
@@ -81,7 +93,7 @@ def exercisers(check: Check, runs: dict[str, GivenRun]) -> list[str] | None:
     by = [run for run, given in runs.items()
           if (not check.agent_types or given.agent_type in check.agent_types)
           and (not check.patterns
-               or any(p.search(line) for p in check.patterns for line in given.lines))]
+               or any(p.search(line) for p in check.patterns for _, line in given.lines))]
     return by or None
 
 
@@ -94,6 +106,14 @@ def deferred_since(path: Path, text: str) -> float:
         raise Refused(mctx("{path} has no log line that moves it into `{deferred}`").format(
             path=path, deferred=Status.DEFERRED))
     return line_time(lines[i])
+
+
+def read_since(path: Path, text: str) -> float | None:
+    """`deferred_since` of the ticket, or None where it refuses."""
+    try:
+        return deferred_since(path, text)
+    except Refused:
+        return None
 
 
 def run_command(command: str) -> tuple[Status, str]:
@@ -129,8 +149,8 @@ def judged(path: Path, text: str, runs: dict[str, GivenRun], now: float,
     would run past `deadline`, a `time.monotonic` time."""
     check = check_of(path, text)
     since = deferred_since(path, text)
-    by = exercisers(check, {run: given for run, given in runs.items()
-                            if given.start >= since})
+    by = exercisers(check, {run: after for run, given in runs.items()
+                            if (after := given.since(since)).lines})
     if by is not None and check.command is not None:
         if time.monotonic() + COMMAND_SECONDS > deadline:
             raise OutOfTime
@@ -148,10 +168,13 @@ def sweep(tickets: Path, runs: list[str], undecided: list[str]) -> list[Path]:
     sweep --help-all` states, then routes the deferred groups as `route`
     does, and returns the path each moved ticket went to."""
     deadline = time.monotonic() + FOREGROUND_MS / 1000 - SWEEP_MARGIN
-    given = {run: given_run(run) for run in runs}
+    validations = deferred(tickets, Kind.VALIDATION)
     now = time.time()
+    oldest = min((t for path, text in validations if (t := read_since(path, text)) is not None),
+                 default=now)
+    given = {run: given_run(run, oldest) for run in runs}
     moved: list[Path] = []
-    for path, text in deferred(tickets, Kind.VALIDATION):
+    for path, text in validations:
         try:
             move = judged(path, text, given, now, deadline)
         except OutOfTime:

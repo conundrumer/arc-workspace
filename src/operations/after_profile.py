@@ -3,7 +3,11 @@ batch (`batches`), each its own procedure of `order.LATE`.
 
 The sweep (`file_ticket.py sweep`) runs where a `validation` ticket of
 the session stands under `tickets/deferred/`, on the runs of the batch
-that profile launch closed, the runs the profile's brief gives.
+that profile launch closed, the runs the profile's brief gives, and on
+the session's operators, its operator launchers and its main run, which
+stand under no operator, so no batch holds them. The sweep checks a
+ticket only on the lines of those runs timestamped at or after the
+ticket's last move into `deferred`.
 
 The check of the script calls (`scripts/check_script_calls.py`) runs on
 the calls since the closed batch's start."""
@@ -14,6 +18,7 @@ from collections.abc import Callable
 import script_calls
 
 from operations import batches
+from operations.constants import COORDINATOR
 from operations.handled import done
 from operations.log_commands import FILE_TICKET
 from operations.state import State
@@ -49,8 +54,16 @@ def validation(state: State) -> Bash | None:
                                   batches.start(state, closing), closing)
         # No batch waits on the sweep: where the runs do not read, the `validation`
         # tickets stay under `deferred` for the next profile launch.
-        return sweep_command(runs) if isinstance(runs, list) else None
+        return sweep_command([*runs, *unbatched_runs(state)]) if isinstance(runs, list) else None
     return once_after_profile(state, "sweep", sweep)
+
+
+def unbatched_runs(state: State) -> list[str]:
+    """The session's operators, its operator launchers, and its main run,
+    in that order."""
+    launchers = dict.fromkeys(p for o in state.operators
+                              if (p := state.parents.get(o)) not in (None, COORDINATOR))
+    return [*state.operators, *launchers, state.session]
 
 
 def script_check(state: State) -> Bash | None:
