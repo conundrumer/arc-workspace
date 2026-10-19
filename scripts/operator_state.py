@@ -53,9 +53,13 @@ def ends_read(agents: Sequence[Agent], me: str, listing: list[Listed],
               now_watched: Sequence[Watched], now: float, undecided: list[str]) -> EndsRead:
     """`agents`, each pending one ended where a stall alert fired on it, where
     it is of another operator whose work is no longer open
-    (`ended_elsewhere`), or where it stopped with work of its own still
-    running and is quiet. A watched agent that no operator launched, and
-    that the coordinator launched, has its stall read too."""
+    (`ended_elsewhere`), or where it is quiet and either stopped with work
+    of its own still running or waits as at work while its own transcript
+    shows its turn ended with no work of its own still running
+    (`turn_ended_idle`). An agent so ended at work is left out of the
+    `quiet` it returns, so no stuck alert names it. A watched agent that
+    no operator launched, and that the coordinator launched, has its stall
+    read too."""
     launched = {a.agent_id for a in agents if a.agent_id}
     watched_ids = {w.agent_id for w in now_watched}
     coordinators = {aid: x.launch.since for x in listing
@@ -64,9 +68,22 @@ def ends_read(agents: Sequence[Agent], me: str, listing: list[Listed],
                               [w.agent_id for w in now_watched if w.stalled is not None])
     ended: dict[str, Report | None] = {**ended_elsewhere(list(agents), me, undecided), **stalled}
     quiet = quiet_read([a for a in agents if a.agent_id not in ended], listing, now)
-    ended.update(dict.fromkeys(aid for a in agents if a.waits is Waits.STILL_RUNNING
-                               and (aid := a.agent_id) is not None and aid in quiet))
+    idle = turn_ended_idle(listing)
+    at_work = [aid for a in agents if a.waits is Waits.AT_WORK
+               and (aid := a.agent_id) is not None and aid in quiet and aid in idle]
+    ended.update(dict.fromkeys([*(aid for a in agents if a.waits is Waits.STILL_RUNNING
+                                  and (aid := a.agent_id) is not None and aid in quiet),
+                                *at_work]))
+    quiet = {aid: q for aid, q in quiet.items() if aid not in at_work}
     return EndsRead(tuple(ended_by(agents, ended)), ended, stalled, quiet)
+
+
+def turn_ended_idle(listing: list[Listed]) -> frozenset[str]:
+    """The agents of `listing` whose own transcript shows their turn ended
+    (`Listed.ended`) with no work of their own still running
+    (`Listed.running`)."""
+    return frozenset(aid for x in listing
+                     if (aid := x.launch.agent) is not None and x.ended and not x.running)
 
 
 def quiet_read(agents: Sequence[Agent], listing: list[Listed], now: float) -> dict[str, float]:
