@@ -69,6 +69,8 @@
 //! - the judge's comparison: [`judge`], [`judge::candidates`],
 //!   [`judge::solves`], and [`task::JudgedTask`] in [`task`]
 //! - the constraint module: `constraints`
+//! - the lazy product that the constraint module and `Unfold` step
+//!   through: `product`
 //! - the options of a pick: `eval::picks`
 //! - the models of a case: `eval::models`
 //! - the judged run: `judge::run`, and the subcommand `compare` of
@@ -88,6 +90,7 @@ pub mod harness;
 pub mod hash;
 pub mod judge;
 pub mod layout;
+mod product;
 pub mod program;
 pub mod read;
 pub mod registry;

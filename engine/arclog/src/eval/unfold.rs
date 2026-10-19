@@ -24,6 +24,7 @@ use super::ir::ClauseIr;
 use super::join::{self, Budget};
 use super::{Evaluation, FormBodies, Outcome, ReachedBound, RelationValue, RunFault, Stop};
 use crate::hash::{StableHashMap, StableHashSet};
+use crate::product::Product;
 use crate::program::path::NodePath;
 use crate::program::{OutputStep, PortName};
 use crate::registry::{is_key, Component, InputPort};
@@ -296,13 +297,9 @@ impl<'g> DistinctWalks<'g> {
 /// significant, as the rows of each of some outputs at those walks, the
 /// union of the rows of each key.
 pub struct JointWalks<'g> {
-    keys: Vec<DistinctWalks<'g>>,
+    keys: Product<DistinctWalks<'g>>,
     outputs: usize,
     arity: u16,
-    /// The index of each key's value in the last joint walk given, `None`
-    /// before the first.
-    positions: Option<Vec<usize>>,
-    done: bool,
 }
 
 impl<'g> JointWalks<'g> {
@@ -319,32 +316,16 @@ impl<'g> JointWalks<'g> {
     /// `outputs`, of `arity` columns.
     fn new(keys: impl IntoIterator<Item = (&'g StateGraph, Row)>, outputs: &'g [UnfoldOutput], arity: u16) -> Self {
         let keys = keys.into_iter().map(|(graph, key)| DistinctWalks::new(graph, outputs, key)).collect();
-        JointWalks { keys, outputs: outputs.len(), arity, positions: None, done: false }
+        JointWalks { keys: Product::new(keys), outputs: outputs.len(), arity }
     }
 
     /// The next joint walk, or `None` past the last.
     pub fn next(&mut self, budget: &mut Budget<'_>) -> Result<Option<Vec<RowSet>>, ReachedBound> {
-        if self.done {
+        let Some(walk) = self.keys.next(|key, index| Ok(key.get(index, budget)?.is_some()))? else {
             return Ok(None);
-        }
-        let advanced = match &mut self.positions {
-            None => {
-                let mut all = true;
-                for key in &mut self.keys {
-                    all &= key.get(0, budget)?.is_some();
-                }
-                self.positions = Some(vec![0; self.keys.len()]);
-                all
-            }
-            Some(positions) => advance(&mut self.keys, positions, budget)?,
         };
-        if !advanced {
-            self.done = true;
-            return Ok(None);
-        }
-        let positions = self.positions.as_ref().expect("positions once the first joint walk is given");
         let mut rows = vec![RowSet::empty(self.arity); self.outputs];
-        for (key, &position) in self.keys.iter().zip(positions) {
+        for (key, position) in walk {
             for (joint, part) in rows.iter_mut().zip(&key.found[position]) {
                 for row in part.rows() {
                     joint.insert(row.into());
@@ -353,19 +334,6 @@ impl<'g> JointWalks<'g> {
         }
         Ok(Some(rows))
     }
-}
-
-/// Moves `positions` to the next joint walk: the last key that has a next
-/// distinct value takes it, and each key after it goes back to its first.
-fn advance(keys: &mut [DistinctWalks<'_>], positions: &mut [usize], budget: &mut Budget<'_>) -> Result<bool, ReachedBound> {
-    for at in (0..keys.len()).rev() {
-        if keys[at].get(positions[at] + 1, budget)?.is_some() {
-            positions[at] += 1;
-            positions[at + 1..].fill(0);
-            return Ok(true);
-        }
-    }
-    Ok(false)
 }
 
 /// The values of the outputs of an `Unfold` instance of `component` over

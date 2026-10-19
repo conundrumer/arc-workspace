@@ -14,6 +14,8 @@ mod search;
 use cluster::Cluster;
 use search::Search;
 
+use crate::product::Product;
+
 /// One option of a pick, by its index in the canonical order.
 pub type OptionIndex = usize;
 
@@ -81,8 +83,7 @@ impl Pick {
     /// Where `first_only` is set, the iterator gives the first model alone.
     pub fn models(&self, node_cap: u64, first_only: bool) -> Models<'_> {
         Models {
-            clusters: self.clusters.iter().map(|cluster| ClusterModels::new(cluster, node_cap)).collect(),
-            positions: None,
+            product: Product::new(self.clusters.iter().map(|cluster| ClusterModels::new(cluster, node_cap)).collect()),
             first_only,
             done: false,
         }
@@ -93,10 +94,7 @@ impl Pick {
 /// the cluster of the least option the most significant. An item that is a
 /// [`NodeCapReached`] is the last item.
 pub struct Models<'a> {
-    clusters: Vec<ClusterModels<'a>>,
-    /// The index of each cluster's model in the last model given, `None`
-    /// before the first.
-    positions: Option<Vec<usize>>,
+    product: Product<ClusterModels<'a>>,
     first_only: bool,
     done: bool,
 }
@@ -108,18 +106,12 @@ impl Iterator for Models<'_> {
         if self.done {
             return None;
         }
-        let first = self.positions.is_none();
-        let positions = self.positions.get_or_insert_with(|| vec![0; self.clusters.len()]);
-        let advanced = if first {
-            self.clusters.iter_mut().try_for_each(|cluster| cluster.get(0).map(|_| ())).map(|()| true)
-        } else if self.first_only {
-            Ok(false)
-        } else {
-            advance(&mut self.clusters, positions)
-        };
-        match advanced {
-            Ok(true) => Some(Ok(model(&self.clusters, positions))),
-            Ok(false) => {
+        match self.product.next(|cluster, index| cluster.get(index).map(|model| model.is_some())) {
+            Ok(Some(element)) => {
+                self.done = self.first_only;
+                Some(Ok(model(element)))
+            }
+            Ok(None) => {
                 self.done = true;
                 None
             }
@@ -131,29 +123,14 @@ impl Iterator for Models<'_> {
     }
 }
 
-/// The model of the product at `positions`.
-fn model(clusters: &[ClusterModels<'_>], positions: &[usize]) -> Model {
-    let mut kept: Vec<OptionIndex> = clusters
-        .iter()
-        .zip(positions)
-        .flat_map(|(cluster, &position)| cluster.found[position].iter().map(|&local| cluster.cluster.options[local]))
+/// The model of the product at an element, each cluster with the position
+/// of its model.
+fn model<'c, 'a: 'c>(element: impl Iterator<Item = (&'c ClusterModels<'a>, usize)>) -> Model {
+    let mut kept: Vec<OptionIndex> = element
+        .flat_map(|(cluster, position)| cluster.found[position].iter().map(|&local| cluster.cluster.options[local]))
         .collect();
     kept.sort_unstable();
     kept.into()
-}
-
-/// Moves `positions` to the next model of the product: the last cluster that
-/// has a next model takes it, and each cluster after it goes back to its
-/// first.
-fn advance(clusters: &mut [ClusterModels<'_>], positions: &mut [usize]) -> Result<bool, NodeCapReached> {
-    for at in (0..clusters.len()).rev() {
-        if clusters[at].get(positions[at] + 1)?.is_some() {
-            positions[at] += 1;
-            positions[at + 1..].fill(0);
-            return Ok(true);
-        }
-    }
-    Ok(false)
 }
 
 /// The models of one cluster found so far, each as the local indexes of the
