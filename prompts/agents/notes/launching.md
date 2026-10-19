@@ -231,7 +231,7 @@
 - Ask an operator for no message to you before its final reply, other than the messages that open with `for the coordinator:` or `undecided:`, which it sends as it goes.
     + xref: src/operations/steps.py:DECISION, src/operations/steps.py:UNDECIDED
 - Send each draft `change` ticket that the reply of an agent you launched gives, and each `change` ticket you revise, to an operator in an `Op drafts to review: <number>` line.
-- Each time a `change` of your session comes to stand untaken with every ticket its `depends-on` gives under `tickets/closed/`, while no operator of your session holds it or runs its review, tell an operator that tickets are open.
+- Each time a `change` or a `request` of your session comes to stand untaken with every ticket its `depends-on` gives under `tickets/closed/`, while no operator of your session holds it or runs its review, tell an operator that tickets are open.
 - Revise a `change` ticket that stands untaken or under `tickets/assigned/`, `tickets/blocked/` or `tickets/waiting/` only once you have moved it back to `tickets/draft/`, with a log line whose note gives what you revise and on what ground.
 - Once the user rules on a draft `change` ticket under `tickets/blocked/`, move it back to `tickets/draft/` with the ruling in the note, revise it where the ruling needs that, and send it to an operator in an `Op drafts to review: <number>` line.
 

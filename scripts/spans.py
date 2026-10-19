@@ -17,7 +17,7 @@ from file_ticket import Call, file_ticket, main_tickets, run  # noqa: E402
 from run_reads import blocks, message_text  # noqa: E402
 from senders import Origin, origin  # noqa: E402
 from ticket_files import ticket_name, ticket_path, ticket_status  # noqa: E402
-from ticket_form import bounds, section, section_head  # noqa: E402
+from ticket_form import DEPENDS_ON, bounds, check_depends_on, list_items, section, section_head, with_field  # noqa: E402
 from ticket_log import log_moves  # noqa: E402
 from ticket_numbers import TicketNumber, session_id, ticket_number  # noqa: E402
 from ticketing.text import SECTIONS, heading, ticket_text  # noqa: E402
@@ -43,6 +43,23 @@ change itself."""
 
 INFERRED = "--inferred"
 
+ROUTE_FLAG = "--route"
+
+DEPENDS_FLAG = "--depends-on"
+
+
+def flag(rest: list[str], name: str) -> tuple[str | None, list[str]]:
+    """The value of the flag `name` where `rest` opens with it, and the
+    arguments after it."""
+    if rest[:1] == [name] and len(rest) >= 2:
+        return rest[1], rest[2:]
+    return None, rest
+
+
+def depends_value(numbers: str | None) -> str | None:
+    """The `depends-on` field value of the flag's `numbers`."""
+    return None if numbers is None else ", ".join(list_items(numbers))
+
 FOLLOW_UP = "re {number}"
 """The route of a follow-up on the request `number`, and of a ruling the
 user gives on it."""
@@ -59,14 +76,15 @@ def route_label(route: Route | FollowUp) -> str:
 
 
 HELP = mctx("""
-    - `{invocation} file <route> [{inferred}] <subject> <title> <goal> <start words> <end words>` files a `request` whose span runs from the message `<start words>` gives to the one `<end words>` gives, with the Grounds lines on its stdin, and prints its path.
+    - `{invocation} file <route> [{inferred}] [{depends_flag} <numbers>] <subject> <title> <goal> <start words> <end words>` files a `request` whose span runs from the message `<start words>` gives to the one `<end words>` gives, with the Grounds lines on its stdin, and prints its path.
         - Each Grounds line is `- <one addition to what the span gives, with its source>`.
         - On `op draft`, and on a route given with `{inferred}`, it moves the request to `tickets/draft/`, and on each of {held} with no `{inferred}`, to `tickets/assigned/`, with an `assigned` line whose holder is the session id the shell holds in `CLAUDE_CODE_SESSION_ID`.
     - `{invocation} brief [--route <route>] <number>` prints the brief of the request `<number>`.
     - `{invocation} brief --route <route> <start words> <end words> <goal>` prints the brief of that span and `<goal>`, with the Grounds lines on its stdin.
-    - `{invocation} append [{inferred}] [--route <route>] [{goal_flag} <goal>] <number> <start words> <end words>` appends that span to the request `<number>`, with a log line, and prints its path.
+    - `{invocation} append [{inferred}] [--route <route>] [{goal_flag} <goal>] [{depends_flag} <numbers>] <number> <start words> <end words>` appends that span to the request `<number>`, with a log line, and prints its path.
         - With `--route` and a route other than `op draft`, it moves a request under `tickets/draft/` to where `file` puts a request on that route with no `{inferred}`.
         - `{goal_flag}` gives `<goal>` as the request's `{goal}`, in place of the one it holds, or before its `{transcript}` where it holds none.
+    - `{depends_flag}` gives `<numbers>`, `<number>[,<number>...]`, as the request's `{depends_on}` field, in place of the one it holds, as `uv run python scripts/file_ticket.py --help request` gives that field.
     - `<goal>` holds at most {goal_words} words.
     - `<route>` is one of {routes}, and `{inferred}` marks a route the coordinator inferred.
     - `<subject>` and `<title>` are a `request`'s, as `uv run python scripts/file_ticket.py --help request` gives them.
@@ -202,11 +220,13 @@ def grounds_lines() -> str:
     return sys.stdin.read().strip("\n")
 
 
-def file_request(route: Route, inferred: bool, subject: str, title: str, goal: str, start_words: str,
-                 end_words: str) -> str:
+def file_request(route: Route, inferred: bool, depends: str | None, subject: str, title: str, goal: str,
+                 start_words: str, end_words: str) -> str:
     check_goal(goal)
     span = resolve_span(start_words, end_words)
-    text = ticket_text(Kind.REQUEST, title, {GOAL: goal, TRANSCRIPT: span.line(), GROUNDS: grounds_lines()})
+    fields = {} if depends is None else {DEPENDS_ON: depends}
+    text = ticket_text(Kind.REQUEST, title, {GOAL: goal, TRANSCRIPT: span.line(), GROUNDS: grounds_lines()},
+                       fields)
     tickets = main_tickets()
     route_note = ROUTE_NOTE.format(route=route)
     path = file_ticket(tickets, Domain.CHANGE.value, subject, COORDINATOR, text,
@@ -266,11 +286,8 @@ def render_brief(goal: str | None, spans: list[Span], grounds: str) -> str:
 
 
 def brief(*args: str) -> str:
-    route = None
-    rest = list(args)
-    if rest[:1] == ["--route"] and len(rest) >= 2:
-        route = route_of(rest[1])
-        rest = rest[2:]
+    named, rest = flag(list(args), ROUTE_FLAG)
+    route = None if named is None else route_of(named)
     if len(rest) == 1:
         text = ticket_path(main_tickets(), ticket_number(rest[0])).read_text()
         goal, spans, grounds = request_goal(text), spans_of(text), section(text, GROUNDS)
@@ -284,12 +301,14 @@ def brief(*args: str) -> str:
     return render_brief(goal, spans, grounds)
 
 
-def append(inferred: bool, route: Route | None, goal: str | None, number: str, start_words: str,
-           end_words: str) -> str:
+def append(inferred: bool, route: Route | None, goal: str | None, depends: str | None, number: str,
+           start_words: str, end_words: str) -> str:
     if goal is not None:
         check_goal(goal)
     span = resolve_span(start_words, end_words)
     tickets = main_tickets()
+    if depends is not None:
+        check_depends_on(tickets, depends)
     ref = ticket_number(number)
     path = ticket_path(tickets, ref)
     if route is not None and (ticket_status(path) is not Status.DRAFT or route is Route.DRAFT):
@@ -298,6 +317,8 @@ def append(inferred: bool, route: Route | None, goal: str | None, number: str, s
     text = path.read_text()
     if goal is not None:
         text = with_goal(text, goal)
+    if depends is not None:
+        text = with_field(text, DEPENDS_ON, depends)
     _, cut = bounds(text, TRANSCRIPT)
     rest = text[cut:]
     path.write_text(f"{text[:cut].rstrip(chr(10))}\n{span.line()}\n" + (f"\n{rest}" if rest else ""))
@@ -310,21 +331,20 @@ def append(inferred: bool, route: Route | None, goal: str | None, number: str, s
     return f"{moved}\n\n{readback_prompt(route, request_goal(text), inferred)}"
 
 
-def marked(args: tuple[str, ...], count: int | None) -> tuple[bool, list[str]]:
-    """Whether `args` open with `INFERRED`, and the rest of them, which
-    number `count` where it is given."""
+def marked(args: tuple[str, ...]) -> tuple[bool, list[str]]:
+    """Whether `args` open with `INFERRED`, and the rest of them."""
     inferred = args[:1] == (INFERRED,)
-    rest = list(args[1 if inferred else 0:])
-    if count is not None and len(rest) != count:
-        raise no_form()
-    return inferred, rest
+    return inferred, list(args[1 if inferred else 0:])
 
 
 def file_command(*args: str) -> str:
     if not args:
         raise no_form()
-    inferred, rest = marked(args[1:], 5)
-    return file_request(route_of(args[0]), inferred, *rest)
+    inferred, rest = marked(args[1:])
+    depends, rest = flag(rest, DEPENDS_FLAG)
+    if len(rest) != 5:
+        raise no_form()
+    return file_request(route_of(args[0]), inferred, depends_value(depends), *rest)
 
 
 GOAL_FLAG = "--goal"
@@ -346,16 +366,13 @@ def check_goal(goal: str) -> str:
 
 
 def append_command(*args: str) -> str:
-    inferred, rest = marked(args, None)
-    route = None
-    if rest[:1] == ["--route"] and len(rest) >= 2:
-        route, rest = route_of(rest[1]), rest[2:]
-    goal = None
-    if rest[:1] == [GOAL_FLAG] and len(rest) >= 2:
-        goal, rest = rest[1], rest[2:]
+    inferred, rest = marked(args)
+    route, rest = flag(rest, ROUTE_FLAG)
+    goal, rest = flag(rest, GOAL_FLAG)
+    depends, rest = flag(rest, DEPENDS_FLAG)
     if len(rest) != 3:
         raise no_form()
-    return append(inferred, route, goal, *rest)
+    return append(inferred, None if route is None else route_of(route), goal, depends_value(depends), *rest)
 
 
 SUBCOMMANDS = {
@@ -373,7 +390,7 @@ def unknown(word: str) -> str:
 def main(args: list[str]) -> int:
     text = HELP.format(invocation=INVOCATION, inferred=INFERRED, routes=ROUTES,
                        held=ticked(r.value for r in HELD), time_form=TIME_FORM,
-                       goal=heading(GOAL), goal_flag=GOAL_FLAG, goal_words=GOAL_WORDS, transcript=heading(TRANSCRIPT), follow_up=FOLLOW_UP.format(number="<number>"), grounds=heading(GROUNDS))
+                       goal=heading(GOAL), goal_flag=GOAL_FLAG, depends_flag=DEPENDS_FLAG, depends_on=DEPENDS_ON, goal_words=GOAL_WORDS, transcript=heading(TRANSCRIPT), follow_up=FOLLOW_UP.format(number="<number>"), grounds=heading(GROUNDS))
     act = SUBCOMMANDS.get(args[0]) if args else None
     if act is None:
         return run(args, Call(INVOCATION, args, text, 1, unknown, False))

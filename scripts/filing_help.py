@@ -69,6 +69,7 @@ FORMS = {
         """),
     FormPart.REQUEST: mctx("""
         - A `request` has `# <target>: <what the user asks for>` as its title, and the sections {request_sections} in place of {defect_headings}.
+            - It may add `depends-on: <number>, <number>` to the front matter, and no ticket analyst is given it while a ticket that field gives stands outside `tickets/closed/`.
             - A `request` that a `change` serves also has, before `## Log`, a `{validation}` section: what a later run must show for its need to count as met.
                 - It may hold lines `- {exercised_field} <regular expression>`, the expression with no backticks, each of which matches a line of the transcript of a run that exercises the change, and, for a change to code, no line of a run that only reads that code or its diff. Where it holds none, a run needs no match.
                     - A transcript line is a JSON line, so the expression matches a quote or a backslash in its JSON escape, and the sweep, and `log` on the request's move into `{waiting}`, refuse an expression that matches its own text in that escape, applied once or twice.

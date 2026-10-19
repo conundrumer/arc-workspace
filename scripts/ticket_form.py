@@ -83,9 +83,13 @@ VALIDATES = "validates"
 """The field of a `validation` ticket that gives the number of the
 `request` it checks."""
 
-FIELDS = {Kind.CHANGE: frozenset({"depends-on", "editors", "after-merge",
+DEPENDS_ON = "depends-on"
+"""The field that gives the tickets whose close a ticket waits on."""
+
+FIELDS = {Kind.CHANGE: frozenset({DEPENDS_ON, "editors", "after-merge",
                                        "mechanical"}),
           Kind.DELAY: frozenset({"fix"}),
+          Kind.REQUEST: frozenset({DEPENDS_ON}),
           Kind.VALIDATION: frozenset({VALIDATES})}
 """The front matter fields besides `kind` that each kind may give."""
 
@@ -111,7 +115,7 @@ def list_items(value: str) -> list[str]:
 def depends_on(fields: dict[str, str]) -> list[str]:
     """The items of the `depends-on` field of a ticket's front matter
     `fields`, none where it has no such field."""
-    return list_items(fields["depends-on"]) if "depends-on" in fields else []
+    return list_items(fields[DEPENDS_ON]) if DEPENDS_ON in fields else []
 
 
 def editor_names() -> set[str]:
@@ -203,7 +207,7 @@ def check_mechanical(value: str) -> None:
 
 
 VALUE_CHECKS: dict[str, Callable[[Path, str], None]] = {
-    "depends-on": check_depends_on,
+    DEPENDS_ON: check_depends_on,
     "editors": lambda _tickets, value: check_editors(value),
     "fix": lambda _tickets, value: check_fix(value),
     "mechanical": lambda _tickets, value: check_mechanical(value)}
@@ -250,3 +254,16 @@ def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
 def front(text: str) -> dict[str, str]:
     head = re.match(FRONT, text)
     return {} if head is None else dict(front_fields(head))
+
+
+def with_field(text: str, key: str, value: str) -> str:
+    """A ticket's `text` whose front matter gives `key` as `value`, in
+    place of the value it gives, or after its other fields where it gives
+    none."""
+    head = re.match(FRONT, text)
+    if head is None:
+        raise Refused(mctx("the ticket gives no front matter"))
+    fields = dict(front_fields(head))
+    fields[key] = value
+    lines = "".join(f"{k}: {v}\n" for k, v in fields.items())
+    return f"{text[:head.start('fields')]}{lines}{text[head.end('fields'):]}"

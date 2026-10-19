@@ -7,7 +7,7 @@ from pathlib import Path
 from controlled_markdown import mctx
 from operations.state import acted_on
 from ticket_files import TicketName, listed_ticket_path, ticket_files, ticket_name, ticket_status
-from ticket_form import ticket_kind, title
+from ticket_form import depends_on, front, ticket_kind, title
 from ticket_log import read_ticket
 from ticket_numbers import TicketNumber, ticket_number
 from ticketing.exits import Exit, exit_of
@@ -22,10 +22,12 @@ def settled_elsewhere(tickets: Path, path: Path, name: TicketName) -> bool:
     kind = ticket_kind(text)
     if kind is None:
         raise Refused(mctx("{path} gives no kind in its front matter").format(path=path))
-    on_open_change = (kind is Kind.QUESTION and name.domain is Domain.CHANGE and ticket_status(
-        listed_ticket_path(tickets, ticket_number(name.subject))) is not Status.CLOSED)
+    def is_open(number: str) -> bool:
+        return ticket_status(listed_ticket_path(tickets, ticket_number(number))) is not Status.CLOSED
+
+    on_open_change = kind is Kind.QUESTION and name.domain is Domain.CHANGE and is_open(name.subject)
     exits = exit_of(ticket_status(path), kind, on_open_change=on_open_change, title=title(path, text))
-    return Exit.TICKET_ANALYST not in exits.by
+    return Exit.TICKET_ANALYST not in exits.by or any(map(is_open, depends_on(front(text))))
 
 
 def to_settle(tickets: Path, session: int, adopted: Collection[int],

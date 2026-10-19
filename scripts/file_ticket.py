@@ -93,9 +93,9 @@ TO_SETTLE_HELP = mctx("""
     """)
 
 TO_SETTLE_RULES = mctx("""
-    - The list leaves out each `{change_kind}`, each `{question}` filed on a change whose ticket stands outside `tickets/closed/`, and each `{refactor}` whose title ends in `{many_ideas}`.
+    - The list leaves out each `{change_kind}`, each `{question}` filed on a change whose ticket stands outside `tickets/closed/`, each `{refactor}` whose title ends in `{many_ideas}`, and each ticket whose `depends-on` gives a ticket that stands outside `tickets/closed/`.
     - A `{question}` with the `<domain>` `{change_domain}` is filed on the change its `<subject>` gives.
-    - The command refuses where a number the call gives names no ticket, where the front matter of a ticket the list would hold gives no kind, where a `{refactor}` it would hold has no title, or where a `{question}` filed on a change names no ticket the ticket tracker holds.
+    - The command refuses where a number the call gives names no ticket, where the front matter of a ticket the list would hold gives no kind, where a `{refactor}` it would hold has no title, or where a `{question}` filed on a change, or a `depends-on` entry of a ticket it would hold, names no ticket the ticket tracker holds.
     """)
 
 MAIN_HELP = mctx("""
