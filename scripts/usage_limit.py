@@ -146,11 +146,17 @@ def model_name(entry: dict[str, Any]) -> str:
 def window(raw: Any, used_key: str, seconds: int, now: float) -> Window | None:
     """The `Window` at `now` of the API's window `raw`, whose used share is
     `used_key` and whose length is `seconds`: its `elapsed_pct` from its
-    `resets_at`, and, once that time has passed, a `used_pct` of 0. None
+    `resets_at`, and, once that time has passed, a `used_pct` of 0. A window
+    with no `resets_at` (`null`) has not started: its used share as given,
+    an `elapsed_pct` of 0, and a reset one window length after `now`. None
     where `raw` does not read."""
     used = raw.get(used_key) if isinstance(raw, dict) else None
     resets = raw.get("resets_at") if isinstance(raw, dict) else None
-    if not isinstance(used, int | float) or not isinstance(resets, str):
+    if not isinstance(used, int | float):
+        return None
+    if resets is None:
+        return Window(float(used), 0.0, now + seconds)
+    if not isinstance(resets, str):
         return None
     try:
         at = iso_time(resets)

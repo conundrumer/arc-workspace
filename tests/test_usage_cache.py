@@ -1,6 +1,7 @@
 """The reading of the usage cache refuses a cache it cannot read, and a
-stale one, and gives a `null` window as absent and a window past its reset
-as unused."""
+stale one, and gives a `null` window as absent, a window past its reset
+as unused, and a window with a `null` `resets_at` as one that has not
+started."""
 
 import json
 from pathlib import Path
@@ -43,6 +44,19 @@ def test_a_full_window_gives_the_limit_in_force_and_a_reset_one_gives_it_lifted(
     usage, r, _ = reading(tmp_path, monkeypatch, {"fetched_at": NOW - 10, "data": data})
     assert r.limit is usage.Limit.LIFTED and r.fetched == NOW - 10
     assert r.usage.windows["five_hour"].used_pct == 0
+
+
+def test_a_window_with_no_reset_time_has_not_started(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    data = {"five_hour": {"utilization": 0.0, "resets_at": None},
+            "seven_day": {"utilization": 56.0, "resets_at": stamp(NOW + 86400)}}
+    usage, r, undecided = reading(tmp_path, monkeypatch, {"fetched_at": NOW - 10, "data": data})
+    assert r.limit is usage.Limit.LIFTED and not undecided
+    assert set(r.usage.windows) == {"five_hour", "seven_day"}
+    five = r.usage.windows["five_hour"]
+    assert (five.used_pct, five.elapsed_pct) == (0.0, 0.0)
+    assert five.resets_at == NOW + 5 * 3600
+    assert r.usage.windows["seven_day"].used_pct == 56.0
 
 
 @pytest.mark.parametrize("cache", [
