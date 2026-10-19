@@ -379,7 +379,7 @@
   (apply (:D T) (:P S) (:P_out *S2))
   (step_offset (:D D2) (:V S2)))
 
-;; Proposers: the domain proposers of docs/arclog/arclog.md#program, then the components of programs/proposers.dl, each with the columns of its propose relation, apart from PanelCombine, whose columns are those of a set-keyed table, one row for each panel of each entry: the entry's id, the entry's output color, the panel's place in the arrangement's frame, and the color of the panel's cell.
+;; Proposers: the type-domain proposers of docs/arclog/arclog.md#program, then the components of programs/proposers.dl, each with the columns of its propose relation, apart from PanelCombine, whose columns are those of a set-keyed table, one row for each panel of each entry: the entry's id, the entry's output color, the panel's place in the arrangement's frame, and the color of the panel's cell.
 (proposer AxisDomain native domain (columns (A Axis)))
 (proposer ColorDomain native domain (columns (C Color)))
 (proposer D4Domain native domain (columns (D D4)))

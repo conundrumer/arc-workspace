@@ -170,7 +170,7 @@ def domain_proposer(types: list[str]) -> str:
 
 def covered_proposer(verdict: tuple[str, ...] | None, types: list[str]) -> str | None:
     """The proposer whose table a `covered` plan verdict gives a value of
-    `types`: the verdict's own, or for a `domain` verdict the domain
+    `types`: the verdict's own, or for a `domain` verdict the type-domain
     proposer of those types."""
     if not verdict or verdict[0] != "covered":
         return None
@@ -1258,9 +1258,9 @@ class Converter:
 
     def candidate_parse(self, prog):
         """A determination that runs the program's parse at each candidate
-        value of a parameter and keeps the values a test of its own passes,
-        as a domain: the parameter is a domain DET, whose values the engine
-        keeps by the program's fit, and the determination's clauses that
+        value of a parameter and keeps the values a test of its own passes:
+        the parameter's DET offers the candidates, the engine keeps those
+        that the program's fit passes, and the determination's clauses that
         only that test reads drop out. A determination clause that reads the
         parse at the kept value reads the program's parse, lifted, with the
         parameter in place of the candidate."""
