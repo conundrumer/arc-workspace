@@ -44,6 +44,19 @@ const USAGE: &str = "usage: arclog-cli check-diff <corpus-dir> [<task_id> ...] [
 /// result stored as unfinished is the result of its keys.
 const BOUND_SECONDS: u64 = 30;
 
+/// The cargo profile `check_one` builds under: the release profile's
+/// optimization, with incremental compilation, so a rebuild after an edit
+/// compiles again only what the edit changed.
+const PROFILE: &str = "tool";
+
+/// The `--config` settings that define [`PROFILE`]. They stand here, not in
+/// a manifest, so a base engine whose manifest lacks the profile builds
+/// under it too. The engine key hashes them, as the code the profile
+/// generates bears on which checks reach [`BOUND_SECONDS`].
+fn profile_config() -> [String; 2] {
+    [format!("profile.{PROFILE}.inherits=\"release\""), format!("profile.{PROFILE}.incremental=true")]
+}
+
 /// The file of the checker's binary, from the root of a checkout.
 const CHECK_ONE: &str = "engine/arclog-cli/src/bin/check_one.rs";
 
@@ -228,14 +241,14 @@ fn check_diff(arguments: &Arguments) -> Result<Report, String> {
             return Err(format!("the corpus has no solver {missing}"));
         }
     }
-    let rustc = output(Command::new("rustc").arg("-vV"))?;
+    let toolchain = [output(Command::new("rustc").arg("-vV"))?, profile_config().concat().into_bytes()].concat();
     let rev = match &arguments.base {
         Some(rev) => rev.clone(),
         None => String::from_utf8_lossy(&git(&root, &["merge-base", "HEAD", "master"])?).trim().to_owned(),
     };
     let check_one = build_check_one(&root.join("engine"))?;
-    let current = Engine { key: key_of(&current_files(&root)?, &rustc), binary: Binary::Current(check_one) };
-    let base_key = key_of(&base_files(&root, &rev)?, &rustc);
+    let current = Engine { key: key_of(&current_files(&root)?, &toolchain), binary: Binary::Current(check_one) };
+    let base_key = key_of(&base_files(&root, &rev)?, &toolchain);
     let dir = store.join("engines").join(&base_key);
     let base = Engine { key: base_key, binary: Binary::Base { root, rev, dir, built: OnceLock::new() } };
     let engines = [base, current];
@@ -517,11 +530,13 @@ fn build_base(root: &Path, rev: &str, dir: &Path) -> Result<PathBuf, String> {
     build_check_one(&dir.join("engine")).map_err(|error| format!("the base engine at {rev}: {error}"))
 }
 
-/// The `check_one` of the engine workspace `engine`, once `cargo build
-/// --release` has built it there.
+/// The `check_one` of the engine workspace `engine`, once `cargo build`
+/// under [`PROFILE`] has built it there.
 fn build_check_one(engine: &Path) -> Result<PathBuf, String> {
     let built = Command::new("cargo")
-        .args(["build", "--release", "-p", "arclog-cli", "--bin", "check_one"])
+        .arg("build")
+        .args(profile_config().iter().flat_map(|setting| ["--config", setting]))
+        .args(["--profile", PROFILE, "-p", "arclog-cli", "--bin", "check_one"])
         .current_dir(engine)
         .stdout(Stdio::null())
         .status()
@@ -529,7 +544,7 @@ fn build_check_one(engine: &Path) -> Result<PathBuf, String> {
     if !built.success() {
         return Err(format!("`check_one` does not build in {}", engine.display()));
     }
-    Ok(engine.join("target/release/check_one"))
+    Ok(engine.join("target").join(PROFILE).join("check_one"))
 }
 
 #[cfg(test)]
