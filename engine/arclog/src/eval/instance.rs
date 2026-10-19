@@ -1,6 +1,7 @@
 //! Instances of lib components: the [`Construction`] trait, the table of
-//! constructions by registry name, the evaluation of an `INIT` form and the
-//! defaults of its inputs. The evaluation of an `INIT` form is in `init`.
+//! constructions by registry name, the evaluation of an `INIT` form and of
+//! its inputs, and the defaults of its inputs. The evaluation of an `INIT`
+//! form is in `init`.
 //!
 //! The constructions stand in the crate `arclog-constructions`, which
 //! depends on this crate, so no code of this crate refers to them. An instance
@@ -152,5 +153,5 @@ impl Constructions {
 #[path = "instance_init.rs"]
 mod init;
 
-pub use init::evaluate_instance;
+pub use init::{evaluate_input, evaluate_instance};
 pub(in crate::eval) use init::rows_of;

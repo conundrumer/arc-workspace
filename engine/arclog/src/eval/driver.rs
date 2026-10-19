@@ -54,7 +54,8 @@ impl<'e, 'a> Driver<'e, 'a> {
         let form = program.form_of(relation.node);
         let mut budget = Budget::new(evaluation.limits, evaluation.session);
         match &program.graph.nodes[relation.node.0 as usize].kind {
-            DependencyKind::Clause(_) | DependencyKind::InstanceInput { .. } => self.clauses(relation.node, example),
+            DependencyKind::Clause(_) => self.clauses(relation.node, example),
+            DependencyKind::InstanceInput { input, .. } => instance::evaluate_input(evaluation, &self.bodies(), form, input, example),
             DependencyKind::Parameter(name) => self.parameter(relation, name),
             DependencyKind::InstanceOutput { .. } => {
                 let outputs = instance::evaluate_instance(evaluation, &self.bodies(), form, example, &mut budget)?;
@@ -112,7 +113,7 @@ impl<'e, 'a> Driver<'e, 'a> {
     }
 
     /// The relation of `node`, the union of the relations of its forms, each
-    /// a clause or an instance input evaluated by generic join.
+    /// a clause evaluated by generic join.
     fn clauses(&self, node: GraphNodeIndex, example: Option<Example>) -> Outcome<RelationValue> {
         let mut relations = Vec::new();
         for form in self.program().forms_of(node) {

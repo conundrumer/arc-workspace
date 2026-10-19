@@ -1,6 +1,7 @@
 //! The evaluation of an `INIT` form: each output of its instance, from the
-//! key groups of its inputs, each input the rows of its clause, of the `DET`
-//! that stores it, or of its default.
+//! key groups of its inputs, and each input as a clause reads it, each
+//! input the rows of its clause, of the `DET` that stores it, or of its
+//! default.
 
 use std::sync::Arc;
 
@@ -22,21 +23,15 @@ use crate::types::{each_site_label, use_label, FormTypes, GraphRelation, ValueTy
 /// The value of each output of the instance whose `INIT` form stands at
 /// `form`, on `example`, or task-wide where it is `None`, with its relation,
 /// from one run of its component's construction over each key group of
-/// the instance's inputs, each input the rows its clause gives, or, where the instance
-/// writes none and the input's node reads the parameter node of a `DET` of
-/// the input, that parameter's rows, in the columns of the port, and
-/// otherwise the input's default rows, with
-/// `bodies` evaluating the form's bodies. A body whose value holds no rows
-/// gives that value to each output.
+/// the instance's inputs, each input's rows as `input_groups` gives them,
+/// with `bodies` evaluating the form's bodies. A body whose value holds no
+/// rows gives that value to each output.
 ///
 /// The key clause's rows are the groups, and an instance with no key
-/// clause has one group, at the `Unit` key. A keyed input is its body
-/// joined with the key body, and a broadcast joins each group. An input
-/// with no clause and no default whose every column other than `key` takes
-/// the one key label of its type is filled from the key, and otherwise
-/// holds no row. A component whose inputs read its outputs, a
-/// task-structure component and a component the table of constructions
-/// lacks give a [`RunFault`] whose message gives the component.
+/// clause has one group, at the `Unit` key. A component whose inputs read
+/// its outputs, a task-structure component and a component the table of
+/// constructions lacks give a [`RunFault`] whose message gives the
+/// component.
 pub fn evaluate_instance<'a>(
     evaluation: &Evaluation<'a>,
     bodies: &FormBodies<'_>,
@@ -45,79 +40,38 @@ pub fn evaluate_instance<'a>(
     budget: &mut Budget<'a>,
 ) -> Outcome<Vec<(GraphRelation, RelationValue)>> {
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
-    let root = NodeRef::Program(evaluation.program.program.program.value());
-    let Some(NodeRef::Instance(instance)) = node_at(root, form) else { panic!("an `INIT` form at the form of an instance output") };
-    let name = &instance.component;
-    let unevaluated = || fault(format!("the engine does not evaluate the component `{}`", name.0));
-    let Some(LibEntry::Component(component)) = evaluation.registry.entry(name) else { return Err(unevaluated()) };
+    let (instance, component) = instance_at(evaluation, form)?;
+    let unevaluated = || unevaluated(form, instance);
     if component.kind == ComponentKind::TaskStructure || component.reads_outputs() {
         return Err(unevaluated());
     }
-    let construction = evaluation.constructions.get(name).ok_or_else(unevaluated)?;
+    let construction = evaluation.constructions.get(&instance.component).ok_or_else(unevaluated)?;
     let relations = output_relations(evaluation, form, instance, component);
     let each = |value: RelationValue| relations.iter().map(|relation| (relation.clone(), value.clone())).collect();
     let shape = InstanceShape::of(evaluation, form, instance, component);
-
-    let key_labels = shape.key_labels();
-    let groups: Vec<Row> = match &shape.key_body {
-        Some(key_body) => {
-            let clause = ir::compile_instance_body(evaluation.program, form, &[key_body.clone()], &key_labels)
-                .map_err(|compile| fault(format!("the key body does not compile: {compile:?}")))?;
-            match rows_of(bodies.relation(form, &clause, example)?, key_labels.len()).map_err(&fault)? {
-                Ok(rows) => rows,
-                Err(value) => return Ok(each(value)),
-            }
-        }
-        None => vec![Row::default()],
+    let groups = match key_groups(evaluation, bodies, form, &shape, example)? {
+        Ok(groups) => groups,
+        Err(value) => return Ok(each(value)),
     };
 
     let mut group_inputs: Vec<Vec<RowSet>> = vec![Vec::with_capacity(component.inputs.len()); groups.len()];
     let mut types = Vec::with_capacity(component.inputs.len());
     let mut columns = Vec::with_capacity(component.inputs.len());
     for input in component.inputs.iter() {
-        let input_types = shape.port_types(&input.port.columns).map_err(&fault)?;
-        let per_group = match shape.written(&input.port.name) {
-            Some((input_path, keyed, written)) => {
-                let head = shape.head_labels(written, &input.port.columns).map_err(&fault)?;
-                let body = (written.body.value(), input_path.child(written.position(InstanceInputPart::Body)));
-                let (parts, prefix): (Vec<(&Body, NodePath)>, &[LabelId]) = match (&shape.key_body, keyed) {
-                    (Some(key_body), true) => (vec![key_body.clone(), body], &key_labels),
-                    _ => (vec![body], &[]),
-                };
-                let columns: Vec<LabelId> = prefix.iter().chain(&head).copied().collect();
-                let clause = ir::compile_instance_body(evaluation.program, form, &parts, &columns)
-                    .map_err(|compile| fault(format!("input `{}` does not compile: {compile:?}", input.port.name.0)))?;
-                let rows = match rows_of(bodies.relation(form, &clause, example)?, columns.len()).map_err(&fault)? {
-                    Ok(rows) => rows,
-                    Err(value) => return Ok(each(value)),
-                };
-                grouped(&groups, prefix.len(), head.len(), rows)
-            }
-            None => match stored_input(evaluation, form, instance, &input.port.name) {
-                Some(parameter) => {
-                    let widths = shape.widths(&input.port.columns).map_err(&fault)?;
-                    let arity = widths.iter().map(|width| width.unwrap_or(shape.output_key().width())).sum::<usize>();
-                    let rows = match rows_of(evaluation.relation(&parameter, None)?, arity).map_err(&fault)? {
-                        Ok(rows) => rows,
-                        Err(value) => return Ok(each(value)),
-                    };
-                    let prefix = if shape.key_body.is_some() { key_labels.len() } else { 0 };
-                    grouped(&groups, prefix, input_types.len(), rows.iter().map(|row| shape.key_first(&widths, row)).collect())
-                }
-                None => shape.unwritten(input, &input_types, &groups, evaluation).map_err(&fault)?,
-            },
+        let per_group = match input_groups(evaluation, bodies, form, instance, &shape, input, &groups, example)? {
+            Ok(per_group) => per_group,
+            Err(value) => return Ok(each(value)),
         };
         for (inputs, rows) in group_inputs.iter_mut().zip(per_group) {
             inputs.push(rows);
         }
-        types.push(input_types);
+        types.push(shape.port_types(&input.port.columns).map_err(&fault)?);
         columns.push(shape.port_column_types(&input.port.columns).map_err(&fault)?);
     }
 
     let widths: Vec<Vec<Option<usize>>> = component.outputs.iter().map(|output| shape.widths(&output.columns)).collect::<Result<_, _>>().map_err(&fault)?;
     let output_key = shape.output_key();
-    let arity = |widths: &[Option<usize>]| widths.iter().map(|width| width.unwrap_or(output_key.width())).sum::<usize>();
-    let mut rows: Vec<RowSet> = widths.iter().map(|widths| RowSet::empty(arity(widths) as u16)).collect();
+    let mut rows: Vec<RowSet> = widths.iter().map(|widths| RowSet::empty(shape.arity(widths) as u16)).collect();
     let mut context = ConstructionContext { session: evaluation.session, registry: evaluation.registry, budget };
     for (key, inputs) in groups.iter().zip(&group_inputs) {
         let group = GroupInputs { inputs, types: &types, columns: &columns };
@@ -128,24 +82,150 @@ pub fn evaluate_instance<'a>(
         let key_columns = output_key.columns(key);
         for ((rows, widths), values) in rows.iter_mut().zip(&widths).zip(&outputs.outputs) {
             for values in values.rows() {
-                let mut row = Vec::with_capacity(arity(widths));
-                let mut rest = values;
-                for width in widths {
-                    match width {
-                        None => row.extend_from_slice(&key_columns),
-                        Some(width) => {
-                            let (taken, after) = rest.split_at(*width);
-                            row.extend_from_slice(taken);
-                            rest = after;
-                        }
-                    }
-                }
-                rows.insert(row.into());
+                rows.insert(laid_out(widths, &key_columns, values));
             }
         }
     }
     let values = rows.into_iter().map(|rows| RelationValue::Rows(Arc::new(join::one_part(rows))));
     Ok(relations.into_iter().zip(values).collect())
+}
+
+/// The rows of the input `port` of the instance whose `INIT` form stands
+/// at `form`, on `example`, or task-wide where it is `None`, as a clause
+/// that reads that input reads them: the rows `input_groups` gives each
+/// key group, in the columns of the port, the group's key at the `key`
+/// column as an output row holds it, with `bodies` evaluating the form's
+/// bodies. A body whose value holds no rows gives that value.
+pub fn evaluate_input(
+    evaluation: &Evaluation<'_>,
+    bodies: &FormBodies<'_>,
+    form: &NodePath,
+    port: &PortName,
+    example: Option<Example>,
+) -> Outcome<RelationValue> {
+    let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
+    let (instance, component) = instance_at(evaluation, form)?;
+    let input = component.inputs.iter().find(|input| input.port.name == *port).expect("an input of the component at each instance input node");
+    let shape = InstanceShape::of(evaluation, form, instance, component);
+    let groups = match key_groups(evaluation, bodies, form, &shape, example)? {
+        Ok(groups) => groups,
+        Err(value) => return Ok(value),
+    };
+    let per_group = match input_groups(evaluation, bodies, form, instance, &shape, input, &groups, example)? {
+        Ok(per_group) => per_group,
+        Err(value) => return Ok(value),
+    };
+    let widths = shape.widths(&input.port.columns).map_err(&fault)?;
+    let output_key = shape.output_key();
+    let mut rows = RowSet::empty(shape.arity(&widths) as u16);
+    for (key, group) in groups.iter().zip(&per_group) {
+        let key_columns = output_key.columns(key);
+        for values in group.rows() {
+            rows.insert(laid_out(&widths, &key_columns, values));
+        }
+    }
+    Ok(RelationValue::Rows(Arc::new(join::one_part(rows))))
+}
+
+/// The `INIT` form at `form` and the component it instantiates, or a
+/// [`RunFault`] where the registry declares no such component.
+fn instance_at<'p>(evaluation: &Evaluation<'p>, form: &NodePath) -> Outcome<(&'p Instance, &'p Component)> {
+    let root = NodeRef::Program(evaluation.program.program.program.value());
+    let Some(NodeRef::Instance(instance)) = node_at(root, form) else { panic!("an `INIT` form at the form of an instance's node") };
+    match evaluation.registry.entry(&instance.component) {
+        Some(LibEntry::Component(component)) => Ok((instance, component)),
+        _ => Err(unevaluated(form, instance)),
+    }
+}
+
+/// The fault of `instance`, the `INIT` form at `form`, whose component the
+/// engine does not evaluate.
+fn unevaluated(form: &NodePath, instance: &Instance) -> RunFault {
+    RunFault { message: format!("the engine does not evaluate the component `{}`", instance.component.0).into(), form: form.clone() }
+}
+
+/// The key groups of the instance of `shape`, the `INIT` form at `form`, on
+/// `example`: the rows of its key clause, or the one empty row where it
+/// has none, or the value of the key body where it holds no rows.
+fn key_groups(
+    evaluation: &Evaluation<'_>,
+    bodies: &FormBodies<'_>,
+    form: &NodePath,
+    shape: &InstanceShape<'_>,
+    example: Option<Example>,
+) -> Outcome<Result<Vec<Row>, RelationValue>> {
+    let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
+    let Some(key_body) = &shape.key_body else { return Ok(Ok(vec![Row::default()])) };
+    let key_labels = shape.key_labels();
+    let clause = ir::compile_instance_body(evaluation.program, form, &[key_body.clone()], &key_labels)
+        .map_err(|compile| fault(format!("the key body does not compile: {compile:?}")))?;
+    rows_of(bodies.relation(form, &clause, example)?, key_labels.len()).map_err(&fault)
+}
+
+/// The rows of `input` of `instance`, the `INIT` form at `form` of `shape`,
+/// at each of `groups`, in the order of its row positions other than
+/// `key`: the rows its clause gives, or, where the instance writes none
+/// and the input's node reads the parameter node of a `DET` of the input,
+/// that parameter's rows, and otherwise the rows
+/// [`InstanceShape::unwritten`] gives. A keyed input is its body joined
+/// with the key body, and a broadcast joins each group. A body whose value
+/// holds no rows gives that value.
+#[allow(clippy::too_many_arguments)]
+fn input_groups(
+    evaluation: &Evaluation<'_>,
+    bodies: &FormBodies<'_>,
+    form: &NodePath,
+    instance: &Instance,
+    shape: &InstanceShape<'_>,
+    input: &InputPort,
+    groups: &[Row],
+    example: Option<Example>,
+) -> Outcome<Result<Vec<RowSet>, RelationValue>> {
+    let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
+    let input_types = shape.port_types(&input.port.columns).map_err(&fault)?;
+    let key_labels = shape.key_labels();
+    match shape.written(&input.port.name) {
+        Some((input_path, keyed, written)) => {
+            let head = shape.head_labels(written, &input.port.columns).map_err(&fault)?;
+            let body = (written.body.value(), input_path.child(written.position(InstanceInputPart::Body)));
+            let (parts, prefix): (Vec<(&Body, NodePath)>, &[LabelId]) = match (&shape.key_body, keyed) {
+                (Some(key_body), true) => (vec![key_body.clone(), body], &key_labels),
+                _ => (vec![body], &[]),
+            };
+            let columns: Vec<LabelId> = prefix.iter().chain(&head).copied().collect();
+            let clause = ir::compile_instance_body(evaluation.program, form, &parts, &columns)
+                .map_err(|compile| fault(format!("input `{}` does not compile: {compile:?}", input.port.name.0)))?;
+            Ok(rows_of(bodies.relation(form, &clause, example)?, columns.len()).map_err(&fault)?.map(|rows| grouped(groups, prefix.len(), head.len(), rows)))
+        }
+        None => match stored_input(evaluation, form, instance, &input.port.name) {
+            Some(parameter) => {
+                let widths = shape.widths(&input.port.columns).map_err(&fault)?;
+                let prefix = if shape.key_body.is_some() { key_labels.len() } else { 0 };
+                Ok(rows_of(evaluation.relation(&parameter, None)?, shape.arity(&widths))
+                    .map_err(&fault)?
+                    .map(|rows| grouped(groups, prefix, input_types.len(), rows.iter().map(|row| shape.key_first(&widths, row)).collect())))
+            }
+            None => Ok(Ok(shape.unwritten(input, &input_types, groups, evaluation).map_err(&fault)?)),
+        },
+    }
+}
+
+/// A row of a port whose columns have `widths`: `key_columns` at the `key`
+/// column, and the positions of `values` in order at the others.
+fn laid_out(widths: &[Option<usize>], key_columns: &[TermId], values: &[TermId]) -> Row {
+    let mut row = Vec::with_capacity(values.len() + key_columns.len());
+    let mut rest = values;
+    for width in widths {
+        match width {
+            None => row.extend_from_slice(key_columns),
+            Some(width) => {
+                let (taken, after) = rest.split_at(*width);
+                row.extend_from_slice(taken);
+                rest = after;
+            }
+        }
+    }
+    row.into()
 }
 
 /// The relation of each output of `instance`, the `INIT` form at `form`, of
@@ -253,6 +333,11 @@ impl<'p> InstanceShape<'p> {
     /// [`Self::output_key`] positions.
     fn widths(&self, columns: &[Column]) -> Result<Vec<Option<usize>>, String> {
         columns.iter().map(|column| if is_key(column) { Ok(None) } else { self.column_types(column).map(|types| Some(types.len())) }).collect()
+    }
+
+    /// The count of row positions of a port whose columns have `widths`.
+    fn arity(&self, widths: &[Option<usize>]) -> usize {
+        widths.iter().map(|width| width.unwrap_or(self.output_key().width())).sum()
     }
 
     /// The key columns of the instance's output rows.
