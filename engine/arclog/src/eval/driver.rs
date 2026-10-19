@@ -8,10 +8,9 @@ use std::sync::Arc;
 use super::examples::{self, ExampleScope};
 use super::ir::{self, AtomSource, ClauseIr, IrNode};
 use super::join::{self, Budget, JoinInputs, NodeInput};
-use super::lookup::output_relation;
 use super::models::{self, Choice, Entry, Factor};
-use super::{cache, instance, output, plan, rigid};
-use super::{Evaluation, GridValue, NoGridColumns, Outcome, RelationValue, RunFault, Stop};
+use super::{cache, instance, plan, rigid};
+use super::{Evaluation, Outcome, RelationValue, RunFault, Stop};
 use crate::hash::StableHashMap;
 use crate::program::path::NodePath;
 use crate::program::ProgramRelation;
@@ -249,60 +248,6 @@ impl<'e, 'a> Driver<'e, 'a> {
             }
         }
     }
-
-    /// The relation of `&output`.
-    fn output_relation(&self) -> GraphRelation {
-        output_relation(self.evaluation.program).expect("a checked case program derives `&output`")
-    }
-
-    /// The grid of `&output` on `example` by `columns`.
-    pub(super) fn grid(&self, example: Example, columns: output::GridColumns) -> Outcome<GridValue> {
-        Ok(match self.value(&self.output_relation(), Some(example))? {
-            RelationValue::Rows(relation) => output::read_grid(&relation, columns).map_or(GridValue::Undefined, GridValue::Grid),
-            RelationValue::Undefined => GridValue::Undefined,
-            RelationValue::Stopped(stop) => GridValue::Stopped(stop),
-        })
-    }
-
-    /// The grid columns of `&output`, as [`Evaluation::grid_columns`] gives
-    /// them.
-    pub(super) fn grid_columns(&self) -> Outcome<Result<output::GridColumns, NoGridColumns>> {
-        let relation = self.output_relation();
-        let program = self.evaluation.program;
-        let form = program.program.form_of(relation.node).clone();
-        let types = program.types.columns(&relation).ok_or_else(|| RunFault {
-            message: "the columns of `&output` have no types".into(),
-            form: form.clone(),
-        })?;
-        let task = self.evaluation.task;
-        let mut solving = Vec::new();
-        for columns in output::candidate_columns(types) {
-            let mut solves = true;
-            for (pair, example) in task.train.iter().zip(task.examples()) {
-                match self.grid(example, columns)? {
-                    GridValue::Grid(grid) if grid == pair.output => {}
-                    GridValue::Stopped(stop) => return Ok(Err(NoGridColumns::Stopped(stop))),
-                    GridValue::Grid(_) | GridValue::Undefined => {
-                        solves = false;
-                        break;
-                    }
-                }
-            }
-            if solves {
-                solving.push(columns);
-            }
-        }
-        let Some((&first, rest)) = solving.split_first() else { return Ok(Err(NoGridColumns::NoPairSolves)) };
-        for &other in rest {
-            for example in task.examples() {
-                let (a, b) = (self.grid(example, first)?, self.grid(example, other)?);
-                if !same_grid(&a, &b) {
-                    return Err(RunFault { message: "the grid columns of `&output` are underdetermined".into(), form });
-                }
-            }
-        }
-        Ok(Ok(first))
-    }
 }
 
 /// The way into the driver of a form over a lib component, such as an
@@ -331,15 +276,6 @@ impl FormBodies<'_> {
 /// `None`.
 fn scope_at(example: Option<Example>) -> ExampleScope {
     if example.is_some() { ExampleScope::PerExample } else { ExampleScope::TaskWide }
-}
-
-/// Whether two grid values give one grid, or are both `undefined`.
-fn same_grid(a: &GridValue, b: &GridValue) -> bool {
-    match (a, b) {
-        (GridValue::Grid(a), GridValue::Grid(b)) => a == b,
-        (GridValue::Undefined, GridValue::Undefined) => true,
-        _ => false,
-    }
 }
 
 /// The union of `relations`, of one arity: the one relation where there is

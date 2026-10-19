@@ -22,8 +22,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::process::ExitCode;
 use std::sync::Mutex;
 
-use arclog::eval::{GridValue, NoGridColumns, ReachedBound, Stop};
+use arclog::eval::{ReachedBound, Stop};
 use arclog::harness::{require_optimized_build, run_over_corpus, SolverResult};
+use arclog::judge::solves::OutputSet;
 use arclog::session::Counts;
 use serde_json::Value;
 
@@ -98,16 +99,12 @@ pub(crate) fn slower(seconds: f64, record: &Value) -> Result<Option<String>, Str
 fn timed(arguments: &Arguments, id: &str, counts: &Mutex<BTreeMap<String, Counts>>) -> Result<Vec<String>, String> {
     let record = read_json(&arguments.snapshot.join(format!("{id}.json")))?;
     with_concept_case(&arguments.corpus, &arguments.tasks, id, |case| {
-        let (outputs, seconds) = case.run();
+        let (run, seconds) = case.run();
         let largest = case.evaluation.session.largest_counts();
         counts.lock().expect("a map of counts that no panic poisoned").insert(id.to_owned(), largest);
         let mut lines: Vec<String> = slower(seconds, &record)?.into_iter().collect();
-        let outputs = outputs.map_err(|fault| format!("a fault of the run at {:?}: {}", fault.form, fault.message))?;
-        let stops: Vec<&Stop> = match &outputs {
-            Err(NoGridColumns::Stopped(stop)) => vec![stop],
-            Err(NoGridColumns::NoPairSolves) => Vec::new(),
-            Ok(grids) => grids.iter().filter_map(|(_, grid)| if let GridValue::Stopped(stop) = grid { Some(stop) } else { None }).collect(),
-        };
+        let run = run.map_err(|fault| format!("a fault of the run at {:?}: {}", fault.form, fault.message))?;
+        let stops: Vec<&Stop> = run.pairs.iter().filter_map(|pair| if let OutputSet::Stopped(stop) = &pair.set { Some(stop) } else { None }).collect();
         let at_caps: BTreeSet<String> = stops
             .into_iter()
             .filter(|stop| matches!(stop.bound, ReachedBound::Work { .. } | ReachedBound::Rows { .. }))
