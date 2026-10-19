@@ -1,8 +1,8 @@
-"""An `Op expedite:` line, and an allow line of the operator's session,
-each reach from a ticket that is not a `change` each `change` whose
-Motivation gives its number, past the chain of links. An allow line holds
-through the ticket's later moves, and the allow line of a second session
-admits the ticket for that session's operators alone."""
+"""An allow line of the operator's session reaches from a ticket that is
+not a `change` each `change` whose Motivation gives its number, past the
+chain of links. An allow line holds through the ticket's later moves, and
+the allow line of a second session admits the ticket for that session's
+operators alone."""
 
 from pathlib import Path
 
@@ -27,15 +27,6 @@ def served_tickets(tickets: Path, more: str = ""):
         ticket(tickets, "9-4_change_y-other_ticket-analyst", "change", "y: other",
                "## Motivation\n- Serves 9-9.\n\n"),
     ]
-
-
-def test_an_expedite_line_on_a_request_reaches_each_change_that_serves_it(tmp_path: Path) -> None:
-    from operations.state import Message
-    from operations.taking import allowed, expedited
-    s = state(tmp_path, served_tickets(tmp_path / "tickets"),
-              messages=[Message("op", 1.0, None, "Op expedite: 9-1")])
-    assert expedited(s) == {"9-1", "9-2", "9-3"}
-    assert allowed(s) == set()
 
 
 def test_an_allow_line_on_a_request_reaches_each_change_that_serves_it(tmp_path: Path) -> None:

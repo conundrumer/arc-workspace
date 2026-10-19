@@ -136,7 +136,7 @@
         + xref: src/operations/directives.py, scripts/operate.py:main
     - `Op drafts to review: <number>, ...`: the draft `change` tickets to review.
         + xref: src/operations/directives.py
-    - `Op expedite: <number>, ...`: tickets of any session, and from each of them, and so on down each chain: each ticket a link, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, leads to from it, and, from a ticket that is not a `change`, each `change` whose Motivation gives its number. The operator releases and settles each of them as it does its session's, and takes each `change` among them ahead of the other changes it may take, where `Op scope: own.` and `Op pause.` admit it.
+    - `Op expedite: <number>, ...`: tickets of any session, and from each of them, and so on down each chain: each ticket a link, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, leads to from it, and, from a ticket that is not a `change`, each `change` whose Motivation gives its number. The operator releases and settles each of them as it does its session's, and takes each `change` among them ahead of the other changes it may take, whatever `Op scope: own.` and `Op pause.` stand.
         + xref: src/operations/directives.py
     - `Op merged: <number>, ...`: the changes the coordinator merged itself.
         + xref: src/operations/directives.py
@@ -150,7 +150,7 @@
         - Each ticket outside `tickets/closed/` whose title refers to a file that the commit that merged a `change` of the item above changed, or to a file of a commit that a coordinator's line in the log of a `request` of the item above gives, that a ticket analyst judged the session's line of work needs, as the line `own: <judgment>` in its log shows, and from each such ticket the tickets that the steps of the item above lead to. A ticket analyst judges each such ticket whose log holds neither an `own:` line nor a `not own:` line.
     - `Op scope: all.`: ends the limit of `Op scope: own.`.
         + xref: src/operations/directives.py
-    - `Op pause.`: the operators of the session settle no untaken ticket and take no `change`, other than the tickets whose log holds an `allow` line with the session's id, each with the tickets a chain of links reaches from it as `Op expedite:` gives a chain, and the work an operator of the session took and each `change` that work waits on, which they finish.
+    - `Op pause.`: the operators of the session settle no untaken ticket and take no `change`, other than the tickets an `Op expedite:` line gives and the tickets whose log holds an `allow` line with the session's id, each with the tickets a chain of links reaches from it as `Op expedite:` gives a chain, and the work an operator of the session took and each `change` that work waits on, which they finish.
         + xref: src/operations/directives.py
     - `Op resume.`: ends `Op pause.`.
         + xref: src/operations/directives.py

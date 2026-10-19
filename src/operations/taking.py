@@ -7,9 +7,9 @@ sessions `SessionsRead.adopted` gives, as `State.mine` gives them. Which session
 is the main one, `file_ticket.py main --help` states; which sessions are
 idle, `idle_sessions.read_sessions` gives.
 
-The work already held (`held_work`), the tickets an allow line of the
-session gives (`allowed`) and the session's line of work (`own_work`) are
-what the `Op pause.` and `Op scope:` lines admit, as `admission` gives
+The work already held (`held_work`), the tickets an allow line or an
+`Op expedite:` line of the session gives (`allowed`) and the session's
+line of work (`own_work`) are what the `Op pause.` and `Op scope:` lines admit, as `admission` gives
 it. A ticket whose title refers to a file that line changed is of it only
 once a ticket analyst judges that the line needs it (`follow_ups`,
 `admission.judging`).
@@ -97,12 +97,18 @@ def served(state: State, start: set[str]) -> set[str]:
     return closure(state, start, step)
 
 
+def expedite_starts(state: State) -> set[str]:
+    """The numbers an `Op expedite:` line to any operator of the session
+    gives."""
+    return {n for n, _ in numbers_in(session_lines(state), Directive.EXPEDITE)}
+
+
 def expedited(state: State) -> set[str]:
     """The tickets of `served` from the tickets an `Op expedite:` line to
     any operator of the session gives, which the operator takes ahead of
     the others, so that an expedite outlives the operator it was sent
-    to."""
-    return served(state, {n for n, _ in numbers_in(session_lines(state), Directive.EXPEDITE)})
+    to. `allowed` holds each of them."""
+    return served(state, expedite_starts(state))
 
 
 def taken_before(t: Ticket) -> bool:
@@ -125,9 +131,11 @@ def held_work(state: State) -> set[str]:
 def allowed(state: State) -> set[str]:
     """The tickets `Op pause.` admits past the work held, and `Op scope: own.`
     past the session's line of work: those of `served` from the tickets
-    with an allow line of the operator's session (`Ticket.allowers`)."""
+    with an allow line of the operator's session (`Ticket.allowers`) and
+    from the tickets an `Op expedite:` line of the session gives."""
     return served(state, {n for n, t in state.tracker.tickets.items()
-                          if state.session in t.allowers})
+                          if state.session in t.allowers}
+                  | expedite_starts(state))
 
 
 COMMIT_WORD = re.compile(r"\b[0-9a-f]{7,40}\b")

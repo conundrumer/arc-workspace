@@ -14,15 +14,15 @@ prefix `Op`, the word of its kind and a colon, past a list marker:
 - `Op tickets are open.`, which leaves the scope as `own_scope` gives it;
 - `Op scope: own.`, under which no operator of the session settles an untaken
   ticket or takes a change outside the work held, the tickets an allow
-  line of the session gives (`taking.allowed`) and the session's line of
-  work (`taking.own_work`), other than the launch of a ticket analyst that
+  line or an `Op expedite:` line of the session gives (`taking.allowed`)
+  and the session's line of work (`taking.own_work`), other than the launch of a ticket analyst that
   judges whether that line needs a ticket whose title refers to a file
   the line changed (`admission.judging`), and `Op scope: all.`, which ends that limit,
   the last such line standing, and `Op scope: own.` where none came
   (`own_scope`);
 - `Op pause.`, after which no operator of the session settles an untaken
   ticket or takes a change outside the work held and the tickets an
-  allow line of the session gives, and `Op resume.`, which ends
+  allow line or an `Op expedite:` line of the session gives, and `Op resume.`, which ends
   the pause, the last such line standing (`paused`);
 - `Op pace: <preset> [<argument> ...]` or `Op pace: <path>`, the usage pace
   for every operator of the session (`pace`), as `pacing` gives it;

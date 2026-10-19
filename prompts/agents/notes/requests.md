@@ -32,7 +32,7 @@
 - `op send`: file the `request` and, where each ticket its `depends-on` gives stands under `tickets/closed/`, launch a ticket analyst on it, with its transcript brief, and tell an operator so once the analyst replies. Where one stands outside `tickets/closed/`, tell an operator that tickets are open, and launch no analyst.
 - `hotfix`: file the change's `request`, write its brief, and, as [Running a change](#running-a-change) gives, launch at once on a worktree the editors it needs, each with that brief, and merge the change.
     + xref: prompts/agents/notes/requests.md#running-a-change
-- `expedite <number>`: write an `allow` line, as [Tracking](prompts/agents/notes/tickets.md#tracking) gives it, on each ticket of that number that stands outside `tickets/assigned/` and `tickets/closed/`, send an operator `Op expedite: <number>`, and tell the user the tickets outside `tickets/closed/` that line gives, as [An operator's brief](prompts/agents/notes/launching.md#an-operators-brief) gives that line.
+- `expedite <number>`: send an operator `Op expedite: <number>`, and tell the user the tickets outside `tickets/closed/` that line gives, as [An operator's brief](prompts/agents/notes/launching.md#an-operators-brief) gives that line.
     + xref: prompts/agents/notes/launching.md#an-operators-brief
 - `op scope: own`, `op scope: all`, `op pause` and `op resume`: write nothing, and send an operator the directive with a capital `Op` and a closing period, as `Op pause.`.
     + xref: prompts/agents/notes/launching.md#an-operators-brief
