@@ -7,7 +7,7 @@
 //! margins, as `programs/lib/box.dl` gives `compose`.
 
 use arclog::algebra::boxes::{compose, divide, margin, margins};
-use arclog::algebra::orientation::{Edge, Geometry};
+use arclog::algebra::geometry::{Edge, Geometry};
 use arclog::eval::ReachedBound;
 use arclog::eval::instance::{Construction, ConstructionContext, GroupInputs, GroupOutputs};
 use arclog::hash::StableHashSet;

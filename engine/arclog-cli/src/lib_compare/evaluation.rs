@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
-use arclog::algebra::orientation::{D4Element, Edge, Geometry};
+use arclog::algebra::geometry::{D4Element, Edge, Geometry};
 use arclog::algebra::{algebra, Algebra};
 use arclog::eval::instance::Construction;
 use arclog::eval::unfold::UnfoldOutput;

@@ -10,16 +10,17 @@ use std::sync::Arc;
 
 use super::ir::{Argument, ClauseIr, Comparison, Filter, IrNode, Operand, Variable};
 use super::plan::{
-    algebra_relation, bound_variables, mode_holds, orientation_domain, variable_order, OrientationDomain, RelationSizes,
+    algebra_relation, bound_variables, mode_holds, variable_order, RelationSizes,
     VariableOrder,
 };
 use super::{Caps, Limits, ReachedBound};
+use crate::algebra::geometry::domain;
 use crate::hash::StableHashMap;
 use crate::program::ConstraintOp;
 use crate::registry::Registry;
 use crate::relations::{ColumnIndex, ColumnOrder, Index, Relation, RelationPart, Row, RowSet};
 use crate::session::TaskSession;
-use crate::terms::{Constant, Term, TermId};
+use crate::terms::{Term, TermId};
 use crate::types::ValueType;
 
 /// The bindings a [`Batch`] counts before it charges its budget.
@@ -435,8 +436,7 @@ impl<'c> Search<'c> {
             values
         } else {
             let ty = &self.clause.variables[usize::from(variable.0)].ty;
-            assert!(orientation_domain(ty).is_some(), "a variable of the order that a node of the clause binds");
-            domain(self.registry, ty)
+            domain(self.registry, ty).expect("a variable of the order that a node of the clause binds")
         };
         let early = rank >= self.stop_from;
         let mut candidates = candidates;
@@ -631,11 +631,3 @@ impl<'c> Search<'c> {
     }
 }
 
-/// The term id of each constant of the orientation type `ty`.
-fn domain(registry: &Registry, ty: &ValueType) -> Vec<TermId> {
-    let encode = |constant| Term::Constant(Constant::Orientation(constant)).encode().expect("a constant's term id");
-    match orientation_domain(ty).expect("an orientation type") {
-        OrientationDomain::C4 => registry.c4_constants().each().map(encode).collect(),
-        OrientationDomain::Types(types) => types.iter().flat_map(|&t| registry.constants_of(t).each()).map(encode).collect(),
-    }
-}

@@ -1,6 +1,7 @@
 //! The algebra relations and relation macros of the lib, native: the box
 //! algebra in [`boxes`], and the orientation algebra in [`orientation`],
-//! over the fact sets of [`tables`].
+//! over the geometry of a frame in [`geometry`] and the fact sets of
+//! [`tables`].
 //!
 //! An algebra relation is evaluated at a mode its bound columns satisfy, as
 //! the registry's [`crate::registry::Mode`] gives, and a relation over a
@@ -8,11 +9,12 @@
 //! has every row that holds it, so no relation chooses among them.
 
 pub mod boxes;
+pub mod geometry;
 pub mod orientation;
 pub mod tables;
 
 use crate::hash::StableHashMap;
-use crate::registry::{AlgebraRelation, LibEntry, LibName, Macro, Registry};
+use crate::registry::{AlgebraRelation, LibName, Registry};
 use crate::terms::{ReachedMarginBound, TermId};
 
 /// An algebra relation of the lib, evaluated natively.
@@ -58,8 +60,7 @@ pub fn satisfied_mode(relation: &AlgebraRelation, bound: &[bool]) -> Option<usiz
 
 /// The declaration of the algebra relation or relation macro `name`.
 fn declaration<'r>(registry: &'r Registry, name: &str) -> &'r AlgebraRelation {
-    match registry.entry(&LibName(name.into())) {
-        Some(LibEntry::Relation(relation)) | Some(LibEntry::Macro(Macro::Relation { relation, .. })) => relation,
-        _ => panic!("`{name}` is an algebra relation or a relation macro of the registry"),
-    }
+    registry
+        .algebra_relation(&LibName(name.into()))
+        .unwrap_or_else(|| panic!("`{name}` is an algebra relation or a relation macro of the registry"))
 }

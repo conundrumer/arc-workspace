@@ -187,6 +187,9 @@ pub struct ResolvedProgram {
     pub graph: DependencyGraph,
     /// The paths of the forms of each node of the graph, by its index.
     forms: Box<[Box<[NodePath]>]>,
+    /// The nodes of the graph that each form gives, by the form's path, in
+    /// the order of their indices.
+    form_nodes: crate::hash::StableHashMap<NodePath, Box<[GraphNodeIndex]>>,
     /// The side of each node of the graph, by its index.
     sides: Box<[Side]>,
     /// The columns of each node of the graph that hold an Example, by its
@@ -292,6 +295,14 @@ impl ResolvedProgram {
     /// that several clauses derive.
     pub fn forms_of(&self, node: GraphNodeIndex) -> &[NodePath] {
         &self.forms[node.0 as usize]
+    }
+
+    /// The nodes of the graph that the form at `form` gives, in the order of
+    /// their indices: none for a path that is no form's, several for an
+    /// `INIT` form, which gives a node to each output and each input it
+    /// writes. The inverse of [`ResolvedProgram::forms_of`].
+    pub fn nodes_of(&self, form: &NodePath) -> &[GraphNodeIndex] {
+        self.form_nodes.get(form).map_or(&[], |nodes| nodes)
     }
 
     /// Whether the form that holds the read at `read` reads its relation in

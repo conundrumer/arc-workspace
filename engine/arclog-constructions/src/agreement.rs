@@ -7,7 +7,7 @@
 //! [`arclog::algebra::algebra`], and reads no order of term ids, cells or
 //! rows.
 
-use arclog::algebra::orientation::{Edge, Edges, Geometry};
+use arclog::algebra::geometry::{Edge, Edges, Geometry};
 use arclog::algebra::{algebra, Algebra};
 use arclog::eval::instance::{Construction, ConstructionContext, GroupInputs, GroupOutputs};
 use arclog::eval::join::Budget;

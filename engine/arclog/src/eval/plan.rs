@@ -8,11 +8,10 @@
 //! output of an algebra relation directly after the inputs of the first of
 //! its modes that the order satisfies.
 
-use super::ir::{lib_algebra_relation, Argument, Arguments, ClauseIr, IrNode, Operand, Variable};
+use super::ir::{Argument, Arguments, ClauseIr, IrNode, Operand, Variable};
 use crate::program::ConstraintOp;
 use crate::registry::{AlgebraRelation, LibName, Registry};
-use crate::terms::OrientationType;
-use crate::types::ValueType;
+use crate::algebra::geometry::orientation_domain;
 
 /// The order the join binds a clause's variables in, each variable once.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -124,7 +123,7 @@ pub(super) fn variables_of(arguments: &Arguments) -> impl Iterator<Item = Variab
 
 /// The declaration of the algebra relation or relation macro `name`.
 pub(super) fn algebra_relation<'r>(registry: &'r Registry, name: &LibName) -> &'r AlgebraRelation {
-    lib_algebra_relation(registry, name).expect("a lib atom of a checked clause reads an algebra relation or a relation macro")
+    registry.algebra_relation(name).expect("a lib atom of a checked clause reads an algebra relation or a relation macro")
 }
 
 /// Whether the columns of `arguments` whose variables `bound` holds, or
@@ -147,18 +146,3 @@ pub(super) fn mode_holds(relation: &AlgebraRelation, arguments: &Arguments, clau
     crate::algebra::satisfied_mode(relation, &columns).is_some()
 }
 
-/// The constants of an orientation type, its finite domain: the D4
-/// constants that are C4, or the constants of each orientation type it
-/// unites.
-pub(super) enum OrientationDomain {
-    C4,
-    Types(&'static [OrientationType]),
-}
-
-/// The domain of `ty`, or `None` where `ty` is no orientation type.
-pub(super) fn orientation_domain(ty: &ValueType) -> Option<OrientationDomain> {
-    match ty {
-        ValueType::C4 => Some(OrientationDomain::C4),
-        ty => ty.orientation_types().map(OrientationDomain::Types),
-    }
-}

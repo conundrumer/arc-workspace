@@ -339,12 +339,20 @@ impl<'a> Builder<'a> {
             nodes: self.nodes.into(),
             reads: self.reads.into_iter().map(|reads| reads.into_iter().map(GraphNodeIndex).collect()).collect(),
         };
+        let mut form_nodes: StableHashMap<NodePath, Vec<GraphNodeIndex>> = StableHashMap::default();
+        for (node, forms) in self.forms.iter().enumerate() {
+            for form in forms {
+                form_nodes.entry(form.clone()).or_default().push(GraphNodeIndex(node as u32));
+            }
+        }
+        let form_nodes = form_nodes.into_iter().map(|(form, nodes)| (form, Box::from(nodes))).collect();
         let forms = self.forms.into_iter().map(Box::from).collect();
         WithDiagnostics {
             value: ResolvedProgram {
                 program: self.case.clone(),
                 graph,
                 forms,
+                form_nodes,
                 sides: self.sides.into(),
                 examples: self.examples.into(),
                 output_examples: self.output_examples,

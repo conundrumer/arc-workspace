@@ -245,6 +245,15 @@ impl Component {
     pub fn reads_outputs(&self) -> bool {
         self.inputs.iter().any(|input| input.reads_outputs)
     }
+
+    /// The ports that are relations of their own at an `INIT` form that
+    /// writes the inputs `written`: each output, then each written input
+    /// whose name no output shares.
+    pub fn relation_ports<'c>(&'c self, written: &'c [&PortName]) -> impl Iterator<Item = &'c Port> + 'c {
+        let shares_output = |port: &Port| self.outputs.iter().any(|output| output.name == port.name);
+        let inputs = self.inputs.iter().map(|input| &input.port).filter(|port| written.contains(&&port.name));
+        self.outputs.iter().chain(inputs.filter(move |port| !shares_output(port)))
+    }
 }
 
 /// A proposer, native or written in arclog, and its columns with their
@@ -386,6 +395,15 @@ impl Registry {
     /// What `name` declares, or `None` where the lib has no such name.
     pub fn entry(&self, name: &LibName) -> Option<&LibEntry> {
         self.entries.get(name)
+    }
+
+    /// The declaration of the algebra relation or relation macro `name`, or
+    /// `None` where the lib declares neither of that name.
+    pub fn algebra_relation(&self, name: &LibName) -> Option<&AlgebraRelation> {
+        match self.entry(name)? {
+            LibEntry::Relation(relation) | LibEntry::Macro(Macro::Relation { relation, .. }) => Some(relation),
+            _ => None,
+        }
     }
 
     /// The orientation constant written `name`, such as `DIR_T`.

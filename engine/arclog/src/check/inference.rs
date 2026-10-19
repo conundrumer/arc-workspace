@@ -775,8 +775,7 @@ impl<'a> Inference<'a> {
         match form {
             Form::Clause(clause) if clause.value().columns.is_empty() => {
                 let clause = clause.value();
-                let mut nodes = (0..self.program.graph.nodes.len() as u32).map(GraphNodeIndex);
-                let node = nodes.find(|node| self.program.forms_of(*node).contains(at)).expect("the resolver gives each clause a node");
+                let node = self.program.nodes_of(at).first().expect("the resolver gives each clause a node");
                 let scope = &self.program.graph.nodes[node.0 as usize].scope;
                 let names = self.clause_column_names(clause, scope);
                 let column = |name: &ColumnName| self.clause_column(at, clause, scope, std::slice::from_ref(name), &|_| None, PoseOr::Given);
@@ -788,11 +787,7 @@ impl<'a> Inference<'a> {
                 let Some(inference) = self.infer(at) else { return Vec::new() };
                 let (Some(component), ScopeOwner::Form(Form::Instance(instance))) = (inference.component, inference.owner) else { return Vec::new() };
                 let written: Vec<&PortName> = written_inputs(instance.value().key.as_ref(), &instance.value().inputs).map(|input| &input.name).collect();
-                let inputs = component.inputs.iter().map(|input| &input.port).filter(|port| written.contains(&&port.name));
-                let outputs = component.outputs.iter();
-                let mut ports: Vec<&crate::registry::Port> = outputs.collect();
-                ports.extend(inputs.filter(|port| !component.outputs.iter().any(|output| output.name == port.name)));
-                for port in ports {
+                for port in component.relation_ports(&written) {
                     let column = |name: &ColumnName| port_column(&inference, port, std::slice::from_ref(name));
                     relations.push((Arc::from([OutputStep::Port(port.name.clone())]), relation_columns(port.columns.iter().map(|column| &column.name), &column)));
                 }

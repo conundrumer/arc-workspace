@@ -364,6 +364,29 @@ pub struct Instance {
     pub inputs: Arc<[Node<InstanceInput>]>,
 }
 
+/// A part of an [`Instance`] form, by its index among the parts of its
+/// kind.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum InstancePart {
+    Key,
+    Input(usize),
+}
+
+impl Instance {
+    /// The parts of the form in the order of its children: the key clause,
+    /// then the inputs.
+    pub fn parts(&self) -> impl Iterator<Item = InstancePart> + '_ {
+        let key = self.key.iter().map(|_| InstancePart::Key);
+        key.chain((0..self.inputs.len()).map(InstancePart::Input))
+    }
+
+    /// The position of `part`, a part the form holds, among the children of
+    /// the form, as [`Instance::parts`] orders them.
+    pub fn position(&self, part: InstancePart) -> u32 {
+        self.parts().position(|own| own == part).expect("a part the form holds") as u32
+    }
+}
+
 /// A key clause, `(key (<body>) <inputs>)`: its body, whose `^` labels are
 /// the key's columns (`docs/arclog/arclog.md#instance`), and the keyed
 /// inputs.

@@ -12,15 +12,16 @@
 use std::sync::Arc;
 
 use super::join::{self, Budget};
+use super::values::OutputKey;
 use super::{ir, Evaluation, FormBodies, Outcome, RelationValue, RunFault, Stop};
 use crate::algebra::boxes::apply;
-use crate::algebra::orientation::{D4Element, Geometry};
+use crate::algebra::geometry::{D4Element, Geometry};
 use crate::hash::{StableHashMap, StableHashSet};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Atom, Body, Conjunct, LabelId, Node, OutputName, OutputOwner, OutputStep, ProgramRelation, RigidDet};
 use crate::relations::{Row, RowSet};
 use crate::resolver::form_columns;
-use crate::terms::{Constant, Example, Term, TermId};
+use crate::terms::{Example, Term, TermId};
 use crate::types::{each_site_label, use_label, FormTypes, ValueType};
 
 /// The value of `output`, an output of the `RIGID_DET` form at `form`:
@@ -121,9 +122,9 @@ impl<'e, 'p> Assembly<'e, 'p> {
         RelationValue::Stopped(Stop { bound, form: self.form.clone() })
     }
 
-    /// The count of an output row's key columns.
-    fn key_width(&self) -> usize {
-        if self.key.is_some() { self.key_labels.len() } else { 1 }
+    /// The key columns of the assembly's output rows.
+    fn output_key(&self) -> OutputKey {
+        OutputKey::of(self.key.is_some().then_some(self.key_labels.len()))
     }
 
     /// The one part whose output's path begins with `step`.
@@ -139,16 +140,6 @@ impl<'e, 'p> Assembly<'e, 'p> {
     /// The path after the form's name of `part`'s output.
     fn steps(&self, part: &Part<'_>) -> Vec<OutputStep> {
         form_columns::part_steps(&part.atom.value().relation).expect("a part that reads a relation")
-    }
-
-    /// The key columns of an output row at the key `key`: the key's columns,
-    /// or the one `Unit` column of a form with no key.
-    fn key_columns<'k>(&self, key: &'k [TermId]) -> std::borrow::Cow<'k, [TermId]> {
-        if self.key.is_some() {
-            key.into()
-        } else {
-            vec![Term::Constant(Constant::Unit).encode().expect("a Unit has a term id")].into()
-        }
     }
 
     /// The common reading of `part` from its stored record, by key: each
@@ -174,7 +165,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
     fn placements(&self, part: &Part<'_>, budget: &mut Budget<'_>) -> Outcome<Result<RowSet, RelationValue>> {
         let geometry = Geometry::get();
         let elements = geometry.domain(&ValueType::D4);
-        let mut rows = RowSet::empty((self.key_width() + 1 + part.labels.len()) as u16);
+        let mut rows = RowSet::empty((self.output_key().width() + 1 + part.labels.len()) as u16);
         for (key, reading) in self.common_reading(part)? {
             if let Err(bound) = budget.charge_rows((elements.len() * reading.len()) as u64) {
                 return Ok(Err(self.stopped(bound)));
@@ -182,7 +173,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
             for &element in elements {
                 let g = geometry.element(element);
                 for values in reading.rows() {
-                    let mut row = self.key_columns(&key).into_owned();
+                    let mut row = self.output_key().columns(&key).into_owned();
                     row.push(element);
                     row.extend(image(geometry, g, values, &part.types));
                     rows.insert(row.into());
@@ -222,7 +213,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
         }
         let geometry = Geometry::get();
         let elements = geometry.domain(&ValueType::D4);
-        let mut rows = RowSet::empty((self.key_width() + self.instance_labels.len() + 1) as u16);
+        let mut rows = RowSet::empty((self.output_key().width() + self.instance_labels.len() + 1) as u16);
         for instance in &instances {
             if let Err(bound) = budget.charge_work(elements.len() as u64) {
                 return Ok(Err(self.stopped(bound)));
@@ -241,7 +232,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
                     images.len() == observed.map_or(0, RowSet::len) && observed.into_iter().flat_map(|o| o.rows()).all(|values| images.contains(values))
                 });
                 if takes {
-                    let mut row = self.key_columns(key).into_owned();
+                    let mut row = self.output_key().columns(key).into_owned();
                     row.extend_from_slice(at);
                     row.push(element);
                     rows.insert(row.into());

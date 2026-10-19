@@ -26,7 +26,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use arclog::algebra::orientation::Geometry;
+use arclog::algebra::geometry::Geometry;
 use arclog::program::ColumnName;
 use arclog::registry::{AlgebraRelation, Column, ColumnType, Component, LibEntry, LibName, Macro, Registry};
 use arclog::terms::{Constant, Term, TermId};

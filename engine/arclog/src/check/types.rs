@@ -433,8 +433,7 @@ pub(super) use registry_columns::component;
 /// of the dependency graph that the form gives, or `None` where it gives
 /// none.
 pub(super) fn form_side(program: &ResolvedProgram, form: &NodePath) -> Option<Side> {
-    let mut nodes = (0..program.graph.nodes.len() as u32).map(GraphNodeIndex);
-    nodes.find(|found| program.form_of(*found) == form).map(|found| program.side(found))
+    program.nodes_of(form).first().map(|found| program.side(*found))
 }
 
 /// The type of the value at `site` of a head or of a read: its one bare

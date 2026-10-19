@@ -53,7 +53,7 @@ pub struct MacroDeclarations {
 /// that read one another, given at each macro of the cycle; a label of the
 /// definition, a column's or one that no column stands for, whose sites
 /// have an empty meet, or whose branches give types with no join, over the
-/// list of the label's scope that [`crate::types::scope_list`] gives, the
+/// list of the label's scope that `crate::types::scope_list` gives, the
 /// definition for a column's label; a column whose label stands at no site
 /// that gives a type; or a definition that no set of the columns grounds.
 /// A macro that reads a macro with a fault takes no declaration, and gives

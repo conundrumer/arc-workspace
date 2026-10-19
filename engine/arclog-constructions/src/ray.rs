@@ -6,7 +6,7 @@
 
 use arclog::algebra::Algebra;
 use arclog::algebra::boxes::BoxRelation;
-use arclog::algebra::orientation::{Edge, Edges, Geometry};
+use arclog::algebra::geometry::{Edge, Edges, Geometry};
 use arclog::eval::ReachedBound;
 use arclog::eval::instance::{Construction, ConstructionContext, GroupInputs, GroupOutputs};
 use arclog::hash::{StableHashMap, StableHashSet};

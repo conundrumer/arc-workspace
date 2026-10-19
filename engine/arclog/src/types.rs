@@ -70,21 +70,6 @@ pub enum ValueType {
     Record(Box<[(crate::program::ColumnName, ValueType)]>),
 }
 
-/// The name of a record's field (`docs/arclog/arclog.md#sites`).
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct FieldName(pub Box<str>);
-
-impl FieldName {
-    /// The field that a site's head or an elided site's label names, or
-    /// `None` for a column that holds a slot in place of a written name.
-    pub fn of(column: &crate::program::ColumnName) -> Option<FieldName> {
-        match column {
-            crate::program::ColumnName::Written(name) => Some(FieldName(name.clone())),
-            crate::program::ColumnName::Slot(_) => None,
-        }
-    }
-}
-
 /// The result of the meet of two types.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Meet {
@@ -191,7 +176,7 @@ pub(crate) fn label_fault_message(fault: LabelFault) -> String {
 
 /// The type that `body` gives `label`, `None` where it gives none, or the
 /// fault of that type. `body` is the list of the label's scope, as
-/// [`scope_list`] gives it.
+/// `scope_list` gives it.
 ///
 /// The type is the meet, as [`ValueType::meet`] gives it, of the types of
 /// every site of the label, at any depth, and a join, as [`ValueType::join`]
@@ -208,7 +193,9 @@ pub(crate) fn label_fault_message(fault: LabelFault) -> String {
 /// branch of an `OR` that holds no label equal to the label takes no part in
 /// the `OR`'s join, and a branch that holds one and gives the label no type
 /// gives that join none. A then or an else list that gives the label no
-/// type gives the `IF`'s join none.
+/// type gives the `IF`'s join none. In both forms, a branch, a then or an
+/// else that gives the label no type and names it with `=` beside another
+/// label takes no part in the join.
 ///
 /// A site is one label at an atom's site, at any depth of the site: a bare
 /// label at the site's column, a bare label at a column of a type
@@ -320,7 +307,7 @@ impl LabelWalk<'_> {
                     class.iter().any(|label| labels.contains(label))
                 };
                 let holding = branches.iter().filter(|branch| holds(branch.value()));
-                join_branches(holding.map(|branch| self.body_type(branch.value(), pairs)))
+                join_branches(holding.filter_map(|branch| self.branch_type(branch.value(), pairs)))
             }
             Conjunct::If { test, then, otherwise } => {
                 let test_type = self.body_type(test.value(), pairs)?;
@@ -328,8 +315,9 @@ impl LabelWalk<'_> {
                 if self.fresh_in(test.value()) {
                     return meet(test_type, then_type);
                 }
-                let otherwise_type = self.body_type(otherwise.value(), pairs);
-                meet(test_type, join_branches([Ok(then_type), otherwise_type].into_iter())?)
+                let then_type = self.typed_branch(then.value(), Ok(then_type));
+                let otherwise_type = self.branch_type(otherwise.value(), pairs);
+                meet(test_type, join_branches([then_type, otherwise_type].into_iter().flatten())?)
             }
             Conjunct::All { domain, body } => {
                 let domain_type = self.body_type(domain.value(), pairs)?;
@@ -365,6 +353,35 @@ impl LabelWalk<'_> {
             }
         });
         fresh
+    }
+
+    /// The type of `body`, a branch of an `OR` or a then or an else of an
+    /// `IF`, as [`LabelWalk::typed_branch`] gives it.
+    fn branch_type(&self, body: &crate::program::Body, pairs: &[LabelPair]) -> Option<Result<Option<ValueType>, LabelFault>> {
+        self.typed_branch(body, self.body_type(body, pairs))
+    }
+
+    /// `ty`, the type of the branch `body`, or `None` where the branch takes
+    /// no part in the join of the branches: it gives the label asked no
+    /// type, and names it with `=` beside another label.
+    fn typed_branch(&self, body: &crate::program::Body, ty: Result<Option<ValueType>, LabelFault>) -> Option<Result<Option<ValueType>, LabelFault>> {
+        match ty {
+            Ok(None) if self.equated_in(body) => None,
+            ty => Some(ty),
+        }
+    }
+
+    /// Whether a constraint `=` of `body`, at any depth, makes the label
+    /// asked equal to another label.
+    fn equated_in(&self, body: &crate::program::Body) -> bool {
+        use crate::program::{Constraint, ConstraintOp, Operand};
+        let mut equated = false;
+        each_conjunct(body, &mut |conjunct| {
+            if let crate::program::Conjunct::Constraint(Constraint { op: ConstraintOp::Eq, first, second: Operand::Label(second) }) = conjunct {
+                equated |= first.label == self.label || second.label == self.label;
+            }
+        });
+        equated
     }
 }
 

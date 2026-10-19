@@ -57,7 +57,17 @@ impl<'e, 'a> Driver<'e, 'a> {
             DependencyKind::Clause(_) | DependencyKind::InstanceInput { .. } => self.clauses(relation.node, example),
             DependencyKind::Parameter(name) => self.parameter(relation, name),
             DependencyKind::InstanceOutput { .. } => {
-                instance::evaluate_instance(evaluation, &self.bodies(), form, relation, example, &mut budget())
+                let outputs = instance::evaluate_instance(evaluation, &self.bodies(), form, example, &mut budget())?;
+                let mut asked = None;
+                let mut values = self.values.borrow_mut();
+                for (output, value) in outputs {
+                    if output == *relation {
+                        asked = Some(value);
+                    } else {
+                        values.insert((output, example), value);
+                    }
+                }
+                Ok(asked.expect("the value of each output of the instance"))
             }
             DependencyKind::RigidAssembly(_) => {
                 let output = relation.output.as_ref().and_then(|path| path.first()).expect("an output of the assembly");

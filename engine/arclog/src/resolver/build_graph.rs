@@ -17,7 +17,7 @@ use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
     Atom, Clause, ClauseKeyword, Form, Instance, NameScope, OutputName, OutputOwner, OutputStep, PortName, ProgramRelation, RelationRef,
 };
-use crate::program::DemonstratedPart;
+use crate::program::{DemonstratedPart, InstancePart};
 
 /// The node kind of a clause: a chosen relation where it has `ONE`
 /// marks, a parameter where it is a `DET` with none, and a clause
@@ -233,19 +233,19 @@ impl<'a> Builder<'a> {
             RelationRef::Output(OutputName { of: OutputOwner::Instance(name.clone()), path: Arc::from([OutputStep::Port(port.clone())]) })
         };
         for input in component.inputs.iter() {
-            let columns = form_columns::port_columns(&input.port, &bindings).columns();
-            let read = inputs.iter().find(|(port, _)| *port == input.port.name);
-            if let Some((port, node)) = read.filter(|(port, _)| !component.outputs.iter().any(|output| output.name == *port)) {
-                self.target(scope, relation(port), Target { node: *node, columns: ColumnsOf::Fixed(columns.clone()) });
-            }
-            port_columns.insert(input.port.name.clone(), columns);
+            port_columns.insert(input.port.name.clone(), form_columns::port_columns(&input.port, &bindings).columns());
         }
         for (output, (port, node)) in component.outputs.iter().zip(&outputs) {
             let listing = form_columns::port_columns(output, &bindings);
-            let columns = listing.columns();
-            self.target(scope, relation(port), Target { node: *node, columns: ColumnsOf::Fixed(columns.clone()) });
-            port_columns.insert(port.clone(), columns);
+            port_columns.insert(port.clone(), listing.columns());
             self.relate(*node, &path, Some(Arc::from([OutputStep::Port(port.clone())])), listing);
+        }
+        let written: Vec<&PortName> = written.iter().map(|input| &input.name).collect();
+        for port in component.relation_ports(&written) {
+            let node = outputs.iter().chain(&inputs).find(|(name, _)| *name == port.name).map(|(_, node)| *node);
+            let node = node.expect("a node of each output and of each input the form writes");
+            let columns = ColumnsOf::Fixed(port_columns[&port.name].clone());
+            self.target(scope, relation(&port.name), Target { node, columns });
         }
         self.instances.insert((scope.clone(), name.clone()), InstanceNodes { form: path, inputs, outputs, columns: port_columns, component });
     }
@@ -281,18 +281,17 @@ impl<'a> Builder<'a> {
                 let every = nodes.every();
                 let reader = |input: &PortName| nodes.input(input).expect("a node of each input the form writes");
                 let mut readers: Vec<(NodeRef<'a>, NodePath, Vec<GraphNodeIndex>)> = Vec::new();
-                let mut before = 0;
                 if let Some(key) = &instance.key {
                     let key = key.value();
-                    let key_path = path.child(0);
+                    let key_path = path.child(instance.position(InstancePart::Key));
                     readers.push((NodeRef::Body(key.key.body.value()), key_path.child(0), every.clone()));
                     for (index, input) in key.inputs.iter().enumerate() {
                         readers.push((NodeRef::InstanceInput(input.value()), key_path.child(1 + index as u32), vec![reader(&input.value().name)]));
                     }
-                    before = 1;
                 }
                 for (index, input) in instance.inputs.iter().enumerate() {
-                    readers.push((NodeRef::InstanceInput(input.value()), path.child(before + index as u32), vec![reader(&input.value().name)]));
+                    let at = path.child(instance.position(InstancePart::Input(index)));
+                    readers.push((NodeRef::InstanceInput(input.value()), at, vec![reader(&input.value().name)]));
                 }
                 for (node, at, readers) in readers {
                     self.read_below(node, at, scope, &readers, &path);

@@ -7,7 +7,7 @@
 //! `programs/lib_functors.cpp` and the rules of `programs/lib/box.dl`, and
 //! each macro's that of its definition in `engine/lib/registry.sexpr`.
 
-use super::orientation::{Edge, Edges, Geometry};
+use super::geometry::{Edge, Edges, Geometry};
 use super::Algebra;
 use crate::registry::Registry;
 use crate::terms::{Margins, ReachedMarginBound, Term, TermId};
@@ -148,7 +148,7 @@ fn extent(p: Margins, axis: Edges) -> i32 {
 
 /// The image of `p` under the D4 element `g`: the margin at each edge goes
 /// to that edge's image.
-pub(crate) fn apply(g: super::orientation::D4Element, p: Margins) -> Margins {
+pub(crate) fn apply(g: super::geometry::D4Element, p: Margins) -> Margins {
     margins(|e| margin(p, Edge::ALL.into_iter().find(|&f| g.image(f) == e).expect("an element moves each edge to an edge")))
 }
 

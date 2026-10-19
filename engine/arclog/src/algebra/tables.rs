@@ -9,7 +9,7 @@
 //! constant per column of the relation, in the order of its columns, each a
 //! constant of its column's type.
 
-use super::orientation::Geometry;
+use super::geometry::Geometry;
 use crate::check::CheckId;
 use crate::diagnostic::Diagnostic;
 use crate::hash::StableHashMap;
