@@ -84,7 +84,7 @@ impl Builder<'_> {
             let columns = match form {
                 NodeRef::Clause(clause) => match self.concept_columns.get(path) {
                     Some(columns) => columns.clone(),
-                    None => self.clause_columns(clause, scope, &writer),
+                    None => self.clause_columns(node, clause, scope, &writer),
                 },
                 NodeRef::Choose(choose) => Some(choose_columns(choose, &writer)),
                 _ => None,
@@ -96,10 +96,17 @@ impl Builder<'_> {
         (combined(kind_tag(kind), parts.into_iter().map(|(bytes, _)| bytes), &tail), columns)
     }
 
-    /// The columns of the relation a clause derives: its labels in their
-    /// canonical positions; or, with no columns of its own, its first
+    /// The columns of the relation a clause of `node` derives: for a `DET`
+    /// parameter node that an atom reads, its labels that a site of a read
+    /// of the relation names, in the order the clause gives them, as
+    /// [`Builder::keeps`] gives them; for another clause, its labels in
+    /// their canonical positions; or, with no columns of its own, its first
     /// proposer's, or the output's of an instance it stands for.
-    fn clause_columns(&self, clause: &Clause, scope: &NameScope, writer: &Writer<'_>) -> Option<Columns> {
+    fn clause_columns(&self, node: usize, clause: &Clause, scope: &NameScope, writer: &Writer<'_>) -> Option<Columns> {
+        if !clause.columns.is_empty() && self.read_columns[node].is_some() {
+            let kept = clause.columns.iter().filter(|column| self.keeps(node, &column.name));
+            return Some(Columns::of_names(kept.map(|column| column.name.clone())));
+        }
         if !clause.columns.is_empty() {
             let labeling = canonical_labeling(LabelScope::Clause(clause), writer, &mut SearchBudget::new());
             return Some(ordered(&clause.columns, &labeling));

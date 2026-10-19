@@ -367,12 +367,34 @@ pub struct ConceptReads<'a> {
     pub determinations: &'a [NodePath],
 }
 
+/// What every case of a solver resolves against, as
+/// [`crate::solver::Solver::derived_relations`] gives it, or a synthesized
+/// program's own.
+#[derive(Clone, Debug, Default)]
+pub struct SolverScope {
+    /// The relations that some block of the solver derives, as
+    /// [`crate::solver::Solver::derived`] gives them.
+    pub derived: crate::hash::StableHashSet<ProgramRelation>,
+    /// The column names that the sites of the reads of each relation name
+    /// across the solver's cases, as [`crate::solver::Solver::read_columns`]
+    /// gives them, which a `DET` of the relation keeps.
+    pub read_columns: crate::hash::StableHashMap<ProgramRelation, Vec<ColumnName>>,
+}
+
+/// Adds to `names` each of `columns` that it does not hold, in order.
+pub(crate) fn add_columns<'c>(names: &mut Vec<ColumnName>, columns: impl IntoIterator<Item = &'c ColumnName>) {
+    for column in columns {
+        if !names.contains(column) {
+            names.push(column.clone());
+        }
+    }
+}
+
 /// Resolves the names of `case`, a case program that `crate::solver` gives,
 /// or a synthesized program. `concept` is `None` for a synthesized program
-/// and for the concept case. `derived` holds the relations that some block
-/// of the solver derives, as [`crate::solver::Solver::derived_relations`]
-/// gives, or a synthesized program's own: a name among them that no block of
-/// the case derives is [`Resolution::Undefined`], and a name among none is
+/// and for the concept case. `scope` holds what the cases of the solver
+/// share, or a synthesized program's own: a name among its derived relations
+/// that no block of the case derives is [`Resolution::Undefined`], and a name among none is
 /// [`Resolution::Unresolved`].
 ///
 /// Gives a diagnostic of the scope at each name that resolves to nothing and
@@ -382,10 +404,10 @@ pub struct ConceptReads<'a> {
 pub fn resolve(
     case: &Node<Program>,
     concept: Option<ConceptReads<'_>>,
-    derived: &crate::hash::StableHashSet<ProgramRelation>,
+    scope: &SolverScope,
     registry: &Registry,
 ) -> WithDiagnostics<ResolvedProgram> {
-    build::resolve(case, concept, derived, registry)
+    build::resolve(case, concept, scope, registry)
 }
 
 /// Each `DEMO_RULE` form of the `DEMONSTRATED` form at `path`, with its

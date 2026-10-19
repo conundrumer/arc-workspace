@@ -122,8 +122,12 @@ pub struct Clause {
     pub ones: Arc<[OneMark]>,
     /// The relation's columns, in the order the clause gives them
     /// (`docs/arclog/arclog.md#sites`), which the resolved content replaces
-    /// by the canonical positions of their labels. A `DET` with a proposer
-    /// and no body takes the proposer's columns, which the registry gives,
+    /// by the canonical positions of their labels. The resolver gives the
+    /// relation of a `DET` with a body that an atom reads only those of
+    /// these columns that a site of a read of the relation in any case
+    /// names, a read in an `ALT` block that does not derive the relation
+    /// included, in the order the clause gives them, and each other label
+    /// of the clause is existential. A `DET` with a proposer and no body takes the proposer's columns, which the registry gives,
     /// and holds none here. So does a `DET_OR_RULE` or `RULE_OR_DET` line
     /// with proposers and no body (`docs/arclog/arclog.md#the-alts-form`),
     /// whose columns are named as the line's first proposer names them. A

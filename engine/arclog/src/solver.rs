@@ -12,10 +12,11 @@ use crate::layout::Layout;
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::canonical::relation_of;
 use crate::write::relation_ref;
+use crate::resolver::SolverScope;
 use std::sync::Arc;
 
 use crate::program::{
-    written_inputs, Alt, AltItem, Alts, AltsName, Arcdata, Body, Clause, ClauseKeyword, DemoRule, Demonstrated, DemonstratedPart, Form, Instance,
+    written_inputs, Alt, AltItem, Alts, AltsName, Arcdata, Body, Clause, ClauseKeyword, ColumnName, DemoRule, Demonstrated, DemonstratedPart, Form, Instance,
     InstanceInput, InstanceName, KeyClause, Node, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationRef, RigidDetName,
 };
 
@@ -257,6 +258,14 @@ impl Solver {
         })
     }
 
+    /// What every case of the solver resolves against, as
+    /// [`crate::resolver::resolve`] takes it: the relations that
+    /// [`Solver::derived`] gives, and the columns that
+    /// [`Solver::read_columns`] gives.
+    pub fn derived_relations(&self) -> SolverScope {
+        SolverScope { derived: self.derived(), read_columns: self.read_columns() }
+    }
+
     /// The relations that some block of the solver's forms, or of the
     /// claims of the solver its `representative` line names, derives at the
     /// program's name scope, which a name that no block of a case derives
@@ -267,7 +276,7 @@ impl Solver {
     /// each case that takes the alt, so the set leaves out its name too,
     /// unless a form of the concept program outside its `DEMO_RULE` forms
     /// derives it.
-    pub fn derived_relations(&self) -> StableHashSet<ProgramRelation> {
+    pub fn derived(&self) -> StableHashSet<ProgramRelation> {
         let mut derived = StableHashSet::default();
         let mut owners = StableHashSet::default();
         let mut outputs = Vec::new();
@@ -305,6 +314,22 @@ impl Solver {
         }
         derived.extend(outputs.into_iter().filter(|o| owners.contains(&o.of)).map(ProgramRelation::Output));
         derived
+    }
+
+    /// The column names that the sites of the reads of each relation name,
+    /// in source order, across the solver's forms and the claims of the
+    /// solver its `representative` line names, through every `ALT` block,
+    /// apart from the reads in an `ALT` block that derives the relation or
+    /// that a block deriving it holds: a `DET` of the concept program has
+    /// one determination in every case, and an alt reads it at these
+    /// columns (`docs/arclog/arclog.md#the-alts-form`).
+    pub fn read_columns(&self) -> StableHashMap<ProgramRelation, Vec<ColumnName>> {
+        let mut named = StableHashMap::default();
+        let claims = self.representative_claims().map(|(_, form)| form);
+        for form in self.program.value().forms.iter().chain(claims) {
+            form_reads(form, &[], &mut named);
+        }
+        named
     }
 
     /// The concept case: the concept case's name at each `ALTS` form, whose
@@ -707,6 +732,66 @@ fn rule_forms(form: &Form) -> impl Iterator<Item = &Form> {
         _ => None,
     };
     demonstrated.into_iter().flat_map(|d| d.rules.iter().flat_map(|rule| rule.value().forms.iter()))
+}
+
+/// Adds to `named` the column names that the sites of each read in `form`
+/// name, as [`Solver::read_columns`] gives them, where `rederived` holds
+/// the relations that the `ALT` blocks holding `form` derive.
+fn form_reads(form: &Form, rederived: &[ProgramRelation], named: &mut StableHashMap<ProgramRelation, Vec<ColumnName>>) {
+    if let Form::Claim(_) | Form::Alts(_) = form {
+        return block_reads(Block::Form(form), rederived, named);
+    }
+    each_atom(NodeRef::from(form), &mut |atom| {
+        let relation = match &atom.relation {
+            RelationRef::Declared(name) => ProgramRelation::Declared(name.clone()),
+            RelationRef::Output(output) => ProgramRelation::Output(output.clone()),
+            _ => return,
+        };
+        if rederived.contains(&relation) {
+            return;
+        }
+        crate::resolver::add_columns(named.entry(relation).or_default(), atom.sites.iter().map(|site| &site.column));
+    });
+}
+
+/// [`form_reads`] over the blocks of `block`, an `ALT` block adding to
+/// `rederived` the relations its own forms derive.
+fn block_reads(block: Block<'_>, rederived: &[ProgramRelation], named: &mut StableHashMap<ProgramRelation, Vec<ColumnName>>) {
+    let mut own = rederived.to_vec();
+    if let Block::Alt(_) = block {
+        own.extend(block_derived(block));
+    }
+    for (_, inner) in inner_blocks(block, &|_| true) {
+        match inner {
+            Block::Form(form) => form_reads(form, &own, named),
+            Block::Alt(_) => block_reads(inner, &own, named),
+        }
+    }
+}
+
+/// The relations that the forms of `block` derive, the forms of its claims
+/// included and those of its `ALT` blocks left out.
+fn block_derived(block: Block<'_>) -> Vec<ProgramRelation> {
+    let mut derived = Vec::new();
+    for (_, inner) in inner_blocks(block, &|_| false) {
+        let Block::Form(form) = inner else { continue };
+        match (form, derives(form)) {
+            (Form::Claim(_), _) => derived.extend(block_derived(inner)),
+            (_, Some(Derives::Relation(relation))) => derived.push(relation),
+            _ => {}
+        }
+    }
+    derived
+}
+
+/// Calls `f` on each atom below `node`.
+fn each_atom<'a>(node: NodeRef<'a>, f: &mut dyn FnMut(&'a crate::program::Atom)) {
+    if let Some(atom) = node.atom() {
+        f(atom);
+    }
+    for child in node.children() {
+        each_atom(child, f);
+    }
 }
 
 /// Calls `f` on each form below `form`, `form` included, outside the
