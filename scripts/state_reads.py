@@ -27,8 +27,7 @@ this module before the first state."""
 
 type Made = tuple[object, ...]
 """The held reads a run or a stamp made, in the order it made them, each
-followed by the result it gave, in one flat tuple, as a call holds about a
-hundred thousand of them (`made_of`)."""
+followed by the result it gave, in one flat tuple (`made_of`)."""
 
 
 def made_of(frame: Mapping["Held", object]) -> Made:
@@ -55,9 +54,8 @@ class Held:
     `kept_reads`, where it is kept there (`Kept.DISK`), the held reads its
     last run made (`made`) with the result each gave it, the held reads
     whose last run made it (`dependents`, None where no held read has
-    rested on it, the one such read itself where it is the only one, as a
-    call holds about a hundred thousand held reads, most with one such
-    read), and whether a source it rests on gave another result since it
+    rested on it, the one such read itself where it is the only one), and
+    whether a source it rests on gave another result since it
     was last checked (`marked`). A held read is a source (`source`) where
     its stamp is not `DERIVED`."""
     __slots__ = ("read", "call", "positional", "state", "reached", "mark",
@@ -340,8 +338,8 @@ class Named(tuple[tuple[str, Any], ...]):
 
 
 type Call = tuple[Any, ...]
-"""The arguments of a read, less its `notes`, in one tuple, as a call holds
-about a hundred thousand of them: the positional ones, then, where it is
+"""The arguments of a read, less its `notes`, in one tuple: the positional
+ones, then, where it is
 given any, its named ones as one `Named`, and each `Path` among them as its
 `PathText` (`call_of`), so that a held read keeps no `Path` its caller
 made (`split`)."""

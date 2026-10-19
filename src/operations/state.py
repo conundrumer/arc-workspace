@@ -276,8 +276,8 @@ class Call:
     or moved to the background is the output its command wrote, once a
     notification of its end reached the operator, and it is an error
     where that notification gives a status other than `completed`. The
-    result of a call that is not an error is empty, other than that of a
-    Bash call that is not a call of `next`: no step reads it."""
+    result of a call that is not an error is empty where `reads_output` of
+    `scripts/operator_transcript.py` does not hold."""
     operator: str
     time: float
     tool: str

@@ -242,8 +242,7 @@ def calls_of(aid: str, path: Path, read: OperatorLines, commits: frozenset[tuple
     """The calls of the operator `aid` that `read` gives, each with its
     outcome, with `subjects` as the pairs `commits` gives, the result of a
     call that is not an error held as empty where `reads_output` does not
-    hold, as no step reads it and a call holds that text of each call of
-    each operator, and the uses of
+    hold, and the uses of
     `read` with each input read as `unfiled_call` gives it. The `Call` of a
     use is made anew only where a value it is made from changed since the
     last read on the same fold."""
