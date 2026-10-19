@@ -9,6 +9,8 @@
 //! content. [`crate::eval::filters`] compiles `NOT`, `ALL`, `IF` and `OR`
 //! through [`IrBuilder`].
 
+use std::rc::Rc;
+
 use crate::check::CheckedProgram;
 use crate::hash::StableHashSet;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
@@ -149,6 +151,14 @@ pub enum CompileFault {
     Untyped { label: LabelId },
 }
 
+/// What one compile takes: the path of each conjunct it compiles, and the
+/// labels of the columns of the relation it gives.
+#[derive(Debug)]
+pub struct Compiled {
+    pub conjuncts: Box<[NodePath]>,
+    pub columns: Box<[LabelId]>,
+}
+
 /// The state of a compilation of one body: the variables given so far and
 /// the nodes compiled so far.
 #[derive(Debug)]
@@ -157,6 +167,9 @@ pub struct IrBuilder<'a> {
     /// The path of the form whose body is compiled, whose label types the
     /// variables take.
     pub form: NodePath,
+    /// What the compile that this builder or the builder it is nested in
+    /// serves takes.
+    pub compiled: Rc<Compiled>,
     /// The canonical order of the top-level form that holds `form`.
     order: CanonicalOrder,
     variables: Vec<VariableInfo>,
@@ -164,9 +177,10 @@ pub struct IrBuilder<'a> {
 }
 
 impl<'a> IrBuilder<'a> {
-    /// A builder over the body of the form at `form` of `program`, or the
-    /// fault of a label of the form's scope that `program` gives no type.
-    pub fn new(program: &'a CheckedProgram, form: NodePath) -> Result<Self, CompileFault> {
+    /// A builder over the body of the form at `form` of `program`, for a
+    /// compile that takes `compiled`, or the fault of a label of the form's
+    /// scope that `program` gives no type.
+    pub fn new(program: &'a CheckedProgram, form: NodePath, compiled: Rc<Compiled>) -> Result<Self, CompileFault> {
         let (first, scope) = form.0.split_first().expect("the path of a form of the program");
         let top = &program.program.program.value().forms[first.0 as usize];
         let order = CanonicalOrder::of(top, &mut SearchBudget::new());
@@ -179,7 +193,7 @@ impl<'a> IrBuilder<'a> {
             variables[position as usize] = Some(VariableInfo { ty });
         }
         let variables = variables.into_iter().map(|info| info.expect("a label at each canonical position")).collect();
-        Ok(IrBuilder { program, form, order, variables, nodes: Vec::new() })
+        Ok(IrBuilder { program, form, compiled, order, variables, nodes: Vec::new() })
     }
 
     /// The variable of `label`: its canonical position in the form's scope.
@@ -423,7 +437,11 @@ pub fn compile_grounded(
         ungrounded.sort_by_key(|label| label.0);
         return Err(CompileFault::Ungrounded { labels: ungrounded.into() });
     }
-    let mut builder = IrBuilder::new(program, scope)?;
+    let compiled = Compiled {
+        conjuncts: conjuncts.iter().map(|(_, path)| path.clone()).collect(),
+        columns: columns.into(),
+    };
+    let mut builder = IrBuilder::new(program, scope, Rc::new(compiled))?;
     for (conjunct, path) in &conjuncts {
         builder.conjunct(conjunct, path)?;
     }

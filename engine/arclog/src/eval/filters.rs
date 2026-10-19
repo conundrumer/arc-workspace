@@ -199,7 +199,7 @@ pub fn probe(
 /// A builder of a clause nested in `builder`'s, over the variables of the
 /// same form.
 fn nested<'a>(builder: &IrBuilder<'a>) -> Result<IrBuilder<'a>, CompileFault> {
-    IrBuilder::new(builder.program, builder.form.clone())
+    IrBuilder::new(builder.program, builder.form.clone(), builder.compiled.clone())
 }
 
 /// The filter over `outer` whose body is the clause of `body`, a relation
@@ -208,17 +208,20 @@ fn filter(outer: Box<[Variable]>, body: IrBuilder<'_>) -> Filter {
     Filter { outer, body: Box::new(body.finish(Box::new([]))) }
 }
 
-/// The labels that stand at `path` and elsewhere in the form that holds
-/// `path`, those a body at `path` reads from the clause around it.
+/// The labels that stand at `path` and also outside it, in the conjuncts
+/// that the compile of `builder` takes, at any depth, or among the columns
+/// of the relation it gives: those a body at `path` reads from the clause
+/// around it.
 fn outer_labels(builder: &IrBuilder<'_>, path: &NodePath) -> BTreeSet<u32> {
-    let form = enclosing_form(builder, path);
     let root = NodeRef::Program(builder.program.program.program.value());
     let mut inside = BTreeSet::new();
-    let mut outside = BTreeSet::new();
-    each_label(node_at(root, &form).expect("the path of a form"), &form, &mut |at, label| {
-        let set = if at.0.starts_with(&path.0) { &mut inside } else { &mut outside };
-        set.insert(label.0);
-    });
+    let mut outside: BTreeSet<u32> = builder.compiled.columns.iter().map(|label| label.0).collect();
+    for conjunct in builder.compiled.conjuncts.iter() {
+        each_label(node_at(root, conjunct).expect("the path of a conjunct of the program"), conjunct, &mut |at, label| {
+            let set = if at.0.starts_with(&path.0) { &mut inside } else { &mut outside };
+            set.insert(label.0);
+        });
+    }
     inside.intersection(&outside).copied().collect()
 }
 
@@ -246,18 +249,6 @@ fn variables_of(builder: &mut IrBuilder<'_>, labels: &BTreeSet<u32>) -> Box<[Var
     let mut variables: Vec<Variable> = labels.iter().map(|&label| builder.variable(LabelId(label))).collect();
     variables.sort_by_key(|variable| variable.0);
     variables.into()
-}
-
-/// The path of the clause, the instance input, the key clause or the
-/// `RIGID_DET` form that holds `path`, whose body the clause of `builder`
-/// compiles.
-fn enclosing_form(builder: &IrBuilder<'_>, path: &NodePath) -> NodePath {
-    let root = NodeRef::Program(builder.program.program.program.value());
-    (1..path.0.len())
-        .rev()
-        .map(|depth| NodePath(path.0[..depth].into()))
-        .find(|prefix| matches!(node_at(root, prefix), Some(NodeRef::Clause(_) | NodeRef::InstanceInput(_) | NodeRef::KeyClause(_) | NodeRef::RigidDet(_))))
-        .expect("a filter stands in the body of a clause, of an instance input, of a key clause or of a `RIGID_DET` form")
 }
 
 /// Calls `visit` on each label that stands in `node` at `at`, at any depth,

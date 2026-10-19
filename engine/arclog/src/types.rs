@@ -193,9 +193,11 @@ pub(crate) fn label_fault_message(fault: LabelFault) -> String {
 /// branch of an `OR` that holds no label equal to the label takes no part in
 /// the `OR`'s join, and a branch that holds one and gives the label no type
 /// gives that join none. A then or an else list that gives the label no
-/// type gives the `IF`'s join none. In both forms, a branch, a then or an
-/// else that gives the label no type and names it with `=` beside another
-/// label takes no part in the join.
+/// type gives the `IF`'s join none. In a list nested in `body`, a label
+/// that the list's constraints make equal to the label, and that the
+/// constraints of the lists around the list do not, gives the label in the
+/// list as well the type that its own sites in the lists around the list
+/// give it, outside the conjunct that holds the list.
 ///
 /// A site is one label at an atom's site, at any depth of the site: a bare
 /// label at the site's column, a bare label at a column of a type
@@ -209,7 +211,7 @@ pub fn label_type(
     label: crate::program::LabelId,
     site_type: &dyn Fn(&crate::program::Atom, &[crate::program::ColumnName]) -> Option<ValueType>,
 ) -> Result<Option<ValueType>, LabelFault> {
-    LabelWalk { label, site_type }.body_type(body, &[])
+    LabelWalk { label, site_type, asked: vec![label] }.body_type(body, &[], None)
 }
 
 /// The list of the scope of `label`, a label of `list` that is no head
@@ -250,32 +252,91 @@ pub(crate) fn scope_list(list: &crate::program::Body, label: crate::program::Lab
     }
 }
 
-/// The walk of [`label_type`] for `label`, the label asked.
+/// The walk of [`label_type`] for `label`, the label asked. `asked` holds
+/// `label` and each label whose walk holds this one, whose types the walk
+/// does not take from the lists around a list.
 struct LabelWalk<'a> {
     label: crate::program::LabelId,
     site_type: &'a dyn Fn(&crate::program::Atom, &[crate::program::ColumnName]) -> Option<ValueType>,
+    asked: Vec<crate::program::LabelId>,
+}
+
+/// A list around the list a walk is in: the list, the pairs of labels that
+/// its constraints and those around it make equal there, the index of its
+/// conjunct that holds the inner list, and the list around it.
+struct Around<'b> {
+    list: &'b crate::program::Body,
+    pairs: &'b [LabelPair],
+    holder: usize,
+    outer: Option<&'b Around<'b>>,
 }
 
 impl LabelWalk<'_> {
     /// The type of `body`, where `outer` holds the pairs of labels that the
-    /// constraints of the lists around `body` make equal there.
-    fn body_type(&self, body: &crate::program::Body, outer: &[LabelPair]) -> Result<Option<ValueType>, LabelFault> {
+    /// constraints of the lists around `body` make equal there, and
+    /// `around` the list around `body`, none for the list of the label's
+    /// scope.
+    fn body_type(
+        &self,
+        body: &crate::program::Body,
+        outer: &[LabelPair],
+        around: Option<&Around<'_>>,
+    ) -> Result<Option<ValueType>, LabelFault> {
         let pairs = with_constraints(outer, body);
         let class = equal_labels(&pairs, self.label);
+        let mut ty = self.list_type(body, &pairs, &class, around, None)?;
+        let Some(around) = around else { return Ok(ty) };
+        let before = equal_labels(outer, self.label);
+        for &other in class.iter().filter(|label| !before.contains(label) && !self.asked.contains(label)) {
+            ty = meet(ty, self.around_type(other, around)?)?;
+        }
+        Ok(ty)
+    }
+
+    /// The type that the sites of `other` give it in `around` and the lists
+    /// around it, outside the conjunct of each that holds the inner list.
+    fn around_type(&self, other: crate::program::LabelId, around: &Around<'_>) -> Result<Option<ValueType>, LabelFault> {
+        let asked = self.asked.iter().copied().chain(std::iter::once(other)).collect();
+        let walk = LabelWalk { label: other, site_type: self.site_type, asked };
         let mut ty = None;
-        for conjunct in body.conjuncts.iter() {
-            ty = meet(ty, self.conjunct_type(conjunct, &pairs, &class)?)?;
+        let mut frame = Some(around);
+        while let Some(list) = frame {
+            let class = equal_labels(list.pairs, other);
+            ty = meet(ty, walk.list_type(list.list, list.pairs, &class, list.outer, Some(list.holder))?)?;
+            frame = list.outer;
+        }
+        Ok(ty)
+    }
+
+    /// The meet of the types of the conjuncts of `list`, other than the one
+    /// at `skip`, where `pairs` and `class` are as [`LabelWalk::conjunct_type`]
+    /// takes them, and `outer` is the list around `list`.
+    fn list_type(
+        &self,
+        list: &crate::program::Body,
+        pairs: &[LabelPair],
+        class: &[crate::program::LabelId],
+        outer: Option<&Around<'_>>,
+        skip: Option<usize>,
+    ) -> Result<Option<ValueType>, LabelFault> {
+        let mut ty = None;
+        for (holder, conjunct) in list.conjuncts.iter().enumerate().filter(|(index, _)| Some(*index) != skip) {
+            let here = Around { list, pairs, holder, outer };
+            ty = meet(ty, self.conjunct_type(conjunct, pairs, class, &here)?)?;
         }
         Ok(ty)
     }
 
     /// The type of `conjunct`, a conjunct of a list whose constraints and
     /// those around it give `pairs`, and the class of the label asked there.
+    /// `here` is that list, with `conjunct` as the holder of the lists
+    /// nested in it.
     fn conjunct_type(
         &self,
         conjunct: &crate::program::Conjunct,
         pairs: &[LabelPair],
         class: &[crate::program::LabelId],
+        here: &Around<'_>,
     ) -> Result<Option<ValueType>, LabelFault> {
         use crate::program::{Conjunct, Negated};
         match conjunct {
@@ -300,28 +361,27 @@ impl LabelWalk<'_> {
                 }
                 Ok(ty)
             }
-            Conjunct::Not(Negated::Form(form)) => self.conjunct_type(form, pairs, class),
+            Conjunct::Not(Negated::Form(form)) => self.conjunct_type(form, pairs, class, here),
             Conjunct::Or(branches) => {
                 let holds = |branch: &crate::program::Body| {
                     let labels = crate::grounding::body_labels(branch);
                     class.iter().any(|label| labels.contains(label))
                 };
                 let holding = branches.iter().filter(|branch| holds(branch.value()));
-                join_branches(holding.filter_map(|branch| self.branch_type(branch.value(), pairs)))
+                join_branches(holding.map(|branch| self.body_type(branch.value(), pairs, Some(here))))
             }
             Conjunct::If { test, then, otherwise } => {
-                let test_type = self.body_type(test.value(), pairs)?;
-                let then_type = self.body_type(then.value(), &with_constraints(pairs, test.value()))?;
+                let test_type = self.body_type(test.value(), pairs, Some(here))?;
+                let then_type = self.body_type(then.value(), &with_constraints(pairs, test.value()), Some(here))?;
                 if self.fresh_in(test.value()) {
                     return meet(test_type, then_type);
                 }
-                let then_type = self.typed_branch(then.value(), Ok(then_type));
-                let otherwise_type = self.branch_type(otherwise.value(), pairs);
-                meet(test_type, join_branches([then_type, otherwise_type].into_iter().flatten())?)
+                let otherwise_type = self.body_type(otherwise.value(), pairs, Some(here));
+                meet(test_type, join_branches([Ok(then_type), otherwise_type].into_iter())?)
             }
             Conjunct::All { domain, body } => {
-                let domain_type = self.body_type(domain.value(), pairs)?;
-                meet(domain_type, self.body_type(body.value(), &with_constraints(pairs, domain.value()))?)
+                let domain_type = self.body_type(domain.value(), pairs, Some(here))?;
+                meet(domain_type, self.body_type(body.value(), &with_constraints(pairs, domain.value()), Some(here))?)
             }
             Conjunct::Constraint(_) => Ok(None),
         }
@@ -353,35 +413,6 @@ impl LabelWalk<'_> {
             }
         });
         fresh
-    }
-
-    /// The type of `body`, a branch of an `OR` or a then or an else of an
-    /// `IF`, as [`LabelWalk::typed_branch`] gives it.
-    fn branch_type(&self, body: &crate::program::Body, pairs: &[LabelPair]) -> Option<Result<Option<ValueType>, LabelFault>> {
-        self.typed_branch(body, self.body_type(body, pairs))
-    }
-
-    /// `ty`, the type of the branch `body`, or `None` where the branch takes
-    /// no part in the join of the branches: it gives the label asked no
-    /// type, and names it with `=` beside another label.
-    fn typed_branch(&self, body: &crate::program::Body, ty: Result<Option<ValueType>, LabelFault>) -> Option<Result<Option<ValueType>, LabelFault>> {
-        match ty {
-            Ok(None) if self.equated_in(body) => None,
-            ty => Some(ty),
-        }
-    }
-
-    /// Whether a constraint `=` of `body`, at any depth, makes the label
-    /// asked equal to another label.
-    fn equated_in(&self, body: &crate::program::Body) -> bool {
-        use crate::program::{Constraint, ConstraintOp, Operand};
-        let mut equated = false;
-        each_conjunct(body, &mut |conjunct| {
-            if let crate::program::Conjunct::Constraint(Constraint { op: ConstraintOp::Eq, first, second: Operand::Label(second) }) = conjunct {
-                equated |= first.label == self.label || second.label == self.label;
-            }
-        });
-        equated
     }
 }
 
