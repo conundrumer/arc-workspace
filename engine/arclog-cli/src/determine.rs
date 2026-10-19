@@ -180,8 +180,13 @@ impl Comparison<'_> {
                 Parameter::Determined(value) => value.clone(),
                 Parameter::Open(values) => union(values.clone()),
             };
-            let Some(record) = self.record(relation) else { continue };
-            let Some((program, node)) = self.determined.iter().find_map(|case| Some((case.program, det_node(case.program, relation)?))) else {
+            let Some(record) = self.record(relation) else {
+                if !self.in_compared_assembly(relation) {
+                    findings.push(Finding::Fault(format!("{name}: no `param` record gives the parameter, so its determined value is not compared")));
+                }
+                continue;
+            };
+            let Some((program, node)) = self.det(relation) else {
                 unreachable!("a parameter that the determination gives is a `DET` of a case it runs")
             };
             let relation = GraphRelation { node, output: None };
@@ -216,6 +221,25 @@ impl Comparison<'_> {
         self.records.iter().find(|(name, _)| *name == relation).map(|(_, value)| *value)
     }
 
+    /// The program of the first case that runs the `DET` of `relation`, and
+    /// that `DET`'s node in it, or `None` where no case runs it.
+    fn det(&self, relation: &ProgramRelation) -> Option<(&CheckedProgram, GraphNodeIndex)> {
+        self.determined.iter().find_map(|case| Some((case.program, det_node(case.program, relation)?)))
+    }
+
+    /// Whether the `DET` of `relation` is read by a `RIGID_DET` assembly
+    /// whose parts the records give, which [`Self::assembly`] compares
+    /// through those parts.
+    fn in_compared_assembly(&self, relation: &ProgramRelation) -> bool {
+        let Some((program, node)) = self.det(relation) else {
+            return false;
+        };
+        let graph = &program.program.graph;
+        graph.nodes.iter().zip(&graph.reads).any(|(assembly, reads)| {
+            matches!(&assembly.kind, DependencyKind::RigidAssembly(name) if reads.contains(&node) && self.records.iter().any(|(record, _)| is_part(record, name)))
+        })
+    }
+
     /// The comparison of the parts of `assembly` with their records, up to
     /// one D4 element, the same for every part, as
     /// `docs/engine/determination.md#rigid_det` gives: its finding, or
@@ -223,9 +247,7 @@ impl Comparison<'_> {
     /// join `compared`.
     fn assembly(&self, assembly: &RigidDetName, compared: &mut Vec<Compared>) -> Option<Finding> {
         let name = relation_spelled(&ProgramRelation::Output(arclog::program::OutputName { of: OutputOwner::RigidDet(assembly.clone()), path: Arc::new([]) }));
-        let parts: Vec<(&ProgramRelation, &ParamValue)> = self.records.iter().copied().filter(|(relation, _)| {
-            matches!(relation, ProgramRelation::Output(output) if output.of == OutputOwner::RigidDet(assembly.clone()) && output.path.first() != Some(&arclog::program::OutputStep::Pose))
-        }).collect();
+        let parts: Vec<(&ProgramRelation, &ParamValue)> = self.records.iter().copied().filter(|(relation, _)| is_part(relation, assembly)).collect();
         let Some((case, node)) = self.determined.iter().find_map(|case| {
             let solved = self.determination.cases.iter().any(|(name, outcome, _)| name == case.name && matches!(outcome, CaseOutcome::Solved));
             let nodes = &case.program.program.graph.nodes;
@@ -314,6 +336,12 @@ impl Comparison<'_> {
         let engine = rows.iter().map(|row| row_leaves(row)).collect::<Result<_, _>>()?;
         Ok((written, engine))
     }
+}
+
+/// Whether `relation` is a part of `assembly`: an output of it other than
+/// its pose.
+fn is_part(relation: &ProgramRelation, assembly: &RigidDetName) -> bool {
+    matches!(relation, ProgramRelation::Output(output) if output.of == OutputOwner::RigidDet(assembly.clone()) && output.path.first() != Some(&arclog::program::OutputStep::Pose))
 }
 
 /// What differs between the record's rows and the engine's rows of one

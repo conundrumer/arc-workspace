@@ -52,7 +52,7 @@ The step of the [build order](overview.md#build-order) that builds it ends when 
 ## End check
 
 - `arclog-cli determine <corpus-dir> <tasks-dir> [<task_id> ...]` determines the parameters of each solver given, or of every solver of the corpus, from its task's evidence, and compares each determined value with the solver's `param` rows. It prints each difference by solver and parameter.
-- Idents compare up to one renaming, as [Parallelism and determinism](evaluator.md#parallelism-and-determinism) gives, and the parts of a `RIGID_DET` assembly as [`RIGID_DET`](#rigid_det) gives. A `DET` with no body and no proposer, and each other fault of a solver or of the conversion that this doc names, is reported as that fault, and is not a difference.
+- Idents compare up to one renaming, as [Parallelism and determinism](evaluator.md#parallelism-and-determinism) gives, and the parts of a `RIGID_DET` assembly as [`RIGID_DET`](#rigid_det) gives. A `DET` with no body and no proposer, and each other fault of a solver or of the conversion that this doc names, is reported as that fault, and is not a difference. A parameter that no `param` record gives is reported as a fault, other than a part `DET` of a `RIGID_DET` assembly whose parts the records give.
 
 ## How each decision can fail
 
