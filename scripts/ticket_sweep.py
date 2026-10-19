@@ -1,8 +1,5 @@
 """The sweep of the `validation` tickets under `tickets/deferred/`, whose
-rules `file_ticket.py sweep --help-all` states: a ticket is checked
-against the lines of the given runs timestamped at or after its last move
-into `deferred`, so the sweep reads each run from its end back to the
-oldest such move."""
+rules `file_ticket.py sweep --help-all` states."""
 
 import os
 import signal

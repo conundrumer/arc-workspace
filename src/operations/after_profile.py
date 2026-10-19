@@ -5,9 +5,7 @@ The sweep (`file_ticket.py sweep`) runs where a `validation` ticket of
 the session stands under `tickets/deferred/`, on the runs of the batch
 that profile launch closed, the runs the profile's brief gives, and on
 the session's operators, its operator launchers and its main run, which
-stand under no operator, so no batch holds them. The sweep checks a
-ticket only on the lines of those runs timestamped at or after the
-ticket's last move into `deferred`.
+stand under no operator, so no batch holds them.
 
 The check of the script calls (`scripts/check_script_calls.py`) runs on
 the calls since the closed batch's start."""
