@@ -55,14 +55,15 @@ class Held:
     `kept_reads`, where it is kept there (`Kept.DISK`), the held reads its
     last run made (`made`) with the result each gave it, the held reads
     whose last run made it (`dependents`, None where no held read has
-    rested on it), and whether a source it rests on gave another result
-    since it was last checked (`marked`). A held read
-    is a source where its stamp is not `DERIVED`."""
-    __slots__ = ("source", "read", "call", "positional", "state", "reached", "mark",
+    rested on it, the one such read itself where it is the only one, as a
+    call holds about a hundred thousand held reads, most with one such
+    read), and whether a source it rests on gave another result since it
+    was last checked (`marked`). A held read is a source (`source`) where
+    its stamp is not `DERIVED`."""
+    __slots__ = ("read", "call", "positional", "state", "reached", "mark",
                  "stamped", "value", "lines", "version", "made", "dependents", "marked")
 
-    def __init__(self, source: bool, read: "ReadInfo", call: "Call", positional: bool) -> None:
-        self.source = source
+    def __init__(self, read: "ReadInfo", call: "Call", positional: bool) -> None:
         self.read = read
         self.call = call
         self.positional = positional
@@ -74,8 +75,24 @@ class Held:
         self.value: object = None
         self.lines: tuple[str, ...] = ()
         self.made: Made = ()
-        self.dependents: list[Held] | None = None
+        self.dependents: Held | list[Held] | None = None
         self.marked = False
+
+    @property
+    def source(self) -> bool:
+        """Whether this read is a source: one whose stamp is not `DERIVED`."""
+        return not isinstance(self.read.stamp, Derived)
+
+    def held(self) -> bool:
+        """Whether this read is still among the held reads of its read."""
+        return self.read.held.get(self.call) is self
+
+    def above(self) -> tuple["Held", ...]:
+        """The held reads whose last run made this one (`dependents`)."""
+        found = self.dependents
+        if found is None:
+            return ()
+        return (found,) if isinstance(found, Held) else tuple(found)
 
     def recall(self) -> object:
         """The read's result at this state for its arguments."""
@@ -91,17 +108,37 @@ class Held:
         `made`."""
         if belows(made) != belows(self.made):
             for below in belows(self.made):
-                assert below.dependents is not None
-                below.dependents.remove(self)
+                below.lose(self)
             for below in belows(made):
-                if below.dependents is None:
-                    below.dependents = []
-                below.dependents.append(self)
+                below.gain(self)
         self.made = made
 
+    def gain(self, above: "Held") -> None:
+        """Add `above` to the held reads that rest on this one."""
+        found = self.dependents
+        if found is None:
+            self.dependents = above
+        elif isinstance(found, Held):
+            self.dependents = [found, above]
+        else:
+            found.append(above)
 
-_held: dict[Held, None] = {}
-"""Each held read, in the order it was first held."""
+    def lose(self, above: "Held") -> None:
+        """Remove one entry of `above` from the held reads that rest on this
+        one, which holds it."""
+        found = self.dependents
+        if found is above:
+            self.dependents = None
+            return
+        assert isinstance(found, list)
+        found.remove(above)
+        if len(found) == 1:
+            self.dependents = found[0]
+
+
+def all_held() -> list[Held]:
+    """Each held read, those of each read in the order it was first held."""
+    return [h for info in _reads.values() for h in info.held.values()]
 
 _marking = False
 """Whether the sources are being brought up to date at this state."""
@@ -140,13 +177,12 @@ def new_state() -> float:
     for below in late:
         mark_dependents(below)
     def unused(h: Held) -> bool:
-        return h in _held and h.reached != last and not h.dependents
-    idle = [h for h in _held if unused(h)]
+        return h.held() and h.reached != last and h.dependents is None
+    idle = [h for h in all_held() if unused(h)]
     while idle:
         h = idle.pop()
         if not unused(h):
             continue
-        del _held[h]
         h.drop()
         made = belows(h.made)
         h.rest_on(())
@@ -156,7 +192,7 @@ def new_state() -> float:
     _marking = True
     _partial = False
     try:
-        for h in list(_held):
+        for h in all_held():
             bring_up(h)
     finally:
         _marking = False
@@ -194,7 +230,7 @@ def bring_up(source: Held) -> None:
     source it rests on: a source whose read fails stays as held, and marks
     each held read that rests on it."""
     global _partial
-    if not source.source or source.state == _state or source not in _held:
+    if not source.source or source.state == _state or not source.held():
         return
     if _stands is not None and source.read is _stands[0] and _stands[1](source.call):
         source.state = _state
@@ -211,7 +247,7 @@ def bring_up(source: Held) -> None:
 def mark_dependents(below: Held) -> None:
     """Mark each held read that rests on `below`, transitively."""
     seen: set[Held] = set()
-    stack = list(below.dependents or ())
+    stack = list(below.above())
     while stack:
         h = stack.pop()
         if h in seen:
@@ -220,7 +256,7 @@ def mark_dependents(below: Held) -> None:
         h.marked = True
         if h.state == _state:
             _marked_late.append(h)
-        stack += h.dependents or ()
+        stack += h.above()
 
 
 class Derived:
@@ -297,16 +333,34 @@ class Kept(Enum):
     was does not make miss."""
 
 
-type Call = tuple[tuple[Any, ...], tuple[tuple[str, Any], ...]]
-"""The arguments of a read, positional and named, less its `notes`, the
-named ones in the order of their names, and each `Path` among them as its
+class Named(tuple[tuple[str, Any], ...]):
+    """The named arguments of a `Call`, each with its value, in the order of
+    their names."""
+    __slots__ = ()
+
+
+type Call = tuple[Any, ...]
+"""The arguments of a read, less its `notes`, in one tuple, as a call holds
+about a hundred thousand of them: the positional ones, then, where it is
+given any, its named ones as one `Named`, and each `Path` among them as its
 `PathText` (`call_of`), so that a held read keeps no `Path` its caller
-made."""
+made (`split`)."""
 
 
 def call_of(args: tuple[Any, ...], kwargs: Iterable[tuple[str, Any]]) -> Call:
     """The `Call` of the arguments `args` and `kwargs`."""
-    return tuple(map(as_key, args)), tuple(sorted((k, as_key(v)) for k, v in kwargs))
+    named = sorted((k, as_key(v)) for k, v in kwargs)
+    if not named:
+        return tuple(map(as_key, args))
+    return (*map(as_key, args), Named(named))
+
+
+def split(call: Call) -> tuple[tuple[Any, ...], tuple[tuple[str, Any], ...]]:
+    """The positional and the named arguments of `call`, as `call_of` took
+    them in."""
+    if call and type(call[-1]) is Named:
+        return call[:-1], tuple(call[-1])
+    return call, ()
 
 
 _texts: dict[str, PathText] = {}
@@ -333,7 +387,8 @@ def as_argument(value: object) -> object:
 
 def arguments(call: Call) -> tuple[tuple[Any, ...], dict[str, Any]]:
     """The arguments the read takes for `call`, positional and named."""
-    return tuple(map(as_argument, call[0])), {k: as_argument(v) for k, v in call[1]}
+    args, kwargs = split(call)
+    return tuple(map(as_argument, args)), {k: as_argument(v) for k, v in kwargs}
 
 
 class By(Enum):
@@ -424,13 +479,13 @@ def trace_of(made: Made) -> tuple[Leaf, ...]:
         seen.add(h)
         ident = (h.read.name, h.call)
         if h.read.kept is Kept.DISK and h.version is not None:
-            out.setdefault(ident, (By.VERSION, h.read.name, *h.call, h.version))
+            out.setdefault(ident, (By.VERSION, h.read.name, *split(h.call), h.version))
         elif h.read.kept is not None or (h.source and h.read.stamp is None):
-            out.setdefault(ident, (By.VALUE, h.read.name, *h.call, value))
+            out.setdefault(ident, (By.VALUE, h.read.name, *split(h.call), value))
         elif h.source and h.stamped:
             stack += list(pairs(h.stamped))[::-1]
         elif h.source:
-            out.setdefault(ident, (By.STAMP, h.read.name, *h.call, h.mark))
+            out.setdefault(ident, (By.STAMP, h.read.name, *split(h.call), h.mark))
         else:
             stack += list(pairs(h.made))[::-1]
     return tuple(out.values())
@@ -520,7 +575,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
             if kept is not Kept.DISK or store is None:
                 return None, None
             try:
-                record: Record | None = store.held(info.name, repr(canonical(key)))
+                record: Record | None = store.held(info.name, repr(canonical(split(key))))
             except TypeError:
                 return None, None
             if record is None:
@@ -540,7 +595,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
             if kept is not Kept.DISK or store is None:
                 return None
             try:
-                name = repr(canonical(key))
+                name = repr(canonical(split(key)))
             except TypeError:
                 return None
             version = version or uuid.uuid4().hex
@@ -592,9 +647,8 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                 version = keep(key, made, value, kept_lines,
                                before[1] if before is not None and same(value, before[0]) else None)
             if hit is None:
-                hit = Held(not derived, info, key, positional)
+                hit = Held(info, key, positional)
                 held[key] = hit
-                _held[hit] = None
             elif value is not hit.value and same(value, hit.value):
                 value = hit.value
             elif value is not hit.value and hit.source:

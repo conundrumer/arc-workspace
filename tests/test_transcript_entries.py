@@ -126,7 +126,6 @@ def open_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
 
 
 def drop_held() -> None:
-    state_reads._held.clear()
     for info in state_reads._reads.values():
         info.held.clear()
 

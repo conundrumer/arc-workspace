@@ -274,7 +274,9 @@ class Call:
     call. The result of a Bash call the harness ran
     or moved to the background is the output its command wrote, once a
     notification of its end reached the operator, and it is an error
-    where that notification gives a status other than `completed`."""
+    where that notification gives a status other than `completed`. The
+    result of a call that is not an error is empty, other than that of a
+    Bash call that is not a call of `next`: no step reads it."""
     operator: str
     time: float
     tool: str

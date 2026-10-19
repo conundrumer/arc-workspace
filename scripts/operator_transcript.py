@@ -240,7 +240,10 @@ def launch_read(aid: str, path: Path, main: Path, undecided: list[str]) -> Opera
 def calls_of(aid: str, path: Path, read: OperatorLines, commits: frozenset[tuple[str, float]],
              undecided: list[str]) -> tuple[tuple[Call, ...], Uses]:
     """The calls of the operator `aid` that `read` gives, each with its
-    outcome, with `subjects` as the pairs `commits` gives, and the uses of
+    outcome, with `subjects` as the pairs `commits` gives, the result of a
+    call that is not an error held as empty where `reads_output` does not
+    hold, as no step reads it and a call holds that text of each call of
+    each operator, and the uses of
     `read` with each input read as `unfiled_call` gives it. The `Call` of a
     use is made anew only where a value it is made from changed since the
     last read on the same fold."""
@@ -262,7 +265,8 @@ def calls_of(aid: str, path: Path, read: OperatorLines, commits: frozenset[tuple
 
         def make(lines: list[str]) -> MadeCall:
             merge = merge_outcome(aid, command, t, text, error, subjects, denied, lines)
-            return (Call(aid, t, tool, inp, text, error, merge, call_conflicts(merge, text)),
+            held = text if text is None or error or reads_output(tool, command, aid) else ""
+            return (Call(aid, t, tool, inp, held, error, merge, call_conflicts(merge, text)),
                     command in denied)
 
         made, last_denied = making.item(call, lambda _: given, make, undecided)
@@ -272,6 +276,13 @@ def calls_of(aid: str, path: Path, read: OperatorLines, commits: frozenset[tuple
             denied.discard(command)
         calls.append(made)
     return tuple(calls), uses
+
+
+def reads_output(tool: str, command: str, aid: str) -> bool:
+    """Whether a step may read the text of the result of a call of the
+    operator `aid` that is not an error: that of a Bash call other than a
+    call of `next`, such as a merge or a call of `--under`."""
+    return tool == Tool.BASH and not is_next(command, aid)
 
 
 def launches_of(aid: str, path: Path, main: Path, uses: Uses,

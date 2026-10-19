@@ -34,7 +34,6 @@ def new_process() -> None:
     process starts with none."""
     kept_reads.flush()
     audit_records._records.clear()
-    state_reads._held.clear()
     for info in state_reads._reads.values():
         info.held.clear()
     kept_reads.open_store(kept_reads.store().path)

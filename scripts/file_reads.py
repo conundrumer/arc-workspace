@@ -85,7 +85,7 @@ def stats_stand_but(changed: Collection[str] | None) -> None:
     if changed is None:
         stand_next(None)
     else:
-        stand_next((stat_read, lambda call: str(call[0][0]) not in changed))
+        stand_next((stat_read, lambda call: str(call[0]) not in changed))
 
 
 def is_file(path: Path) -> bool:

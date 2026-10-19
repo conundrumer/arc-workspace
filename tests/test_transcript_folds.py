@@ -118,9 +118,8 @@ def later_process(store: Path) -> None:
     """Drop what this process holds, as a new process starts with none,
     and open the store at `store`."""
     kept_reads.flush()
-    for h in list(state_reads._held):
+    for h in state_reads.all_held():
         h.drop()
-    state_reads._held.clear()
     transcript_snapshots._read.clear()
     transcript_folds._folds.clear()
     kept_reads.open_store(store)

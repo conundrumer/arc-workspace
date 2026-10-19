@@ -34,7 +34,6 @@ def new_process() -> None:
     """Write the records, and drop what this process holds, as a new
     process starts with none."""
     kept_reads.flush()
-    state_reads._held.clear()
     for info in state_reads._reads.values():
         info.held.clear()
     kept_reads.open_store(kept_reads.store().path)
