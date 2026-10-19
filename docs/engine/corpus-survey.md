@@ -1,6 +1,6 @@
 # Corpus survey
 
-A survey of the 904 `.arclog` and 904 `.arcdata` files under `work/arclog/gen/` on 2026-10-15, and of the tasks under `data/tasks/`. The engine design of [overview.md](overview.md) rests on these numbers. The script is one pass over the s-expressions, about 1 s, with column names from `src/arclog_convert/lib-signature.dl`.
+The output of `uv run python scripts/corpus_survey.py`, which rewrites the sections it is given, and with no name the sections that run no solver: change the script, never this file. Run a section only where a decision needs its numbers on the current corpus.
 
 ## Forms
 
@@ -8,39 +8,41 @@ Count of list nodes with the head, and the number of files with at least one.
 
 | form | count | files |
 | --- | --- | --- |
-| RULE | 8083 | 904 |
-| NOT | 3920 | 854 |
-| INIT | 3914 | 851 |
-| DET | 3229 | 853 |
-| OR | 2219 | 790 |
-| ALT | 1402 | 606 |
-| ALTS | 1066 | 606 |
-| OUTPUT / INPUT | 801 / 582 | 118 / 117 |
-| ALL | 236 | 154 |
-| IF | 138 | 118 |
-| DET_OR_RULE / RULE_OR_DET | 120 / 25 | 77 / 16 |
-| ONE | 47 | 31 |
+| RULE | 8900 | 953 |
+| INIT | 4542 | 904 |
+| NOT | 4411 | 905 |
+| DET | 3622 | 897 |
+| OR | 2409 | 839 |
+| ALT | 1624 | 653 |
+| ALTS | 1227 | 653 |
+| OUTPUT / INPUT | 1096 / 815 | 167 / 166 |
+| ALL | 278 | 179 |
+| DET_OR_RULE / RULE_OR_DET | 169 / 33 | 112 / 24 |
+| IF | 138 | 119 |
+| ONE | 62 | 42 |
+| DEMO_RULE / DEMONSTRATED | 19 / 7 | 6 / 6 |
 | CHOOSE | 18 | 18 |
-| DEMO_RULE / DEMONSTRATED | 13 / 5 | 4 / 4 |
-| APPROXIMATED | 12 | 12 |
-| RIGID_DET | 9 | 9 |
+| APPROXIMATED | 14 | 14 |
+| RIGID_DET | 14 | 11 |
 
-- `ONE` by shape: 38 bare `(ONE)` in a DET, 1 bare in a DET_OR_RULE, 1 bare in a RULE, 7 with columns, all in a RULE. 39 open parameters in total.
-- Declaration forms per file: median 14, p90 30, max 101 (a64e4611). All headed nodes per file: median 109, p90 286, max 1327 (20a9e565).
-- TODO markers: 13 in total; alt-undefined 3, record-shape 2, head-term 2, rigid-part 2, demonstrated-select 1, term 1.
+- `ONE` by shape: 43 bare `(ONE)` in a DET, 13 with columns in a RULE, 4 with columns in a DET, 1 bare `(ONE)` in a RULE, 1 bare `(ONE)` in a DET_OR_RULE. The open parameters, a bare `(ONE)` in a DET or a DET_OR_RULE: 44.
+- Declaration forms per file: median 15, p90 32, max 121 (a32d8b75). All headed nodes per file: median 117, p90 301, max 1259 (20a9e565).
+- TODO markers: 9 in total; head-term 5, alt-undefined 4.
+
+Inputs: the 953 `.arclog` files of `work/arclog/gen/`. Computed on 2026-10-19.
 
 ## Alts structure
 
-Here an `ALTS` form includes each `DET_OR_RULE` and `RULE_OR_DET` line. The cases of a file are the cases that [Cases](cases.md#cases) gives, where such a line splits only the bases that read its relation, less the excluded ones: on 2026-10-19, the cases that the file's record in the snapshot `.cache/parity/` holds. The script is `case_counts.py` in the directory of [Open values and constraint search](#open-values-and-constraint-search), `python3 case_counts.py` from the repo root.
+Here an `ALTS` form includes each `DET_OR_RULE` and `RULE_OR_DET` line, and its depth is one more than the `ALTS` forms it stands in. A combination block is an `ALT` that stands directly in an `ALT`. The cases of a file are the cases that the file's record in the snapshot `.cache/parity/` holds, as `docs/engine/cases.md#cases` gives them.
 
 | measure | value |
 | --- | --- |
-| files with an `ALTS` form | 607 |
+| files with an `ALTS` form | 655 |
 | `ALTS` forms per file, max | 13 (ae3edfdc) |
-| ALTS nesting depth, max | 3 (a48eeaf7); 53 files at depth 2 or more |
-| combination ALT blocks | 52 |
+| ALTS nesting depth, max | 3 (a48eeaf7); 72 files at depth 2 or more |
+| combination ALT blocks | 72 |
 | cases per file | median 2; max 1177 (b2bc3ffd), then a1aa0c1e 1080, a416fc5b 884, b10624e5 768, af24b4cc 736, ae3edfdc 640, ac3e2b04 576, aa300dc3 528 |
-| files with excludes | 48; 336 excludes; max 46 per file (a2d730bd) |
+| files with excludes | 60; 376 excludes; max 34 per file (a2d730bd) |
 
 | cases | files |
 | --- | --- |
@@ -52,112 +54,128 @@ Here an `ALTS` form includes each `DET_OR_RULE` and `RULE_OR_DET` line. The case
 | 17–64 | 52 |
 | more than 64 | 48 |
 
+Inputs: the 953 `.arclog` files of `work/arclog/gen/` and their `.arcdata` files, and the records of `.cache/parity/` of the 953 of them that have one. Computed on 2026-10-19.
+
 ## Instances
 
 `INIT` forms per component; a `DEMONSTRATED` form counts as DemonstrationConsistency. The key width is the number of `^` labels in the key clause, 0 for the `Unit` key. Most instances in one file: 27 (a64e4611).
 
 | component | instances | key widths {width: n} | max width (stem) |
 | --- | --- | --- | --- |
-| Order | 656 | 0:338 1:218 2:77 3:21 4:1 5:1 | 5 (9f8de559) |
-| BoundingBox | 611 | 0:198 1:321 2:78 3:12 4:1 5:1 | 5 (a25697e4) |
-| Cardinality | 477 | 0:68 1:309 2:85 3:12 4:3 | 4 (4290ef0e) |
-| Connectivity | 425 | 0:258 1:155 2:11 3:1 | 3 (4290ef0e) |
-| Singleton | 287 | 0:80 1:130 2:62 3:10 4:5 | 4 (212895b5) |
-| Ray | 240 | 0:128 1:90 2:18 3:3 8:1 | 8 (351d6448) |
-| Division | 226 | 0:166 1:38 2:20 3:1 4:1 | 4 (351d6448) |
-| Tiling | 137 | 0:127 1:10 | 1 |
-| Frame | 125 | 0:88 1:32 2:5 | 2 (21897d95) |
-| Inclusion | 105 | 0:105 | 0 |
-| Quotient | 82 | 0:82 | 0 |
-| Propagation | 74 | 0:41 1:23 2:9 3:1 | 3 (20a9e565) |
-| Boundary | 68 | 0:41 1:26 2:1 | 2 (136b0064) |
-| Occurrences | 63 | 0:17 1:24 2:15 3:6 5:1 | 5 (269e22fb) |
-| Distance | 58 | 0:25 1:25 2:8 | 2 (28a6681f) |
-| Enclosure | 54 | 0:28 1:24 2:2 | 2 (8ba14f53) |
-| Walk | 52 | 0:35 1:16 3:1 | 3 (a6f40cea) |
-| Flood | 50 | 0:32 1:12 2:6 | 2 (142ca369) |
-| Agreement | 39 | 0:10 1:13 2:15 4:1 | 4 (409aa875) |
-| Outlines | 24 | 0:8 1:16 | 1 |
-| Periods | 23 | 0:12 1:11 | 1 |
-| CellDistance | 19 | 0:13 1:6 | 1 |
-| Excess | 11 | 0:3 1:2 2:6 | 2 (137eaa0f) |
-| DemonstrationConsistency | 6 | 0:1 1:3 2:1 5:1 | 5 (351d6448) |
+| Order | 755 | 0:395 1:248 2:83 3:24 4:4 5:1 | 5 (9f8de559) |
+| BoundingBox | 681 | 0:213 1:360 2:95 3:12 5:1 | 5 (a25697e4) |
+| Cardinality | 552 | 0:76 1:355 2:103 3:14 4:4 | 4 (4 files) |
+| Connectivity | 479 | 0:276 1:185 2:17 3:1 | 3 (4290ef0e) |
+| Singleton | 359 | 0:122 1:146 2:75 3:11 4:5 | 4 (5 files) |
+| Frame | 265 | 0:227 1:33 2:5 | 2 (5 files) |
+| Ray | 261 | 0:136 1:104 2:17 3:3 8:1 | 8 (351d6448) |
+| Division | 236 | 0:170 1:41 2:23 3:1 4:1 | 4 (351d6448) |
+| Tiling | 170 | 0:160 1:10 | 1 (7 files) |
+| Inclusion | 109 | 0:109 | 0 (82 files) |
+| Propagation | 83 | 0:51 1:22 2:9 3:1 | 3 (20a9e565) |
+| Quotient | 76 | 0:76 | 0 (66 files) |
+| Occurrences | 75 | 0:23 1:29 2:16 3:6 5:1 | 5 (269e22fb) |
+| Boundary | 73 | 0:45 1:27 2:1 | 2 (136b0064) |
+| Enclosure | 64 | 0:35 1:27 2:2 | 2 (2 files) |
+| Distance | 60 | 0:27 1:25 2:8 | 2 (8 files) |
+| Walk | 55 | 0:36 1:18 3:1 | 3 (a6f40cea) |
+| Flood | 53 | 0:35 1:13 2:5 | 2 (5 files) |
+| Agreement | 43 | 0:9 1:15 2:18 4:1 | 4 (409aa875) |
+| Outlines | 25 | 0:9 1:16 | 1 (16 files) |
+| Periods | 25 | 0:12 1:13 | 1 (13 files) |
+| CellDistance | 22 | 0:15 1:7 | 1 (3 files) |
+| Excess | 12 | 0:3 1:2 2:6 4:1 | 4 (c663677b) |
+| DemonstrationConsistency | 7 | 0:2 1:3 2:1 5:1 | 5 (351d6448) |
+| Wallpaper | 4 | 0:4 | 0 (3 files) |
 | Unfold | 3 | 0:1 1:1 2:1 | 2 (a8d7556c) |
-| ExtentDivisions | 2 | 1:2 | 1 |
-| Wallpaper | 2 | 0:2 | 0 |
+| ExtentDivisions | 2 | 1:2 | 1 (2 files) |
 
-- Inclusion and Quotient never take a key clause; their records are in the type parameters.
-- The `CHOOSE` `for` key has width 1 in 13 forms, 2 in 3 and 3 in 2.
+- The components no instance of which takes a key clause: Inclusion, Quotient, Wallpaper.
+- The `CHOOSE` `for` key widths {width: n}: 1:13, 2:3, 3:2.
+
+Inputs: the 953 `.arclog` files of `work/arclog/gen/`. Computed on 2026-10-19.
 
 ## Recursion
 
-Each declaration's `&` reads, with `&x.out` counted as a read of `&x`; a read under `NOT`, under `ALL` or in an `IF` test is negated. Cycles are the strongly connected components over three graphs: every derivation merged, the concept program alone, and each alt path with its derivations in place of the concept program's.
+Each declaration's `&` reads, with `&x.out` counted as a read of `&x`; a read under `NOT`, under `ALL` or in an `IF` test is negated. Cycles are the strongly connected components over three graphs: every derivation merged, the concept program alone, and each alt path with its derivations in place of the concept program's. The cycles of one kind are listed up to 8, the largest first.
 
 | measure | result |
 | --- | --- |
-| relations that read themselves | 3, all Unfold instances (3490cc26 `&state`, 696d4842 `&crawl`, a8d7556c `&claim`), none through a negation |
-| a RULE or DET that reads itself | 0 |
-| cycles in the concept program's graph | 1: 17cae0c1, 9 relations, no negation: `&panel_division`.side → `&size` → `&tile_size` → `&glyph_member` → `&panel_mark` → `&mark` → `&panel` → `&panel_division` |
-| cycles on an alt path | 3; 2 through a negation |
-| 351d6448, alt `$PanelAxisFromLines` | 32 relations, 15 negated edges |
-| ac0c5833, alt `$RectMarker` | 7 relations: `&exact_split` −NOT→ `&split_fault` → `&triple_cell` → `&box_triple` → `&marker_max_side` −NOT→ `&unsplit` −NOT→ `&exact_split`; a `DET_OR_RULE` with `(ONE)` reads the program it parameterizes |
+| relations that read themselves | 3; 3490cc26 `&state`; 696d4842 `&crawl`; a8d7556c `&claim` |
+| a clause that reads its own relation | 0 |
+| cycles in the concept program's graph | 3 |
+| 3490cc26 | 1 relations, 0 negated edges: `&state` |
+| 696d4842 | 1 relations, 0 negated edges: `&crawl` |
+| a8d7556c | 1 relations, 0 negated edges: `&claim` |
+| cycles on an alt path and in no concept graph | 0; 0 through a negation |
+
+Inputs: the 953 `.arclog` files of `work/arclog/gen/`. Computed on 2026-10-19.
 
 ## Arcdata
 
 | measure | value |
 | --- | --- |
-| params, total / max per file | 2797 / 15 (136b0064) |
-| largest param | 441 rows, a 21×21 grid (73251a56 `&label`) |
-| Frame / Division params | 67 / 25 |
-| witnesses with a body | 769; max 22 per file (abbfd121); 112 files have one |
-| bodiless back-references | 89 |
-| plausibility | variant 335, borderline 273, ordinary 97, foreign 64 |
-| verdict | concept 362, an alt 353, any 40, other 14 |
-| top-level heads | param 2797, alts 599, exclude 336, representative 47, approximated 12 |
+| params, total / max per file | 2923 / 15 (136b0064) |
+| largest param | 441 rows (73251a56 `&label`) |
+| witnesses with a body | 1020; max 20 per file (abbfd121); 161 files have one |
+| bodiless back-references | 118 |
+| plausibility | variant 432, borderline 370, ordinary 127, foreign 91 |
+| verdict | concept 494, an alt 462, any 48, other 16 |
+| top-level heads | param 2923, alts 819, exclude 376, representative 47, approximated 14 |
+
+A `grid` value of a param counts one row per cell that is not `_`.
+
+Inputs: the 953 `.arcdata` files of `work/arclog/gen/`. Computed on 2026-10-19.
 
 ## Columns
 
-A derived relation's columns are its body's top-level `*` labels plus what its `OR` and `IF` forms export. A read projects when the columns its sites select, `E` aside, are a strict subset of the relation's.
+A derived relation is one a clause with a body derives, and its columns are its body's top-level `*` labels plus what its `OR` and `IF` forms export, over every such clause. A read projects when the columns its sites select, `E` aside, are a strict subset of the relation's.
 
 | measure | value |
 | --- | --- |
 | widest derived relation | 24 columns (a57f2f04 `&copy`) |
-| widest lib relation | 5 (`divide`) |
-| arity distribution | 0:31, 1:705, 2:2196, 3:1553, 4:1180, 5:784, 6:487, 7:297, 8:136, 9:91, 10+:127 |
-| derived-relation reads that project | 13513 of 18858 |
-| lib atoms with fewer sites than the lib arity | 1046 of 11740 |
-| instance-output atoms | 7123 |
+| widest lib relation read | 5 (`divide`) |
+| arity distribution | 0:64, 1:909, 2:2404, 3:1775, 4:1341, 5:894, 6:529, 7:325, 8:147, 9:104, 10+:142 |
+| derived-relation reads that project | 15711 of 21687 |
+| lib atoms with fewer sites than the lib arity | 993 of 13049 |
+| instance-output atoms | 4583 |
+
+Inputs: the 953 `.arclog` files of `work/arclog/gen/`, with the lib's columns from `src/arclog_convert/lib-signature.dl`. Computed on 2026-10-19.
 
 ## Rare constructs
 
-- Keywords: the thinnest are DEMONSTRATED 5, RIGID_DET 9, APPROXIMATED 12, DEMO_RULE 13.
-- Components under 5: DemonstrationConsistency as INIT 1, ExtentDivisions 2, Wallpaper 2, Unfold 3.
-- Proposers: 41 of the 34 declared comps plus domains are used; DominantColor 543 uses. Under 5: BoxDomain 1, since gone from 48d8fb45, ColorColorDomain 1, NumberDirDomain 1, SepTileCountAxis 1, VanishedNewPairs 1, OutNewColor 2, Period 2, PositionDomain 2, DiagDirAxisDomain 3, ChangedPairs 4.
-- Lib relations: 66 of 69 used. Under 5: corner_outset 1, sym_elem 1, axis_outset 2, d4_identity 2, corner_inset 3, edge_outset 3, reflection 4.
-- Param column-type tuples: 46 kinds under 5 uses, such as `Position Sym`, `Dir8 Dir8`, `number C4`, `Color Offset Color`, `Ident Dir8`.
-- Constraint operators are all common: `=` 685, `!=` 580, `<` 229, `>` 88, `<=` 71, `>=` 57.
+- Keywords: the thinnest are DEMONSTRATED 7, APPROXIMATED 14, RIGID_DET 14, CHOOSE 18.
+- Components under 5 instances: ExtentDivisions 2, Unfold 3, Wallpaper 4.
+- Proposers: 40 of the 42 proposers are named by a DET or a DET_OR_RULE; DominantColor has the most uses, 569. Under 5: ConstInDimAxis 1, NumberDirDomain 1, VanishedNewPairs 1, ColorColorDomain 2, OutNewColor 2, Period 2.
+- Lib relations: 66 of 67 read. Under 5: corner_outset 1, axis_outset 2, d4_identity 2, corner_inset 3, d4_compose 3, d4_inverse 4, edge_outset 4.
+- Param column-type tuples: 48 kinds under 5 uses, such as `Color Dir`, `Color Offset`, `DiagDir DiagDir`, `Position Position`, `number Position`.
+- Constraint operators: `=` 746, `!=` 668, `<` 256, `>` 114, `<=` 80, `>=` 67.
+
+Inputs: the 953 `.arclog` files of `work/arclog/gen/` and `.arcdata` files, with the proposers of `src/arclog_convert/convert.py`. Computed on 2026-10-19.
 
 ## Tasks
 
 | measure | value |
 | --- | --- |
 | tasks | 1147 |
-| largest grid | 30×30, 900 cells (e12f9a14) |
+| largest grid | 30×30, 900 cells (05a7bcf2) |
 | most train pairs | 10 (794b24be) |
 | most test inputs | 4 (8dab14c2) |
 
+Inputs: the 1147 task files of `data/tasks/`. Computed on 2026-10-19.
+
 ## Bodies
 
-A survey of the 905 `.arclog` files of `gen/` on 2026-10-16. A body is the body of a `RULE`, `DET`, `DET_OR_RULE`, `RULE_OR_DET` or `RIGID_DET` form, an instance's key clause or input, or a `CHOOSE` form's `from` or `never` list: 20241 bodies. The script is `survey_caps.py`, one pass of about 2 s, and `summarize.py` reads its JSON, both under `/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/129de8fc-2a0d-4d4d-b950-3a0194c762e2/scratchpad/corpus-caps/`: `uv run python survey_caps.py work/arclog/gen > out.json`, then `python3 summarize.py out.json`.
-
-An atom counts each atom, negated atom, constraint and `ONE` mark at every depth. A label counts each variable once, a label local to an `OR` branch, an `IF` test or an `ALL` once per form it is local to.
+A body is the body of a `RULE`, `DET`, `DET_OR_RULE`, `RULE_OR_DET` or `RIGID_DET` form, an instance's key clause or input, or a `CHOOSE` form's `from` or `never` list: 22298 bodies. An atom counts each atom, negated atom, constraint and `ONE` mark at every depth. A label counts each variable once, a label local to an `OR` branch, an `IF` test or an `ALL` once per form it is local to.
 
 | measure | p50 | p90 | p99 | max (stem, relation) |
 | --- | --- | --- | --- | --- |
-| atoms | 2 | 5 | 11 | 33 (20a9e565 `&fill`) |
-| labels | 2 | 5 | 10 | 24 (20a9e565 `&fill`, a57f2f04 `&copy`) |
-| vertices of the atom–variable graph | 6 | 14 | 25 | 65 (20a9e565 `&fill`) |
-| nesting depth of `OR`, `IF`, `ALL`, `NOT` | 0 | 1 | 1 | 3 |
+| atoms | 2 | 5 | 11 | 29 (88bcf3b4 `&walk`) |
+| labels | 2 | 5 | 10 | 24 (a57f2f04 `&copy`) |
+| vertices of the atom–variable graph | 6 | 13 | 24 | 60 (88bcf3b4 `&walk`) |
+| nesting depth of `OR`, `IF`, `ALL`, `NOT` | 0 | 1 | 1 | 3 (83302e8f `&output`, a09f6c25 `&output`, 10 more) |
+
+Inputs: the 953 `.arclog` files of `work/arclog/gen/`. Computed on 2026-10-19.
 
 ## Body symmetry
 
@@ -165,153 +183,172 @@ Each body is a graph: a vertex per atom, colored by its relation and its negatio
 
 | measure | value |
 | --- | --- |
-| bodies that refinement leaves discrete | 20081 of 20241 |
-| bodies with ties | 160: 125 `RULE`, 19 `DET`, 7 `never`, 6 input, 3 key |
-| non-singleton cells per tied body | 1:12, 2:92, 3:25, 4:18, 5:7, 6:5, 8:1 |
-| largest cell after refinement | 2 in 156 bodies, 3 in 3, 4 in 1 |
-| automorphism group order | 2:151, 4:5, 6:3, 8:1 |
-| bodies whose search leaves differ from the automorphism count | 0: every tie that refinement leaves is a symmetry of the body |
-| search tree nodes, first smallest | p50 3, p99 10, max 15 (a6f40cea `&joined`) |
-| search tree nodes, first largest | p50 3, p99 10, max 13 (a6f40cea `&joined`) |
-| individualization depth | first smallest: 1 in 151 bodies, 2 in 8, 3 in 1; first largest: at most 2 |
+| bodies that refinement leaves discrete | 22093 of 22298 |
+| bodies with ties | 205: `RULE` 152, `DET` 19, key 18, input 9, never 7 |
+| non-singleton cells per tied body | 1:18, 2:121, 3:24, 4:25, 5:11, 6:5, 8:1 |
+| largest cell after refinement | 2 in 201 bodies, 3 in 2 bodies, 4 in 2 bodies |
+| automorphism group order | 2:193, 4:8, 6:2, 8:1, 24:1 |
+| bodies whose search leaves differ from the automorphism count | 0 |
+| search tree nodes, first smallest | p50 3, p99 10, max 41 (c803e39c `&roles`) |
+| search tree nodes, first largest | p50 3, p99 10, max 41 (c803e39c `&roles`) |
+| search tree nodes, first | p50 3, p99 10, max 41 (c803e39c `&roles`) |
+| individualization depth | first smallest: 1 in 193 bodies, 2 in 10 bodies, 3 in 2 bodies; first largest: 1 in 193 bodies, 2 in 11 bodies, 3 in 1 bodies; first: 1 in 193 bodies, 2 in 10 bodies, 3 in 2 bodies |
+| searches stopped at the node cap | 0 |
 
-- The symmetric bodies are self-joins of one relation with two labels that swap, such as a6f40cea `&joined` `(&piece_color *B *Id *Col) (&piece_color B (:Id *Id2) Col)`, with each `ALL` adding a swap of its own locals.
-- The order 8 bodies: 4c7dc4dd `&slot`, a32d8b75 `&pattern_many` and `&pattern_many2`, a6f40cea `&joined`.
+- The bodies of the largest automorphism group: c803e39c `&roles`.
+
+Inputs: the 953 `.arclog` files of `work/arclog/gen/`. Computed on 2026-10-19.
 
 ## Join shapes
 
-The top-level positive atoms of each clause body and instance input, 18103 bodies, with `(= X Y)` as an edge. Acyclic is GYO reducibility of the hypergraph of their labels. A self-join is a relation read by two or more of those atoms.
+The top-level positive atoms of each clause body and instance input, 19957 bodies, with `(= X Y)` as an edge. Acyclic is GYO reducibility of the hypergraph of their labels. A self-join is a relation read by two or more of those atoms. An atom joined on a computed key is an algebra atom checked against an output already bound while its input comes from a stored atom written later. A body cyclic through stored relations is cyclic with its algebra atoms and orientation tables removed.
 
 | measure | value |
 | --- | --- |
 | top-level positive atoms | p50 1, p90 4, p99 8, max 23 (4522001f `&fit_cell`) |
-| connected components | 0:3569, 1:13263, 2:1174, 3:78, 4:18, 5:1 (269e22fb `&render`) |
-| cyclic bodies | 1737: 1276 `RULE`, 247 input, 213 `DET`, 1 `RULE_OR_DET`; largest 4522001f `&fit_cell` 23 atoms, a57f2f04 `&copy` 21 |
-| bodies with a self-join | 1348; 771 of them cyclic; most reads of one relation 4 |
+| connected components | 0:3678, 1:14826, 2:1344, 3:85, 4:23, 5:1 (269e22fb `&render`) |
+| cyclic bodies | 1899: `RULE` 1395, input 268, `DET` 230, `DET_OR_RULE` 4, `RULE_OR_DET` 2; largest 4522001f `&fit_cell` 23 atoms, a57f2f04 `&copy` 21 atoms |
+| bodies with a self-join | 1463; 841 of them cyclic; most reads of one relation 4 |
 | lib atoms per body | p90 2, p99 4, max 19 |
-| algebra outputs joined on a computed key | 207 bodies: 117 input, 75 `RULE`, 11 `DET`; by relation split 95, margin 28, sub_extent 25, divide 14, neighbor 13, relative 11, box_extent 8, frame_extent 6 |
-| bodies cyclic through stored relations, with the algebra atoms removed | 103; 15 of them in the solvers of [Runs](#runs) |
+| algebra outputs joined on a computed key | 212 bodies: input 118, `RULE` 80, `DET` 12, `RULE_OR_DET` 2; by relation split 95, margin 25, sub_extent 25, neighbor 16, divide 14, relative 11, box_extent 6, frame_extent 6, compose 4, axis_extents 3, apply 2, diag_dist 2, frame_offset 2, jump_offset 1, jump 1 |
+| bodies cyclic through stored relations | 98 |
 
-- The last two rows are of 2026-10-17, over `gen/` converted again: `ckjoin.py` and `cyc.py` under `/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/129de8fc-2a0d-4d4d-b950-3a0194c762e2/scratchpad/evaluator-evidence/`. An atom joined on a computed key is an algebra atom checked against an output already bound while its input comes from a stored atom enumerated later.
-- A body with two or more components is a cross product. The inputs `before` of `Order` instances form most of the 4-component bodies, as a pair of cells by design.
+Inputs: the 953 `.arclog` files of `work/arclog/gen/`, with the lib's columns from `src/arclog_convert/lib-signature.dl`. Computed on 2026-10-19.
 
 ## Prefix sizes
 
-The row count of each written prefix of a body's top-level items, against the body's, on 2026-10-17. Each solver of `gen/` ran on Souffle on train input 0 and its largest train input, with every relation written out, and the prefixes were joined from those rows, with the orientation tables, the Box and number relations, the checks and the comparisons applied. 8718 bodies of 911 solvers were measured; the rest read `ex_input` or `ex_output`, a relation renamed by the converter or a keyed input, or are `DET` bodies. `divide`, `frame_offset`, `OR`, `IF`, `ALL` and `ONE` are not applied, so a body that holds one has an upper bound for its count. A prefix's count is the product of its parts, so a prefix of two parts that share no label counts as their cross product. The scripts are under `/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/129de8fc-2a0d-4d4d-b950-3a0194c762e2/scratchpad/prefix-probe/`: `dump.py`, then `measure.py` with `alg.py`, `reorder2.py` and `analyze2.py`.
+The row count of each written prefix of a body's top-level items, against the body's. Each solver of `gen/` ran on Souffle on train input 0 and its largest train input, with every relation of its name map written out, and the prefixes were joined from those rows, with the orientation tables, the Box and number relations, the checks and the comparisons applied; the bodies measured are those of a `RULE`, `DET_OR_RULE` or `RULE_OR_DET` clause and an instance's key clause and inputs, each on the rows of the case its alts pin. `divide`, `frame_offset`, `OR`, `IF`, `ALL` and `ONE` are not applied, so a body that holds one has an upper bound for its count. A prefix's count is the product of its parts, so a prefix of two parts that share no label counts as their cross product. A body's largest prefix is taken on the input where it is largest.
 
 | measure | value |
 | --- | --- |
-| largest prefix | ≤10^3 in 8097 bodies; over 10^4 in 102, over 10^5 in 30, over 10^6 in 4, none over 10^7 |
-| largest prefix over 100 times the full body | 117 bodies |
-| prefix over 10^5 with the full body under 1/100 of it | 7 |
+| bodies measured | 11523 of 927 solvers; other outcomes: failed 9, no rows 1, no run 28, no stored atom 2800, unresolved 5426 |
+| largest prefix | ≤10^3 in 10820 bodies; over 10^4 in 110, over 10^5 in 31, over 10^6 in 6, over 10^7 in 1 |
+| largest prefix over 100 times the full body | 142 |
+| prefix over 10^5 with the full body under 1/100 of it | 9 |
 | prefix over 10^6 with the full body under 1/100 of it | 0 |
-| bodies over 10^4 that another normal order brings under it | 20 of the 93 the reorder reached, such as 80214e03 `&separated`, 309K rows to 1368, with `neighbor` before the `!=` |
+| bodies over 10^4 that another order the modes allow brings under it | 23 of the 103 of at most 12 items whose search ended within 120 s, such as 80214e03 `&separated`, 309256 rows to 1368 |
 
-- The large prefixes are mostly a cross product of two cell sets, or of cells and boxes, before the check that relates them: `inside`, `interior`, `same_line`, `nearer`. a6f40cea `&hole`, `input` against `&rings.box` before `interior`, is 6.39M rows, and its body 104K.
+Inputs: Souffle runs of the solvers of the 953 `.arclog` files of `work/arclog/gen/`, on their tasks' train inputs, with the converter's name maps under `work/arclog/names/`. Computed on 2026-10-19.
 
 ## Join orders
 
-The variable order of [Joins](evaluator.md#joins), simulated on 2026-10-17 on the bodies of [Join shapes](#join-shapes) that join on a computed key or are cyclic through stored relations. The rows are those of [Prefix sizes](#prefix-sizes), on the same train inputs, with the relations of a solver's instances from a second Souffle run of each solver whose dump lacked them. The count of a set of variables is the number of its bindings that agree with each atom projected onto the set. An algebra check applies once its labels are bound, and a function once the inputs of one of its modes are bound. The work of an order is the sum, over its variables, of the fewest extensions that one atom gives the bindings so far, plus the rows of each computed-key index the order builds. The written order breaks ties of relation size, in place of the canonical order. The best order minimizes each measure over every order that the modes allow, for bodies of at most 9 variables. Each body is taken on the input where its written order has the largest intermediate. The scripts are `sim.py` and `ana.py` under `/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/129de8fc-2a0d-4d4d-b950-3a0194c762e2/scratchpad/join-order/`: `python3 sim.py OUT.json <stem> targets.json` for each stem, then `python3 ana.py`.
+An algebra check applies once its labels are bound, and a function once the inputs of one of its modes are bound. The written order takes each variable at its first appearance; the rule's order takes each function output directly once a mode's inputs are bound, else the variable of the smallest relation, ties broken by the written order. The best order minimizes each measure over every order that the modes allow, for bodies of at most 9 variables. Each body is taken on the input where its written order has the largest intermediate. `unresolved` is a body that reads a relation the name map does not reach from the top level.
 
 | bodies | order | largest intermediate, max / sum | work, max / sum |
 | --- | --- | --- | --- |
-| computed key, 133 of 207 | written | 401408 / 628782 | 440611 / 938789 |
-| | the rule | 83520 / 248760 | 102186 / 590762 |
-| | the rule with no computed-key index | 83520 / 248760 | 194092 / 915683 |
-| computed key, the 125 of at most 9 variables | the rule | 83520 / 221250 | 102186 / 517662 |
-| | best | 83520 / 220963 | 90120 / 445386 |
-| cyclic, 39 of 103 | written | 401408 / 533614 | 440611 / 941474 |
-| | the rule | 46076 / 93935 | 87358 / 253596 |
-| cyclic, the 32 of at most 9 variables | the rule | 896 / 4521 | 1436 / 10347 |
-| | best | 896 / 3777 | 1436 / 7696 |
+| computed key, 144 of 201 | written | 83520 / 239217 | 90120 / 520473 |
+|  | the rule | 83520 / 224356 | 102186 / 541494 |
+|  | the rule with no computed-key index | 83520 / 224356 | 194092 / 867420 |
+| computed key, the 138 of at most 9 variables | the rule | 83520 / 222214 | 102186 / 527109 |
+|  | best | 83520 / 221941 | 90120 / 449815 |
+| cyclic, 47 of 92 | written | 46076 / 57775 | 164514 / 234547 |
+|  | the rule | 46076 / 52596 | 87358 / 125498 |
+|  | the rule with no computed-key index | 46076 / 52596 | 87358 / 125532 |
+| cyclic, the 41 of at most 9 variables | the rule | 896 / 5008 | 2134 / 11484 |
+|  | best | 896 / 4413 | 1436 / 8262 |
 
-- No measured body under the rule has a largest intermediate over 10^4 and over 10 times the best order's, or work over 10^5 and over 10 times the best order's. The largest ratios of work are b7f8a4d8 `&covered`, 1621 against 54, which binds the colors of `&paint` before the ranks of the `&draw_rank` atoms it joins, and c7f57c3e `&tiling.side`, 18666 against 6600, and b71a7747 `&kept`, 6554 against 1762, which bind a table of 2 rows (`axis_elem`, `perp`) before the stored relation.
-- The computed-key index cuts the work of b71a7747 `&band_square` from 282424 to 2249, an index on `split` over `input`, and of a32d8b75 `&cover` from 139396 to 1924, an index on `diag_dist` over `&field_at`.
-- An output of an algebra relation that is bound after every variable of a stored relation, in place of directly after the inputs of its mode, gives a32d8b75 `&cover` a largest intermediate of 138240 against 288, and 9b2a60aa `&copy` work of 9973 against 145.
-- Of the bodies over 9 variables, the largest under the rule are 4e34c42c `&layout.edge`, 46076, as in its written order, 50a16a69 `&output`, 25088 against 401408 written, and b10624e5 `&scaled`, 5194 against 63219 written.
-- 74 computed-key bodies and 64 cyclic bodies are not measured. Most read a relation whose arclog name resolves to no Souffle relation, as a converter rename gives, such as 00dbd492 `same.equal` for Souffle's `same.equals`: 62 and 60. 10 computed-key bodies and 5545f144 `&hop` bind a label only through `divide`, `frame_offset` or a form that the simulation does not apply. 1d0a4b61 `&output` reaches the limit of 6 s on one count. The rest, such as 351d6448 `&advance`, match no body that the simulation parses.
+- computed key: 1 bodies reach a count past 100000000 rows or 6.0 s under some order, and stand outside the table: 50a16a69 `&output`.
+- computed key: 0 bodies under the rule have a largest intermediate over 10^4 and over 10 times the best order's, or work over 10^5 and over 10 times the best order's.
+- computed key: 56 bodies are not measured: unresolved 54, no order 2.
+- cyclic: 1 bodies reach a count past 100000000 rows or 6.0 s under some order, and stand outside the table: 50a16a69 `&output`.
+- cyclic: 0 bodies under the rule have a largest intermediate over 10^4 and over 10 times the best order's, or work over 10^5 and over 10 times the best order's.
+- cyclic: 44 bodies are not measured: unresolved 43, timeout 1.
+
+Inputs: the rows of Prefix sizes, over the bodies of Join shapes of the 953 `.arclog` files of `work/arclog/gen/`. Computed on 2026-10-19.
 
 ## Determination candidates
 
-`DET` and `DET_OR_RULE` forms with no body, by the proposers they name, in `gen/`, and the Souffle tooling's determination plans.
+`DET` and `DET_OR_RULE` forms with no body, by the proposers they name, in `gen/`, and the Souffle tooling's determination plans. A file's product multiplies, over its forms with no body that name a domain proposer, the largest domain among the proposers a form names, at the domain's size in a task of 30×30 grids.
 
-- Domain proposers with no body per file, at the domain's size in a full task (Color 10, Number 30, Sym 16, Position 900, Box 216225): the largest products are 48d8fb45 `BoxDomain` 216225, ca8de6ea and 7fe24cdd `PositionDomain` 900, 4522001f 160, ba26e723 120; 5 files are over 100.
-- On 2026-10-18, no `DET` of `gen/` names `BoxDomain`: 48d8fb45's `win_box` states a body. Two name `PositionDomain`, 7fe24cdd `&anchor` and ed74f2f2 `&target_tile`, and ca8de6ea names none.
-- `uv run python scripts/run_dl.py determination-plan <stem>` gives the domain of the values the task admits: 48d8fb45 `win_box` 95 values, 7fe24cdd `anchor` 52, ba26e723 72 joint assignments; in ca8de6ea and 4522001f every such parameter has a determination relation.
-- The 8951 plans under `.cache/determination-plan/`, from every version of the Souffle solvers, with each covered line's `enumerable(n)` or `narrowed(n)` multiplied: product 1 in 3533 plans, 2 to 10 in 4178, 11 to 100 in 1240, and none over 100. The tool's `ENUMERATION_LIMIT` is 100 (`src/checker/determination_plan.py`). 83 plans report a product over it, up to 2258530576, and for those the solver adds determination relations until the product is under 100.
+- The largest products of domain proposers with no body per file: baf41dbf 300, a32d8b75 128, ba26e723 120, c62e2108 120, 239be575 100; 4 files are over 100.
+- The forms with no body that name `BoxDomain` or `PositionDomain`: none.
+- The 20318 plans under `.cache/determination-plan/`, from every version of the Souffle solvers, with each covered line's `enumerable(n)` or `narrowed(n)` multiplied: product 1 in 8078, 2 to 10 in 9509, 11 to 100 in 2727, over 100 in 4. The tool's `ENUMERATION_LIMIT` is 100. 86 plans report a product over it, up to 2258530576.
+
+Inputs: the 953 `.arclog` files of `work/arclog/gen/`, and the plans of `.cache/determination-plan/`. Computed on 2026-10-19.
 
 ## Open values and constraint search
 
-- 34 parameters of a `DET` or `DET_OR_RULE` with `(ONE)` have a `param` record: rows 2:14, 3:1, 4:7, 6:1, 7:1, 8:10. The 8-row ones are D4 orientations, such as abbfd121 `&scan`. The script is `open_values.py` in the same directory, `python3 open_values.py out.json work/arclog/gen`.
-- On 2026-10-17, 42 such parameters: rows 2:17, 3:1, 4:9, 6:1, 7:1, 8:11, each row a single value, and 96:2, b7f8a4d8 `&draw_rank` and bc93ec48 `&precedence`, each 24 open values of 4 rows under an Ident column. `gen/` has 18 `CHOOSE` forms, 8 `RULE` clauses with `ONE` marks in 7 files, and 7 `DEMONSTRATED` forms. The script is `picks.py` under `/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/129de8fc-2a0d-4d4d-b950-3a0194c762e2/scratchpad/cases-models/`, `python3 picks.py work/arclog/gen`.
-- Models per case per input, on 2026-10-17: the distinct (`OpenValue`, `TiebreakResolution`) pairs of each case in the Souffle `out` on each train and test input, by `run_dl.py relation <stem> out`, over the 7 solvers with `TiebreakResolutions` and the 5 with the largest products of open values. The largest is 64, in a2d730bd, abc82100 and 9f8de559, each two D4 parameters of 8 open values. Among the tie solvers, the largest is 4: a3325580, 4 lead corners and no tie on any input, and b7cb93ac train 2. The product of the open values per file of every other solver is at most 16 (abbfd121), and its arclog form 24 for b7f8a4d8 and bc93ec48. So 64 bounds the models per case per input of these forms. The `CHOOSE` forms with no tie in their Souffle solvers and the `DEMONSTRATED` forms are not measured. The script is `ties.py` in the same directory, `python3 -u ties.py <stem>...` from the repo root.
-- Models per case per input and search nodes per cluster, on 2026-10-19: `arclog-cli compare .cache/parity work/arclog/gen data/tasks` over the concept cases of `work/arclog/gen/`, under a model cap of 1 000 000 and a node cap of 10 000 000, counted with instrumentation that is not committed. The largest are 8 models and 14 nodes, each of 9f8de559, among the 840 solvers of 953 whose concept case ran to its end; 6 hold a `DEMONSTRATED` form and are not compared. The outlier 97a05b5b searches 4 147 798 nodes for its one model, with an engine run of 22.6 s against Souffle's 0.7 s, and is a fault of its solver or of the lib. The node cap 2^5 = 32 is about twice the 14 nodes, and the model cap 2^7 = 128 is about twice the 64 models that the item above gives as the bound of the open-value forms, which covers a2d730bd and abc82100, solvers that gave no engine count.
-- The [Evidence](../../docs/arclog/constraints.md#evidence) of the constraint doc measures the covers of the nine `CoverForcing` solvers: each key has one cover or none. For the other picks, it states that propagation alone solves the pick on every corpus input, and no run measures it.
+- 43 parameters of a `DET` or `DET_OR_RULE` with `(ONE)` have a `param` record: rows 2:17, 3:1, 4:9, 6:1, 7:1, 8:12, 16:2.
+- The largest products of those rows per file: 9f8de559 64, a2d730bd 64, abc82100 64, abbfd121 16, b7f8a4d8 16.
+- `gen/` has 18 `CHOOSE` forms, 8 `RULE` clauses with `ONE` marks in 7 files, and 7 `DEMONSTRATED` forms.
+
+Inputs: the 953 `.arclog` files of `work/arclog/gen/` and `.arcdata` files. Computed on 2026-10-19.
+
+### Models per case per input
+
+The models of a case on an input are the distinct values of the `OpenValue` and `TiebreakResolution` columns of the Souffle `out` relation under one value of its `Choice` column, on each train and test input, over the 5 solvers of the largest products of open values and each solver whose `out` holds a `TiebreakResolution` column.
+
+| stem | tie column | most models of a case on an input | inputs with no count, and why |
+| --- | --- | --- | --- |
+| 9f8de559 | no | 64 | none |
+| a2d730bd | no | 64 | none |
+| abc82100 | no | 64 | none |
+| b7f8a4d8 | no | 25 | none |
+| abbfd121 | no | 16 | none |
+| a3325580 | yes | 4 | none |
+| 8e5c0c38 | yes | 2 | none |
+| c4d067a0 | yes | 2 | none |
+| c61be7dc | yes | 2 | none |
+| b15fca0b | yes | 1 | none |
+| b7999b51 | yes | 1 | none |
+| b99e7126 | yes | 1 | none |
+| bd283c4a | yes | 1 | none |
+| 89565ca0 | no | none | no Choice column |
+| a6953f00 | no | none | no Choice column |
+| b7cb93ac | no | none | no Choice column |
+
+Inputs: Souffle runs of the 16 solvers of `programs/solvers/` above, on the tasks of `data/tasks/`. Computed on 2026-10-19.
 
 ## Forms per solver
 
-Declaration forms per file, a relation that more than one block derives, and such a relation whose clauses have more than one set of top-level labels. The script is `forms_shared.py` in the same directory, `python3 forms_shared.py work/arclog/gen`.
+Declaration forms per file, a relation that more than one block derives, and such a relation whose clauses have more than one set of top-level labels, for the 4 files of the most cases and the file of the most forms.
 
 | stem | cases | forms | relations | rederived | with another column set |
 | --- | --- | --- | --- | --- | --- |
-| af24b4cc | 736 | 54 | 46 | 4 | 2 |
 | b2bc3ffd | 1177 | 39 | 26 | 8 | 3 |
-| ae3edfdc | 640 | 36 | 26 | 7 | 1 |
-| ac0c5833 | 428 | 50 | 38 | 9 | 3 |
-| a32d8b75 | | 161 | 145 | 15 | 11 |
+| a1aa0c1e | 1080 | 55 | 43 | 8 | 3 |
+| a416fc5b | 884 | 67 | 57 | 8 | 4 |
+| b10624e5 | 768 | 41 | 37 | 3 | 2 |
+| a32d8b75 | 48 | 121 | 111 | 9 | 7 |
 
-- 399 files have a relation rederived with another column set.
+- 439 files have a relation rederived with another column set.
+
+Inputs: the 953 `.arclog` files of `work/arclog/gen/`, and the records of `.cache/parity/`. Computed on 2026-10-19.
 
 ## Runs
 
-17 Souffle solvers, each run once by `run_dl.py run <stem>` with each Souffle call profiled by `souffle -p` and the run store bypassed, on 2026-10-16. They were chosen as the extremes above: the slowest runs of the gate's `accepted-times.json` (a934301b, abbfd121, a5f85a15, a61ba2ce, 0dfd9992, aa62e3f4), the most cases (af24b4cc, b2bc3ffd), the largest and the cyclic bodies (20a9e565, 4522001f, a57f2f04, a395ee82), the 5-component body (269e22fb), the most Ident instances (ae58858e, b2862040, 21897d95), and the most box arithmetic with the most forms (a32d8b75). For 15 of them, all but a395ee82 and 269e22fb, each call was made a second time with an `.output` for every relation its profile names, and the rows were read. The scripts are `profile_run.py` and `profiles.py` in the directory of [Bodies](#bodies): `uv run python profile_run.py [--dump] DIR <stem>...` from the repo root, then `python3 profiles.py DIR`.
-
-A Souffle solver holds every case in one relation, under its choice columns, so a relation's tuples bound the rows that one case's clause gives. A relation whose path has a segment that starts with `_` is internal to a lib component, which the engine builds natively; the others are public.
+The solvers: those of the most CPU seconds in the snapshot `.cache/parity/`, of the most cases, of the bodies and the cyclic bodies of the most atoms, of the body of the most components, of the most Ident instances and of the most box arithmetic, as the sections above give them. A Souffle solver holds every case in one relation, under its choice columns, so a relation's tuples bound the rows that one case's clause gives. A relation whose path has a segment that starts with `_` is internal to a lib component, which the engine builds natively; the others are public. A call's time is the profile's wall time, and `run_dl.py run` makes its Souffle calls in parallel, so the times include contention.
 
 | stem | calls | slowest call | largest public relation | slowest public rule |
 | --- | --- | --- | --- | --- |
-| a57f2f04 | 51 | 28.5 s | `parse.scan_order.before` 2440832 | 21.2 s, `parse.copy`, 38400 tuples |
-| a32d8b75 | 17 | 4.6 s | `out` 64000 | 4.5 s, `parse.cover`, 20800 tuples |
-| abbfd121 | 92 | 4.2 s | `parse.shade_reach.edge` 499455 | 0.47 s, `clash`, 4536 tuples |
-| 20a9e565 | 105 | 3.2 s | `grown_box.cell` 89090 | 2.9 s, `mirror_defect`, 1240 tuples |
-| b2bc3ffd | 91 | 1.1 s | `out` 32720 | 0.28 s, `landing` |
-| a395ee82 | 39 | 1.0 s | `out` 21780 | 1.0 s, `determine.covered` |
-| 0dfd9992 | 5 | 0.9 s | `orbit.edge` 42591 | 7 ms |
-| af24b4cc | 3249 | 0.32 s | `commonest.item` 2880 | 0.18 s |
-| b2862040 | 182 | 0.29 s | `determine.ex.off_wall` 17304 | 0.11 s |
-| the other 8 | | under 0.2 s | at most 31414 (269e22fb `occ.placement`) | at most 0.13 s |
+| c663677b | 31 | 6.6 s | `tile_vote` 3214148 | 1.2 s, `tile_area.tally`, 2704 tuples |
+| ac0c5833 | 955 | 4.1 s | `out` 122400 | 3.8 s, `parse.triple`, 36528 tuples |
+| 20a9e565 | 25 | 2.1 s | `repeat` 10488 | 1.9 s, `mirror_defect`, 1240 tuples |
+| a57f2f04 | 51 | 801 ms | `out` 183040 | 369 ms, `parse.copy`, 23040 tuples |
+| b10624e5 | 924 | 587 ms | `scaled` 17496 | 397 ms, `lacked`, 4 tuples |
+| a416fc5b | 229 | 269 ms | `out` 249984 | 80 ms, `out`, 222208 tuples |
+| 269e22fb | 14 | 128 ms | `occ.placement` 31414 | 98 ms, `occ.placement`, 31414 tuples |
+| b2bc3ffd | 91 | 126 ms | `out` 32720 | 24 ms, `out`, 3768 tuples |
+| ad38a9d0 | 92 | 90 ms | `out` 1701 | 16 ms, `shape_match.observed_member`, 5 tuples |
+| the other 8 |  | under 85 ms | at most 12492 |  |
 
-- The largest internal relations are Wallpaper's: abbfd121 `wp._pair` 1708260 and 0dfd9992 `wp._reach` 1312968, the slowest internal rule 1.3 s.
-- a57f2f04's `parse.scan_order.before` is the `before` input of an `Order` instance, a pair relation over its members.
-- The tooling's limit per call is 20 s of CPU (`src/cli/common.py`). Of the 17, a57f2f04 is the one solver whose slowest call reaches 28.5 s of the profile's wall time.
-- `run_dl.py run` makes its Souffle calls in parallel, so the times above include contention: a57f2f04 took 47 s of user time over 18 s of wall time. Each call rerun alone, under a load average of 11 to 17, gives a57f2f04's slowest call 6.35 s of wall time, its largest `parse.copy` 4.93 s, and abbfd121's slowest call 2.25 s of program and about 1.3 s of Souffle's frontend. `capture.py` and `rerun.sh` in `scratchpad/slow-solvers/` keep each call's program and facts and rerun one call alone.
+- The largest internal relations: c663677b `tile_major._key` 807192, a416fc5b `_cls_rec` 249984.
+- The tooling's limit per call is 20.0 s of CPU; the solvers whose slowest call passes it in wall time: none.
 
-### Causes of the outliers
-
-Each outlier above was read and, where a fix was tried, rerun with the fix, and every fix kept the output, by an md5 of the sorted `.output` files. None is a cost of its task's intended concept. The class column judges by principle: a form that does more work than another is a fault only where a principle rules it out, since the principled form is right whatever it costs, as [Performance](../../docs/handbook/encoding.md#performance) gives.
-
-| clause | cause | class | measured fix |
-| --- | --- | --- | --- |
-| a57f2f04 `parse.copy` | each row is derived on 32 paths of about 30 functor calls each: `diag_dirs` takes each corner once per axis order, 2×; `box_extent` inlines `axis_of`, whose 2 rows give one extent, 4× over two calls; `Parse` is keyed by the whole `Choice`, though the copy varies with no `PanelExtent`, 2×; and on one input 57600 rows hold 900 distinct contents, since the cases' relations hold the same rows there | the key: solver, by the rule that a comp is keyed by the `Choice` fields it varies with; the axis order: the principled form, which states the corner on either axis with no axis literal; `box_extent`: lib; the rest: Souffle (no shared subexpressions, no sharing across cases) | one axis order and `box_extent` without the hidden direction: 2.76 s to 0.36 s on call 21 |
-| a57f2f04 `parse.scan_order.before` | `Order.first` by subsumption over the `before` pairs, O(m²) per key against O(m) for a minimum; 512 keys hold 24 distinct contents, since the scan is keyed by the whole `Choice` | `first` by pairs: lib; the key: solver, by the same rule | two minimum aggregates in place of `LexOrder`: 2440832 rows to none, 3.4 s to 0.03 s |
-| abbfd121 `parse.shade_reach.edge` | a `Propagation` keyed by source color copies the colorless `map_link` edges once per color, 3×, and its closure chains past the output claim's text | solver, by fidelity: the closure states a hypothesis that the output claim does not | a direct read of `map_link`: 504k rows less, the same output |
-| abbfd121 Wallpaper internals | `wp._reach` and `wp._pair`, 1708260 rows each, test every candidate on every pair of a lattice class, where a test per class decides it | lib | a test per class: `_pair` gone, `_reach` 256k, the program 2.0 s to 0.73 s |
-| a32d8b75 `parse.cover` | each of 15600 rows enumerates about 660 field cells and filters on an equal computed `diag_dist`: about 20M probes | Souffle (no index on a computed key) | a relation of the computed key, 10560 rows: 2.94 s to 0.014 s |
-| 20a9e565 `mirror_defect` | a universal by defect negation that enumerates every P after the defect row is derived: about 3.7M probes for 1240 defects | Souffle (no early exit on an existential) | none clean; a rewrite changed 6 rows |
-| a395ee82 `determine.covered` | a cell's place in its block is computed per pair of cells, the join is on a computed key, and the axis and `box_extent` factors of `parse.copy` | Souffle (no hoisting, no index on a computed key); the axis order: the principled form; `box_extent`: lib | a relation of the places, 11371 rows: 1.11 s to 0.065 s |
-
-- Past the fixes, the largest rows are those of the orbit as cell pairs, abbfd121's `wp.action` 256038 and `map_link` 166485, and the rows that cases whose relations hold the same rows on an input give once each.
+Inputs: profiled Souffle runs of the 17 solvers above, of `programs/solvers/`. Computed on 2026-10-19.
 
 ### Box values
 
-The values of the form `[t, b, l, r]` in every dumped row of the 15, outside `in`, `ex_in` and `ex_out`:
+The values of the form `[t, b, l, r]` in every dumped row of the solvers of Runs, outside `in`, `ex_in` and `ex_out`. An intermediate value of an inline functor, such as `@box_compose` in a body, is in no relation, so this section does not see it.
 
-- The largest margin is 29, and the smallest is −22 (abbfd121 `determine.parse.period._cand [22, -22, 0, 0]`), then −20 (0dfd9992 `si._cand`). 0dfd9992 `wp._image [1, 19, 28, -8]` is the widest box past the frame.
-- The determination plan of 48d8fb45 gives `win_box` `[1, -3, -1, -1]`.
-- An intermediate value of an inline functor, such as `@box_compose` in a body, is in no relation, so this survey does not see it.
+- The largest margin is 43 (995c5fa3 `countrankasc.counts.counts.item [0, 3, 0, 43]`), and the smallest is -43 (995c5fa3 `period.inv._cand [0, 0, 43, -43]`).
+
+Inputs: the dumps of Runs. Computed on 2026-10-19.
 
 ### Idents
 
 An Ident group is a distinct row of a relation whose last column is `id`, less its `p` or `a` column, outside `_ident`, summed over the relations of one call: the components, classes and enclosures that the call labels.
 
-- Per call, at most 340 (b2862040), then 146 (a934301b), 48 (af24b4cc) and 28 (ae58858e).
+- Per call, at most 48 (af24b4cc), then 28 (ae58858e), then 16 (c0f76784), then 9 (88bcf3b4).
+
+Inputs: the dumps of Runs. Computed on 2026-10-19.
