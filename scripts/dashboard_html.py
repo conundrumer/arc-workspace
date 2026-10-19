@@ -14,8 +14,8 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 
-from dashboard_reads import (DAY, OPEN, STALE_RECORD, OperatorRecords, Stage, change_of, hits_full, phrase,
-                             stage, users)
+from dashboard_reads import (DAY, OPEN, STALE_RECORD, OperatorRecords, Stage, change_of, hits_full, logged,
+                             phrase, stage, users)
 from dashboard_template import EVENTS, LAST_LOOK, SEARCH_ROUTE, TAB, TEMPLATE, TICKET_ROUTE
 from state_assembly import ScriptAdmits, Shown, ShownAgent, ShownParty, Start
 from ticket_reads import read_tickets
@@ -353,20 +353,30 @@ class Standings:
         return out
 
 
-def stage_bar(s: Stage, at_work: bool) -> str:
-    """A bar of one cell for each stage, done up to `s`, and at `s` at work
-    where `at_work` holds and stopped otherwise."""
-    at = "n" if at_work else "x"
-    cells = "".join(f'<b class="{"d" if k < s else at if k == s else ""}"></b>' for k in Stage)
+class Mark(Enum):
+    """The cell of a stage bar at the stage it reaches, by its CSS class:
+    an agent at work, work stopped unfinished, or work finished."""
+    AT_WORK = "n"
+    STOPPED = "x"
+    FINISHED = "d"
+
+
+def stage_bar(s: Stage, mark: Mark) -> str:
+    """A bar of one cell for each stage, done up to `s`, and at `s` as
+    `mark` gives."""
+    cells = "".join(f'<b class="{"d" if k < s else mark.value if k == s else ""}"></b>' for k in Stage)
     return f'<span class="mb">{cells}</span>'
 
 
 def stopped_bar(v: View, t: Ticket) -> str:
-    """The stage bar of `t`, which no agent works on, where its change
-    passed Triage before its work stopped; else nothing."""
+    """The stage bar of `t`, which no agent works on, from the work the log
+    of its change records (`dashboard_reads.logged`), where that work
+    reached past Triage; else nothing."""
     c = change_of(t, v.all_)
-    s = None if c is None else stage([], c)
-    return "" if s is None or s is Stage.TRIAGE else stage_bar(s, False)
+    w = None if c is None else logged(c)
+    if w is None or w.stage is Stage.TRIAGE:
+        return ""
+    return stage_bar(w.stage, Mark.FINISHED if w.finished else Mark.STOPPED)
 
 
 def row(v: View, t: Ticket, right: str, lead: int | None = None) -> str:
@@ -394,7 +404,7 @@ def active(v: View, st: Standings) -> tuple[str, int]:
             s = stage([x.role for x in w], c or t)
             take = taken(c or t)
             rows.append((t.filed if take is None else take.time, t,
-                         f"{stage_bar(s, True)}{s.name.capitalize()} · {ago(v.now - a.launched)}"))
+                         f"{stage_bar(s, Mark.AT_WORK)}{s.name.capitalize()} · {ago(v.now - a.launched)}"))
     rows.sort(key=lambda r: r[0])
     if not rows:
         return '<div class="meta">Nothing is being worked on.</div>', 0

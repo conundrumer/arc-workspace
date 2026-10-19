@@ -1,7 +1,7 @@
 """The reads the ticket dashboard (`ticket_dashboard`) renders from: the
 recorded states of the operators of each session, and of a ticket its phrase,
-the change it waits on, whether it is the user's and the stage of the work
-on it; and the time a usage window reaches 100% at its rate so far."""
+the change it waits on, whether it is the user's, the stage of the work
+on it and the work its change's log records; and the time a usage window reaches 100% at its rate so far."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -189,6 +189,41 @@ def stage(roles: list[Role], change: Ticket | None) -> Stage:
     floor = (Stage.TRIAGE if change is None or change.kind is not Kind.CHANGE
              else Stage.DESIGN if change.status is Status.DRAFT else Stage.BUILD)
     return max([floor, *(ROLE_STAGE[r] for r in roles)])
+
+
+ROLES: Mapping[str, Role] = {r.value: r for r in Role}
+"""Each role by the name a log line's bracket gives it."""
+
+
+@dataclass(frozen=True)
+class Logged:
+    """The work on a change that its log records: the furthest stage of
+    it, and whether the work of that stage finished."""
+    stage: Stage
+    finished: bool
+
+
+def logged(change: Ticket) -> Logged | None:
+    """The work the log of `change` records. A line is work of the stage
+    `ROLE_STAGE` gives the role its bracket names, and the first line, the
+    filing, is work of Triage, whoever filed it; a line whose bracket names
+    no role is no work. A line finishes the work of its stage where it
+    moves `change` to another status than the line before it left it in,
+    as a review that approves a draft does, and the filing finishes Triage.
+    None where no line is work."""
+    found: Logged | None = None
+    before: Status | None = None
+    for i, ln in enumerate(change.log):
+        role = ROLES.get(ln.agent)
+        s = Stage.TRIAGE if i == 0 else None if role is None else ROLE_STAGE[role]
+        if s is not None:
+            moved = i == 0 or ln.status is not before
+            if found is None or s > found.stage:
+                found = Logged(s, moved)
+            elif s == found.stage and moved:
+                found = Logged(s, True)
+        before = ln.status
+    return found
 
 
 def hits_full(usage: Usage, name: WindowName) -> float | None:
