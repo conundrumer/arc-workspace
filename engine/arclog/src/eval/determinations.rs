@@ -15,7 +15,7 @@ use super::join;
 use super::{Evaluation, Outcome, RelationValue, RunFault, Stop};
 use crate::check::CheckedProgram;
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Clause, ClauseKeyword, DeclaredName, OutputOwner, OutputStep, ProgramRelation, RelationName};
+use crate::program::{Clause, ClauseKeyword, DeclaredName, ProgramRelation, RelationName};
 use crate::registry::{LibEntry, Proposer, ProposerKind, Registry};
 use crate::relations::{Relation, Row, RowSet};
 use crate::resolver::{DependencyKind, GraphNodeIndex};
@@ -231,20 +231,10 @@ fn declared_spelled(name: &DeclaredName) -> String {
 /// `relation` as a file writes it, `&marker.glyph` for an output, with a
 /// slot for a name a decode gives no text.
 pub fn relation_spelled(relation: &ProgramRelation) -> String {
-    let output = match relation {
-        ProgramRelation::Declared(name) => return spelled(name),
-        ProgramRelation::Output(output) => output,
-    };
-    let owner = match &output.of {
-        OutputOwner::Instance(name) => declared_spelled(&name.0),
-        OutputOwner::RigidDet(name) => declared_spelled(&name.0),
-    };
-    let steps = output.path.iter().map(|step| match step {
-        OutputStep::Port(port) => port.0.to_string(),
-        OutputStep::Part(part) => declared_spelled(part).trim_start_matches('&').to_owned(),
-        OutputStep::Pose => "pose".to_owned(),
-    });
-    std::iter::once(owner).chain(steps).collect::<Vec<_>>().join(".")
+    match relation {
+        ProgramRelation::Declared(name) => spelled(name),
+        ProgramRelation::Output(output) => crate::write::output_name(output, declared_spelled),
+    }
 }
 
 /// Whether the registry marks the proposer `name` as a type-domain proposer.

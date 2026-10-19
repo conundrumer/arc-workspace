@@ -182,15 +182,17 @@ fn column(name: &ColumnName) -> &str {
     }
 }
 
-fn output_name(name: &OutputName) -> String {
+/// `name` as a file writes it, with each declared name in it as `declared`
+/// spells it.
+pub(crate) fn output_name<'n, S: AsRef<str>>(name: &'n OutputName, declared: impl Fn(&'n DeclaredName) -> S) -> String {
     let mut text = match &name.of {
-        OutputOwner::Instance(InstanceName(owner)) | OutputOwner::RigidDet(RigidDetName(owner)) => declared(owner).to_owned(),
+        OutputOwner::Instance(InstanceName(owner)) | OutputOwner::RigidDet(RigidDetName(owner)) => declared(owner).as_ref().to_owned(),
     };
     for step in name.path.iter() {
         text.push('.');
         match step {
             OutputStep::Port(PortName(port)) => text.push_str(port),
-            OutputStep::Part(part) => text.push_str(declared(part).trim_start_matches(sp::DECLARED_MARK)),
+            OutputStep::Part(part) => text.push_str(declared(part).as_ref().trim_start_matches(sp::DECLARED_MARK)),
             OutputStep::Pose => text.push_str(sp::POSE),
         }
     }
@@ -200,7 +202,7 @@ fn output_name(name: &OutputName) -> String {
 pub(super) fn program_relation(relation: &ProgramRelation) -> String {
     match relation {
         ProgramRelation::Declared(RelationName(name)) => declared(name).to_owned(),
-        ProgramRelation::Output(name) => output_name(name),
+        ProgramRelation::Output(name) => output_name(name, declared),
     }
 }
 
@@ -210,7 +212,7 @@ pub(crate) fn relation_ref(relation: &RelationRef) -> String {
         RelationRef::Fact(fact) => spelling(sp::FACT_RELATIONS, fact).to_owned(),
         RelationRef::Lib(crate::registry::LibName(name)) => name.to_string(),
         RelationRef::Declared(RelationName(name)) => declared(name).to_owned(),
-        RelationRef::Output(name) => output_name(name),
+        RelationRef::Output(name) => output_name(name, declared),
         RelationRef::DefinedPort(PortName(port)) => format!("{}{port}", sp::SELF_PREFIX),
     }
 }
