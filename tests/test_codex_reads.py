@@ -266,7 +266,7 @@ def test_unrecorded_preparation_failure_adds_no_walk_and_allows_retry(
     assert walk.step_calls(reads.walk_entries(entries, "code-reviewer"), "code-reviewer") == expected
 
 
-@pytest.mark.parametrize("bad", ["generic-error", "post-start", "wrong-id", "missing-output",
+@pytest.mark.parametrize("bad", ["post-start", "wrong-id", "missing-output",
                                  "untimed-record", "overlapping-record", "multiple-launches",
                                  "resume", "session-only"])
 def test_unproved_missing_record_still_refuses(tmp_path, bad):
@@ -278,8 +278,6 @@ def test_unproved_missing_record_still_refuses(tmp_path, bad):
     record.update(started=1792454461, ended=1792454462)
     output = tmp_path / "background.output"
     match bad:
-        case "generic-error":
-            output.write_text("codex_agent: failed\n\n[exited with code 1]")
         case "post-start":
             output.write_text(PREPARATION_TRACEBACK.replace("in role_instructions", "in daemon_turn"))
         case "wrong-id":
@@ -303,6 +301,115 @@ def test_unproved_missing_record_still_refuses(tmp_path, bad):
     path.write_text(json.dumps(record) + "\n")
     with pytest.raises(ValueError, match="no (matching )?turn record|more than one Codex command"):
         reads.walk_entries([failed, result, retry], "code-reviewer")
+
+
+@pytest.mark.parametrize("pipe", ["tail -5", "cat", "tee /tmp/launch.log", "sed -n '1,5p'"])
+@pytest.mark.parametrize("output", [
+    "\n".join(PREPARATION_TRACEBACK.splitlines()[-6:-2]),
+    "custom.setup.ConfigurationError: missing settings",
+    "codex_agent: failed\n\n[exited with code 1]",
+    "Exit code 2\ncannot open brief",
+])
+@pytest.mark.parametrize("retry", [False, True])
+def test_filtered_unrecorded_failure_adds_nothing(tmp_path, pipe, output, retry):
+    failed, result = preparation_failure(tmp_path, output=output)
+    failed["message"]["content"][0]["input"]["command"] += f" <<'INPUT' 2>&1 | {pipe}\nwork\nINPUT"
+    entries = [failed, result]
+    expected = []
+    if retry:
+        accepted = turn(tmp_path, [(STEP, "completed")])
+        accepted["timestamp"] = "2026-10-20T00:01:00Z"
+        path = tmp_path / "codex-events.jsonl"
+        record = json.loads(path.read_text())
+        record.update(started=1792454461, ended=1792454462)
+        path.write_text(json.dumps(record) + "\n")
+        entries.append(accepted)
+        expected = [("1:0", "completed")]
+    assert walk.step_calls(reads.walk_entries(entries, "code-reviewer"), "code-reviewer") == expected
+
+
+@pytest.mark.parametrize("output", ["", "failed", "completed", "Traceback (most recent call last):"])
+def test_filtered_output_without_failure_evidence_still_refuses(tmp_path, output):
+    failed, result = preparation_failure(tmp_path, output=output)
+    failed["message"]["content"][0]["input"]["command"] += " 2>&1 | tail -5"
+    with pytest.raises((OSError, ValueError)):
+        reads.walk_entries([failed, result], "code-reviewer")
+
+
+def test_failed_tool_result_without_a_turn_adds_nothing(tmp_path):
+    failed, result = preparation_failure(tmp_path, output="")
+    result["message"]["content"][0]["is_error"] = True
+    assert reads.walk_entries([failed, result], "code-reviewer") == []
+
+
+def test_filtered_failure_cannot_discard_its_turn_record(tmp_path):
+    failed, result = preparation_failure(tmp_path, output="custom.Error: failed")
+    turn(tmp_path, [(STEP, "recorded")])
+    assert walk.step_calls(reads.walk_entries([failed, result], "code-reviewer"),
+                           "code-reviewer") == [("1:0", "recorded")]
+
+
+def test_timed_preparation_failure_cannot_discard_a_matching_turn_record(tmp_path):
+    failed, result = preparation_failure(tmp_path, output="")
+    result["timestamp"] = "2026-10-20T00:00:10Z"
+    (tmp_path / "codex-launch-failures.jsonl").write_text(json.dumps({
+        "id": "a" * 32, "error": "cannot prepare", "started": 1792454401, "ended": 1792454402}))
+    turn(tmp_path, [(STEP, "recorded")])
+    path = tmp_path / "codex-events.jsonl"
+    record = json.loads(path.read_text())
+    record.update(started=1792454401, ended=1792454402)
+    path.write_text(json.dumps(record) + "\n")
+    assert walk.step_calls(reads.walk_entries([failed, result], "code-reviewer"),
+                           "code-reviewer") == [("1:0", "recorded")]
+
+
+def test_failure_after_a_completed_call_keeps_its_walk(tmp_path):
+    accepted = turn(tmp_path, [(STEP, "completed")])
+    failed, result = preparation_failure(tmp_path, output="Exit code 2\nmissing brief")
+    assert walk.step_calls(reads.walk_entries([accepted, failed, result], "code-reviewer"),
+                           "code-reviewer") == [("1:0", "completed")]
+
+
+@pytest.mark.parametrize("output", [
+    '{"type":"turn.started"}\n\n[exited with code 1]',
+    "codex_agent: daemon turn failed (not replayed): disconnected\n\n[exited with code 1]",
+    "codex_agent: codex exec exited 1 with no last message or thread id\n\n[exited with code 1]",
+])
+def test_turn_execution_without_a_record_still_refuses(tmp_path, output):
+    failed, result = preparation_failure(tmp_path, output=output)
+    with pytest.raises((OSError, ValueError)):
+        reads.walk_entries([failed, result], "code-reviewer")
+
+
+@pytest.mark.parametrize("pipe", ["tail -1", "head -1", "cat >/dev/null"])
+@pytest.mark.parametrize("proof", ["valid", "earlier", "later", "overlap", "untimed", "duplicate"])
+@pytest.mark.parametrize("background", [False, True])
+def test_saved_preparation_failure_survives_output_filters(tmp_path, pipe, proof, background):
+    failed, result = preparation_failure(tmp_path, output="", background=background)
+    failed["message"]["content"][0]["input"]["command"] += f" --resume 2>&1 | {pipe}"
+    result["timestamp"] = "2026-10-20T00:00:10Z"
+    entries = [failed, result]
+    if background:
+        result["timestamp"] = "2026-10-20T00:00:00.500Z"
+        entries.append({"type": "assistant", "timestamp": "2026-10-20T00:00:10Z",
+                        "message": {"content": "Preparation ended."}})
+    saved = {"id": "a" * 32, "error": "cannot prepare", "started": 1792454401, "ended": 1792454402}
+    match proof:
+        case "earlier":
+            saved.update(started=1792454398, ended=1792454399)
+        case "later":
+            saved.update(started=1792454411, ended=1792454412)
+        case "overlap":
+            saved.update(started=1792454399)
+        case "untimed":
+            del saved["started"]
+    (tmp_path / "codex-launch-failures.jsonl").write_text(
+        (json.dumps(saved) + "\n") * (2 if proof == "duplicate" else 1))
+    if proof == "valid":
+        assert reads.walk_entries(entries, "code-reviewer") == []
+    else:
+        with pytest.raises((OSError, ValueError)):
+            reads.walk_entries(entries, "code-reviewer")
 
 
 def test_exhausted_records_name_the_unaccounted_launch(tmp_path):

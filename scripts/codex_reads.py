@@ -95,27 +95,39 @@ def launch_output(entries: list[dict[str, Any]], call_id: str) -> str:
 
 
 def unrecorded_launch(entries: list[dict[str, Any]], index: int,
-                      call_id: str, scratch: Path) -> bool:
-    """Require proof of preparation failure and that no turn record is its own.
+                      call_id: str, scratch: Path, used: int = 0) -> bool:
+    """Require a failed launch and evidence that it owns no turn record.
 
-    Older launchers have only their error output. Their scratch must be empty
-    or contain timed records starting at a later call. New launchers also save
-    an identified preparation failure, separate from Codex's turn history.
+    Output filters may discard the exit status or most of a traceback. Saved
+    preparation failures can instead be bound by their id or call interval.
+    Otherwise require failure output and an empty scratch or records outside
+    this call's interval. Missing records alone never prove a failed launch.
     """
     import re
+    from run_reads import output_file
 
     output = launch_output(entries, call_id)
     body = output.removeprefix("Exit code 1\n").removesuffix("\n\n[exited with code 1]")
-    exit_one = output.startswith("Exit code 1\n") or output.endswith("[exited with code 1]")
+    result = next((b for e in entries for b in blocks(e, "tool_result")
+                   if b.get("tool_use_id") == call_id), {})
+    start = timestamp(entries[index])
+    later = next((timestamp(e) for e in entries[index + 1:]
+                  for _, _, directory in commands(e) if directory == scratch), None)
+    end = next((timestamp(e) for e in entries[index + 1:]
+                for b in blocks(e, "tool_result") if b.get("tool_use_id") == call_id), None)
+    # A background acknowledgement is not the end of preparation. Its next
+    # launch (or the transcript's last timestamp) bounds the saved failure.
+    if output_file(result) is not None:
+        end = max((t for e in entries if (t := timestamp(e)) is not None), default=None)
+    bounds = [t for t in (end, later) if t is not None]
+    end = min(bounds) if bounds else None
     failure = re.fullmatch(
         r"codex_agent: launch failed before Codex started \[([0-9a-f]{32})\]: (.*)",
         body, re.S)
     interval = None
+    path = scratch / "codex-launch-failures.jsonl"
+    saved = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
     if failure:
-        path = scratch / "codex-launch-failures.jsonl"
-        if not path.exists():
-            return False
-        saved = [json.loads(line) for line in path.read_text().splitlines()]
         matches = [r for r in saved if r.get("id") == failure[1]
                    and r.get("error") == failure[2]]
         if len(matches) != 1:
@@ -124,21 +136,30 @@ def unrecorded_launch(entries: list[dict[str, Any]], index: int,
         if not all(isinstance(t, (int, float)) for t in interval) or interval[0] > interval[1]:
             return False
     else:
-        # A traceback must locate the failure inside instruction construction,
-        # not merely mention that function in a later Codex error or answer.
+        if start is not None and end is not None:
+            matches = [r for r in saved
+                       if isinstance(r.get("started"), (int, float))
+                       and isinstance(r.get("ended"), (int, float))
+                       and start <= r["started"] <= r["ended"] <= end]
+            if len(matches) == 1:
+                interval = matches[0]["started"], matches[0]["ended"]
+
+        # Filters may leave just a terminal exception, and a pipeline may
+        # report success despite it. Explicit evidence of turn execution still
+        # refuses: its missing record cannot be explained by preparation.
         frames = re.findall(r'^  File "([^"\n]+)", line \d+, in (\S+)\n    ([^\n]+)',
                             body, re.M)
-        traceback = (body.startswith("Traceback (most recent call last):\n")
-                     and exit_one
-                     and len(frames) >= 4
-                     and [(Path(p).name, f) for p, f, _ in frames[:4]] == [
-                         ("codex_agent.py", "<module>"), ("codex_agent.py", "main"),
-                         ("codex_agent.py", "run"), ("codex_agent.py", "role_instructions")]
-                     and frames[2][2].startswith("instructions = ")
-                     and "role_instructions(" in frames[2][2])
-        diagnostic = (exit_one
-                      and re.fullmatch(r"codex_agent: /[^\n]+:\d+: no-marker: [^\n]+", body))
-        if not (traceback or diagnostic):
+        executing = any(Path(p).name == "codex_agent.py" and (
+            f in ("daemon_turn", "execute", "usage_record")
+            or (f == "run" and re.search(r"\b(?:daemon_turn|runner|usage_record)\(", code)))
+            for p, f, code in frames)
+        executing = executing or bool(re.search(
+            r'"type"\s*:\s*"(?:thread\.started|turn\.(?:started|completed|failed)|item\.completed)"'
+            r'|codex_agent: (?:daemon turn failed|codex exec exited)', output))
+        failed = (result.get("is_error") is True
+                  or re.search(r"(?:^Exit code [1-9]\d*\n|\[exited with code [1-9]\d*\]$)", output)
+                  or re.search(r"(?:^|\n)(?:\w+\.)*\w*(?:Error|Exception): [^\n]+$", body))
+        if interval is None and (executing or not failed):
             return False
 
     block = next(b for b in blocks(entries[index], "tool_use") if b.get("id") == call_id)
@@ -146,19 +167,17 @@ def unrecorded_launch(entries: list[dict[str, Any]], index: int,
         str((block.get("input") or {}).get("command", "")))) if program == "codex_agent.py"]
     if len(launches) != 1:
         raise ValueError("the failed Bash call contains more than one Codex command")
-    if interval is not None:
+    if failure:
         # The matching identifier is written only by preparation's exception
         # handler. It cannot consume a turn record, even on a failed resume.
         return True
-    if "--resume" in launches[0]:
+    if interval is None and "--resume" in launches[0]:
         return False
     path = scratch / "codex-events.jsonl"
-    records = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+    records = ([json.loads(line) for line in path.read_text().splitlines()]
+               if path.exists() else [])[used:]
     if not records:
-        return not (scratch / "codex-session").exists()
-    start = timestamp(entries[index])
-    later = next((timestamp(e) for e in entries[index + 1:]
-                  for _, _, directory in commands(e) if directory == scratch), None)
+        return used > 0 or not (scratch / "codex-session").exists()
     if start is None or later is None or later <= start:
         return False
     return all(isinstance(r.get("started"), (int, float)) and r["started"] >= later
@@ -195,7 +214,8 @@ def walk_entries(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any
                 continue
             if agent_type != kind:
                 raise ValueError("the Codex call gives no matching agent type")
-            if unrecorded_launch(entries, index, call_id, directory):
+            if unrecorded_launch(entries, index, call_id, directory,
+                                 used if directory == scratch else 0):
                 continue
             if scratch is None:
                 scratch = directory
