@@ -59,8 +59,8 @@ def test_launch(switch: Path, role: Role, enabled: bool, model: Model | None):
     assert params["subagent_type"] == role.agent_type
     assert params["run_in_background"] == "true"
     if routed:
-        codex = "gpt-6-astra" if role is Role.CODE_EDITOR and model is None else "gpt-5.6-sol"
-        assert params["prompt"] == f'brief\nCodex mode: model `{codex}`, reasoning effort `medium`.'
+        effort = "high" if role is Role.CODE_EDITOR and model is None else "medium"
+        assert params["prompt"] == f'brief\nCodex mode: model `gpt-6.1-sol`, reasoning effort `{effort}`.'
     else:
         assert params["prompt"] == "brief"
     step = Launch(role, "1-1", "brief", model, occasion="test")

@@ -192,10 +192,7 @@ def parameter(value: object) -> str:
 
 CODEX_ROLES = frozenset({Role.CODE_EDITOR, Role.CODE_REVIEWER, Role.DESIGN_REVIEWER,
                          Role.LIB_REVIEWER})
-CODEX_EDITOR_MODEL = "gpt-6-astra"
-"""The Codex model of a code editor of a change that is not `mechanical`."""
-CODEX_MODEL = "gpt-5.6-sol"
-"""The Codex model of each other launch in Codex mode."""
+CODEX_MODEL = "gpt-6.1-sol"
 CODEX_LINE = mctx("Codex mode: model `{model}`, reasoning effort `{effort}`.")
 
 
@@ -211,8 +208,7 @@ def launch_parameters(role: Role, subject: str, model: Model | None,
     if prompt is not None:
         if codex:
             editor = role is Role.CODE_EDITOR and model is not Model.SONNET
-            prompt += "\n" + CODEX_LINE.format(model=CODEX_EDITOR_MODEL if editor else CODEX_MODEL,
-                                               effort="medium")
+            prompt += "\n" + CODEX_LINE.format(model=CODEX_MODEL, effort="high" if editor else "medium")
         out["prompt"] = prompt
     return out
 
