@@ -3,8 +3,8 @@ and the sheet of a ticket (`ticket_dashboard`), over the entries of a
 render (`dashboard_html.Rendered`): the words of a request, as the page's
 search box gives them in the URL's `q` parameter, the HTML of their hits,
 a ticket whose number is one of them first, then newest first, and at most
-`LIMIT` of them, and the HTML of a ticket's sheet, with the change it
-waits on."""
+`LIMIT` of them, and the HTML of a ticket's sheet, with the changes
+whose rows lead with it."""
 
 from collections.abc import Mapping
 
@@ -62,13 +62,17 @@ def lines(t: Ticket, now: float) -> str:
 
 
 def sheet(e: Entry, now: float) -> str:
-    """The HTML of the sheet of `e`: its number and kind, its phrase, the
-    change it waits on with the words of that change's state, or else
-    the plain sentence on its status, its last `SHEET_LINES` log lines, and
-    the last `SHEET_LINES` of that change's under its number."""
-    t, c = e.ticket, e.change
-    lead = e.status if c is None else f"Work on {c.change.number} · {c.state}"
-    tail = "" if c is None else f'<div class="gh">Change {esc(c.change.number)}</div>{lines(c.change, now)}'
+    """The HTML of the sheet of `e`: its number and kind, its phrase, each
+    live change whose row leads with it with the words of that change's
+    state, or else the plain sentence on its status, its last
+    `SHEET_LINES` log lines, and the last `SHEET_LINES` of each of those
+    changes an agent is at work on, or else of the first, under its
+    number."""
+    t, cs = e.ticket, e.changes
+    leads = [e.status] if not cs else [f"Work on {c.change.number} · {c.state}" for c in cs]
+    tails = [c for c in cs if c.at_work] or cs[:1]
     return (f'<div class="num">{esc(t.number)} · {esc(t.kind)}</div>'
-            f'<div class="sh" style="font-size:17px">{esc(e.phrase)}</div><div class="p">{esc(lead)}</div>'
-            f'{lines(t, now)}{tail}')
+            f'<div class="sh" style="font-size:17px">{esc(e.phrase)}</div>'
+            + "".join(f'<div class="p">{esc(x)}</div>' for x in leads)
+            + lines(t, now)
+            + "".join(f'<div class="gh">Change {esc(c.change.number)}</div>{lines(c.change, now)}' for c in tails))
