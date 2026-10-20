@@ -39,7 +39,7 @@ fn domain_fault(solver: &str, name: &str, colors: &[u8]) -> bool {
     outcome.is_err()
 }
 
-const READS_A_PICK: &str = "(CHOOSE &pick\n  (from (input *P *Col)))\n(DET &x\n  (&pick *P *Col))\n";
+const READS_A_PICK: &str = "(RULE &pick (input *P *Col)\n  (ONE))\n(DET &x\n  (&pick *P *Col))\n";
 
 #[test]
 fn a_det_that_reads_a_pick_of_two_models_is_refused() {

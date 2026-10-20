@@ -152,3 +152,59 @@ fn a_field_name_that_is_not_pascal_case_is_refused() {
 fn no_prefix_breaks_the_spelling() {
     assert_eq!(first_refused("(RULE &w (input *P (:Col *C))\n  (input *P (:Col C)))", CheckId::Spelling), None);
 }
+
+const MARK_ON_NO_COLUMN: &str = "(RULE &w (input *P (:Col *C))\n  (OR ((input P (:Col *D)))\n      ((input P (:Col C))))\n  (ONE D))";
+
+#[test]
+fn a_one_mark_on_a_label_that_is_no_column_is_refused() {
+    assert_eq!(refused_lines(MARK_ON_NO_COLUMN, CheckId::Picks), vec![1]);
+    assert_eq!(first_refused(MARK_ON_NO_COLUMN, CheckId::Picks), Some((path(&[]), vec![path(&[])])));
+}
+
+const ONE_IN_A_BODY: &str = "(RULE &w (input *P (:Col *C))\n  (OR ((ONE P))\n      ((input P (:Col C)))))";
+
+#[test]
+fn a_one_inside_a_body_is_refused() {
+    assert_eq!(refused_lines(ONE_IN_A_BODY, CheckId::Picks), vec![2]);
+    assert_eq!(first_refused(ONE_IN_A_BODY, CheckId::Picks), Some((path(&[0, 1, 0, 0]), vec![path(&[0, 1, 0, 0])])));
+}
+
+const CHOOSE_WITH_NO_NEVER: &str = "(RULE &cell (input *P (:Col *C)))\n(CHOOSE &pick\n  (from (&cell *P *C)))";
+
+#[test]
+fn a_choose_with_no_never_is_refused_at_its_end() {
+    assert_eq!(refused_lines(CHOOSE_WITH_NO_NEVER, CheckId::Picks), vec![2, 2]);
+    assert_eq!(first_refused(CHOOSE_WITH_NO_NEVER, CheckId::Picks).map(|(end, _)| end), Some(path(&[])));
+}
+
+const NEVER_READS_ONCE: &str = "(RULE &cell (input *P (:Col *C)))\n(CHOOSE &pick\n  (from (&cell *P *C))\n  (never\n    (&cell *P *C)\n    (input P (:Col C))))";
+
+#[test]
+fn a_never_that_reads_the_candidate_once_is_refused_at_the_end() {
+    assert_eq!(refused_lines(NEVER_READS_ONCE, CheckId::Picks), vec![2]);
+    assert_eq!(first_refused(NEVER_READS_ONCE, CheckId::Picks), Some((path(&[]), vec![path(&[1])])));
+}
+
+const ONE_MARKS_STATE_IT: &str = "(RULE &cell (input *P (:Col *C)))\n(CHOOSE &pick\n  (from (&cell *P *C))\n  (never\n    (&cell *P *C)\n    (&cell P (:C *C2))\n    (!= C C2)))";
+
+#[test]
+fn a_choose_that_one_marks_state_is_refused_at_its_end() {
+    assert_eq!(refused_lines(ONE_MARKS_STATE_IT, CheckId::Picks), vec![2]);
+    assert_eq!(first_refused(ONE_MARKS_STATE_IT, CheckId::Picks), Some((path(&[]), vec![path(&[])])));
+}
+
+const NO_SUCH_PART: &str = "(RULE &cell (input *P (:Col *C)))\n(RIGID_DET &m (&cell *P *C))\n(RULE &w\n  (&m.nope *P))";
+
+#[test]
+fn a_read_of_no_part_of_a_rigid_det_is_refused() {
+    assert_eq!(refused_lines(NO_SUCH_PART, CheckId::RigidPartsAndProposers), vec![4]);
+    assert_eq!(first_refused(NO_SUCH_PART, CheckId::RigidPartsAndProposers), Some((path(&[0, 0, 0, 0]), vec![path(&[0, 0])])));
+}
+
+const LOWERCASE_PROPOSER: &str = "(DET &d dirDomain)";
+
+#[test]
+fn a_proposer_name_that_is_not_pascal_case_is_refused() {
+    assert_eq!(refused_lines(LOWERCASE_PROPOSER, CheckId::RigidPartsAndProposers), vec![1]);
+    assert!(first_refused(LOWERCASE_PROPOSER, CheckId::RigidPartsAndProposers).is_some());
+}

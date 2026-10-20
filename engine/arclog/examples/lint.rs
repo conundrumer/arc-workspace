@@ -34,7 +34,7 @@ use arclog::registry::Registry;
 fn check_of(code: LintCode) -> Option<CheckId> {
     use LintCode::*;
     Some(match code {
-        Syntax | Form | Clause | Body | Atom | Site | Label | Constraint | Not | Or | If | All | Mark | Zero | Wildcard | Name | EqMark => CheckId::Grammar,
+        Syntax | Form | Clause | Body | Atom | Site | Label | Constraint | Not | Or | If | All | Mark | Zero | Wildcard | Name | EqMark | Choose | Rigid => CheckId::Grammar,
         Undeclared | Relation | Component | ProposerUnknown => CheckId::Scope,
         Column | SiteTwice => CheckId::SiteColumns,
         EqMake | EqUnexported | RemadeExport => CheckId::MadeAndExportedLabels,
@@ -48,11 +48,13 @@ fn check_of(code: LintCode) -> Option<CheckId> {
         ClauseTwice => CheckId::OneClause,
         BroadcastInside | KeySite => CheckId::InstanceSites,
         Remade | LabelClash | Elide | FieldCase => CheckId::Spelling,
+        One | OnePlace | ChooseNoNever | ChooseOne | NeverReads => CheckId::Picks,
+        RigidPart | Proposer => CheckId::RigidPartsAndProposers,
         AltClaim | AltCols | AltCombination | AltSame | AltTail | Alts | AltsEmpty | Approximated | ArcdataHead | ArcdataName | ArcdataOrder |
-        Assign | BareInit | Choose | ChooseNoNever | ChooseOne | Claim | ClaimText | ConceptEmpty | Count | CountPlace | Cycle | DemoRule |
-        DetOrRule | EmptyGloss | Exclude | GridLayout | HeadSite | Input | Instance | KeyForm | KeyLocal | NeverReads | NoOutput | NotUndefined |
-        One | OnePlace | OrImplied | OrLineTwice | Order | OutputTail | Param | ParamGrid | ParamTypes | Parse | ParseHead | Proposer | RecordField |
-        RecordPosition | Render | RenderHead | RenderPlace | RepeatForm | Representative | Rigid | RigidPart | SceneAlts | SceneArclog | SceneBlock |
+        Assign | BareInit | Claim | ClaimText | ConceptEmpty | Count | CountPlace | Cycle | DemoRule |
+        DetOrRule | EmptyGloss | Exclude | GridLayout | HeadSite | Input | Instance | KeyForm | KeyLocal | NoOutput | NotUndefined |
+        OrImplied | OrLineTwice | Order | OutputTail | Param | ParamGrid | ParamTypes | Parse | ParseHead | RecordField |
+        RecordPosition | Render | RenderHead | RenderPlace | RepeatForm | Representative | SceneAlts | SceneArclog | SceneBlock |
         SceneClaim | SceneForm | SceneParse | ScenePick | SceneTaskSide | SharedCols | Spelling | StandsUnder | TopOrder | Unbound | Witness |
         WitnessId | WitnessNoInput | WitnessNoSeparates | WitnessOther | WitnessRef => return None,
     })

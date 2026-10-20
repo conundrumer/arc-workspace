@@ -19,9 +19,11 @@ pub mod labels;
 pub mod lint;
 pub mod marks;
 pub mod one_clause;
+pub mod picks;
 pub mod pose;
 pub mod prefix;
 pub mod reads;
+pub mod rigid_proposer;
 pub mod scope;
 pub mod site_columns;
 pub mod spelling;
@@ -121,13 +123,21 @@ pub enum CheckId {
     /// one, passes it but for the names of fields, and its result is
     /// cached under no [`CheckCacheKey`].
     Spelling,
+    /// The picks: the labels of a clause's `ONE` marks, and the `never`
+    /// bodies of a `CHOOSE` form.
+    Picks,
+    /// The reads of the outputs of a `RIGID_DET` form, and the names of a
+    /// clause's proposers. The check reads the `RIGID_DET` forms of the
+    /// case program, which the form's [`CheckCacheKey`] does not hold, so
+    /// its result is cached under no key.
+    RigidPartsAndProposers,
 }
 
 impl CheckId {
     /// Whether the check's result on a form follows from the form's
     /// [`CheckCacheKey`], so that [`check_program`] caches it.
     pub fn is_cached(self) -> bool {
-        !matches!(self, CheckId::OneClause | CheckId::Spelling)
+        !matches!(self, CheckId::OneClause | CheckId::Spelling | CheckId::RigidPartsAndProposers)
     }
 }
 
@@ -628,7 +638,7 @@ fn read_signatures(program: &ResolvedProgram, form: &Form, path: &NodePath, orde
 /// a partial form that no completion makes a node of the grammar, or a name
 /// that no completion resolves.
 pub fn checks() -> &'static [&'static dyn Check] {
-    static CHECKS: [&dyn Check; 15] = [
+    static CHECKS: [&dyn Check; 17] = [
         &grammar::GrammarCheck,
         &scope::ScopeCheck,
         &site_columns::SiteColumnsCheck,
@@ -644,6 +654,8 @@ pub fn checks() -> &'static [&'static dyn Check] {
         &one_clause::OneClauseCheck,
         &instance_sites::InstanceSitesCheck,
         &spelling::SpellingCheck,
+        &picks::PicksCheck,
+        &rigid_proposer::RigidPartsAndProposersCheck,
     ];
     &CHECKS
 }
