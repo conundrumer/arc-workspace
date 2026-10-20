@@ -863,3 +863,122 @@ impl Node<Atom> {
         Node::new(Atom { relation: atom.relation.clone(), sites })
     }
 }
+
+/// The lists that [`own_lists`] and [`wrappers_of`] give each node are the
+/// lists the reader reads it from: with the names the reader gives the
+/// labels, the ranking of [`ScopeLabels::check_joins`] gives each join the
+/// label the reader joined it to.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layout::SourceFile;
+    use crate::read::read_arclog;
+
+    /// Programs that hold each list that `own_lists` and `wrappers_of` give.
+    /// Where a site that makes a label inside a list ranks second to one
+    /// that the list does not hold, and first without that list, the program
+    /// holds the two sites in that order, and a join of their name.
+    const PROGRAMS: [&str; 12] = [
+        // An input's head and its key body.
+        "(RULE &cells (input (:P *P) (:Col *Col)))\n\
+         (DEMONSTRATED &catalog\n\
+           (key ((&cells (:P *P) (:Col ^Col)))\n\
+             (value (P)\n\
+               (&cells (:P *P) (:Col Col)) (&cells (:P P)))))\n",
+        // A `CHOOSE` form's `for` clause, with its `from` inside it.
+        "(RULE &cells (input (:P *P) (:Col *Col)))\n\
+         (CHOOSE &pick\n\
+           (for ((&cells (:P *P)) (&cells (:P P)))\n\
+             (from (&cells (:P P) (:Col *Col)))))\n",
+        // A `CHOOSE` form's `for` clause, with its `from` outside it.
+        "(RULE &cells (input (:P *P) (:Col *Col)))\n\
+         (CHOOSE &pick\n\
+           (for ((&cells (:P *P)) (&cells (:P P))))\n\
+           (from (&cells (:P P) (:Col *Col))))\n",
+        // A `CHOOSE` form's `for` clause, with its `from` inside it, and a
+        // `never` clause.
+        "(RULE &cells (input (:P *P) (:Col *Col)))\n\
+         (CHOOSE &pick\n\
+           (for ((&cells (:P *X)))\n\
+             (from (&cells (:P *X) (:Col *Col))))\n\
+           (never (&cells (:P X))))\n",
+        // A `CHOOSE` form's `for` clause, with its `from` outside it, and a
+        // `never` clause.
+        "(RULE &cells (input (:P *P) (:Col *Col)))\n\
+         (CHOOSE &pick\n\
+           (for ((&cells (:P *X))))\n\
+           (from (&cells (:P *X) (:Col *Col)))\n\
+           (never (&cells (:P X))))\n",
+        // A `RIGID_DET` form's `key` clause, with no `instance` clause.
+        "(RULE &cells (input (:P *P) (:Col *Col)))\n\
+         (RIGID_DET &piece\n\
+           (key ((&cells (:P *X) (:Col ^C)))\n\
+             (&cells (:P (:a (:b *X))))\n\
+             (&cells (:P X))))\n",
+        // A `RIGID_DET` form's `key` and `instance` clauses.
+        "(RULE &cells (input (:P *P) (:Col *Col)))\n\
+         (RIGID_DET &piece\n\
+           (key ((&cells (:P *X) (:Col ^C)))\n\
+             (instance ((&cells (:P *X)))\n\
+               (&cells (:P X)))))\n",
+        // `(NOT (<atom>))`.
+        "(RULE &cells (input (:P *P) (:Col *Col)))\n\
+         (RULE &a (NOT (&cells (:P *X))) (&cells (:P *X)) (&cells (:P X)))\n",
+        // An `OR`'s later branch.
+        "(RULE &cells (input (:P *P) (:Col *Col)))\n\
+         (RULE &a (OR ((&cells (:P *Y))) ((&cells (:P *X)))) (&cells (:P (:a *X))) (&cells (:P X)))\n",
+        // An `IF`'s then.
+        "(RULE &cells (input (:P *P) (:Col *Col)))\n\
+         (RULE &a (IF ((&cells (:P *Y))) ((&cells (:P *X))) ((&cells (:P *Z)))) (&cells (:P (:a *X))) (&cells (:P X)))\n",
+        // A `DEMO_RULE` form's head.
+        "(RULE &stage (input (:P *P) (:Col *Col)))\n\
+         (DEMONSTRATED &catalog\n\
+           (value (P)\n\
+             (&stage (:P *P) (:Col *Col)))\n\
+           (DEMO_RULE ($Same *P)\n\
+             (RULE &prediction (&stage (:P *P)) (&stage (:P P)))\n\
+             (RULE &other (&stage (:P P)))))\n",
+        // An input's body and an `INIT` form's key body.
+        "(RULE &cells (input (:P *P) (:Col *Col)))\n\
+         (INIT &obj Connectivity\n\
+           (key ((&cells (:P *Q) (:Col ^Col)))\n\
+             (node (P)\n\
+               (&cells (:P *P) (:Col Col)) (&cells (:P *Q) (:Col P)))))\n",
+    ];
+
+    /// The path of each label scope below `node`, at `at`.
+    fn scopes(node: NodeRef<'_>, at: &NodePath, out: &mut Vec<NodePath>) {
+        for (child, index) in node.children().into_iter().zip(0u32..) {
+            let path = at.child(index);
+            if opens_scope(node, index as usize, child) {
+                out.push(path.clone());
+            }
+            scopes(child, &path, out);
+        }
+    }
+
+    #[test]
+    fn the_ranking_over_the_lists_of_each_node_joins_as_the_reader_joins() {
+        for text in PROGRAMS {
+            let read = read_arclog(text, SourceFile::Arclog).unwrap_or_else(|errors| panic!("{text}: {errors:?}"));
+            assert!(read.diagnostics.is_empty(), "{text}: {:?}", read.diagnostics);
+            let (program, layout) = read.value;
+            let root = NodeRef::Program(program.value());
+            let mut paths = Vec::new();
+            scopes(root, &NodePath::default(), &mut paths);
+            let mut joins = 0;
+            for path in paths {
+                let node = node_at(root, &path).expect("each scope's path names its node");
+                let mut scope = ScopeLabels::default();
+                scope.walk(node, &path, &mut Vec::new()).unwrap_or_else(|error| panic!("{text}: {error:?}"));
+                let names = &layout.node(SourceFile::Arclog, &path).expect("the reader gives each scope its layout").label_names;
+                scope.names = names.iter().map(|(label, name)| (*label, ColumnName::Written(name.clone()))).collect();
+                joins += scope.uses.iter().filter(|use_| matches!(use_.label, LabelUse::Join(_))).count();
+                if let Err(EditError::BareLabel { path }) = scope.check_joins() {
+                    panic!("{text}: the ranking joins the join at {path:?} to another maker than the reader does");
+                }
+            }
+            assert!(joins > 0, "{text}: no join");
+        }
+    }
+}
