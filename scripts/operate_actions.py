@@ -20,7 +20,8 @@ from ticket_numbers import staged
 from tree_reads import main_tree
 
 from operations import directives, relay, runs, ticket_stall, waits
-from operations import codex_mode
+from operations import codex_mode, trial_mode
+from operations.mode_switch import ModeSwitch
 from operations.constants import WAKE
 from operations.line_store import record_lines
 from operations.command_words import Action
@@ -46,6 +47,7 @@ class OperateAction(StrEnum):
     WAIT = WAIT_ACTION
     BOUND = "bound"
     CODEX = "codex"
+    TRIAL = "trial"
 
 
 DEFAULT_BOUND = "default"
@@ -132,8 +134,17 @@ def set_bound(args: list[str]) -> int:
 
 def set_codex(args: list[str]) -> int:
     """Set or print the switch, as `operate.py --help` gives it."""
+    return set_mode(args, codex_mode.SWITCH)
+
+
+def set_trial(args: list[str]) -> int:
+    """Set or print the switch, as `operate.py --help` gives it."""
+    return set_mode(args, trial_mode.SWITCH)
+
+
+def set_mode(args: list[str], switch: ModeSwitch) -> int:
     main = main_tree()
-    path = main / codex_mode.OVERRIDE
+    path = main / switch.override
     match args:
         case []:
             pass
@@ -143,7 +154,7 @@ def set_codex(args: list[str]) -> int:
             with staged(path.parent, "on\n") as tmp:
                 os.replace(tmp, path)
         case _:
-            print(mctx("operate: codex takes nothing, on, or off"), file=sys.stderr)
+            print(mctx("operate: {mode} takes nothing, on, or off").format(mode=switch.override.name), file=sys.stderr)
             return 1
-    print("on" if codex_mode.read(main) else "off")
+    print("on" if switch.read(main) else "off")
     return 0

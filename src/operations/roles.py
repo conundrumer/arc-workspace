@@ -9,7 +9,7 @@ from enum import StrEnum
 
 from handbook.agent_documents import agent_meta
 from controlled_markdown import mctx
-from operations import codex_mode
+from operations import codex_mode, trial_mode
 
 
 class Model(StrEnum):
@@ -202,11 +202,11 @@ CODEX_LINE = mctx("Codex mode: role `{role}`, model `{model}`, reasoning effort 
 def launch_parameters(role: Role, subject: str, model: Model | None,
                       prompt: str | None = None) -> dict[str, str]:
     """The parameters of the printed call and the operator's record of
-    it, with the Codex switch held for the command run."""
+    it, with the mode switches held for the command run."""
     out = {"description": description(role, subject), "subagent_type": launched_type(role, subject),
            "run_in_background": parameter(True)}
     codex = role in CODEX_ROLES and codex_mode.enabled()
-    if (given := Model.HAIKU if codex else model or launched_model(role, subject)) is not None:
+    if (given := Model.HAIKU if trial_mode.enabled() or codex else model or launched_model(role, subject)) is not None:
         out["model"] = str(given)
     if prompt is not None:
         if codex:

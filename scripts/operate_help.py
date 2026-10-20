@@ -39,6 +39,7 @@ USAGE = mctx("""
         uv run python scripts/operate.py waits <ticket number>
         uv run python scripts/operate.py bound [<tokens>|default]
         uv run python scripts/operate.py codex [on|off]
+        uv run python scripts/operate.py trial [on|off]
         ```
     - Where `next`, `relay` or `review` is given the agent id of an agent other than the one its part of this help gives, it prints that the agent is none that form serves, and what that agent does.
     {parts}
@@ -50,6 +51,7 @@ USAGE = mctx("""
     - `waits` prints the paths of links from a ticket, as `--help alerts` gives them, from the state `next` reads for the session.
     - `bound` prints the context bound of an operator and an operator launcher in force, and its source, as `500000 override` or `100000 default`. Given `<tokens>`, a positive whole number, it first writes that number as the override, which holds for every session on the machine; given `default`, it first removes the override.
     - `codex` prints `on` or `off`. Given either word, it first sets Codex mode for every session on the machine. It is off where the main tree has no `.cache/codex`. While on, code editors, code reviewers, design reviewers and lib reviewers run on Haiku and give each checklist item to Codex. Each command holds the switch value for its run.
+    - `trial` prints `on` or `off`. Given either word, it first sets trial mode for every session on the machine. It is off where the main tree has no `.cache/trial`. While on, every launch the operator or `review` prints gives Haiku as its model, whatever its role, agent document or step gives. Each command holds the switch value for its run.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives.
     """)
 """The help the bare `--help` prints."""
