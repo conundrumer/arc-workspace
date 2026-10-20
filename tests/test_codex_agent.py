@@ -56,6 +56,11 @@ def test_start_then_resume(files):
     brief.unlink()
     assert run("later result") == "done"
     assert calls[1] == [*argv[:-1], "resume", "t1", "later result"]
+    records = [json.loads(line) for line in (scratch / "codex-events.jsonl").read_text().splitlines()]
+    assert len(records) == 2
+    assert [r["input"] for r in records] == ["first item", "later result"]
+    assert all(r["thread"] == "t1" and r["ok"] for r in records)
+    assert all(json.loads(r["output"])["type"] == "thread.started" for r in records)
 
 
 def test_no_user_document(files):
@@ -148,3 +153,5 @@ def test_failure_does_not_return_stale_message(files, code, event, message):
         agent.run("code-editor", scratch, brief, "gpt-6-astra", "medium", "item",
                   root, home, root, root, runner)
     assert (scratch / "codex-session").read_text().strip() == "failed-thread"
+    record = json.loads((scratch / "codex-events.jsonl").read_text())
+    assert record["thread"] == "failed-thread" and not record["ok"]

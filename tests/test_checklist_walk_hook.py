@@ -9,6 +9,7 @@ from engine import checkout
 from handbook.checklist import Checklist
 from handbook.paths import scripts_importable
 from tests.hookrun import run_hook
+from tests.codex_run import turn
 
 scripts_importable()
 
@@ -36,6 +37,10 @@ def session(tmp_path: Path, results: list[str], stops: dict[int, str] | None = N
                                  else f"{STEP} | head -3"}}]}},
                   {"type": "user", "toolUseResult": {"stdout": result}, "message": {"content": [
                       {"type": "tool_result", "tool_use_id": f"t{n}", "content": result}]}}]
+    if kind == "codex-launcher":
+        lines = [lines[0], turn(tmp_path / "codex", [
+            (f"{STEP} --stop {stops[n]}" if n in stops else STEP, result)
+            for n, result in enumerate(results)])]
     lines += [{"type": "user", "message": {"role": "user", "content": m}} for m in messages]
     (agents / f"agent-{AGENT}.jsonl").write_text("".join(json.dumps(e) + "\n" for e in lines))
     (tmp_path / "s.jsonl").write_text("")
@@ -111,3 +116,61 @@ def test_a_launcher_is_held_to_its_roles_walk(tmp_path: Path) -> None:
 
 def test_a_launcher_with_a_whole_walk_is_allowed(tmp_path: Path) -> None:
     assert not denied(session(tmp_path, whole_walk(), kind="codex-launcher"))
+
+
+def test_a_launcher_with_no_codex_evidence_is_always_denied(tmp_path: Path) -> None:
+    stdin = session(tmp_path, whole_walk(), kind="codex-launcher")
+    (tmp_path / "codex" / "codex-events.jsonl").unlink()
+    assert denied(stdin)
+    assert denied(stdin)
+
+
+def test_a_launcher_with_a_partial_walk_is_always_denied(tmp_path: Path) -> None:
+    stdin = session(tmp_path, whole_walk()[:3], kind="codex-launcher")
+    assert denied(stdin)
+    assert denied(stdin)
+
+
+def test_a_codex_stop_is_bounded_until_a_message(tmp_path: Path) -> None:
+    assert not denied(session(tmp_path, *stopped(whole_walk(), 2), kind="codex-launcher"))
+
+
+def test_a_message_after_a_codex_stop_requires_the_rest(tmp_path: Path) -> None:
+    assert denied(session(tmp_path, *stopped(whole_walk(), 2),
+                          messages=("Continue.",), kind="codex-launcher"))
+
+
+def test_a_launcher_cannot_substitute_its_own_walk(tmp_path: Path) -> None:
+    stdin = session(tmp_path, whole_walk(), kind="codex-launcher")
+    path = tmp_path / "s" / "subagents" / f"agent-{AGENT}.jsonl"
+    lines = path.read_text().splitlines()
+    path.write_text(lines[0] + "\n")
+    assert denied(stdin)
+
+
+def test_malformed_codex_evidence_is_always_denied(tmp_path: Path) -> None:
+    stdin = session(tmp_path, whole_walk(), kind="codex-launcher")
+    (tmp_path / "codex" / "codex-events.jsonl").write_text("null\n")
+    assert denied(stdin)
+    assert denied(stdin)
+
+
+def test_a_codex_walk_can_continue_across_a_resume(tmp_path: Path) -> None:
+    results = whole_walk()
+    stdin = session(tmp_path, results[:3], kind="codex-launcher")
+    path = tmp_path / "s" / "subagents" / f"agent-{AGENT}.jsonl"
+    with path.open("a") as f:
+        f.write(json.dumps({"type": "user", "message": {"content": "Here is the result."}}) + "\n")
+        f.write(json.dumps(turn(tmp_path / "codex", [(STEP, r) for r in results[3:]], first=False)) + "\n")
+    assert not denied(stdin)
+
+
+def test_a_resume_input_removes_a_codex_stops_bound(tmp_path: Path) -> None:
+    stdin = session(tmp_path, *stopped(whole_walk(), 2), kind="codex-launcher")
+    assert not denied(stdin)
+    path = tmp_path / "s" / "subagents" / f"agent-{AGENT}.jsonl"
+    with path.open("a") as f:
+        f.write(json.dumps(turn(tmp_path / "codex", [], first=False,
+                               text="The requested result is ready. Continue your walk.")) + "\n")
+    assert denied(stdin)
+    assert denied(stdin)

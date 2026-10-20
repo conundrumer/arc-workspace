@@ -21,7 +21,11 @@ the stop bounds nothing, and the whole walk is held. A stop on an item the walk 
 item of the checklist, is held to the whole walk. The result of a stop
 holds no item.
 
-A denied call is recorded with the id of the agent's last step call, in a
+For a Codex launcher, `codex_reads.walk_entries` reads Codex's command
+results instead. An unreadable or incomplete Codex walk is denied on each
+attempt; the launcher must pass the refusal back to Codex by a resume.
+
+A denied Claude call is recorded with the id of the agent's last step call, in a
 file named by its agent id under `STOPS` of its session directory, and no
 call is denied again while that step call is still the last: a fault in
 the check, or a checklist that changed under the run, then cannot hold the
@@ -30,6 +34,8 @@ allows the call and says why on stderr."""
 
 import re
 import sys
+
+from controlled_markdown import mctx
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
@@ -148,7 +154,8 @@ def check(hook: dict[str, Any]) -> str | None:
     """The reason to deny the SubagentHandback call `hook` gives, as the
     module docstring gives it, or None."""
     from printed_launch_hook import first_at
-    from run_reads import caller_id, caller_type
+    from run_reads import agent_type, caller_id, caller_type, caller_transcript
+    from operations.roles import CODEX_LAUNCHER
     from entry_reads import entries_back
 
     from handbook.checklist import checklist_agents
@@ -156,21 +163,39 @@ def check(hook: dict[str, Any]) -> str | None:
     tool = hook.get("tool_name")
     if tool is not None and tool != "SubagentHandback":
         raise not_registered("SubagentHandback", "tool", tool)
-    path, kind = caller_type(HOOK, hook)
+    path = caller_transcript(hook)
+    codex = agent_type(path) == CODEX_LAUNCHER
+    try:
+        path, kind = caller_type(HOOK, hook)
+    except ValueError as exc:
+        if codex:
+            return mctx("Blocked: cannot read the Codex role: {error}.").format(error=exc)
+        raise
     agent = caller_id(hook)
     if kind is None or agent is None or kind not in checklist_agents():
         return None
     entries = list(reversed(list(entries_back(path))))
+    if codex:
+        from codex_reads import walk_entries
+
+        try:
+            entries = walk_entries(entries, kind)
+        except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError) as exc:
+            return mctx("Blocked: cannot read the Codex walk: {error}. "
+                        "Resume Codex to finish its walk.").format(error=exc)
     calls = _calls(entries, kind)
     gap = walk_gap(kind, calls, stop_bound(entries, calls, kind))
     if gap is None:
         return None
     last = calls[-1][0] if calls else NO_CALL
-    if not first_at(hook, STOPS, agent, last):
+    if not codex and not first_at(hook, STOPS, agent, last):
         print(f"{HOOK}: allowed: a handback was denied at step call {last}, "
               "and the agent made no step call since", file=sys.stderr)
         return None
-    return refusal(gap.command, kind)
+    reason = refusal(gap.command, kind)
+    if codex:
+        return mctx("Blocked: resume Codex with this refusal, then hand back its updated reply.") + "\n" + reason
+    return reason
 
 
 def main() -> int:

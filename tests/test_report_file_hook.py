@@ -10,6 +10,7 @@ from pathlib import Path
 from engine import checkout
 from handbook.paths import scripts_importable
 from tests.hookrun import run_hook
+from tests.codex_run import turn
 
 scripts_importable()
 
@@ -102,4 +103,45 @@ def test_a_launcher_is_held_to_its_report_file(tmp_path: Path) -> None:
     stdin = session(tmp_path, "done")
     meta = tmp_path / "s" / "subagents" / f"agent-{AGENT}.meta.json"
     meta.write_text(json.dumps({"agentType": "codex-launcher"}))
+    assert denied(stdin)
+
+
+def codex_session(tmp_path: Path, message: str, *later: dict[str, object]) -> str:
+    stdin = session(tmp_path, message, *later)
+    path = tmp_path / "s" / "subagents" / f"agent-{AGENT}.jsonl"
+    entries = [json.loads(line) for line in path.read_text().splitlines()]
+    entries[0]["message"]["content"][0]["text"] += (
+        "\nCodex mode: role `code-reviewer`, model `gpt-6.1-sol`, reasoning effort `medium`.")
+    entries.append(turn(tmp_path / "codex", []))
+    path.write_text("".join(json.dumps(e) + "\n" for e in entries))
+    path.with_suffix(".meta.json").write_text(json.dumps({"agentType": "codex-launcher"}))
+    return stdin
+
+
+def test_a_codex_report_written_after_the_last_message_is_allowed(tmp_path: Path) -> None:
+    stdin = codex_session(tmp_path, str(tmp_path / NAME))
+    written(tmp_path, BRIEF_AT + 10)
+    assert not denied(stdin)
+
+
+def test_a_codex_report_before_a_resumed_message_is_always_denied(tmp_path: Path) -> None:
+    stdin = codex_session(tmp_path, str(tmp_path / NAME), prompt("u1", BRIEF_AT + 20, "Continue."))
+    written(tmp_path, BRIEF_AT + 10)
+    assert denied(stdin)
+    assert denied(stdin)
+
+
+def test_a_codex_report_with_missing_evidence_is_always_denied(tmp_path: Path) -> None:
+    stdin = codex_session(tmp_path, str(tmp_path / NAME))
+    written(tmp_path, BRIEF_AT + 10)
+    (tmp_path / "codex" / "codex-events.jsonl").unlink()
+    assert denied(stdin)
+    assert denied(stdin)
+
+
+def test_a_codex_report_with_an_unreadable_brief_is_always_denied(tmp_path: Path) -> None:
+    stdin = codex_session(tmp_path, str(tmp_path / NAME))
+    written(tmp_path, BRIEF_AT + 10)
+    (tmp_path / "brief.md").unlink()
+    assert denied(stdin)
     assert denied(stdin)

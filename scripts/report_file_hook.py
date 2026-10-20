@@ -14,7 +14,10 @@ handback, after the agent has written its final reply.
 The brief is the first message of the agent's own transcript, with each
 file it gives by `FILED_LINE` read in (`filed_texts.unfiled`).
 
-A denied call is recorded with the id of the last message the agent got,
+A Codex launcher must have readable turn records (`codex_reads`), and its
+brief and report must be readable. Its refusals apply on each attempt.
+
+A denied Claude call is recorded with the id of the last message the agent got,
 in a file named by its agent id under `STOPS` of its session directory,
 and no call is denied again while that message is still the last. A denial
 gives the agent no message, so a fault in the check cannot hold the agent
@@ -23,6 +26,8 @@ reply has a new handback checked again. Where the brief gives a file that
 is gone, the hook allows the call and says why on stderr."""
 
 import sys
+
+from controlled_markdown import mctx
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -83,7 +88,8 @@ def check(hook: Hook) -> str | None:
     module docstring gives it, or None."""
     from filed_texts import brief_report_file, report_file
     from printed_launch_hook import first_at
-    from run_reads import caller_id, caller_transcript
+    from run_reads import agent_type, caller_id, caller_transcript, role_type
+    from operations.roles import CODEX_LAUNCHER
     from entry_reads import entries_back, entries_forward
 
     tool = hook.get("tool_name")
@@ -93,12 +99,28 @@ def check(hook: Hook) -> str | None:
     if agent is None:
         return None
     path = caller_transcript(hook)
+    codex = agent_type(path) == CODEX_LAUNCHER
+    if codex:
+        from codex_reads import walk_entries
+
+        try:
+            kind = role_type(path)
+            if kind is None:
+                raise ValueError("the Codex role is unknown")
+            walk_entries(list(entries_forward(path)), kind)
+        except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError) as exc:
+            return mctx("Blocked: cannot read the Codex report's run: {error}.").format(error=exc)
     undecided: list[str] = []
-    text = brief(entries_forward(path), f"the brief of {agent}", undecided)
+    try:
+        text = brief(entries_forward(path), f"the brief of {agent}", undecided)
+    except (OSError, ValueError) as exc:
+        if codex:
+            return mctx("Blocked: cannot read the Codex brief: {error}.").format(error=exc)
+        raise
     for line in undecided:
-        print(f"{HOOK}: allowed: {line}", file=sys.stderr)
+        print(f"{HOOK}: {'blocked' if codex else 'allowed'}: {line}", file=sys.stderr)
     if text is None or undecided:
-        return None
+        return mctx("Blocked: cannot read the Codex brief and its report file.") if codex else None
     wanted = brief_report_file(text)
     if wanted is None:
         return None
@@ -106,7 +128,7 @@ def check(hook: Hook) -> str | None:
     if given == wanted and written_since(wanted, entries_back(path)):
         return None
     last = last_message(entries_back(path))
-    if not first_at(hook, STOPS, agent, last):
+    if not codex and not first_at(hook, STOPS, agent, last):
         print(f"{HOOK}: allowed: a handback was denied after message {last}, "
               "and the agent got no message since", file=sys.stderr)
         return None

@@ -1,9 +1,9 @@
-"""Run one checklist item in the agent's Codex session.
+"""Run the agent's checklist in one Codex session.
 
     uv run python scripts/codex_agent.py <agent> <scratch> <brief> <model> <effort> [--cwd <dir>]
 
-Give the item or a later message on stdin. The first call reads the rendered
-agent document, the repo and user CLAUDE.md files, and the brief. Later
+Give the starting instruction or a later result or message on stdin. The
+first call reads the rendered agent document, the repo and user CLAUDE.md files, and the brief. Later
 calls resume the thread in <scratch>/codex-session with only the new input.
 `--cwd` sets the directory Codex works in, defaulting to the current directory.
 The last message is printed; a failed turn prints its error and exits 1.
@@ -26,18 +26,21 @@ DONE = "codex-done"
 which the Codex launcher's foreground wait checks for."""
 
 PREAMBLE = mctx(
-    "You do the work of one item of your agent's checklist at a time, given "
-    "by a Claude agent. That agent runs `step.py`, makes every Agent call "
-    "and SendMessage, and gives the final reply. Run no `step.py`; you have "
-    "no Agent or SendMessage tool. Where your documents tell you to launch "
-    "an agent, send a message or give a final reply, end your turn and tell "
-    "the Claude agent what to do, with the full text to send. The Claude "
-    "agent also runs `operate.py review` in its own foreground Bash call "
-    "where your documents give that command; ask it for the result. It "
-    "gives you the results and messages in later turns. The Codex mode "
-    "procedure is for that Claude agent; do not run `codex_agent.py` yourself. "
-    "End each turn with what you did on the item and anything left unfinished, "
-    "with why.")
+    "Do the work your role's documents and brief give. Where your role has a "
+    "checklist, run `uv run python scripts/step.py <role>` yourself, starting "
+    "with its first item, and walk it through its end in this run. Do each "
+    "item and run the step command it gives to go on, including choosing "
+    "whether to enter conditional parts. You have no Agent or SendMessage "
+    "tool; make no Agent call and no SendMessage. Where your documents give "
+    "one, end your turn with the full call to make, including all arguments "
+    "and the full text to send. The Claude launcher makes the call and "
+    "passes its result or a message back by resuming this session; then "
+    "continue your walk. Also ask the launcher to run `operate.py review` "
+    "in its own foreground Bash call where your documents give it. The "
+    "Codex mode procedure is for that launcher; do not run `codex_agent.py` "
+    "yourself. Where blocked, use your checklist's `--stop` call and report "
+    "what remains unfinished and why. Write the report and final reply "
+    "your documents give; the launcher delivers your final reply.")
 
 
 def without_front(text: str) -> str:
@@ -113,7 +116,10 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
             if event["item"].get("type") == "error":
                 errors.append(error_text(event["item"]))
     message = last.read_text() if last.exists() else ""
-    if done.returncode or errors or not message.strip() or thread is None:
+    ok = not (done.returncode or errors or not message.strip() or thread is None)
+    with (scratch / "codex-events.jsonl").open("a") as record:
+        record.write(json.dumps({"thread": thread, "input": item, "output": done.stdout, "ok": ok}) + "\n")
+    if not ok:
         details = "\n".join([*errors, done.stderr.strip()]).strip()
         raise ValueError(details or
                          f"codex exec exited {done.returncode} with no last message or thread id")
