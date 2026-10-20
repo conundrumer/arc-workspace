@@ -11,6 +11,7 @@ from tests.conftest import script
 scripts_importable()
 spends = script("spends")
 rollout = script("codex_rollout")
+state_reads = script("state_reads")
 
 
 def at(second):
@@ -127,3 +128,37 @@ def test_absent_initial_boundary_is_unknown(tmp_path):
     path.write_text(''.join(json.dumps({"type": "event_msg", "timestamp": at(10),
                                        "payload": p}) + '\n' for p in payloads))
     assert rollout.turns("thread", tmp_path)[0].usage is None
+
+
+def test_unresolved_sources_follow_directory_changes(tmp_path, monkeypatch):
+    """Shared discovery must keep watching for missing transcripts at later states."""
+    projects = tmp_path / "projects"
+    session = projects / "project" / "session"
+    session.mkdir(parents=True)
+    (session / "transcript.jsonl").write_text("")
+    external = tmp_path / "external"
+    (external / "child").mkdir(parents=True)
+    link = projects / "linked"
+    link.symlink_to(external, target_is_directory=True)
+    ticket = tmp_path / "ticket.md"
+    ticket.write_text("")
+    monkeypatch.setattr(spends, "project_dirs", lambda: [projects])
+
+    def inputs():
+        return spends.unresolved_spend(ticket, [], 0).codex.inputs
+
+    watched = {ticket, projects, session.parent, session, link}
+    state_reads.new_state()
+    assert inputs() == tuple(sorted(spends.fingerprint(p) for p in watched))
+
+    added = session / "subagents"
+    added.mkdir()
+    watched.add(added)
+    state_reads.new_state()
+    assert inputs() == tuple(sorted(spends.fingerprint(p) for p in watched))
+
+    added.rmdir()
+    link.unlink()
+    watched -= {added, link}
+    state_reads.new_state()
+    assert inputs() == tuple(sorted(spends.fingerprint(p) for p in watched))

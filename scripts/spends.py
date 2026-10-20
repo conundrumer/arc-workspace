@@ -15,7 +15,7 @@ import codex_rollout
 from agent_launches import runs_under
 from agent_turns import first_time, has_ended, last_time
 from run_reads import agent_type, run_entries
-from file_reads import file_text, stat_read
+from file_reads import file_text, listed, stat_read
 from state_reads import DERIVED, Kept, state_cache
 from ticket_files import listed_tickets, ticket_name
 from ticket_log import moved
@@ -299,6 +299,26 @@ def stopped(path: Path) -> bool:
     return False
 
 
+@state_cache(DERIVED)
+def transcript_directories(directory: Path) -> frozenset[Path]:
+    """The directories to watch for missing transcripts under `directory`.
+    Share their discovery across spends, resting on each directory's listing
+    so that a later state sees directories added or removed. Include links
+    to directories without descending them, as `Path.rglob` does.
+    """
+    found = {directory}
+    todo = [directory]
+    while todo:
+        parent = todo.pop()
+        for entry in listed(parent):
+            if entry.is_dir:
+                child = parent / entry.name
+                found.add(child)
+                if not entry.is_link:
+                    todo.append(child)
+    return frozenset(found)
+
+
 def unresolved_spend(path: Path, runs: list[str], before: float) -> UnpricedSpend:
     """Preserve attributable components while another run's evidence is absent."""
     known = [run for run in runs if isinstance(known_owners([run], {}), dict)]
@@ -311,8 +331,7 @@ def unresolved_spend(path: Path, runs: list[str], before: float) -> UnpricedSpen
                                    "closing line gives no change runs"))
     watched = {path}
     for directory in project_dirs():
-        watched.add(directory)
-        watched.update(p for p in directory.rglob("*") if p.is_dir())
+        watched.update(transcript_directories(directory))
     for run in runs:
         transcript = held_find(run)
         if transcript is not None:
