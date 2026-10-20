@@ -67,3 +67,15 @@ SENT_BY_MESSAGE = re.compile(
 
 POLL_AGAIN = mctx("Run the command again: nothing is ready.")
 """The last line of what the command prints for a poll."""
+
+
+STATE_READ_TIMEOUT = mctx("State read/planning failed for agent {agent}: the foreground bound "
+                          "of {seconds} seconds elapsed before a result was available. Work "
+                          "readiness is unknown. Investigate why state read/planning "
+                          "exceeded the foreground bound.")
+"""The watchdog's failure report to the coordinator, including the caller
+id (the editor's for `review`)."""
+
+
+AFTER_TIMEOUT = mctx("Send the failure below to the coordinator, then run the command again "
+                     "to continue your procedure.")

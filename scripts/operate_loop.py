@@ -36,10 +36,11 @@ from transcripts import find
 
 from operations import briefs, order, plan, ticket_stall, unwaited
 from operations.command_words import Action
-from operations.constants import BLOCK_SECONDS, LIMIT_SECONDS, WAIT_CAP
+from operations.constants import BLOCK_SECONDS, COORDINATOR, LIMIT_SECONDS, WAIT_CAP
 from operations.pacing import Until
 from operations.filing import filed, with_report
 from operations.printing import batch_line, key_line, listing_line, printed
+from operations.printed_forms import AFTER_TIMEOUT, STATE_READ_TIMEOUT
 from operations.monitor import MonitorState
 from operations.roles import Role
 from operations.state import State
@@ -112,12 +113,15 @@ def single_instance(me: str) -> None:
 
 
 def arm_watchdog(me: str) -> None:
-    """Print that the agent runs the command again, and end the process,
-    once `LIMIT_SECONDS` have passed, as `--help next` gives it."""
+    """Print a failure report for the coordinator and end the process once
+    `LIMIT_SECONDS` have passed, as `--help next` gives it."""
     def expire(_signum: int, _frame: object) -> None:
-        print(printed(Poll(), me, Path()), flush=True)
+        step = Send(COORDINATOR, STATE_READ_TIMEOUT.format(agent=me, seconds=LIMIT_SECONDS),
+                    "state-read-timeout")
+        print(AFTER_TIMEOUT, flush=True)
+        print(printed(step, me, Path()), flush=True)
         script_calls.record()
-        os._exit(0)
+        os._exit(1)
     signal.signal(signal.SIGALRM, expire)
     signal.alarm(LIMIT_SECONDS)
 
