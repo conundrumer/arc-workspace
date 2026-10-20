@@ -19,6 +19,7 @@ from operations.admission import refusal
 from operations.change_budget import TAKE_NOTE, budget_fields, with_cost
 from operations.directives import Directive, numbers, paused
 from operations.log_commands import log
+from operations.merging import merged
 from operations.parties import Hold, OnTicket, Party
 from operations.start_holds import admission_held
 from operations.state import State, Ticket, memoized
@@ -46,10 +47,11 @@ def ready(state: State) -> list[Ticket]:
 
 
 def awaiting(state: State) -> list[tuple[Ticket, list[str]]]:
-    """Each ticket of `purview` that `Exit.TAKE` takes out of its status,
+    """Each unmerged ticket of `purview` that `Exit.TAKE` takes out of its status,
     with the tickets of its `depends-on` that are not closed."""
     return [(t, [d for d in t.depends_on if not closed(state, d)]) for n in sorted(purview(state))
-            if (t := state.tracker.tickets.get(n)) is not None and Exit.TAKE in exits(state, t).by]
+            if (t := state.tracker.tickets.get(n)) is not None
+            and Exit.TAKE in exits(state, t).by and not merged(state, t)]
 
 
 def lead(state: State) -> set[str]:
@@ -165,6 +167,7 @@ def take(state: State) -> Step | None:
     for n, time in numbers(state, Directive.MERGE):
         t = state.tracker.tickets.get(n)
         if (t is not None and Exit.MERGE_LINE in exits(state, t).by
+                and not merged(state, t)
                 and time > status_since(t)):
             return Bash(log(n, Status.ASSIGNED, Status.BLOCKED,
                             "taking: the coordinator's `Op merge:` line rules the merge", state.me),

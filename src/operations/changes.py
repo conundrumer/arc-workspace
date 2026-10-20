@@ -120,7 +120,7 @@ from operations.steps import (Bash, Launch, Pause, Poll, Repeatable, Send, Step,
                               agent_ids, key, retirement_key, served)
 from operations.log_commands import AGENT
 from operations.change_take import take
-from operations.taking import RELEASED_LINE
+from operations.taking import RELEASED_LINE, purview
 from operations.tracker import last_index
 from operations.worktrees import WORKTREE, worktree
 from ticketing.times import utc_stamp
@@ -147,6 +147,16 @@ def held(state: State) -> list[Ticket]:
         return landed + rest
     after = [t for t in rest if t.order > served.order]
     return landed + after + [t for t in rest if t.order <= served.order]
+
+
+def closing(state: State) -> list[Ticket]:
+    """The unassigned merged changes of the operator's purview, in ticket
+    order. These continue the closing sequence without being taken."""
+    return sorted((t for n in purview(state)
+                   if (t := state.tracker.tickets.get(n)) is not None
+                   and t.kind is Kind.CHANGE
+                   and t.status not in (Status.ASSIGNED, Status.CLOSED)
+                   and merging.merged(state, t)), key=lambda t: t.order)
 
 
 def last_served(state: State) -> Ticket | None:
@@ -656,7 +666,8 @@ def cap_reply(reviewer: Agent | None, judged: float) -> tuple[str, Report] | Non
 def step(state: State,
          idle: Callable[[State, Ticket, Step | None], Step | None]) -> Step | None:
     """The next step of the changes: a message to an agent on a change no
-    longer held, a take, then the step of each change the operator
+    longer held, a take, then the closing sequence of each unassigned
+    merged change (`closing`), then the step of each change the operator
     holds (`due_step`), or, where it has none, the step `idle` gives for
     it, other than a step an operator already made or handled
     (`repeated`). Where each step is such a step, the step is that of the
@@ -665,7 +676,7 @@ def step(state: State,
     for s in before:
         if not repeated(s, state):
             return s
-    for t in held(state):
+    for t in [*closing(state), *held(state)]:
         s = next_step(state, t)
         if (due := due_step(state, t, s)) is not None:
             return due

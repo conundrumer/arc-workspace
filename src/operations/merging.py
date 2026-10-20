@@ -86,7 +86,8 @@ from controlled_markdown import form, mctx
 from controlled_markdown.nodes import Rule, finding_lines
 from engine.duration import FOOTER_RE
 from operations import briefs, messages
-from operations.directives import Decision, Ruling, held_on, ruling
+from operations.directives import (Decision, Directive, Ruling, held_on, numbers_in, ruling,
+                                   session_lines)
 from operations.change_agents import of_change, settled
 from operations.change_holds import open_questions
 from operations.change_budget import TIME_NOTE, TIME_OPENING, left_draft, taken
@@ -348,7 +349,11 @@ def merged(state: State, t: Ticket) -> bool:
     removes a worktree only after it lands the change, and a call that
     runs `operate.py next` after the merge has no result yet. A
     `merge_commit` counts as landed too, since an operator of another
-    session may have made it, whose calls this session does not read."""
+    session may have made it, whose calls this session does not read.
+    An `Op merged:` line to any operator of the session also counts,
+    including a coordinator merge with a different commit subject."""
+    if any(n == t.number for n, _ in numbers_in(session_lines(state), Directive.MERGED)):
+        return True
     gone = {p for p in log_worktrees(t) if Path(p) not in state.git.worktrees}
     if any(c.merge is Merge.MERGED or (c.result is None and names_any(c, gone))
            for c in merge_calls(state, t)):
@@ -688,5 +693,5 @@ def close(state: State, t: Ticket, agents: list[Agent], evidence: str | None = N
     # An agent with no known id leaves the line with no run, and the
     # change with no known cost (`scripts/spends.py`).
     runs = "" if None in ids else "".join(f" {i}" for i in ids)
-    return Bash(log(t.number, Status.CLOSED, Status.ASSIGNED, note + runs, None),
+    return Bash(log(t.number, Status.CLOSED, t.status, note + runs, None),
                 f"{t.number} close", occasion=str(t.last_time))
