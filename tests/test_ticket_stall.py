@@ -69,7 +69,7 @@ def test_a_ticket_long_without_progress_is_not_stalled_at_the_read_that_first_fi
 def test_an_unreadable_record_gives_no_due_times(tmp_path: Path,
                                                  monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.syspath_prepend(str(checkout.scripts()))
-    assembly = script("state_assembly")
+    assembly = script("session_records")
     (tmp_path / assembly.DUE_SINCE).write_text('{"9-1": "x"')
     assert assembly.record_read(tmp_path, assembly.DUE_SINCE) == {}
     (tmp_path / assembly.DUE_SINCE).write_text('{"9-1": "x"}')

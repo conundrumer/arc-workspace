@@ -1,22 +1,12 @@
 """The assembly of the state the operator's procedures read, from the reads
 of the ticket tracker, of git and the main worktree, and of the
-transcripts of the session's operators, and of the state the monitor's
-steps read (`monitor_reads`); and the session's records of the times from
-which an operator's step has been due on each ticket (`State.due_since`,
-in the file `DUE_SINCE`) and from which each ticket has waited on no party
-(`State.unwaited_since`, in the file `UNWAITED_SINCE`), read by `read_state`
-(`record_read`) and written by `write_record`, and of the state the ticket
-dashboard shows (`Shown`, in the file `SHOWN`), written by `write_shown`
-and read by `shown_read`, each a JSON object in the session's
-scratchpad."""
+transcripts of the session's operators, with the session's records of
+due and unwaited times (`session_records`), and of the state the
+monitor's steps read (`monitor_reads`)."""
 
 import atexit
-import json
-import math
-import os
 import time
 from collections.abc import Mapping
-from typing import Any
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -43,7 +33,7 @@ from relay_reads import session_id
 from run_reads import context_size, parent_id
 from run_scripts import pace_reads, read_runs
 from state_reads import new_state
-from ticket_numbers import session_index, staged, ticket_number
+from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
 from transcripts import find
@@ -54,27 +44,24 @@ from tree_reads import (
     scratch,
 )
 from usage_limit import read_usage
+from session_records import DUE_SINCE, UNWAITED_SINCE, record_read
 
 from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
-from operations import change_take, pacing, start_holds, ticket_stall, triage, unwaited
-from operations.pacing import Capped, Pace, Scripted, Until, Usage
-from operations.parties import Hold, OnTicket, Party
-from operations.roles import Role
-from operations.directives import Directive, given_again, named, own_scope, pace, paused, session_lines
-from operations.taking import allowed, expedited
+from operations import pacing
+from operations.pacing import Usage
+from operations.directives import given_again, named, pace
+from operations.taking import allowed
 from operations.monitor import MonitorState
 from operations.plan import taken_up
 from operations.state import (
     AuditWindow,
     Computed,
     Deferred,
-    DueEntry,
     GitRead,
     LateResume,
     NotComputed,
     Reader,
-    Spend,
     State,
     Stuck,
     TrackerRead,
@@ -87,18 +74,6 @@ from operator_state import (EndsRead, ends_read, not_given, stuck_read, undecide
 STARTED = time.time()
 """The start of the process: a step given to `me` before it, with no call
 of it made, is one `me` ran `next` again before it made."""
-
-DUE_SINCE = "due-since.json"
-"""The name of the file, in the session's scratchpad, that holds
-`State.due_since`."""
-
-UNWAITED_SINCE = "unwaited-since.json"
-"""The name of the file, in the session's scratchpad, that holds
-`State.unwaited_since`."""
-
-SHOWN = "shown-state.json"
-"""The name of the file, in the session's scratchpad, that holds the
-`Shown` of the operator's last read of the state."""
 
 DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.CONSOLE, ReaderName.SURVEY,
                         ReaderName.WORKFLOW})
@@ -187,222 +162,6 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     watching.extend(ungiven(computed_lines))
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(ends.stalled),
                                undecided=tuple(watching))
-
-
-def record_read(here: Path, name: str) -> dict[str, DueEntry]:
-    """The record the file `name` under `here` gives, or empty where that
-    file is missing or holds no JSON object whose values are each a pair of
-    finite numbers, the `since` and the `last` of a `DueEntry`."""
-    try:
-        record = json.loads((here / name).read_text())
-    except (OSError, ValueError):
-        return {}
-    if not isinstance(record, dict) or not all(
-            isinstance(v, list) and len(v) == 2
-            and all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
-                    for x in v)
-            for v in record.values()):
-        return {}
-    return {n: DueEntry(float(v[0]), float(v[1])) for n, v in record.items()}
-
-
-def write_record(here: Path, name: str, times: Mapping[str, DueEntry]) -> None:
-    """Replaces the file `name` under `here` with `times`, each entry as the
-    pair its `DueEntry` gives."""
-    replaced(here, name, {n: [e.since, e.last] for n, e in sorted(times.items())})
-
-
-def replaced(here: Path, name: str, record: object) -> None:
-    """Replaces the file `name` under `here` with the JSON of `record`, at
-    once."""
-    with staged(here, json.dumps(record)) as tmp:
-        os.replace(tmp, here / name)
-
-
-@dataclass(frozen=True)
-class ScriptAdmits:
-    """The pace of an `Op pace: <path>` line, as `Shown` keeps it: whether
-    the script admits a step that starts an agent's run."""
-    admits: bool
-
-
-type ShownPace = Until | ScriptAdmits | NotComputed
-
-type ShownHold = ShownPace | Capped
-"""What holds agent starts (`start_holds.hold`), as `Shown` keeps it."""
-
-type ShownParty = Hold | OnTicket
-"""The party a ticket the operators start next waits on, as `Shown` keeps
-it."""
-
-
-@dataclass(frozen=True)
-class ShownAgent:
-    """A pending agent of the session's operators: its role, the time of its
-    launch and the tickets it is at work on (`ticket_stall.agents_by_ticket`)."""
-    role: Role
-    launched: float
-    tickets: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class Start:
-    """A ticket the operators start next, with the party that holds it, or
-    None where none does."""
-    number: str
-    held: ShownParty | None
-
-
-@dataclass(frozen=True)
-class Shown:
-    """The values of a read of the state that the ticket dashboard shows:
-    the time of the read, the text of the `Op pace:` line in force, or None
-    where the pace is the default, the pace computed, whether the session
-    is paused and keeps to its own scope, the tickets expedited, the
-    pending agents, the tickets that wait on nothing with the time from
-    which each has stood so (`unwaited.unwaited`), what holds agent starts
-    where something does, and the tickets the operators start next, in the
-    order the step logic takes them: those `triage.selection` selects, then
-    those it holds, then the changes of `change_take.ready`, those of
-    `change_take.takeable` first."""
-    at: float
-    pace_line: str | None
-    pace: ShownPace
-    paused: bool
-    own_scope: bool
-    expedited: tuple[str, ...]
-    agents: tuple[ShownAgent, ...]
-    unwaited: Mapping[str, float]
-    start_hold: ShownHold | None
-    starts: tuple[Start, ...]
-
-
-def shown_pace(p: Pace) -> ShownPace:
-    """`p` as `Shown` keeps it."""
-    match p:
-        case Scripted(_, admits):
-            return ScriptAdmits(admits)
-        case other:
-            return other
-
-
-def shown_party(p: Party) -> ShownParty:
-    """`p`, which `triage.selection` or `change_take.left` gives. Raises
-    ValueError on a party of another kind."""
-    match p:
-        case Hold() | OnTicket():
-            return p
-        case _:
-            raise ValueError(f"no ticket the operators start next waits on {p!r}")
-
-
-def starts(state: State) -> tuple[Start, ...]:
-    """`Shown.starts` of `state`."""
-    selected, held = triage.selection(state)
-    ready = change_take.ready(state)
-    first = change_take.takeable(state)
-    firsts = {t.number for t in first}
-    left = change_take.left(state)
-    return (*(Start(n, None) for n in selected),
-            *(Start(n, h) for n, h in held.items()),
-            *(Start(t.number, None if (p := left.get(t.number)) is None else shown_party(p))
-              for t in [*first, *(t for t in ready if t.number not in firsts)]))
-
-
-def shown(state: State) -> Shown:
-    """The `Shown` of `state`."""
-    lines = [ln.text for ln in session_lines(state) if ln.kind is Directive.PACE]
-    by_ticket = ticket_stall.agents_by_ticket(state)
-    held = start_holds.hold(state)
-    return Shown(state.now, lines[-1] if lines and pace(state) is not None else None,
-                 shown_pace(state.computed.pace), paused(state), own_scope(state),
-                 tuple(sorted(expedited(state))),
-                 tuple(ShownAgent(a.role, a.launched,
-                                  tuple(n for n, xs in by_ticket.items() if any(x is a for x in xs)))
-                       for a in state.transcripts.agents if a.pending),
-                 dict(sorted(unwaited.unwaited(state).items())),
-                 None if held is None else held if isinstance(held, Capped) else shown_pace(held),
-                 starts(state))
-
-
-def pace_json(p: ShownHold) -> dict[str, object]:
-    """The JSON form of `p`, which `pace_of` reads."""
-    match p:
-        case Until(at, cap):
-            return {"until": at, "cap": cap}
-        case ScriptAdmits(admits):
-            return {"script_admits": admits}
-        case NotComputed(why):
-            return {"not_computed": why}
-        case Capped(cap):
-            return {"capped": cap}
-
-
-def pace_of(p: Any) -> ShownHold:
-    """The value whose JSON form (`pace_json`) is `p`."""
-    if "until" in p:
-        return Until(float(p["until"]), None if p["cap"] is None else int(p["cap"]))
-    if "script_admits" in p:
-        return ScriptAdmits(bool(p["script_admits"]))
-    if "capped" in p:
-        return Capped(int(p["capped"]))
-    return NotComputed(str(p["not_computed"]))
-
-
-def party_json(p: ShownParty | None) -> dict[str, str] | None:
-    """The JSON form of `p`, which `party_of` reads."""
-    match p:
-        case None:
-            return None
-        case Hold():
-            return {"hold": p.name}
-        case OnTicket(number):
-            return {"on": number}
-
-
-def party_of(p: Any) -> ShownParty | None:
-    """The value whose JSON form (`party_json`) is `p`."""
-    if p is None:
-        return None
-    return Hold[p["hold"]] if "hold" in p else OnTicket(str(p["on"]))
-
-
-def write_shown(here: Path, state: State) -> None:
-    """Replaces the file `SHOWN` under `here` with the `Shown` of `state`."""
-    s = shown(state)
-    replaced(here, SHOWN, {
-        "at": s.at, "pace_line": s.pace_line, "pace": pace_json(s.pace), "paused": s.paused,
-        "own_scope": s.own_scope, "expedited": list(s.expedited),
-        "agents": [{"role": a.role.value, "launched": a.launched, "tickets": list(a.tickets)}
-                   for a in s.agents],
-        "unwaited": dict(s.unwaited),
-        "start_hold": None if s.start_hold is None else pace_json(s.start_hold),
-        "starts": [{"number": x.number, "held": party_json(x.held)} for x in s.starts]})
-
-
-def shown_read(here: Path) -> Shown | str:
-    """The `Shown` the file `SHOWN` under `here` holds, or why there is
-    none: the file is missing, or does not hold the JSON `write_shown`
-    writes."""
-    try:
-        r = json.loads((here / SHOWN).read_text())
-    except OSError:
-        return f"no read of the state is recorded ({here / SHOWN} is missing)"
-    except ValueError as e:
-        return f"the record {here / SHOWN} does not parse: {e}"
-    try:
-        kept = pace_of(r["pace"])
-        if isinstance(kept, Capped):
-            raise ValueError(f"the pace {kept!r} is a hold")
-        return Shown(float(r["at"]), None if r["pace_line"] is None else str(r["pace_line"]), kept,
-                     bool(r["paused"]), bool(r["own_scope"]), tuple(map(str, r["expedited"])),
-                     tuple(ShownAgent(Role(a["role"]), float(a["launched"]), tuple(map(str, a["tickets"])))
-                           for a in r["agents"]),
-                     {str(n): float(t) for n, t in r["unwaited"].items()},
-                     None if r["start_hold"] is None else pace_of(r["start_hold"]),
-                     tuple(Start(str(x["number"]), party_of(x["held"])) for x in r["starts"]))
-    except (KeyError, TypeError, ValueError, AttributeError) as e:
-        return f"the record {here / SHOWN} does not hold a read of the state: {e!r}"
 
 
 @dataclass(frozen=True)

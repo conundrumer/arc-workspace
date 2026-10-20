@@ -28,7 +28,9 @@ from controlled_markdown import mctx
 from file_reads import held_paths, stats_stand_but
 from relay_reads import LOCK_DIR, read_relay, session_id, wait_lock, wait_running
 from run_reads import agent_type
-from state_assembly import DUE_SINCE, UNWAITED_SINCE, read_state, write_record, write_shown
+from session_records import DUE_SINCE, UNWAITED_SINCE, write_record
+from shown_state import write_shown
+from state_assembly import read_state
 from state_reads import partial
 from transcripts import find
 
@@ -339,7 +341,7 @@ def read_and_record(me: str, here: Path) -> tuple[State, MonitorState]:
     the times from which a step has been due (`ticket_stall.due_times`) and
     from which a ticket has waited on no party (`unwaited.times`) hold
     those of that state, and the record of the state the ticket dashboard
-    shows (`state_assembly.Shown`) holds that state's."""
+    shows (`shown_state.Shown`) holds that state's."""
     state, watch = read_state(me)
     write_record(here, DUE_SINCE, ticket_stall.due_times(state))
     write_record(here, UNWAITED_SINCE, unwaited.times(state))

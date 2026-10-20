@@ -18,7 +18,7 @@ from pathlib import Path
 from dashboard_reads import (DAY, OPEN, STALE_RECORD, OperatorRecords, Stage, change_of, hits_full,
                              journal_work, logged, phrase, stage, users, Work)
 from dashboard_template import DONE_TAB, EVENTS, LAST_LOOK, QUEUED_TAB, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
-from state_assembly import ScriptAdmits, Shown, ShownAgent, ShownParty, Start
+from shown_state import ScriptAdmits, Shown, ShownAgent, ShownParty, Start
 from ticket_reads import read_tickets
 from usage_limit import Reading
 
@@ -275,15 +275,16 @@ class Standing(Enum):
     """Where an open ticket stands, by the first thing that must change
     before it starts: nothing (at work or ready), a ticket that moves
     (waiting), a hold of its own or its session's, or a ticket held
-    so (behind)."""
+    so (behind). The pause of a session is no such thing: a ticket of a
+    paused session stands as it would once the session resumes."""
     WORKING = auto()
     READY = auto()
     WAITING = auto()
-    PAUSED = auto()
     OWN_SCOPE = auto()
     NO_OPERATOR = auto()
     HELD = auto()
     ON_HOLD = auto()
+    DEFERRED = auto()
     BEHIND = auto()
 
 
@@ -291,19 +292,19 @@ MOVING = frozenset({Standing.WORKING, Standing.READY, Standing.WAITING})
 """The standings of a blocker that leave the ticket it blocks waiting on
 it; a blocker held otherwise leaves it behind held work."""
 
-FIRST = frozenset({Standing.WORKING, Standing.ON_HOLD, Standing.NO_OPERATOR, Standing.OWN_SCOPE, Standing.PAUSED})
+FIRST = frozenset({Standing.WORKING, Standing.ON_HOLD, Standing.DEFERRED, Standing.NO_OPERATOR, Standing.OWN_SCOPE})
 """The standings of a ticket's own that must change before its blocker
 matters."""
 
 HELD_HEAD: Mapping[Standing, str] = {
-    Standing.ON_HOLD: "On hold by you", Standing.PAUSED: "Paused",
+    Standing.ON_HOLD: "On hold by you", Standing.DEFERRED: "Deferred",
     Standing.OWN_SCOPE: "Outside its own work", Standing.NO_OPERATOR: "No operator running",
     Standing.HELD: "Held by a line", Standing.BEHIND: "Behind held work"}
 """The head of each group of held tickets in a session's tab of Queued,
 in the order of the groups."""
 
 HOLD_WORD: Mapping[Standing, str] = {
-    Standing.ON_HOLD: "on hold by you", Standing.PAUSED: "paused",
+    Standing.ON_HOLD: "on hold by you", Standing.DEFERRED: "deferred",
     Standing.OWN_SCOPE: "outside its own work", Standing.NO_OPERATOR: "no operator",
     Standing.HELD: "held by a line"}
 """What holds the ticket a row behind held work waits on."""
@@ -333,10 +334,11 @@ class Standings:
     each, as `state` gives it.
 
     A live change, an open `change` whose log does not give it merged, has
-    a row of its own under each ticket it leads with (`heads`). An open
+    one row, under the ticket it leads with (`lead`). An open
     ticket of another kind has a row of its own where its Motivation gives
     no open ticket, and where a live change leads with it, that row shows
-    only while an agent is at work on it; the agents of a ticket of
+    only while an agent is at work on it, and the same holds of each other
+    ticket of the change's `heads`; the agents of a ticket of
     another kind whose Motivation gives an open ticket count for the
     tickets it leads with."""
 
@@ -345,6 +347,7 @@ class Standings:
         records = v.records.records
         self.paused = {r.index for r in records if r.shown.paused}
         self.own_scope = {r.index for r in records if r.shown.own_scope}
+        self.in_scope = {r.index: r.shown.in_scope for r in records}
         self.live = {r.index for r in records}
         self.main = None if v.records.main_missing is not None or not records else records[0].index
         self.open_ = [t for t in v.all_.values() if t.status in OPEN and not merged(t)]
@@ -354,11 +357,11 @@ class Standings:
                 self.waiting_on.setdefault(c.number, []).append(t)
         self.position: dict[str, int] = {}
         """The place of each ticket among the starts of its record that no
-        hold but the pace holds, in their order."""
+        hold but the pace or the pause holds, in their order."""
         for r in records:
             k = 0
             for st in r.shown.starts:
-                if st.number not in self.position and (st.held is None or st.held is Hold.PACE):
+                if st.number not in self.position and st.held in (None, Hold.PACE, Hold.PAUSE):
                     self.position[st.number] = k
                     k += 1
         self.pooled: dict[str, list[ShownAgent]] = {t.number: list(v.agents.get(t.number, [])) for t in self.open_}
@@ -366,10 +369,17 @@ class Standings:
         tickets of another kind than `change` that lead with it, and of the
         change it waits on where that change is not live."""
         self.rows: list[Row] = []
+        self.changes: dict[str, list[Ticket]] = {}
+        """The live changes of each ticket of their `heads` other than
+        themselves."""
         for t in self.open_:
             heads = self.heads(t)
             if t.kind is Kind.CHANGE:
-                self.rows += [Row(t, None) if h is t else Row(h, t) for h in heads]
+                lead = self.lead(heads)
+                self.rows.append(Row(t, None) if lead is t else Row(lead, t))
+                for h in heads:
+                    if h is not t:
+                        self.changes.setdefault(h.number, []).append(t)
             elif heads == [t]:
                 self.rows.append(Row(t, None))
                 c = change_of(t, v.all_)
@@ -378,11 +388,6 @@ class Standings:
             else:
                 for h in heads:
                     self.pooled[h.number] += v.agents.get(t.number, [])
-        self.changes: dict[str, list[Ticket]] = {}
-        """The live changes of each ticket that leads their rows."""
-        for r in self.rows:
-            if r.change is not None:
-                self.changes.setdefault(r.lead.number, []).append(r.change)
         self.memo: dict[str, tuple[Standing, Ticket]] = {}
 
     def heads(self, t: Ticket, seen: frozenset[str] = frozenset()) -> list[Ticket]:
@@ -401,9 +406,16 @@ class Standings:
                 out.update((h.number, h) for h in self.heads(s, seen | {t.number}))
         return list(out.values()) or [t]
 
+    @staticmethod
+    def lead(heads: list[Ticket]) -> Ticket:
+        """The ticket of `heads` a live change's row leads with: the oldest
+        `request`, else the oldest."""
+        return min(heads, key=lambda h: (h.kind is not Kind.REQUEST, h.filed))
+
     def shown(self, r: Row) -> bool:
-        """Whether `r` shows: a row of a ticket's own where live changes
-        lead with the ticket shows only while an agent is at work on it."""
+        """Whether `r` shows: a row of a ticket's own where the ticket is
+        one of the `heads` of a live change shows only while an agent is at
+        work on it."""
         return r.change is not None or r.lead.number not in self.changes or bool(self.agents(r.lead))
 
     def agents(self, t: Ticket) -> list[ShownAgent]:
@@ -427,15 +439,23 @@ class Standings:
             return Standing.WORKING
         if t.status is Status.BLOCKED or (c is not None and c.status is Status.BLOCKED):
             return Standing.ON_HOLD
+        if t.status is Status.DEFERRED:
+            return Standing.DEFERRED
         if t.session is None or t.session not in self.live:
             return Standing.NO_OPERATOR
-        if t.session in self.own_scope and not v.mine(t):
+        if t.session in self.own_scope and not self.owned(t):
             return Standing.OWN_SCOPE
-        if t.session in self.paused and t.number not in v.expedited:
-            return Standing.PAUSED
         if t.number in self.position or (t.status in UNTAKEN and t.number not in v.holds):
             return Standing.READY
         return Standing.HELD
+
+    def owned(self, t: Ticket) -> bool:
+        """Whether the operator of the session of `t`, which has a record,
+        takes `t` while it keeps to its own scope: `t` is of the record's
+        `in_scope`; or, where the record gives no `in_scope`, `t` is the
+        user's."""
+        admitted = self.in_scope[t.session]
+        return self.v.mine(t) if admitted is None else t.number in admitted
 
     def state(self, t: Ticket, seen: frozenset[str] = frozenset()) -> tuple[Standing, Ticket]:
         """The standing of `t` and the ticket it stands by: `t`'s own
@@ -524,10 +544,14 @@ def active(v: View, st: Standings) -> tuple[str, int]:
 
 
 def session_line(st: Standings, s: int | None) -> str:
+    """The line atop the tab of session `s` in Queued: whether its operator
+    runs, and whether it keeps to its own work; where it is paused, ending
+    on the words that lead the groups of what a resume starts."""
     if s not in st.live:
         return "No operator running"
-    state = ("Paused" + (" by you" if s == st.main else "")) if s in st.paused else "Running"
-    return state + (" · takes only its own work" if s in st.own_scope else "")
+    paused = s in st.paused
+    state = ("Paused" + (" by you" if s == st.main else "")) if paused else "Running"
+    return state + (" · takes only its own work" if s in st.own_scope else "") + (" · on resume:" if paused else "")
 
 
 def tab_word(st: Standings, s: int | None) -> str:
@@ -589,9 +613,12 @@ def tab_set(key: str, panes: list[tuple[int | None, str, str]]) -> str:
 def queued(v: View, st: Standings) -> str:
     """The HTML of Queued: a tab for each session that filed the ticket
     of a row shown whose subject is not at work, and in it, its operator's
-    state, its rows ready in the order of their starts, those waiting, and
-    the held ones in a group for each hold; the newest first among rows
-    the user's tickets, the expedited ones and the starts do not order."""
+    state, its rows ready (`Next`, or `Next on resume` in a paused
+    session), those waiting, and the held ones in a group for each hold.
+    The rows ready and those waiting go in the order of their starts, and
+    the rows no start orders after them; those rows, and the held ones, go
+    the user's tickets first, then the expedited ones, then the newest
+    first."""
     sessions: dict[int | None, list[tuple[Row, Standing, Ticket]]] = {}
     for r in st.rows:
         if r.change is None and r.lead.number in st.changes:
@@ -603,8 +630,8 @@ def queued(v: View, st: Standings) -> str:
         return '<div class="meta">Nothing is queued.</div>'
 
     def ordered(xs: list[Row]) -> list[Row]:
-        return sorted(xs, key=lambda r: (not v.mine(r.lead), r.lead.number not in v.expedited,
-                                         st.position.get(r.subject.number, len(st.position)), -r.subject.filed))
+        return sorted(xs, key=lambda r: (st.position.get(r.subject.number, len(st.position)), not v.mine(r.lead),
+                                         r.lead.number not in v.expedited, -r.subject.filed))
 
     keys = sorted(sessions, key=lambda s: (s not in st.live, s in st.paused, -len(sessions[s])))
     panes: list[tuple[int | None, str, str]] = []
@@ -614,7 +641,7 @@ def queued(v: View, st: Standings) -> str:
         waiting = ordered([r for r, k, _ in items if k is Standing.WAITING])
         body = f'<div class="sh2">{esc(session_line(st, s))}</div>'
         if ready:
-            body += ('<div class="gh">Next</div><div class="wl">'
+            body += (f'<div class="gh">Next{" on resume" if s in st.paused else ""}</div><div class="wl">'
                      + "".join(row(v, r.lead, stopped_bar(v, r), r.change, i + 1) for i, r in enumerate(ready)) + "</div>")
         if waiting:
             body += ('<div class="gh">Waiting</div><div class="wl">'

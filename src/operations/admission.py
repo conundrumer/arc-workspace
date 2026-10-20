@@ -75,7 +75,13 @@ def scope_admits(state: State) -> Callable[[str], bool]:
         return allowed(state).__contains__
     if not own_scope(state):
         return lambda _: True
-    return (allowed(state) | own_work(state)).__contains__
+    return in_scope(state).__contains__
+
+
+def in_scope(state: State) -> set[str]:
+    """The tickets the `Op scope: own.` line admits: those of `allowed` and
+    of `own_work`."""
+    return allowed(state) | own_work(state)
 
 
 @memoized

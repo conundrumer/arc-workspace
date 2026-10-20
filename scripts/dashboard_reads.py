@@ -12,7 +12,7 @@ from enum import IntEnum
 from pathlib import Path
 
 from idle_sessions import live, named_main
-from state_assembly import Shown, ShownAgent, ShownParty, Start, shown_read
+from shown_state import Shown, ShownAgent, ShownParty, Start, shown_read
 from step_journal import records
 from ticket_numbers import indexed, indexes, parsed_number
 from tree_reads import scratch
@@ -95,7 +95,7 @@ class OperatorRecords:
 
 def operator_records(tickets: Path, now: float) -> OperatorRecords:
     """The records of the last reads of the operators of each session that
-    `ticket_numbers.indexes` gives (`state_assembly.write_shown`): the main
+    `ticket_numbers.indexes` gives (`shown_state.write_shown`): the main
     session's, or why it has none; each other session's whose time is
     within `STALE_RECORD` of `now`, or whose session `idle_sessions.live`
     gives as live; and none of another session whose record is missing or
