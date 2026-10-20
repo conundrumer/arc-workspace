@@ -33,7 +33,13 @@ tools: Bash, Agent, SendMessage, TaskStop
 - Make the Agent calls and SendMessage calls Codex asks for where the role's documents allow them, including each launch that `uv run python scripts/operate.py review <agent-id>` prints.
     + xref: scripts/operate_review.py:review
 - Run that review command yourself in a foreground Bash call, with your agent id, where the checklist calls for it, and pass its output to Codex.
-- Resume the same command only to pass back a requested result or a message that reaches you, as its next input. Codex then continues its walk.
+- Use `uv run python scripts/codex_agent.py show <scratch>` to read the running turn's status, tokens and recent activity.
+    + xref: scripts/codex_agent.py:control, scripts/codex_rollout.py:Rollout.show
+- Pass a message that reaches you during a daemon turn with `uv run python scripts/codex_agent.py steer <scratch> '<message>'`; use `uv run python scripts/codex_agent.py interrupt <scratch>` where the coordinator asks you to stop the turn.
+    + xref: scripts/codex_agent.py:control
+- Resume the same launch command to pass back a requested result or a message after the turn ends. Codex then continues its walk.
+- The launch command uses the shared daemon where available and reports an exec fallback on stderr where the daemon is unavailable or refuses. Exec turns take new input only after they end.
+    + xref: scripts/codex_agent.py:daemon_turn
 - Where Codex reports a blocker other than waiting for a call or message above, or the command exits nonzero, give its work so far and what remains unfinished with the reason and any error. Do no unfinished work yourself.
     + xref: scripts/codex_agent.py:main
 

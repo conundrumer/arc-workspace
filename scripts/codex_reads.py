@@ -14,6 +14,7 @@ from typing import Any
 
 from command_labels import segment_program, simple_commands
 from run_reads import blocks, is_prompt
+
 from operations.roles import Role
 
 
@@ -35,6 +36,8 @@ def walk_entries(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any
             for words in simple_commands(str((block.get("input") or {}).get("command", ""))):
                 program, args = segment_program(words)
                 if program != "codex_agent.py":
+                    continue
+                if args and args[0] in ("show", "steer", "interrupt"):
                     continue
                 if len(args) < 5:
                     raise ValueError("the Codex call gives no matching role and scratch directory")
@@ -77,6 +80,10 @@ def walk_entries(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any
                         or not any(e.get("type") == "turn.completed" for e in events)):
                     raise ValueError("the Codex turn did not complete")
                 for n, event in enumerate(events):
+                    if event.get("type") == "input":
+                        if not isinstance(event.get("text"), str):
+                            raise ValueError("the Codex steering input is not text")
+                        out.append({"type": "user", "message": {"content": event["text"]}})
                     if event.get("type") != "item.completed":
                         continue
                     item = event["item"]

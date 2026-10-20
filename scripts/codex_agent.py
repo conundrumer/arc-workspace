@@ -1,12 +1,20 @@
-"""Run the agent's checklist in one Codex session.
+"""Run the agent's checklist on the shared Codex daemon, with exec fallback.
 
     uv run python scripts/codex_agent.py <agent> <scratch> <brief> <model> <effort> [--cwd <dir>]
 
 Give the starting instruction or a later result or message on stdin. The
-first call reads the rendered agent document, the repo and user CLAUDE.md files, and the brief. Later
-calls resume the thread in <scratch>/codex-session with only the new input.
+first call reads the rendered agent document, repo and user CLAUDE.md files,
+and the brief. Later calls resume the thread in <scratch>/codex-session with only the new input.
 `--cwd` sets the directory Codex works in, defaulting to the current directory.
-The last message is printed; a failed turn prints its error and exits 1.
+The last message is printed; a failed or interrupted turn exits 1. The daemon
+is never started or stopped. An unavailable or refusing daemon falls back to exec
+before a turn starts; a lost connection after submission is reported, not replayed.
+
+    uv run python scripts/codex_agent.py show <scratch>
+    uv run python scripts/codex_agent.py steer <scratch> <message>
+    uv run python scripts/codex_agent.py interrupt <scratch>
+
+Show reads the live rollout; steer and interrupt reach the running daemon turn.
 """
 
 import argparse
@@ -16,6 +24,9 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+import codex_daemon
+import codex_rollout
 
 from controlled_markdown import mctx
 from engine import checkout
@@ -76,10 +87,120 @@ def error_text(event: dict[str, Any]) -> str:
     return str(error.get("message", error)) if isinstance(error, dict) else str(error)
 
 
+class TurnFailed(ValueError):
+    """A failed turn whose last answer still belongs on stdout."""
+
+    def __init__(self, detail: str, message: str):
+        super().__init__(detail)
+        self.message = message
+
+
+def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
+                cwd: Path, model: str, effort: str, writable: list[Path],
+                transport: Callable[[], Any]) -> str | None:
+    """Try the daemon; only a refusal before turn submission permits fallback."""
+    original_thread = thread
+    client = None
+    events: list[dict[str, Any]] = []
+    submitted = False
+    message = ""
+    ok = False
+
+    def emit(event: dict[str, Any]):
+        nonlocal message
+        events.append(event)
+        if event.get("item", {}).get("type") == "agent_message":
+            message = event["item"]["text"]
+            (scratch / "codex-last.md").write_text(message)
+
+    try:
+        try:
+            client = transport()
+            loaded = codex_daemon.start(client, thread, cwd, model, effort, writable)
+        except (OSError, ValueError) as exc:
+            print(f"codex_agent: shared daemon unavailable or refused: {exc}; "
+                  "falling back to codex exec", file=sys.stderr)
+            return None
+        thread = str(loaded["thread"]["id"])
+        (scratch / "codex-session").write_text(thread + "\n")
+        events.append({"type": "thread.started", "thread_id": thread})
+        # A disconnect here may follow acceptance. Never replay that work in exec.
+        submitted = True
+        try:
+            started = client.call("turn/start", {"threadId": thread, "effort": effort,
+                                  "input": [{"type": "text", "text": prompt}]})
+        except codex_daemon.Refused as exc:
+            submitted = False
+            if original_thread is None:
+                (scratch / "codex-session").unlink()
+            print(f"codex_agent: shared daemon refused: {exc}; falling back to codex exec",
+                  file=sys.stderr)
+            return None
+        message, ok = codex_daemon.collect(client, thread, started["turn"]["id"], emit)
+        (scratch / "codex-last.md").write_text(message)
+        ok = ok and bool(message.strip())
+        if not ok:
+            raise TurnFailed(f"Codex turn {events[-1].get('status')} "
+                             f"{events[-1].get('error') or ''}".strip(), message)
+        return message
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, TurnFailed):
+            raise
+        raise TurnFailed(f"daemon turn failed (not replayed): {exc}", message) from exc
+    finally:
+        if submitted:
+            with (scratch / "codex-events.jsonl").open("a") as record:
+                record.write(json.dumps({"thread": thread, "input": item,
+                    "output": "\n".join(map(json.dumps, events)), "ok": ok}) + "\n")
+        if client is not None:
+            client.close()
+
+
+def control(argv: list[str], transport: Callable[[], Any] = codex_daemon.Proxy) -> int:
+    """Show live evidence or deliver a steer/interrupt without resuming a thread."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("action", choices=("show", "steer", "interrupt"))
+    parser.add_argument("scratch", type=Path)
+    parser.add_argument("message", nargs="?")
+    args = parser.parse_args(argv)
+    if args.action == "steer" and not args.message:
+        parser.error("steer requires a message")
+    if not (args.scratch / "codex-session").exists():
+        print(f"{args.scratch}: no saved Codex thread; no turn running")
+        return 0
+    state = codex_rollout.read(args.scratch, Path.home())
+    if args.action == "show":
+        print(state.show())
+    elif state.turn is None:
+        print(f"thread {state.thread}: no turn running")
+    else:
+        client = transport()
+        try:
+            params: dict[str, Any] = {"threadId": state.thread}
+            if args.action == "steer":
+                params.update(expectedTurnId=state.turn,
+                              input=[{"type": "text", "text": args.message}])
+            else:
+                params["turnId"] = state.turn
+            try:
+                client.call("turn/" + args.action, params)
+            except codex_daemon.Refused:
+                current = client.call("thread/read", {"threadId": state.thread, "includeTurns": True})
+                if not any(t["status"] == "inProgress" for t in current["thread"]["turns"]):
+                    print(f"thread {state.thread}: no turn running")
+                    return 0
+                raise
+            print(f"{args.action} sent to turn {state.turn}")
+        finally:
+            client.close()
+    return 0
+
+
 def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: str,
         root: Path, home: Path, main: Path, cwd: Path,
         runner: Callable[[list[str]], subprocess.CompletedProcess[str]] = execute,
-        agent_type: str | None = None) -> str:
+        agent_type: str | None = None,
+        transport: Callable[[], Any] = codex_daemon.Proxy) -> str:
     """Return the last message, or raise with the CLI's error. Save a thread
     id even on failure so a later call can continue the same session."""
     scratch = scratch.resolve()
@@ -98,6 +219,10 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
     writable = [main / "tickets", main / ".git",
                 *([git_dir] if git_dir != main / ".git" else []), main / ".cache",
                 home / ".cache" / "uv", home / ".cargo", scratch]
+    daemon_message = daemon_turn(scratch, thread, prompt, item, cwd, model, effort,
+                                 writable, transport)
+    if daemon_message is not None:
+        return daemon_message
     argv = ["codex", "exec", "-m", model, "-c", f'model_reasoning_effort="{effort}"',
             "-c", "project_doc_max_bytes=0", "-s", "workspace-write",
             "-c", "sandbox_workspace_write.network_access=true",
@@ -132,6 +257,12 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
 
 
 def main(argv: list[str]) -> int:
+    if argv and argv[0] in ("show", "steer", "interrupt"):
+        try:
+            return control(argv)
+        except (OSError, ValueError) as exc:
+            print(f"codex_agent: {exc}", file=sys.stderr)
+            return 1
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("agent", choices=sorted(r.value for r in CODEX_ROLES))
@@ -151,6 +282,8 @@ def main(argv: list[str]) -> int:
                       checkout.main_worktree(checkout.ROOT), args.cwd.resolve(),
                       agent_type=args.agent_type)
     except (OSError, ValueError) as exc:
+        if isinstance(exc, TurnFailed) and exc.message:
+            print(exc.message, flush=True)
         print(f"codex_agent: {exc}", file=sys.stderr)
         return 1
     else:
