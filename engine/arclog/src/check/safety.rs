@@ -216,7 +216,7 @@ fn keyed_inputs<'a>(
 
 /// The entries of `labels` of the label scope that holds the body at
 /// `at`: the scope whose form's path is the longest prefix of `at`.
-fn label_scope<'l>(labels: &'l [LabelInScope], at: &NodePath) -> Vec<&'l LabelInScope> {
+pub(super) fn label_scope<'l>(labels: &'l [LabelInScope], at: &NodePath) -> Vec<&'l LabelInScope> {
     let holds = |entry: &&LabelInScope| at.0.starts_with(&entry.scope.0);
     let Some(depth) = labels.iter().filter(holds).map(|entry| entry.scope.0.len()).max() else { return Vec::new() };
     labels.iter().filter(holds).filter(|entry| entry.scope.0.len() == depth).collect()

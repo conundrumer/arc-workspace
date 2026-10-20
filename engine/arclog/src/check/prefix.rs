@@ -86,7 +86,7 @@ pub fn check_prefix(program: &ResolvedProgram, clauses: &SolverClauses, registry
     let path = NodePath::top(complete.len() as u32);
     let cases = inference::CaseInferences::new(clauses, registry);
     let inference = inference::Inference::new(program, &cases);
-    let scope = |labels| Scope { program, registry, labels, clauses, inference: &inference };
+    let scope = |labels| Scope { program, registry, labels, clauses, inference: &inference, files: None };
     let order = CanonicalOrder::of(partial, &mut SearchBudget::new());
     let untyped = labels_in_scopes(&order, &|_, _| None);
     let (_, form_types) = types::infer_form(&CheckInput { form: partial, path: &path, scope: scope(&untyped) }, &order);

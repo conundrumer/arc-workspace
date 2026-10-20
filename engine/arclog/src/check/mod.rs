@@ -1,6 +1,6 @@
 //! The checker: a set of checks, each over one syntax node and its scope,
-//! the declarations visible at that node and the labels of each label scope
-//! of its top-level form with their types. The cycle check reads the
+//! the declarations visible at that node, the labels of each label scope
+//! of its top-level form with their types, and the files it was read from. The cycle check reads the
 //! dependency graph instead.
 //!
 //! Each check has a form on a prefix, [`Check::check_prefix`], so that a
@@ -14,23 +14,30 @@ pub mod grammar;
 pub mod safety;
 mod inference;
 pub mod instance_inputs;
+pub mod instance_sites;
 pub mod labels;
 pub mod lint;
+pub mod marks;
+pub mod one_clause;
 pub mod pose;
 pub mod prefix;
 pub mod reads;
 pub mod scope;
 pub mod site_columns;
+pub mod spelling;
 pub mod types;
 pub mod unfold_reads;
+pub mod zero;
 
 use std::sync::Arc;
 
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use crate::hash::StableHashMap;
 use crate::program::canonical::{canonical_form, CanonicalForm, CanonicalOrder, CanonicalWriter, SearchBudget};
-use crate::program::path::{NodePath, NodeRef};
+use crate::layout::{NodeLayout, SourceFile};
+use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Form, LabelId};
+use crate::solver::{Case, FileOwner, Solver};
 use crate::registry::Registry;
 use crate::resolver::{DependencyGraph, ResolvedProgram, Signature};
 use crate::types::{ProgramTypes, ValueType};
@@ -39,7 +46,9 @@ mod clauses;
 pub use clauses::{ClauseEntry, FileScope, HeldClauses, SolverClauses};
 use clauses::{clause_signature, top_level_forms};
 
-/// The checks this step builds, those that evaluation needs.
+/// The checks of the checker: those that evaluation needs, and the checks
+/// of the language that synthesis takes from the Python lint
+/// (`docs/engine/synthesis.md#checks-moved-from-the-lint`).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum CheckId {
     /// The grammar: an s-expression that matches no node kind.
@@ -92,6 +101,34 @@ pub enum CheckId {
     /// The pooled and lifted reads, as `docs/arclog/arclog.md#program`
     /// gives.
     PooledAndLiftedReads,
+    /// The rules on `=` and `0` of
+    /// `docs/arclog/arclog.md#negation-and-constraints`.
+    EqualityAndZero,
+    /// The marks a constraint's labels take: `*` only on the first label
+    /// of `=`.
+    ConstraintMarks,
+    /// One clause per relation in a block, the blocks as [`CaseFiles`]
+    /// gives them. The check reads the forms before the form under check,
+    /// so its result is cached under no [`CheckCacheKey`].
+    OneClause,
+    /// The sites of an instance's keyed inputs: an input that reads no key
+    /// label stands after the key clause, and a read at the key in scope
+    /// writes no key site.
+    InstanceSites,
+    /// The spelling of the program form: the names of labels and fields,
+    /// and the elision of sites. The check reads the text of the files that
+    /// [`CaseFiles`] gives, so a program with no files, as a synthesized
+    /// one, passes it but for the names of fields, and its result is
+    /// cached under no [`CheckCacheKey`].
+    Spelling,
+}
+
+impl CheckId {
+    /// Whether the check's result on a form follows from the form's
+    /// [`CheckCacheKey`], so that [`check_program`] caches it.
+    pub fn is_cached(self) -> bool {
+        !matches!(self, CheckId::OneClause | CheckId::Spelling)
+    }
 }
 
 /// A label of a label scope within a top-level form, as [`LabelId`] gives
@@ -123,6 +160,55 @@ pub struct Scope<'a> {
     /// The inference of the labels of `program`, over the case programs of
     /// `clauses`, that the checks of one [`check_program`] call share.
     inference: &'a inference::Inference<'a>,
+    /// The files that `program` was read from, where it was read from
+    /// text.
+    pub files: Option<&'a CaseFiles<'a>>,
+}
+
+/// The files a case program was read from: the case, and the solver whose
+/// files hold its forms.
+#[derive(Clone, Copy, Debug)]
+pub struct CaseFiles<'a> {
+    pub solver: &'a Solver,
+    pub case: &'a Case,
+}
+
+impl<'a> CaseFiles<'a> {
+    /// The file that holds the node at `path` of the case program, the
+    /// solver whose arclog file it is, its own or its representative's, and
+    /// the node's path in that file.
+    fn file_of(&self, path: &NodePath) -> (FileOwner, &'a Solver, NodePath) {
+        let (owner, file_path) = self.case.file_path(path);
+        let owning = match owner {
+            FileOwner::Solver => self.solver,
+            FileOwner::Representative => self.solver.representative.as_deref().expect("a node of the representative's file has a representative"),
+        };
+        (owner, owning, file_path)
+    }
+
+    /// The layout of the node at `path` of the case program, where its
+    /// file gives it one.
+    fn layout(&self, path: &NodePath) -> Option<&'a NodeLayout> {
+        let (_, owning, file_path) = self.file_of(path);
+        owning.layout.node(SourceFile::Arclog, &file_path)
+    }
+
+    /// The name the file writes for `label` of the label scope whose form
+    /// stands at `scope` in the case program.
+    fn label_name(&self, scope: &NodePath, label: LabelId) -> Option<&'a str> {
+        let names = &self.layout(scope)?.label_names;
+        names.iter().find(|(id, _)| *id == label).map(|(_, name)| &**name)
+    }
+
+    /// The block of the file that holds the form at `path` of the case
+    /// program: the file, and the path there of the innermost `ALT` that
+    /// holds the form, or the empty path for the concept program's block.
+    fn block(&self, path: &NodePath) -> (FileOwner, NodePath) {
+        let (owner, owning, file_path) = self.file_of(path);
+        let root = NodeRef::Program(owning.program.value());
+        let alt = (0..file_path.0.len()).rev().map(|depth| NodePath(file_path.0[..depth].into())).find(|at| matches!(node_at(root, at), Some(NodeRef::Alt(_))));
+        (owner, alt.unwrap_or_default())
+    }
 }
 
 /// A check's input: one node, its path, and its scope.
@@ -231,7 +317,10 @@ pub fn check_cycles(graph: &DependencyGraph, program: &ResolvedProgram) -> Check
 /// The signatures stand in a fixed order: those of the names the form
 /// reads, in the order of each name's first read in the form's canonical
 /// order, then the signatures of the clauses that [`CheckId::Types`] reads,
-/// as [`types::type_clause_signatures`] gives them. The key of [`CheckId::Cycles`], which
+/// as [`types::type_clause_signatures`] gives them, and, for
+/// [`CheckId::EqualityAndZero`], then the signatures of the clauses of the
+/// form's relation across the solver's blocks, where the form is a clause
+/// with a `(= *X 0)` at the top level of its body. The key of [`CheckId::Cycles`], which
 /// reads no form, holds the form of the program's dependency graph with the
 /// path of each node's form, and no signature.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -315,6 +404,18 @@ pub fn check_shared_program(
     registry: &Registry,
     cache: &mut CheckCache,
 ) -> Result<CheckedProgram, Vec<Diagnostic>> {
+    check_program_of_files(program, clauses, registry, cache, None)
+}
+
+/// [`check_shared_program`] over a program read from `files`, which
+/// [`CheckId::OneClause`] and [`CheckId::Spelling`] read.
+pub fn check_program_of_files(
+    program: Arc<ResolvedProgram>,
+    clauses: &SolverClauses,
+    registry: &Registry,
+    cache: &mut CheckCache,
+    files: Option<&CaseFiles<'_>>,
+) -> Result<CheckedProgram, Vec<Diagnostic>> {
     let mut refused = Vec::new();
     let cycles_key = CheckCacheKey { check: CheckId::Cycles, canonical_form: graph_form(&program), signatures: Box::new([]) };
     if let CheckResult::Refuse(refusals) = cached(cache, cycles_key, || check_cycles(&program.graph, &program)) {
@@ -341,7 +442,7 @@ pub fn check_shared_program(
     let form_types: Vec<Arc<types::ScopeTypes>> = {
         let cases = inference::CaseInferences::new(clauses, registry);
         let inference = inference::Inference::new(&program, &cases);
-        let scope = |labels| Scope { program: &program, registry, labels, clauses, inference: &inference };
+        let scope = |labels| Scope { program: &program, registry, labels, clauses, inference: &inference, files };
         let form_types: Vec<Arc<types::ScopeTypes>> = forms
             .iter()
             .zip(&mut refused_by_form)
@@ -366,12 +467,20 @@ pub fn check_shared_program(
         for ((at, labels), refused) in forms.iter().zip(&labels).zip(&mut refused_by_form) {
             let input = CheckInput { form: at.form, path: &at.path, scope: scope(labels) };
             for check in checks().iter().filter(|check| check.id() != CheckId::Types) {
-                let canonical_form = match check.id() {
-                    CheckId::Safety => with_written_order(at.form, &at.canonical, &at.order),
-                    _ => at.canonical.clone(),
+                let result = match check.id() {
+                    id if !id.is_cached() => check.check(&input),
+                    id => {
+                        let canonical_form = match id {
+                            CheckId::Safety => with_written_order(at.form, &at.canonical, &at.order),
+                            _ => at.canonical.clone(),
+                        };
+                        let mut signatures = at.signatures.to_vec();
+                        if id == CheckId::EqualityAndZero {
+                            signatures.extend(zero::zero_clause_signatures(at.form, clauses).cloned());
+                        }
+                        cached(cache, key(id, canonical_form, signatures.into()), || check.check(&input))
+                    }
                 };
-                let check_key = key(check.id(), canonical_form, at.signatures.clone());
-                let result = cached(cache, check_key, || check.check(&input));
                 at.report(refused, check.id(), &result);
             }
         }
@@ -519,7 +628,7 @@ fn read_signatures(program: &ResolvedProgram, form: &Form, path: &NodePath, orde
 /// a partial form that no completion makes a node of the grammar, or a name
 /// that no completion resolves.
 pub fn checks() -> &'static [&'static dyn Check] {
-    static CHECKS: [&dyn Check; 10] = [
+    static CHECKS: [&dyn Check; 15] = [
         &grammar::GrammarCheck,
         &scope::ScopeCheck,
         &site_columns::SiteColumnsCheck,
@@ -530,6 +639,20 @@ pub fn checks() -> &'static [&'static dyn Check] {
         &unfold_reads::UnfoldReadsCheck,
         &instance_inputs::InstanceInputsCheck,
         &reads::PooledAndLiftedReadsCheck,
+        &zero::EqualityAndZeroCheck,
+        &marks::ConstraintMarksCheck,
+        &one_clause::OneClauseCheck,
+        &instance_sites::InstanceSitesCheck,
+        &spelling::SpellingCheck,
     ];
     &CHECKS
+}
+
+/// Visits `node`, at `at`, and each node below it, in source order, each
+/// with its path.
+fn each_node<'a>(node: NodeRef<'a>, at: &NodePath, visit: &mut dyn FnMut(NodeRef<'a>, &NodePath)) {
+    visit(node, at);
+    for (child, index) in node.children().into_iter().zip(0u32..) {
+        each_node(child, &at.child(index), visit);
+    }
 }

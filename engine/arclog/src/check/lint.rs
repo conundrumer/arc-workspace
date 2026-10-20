@@ -19,14 +19,14 @@
 
 use std::sync::Arc;
 
-use super::{check_shared_program, CheckCache, SolverClauses};
+use super::{check_program_of_files, CaseFiles, CheckCache, SolverClauses};
 use crate::diagnostic::{Diagnostic, Location, Severity};
 use crate::hash::StableHashMap;
 use crate::layout::{FilePlace, SourceFile};
 use crate::program::path::NodePath;
 use crate::registry::Registry;
 use crate::resolver::{resolve_cases, ResolvedCase};
-use crate::solver::{Case, CaseName, FileOwner, Solver};
+use crate::solver::{Case, CaseName, Solver};
 
 /// The errors of every check over every case of `solver`, the excluded
 /// cases included, each once per place in the files. The diagnostics stand
@@ -39,7 +39,8 @@ pub fn lint(solver: &Solver, registry: &Registry) -> Vec<Diagnostic> {
     let mut found = Found::default();
     for ResolvedCase { case, resolved } in cases.cases() {
         let mut diagnostics = resolved.diagnostics.clone();
-        if let Err(refused) = check_shared_program(Arc::clone(&resolved.value), &clauses, registry, &mut cache) {
+        let files = CaseFiles { solver, case };
+        if let Err(refused) = check_program_of_files(Arc::clone(&resolved.value), &clauses, registry, &mut cache, Some(&files)) {
             diagnostics.extend(refused);
         }
         for diagnostic in diagnostics.into_iter().filter(|d| d.severity == Severity::Error) {
@@ -91,11 +92,7 @@ impl Found {
 /// of its nearest node above that has a place, as a bare-label argument of a
 /// site has none of its own.
 fn place(solver: &Solver, case: &Case, path: &NodePath) -> FilePlace {
-    let (owner, file_path) = case.file_path(path);
-    let owning = match owner {
-        FileOwner::Solver => solver,
-        FileOwner::Representative => solver.representative.as_deref().expect("a node of the representative's file has a representative"),
-    };
+    let (_, owning, file_path) = CaseFiles { solver, case }.file_of(path);
     let place = (0..=file_path.0.len())
         .rev()
         .find_map(|depth| owning.layout.node(SourceFile::Arclog, &NodePath(file_path.0[..depth].into()))?.place)

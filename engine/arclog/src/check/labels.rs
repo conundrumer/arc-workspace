@@ -89,21 +89,50 @@ fn refusals(form_body: &FormBody<'_>, refused: &mut Vec<(&'static str, NodePath)
 /// does not hold, and each label made at a site of a `NOT` atom, and so for
 /// the parts of each form of `list`, each part with the labels it keeps.
 fn list(list: &[(NodePath, &Conjunct)], visible: &StableHashSet<LabelId>, refused: &mut Vec<(&'static str, NodePath)>) {
+    each_list(list, visible, &[], &mut |list, visible, _| {
+        for (at, conjunct) in list {
+            match conjunct {
+                Conjunct::Atom(_) | Conjunct::Constraint(_) => each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |at, use_| {
+                    if let LabelUse::Join(label) = use_ {
+                        read(visible, label, at, refused);
+                    }
+                }),
+                Conjunct::Not(Negated::Atom(_)) => each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |at, use_| match use_ {
+                    LabelUse::Fresh(_) | LabelUse::Key(_) => refused.push(("a site of a `NOT` atom makes the label, where every site of the atom joins", at.clone())),
+                    LabelUse::Join(label) => read(visible, label, at, refused),
+                    LabelUse::Zero => {}
+                }),
+                Conjunct::Not(Negated::Form(_)) | Conjunct::All { .. } | Conjunct::Or(_) | Conjunct::If { .. } => {}
+            }
+        }
+    });
+}
+
+/// Visits `list` with `visible`, the labels visible in it, and `named`,
+/// the labels of an `OR`'s first branch or an `IF`'s then that it may
+/// name, then each part of each form of `list`, as
+/// [`crate::safety::parts_of`] gives the parts, in the same way: each part
+/// with the labels visible in `list`, those it keeps, and the labels of the
+/// form's first branch or then, which a later branch or the else may name,
+/// as `docs/arclog/arclog.md#disjunction` gives.
+pub(super) fn each_list(
+    list: &[(NodePath, &Conjunct)],
+    visible: &StableHashSet<LabelId>,
+    named: &[LabelId],
+    visit: &mut dyn FnMut(&[(NodePath, &Conjunct)], &StableHashSet<LabelId>, &[LabelId]),
+) {
+    visit(list, visible, named);
     for (at, conjunct) in list {
-        match conjunct {
-            Conjunct::Atom(_) | Conjunct::Constraint(_) => each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |at, use_| {
-                if let LabelUse::Join(label) = use_ {
-                    read(visible, label, at, refused);
-                }
-            }),
-            Conjunct::Not(Negated::Atom(_)) => each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |at, use_| match use_ {
-                LabelUse::Fresh(_) | LabelUse::Key(_) => refused.push(("a site of a `NOT` atom makes the label, where every site of the atom joins", at.clone())),
-                LabelUse::Join(label) => read(visible, label, at, refused),
-                LabelUse::Zero => {}
-            }),
-            Conjunct::Not(Negated::Form(_)) | Conjunct::All { .. } => parts(conjunct, at, visible, &[], refused),
-            Conjunct::Or(branches) => parts(conjunct, at, visible, &kept(branches[0].value()), refused),
-            Conjunct::If { then, .. } => parts(conjunct, at, visible, &kept(then.value()), refused),
+        let named = match conjunct {
+            Conjunct::Or(branches) => kept(branches[0].value()),
+            Conjunct::If { then, .. } => kept(then.value()),
+            Conjunct::Atom(_) | Conjunct::Not(_) | Conjunct::Constraint(_) | Conjunct::All { .. } => Vec::new(),
+        };
+        for part in parts_of(conjunct, at) {
+            let mut inner = visible.clone();
+            inner.extend(named.iter().copied());
+            part_kept(&part, &mut inner);
+            each_list(&part, &inner, &named, visit);
         }
     }
 }
@@ -113,20 +142,6 @@ fn list(list: &[(NodePath, &Conjunct)], visible: &StableHashSet<LabelId>, refuse
 fn read(visible: &StableHashSet<LabelId>, label: LabelId, at: &NodePath, refused: &mut Vec<(&'static str, NodePath)>) {
     if !visible.contains(&label) {
         refused.push(("the label is read outside each list that keeps it", at.clone()));
-    }
-}
-
-/// Pushes onto `refused` the refusals of each part of `conjunct`, a form
-/// at `at`, each part read with `visible`, `named` and the labels the part
-/// keeps. `named` holds the labels of an `OR`'s first branch or of an
-/// `IF`'s then, which a later branch or the else may name, as
-/// `docs/arclog/arclog.md#disjunction` gives.
-fn parts(conjunct: &Conjunct, at: &NodePath, visible: &StableHashSet<LabelId>, named: &[LabelId], refused: &mut Vec<(&'static str, NodePath)>) {
-    for part in parts_of(conjunct, at) {
-        let mut inner = visible.clone();
-        inner.extend(named.iter().copied());
-        part_kept(&part, &mut inner);
-        list(&part, &inner, refused);
     }
 }
 
