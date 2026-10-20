@@ -247,9 +247,9 @@ def made(state: State, step: Launch) -> State:
     step, with no result, and a pending agent of `state.me` with no agent
     id."""
     call = Call(operator=state.me, time=state.now, tool=Tool.AGENT, result=None, error=False,
-                input=launch_parameters(step.role, step.subject, step.model) | {"prompt": step.brief})
+                input=launch_parameters(step.role, step.subject, step.model, step.brief))
     agent = Agent(agent_id=None, operator=state.me, role=step.role, subject=step.subject,
-                  brief=step.brief, launched=state.now, since=state.now, waits=Waits.AT_WORK, reports=(),
+                  brief=call.input["prompt"], launched=state.now, since=state.now, waits=Waits.AT_WORK, reports=(),
                   notifies=True)
     t = state.transcripts
     return replace(state, transcripts=replace(t, calls=(*t.calls, call),

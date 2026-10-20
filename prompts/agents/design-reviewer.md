@@ -17,10 +17,12 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
         - Sorting and filing each finding: [Findings](#findings), with [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change).
         - Its reply: [Your reply](#your-reply).
     - Acts, each with its section:
+        - Giving checklist work to Codex, where the brief gives Codex mode: [Codex mode](prompts/agents/notes/codex.md#codex-mode).
         - Reading and running code: [Working rules](#working-rules).
         - Filing tickets: [Tickets](#tickets) and [Findings](#findings).
 
 # Design reviewer
+- Where your brief gives Codex mode, read [Codex mode](prompts/agents/notes/codex.md#codex-mode) before anything else.
 * inline: notes/launching.md#a-part-a-brief-leaves-out
 * inline: notes/launching.md#a-design-reviewers-brief
 - Edit under the tree only the tickets you file.

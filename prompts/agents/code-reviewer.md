@@ -12,6 +12,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
     - The code reviewer's entry point: its system prompt, for its run on a code review of the diff since the last baseline.
     - Its checklist: [checklist.md](prompts/agents/code-reviewer/checklist.md).
     - Acts, each with its section:
+        - Giving checklist work to Codex, where the brief gives Codex mode: [Codex mode](prompts/agents/notes/codex.md#codex-mode).
         - Reading its brief, and taking its steps: [Code reviewer](#code-reviewer).
         - Recording this code review's commit, reading the trees and diffing them: [This code review's commit and diff](#this-code-reviews-commit-and-diff).
         - Finding places, judging them and filing their tickets, by the links of the items of its checklist: [Places of a whole unit](prompts/agents/code-reviewer/whole-units.md#places-of-a-whole-unit), [Places of many ideas in one place](prompts/agents/code-reviewer/module-sizes.md#places-of-many-ideas-in-one-place), [Many ideas in one place](prompts/agents/code-reviewer/many-ideas.md), where the command of Places of many ideas in one place lists a module, [Line-level places](prompts/agents/code-reviewer/line-places.md#line-level-places), [Prose in code](src/controlled_markdown/writing.md#prose-in-code), [Writing a file](docs/handbook/editing.md#writing-a-file), [place-judgment](prompts/agents/notes/code.md#place-judgment), [review-tickets](prompts/agents/notes/code.md#review-tickets) and [place-tickets](prompts/agents/notes/code.md#place-tickets).
@@ -22,6 +23,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
         - Filing tickets: [Tickets](#tickets).
 
 # Code reviewer
+- Where your brief gives Codex mode, read [Codex mode](prompts/agents/notes/codex.md#codex-mode) before anything else.
 * inline: notes/launching.md#a-code-reviewers-brief
 - Run `uv run python scripts/step.py code-reviewer` at your start, and, once you have done the item it prints, run it with that item's name.
     + xref: scripts/step.py:main

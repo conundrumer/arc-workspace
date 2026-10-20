@@ -29,7 +29,7 @@ from transcript_snapshots import Refused  # noqa: E402
 from tree_reads import main_tree, run_in_main  # noqa: E402
 from help_parts import print_help  # noqa: E402
 
-from operations import journal, pacing, runs  # noqa: E402
+from operations import codex_mode, journal, pacing, runs  # noqa: E402
 from operations.directives import NUMBER  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
@@ -39,11 +39,12 @@ from operations.constants import (BLOCK_SECONDS, LIMIT_SECONDS, RUN_SECONDS, SUB
 from operations.task_work import release, restore, set_aside  # noqa: E402
 from operate_loop import block, operator_step, wait  # noqa: E402
 from operate_actions import (TASK_ID, OperateAction, claim_task, print_waits, relay_step,  # noqa: E402
-                             send_lines, set_bound)
+                             send_lines, set_bound, set_codex)
 from operate_help import PARTS, PURPOSES, USAGE, HelpPart  # noqa: E402
 from operate_review import review  # noqa: E402
 
 def main(argv: list[str]) -> int:
+    codex_mode.enabled.cache_clear()
     if not argv or argv[0] in ("--help", "-h"):
         return print_help(argv[1:], HelpPart, lambda parts: USAGE.format(parts=parts), PURPOSES,
                           lambda part: PARTS[part].format(
@@ -63,6 +64,8 @@ def main(argv: list[str]) -> int:
             return send_lines(sys.stdin.read())
         if argv == [OperateAction.BOUND]:
             return set_bound([])
+        if argv == [OperateAction.CODEX]:
+            return set_codex([])
         args = parser.parse_args(argv)
         match OperateAction(args.action):
             case OperateAction.NEXT:
@@ -111,6 +114,10 @@ def main(argv: list[str]) -> int:
                 if args.run is not None:
                     parser.error(mctx("bound takes no {run_option}").format(run_option=runs.RUN_OPTION))
                 return set_bound([args.ident, *args.rest])
+            case OperateAction.CODEX:
+                if args.run is not None:
+                    parser.error(mctx("codex takes no {run_option}").format(run_option=runs.RUN_OPTION))
+                return set_codex([args.ident, *args.rest])
     except Refused as exc:
         print(f"operate: {exc}", file=sys.stderr)
         return 1

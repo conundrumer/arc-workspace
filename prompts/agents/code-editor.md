@@ -12,6 +12,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     - The code editor's entry point: its system prompt, for its run on the part of a change outside the documents, the lib and the solvers.
     - Its checklist: [checklist.md](prompts/agents/code-editor/checklist.md).
     - Acts, each with its section:
+        - Giving checklist work to Codex, where the brief gives Codex mode: [Codex mode](prompts/agents/notes/codex.md#codex-mode).
         - Reading its brief, messages to other agents, and taking its steps: [Code editor](#code-editor), with [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) by the link of [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), for a review an item has it make.
         - Writing the code against the spec: [Writing the code](prompts/agents/code-editor/writing-the-code.md#writing-the-code), by the links of the items of its checklist, and [code-working-rules](prompts/agents/notes/code.md#code-working-rules).
         - Reading its diff for defect places: [Your diff](#your-diff).
@@ -21,6 +22,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
         - Filing tickets: [Tickets](#tickets).
 
 # Code editor
+- Where your brief gives Codex mode, read [Codex mode](prompts/agents/notes/codex.md#codex-mode) before anything else.
 * inline: notes/worktree.md#editor-messages
 * inline: notes/launching.md#an-editors-brief
 * inline: notes/launching.md#a-code-editors-brief

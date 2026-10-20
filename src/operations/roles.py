@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from handbook.agent_documents import agent_meta
+from controlled_markdown import mctx
+from operations import codex_mode
 
 
 class Model(StrEnum):
@@ -188,14 +190,30 @@ def parameter(value: object) -> str:
     return str(value).lower() if isinstance(value, bool) else str(value)
 
 
-def launch_parameters(role: Role, subject: str, model: Model | None) -> dict[str, str]:
-    """The parameters of the Agent call of a launch of `role` on `subject`
-    other than its prompt, each as the printed launch gives it, where
-    `model` is the model its step gives."""
+CODEX_ROLES = frozenset({Role.CODE_EDITOR, Role.CODE_REVIEWER, Role.DESIGN_REVIEWER,
+                         Role.LIB_REVIEWER})
+CODEX_EDITOR_MODEL = "gpt-6-astra"
+"""The Codex model of a code editor of a change that is not `mechanical`."""
+CODEX_MODEL = "gpt-5.6-sol"
+"""The Codex model of each other launch in Codex mode."""
+CODEX_LINE = mctx("Codex mode: model `{model}`, reasoning effort `{effort}`.")
+
+
+def launch_parameters(role: Role, subject: str, model: Model | None,
+                      prompt: str | None = None) -> dict[str, str]:
+    """The parameters of the printed call and the operator's record of
+    it, with the Codex switch held for the command run."""
     out = {"description": description(role, subject), "subagent_type": launched_type(role, subject),
            "run_in_background": parameter(True)}
-    if (given := model or launched_model(role, subject)) is not None:
+    codex = role in CODEX_ROLES and codex_mode.enabled()
+    if (given := Model.HAIKU if codex else model or launched_model(role, subject)) is not None:
         out["model"] = str(given)
+    if prompt is not None:
+        if codex:
+            editor = role is Role.CODE_EDITOR and model is not Model.SONNET
+            prompt += "\n" + CODEX_LINE.format(model=CODEX_EDITOR_MODEL if editor else CODEX_MODEL,
+                                               effort="medium")
+        out["prompt"] = prompt
     return out
 
 

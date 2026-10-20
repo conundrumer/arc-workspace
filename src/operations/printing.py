@@ -246,7 +246,8 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
     id is `agent`, with the files `filing.filed` gives under `scratch`."""
     match step:
         case Launch(role, subject, _, model):
-            return launch_text(launch_parameters(role, subject, model), filed_line(step, scratch))
+            params = launch_parameters(role, subject, model, filed_line(step, scratch))
+            return launch_text(params, params.pop(PROMPT))
         case Send(to):
             head, rest = split_message(step)
             line = filed_line(step, scratch) if rest else ""
