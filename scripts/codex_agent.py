@@ -1,10 +1,11 @@
 """Run one checklist item in the agent's Codex session.
 
-    uv run python scripts/codex_agent.py <agent> <scratch> <brief> <model> <effort>
+    uv run python scripts/codex_agent.py <agent> <scratch> <brief> <model> <effort> [--cwd <dir>]
 
 Give the item or a later message on stdin. The first call reads the rendered
 agent document, the repo and user CLAUDE.md files, and the brief. Later
 calls resume the thread in <scratch>/codex-session with only the new input.
+`--cwd` sets the directory Codex works in, defaulting to the current directory.
 The last message is printed; a failed turn prints its error and exits 1.
 """
 
@@ -116,11 +117,12 @@ def main(argv: list[str]) -> int:
     parser.add_argument("brief", type=Path)
     parser.add_argument("model")
     parser.add_argument("effort", choices=("low", "medium", "high", "xhigh"))
+    parser.add_argument("--cwd", type=Path, default=Path.cwd())
     args = parser.parse_args(argv)
     try:
         message = run(args.agent, args.scratch, args.brief, args.model, args.effort,
                       sys.stdin.read(), checkout.ROOT, Path.home(),
-                      checkout.main_worktree(checkout.ROOT), Path.cwd())
+                      checkout.main_worktree(checkout.ROOT), args.cwd.resolve())
     except (OSError, ValueError) as exc:
         print(f"codex_agent: {exc}", file=sys.stderr)
         return 1

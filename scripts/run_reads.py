@@ -11,7 +11,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol
 
-from controlled_markdown import mctx
+from controlled_markdown import form, mctx
+from operations.roles import CODEX_LAUNCHER, CODEX_LINE, CODEX_ROLES
 from operations.constants import COORDINATOR as MAIN
 from operations.printed_forms import POLL_AGAIN
 from token_prices import request_input
@@ -443,12 +444,33 @@ def same_since(calls: list[tuple[str, str, float]], texts: Mapping[str, str]) ->
     return calls[runs[-1][0]][2]
 
 
+def role_type(path: Path) -> str | None:
+    """The role whose checks apply to a run. A Codex launcher gives its
+    role in the Codex mode line of its first prompt; its recorded agent
+    type stays that of the wrapper for document delivery and profiling.
+    Raise where that prompt gives no supported role."""
+    kind = agent_type(path)
+    if kind != CODEX_LAUNCHER:
+        return kind
+    from entry_reads import entries_forward
+
+    start = path if first_parent(path) is None else chain(path)[0]
+    first = next((e for e in entries_forward(start) if is_prompt(e)), None)
+    line = re.compile("^" + form(CODEX_LINE, {"role": "(?P<role>[^`]+)",
+                                            "model": "[^`]+", "effort": "[^`]+"})
+                      + "$", re.MULTILINE)
+    match = line.search(message_text(first)) if first is not None else None
+    if match is None or match["role"] not in {r.value for r in CODEX_ROLES}:
+        raise ValueError(f"{path}: the first prompt gives no Codex role")
+    return match["role"]
+
+
 def caller_type(hook: str, data: dict[str, Any]) -> tuple[Path, str | None]:
     """The transcript of the caller of the hook input `data`, and its agent
-    type, or None where it is unknown, which the hook `hook` says on stderr
-    with an `allowed:` line."""
+    role (`role_type`), or None where it is unknown, which the hook
+    `hook` says on stderr with an `allowed:` line."""
     path = caller_transcript(data)
-    kind = agent_type(path)
+    kind = role_type(path)
     if kind is None:
         print(f"{hook}: allowed: {UNKNOWN_TYPE.format(path=path)}", file=sys.stderr)
     return path, kind

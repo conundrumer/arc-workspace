@@ -12,7 +12,6 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
     - The lib reviewer's entry point: its system prompt, for its run on a lib review of the lib's diff since the last baseline.
     - Its checklist: [checklist.md](prompts/agents/lib-reviewer/checklist.md).
     - Acts, each with its section:
-        - Giving checklist work to Codex, where the brief gives Codex mode: [Codex mode](prompts/agents/notes/codex.md#codex-mode).
         - Reading the handbook: [abridgement](prompts/agents/notes/reading.md#abridgement), [citations](prompts/agents/notes/reading.md#citations).
         - Reading its brief, and taking its steps: [Lib reviewer](#lib-reviewer).
         - Recording this lib review's commit, reading the trees and diffing them: [This lib review's commit and diff](#this-lib-reviews-commit-and-diff).
@@ -32,7 +31,6 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
     + abridged: ../../docs/handbook/patterns.md
 
 # Lib reviewer
-- Where your brief gives Codex mode, read [Codex mode](prompts/agents/notes/codex.md#codex-mode) before anything else.
 * inline: notes/launching.md#a-lib-reviewers-brief
 - Run `uv run python scripts/step.py lib-reviewer` at your start, and, once you have done the item it prints, run it with that item's name.
     + xref: scripts/step.py:main

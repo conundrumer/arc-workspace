@@ -7,8 +7,9 @@ caller (`hook_entry.run_pre_tool_use`). The argument names the matcher:
 `operator_stop_hook`, `checklist_walk_hook` and `report_file_hook`, `send`
 for `SendMessage`, whose check is that of `printed_send_hook`, and `agent`
 for `Agent`, whose checks are those of `context_bound_hook` and
-`printed_launch_hook`. Each runs with the reader update
-(`reader_delivery.reader_update`). Each check keeps its own guard against
+`printed_launch_hook`, and `bash` for `Bash|Monitor`, whose checks are
+those of `pending_wait_hook` and `codex_bash_hook`. Each runs with the reader update
+(`reader_delivery.reader_update`). Checks that record a denial keep their own guards against
 denying one event twice."""
 
 import sys
@@ -19,6 +20,7 @@ HOOK = "joined_hooks"
 HANDBACK = "handback"
 SEND = "send"
 AGENT = "agent"
+BASH = "bash"
 
 
 def main() -> int:
@@ -43,8 +45,15 @@ def main() -> int:
 
             return run_pre_tool_use(HOOK, [context_bound_hook.check, printed_launch_hook.check],
                                     reader_update)
+        case [arg] if arg == BASH:
+            import codex_bash_hook
+            import pending_wait_hook
+            from reader_delivery import reader_update
+
+            return run_pre_tool_use(HOOK, [pending_wait_hook.check, codex_bash_hook.check],
+                                    reader_update)
         case args:
-            raise SystemExit(f"{HOOK}: usage: joined_hooks.py {HANDBACK}|{SEND}|{AGENT}, "
+            raise SystemExit(f"{HOOK}: usage: joined_hooks.py {HANDBACK}|{SEND}|{AGENT}|{BASH}, "
                              f"given `{' '.join(args)}`")
 
 

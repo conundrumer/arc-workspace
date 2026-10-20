@@ -96,3 +96,10 @@ def test_a_harness_note_after_the_write_is_allowed(tmp_path: Path) -> None:
     note = {**prompt("u1", BRIEF_AT + 20, "[handback-send-enforce] Your report has not been delivered."),
             "isMeta": True}
     assert not denied(session(tmp_path, str(tmp_path / NAME), note))
+
+
+def test_a_launcher_is_held_to_its_report_file(tmp_path: Path) -> None:
+    stdin = session(tmp_path, "done")
+    meta = tmp_path / "s" / "subagents" / f"agent-{AGENT}.meta.json"
+    meta.write_text(json.dumps({"agentType": "codex-launcher"}))
+    assert denied(stdin)

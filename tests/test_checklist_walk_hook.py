@@ -18,15 +18,17 @@ STEP = "uv run python scripts/step.py code-reviewer"
 
 
 def session(tmp_path: Path, results: list[str], stops: dict[int, str] | None = None,
-            messages: tuple[str, ...] = ()) -> str:
+            messages: tuple[str, ...] = (), kind: str = "code-reviewer") -> str:
     """A session whose code reviewer `AGENT` made one step call for each
     of `results`, a stop at the item `stops` gives for its index, then
     received `messages`, and the hook input of its SubagentHandback call."""
     stops = stops or {}
     agents = tmp_path / "s" / "subagents"
     agents.mkdir(parents=True)
-    (agents / f"agent-{AGENT}.meta.json").write_text(json.dumps({"agentType": "code-reviewer"}))
-    lines: list[dict] = []
+    (agents / f"agent-{AGENT}.meta.json").write_text(json.dumps({"agentType": kind}))
+    lines: list[dict] = ([] if kind != "codex-launcher" else [
+        {"type": "user", "message": {"content":
+            "Codex mode: role `code-reviewer`, model `gpt-6.1-sol`, reasoning effort `medium`."}}])
     for n, result in enumerate(results):
         lines += [{"type": "assistant", "message": {"content": [
                       {"type": "tool_use", "id": f"t{n}", "name": "Bash",
@@ -101,3 +103,11 @@ def test_a_step_call_after_a_stop_holds_the_whole_walk(tmp_path: Path) -> None:
 def test_a_message_after_a_stop_holds_the_whole_walk(tmp_path: Path) -> None:
     results, stops = stopped(whole_walk(), 2)
     assert denied(session(tmp_path, results, stops, ("Do the item now.",)))
+
+
+def test_a_launcher_is_held_to_its_roles_walk(tmp_path: Path) -> None:
+    assert denied(session(tmp_path, whole_walk()[:3], kind="codex-launcher"))
+
+
+def test_a_launcher_with_a_whole_walk_is_allowed(tmp_path: Path) -> None:
+    assert not denied(session(tmp_path, whole_walk(), kind="codex-launcher"))

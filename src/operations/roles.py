@@ -172,6 +172,8 @@ ANALYST_NAMES = frozenset({Role.TICKET_ANALYST.value, *ANALYST_TYPES.values()})
 
 def launched_type(role: Role, subject: str) -> str:
     """The `subagent_type` a launch of `role` on `subject` gives."""
+    if role in CODEX_ROLES and codex_mode.enabled():
+        return CODEX_LAUNCHER
     if role is Role.TICKET_ANALYST and (of := analyst_of(subject)) is not None:
         return ANALYST_TYPES.get(of[0], role.agent_type)
     return role.agent_type
@@ -192,8 +194,9 @@ def parameter(value: object) -> str:
 
 CODEX_ROLES = frozenset({Role.CODE_EDITOR, Role.CODE_REVIEWER, Role.DESIGN_REVIEWER,
                          Role.LIB_REVIEWER})
+CODEX_LAUNCHER = "codex-launcher"
 CODEX_MODEL = "gpt-6.1-sol"
-CODEX_LINE = mctx("Codex mode: model `{model}`, reasoning effort `{effort}`.")
+CODEX_LINE = mctx("Codex mode: role `{role}`, model `{model}`, reasoning effort `{effort}`.")
 
 
 def launch_parameters(role: Role, subject: str, model: Model | None,
@@ -208,7 +211,8 @@ def launch_parameters(role: Role, subject: str, model: Model | None,
     if prompt is not None:
         if codex:
             editor = role is Role.CODE_EDITOR and model is not Model.SONNET
-            prompt += "\n" + CODEX_LINE.format(model=CODEX_MODEL, effort="high" if editor else "medium")
+            prompt += "\n" + CODEX_LINE.format(role=role.value, model=CODEX_MODEL,
+                                              effort="high" if editor else "medium")
         out["prompt"] = prompt
     return out
 
@@ -246,6 +250,7 @@ LAUNCHING_EDITORS = (Role.CODE_EDITOR, Role.DOC_EDITOR)
 CHECKS = (Role.DESIGN_REVIEWER, Role.ITEM_CHECKER, Role.TICKET_ANALYST, Role.DOC_REVIEWER)
 """The roles of the checks of a change that its editors launch."""
 
-CHECK_TYPES = frozenset(launched_type(r, analyst_subject(Purpose.CHANGE, "")) for r in CHECKS)
+CHECK_TYPES = frozenset({CODEX_LAUNCHER, *(r.agent_type for r in CHECKS),
+                         *(launched_type(r, analyst_subject(Purpose.CHANGE, "")) for r in CHECKS)})
 """The `subagent_type` of each launch of `CHECKS`: a ticket analyst of a
 change runs as the agent type of its purpose (`ANALYST_TYPES`)."""

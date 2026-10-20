@@ -56,11 +56,12 @@ def test_launch(switch: Path, role: Role, enabled: bool, model: Model | None):
     params = launch_parameters(role, "1-1", model, "brief")
     routed = enabled and role is not Role.DOC_EDITOR
     assert params["model"] == (Model.HAIKU if routed else model or role.model)
-    assert params["subagent_type"] == role.agent_type
+    assert params["subagent_type"] == ("codex-launcher" if routed else role.agent_type)
+    assert params["description"] == f"op {role.value} 1-1"
     assert params["run_in_background"] == "true"
     if routed:
         effort = "high" if role is Role.CODE_EDITOR and model is None else "medium"
-        assert params["prompt"] == f'brief\nCodex mode: model `gpt-6.1-sol`, reasoning effort `{effort}`.'
+        assert params["prompt"] == f'brief\nCodex mode: role `{role.value}`, model `gpt-6.1-sol`, reasoning effort `{effort}`.'
     else:
         assert params["prompt"] == "brief"
     step = Launch(role, "1-1", "brief", model, occasion="test")
@@ -72,6 +73,8 @@ def test_launch(switch: Path, role: Role, enabled: bool, model: Model | None):
     assert len(launches) == 1
     assert launches[0] is not None
     assert launches[0]["model"] == params["model"]
+    assert launches[0]["subagent_type"] == params["subagent_type"]
+    assert launches[0]["description"] == params["description"]
     assert ("Codex mode:" in launches[0]["prompt"]) == routed
 
 

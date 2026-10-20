@@ -1,6 +1,7 @@
 """The Codex prompt, invocation and failed-turn handling, with no CLI run."""
 
 import json
+import io
 import subprocess
 from pathlib import Path
 
@@ -58,6 +59,32 @@ def test_no_user_document(files):
     (home / ".claude" / "CLAUDE.md").unlink()
     assert agent.first_prompt(root, home, "code-editor", brief, "item").endswith(
         "repo instructions\n\nbrief body\n\nitem")
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_cwd(files, monkeypatch, explicit):
+    root, home, brief, scratch = files
+    worktree = root / ".claude" / "worktrees" / "change"
+    worktree.mkdir(parents=True)
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(agent.checkout, "ROOT", root)
+    monkeypatch.setattr(agent.checkout, "main_worktree", lambda _: root)
+    monkeypatch.setattr(agent.Path, "home", lambda: home)
+    monkeypatch.setattr(agent.sys, "stdin", io.StringIO("item"))
+    calls = []
+
+    def runner(argv):
+        calls.append(argv)
+        Path(argv[argv.index("-o") + 1]).write_text("done")
+        return subprocess.CompletedProcess(argv, 0, '{"thread_id":"t1"}', "")
+
+    monkeypatch.setattr(agent.subprocess, "run", lambda argv, **_: runner(argv))
+    args = ["code-editor", str(scratch), str(brief), "gpt-6.1-sol", "high"]
+    assert agent.main([*args, *(["--cwd", str(worktree)] if explicit else [])]) == 0
+    argv = calls[0]
+    assert argv[argv.index("-C") + 1] == str(worktree if explicit else root)
+    assert argv[-1] == "\n\n".join([agent.PREAMBLE, "agent body", "repo instructions",
+                                    "user instructions", "brief body", "item"])
 
 
 def test_cli_stdin_is_closed(monkeypatch):

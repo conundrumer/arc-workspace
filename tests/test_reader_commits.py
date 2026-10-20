@@ -281,7 +281,7 @@ def test_subagent_first_update_from_held_texts(tmp_path: Path) -> None:
     assert record(main, OPERATOR_ID).read_text() == both(head())
 
 
-GIVES_UPDATE = ("pending_wait_hook", 'joined_hooks.py" agent', 'joined_hooks.py" handback',
+GIVES_UPDATE = ('joined_hooks.py" bash', 'joined_hooks.py" agent', 'joined_hooks.py" handback',
                 'joined_hooks.py" send', "reader_update_hook")
 """The PreToolUse hooks that give the caller its update."""
 

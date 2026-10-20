@@ -211,7 +211,7 @@ def test_hook_denies(tmp_path: Path) -> None:
     write_jsonl(path, entries)
     settings = json.loads((checkout.claude() / "settings.json").read_text())
     [command] = [h["command"] for m in settings["hooks"]["PreToolUse"]
-                 for h in m["hooks"] if "pending_wait_hook.py" in h["command"]]
+                 if m.get("matcher") == "Bash|Monitor" for h in m["hooks"]]
     hook = {"tool_name": "Bash", "tool_input": wait["input"],
             "tool_use_id": "w1", "transcript_path": str(path)}
     done = subprocess.run(command, shell=True, input=json.dumps(hook),
