@@ -2,7 +2,7 @@
 
 use super::reads::form_reads;
 use super::types::result;
-use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
+use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::NodePath;
 use crate::program::SiteArg;
@@ -15,6 +15,10 @@ pub struct SiteColumnsCheck;
 impl Check for SiteColumnsCheck {
     fn id(&self) -> CheckId {
         CheckId::SiteColumns
+    }
+
+    fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey> {
+        Some(at.base(self.id()))
     }
 
     /// Refuses each site of an atom of the form on a column that the

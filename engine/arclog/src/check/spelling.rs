@@ -5,7 +5,7 @@
 use super::labels::each_list;
 use super::safety::{form_bodies, label_scope, BodyPlace, FormBody};
 use super::types::result;
-use super::{each_node, CaseFiles, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
+use super::{each_node, CaseFiles, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::hash::StableHashSet;
@@ -19,6 +19,11 @@ pub struct SpellingCheck;
 impl Check for SpellingCheck {
     fn id(&self) -> CheckId {
         CheckId::Spelling
+    }
+
+    /// No key, since the check reads the text of the files of the case.
+    fn cache_key(&self, _: &KeyInput<'_>) -> Option<CheckCacheKey> {
+        None
     }
 
     /// Refuses:

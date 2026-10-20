@@ -4,7 +4,7 @@
 
 use super::reads::forms_within;
 use super::types::result;
-use super::{Check, CheckId, CheckInput, CheckResult, LabelInScope, Prefix, PrefixResult, Refusal};
+use super::{Check, CheckId, CheckInput, CheckResult, LabelInScope, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::eval::ir::atom_modes;
 use crate::safety::{body_labels, conjunct_labels, each_label_use_at, bound_labels, list_of, parts_of};
 use crate::hash::StableHashSet;
@@ -25,6 +25,14 @@ pub struct SafetyCheck;
 impl Check for SafetyCheck {
     fn id(&self) -> CheckId {
         CheckId::Safety
+    }
+
+    /// The base key with the form's canonical form followed by the written
+    /// order of each list of the form, since the check reads each list in
+    /// its written order.
+    fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey> {
+        let canonical_form = super::with_written_order(at.form, at.canonical, at.order);
+        Some(CheckCacheKey { check: self.id(), canonical_form, signatures: at.signatures.into() })
     }
 
     /// Refuses each label of a body of the form that the body leaves

@@ -1,7 +1,7 @@
 //! The pose rule's check.
 
 use super::types::{result, PoseOr};
-use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
+use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::types::ValueType;
 
@@ -11,6 +11,10 @@ pub struct PoseRuleCheck;
 impl Check for PoseRuleCheck {
     fn id(&self) -> CheckId {
         CheckId::PoseRule
+    }
+
+    fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey> {
+        Some(at.base(self.id()))
     }
 
     /// Refuses each site of a Pose label of the form that

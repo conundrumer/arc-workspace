@@ -3,7 +3,7 @@
 use super::safety::{each_head_use, form_bodies, FormBody};
 use crate::safety::{each_label_use_at, list_of, parts_of};
 use super::types::result;
-use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
+use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::hash::StableHashSet;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
@@ -16,6 +16,10 @@ pub struct MadeAndExportedLabelsCheck;
 impl Check for MadeAndExportedLabelsCheck {
     fn id(&self) -> CheckId {
         CheckId::MadeAndExportedLabels
+    }
+
+    fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey> {
+        Some(at.base(self.id()))
     }
 
     /// Refuses, in each body of the form:

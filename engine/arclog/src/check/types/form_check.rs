@@ -2,7 +2,7 @@
 //! scope of the form, on a whole form and on a prefix.
 
 use super::super::inference::FormInference;
-use super::super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
+use super::super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use super::{map_labels, pose_of_fault, result, rule_scope_forms, rule_within, form_within};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::NodePath;
@@ -15,6 +15,10 @@ pub struct TypesCheck;
 impl Check for TypesCheck {
     fn id(&self) -> CheckId {
         CheckId::Types
+    }
+
+    fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey> {
+        Some(at.base(self.id()))
     }
 
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {

@@ -1,7 +1,7 @@
 //! The check of the marks a constraint's labels take.
 
 use super::types::result;
-use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
+use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{Conjunct, ConstraintOp};
@@ -12,6 +12,10 @@ pub struct ConstraintMarksCheck;
 impl Check for ConstraintMarksCheck {
     fn id(&self) -> CheckId {
         CheckId::ConstraintMarks
+    }
+
+    fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey> {
+        Some(at.base(self.id()))
     }
 
     /// Refuses each constraint other than `=` that makes a label, `*X`,

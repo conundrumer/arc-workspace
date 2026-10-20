@@ -4,7 +4,7 @@
 
 use super::safety::{form_bodies, FormBody};
 use super::types::result;
-use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, SolverClauses};
+use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, SolverClauses, CheckCacheKey, KeyInput};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{constraint_second, Body, Clause, ClauseKeyword, Conjunct, Constraint, ConstraintOp, Form, LabelId, LabelUse, Operand, RelationRef, SiteArg};
@@ -20,6 +20,16 @@ pub struct EqualityAndZeroCheck;
 impl Check for EqualityAndZeroCheck {
     fn id(&self) -> CheckId {
         CheckId::EqualityAndZero
+    }
+
+    /// The base key with, after its signatures, those of the clauses of the
+    /// form's relation across the solver's blocks, as
+    /// [`zero_clause_signatures`] gives them.
+    fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey> {
+        let mut key = at.base(self.id());
+        let signatures = key.signatures.iter().cloned().chain(zero_clause_signatures(at.form, at.clauses).cloned());
+        key.signatures = signatures.collect();
+        Some(key)
     }
 
     /// Refuses:

@@ -4,7 +4,7 @@
 
 use super::reads::{form_reads, forms_within, FormRead};
 use super::types::{component, result};
-use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
+use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::safety::body_labels;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
@@ -18,6 +18,10 @@ pub struct InstanceInputsCheck;
 impl Check for InstanceInputsCheck {
     fn id(&self) -> CheckId {
         CheckId::InstanceInputs
+    }
+
+    fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey> {
+        Some(at.base(self.id()))
     }
 
     /// Refuses, in each `INIT` form of the form, each input that its

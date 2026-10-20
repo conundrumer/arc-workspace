@@ -2,7 +2,7 @@
 //! (`docs/arclog/arclog.md#instance`).
 
 use super::types::result;
-use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
+use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
@@ -17,6 +17,10 @@ pub struct InstanceSitesCheck;
 impl Check for InstanceSitesCheck {
     fn id(&self) -> CheckId {
         CheckId::InstanceSites
+    }
+
+    fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey> {
+        Some(at.base(self.id()))
     }
 
     /// Refuses, in an `INIT` or a `DEMONSTRATED` form with a key clause:

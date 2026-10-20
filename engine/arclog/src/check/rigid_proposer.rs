@@ -3,7 +3,7 @@
 //! the proposers a clause gives.
 
 use super::types::result;
-use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
+use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{OutputName, OutputOwner, RelationRef, RigidDetName};
@@ -16,6 +16,12 @@ pub struct RigidPartsAndProposersCheck;
 impl Check for RigidPartsAndProposersCheck {
     fn id(&self) -> CheckId {
         CheckId::RigidPartsAndProposers
+    }
+
+    /// No key, since the check reads the `RIGID_DET` forms of the case
+    /// program.
+    fn cache_key(&self, _: &KeyInput<'_>) -> Option<CheckCacheKey> {
+        None
     }
 
     /// Refuses, at the clause, a proposer whose name is not an uppercase

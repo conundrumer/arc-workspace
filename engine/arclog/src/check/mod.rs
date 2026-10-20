@@ -133,14 +133,6 @@ pub enum CheckId {
     RigidPartsAndProposers,
 }
 
-impl CheckId {
-    /// Whether the check's result on a form follows from the form's
-    /// [`CheckCacheKey`], so that [`check_program`] caches it.
-    pub fn is_cached(self) -> bool {
-        !matches!(self, CheckId::OneClause | CheckId::Spelling | CheckId::RigidPartsAndProposers)
-    }
-}
-
 /// A label of a label scope within a top-level form, as [`LabelId`] gives
 /// scopes, with its inferred type where the type check has given one.
 #[derive(Clone, Debug)]
@@ -300,6 +292,35 @@ pub trait Check: Sync {
     /// The check over a prefix. It refuses only where no completion of the
     /// prefix passes [`Check::check`].
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult;
+
+    /// The key that the check's result on the top-level form of `at` is
+    /// cached under, or `None` where the result reads more than a key holds,
+    /// so that it is cached under no key.
+    fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey>;
+}
+
+/// What a check's [`CheckCacheKey`] on a top-level form is built from: the
+/// form, its canonical form and order, the signatures of its base key, and
+/// the clauses of each relation across the solver's blocks.
+#[derive(Clone, Copy, Debug)]
+pub struct KeyInput<'a> {
+    pub form: &'a Form,
+    pub canonical: &'a CanonicalForm,
+    pub order: &'a CanonicalOrder,
+    /// The signatures of the names the form reads, in the order of each
+    /// name's first read in the form's canonical order, then the signatures
+    /// of the clauses that [`CheckId::Types`] reads, as
+    /// [`types::type_clause_signatures`] gives them.
+    pub signatures: &'a [Signature],
+    pub clauses: &'a SolverClauses,
+}
+
+impl KeyInput<'_> {
+    /// The base key of `check` on the form: the form's canonical form and
+    /// [`KeyInput::signatures`].
+    pub fn base(&self, check: CheckId) -> CheckCacheKey {
+        CheckCacheKey { check, canonical_form: self.canonical.clone(), signatures: self.signatures.into() }
+    }
 }
 
 /// The cycle check, which reads the dependency graph and no node. Each
@@ -320,19 +341,16 @@ pub fn check_cycles(graph: &DependencyGraph, program: &ResolvedProgram) -> Check
     CheckResult::Refuse(forms.into_iter().map(refusal).collect())
 }
 
-/// The key of the check cache: the check, the form's canonical form, with
-/// each name as the file writes it, and the signatures of the names it
-/// reads, so the cases that share a form share its check. It compares as a
-/// key of canonical parts does ([`crate::program`]).
-/// The signatures stand in a fixed order: those of the names the form
-/// reads, in the order of each name's first read in the form's canonical
-/// order, then the signatures of the clauses that [`CheckId::Types`] reads,
-/// as [`types::type_clause_signatures`] gives them, and, for
-/// [`CheckId::EqualityAndZero`], then the signatures of the clauses of the
-/// form's relation across the solver's blocks, where the form is a clause
-/// with a `(= *X 0)` at the top level of its body. The key of [`CheckId::Cycles`], which
-/// reads no form, holds the form of the program's dependency graph with the
-/// path of each node's form, and no signature.
+/// The key of the check cache: the check, a canonical form, with each name
+/// as the file writes it, and the signatures of the clauses and names the
+/// check's result reads, in a fixed order, so the cases that share a form
+/// share its check. It compares as a key of canonical parts does
+/// ([`crate::program`]). Each check gives its key on a top-level form by
+/// [`Check::cache_key`], from the base key that [`KeyInput::base`] gives,
+/// and the doc of a check whose key differs from the base key gives what
+/// its key adds. The key of [`CheckId::Cycles`], which reads no form, holds
+/// the form of the program's dependency graph with the path of each node's
+/// form, and no signature.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct CheckCacheKey {
     pub check: CheckId,
@@ -447,7 +465,6 @@ pub fn check_program_of_files(
             TopLevelForm { path, form, order, canonical, signatures: signatures.into(), untyped }
         })
         .collect();
-    let key = |check: CheckId, canonical_form: CanonicalForm, signatures: Box<[Signature]>| CheckCacheKey { check, canonical_form, signatures };
     let mut refused_by_form = vec![Vec::new(); forms.len()];
     let form_types: Vec<Arc<types::ScopeTypes>> = {
         let cases = inference::CaseInferences::new(clauses, registry);
@@ -458,16 +475,21 @@ pub fn check_program_of_files(
             .zip(&mut refused_by_form)
             .map(|(at, refused)| {
                 let input = CheckInput { form: at.form, path: &at.path, scope: scope(&at.untyped) };
-                let types_key = key(CheckId::Types, at.canonical.clone(), at.signatures.clone());
-                let (result, types) = match (cache.get(&types_key).cloned(), cache.types(&types_key)) {
-                    (Some(result), Some(types)) => (result, types),
-                    _ => {
-                        let (result, types) = types::infer_form(&input, &at.order);
-                        let types = Arc::new(types);
-                        cache.insert(types_key.clone(), result.clone());
-                        cache.insert_types(types_key, Arc::clone(&types));
-                        (result, types)
-                    }
+                let infer = || {
+                    let (result, types) = types::infer_form(&input, &at.order);
+                    (result, Arc::new(types))
+                };
+                let (result, types) = match types::TypesCheck.cache_key(&at.key_input(clauses)) {
+                    None => infer(),
+                    Some(types_key) => match (cache.get(&types_key).cloned(), cache.types(&types_key)) {
+                        (Some(result), Some(types)) => (result, types),
+                        _ => {
+                            let (result, types) = infer();
+                            cache.insert(types_key.clone(), result.clone());
+                            cache.insert_types(types_key, Arc::clone(&types));
+                            (result, types)
+                        }
+                    },
                 };
                 at.report(refused, CheckId::Types, &result);
                 types
@@ -477,19 +499,9 @@ pub fn check_program_of_files(
         for ((at, labels), refused) in forms.iter().zip(&labels).zip(&mut refused_by_form) {
             let input = CheckInput { form: at.form, path: &at.path, scope: scope(labels) };
             for check in checks().iter().filter(|check| check.id() != CheckId::Types) {
-                let result = match check.id() {
-                    id if !id.is_cached() => check.check(&input),
-                    id => {
-                        let canonical_form = match id {
-                            CheckId::Safety => with_written_order(at.form, &at.canonical, &at.order),
-                            _ => at.canonical.clone(),
-                        };
-                        let mut signatures = at.signatures.to_vec();
-                        if id == CheckId::EqualityAndZero {
-                            signatures.extend(zero::zero_clause_signatures(at.form, clauses).cloned());
-                        }
-                        cached(cache, key(id, canonical_form, signatures.into()), || check.check(&input))
-                    }
+                let result = match check.cache_key(&at.key_input(clauses)) {
+                    None => check.check(&input),
+                    Some(key) => cached(cache, key, || check.check(&input)),
                 };
                 at.report(refused, check.id(), &result);
             }
@@ -519,6 +531,12 @@ struct TopLevelForm<'p> {
 }
 
 impl TopLevelForm<'_> {
+    /// What the checks' cache keys on the form are built from, with
+    /// `clauses`, the clauses of each relation across the solver's blocks.
+    fn key_input<'a>(&'a self, clauses: &'a SolverClauses) -> KeyInput<'a> {
+        KeyInput { form: self.form, canonical: &self.canonical, order: &self.order, signatures: &self.signatures, clauses }
+    }
+
     /// Pushes onto `refused` a diagnostic of `check` for each refusal of
     /// `result`, at its path in the form's source order.
     fn report(&self, refused: &mut Vec<Diagnostic>, check: CheckId, result: &CheckResult) {

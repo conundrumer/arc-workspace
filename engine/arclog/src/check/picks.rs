@@ -3,7 +3,7 @@
 //! `docs/arclog/constraints.md#choose`).
 
 use super::types::result;
-use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
+use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{Atom, Body, Choose, ChoosePart, Clause, ColumnName, Conjunct, Form, ConstraintOp, LabelId, LabelUse, Operand, RelationRef, Site, SiteArg};
@@ -14,6 +14,10 @@ pub struct PicksCheck;
 impl Check for PicksCheck {
     fn id(&self) -> CheckId {
         CheckId::Picks
+    }
+
+    fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey> {
+        Some(at.base(self.id()))
     }
 
     /// Refuses an atom that reads `ONE`, a mark that stands only after a

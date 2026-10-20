@@ -1,6 +1,6 @@
 //! The check of one clause per relation in a block.
 
-use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
+use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::program::path::NodePath;
 use crate::program::{Clause, ClauseKeyword, Form};
 
@@ -10,6 +10,11 @@ pub struct OneClauseCheck;
 impl Check for OneClauseCheck {
     fn id(&self) -> CheckId {
         CheckId::OneClause
+    }
+
+    /// No key, since the check reads the forms before the form under check.
+    fn cache_key(&self, _: &KeyInput<'_>) -> Option<CheckCacheKey> {
+        None
     }
 
     /// Refuses a top-level clause of a relation that an earlier top-level

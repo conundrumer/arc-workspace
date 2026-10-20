@@ -3,7 +3,7 @@
 //! checked program have an Example column.
 
 use super::types::result;
-use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
+use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::hash::StableHashSet;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
@@ -17,6 +17,10 @@ pub struct PooledAndLiftedReadsCheck;
 impl Check for PooledAndLiftedReadsCheck {
     fn id(&self) -> CheckId {
         CheckId::PooledAndLiftedReads
+    }
+
+    fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey> {
+        Some(at.base(self.id()))
     }
 
     /// Refuses each read that `docs/arclog/arclog.md#program` does not let

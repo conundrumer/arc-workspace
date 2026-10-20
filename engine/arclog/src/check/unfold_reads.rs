@@ -3,7 +3,7 @@
 use super::instance_inputs::inputs_at;
 use super::reads::form_reads;
 use super::types::{component, result};
-use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
+use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::LabelUse;
@@ -15,6 +15,10 @@ pub struct UnfoldReadsCheck;
 impl Check for UnfoldReadsCheck {
     fn id(&self) -> CheckId {
         CheckId::UnfoldReads
+    }
+
+    fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey> {
+        Some(at.base(self.id()))
     }
 
     /// Refuses each read by an `INIT` form of the form of an output of its
