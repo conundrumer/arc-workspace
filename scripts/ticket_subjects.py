@@ -55,9 +55,12 @@ def filed_subject(tickets: Path, kind: Kind, domain: Domain, subject: str) -> st
     if not FIELD.fullmatch(subject):
         raise Refused(mctx("`{subject}` is not kebab words").format(subject=subject))
     if kind in ASKS_CHANGE:
-        if (domain is not Domain.CHANGE or not CHANGE_SUBJECT.fullmatch(subject)
-                or parsed_number(subject) is not None):
-            raise Refused(mctx("a `{kind}` takes `change` and `<namespace>-<short-title>`").format(kind=kind))
+        if domain is not Domain.CHANGE:
+            raise Refused(mctx("a `{kind}` takes `change` as `<domain>`").format(kind=kind))
+        if not CHANGE_SUBJECT.fullmatch(subject):
+            raise Refused(mctx("`{subject}` is no `<namespace>-<short-title>` subject of a `{kind}`: kebab words with a `-`").format(subject=subject, kind=kind))
+        if parsed_number(subject) is not None:
+            raise Refused(mctx("`{subject}` is a ticket number, no subject of a `{kind}`").format(subject=subject, kind=kind))
     else:
         check_subject(tickets, domain, subject)
     return subject

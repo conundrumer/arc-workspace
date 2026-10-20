@@ -88,7 +88,7 @@ HELP = mctx("""
     - `{depends_flag}` gives `<numbers>`, `<number>[,<number>...]`, as the request's `{depends_on}` field, in place of the one it holds, as `uv run python scripts/file_ticket.py --help request` gives that field.
     - `<goal>` holds at most {goal_words} words.
     - `<route>` is one of {routes}, and `{inferred}` marks a route the coordinator inferred.
-    - `<subject>` and `<title>` are a `request`'s, as `uv run python scripts/file_ticket.py --help request` gives them.
+    - `<subject>` is `<namespace>-<short-title>`, kebab words such as `spans-help`, and `<title>` is a `request`'s, as `uv run python scripts/file_ticket.py --help request` gives it.
     - A message is a message of the user, or the text of one of the coordinator's replies, in the session whose id the shell holds in `CLAUDE_CODE_SESSION_ID`.
     - A words argument matches a message whose words hold its words in a row, where a word is a run of letters and digits, compared in lower case, and each other character only separates words.
     - A words argument that is a time in the form `{time_form}` names the one message of the session at that time.
