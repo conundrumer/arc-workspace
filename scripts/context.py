@@ -52,11 +52,11 @@ HELP = mctx("""
             - `.claude/<agent>-next.md`, rendered from each `prompts/agents/<agent>-next.md` with no front matter: the steps that agent reads once it has done those of its prompt.
             - `.claude/coordinator.md`, the coordinator's document, rendered from `prompts/agents/notes/coordinator.md`.
             - The files a codex session on the repo reads: `AGENTS.md`, [Codex on arc-workspace](prompts/codex.md) rendered, and `.codex/config.toml`, with the main tree's `docs/codex-style.md` as its developer instructions.
-    - Before it writes, `--write` checks `CLAUDE.md` and each `.md` file under `docs/handbook/` and `prompts/agents/` against the budget its `+ budget:` line gives.
+    - Before it writes, `--write` checks `CLAUDE.md` and each `.md` file under `docs/handbook/` and `prompts/agents/` against the budget its `+ document-size-budget:` line gives.
         - The budget bounds the rendering `--write` writes from the file, where the file is the coordinator's document or an agent's prompt whose `+ lib:` is `none`, that rendering with none of the lists its render computes from other files, where the file is a `<name>-next.md`, and otherwise the file's own text.
         - For each file whose bounded text holds 90 % of its budget or more, it prints a warning on stderr and goes on.
             - Where the bounded text is past the budget, `scripts/merge_change.py` files a whole-document pass on the file, as its `--help` gives.
-        - For each file with no `+ budget:` line, it prints the failure, writes nothing and exits 1.
+        - For each file with no `+ document-size-budget:` line, it prints the failure, writes nothing and exits 1.
     - Each other form that renders the coordinator's document, other than `session-start`, checks that rendering the same way.
     - Each form that writes a generated file in the checkout, other than `session-start`, first checks that git ignores each one it writes there.
         - Where git does not ignore one, the form writes none, prints each such file and `.gitignore`, and exits 1.

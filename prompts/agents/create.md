@@ -8,7 +8,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
 
 + lib: interface
 + message: brief
-+ budget: 3600
++ document-size-budget: 3600
 * comment: when editing this doc
     - The `create` agent's entry point: a solver session or an operator launches it with a brief that gives one task, to write that task's solver from the Analyze files, develop it, and pin its cases to witnesses.
     - Parts of the work, in order:

@@ -1,4 +1,4 @@
-+ budget: 25484
++ document-size-budget: 25484
 * comment: when editing this doc
     - The ticket analyst and the draft analyst load this document by the links of their step documents, before it writes the Intent of a `change` to the agents' processes and at the process assessment; the ticket reviewer loads it by a link of its Checks, for such a `change`. Each serves judging a change to the processes against what they must achieve.
     - Acts, each with its section, one process each, giving its outcomes and how it can fail:

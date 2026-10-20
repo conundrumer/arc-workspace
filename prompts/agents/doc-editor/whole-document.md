@@ -1,4 +1,4 @@
-+ budget: 3403
++ document-size-budget: 3403
 * comment: when editing this doc
     - The doc editor receives this document from the step command as it enters a whole-document pass, once it has worked out the readers of the places it will edit, and before it writes the edit.
     - Acts, each with its section:
@@ -21,5 +21,5 @@
 - Move text that a reader needs only at a later step or in a rare case behind a link whose condition gives that step or case. Cut a quirk that a tool, a hook or its error message enforces or gives at the moment of failure, and where none does, file a `bug` ticket on the tool or the hook whose failure the quirk is to stop.
 - Cut no line that a reader needs, whatever the budget: the size is the outcome of the pass.
 - Cut or reword no line of [Principles](docs/handbook/principles.md), which the user judges. You may change which readers load it.
-- The pass sets the `+ budget:` line of each document your change's Scope gives to the size of its bounded text divided by `BAND` in [budget.py](src/handbook/budget.py), rounded down, plus one, so that its next growth draws a warning before a pass. `uv run python -c 'from handbook import budgeted; [print(s.doc, s.size) for s in budgeted.sizes()]'` prints each size.
+- The pass sets the `+ document-size-budget:` line of each document your change's Scope gives to the size of its bounded text divided by `BAND` in [budget.py](src/handbook/budget.py), rounded down, plus one, so that its next growth draws a warning before a pass. `uv run python -c 'from handbook import budgeted; [print(s.doc, s.size) for s in budgeted.sizes()]'` prints each size.
     + xref: src/handbook/budget.py:BAND, src/handbook/budgeted.py:sizes

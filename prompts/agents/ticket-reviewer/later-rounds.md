@@ -1,4 +1,4 @@
-+ budget: 1185
++ document-size-budget: 1185
 * comment: when editing this doc
     - The ticket reviewer receives this document from the step command as it enters a later round's review, once it has entered the review of the drafts of its brief that meet their Goal.
     - Acts, each with its section:

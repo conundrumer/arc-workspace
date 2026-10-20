@@ -11,7 +11,7 @@ from tests.conftest import script
 
 review_tag = script("review_tag")
 
-CHECKLIST = """+ budget: 1000
+CHECKLIST = """+ document-size-budget: 1000
 
 # Diff the trees
 - Diff them.

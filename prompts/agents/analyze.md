@@ -8,7 +8,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 
 + lib: index
 + message: brief
-+ budget: 2600
++ document-size-budget: 2600
 * comment: when editing this doc
     - The `analyze` agent's entry point: a solver session or an operator launches it with a brief that gives one task, to run Analyze on that task.
     - Parts of the work, in order:

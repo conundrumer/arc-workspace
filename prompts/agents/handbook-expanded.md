@@ -6,7 +6,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 ---
 
 + lib: interface
-+ budget: 4002
++ document-size-budget: 4002
 * comment: when editing this doc
     - The `handbook-expanded` agent's entry point: a session or an operator launches it for work on a task's solver, and as the editor of the part of a change in the lib or in a solver under `programs/solvers/`.
     - Parts of the work, in order:

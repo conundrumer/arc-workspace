@@ -6,7 +6,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Artifact, TaskStop
 ---
 
 + lib: index
-+ budget: 1800
++ document-size-budget: 1800
 * comment: when editing this doc
     - The `handbook` agent's entry point: a session launches it for work that references the handbook, with the lib as an index, and a role with no `agent` attribute runs as it.
     - Its brief gives its work. Acts, each with the section it inlines:

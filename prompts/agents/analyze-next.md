@@ -1,5 +1,5 @@
 + lib: none
-+ budget: 16800
++ document-size-budget: 16800
 * comment: when editing this doc
     - The `analyze` agent loads this document, rendered to `.claude/analyze-next.md`, once it has written the concept, by the step of [Analyze](docs/handbook/procedure.md#analyze) that gives it.
     - Parts of the work, in order:

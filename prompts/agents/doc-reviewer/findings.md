@@ -1,4 +1,4 @@
-+ budget: 1800
++ document-size-budget: 1800
 * comment: when editing this doc
     - The doc reviewer reads this document by the links of the items `File the tickets` and `Send the findings` of its [checklist](prompts/agents/doc-reviewer/checklist.md), once it has made the findings of a review.
     - Acts, each with its section:

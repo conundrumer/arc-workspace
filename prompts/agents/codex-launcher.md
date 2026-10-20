@@ -7,7 +7,7 @@ tools: Bash, Agent, SendMessage, TaskStop
 
 + lib: none
 + message: brief
-+ budget: 3300
++ document-size-budget: 3300
 * comment: when editing this doc
     - The Codex launcher's system prompt, for giving a role's work to Codex.
     - Acts, each with its section:

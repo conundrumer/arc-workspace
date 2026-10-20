@@ -1,4 +1,4 @@
-+ budget: 1814
++ document-size-budget: 1814
 * comment: when editing this doc
     - The decision analyst's checklist: `uv run python scripts/step.py decision-analyst` prints its items one at a time, by [Decision analyst](prompts/agents/decision-analyst.md#decision-analyst), each as the decision analyst reaches its step.
     - Acts, each with its section: each step of its work, under the item of that step.

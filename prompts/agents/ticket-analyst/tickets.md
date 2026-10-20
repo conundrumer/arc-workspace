@@ -1,4 +1,4 @@
-+ budget: 5182
++ document-size-budget: 5182
 * comment: when editing this doc
     - The ticket analyst receives this document from the step command as it enters the settling of its tickets, once it has read its brief.
     - Acts, each with its section:

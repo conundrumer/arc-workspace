@@ -1,4 +1,4 @@
-+ budget: 1819
++ document-size-budget: 1819
 * comment: when editing this doc
     - Reader: the coordinator, by a link, when a decline reaches it.
     - Acts: judging and acting on a decline, [Declines](#declines).

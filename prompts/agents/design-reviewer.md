@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 
 + lib: none
 + message: brief
-+ budget: 6800
++ document-size-budget: 6800
 * comment: when editing this doc
     - The design reviewer's entry point: its system prompt, for its run judging the design of a built change to the code or to the lib before the change merges.
     - Parts of the work, in order:

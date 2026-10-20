@@ -1,4 +1,4 @@
-+ budget: 981
++ document-size-budget: 981
 * comment: when editing this doc
     - The ticket analyst receives this document from the step command as it enters the process assessment, once it has read its brief.
     - Acts, each with its section:

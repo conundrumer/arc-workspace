@@ -1,4 +1,4 @@
-+ budget: 7266
++ document-size-budget: 7266
 * comment: when editing this doc
     - Readers: the editors of a change inline its sections other than Gate, which they link for writing accepted gate outputs, the doc reviewer inlines the sections on its worktree, the ticket analyst, the draft analyst, the decision analyst and the ticket reviewer inline the one on another agent's worktree, and the coordinator links that one.
     - Acts, each with its section:

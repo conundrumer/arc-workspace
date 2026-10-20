@@ -1,4 +1,4 @@
-+ budget: 15345
++ document-size-budget: 15345
 * comment: when editing this doc
     - The coordinator loads Making a change, Merging a change and A denied merge by the links of its Changes section, at the steps they give; the decision analyst loads Findings an editor leaves by a link of [An editor's findings](prompts/agents/decision-analyst/findings.md), where its brief gives findings an editor left.
     - Acts, each with its section:

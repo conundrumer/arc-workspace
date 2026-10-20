@@ -1,4 +1,4 @@
-+ budget: 1537
++ document-size-budget: 1537
 * comment: when editing this doc
     - Reader: the coordinator, by a link, before it launches an agent on cards.
     - Acts: launching that agent, [Cards](#cards).

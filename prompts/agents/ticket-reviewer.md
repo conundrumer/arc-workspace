@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 + lib: none
 + message: brief
-+ budget: 8695
++ document-size-budget: 8695
 * comment: when editing this doc
     - The entry point of the ticket reviewer, launched with a brief that gives draft `change` tickets to review.
     - Its checklist: [checklist.md](prompts/agents/ticket-reviewer/checklist.md).

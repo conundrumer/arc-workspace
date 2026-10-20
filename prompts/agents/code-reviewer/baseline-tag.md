@@ -1,4 +1,4 @@
-+ budget: 800
++ document-size-budget: 800
 * comment: when editing this doc
     - The code reviewer reads this document by the link of the item `Make the baseline tag` of its [checklist](prompts/agents/code-reviewer/checklist.md).
     - Acts, each with its section:

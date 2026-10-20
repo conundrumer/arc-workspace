@@ -1,4 +1,4 @@
-+ budget: 6146
++ document-size-budget: 6146
 * comment: when editing this doc
     - The doc reviewer receives this document from the step command as it enters the trials of a review, once it has read its brief, and before it reviews the change.
     - Acts, each with its section:

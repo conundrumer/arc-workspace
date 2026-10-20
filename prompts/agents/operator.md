@@ -7,7 +7,7 @@ tools: Bash, Agent, SendMessage
 
 + lib: none
 + message: brief
-+ budget: 1300
++ document-size-budget: 1300
 * comment: when editing this doc
     - The operator's entry point: the coordinator or an operator launcher launches it with a brief, and `operate.py next` reads that brief and gives each call it makes.
         + xref: scripts/operate.py:main, scripts/operate_loop.py:operator_step

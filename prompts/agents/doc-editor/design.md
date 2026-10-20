@@ -1,4 +1,4 @@
-+ budget: 1100
++ document-size-budget: 1100
 * comment: when editing this doc
     - The doc editor reads this document by the link of the item `Write the edit` of its [checklist](prompts/agents/doc-editor/checklist.md), once it has worked out the readers of the places it edits.
     - Acts, each with its section:

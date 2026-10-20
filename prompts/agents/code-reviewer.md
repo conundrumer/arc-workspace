@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 
 + lib: none
 + message: brief
-+ budget: 14561
++ document-size-budget: 14561
 * comment: when editing this doc
     - The code reviewer's entry point: its system prompt, for its run on a code review of the diff since the last baseline.
     - Its checklist: [checklist.md](prompts/agents/code-reviewer/checklist.md).

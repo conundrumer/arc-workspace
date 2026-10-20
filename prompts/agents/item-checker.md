@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Write, SendMessage, TaskStop
 
 + lib: none
 + message: brief
-+ budget: 9600
++ document-size-budget: 9600
 * comment: when editing this doc
     - The item checker's entry point: its system prompt, for its run checking a change's items against its editors' reports and its worktree.
     - Parts of the work, in order:

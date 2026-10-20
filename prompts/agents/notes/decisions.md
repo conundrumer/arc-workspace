@@ -1,4 +1,4 @@
-+ budget: 26674
++ document-size-budget: 26674
 * comment: when editing this doc
     - The ticket analyst and the draft analyst inline the subsections of [Decisions](#decisions) other than A decision's record in a reply, for resolving a ticket, and [Resolving](#resolving), for applying a resolution. The decision analyst inlines The user's goals, Rule and intent, How a decision is made, The user's part, Cost and time and Agents' choices, for judging what a change's editors leave and ruling a held step. The reply files of the checklists of those three link [analyst-reply](#analyst-reply), for giving their reply. The ticket reviewer and the doc reviewer inline The user's goals, for weighing a design or a change. The coordinator loads Decisions, The user's part and Defaults by the links of its Decisions section, before it makes a decision or ends a turn with one. Process notes, the ticket analyst's step documents and the coordinator's change notes link sections of it.
     - Acts, each with its section:

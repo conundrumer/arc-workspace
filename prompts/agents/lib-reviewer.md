@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 
 + lib: interface
 + message: brief
-+ budget: 5600
++ document-size-budget: 5600
 * comment: when editing this doc
     - The lib reviewer's entry point: its system prompt, for its run on a lib review of the lib's diff since the last baseline.
     - Its checklist: [checklist.md](prompts/agents/lib-reviewer/checklist.md).

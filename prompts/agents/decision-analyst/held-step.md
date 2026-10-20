@@ -1,4 +1,4 @@
-+ budget: 1291
++ document-size-budget: 1291
 * comment: when editing this doc
     - The decision analyst receives this document from the step command as it enters the deciding of a step an operator holds, once it has read its brief.
     - Acts, each with its section:

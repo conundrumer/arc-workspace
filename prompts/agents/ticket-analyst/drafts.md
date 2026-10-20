@@ -1,4 +1,4 @@
-+ budget: 3987
++ document-size-budget: 3987
 * comment: when editing this doc
     - The ticket analyst receives this document from the step command as it enters the revision of a draft `change`, once it has read the message that gives the draft, and the draft analyst reads [Revising a draft](#revising-a-draft) by the links of the items of its checklist, for its revision of the draft its brief gives. The ticket analyst links it from [Settling tickets](prompts/agents/ticket-analyst/tickets.md) as well, for a commit merged for a `request`.
     - Acts, each with its section:

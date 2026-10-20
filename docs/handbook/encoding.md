@@ -1,4 +1,4 @@
-+ budget: 7200
++ document-size-budget: 7200
 * comment: when editing this doc
     - The notes at the head of [Principles](docs/handbook/principles.md) apply.
         + xref: docs/handbook/principles.md

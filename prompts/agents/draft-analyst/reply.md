@@ -1,4 +1,4 @@
-+ budget: 700
++ document-size-budget: 700
 * comment: when editing this doc
     - The draft analyst reads this document by the link of the item `Reply` of its [checklist](prompts/agents/draft-analyst/checklist.md), as it gives its final reply.
     - Acts, each with its section:

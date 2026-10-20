@@ -1,4 +1,4 @@
-+ budget: 2300
++ document-size-budget: 2300
 * comment: when editing this doc
     - No tool reads this doc.
     - A row stays only while both conditions hold:

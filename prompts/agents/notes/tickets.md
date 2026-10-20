@@ -1,4 +1,4 @@
-+ budget: 11199
++ document-size-budget: 11199
 * comment: when editing this doc
     - Readers: each agent that files tickets inlines the sections for its work; the coordinator links them from [Tickets](prompts/agents/notes/requests.md#tickets); the ticket analyst, the draft analyst and the ticket reviewer link Change tickets.
     - Acts, each with its section:

@@ -1,4 +1,4 @@
-+ budget: 26971
++ document-size-budget: 26971
 
 # Editing the agent-facing documents
 - The handbook, the console's messages to a worker, the documents that say what each agent reads, and what the tools print to a session.

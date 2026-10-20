@@ -6,7 +6,7 @@ import pytest
 
 from handbook.checklist import Checklist
 
-CHECKLIST = """+ budget: 1000
+CHECKLIST = """+ document-size-budget: 1000
 
 # Read the ticket
 - Read it.

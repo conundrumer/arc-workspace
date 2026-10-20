@@ -1,4 +1,4 @@
-+ budget: 1842
++ document-size-budget: 1842
 * comment: when editing this doc
     - The doc reviewer receives this document from the step command at the start of its run, before it reviews.
     - Acts, each with its section:

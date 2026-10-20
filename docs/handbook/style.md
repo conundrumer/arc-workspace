@@ -1,5 +1,5 @@
 + index: headings
-+ budget: 8200
++ document-size-budget: 8200
 * comment: when editing this doc
     - Use a nested list when each parallel item states a rule a reader can follow or break on its own.
 

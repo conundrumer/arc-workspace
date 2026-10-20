@@ -1,4 +1,4 @@
-+ budget: 1500
++ document-size-budget: 1500
 * comment: when editing this doc
     - The code editor receives this document from the step command as it enters a split, once it has written its `Reuse` list and searched the `refactor` tickets on its modules, or, in the middle of writing the code, on a module it comes to edit.
     - Acts, each with its section:

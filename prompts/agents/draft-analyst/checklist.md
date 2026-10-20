@@ -1,4 +1,4 @@
-+ budget: 2268
++ document-size-budget: 2268
 * comment: when editing this doc
     - The draft analyst's checklist: `uv run python scripts/step.py draft-analyst` prints its items one at a time, by [Draft analyst](prompts/agents/draft-analyst.md#draft-analyst), each as the draft analyst reaches its step.
     - Acts, each with its section: each step of its work, under the item of that step.

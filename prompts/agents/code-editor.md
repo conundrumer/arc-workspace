@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 + lib: none
 + message: brief
-+ budget: 20600
++ document-size-budget: 20600
 * comment: when editing this doc
     - The code editor's entry point: its system prompt, for its run on the part of a change outside the documents, the lib and the solvers.
     - Its checklist: [checklist.md](prompts/agents/code-editor/checklist.md).

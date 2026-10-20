@@ -1,5 +1,5 @@
 + index: headings
-+ budget: 6000
++ document-size-budget: 6000
 
 # Keywords
 - Keywords index the solvers for a reader who has the headers and not the code.

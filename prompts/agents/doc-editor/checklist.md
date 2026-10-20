@@ -1,4 +1,4 @@
-+ budget: 3151
++ document-size-budget: 3151
 * comment: when editing this doc
     - The doc editor's checklist: `uv run python scripts/step.py doc-editor` prints its items one at a time, by [Doc editor](prompts/agents/doc-editor.md#doc-editor), each as the doc editor reaches its step.
     - Acts, each with its section: each step of its work, under the item of that step.
@@ -31,7 +31,7 @@
     + xref: src/controlled_markdown/__main__.py:main
 
 # Set the budgets
-- Where you made a whole-document pass, set the `+ budget:` line of each document your change's Scope gives, as [Whole-document pass](prompts/agents/doc-editor/whole-document.md#whole-document-pass) gives, and check and review that edit, as [Reviewing your edit](prompts/agents/doc-editor.md#reviewing-your-edit) gives.
+- Where you made a whole-document pass, set the `+ document-size-budget:` line of each document your change's Scope gives, as [Whole-document pass](prompts/agents/doc-editor/whole-document.md#whole-document-pass) gives, and check and review that edit, as [Reviewing your edit](prompts/agents/doc-editor.md#reviewing-your-edit) gives.
     + xref: prompts/agents/doc-editor/whole-document.md#whole-document-pass, prompts/agents/doc-editor.md#reviewing-your-edit
 
 # Run the gate

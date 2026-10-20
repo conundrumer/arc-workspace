@@ -7,7 +7,7 @@ tools: Bash, Agent, SendMessage
 
 + lib: none
 + message: brief
-+ budget: 1106
++ document-size-budget: 1106
 * comment: when editing this doc
     - The operator launcher's entry point: the coordinator launches it with the wake text that `operate.py send` prints, or with the lines that waited for the next operator, and `operate.py relay` reads that brief and gives each call it makes.
         + xref: scripts/operate.py:main, scripts/operate_actions.py:relay_step

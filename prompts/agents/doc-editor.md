@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 + lib: none
 + message: brief
-+ budget: 46595
++ document-size-budget: 46595
 * comment: when editing this doc
     - The doc editor's entry point: its system prompt, for its run on the part of a change that edits the agent-facing documents.
     - Its checklist: [checklist.md](prompts/agents/doc-editor/checklist.md).

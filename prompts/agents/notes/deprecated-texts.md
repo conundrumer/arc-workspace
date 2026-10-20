@@ -1,4 +1,4 @@
-+ budget: 2327
++ document-size-budget: 2327
 * comment: when editing this doc
     - Readers: each reader of [Editing the agent-facing documents](docs/handbook/editing.md), by the link of its [Where each text is](docs/handbook/editing.md#where-each-text-is), before it edits a text of the solver console, of the roles or of the workflows, or reviews a change that one of their readers reads.
     - Acts, each with its section:

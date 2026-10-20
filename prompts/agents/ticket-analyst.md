@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 
 + lib: none
 + message: brief
-+ budget: 31966
++ document-size-budget: 31966
 * comment: when editing this doc
     - The entry point of the ticket analyst, launched with a brief that gives tickets to settle or the process assessment, and resumed with a draft it filed to revise.
     - Its checklist: [checklist.md](prompts/agents/ticket-analyst/checklist.md).

@@ -1,4 +1,4 @@
-+ budget: 11479
++ document-size-budget: 11479
 * comment: when editing this doc
     - The ticket analyst and the draft analyst receive this document from the step command as they enter the part of their work that writes the text of a `change` they file or revise, once they have chosen that resolution.
     - Acts, each with its section:

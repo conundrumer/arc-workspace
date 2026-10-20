@@ -1,4 +1,4 @@
-+ budget: 1201
++ document-size-budget: 1201
 * comment: when editing this doc
     - The code reviewer receives this file from `uv run python scripts/step.py code-reviewer --enter judge-the-listed-modules`, by its [checklist](prompts/agents/code-reviewer/checklist.md), with the modules that the command of [Places of many ideas in one place](prompts/agents/code-reviewer/module-sizes.md#places-of-many-ideas-in-one-place) listed in its run.
     - Acts, each with its section:

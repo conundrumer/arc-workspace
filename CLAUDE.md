@@ -1,4 +1,4 @@
-+ budget: 2100
++ document-size-budget: 2100
 + lib: none
 
 # arc-workspace

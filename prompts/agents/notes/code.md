@@ -1,4 +1,4 @@
-+ budget: 6611
++ document-size-budget: 6611
 * comment: when editing this doc
     - [Code editor](prompts/agents/code-editor.md), [Code reviewer](prompts/agents/code-reviewer.md), [Lib reviewer](prompts/agents/lib-reviewer.md) and [Design reviewer](prompts/agents/design-reviewer.md) inline its sections, for editing the code under `src/` and `scripts/`, reviewing it, and judging a change's design.
     - Acts, each with its section:

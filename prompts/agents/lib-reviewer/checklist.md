@@ -1,4 +1,4 @@
-+ budget: 1800
++ document-size-budget: 1800
 * comment: when editing this doc
     - The lib reviewer's checklist: `uv run python scripts/step.py lib-reviewer` prints its items one at a time, by [Lib reviewer](prompts/agents/lib-reviewer.md#lib-reviewer), each as the lib reviewer reaches its step.
     - Acts, each with its section: each step of its work, under the item of that step.

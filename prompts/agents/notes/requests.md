@@ -1,4 +1,4 @@
-+ budget: 10703
++ document-size-budget: 10703
 * comment: when editing this doc
     - The coordinator loads each section by a link: Routes before it acts on a user's message that asks for work, Running a change from the `direct` and `hotfix` lines of Routes, and Tickets, The user's words on a ticket and Waiting on a ticket at the triggers its document gives.
     - Acts, each with its section:

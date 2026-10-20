@@ -1,4 +1,4 @@
-+ budget: 1200
++ document-size-budget: 1200
 * comment: when editing this doc
     - Readers: each Claude Code session on the repo and each agent launched in one, by the link of [arc-workspace](CLAUDE.md), before it runs the tests, the type check, a solver, or `scripts/materialize.py`.
     - Acts, each with its section:

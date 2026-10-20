@@ -1,5 +1,5 @@
 + index: entries
-+ budget: 19600
++ document-size-budget: 19600
 * comment: when editing this doc
     - cite a task by bare id to give a precedent, or by id with a gloss to state the task's facts; write the gloss without the task's internal vocabulary.
     - Include an entry only when the pattern took substantial derivation or user direction to reach. If a session can rederive a pattern cheaply, omit it even when it looks reusable.

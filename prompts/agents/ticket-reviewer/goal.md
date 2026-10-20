@@ -1,4 +1,4 @@
-+ budget: 1100
++ document-size-budget: 1100
 * comment: when editing this doc
     - The ticket reviewer reads this document by the link of the item `Judge each draft by its Goal` of its [checklist](prompts/agents/ticket-reviewer/checklist.md), at the start of its review.
     - Acts, each with its section:

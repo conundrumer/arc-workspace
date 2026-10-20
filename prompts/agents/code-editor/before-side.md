@@ -1,4 +1,4 @@
-+ budget: 1400
++ document-size-budget: 1400
 * comment: when editing this doc
     - The code editor receives this document from the step command as it enters the before side, once it has written the code and reviewed its diff.
     - Acts, each with its section:

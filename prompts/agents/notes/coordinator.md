@@ -1,5 +1,5 @@
 + lib: none
-+ budget: 5459
++ document-size-budget: 5459
 * comment: when editing this doc
     - The coordinator, the session the user talks with, loads this document whole, rendered, at its start: it serves all of its work for the user, and each section gives the trigger at which the coordinator loads the notes for that part.
     - Parts of the work, in order, each with what it loads:

@@ -1,4 +1,4 @@
-+ budget: 1811
++ document-size-budget: 1811
 * comment: when editing this doc
     - The ticket reviewer's checklist: `uv run python scripts/step.py ticket-reviewer` prints its items one at a time, by [Ticket reviewer](prompts/agents/ticket-reviewer.md#ticket-reviewer), each as the ticket reviewer reaches its step.
     - Acts, each with its section: each step of its work, under the item of that step.

@@ -8,7 +8,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
 
 + lib: interface
 + message: brief
-+ budget: 4200
++ document-size-budget: 4200
 * comment: when editing this doc
     - The `refine` agent's entry point: a solver session or an operator launches it with a brief that gives one task, to reconcile that task's solver with the latest report, then simplify and prune it.
     - Parts of the work, in order:

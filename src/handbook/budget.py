@@ -1,6 +1,6 @@
 """A document's size budget: the most characters the text it bounds may
-hold, given by the document's `budget` attribute, and the band below the
-budget, from `BAND` of it, in which a size draws a warning. What each
+hold, given by the document's `document-size-budget` attribute, and the
+band below the budget, from `BAND` of it, in which a size draws a warning. What each
 command prints for a size within the band, past the budget, or for a
 document with no budget is as `uv run python scripts/context.py --help`
 gives it, and the pass the merge files on a document past its budget as
@@ -21,7 +21,7 @@ from handbook.paths import DOCUMENTS_ROOT, repo_label
 BAND = 0.9
 """The share of a budget at which its band starts."""
 
-BUDGET_ATTR = "budget"
+BUDGET_ATTR = "document-size-budget"
 
 
 class Standing(Enum):
@@ -110,16 +110,16 @@ class Size:
 
 WITHIN_BAND = mctx("Warning: {text} holds {size} characters, near the "
                    "budget of {budget} that {path} gives.")
-# The sentence that tells the reader to cut no text and keep the `+ budget:`
-# line comes from the user's words, session 7fd429fb-e3be-4173-9b0e-df52f507d6a2,
+# The sentence that tells the reader to cut no text and keep the
+# `+ document-size-budget:` line comes from the user's words, session 7fd429fb-e3be-4173-9b0e-df52f507d6a2,
 # 2026-10-16 (request 6-1476): "Hot fix budget rule so we do not enforce it
 # until we have a proper resolution".
 PAST_BUDGET = mctx(
     "Warning: {text} holds {size} characters, past the budget of {budget} "
     "that {path} gives. A merge files a whole-document pass on it where no "
     "such pass stands open. Outside that pass, cut no text for this, and "
-    "leave the `+ budget:` line as it is.")
-NO_BUDGET = mctx("{path} has no `+ budget:` line.")
+    "leave the `+ document-size-budget:` line as it is.")
+NO_BUDGET = mctx("{path} has no `+ document-size-budget:` line.")
 NOT_A_NUMBER = mctx("`{attr}: {value}` in {doc} is no number of characters")
 
 

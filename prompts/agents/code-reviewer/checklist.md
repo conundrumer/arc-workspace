@@ -1,4 +1,4 @@
-+ budget: 4303
++ document-size-budget: 4303
 * comment: when editing this doc
     - The code reviewer's checklist: `uv run python scripts/step.py code-reviewer` prints its items one at a time, by [Code reviewer](prompts/agents/code-reviewer.md#code-reviewer), each as the code reviewer reaches its step.
     - Acts, each with its section: each step of its work, under the item of that step.

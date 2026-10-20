@@ -1,4 +1,4 @@
-+ budget: 4039
++ document-size-budget: 4039
 * comment: when editing this doc
     - The ticket analyst's checklist: `uv run python scripts/step.py ticket-analyst` prints its items one at a time, by [Ticket analyst](prompts/agents/ticket-analyst.md#ticket-analyst), each as the ticket analyst reaches its step.
     - Acts, each with its section: each step of its work, under the item of that step.

@@ -1,4 +1,4 @@
-+ budget: 1300
++ document-size-budget: 1300
 * comment: when editing this doc
     - Readers: each Claude Code session on the repo and each agent launched in one, by the link of [arc-workspace](CLAUDE.md), before it answers a question about how console sessions run or changes the console.
     - Acts, each with its section:

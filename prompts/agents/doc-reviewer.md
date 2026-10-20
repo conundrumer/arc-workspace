@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Write, Agent, SendMessage, TaskStop
 
 + lib: none
 + message: brief
-+ budget: 45195
++ document-size-budget: 45195
 * comment: when editing this doc
     - The doc reviewer's entry point: its system prompt, for its run reviewing a change to the agent-facing documents, a merged commit, or a standing doc review.
     - Its checklist: [checklist.md](prompts/agents/doc-reviewer/checklist.md).

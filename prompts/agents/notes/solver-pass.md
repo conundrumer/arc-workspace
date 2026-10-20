@@ -1,4 +1,4 @@
-+ budget: 2200
++ document-size-budget: 2200
 * comment: when editing this doc
     - [Analyze agent](prompts/agents/analyze.md), [Create agent](prompts/agents/create.md) and [Refine agent](prompts/agents/refine.md) inline its sections, each at the start of a solver pass or at its report.
     - Acts, each with its section:
