@@ -22,6 +22,7 @@ use crate::check::CheckId;
 use crate::eval::instance::Constructions;
 use crate::eval::Cancellation;
 use crate::judge::candidates::PairCandidates;
+use crate::program::path::NodePath;
 use crate::program::ProgramRelation;
 use crate::program::{Node, Program};
 use crate::registry::Registry;
@@ -93,12 +94,6 @@ impl TokenMask {
     pub fn contains(&self, id: u32) -> bool {
         self.words.get(id as usize / 64).is_some_and(|word| word & (1 << (id % 64)) != 0)
     }
-
-    /// The ids in the mask, in order.
-    pub fn ids(&self) -> impl Iterator<Item = u32> + '_ {
-        let ids = 0..u32::try_from(self.words.len() * 64).expect("fewer than 2^32 ids");
-        ids.filter(|id| self.contains(*id))
-    }
 }
 
 impl<'a> Decoder<'a> {
@@ -120,10 +115,6 @@ impl<'a> Decoder<'a> {
         &self.context.vocabulary
     }
 
-    pub fn settings(&self) -> &DecodeSettings {
-        &self.context.settings
-    }
-
     /// The task, the session and the constructions that the decode's
     /// prefixes are evaluated on.
     pub fn evaluation_inputs(&self) -> (&'a Task, &'a TaskSession, &'a Constructions) {
@@ -141,11 +132,6 @@ impl<'a> Decoder<'a> {
             }
         }
         mask
-    }
-
-    /// Whether `token` is in the mask, or why it is not.
-    pub fn admits(&self, token: &Token) -> Result<(), Refusal> {
-        self.next(token).map(|_| ())
     }
 
     /// Advances the decode by `token`, and gives the tokens that the engine
@@ -187,6 +173,14 @@ impl<'a> Decoder<'a> {
     /// The program so far: its finished forms.
     pub fn program(&self) -> &Node<Program> {
         self.state.program()
+    }
+
+    /// The program so far with the form in progress as its last form, the
+    /// prefix that the mask's checks read, and the path in that form of its
+    /// innermost open node, or none where the last form is complete; or none
+    /// where the form in progress shows no node yet.
+    pub fn partial(&self) -> Option<(Node<Program>, Option<NodePath>)> {
+        self.state.partial()
     }
 
     /// The state after `token`, and the tokens the engine emits after it,

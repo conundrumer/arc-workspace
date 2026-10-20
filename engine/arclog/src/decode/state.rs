@@ -27,6 +27,7 @@ use crate::resolver::columns::example;
 use crate::safety::body_labels;
 use crate::resolver::form_columns::rigid_outputs;
 use crate::resolver::registry_columns::{component, proposer_columns, typed_columns};
+use crate::stream::write::reads_example_column;
 use crate::stream::{Control, Token};
 
 /// Why the grammar refuses a token at a state.
@@ -108,7 +109,7 @@ enum ClauseStage {
 enum Close {
     /// A clause's body: `ONE` or `END`.
     Clause,
-    /// A branch of an `OR`: `OR` or `END`.
+    /// A branch of an `OR`: `ALSO`, which opens the next branch, or `END`.
     Branch,
     /// Each other list: `END`.
     List,
@@ -228,6 +229,8 @@ enum ChooseStage {
     FromOpen,
     Never,
     NeverOpen,
+    /// After a `never` body: `ALSO` and the next, or the form's `END`.
+    NeverEnd,
 }
 
 #[derive(Clone, Debug)]
@@ -470,17 +473,12 @@ impl State {
         }
     }
 
-    /// A body's conjuncts, then its closing token. In a branch of an `OR`
-    /// that holds a conjunct, `OR` closes the branch, so an `OR` form stands
-    /// in a branch only as its first conjunct.
+    /// A body's conjuncts, then its closing token. `OR` opens an `OR` form
+    /// wherever it stands, and `ALSO` closes a branch of one.
     fn offer_body(&mut self, context: &Context<'_>, token: &Token) -> Result<Offer, Unexpected> {
         let in_key = self.in_key();
         let body = top!(self, Frame::Body);
-        let separates = body.close == Close::Branch && !body.conjuncts.is_empty() && !body.negate;
         if let Token::Control(control @ (Control::Not | Control::Op(_) | Control::Or | Control::If | Control::All)) = token {
-            if separates && *control == Control::Or {
-                return Ok(Offer::Close { consumed: true });
-            }
             if std::mem::take(&mut body.negate) {
                 self.push_body(Close::Not, in_key);
                 if *control == Control::Not {
@@ -510,7 +508,7 @@ impl State {
         let closes = match (body.close, token) {
             (Close::Not, _) => false,
             (_, Token::Control(Control::End)) => true,
-            (Close::Clause, Token::Control(Control::One)) | (Close::Branch, Token::Control(Control::Or)) => true,
+            (Close::Clause, Token::Control(Control::One)) | (Close::Branch, Token::Control(Control::Also)) => true,
             _ => false,
         };
         match closes && !body.negate {
@@ -556,7 +554,7 @@ impl State {
         if let Token::Relation(_) = token {
             let (program, open) = self.partial().expect("a form that shows its atom");
             let at = self.absolute(&open.expect("an open atom"));
-            if context.resolved(&program).reads_lifted(&at) {
+            if reads_example_column(&context.resolved(&program), &at) {
                 let atom = top!(self, Frame::Atom);
                 atom.columns = std::iter::once(example()).chain(atom.columns.iter().cloned()).collect();
             }
@@ -732,6 +730,18 @@ impl State {
                 self.push_body(Close::List, false);
                 Ok(Offer::Again)
             }
+            (ChooseStage::NeverEnd, _) => match token {
+                Token::Control(Control::Also) => {
+                    choose.stage = ChooseStage::NeverOpen;
+                    self.push_body(Close::List, false);
+                    Ok(Offer::Taken)
+                }
+                Token::Control(Control::End) => {
+                    self.finish_choose(forced);
+                    Ok(Offer::Taken)
+                }
+                _ => Err("a `never` body is followed by `ALSO` and the next, or by the form's `END`"),
+            },
             _ => unreachable!("a `CHOOSE` form whose body stands open"),
         }
     }
@@ -903,7 +913,7 @@ impl State {
                 }
                 _ => {
                     choose.never.push(body);
-                    self.finish_choose(forced);
+                    choose.stage = ChooseStage::NeverEnd;
                 }
             },
             (Frame::Rigid(rigid), Built::Body(body)) => match rigid.stage {
@@ -1142,7 +1152,7 @@ impl State {
                     ChooseStage::ForOpen => value.rows = Some(KeyBody { body: open_body(child), columns: Arc::from([]) }),
                     ChooseStage::FromOpen => value.from = open_body(child),
                     ChooseStage::NeverOpen => value.never = never.chain([open_body(child)]).collect(),
-                    ChooseStage::For | ChooseStage::Never => value.never = never.collect(),
+                    ChooseStage::For | ChooseStage::Never | ChooseStage::NeverEnd => value.never = never.collect(),
                 }
                 value.from_inside_for = inside_for(value.rows.as_ref(), value.from.value());
                 Built::Form(Form::Choose(Node::new(value)))

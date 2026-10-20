@@ -2,18 +2,22 @@
 //! same content, with each token the language model emits in its mask and
 //! each token the engine emits among the tokens it forces, refuses a token
 //! outside the mask, and forks a decode that leaves its source as it was.
+//! Each prefix that the checks cut from a decoded form is the partial
+//! program that the decode shows at the token of its stream that ends the
+//! prefix's node.
 
+use arclog::check::prefix::prefixes;
 use arclog::check::{check_program, CheckCache, CheckId, CheckedProgram, SolverClauses};
 use arclog::decode::{Decoder, Refusal};
 use arclog::eval::instance::Constructions;
 use arclog::eval::values::Caps;
-use arclog::program::path::NodePath;
-use arclog::program::{FactRelation, Node, Program};
+use arclog::program::path::{node_at, NodePath, NodeRef, PathStep};
+use arclog::program::{FactRelation, Form, Node, Program};
 use arclog::read::read_solver;
 use arclog::registry::{LibName, Registry};
 use arclog::resolver::{resolve, SolverScope};
 use arclog::session::{SessionBound, TaskSession};
-use arclog::stream::{token_stream, Control, DecodeSettings, Emitter, Token, Vocabulary};
+use arclog::stream::{token_stream, token_stream_with_paths, Control, DecodeSettings, Emitter, Token, Vocabulary};
 use arclog::task::Task;
 
 /// The checked concept program of the arclog file `arclog`.
@@ -49,21 +53,65 @@ fn decoder(inputs: &Inputs) -> Decoder<'_> {
 
 /// Steps `decoder` through `stream`: each token of the language model in
 /// the mask, and each token of the engine the next of the tokens the step
-/// before it forced.
-fn walk(decoder: &mut Decoder<'_>, stream: &[(Token, Emitter)]) {
+/// before it forced. Gives, for each token, the partial program the decode
+/// shows after the step of the language model's token that it is or that
+/// forces it.
+fn walk(decoder: &mut Decoder<'_>, stream: &[(Token, Emitter)]) -> Vec<Option<Node<Program>>> {
     let mut forced: Vec<Token> = Vec::new();
+    let mut shown = Vec::new();
+    let mut last = None;
     for (index, (token, emitter)) in stream.iter().enumerate() {
         match emitter {
-            Emitter::Engine => assert_eq!(Some(token), (!forced.is_empty()).then(|| forced.remove(0)).as_ref(), "the engine's token at {index}"),
+            Emitter::Engine => {
+                assert_eq!(Some(token), (!forced.is_empty()).then(|| forced.remove(0)).as_ref(), "the engine's token at {index}");
+                shown.push(last.clone());
+            }
             Emitter::Model => {
                 assert!(forced.is_empty(), "the engine forces {forced:?} before the token at {index}");
                 let id = decoder.vocabulary().id(token).expect("a token of the vocabulary");
                 assert!(decoder.admissible().contains(id), "the mask admits {token:?} at {index}");
                 forced = decoder.step(token.clone()).unwrap_or_else(|refusal| panic!("{token:?} at {index}: {refusal:?}")).forced.into();
+                last = decoder.partial().map(|(program, _)| program);
+                shown.push(last.clone());
             }
         }
     }
     assert!(forced.is_empty(), "the engine forces {forced:?} after the stream");
+    shown
+}
+
+/// The path in `form` of the node at `end` in the partial form `partial`
+/// of a prefix: `end`, but at an input whose body the prefix ends in, where
+/// the partial input holds no head site and the body stands first.
+fn source_path(form: &Form, partial: &Form, end: &NodePath) -> NodePath {
+    let mut steps = Vec::new();
+    for (depth, step) in end.0.iter().enumerate() {
+        let above = NodePath(end.0[..depth].into());
+        match (node_at(NodeRef::from(form), &NodePath(steps.clone().into())), node_at(NodeRef::from(partial), &above)) {
+            (Some(NodeRef::InstanceInput(input)), Some(NodeRef::InstanceInput(open))) if open.head.is_empty() && step.0 == 0 => steps.push(PathStep(input.head.len() as u32)),
+            _ => steps.push(*step),
+        }
+    }
+    NodePath(steps.into())
+}
+
+/// Asserts that each prefix of each form of `decoded`, after the forms
+/// before it, is the program of `shown` at the last token of `paths` at or
+/// below the path of the prefix's node, or, for a node that writes no
+/// token, at the token that ends the prefix before it.
+fn shows_each_prefix(decoded: &Node<Program>, paths: &[NodePath], shown: &[Option<Node<Program>>]) {
+    let forms = &decoded.value().forms;
+    let mut end = 0;
+    for (index, form) in forms.iter().enumerate() {
+        for prefix in prefixes(form) {
+            let node = NodePath::top(index as u32).join(&source_path(form, &prefix.partial, &prefix.end));
+            if let Some(last) = paths.iter().rposition(|path| path.0.starts_with(&node.0)) {
+                end = last;
+            }
+            let program = Node::new(Program { forms: forms[..index].iter().cloned().chain([prefix.partial.clone()]).collect() });
+            assert!(shown[end].as_ref() == Some(&program), "the decode shows {:?} at token {end}, and the prefix of form {index} at {:?} is {:?}", shown[end], prefix.end, prefix.partial);
+        }
+    }
 }
 
 /// The program written in `arclog`, checked, and the program that the
@@ -74,8 +122,10 @@ fn round_trip(arclog: &str) -> (CheckedProgram, CheckedProgram) {
     let stream = token_stream(&written, &vocabulary).expect("the program has a stream");
     let inputs = inputs();
     let mut decoder = decoder(&inputs);
-    walk(&mut decoder, &stream);
+    let shown = walk(&mut decoder, &stream);
     let decoded = checked_decoded(decoder.program());
+    let paths: Vec<NodePath> = token_stream_with_paths(&decoded, &vocabulary).expect("the decoded program has a stream").into_iter().map(|(_, _, path)| path).collect();
+    shows_each_prefix(decoder.program(), &paths, &shown);
     assert_eq!(token_stream(&decoded, &vocabulary).expect("the decoded program has a stream"), stream);
     (written, decoded)
 }
@@ -109,6 +159,17 @@ fn a_negation_an_if_an_all_and_a_constraint_on_zero_decode_to_their_content() {
 #[test]
 fn a_det_by_a_proposer_and_a_one_mark_decode_to_their_content() {
     same_content("(DET &arr_dim ScaleRatio)\n(RULE &cell (input *P *Col) (ONE P))\n");
+}
+
+#[test]
+fn an_or_after_a_conjunct_of_a_branch_decodes_to_its_content() {
+    same_content(&format!("{BG}{FG}(RULE &nested (input *P *Col) (OR ((&bg (:C Col)) (OR ((&fg P)) ((&fg (:Col Col))))) ((&fg P))))\n"));
+}
+
+#[test]
+fn a_choose_of_two_never_clauses_decodes_to_its_stream() {
+    let pick = "(CHOOSE &pick (from (&fg *P *Col)) (never (&fg *P *Col) (&fg (:P *P2) Col) (!= P P2) (&bg (:C Col))) (never (&fg *P *Col) (&fg P (:Col *C2)) (!= Col C2)))\n";
+    round_trip(&format!("{BG}{FG}{pick}"));
 }
 
 /// The names of a key's columns are a part of the content of its instance,

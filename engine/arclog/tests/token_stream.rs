@@ -82,7 +82,7 @@ fn an_instance_gives_its_input_names_its_projection_and_its_outputs() {
         (control(Control::Skip), M),
         (Token::Column(1), E),
         (Token::Relation(1), M),
-        (Token::Column(0), M),
+        (Token::Column(1), M),
     ];
     want.extend(fresh(0));
     want.extend([
@@ -100,7 +100,7 @@ fn an_instance_gives_its_input_names_its_projection_and_its_outputs() {
 }
 
 #[test]
-fn an_or_gives_its_branches_between_or_tokens_and_its_end() {
+fn an_or_gives_its_branches_between_also_tokens_and_its_end() {
     let program = "(RULE &axis_len (input (:P *B)) (frame_extent (:P B) (:N *N)))\n(RULE &larger (&axis_len *B) (&axis_len (:B *B2)))\n";
     let prefix = length(program);
     let got = stream(&format!("{program}(RULE &prior (&axis_len *B *N) (&axis_len (:B *B2) (:N *N2)) (OR ((> N N2)) ((= N N2) (&larger B B2))))\n"));
@@ -117,7 +117,7 @@ fn an_or_gives_its_branches_between_or_tokens_and_its_end() {
         (control(Control::Op(ConstraintOp::Gt)), M),
         (Token::Label(1), M),
         (Token::Label(3), M),
-        (control(Control::Or), M),
+        (control(Control::Also), M),
         (control(Control::Op(ConstraintOp::Eq)), M),
         (Token::Label(1), M),
         (Token::Label(3), M),

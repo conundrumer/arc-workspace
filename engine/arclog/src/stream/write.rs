@@ -21,7 +21,7 @@
 use crate::check::CheckedProgram;
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use crate::hash::StableHashMap;
-use crate::program::path::NodePath;
+use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
     Body, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, ConstraintLabel, Form, Instance, InstanceInput, LabelId, LabelUse, Negated,
     Operand, OutputName, OutputOwner, OutputStep, ProgramRelation, RelationRef, RigidDet, Site, SiteArg,
@@ -31,7 +31,7 @@ use crate::registry::{Component, InputPort, LibEntry, Registry};
 use crate::resolver::registry_columns::{component, proposer_columns, typed_columns};
 use crate::resolver::columns::{example, projection};
 use crate::resolver::form_columns::rigid_outputs;
-use crate::resolver::ResolvedProgram;
+use crate::resolver::{DependencyKind, Resolution, ResolvedProgram, Side};
 
 use super::{Control, Emitter, Token, Vocabulary};
 
@@ -46,6 +46,17 @@ use super::{Control, Emitter, Token, Vocabulary};
 /// `DEMONSTRATED` or an `ALTS` form, and a `DET_OR_RULE` or `RULE_OR_DET`
 /// line.
 pub fn token_stream(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<Vec<(Token, Emitter)>, Diagnostic> {
+    Ok(token_stream_with_paths(program, vocabulary)?.into_iter().map(|(token, emitter, _)| (token, emitter)).collect())
+}
+
+/// The token stream of [`token_stream`], each token with the path in
+/// `program` of the node whose writing emits it: a node's tokens stand at
+/// its path or below it, and its last such token ends it. A token that
+/// closes a list or a clause of a form stands at the form's path, but the
+/// `END` of a key's body, which gives the key its columns, stands at the
+/// body's path, and a clause's proposers stand at its body's path, which
+/// they precede.
+pub fn token_stream_with_paths(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<Vec<(Token, Emitter, NodePath)>, Diagnostic> {
     let mut writer = Writer {
         vocabulary,
         registry: vocabulary.registry(),
@@ -74,7 +85,7 @@ struct Writer<'w> {
     declared: StableHashMap<ProgramRelation, Declared>,
     /// The slot of each label of the current top-level form.
     labels: StableHashMap<LabelId, u32>,
-    stream: Vec<(Token, Emitter)>,
+    stream: Vec<(Token, Emitter, NodePath)>,
 }
 
 impl Writer<'_> {
@@ -82,7 +93,7 @@ impl Writer<'_> {
         if self.vocabulary.id(&token).is_none() {
             return Err(self.missing(&token, path));
         }
-        self.stream.push((token, emitter));
+        self.stream.push((token, emitter, path.clone()));
         Ok(())
     }
 
@@ -157,7 +168,7 @@ impl Writer<'_> {
         };
         self.model(keyword, path)?;
         for proposer in clause.proposers.iter() {
-            self.push(Token::Proposer(proposer.clone()), Emitter::Model, path)?;
+            self.push(Token::Proposer(proposer.clone()), Emitter::Model, &path.child(0))?;
         }
         self.body(clause.body.value(), &path.child(0))?;
         for mark in clause.ones.iter() {
@@ -205,7 +216,7 @@ impl Writer<'_> {
                 self.model(Control::Or, path)?;
                 for (index, branch) in branches.iter().enumerate() {
                     if index > 0 {
-                        self.model(Control::Or, path)?;
+                        self.model(Control::Also, path)?;
                     }
                     self.body(branch.value(), &path.child(index as u32))?;
                 }
@@ -269,7 +280,7 @@ impl Writer<'_> {
             RelationRef::Output(output) => self.declared_relation(&ProgramRelation::Output(output.clone()), path)?,
             RelationRef::DefinedPort(_) => return Err(no_form("a read of an input port", path)),
         };
-        let columns: Box<[ColumnName]> = match self.resolved.reads_lifted(path) {
+        let columns: Box<[ColumnName]> = match reads_example_column(self.resolved, path) {
             true => std::iter::once(example()).chain(columns.iter().cloned()).collect(),
             false => columns,
         };
@@ -303,7 +314,7 @@ impl Writer<'_> {
         let Some(group) = self.resolved.column_group(path) else {
             for (index, arg) in site.value.args.iter().enumerate() {
                 match arg {
-                    SiteArg::Label(label) | SiteArg::NamedLabel { label, .. } => self.label(*label, path)?,
+                    SiteArg::Label(label) | SiteArg::NamedLabel { label, .. } => self.label(*label, &path.child(index as u32))?,
                     SiteArg::Field(_) => return Err(run_fault("a field site on a site that reads no record".to_owned(), &path.child(index as u32))),
                 }
             }
@@ -347,7 +358,7 @@ impl Writer<'_> {
                 let key = key.value();
                 let at = path.child(0);
                 self.body(key.key.body.value(), &at.child(0))?;
-                self.model(Control::End, &at)?;
+                self.model(Control::End, &at.child(0))?;
                 self.inputs(component, &key.inputs, |_| true, &at, 1)?;
             }
         }
@@ -443,7 +454,7 @@ impl Writer<'_> {
                 None => self.model(Control::Skip, path)?,
                 Some(clause) => {
                     self.body(clause.body.value(), &path.child(child))?;
-                    self.model(Control::End, path)?;
+                    self.model(Control::End, &path.child(child))?;
                     child += 1;
                 }
             }
@@ -467,7 +478,7 @@ impl Writer<'_> {
             None => self.model(Control::Skip, path)?,
             Some(rows) => {
                 self.body(rows.body.value(), &path.child(0))?;
-                self.model(Control::End, path)?;
+                self.model(Control::End, &path.child(0))?;
             }
         }
         self.push(Token::Column(1), Emitter::Engine, path)?;
@@ -484,10 +495,34 @@ impl Writer<'_> {
             self.body(never.value(), &path.child(rows + 1 + index as u32))?;
             self.model(Control::End, path)?;
         }
+        if !choose.never.is_empty() {
+            self.model(Control::End, path)?;
+        }
         let row_columns = choose.rows.iter().flat_map(|rows| rows.columns.iter());
         let columns = row_columns.chain(choose.candidate_columns.iter()).map(|column| column.name.clone()).collect();
         self.declare(ProgramRelation::Declared(choose.name.clone()), columns, path)
     }
+}
+
+/// Whether the read at `read` gives the Example column the column token 0,
+/// with the columns of its relation after it, as
+/// `docs/arclog/arclog.md#token-stream` gives: a clause's read where it is
+/// lifted, and a read in an `INIT`, a `CHOOSE` or a `RIGID_DET` form of a
+/// per-input relation that is no fact and no relation of the form, lifted
+/// or not. The side of such a form follows from its reads, a site on `E`
+/// among them, so the rule reads only what stands at the read's relation
+/// token.
+pub(crate) fn reads_example_column(resolved: &ResolvedProgram, read: &NodePath) -> bool {
+    let program = NodeRef::Program(resolved.program.value());
+    let depths = 1..=read.0.len();
+    let Some(form) = depths.map(|depth| NodePath(read.0[..depth].into())).find(|at| !matches!(node_at(program, at), Some(NodeRef::Claim(_)))) else { return false };
+    match node_at(program, &form) {
+        Some(NodeRef::Instance(_) | NodeRef::Choose(_) | NodeRef::RigidDet(_)) => {}
+        _ => return resolved.reads_lifted(read),
+    }
+    let Some(Resolution::Node(node)) = resolved.resolution(read) else { return false };
+    let fact = matches!(resolved.graph.nodes[node.0 as usize].kind, DependencyKind::Fact(_));
+    !fact && !resolved.nodes_of(&form).contains(node) && resolved.side(*node) == Side::PerInput
 }
 
 fn diagnostic(kind: DiagnosticKind, severity: Severity, message: String, path: &NodePath) -> Diagnostic {
