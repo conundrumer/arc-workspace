@@ -12,7 +12,7 @@ commit. The merge makes the readers' tree of the old `master` before the
 fast-forward, and fast-forwards where that make fails. The checks run by
 the command lines of the tree they check, by the main tree's copy of
 `merge_steps.py` where the changes touch it, and refuse changes to `engine/`
-where the engine does not compile."""
+where the engine does not compile or a test of it fails."""
 
 import os
 import subprocess
@@ -316,10 +316,9 @@ edition = "2021"
 """
 
 
-def test_the_checks_refuse_an_engine_that_does_not_compile(trees, monkeypatch):
-    """A change under `engine/` whose crate does not compile is refused; a
-    change that touches no path under `engine/` is not, though the engine
-    it stands on does not compile."""
+def engine_change(trees, monkeypatch, lib: str):
+    """The module `merge_steps`, with no document check, and the worktree,
+    uncommitted, of a crate under `engine/` whose library is `lib`."""
     steps = script("merge_steps")
     monkeypatch.setattr(steps, "DOCUMENT_CHECKS", ())
     _, worktree = trees
@@ -327,7 +326,15 @@ def test_the_checks_refuse_an_engine_that_does_not_compile(trees, monkeypatch):
     (worktree / "scripts" / "gate.py").write_text("")
     (worktree / "engine" / "src").mkdir(parents=True)
     (worktree / "engine" / "Cargo.toml").write_text(CRATE)
-    (worktree / "engine" / "src" / "lib.rs").write_text("pub fn f() -> u8 { \"\" }\n")
+    (worktree / "engine" / "src" / "lib.rs").write_text(lib)
+    return steps, worktree
+
+
+def test_the_checks_refuse_an_engine_that_does_not_compile(trees, monkeypatch):
+    """A change under `engine/` whose crate does not compile is refused; a
+    change that touches no path under `engine/` is not, though the engine
+    it stands on does not compile."""
+    steps, worktree = engine_change(trees, monkeypatch, "pub fn f() -> u8 { \"\" }\n")
     base = git(worktree, "rev-parse", "HEAD").strip()
     failed = steps.checks(worktree, base, str(worktree / "out"))
     assert len(failed) == 1 and "mismatched types" in failed[0]
@@ -336,3 +343,13 @@ def test_the_checks_refuse_an_engine_that_does_not_compile(trees, monkeypatch):
     base = git(worktree, "rev-parse", "HEAD").strip()
     commit_file(worktree, "p")
     assert steps.checks(worktree, base, str(worktree / "out")) == []
+
+
+def test_the_checks_refuse_an_engine_whose_test_fails(trees, monkeypatch):
+    """A change under `engine/` whose crate compiles and holds a test that
+    fails is refused, by the name of that test."""
+    steps, worktree = engine_change(
+        trees, monkeypatch, "#[test]\nfn one_is_two() { assert_eq!(1, 2); }\n")
+    base = git(worktree, "rev-parse", "HEAD").strip()
+    failed = steps.checks(worktree, base, str(worktree / "out"))
+    assert len(failed) == 1 and "one_is_two" in failed[0]

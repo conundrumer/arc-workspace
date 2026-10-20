@@ -42,16 +42,18 @@ DOCUMENT_PASS = ("scripts/document_pass.py",)
 ENGINE = "engine/"
 """The directory of the Cargo workspace."""
 
-ENGINE_CHECK = ("cargo", "check", "--manifest-path", f"{ENGINE}Cargo.toml",
-                "--workspace", "--all-targets", "--offline")
+ENGINE_CHECK = ("cargo", "test", "--manifest-path", f"{ENGINE}Cargo.toml",
+                "--workspace", "--offline", "--no-fail-fast")
 """The check that compiles every target of each crate of the workspace
-under `ENGINE`, from the crates already fetched."""
+under `ENGINE`, from the crates already fetched, and runs every test of
+those crates, giving each test that fails."""
 
 
 def checks(tree: Path, base: str, gate_out: str) -> list[str]:
     """Run in `tree` the checks of changes from the commit `base`: the
-    output of each that fails. The compile of the engine (`ENGINE_CHECK`)
-    is among them where the changes touch a path under `ENGINE`."""
+    output of each that fails. The compile and the tests of the engine
+    (`ENGINE_CHECK`) are among them where the changes touch a path under
+    `ENGINE`."""
     engine = any(p.startswith(ENGINE) for p in changed_outside_work(tree, base))
     with contextlib.redirect_stdout(sys.stderr):
         return failures(tree, [*map(Check, DOCUMENT_CHECKS),

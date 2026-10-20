@@ -38,7 +38,7 @@ the command line of `master`'s copy. The checks are:
     uv run python -m controlled_markdown check
     uv run python scripts/context.py --write
     uv run python scripts/gate.py --affected <base> <out>
-    cargo check --manifest-path engine/Cargo.toml --workspace --all-targets --offline
+    cargo test --manifest-path engine/Cargo.toml --workspace --offline --no-fail-fast
 
 The last runs only where the changes touch a path under `engine/`. The
 checks run concurrently. A check passes when it exits 0, and a refusal

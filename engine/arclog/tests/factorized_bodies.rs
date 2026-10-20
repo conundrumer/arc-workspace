@@ -112,7 +112,7 @@ fn joined_rows(program: &CheckedProgram, task: &Task, kept: &[u32]) -> Option<Ha
 
 #[test]
 fn each_subset_of_a_body_of_three_parts_gives_the_rows_of_its_whole_join() {
-    let program = checked("(input *P (:Col *A))\n  (input (:P *Q) (:Col *B))\n  (input (:P *R) (:Col B))\n  (input (:P *S) (:Col *C))\n  (= C 0)\n  (input P (:Col B))");
+    let program = checked("(input *P (:Col *A))\n  (input (:P *Q) (:Col *B))\n  (input (:P *R) (:Col B))\n  (input (:P *S) (:Col *C))\n  (!= C B)\n  (input P (:Col B))");
     let task = task();
     let session = session();
     let count = 6u32;
