@@ -293,17 +293,28 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
     thread = saved_thread(scratch, resume)
     scratch.mkdir(parents=True, exist_ok=True)
     session = scratch / "codex-session"
-    instructions = None if thread is not None else role_instructions(root, home, agent, agent_type)
-    prompt = item if thread is not None else "\n\n".join([brief.read_text(), item])
-    last = scratch / "codex-last.md"
-    last.unlink(missing_ok=True)
-    git_dir = Path(checkout.git_out(cwd, "rev-parse", "--absolute-git-dir").strip())
-    # The repository's commands write the main tree's tickets, git data and
-    # caches, and uv's and cargo's caches, from any worktree. Codex keeps the
-    # git dir of a worktree it runs in read-only unless that dir is a root.
-    writable = [main / "tickets", main / ".git",
-                *([git_dir] if git_dir != main / ".git" else []), main / ".cache",
-                home / ".cache" / "uv", home / ".cargo", scratch]
+    preparing = time.time()
+    try:
+        instructions = None if thread is not None else role_instructions(root, home, agent, agent_type)
+        prompt = item if thread is not None else "\n\n".join([brief.read_text(), item])
+        last = scratch / "codex-last.md"
+        last.unlink(missing_ok=True)
+        git_dir = Path(checkout.git_out(cwd, "rev-parse", "--absolute-git-dir").strip())
+        # The repository's commands write the main tree's tickets, git data and
+        # caches, and uv's and cargo's caches, from any worktree. Codex keeps the
+        # git dir of a worktree it runs in read-only unless that dir is a root.
+        writable = [main / "tickets", main / ".git",
+                    *([git_dir] if git_dir != main / ".git" else []), main / ".cache",
+                    home / ".cache" / "uv", home / ".cargo", scratch]
+    except Exception as exc:
+        from uuid import uuid4
+
+        failure = {"id": uuid4().hex, "started": preparing, "ended": time.time(),
+                   "error": str(exc)}
+        # Separate from turn history: a fresh retry must still be possible.
+        with (scratch / "codex-launch-failures.jsonl").open("a") as record:
+            record.write(json.dumps(failure) + "\n")
+        raise ValueError(f"launch failed before Codex started [{failure['id']}]: {exc}") from exc
     daemon_message = daemon_turn(scratch, thread, prompt, item, cwd, model, effort,
                                  writable, transport, instructions, home)
     if daemon_message is not None:

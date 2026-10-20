@@ -574,3 +574,59 @@ def test_resume_requires_saved_thread(files):
         run(files, transport, resume=True)
     assert not transport.calls
     assert not files[-1].exists()
+
+
+@pytest.mark.parametrize("phase", ["instructions", "brief", "git"])
+def test_preparation_failure_is_proved_without_turn_history_and_can_retry(
+        files, monkeypatch, capsys, phase):
+    from controlled_markdown.nodes import ControlledMarkdownError, Rule
+
+    root, home, brief, scratch = files
+    transport = Transport()
+    real_run = agent.run
+
+    def no_exec(_):
+        pytest.fail("preparation failure reached exec")
+
+    monkeypatch.setattr(agent, "run", lambda *a, **kw: real_run(
+        *a, **kw, runner=no_exec, transport=lambda: transport))
+    with monkeypatch.context() as preparation:
+        def fail(*_):
+            if phase == "instructions":
+                raise ControlledMarkdownError("/home/CLAUDE.md", 3, Rule.NO_MARKER, "bad line")
+            raise OSError("git directory unavailable")
+
+        if phase == "instructions":
+            preparation.setattr(agent, "role_instructions", fail)
+        elif phase == "brief":
+            brief.unlink()
+        else:
+            preparation.setattr(agent.checkout, "git_out", fail)
+        assert agent.main([
+            "code-reviewer", str(scratch), str(brief), "model", "low",
+            "--agent-type", "general-purpose", "--cwd", str(root),
+        ]) == 1
+    stderr = capsys.readouterr().err
+    assert "launch failed before Codex started" in stderr
+    failure = json.loads((scratch / "codex-launch-failures.jsonl").read_text())
+    assert failure["id"] in stderr and failure["error"] in stderr
+    assert failure["started"] <= failure["ended"]
+    assert not transport.calls
+    assert not (scratch / "codex-session").exists()
+    assert not (scratch / "codex-events.jsonl").exists()
+    assert (scratch / agent.DONE).exists()
+
+    entry = turn(scratch.parent / "launcher", [])
+    entry["message"]["content"][0]["input"]["command"] = (
+        f"python scripts/codex_agent.py code-reviewer {scratch} {brief} model low")
+    result = {"type": "user", "message": {"content": [{
+        "type": "tool_result", "tool_use_id": "codex", "content": "Exit code 1\n" + stderr}]}}
+    assert reads.walk_entries([entry, result], "code-reviewer") == []
+
+    brief.write_text("brief body")
+    monkeypatch.setattr(agent, "run", real_run)
+    assert run(files, transport) == "reply"
+    retry = json.loads(json.dumps(entry))
+    retry["message"]["content"][0]["id"] = "retry"
+    evidence = reads.walk_entries([entry, result, retry], "code-reviewer")
+    assert evidence[2]["message"]["content"][0]["content"] == "first item"

@@ -107,7 +107,7 @@ def test_unreadable_evidence_is_refused(tmp_path: Path, bad: str):
                 f"uv run python scripts/codex_agent.py code-editor {tmp_path} /tmp/b model high")
     if bad not in {"missing-turn", "extra-turn"}:
         path.write_text(json.dumps(record) + "\n")
-    with pytest.raises((OSError, ValueError, KeyError, IndexError)):
+    with pytest.raises((OSError, ValueError, KeyError)):
         reads.walk_entries(entries, "code-reviewer")
 
 
@@ -212,3 +212,131 @@ def test_refusal_after_an_accepted_attempt_is_rejected(tmp_path: Path, session: 
         "content": "codex_agent: " + reads.FRESH_REFUSAL}]}}
     with pytest.raises(ValueError, match="after an accepted Codex call"):
         reads.walk_entries([accepted, refused, result], "code-reviewer")
+
+
+PREPARATION_TRACEBACK = '''Traceback (most recent call last):
+  File "/repo/scripts/codex_agent.py", line 397, in <module>
+    sys.exit(main(sys.argv[1:]))
+  File "/repo/scripts/codex_agent.py", line 379, in main
+    message = run(args.agent, args.scratch, args.brief, args.model, args.effort,
+  File "/repo/scripts/codex_agent.py", line 296, in run
+    instructions = None if thread is not None else role_instructions(root, home, agent, agent_type)
+  File "/repo/scripts/codex_agent.py", line 98, in role_instructions
+    entry_text(user.resolve())
+  File "/repo/src/controlled_markdown/parser.py", line 224, in parse
+    raise ControlledMarkdownError(source, num, Rule.NO_MARKER,
+controlled_markdown.nodes.ControlledMarkdownError: /home/.claude/CLAUDE.md:3: no-marker: bad line
+
+[exited with code 1]'''
+
+
+def preparation_failure(tmp_path, *, background=False, output=PREPARATION_TRACEBACK):
+    """A launch with no record, followed by its foreground or background result."""
+    command = f"uv run python scripts/codex_agent.py code-reviewer {tmp_path} /tmp/b model high"
+    launch = {"type": "assistant", "timestamp": "2026-10-20T00:00:00Z", "message": {
+        "content": [{"type": "tool_use", "name": "Bash", "id": "failed",
+                     "input": {"command": command}}]}}
+    if background:
+        path = tmp_path / "background.output"
+        path.write_text(output)
+        output = f"Command running in background. Output is being written to: {path}."
+    result = {"type": "user", "message": {"content": [{
+        "type": "tool_result", "tool_use_id": "failed", "content": output}]}}
+    return launch, result
+
+
+@pytest.mark.parametrize("background", [False, True])
+@pytest.mark.parametrize("retry", [False, True])
+@pytest.mark.parametrize("diagnostic", [False, True])
+def test_unrecorded_preparation_failure_adds_no_walk_and_allows_retry(
+        tmp_path, background, retry, diagnostic):
+    output = ("codex_agent: /home/CLAUDE.md:3: no-marker: bad line\n\n[exited with code 1]"
+              if diagnostic else PREPARATION_TRACEBACK)
+    entries = list(preparation_failure(tmp_path, background=background, output=output))
+    expected = []
+    if retry:
+        accepted = turn(tmp_path, [(STEP, "actual turn")])
+        accepted["timestamp"] = "2026-10-20T00:01:00Z"
+        path = tmp_path / "codex-events.jsonl"
+        record = json.loads(path.read_text())
+        record.update(started=1792454461, ended=1792454462)
+        path.write_text(json.dumps(record) + "\n")
+        entries.append(accepted)
+        expected = [("1:0", "actual turn")]
+    assert walk.step_calls(reads.walk_entries(entries, "code-reviewer"), "code-reviewer") == expected
+
+
+@pytest.mark.parametrize("bad", ["generic-error", "post-start", "wrong-id", "missing-output",
+                                 "untimed-record", "overlapping-record", "multiple-launches",
+                                 "resume", "session-only"])
+def test_unproved_missing_record_still_refuses(tmp_path, bad):
+    failed, result = preparation_failure(tmp_path, background=True)
+    retry = turn(tmp_path, [(STEP, "must not hide missing evidence")])
+    retry["timestamp"] = "2026-10-20T00:01:00Z"
+    path = tmp_path / "codex-events.jsonl"
+    record = json.loads(path.read_text())
+    record.update(started=1792454461, ended=1792454462)
+    output = tmp_path / "background.output"
+    match bad:
+        case "generic-error":
+            output.write_text("codex_agent: failed\n\n[exited with code 1]")
+        case "post-start":
+            output.write_text(PREPARATION_TRACEBACK.replace("in role_instructions", "in daemon_turn"))
+        case "wrong-id":
+            result["message"]["content"][0]["tool_use_id"] = "unrelated"
+        case "missing-output":
+            output.unlink()
+        case "untimed-record":
+            del record["started"]
+        case "overlapping-record":
+            record["started"] = 1792454401
+        case "multiple-launches":
+            block = failed["message"]["content"][0]
+            block["input"]["command"] += "\n" + block["input"]["command"]
+        case "resume":
+            failed["message"]["content"][0]["input"]["command"] += " --resume"
+        case "session-only":
+            path.unlink()
+            with pytest.raises(ValueError, match="no turn record"):
+                reads.walk_entries([failed, result], "code-reviewer")
+            return
+    path.write_text(json.dumps(record) + "\n")
+    with pytest.raises(ValueError, match="no (matching )?turn record|more than one Codex command"):
+        reads.walk_entries([failed, result, retry], "code-reviewer")
+
+
+def test_exhausted_records_name_the_unaccounted_launch(tmp_path):
+    first = turn(tmp_path, [])
+    second = json.loads(json.dumps(first))
+    second["message"]["content"][0]["id"] = "missing-launch"
+    with pytest.raises(ValueError, match="launch missing-launch has no turn record"):
+        reads.walk_entries([first, second], "code-reviewer")
+
+
+@pytest.mark.parametrize("proof", ["valid", "missing", "wrong-id", "wrong-error", "duplicate",
+                                   "bad-times", "extra-output"])
+def test_identified_preparation_failure_requires_its_saved_evidence(tmp_path, proof):
+    accepted = turn(tmp_path, [(STEP, "completed")])
+    token = "a" * 32
+    output = f"codex_agent: launch failed before Codex started [{token}]: unavailable git directory"
+    failed, result = preparation_failure(tmp_path, output=output)
+    failed["message"]["content"][0]["input"]["command"] += " --resume"
+    saved = {"id": token, "error": "unavailable git directory", "started": 1, "ended": 2}
+    match proof:
+        case "wrong-id":
+            saved["id"] = "b" * 32
+        case "wrong-error":
+            saved["error"] = "different error"
+        case "bad-times":
+            saved["ended"] = 0
+        case "extra-output":
+            result["message"]["content"][0]["content"] = "accepted turn\n" + output
+    if proof != "missing":
+        (tmp_path / "codex-launch-failures.jsonl").write_text(
+            (json.dumps(saved) + "\n") * (2 if proof == "duplicate" else 1))
+    if proof == "valid":
+        assert walk.step_calls(reads.walk_entries([accepted, failed, result], "code-reviewer"),
+                               "code-reviewer") == [("1:0", "completed")]
+    else:
+        with pytest.raises(ValueError, match="no turn record"):
+            reads.walk_entries([accepted, failed, result], "code-reviewer")
