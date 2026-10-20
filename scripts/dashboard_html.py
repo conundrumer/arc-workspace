@@ -556,11 +556,11 @@ def page(tickets: Path, now: float, usage: Reading, records: OperatorRecords,
     work, working = active(v, st)
     stuck, waits = blocked(v)
     sections = [
-        ("blocked", f"Blocked on you · {waits}", stuck),
+        ("health", "Health", health(v, [*undecided, *(f"unread: {u.path}: {u.why}" for u in unread)])),
         ("active", "Active", work),
         ("queued", "Queued", queued(v, st)),
         ("sl", "Since you looked", '<div id="since"></div>'),
-        ("health", "Health", health(v, [*undecided, *(f"unread: {u.path}: {u.why}" for u in unread)])),
+        ("blocked", f"Blocked on you · {waits}", stuck),
         ("done", "Done", done(v) + '<div class="key"><span><i></i>filed by you</span><span>★ expedited</span></div>'),
         ("pace", "Pace", pace(v)), ("queue", "Queue", queue(v)),
         ("find", "Find",

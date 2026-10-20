@@ -50,7 +50,7 @@ def test_page_section_order_and_all_open_work(tmp_path, monkeypatch):
     rendered = dashboard.page(tmp_path, v.now, usage.Reading(usage.Limit.UNKNOWN, None, v.usage),
                               v.records, []).text
     assert re.findall(r'<h2 id="([^"]+)"', rendered) == [
-        "blocked", "active", "queued", "sl", "health", "done", "pace", "queue", "find"]
+        "health", "active", "queued", "sl", "blocked", "done", "pace", "queue", "find"]
     active = rendered.split('<h2 id="active">')[1].split('<h2')[0]
     queued = rendered.split('<h2 id="queued">')[1].split('<h2')[0]
     assert f'data-n="{working.number}"' in active
