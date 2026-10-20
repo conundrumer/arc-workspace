@@ -80,6 +80,7 @@
 //! ## Step 5
 //!
 //! - the token stream: [`stream`] and its submodules
+//! - the decoder and its token mask: [`decode`] and its submodules
 //!
 //! A module whose functions take arguments holds
 //! `#![allow(unused_variables, dead_code)]` until its stage writes the bodies, since a
@@ -88,6 +89,7 @@
 pub mod algebra;
 pub mod check;
 pub mod constraints;
+pub mod decode;
 pub mod diagnostic;
 pub mod eval;
 pub mod safety;
