@@ -1,5 +1,6 @@
 //! The token stream of each program of `docs/arclog/arclog.md#trace-form`
-//! gives the tokens of its trace form, the bracketed ones the engine's, and
+//! gives the tokens of its trace form, the bracketed ones the engine's, a
+//! site on a record-valued column gives one `END`, after its field sites, and
 //! a program that passes a vocabulary cap is refused.
 
 use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
@@ -139,4 +140,20 @@ fn a_program_past_a_cap_is_refused() {
     let vocabulary = Vocabulary::new(Registry::get(), &settings);
     let refusal = token_stream(&checked(&format!("{BG}{FG}")), &vocabulary).expect_err("the second relation passes the cap");
     assert_eq!(refusal.kind, DiagnosticKind::Bound);
+}
+
+const BBOX: &str = "(INIT &bbox BoundingBox\n  (key ((input *P ^Col))\n    (cell (P)\n      (input *P Col))))\n";
+
+#[test]
+fn a_site_on_a_record_gives_its_field_sites_and_one_end() {
+    let prefix = length(BBOX);
+    let got = stream(&format!("{BBOX}(RULE &w (&bbox.cell (:key (:Col *Col)) *P))\n"));
+    let elided = stream(&format!("{BBOX}(RULE &w (&bbox.cell (:key *Col) *P))\n"));
+    let mut want = vec![(control(Control::Rule), M), (Token::Relation(1), M), (Token::Column(0), M), (Token::Column(0), M)];
+    want.extend(fresh(0));
+    want.extend([(control(Control::End), M), (Token::Column(1), M)]);
+    want.extend(fresh(1));
+    want.extend([(control(Control::End), M), (Token::Relation(2), E)]);
+    assert_eq!(after(&got, prefix), &want[..]);
+    assert_eq!(got, elided);
 }

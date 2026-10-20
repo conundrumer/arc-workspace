@@ -60,9 +60,8 @@ impl Builder<'_> {
                         SiteArg::Field(field) => &field.column,
                         SiteArg::Label(_) => continue,
                     };
-                    if let Some(Place::Field(position, group)) = columns.place(&[site.column.clone(), field.clone()]) {
+                    if let Some(Place::Field(position, _)) = columns.place(&[site.column.clone(), field.clone()]) {
                         self.positions.insert(path.child(index as u32), position);
-                        self.groups.insert(path.child(index as u32), group);
                     }
                 }
                 self.groups.insert(path, group);
