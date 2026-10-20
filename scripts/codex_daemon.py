@@ -162,7 +162,8 @@ class Proxy:
 
 
 def start(
-    client: Any, thread: str | None, cwd: Path, model: str, effort: str, writable: list[Path]
+    client: Any, thread: str | None, cwd: Path, model: str, effort: str, writable: list[Path],
+    instructions: str | None = None,
 ) -> dict[str, Any]:
     """Load a thread and check effective settings before starting any work."""
     config = {
@@ -171,6 +172,8 @@ def start(
         "sandbox_workspace_write.network_access": True,
         "sandbox_workspace_write.writable_roots": list(map(str, writable)),
     }
+    if instructions is not None:
+        config["developer_instructions"] = instructions
     params = {
         "cwd": str(cwd),
         "model": model,

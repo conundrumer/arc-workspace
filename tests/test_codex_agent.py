@@ -95,6 +95,7 @@ class Transport:
 
 @pytest.fixture
 def files(tmp_path, monkeypatch):
+    monkeypatch.delenv("CODEX_HOME", raising=False)
     root, home = tmp_path / "repo", tmp_path / "home"
     root.mkdir()
     (root / "CLAUDE.md").write_text("repo instructions")
@@ -139,7 +140,10 @@ def test_start_resume_and_walk_record(files):
     assert transport.closed
     assert (scratch / "codex-session").read_text() == "thread\n"
     first = transport.calls[1][1]["input"][0]["text"]
-    assert first == "\n\n".join([agent.PREAMBLE, "repo instructions", "brief body", "first item"])
+    assert first == "brief body\n\nfirst item"
+    assert transport.calls[0][1]["config"]["developer_instructions"] == "\n\n".join(
+        [agent.PREAMBLE, "repo instructions"]
+    )
     # Supply the real walk reader with the record emitted by the daemon path.
     entry = turn(scratch.parent / "launcher", [])
     entry["message"]["content"][0]["input"]["command"] = (
@@ -153,6 +157,7 @@ def test_start_resume_and_walk_record(files):
     assert run(files, transport) == "reply"
     assert transport.calls[0][0] == "thread/resume"
     assert transport.calls[0][1]["threadId"] == "thread"
+    assert "developer_instructions" not in transport.calls[0][1]["config"]
     assert transport.calls[1][1]["input"][0]["text"] == "first item"
 
 
@@ -176,6 +181,15 @@ def test_refusal_falls_back_and_keeps_walk_record(files, refuse, capsys):
     assert transport.closed
     assert "falling back to codex exec" in capsys.readouterr().err
     assert ("resume" in calls[0]) == (refuse == "thread/resume")
+    overrides = [arg for arg in calls[0] if arg.startswith("developer_instructions=")]
+    if refuse == "thread/resume":
+        assert not overrides
+        assert calls[0][-1] == "first item"
+    else:
+        assert json.loads(overrides[0].split("=", 1)[1]) == "\n\n".join(
+            [agent.PREAMBLE, "repo instructions"]
+        )
+        assert calls[0][-1] == "brief body\n\nfirst item"
     record = json.loads((scratch / "codex-events.jsonl").read_text())
     assert record["ok"] is True and record["input"] == "first item"
     assert json.loads(record["output"].splitlines()[-1])["type"] == "turn.completed"

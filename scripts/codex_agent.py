@@ -3,8 +3,10 @@
     uv run python scripts/codex_agent.py <agent> <scratch> <brief> <model> <effort> [--cwd <dir>]
 
 Give the starting instruction or a later result or message on stdin. The
-first call reads the rendered agent document, repo and user CLAUDE.md files,
-and the brief. Later calls resume the thread in <scratch>/codex-session with only the new input.
+first call supplies the rendered agent document and repo and user CLAUDE.md
+files as developer instructions, with the configured Codex style. The brief
+and starting instruction are user input. Later calls resume the thread in
+<scratch>/codex-session with its initial instructions and only the new input.
 `--cwd` sets the directory Codex works in, defaulting to the current directory.
 The last message is printed; a failed or interrupted turn exits 1. The daemon
 is never started or stopped. An unavailable or refusing daemon falls back to exec
@@ -19,8 +21,10 @@ Show reads the live rollout; steer and interrupt reach the running daemon turn.
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -65,16 +69,24 @@ def without_front(text: str) -> str:
     return text
 
 
-def first_prompt(root: Path, home: Path, agent: str, brief: Path, item: str,
-                 agent_type: str | None = None) -> str:
+def role_instructions(root: Path, home: Path, agent: str,
+                      agent_type: str | None = None) -> str:
     user = home / ".claude" / "CLAUDE.md"
     kind = agent_type or Role(agent).agent_type
     document = ([] if kind == GENERAL else
                 [without_front((root / ".claude" / "agents" / f"{kind}.md").read_text())])
+    styles = []
+    for config in (Path(os.environ.get("CODEX_HOME", home / ".codex")) / "config.toml",
+                   checkout.main_worktree(root) / ".codex" / "config.toml"):
+        if config.exists():
+            style = tomllib.loads(config.read_text()).get("developer_instructions")
+            if style is not None:
+                if not isinstance(style, str):
+                    raise ValueError(f"{config}: developer_instructions must be a string")
+                styles.append(style)
     return "\n\n".join([
-        PREAMBLE, *document,
-        (root / "CLAUDE.md").read_text(), *([user.read_text()] if user.exists() else []),
-        brief.read_text(), item])
+        *styles, PREAMBLE, *document,
+        (root / "CLAUDE.md").read_text(), *([user.read_text()] if user.exists() else [])])
 
 
 def execute(argv: list[str]) -> subprocess.CompletedProcess[str]:
@@ -97,7 +109,7 @@ class TurnFailed(ValueError):
 
 def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
                 cwd: Path, model: str, effort: str, writable: list[Path],
-                transport: Callable[[], Any]) -> str | None:
+                transport: Callable[[], Any], instructions: str | None = None) -> str | None:
     """Try the daemon; only a refusal before turn submission permits fallback."""
     original_thread = thread
     client = None
@@ -116,7 +128,7 @@ def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
     try:
         try:
             client = transport()
-            loaded = codex_daemon.start(client, thread, cwd, model, effort, writable)
+            loaded = codex_daemon.start(client, thread, cwd, model, effort, writable, instructions)
         except (OSError, ValueError) as exc:
             print(f"codex_agent: shared daemon unavailable or refused: {exc}; "
                   "falling back to codex exec", file=sys.stderr)
@@ -209,7 +221,8 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
     thread = session.read_text().strip() if session.exists() else None
     if thread == "":
         raise ValueError(f"{session}: empty session id")
-    prompt = item if thread is not None else first_prompt(root, home, agent, brief, item, agent_type)
+    instructions = None if thread is not None else role_instructions(root, home, agent, agent_type)
+    prompt = item if thread is not None else "\n\n".join([brief.read_text(), item])
     last = scratch / "codex-last.md"
     last.unlink(missing_ok=True)
     git_dir = Path(checkout.git_out(cwd, "rev-parse", "--absolute-git-dir").strip())
@@ -220,7 +233,7 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
                 *([git_dir] if git_dir != main / ".git" else []), main / ".cache",
                 home / ".cache" / "uv", home / ".cargo", scratch]
     daemon_message = daemon_turn(scratch, thread, prompt, item, cwd, model, effort,
-                                 writable, transport)
+                                 writable, transport, instructions)
     if daemon_message is not None:
         return daemon_message
     argv = ["codex", "exec", "-m", model, "-c", f'model_reasoning_effort="{effort}"',
@@ -228,6 +241,8 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
             "-c", "sandbox_workspace_write.network_access=true",
             "-c", 'approval_policy="never"', *(a for d in writable for a in ("--add-dir", str(d))),
             "--skip-git-repo-check", "-C", str(cwd), "-o", str(last), "--json"]
+    if instructions is not None:
+        argv.extend(["-c", "developer_instructions=" + json.dumps(instructions)])
     done = runner([*argv, *(["resume", thread] if thread is not None else []), prompt])
     errors: list[str] = []
     for line in done.stdout.splitlines():
