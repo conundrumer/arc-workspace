@@ -422,10 +422,10 @@ class Standings:
             return Standing.ON_HOLD
         if t.session is None or t.session not in self.live:
             return Standing.NO_OPERATOR
-        if t.session in self.paused and t.number not in v.expedited:
-            return Standing.PAUSED
         if t.session in self.own_scope and not v.mine(t):
             return Standing.OWN_SCOPE
+        if t.session in self.paused and t.number not in v.expedited:
+            return Standing.PAUSED
         if t.number in self.position or (t.status in UNTAKEN and t.number not in v.holds):
             return Standing.READY
         return Standing.HELD
@@ -518,11 +518,8 @@ def active(v: View, st: Standings) -> tuple[str, int]:
 def session_line(st: Standings, s: int | None) -> str:
     if s not in st.live:
         return "No operator running"
-    if s in st.paused:
-        return "Paused" + (" by you" if s == st.main else "")
-    if s in st.own_scope:
-        return "Running · takes only its own work"
-    return "Running"
+    state = ("Paused" + (" by you" if s == st.main else "")) if s in st.paused else "Running"
+    return state + (" · takes only its own work" if s in st.own_scope else "")
 
 
 def tab_word(st: Standings, s: int | None) -> str:
