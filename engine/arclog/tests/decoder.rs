@@ -59,7 +59,7 @@ fn walk(decoder: &mut Decoder<'_>, stream: &[(Token, Emitter)]) {
                 assert!(forced.is_empty(), "the engine forces {forced:?} before the token at {index}");
                 let id = decoder.vocabulary().id(token).expect("a token of the vocabulary");
                 assert!(decoder.admissible().contains(id), "the mask admits {token:?} at {index}");
-                forced = decoder.step(token.clone()).unwrap_or_else(|refusal| panic!("{token:?} at {index}: {refusal:?}")).into();
+                forced = decoder.step(token.clone()).unwrap_or_else(|refusal| panic!("{token:?} at {index}: {refusal:?}")).forced.into();
             }
         }
     }

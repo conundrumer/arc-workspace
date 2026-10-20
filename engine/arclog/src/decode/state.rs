@@ -1234,7 +1234,7 @@ fn field_arg(column: &ColumnName, field: u32, label: LabelUse) -> SiteArg {
 }
 
 /// The columns of `labels`, each named by its slot, from `first`.
-fn slot_columns(labels: Vec<LabelId>, first: usize) -> Arc<[RelationColumn]> {
+pub(super) fn slot_columns(labels: Vec<LabelId>, first: usize) -> Arc<[RelationColumn]> {
     let column = |(index, label)| RelationColumn { name: ColumnName::Slot(u32::try_from(first + index).expect("fewer than 2^32 columns")), label };
     labels.into_iter().enumerate().map(column).collect()
 }

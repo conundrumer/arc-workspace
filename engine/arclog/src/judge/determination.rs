@@ -2,7 +2,9 @@
 //! `docs/engine/determination.md#det` gives it: per base case, the joint
 //! assignments of the `DET`s it reads at which it solves every train pair,
 //! restricted across cases to the values they agree on, and the value, the
-//! open values or the error of each parameter.
+//! open values or the error of each parameter. The walk of a relation's
+//! joint assignments, with the search for its grid columns at each, is
+//! `walk`, which the consistency test of [`crate::decode`] runs too.
 
 use std::sync::Arc;
 
@@ -42,13 +44,48 @@ pub struct DeterminedCase<'a> {
     pub limits: &'a Limits,
 }
 
-impl DeterminedCase<'_> {
+impl<'a> DeterminedCase<'a> {
     /// The evaluation of the case at `parameters`, with the concept program
     /// where the case program takes forms from it.
     pub fn evaluation<'p>(&'p self, parameters: &'p ParameterValues) -> Evaluation<'p> {
-        Evaluation {
+        self.inputs().at(parameters)
+    }
+
+    fn inputs(&self) -> EvaluationInputs<'a> {
+        EvaluationInputs {
             program: self.program,
             concept: self.program.program.concept().is_some().then_some(self.concept),
+            task: self.task,
+            session: self.session,
+            registry: self.registry,
+            constructions: self.constructions,
+            limits: self.limits,
+        }
+    }
+}
+
+/// The fields of an [`Evaluation`] other than its parameter values, which
+/// the walk of the joint assignments sets at each assignment.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct EvaluationInputs<'a> {
+    pub(crate) program: &'a CheckedProgram,
+    pub(crate) concept: Option<&'a CheckedProgram>,
+    pub(crate) task: &'a Task,
+    pub(crate) session: &'a TaskSession,
+    pub(crate) registry: &'a Registry,
+    pub(crate) constructions: &'a Constructions,
+    pub(crate) limits: &'a Limits,
+}
+
+impl<'a> EvaluationInputs<'a> {
+    /// The evaluation at `parameters`.
+    pub(crate) fn at<'p>(&self, parameters: &'p ParameterValues) -> Evaluation<'p>
+    where
+        'a: 'p,
+    {
+        Evaluation {
+            program: self.program,
+            concept: self.concept,
             task: self.task,
             parameters,
             session: self.session,
@@ -128,27 +165,67 @@ impl Determination {
     }
 }
 
-/// A `DET` that a case reads, as its walk takes it.
-struct Det {
-    node: GraphNodeIndex,
-    relation: ProgramRelation,
+/// A `DET` that a relation reads, at any depth.
+#[derive(Clone, Debug)]
+pub(crate) struct Det {
+    pub(crate) node: GraphNodeIndex,
+    pub(crate) relation: ProgramRelation,
     /// Whether it ends in `(ONE)`.
-    open: bool,
+    pub(crate) open: bool,
+    /// Whether it ends in `(ONE)` and names no proposer, so that the models
+    /// of the constraint module give its values, and the walk of the
+    /// assignments assigns it nothing.
+    pub(crate) pick: bool,
 }
 
-/// An assignment a case keeps: a value for each `DET` it assigns, and the
+/// Each `DET` that the relation at `root` reads in `program`, at any depth,
+/// in dependency order.
+pub(crate) fn dets_read(program: &CheckedProgram, root: GraphNodeIndex) -> Vec<Det> {
+    let resolved = &program.program;
+    let read = reached(resolved, root);
+    let nodes = determinations(program).into_iter().filter(|node| read[node.0 as usize]);
+    nodes
+        .map(|node| {
+            let (relation, open) = det_relation(&resolved.graph.nodes[node.0 as usize].kind).expect("a `DET` node");
+            Det { node, relation, open, pick: open && !names_proposer(resolved, node) }
+        })
+        .collect()
+}
+
+/// An assignment the walk keeps: a value for each `DET` it assigns, and the
 /// fault of underdetermined grid columns or of the run at it, which is the
 /// case's error where the assignment is left after the restriction.
-#[derive(Clone)]
-struct Kept {
-    values: Vec<(ProgramRelation, Arc<Relation>)>,
-    fault: Option<RunFault>,
+#[derive(Clone, Debug)]
+pub(crate) struct Kept {
+    pub(crate) values: Vec<(ProgramRelation, Arc<Relation>)>,
+    pub(crate) fault: Option<RunFault>,
 }
 
-/// What ends the walk of a case before its last assignment.
-enum End {
+/// What ends the walk of the assignments before its last assignment.
+#[derive(Clone, Debug)]
+pub(crate) enum End {
     Stop(Stop),
     Fault(RunFault),
+}
+
+/// The walk of the joint assignments of a relation's `DET`s.
+pub(crate) struct Walked {
+    /// The assignments at which the relation, read as `&output`, solves
+    /// every train pair, in the order of the walk.
+    pub(crate) kept: Vec<Kept>,
+    /// The `DET`s met with several values in the domain, in the order met.
+    pub(crate) branching: Vec<ProgramRelation>,
+    pub(crate) end: Result<(), End>,
+}
+
+/// The walk of the joint assignments of `dets`, the `DET`s that `output`
+/// reads less the picks, depth-first in their dependency order, under the
+/// assignment cap `cap`: at each assignment, the search for the grid
+/// columns of `output` over the train pairs whose candidates are `train`.
+pub(crate) fn walk(inputs: EvaluationInputs<'_>, dets: &[Det], output: &GraphRelation, train: &[PairCandidates<'_>], cap: u64) -> Walked {
+    let mut walk = Walk { inputs, dets, output, train, cap, count: 0, kept: Vec::new(), branching: Vec::new() };
+    let end = walk.descend(0, &mut Vec::new());
+    Walked { kept: walk.kept, branching: walk.branching, end }
 }
 
 /// The determination of the `DET`s of `cases` on the train pairs of
@@ -163,23 +240,21 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
     for case in cases {
         let program = &case.program.program;
         let output = output_relation(case.program).expect("a checked case program derives `&output`");
-        let read = reached(program, output.node);
         let mut dets = Vec::new();
         let mut reads = Vec::new();
-        for node in determinations(case.program).into_iter().filter(|node| read[node.0 as usize]) {
-            let (relation, open) = det_relation(&program.graph.nodes[node.0 as usize].kind).expect("a `DET` node");
-            if !order.contains(&relation) {
-                order.push(relation.clone());
+        for det in dets_read(case.program, output.node) {
+            if !order.contains(&det.relation) {
+                order.push(det.relation.clone());
             }
-            reads.push(relation.clone());
-            if open {
-                opens.insert(relation.clone());
+            reads.push(det.relation.clone());
+            if det.open {
+                opens.insert(det.relation.clone());
             }
-            if open && !names_proposer(program, node) {
-                picks.insert(relation);
+            if det.pick {
+                picks.insert(det.relation);
                 continue;
             }
-            dets.push(Det { node, relation, open });
+            dets.push(det);
         }
         let holds_demonstrated = program.graph.nodes.iter().any(|node| matches!(node.kind, DependencyKind::Demonstrated(_)));
         if holds_demonstrated {
@@ -187,14 +262,14 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
             walked.push((CaseOutcome::Demonstrated, reads, Vec::new()));
             continue;
         }
-        let mut walk = Walk { case, dets: &dets, output: &output, train: &train, count: 0, kept: Vec::new(), branching: Vec::new() };
-        let outcome = match walk.descend(0, &mut Vec::new()) {
-            Ok(()) if walk.kept.is_empty() => CaseOutcome::Unsolved,
+        let Walked { kept, branching, end } = walk(case.inputs(), &dets, &output, &train, case.session.caps.assignments);
+        let outcome = match end {
+            Ok(()) if kept.is_empty() => CaseOutcome::Unsolved,
             Ok(()) => CaseOutcome::Solved,
-            Err(End::Stop(stop)) => CaseOutcome::Stopped { stop, parameters: walk.branching },
+            Err(End::Stop(stop)) => CaseOutcome::Stopped { stop, parameters: branching },
             Err(End::Fault(fault)) => CaseOutcome::Fault(fault),
         };
-        let kept = if matches!(outcome, CaseOutcome::Solved) { walk.kept } else { Vec::new() };
+        let kept = if matches!(outcome, CaseOutcome::Solved) { kept } else { Vec::new() };
         walked.push((outcome, reads, kept));
     }
     restrict(&mut walked);
@@ -205,16 +280,7 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
         } else if picks.contains(&relation) {
             Parameter::Pick
         } else {
-            let mut values: Vec<Arc<Relation>> = Vec::new();
-            for (_, _, kept) in &walked {
-                for assignment in kept {
-                    for (name, value) in &assignment.values {
-                        if *name == relation && !values.iter().any(|seen| same_rows(seen, value)) {
-                            values.push(value.clone());
-                        }
-                    }
-                }
-            }
+            let mut values = distinct_values(walked.iter().flat_map(|(_, _, kept)| kept), &relation);
             match (opens.contains(&relation), values.len()) {
                 (_, 0) => continue,
                 (true, _) => Parameter::Open(values),
@@ -231,10 +297,11 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
 /// The walk of one case's joint assignments, depth-first in the
 /// dependency order of its `DET`s.
 struct Walk<'w, 'a> {
-    case: &'w DeterminedCase<'a>,
+    inputs: EvaluationInputs<'a>,
     dets: &'w [Det],
     output: &'w GraphRelation,
     train: &'w [PairCandidates<'w>],
+    cap: u64,
     /// The complete assignments reached.
     count: u64,
     kept: Vec<Kept>,
@@ -249,11 +316,12 @@ impl Walk<'_, '_> {
     fn descend(&mut self, at: usize, assigned: &mut Vec<(ProgramRelation, Arc<Relation>)>) -> Result<(), End> {
         let parameters = ParameterValues::determined(assigned.clone());
         let Some(det) = self.dets.get(at) else {
-            let evaluation = self.case.evaluation(&parameters);
+            let evaluation = self.inputs.at(&parameters);
             self.count += 1;
-            let cap = self.case.session.caps.assignments;
+            let cap = self.cap;
             if self.count > cap {
-                let form = self.dets.last().map_or_else(|| self.case.program.program.form_of(self.output.node), |det| self.case.program.program.form_of(det.node));
+                let program = &self.inputs.program.program;
+                let form = self.dets.last().map_or_else(|| program.form_of(self.output.node), |det| program.form_of(det.node));
                 return Err(End::Stop(Stop { bound: ReachedBound::Assignments { cap }, form: form.clone() }));
             }
             let fault = match grid_columns(&evaluation, self.output, self.train) {
@@ -266,11 +334,11 @@ impl Walk<'_, '_> {
             return Ok(());
         };
         if det.open {
-            if let Some(fault) = keyed_one(self.case.program, det.node) {
+            if let Some(fault) = keyed_one(self.inputs.program, det.node) {
                 return Err(End::Fault(fault));
             }
         }
-        let domain = match self.case.evaluation(&parameters).domain(det.node).map_err(End::Fault)? {
+        let domain = match self.inputs.at(&parameters).domain(det.node).map_err(End::Fault)? {
             Domain::Rows(rows) if det.open => one_row_each(&rows),
             Domain::Rows(rows) => rows,
             Domain::Undefined => return self.descend(at + 1, assigned),
@@ -287,6 +355,18 @@ impl Walk<'_, '_> {
         }
         Ok(())
     }
+}
+
+/// The values that `assignments` give `relation`, each once, in the order
+/// of `assignments`.
+pub(crate) fn distinct_values<'k>(assignments: impl IntoIterator<Item = &'k Kept>, relation: &ProgramRelation) -> Vec<Arc<Relation>> {
+    let mut values: Vec<Arc<Relation>> = Vec::new();
+    for (name, value) in assignments.into_iter().flat_map(|assignment| &assignment.values) {
+        if name == relation && !values.iter().any(|seen| same_rows(seen, value)) {
+            values.push(value.clone());
+        }
+    }
+    values
 }
 
 /// Restricts the kept assignments of each case to those that agree, on
