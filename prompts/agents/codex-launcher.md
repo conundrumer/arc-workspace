@@ -25,7 +25,7 @@ tools: Bash, Agent, SendMessage, TaskStop
     Do the work your documents and your brief give. Where your role has a checklist, walk it from its first item to its end.
     INPUT
     ```
-    - `<brief>` is the file your prompt has you read, `<scratch>` the scratch directory your brief gives, or else a new directory `codex-<role>` under it, and `<worktree>` the worktree your brief gives. Leave out `--cwd` where your brief gives no worktree.
+    - `<brief>` is the file your prompt has you read, `<scratch>` the scratch directory your brief gives, or else a new directory `codex-<role>-<brief name>` under it, where `<brief name>` is the brief file's name without `.md`, and `<worktree>` the worktree your brief gives. Leave out `--cwd` where your brief gives no worktree.
     - Use an absolute path for `<scratch>`, and use it on each call: the command resumes the Codex session there.
         + xref: scripts/codex_reads.py:walk_entries
 - Then wait for it in the foreground: a Bash call with a timeout of 240000 ms whose command is `: 'unattended-wait: codex_agent.py'; for i in $(seq 46); do [ -e <scratch>/codex-done ] && break; sleep 5; done`, repeated until `<scratch>/codex-done` exists or the command's completion notification reaches you. Then read Codex's reply from the command's output file.
