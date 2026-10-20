@@ -30,10 +30,9 @@ script's own forms and by `master` (`state.Merge`,
   gives the call, the script's refusal line and the worktree, since no
   editor may move the branch;
 - a refusal because the change's branch holds no change against `master`
-  (`NO_CHANGE`) goes to a ticket analyst as a step the command cannot
-  place, and to no editor as a finding; no merge call on that worktree is
-  given again, whatever reports after the call, until the change comes
-  back to an operator (`came_back`);
+  (`NO_CHANGE`) reaches a held-step ruling. A `passes` ruling admits the
+  closing sequence; `again` gives the editor the missing work and permits
+  a new merge after its report;
 - a hand-off moves the change to `tickets/released/` and back to
   `tickets/assigned/` with the session id as its holder, which holds it
   live while the coordinator's session runs, so no operator takes it; the
@@ -70,7 +69,7 @@ change since its last move out of `tickets/draft/`
 `handled.unmoved` gives for that finding, reports after the latest merge
 call, the merge call is given again.
 
-Once the change is merged, an agent runs the steps and checks of each item
+Once the change is merged or its empty-merge ruling passes, an agent runs the steps and checks of each item
 of its ticket's Scope that opens `After the merge`, then the command closes each `refactor` ticket
 on a module a code editor of the change reports it split, or logs the part
 the report gives as left unsplit, then each open `question` ticket filed on
@@ -79,6 +78,7 @@ the change (`change_holds.open_questions`), then the change's own ticket."""
 import re
 import shlex
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import replace
 from functools import cache
 from pathlib import Path
 
@@ -86,6 +86,7 @@ from controlled_markdown import form, mctx
 from controlled_markdown.nodes import Rule, finding_lines
 from engine.duration import FOOTER_RE
 from operations import briefs, messages
+from operations.directives import Decision, Ruling, held_on, ruling
 from operations.change_agents import of_change, settled
 from operations.change_holds import open_questions
 from operations.change_budget import TIME_NOTE, TIME_OPENING, left_draft, taken
@@ -99,6 +100,7 @@ from operations.command_words import command_words
 from operations.handled import ask_again, decided_by, held_aside, sent, unmoved
 from operations.steps import Bash, Launch, Send, Step, Undecided, labeled
 from operations.log_commands import log
+from operations.tracker import last_index
 from operations.worktrees import WORKTREE
 from ticketing.vocabulary import MANY_IDEAS, Kind, Note, Resolution, Status
 
@@ -394,9 +396,8 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent],
     """The merge of the change in `w`, once its editors and its review have
     passed, again after a call that left the worktree with changes made
     after its commit or that a report of an agent on the change follows,
-    and the step on a failed merge call. A `NO_CHANGE` refusal goes to a
-    ticket analyst (`Undecided`) until the change comes back to an
-    operator (`came_back`), whatever reports after it. A refusal or a
+    and the step on a failed merge call. A `NO_CHANGE` refusal needs a
+    ruling on readiness for the closing sequence. A refusal or a
     conflict that no agent of `latest` can take as a finding goes in the
     brief of the editor that `staff` launches."""
     command = merge_command(t, w)
@@ -410,7 +411,23 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent],
     at = f"{t.last_time} {max(reported, default=0.0)} {'' if last is None else last.time}"
     empty = None if last is None else NO_CHANGE_LINE.search(last.result or "")
     if last is not None and empty is not None and not came_back(t, last.time):
-        return Undecided(empty[0], change=t.number)
+        decision = empty_ruling(state, t, w, last)
+        if isinstance(decision, Undecided):
+            return decision
+        if decision.choice is Decision.PASSES:
+            return close(state, t, of_change(state, t), NO_MERGE_EVIDENCE)
+        editor_reports = [r.time for a in latest if (r := a.last_report) is not None]
+        if not editor_reports or max(editor_reports) <= decision.time:
+            missing = messages.merge_finding(t.number, last.result or "")
+            reports = [r for a in decided_by(state, held_on(empty_hold(t, w, last), EMPTY_CHOICES))
+                       if (r := a.last_report) is not None]
+            if reports:
+                missing += "\n" + reports[-1].text
+            to = finding_recipient(last, latest)
+            if to is not None and to.agent_id is not None:
+                return Send(to.agent_id, missing,
+                            f"empty merge rework {t.number} {decision.time}")
+            return staff(missing)
     if (last is None or (reported and max(reported) > last.time)
             or came_back(t, last.time)):
         return Bash(command, f"{t.number} merge {w}", occasion=at)
@@ -441,6 +458,48 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent],
             return Bash(command, f"{t.number} merge {w}", occasion=at)
         case Merge.MERGED:
             return None
+
+
+EMPTY_CHOICES = {
+    Decision.PASSES: mctx("the work required before the merge is complete; run the closing sequence"),
+    Decision.AGAIN: mctx("give the editor the missing work and merge again after its report"),
+}
+EMPTY_MERGE = mctx("change {number}: merge refused for an empty diff in `{worktree}`; ticket revision {revision}; "
+                   "refused call at {time}: `{command}`. Refusal: {refusal}.")
+NO_MERGE_EVIDENCE = "no-merge"
+
+
+def empty_hold(t: Ticket, w: Path, call: Call) -> str:
+    at = last_index(t, (Note.FILED, Note.REVISED))
+    revision = t.log[at].time if at >= 0 else left_draft(t)
+    return EMPTY_MERGE.format(number=t.number, worktree=w, revision=revision,
+                              time=call.time, command=call.command,
+                              refusal=refusal_line(call.result or ""))
+
+
+def empty_ruling(state: State, t: Ticket, w: Path, call: Call) -> Ruling | Undecided:
+    decision = ruling(state, empty_hold(t, w, call), EMPTY_CHOICES)
+    return replace(decision, change=t.number) if isinstance(decision, Undecided) else decision
+
+
+def empty_completion(state: State, t: Ticket) -> Ruling | None:
+    """The passing ruling on the latest empty refusal in the current worktree,
+    or None. A new refusal or ticket revision needs a new ruling."""
+    calls = merge_calls(state, t)
+    if not calls:
+        return None
+    call = calls[-1]
+    if NO_CHANGE_LINE.search(call.result or "") is None or came_back(t, call.time):
+        return None
+    paths = [w for w in state.git.worktrees if names_any(call, {str(w)})]
+    if len(paths) != 1:
+        return None
+    decision = empty_ruling(state, t, paths[0], call)
+    return decision if isinstance(decision, Ruling) and decision.choice is Decision.PASSES else None
+
+
+def ready_to_close(state: State, t: Ticket) -> bool:
+    return merged(state, t) or empty_completion(state, t) is not None
 
 
 def handed_off(line: LogLine) -> bool:
@@ -593,8 +652,8 @@ def unsplit(t: Ticket) -> str:
     return f"left unsplit by change {t.number}"
 
 
-def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
-    """The steps after a change's merge, or None while its `after-merge`
+def close(state: State, t: Ticket, agents: list[Agent], evidence: str | None = None) -> Step | None:
+    """The closing sequence admitted by a merge or readiness ruling, or None while its `after-merge`
     agent runs. A split step is given while its `refactor` ticket holds no
     line that the step logs as left unsplit (`unsplit`)."""
     head = state.git.commits[0].hash
@@ -602,11 +661,12 @@ def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
         runs = state.agents_of(Role.AFTER_MERGE, t.number)
         if not runs:
             return Launch(Role.AFTER_MERGE, t.number, briefs.after_merge(
-                t.number, t.after_merge, head), occasion=head)
+                t.number, t.after_merge, head, evidence), occasion=head)
         if runs[-1].pending:
             return None
     commit = merge_commit(state, t)
-    note = f"{Resolution.FIXED.value} {t.number} {head if commit is None else commit.hash}"
+    proof = evidence if evidence is not None else head if commit is None else commit.hash
+    note = f"{Resolution.FIXED.value} {t.number} {proof}"
     split: dict[str, str | None] = {}
     for a in agents:
         split.update(splits(a))

@@ -1,6 +1,4 @@
-"""A merge refused because the change's branch holds no change against
-`master` goes to a ticket analyst, whatever reports after it, until the
-change comes back to an operator."""
+"""An empty merge refuses to proceed without a readiness ruling."""
 
 import dataclasses
 from pathlib import Path
@@ -39,6 +37,6 @@ def test_an_empty_change_goes_to_an_analyst(tmp_path: Path, reported: bool, back
     s = dataclasses.replace(s, transcripts=dataclasses.replace(s.transcripts, calls=(call,)))
     step = merge_steps(s, t, w, [editor], lambda _: None)
     if held:
-        assert isinstance(step, Undecided) and step.what == refusal
+        assert isinstance(step, Undecided) and step.ruling
     else:
         assert isinstance(step, Bash) and step.command == merge_command(t, w)

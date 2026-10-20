@@ -178,7 +178,9 @@ def progress(state: State, t: Ticket) -> float | None:
     if any(a.pending and a.agent_id not in state.transcripts.quiet for a in agents):
         return None
     merge = merging.merge_commit(state, t) if t.kind is Kind.CHANGE else None
+    completion = merging.empty_completion(state, t) if t.kind is Kind.CHANGE else None
     last: float = max([t.filed,
+                       *([completion.time] if completion is not None else []),
                        *([merge.time] if merge is not None else []),
                        *(ln.time for ln in t.log
                          if TAKEN.fullmatch(ln.note) is None and taking.RELEASED_LINE.fullmatch(ln.note) is None),

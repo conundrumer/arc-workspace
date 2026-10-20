@@ -341,7 +341,7 @@ def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], 
 # merge with no one holding them (2-334, 4-29), and a running session's
 # launches checking hooks it had not reloaded.
 AFTER_MERGE = mctx("""
-    - Change {number} is merged into `master` at {head}.
+    - Change {number}: {completion}.
     - Run each step and each check its ticket places after the merge, which `{command}` prints, in the order it gives them:
     {items}
     - File each step and each check that fails as a `bug` ticket, by the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), {filing}.
@@ -351,10 +351,12 @@ AFTER_MERGE = mctx("""
     """)
 
 
-def after_merge(number: str, items: str, head: str) -> str:
+def after_merge(number: str, items: str, head: str, evidence: str | None = None) -> str:
     filing = FILE_AS.format(domain_subject=mctx("`change` and {number}").format(number=number),
                             agent=OPERATOR)
-    return AFTER_MERGE.format(number=number, head=head, items="\n".join(nested(items)), filing=filing,
+    completion = (mctx("work required before the merge is complete; no merge was needed") if evidence is not None
+                  else mctx("merged into `master` at {head}").format(head=head))
+    return AFTER_MERGE.format(number=number, completion=completion, items="\n".join(nested(items)), filing=filing,
                               command=TICKET_PATH.format(number=number))
 
 

@@ -132,15 +132,15 @@ def holds(t: Ticket, me: str) -> bool:
 
 
 def held(state: State) -> list[Ticket]:
-    """The changes the operator holds: those `master` holds merged first,
-    in ticket order, so that a merged change's close comes at the next step
+    """The changes the operator holds: those ready to close first,
+    in ticket order, so that their close comes at the next step
     of the changes; then the others in ticket order rotated to start at
     the first that follows the change its latest printed step served
     (`last_served`), so that each held change with a ready step gets one
     step before any gets a second."""
     tickets = sorted((t for t in state.tracker.tickets.values() if holds(t, state.me)),
                      key=lambda t: t.order)
-    landed = [t for t in tickets if merging.merged(state, t)]
+    landed = [t for t in tickets if merging.ready_to_close(state, t)]
     rest = [t for t in tickets if t not in landed]
     served = last_served(state)
     if served is None:
@@ -237,8 +237,9 @@ def staff_editor(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
 def carry(state: State, t: Ticket) -> Step | None:
     """The next step on the change `t` the operator holds, or None where it
     waits on an agent."""
-    if merging.merged(state, t):
-        return merging.close(state, t, of_change(state, t))
+    if merging.ready_to_close(state, t):
+        return merging.close(state, t, of_change(state, t),
+                             merging.NO_MERGE_EVIDENCE if not merging.merged(state, t) else None)
     editors = change_editors(t)
     if not isinstance(editors, tuple):
         return editors
