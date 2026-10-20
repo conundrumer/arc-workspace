@@ -4,10 +4,8 @@
 //! dependency graph instead.
 //!
 //! Each check has a form on a prefix, [`Check::check_prefix`], so that a
-//! decode can refuse a prefix that no completion passes. Until the step of the
-//! build order that `docs/engine/synthesis.md`, Synthesis, gives builds the
-//! prefix forms, each check's `check_prefix` gives
-//! [`PrefixResult::Undecided`].
+//! decode can refuse a prefix that no completion passes. [`prefix`] gives
+//! the prefixes of a form and runs the checks on one.
 //!
 //! The checker stage writes the bodies of the checks, each in a submodule of
 //! its own.
@@ -19,6 +17,7 @@ pub mod instance_inputs;
 pub mod labels;
 pub mod lint;
 pub mod pose;
+pub mod prefix;
 pub mod reads;
 pub mod scope;
 pub mod site_columns;
@@ -165,8 +164,12 @@ pub enum PrefixResult {
 /// A program prefix: the forms given so far, the last of them incomplete,
 /// as a decode gives it.
 ///
+/// `scope` is the scope of the program whose forms are `complete`, then
+/// `partial`, at `path`.
+///
 /// `open` is the path, relative to `partial`, of the innermost node the
-/// decode still writes. That node and each node above it are open: an open
+/// decode still writes, or `None` once `partial` is complete. That node and
+/// each node above it are open: an open
 /// `OR`, `IF`, `ALL` or `NOT` may still take a branch, a test atom or a
 /// site, so it bounds no completion yet. Every other node of `partial` is
 /// complete. A list that the decode has not reached, such as the else of an
@@ -178,8 +181,16 @@ pub enum PrefixResult {
 pub struct Prefix<'a> {
     pub complete: &'a [Form],
     pub partial: &'a Form,
-    pub open: &'a NodePath,
+    pub path: &'a NodePath,
+    pub open: Option<&'a NodePath>,
     pub scope: Scope<'a>,
+}
+
+impl Prefix<'_> {
+    /// Whether the node at `at`, a path relative to `partial`, is open.
+    pub fn is_open(&self, at: &NodePath) -> bool {
+        self.open.is_some_and(|open| open.0.starts_with(&at.0))
+    }
 }
 
 /// One check of the checker.
@@ -351,17 +362,7 @@ pub fn check_shared_program(
                 types
             })
             .collect();
-        let labels: Vec<Vec<LabelInScope>> = forms
-            .iter()
-            .zip(&form_types)
-            .map(|(at, types)| {
-                let typed: StableHashMap<NodePath, &crate::types::FormTypes> = types.iter().map(|(canonical, types)| (at.order.source_path(canonical), types)).collect();
-                labels_in_scopes(&at.order, &|scope, position| {
-                    let types = typed.get(scope).expect("the type check gives the types of each label scope of the form");
-                    types.label(LabelId(position)).cloned()
-                })
-            })
-            .collect();
+        let labels: Vec<Vec<LabelInScope>> = forms.iter().zip(&form_types).map(|(at, types)| typed_labels(&at.order, types)).collect();
         for ((at, labels), refused) in forms.iter().zip(&labels).zip(&mut refused_by_form) {
             let input = CheckInput { form: at.form, path: &at.path, scope: scope(labels) };
             for check in checks().iter().filter(|check| check.id() != CheckId::Types) {
@@ -418,6 +419,16 @@ fn labels_in_scopes(order: &CanonicalOrder, ty: &dyn Fn(&NodePath, u32) -> Optio
         labels.iter().map(|&(label, position)| LabelInScope { scope: scope.clone(), label, ty: ty(scope, position) }).collect::<Vec<_>>()
     };
     order.label_scopes().iter().flat_map(each).collect()
+}
+
+/// The labels of each label scope that `order` gives, each with the type
+/// that `types`, the type check's types of the form, give it.
+fn typed_labels(order: &CanonicalOrder, types: &types::ScopeTypes) -> Vec<LabelInScope> {
+    let typed: StableHashMap<NodePath, &crate::types::FormTypes> = types.iter().map(|(canonical, types)| (order.source_path(canonical), types)).collect();
+    labels_in_scopes(order, &|scope, position| {
+        let types = typed.get(scope).expect("the type check gives the types of each label scope of the form");
+        types.label(LabelId(position)).cloned()
+    })
 }
 
 /// The result cached under `key`, or else the result of `run`, which it

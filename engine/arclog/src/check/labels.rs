@@ -7,7 +7,7 @@ use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refus
 use crate::hash::StableHashSet;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
-use crate::program::{Body, Conjunct, LabelId, LabelUse, Negated};
+use crate::program::{Body, Conjunct, Form, LabelId, LabelUse, Negated};
 use crate::read::columns::exports;
 
 /// [`CheckId::MadeAndExportedLabels`].
@@ -31,20 +31,29 @@ impl Check for MadeAndExportedLabelsCheck {
     /// - a `^` label that the key body's own list does not keep, so that no
     ///   atom at the key body's top level binds the key's column.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
-        let mut refused: Vec<(&'static str, NodePath)> = Vec::new();
-        for form_body in form_bodies(input.form) {
-            refusals(&form_body, &mut refused);
-        }
+        let refused = body_refusals(input.form, &|_| true);
         if refused.is_empty() {
             return CheckResult::Pass;
         }
         let order = CanonicalOrder::of(input.form, &mut SearchBudget::new());
-        result(refused.into_iter().map(|(message, at)| Refusal { message: message.into(), at: order.canonical_path(&at) }).collect())
+        result(refused.into_iter().map(|refusal| Refusal { at: order.canonical_path(&refusal.at), ..refusal }).collect())
     }
 
-    fn check_prefix(&self, _prefix: &Prefix<'_>) -> PrefixResult {
-        PrefixResult::Undecided
+    /// The refusals of each complete body of the partial form, since a node
+    /// written later in an open body may make or export the label it reads.
+    fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
+        super::prefix::refused(body_refusals(prefix.partial, &|body| !prefix.is_open(&body.at)))
     }
+}
+
+/// The refusals of each body of `form` that `checked` keeps, each at its
+/// source path.
+fn body_refusals(form: &Form, checked: &dyn Fn(&FormBody<'_>) -> bool) -> Vec<Refusal> {
+    let mut refused: Vec<(&'static str, NodePath)> = Vec::new();
+    for form_body in form_bodies(form).iter().filter(|body| checked(body)) {
+        refusals(form_body, &mut refused);
+    }
+    refused.into_iter().map(|(message, at)| Refusal { message: message.into(), at }).collect()
 }
 
 /// The labels the list `body` keeps, each that a site or a `=` of its own

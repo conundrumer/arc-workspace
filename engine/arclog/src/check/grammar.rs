@@ -14,7 +14,7 @@ impl Check for GrammarCheck {
         CheckResult::Pass
     }
 
-    fn check_prefix(&self, _prefix: &Prefix<'_>) -> PrefixResult {
-        PrefixResult::Undecided
+    fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
+        super::prefix::grammar(prefix)
     }
 }

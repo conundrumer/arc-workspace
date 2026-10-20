@@ -57,8 +57,10 @@ impl Check for SiteColumnsCheck {
         result(refused.into_iter().map(|(message, at)| Refusal { message: message.into(), at: order.canonical_path(&at) }).collect())
     }
 
-    fn check_prefix(&self, _prefix: &Prefix<'_>) -> PrefixResult {
-        PrefixResult::Undecided
+    /// Each refusal stands as soon as its site does, since the site's column
+    /// and the relation its atom reads stand before its arguments.
+    fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
+        super::prefix::standing(prefix, self.check(&super::prefix::whole(prefix)), &|_| true)
     }
 }
 

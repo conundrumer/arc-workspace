@@ -243,6 +243,12 @@ impl<'a> FormInference<'a> {
         typed(&self.labels, label)
     }
 
+    /// Whether `label` takes its type from a column of `(pose-or <type>)`
+    /// alone.
+    pub fn is_given(&self, label: LabelId) -> bool {
+        self.given.contains(&label)
+    }
+
     /// The Pose type of `label`, where one of its sites gives it one.
     pub fn pose_of(&self, label: LabelId) -> Option<&ValueType> {
         match &self.labels.iter().find(|(found, _)| *found == label)?.1 {

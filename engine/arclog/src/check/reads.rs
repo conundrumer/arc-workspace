@@ -40,8 +40,8 @@ impl Check for PooledAndLiftedReadsCheck {
         result(refusals)
     }
 
-    fn check_prefix(&self, _prefix: &Prefix<'_>) -> PrefixResult {
-        PrefixResult::Undecided
+    fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
+        super::prefix::settled(prefix, self)
     }
 }
 

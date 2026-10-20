@@ -54,7 +54,7 @@ impl Check for UnfoldReadsCheck {
         result(refusals.into_iter().map(|refusal| Refusal { at: order.canonical_path(&refusal.at), ..refusal }).collect())
     }
 
-    fn check_prefix(&self, _prefix: &Prefix<'_>) -> PrefixResult {
-        PrefixResult::Undecided
+    fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
+        super::prefix::settled(prefix, self)
     }
 }

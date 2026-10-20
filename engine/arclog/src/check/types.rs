@@ -1,14 +1,14 @@
-//! The type check, the two functions through which it hands its types to
-//! [`super::check_program`], the helpers that it and the inference of a
-//! case program's label types share, and, in its module `within`, the
-//! lookups of forms and label scopes that they read.
+//! The types of a case program: the type check in its module
+//! `form_check`, the typing of a program's relations, which hands the
+//! check's types to [`super::check_program`], the helpers that the check
+//! and the inference of a case program's label types share, and, in its
+//! module `within`, the lookups of forms and label scopes that they read.
 
 use std::sync::Arc;
 
-use super::inference::FormInference;
-use super::{Check, CheckId, CheckInput, CheckResult, HeldClauses, Prefix, PrefixResult, Refusal, SolverClauses};
+use super::{CheckResult, HeldClauses, Refusal, SolverClauses};
 use crate::hash::StableHashMap;
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
+use crate::program::canonical::CanonicalOrder;
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
     ColumnName, Conjunct, Constraint, ConstraintOp, Form, LabelId, NameScope, Operand, OutputStep, PortName, Site, SiteArg,
@@ -18,143 +18,17 @@ use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, ResolvedProgram, Signature};
 use crate::types::{
-    each_conjunct, each_site_label, label_fault_message, use_label, AssemblyId, FormRelation, FormTypes,
+    each_conjunct, each_site_label, use_label, AssemblyId, FormTypes,
     GraphRelation, KeyRow, LabelFault, ProgramTypes, ValueType,
 };
 pub(super) use within::{demo_rule, form_at, form_within, rule_scope_forms, scope_forms};
 use within::rule_within;
 
+mod form_check;
 mod within;
 
-/// [`CheckId::Types`].
-pub struct TypesCheck;
-
-impl Check for TypesCheck {
-    fn id(&self) -> CheckId {
-        CheckId::Types
-    }
-
-    fn check(&self, input: &CheckInput<'_>) -> CheckResult {
-        infer_form(input, &CanonicalOrder::of(input.form, &mut SearchBudget::new())).0
-    }
-
-    fn check_prefix(&self, _prefix: &Prefix<'_>) -> PrefixResult {
-        PrefixResult::Undecided
-    }
-}
-
-/// The [`FormTypes`] of each label scope of a form, by the scope's
-/// canonical path relative to the form, in the order of those paths, as
-/// [`super::CheckCache`] keeps them.
-pub type ScopeTypes = Box<[(NodePath, FormTypes)]>;
-
-/// The type check's result on the form of `input`, and the [`FormTypes`] of
-/// each label scope of the form that `order` gives, each by the scope's
-/// canonical path, with each label at its canonical position in its scope.
-///
-/// The result is the union of the refusals of the inference of each label
-/// scope of the form, as [`CanonicalOrder::label_scopes`] gives them, each scope inferred
-/// at its source path joined to the form's path, and, for a clause, of the
-/// refusals at the columns of its relation. A fault of a label whose sites
-/// give it a Pose type and another type is the pose rule's, which
-/// [`super::pose`] refuses.
-pub fn infer_form(input: &CheckInput<'_>, order: &CanonicalOrder) -> (CheckResult, ScopeTypes) {
-    let inference = input.scope.inference;
-    let mut found = Vec::new();
-    let mut scopes = Vec::new();
-    for source in inferred_scopes(order) {
-        let form = inference.infer(&input.path.join(&source)).expect(SCOPE_FORM);
-        found.extend(refusals(&form, order, &source));
-        let relations = scope_forms_within(input.form, &source).into_iter().flat_map(|(at, form)| {
-            let relations = inference.form_relations(&input.path.join(&at), form);
-            let canonical = order.canonical_path(&at);
-            relations.into_iter().map(move |(output, columns)| (FormRelation { form: canonical.clone(), output }, columns))
-        });
-        scopes.push((order.canonical_path(&source), scope_types(&form, order, &source, relations.collect::<Vec<_>>())));
-    }
-    if let (Form::Clause(clause), Some(form)) = (input.form, inference.infer(input.path)) {
-        found.extend(inference.column_refusals(&form, clause.value(), input.path, order));
-    }
-    (result(found), scopes.into())
-}
-
-/// What stands at the source path of each label scope of a form.
-const SCOPE_FORM: &str = "a form or a `DEMO_RULE` stands at the path of each label scope of the form";
-
-/// The source path of each label scope of a form whose canonical order is
-/// `order`, relative to the form, in the order of
-/// [`CanonicalOrder::label_scopes`]: the scopes that [`infer_form`] infers
-/// and whose clauses [`type_clause_signatures`] reads.
-fn inferred_scopes(order: &CanonicalOrder) -> Vec<NodePath> {
-    order.label_scopes().into_iter().map(|(source, _)| source).collect()
-}
-
-/// The refusals of the type check on `form`, the label scope whose form
-/// stands at `scope`, a source path relative to a form whose canonical
-/// order is `order`, each at the canonical path of `scope` joined to its
-/// place in the scope's form.
-fn refusals(form: &FormInference<'_>, order: &CanonicalOrder, scope: &NodePath) -> Vec<Refusal> {
-    let place = |at: &NodePath| order.canonical_path(&scope.join(at));
-    let mut refusals = Vec::new();
-    for (label, ty) in &form.labels {
-        let Err(fault) = ty else { continue };
-        if pose_of_fault(fault).is_some() {
-            continue;
-        }
-        let message = match fault {
-            LabelFault::NoJoin(a, b) if form.zero_typed.contains(label) => {
-                format!("the label here takes the types {a:?} and {b:?} from the other clauses of its relation, which have no join")
-            }
-            fault => format!("the label here {}", label_fault_message(fault.clone())),
-        };
-        refusals.push(Refusal { message: message.into(), at: place(form.walk.first_use(*label)) });
-    }
-    for (at, constraint) in &form.walk.constraints {
-        if !matches!(constraint.op, ConstraintOp::Lt | ConstraintOp::Le | ConstraintOp::Gt | ConstraintOp::Ge) {
-            continue;
-        }
-        let second = match constraint.second {
-            Operand::Label(label) => Some(label.label),
-            Operand::Zero => None,
-        };
-        for label in std::iter::once(constraint.first.label).chain(second) {
-            if let Some(ty) = form.label(label).filter(|ty| !ty.admits_order()) {
-                let message = format!("the constraint orders a label of the type {ty:?}, and only `Number` has an order");
-                refusals.push(Refusal { message: message.into(), at: place(at) });
-            }
-        }
-    }
-    refusals
-}
-
-/// The types of the labels of `form`, the scope whose form stands at
-/// `scope`, a source path relative to the form whose canonical order is
-/// `order`, each label at its canonical position in that scope, with the
-/// column types of `relations`.
-fn scope_types(
-    form: &FormInference<'_>,
-    order: &CanonicalOrder,
-    scope: &NodePath,
-    relations: impl IntoIterator<Item = (FormRelation, Box<[ValueType]>)>,
-) -> FormTypes {
-    let position = |label: LabelId| LabelId(order.canonical_label(scope, label));
-    let types = form.labels.iter().filter_map(|(label, ty)| match ty {
-        Ok(Some(ty)) => Some((position(*label), map_labels(ty, &position))),
-        Ok(None) | Err(_) => None,
-    });
-    FormTypes::new(types, relations)
-}
-
-/// Each form that stands in the label scope at `scope`, a source path
-/// relative to `form`, with its path relative to `form`: the scope's own
-/// form, or each form of a `DEMO_RULE` that stands in the rule's scope.
-fn scope_forms_within<'f>(form: &'f Form, scope: &NodePath) -> Vec<(NodePath, &'f Form)> {
-    if let Some(found) = form_within(form, scope) {
-        return vec![(scope.clone(), found)];
-    }
-    let rule = rule_within(form, scope).expect(SCOPE_FORM);
-    rule_scope_forms(rule).map(|(index, found)| (scope.child(index), found)).collect()
-}
+pub use form_check::{infer_form, ScopeTypes, TypesCheck};
+use form_check::{inferred_scopes, scope_forms_within};
 
 /// The [`ProgramTypes`] of `program`: for each form of `forms`, at its path,
 /// the types of each label scope of the form, at the scope's source path
@@ -276,7 +150,7 @@ fn given_columns(
 
 /// The signatures of the clauses that the type check of `form`, a
 /// top-level form whose canonical order is `order`, reads, as
-/// [`CheckId::Types`] gives, each once: for a clause, those of the clauses
+/// [`crate::check::CheckId::Types`] gives, each once: for a clause, those of the clauses
 /// of its relation, then, for each clause form that stands in a label scope
 /// of the form, as [`CanonicalOrder::label_scopes`] gives them, in their
 /// order, where it has a head label that only `(= *X 0)` gives a type,
