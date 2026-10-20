@@ -267,9 +267,10 @@ CODE_EDITORS = mctx("Where a move needs the code to change, send that code chang
                     "SendMessage to the code editor of the change: {ids}.")
 
 
-FINGERPRINT = mctx("Before you write each final reply, run `uv run python "
-                   "scripts/change_worktree.py --fingerprint {worktree}`, and end that reply with "
-                   "the line `{opening} <what it printed>`.")
+FINGERPRINT_COMMAND = mctx("`uv run python scripts/change_worktree.py --fingerprint {worktree}`")
+FINGERPRINT = mctx("Before you write each final reply, run {command}. Where your brief gives "
+                   "a report file, end that report's contents with the line "
+                   "`{opening} <what it printed>`. Otherwise, end that reply with that line.")
 
 
 OPENINGS = mctx("Where no finding stands, other than one you filed as a ticket, and none is "
@@ -280,8 +281,12 @@ OPENINGS = mctx("Where no finding stands, other than one you filed as a ticket, 
 its final reply that `reports.no_finding` and `reports.at_cap` read."""
 
 
+def fingerprint_command(worktree: Path) -> str:
+    return FINGERPRINT_COMMAND.format(worktree=worktree)
+
+
 def fingerprint_line(worktree: Path) -> str:
-    return FINGERPRINT.format(worktree=worktree, opening=WORKTREE)
+    return FINGERPRINT.format(command=fingerprint_command(worktree), opening=WORKTREE)
 
 
 def reviewer_closing(worktree: Path, operator: str, settled: "Settled") -> list[str]:

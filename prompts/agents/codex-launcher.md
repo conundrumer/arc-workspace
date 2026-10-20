@@ -26,7 +26,7 @@ tools: Bash, Agent, SendMessage, TaskStop
     INPUT
     ```
     - `<brief>` is the file your prompt has you read, `<scratch>` the scratch directory your brief gives, or else a new directory `codex-<role>-<brief name>` under it, where `<brief name>` is the brief file's name without `.md`, and `<worktree>` the worktree your brief gives. Leave out `--cwd` where your brief gives no worktree.
-    - Use an absolute path for `<scratch>`, and use it on each call: the command resumes the Codex session there.
+    - Use an absolute path for `<scratch>`, and use it on each call.
         + xref: scripts/codex_reads.py:walk_entries
 - Then wait for it in the foreground: a Bash call with a timeout of 240000 ms whose command is `: 'unattended-wait: codex_agent.py'; for i in $(seq 46); do [ -e <scratch>/codex-done ] && break; sleep 5; done`, repeated until `<scratch>/codex-done` exists or the command's completion notification reaches you. Then read Codex's reply from the command's output file.
     + xref: scripts/codex_agent.py:DONE
@@ -37,7 +37,8 @@ tools: Bash, Agent, SendMessage, TaskStop
     + xref: scripts/codex_agent.py:control, scripts/codex_rollout.py:Rollout.show
 - Pass a message that reaches you during a daemon turn with `uv run python scripts/codex_agent.py steer <scratch> '<message>'`; use `uv run python scripts/codex_agent.py interrupt <scratch>` where the coordinator asks you to stop the turn.
     + xref: scripts/codex_agent.py:control
-- Resume the same launch command to pass back a requested result or a message after the turn ends. Codex then continues its walk.
+- After the turn ends, add `--resume` to the same launch command to pass back a requested result or a message. Codex then continues its walk.
+    + xref: scripts/codex_agent.py:main
 - The launch command uses the shared daemon where available and reports an exec fallback on stderr where the daemon is unavailable or refuses. Exec turns take new input only after they end.
     + xref: scripts/codex_agent.py:daemon_turn
 - Where Codex reports a blocker other than waiting for a call or message above, or the command exits nonzero, give its work so far and what remains unfinished with the reason and any error. Do no unfinished work yourself.

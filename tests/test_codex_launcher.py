@@ -130,3 +130,25 @@ def test_joined_bash_denies_a_launcher_write(tmp_path: Path, monkeypatch, capsys
     assert script("joined_hooks").main() == 0
     out = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
     assert out["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize("wording", ["old", "new", "prefix", "different", "wrong-role"])
+def test_reviewer_recognition_uses_exact_worktree_command(tmp_path: Path, wording: str):
+    from operations import briefs, doc_review
+    from operations.roles import Role
+    from operations.state import Agent
+
+    worktree = tmp_path / "change"
+    command = briefs.fingerprint_command(worktree)
+    text = ("Before you write each final reply, run " + command
+            + ", and end that reply with the line `Worktree: <what it printed>`.")
+    if wording == "new":
+        text = briefs.fingerprint_line(worktree)
+    elif wording == "prefix":
+        text = briefs.fingerprint_line(tmp_path / "change-other")
+    elif wording == "different":
+        text = briefs.fingerprint_line(tmp_path / "other")
+    role = Role.CODE_REVIEWER if wording == "wrong-role" else Role.DOC_REVIEWER
+    reviewer = Agent("reviewer", "operator", role, "change", text, 0, 0, None, (), False)
+    expected = [reviewer] if wording in ("old", "new") else []
+    assert doc_review.reviewers_of([reviewer], worktree) == expected

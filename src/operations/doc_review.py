@@ -52,7 +52,7 @@ def reviewers_of(agents: list[Agent], w: Path) -> list[Agent]:
     """The doc reviewers among a change's `agents` whose brief gives the
     change's worktree `w`. A reviewer of an earlier run of the change
     reviewed that run's worktree, so it is none of the change's now."""
-    line = briefs.fingerprint_line(w)
+    line = briefs.fingerprint_command(w)
     return [a for a in agents if a.role is Role.DOC_REVIEWER and line in a.brief]
 
 

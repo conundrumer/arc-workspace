@@ -1,12 +1,14 @@
 """Run the agent's checklist on the shared Codex daemon, with exec fallback.
 
-    uv run python scripts/codex_agent.py <agent> <scratch> <brief> <model> <effort> [--cwd <dir>]
+    uv run python scripts/codex_agent.py <agent> <scratch> <brief> <model> <effort> [--cwd <dir>] [--resume]
 
 Give the starting instruction or a later result or message on stdin. The
 first call supplies the rendered agent document and repo and user CLAUDE.md
 files as developer instructions, with the configured Codex style. The brief
-and starting instruction are user input. Later calls resume the thread in
-<scratch>/codex-session with its initial instructions and only the new input.
+and starting instruction are user input. A fresh call refuses existing
+thread or turn history without changing it.
+`--resume` requires the thread in <scratch>/codex-session and continues it
+with its initial instructions and only the new input.
 `--cwd` sets the directory Codex works in, defaulting to the current directory.
 The last message is printed; a failed or interrupted turn exits 1. The daemon
 is never started or stopped. An unavailable or refusing daemon falls back to exec
@@ -39,6 +41,8 @@ from engine import checkout
 from handbook.context import codex_config_value, codex_permissions
 from operations.roles import ANALYST_NAMES, CODEX_ROLES, GENERAL, Role
 from operations.state import CodexUsage
+
+FRESH_REFUSAL = "fresh launch refused: existing Codex history; no thread or turn accepted"
 
 DONE = "codex-done"
 """The file under the scratch directory that the command makes once it ends,
@@ -259,19 +263,31 @@ def control(argv: list[str], transport: Callable[[], Any] = codex_daemon.Proxy) 
     return 0
 
 
+def saved_thread(scratch: Path, resume: bool) -> str | None:
+    """Validate the launch before changing any saved evidence."""
+    session = scratch / "codex-session"
+    if not resume:
+        if session.exists() or (scratch / "codex-events.jsonl").exists():
+            raise ValueError(FRESH_REFUSAL)
+        return None
+    thread = session.read_text().strip()
+    if not thread:
+        raise ValueError(f"{session}: empty session id")
+    return thread
+
+
 def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: str,
         root: Path, home: Path, main: Path, cwd: Path,
         runner: Callable[[list[str]], subprocess.CompletedProcess[str]] = execute,
         agent_type: str | None = None,
-        transport: Callable[[], Any] = codex_daemon.Proxy) -> str:
+        transport: Callable[[], Any] = codex_daemon.Proxy,
+        resume: bool = False) -> str:
     """Return the last message, or raise with the CLI's error. Save a thread
     id even on failure so a later call can continue the same session."""
     scratch = scratch.resolve()
+    thread = saved_thread(scratch, resume)
     scratch.mkdir(parents=True, exist_ok=True)
     session = scratch / "codex-session"
-    thread = session.read_text().strip() if session.exists() else None
-    if thread == "":
-        raise ValueError(f"{session}: empty session id")
     instructions = None if thread is not None else role_instructions(root, home, agent, agent_type)
     prompt = item if thread is not None else "\n\n".join([brief.read_text(), item])
     last = scratch / "codex-last.md"
@@ -344,14 +360,21 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--cwd", type=Path, default=Path.cwd())
     parser.add_argument("--agent-type", choices=sorted({r.agent_type for r in CODEX_ROLES}
                                                      | ANALYST_NAMES))
+    parser.add_argument("--resume", action="store_true",
+                        help="continue the saved thread; required for later turns")
     args = parser.parse_args(argv)
+    try:
+        saved_thread(args.scratch, args.resume)
+    except (OSError, ValueError) as exc:
+        print(f"codex_agent: {exc}", file=sys.stderr)
+        return 1
     done = args.scratch / DONE
     done.unlink(missing_ok=True)
     try:
         message = run(args.agent, args.scratch, args.brief, args.model, args.effort,
                       sys.stdin.read(), checkout.ROOT, Path.home(),
                       checkout.main_worktree(checkout.ROOT), args.cwd.resolve(),
-                      agent_type=args.agent_type)
+                      agent_type=args.agent_type, resume=args.resume)
     except (OSError, ValueError) as exc:
         if isinstance(exc, TurnFailed) and exc.message:
             print(exc.message, flush=True)

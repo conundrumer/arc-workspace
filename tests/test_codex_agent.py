@@ -116,7 +116,7 @@ def files(tmp_path, monkeypatch):
     return root, home, brief, scratch
 
 
-def run(files, transport, runner=None):
+def run(files, transport, runner=None, *, resume=False):
     root, home, brief, scratch = files
 
     def no_exec(_):
@@ -136,6 +136,7 @@ def run(files, transport, runner=None):
         runner or no_exec,
         agent_type="general-purpose",
         transport=lambda: transport,
+        resume=resume,
     )
 
 
@@ -160,7 +161,7 @@ def test_start_resume_and_walk_record(files):
     assert evidence[3]["message"]["content"] == "change course"
     brief.unlink()
     transport = Transport()
-    assert run(files, transport) == "reply"
+    assert run(files, transport, resume=True) == "reply"
     assert transport.calls[0][0] == "thread/resume"
     assert transport.calls[0][1]["threadId"] == "thread"
     assert "developer_instructions" not in transport.calls[0][1]["config"]
@@ -183,7 +184,7 @@ def test_refusal_falls_back_and_keeps_walk_record(files, refuse, capsys):
         )
 
     transport = Transport(refuse=refuse)
-    assert run(files, transport, runner) == "exec reply"
+    assert run(files, transport, runner, resume=refuse == "thread/resume") == "exec reply"
     assert transport.closed
     assert "falling back to codex exec" in capsys.readouterr().err
     assert ("resume" in calls[0]) == (refuse == "thread/resume")
@@ -465,3 +466,23 @@ def test_absent_command_output_keeps_walk_evidence(files, completed_output, chun
     )
     evidence = reads.walk_entries([entry], "code-reviewer")
     assert evidence[2]["message"]["content"][0]["content"] == expected
+
+
+@pytest.mark.parametrize("history", ["codex-session", "codex-events.jsonl"])
+def test_fresh_launch_refuses_history_without_changing_evidence(files, history, capsys):
+    scratch = files[-1]
+    scratch.mkdir()
+    for name in (history, "codex-last.md", agent.DONE):
+        (scratch / name).write_text("saved evidence")
+    before = {p.name: p.read_bytes() for p in scratch.iterdir()}
+    assert agent.main(["code-reviewer", str(scratch), str(files[2]), "model", "low"]) == 1
+    assert "no thread or turn accepted" in capsys.readouterr().err
+    assert {p.name: p.read_bytes() for p in scratch.iterdir()} == before
+
+
+def test_resume_requires_saved_thread(files):
+    transport = Transport()
+    with pytest.raises(OSError):
+        run(files, transport, resume=True)
+    assert not transport.calls
+    assert not files[-1].exists()

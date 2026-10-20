@@ -2,9 +2,10 @@
 
 The launcher's calls locate the scratch directory. Each call must have a
 record, in order. Failed attempts before session creation contribute no
-walk. Once a session exists, records must match codex-session, and the
-latest turn must have completed. Missing or unreadable evidence refuses
-handback, including a repeated handback.
+walk. A fresh-call refusal proved by its tool result permits a retry in
+a new directory before any call is accepted. Once a session exists,
+records must match codex-session, and the latest turn must have completed.
+Missing or unreadable evidence refuses handback, including a repeated handback.
 The results are given in the transcript form the checklist hook reads.
 """
 
@@ -14,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from codex_agent import FRESH_REFUSAL
 from command_labels import segment_program, simple_commands
 from run_reads import blocks, is_prompt
 
@@ -79,10 +81,25 @@ def walk_entries(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any
     records: list[dict[str, Any]] = []
     used = 0
     started = False
+    refused = {b.get("tool_use_id") for entry in entries
+               for b in blocks(entry, "tool_result")
+               if isinstance(b.get("content"), str)
+               and b["content"].strip() in ("codex_agent: " + FRESH_REFUSAL,
+                                            "Exit code 1\ncodex_agent: " + FRESH_REFUSAL)}
     for entry in entries:
         if is_prompt(entry):
             out.append(entry)
-        for _, agent_type, directory in commands(entry):
+        for call_id, agent_type, directory in commands(entry):
+            if call_id in refused:
+                block = next(b for b in blocks(entry, "tool_use") if b.get("id") == call_id)
+                launches = [program for program, _ in map(segment_program, simple_commands(
+                    str((block.get("input") or {}).get("command", ""))))
+                    if program == "codex_agent.py"]
+                if len(launches) != 1:
+                    raise ValueError("the refused Bash call contains more than one Codex command")
+                if scratch is not None:
+                    raise ValueError("a fresh launch was refused after an accepted Codex call")
+                continue
             if agent_type != kind:
                 raise ValueError("the Codex call gives no matching agent type")
             if scratch is None:

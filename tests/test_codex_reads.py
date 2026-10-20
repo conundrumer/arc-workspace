@@ -107,3 +107,62 @@ def test_no_session_failures_do_not_relax_session_checks(tmp_path: Path, bad: st
     path.write_text("".join(json.dumps(r) + "\n" for r in records))
     with pytest.raises(ValueError):
         reads.walk_entries(entries, "code-reviewer")
+
+
+@pytest.mark.parametrize("proof", ["refused", "exit-code", "missing", "accepted-output", "wrong-id"])
+def test_refused_fresh_launch_can_retry_in_new_directory(tmp_path: Path, proof: str):
+    old = tmp_path / "old"
+    old.mkdir()
+    first = turn(old, [(STEP, "unrelated")])
+    content = "codex_agent: " + reads.FRESH_REFUSAL
+    if proof == "exit-code":
+        content = "Exit code 1\n" + content
+    elif proof == "missing":
+        content = "failed"
+    elif proof == "accepted-output":
+        content = "accepted thread\n" + content
+    result = {"type": "user", "message": {"content": [{
+        "type": "tool_result", "tool_use_id": "other" if proof == "wrong-id" else "codex",
+        "content": content}]}}
+    new = turn(tmp_path / "new", [(STEP, "accepted")])
+    new["message"]["content"][0]["id"] = "retry"
+    if proof in {"refused", "exit-code"}:
+        assert walk.step_calls(reads.walk_entries([first, result, new], "code-reviewer"),
+                               "code-reviewer") == [("1:0", "accepted")]
+    else:
+        with pytest.raises(ValueError):
+            reads.walk_entries([first, result, new], "code-reviewer")
+
+
+@pytest.mark.parametrize("extra", ["work", "show", "steer", "interrupt"])
+def test_refusal_cannot_hide_multiple_codex_commands(tmp_path: Path, extra: str):
+    first = turn(tmp_path / "old", [(STEP, "unrelated")])
+    block = first["message"]["content"][0]
+    command = block["input"]["command"]
+    extra_command = command if extra == "work" else f"python scripts/codex_agent.py {extra}"
+    block["input"]["command"] = command + "\n" + extra_command
+    result = {"type": "user", "message": {"content": [{
+        "type": "tool_result", "tool_use_id": "codex",
+        "content": "codex_agent: " + reads.FRESH_REFUSAL}]}}
+    retry = turn(tmp_path / "new", [(STEP, "accepted")])
+    retry["message"]["content"][0]["id"] = "retry"
+    with pytest.raises(ValueError, match="more than one Codex command"):
+        reads.walk_entries([first, result, retry], "code-reviewer")
+
+
+@pytest.mark.parametrize("session", [True, False])
+def test_refusal_after_an_accepted_attempt_is_rejected(tmp_path: Path, session: bool):
+    accepted = turn(tmp_path, [(STEP, "accepted")])
+    if not session:
+        path = tmp_path / "codex-events.jsonl"
+        record = json.loads(path.read_text())
+        record.update(thread=None, ok=False)
+        path.write_text(json.dumps(record) + "\n")
+        turn(tmp_path, [], first=False)
+    refused = turn(tmp_path / "old", [(STEP, "unrelated")])
+    refused["message"]["content"][0]["id"] = "refused"
+    result = {"type": "user", "message": {"content": [{
+        "type": "tool_result", "tool_use_id": "refused",
+        "content": "codex_agent: " + reads.FRESH_REFUSAL}]}}
+    with pytest.raises(ValueError, match="after an accepted Codex call"):
+        reads.walk_entries([accepted, refused, result], "code-reviewer")
