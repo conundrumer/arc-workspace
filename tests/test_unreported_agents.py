@@ -5,6 +5,9 @@ change in place of its merge. The merge of a change closes only its open
 `question` tickets."""
 
 from pathlib import Path
+from dataclasses import replace
+
+import pytest
 
 from tests.conftest import script
 from tests.test_change_overrun import worktree
@@ -72,19 +75,41 @@ def change(tmp_path: Path, w: Path, editors: str = "code-editor"):
                   + CHANGE_LOG.format(me=ME, w=w))
 
 
-def test_a_resumed_editor_that_gave_no_report_since_holds_the_merge(tmp_path: Path) -> None:
+@pytest.mark.parametrize("resumed", [False, True])
+def test_an_unreported_editor_blocks_review_and_merge(tmp_path: Path, resumed: bool) -> None:
     from operations import briefs
-    from operations.changes import carry
+    from operations.changes import carry, next_step
+    from operations.journal import Close, Entry, Journal, Outcome
+    from operations.state import Tool, Waits
     from operations.roles import Role
-    from operations.steps import Undecided
+    from operations.steps import Send, Undecided, analyst_key
     w = worktree(tmp_path)
     (w / "a.txt").write_text("b\n")
     t = change(tmp_path, w)
     launched = t.last_time + 10
     editor = agent(FIRST, Role.CODE_EDITOR, t.number, briefs.WORK_IN.format(worktree=w),
-                   launched, launched + 100, [launched + 50])
-    step = carry(state(tmp_path, [t], [editor], w), t)
-    assert isinstance(step, Undecided) and FIRST in step.what
+                   launched, launched + 100 if resumed else launched,
+                   [launched + 50] if resumed else [])
+    initial = state(tmp_path, [t], [editor], w)
+    step = next_step(initial, t)
+    assert isinstance(step, Send) and step.to == FIRST
+    resumed_at = editor.since + 10
+    entry = Entry(None, "", step.origin, ME, resumed_at, Tool.SEND_MESSAGE,
+                  FIRST, step.message, None, t.number,
+                  Close(Outcome.DONE, resumed_at + 1, ""))
+    recovery = replace(initial, journal=Journal((entry,)),
+                       transcripts=replace(initial.transcripts,
+                           agents=(replace(editor, since=resumed_at),)))
+    failed = next_step(recovery, t)
+    assert isinstance(failed, Undecided) and FIRST in failed.what and str(w) in failed.what
+    again = next_step(replace(recovery, now=recovery.now + 100), t)
+    assert isinstance(again, Undecided) and analyst_key(again) == analyst_key(failed)
+    running = replace(recovery, transcripts=replace(recovery.transcripts,
+        agents=(replace(editor, since=resumed_at, waits=Waits.AT_WORK),)))
+    assert carry(running, t) is None
+    independent = replace(recovery, transcripts=replace(recovery.transcripts,
+        agents=(replace(editor, since=resumed_at + 10),)))
+    assert isinstance(next_step(independent, t), Send)
 
 
 def test_two_doc_reviewers_that_gave_no_reply_hold_the_review(tmp_path: Path) -> None:

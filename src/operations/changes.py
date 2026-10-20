@@ -57,9 +57,11 @@ gets that step on what its agents leave, with that analyst's brief
 giving the change past its cost budget, and merges once that step
 leaves nothing, in place of the steps below.
 
-An editor of a change that ended with no report since its launch or its
-last resume holds the change in place of the steps below, since its
-worktree may lack the work it was given.
+An editor of a change with an agent id that ended with no report since
+its launch or its last resume gets one recovery message to finish that work and report.
+While that editor runs, the change waits. If that recovery ends without
+a fresh report, an explicit unresolved step goes to a ticket analyst
+to settle recovery or replacement. The steps below wait for fresh reports.
 
 Once no editor of a change with an editor that builds code runs, and
 after the doc editor of its fragments is launched where `change_fragments`
@@ -298,7 +300,7 @@ def reported_step(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
     if (step := fragments_step(state, t, w, here)) is not None:
         return step
     latest = latest_editors(here)
-    if (hold := editor_unreported(t, latest)) is not None:
+    if (hold := editor_unreported(state, t, w, latest)) is not None:
         return hold
     context = StageContext(state, t, w, editors, here, latest,
                             with_elsewhere(state, t.number, agents, REVIEWER_ROLES), launcher)
@@ -487,7 +489,7 @@ def handed_on(state: State, c: EditorChange) -> str | None:
     here = editors_in(c.agents, c.w)
     if unstaffed(c.editors, here) or any(a.unreported for a in latest_editors(here)):
         return mctx("Another editor of change {number} has not reported, so the operator "
-                    "launches the change's checks: give your final reply.").format(
+                    "takes its next step: give your final reply.").format(
                         number=c.t.number)
     return None
 
@@ -513,16 +515,37 @@ def check_or_line(state: State, c: EditorChange, agents: list[Agent]) -> Step | 
         number=c.t.number)
 
 
-def editor_unreported(t: Ticket, latest: list[Agent]) -> Undecided | None:
-    """The hold of the change `t` on the first of its editors `latest`
-    that ended with no report since its launch or its last resume, or None
-    where none did."""
+def editor_unreported(state: State, t: Ticket, w: Path,
+                      latest: list[Agent]) -> Step | None:
+    """The recovery of the first unreported editor of `t`, or the
+    unresolved step where that recovery ended without a fresh report."""
     for a in latest:
-        if a.unreported:
-            return Undecided(mctx("{role} {agent} on change {number} ended with no report "
-                                  "since its launch or last resume at {time}").format(role=a.role, agent=a.agent_id,
-                                                           number=t.number,
-                                                           time=utc_stamp(a.since)))
+        if not a.unreported:
+            continue
+        if a.agent_id is None:
+            return Undecided(mctx("{role} on change {number} in {worktree} ended without "
+                                  "a report and has no agent identity for recovery").format(
+                role=a.role, number=t.number, worktree=w))
+        recovery = Send(a.agent_id, mctx(
+            "Change {number}: your turn since {time} ended without a report. "
+            "Finish the work your latest brief or finding gave you in {worktree}, "
+            "write your report, and hand back its report path.").format(
+                number=t.number, time=utc_stamp(a.since), worktree=w),
+            f"recover unreported {t.number}", since=a.since, change=t.number)
+        attempts = [e for e in state.journal.sent(a.agent_id)
+                    if e.origin == recovery.origin and e.change == t.number
+                    and e.close is not None and e.close.time >= a.since]
+        if attempts:
+            attempt = attempts[-1]
+            subject = f"failed editor recovery {t.number} {a.agent_id} {attempt.given}"
+            return Undecided(mctx(
+                "{role} {agent} on change {number} in {worktree} ended without a fresh "
+                "report after recovery sent at {time}. The work "
+                "from its latest brief or finding remains unreported; "
+                "settle recovery or replacement before review or merge.").format(
+                    role=a.role, agent=a.agent_id, number=t.number, worktree=w,
+                    time=utc_stamp(attempt.given)), subject=subject)
+        return recovery
     return None
 
 
