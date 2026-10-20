@@ -3,9 +3,9 @@
     uv run python scripts/codex_agent.py <agent> <scratch> <brief> <model> <effort> [--cwd <dir>] [--resume]
 
 Give the starting instruction or a later result or message on stdin. The
-first call supplies the rendered agent document and repo and user CLAUDE.md
-files as developer instructions, with the configured Codex style. The brief
-and starting instruction are user input. A fresh call refuses existing
+first call supplies the rendered agent document and rendered repo and user
+CLAUDE.md files as developer instructions, with the configured Codex style.
+The brief and starting instruction are user input. A fresh call refuses existing
 thread or turn history without changing it.
 `--resume` requires the thread in <scratch>/codex-session and continues it
 with its initial instructions and only the new input.
@@ -38,7 +38,7 @@ import codex_rollout
 
 from controlled_markdown import mctx
 from engine import checkout
-from handbook.context import codex_config_value, codex_permissions
+from handbook.context import codex_config_value, codex_permissions, entry_text
 from operations.roles import ANALYST_NAMES, CODEX_ROLES, GENERAL, Role
 from operations.state import CodexUsage
 
@@ -94,7 +94,8 @@ def role_instructions(root: Path, home: Path, agent: str,
                 styles.append(style)
     return "\n\n".join([
         *styles, PREAMBLE, *document,
-        (root / "CLAUDE.md").read_text(), *([user.read_text()] if user.exists() else [])])
+        entry_text((root / "CLAUDE.md").resolve()),
+        *([entry_text(user.resolve())] if user.exists() else [])])
 
 
 def execute(argv: list[str]) -> subprocess.CompletedProcess[str]:

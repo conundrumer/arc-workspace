@@ -1,4 +1,5 @@
 + budget: 2100
++ lib: none
 
 # arc-workspace
 - ARC-AGI-2 work for the 2026 Kaggle competition.

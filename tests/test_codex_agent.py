@@ -150,7 +150,7 @@ def files(tmp_path, monkeypatch):
     monkeypatch.delenv("CODEX_HOME", raising=False)
     root, home = tmp_path / "repo", tmp_path / "home"
     root.mkdir()
-    (root / "CLAUDE.md").write_text("repo instructions")
+    (root / "CLAUDE.md").write_text("+ lib: none\n- repo instructions\n")
     brief = tmp_path / "brief.md"
     brief.write_text("brief body")
     scratch = tmp_path / "scratch"
@@ -195,7 +195,7 @@ def test_start_resume_and_walk_record(files):
     first = transport.calls[1][1]["input"][0]["text"]
     assert first == "brief body\n\nfirst item"
     assert transport.calls[0][1]["config"]["developer_instructions"] == "\n\n".join(
-        [agent.PREAMBLE, "repo instructions"]
+        [agent.PREAMBLE, "- repo instructions\n"]
     )
     # Supply the real walk reader with the record emitted by the daemon path.
     entry = turn(scratch.parent / "launcher", [])
@@ -234,7 +234,7 @@ def test_refusal_falls_back_and_keeps_walk_record(files, refuse, capsys):
     assert "resume" not in calls[0]
     overrides = [arg for arg in calls[0] if arg.startswith("developer_instructions=")]
     assert json.loads(overrides[0].split("=", 1)[1]) == "\n\n".join(
-        [agent.PREAMBLE, "repo instructions"]
+        [agent.PREAMBLE, "- repo instructions\n"]
     )
     assert calls[0][-1] == "brief body\n\nfirst item"
     record = json.loads((scratch / "codex-events.jsonl").read_text())
