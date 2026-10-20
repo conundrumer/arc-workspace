@@ -186,7 +186,7 @@ impl MacroDerivation<'_, '_> {
                 Ok(None) => "stands at no site that gives a type".to_string(),
                 Err(fault) => label_fault_message(fault),
             };
-            let message = format!("the label of the column `{}` of the macro `{}` {message}", column_display(column), m.name.0);
+            let message = format!("the label of the column `{}` of the macro `{}` {message}", crate::program::column_spelled(column), m.name.0);
             diagnostics.push(crate::read::check_error(CheckId::Types, message, m.place));
         }
         let mut label_types = StableHashMap::default();
@@ -326,12 +326,4 @@ fn local_label_types(
         }
     });
     labels.into_iter().map(|label| (label, label_type(scope_list(body, label), label, site_type))).collect()
-}
-
-/// The name of `column`, for a diagnostic.
-pub(super) fn column_display(column: &ColumnName) -> String {
-    match column {
-        ColumnName::Written(name) => name.to_string(),
-        ColumnName::Slot(slot) => format!("slot {slot}"),
-    }
 }

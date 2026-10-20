@@ -1,7 +1,6 @@
 //! The check of the reads of the bodies of the two lib files: each atom
 //! reads a name that a form declares, at columns that name declares.
 
-use super::column_types::column_display;
 use super::reader::FileReader;
 use super::*;
 
@@ -12,7 +11,7 @@ impl FileReader {
         let mut faults = Vec::new();
         for body in &self.bodies {
             each_atom(body.body.value(), &mut |atom| {
-                let relation = crate::write::relation_ref(&atom.relation);
+                let relation = crate::write::relation_ref(&atom.relation, crate::write::declared);
                 let columns = match self.columns_of(&atom.relation) {
                     Ok(columns) => columns,
                     Err(fault) => {
@@ -21,7 +20,7 @@ impl FileReader {
                     }
                 };
                 for site in atom.sites.iter().filter(|site| !columns.contains(&site.column)) {
-                    let message = format!("an atom of `{relation}` has a site at `{}`, which is no column of `{relation}`", column_display(&site.column));
+                    let message = format!("an atom of `{relation}` has a site at `{}`, which is no column of `{relation}`", crate::program::column_spelled(&site.column));
                     faults.push((CheckId::SiteColumns, message, body.place));
                 }
             });

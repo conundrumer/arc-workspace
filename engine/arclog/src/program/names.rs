@@ -15,6 +15,26 @@ pub enum DeclaredName {
     Slot(u32),
 }
 
+/// `name` as a file writes it, or its slot.
+pub(crate) fn declared_spelled(name: &DeclaredName) -> String {
+    match name {
+        DeclaredName::Written(text) => text.to_string(),
+        DeclaredName::Slot(slot) => slot_spelled(*slot),
+    }
+}
+
+/// `column` as a file writes it, or its slot.
+pub(crate) fn column_spelled(column: &ColumnName) -> String {
+    match column {
+        ColumnName::Written(text) => text.to_string(),
+        ColumnName::Slot(slot) => slot_spelled(*slot),
+    }
+}
+
+fn slot_spelled(slot: u32) -> String {
+    format!("slot {slot}")
+}
+
 /// The scope of a declared name: the program, or one `DEMO_RULE` form, by its
 /// path. A name that a `DEMO_RULE` form declares stands for its declaration
 /// within that form alone (`docs/arclog/arclog.md#demonstrated`).

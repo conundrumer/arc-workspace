@@ -9,7 +9,7 @@
 mod arcdata;
 mod arclog;
 
-pub(crate) use arclog::{output_name, relation_ref};
+pub(crate) use arclog::{declared, output_name, relation_ref};
 
 use crate::layout::Layout;
 use crate::program::{Arcdata, Node, Program};

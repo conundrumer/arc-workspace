@@ -571,7 +571,7 @@ enum Reading {
 /// The readings of a line, each with its name, the concept case's first, as
 /// `docs/arclog/arclog.md#the-alts-form` gives.
 fn readings(line: &Clause) -> Vec<(AltsName, Reading)> {
-    let relation = relation_ref(&relation_of(&line.derives));
+    let relation = relation_ref(&relation_of(&line.derives), crate::write::declared);
     let named = |reading: &str| AltsName(format!("{relation}={reading}").into());
     let stored = (named("$Stored"), Reading::Stored);
     let derived: Vec<(AltsName, Reading)> = if line.proposers.len() > 1 {

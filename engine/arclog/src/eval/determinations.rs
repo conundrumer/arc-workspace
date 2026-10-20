@@ -15,7 +15,7 @@ use super::join;
 use super::{Evaluation, Outcome, RelationValue, RunFault, Stop};
 use crate::check::CheckedProgram;
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Clause, ClauseKeyword, DeclaredName, ProgramRelation, RelationName};
+use crate::program::{Clause, ClauseKeyword, ProgramRelation, RelationName};
 use crate::registry::{LibEntry, Proposer, ProposerKind, Registry};
 use crate::relations::{Relation, Row, RowSet};
 use crate::resolver::{DependencyKind, GraphNodeIndex};
@@ -217,15 +217,7 @@ pub(super) fn many_models(driver: &Driver<'_, '_>, det: GraphNodeIndex, pick: &R
 
 /// `name` as a file writes it, or its slot.
 fn spelled(name: &RelationName) -> String {
-    declared_spelled(&name.0)
-}
-
-/// `name` as a file writes it, or its slot.
-fn declared_spelled(name: &DeclaredName) -> String {
-    match name {
-        DeclaredName::Written(text) => text.to_string(),
-        DeclaredName::Slot(slot) => format!("slot {slot}"),
-    }
+    crate::program::declared_spelled(&name.0)
 }
 
 /// `relation` as a file writes it, `&marker.glyph` for an output, with a
@@ -233,7 +225,7 @@ fn declared_spelled(name: &DeclaredName) -> String {
 pub fn relation_spelled(relation: &ProgramRelation) -> String {
     match relation {
         ProgramRelation::Declared(name) => spelled(name),
-        ProgramRelation::Output(output) => crate::write::output_name(output, declared_spelled),
+        ProgramRelation::Output(output) => crate::write::output_name(output, crate::program::declared_spelled),
     }
 }
 

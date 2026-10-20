@@ -6,11 +6,12 @@
 use arclog::check::{check_program, CheckCache, CheckId, CheckedProgram, SolverClauses};
 use arclog::diagnostic::{Diagnostic, DiagnosticKind, Location};
 use arclog::program::path::{NodePath, PathStep};
-use arclog::program::{Conjunct, Form};
+use arclog::program::{Atom, Body, Clause, Conjunct, DeclaredName, Form, Node, Program, RelationName, RelationRef};
 use arclog::read::read_solver;
 use arclog::registry::Registry;
 use arclog::resolver::resolve;
 use arclog::types::ValueType;
+use std::sync::Arc;
 
 /// The check of the concept case of the arclog file `arclog`, through
 /// `cache`.
@@ -71,4 +72,21 @@ fn a_label_of_a_clause_with_two_types_with_no_join_is_refused() {
     .expect_err("the type check refuses the label");
     let at: Vec<&Location> = refused.iter().filter(|found| found.kind == DiagnosticKind::Check(CheckId::Types)).map(|found| &found.location).collect();
     assert_eq!(at, vec![&Location::Path(path(&[0, 0, 0, 1, 0]))]);
+}
+
+#[test]
+fn a_read_of_an_undeclared_slot_gives_a_scope_diagnostic_that_names_the_slot() {
+    let solver = read_solver("scopes", "(RULE &output\n  (input *P *Col)\n  (&gone *P))\n", "", &|_| None).expect("the file reads").value;
+    let read = &solver.concept_case().program;
+    let Form::Clause(clause) = &read.value().forms[0] else { panic!("the first form is a clause") };
+    let mut conjuncts = clause.value().body.value().conjuncts.to_vec();
+    let Conjunct::Atom(atom) = &conjuncts[1] else { panic!("the second conjunct is an atom") };
+    let slot = Atom { relation: RelationRef::Declared(RelationName(DeclaredName::Slot(7))), sites: atom.value().sites.clone() };
+    conjuncts[1] = Conjunct::Atom(Node::new(slot));
+    let body = Node::new(Body { conjuncts: conjuncts.into() });
+    let program = Node::new(Program { forms: Arc::new([Form::Clause(Node::new(Clause { body, ..clause.value().clone() }))]) });
+    let resolved = resolve(&program, None, &solver.derived_relations(), Registry::get());
+    let scope: Vec<_> = resolved.diagnostics.iter().filter(|d| d.kind == DiagnosticKind::Check(CheckId::Scope)).collect();
+    assert_eq!(scope.len(), 1, "{:?}", resolved.diagnostics);
+    assert!(scope[0].message.contains("slot 7"), "{}", scope[0].message);
 }

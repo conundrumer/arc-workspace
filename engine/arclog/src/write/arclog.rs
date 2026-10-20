@@ -168,7 +168,7 @@ struct Writer<'l> {
     out: Out<'l>,
 }
 
-fn declared(name: &DeclaredName) -> &str {
+pub(crate) fn declared(name: &DeclaredName) -> &str {
     match name {
         DeclaredName::Written(text) => text,
         DeclaredName::Slot(_) => panic!("the arclog writer writes names as a file writes them, and a slot has none"),
@@ -206,12 +206,13 @@ pub(super) fn program_relation(relation: &ProgramRelation) -> String {
     }
 }
 
-/// The name of `relation` as a file writes it.
-pub(crate) fn relation_ref(relation: &RelationRef) -> String {
+/// The name of `relation` as a file writes it, with each declared name in it
+/// as `declared` spells it.
+pub(crate) fn relation_ref<'n, S: AsRef<str>>(relation: &'n RelationRef, declared: impl Fn(&'n DeclaredName) -> S) -> String {
     match relation {
         RelationRef::Fact(fact) => spelling(sp::FACT_RELATIONS, fact).to_owned(),
         RelationRef::Lib(crate::registry::LibName(name)) => name.to_string(),
-        RelationRef::Declared(RelationName(name)) => declared(name).to_owned(),
+        RelationRef::Declared(RelationName(name)) => declared(name).as_ref().to_owned(),
         RelationRef::Output(name) => output_name(name, declared),
         RelationRef::DefinedPort(PortName(port)) => format!("{}{port}", sp::SELF_PREFIX),
     }
@@ -418,7 +419,7 @@ impl<'l> Writer<'l> {
     /// An atom's relation and its sites, the sites among `children`, the
     /// children of the node whose layout gives which the file elides.
     fn atom(&mut self, atom: &Atom, children: &ChildPaths<NodeRef>, names: &Names, t: &mut Tokens) {
-        self.put(t, &relation_ref(&atom.relation));
+        self.put(t, &relation_ref(&atom.relation, declared));
         self.sites(&atom.sites, children, names);
     }
 

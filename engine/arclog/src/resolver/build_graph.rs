@@ -401,7 +401,7 @@ impl<'a> Builder<'a> {
     }
 
     pub(super) fn resolve_name(&mut self, scope: &NameScope, relation: &RelationRef, path: &NodePath) -> Resolution {
-        let name = || crate::write::relation_ref(relation);
+        let name = || crate::write::relation_ref(relation, crate::program::declared_spelled);
         let program_relation = match relation {
             RelationRef::Lib(lib) => {
                 if self.registry.entry(lib).is_none() {
