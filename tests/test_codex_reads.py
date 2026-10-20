@@ -245,6 +245,85 @@ def preparation_failure(tmp_path, *, background=False, output=PREPARATION_TRACEB
     return launch, result
 
 
+@pytest.mark.parametrize("position", ["alone", "before", "between", "after"])
+@pytest.mark.parametrize("reason", [
+    "This call was not run, since your documents may have changed.",
+    "Repository edits must use the delegated agent.",
+    "A different hook declined this command.",
+])
+def test_hook_refused_bash_adds_no_walk(tmp_path, position, reason):
+    refused, result = preparation_failure(tmp_path, output="PreToolUse:Bash hook error: " + reason)
+    refused["timestamp"] = "2026-10-20T00:00:05Z"
+    refused["message"]["content"][0]["input"]["command"] += " --resume"
+    result["message"]["content"][0]["is_error"] = True
+    entries = [refused, result]
+    expected = []
+    if position != "alone":
+        first = turn(tmp_path, [(STEP, "first")])
+        first["timestamp"] = "2026-10-20T00:00:00Z"
+        path = tmp_path / "codex-events.jsonl"
+        record = json.loads(path.read_text())
+        # A refused call cannot bound the accepted call's preparation time.
+        record["started"] = 1792454410
+        path.write_text(json.dumps(record) + "\n")
+        if position == "before":
+            refused["timestamp"] = "2026-10-19T23:59:59Z"
+            entries.append(first)
+        else:
+            entries.insert(0, first)
+        expected = [("1:0", "first")]
+    if position == "between":
+        retry = turn(tmp_path, [(STEP, "resumed")], first=False)
+        retry["timestamp"] = "2026-10-20T00:01:00Z"
+        retry["message"]["content"][0]["id"] = "retry"
+        entries.append(retry)
+        expected.append(("2:0", "resumed"))
+    original = json.dumps(entries)
+    assert walk.step_calls(reads.walk_entries(entries, "code-reviewer"), "code-reviewer") == expected
+    assert json.dumps(entries) == original
+
+
+@pytest.mark.parametrize("command", [
+    "uv run python scripts/codex_agent.py",
+    "uv run python scripts/codex_agent.py code-editor /missing /tmp/b model high",
+    "uv run python scripts/codex_agent.py code-reviewer /missing /tmp/b model high\n"
+    "uv run python scripts/codex_agent.py code-reviewer /other /tmp/b model high",
+])
+def test_hook_refusal_skips_whole_bash_call_but_keeps_other_blocks(tmp_path, command):
+    refused, result = preparation_failure(tmp_path, output="PreToolUse:Bash hook error: declined")
+    refused["message"]["content"][0]["input"]["command"] = command
+    result["message"]["content"][0]["is_error"] = True
+    accepted = turn(tmp_path, [(STEP, "accepted")])
+    refused["message"]["content"].extend(accepted["message"]["content"])
+    prompt = {"type": "text", "text": "Continue the walk."}
+    result["message"]["content"].append(prompt)
+    entries = reads.walk_entries([refused, result], "code-reviewer")
+    assert walk.step_calls(entries, "code-reviewer") == [("1:0", "accepted")]
+    assert entries[-1] == result
+
+
+@pytest.mark.parametrize("bad", ["wrong-id", "not-error", "missing-error", "post-hook", "quoted"])
+def test_unproved_hook_refusal_still_requires_turn_record(tmp_path, bad):
+    accepted = turn(tmp_path, [(STEP, "completed")])
+    refused, result = preparation_failure(tmp_path, output="PreToolUse:Bash hook error: declined")
+    refused["message"]["content"][0]["input"]["command"] += " --resume"
+    block = result["message"]["content"][0]
+    block["is_error"] = True
+    match bad:
+        case "wrong-id":
+            block["tool_use_id"] = "other"
+        case "not-error":
+            block["is_error"] = False
+        case "missing-error":
+            del block["is_error"]
+        case "post-hook":
+            block["content"] = "PostToolUse:Bash hook error: declined"
+        case "quoted":
+            block["content"] = "Command output: " + block["content"]
+    with pytest.raises(ValueError, match="no turn record"):
+        reads.walk_entries([accepted, refused, result], "code-reviewer")
+
+
 @pytest.mark.parametrize("background", [False, True])
 @pytest.mark.parametrize("retry", [False, True])
 @pytest.mark.parametrize("diagnostic", [False, True])

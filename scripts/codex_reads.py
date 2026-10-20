@@ -214,10 +214,35 @@ def unrecorded_launch(entries: list[dict[str, Any]], index: int,
                for r in records)
 
 
+def without_hook_refusals(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove Bash calls the harness says a PreToolUse hook prevented.
+
+    No part of such a call ran, so even parsing its launch arguments or
+    using it to bound another call's turn would give it an effect it had not.
+    The diagnostic after the harness prefix belongs to the refusing hook.
+    """
+    refused = {b.get("tool_use_id") for entry in entries if entry.get("type") == "user"
+               for b in blocks(entry, "tool_result")
+               if b.get("is_error") is True and isinstance(b.get("content"), str)
+               and b["content"].startswith("PreToolUse:Bash hook error:")}
+    out = []
+    for entry in entries:
+        skipped = [b for b in blocks(entry, "tool_use")
+                   if b.get("name") == "Bash" and b.get("id") in refused]
+        if entry.get("type") == "assistant" and skipped:
+            message = entry["message"]
+            out.append({**entry, "message": {**message, "content": [
+                b for b in message["content"] if b not in skipped]}})
+        else:
+            out.append(entry)
+    return out
+
+
 def walk_entries(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any]]:
     """The Codex command results among a launcher's entries, with its
     prompts kept in order so a message after a stop removes its bound.
     Raise where a call, record or completed turn cannot be read."""
+    entries = without_hook_refusals(entries)
     out: list[dict[str, Any]] = []
     scratch: Path | None = None
     records: list[dict[str, Any]] = []
