@@ -292,6 +292,14 @@ def control(argv: list[str], transport: Callable[[], Any] = codex_daemon.Proxy) 
     args = parser.parse_args(argv)
     if args.action == "steer" and not args.message:
         parser.error("steer requires a message")
+    import codex_ticket
+
+    if args.action == "steer":
+        codex_ticket.legacy_guard(args.scratch)
+    elif args.action == "interrupt" and codex_ticket.interrupt(args.scratch, transport):
+        return 0
+    elif args.action == "show" and (binding := codex_ticket.Binding.read(args.scratch)) is not None:
+        print(binding.correction())
     if not (args.scratch / "codex-session").exists():
         print(f"{args.scratch}: no saved Codex thread; no turn running")
         return 0
@@ -345,6 +353,9 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
     """Return the last message, or raise with the CLI's error. Save a thread
     id even on failure so a later call can continue the same session."""
     scratch = scratch.resolve()
+    import codex_ticket
+
+    codex_ticket.legacy_guard(scratch)
     thread = saved_thread(scratch, resume)
     scratch.mkdir(parents=True, exist_ok=True)
     session = scratch / "codex-session"
