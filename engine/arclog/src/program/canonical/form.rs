@@ -430,6 +430,21 @@ pub(crate) fn shares_rule_scope(rule: &DemoRule, index: usize) -> bool {
     kind && !rule.forms.from_alt(index)
 }
 
+/// Whether `child`, the child at `index` of `parent` as
+/// [`NodeRef::children`] gives it, is a label scope of its own, as
+/// [`crate::program::LabelId`] gives scopes: each form of a program, a
+/// claim or an `ALT` block, a `DEMO_RULE` form of a
+/// `DEMONSTRATED` form, and a form of a `DEMO_RULE` form that does not
+/// share the rule's scope, as `shares_rule_scope` gives.
+pub fn opens_scope(parent: NodeRef<'_>, index: usize, child: NodeRef<'_>) -> bool {
+    match parent {
+        NodeRef::Program(_) | NodeRef::Claim(_) | NodeRef::Alt(_) => !matches!(child, NodeRef::Alt(_)),
+        NodeRef::Demonstrated(_) => matches!(child, NodeRef::DemoRule(_)),
+        NodeRef::DemoRule(rule) => !shares_rule_scope(rule, index),
+        _ => false,
+    }
+}
+
 /// Writes a form that is a label scope of its own, as
 /// [`crate::program::LabelId`] gives scopes.
 pub(super) fn form_root(cx: &mut Context, out: &mut CanonicalWriter, form: &Form) {

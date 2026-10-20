@@ -11,7 +11,10 @@
 //!
 //! A path step is an index into the children of a node, which
 //! [`NodeRef::children`] gives: the nodes it holds, in the order the file
-//! writes them, each member of a list field counted in turn. [`node_at`] is
+//! writes them, each member of a list field counted in turn.
+//! [`NodeRef::handles`] is the one walk of that order, which gives each
+//! child as the handle the node holds it by, so that the walks over
+//! borrowed nodes and over owned ones read it alike. [`node_at`] is
 //! the one walk of an arclog path, and [`data_node_at`] the one walk of an
 //! arcdata path, so the layout, the edits, the resolver and the case
 //! programs number the children of a node alike.
@@ -161,26 +164,39 @@ impl<'a> NodeRef<'a> {
 
     /// The node's children, in the order of the module comment's table.
     pub fn children(self) -> Vec<NodeRef<'a>> {
-        fn forms(forms: &[Form]) -> Vec<NodeRef<'_>> {
-            forms.iter().map(NodeRef::from).collect()
+        self.handles().into_iter().map(Handle::node).collect()
+    }
+
+    /// The node's children, each by the handle the node holds it by, in the
+    /// order of the module comment's table.
+    pub fn handles(self) -> Vec<Handle<'a>> {
+        fn forms(forms: &[Form]) -> Vec<Handle<'_>> {
+            forms.iter().map(Handle::Form).collect()
         }
-        fn sites(sites: &[Site]) -> Vec<NodeRef<'_>> {
-            sites.iter().map(NodeRef::Site).collect()
+        fn sites(sites: &[Site]) -> Vec<Handle<'_>> {
+            sites.iter().map(Handle::Site).collect()
         }
-        fn bodies<'b>(bodies: impl IntoIterator<Item = &'b Node<Body>>) -> Vec<NodeRef<'b>> {
-            bodies.into_iter().map(|body| NodeRef::Body(body.value())).collect()
+        fn bodies<'b>(bodies: impl IntoIterator<Item = &'b Node<Body>>) -> Vec<Handle<'b>> {
+            bodies.into_iter().map(Handle::Body).collect()
         }
         match self {
             NodeRef::Program(program) => forms(&program.forms),
-            NodeRef::Claim(claim) => claim.blocks().map(NodeRef::from).collect(),
+            NodeRef::Claim(claim) => forms(&claim.forms),
             NodeRef::DemoRule(rule) => forms(&rule.forms),
-            NodeRef::Alts(alts) => alts.blocks().map(NodeRef::from).collect(),
-            NodeRef::Alt(alt) => alt.blocks().map(NodeRef::from).collect(),
+            NodeRef::Alts(alts) => alts.alts.iter().map(Handle::Alt).collect(),
+            NodeRef::Alt(alt) => alt
+                .items
+                .iter()
+                .map(|item| match item {
+                    AltItem::Form(form) => Handle::Form(form),
+                    AltItem::Alt(alt) => Handle::Alt(alt),
+                })
+                .collect(),
             NodeRef::Clause(clause) => bodies([&clause.body]),
-            NodeRef::Body(body) => body.conjuncts.iter().map(NodeRef::Conjunct).collect(),
+            NodeRef::Body(body) => body.conjuncts.iter().map(Handle::Conjunct).collect(),
             NodeRef::Conjunct(conjunct) => match conjunct {
-                Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)) => conjunct.atom().map_or_else(Vec::new, |atom| sites(&atom.value().sites)),
-                Conjunct::Not(Negated::Form(form)) => vec![NodeRef::Conjunct(form)],
+                Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => sites(&atom.value().sites),
+                Conjunct::Not(Negated::Form(form)) => vec![Handle::Conjunct(form)],
                 Conjunct::Constraint(_) => Vec::new(),
                 Conjunct::Or(branches) => bodies(branches.iter()),
                 Conjunct::If { test, then, otherwise } => bodies([test, then, otherwise]),
@@ -192,56 +208,93 @@ impl<'a> NodeRef<'a> {
                 .args
                 .iter()
                 .map(|arg| match arg {
-                    SiteArg::Label(label) | SiteArg::NamedLabel { label, .. } => NodeRef::Label(label),
-                    SiteArg::Field(field) => NodeRef::Site(field),
+                    SiteArg::Label(_) | SiteArg::NamedLabel { .. } => Handle::Arg(arg),
+                    SiteArg::Field(field) => Handle::Site(field),
                 })
                 .collect(),
             NodeRef::Label(_) => Vec::new(),
             NodeRef::Instance(instance) => instance
                 .parts()
                 .map(|part| match part {
-                    InstancePart::Key => NodeRef::KeyClause(instance.key.as_ref().expect("the key clause of a part").value()),
-                    InstancePart::Input(index) => NodeRef::InstanceInput(instance.inputs[index].value()),
+                    InstancePart::Key => Handle::KeyClause(instance.key.as_ref().expect("the key clause of a part")),
+                    InstancePart::Input(index) => Handle::Input(&instance.inputs[index]),
                 })
                 .collect(),
             NodeRef::KeyClause(clause) => clause
                 .parts()
                 .map(|part| match part {
-                    KeyClausePart::Body => NodeRef::Body(clause.key.body.value()),
-                    KeyClausePart::Input(index) => NodeRef::InstanceInput(clause.inputs[index].value()),
+                    KeyClausePart::Body => Handle::Body(&clause.key.body),
+                    KeyClausePart::Input(index) => Handle::Input(&clause.inputs[index]),
                 })
                 .collect(),
             NodeRef::InstanceInput(input) => input
                 .parts()
                 .map(|part| match part {
-                    InstanceInputPart::Head(index) => NodeRef::Site(&input.head[index]),
-                    InstanceInputPart::Body => NodeRef::Body(input.body.value()),
+                    InstanceInputPart::Head(index) => Handle::Site(&input.head[index]),
+                    InstanceInputPart::Body => Handle::Body(&input.body),
                 })
                 .collect(),
             NodeRef::Choose(choose) => choose
                 .parts()
                 .map(|part| match part {
-                    ChoosePart::For => NodeRef::Body(choose.rows.as_ref().expect("the `for` clause of a part").body.value()),
-                    ChoosePart::From => NodeRef::Body(choose.from.value()),
-                    ChoosePart::Never(index) => NodeRef::Body(choose.never[index].value()),
+                    ChoosePart::For => Handle::Body(&choose.rows.as_ref().expect("the `for` clause of a part").body),
+                    ChoosePart::From => Handle::Body(&choose.from),
+                    ChoosePart::Never(index) => Handle::Body(&choose.never[index]),
                 })
                 .collect(),
             NodeRef::RigidDet(rigid) => rigid
                 .children()
                 .map(|part| match part {
-                    RigidDetPart::Key => NodeRef::Body(rigid.key.as_ref().expect("the `key` clause of a part").body.value()),
-                    RigidDetPart::Instance => NodeRef::Body(rigid.instance.as_ref().expect("the `instance` clause of a part").body.value()),
-                    RigidDetPart::Part(index) => NodeRef::Atom(rigid.parts[index].value()),
+                    RigidDetPart::Key => Handle::Body(&rigid.key.as_ref().expect("the `key` clause of a part").body),
+                    RigidDetPart::Instance => Handle::Body(&rigid.instance.as_ref().expect("the `instance` clause of a part").body),
+                    RigidDetPart::Part(index) => Handle::Atom(&rigid.parts[index]),
                 })
                 .collect(),
             NodeRef::Demonstrated(demonstrated) => demonstrated
                 .parts()
                 .map(|part| match part {
-                    DemonstratedPart::Key => NodeRef::KeyClause(demonstrated.key.as_ref().expect("the key clause of a part").value()),
-                    DemonstratedPart::Input(index) => NodeRef::InstanceInput(demonstrated.inputs[index].value()),
-                    DemonstratedPart::Rule(index) => NodeRef::DemoRule(demonstrated.rules[index].value()),
+                    DemonstratedPart::Key => Handle::KeyClause(demonstrated.key.as_ref().expect("the key clause of a part")),
+                    DemonstratedPart::Input(index) => Handle::Input(&demonstrated.inputs[index]),
+                    DemonstratedPart::Rule(index) => Handle::DemoRule(&demonstrated.rules[index]),
                 })
                 .collect(),
+        }
+    }
+}
+
+/// A child of an arclog node, borrowed as the handle its parent holds it
+/// by, as [`NodeRef::handles`] gives it.
+#[derive(Clone, Copy, Debug)]
+pub enum Handle<'a> {
+    Form(&'a Form),
+    Alt(&'a Node<Alt>),
+    KeyClause(&'a Node<KeyClause>),
+    Input(&'a Node<InstanceInput>),
+    DemoRule(&'a Node<DemoRule>),
+    Body(&'a Node<Body>),
+    Conjunct(&'a Conjunct),
+    /// A part of a `RIGID_DET` form.
+    Atom(&'a Node<Atom>),
+    Site(&'a Site),
+    /// A [`SiteArg::Label`] or a [`SiteArg::NamedLabel`].
+    Arg(&'a SiteArg),
+}
+
+impl<'a> Handle<'a> {
+    /// The node the handle holds.
+    pub fn node(self) -> NodeRef<'a> {
+        match self {
+            Handle::Form(form) => NodeRef::from(form),
+            Handle::Alt(alt) => NodeRef::Alt(alt.value()),
+            Handle::KeyClause(clause) => NodeRef::KeyClause(clause.value()),
+            Handle::Input(input) => NodeRef::InstanceInput(input.value()),
+            Handle::DemoRule(rule) => NodeRef::DemoRule(rule.value()),
+            Handle::Body(body) => NodeRef::Body(body.value()),
+            Handle::Conjunct(conjunct) => NodeRef::Conjunct(conjunct),
+            Handle::Atom(atom) => NodeRef::Atom(atom.value()),
+            Handle::Site(site) => NodeRef::Site(site),
+            Handle::Arg(SiteArg::Label(label) | SiteArg::NamedLabel { label, .. }) => NodeRef::Label(label),
+            Handle::Arg(SiteArg::Field(field)) => NodeRef::Site(field),
         }
     }
 }

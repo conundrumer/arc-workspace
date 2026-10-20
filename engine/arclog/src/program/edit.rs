@@ -7,7 +7,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::path::{node_at, NodePath, NodeRef, PathStep};
+use super::canonical::opens_scope;
+use super::path::{node_at, Handle, NodePath, NodeRef, PathStep};
 use super::*;
 use crate::read::columns::{key_labels, made_labels};
 use crate::read::is_type_parameter_column;
@@ -312,77 +313,23 @@ fn rebuild(node: &Owned, path: &[PathStep], change: &mut dyn FnMut(&Owned, Vec<O
 impl Owned {
     /// The node's children, in the order of [`NodeRef::children`].
     fn children(&self) -> Vec<Owned> {
-        fn bodies<'a>(bodies: impl IntoIterator<Item = &'a Node<Body>>) -> Vec<Owned> {
-            bodies.into_iter().cloned().map(Owned::Body).collect()
-        }
-        fn sites(sites: &[Site]) -> Vec<Owned> {
-            sites.iter().cloned().map(Owned::Site).collect()
-        }
-        fn forms(forms: &[Form]) -> Vec<Owned> {
-            forms.iter().cloned().map(Owned::Form).collect()
-        }
+        self.node().handles().into_iter().map(Owned::from).collect()
+    }
+
+    /// The node, borrowed.
+    fn node(&self) -> NodeRef<'_> {
         match self {
-            Owned::Program(program) => forms(&program.value().forms),
-            Owned::Form(Form::Claim(claim)) => forms(&claim.value().forms),
-            Owned::Form(Form::Clause(clause)) => bodies([&clause.value().body]),
-            Owned::Form(Form::Instance(instance)) => {
-                let instance = instance.value();
-                instance.key.iter().cloned().map(Owned::KeyClause).chain(instance.inputs.iter().cloned().map(Owned::Input)).collect()
-            }
-            Owned::Form(Form::Choose(choose)) => {
-                let choose = choose.value();
-                bodies(choose.rows.iter().map(|rows| &rows.body).chain([&choose.from]).chain(choose.never.iter()))
-            }
-            Owned::Form(Form::RigidDet(rigid)) => {
-                let rigid = rigid.value();
-                let clauses = bodies(rigid.key.iter().chain(rigid.instance.iter()).map(|clause| &clause.body));
-                clauses.into_iter().chain(rigid.parts.iter().cloned().map(Owned::Atom)).collect()
-            }
-            Owned::Form(Form::Demonstrated(demonstrated)) => {
-                let demonstrated = demonstrated.value();
-                let key = demonstrated.key.iter().cloned().map(Owned::KeyClause);
-                let inputs = demonstrated.inputs.iter().cloned().map(Owned::Input);
-                key.chain(inputs).chain(demonstrated.rules.iter().cloned().map(Owned::DemoRule)).collect()
-            }
-            Owned::Form(Form::Alts(alts)) => alts.value().alts.iter().cloned().map(Owned::Alt).collect(),
-            Owned::Alt(alt) => alt
-                .value()
-                .items
-                .iter()
-                .map(|item| match item {
-                    AltItem::Form(form) => Owned::Form(form.clone()),
-                    AltItem::Alt(alt) => Owned::Alt(alt.clone()),
-                })
-                .collect(),
-            Owned::KeyClause(clause) => {
-                let clause = clause.value();
-                bodies([&clause.key.body]).into_iter().chain(clause.inputs.iter().cloned().map(Owned::Input)).collect()
-            }
-            Owned::Input(input) => {
-                let input = input.value();
-                sites(&input.head).into_iter().chain(bodies([&input.body])).collect()
-            }
-            Owned::DemoRule(rule) => forms(&rule.value().forms),
-            Owned::Body(body) => body.value().conjuncts.iter().cloned().map(Owned::Conjunct).collect(),
-            Owned::Conjunct(conjunct) => match conjunct {
-                Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => sites(&atom.value().sites),
-                Conjunct::Not(Negated::Form(form)) => vec![Owned::Conjunct(Conjunct::clone(form))],
-                Conjunct::Constraint(_) => Vec::new(),
-                Conjunct::Or(branches) => bodies(branches.iter()),
-                Conjunct::If { test, then, otherwise } => bodies([test, then, otherwise]),
-                Conjunct::All { domain, body } => bodies([domain, body]),
-            },
-            Owned::Atom(atom) => sites(&atom.value().sites),
-            Owned::Site(site) => site
-                .value
-                .args
-                .iter()
-                .map(|arg| match arg {
-                    SiteArg::Field(field) => Owned::Site(field.clone()),
-                    SiteArg::Label(_) | SiteArg::NamedLabel { .. } => Owned::Arg(arg.clone()),
-                })
-                .collect(),
-            Owned::Arg(_) => Vec::new(),
+            Owned::Program(program) => NodeRef::Program(program.value()),
+            Owned::Form(form) => Handle::Form(form).node(),
+            Owned::Alt(alt) => Handle::Alt(alt).node(),
+            Owned::KeyClause(clause) => Handle::KeyClause(clause).node(),
+            Owned::Input(input) => Handle::Input(input).node(),
+            Owned::DemoRule(rule) => Handle::DemoRule(rule).node(),
+            Owned::Body(body) => Handle::Body(body).node(),
+            Owned::Conjunct(conjunct) => Handle::Conjunct(conjunct).node(),
+            Owned::Atom(atom) => Handle::Atom(atom).node(),
+            Owned::Site(site) => Handle::Site(site).node(),
+            Owned::Arg(arg) => Handle::Arg(arg).node(),
         }
     }
 
@@ -448,6 +395,23 @@ impl Owned {
             }
         };
         Some(Rebuilt::Node(node))
+    }
+}
+
+impl From<Handle<'_>> for Owned {
+    fn from(handle: Handle<'_>) -> Owned {
+        match handle {
+            Handle::Form(form) => Owned::Form(form.clone()),
+            Handle::Alt(alt) => Owned::Alt(alt.clone()),
+            Handle::KeyClause(clause) => Owned::KeyClause(clause.clone()),
+            Handle::Input(input) => Owned::Input(input.clone()),
+            Handle::DemoRule(rule) => Owned::DemoRule(rule.clone()),
+            Handle::Body(body) => Owned::Body(body.clone()),
+            Handle::Conjunct(conjunct) => Owned::Conjunct(conjunct.clone()),
+            Handle::Atom(atom) => Owned::Atom(atom.clone()),
+            Handle::Site(site) => Owned::Site(site.clone()),
+            Handle::Arg(arg) => Owned::Arg(arg.clone()),
+        }
     }
 }
 
@@ -840,17 +804,6 @@ fn wrappers_of(parent: NodeRef<'_>, index: u32, child: NodeRef<'_>) -> Vec<Wrapp
         }
         (_, NodeRef::Body(_)) => vec![own],
         _ => Vec::new(),
-    }
-}
-
-/// Whether `child`, the child at `index` of `parent`, is a label scope of
-/// its own, as [`LabelId`] gives scopes.
-fn opens_scope(parent: NodeRef<'_>, index: usize, child: NodeRef<'_>) -> bool {
-    match parent {
-        NodeRef::Program(_) | NodeRef::Claim(_) | NodeRef::Alt(_) => !matches!(child, NodeRef::Alt(_)),
-        NodeRef::Demonstrated(_) => matches!(child, NodeRef::DemoRule(_)),
-        NodeRef::DemoRule(rule) => rule.forms.from_alt(index),
-        _ => false,
     }
 }
 
