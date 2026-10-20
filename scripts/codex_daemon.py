@@ -64,7 +64,8 @@ class Proxy:
             )
             if not headers.startswith(b"HTTP/1.1 101 ") or accept not in headers:
                 raise ValueError("Codex proxy refused WebSocket upgrade")
-            self.call("initialize", {"clientInfo": {"name": "arc_codex_agent", "version": "1"}})
+            self.call("initialize", {"clientInfo": {"name": "arc_codex_agent", "version": "1"},
+                                     "capabilities": {"experimentalApi": True}})
             self.send({"method": "initialized", "params": {}})
         except BaseException:
             self.close()
