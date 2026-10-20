@@ -15,6 +15,16 @@ walk = script("checklist_walk_hook")
 STEP = "uv run python scripts/step.py code-reviewer"
 
 
+@pytest.mark.parametrize("option", ["--agent-type decision-analyst", "--agent-type=decision-analyst"])
+def test_analyst_agent_type_option_forms(tmp_path: Path, option: str):
+    step = "uv run python scripts/step.py decision-analyst"
+    entry = turn(tmp_path, [(step, "item")])
+    entry["message"]["content"][0]["input"]["command"] = (
+        f"uv run python scripts/codex_agent.py ticket-analyst {tmp_path} /tmp/brief model high {option}")
+    assert walk.step_calls(reads.walk_entries([entry], "decision-analyst"), "decision-analyst") == [
+        ("1:0", "item")]
+
+
 @pytest.mark.parametrize("bad", ["missing-session", "empty-session", "wrong-thread", "broken-json",
                                  "missing-turn", "extra-turn", "failed-turn", "unknown-events",
                                  "missing-output", "wrong-role", "missing-input", "non-text-input"])

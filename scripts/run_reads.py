@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from controlled_markdown import form, mctx
-from operations.roles import CODEX_LAUNCHER, CODEX_LINE, CODEX_ROLES
+from operations.roles import ANALYST_NAMES, CODEX_AGENT_LINE, CODEX_LAUNCHER, CODEX_LINE, CODEX_ROLES, Role
 from operations.constants import COORDINATOR as MAIN
 from operations.printed_forms import POLL_AGAIN
 from token_prices import request_input
@@ -448,7 +448,7 @@ def role_type(path: Path) -> str | None:
     """The role whose checks apply to a run. A Codex launcher gives its
     role in the Codex mode line of its first prompt; its recorded agent
     type stays that of the wrapper for document delivery and profiling.
-    Raise where that prompt gives no supported role."""
+    Raise where that prompt gives no supported role or agent type."""
     kind = agent_type(path)
     if kind != CODEX_LAUNCHER:
         return kind
@@ -459,10 +459,19 @@ def role_type(path: Path) -> str | None:
     line = re.compile("^" + form(CODEX_LINE, {"role": "(?P<role>[^`]+)",
                                             "model": "[^`]+", "effort": "[^`]+"})
                       + "$", re.MULTILINE)
-    match = line.search(message_text(first)) if first is not None else None
+    text = message_text(first) if first is not None else ""
+    match = line.search(text)
     if match is None or match["role"] not in {r.value for r in CODEX_ROLES}:
         raise ValueError(f"{path}: the first prompt gives no Codex role")
-    return match["role"]
+    role = Role(match["role"])
+    agent_line = re.compile("^" + form(CODEX_AGENT_LINE, {"agent_type": "(?P<kind>[^`]+)"})
+                            + "$", re.MULTILINE)
+    agent = agent_line.search(text)
+    kind = agent["kind"] if agent is not None else role.agent_type
+    allowed = ANALYST_NAMES if role is Role.TICKET_ANALYST else {role.agent_type}
+    if kind not in allowed:
+        raise ValueError(f"{path}: the first prompt gives no matching Codex agent type")
+    return kind
 
 
 def caller_type(hook: str, data: dict[str, Any]) -> tuple[Path, str | None]:

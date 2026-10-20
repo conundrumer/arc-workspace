@@ -52,7 +52,7 @@ END_TURN_LISTING = mctx("End your turn with no other call: the end of an agent y
 
 
 def listing_line(held: Launch) -> str:
-    return END_TURN_LISTING.format(agent_type=launched_type(held.role, held.subject))
+    return END_TURN_LISTING.format(agent_type=launched_type(held.role, held.subject, held.model))
 
 
 END_TURN_WAIT = mctx("End your turn with no other call: the completion of the `wait` call, a "

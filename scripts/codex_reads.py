@@ -14,6 +14,7 @@ from typing import Any
 
 from command_labels import segment_program, simple_commands
 from run_reads import blocks, is_prompt
+from operations.roles import Role
 
 
 def walk_entries(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any]]:
@@ -35,8 +36,16 @@ def walk_entries(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any
                 program, args = segment_program(words)
                 if program != "codex_agent.py":
                     continue
-                if len(args) < 5 or args[0] != kind:
+                if len(args) < 5:
                     raise ValueError("the Codex call gives no matching role and scratch directory")
+                agent_type = Role(args[0]).agent_type
+                for i, arg in enumerate(args):
+                    if arg == "--agent-type":
+                        agent_type = args[i + 1]
+                    elif arg.startswith("--agent-type="):
+                        agent_type = arg.partition("=")[2]
+                if agent_type != kind:
+                    raise ValueError("the Codex call gives no matching agent type")
                 directory = Path(args[1])
                 # Relative paths after a shell cd cannot be located from the hook's cwd.
                 if not directory.is_absolute():

@@ -52,13 +52,13 @@ def test_switch_refuses_invalid_file(switch: Path, text: str):
 @pytest.mark.parametrize("role, expected", [(Role.CODE_EDITOR, Model.OPUS),
                                           (Role.GATE, Model.SONNET),
                                           (Role.BATCH_PROFILE, None)])
-@pytest.mark.parametrize("model", [None, Model.OPUS, Model.SONNET])
+@pytest.mark.parametrize("model", [None, *Model])
 def test_launch(switch: Path, trial: bool, codex: bool, role: Role,
                 expected: Model | None, model: Model | None):
     actions.set_trial(["on" if trial else "off"])
     actions.set_codex(["on" if codex else "off"])
     params = launch_parameters(role, "1-1", model, "brief")
-    routed = codex and role is Role.CODE_EDITOR
+    routed = codex and (model or expected) is not Model.HAIKU
     assert params.get("model") == (Model.HAIKU if trial or routed else model or expected)
     assert params["subagent_type"] == ("codex-launcher" if routed else role.agent_type)
     assert ("Codex mode:" in params["prompt"]) == routed

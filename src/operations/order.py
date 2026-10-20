@@ -199,7 +199,7 @@ def unlisted(state: State, step: Step) -> bool:
     one of an agent type the operator's agent listing lacks."""
     if not isinstance(step, Launch) or state.listing is None:
         return False
-    agent_type = launched_type(step.role, step.subject)
+    agent_type = launched_type(step.role, step.subject, step.model)
     return agent_type not in state.listing and agent_type in state.git.definitions
 
 

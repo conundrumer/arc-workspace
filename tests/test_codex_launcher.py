@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from handbook.paths import scripts_importable
-from operations.roles import CODEX_LINE
+from operations.roles import CODEX_AGENT_LINE, CODEX_LINE, PASSES, Role
 from tests.conftest import script
 
 scripts_importable()
@@ -24,18 +24,32 @@ def transcript(tmp_path: Path, first: str, kind: str = "codex-launcher") -> Path
     return path
 
 
-@pytest.mark.parametrize("role", ["code-editor", "code-reviewer", "design-reviewer", "lib-reviewer"])
+@pytest.mark.parametrize("role", [r for r in Role if r not in (*PASSES, Role.OPERATOR)])
 def test_caller_role(tmp_path: Path, monkeypatch, role):
     path = transcript(tmp_path, "brief\n" + CODEX_LINE.format(
         role=role, model="gpt-6.1-sol", effort="high"))
     monkeypatch.setattr(reads, "caller_transcript", lambda _: path)
     assert reads.agent_type(path) == "codex-launcher"
-    assert reads.caller_type("test", {}) == (path, role)
+    assert reads.caller_type("test", {}) == (path, role.agent_type)
 
 
-@pytest.mark.parametrize("first", ["brief", CODEX_LINE.format(
-    role="operator", model="gpt-6.1-sol", effort="high")])
+@pytest.mark.parametrize("first", ["brief", *[CODEX_LINE.format(
+    role=role, model="gpt-6.1-sol", effort="high") for role in ["unknown", *PASSES, Role.OPERATOR]]])
 def test_missing_or_unsupported_role_is_refused(tmp_path: Path, first):
+    with pytest.raises(ValueError):
+        reads.role_type(transcript(tmp_path, first))
+
+
+@pytest.mark.parametrize("kind", ["draft-analyst", "decision-analyst"])
+def test_analyst_checks_use_the_selected_document(tmp_path: Path, kind: str):
+    first = CODEX_LINE.format(role="ticket-analyst", model="gpt-6.1-sol", effort="high")
+    first += "\n" + CODEX_AGENT_LINE.format(agent_type=kind)
+    assert reads.role_type(transcript(tmp_path, first)) == kind
+
+
+def test_a_different_roles_document_is_refused(tmp_path: Path):
+    first = CODEX_LINE.format(role="code-editor", model="gpt-6.1-sol", effort="high")
+    first += "\n" + CODEX_AGENT_LINE.format(agent_type="operator")
     with pytest.raises(ValueError):
         reads.role_type(transcript(tmp_path, first))
 

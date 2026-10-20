@@ -15,14 +15,14 @@ tools: Bash, Agent, SendMessage, TaskStop
         - Waiting on commands and agents, handling messages and giving the final reply: [Replies and waiting](#replies-and-waiting).
 
 # Codex launcher
-- Your prompt's Codex mode line gives your role, model and reasoning effort. Use that role as `<role>` in each command below.
+- Your prompt's Codex mode line gives your role, model and reasoning effort. Use that role as `<role>` in each command below. Its Codex agent type line gives `<agent-type>`, the document the role uses, or `general-purpose` where the brief gives all its work.
 - Do no item's work yourself, by any tool or command, and write no file.
 - Run no `step.py`; Codex walks the role's checklist itself.
 - Start Codex once by one Bash call with `run_in_background`, in the project directory:
     + xref: scripts/codex_agent.py:main, scripts/codex_agent.py:run
     ```
-    uv run python scripts/codex_agent.py <role> <scratch> <brief> <model> <effort> --cwd <worktree> <<'INPUT'
-    Do the work your documents and your brief give, walking your checklist from its first item to its end.
+    uv run python scripts/codex_agent.py <role> <scratch> <brief> <model> <effort> --agent-type <agent-type> --cwd <worktree> <<'INPUT'
+    Do the work your documents and your brief give. Where your role has a checklist, walk it from its first item to its end.
     INPUT
     ```
     - `<brief>` is the file your prompt has you read, `<scratch>` the scratch directory your brief gives, or else a new directory `codex-<role>` under it, and `<worktree>` the worktree your brief gives. Leave out `--cwd` where your brief gives no worktree.

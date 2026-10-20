@@ -170,21 +170,26 @@ ANALYST_NAMES = frozenset({Role.TICKET_ANALYST.value, *ANALYST_TYPES.values()})
 """The agent names of a ticket analyst, whichever type runs it."""
 
 
-def launched_type(role: Role, subject: str) -> str:
-    """The `subagent_type` a launch of `role` on `subject` gives."""
-    if role in CODEX_ROLES and codex_mode.enabled():
-        return CODEX_LAUNCHER
+def agent_type(role: Role, subject: str) -> str:
+    """The agent document a launch uses before the mode switches."""
     if role is Role.TICKET_ANALYST and (of := analyst_of(subject)) is not None:
         return ANALYST_TYPES.get(of[0], role.agent_type)
     return role.agent_type
 
 
+def launched_type(role: Role, subject: str, model: Model | None = None) -> str:
+    """The `subagent_type` a launch of `role` on `subject` gives."""
+    if role in CODEX_ROLES and codex_mode.enabled() and (model or launched_model(role, subject)) is not Model.HAIKU:
+        return CODEX_LAUNCHER
+    return agent_type(role, subject)
+
+
 def launched_model(role: Role, subject: str) -> Model | None:
     """The model a launch of `role` on `subject` gives, where its step sets
     none in its place."""
-    if (agent_type := launched_type(role, subject)) == role.agent_type:
+    if (kind := agent_type(role, subject)) == role.agent_type:
         return role.model
-    return document_model(agent_type)
+    return document_model(kind)
 
 
 def parameter(value: object) -> str:
@@ -192,27 +197,53 @@ def parameter(value: object) -> str:
     return str(value).lower() if isinstance(value, bool) else str(value)
 
 
-CODEX_ROLES = frozenset({Role.CODE_EDITOR, Role.CODE_REVIEWER, Role.DESIGN_REVIEWER,
-                         Role.LIB_REVIEWER})
 CODEX_LAUNCHER = "codex-launcher"
 CODEX_MODEL = "gpt-6.1-sol"
+CODEX_ROLES = {
+    Role.TRANSCRIPT_REVIEW: (CODEX_MODEL, "high"),
+    Role.TICKET_ANALYST: (CODEX_MODEL, "high"),
+    Role.TICKET_REVIEWER: (CODEX_MODEL, "high"),
+    Role.ITEM_CHECKER: (CODEX_MODEL, "medium"),
+    Role.CODE_EDITOR: (CODEX_MODEL, "high"),
+    Role.DOC_EDITOR: (CODEX_MODEL, "high"),
+    Role.HANDBOOK_EXPANDED: (CODEX_MODEL, "high"),
+    Role.SOLVER_FIX: (CODEX_MODEL, "high"),
+    Role.DOC_REVIEWER: (CODEX_MODEL, "high"),
+    Role.DESIGN_REVIEWER: (CODEX_MODEL, "high"),
+    Role.CODE_REVIEWER: (CODEX_MODEL, "high"),
+    Role.LIB_REVIEWER: (CODEX_MODEL, "high"),
+    Role.BATCH_PROFILE: (CODEX_MODEL, "medium"),
+    Role.GATE: (CODEX_MODEL, "medium"),
+    Role.COST_AUDIT: (CODEX_MODEL, "medium"),
+    Role.LOAD_CHECK: (CODEX_MODEL, "medium"),
+    Role.AFTER_MERGE: (CODEX_MODEL, "medium"),
+    Role.LISTING_WAIT: (CODEX_MODEL, "medium"),
+}
+"""The Codex model and effort of each role outside the operator and solver passes,
+where its launch is not Haiku.
+A Sonnet step override gives a mechanical code editor medium effort."""
+
 CODEX_LINE = mctx("Codex mode: role `{role}`, model `{model}`, reasoning effort `{effort}`.")
+CODEX_AGENT_LINE = mctx("Codex agent type: `{agent_type}`.")
 
 
 def launch_parameters(role: Role, subject: str, model: Model | None,
                       prompt: str | None = None) -> dict[str, str]:
     """The parameters of the printed call and the operator's record of
     it, with the mode switches held for the command run."""
-    out = {"description": description(role, subject), "subagent_type": launched_type(role, subject),
+    kind = launched_type(role, subject, model)
+    out = {"description": description(role, subject), "subagent_type": kind,
            "run_in_background": parameter(True)}
-    codex = role in CODEX_ROLES and codex_mode.enabled()
+    codex = kind == CODEX_LAUNCHER
     if (given := Model.HAIKU if trial_mode.enabled() or codex else model or launched_model(role, subject)) is not None:
         out["model"] = str(given)
     if prompt is not None:
         if codex:
-            editor = role is Role.CODE_EDITOR and model is not Model.SONNET
-            prompt += "\n" + CODEX_LINE.format(role=role.value, model=CODEX_MODEL,
-                                              effort="high" if editor else "medium")
+            codex_model, effort = CODEX_ROLES[role]
+            if role is Role.CODE_EDITOR and model is Model.SONNET:
+                effort = "medium"
+            prompt += "\n" + CODEX_LINE.format(role=role.value, model=codex_model, effort=effort)
+            prompt += "\n" + CODEX_AGENT_LINE.format(agent_type=agent_type(role, subject))
         out["prompt"] = prompt
     return out
 
