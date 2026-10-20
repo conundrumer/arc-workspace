@@ -1,0 +1,14 @@
+//! The token stream of a program, as `docs/arclog/arclog.md#token-stream`
+//! gives it: its tokens in [`token`], the decode settings in [`settings`],
+//! the ids of the tokens in [`vocabulary`], and the writer from a case
+//! program to its stream in [`write`](mod@write).
+
+pub mod settings;
+pub mod token;
+pub mod vocabulary;
+pub mod write;
+
+pub use settings::{DecodeSettings, VocabularyCaps};
+pub use token::{Control, Emitter, Token};
+pub use vocabulary::Vocabulary;
+pub use write::token_stream;

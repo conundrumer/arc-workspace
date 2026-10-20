@@ -1,6 +1,7 @@
 //! The core crate of the arclog engine: the interfaces and shared parts of
 //! step 1 of the engine's build order, Reader and checker, of step 2,
-//! Evaluator and lib, and of step 3, Cases and judge, for one case.
+//! Evaluator and lib, of step 3, Cases and judge, for one case, and of
+//! step 5, Synthesis.
 //!
 //! The crate is unrelated to the Python package `engine` under
 //! `src/engine/`.
@@ -76,6 +77,10 @@
 //! - the judged run: `judge::run`, and the subcommand `compare` of
 //!   `arclog-cli`
 //!
+//! ## Step 5
+//!
+//! - the token stream: [`stream`] and its submodules
+//!
 //! A module whose functions take arguments holds
 //! `#![allow(unused_variables, dead_code)]` until its stage writes the bodies, since a
 //! `todo!()` body reads none of its arguments.
@@ -98,6 +103,7 @@ pub mod relations;
 pub mod resolver;
 pub mod session;
 pub mod solver;
+pub mod stream;
 pub mod task;
 pub mod terms;
 pub mod types;

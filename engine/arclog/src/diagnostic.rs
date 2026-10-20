@@ -15,7 +15,8 @@ pub enum DiagnosticKind {
     Check(crate::check::CheckId),
     /// A bound reached, which is an alert.
     Bound,
-    /// A fault of a run, reported by the evaluator.
+    /// A fault of a run, reported by the evaluator, or by the writer of a
+    /// token stream.
     Run,
 }
 

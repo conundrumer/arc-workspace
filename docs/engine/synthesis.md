@@ -11,20 +11,20 @@ The step ends when each of these holds, or the difference is reported as a fault
 
 ## Decode settings
 
-- A decode reads each of these settings, and each has a default. The mask or the consistency test reads a setting, and no other part of the design depends on its value, so the synthesis work can change one with no change to the design.
+- The decode settings are one value, which a decode reads, and each setting has a default. The mask or the consistency test reads a setting, and no other part of the design depends on its value, so the synthesis work can change one with no change to the design.
     - **Proposer tokens.** The mask offers the proposers as tokens, or the program writes each determination body as clauses. Default: the mask offers them. The mask reads it.
     - **Type-domain proposers.** The mask offers the type-domain proposers of [Proposers](determination.md#proposers), or not. Default: it offers them. The mask reads it.
-    - **Vocabulary caps.** The relation, column and label slots of [Token mask](#token-mask). Default: the corpus's maxima with a margin: the relations a case program declares, the outputs of its instances and `CHOOSE` forms included, the columns of a relation, and the labels of a clause, as [Forms per solver](corpus-survey.md#forms-per-solver), [Columns](corpus-survey.md#columns) and [Bodies](corpus-survey.md#bodies) give. The margin is provisional: no decode shows how far a synthesized program goes past the corpus. The mask reads them.
+    - **Vocabulary caps.** The relation, column and label slots of [Token mask](#token-mask). Default: the corpus's maxima with a margin. The largest counts over the 942 concept cases of `gen/` that give a stream are 201 relations declared (a64e4611), 23 column positions (a57f2f04) and 28 labels of one form (28a6681f). Each cap is the least power of two at or above twice its count: 512, 64 and 64. The margin is provisional: no decode shows how far a synthesized program goes past the corpus. The mask reads them.
     - **Assignment cap.** Default: the cap of [`DET`](determination.md#det). The consistency test reads it, at each prefix.
     - **Model cap and node cap.** Default: the caps of [The constraint module](cases.md#the-constraint-module). The consistency test reads them, at each prefix.
     - **Row cap and binding cap.** Default: the caps of [Joins](evaluator.md#joins). The row cap is no lower than the largest part that a body of `gen/` needs, the orbit's cell pairs, as [Causes of the outliers](outliers.md#causes-of-the-outliers) gives. The consistency test reads them, at each prefix.
-    - **Deadline.** Default: the Kaggle run's deadline per candidate program, as [Shipping](#shipping) gives. The consistency test reads it.
+    - **Deadline.** Default: 10 s per candidate program, provisional: no Kaggle run yet gives the count of candidate programs per task. The consistency test reads it.
 - The candidates of a train pair are not a setting. A run has the candidates of its task data, as [Candidates](cases.md#candidates) gives, so a decode on Kaggle task data is open-world and a decode on the task data of this repo is closed-world.
 
 ## Token mask
 
 - One automaton, `Decoder`, reads the token stream of a program. Its state is the partial program so far and the clause in progress.
-- `Decoder::new(task, session, registry, constructions, limits)` starts a decode over a task in a task session. These are the arguments of `Evaluation` in `engine/arclog/src/eval/mod.rs` less the program and its parameter values, which a decode builds and does not store.
+- `Decoder::new(task, session, registry, constructions, settings)` starts a decode over a task in a task session. These are the arguments of `Evaluation` in `engine/arclog/src/eval/mod.rs` less the program and its parameter values, which a decode builds and does not store, with the decode settings, which hold the caps and the deadline, in place of its limits.
 - `admissible()` gives the token mask: the tokens that may come next. A token is in the mask when every check of [Checker](reader.md#checker) holds on the partial program with that token.
 - A check's prefix form refuses at the token where a refusal can no longer be undone:
     - The grammar, the scope, a site's columns, the pose rule, the pooled and lifted reads, the reads of an `Unfold` instance, an instance's input order, the type meet and the join over branches each refuse at the token that breaks them. A meet only narrows as sites are added, and a join only widens.
@@ -94,7 +94,7 @@ The checks of solver structure, of the arcdata file, of `DEMONSTRATED` and of sc
 ## Shipping
 
 - maturin builds `arclog-py` as an abi3 wheel for Python 3.12 and later, which covers the local 3.12 and Kaggle's 3.13. The probe under `work/kaggle-probe/` installed such a wheel offline. The wheel ships in a Kaggle dataset.
-- The notebook loads the task, runs the program, and gives at most two attempts per test input, under a deadline per candidate program with cancellation, the default of the deadline of [Decode settings](#decode-settings).
+- The notebook loads the task, runs the program, and gives at most two attempts per test input, under a deadline per candidate program with cancellation, as the deadline of [Decode settings](#decode-settings) gives.
 - A decoded program carries no stored value. Its run determines each `DET` from the evidence, as every determination is, and a run in the task session of its decode reuses that session's entries.
 
 ## Known gaps
