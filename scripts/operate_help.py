@@ -224,7 +224,9 @@ PARTS = {
     - `send` records each non-blank line of its stdin, with the time of the call, in the session's store, under `.cache/op-lines/` of the main tree, for the operators of the session.
         - Each line is in a form the brief of an operator gives, as [An operator's brief](prompts/agents/notes/launching.md#an-operators-brief) gives it.
         - Where any line is in no form `next` reads, or is a ruling, an `Op pace:`, an `Op scope:`, an `Op pause` or an `Op resume` line in no fixed form, it records no line, prints the lines it refused, and fails.
-        - Otherwise it prints the message that the coordinator sends alone to its running operator launcher, or, where none runs, gives as the brief of a new operator launcher.
+        - Before recording, it checks the releases of explicitly listed draft requests in `Op expedite:` lines. A refusal records no line and moves no ticket.
+        - After recording, it releases those requests to their normal untaken queue. If a release is refused, `send` fails and prints the reason. Run `send` again with the same lines to finish pending releases.
+        - On success it prints the message that the coordinator sends alone to its running operator launcher, or, where none runs, gives as the brief of a new operator launcher.
     - `next` reads each recorded line as a line of the coordinator's to the operator of the session that ran at the time of its record, or, where none ran, to the next operator launched.
     - After the session's first recorded line, `next` reads each line of a message of the coordinator's, other than the message `send` prints, as in no form, and gives it back to the coordinator once as undecided.
     """),

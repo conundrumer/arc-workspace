@@ -16,7 +16,12 @@ from controlled_markdown import mctx
 from operator_reads import operator_runs
 from relay_reads import read_relay, session_id
 from state_assembly import read_state
-from ticket_numbers import staged
+from ticket_numbers import TicketNumber, staged, ticket_number
+from ticket_files import ticket_path, ticket_status
+from ticket_form import ticket_kind
+from ticket_log import check_moves, log_moves, read_ticket
+from ticketing.vocabulary import COORDINATOR, Kind, Status, queued
+from transcript_snapshots import Refused
 from tree_reads import main_tree
 
 from operations import directives, relay, runs, ticket_stall, waits
@@ -27,6 +32,7 @@ from operations.line_store import record_lines
 from operations.command_words import Action
 from operations.printing import WAIT_ACTION
 from operations.steps import Step
+from operations.state import Message
 from operations.task_work import CLAIM_HELD, claim
 
 TASK_ID = re.compile(task.TASK_ID)
@@ -75,12 +81,13 @@ REFUSED = mctx("operate: send recorded no line, since it refuses each line print
 RECORDED = mctx("Recorded the lines for the operators. Send your running operator launcher the "
                 "message below alone, or, where none runs, launch an operator launcher with it "
                 "as its brief:")
+RELEASE_NOTE = mctx("released by Op expedite")
+RELEASE_REFUSED = mctx("operate: lines recorded; draft release refused: {reason}. "
+                       "Run `send` again with the same lines to finish the releases.")
 
 
 def send_lines(text: str) -> int:
-    """Record the non-blank lines of `text` in the session's store, all of
-    them or, where `directives.refused` refuses any, none, and print the
-    message that wakes the operators, or the refused lines and fail."""
+    """Apply the coordinator's lines as `operate.py --help send` gives."""
     texts = [ln for ln in text.splitlines() if ln.strip()]
     if not texts:
         print(NO_LINES, file=sys.stderr)
@@ -90,10 +97,40 @@ def send_lines(text: str) -> int:
     if bad:
         print("\n".join([REFUSED, *bad]), file=sys.stderr)
         return 1
+    tickets = main / "tickets"
+    try:
+        releases = expedited_requests(tickets, texts)
+    except Refused as exc:
+        print(exc, file=sys.stderr)
+        return 1
     record_lines(main, session_id(), texts, time.time())
+    try:
+        for number in releases:
+            log_moves(tickets, number, queued(Status.DRAFT, Kind.REQUEST), COORDINATOR,
+                      Status.DRAFT, None, RELEASE_NOTE)
+    except Refused as exc:
+        print(RELEASE_REFUSED.format(reason=exc), file=sys.stderr)
+        return 1
     print(RECORDED)
     print(WAKE)
     return 0
+
+
+def expedited_requests(tickets: Path, texts: list[str]) -> list[TicketNumber]:
+    """The explicitly expedited draft requests, after checking their moves
+    without writes. Other kinds and statuses retain their tracker state."""
+    message = Message("", 0.0, None, "\n".join(texts), stored=True)
+    lines = directives.message_lines(message, directives.Forms.PREFIXED)
+    numbers = dict.fromkeys(n for n, _ in directives.numbers_in(lines, directives.Directive.EXPEDITE))
+    releases: list[TicketNumber] = []
+    for text in numbers:
+        number = ticket_number(text)
+        path = ticket_path(tickets, number)
+        if ticket_status(path) is Status.DRAFT and ticket_kind(read_ticket(path)) is Kind.REQUEST:
+            check_moves(tickets, number, queued(Status.DRAFT, Kind.REQUEST), COORDINATOR,
+                        Status.DRAFT, None, RELEASE_NOTE)
+            releases.append(number)
+    return releases
 
 
 def print_waits(number: str) -> int:

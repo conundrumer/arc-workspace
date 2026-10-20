@@ -8,7 +8,8 @@ prefix `Op`, the word of its kind and a colon, past a list marker:
 - `Op drafts to review: <number>, ...`;
 - `Op expedite: <number>, ...`, for every operator of the session, and
   the tickets a chain of links reaches from those numbers
-  (`taking.expedited`);
+  (`taking.expedited`); `operate.py send` also releases explicitly listed
+  draft requests, as `scripts/operate.py --help send` gives;
 - `Op merged: <number>, ...`, the changes the coordinator gives as merged;
 - `Op merge: <number>`, a change under `tickets/blocked/` whose merge that line rules;
 - `Op tickets are open.`, which leaves the scope as `own_scope` gives it;
