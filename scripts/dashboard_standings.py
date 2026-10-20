@@ -43,9 +43,9 @@ FIRST = frozenset({Standing.WORKING, Standing.ON_HOLD, Standing.DEFERRED, Standi
 matters."""
 
 HELD_HEAD: Mapping[Standing, str] = {
-    Standing.ON_HOLD: "On hold by you", Standing.DEFERRED: "Deferred",
-    Standing.OWN_SCOPE: "Outside its own work", Standing.NO_OPERATOR: "No operator running",
-    Standing.HELD: "Held by a line", Standing.BEHIND: "Behind held work"}
+    Standing.HELD: "Held by a line", Standing.BEHIND: "Behind held work",
+    Standing.NO_OPERATOR: "No operator running", Standing.ON_HOLD: "On hold by you",
+    Standing.OWN_SCOPE: "Outside its own work", Standing.DEFERRED: "Deferred"}
 """The head of each group of held tickets in a session's tab of Queued,
 in the order of the groups."""
 
@@ -108,7 +108,7 @@ class Standings:
             if t.kind is not Kind.CHANGE:
                 continue
             members = tuple(self.heads(t))
-            lead = self.lead(self.terminals(t))
+            lead = t if sum(h.kind is Kind.REQUEST for h in members) > 1 else self.lead(self.terminals(t))
             self.rows.append(Row(lead, t, members))
             covered.update(h.number for h in members)
             for h in members:

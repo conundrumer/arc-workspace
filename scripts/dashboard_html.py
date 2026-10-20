@@ -46,7 +46,7 @@ DONE_SECONDS = DAY
 """How far back Done reads the closes."""
 
 LIST_SHOWN = 8
-"""The most rows Your work, a tab of Done, or Since you looked gives above its fold."""
+"""The most rows a tab of Done or Since you looked gives above its fold."""
 
 CLOSE_WORDS: Mapping[Resolution | None, str] = {
     Resolution.FIXED: "Fixed", Resolution.DUPLICATE: "Duplicate",
@@ -286,34 +286,38 @@ def stopped_bar(v: View, r: Row) -> str:
     return stage_bar(w.stage, Mark.FINISHED if w.finished else Mark.STOPPED)
 
 
-def row(v: View, t: Ticket, right: str, change: Ticket | None, lead: int | None = None,
+def row(v: View, t: Ticket, right: str, change: Ticket | None,
         members: tuple[Ticket, ...] = ()) -> str:
-    """The row of `t`, led by `lead` where it is given, with the number of
-    `change`, the change whose state it gives, under its own, and `right`
-    at its end."""
+    """The row of `t`, with its change number below its own and `right`
+    at its end. A bundle leads with its change, and members fold after three."""
     if merged(t):
         right = f'{esc(t.status.value.capitalize())} · merged, awaiting tracker closure'
     star = '<span class="star">★</span>' if t.number in v.expedited else ""
     under = "" if change is None or change is t else f'<small>{link(change.number)}</small>'
-    related = ''.join(f'<a class="tk related" data-n="{esc(m.number)}">'
-                      f'{esc(m.number)} · {esc(capitalized(v.phrase(m)))}</a>'
-                      for m in members if m.number != t.number )
-    related = f'<span class="members">{related}</span>' if related else ""
-    return tap(t.number, ("" if lead is None else f'<span class="wq">{lead}</span>')
-               + f'<span class="wn">{esc(t.number)}{under}</span><span class="wp">{star}{esc(capitalized(v.phrase(t)))}</span>'
-               f'<span class="ws">{right}</span>{related}', "wr" + ("" if lead is None else " ld") + (" me" if v.mine(t) else ""))
+    bundle = t is change and sum(m.kind is Kind.REQUEST for m in members) > 1
+    related = [(m, f'<a class="tk related" data-n="{esc(m.number)}">'
+                f'{esc(m.number)} · {esc(capitalized(v.phrase(m)))}</a>')
+               for m in members if m.number != t.number]
+    texts = [text for _, text in related]
+    visible, rest = texts[:3], texts[3:]
+    more = "" if not rest else f'<details><summary>+{len(rest)} more</summary>{"".join(rest)}</details>'
+    related_html = f'<div class="members">{"".join(visible)}{more}</div>' if related else ""
+    title = t.title if bundle else capitalized(v.phrase(t))
+    return tap(t.number,
+               f'<span class="wn">{esc(t.number)}{under}</span><span class="wp">{star}{esc(title)}</span>'
+               f'<span class="ws">{right}</span>{related_html}', "wr" + (" me" if v.mine(t) else ""))
 
 
 def link(n: str) -> str:
     return f'<a class="tk" data-n="{esc(n)}">{esc(n)} ›</a>'
 
 
-def active(v: View, st: Standings, selected: list[Row] | None = None) -> tuple[str, int]:
+def active(v: View, st: Standings) -> tuple[str, int]:
     """The HTML of Active, the rows whose subject an agent is at work on,
     in the order of their takes, the newest first among those of one
     time, and the count of its rows."""
     rows: list[tuple[float, float, Row, str]] = []
-    for r in st.rows if selected is None else selected:
+    for r in st.rows:
         if st.shown(r) and (w := st.agents(r.subject)):
             a = max(w, key=lambda a: a.launched)
             b = basis(v, r)
@@ -394,7 +398,7 @@ def tab_set(key: str, panes: list[tuple[int | None, str, str]]) -> str:
             + "".join(f'<div class="pane" data-s="{s}">{body}</div>' for s, _, body in panes) + "</div>")
 
 
-def queued(v: View, st: Standings, selected: list[Row] | None = None) -> str:
+def queued(v: View, st: Standings) -> str:
     """The HTML of Queued: a tab for each session that filed the ticket
     of a row shown whose subject is not at work, and in it, its operator's
     state, its rows ready (`Next`, or `Next on resume` in a paused
@@ -404,7 +408,7 @@ def queued(v: View, st: Standings, selected: list[Row] | None = None) -> str:
     the user's tickets first, then the expedited ones, then the newest
     first."""
     sessions: dict[int | None, list[tuple[Row, Standing, Ticket]]] = {}
-    for r in st.rows if selected is None else selected:
+    for r in st.rows:
         k, root = st.state(r.subject)
         if k is not Standing.WORKING:
             sessions.setdefault(r.lead.session, []).append((r, k, root))
@@ -424,7 +428,7 @@ def queued(v: View, st: Standings, selected: list[Row] | None = None) -> str:
         body = f'<div class="sh2">{esc(session_line(st, s))}</div>'
         if ready:
             body += (f'<div class="gh">Next{" on resume" if s in st.paused else ""}</div><div class="wl">'
-                     + "".join(row(v, r.lead, stopped_bar(v, r), r.change, st.position.get(r.subject.number, i) + 1, r.members) for i, r in enumerate(ready)) + "</div>")
+                     + "".join(row(v, r.lead, stopped_bar(v, r), r.change, r.members) for r in ready) + "</div>")
         if waiting:
             body += ('<div class="gh">Waiting</div><div class="wl">'
                      + "".join(row(v, r.lead, f"{stopped_bar(v, r)}<span>after {link(st.state(r.subject)[1].number)}</span>",
@@ -445,39 +449,6 @@ def queued(v: View, st: Standings, selected: list[Row] | None = None) -> str:
             body += f'<details class="grp"{opened}><summary>{esc(label)} · {len(xs)}</summary>{inner}</details>'
         panes.append((s, tab_word(st, s), body))
     return tab_set(QUEUED_TAB, panes)
-
-
-def held_by_line(st: Standings, r: Row) -> bool:
-    k, root = st.state(r.subject)
-    return k is Standing.HELD or (k is Standing.BEHIND and st.own(root) is Standing.HELD)
-
-
-def priority(v: View, st: Standings, rows: list[Row], shown: int) -> str:
-    """Rows with their session, standing, operator position and stage."""
-    rendered = []
-    for r in rows:
-        t = r.subject
-        k, root = st.state(t)
-        if k is Standing.WORKING:
-            w = st.agents(t)
-            state = stage_bar(stage([a.role for a in w], basis(v, r)), Mark.AT_WORK) + at_work(w, v.now)
-        elif k is Standing.READY:
-            position = st.position.get(t.number)
-            state = 'Ready' + ('' if position is None else f' · position {position + 1}')
-            if t.session in st.paused:
-                state += ' · starts on resume'
-        elif k in (Standing.WAITING, Standing.BEHIND):
-            state = f'after {link(root.number)}'
-            if k is Standing.BEHIND:
-                state += f' · {esc(HOLD_WORD[st.own(root)])}'
-        else:
-            state = esc(HELD_HEAD[k])
-        if any(m.status is Status.BLOCKED for m in r.members):
-            state += ' · waits on your decision'
-        if k is not Standing.WORKING:
-            state = stopped_bar(v, r) + state
-        rendered.append(row(v, r.lead, f'{session_name(t.session)} · {state}', r.change, members=r.members))
-    return folded(rendered, shown)
 
 
 def done(v: View) -> str:
@@ -604,28 +575,18 @@ def page(tickets: Path, now: float, usage: Reading, records: OperatorRecords,
     v = View(all_, records, usage.usage, now, records.expedited(), records.agents(), starts,
              {s.number: s.held for s in starts if s.held is not None}, journal_work(tickets), codex)
     st = Standings(v)
-    _, working = active(v, st)
-    yours = [r for r in st.rows if any(v.mine(m) or m.number in v.expedited for m in r.members)]
-    yours.sort(key=lambda r: (not any(m.number in v.expedited for m in r.members),
-                             0 if held_by_line(st, r) else 1 if st.state(r.subject)[0] is Standing.WORKING else 2,
-                             -r.subject.filed))
-    remaining = [r for r in st.rows if r not in yours]
-    held = sorted((r for r in remaining if held_by_line(st, r)), key=lambda r: -r.subject.filed)
-    remaining = [r for r in remaining if r not in held]
-    work, _ = active(v, st, remaining)
+    work, working = active(v, st)
     stuck, waits = blocked(v)
     sections = [
-        ("yours", f"Your work · {len(yours)}", priority(v, st, yours, LIST_SHOWN)),
-        ("held", f"Held by a line · {len(held)}", priority(v, st, held, GROUP_SHOWN)),
-        ("health", "Health", health(v, [*undecided, *(f"unread: {u.path}: {u.why}" for u in unread)])),
+        ("blocked", f"Blocked on you · {waits}", stuck),
         ("active", "Active", work),
-        ("queued", "Queued", queued(v, st, remaining)),
-        ("done", "Done", done(v) + '<div class="key"><span><i></i>filed by you</span><span>★ expedited</span></div>'),
+        ("queued", "Queued", queued(v, st)),
         ("sl", "Since you looked", '<div id="since"></div>'),
+        ("health", "Health", health(v, [*undecided, *(f"unread: {u.path}: {u.why}" for u in unread)])),
+        ("done", "Done", done(v) + '<div class="key"><span><i></i>filed by you</span><span>★ expedited</span></div>'),
         ("pace", "Pace", pace(v)), ("queue", "Queue", queue(v)),
         ("find", "Find",
          '<input id="q" type="search" placeholder="Number or words" autocomplete="off"><div id="res"></div>'),
-        ("blocked", f"Blocked on you · {waits}", stuck),
     ]
     body = (strip(v, working) + "<main>"
             + "".join(f'<h2 id="{i}">{esc(h)}</h2>{b}' for i, h, b in sections)
