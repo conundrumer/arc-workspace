@@ -38,7 +38,6 @@ main{max-width:560px;margin:0 auto;padding:0 16px 40px}
 .strip .r1{font-weight:600}
 .ub{display:flex;align-items:center;gap:8px;margin-top:6px}.ul{width:38px;flex-shrink:0;font-size:12px;color:var(--mute)}
 .uv{width:34px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums}
-.cr{font-size:11px;color:var(--mute);max-width:120px;text-align:right}
 .bar{flex:1;min-width:20px;height:6px;background:var(--line);border-radius:3px;position:relative}
 .bar i.hot{background:var(--warn)}
 .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--acc)}

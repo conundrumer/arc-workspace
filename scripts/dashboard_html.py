@@ -16,6 +16,7 @@ from enum import Enum
 from pathlib import Path
 
 from dashboard_standings import HOLD_WORD, HELD_HEAD, MOVING, Row, Standing, Standings, merged
+from dashboard_usage import codex_bar, usage_bar
 from dashboard_words import clock, hold_text, start_hold_text
 from dashboard_reads import (DAY, OPEN, STALE_RECORD, CodexWindow, OperatorRecords, Stage, change_of, hits_full,
                              journal_work, logged, phrase, stage, users, Work)
@@ -181,33 +182,6 @@ class View:
         if (h := self.holds.get(t.number)) is not None:
             return hold_text(h)
         return STATUS_WORDS[t.status]
-
-
-def usage_bar(usage: Usage, name: WindowName, label: str) -> str:
-    """The HTML of one row of the strip: `label`, a bar of the used share of
-    window `name`, hot where the use is ahead of the elapsed time, with a tick
-    at the elapsed share, and the used percent."""
-    win = usage.windows.get(name)
-    if win is None:
-        return (f'<div class="ub"><span class="ul">{esc(label)}</span><div class="bar"></div>'
-                '<span class="uv">–</span></div>')
-    hot = win.used_pct > win.elapsed_pct
-    return (f'<div class="ub"><span class="ul">{esc(label)}</span>'
-            f'<div class="bar"><i{' class="hot"' if hot else ""} style="width:{min(100, win.used_pct):.0f}%"></i>'
-            f'<b style="left:{min(100, win.elapsed_pct):.0f}%"></b></div>'
-            f'<span class="uv{" w" if hot else ""}">{win.used_pct:.0f}%</span></div>')
-
-
-def codex_bar(window: CodexWindow | None, now: float) -> str:
-    """The weekly Codex account usage and reset, or unavailable."""
-    label = '<span class="ul">Codex</span>'
-    if window is None or window.resets_at <= now:
-        return (f'<div class="ub">{label}<div class="bar"></div>'
-                '<span class="cr">Unavailable</span></div>')
-    return (f'<div class="ub">{label}<div class="bar">'
-            f'<i style="width:{window.used_pct:.0f}%"></i></div>'
-            f'<span class="uv">{window.used_pct:.0f}%</span>'
-            f'<span class="cr">Resets {esc(clock(window.resets_at, now))}</span></div>')
 
 
 def per_session[T](v: View, value: Callable[[Shown], T]) -> list[tuple[str, T]]:
@@ -427,8 +401,10 @@ def queued(v: View, st: Standings) -> str:
         waiting = ordered([r for r, k, _ in items if k is Standing.WAITING])
         body = f'<div class="sh2">{esc(session_line(st, s))}</div>'
         if ready:
-            body += (f'<div class="gh">Next{" on resume" if s in st.paused else ""}</div><div class="wl">'
-                     + "".join(row(v, r.lead, stopped_bar(v, r), r.change, r.members) for r in ready) + "</div>")
+            rows = '<div class="wl">' + "".join(
+                row(v, r.lead, stopped_bar(v, r), r.change, r.members) for r in ready) + "</div>"
+            body += (f'<details class="grp"><summary>Next on resume</summary>{rows}</details>'
+                     if s in st.paused else f'<div class="gh">Next</div>{rows}')
         if waiting:
             body += ('<div class="gh">Waiting</div><div class="wl">'
                      + "".join(row(v, r.lead, f"{stopped_bar(v, r)}<span>after {link(st.state(r.subject)[1].number)}</span>",
@@ -528,6 +504,8 @@ def pace(v: View) -> str:
             rows.append(kv("5-hour 100% at", f'<span class="w">{clock(fh_full, v.now)}</span>'))
     if wk is not None:
         rows.append(kv("Week resets", time.strftime("%a %b %-d, %-I:%M %p", time.localtime(wk.resets_at))))
+    if v.codex is not None and v.codex.resets_at > v.now:
+        rows.append(kv("Codex resets", time.strftime("%a %b %-d, %-I:%M %p", time.localtime(v.codex.resets_at))))
     rows.append(kv("1% of the week", f"${WEEKLY_LIMIT / 100:,.0f}"))
     return f"<details><summary>{head}</summary>{''.join(rows)}</details>"
 

@@ -13,6 +13,7 @@ from typing import Any
 from claude_config import config_dir
 from controlled_markdown import mctx
 from operations.pacing import WINDOW_SECONDS, Usage, Window, WindowName, iso_time
+from usage_window import elapsed_pct
 
 USAGE_STALE = 10 * 60
 """How old, in seconds, the reading of the usage cache (`usage_file`) may
@@ -162,5 +163,5 @@ def window(raw: Any, used_key: str, seconds: int, now: float) -> Window | None:
         at = iso_time(resets)
     except ValueError:
         return None
-    elapsed = min(100.0, max(0.0, 100 * (now - (at - seconds)) / seconds))
+    elapsed = elapsed_pct(at, seconds, now)
     return Window(0.0 if at <= now else float(used), elapsed, at)

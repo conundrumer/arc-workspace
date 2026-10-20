@@ -22,7 +22,8 @@
 2. A corpus of solvers that encodes the priors the synthesis rests on, which is why each solver must be good.
 3. Both reached with less of the user over time, at low cost.
 
-- Each decision on the solver tools and the agents' documents serves these goals. They guide how each other line is read and how a question or a fault is resolved: none is a rule a case must meet, and none overrides a line. Where two goals conflict, the one listed first weighs more.
+- Each decision on the solver tools and the agents' documents serves these goals. When the user mentions [Decision notes](prompts/agents/notes/decisions.md), your behavior is working against those goals. They guide how each other line is read and how a question or a fault is resolved: none is a rule a case must meet, and none overrides a line. Where two goals conflict, the one listed first weighs more.
+    * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-20T21:02:41Z: "Decisions.md should have a note saying that when I mention it, it’s triggered from you behaving in a counterproductive way wrt goals". Request 11-2507.
 
 ### Rule and intent
 - [Principles](docs/handbook/principles.md) is the theory.

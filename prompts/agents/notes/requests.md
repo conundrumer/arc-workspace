@@ -4,7 +4,7 @@
     - Acts, each with its section:
         - Routing a user's request for work: [Routes](#routes).
         - Taking, running and closing out a change the coordinator runs itself: [Running a change](#running-a-change).
-        - Filing, tracking and closing the coordinator's tickets: [Tickets](#tickets).
+        - Responding to faults and filing, tracking and closing the coordinator's tickets: [Tickets](#tickets).
         - Acting on the user's later words on a `request` and rulings on a blocked ticket: [The user's words on a ticket](#the-users-words-on-a-ticket).
         - Waiting on a ticket's close: [Waiting on a ticket](#waiting-on-a-ticket).
 
@@ -14,9 +14,10 @@
 ## Routes
 - A user's message may open or end with a route directive: `direct`, `op send`, `hotfix`, `expedite <number>`, `op scope: own`, `op scope: all`, `op pause`, `op resume`, `op context bound <tokens>`, `op context bound default`, `op file`, `op draft`, `scratch`, or `re <number>`, a follow-up on that `request`.
     + xref: src/ticketing/vocabulary.py:Route
-- Where a user's message that asks for work gives no route directive, infer its route, the `request` a follow-up concerns, and the span, and infer `hotfix` for a small edit with low risk and `op context bound <tokens>` or `op context bound default` for words that set or clear the context bound of an operator.
+- Where a user's message that asks for work gives no route directive, infer its route, the `request` a follow-up concerns, and the span, and infer `hotfix` for a small edit with low risk or a bug that severely breaks operations and `op context bound <tokens>` or `op context bound default` for words that set or clear the context bound of an operator.
     * comment: The user's words, session 129de8fc-2a0d-4d4d-b950-3a0194c762e2, 2026-10-17T15:51:41Z, on a one-line TODO comment inferred `send`: "man. it's just a one line comment. dont burn tokens on it"; session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-17T15:53:22Z: "i asked to add a TODO comment and it inferred route `direct`". Ticket 11-70.
-- On each route on which a line of your documents has you write, write, read back each write and each route you infer, then act: in the same turn on a route the user states, and on an inferred one at the user's next message, unless that message changes or cancels it.
+    * comment: The user's standing instruction, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-20T21:09:44Z: "Bugs that severely break ops should be hot fixed". Request 11-2512.
+- On each route on which a line of your documents has you write, write, read back each write and each route you infer, then act: in the same turn on a route the user has authorized, including by a standing instruction; otherwise, on an inferred route at the user's next message, unless that message changes or cancels it.
     - To write is to run the command of `uv run python scripts/spans.py` that writes the route's `request` or brief. To act is to launch an agent with that brief, make or merge the change, or send an operator a line.
         + xref: scripts/spans.py:file_command, scripts/spans.py:brief
         - The goal you give that command is the point of the work, the outcome the user wants, from the user's words, with no means you proposed and no elaboration.
@@ -24,7 +25,7 @@
         - Open the readback, and each later message that restates it, with a bold label that gives whether you have acted on its route when that message reaches the user: `**Sent.**`, `**Not sent yet.**` where the act waits, or `**Not sent.**` where the route sets off none.
             * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-17T18:46:26Z, after a readback of an inferred route that opened with work done: "It needs to be clear if you sent it or not"; 2026-10-17T18:47:33Z: "Just bold label nothing extreme like emoji or caps lock". Ticket 11-382. Ticket 11-384: on a stated route, the readback goes out before the act, and nothing labelled the act once it was taken.
             - Once you act on a route whose readback opened with `**Not sent yet.**`, open the message that tells the user so with `**Sent.**`.
-        - On an inferred route, follow that label with `**Inferred route: <route>.**`, and end the readback with the act the user's next message sets off, as `Once you reply, I <act>.`, or, where it sets off none, with a sentence that says so. Give it as no decision.
+        - On an inferred route, follow that label with `**Inferred route: <route>.**`. Where the user has not authorized that route, end the readback with the act the user's next message sets off, as `Once you reply, I <act>.`, or, where it sets off none, with a sentence that says so. Give it as no decision.
             * comment: Ticket 6-1167: the coordinator gave a readback again as a labelled decision with a default.
 - `scratch` is work after which nothing under version control has changed, nothing has left the session, and nothing later depends on it. Do it with no readback, no ticket and no brief. Where that work would change a tracked file or send something out of the session, read back a route before that step.
 - `direct`: file the change's `request`, write its brief, and run the change as [Running a change](#running-a-change) gives.
@@ -52,13 +53,14 @@
     + xref: prompts/agents/notes/tickets.md#ticket-files, prompts/agents/notes/tickets.md#ticket-fields, prompts/agents/notes/tickets.md#tracking, prompts/agents/notes/tickets.md#change-tickets
 - Write `coordinator` as `<agent>`.
 - Your own agent id is the session id `echo $CLAUDE_CODE_SESSION_ID` prints.
-- Where you run no solver pass, file each fault you notice, and each fault an agent's report gives, by [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults), where no ticket analyst has found its cause, in place of a change that fixes it.
-    + xref: prompts/agents/notes/tickets.md#noticed-faults
+- Where you run no solver pass, respond to each fault you notice and each fault an agent's report gives: use `hotfix` by [Routes](#routes) for a bug that severely breaks operations; otherwise, where no ticket analyst has found its cause, file it by [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults), in place of a change that fixes it.
+    + xref: prompts/agents/notes/requests.md#routes, prompts/agents/notes/tickets.md#noticed-faults
+    * comment: The user's standing instruction, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-20T21:09:44Z: "Bugs that severely break ops should be hot fixed". Request 11-2512.
 - Where you run no solver pass, the route is `op file`, `op draft` or `op send`, and no `request` of the change stands under `tickets/draft/`, file the change as a `request` with `uv run python scripts/spans.py file`, with `--depends-on <number>[,<number>...]` where the user asks that its work wait for the close of those tickets.
     + xref: scripts/spans.py:file_command
     * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-19T04:14:22Z: "Do both", and 04:15:06Z: "Actually just expedite the req on req", which chose the coordinator's option of 04:13:47Z: "let a request carry `depends-on: <request>`. That request isn't taken, and no analyst is launched on it, until the request it depends on is released or closed". Ticket 11-1940.
-- Where you run no solver pass and a `request` of the change stands under `tickets/draft/`, file no other `request` of the change. Once the user states `op file`, `op send`, `direct` or `hotfix`, or sends the next message after your readback of an inferred route other than `op draft`, and that message does not change or cancel it, append to that `request` the span from the message after its last span to that message, with `uv run python scripts/spans.py append --route <route>` and that route, and with `--depends-on <number>[,<number>...]` where the user asks that its work wait for the close of those tickets.
-    + xref: scripts/spans.py:append_command
+- Where you run no solver pass and a `request` of the change stands under `tickets/draft/`, file no other `request` of the change. Once the user authorizes `op file`, `op send`, `direct` or `hotfix` as [Routes](#routes) gives, or sends the next message after your readback of an inferred route other than `op draft`, and that message does not change or cancel it, append to that `request` the span from the message after its last span to that message, with `uv run python scripts/spans.py append --route <route>` and that route, and with `--depends-on <number>[,<number>...]` where the user asks that its work wait for the close of those tickets.
+    + xref: scripts/spans.py:append_command, prompts/agents/notes/requests.md#routes
     * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-19T04:14:22Z: "Do both", and 04:15:06Z: "Actually just expedite the req on req", which chose the coordinator's option of 04:13:47Z: "let a request carry `depends-on: <request>`. That request isn't taken, and no analyst is launched on it, until the request it depends on is released or closed". Ticket 11-1940.
 - Tell the user what each ticket a line of this document has you file does, in your own words, without quoting its text, and the number of each `request` you move to `tickets/draft/`.
 - A `request`'s first span runs from the user's first message on the change to the user's message that gives its route, or on an inferred route to the user's last one on it, or to an earlier message where the user asks for one.
