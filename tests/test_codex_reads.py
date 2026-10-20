@@ -15,6 +15,52 @@ walk = script("checklist_walk_hook")
 STEP = "uv run python scripts/step.py code-reviewer"
 
 
+@pytest.mark.parametrize("args", [
+    "--help 2>&1 | head -40", "-h", "code-reviewer /tmp/unused /tmp/brief model high --help",
+    "show /tmp/unused", "steer /tmp/unused 'keep going'", "interrupt /tmp/unused",
+])
+def test_commands_without_a_turn_do_not_consume_records(tmp_path: Path, args: str):
+    inspection = {"type": "assistant", "message": {"content": [{
+        "type": "tool_use", "name": "Bash", "id": "inspection",
+        "input": {"command": f"uv run python scripts/codex_agent.py {args}"}}]}}
+    assert list(reads.commands(inspection)) == []
+    assert reads.walk_entries([inspection], "code-reviewer") == []
+    first = turn(tmp_path, [(STEP, "first")])
+    resumed = turn(tmp_path, [(STEP, "second")], first=False)
+    entries = [inspection, first, inspection, resumed, inspection]
+    assert walk.step_calls(reads.walk_entries(entries, "code-reviewer"), "code-reviewer") == [
+        ("1:0", "first"), ("2:0", "second")]
+
+
+def test_help_and_launch_in_one_bash_call(tmp_path: Path):
+    entry = turn(tmp_path, [(STEP, "item")])
+    block = entry["message"]["content"][0]
+    block["input"]["command"] = (
+        "uv run python scripts/codex_agent.py --help 2>&1 | head -40\n"
+        + block["input"]["command"])
+    assert walk.step_calls(reads.walk_entries([entry], "code-reviewer"), "code-reviewer") == [
+        ("1:0", "item")]
+
+
+@pytest.mark.parametrize("args", ["", "code-reviewer", "/tmp/brief model high",
+                                 "code-reviewer /tmp/brief model high"])
+def test_launch_without_role_or_scratch_still_refuses(tmp_path: Path, args: str):
+    entry = turn(tmp_path, [(STEP, "item")])
+    malformed = {"type": "assistant", "message": {"content": [{
+        "type": "tool_use", "name": "Bash", "id": "malformed",
+        "input": {"command": f"uv run python scripts/codex_agent.py {args}"}}]}}
+    with pytest.raises(ValueError, match="no matching role and scratch directory"):
+        reads.walk_entries([entry, malformed], "code-reviewer")
+
+
+def test_help_word_after_option_terminator_is_a_launch_argument(tmp_path: Path):
+    entry = turn(tmp_path, [(STEP, "item")])
+    entry["message"]["content"][0]["input"]["command"] = (
+        f"uv run python scripts/codex_agent.py code-reviewer {tmp_path} /tmp/brief -- --help high")
+    assert walk.step_calls(reads.walk_entries([entry], "code-reviewer"), "code-reviewer") == [
+        ("1:0", "item")]
+
+
 @pytest.mark.parametrize("option", ["--agent-type decision-analyst", "--agent-type=decision-analyst"])
 def test_analyst_agent_type_option_forms(tmp_path: Path, option: str):
     step = "uv run python scripts/step.py decision-analyst"

@@ -40,13 +40,16 @@ def timestamp(entry: dict[str, Any]) -> float | None:
 
 
 def commands(entry: dict[str, Any]):
-    """Recognize Codex work commands, excluding control commands."""
+    """Find turn launches, leaving help and session controls out."""
     for block in blocks(entry, "tool_use"):
         if entry.get("type") != "assistant" or block.get("name") != "Bash":
             continue
         for words in simple_commands(str((block.get("input") or {}).get("command", ""))):
             program, args = segment_program(words)
             if program != "codex_agent.py" or (args and args[0] in ("show", "steer", "interrupt")):
+                continue
+            options = args[:args.index("--")] if "--" in args else args
+            if any(arg in ("-h", "--help") for arg in options):
                 continue
             if len(args) < 5:
                 raise ValueError("the Codex call gives no matching role and scratch directory")
@@ -149,6 +152,6 @@ def walk_entries(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any
                     {"type": "user", "message": {"content": [
                         {"type": "tool_result", "tool_use_id": call, "content": result}]}},
                 ])
-    if scratch is None or used != len(records):
+    if used != len(records):
         raise ValueError("the launcher's calls do not match the Codex turn records")
     return out
