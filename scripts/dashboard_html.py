@@ -12,9 +12,10 @@ import time
 from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from enum import Enum, auto
+from enum import Enum
 from pathlib import Path
 
+from dashboard_standings import HOLD_WORD, HELD_HEAD, MOVING, Row, Standing, Standings, merged
 from dashboard_words import clock, hold_text, start_hold_text
 from dashboard_reads import (DAY, OPEN, STALE_RECORD, CodexWindow, OperatorRecords, Stage, change_of, hits_full,
                              journal_work, logged, phrase, stage, users, Work)
@@ -29,7 +30,7 @@ from operations.pacing import Capped, Until, Usage, WindowName
 from operations.parties import Hold, OnTicket
 from operations.state import NotComputed, Ticket
 from operations.tracker import blocked_on_user
-from ticketing.vocabulary import UNTAKEN, Kind, Resolution, Status
+from ticketing.vocabulary import Kind, Resolution, Status
 
 WEEKLY_LIMIT = 8400.0
 """The weekly usage limit in dollars, as
@@ -39,18 +40,13 @@ NOTE_WORDS = 18
 """The most words of a log line's note the page gives."""
 
 GROUP_SHOWN = 6
-"""The most rows a group of held tickets in Queued gives above its fold."""
-
-MERGED_NOTE = "merged"
-"""The opening of the note of a log line that gives a released ticket's
-change as merged."""
+"""The most rows a group of held tickets gives above its fold."""
 
 DONE_SECONDS = DAY
 """How far back Done reads the closes."""
 
 LIST_SHOWN = 8
-"""The most rows a tab of Done, or a list of Since you looked, gives above
-its fold."""
+"""The most rows Your work, a tab of Done, or Since you looked gives above its fold."""
 
 CLOSE_WORDS: Mapping[Resolution | None, str] = {
     Resolution.FIXED: "Fixed", Resolution.DUPLICATE: "Duplicate",
@@ -116,7 +112,7 @@ def tap(n: str, inner: str, cls: str = "row") -> str:
 
 @dataclass(frozen=True)
 class ChangeState:
-    """A live change whose row leads with an open ticket, the words of its
+    """A live change whose row represents an open ticket, the words of its
     state as a row of Active or Queued gives it, and whether an agent is at
     work on it (`change_states`)."""
     change: Ticket
@@ -127,7 +123,7 @@ class ChangeState:
 @dataclass(frozen=True)
 class Entry:
     """A ticket as the search and its sheet give it: its phrase, the plain
-    sentence on its status, and the live changes whose rows lead with it."""
+    sentence on its status, and the live changes whose rows represent it."""
     ticket: Ticket
     phrase: str
     status: str
@@ -255,209 +251,6 @@ def health(v: View, notes: list[str]) -> str:
     return "".join(out) or '<div class="ok">✓ All moving</div>'
 
 
-class Standing(Enum):
-    """Where an open ticket stands, by the first thing that must change
-    before it starts: nothing (at work or ready), a ticket that moves
-    (waiting), a hold of its own or its session's, or a ticket held
-    so (behind). The pause of a session is no such thing: a ticket of a
-    paused session stands as it would once the session resumes."""
-    WORKING = auto()
-    READY = auto()
-    WAITING = auto()
-    OWN_SCOPE = auto()
-    NO_OPERATOR = auto()
-    HELD = auto()
-    ON_HOLD = auto()
-    DEFERRED = auto()
-    BEHIND = auto()
-
-
-MOVING = frozenset({Standing.WORKING, Standing.READY, Standing.WAITING})
-"""The standings of a blocker that leave the ticket it blocks waiting on
-it; a blocker held otherwise leaves it behind held work."""
-
-FIRST = frozenset({Standing.WORKING, Standing.ON_HOLD, Standing.DEFERRED, Standing.NO_OPERATOR, Standing.OWN_SCOPE})
-"""The standings of a ticket's own that must change before its blocker
-matters."""
-
-HELD_HEAD: Mapping[Standing, str] = {
-    Standing.ON_HOLD: "On hold by you", Standing.DEFERRED: "Deferred",
-    Standing.OWN_SCOPE: "Outside its own work", Standing.NO_OPERATOR: "No operator running",
-    Standing.HELD: "Held by a line", Standing.BEHIND: "Behind held work"}
-"""The head of each group of held tickets in a session's tab of Queued,
-in the order of the groups."""
-
-HOLD_WORD: Mapping[Standing, str] = {
-    Standing.ON_HOLD: "on hold by you", Standing.DEFERRED: "deferred",
-    Standing.OWN_SCOPE: "outside its own work", Standing.NO_OPERATOR: "no operator",
-    Standing.HELD: "held by a line"}
-"""What holds the ticket a row behind held work waits on."""
-
-
-@dataclass(frozen=True)
-class Row:
-    """A row of Active or Queued: the ticket it leads with, and the change
-    of that ticket whose state it gives, None where it gives the ticket's
-    own."""
-    lead: Ticket
-    change: Ticket | None
-
-    @property
-    def subject(self) -> Ticket:
-        """The ticket whose state the row gives."""
-        return self.lead if self.change is None else self.change
-
-
-def merged(t: Ticket) -> bool:
-    """Whether `t` is released and its log gives its change merged."""
-    return t.status is Status.RELEASED and any(ln.note.startswith(MERGED_NOTE) for ln in t.log)
-
-
-class Standings:
-    """The rows of the open tickets of a view (`rows`), and the standing of
-    each, as `state` gives it.
-
-    A live change, an open `change` whose log does not give it merged, has
-    one row, under the ticket it leads with (`lead`). An open
-    ticket of another kind has a row of its own where its Motivation gives
-    no open ticket, and where a live change leads with it, that row shows
-    only while an agent is at work on it, and the same holds of each other
-    ticket of the change's `heads`; the agents of a ticket of
-    another kind whose Motivation gives an open ticket count for the
-    tickets it leads with."""
-
-    def __init__(self, v: View) -> None:
-        self.v = v
-        records = v.records.records
-        self.paused = {r.index for r in records if r.shown.paused}
-        self.own_scope = {r.index for r in records if r.shown.own_scope}
-        self.in_scope = {r.index: r.shown.in_scope for r in records}
-        self.live = {r.index for r in records}
-        self.main = None if v.records.main_missing is not None or not records else records[0].index
-        self.open_ = [t for t in v.all_.values() if t.status in OPEN and not merged(t)]
-        self.waiting_on: dict[str, list[Ticket]] = {}
-        for t in self.open_:
-            if (c := change_of(t, v.all_)) is not None:
-                self.waiting_on.setdefault(c.number, []).append(t)
-        self.position: dict[str, int] = {}
-        """The place of each ticket among the starts of its record that no
-        hold but the pace or the pause holds, in their order."""
-        for r in records:
-            k = 0
-            for st in r.shown.starts:
-                if st.number not in self.position and st.held in (None, Hold.PACE, Hold.PAUSE):
-                    self.position[st.number] = k
-                    k += 1
-        self.pooled: dict[str, list[ShownAgent]] = {t.number: list(v.agents.get(t.number, [])) for t in self.open_}
-        """The agents at work on each open ticket, with those of the
-        tickets of another kind than `change` that lead with it, and of the
-        change it waits on where that change is not live."""
-        self.rows: list[Row] = []
-        self.changes: dict[str, list[Ticket]] = {}
-        """The live changes of each ticket of their `heads` other than
-        themselves."""
-        for t in self.open_:
-            heads = self.heads(t)
-            if t.kind is Kind.CHANGE:
-                lead = self.lead(heads)
-                self.rows.append(Row(t, None) if lead is t else Row(lead, t))
-                for h in heads:
-                    if h is not t:
-                        self.changes.setdefault(h.number, []).append(t)
-            elif heads == [t]:
-                self.rows.append(Row(t, None))
-                c = change_of(t, v.all_)
-                if c is not None and (c.status not in OPEN or merged(c)):
-                    self.pooled[t.number] += v.agents.get(c.number, [])
-            else:
-                for h in heads:
-                    self.pooled[h.number] += v.agents.get(t.number, [])
-        self.memo: dict[str, tuple[Standing, Ticket]] = {}
-
-    def heads(self, t: Ticket, seen: frozenset[str] = frozenset()) -> list[Ticket]:
-        """The tickets the rows of the open ticket `t` lead with: for a
-        live change, each open ticket its Motivation gives or that waits
-        on it, and for a ticket of another kind, each open ticket its
-        Motivation gives, each followed by its own heads; `t` itself where
-        it has none."""
-        all_ = self.v.all_
-        served = [all_[m] for m in t.motivation if m in all_ and all_[m].status in OPEN and not merged(all_[m])]
-        if t.kind is Kind.CHANGE:
-            served += self.waiting_on.get(t.number, [])
-        out: dict[str, Ticket] = {}
-        for s in served:
-            if s.number not in seen and s.number != t.number:
-                out.update((h.number, h) for h in self.heads(s, seen | {t.number}))
-        return list(out.values()) or [t]
-
-    @staticmethod
-    def lead(heads: list[Ticket]) -> Ticket:
-        """The ticket of `heads` a live change's row leads with: the oldest
-        `request`, else the oldest."""
-        return min(heads, key=lambda h: (h.kind is not Kind.REQUEST, h.filed))
-
-    def shown(self, r: Row) -> bool:
-        """Whether `r` shows: a row of a ticket's own where the ticket is
-        one of the `heads` of a live change shows only while an agent is at
-        work on it."""
-        return r.change is not None or r.lead.number not in self.changes or bool(self.agents(r.lead))
-
-    def agents(self, t: Ticket) -> list[ShownAgent]:
-        """The agents whose work the standing of `t` counts (`pooled`)."""
-        return self.pooled.get(t.number, [])
-
-    def blocker(self, t: Ticket) -> Ticket | None:
-        """The first open ticket `depends-on` of `t` gives, else the open
-        change `t` waits on."""
-        deps = [d for d in t.depends_on if d in self.v.all_ and self.v.all_[d].status in OPEN]
-        if deps:
-            return self.v.all_[deps[0]]
-        c = change_of(t, self.v.all_)
-        return c if c is not None and c.status in OPEN else None
-
-    def own(self, t: Ticket) -> Standing:
-        """The standing of `t` apart from its blockers."""
-        v = self.v
-        c = change_of(t, v.all_)
-        if self.agents(t):
-            return Standing.WORKING
-        if t.status is Status.BLOCKED or (c is not None and c.status is Status.BLOCKED):
-            return Standing.ON_HOLD
-        if t.status is Status.DEFERRED:
-            return Standing.DEFERRED
-        if t.session is None or t.session not in self.live:
-            return Standing.NO_OPERATOR
-        if t.session in self.own_scope and not self.owned(t):
-            return Standing.OWN_SCOPE
-        if t.number in self.position or (t.status in UNTAKEN and t.number not in v.holds):
-            return Standing.READY
-        return Standing.HELD
-
-    def owned(self, t: Ticket) -> bool:
-        """Whether the operator of the session of `t`, which has a record,
-        takes `t` while it keeps to its own scope: `t` is of the record's
-        `in_scope`; or, where the record gives no `in_scope`, `t` is the
-        user's."""
-        admitted = self.in_scope[t.session]
-        return self.v.mine(t) if admitted is None else t.number in admitted
-
-    def state(self, t: Ticket, seen: frozenset[str] = frozenset()) -> tuple[Standing, Ticket]:
-        """The standing of `t` and the ticket it stands by: `t`'s own
-        standing and `t` where that standing is in `FIRST` or `t` has no
-        blocker; waiting and its blocker where that blocker's standing is
-        in `MOVING`; else behind held work and the held ticket at the end
-        of the chain."""
-        if t.number in self.memo:
-            return self.memo[t.number]
-        k = self.own(t)
-        b = None if k in FIRST else self.blocker(t)
-        if b is None or b.number in seen:
-            out = (k, t)
-        else:
-            bk, root = self.state(b, seen | {t.number})
-            out = (Standing.WAITING, b) if bk in MOVING else (Standing.BEHIND, root)
-        self.memo[t.number] = out
-        return out
 
 
 class Mark(Enum):
@@ -493,27 +286,34 @@ def stopped_bar(v: View, r: Row) -> str:
     return stage_bar(w.stage, Mark.FINISHED if w.finished else Mark.STOPPED)
 
 
-def row(v: View, t: Ticket, right: str, change: Ticket | None, lead: int | None = None) -> str:
+def row(v: View, t: Ticket, right: str, change: Ticket | None, lead: int | None = None,
+        members: tuple[Ticket, ...] = ()) -> str:
     """The row of `t`, led by `lead` where it is given, with the number of
     `change`, the change whose state it gives, under its own, and `right`
     at its end."""
+    if merged(t):
+        right = f'{esc(t.status.value.capitalize())} · merged, awaiting tracker closure'
     star = '<span class="star">★</span>' if t.number in v.expedited else ""
-    under = "" if change is None else f"<small>{esc(change.number)}</small>"
+    under = "" if change is None or change is t else f'<small>{link(change.number)}</small>'
+    related = ''.join(f'<a class="tk related" data-n="{esc(m.number)}">'
+                      f'{esc(m.number)} · {esc(capitalized(v.phrase(m)))}</a>'
+                      for m in members if m.number != t.number )
+    related = f'<span class="members">{related}</span>' if related else ""
     return tap(t.number, ("" if lead is None else f'<span class="wq">{lead}</span>')
                + f'<span class="wn">{esc(t.number)}{under}</span><span class="wp">{star}{esc(capitalized(v.phrase(t)))}</span>'
-               f'<span class="ws">{right}</span>', "wr" + ("" if lead is None else " ld") + (" me" if v.mine(t) else ""))
+               f'<span class="ws">{right}</span>{related}', "wr" + ("" if lead is None else " ld") + (" me" if v.mine(t) else ""))
 
 
 def link(n: str) -> str:
     return f'<a class="tk" data-n="{esc(n)}">{esc(n)} ›</a>'
 
 
-def active(v: View, st: Standings) -> tuple[str, int]:
+def active(v: View, st: Standings, selected: list[Row] | None = None) -> tuple[str, int]:
     """The HTML of Active, the rows whose subject an agent is at work on,
     in the order of their takes, the newest first among those of one
     time, and the count of its rows."""
     rows: list[tuple[float, float, Row, str]] = []
-    for r in st.rows:
+    for r in st.rows if selected is None else selected:
         if st.shown(r) and (w := st.agents(r.subject)):
             a = max(w, key=lambda a: a.launched)
             b = basis(v, r)
@@ -524,7 +324,7 @@ def active(v: View, st: Standings) -> tuple[str, int]:
     rows.sort(key=lambda x: x[:2])
     if not rows:
         return '<div class="meta">Nothing is being worked on.</div>', 0
-    return '<div class="wl">' + "".join(row(v, r.lead, right, r.change) for _, _, r, right in rows) + "</div>", len(rows)
+    return '<div class="wl">' + "".join(row(v, r.lead, right, r.change, members=r.members) for _, _, r, right in rows) + "</div>", len(rows)
 
 
 def session_line(st: Standings, s: int | None) -> str:
@@ -555,7 +355,7 @@ def behind(st: Standings, root: Ticket) -> str:
 
 
 def change_states(v: View, st: Standings, t: Ticket) -> list[ChangeState]:
-    """The live changes whose rows lead with `t` (`Standings.changes`),
+    """The live changes whose rows represent `t` (`Standings.changes`),
     each with the words of its state: the agent at work on it, next to
     start, the ticket it waits on, or the head of its group of held
     tickets; those at work first."""
@@ -594,7 +394,7 @@ def tab_set(key: str, panes: list[tuple[int | None, str, str]]) -> str:
             + "".join(f'<div class="pane" data-s="{s}">{body}</div>' for s, _, body in panes) + "</div>")
 
 
-def queued(v: View, st: Standings) -> str:
+def queued(v: View, st: Standings, selected: list[Row] | None = None) -> str:
     """The HTML of Queued: a tab for each session that filed the ticket
     of a row shown whose subject is not at work, and in it, its operator's
     state, its rows ready (`Next`, or `Next on resume` in a paused
@@ -604,9 +404,7 @@ def queued(v: View, st: Standings) -> str:
     the user's tickets first, then the expedited ones, then the newest
     first."""
     sessions: dict[int | None, list[tuple[Row, Standing, Ticket]]] = {}
-    for r in st.rows:
-        if r.change is None and r.lead.number in st.changes:
-            continue
+    for r in st.rows if selected is None else selected:
         k, root = st.state(r.subject)
         if k is not Standing.WORKING:
             sessions.setdefault(r.lead.session, []).append((r, k, root))
@@ -626,11 +424,11 @@ def queued(v: View, st: Standings) -> str:
         body = f'<div class="sh2">{esc(session_line(st, s))}</div>'
         if ready:
             body += (f'<div class="gh">Next{" on resume" if s in st.paused else ""}</div><div class="wl">'
-                     + "".join(row(v, r.lead, stopped_bar(v, r), r.change, i + 1) for i, r in enumerate(ready)) + "</div>")
+                     + "".join(row(v, r.lead, stopped_bar(v, r), r.change, st.position.get(r.subject.number, i) + 1, r.members) for i, r in enumerate(ready)) + "</div>")
         if waiting:
             body += ('<div class="gh">Waiting</div><div class="wl">'
                      + "".join(row(v, r.lead, f"{stopped_bar(v, r)}<span>after {link(st.state(r.subject)[1].number)}</span>",
-                                 r.change) for r in waiting)
+                                 r.change, members=r.members) for r in waiting)
                      + "</div>")
         groups: dict[Standing, list[tuple[Row, Ticket]]] = {}
         for r, k, root in items:
@@ -640,13 +438,46 @@ def queued(v: View, st: Standings) -> str:
             label = HELD_HEAD[k]
             xs.sort(key=lambda x: (not v.mine(x[0].lead), x[0].lead.number not in v.expedited, -x[0].subject.filed))
             rows = [row(v, r.lead, stopped_bar(v, r) + (f"<span>after {link(root.number)} · {esc(HOLD_WORD[st.own(root)])}</span>"
-                                                        if k is Standing.BEHIND else ""), r.change)
+                                                        if k is Standing.BEHIND else ""), r.change, members=r.members)
                     for r, root in xs]
             inner = folded(rows, GROUP_SHOWN)
             opened = " open" if label == HELD_HEAD[Standing.ON_HOLD] or any(v.mine(r.lead) for r, _ in xs) else ""
             body += f'<details class="grp"{opened}><summary>{esc(label)} · {len(xs)}</summary>{inner}</details>'
         panes.append((s, tab_word(st, s), body))
     return tab_set(QUEUED_TAB, panes)
+
+
+def held_by_line(st: Standings, r: Row) -> bool:
+    k, root = st.state(r.subject)
+    return k is Standing.HELD or (k is Standing.BEHIND and st.own(root) is Standing.HELD)
+
+
+def priority(v: View, st: Standings, rows: list[Row], shown: int) -> str:
+    """Rows with their session, standing, operator position and stage."""
+    rendered = []
+    for r in rows:
+        t = r.subject
+        k, root = st.state(t)
+        if k is Standing.WORKING:
+            w = st.agents(t)
+            state = stage_bar(stage([a.role for a in w], basis(v, r)), Mark.AT_WORK) + at_work(w, v.now)
+        elif k is Standing.READY:
+            position = st.position.get(t.number)
+            state = 'Ready' + ('' if position is None else f' · position {position + 1}')
+            if t.session in st.paused:
+                state += ' · starts on resume'
+        elif k in (Standing.WAITING, Standing.BEHIND):
+            state = f'after {link(root.number)}'
+            if k is Standing.BEHIND:
+                state += f' · {esc(HOLD_WORD[st.own(root)])}'
+        else:
+            state = esc(HELD_HEAD[k])
+        if any(m.status is Status.BLOCKED for m in r.members):
+            state += ' · waits on your decision'
+        if k is not Standing.WORKING:
+            state = stopped_bar(v, r) + state
+        rendered.append(row(v, r.lead, f'{session_name(t.session)} · {state}', r.change, members=r.members))
+    return folded(rendered, shown)
 
 
 def done(v: View) -> str:
@@ -773,12 +604,22 @@ def page(tickets: Path, now: float, usage: Reading, records: OperatorRecords,
     v = View(all_, records, usage.usage, now, records.expedited(), records.agents(), starts,
              {s.number: s.held for s in starts if s.held is not None}, journal_work(tickets), codex)
     st = Standings(v)
-    work, working = active(v, st)
+    _, working = active(v, st)
+    yours = [r for r in st.rows if any(v.mine(m) or m.number in v.expedited for m in r.members)]
+    yours.sort(key=lambda r: (not any(m.number in v.expedited for m in r.members),
+                             0 if held_by_line(st, r) else 1 if st.state(r.subject)[0] is Standing.WORKING else 2,
+                             -r.subject.filed))
+    remaining = [r for r in st.rows if r not in yours]
+    held = sorted((r for r in remaining if held_by_line(st, r)), key=lambda r: -r.subject.filed)
+    remaining = [r for r in remaining if r not in held]
+    work, _ = active(v, st, remaining)
     stuck, waits = blocked(v)
     sections = [
+        ("yours", f"Your work · {len(yours)}", priority(v, st, yours, LIST_SHOWN)),
+        ("held", f"Held by a line · {len(held)}", priority(v, st, held, GROUP_SHOWN)),
         ("health", "Health", health(v, [*undecided, *(f"unread: {u.path}: {u.why}" for u in unread)])),
         ("active", "Active", work),
-        ("queued", "Queued", queued(v, st)),
+        ("queued", "Queued", queued(v, st, remaining)),
         ("done", "Done", done(v) + '<div class="key"><span><i></i>filed by you</span><span>★ expedited</span></div>'),
         ("sl", "Since you looked", '<div id="since"></div>'),
         ("pace", "Pace", pace(v)), ("queue", "Queue", queue(v)),
