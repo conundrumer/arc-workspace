@@ -23,6 +23,7 @@ def files(tmp_path: Path):
     (home / ".claude" / "CLAUDE.md").write_text("user instructions")
     brief = tmp_path / "brief.md"
     brief.write_text("brief body")
+    subprocess.run(["git", "init", str(root)], check=True, capture_output=True, env={})
     return root, home, brief, tmp_path / "scratch"
 
 
@@ -64,6 +65,32 @@ def test_no_user_document(files):
         "repo instructions\n\nbrief body\n\nitem")
 
 
+def test_worktree_git_dir_is_writable(files):
+    root, home, brief, scratch = files
+    subprocess.run(["git", "-C", str(root), "-c", "user.name=Test", "-c",
+                    "user.email=test@example.com", "-c", "commit.gpgsign=false",
+                    "commit", "--allow-empty", "-m", "initial"],
+                   check=True, capture_output=True, env={})
+    worktree = root.parent / "worktree"
+    subprocess.run(["git", "-C", str(root), "worktree", "add", "--detach", str(worktree)],
+                   check=True, capture_output=True, env={})
+    git_dir = root / ".git" / "worktrees" / worktree.name
+    calls = []
+
+    def runner(argv):
+        calls.append(argv)
+        Path(argv[argv.index("-o") + 1]).write_text("done")
+        return subprocess.CompletedProcess(argv, 0, '{"thread_id":"t1"}', "")
+
+    assert agent.run("code-editor", scratch, brief, "gpt-6.1-sol", "high", "item",
+                     root, home, root, worktree, runner) == "done"
+    argv = calls[0]
+    writable = [argv[i + 1] for i, arg in enumerate(argv) if arg == "--add-dir"]
+    assert str(root / ".git") in writable
+    assert str(git_dir) in writable
+    assert argv[argv.index("-C") + 1] == str(worktree)
+
+
 @pytest.mark.parametrize("explicit", [False, True])
 def test_cwd(files, monkeypatch, explicit):
     root, home, brief, scratch = files
@@ -81,7 +108,9 @@ def test_cwd(files, monkeypatch, explicit):
         Path(argv[argv.index("-o") + 1]).write_text("done")
         return subprocess.CompletedProcess(argv, 0, '{"thread_id":"t1"}', "")
 
-    monkeypatch.setattr(agent.subprocess, "run", lambda argv, **_: runner(argv))
+    subprocess_run = subprocess.run
+    monkeypatch.setattr(agent.subprocess, "run", lambda argv, **kwargs:
+                        runner(argv) if argv[0] == "codex" else subprocess_run(argv, **kwargs))
     args = ["code-editor", str(scratch), str(brief), "gpt-6.1-sol", "high"]
     assert agent.main([*args, *(["--cwd", str(worktree)] if explicit else [])]) == 0
     assert (scratch / agent.DONE).exists()

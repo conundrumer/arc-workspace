@@ -83,10 +83,13 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
     prompt = item if thread is not None else first_prompt(root, home, agent, brief, item)
     last = scratch / "codex-last.md"
     last.unlink(missing_ok=True)
+    git_dir = Path(checkout.git_out(cwd, "rev-parse", "--absolute-git-dir").strip())
     # The repository's commands write the main tree's tickets, git data and
-    # caches, and uv's and cargo's caches, from any worktree.
-    writable = [main / "tickets", main / ".git", main / ".cache", home / ".cache" / "uv",
-                home / ".cargo", scratch]
+    # caches, and uv's and cargo's caches, from any worktree. Codex keeps the
+    # git dir of a worktree it runs in read-only unless that dir is a root.
+    writable = [main / "tickets", main / ".git",
+                *([git_dir] if git_dir != main / ".git" else []), main / ".cache",
+                home / ".cache" / "uv", home / ".cargo", scratch]
     argv = ["codex", "exec", "-m", model, "-c", f'model_reasoning_effort="{effort}"',
             "-c", "project_doc_max_bytes=0", "-s", "workspace-write",
             "-c", "sandbox_workspace_write.network_access=true",
