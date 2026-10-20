@@ -849,7 +849,7 @@ impl Reader {
             let clause = self.list(expr, "a `never` clause")?;
             record.token(clause.open);
             record.token(clause.items[0].place());
-            never.push(self.conjuncts(&clause.items[1..], &path.child(next), scope, Record::new(None), None));
+            never.push(self.conjuncts(&clause.items[1..], &path.child(next), scope, Record::new(Some(clause.place)), None));
             next += 1;
             record.token(clause.close);
         }

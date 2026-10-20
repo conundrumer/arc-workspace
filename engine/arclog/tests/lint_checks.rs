@@ -180,8 +180,8 @@ fn a_choose_with_no_never_is_refused_at_its_end() {
 const NEVER_READS_ONCE: &str = "(RULE &cell (input *P (:Col *C)))\n(CHOOSE &pick\n  (from (&cell *P *C))\n  (never\n    (&cell *P *C)\n    (input P (:Col C))))";
 
 #[test]
-fn a_never_that_reads_the_candidate_once_is_refused_at_the_end() {
-    assert_eq!(refused_lines(NEVER_READS_ONCE, CheckId::Picks), vec![2]);
+fn a_never_that_reads_the_candidate_once_is_refused_at_its_clause() {
+    assert_eq!(refused_lines(NEVER_READS_ONCE, CheckId::Picks), vec![4]);
     assert_eq!(first_refused(NEVER_READS_ONCE, CheckId::Picks), Some((path(&[]), vec![path(&[1])])));
 }
 
