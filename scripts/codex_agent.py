@@ -95,7 +95,7 @@ def role_instructions(root: Path, home: Path, agent: str,
     return "\n\n".join([
         *styles, PREAMBLE, *document,
         entry_text((root / "CLAUDE.md").resolve()),
-        *([entry_text(user.resolve())] if user.exists() else [])])
+        *([user.read_text()] if user.exists() else [])])
 
 
 def execute(argv: list[str]) -> subprocess.CompletedProcess[str]:
