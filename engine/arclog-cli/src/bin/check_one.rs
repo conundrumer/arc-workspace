@@ -11,7 +11,7 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use arclog::check::{check_program, CheckCache, SolverClauses};
+use arclog::check::{check_program_of_files, CaseFiles, CheckCache, SolverClauses};
 use arclog::diagnostic::{Diagnostic, Severity};
 use arclog::harness::read_corpus_solver;
 use arclog::read::read_solver;
@@ -62,7 +62,7 @@ fn check(corpus: &Path, task_id: &str) -> Vec<String> {
     let concept = resolve(&concept_case.program, None, &derived, registry);
     lines.extend(concept.diagnostics.iter().map(line));
     let concept = Arc::new(concept.value);
-    let mut programs = vec![(*concept).clone()];
+    let mut programs = vec![(concept_case.clone(), Arc::clone(&concept))];
     for case in solver.cases(Exclusion::WithExcluded) {
         if case.name == concept_case.name {
             continue;
@@ -70,11 +70,12 @@ fn check(corpus: &Path, task_id: &str) -> Vec<String> {
         let reads = ConceptReads { concept: &concept, determinations: case.concept_determinations() };
         let resolved = resolve(&case.program, Some(reads), &derived, registry);
         lines.extend(resolved.diagnostics.iter().map(line));
-        programs.push(resolved.value);
+        programs.push((case, Arc::new(resolved.value)));
     }
     let mut cache = CheckCache::default();
-    for program in programs {
-        if let Err(diagnostics) = check_program(program, &clauses, registry, &mut cache) {
+    for (case, program) in programs {
+        let files = CaseFiles { solver: &solver, case: &case };
+        if let Err(diagnostics) = check_program_of_files(program, &clauses, registry, &mut cache, Some(&files)) {
             lines.extend(diagnostics.iter().map(line));
         }
     }
