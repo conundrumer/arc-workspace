@@ -16,6 +16,7 @@ from ticket_form import bounds, check_fix, front, ticket_kind, title
 from ticket_log import line_time, log_lines, log_moves, read_ticket
 from ticket_numbers import TicketNumber
 from token_prices import span_cost
+from transcript_entries import epoch
 from transcripts import find
 from transcript_snapshots import Refused
 
@@ -56,14 +57,20 @@ class Case:
 def case_loss(run: str, start: str, end: str, undecided: list[str]) -> Case:
     """The case of the run `run` from `start` to `end`, times in
     `TIME_FORM`, with its dollars None where a request of the run has no
-    price, with an `undecided` line for it."""
+    price, with an `undecided` line for it. Refuses a span that starts
+    before the run's first entry or ends after the time of the call."""
     try:
         begin, finish = stamp_time(start), stamp_time(end)
     except ValueError:
         raise Refused(mctx("a case's span is two times of the form `{form}`").format(form=TIME_FORM))
     if finish < begin:
         raise Refused(mctx("the span of the case ends before it starts"))
-    dollars = span_cost(run_entries(find(run)), begin, finish, undecided)
+    entries = list(run_entries(find(run)))
+    first = entries[0]["timestamp"]
+    if begin < epoch(first) or finish > time.time():
+        raise Refused(mctx("the case's span starts before the run's first entry at {first} "
+                           "or ends after the time of the call").format(first=first))
+    dollars = span_cost(entries, begin, finish, undecided)
     return Case(run, start, end, dollars, finish - begin)
 
 
