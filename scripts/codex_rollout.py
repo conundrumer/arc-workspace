@@ -64,10 +64,15 @@ class Turn:
         return difference(self.after, self.before)
 
 
+def rollout_files(home: Path, pattern: str = "rollout-*.jsonl") -> list[Path]:
+    """Local Codex session rollouts, in path order."""
+    return sorted((home / ".codex" / "sessions").rglob(pattern))
+
+
 def rollout_path(thread: str, home: Path) -> Path:
     if not thread or not all(c.isascii() and (c.isalnum() or c == "-") for c in thread):
         raise ValueError("invalid Codex session id")
-    paths = list((home / ".codex" / "sessions").rglob(f"rollout-*-{thread}.jsonl"))
+    paths = rollout_files(home, f"rollout-*-{thread}.jsonl")
     if len(paths) != 1:
         raise ValueError(f"expected one live rollout for {thread}, found {len(paths)}")
     return paths[0]

@@ -2,15 +2,23 @@
 recorded states of the operators of each session, and of a ticket its phrase,
 the change it waits on, whether it is the user's, the stage of the work
 on it and the work on its change, from the change's log and the sessions'
-step journals; and the time a usage window reaches 100% at its rate so far."""
+step journals; the Codex weekly account limit from local rollouts; and the
+time a usage window reaches 100% at its rate so far."""
 
 import os
+import json
+import math
+import threading
+import time
 from collections import Counter
 from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass
+from datetime import datetime
 from enum import IntEnum
 from pathlib import Path
+from typing import Any
 
+from codex_rollout import rollout_files
 from idle_sessions import live, named_main
 from shown_state import Shown, ShownAgent, ShownParty, Start, shown_read
 from step_journal import records
@@ -297,3 +305,102 @@ def hits_full(usage: Usage, name: WindowName) -> float | None:
         return None
     at = usage.now + (100 - w.used_pct) * (usage.now - start) / w.used_pct
     return at if at < w.resets_at else None
+
+
+@dataclass(frozen=True)
+class CodexWindow:
+    """A weekly account observation, with its observation and reset times."""
+    used_pct: float
+    observed: float
+    resets_at: float
+
+
+def codex_window(row: Any) -> CodexWindow | None:
+    """Read a weekly Codex account limit from a token_count event.
+
+    Other limit identities, malformed observations and token totals give
+    no account observation. The duration identifies the weekly window.
+    """
+    if not isinstance(row, dict) or row.get("type") != "event_msg":
+        return None
+    payload = row.get("payload")
+    if not isinstance(payload, dict) or payload.get("type") != "token_count":
+        return None
+    limits = payload.get("rate_limits")
+    if not isinstance(limits, dict) or limits.get("limit_id") not in (None, "codex"):
+        return None
+    try:
+        at = datetime.fromisoformat(row["timestamp"])
+        if at.tzinfo is None:
+            return None
+        observed = at.timestamp()
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return None
+    for key in ("primary", "secondary"):
+        window = limits.get(key)
+        if not isinstance(window, dict) or window.get("window_minutes") != 10080:
+            continue
+        used, reset = window.get("used_percent"), window.get("resets_at")
+        if (not isinstance(used, (int, float)) or isinstance(used, bool)
+                or not isinstance(reset, (int, float)) or isinstance(reset, bool)
+                or not math.isfinite(used) or not math.isfinite(reset)
+                or not 0 <= used <= 100 or not observed < reset <= observed + 604800):
+            continue
+        return CodexWindow(float(used), observed, float(reset))
+    return None
+
+
+@dataclass
+class CodexSource:
+    """The complete-line offset and latest weekly observation of one file."""
+    identity: tuple[int, int]
+    offset: int = 0
+    latest: CodexWindow | None = None
+
+
+class CodexLimits:
+    """Incremental local account reads, serialized across HTTP threads.
+
+    Discover rollouts at most once in 30 seconds. Read appended complete
+    lines, and restart a file after replacement or truncation. An expired
+    latest observation gives unavailable until another observation arrives.
+    """
+    def __init__(self, home: Path) -> None:
+        self.home = home
+        self.sources: dict[Path, CodexSource] = {}
+        self.discover_at = 0.0
+        self.lock = threading.Lock()
+
+    def read(self, now: float) -> CodexWindow | None:
+        with self.lock:
+            tick = time.monotonic()
+            if tick >= self.discover_at:
+                paths = rollout_files(self.home)
+                self.sources = {p: self.sources.get(p, CodexSource((0, 0))) for p in paths}
+                self.discover_at = tick + 30
+            for path, source in self.sources.items():
+                try:
+                    with path.open("rb") as stream:
+                        stat = os.fstat(stream.fileno())
+                        identity = (stat.st_dev, stat.st_ino)
+                        if source.identity != identity or stat.st_size < source.offset:
+                            source = CodexSource(identity)
+                            self.sources[path] = source
+                        stream.seek(source.offset)
+                        while line := stream.readline():
+                            if not line.endswith(b"\n"):
+                                break
+                            source.offset = stream.tell()
+                            try:
+                                found = codex_window(json.loads(line))
+                            except (ValueError, UnicodeError):
+                                continue
+                            if found is not None and (source.latest is None
+                                                      or found.observed >= source.latest.observed):
+                                source.latest = found
+                except OSError:
+                    self.sources[path] = CodexSource((0, 0))
+            latest = max((s.latest for s in self.sources.values()
+                          if s.latest is not None and s.latest.observed <= now),
+                         key=lambda w: (w.observed, w.resets_at, w.used_pct), default=None)
+            return latest if latest is not None and now < latest.resets_at else None

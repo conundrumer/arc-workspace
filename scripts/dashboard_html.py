@@ -16,7 +16,7 @@ from enum import Enum, auto
 from pathlib import Path
 
 from dashboard_words import clock, hold_text, start_hold_text
-from dashboard_reads import (DAY, OPEN, STALE_RECORD, OperatorRecords, Stage, change_of, hits_full,
+from dashboard_reads import (DAY, OPEN, STALE_RECORD, CodexWindow, OperatorRecords, Stage, change_of, hits_full,
                              journal_work, logged, phrase, stage, users, Work)
 from dashboard_template import DONE_TAB, EVENTS, LAST_LOOK, QUEUED_TAB, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
 from shown_state import ScriptAdmits, Shown, ShownAgent, ShownParty, Start
@@ -160,6 +160,7 @@ class View:
     starts: list[Start]
     holds: Mapping[str, ShownParty]
     work: Mapping[str, list[Work]]
+    codex: CodexWindow | None = None
 
     def mine(self, t: Ticket) -> bool:
         return users(t, self.expedited)
@@ -201,6 +202,18 @@ def usage_bar(usage: Usage, name: WindowName, label: str) -> str:
             f'<span class="uv{" w" if hot else ""}">{win.used_pct:.0f}%</span></div>')
 
 
+def codex_bar(window: CodexWindow | None, now: float) -> str:
+    """The weekly Codex account usage and reset, or unavailable."""
+    label = '<span class="ul">Codex</span>'
+    if window is None or window.resets_at <= now:
+        return (f'<div class="ub">{label}<div class="bar"></div>'
+                '<span class="cr">Unavailable</span></div>')
+    return (f'<div class="ub">{label}<div class="bar">'
+            f'<i style="width:{window.used_pct:.0f}%"></i></div>'
+            f'<span class="uv">{window.used_pct:.0f}%</span>'
+            f'<span class="cr">Resets {esc(clock(window.resets_at, now))}</span></div>')
+
+
 def per_session[T](v: View, value: Callable[[Shown], T]) -> list[tuple[str, T]]:
     """The `value` of each record, led by its session's name and a space,
     `Main` for a main session with no index, or the one value with an
@@ -218,7 +231,8 @@ def strip(v: View, working: int) -> str:
               + ("" if held == [""] else f" ({esc(', '.join(held))})") + "</span>")
     return (f'<div class="strip"><div class="r1">{ops} · {working} in flight{starts}</div>'
             f'{usage_bar(v.usage, WindowName.SEVEN_DAY, "Week")}'
-            f'{usage_bar(v.usage, WindowName.FIVE_HOUR, "5 h")}</div>')
+            f'{usage_bar(v.usage, WindowName.FIVE_HOUR, "5 h")}'
+            f'{codex_bar(v.codex, v.now)}</div>')
 
 
 def health(v: View, notes: list[str]) -> str:
@@ -751,13 +765,13 @@ def blocked(v: View) -> tuple[str, int]:
 
 
 def page(tickets: Path, now: float, usage: Reading, records: OperatorRecords,
-         undecided: list[str]) -> Rendered:
+         undecided: list[str], codex: CodexWindow | None = None) -> Rendered:
     """The page at `now`, with the `undecided` lines of its reads."""
     read, unread = read_tickets(tickets)
     all_ = dict(sorted(read.items(), key=lambda kv: kv[1].order))
     starts = records.starts()
     v = View(all_, records, usage.usage, now, records.expedited(), records.agents(), starts,
-             {s.number: s.held for s in starts if s.held is not None}, journal_work(tickets))
+             {s.number: s.held for s in starts if s.held is not None}, journal_work(tickets), codex)
     st = Standings(v)
     work, working = active(v, st)
     stuck, waits = blocked(v)

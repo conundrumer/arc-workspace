@@ -44,7 +44,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from dashboard_html import Rendered, page
-from dashboard_reads import operator_records
+from dashboard_reads import CodexLimits, CodexWindow, operator_records
 from dashboard_search import results, sheet, words
 from dashboard_template import EVENTS, SEARCH_ROUTE, TICKET_ROUTE
 from file_ticket import main_tickets
@@ -69,6 +69,9 @@ ROOT = Path(__file__).resolve().parents[1]
 """The root of the tree the server runs from."""
 
 
+CODEX = CodexLimits(Path.home())
+
+
 type Stamp = tuple[str, int, int] | None
 
 
@@ -82,10 +85,11 @@ def stamp(path: Path) -> Stamp:
     return (path.name, st.st_mtime_ns, st.st_size)
 
 
-def fingerprint(tickets: Path) -> tuple[Stamp, ...]:
+def fingerprint(tickets: Path) -> tuple[Stamp | CodexWindow, ...]:
     """The stamps of each status directory of `tickets`, of each ticket file
     outside `tickets/closed/` (a log line appended to a file changes its
-    time and not its directory's) and of the usage cache. The page answers
+    time and not its directory's), of the usage cache, and of the current
+    Codex weekly observation. The page answers
     a change of it with a render."""
     out: list[Stamp] = []
     for s in Status:
@@ -93,7 +97,7 @@ def fingerprint(tickets: Path) -> tuple[Stamp, ...]:
         out.append(stamp(d))
         if s is not Status.CLOSED and d.is_dir():
             out.extend(stamp(p) for p in sorted(d.iterdir()))
-    return (*out, stamp(usage_file()))
+    return (*out, stamp(usage_file()), CODEX.read(time.time()))
 
 
 def code_files() -> list[Path]:
@@ -115,7 +119,7 @@ def render(tickets: Path) -> Rendered:
     an earlier render read it."""
     now = new_state()
     undecided: list[str] = []
-    return page(tickets, now, read(now, undecided), operator_records(tickets, now), undecided)
+    return page(tickets, now, read(now, undecided), operator_records(tickets, now), undecided, CODEX.read(now))
 
 
 def accepts_gzip(header: str | None) -> bool:
