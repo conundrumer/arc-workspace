@@ -272,9 +272,10 @@ def health(v: View, notes: list[str]) -> str:
 
 
 class Standing(Enum):
-    """Where an open ticket stands: at work, ready for its session's
-    operator to start, waiting on a ticket at work or ready, or held, with
-    what holds it."""
+    """Where an open ticket stands, by the first thing that must change
+    before it starts: nothing (at work or ready), a ticket that moves
+    (waiting), a hold of its own or its session's, or a ticket held
+    so (behind)."""
     WORKING = auto()
     READY = auto()
     WAITING = auto()
@@ -283,23 +284,29 @@ class Standing(Enum):
     NO_OPERATOR = auto()
     HELD = auto()
     ON_HOLD = auto()
+    BEHIND = auto()
 
 
 MOVING = frozenset({Standing.WORKING, Standing.READY, Standing.WAITING})
 """The standings of a blocker that leave the ticket it blocks waiting on
-it; a blocker held otherwise passes its hold on."""
+it; a blocker held otherwise leaves it behind held work."""
+
+FIRST = frozenset({Standing.WORKING, Standing.ON_HOLD, Standing.NO_OPERATOR, Standing.OWN_SCOPE, Standing.PAUSED})
+"""The standings of a ticket's own that must change before its blocker
+matters."""
 
 HELD_HEAD: Mapping[Standing, str] = {
-    Standing.PAUSED: "Paused", Standing.OWN_SCOPE: "Outside its own work",
-    Standing.NO_OPERATOR: "No operator running", Standing.HELD: "Held by a line",
-    Standing.ON_HOLD: "On hold by you"}
+    Standing.ON_HOLD: "On hold by you", Standing.PAUSED: "Paused",
+    Standing.OWN_SCOPE: "Outside its own work", Standing.NO_OPERATOR: "No operator running",
+    Standing.HELD: "Held by a line", Standing.BEHIND: "Behind held work"}
 """The head of each group of held tickets in a session's tab of Queued,
-in the order of the groups, where the hold is the session's own."""
+in the order of the groups."""
 
-ELSEWHERE_HEAD: Mapping[Standing, str] = {
-    Standing.PAUSED: "Waits on paused {session}", Standing.OWN_SCOPE: "Waits on {session}'s other work",
-    Standing.NO_OPERATOR: "Waits on {session}, no operator", Standing.HELD: "Waits on a hold in {session}"}
-"""The head of a group whose hold is that of another session, `{session}`."""
+HOLD_WORD: Mapping[Standing, str] = {
+    Standing.ON_HOLD: "on hold by you", Standing.PAUSED: "paused",
+    Standing.OWN_SCOPE: "outside its own work", Standing.NO_OPERATOR: "no operator",
+    Standing.HELD: "held by a line"}
+"""What holds the ticket a row behind held work waits on."""
 
 
 @dataclass(frozen=True)
@@ -432,18 +439,19 @@ class Standings:
 
     def state(self, t: Ticket, seen: frozenset[str] = frozenset()) -> tuple[Standing, Ticket]:
         """The standing of `t` and the ticket it stands by: `t`'s own
-        standing and `t` where it is at work, on hold or has no blocker;
-        waiting and its blocker where that blocker's standing is in
-        `MOVING`; else the state of its blocker."""
+        standing and `t` where that standing is in `FIRST` or `t` has no
+        blocker; waiting and its blocker where that blocker's standing is
+        in `MOVING`; else behind held work and the held ticket at the end
+        of the chain."""
         if t.number in self.memo:
             return self.memo[t.number]
         k = self.own(t)
-        b = None if k in (Standing.WORKING, Standing.ON_HOLD) else self.blocker(t)
+        b = None if k in FIRST else self.blocker(t)
         if b is None or b.number in seen:
             out = (k, t)
         else:
             bk, root = self.state(b, seen | {t.number})
-            out = (Standing.WAITING, b) if bk in MOVING else (bk, root)
+            out = (Standing.WAITING, b) if bk in MOVING else (Standing.BEHIND, root)
         self.memo[t.number] = out
         return out
 
@@ -532,10 +540,10 @@ def session_name(s: int | None) -> str:
     return "No session" if s is None else f"S{s}"
 
 
-def held_label(k: Standing, by: int | None, s: int | None) -> str:
-    """The head of the group of a ticket of session `s` held as `k`, by a
-    ticket of session `by`."""
-    return ELSEWHERE_HEAD[k].format(session=session_name(by)) if by != s and k in ELSEWHERE_HEAD else HELD_HEAD[k]
+def behind(st: Standings, root: Ticket) -> str:
+    """The words of a ticket behind held work: the held ticket `root` and
+    what holds it."""
+    return f"after {root.number} · {HOLD_WORD[st.own(root)]}"
 
 
 def change_states(v: View, st: Standings, t: Ticket) -> list[ChangeState]:
@@ -553,8 +561,10 @@ def change_states(v: View, st: Standings, t: Ticket) -> list[ChangeState]:
                 words = "next to start"
             case Standing.WAITING:
                 words = f"after {root.number}"
+            case Standing.BEHIND:
+                words = behind(st, root)
             case _:
-                words = held_label(k, root.session, c.session).lower()
+                words = HELD_HEAD[k].lower()
         out.append(ChangeState(c, words, k is Standing.WORKING))
     return sorted(out, key=lambda x: not x.at_work)
 
@@ -611,16 +621,15 @@ def queued(v: View, st: Standings) -> str:
                      + "".join(row(v, r.lead, f"{stopped_bar(v, r)}<span>after {link(st.state(r.subject)[1].number)}</span>",
                                  r.change) for r in waiting)
                      + "</div>")
-        groups: dict[tuple[int, bool, str], list[tuple[Row, Ticket]]] = {}
+        groups: dict[Standing, list[tuple[Row, Ticket]]] = {}
         for r, k, root in items:
-            if k in MOVING:
-                continue
-            groups.setdefault((list(HELD_HEAD).index(k), root.session != s and k in ELSEWHERE_HEAD,
-                               held_label(k, root.session, s)), []).append((r, root))
-        for (_, _, label), xs in sorted(groups.items()):
+            if k not in MOVING:
+                groups.setdefault(k, []).append((r, root))
+        for k, xs in sorted(groups.items(), key=lambda g: list(HELD_HEAD).index(g[0])):
+            label = HELD_HEAD[k]
             xs.sort(key=lambda x: (not v.mine(x[0].lead), x[0].lead.number not in v.expedited, -x[0].subject.filed))
-            rows = [row(v, r.lead, stopped_bar(v, r) + ("" if root is r.subject else f"<span>via {link(root.number)}</span>"),
-                        r.change)
+            rows = [row(v, r.lead, stopped_bar(v, r) + (f"<span>after {link(root.number)} · {esc(HOLD_WORD[st.own(root)])}</span>"
+                                                        if k is Standing.BEHIND else ""), r.change)
                     for r, root in xs]
             inner = folded(rows, GROUP_SHOWN)
             opened = " open" if label == HELD_HEAD[Standing.ON_HOLD] or any(v.mine(r.lead) for r, _ in xs) else ""
