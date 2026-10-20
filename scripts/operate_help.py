@@ -61,7 +61,7 @@ PURPOSES = {
     HelpPart.JOURNAL: mctx("how `next` runs each Bash step, records each step it gives, and tells whether a step is done"),
     HelpPart.RULINGS: mctx("the forms of the rulings `next` applies"),
     HelpPart.RUN: mctx("the `Op run:` line and the run script `next` reads"),
-    HelpPart.PACE: mctx("the `Op pace:` line, which sets the usage pace within which `next` starts agents"),
+    HelpPart.PACE: mctx("the `Op pace:` line, which sets the Claude usage pace"),
     HelpPart.SEND: mctx("how `send` records the coordinator's lines for the operators"),
     HelpPart.RELAY: mctx("what `relay` prints"),
     HelpPart.REVIEW: mctx("what `review` prints"),
@@ -96,7 +96,7 @@ PARTS = {
         - With a launch, it also prints each further launch that it gives on the state with the launches before it made, until one of these holds:
             - A step that `next` prints ahead of every launch is ready and the output does not hold it.
             - The operator is past its context bound.
-            - The running agents of the session's operators, the launches included, number the usage pace's cap, as `--help pace` gives it.
+            - The pending agents of the session's operators, the launches included, number the harness's limit of concurrent subagents, as `--help pace` gives it.
             - It gives no further launch.
         - Among those further launches, it passes over each step that is no launch, and each launch on a held step that a reply landing during its read of the state can end, and a later call gives each step it passes over.
         - Before the final reply, it prints a SendMessage call that sends the reply's text to the agent that launched the operator.
@@ -195,17 +195,20 @@ PARTS = {
         - With `takes` held back, the run takes no ticket, unless the script loaded and defines no `takes`.
         - The coordinator gets the text of each fault, once for each distinct text.
     """),
+    # User, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-20T18:03:23Z:
+    # "i just dont want claude usage pacing to limit it unnecessarily". Ticket 11-2458.
     HelpPart.PACE: mctx("""
-    - `next` reads a coordinator's line `Op pace: <preset> [<argument> ...]` or `Op pace: <path>` as the usage pace of each operator of the session, and the last line in one of these forms stands. An `Op pace:` line in neither form goes back to the coordinator and leaves the pace as it was.
+    - `next` reads a coordinator's line `Op pace: <preset> [<argument> ...]` or `Op pace: <path>` as the Claude usage pace of each operator of the session, and the last line in one of these forms stands. An `Op pace:` line in neither form goes back to the coordinator and leaves the pace as it was.
         - In the first form, presets joined by `;`, such as `Op pace: even --window five_hour; by 2026-10-21T20:00:00-04:00`, give one pace: within it where each preset's pace is, and its cap is the smallest of the presets' caps.
-        - Past the pace, `next` starts no agent's run, of any line's work: it prints no launch, and no SendMessage call that resumes an agent of the operators whose run has ended or that the usage limit stopped. It takes no untaken ticket and no change. A SendMessage call to a running agent or to the coordinator, and each step that runs no agent, stand.
+        - Past the pace, `next` holds Claude launches and resumes. Codex launches and resumes, including their Haiku wrappers, are exempt. A resume keeps its launch's pace treatment across a mode switch. Messages that start no run and steps that run no agent stand.
+        - Outside Codex mode, the pace also holds untaken tickets and changes. In Codex mode, tickets and changes can reach their concrete next launch, which the pace holds where it is Claude work.
         - While an `Op pause.` line stands, one call of `next` takes each change an `Op expedite:` line gives, each change that settles an `interference` ticket and each change an operator took before, and at most one other change, so that the pause is read again before each further take.
-        - While the pace of an `Op pace:` line of presets admits work, the running agents of the session's operators, the launches of a call of `next` included, number at most the pace's cap after that call: for each such preset, the larger of 1 and the ceiling of {subagents} times the slack over {band} percentage points, and at most {subagents}.
+        - An `Op pace:` line of presets caps pending Claude workers of the session's operators, including launches of that call and excluding Codex wrappers. For each preset, the cap is the larger of 1 and the ceiling of {subagents} times the slack over {band} percentage points, and at most {subagents}.
             - The slack is the number of percentage points by which the window's `used_pct` falls below the bound that the preset gives.
-            - Where the running agents number the cap or more, `next` starts no agent's run, as past the pace.
-            - With no `Op pace:` line, the cap is {subagents}, the harness's limit of concurrent subagents.
+            - Where the pending Claude workers number the cap or more, `next` holds Claude starts as past the pace and can continue to eligible Codex work.
+        - The harness's limit of {subagents} concurrent subagents counts all pending agents.
         - Where no step is ready and the pace holds back a step, `next` prints that the operator runs it again, with the time from which a preset's pace admits agent starts, with the path of the script whose pace holds them back, or with the cap that holds them back.
-    - The pace reads the usage cache that `--help next` gives: for each of its windows, `used_pct`, `elapsed_pct` and the time it resets.
+    - The Claude pace reads the usage cache that `--help next` gives: for each of its windows, `used_pct`, `elapsed_pct` and the time it resets.
     - The presets:
         - `even [--factor F] [--window W]`, with F {factor} and W `{window}` by default: within the pace while the window's `used_pct` is at most F times its `elapsed_pct`.
         - `by <ISO 8601 time> [--window W]`, the time with its time zone and W `{window}` by default: within the pace while the window's `used_pct` is at most the percentage that has passed of the time from the window's start to the given time, and always from that time on.

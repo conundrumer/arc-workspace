@@ -11,14 +11,14 @@ admits only those of `taking.held_work`, of `taking.allowed` and of
 `taking.own_work`; while an `Op pause.` line stands
 (`directives.paused`), only those of `taking.held_work` and of
 `taking.allowed` (`scope_admits`). Past the usage pace
-(`start_holds.past_pace`), it admits none."""
+(`start_holds.admission_held`), it admits none outside Codex mode."""
 
 from collections.abc import Callable
 
 from operations.directives import own_scope, paused
 from operations.pacing import Pace
 from operations.parties import Hold
-from operations.start_holds import past_pace
+from operations.start_holds import admission_held
 from operations.state import State, memoized
 from operations.taking import allowed, expedited, follow_ups, held_work, own_work
 
@@ -37,7 +37,7 @@ def refusal(state: State) -> Callable[[str], Hold | None]:
     the operator may admit it."""
     passes, held = passing(state)
     clear = scope_admits(state)
-    past = past_pace(state)
+    past = admission_held(state)
     scope = scope_hold(state)
 
     def of(n: str) -> Hold | None:
@@ -98,7 +98,7 @@ def passing(state: State) -> tuple[Callable[[str], bool], Callable[[str], bool]]
 def pace_held(state: State, numbers: list[str]) -> Pace | None:
     """The pace, where it alone holds back one of `numbers`: one `admits`
     or `judging` would pass but for the pace."""
-    if not past_pace(state):
+    if not admission_held(state):
         return None
     clear = unpaced(state, scope_admits(state))
     pending = judge_scope(state)
@@ -112,10 +112,10 @@ def judge_hold(state: State) -> Callable[[str], Hold | None]:
     judge whether the session's line of work needs a ticket: the line of
     the user where `judge_scope` does not give it, the run scripts'
     `takes` where `unpaced` does not pass it, and the usage pace past it
-    (`start_holds.past_pace`); None where none does."""
+    (`start_holds.admission_held`); None where none does."""
     pending = judge_scope(state)
     rule = unpaced(state, pending)
-    past = past_pace(state)
+    past = admission_held(state)
     scope = scope_hold(state)
 
     def of(n: str) -> Hold | None:

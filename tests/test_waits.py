@@ -89,7 +89,9 @@ def test_a_ticket_two_paths_share_is_given_in_full_once(tmp_path: Path) -> None:
 
 
 def test_a_chain_held_by_the_pace_or_the_pause_reaches_no_one_and_moves_no_change(
-        tmp_path: Path) -> None:
+        tmp_path: Path, monkeypatch) -> None:
+    from operations import codex_mode
+    monkeypatch.setattr(codex_mode, "enabled", lambda: False)
     from operations import change_take, waits
     from operations.state import Message
     from operations.ticket_stall import stall, stalled

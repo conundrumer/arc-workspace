@@ -229,18 +229,39 @@ def step(state: State) -> Step | None:
         elif s is not None and not repeated(s, state):
             return s
     if ready:
-        nums = [t.number for t in ready]
-        return Launch(Role.TICKET_REVIEWER, joined(nums), briefs.ticket_review(nums, state.me),
-                      items=len(nums), occasion=occasion(ready, at))
+        return group_launch(state, Group.READY, ready, at)
     if waiting:
-        group = linked(waiting[0], waiting)
-        nums = [t.number for t in group]
-        last = [t.number for t in group if at_cap(t)]
-        overruns = [o for t in group if (o := overrun(state, t)) is not None]
-        return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.DRAFT, joined(nums)),
-                      briefs.revise(nums, last, state.me, overruns), items=len(nums),
-                      occasion=occasion(group, at))
+        return group_launch(state, Group.WAITING, linked(waiting[0], waiting), at)
     return None
+
+
+def group_launch(state: State, kind: "Group", group: list[Ticket], at: dict[str, float]) -> Launch:
+    """The concrete launch shared by a group of draft reviews."""
+    nums = [t.number for t in group]
+    if kind is Group.READY:
+        return Launch(Role.TICKET_REVIEWER, joined(nums), briefs.ticket_review(nums, state.me),
+                      items=len(nums), occasion=occasion(group, at))
+    last = [t.number for t in group if at_cap(t)]
+    overruns = [o for t in group if (o := overrun(state, t)) is not None]
+    return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.DRAFT, joined(nums)),
+                  briefs.revise(nums, last, state.me, overruns), items=len(nums),
+                  occasion=occasion(group, at))
+
+
+def review_step(state: State, t: Ticket) -> Step | None:
+    """The concrete step on a draft, including the launch of its group."""
+    s = draft_step(state, t)
+    if not isinstance(s, Joined):
+        return s
+    members: list[Ticket] = []
+    at: dict[str, float] = {}
+    for candidate in drafts(state):
+        given = draft_step(state, candidate)
+        if isinstance(given, Joined) and given.group is s.group:
+            members.append(candidate)
+            at[candidate.number] = given.at
+    group = linked(t, members) if s.group is Group.WAITING else members
+    return group_launch(state, s.group, group, at)
 
 
 def occasion(group: list[Ticket], at: dict[str, float]) -> str:

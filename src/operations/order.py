@@ -46,7 +46,7 @@ step in its place, with the held step set aside
 (`State.aside`). A launch comes with each
 launch the procedures
 give after it, with the launches before it made, up to the harness's
-limit of concurrent subagents or the pace's cap (`start_holds.limit`); each step of the procedures from the
+limit of concurrent subagents (`start_holds.limit`); each step of the procedures from the
 release of tickets on that is no launch, or that launches a ticket
 analyst on a held step, is set aside, and comes at a later call, in this
 order (`batch`)."""
@@ -90,7 +90,15 @@ def first(state: State, *procedures: Callable[[State], Step | None]) -> Step | N
 
 def placed(state: State, procedure: Callable[[State], Step | None]
            ) -> tuple[Step | None, Undecided | None]:
-    """The step of `procedure` that is ready, where an undecided step is the
+    """The ready step and pending undecided step of `placement`."""
+    _, step, waited = placement(state, procedure)
+    return step, waited
+
+
+def placement(state: State, procedure: Callable[[State], Step | None]
+           ) -> tuple[Step | None, Step | None, Undecided | None]:
+    """The given step, its ready step and its pending undecided step,
+    where an undecided step is the
     launch of a ticket analyst on it (`decisions`) and a launch whose chain
     of causes holds it is the step held on it (`lineage.held`), and the undecided step
     the procedure waits on, where it waits on one. A procedure whose step
@@ -110,14 +118,14 @@ def placed(state: State, procedure: Callable[[State], Step | None]
     while True:
         given, s, on, retired = placed_given(state, procedure)
         if given is None:
-            return None, waited
+            return None, None, waited
         if s is None:
             if not retired:
-                return s, on or waited
+                return given, s, on or waited
         else:
             step = s
-            if not start_holds.pace_holds(state, lambda: start_holds.starts_run(state, step)):
-                return s, on or waited
+            if not start_holds.pace_holds(state, lambda: step):
+                return given, s, on or waited
         waited = waited or on
         state = replace(state, aside=state.aside | {key(given)})
 
@@ -212,7 +220,7 @@ def pace_held_step(state: State) -> Pace | Capped | None:
         return None
     for procedure in PROCEDURES:
         _, s, _, _ = placed_given(state, procedure)
-        if start_holds.pace_holds(state, lambda: s is not None and start_holds.starts_run(state, s)):
+        if start_holds.pace_holds(state, lambda: s):
             return held
     return None
 
@@ -291,8 +299,7 @@ def batch(state: State, watch: monitor.MonitorState, first_launch: Launch) -> tu
             state = made(state, early)
             continue
         for procedure in LATE:
-            given = procedure(state)
-            s, _ = placed(state, lambda _st: given)
+            given, s, _ = placement(state, procedure)
             if s is None or given is None:
                 continue
             if isinstance(s, Launch) and joins(state, s):
@@ -314,7 +321,7 @@ def unread_lines(state: State) -> Step | None:
         if isinstance(fault := runs.takes_given(state, ln), str):
             found.append(runs.fault_message(ln, runs.TAKES_NOTHING, fault))
     if isinstance(pace := state.computed.pace, NotComputed):
-        found.append(Send(COORDINATOR, mctx("The usage pace counts as past: {why}").format(
+        found.append(Send(COORDINATOR, mctx("The Claude usage pace counts as past: {why}").format(
             why=pace.why), f"pace {pace.why}"))
     return next((s for s in found if not repeated(s, state)), None)
 

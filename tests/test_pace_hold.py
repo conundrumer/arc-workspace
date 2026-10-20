@@ -27,7 +27,9 @@ def test_a_line_pace_that_admits_work_caps_the_running_agents_by_its_slack() -> 
     assert asap(usage(85, 90)) == Until(-math.inf)
 
 
-def test_at_the_cap_a_launch_is_held_and_the_batch_stops(tmp_path: Path) -> None:
+def test_at_the_cap_a_launch_is_held_and_the_batch_stops(tmp_path: Path, monkeypatch) -> None:
+    from operations import codex_mode
+    monkeypatch.setattr(codex_mode, "enabled", lambda: False)
     from operations import order
     from operations.handled import held_aside
     from operations.monitor import MonitorState

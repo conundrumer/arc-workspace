@@ -227,16 +227,16 @@ def launch_fields(lines: list[str]) -> dict[str, str] | None:
 
 
 def pace_line(pace: Pace | Capped | None) -> str | None:
-    """The line that gives how the usage pace holds back agent starts."""
+    """The line that gives how the Claude usage pace holds back starts."""
     match pace:
         case Capped(cap):
-            return mctx("The usage pace's cap of {cap} running agents holds back agent starts.").format(
+            return mctx("The cap of {cap} pending Claude workers holds back Claude starts.").format(
                 cap=cap)
         case Until(time):
-            return mctx("No agent starts past the usage pace until {time}.").format(
+            return mctx("The Claude pace holds back Claude starts until {time}.").format(
                 time=utc_stamp(time))
         case Scripted(path):
-            return mctx("The pace of the script {path} holds back agent starts.").format(path=path)
+            return mctx("The Claude pace of the script {path} holds back Claude starts.").format(path=path)
         case _:
             return None
 

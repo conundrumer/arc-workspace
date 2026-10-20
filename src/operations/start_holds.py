@@ -1,11 +1,12 @@
-"""The hold of agent starts under the usage pace (`pacing`): past the pace,
-each step that starts an agent's run (`starts_run`) is held, and so is
-each such step while the pace admits work and the running agents of the
-session's operators (`running`) number its cap or more (`hold`)."""
+"""The Claude usage pace holds, as `scripts/operate.py --help pace` gives them."""
 
 from collections.abc import Callable
 
-from operations import pacing
+import re
+
+from controlled_markdown import form
+from operations import codex_mode, pacing
+from operations.roles import CODEX_LAUNCHER, CODEX_LINE, CODEX_ROLES, launched_type
 from operations.constants import SUBAGENT_LIMIT
 from operations.pacing import Capped, Pace, Until
 from operations.state import State, Waits
@@ -34,20 +35,35 @@ def pace_cap(state: State) -> int | None:
 
 
 def limit(state: State) -> int:
-    """The most agents of the session's operators that may run once a call
-    of `next` has made its launches: the pace's cap where it gives one, and
-    `SUBAGENT_LIMIT` otherwise."""
-    cap = pace_cap(state)
-    return SUBAGENT_LIMIT if cap is None else cap
+    """The harness capacity shared by all agents."""
+    return SUBAGENT_LIMIT
+
+
+CODEX_MARKER = re.compile("^" + form(CODEX_LINE, {
+    "role": "(?P<role>[^`]+)", "model": "[^`]+", "effort": "[^`]+"}) + "$", re.MULTILINE)
+
+
+def codex_wrapper(brief: str) -> bool:
+    """Whether a recorded launch brief identifies a Codex wrapper."""
+    return any(m["role"] in {r.value for r in CODEX_ROLES} for m in CODEX_MARKER.finditer(brief))
+
+
+def claude_running(state: State) -> int:
+    """The pending Claude workers, excluding recorded Codex wrappers."""
+    return sum(a.pending and not codex_wrapper(a.brief) for a in state.transcripts.agents)
+
+
+def admission_held(state: State) -> bool:
+    """Whether the Claude pace prevents early ticket admission."""
+    return not codex_mode.enabled() and past_pace(state)
 
 
 def hold(state: State) -> Pace | Capped | None:
-    """What holds agent starts at `State.now`: the pace where it is past,
-    the pace's cap where the running agents number it or more, or None."""
+    """The current Claude pace hold, or None."""
     if past_pace(state):
         return state.computed.pace
     cap = pace_cap(state)
-    return None if cap is None or running(state) < cap else Capped(cap)
+    return None if cap is None or claude_running(state) < cap else Capped(cap)
 
 
 def starts_run(state: State, step: Step) -> bool:
@@ -64,9 +80,16 @@ def starts_run(state: State, step: Step) -> bool:
             return False
 
 
-def pace_holds(state: State, starts: Callable[[], bool]) -> bool:
-    """Whether the usage pace holds a step: something holds agent starts
-    (`hold`) and the step starts an agent's run, as `starts` gives it
-    (`starts_run`). `starts` runs only where something holds agent starts,
-    so a step is computed only where the pace can hold it."""
-    return hold(state) is not None and starts()
+def claude_start(state: State, step: Step) -> bool:
+    """Whether a step starts work subject to the Claude pace."""
+    if isinstance(step, Launch):
+        return launched_type(step.role, step.subject, step.model) != CODEX_LAUNCHER
+    if isinstance(step, Send) and starts_run(state, step):
+        target = next(a for a in reversed(state.transcripts.agents) if a.agent_id == step.to)
+        return not codex_wrapper(target.brief)
+    return False
+
+
+def pace_holds(state: State, step: Callable[[], Step | None]) -> bool:
+    """Whether the Claude pace holds the lazily computed step."""
+    return hold(state) is not None and (s := step()) is not None and claude_start(state, s)

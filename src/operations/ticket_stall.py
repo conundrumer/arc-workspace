@@ -78,7 +78,7 @@ def selection(state: State, e: Exit) -> set[str]:
                     if (h := state.tracker.tickets[n].holder) is None or not live_holder(state, h)}
         case Exit.HOLDER:
             return {n for n in assigned(state) if not start_holds.pace_holds(
-                state, lambda: change_starts_run(state, state.tracker.tickets[n]))}
+                state, lambda: change_step(state, state.tracker.tickets[n]))}
         case Exit.TAKE:
             return {t.number for t in change_take.reach(state)}
         case Exit.TICKET_REVIEW:
@@ -106,11 +106,12 @@ def party(state: State, e: Exit, t: Ticket) -> Party | None:
         case Exit.RELEASE:
             return holder(t)
         case Exit.HOLDER:
-            return Hold.PACE if t.number in assigned(state) else holder(t)
+            return (Hold.PACE if t.number in assigned(state) and start_holds.pace_holds(
+                state, lambda: change_step(state, t)) else holder(t))
         case Exit.TAKE:
             return change_take.left(state).get(t.number)
         case Exit.TICKET_REVIEW:
-            if t.number in drafts.due(state):
+            if t.number in drafts.due(state) and review_held(state, t.number):
                 return Hold.PACE
             return (drafts.writing(state, t)
                     if any(d.number == t.number for d in drafts.drafts(state)) else None)
@@ -128,20 +129,15 @@ def holder(t: Ticket) -> Holder | None:
     return None if t.holder is None else Holder(t.holder)
 
 
-def change_starts_run(state: State, t: Ticket) -> bool:
-    """Whether the step on the change `t` that the operator holds starts an
-    agent's run."""
-    return (changes.holds(t, state.me) and (s := changes.next_step(state, t)) is not None
-            and start_holds.starts_run(state, s))
+def change_step(state: State, t: Ticket) -> Step | None:
+    """The next step on a change held by this operator."""
+    return changes.next_step(state, t) if changes.holds(t, state.me) else None
 
 
 def review_held(state: State, number: str) -> bool:
-    """Whether the usage pace holds the step of the review on the draft
-    `number`: a draft that joins a group joins a launch."""
-    def starts() -> bool:
-        s = drafts.draft_step(state, state.tracker.tickets[number])
-        return isinstance(s, drafts.Joined) or (s is not None and start_holds.starts_run(state, s))
-    return start_holds.pace_holds(state, starts)
+    """Whether the Claude pace holds a draft's concrete review step."""
+    return start_holds.pace_holds(
+        state, lambda: drafts.review_step(state, state.tracker.tickets[number]))
 
 
 def assigned(state: State) -> set[str]:

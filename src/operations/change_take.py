@@ -4,7 +4,7 @@ waits on where a step takes it not (`left`).
 A change of `taking.purview` is ready once each ticket of its
 `depends-on` is closed (`ready`). The operator takes the ready changes
 that `admission.admits` passes or that were taken before, those of `lead`
-first (`takeable`), and none past the usage pace. While an `Op pause.`
+first (`takeable`), and none past the usage pace outside Codex mode. While an `Op pause.`
 line stands, a step takes, of the changes neither of `lead` nor taken
 before, only the first (`batch`), and a step takes the changes of `batch`
 up to the first whose budget `Computed.budgets` does not give (`reach`).
@@ -20,7 +20,7 @@ from operations.change_budget import TAKE_NOTE, budget_fields, with_cost
 from operations.directives import Directive, numbers, paused
 from operations.log_commands import log
 from operations.parties import Hold, OnTicket, Party
-from operations.start_holds import past_pace
+from operations.start_holds import admission_held
 from operations.state import State, Ticket, memoized
 from operations.steps import Bash, Step, Undecided
 from operations.taking import expedited, moves, purview, status_since, taken_before
@@ -62,7 +62,7 @@ def ready_hold(state: State) -> Callable[[Ticket], Hold | None]:
     `admission.refusal` gives of a change not taken before, and otherwise
     the usage pace past it; None where none does."""
     refused = refusal(state)
-    past = past_pace(state)
+    past = admission_held(state)
 
     def of(t: Ticket) -> Hold | None:
         if not taken_before(t) and (h := refused(t.number)) is not None:
