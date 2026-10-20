@@ -28,17 +28,17 @@ pub struct ColumnGroup {
 }
 
 /// A set of rows of one arity, stored row by row with a hash set over the
-/// rows.
+/// rows. Its clones share its rows until one of them takes a row.
 #[derive(Clone, Debug, Default)]
 pub struct RowSet {
     arity: u16,
-    rows: StableHashSet<Row>,
+    rows: std::sync::Arc<StableHashSet<Row>>,
 }
 
 impl RowSet {
     /// An empty set of rows of `arity` columns.
     pub fn empty(arity: u16) -> Self {
-        RowSet { arity, rows: StableHashSet::default() }
+        RowSet { arity, rows: Default::default() }
     }
 
     /// The arity of the rows.
@@ -49,7 +49,7 @@ impl RowSet {
     /// Adds `row`. The row's length is the set's arity.
     pub fn insert(&mut self, row: Row) -> bool {
         assert_eq!(row.len(), usize::from(self.arity), "a row of the set's arity");
-        self.rows.insert(row)
+        std::sync::Arc::make_mut(&mut self.rows).insert(row)
     }
 
     /// Whether the set holds `row`.
@@ -72,7 +72,19 @@ impl RowSet {
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
     }
+
+    /// The identity of the rows this set shares with its clones: two sets
+    /// with equal identities hold the same rows, so a count of bytes counts
+    /// them once.
+    pub fn shared(&self) -> SharedRows {
+        SharedRows(std::sync::Arc::as_ptr(&self.rows) as usize)
+    }
 }
+
+/// The identity of the rows that the clones of a [`RowSet`] share, valid
+/// while one of them is held.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct SharedRows(usize);
 
 /// One part of a body's relation: the rows of one connected component of the
 /// body's atoms, where two atoms are connected when they share a variable.

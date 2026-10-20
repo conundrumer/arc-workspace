@@ -13,11 +13,12 @@ use std::sync::{Arc, Mutex, RwLock};
 use crate::eval::pool::InFlight;
 use crate::eval::{Caps, ReachedBound, RelationValue};
 use crate::hash::{StableHash, StableHashMap, StableHasher};
-use crate::relations::{Relation, RelationPart};
+use crate::relations::{Relation, RelationPart, SharedRows};
 use crate::terms::InternTable;
 
-/// The key of a result-cache entry: the resolved clause IR, the identity of
-/// each relation it reads, the grid it runs on, where it runs on one, and
+/// The key of a result-cache entry: the resolved content of the conjunction
+/// it evaluates, a whole clause or a part of a body, the identity of each
+/// relation it reads, the grid it runs on, where it runs on one, and
 /// the parameter values it reads. It compares as a key of canonical parts
 /// does ([`crate::program`]).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -56,7 +57,9 @@ pub type CachedValue = RelationValue<ReachedBound>;
 /// programs that share an entry hold its clause at different paths.
 ///
 /// The cache holds each relation that an entry's key reads or that an
-/// entry's value is once, under its id, and counts its bytes once. A
+/// entry's value is once, under its id, and counts its bytes once, and the
+/// rows that several of its relations share, such as a part's rows that a
+/// body's relation holds too, once. A
 /// relation that no entry holds any longer leaves the cache, and a relation
 /// made again with its rows then takes a new id.
 #[derive(Debug, Default)]
@@ -80,7 +83,10 @@ struct CacheState {
     /// The ids of the held relations by the hash of their rows.
     by_rows: StableHashMap<StableHash, Vec<RelationId>>,
     next_id: u32,
-    /// The bytes of the held relations and of the entries.
+    /// The rows of the parts of the held relations, by their identity: the
+    /// count of the held relations' parts that share them, and their bytes.
+    rows: StableHashMap<SharedRows, (usize, usize)>,
+    /// The bytes of the held relations, of their rows and of the entries.
     bytes: usize,
 }
 
@@ -191,6 +197,13 @@ impl CacheState {
         self.next_id = self.next_id.checked_add(1).expect("fewer than 2^32 relations in a session");
         let bytes = relation_bytes(&relation);
         self.bytes += bytes;
+        for part in relation.parts() {
+            let (holders, rows) = self.rows.entry(part.rows.shared()).or_insert((0, rows_bytes(part)));
+            if *holders == 0 {
+                self.bytes += *rows;
+            }
+            *holders += 1;
+        }
         self.by_rows.entry(hash).or_default().push(id);
         self.relations.insert(id, HeldRelation { relation, hash, bytes, holders: 0 });
         id
@@ -238,6 +251,15 @@ impl CacheState {
     fn drop_relation(&mut self, id: RelationId) {
         let held = self.relations.remove(&id).expect("a held relation");
         self.bytes -= held.bytes;
+        for part in held.relation.parts() {
+            let shared = part.rows.shared();
+            let (holders, rows) = self.rows.get_mut(&shared).expect("the rows of a held relation's part");
+            *holders -= 1;
+            if *holders == 0 {
+                self.bytes -= *rows;
+                self.rows.remove(&shared);
+            }
+        }
         let ids = self.by_rows.get_mut(&held.hash).expect("the ids of a held relation's hash");
         ids.retain(|&other| other != id);
         if ids.is_empty() {
@@ -331,20 +353,15 @@ pub(crate) fn same_rows(a: &Relation, b: &Relation) -> bool {
     same
 }
 
-/// The bytes of `relation`'s rows and parts.
+/// The bytes of `relation`'s parts beside their rows.
 fn relation_bytes(relation: &Relation) -> usize {
     std::mem::size_of::<Relation>()
-        + relation
-            .parts()
-            .iter()
-            .map(|part| {
-                std::mem::size_of::<RelationPart>()
-                    + std::mem::size_of_val(&*part.columns)
-                    + part.rows.len()
-                        * (std::mem::size_of::<crate::relations::Row>()
-                            + usize::from(part.rows.arity()) * std::mem::size_of::<crate::terms::TermId>())
-            })
-            .sum::<usize>()
+        + relation.parts().iter().map(|part| std::mem::size_of::<RelationPart>() + std::mem::size_of_val(&*part.columns)).sum::<usize>()
+}
+
+/// The bytes of the rows of `part`.
+fn rows_bytes(part: &RelationPart) -> usize {
+    part.rows.len() * (std::mem::size_of::<crate::relations::Row>() + usize::from(part.rows.arity()) * std::mem::size_of::<crate::terms::TermId>())
 }
 
 /// The bytes of an entry beside the relations it holds.

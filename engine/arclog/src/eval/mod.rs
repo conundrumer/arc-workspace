@@ -48,7 +48,7 @@ pub use determinations::Domain;
 pub use driver::FormBodies;
 pub use lookup::{output_relation, relation_of};
 pub use models::ModelsEnd;
-pub use values::{Caps, Cancellation, GridValue, Limits, Outcome, ReachedBound, RelationValue, RunFault, Stop};
+pub use values::{BodyValue, Caps, Cancellation, GridValue, Limits, Outcome, ReachedBound, RelationValue, RunFault, Stop};
 
 use crate::check::CheckedProgram;
 use crate::hash::StableHashMap;
@@ -158,5 +158,15 @@ impl Evaluation<'_> {
     /// asked with `None`, is a fault of the caller, so this panics on one.
     pub fn relation(&self, relation: &GraphRelation, example: Option<Example>) -> Outcome<RelationValue> {
         Driver::new(self).value(relation, example)
+    }
+
+    /// The value of the conjuncts at `kept`, indexes into the body of the
+    /// clause at `form`, on `example`, from the entries of its parts, as
+    /// `docs/engine/synthesis.md#factorized-bodies` gives. The kept
+    /// conjuncts' relation holds the clause's columns whose labels they
+    /// hold, as [`ir::compile_conjuncts`] gives. Where the kept conjuncts do
+    /// not compile, this gives a [`RunFault`] at `form`.
+    pub fn body(&self, form: &crate::program::path::NodePath, kept: &[u32], example: Option<Example>) -> Outcome<BodyValue> {
+        Driver::new(self).body(form, kept, example).map(BodyValue)
     }
 }

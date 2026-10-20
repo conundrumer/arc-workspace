@@ -6,10 +6,12 @@ use std::sync::Arc;
 use super::columns::{Columns, Place};
 use super::GraphNodeIndex;
 use crate::hash::StableHashMap;
-use crate::program::canonical::{cached_write, AsWritten, Canonical, CanonicalForm, CanonicalWriter, NameWriter, SearchBudget};
+use crate::program::canonical::{
+    cached_write, canonical_labeling, AsWritten, Canonical, CanonicalForm, CanonicalWriter, LabelScope, NameWriter, SearchBudget,
+};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
-    Body, ColumnName, DeclaredName, Demonstrated, Form, NameScope, Node, OutputOwner, Program, RelationRef,
+    Body, Clause, ColumnName, DeclaredName, Demonstrated, Form, LabelId, NameScope, Node, OutputOwner, Program, RelationRef,
 };
 
 /// Writes the path of the output that `relation` reads, after the
@@ -71,6 +73,8 @@ enum Mark {
     Open,
     Position,
     Group,
+    /// The content of a part of a clause's body.
+    Part,
 }
 
 /// The relation that the form being written declares: a relation, or the
@@ -171,20 +175,42 @@ impl Names {
                 .collect();
             return Some(combined(0, forms?, &[]));
         }
-        let mut node = NodeRef::Program(program.value());
-        let mut scope = NameScope::Program;
-        let mut own = None;
-        let mut atom = None;
-        for (depth, step) in path.0.iter().enumerate() {
-            node = *node.children().get(step.0 as usize)?;
-            if let NodeRef::DemoRule(_) = node {
-                scope = NameScope::DemoRule(NodePath(path.0[..=depth].into()));
-            }
-            atom = node.atom().or(atom);
-            own = Own::of(node).or(own);
-        }
-        let writer = Writer { names: self, scope: &scope, own: own.as_ref() };
-        self.form_content(program.value(), node, path, atom, &writer)
+        let at = At::of(program, path)?;
+        let writer = Writer { names: self, scope: &at.scope, own: at.own.as_ref() };
+        self.form_content(program.value(), at.node, path, at.atom, &writer)
+    }
+
+    /// The content of the part of the body of the clause at `clause` of
+    /// `program` that the conjuncts at `conjuncts`, indexes into the body,
+    /// make, whose relation's columns are those of the clause whose labels
+    /// `columns` gives: the resolved content of a clause of those conjuncts
+    /// and those columns alone, after a mark that no form's content opens
+    /// with, and `columns` in the order of the part's columns, the order of
+    /// their labels' canonical positions. `None` where `clause` is the path
+    /// of no clause.
+    pub(super) fn part_content(&self, program: &Node<Program>, clause: &NodePath, conjuncts: &[u32], columns: &[LabelId]) -> Option<(CanonicalForm, Box<[LabelId]>)> {
+        let at = At::of(program, clause)?;
+        let NodeRef::Clause(whole) = at.node else { return None };
+        let body = whole.body.value();
+        let part = Clause {
+            gloss: None,
+            proposers: Arc::from([]),
+            body: Node::new(Body { conjuncts: conjuncts.iter().map(|&index| body.conjuncts[index as usize].clone()).collect() }),
+            ones: Arc::from([]),
+            columns: whole.columns.iter().filter(|column| columns.contains(&column.label)).cloned().collect(),
+            ..whole.clone()
+        };
+        let own = Own::of(NodeRef::Clause(&part));
+        let writer = Writer { names: self, scope: &at.scope, own: own.as_ref() };
+        let labeling = canonical_labeling(LabelScope::Clause(&part), &writer, &mut SearchBudget::new());
+        let position = |label: &LabelId| labeling.positions.iter().find(|(found, _)| found == label).map(|(_, position)| *position);
+        let mut ordered: Vec<LabelId> = columns.to_vec();
+        ordered.sort_by_key(position);
+        let form = written_through(NodeRef::Clause(&part), None, &writer).expect("a clause has a canonical form");
+        let mut out = CanonicalWriter::default();
+        out.write(&[Mark::Part as u8]);
+        out.write(&form.bytes);
+        Some((out.finish(), ordered.into()))
     }
 
     /// The resolved content of `node`, at `path` of `program`, through
@@ -200,6 +226,33 @@ impl Names {
             Some(columns) => with_columns(&form, columns),
             None => form,
         })
+    }
+}
+
+/// The node at a path of a program, with the scope its names resolve in,
+/// the relation the form that holds it declares, and the atom that holds
+/// it.
+struct At<'p> {
+    node: NodeRef<'p>,
+    scope: NameScope,
+    own: Option<Own>,
+    atom: Option<&'p crate::program::Atom>,
+}
+
+impl<'p> At<'p> {
+    /// The node at `path` of `program`, or `None` where `path` names no
+    /// node.
+    fn of(program: &'p Node<Program>, path: &NodePath) -> Option<Self> {
+        let mut at = At { node: NodeRef::Program(program.value()), scope: NameScope::Program, own: None, atom: None };
+        for (depth, step) in path.0.iter().enumerate() {
+            at.node = *at.node.children().get(step.0 as usize)?;
+            if let NodeRef::DemoRule(_) = at.node {
+                at.scope = NameScope::DemoRule(NodePath(path.0[..=depth].into()));
+            }
+            at.atom = at.node.atom().or(at.atom);
+            at.own = Own::of(at.node).or(at.own);
+        }
+        Some(at)
     }
 }
 

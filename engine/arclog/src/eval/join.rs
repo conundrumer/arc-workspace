@@ -1,6 +1,8 @@
 //! Generic join over a clause's IR: it binds one variable at a time, in the
 //! clause's variable order, by intersecting the atoms that hold it, and
-//! counts its work and its rows against the caps per batch of bindings.
+//! counts its work and its rows against the caps per batch of bindings. A
+//! body is joined part by part, as [`parts`] gives its parts, and its
+//! relation is their product.
 //!
 //! An algebra relation is evaluated at the point in the order where one of
 //! its modes is satisfied, and its outputs are variables that later atoms
@@ -8,7 +10,7 @@
 
 use std::sync::Arc;
 
-use super::ir::{Argument, ClauseIr, Comparison, Filter, IrNode, Operand, Variable};
+use super::ir::{Argument, Arguments, ClauseIr, Comparison, Filter, IrNode, Operand, Variable};
 use super::plan::{
     algebra_relation, bound_variables, mode_holds, variable_order, RelationSizes,
     VariableOrder,
@@ -157,29 +159,44 @@ pub fn join_at(
     bound: &[(Variable, TermId)],
     budget: &mut Budget<'_>,
 ) -> Result<Relation, ReachedBound> {
-    let components = components(clause);
-    let mut parts = Vec::new();
-    for component in &components {
-        let columns: Vec<ColumnIndex> = (0..clause.columns.len())
-            .filter(|&i| component.variables.contains(&clause.columns[i]))
-            .map(|i| ColumnIndex(i as u16))
-            .collect();
-        let projected: Vec<Variable> = columns.iter().map(|c| clause.columns[usize::from(c.0)]).collect();
-        let order: Vec<Variable> = order
-            .0
-            .iter()
-            .copied()
-            .filter(|v| component.variables.contains(v) && bound.iter().all(|(b, _)| b != v))
-            .collect();
-        let rows = Search::new(clause, &component.nodes, order, bound, inputs, registry).run(&projected, budget)?;
-        if !columns.is_empty() || rows.is_empty() {
-            parts.push(RelationPart { columns: columns.into(), rows });
-        }
+    let nodes: Vec<usize> = (0..clause.nodes.len()).collect();
+    let mut found = Vec::new();
+    for part in parts(clause, &nodes, &|node| node) {
+        let columns = part.columns(clause);
+        let order = part.order(order, bound);
+        let rows = search(clause, &part.nodes, &[], order, bound, inputs, registry, &columns, budget)?;
+        found.push(RelationPart { columns: columns.into(), rows });
     }
-    for (i, column) in clause.columns.iter().enumerate() {
-        assert!(components.iter().any(|c| c.variables.contains(column)), "column {i} of a clause is bound by a node of its body");
-    }
-    Ok(Relation::from_parts(clause.columns.len() as u16, parts.into()))
+    Ok(product(clause, found))
+}
+
+/// The relation of `clause` whose parts are `parts`: their product. A part
+/// that holds no column is left out where it holds a row, and where it holds
+/// none it makes the relation empty.
+pub fn product(clause: &ClauseIr, parts: Vec<RelationPart>) -> Relation {
+    let parts: Vec<RelationPart> = parts.into_iter().filter(|part| !part.columns.is_empty() || part.rows.is_empty()).collect();
+    Relation::from_parts(clause.columns.len() as u16, parts.into())
+}
+
+/// The rows of `columns`, columns of `clause`, over each binding of the
+/// variables of `order` that passes every node of `nodes` and agrees with a
+/// row of each relation of `tries`, by generic join in `order`, at the
+/// values `bound` gives some of the clause's variables. A relation of
+/// `tries` is read as an atom over its arguments.
+#[allow(clippy::too_many_arguments)]
+pub fn search(
+    clause: &ClauseIr,
+    nodes: &[usize],
+    tries: &[(Arc<Relation>, Arguments)],
+    order: Vec<Variable>,
+    bound: &[(Variable, TermId)],
+    inputs: &JoinInputs,
+    registry: &Registry,
+    columns: &[ColumnIndex],
+    budget: &mut Budget<'_>,
+) -> Result<RowSet, ReachedBound> {
+    let projected: Vec<Variable> = columns.iter().map(|c| clause.columns[usize::from(c.0)]).collect();
+    Search::new(clause, nodes, tries, order, bound, inputs, registry).run(&projected, budget)
 }
 
 /// Calls `visit` on each row of `relation`, the product of its parts, in an
@@ -238,16 +255,43 @@ pub fn sizes(inputs: &JoinInputs) -> RelationSizes {
     )
 }
 
-/// A connected set of a clause's variables, with the nodes that hold them;
-/// a node with no variable is a set of its own.
-struct Component {
-    variables: Vec<Variable>,
-    nodes: Vec<usize>,
+/// A part of a clause's body: a connected set of its nodes, two nodes
+/// connected where they share a variable or stand in one group, as
+/// [`parts`] gives the groups, with the variables they hold. A node with no
+/// variable and no other node in its group is a part of its own.
+#[derive(Clone, Debug)]
+pub struct Part {
+    pub variables: Vec<Variable>,
+    pub nodes: Vec<usize>,
+}
+
+impl Part {
+    /// The columns of `clause` that the part holds, in the clause's order.
+    pub fn columns(&self, clause: &ClauseIr) -> Vec<ColumnIndex> {
+        (0..clause.columns.len()).filter(|&i| self.variables.contains(&clause.columns[i])).map(|i| ColumnIndex(i as u16)).collect()
+    }
+
+    /// The variables of `order` that the part holds and `bound` leaves
+    /// unbound, in their order.
+    pub fn order(&self, order: &VariableOrder, bound: &[(Variable, TermId)]) -> Vec<Variable> {
+        order.0.iter().copied().filter(|v| self.variables.contains(v) && bound.iter().all(|(b, _)| b != v)).collect()
+    }
+
+    /// Whether each variable that a node of `nodes` holds and the part
+    /// holds too is one of the part's columns in `clause`, so that the
+    /// part's rows link it to those nodes.
+    pub fn links(&self, clause: &ClauseIr, nodes: &[usize]) -> bool {
+        nodes
+            .iter()
+            .flat_map(|&node| node_variables(&clause.nodes[node]))
+            .filter(|v| self.variables.contains(v))
+            .all(|v| clause.columns.contains(&v))
+    }
 }
 
 /// The variables a node joins in its clause: those it binds, the outer
 /// variables of a filter, and the columns of a union's branches.
-fn node_variables(node: &IrNode) -> Vec<Variable> {
+pub fn node_variables(node: &IrNode) -> Vec<Variable> {
     match node {
         IrNode::Not(filter) | IrNode::Counterexample(filter) => filter.outer.to_vec(),
         IrNode::Or(union) => union.branches.iter().flat_map(|branch| branch.columns.iter().copied()).collect(),
@@ -255,42 +299,40 @@ fn node_variables(node: &IrNode) -> Vec<Variable> {
     }
 }
 
-/// The connected sets of `clause`'s variables, two variables connected
-/// where a node holds both, in the order of their least variables.
-fn components(clause: &ClauseIr) -> Vec<Component> {
-    let mut parent: Vec<usize> = (0..clause.variables.len()).collect();
-    fn root(parent: &mut [usize], v: usize) -> usize {
-        let mut r = v;
+/// The parts of the nodes `nodes` of `clause`, the nodes to which `group`
+/// gives one group standing in one part, in the order of their first nodes.
+pub fn parts<G: Eq + Copy>(clause: &ClauseIr, nodes: &[usize], group: &dyn Fn(usize) -> G) -> Vec<Part> {
+    let mut parent: Vec<usize> = (0..nodes.len()).collect();
+    fn root(parent: &mut [usize], at: usize) -> usize {
+        let mut r = at;
         while parent[r] != r {
             r = parent[r];
         }
-        parent[v] = r;
+        parent[at] = r;
         r
     }
-    let variables: Vec<Vec<Variable>> = clause.nodes.iter().map(node_variables).collect();
-    for held in &variables {
-        for pair in held.windows(2) {
-            let (a, b) = (root(&mut parent, usize::from(pair[0].0)), root(&mut parent, usize::from(pair[1].0)));
+    let variables: Vec<Vec<Variable>> = nodes.iter().map(|&node| node_variables(&clause.nodes[node])).collect();
+    let mut holder: Vec<Option<usize>> = vec![None; clause.variables.len()];
+    for (at, held) in variables.iter().enumerate() {
+        let mut joined: Vec<usize> = held.iter().filter_map(|v| holder[usize::from(v.0)].replace(at)).collect();
+        joined.extend((0..at).filter(|&other| group(nodes[other]) == group(nodes[at])).take(1));
+        for other in joined {
+            let (a, b) = (root(&mut parent, at), root(&mut parent, other));
             parent[a.max(b)] = a.min(b);
         }
     }
-    let mut by_root: std::collections::BTreeMap<usize, Component> = std::collections::BTreeMap::new();
-    let mut alone = Vec::new();
-    for (node, held) in variables.iter().enumerate() {
-        let Some(first) = held.first() else {
-            alone.push(Component { variables: Vec::new(), nodes: vec![node] });
-            continue;
-        };
-        let r = root(&mut parent, usize::from(first.0));
-        let component = by_root.entry(r).or_insert_with(|| Component { variables: Vec::new(), nodes: Vec::new() });
-        component.nodes.push(node);
+    let mut by_root: std::collections::BTreeMap<usize, Part> = std::collections::BTreeMap::new();
+    for (at, held) in variables.iter().enumerate() {
+        let r = root(&mut parent, at);
+        let part = by_root.entry(r).or_insert_with(|| Part { variables: Vec::new(), nodes: Vec::new() });
+        part.nodes.push(nodes[at]);
         for v in held {
-            if !component.variables.contains(v) {
-                component.variables.push(*v);
+            if !part.variables.contains(v) {
+                part.variables.push(*v);
             }
         }
     }
-    by_root.into_values().chain(alone).collect()
+    by_root.into_values().collect()
 }
 
 /// An atom's trie in the join's order: its relation's index over the
@@ -331,6 +373,7 @@ impl<'c> Search<'c> {
     fn new(
         clause: &'c ClauseIr,
         nodes: &[usize],
+        tries: &[(Arc<Relation>, Arguments)],
         order: Vec<Variable>,
         bound: &[(Variable, TermId)],
         inputs: &'c JoinInputs,
@@ -344,7 +387,23 @@ impl<'c> Search<'c> {
         for (r, v) in order.iter().enumerate() {
             rank[usize::from(v.0)] = r;
         }
-        let mut atoms = Vec::new();
+        let trie = |relation: &Relation, arguments: &Arguments| {
+            let mut columns: Vec<(ColumnIndex, Argument)> = arguments
+                .0
+                .iter()
+                .map(|&(column, argument)| match argument {
+                    Argument::Variable(v) => (column, binding[usize::from(v.0)].map_or(argument, Argument::Term)),
+                    Argument::Term(_) => (column, argument),
+                })
+                .collect();
+            columns.sort_by_key(|(column, argument)| match argument {
+                Argument::Term(_) => (0, column.0 as usize),
+                Argument::Variable(v) => (1 + rank[usize::from(v.0)], column.0 as usize),
+            });
+            let index = relation.index(&ColumnOrder(columns.iter().map(|(c, _)| *c).collect()));
+            AtomTrie { index, levels: columns.into_iter().map(|(_, a)| a).collect() }
+        };
+        let mut atoms: Vec<AtomTrie> = tries.iter().map(|(relation, arguments)| trie(relation, arguments)).collect();
         let mut checks = vec![Vec::new(); order.len() + 1];
         let mut libs = vec![Vec::new(); clause.variables.len()];
         let mut filter_orders = StableHashMap::default();
@@ -361,21 +420,7 @@ impl<'c> Search<'c> {
             match &clause.nodes[node] {
                 IrNode::Atom(atom) => {
                     let NodeInput::Relation(relation) = &inputs.0[node] else { panic!("the relation of each atom") };
-                    let mut columns: Vec<(ColumnIndex, Argument)> = atom
-                        .arguments
-                        .0
-                        .iter()
-                        .map(|&(column, argument)| match argument {
-                            Argument::Variable(v) => (column, binding[usize::from(v.0)].map_or(argument, Argument::Term)),
-                            Argument::Term(_) => (column, argument),
-                        })
-                        .collect();
-                    columns.sort_by_key(|(column, argument)| match argument {
-                        Argument::Term(_) => (0, column.0 as usize),
-                        Argument::Variable(v) => (1 + rank[usize::from(v.0)], column.0 as usize),
-                    });
-                    let index = relation.index(&ColumnOrder(columns.iter().map(|(c, _)| *c).collect()));
-                    atoms.push(AtomTrie { index, levels: columns.into_iter().map(|(_, a)| a).collect() });
+                    atoms.push(trie(relation, &atom.arguments));
                 }
                 IrNode::Lib(atom) => {
                     for v in super::plan::variables_of(&atom.arguments) {

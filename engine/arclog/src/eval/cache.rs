@@ -3,6 +3,8 @@
 //! their rows, and eviction by least recent use under a share of the
 //! session's byte bound.
 
+use std::sync::Arc;
+
 use super::pool::InFlight;
 use super::{RelationValue, Stop};
 use crate::program::path::NodePath;
@@ -11,16 +13,16 @@ use crate::resolver::ResolvedContent;
 use crate::session::{CachedValue, RelationId, ResultKey, TaskSession};
 use crate::terms::Example;
 
-/// What an entry reads, from which its [`ResultKey`] is made: its clause's
-/// resolved content, the relations it reads in the order of its reads, the
+/// What an entry reads, from which its [`ResultKey`] is made: the resolved
+/// content of its clause or of its part of a body, the relations it reads in the order of its reads, the
 /// example whose input it runs on where it runs on one, and the relation of
 /// each parameter it reads, in the order of its reads.
 #[derive(Clone, Copy, Debug)]
 pub struct EntryRequest<'a> {
     pub clause: &'a ResolvedContent,
-    pub reads: &'a [&'a Relation],
+    pub reads: &'a [Arc<Relation>],
     pub example: Option<Example>,
-    pub parameters: &'a [&'a Relation],
+    pub parameters: &'a [Arc<Relation>],
 }
 
 /// The value cached for `request` in `session`, if any, made at `form`, the
@@ -28,7 +30,7 @@ pub struct EntryRequest<'a> {
 /// stop the cache holds is given at `form`, so its diagnostic stands at a
 /// path of the requesting program.
 pub fn lookup(session: &TaskSession, request: &EntryRequest<'_>, form: &NodePath) -> Option<RelationValue> {
-    let found = |relations: &[&Relation]| -> Option<Box<[RelationId]>> {
+    let found = |relations: &[Arc<Relation>]| -> Option<Box<[RelationId]>> {
         relations.iter().map(|relation| session.results.find_id(relation)).collect()
     };
     let key = ResultKey {
@@ -64,7 +66,7 @@ pub fn cached(value: &RelationValue) -> Option<CachedValue> {
 
 /// The key of `request`, each relation it reads by its id.
 pub fn key(session: &TaskSession, request: &EntryRequest<'_>) -> ResultKey {
-    let ids = |relations: &[&Relation]| -> Box<[RelationId]> {
+    let ids = |relations: &[Arc<Relation>]| -> Box<[RelationId]> {
         relations.iter().map(|relation| relation_id(session, relation)).collect()
     };
     ResultKey {

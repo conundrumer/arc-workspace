@@ -330,6 +330,21 @@ impl ResolvedProgram {
         self.names.content(&self.program, path).map(|form| ResolvedContent { form })
     }
 
+    /// The resolved content of the part of the body of the clause at
+    /// `clause` that the conjuncts at `conjuncts`, indexes into the body,
+    /// make, whose relation's columns are those of the clause whose labels
+    /// `columns` gives, with those labels in the order of the part's
+    /// columns. A clause that the case takes from the concept program has
+    /// the content of its part there. `None` where `clause` is the path of
+    /// no clause.
+    pub fn part_content(&self, clause: &NodePath, conjuncts: &[u32], columns: &[LabelId]) -> Option<(ResolvedContent, Box<[LabelId]>)> {
+        if let (Some(concept), Some(path)) = (self.concept(), self.concept_path(clause)) {
+            return concept.part_content(&path, conjuncts, columns);
+        }
+        let (form, columns) = self.names.part_content(&self.program, clause, conjuncts, columns)?;
+        Some((ResolvedContent { form }, columns))
+    }
+
     /// The name of the stored parameter's column that each column of the
     /// proposer at `index` of the clause at `clause` stands for, in the
     /// proposer's column order. A `DET_OR_RULE` line maps a proposer's

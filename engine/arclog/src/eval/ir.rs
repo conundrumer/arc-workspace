@@ -379,9 +379,29 @@ pub(crate) fn relation_columns(program: &crate::resolver::ResolvedProgram, form:
 /// [`crate::safety::bound_labels`] gives the bound labels, this refuses them
 /// with those labels.
 pub fn compile_conjuncts(program: &CheckedProgram, clause: &NodePath, kept: &[u32]) -> Result<ClauseIr, CompileFault> {
+    compile_body(program, clause, kept).map(|body| body.clause)
+}
+
+/// The IR of a body's conjuncts, with the conjunct each of its nodes
+/// compiles and the label of each of its columns, from which the parts of
+/// the body are made.
+#[derive(Debug)]
+pub struct CompiledBody {
+    pub clause: ClauseIr,
+    /// The index in the form's body of the conjunct that each node of
+    /// `clause` compiles, by the node's index.
+    pub conjuncts: Box<[u32]>,
+    /// The label of each column of `clause`, in the order of its columns.
+    pub columns: Box<[LabelId]>,
+}
+
+/// The IR of the conjuncts at `kept`, as [`compile_conjuncts`] gives it,
+/// with the conjunct of each node and the label of each column.
+pub fn compile_body(program: &CheckedProgram, clause: &NodePath, kept: &[u32]) -> Result<CompiledBody, CompileFault> {
     let (body, body_path, columns) = form_body(program, clause);
     let conjuncts = kept.iter().map(|&index| (&body.conjuncts[index as usize], body_path.child(index))).collect();
-    compile_safe(program, clause, conjuncts, &columns)
+    let (compiled, of_node, columns) = compile_mapped(program, clause, conjuncts, &columns)?;
+    Ok(CompiledBody { clause: compiled, conjuncts: of_node.into_iter().map(|at| kept[at]).collect(), columns })
 }
 
 /// The IR of the bodies `bodies` of the `INIT` form at `instance`, each with
@@ -420,6 +440,18 @@ pub fn compile_safe(
     conjuncts: Vec<(&Conjunct, NodePath)>,
     columns: &[LabelId],
 ) -> Result<ClauseIr, CompileFault> {
+    compile_mapped(program, form, conjuncts, columns).map(|(clause, _, _)| clause)
+}
+
+/// The IR of `conjuncts`, as [`compile_safe`] gives it, with the index in
+/// `conjuncts` of the conjunct that each node compiles and the label of
+/// each column.
+fn compile_mapped(
+    program: &CheckedProgram,
+    form: &NodePath,
+    conjuncts: Vec<(&Conjunct, NodePath)>,
+    columns: &[LabelId],
+) -> Result<(ClauseIr, Vec<usize>, Box<[LabelId]>), CompileFault> {
     let scope = scope_of(program, form);
     let types = form_types(program, &scope);
     let subset = Body { conjuncts: conjuncts.iter().map(|(conjunct, _)| (*conjunct).clone()).collect() };
@@ -442,11 +474,14 @@ pub fn compile_safe(
         columns: columns.into(),
     };
     let mut builder = IrBuilder::new(program, scope, Rc::new(compiled))?;
-    for (conjunct, path) in &conjuncts {
+    let mut of_node = Vec::new();
+    for (at, (conjunct, path)) in conjuncts.iter().enumerate() {
         builder.conjunct(conjunct, path)?;
+        of_node.resize(builder.nodes.len(), at);
     }
-    let columns = columns.iter().copied().filter(|label| held.contains(label)).map(|label| builder.variable(label)).collect();
-    Ok(builder.finish(columns))
+    let labels: Box<[LabelId]> = columns.iter().copied().filter(|label| held.contains(label)).collect();
+    let columns = labels.iter().map(|&label| builder.variable(label)).collect();
+    Ok((builder.finish(columns), of_node, labels))
 }
 
 /// The IR of the clause at `clause`, a form of `program`: the clause's body,

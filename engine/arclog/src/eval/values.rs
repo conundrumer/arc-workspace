@@ -203,6 +203,32 @@ impl<S> RelationValue<S> {
     }
 }
 
+/// The value of a sub-body of a clause, the conjuncts a caller keeps, on a
+/// request: its rows, held as the product of its parts, `undefined`, or a
+/// stop, as [`RelationValue`] gives them.
+#[derive(Clone, Debug)]
+pub struct BodyValue(pub RelationValue);
+
+impl BodyValue {
+    /// The count of the rows, the product of the parts' counts, or `None`
+    /// where the value holds no rows.
+    pub fn count(&self) -> Option<u64> {
+        match &self.0 {
+            RelationValue::Rows(relation) => Some(relation.len()),
+            RelationValue::Undefined | RelationValue::Stopped(_) => None,
+        }
+    }
+
+    /// Whether the value holds no row, since some part is empty, or `None`
+    /// where the value holds no rows.
+    pub fn is_empty(&self) -> Option<bool> {
+        match &self.0 {
+            RelationValue::Rows(relation) => Some(relation.is_empty()),
+            RelationValue::Undefined | RelationValue::Stopped(_) => None,
+        }
+    }
+}
+
 /// The outcome of a request: a value, or a fault of the run.
 pub type Outcome<T> = Result<T, RunFault>;
 
