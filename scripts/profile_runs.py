@@ -21,7 +21,7 @@ scripts_importable()
 from agents_pending import pending_agents  # noqa: E402
 from budgets import group_budgets, print_budgets, run_budget  # noqa: E402
 from open_agents import call_times, running_agents, work_open  # noqa: E402
-from run_prints import (print_messages,  # noqa: E402
+from run_prints import (print_codex, print_messages,  # noqa: E402
                         print_report, print_running)
 from run_profile import (clock, dollars, minutes,  # noqa: E402
                          part_split, print_groups, print_split,
@@ -51,16 +51,17 @@ def print_profiles(runs: list[Run], args: argparse.Namespace, each_run: bool,
         # The budgets read every run under the project directories, so of
         # their `undecided` lines, only those on a run taken are kept.
         read: list[str] = []
-        budgets = group_budgets(read) if args.each else None
+        budgets = group_budgets(read)
         among = call_times(runs)
         for r in runs:
             print(f"{r.label} {r.agent_type} {clock(r.start)}: {r.description}\n"
                   f"  wall {minutes(r.wall)}  {part_split(r.parts)}  "
                   f"cost {dollars(r.cost)}")
             print_readings(r, call_times([r]), among)
+            print_codex(r, budgets)
             if len(runs) == 1 or args.each:
                 print_messages(r, undecided,
-                               run_budget(budgets, r) if budgets is not None else None)
+                               run_budget(budgets, r) if args.each else None)
                 print_report(r, undecided)
                 print_groups(r.groups, args.top, r.wall)
             if args.each and len(runs) > 1:

@@ -3,9 +3,13 @@ from a run's parent, and of the run's report to that parent, as
 `profile_runs.py --help running` and `profile_runs.py --help one` give them."""
 
 from collections.abc import Callable
+from dataclasses import asdict
+from datetime import datetime
+import json
 
 from agent_reports import Report
-from budgets import of_budget, past_budget
+from budgets import GroupBudget, brief_items, of_budget, past_budget, role_group
+from codex_transcript import Coverage, activity, read as codex_transcript
 from context_bound_hook import bounded, context_bound, past_bound
 from controlled_markdown import mctx
 from open_agents import Listed, parent_reports
@@ -14,6 +18,63 @@ from run_records import Run, Span
 from run_reads import MAIN
 from ticketing.times import utc_stamp
 from tree_reads import main_tree
+from operations.roles import Role
+from spends import union_seconds
+from handbook.agents import agent_names
+
+
+def print_codex(r: Run, budgets: GroupBudget | None) -> None:
+    """Print fresh Codex measurements separately from the launcher profile."""
+    result = codex_transcript(r.path)
+    print(f"  Codex: {result.coverage}")
+    if result.coverage is Coverage.NONE:
+        return
+    print(f"    transcript: uv run python scripts/codex_transcript.py {r.label}")
+    print("    total run cost: unknown (Codex tokens unpriced)")
+    for role in sorted({s.role for s in result.spend.sources}):
+        turns = [(s, t) for s, _, t in result.turns if s.role == role]
+        sources = [s for s in result.spend.sources if s.role == role]
+        complete = len(turns) == len(sources) and all(t.ended is not None for _, t in turns)
+        elapsed = union_seconds([(t.started, t.ended) for _, t in turns
+                                 if t.ended is not None]) if complete else None
+        try:
+            work_role = Role(role)
+        except ValueError:
+            work_role = None
+        group = role_group(work_role) if work_role is not None else role if role in agent_names() else None
+        budget = (budgets(group, brief_items(r))
+                  if budgets is not None and group is not None else None)
+        mark = ("past budget" if elapsed is not None and budget is not None and elapsed > budget
+                else "review required: unknown budget or incomplete work evidence"
+                if budget is None or elapsed is None or result.gaps else "within budget")
+        print(f"    role {role}: elapsed {elapsed if elapsed is not None else 'unknown'} s; "
+              f"budget {budget if budget is not None else 'unknown'} s; {mark}")
+        print(f"      tokens: {json.dumps(asdict(result.spend.totals(role)))}")
+    for source, path, turn in result.turns:
+        rows = activity(turn)
+        results = {row['payload'].get('call_id'): row for row in rows
+                   if row.get('type') == 'response_item' and row['payload'].get('type') in
+                   ('function_call_output', 'custom_tool_call_output')}
+        print(f"    thread {source.thread}; turn {source.turn}; source {path}; "
+              f"start {turn.started}; end {turn.ended}; state {turn.end_state or 'unfinished'}")
+        for row in rows:
+            p = row.get('payload', {})
+            kind = p.get('type', '')
+            if row.get('type') == 'response_item' and kind.endswith('_call'):
+                ended = results.get(p.get('call_id'))
+                start, end = row.get('timestamp'), ended.get('timestamp') if ended else None
+                duration = (datetime.fromisoformat(end).timestamp() -
+                            datetime.fromisoformat(start).timestamp()) if start and end else None
+                print(f"      call {p.get('name', kind)} at {start}; "
+                      f"elapsed {duration if duration is not None else 'unknown'} s")
+            elif row.get('type') == 'event_msg' and kind in ('exec_command_begin', 'exec_command_end', 'item_started', 'item_completed'):
+                item = p.get('item', p)
+                if kind in ('item_started', 'item_completed') and item.get('type') in ('AgentMessage', 'Reasoning'):
+                    continue
+                print(f"      call {item.get('type', kind)} at {row.get('timestamp')}; "
+                      f"recorded duration {item.get('duration_ms', 'unknown')} ms")
+    for gap in result.gaps:
+        print(f"    gap: {gap}")
 
 # The number of a listed agent's last calls that `--running` prints.
 RECENT_CALLS = 8

@@ -67,6 +67,8 @@ PURPOSES = {
 }
 """What each part of the help gives."""
 
+# The user's choice, session 2384db39, 2026-10-20T21:45:12Z, "3 ensure":
+# "Reviews check what Codex itself did in each run." Ticket 11-2530.
 PARTS = {
     HelpPart.RUNS: mctx("""
     - An ID is an agent id, a session id, or the path of a `.jsonl` transcript.
@@ -74,9 +76,11 @@ PARTS = {
     - A run is the transcript of one agent, or where the top-level session takes a new session id while a subagent runs, that subagent's transcripts under each session's directory.
         - Each such transcript under a later session goes on from the one before it, its first entry answering that one's last.
         - A run's agent type, description and launching call are those the earliest of its transcripts' `.meta.json` files that gives each gives.
+        - Where the agent launches Codex, these are the launcher's transcripts; the separate Codex section measures the work attributable to that run.
+            + xref: scripts/run_prints.py:print_codex
     - Each time the tool prints is in UTC, as `YYYY-MM-DDTHH:MMZ` where no item below gives another form.
         - A DATE or TIME it reads is {iso_time}.
-    - A run's wall time, from its first entry to its last, is cut at each entry's time, and each interval goes to one part:
+    - A launcher's wall time, from its first entry to its last, is cut at each entry's time, and each interval goes to one part:
         - `tools`: a tool call is pending.
             - A Bash call is labelled by the known commands it runs, joined by ` + `: {known}, and `{run_dl}` with its subcommand; or, where it runs none, by the first program it runs past setup, and any other call by its tool.
         - `waits`: a foreground Agent, Monitor or TaskOutput call or a poll is pending, or the turn has ended while an agent or command the run backgrounded is running.
@@ -94,14 +98,16 @@ PARTS = {
         - Where none follows, it runs while a process holds open the output file its result names, and where no process holds that file, it ended when the file was last written, or, where that file is gone, at the run's last entry.
         - Where its result names no file, whether it runs is unknown, and it counts as running.
         - Where `lsof` writes to stderr, which files a process holds open is unknown, and the ID is refused.
-    - A run's token cost is the list price of the tokens its requests used, from the price table of `token_prices`, each request priced once at the full usage its entries give.
-        - A run with a request whose model or usage the table does not price has an unknown cost, printed `?`.
-    - `--price-at MODEL` prices each request at the prices the table gives MODEL, in place of those of the model that made it, and a MODEL the table does not price is refused.
+    - A launcher's token cost is the list price of the tokens its requests used, from the price table of `token_prices`, each request priced once at the full usage its entries give.
+        - A launcher with a request whose model or usage the table does not price has an unknown cost, printed `?`.
+        - A run with unpriced Codex work has an unknown complete cost; the launcher's dollars and Codex token counts stay separate.
+            + xref: scripts/run_prints.py:print_codex
+    - `--price-at MODEL` prices each launcher request at the prices the table gives MODEL, in place of those of the model that made it, and a MODEL the table does not price is refused.
         - Where it is given, the tool first prints `price at MODEL:` and that {repriced}.
     - A run whose agent type is unknown is refused, and so is an ID that names transcripts that differ and are not the transcripts of one run.
     """),
     HelpPart.ONE: mctx("""
-    - One run, and each run `--runs` prints, prints its wall time and its token cost, then these lines:
+    - One run, and each run `--runs` prints, prints its launcher wall time and its launcher token cost, then these lines:
         - after `repeated:`, each Bash command it ran more than once, with the number of times, or `none`;
         - after `refused:`, the number of its calls whose result gives a refusal;
         - after `hung:`, the number of its calls that ran, or are in flight and have run, past {hung} times the usual time of their label;
@@ -116,6 +122,18 @@ PARTS = {
     - Under `--each`, each run also prints its budget, and marks `past budget` each message whose self time is past that budget.
         - A run's budget is the budget `--help budget` gives its brief, as a brief of the run's type or role, over every run under the project directories.
         - A run with no budget prints none.
+    - The Codex section gives the attributable work's role, elapsed time, calls and their timing where recorded, token counts, transcript read command and coverage gaps.
+        + xref: scripts/run_prints.py:print_codex
+        - Its elapsed time can overlap launcher wall time.
+            + xref: scripts/run_prints.py:print_codex
+        - Its turn start and end times are Unix timestamps in seconds; call times keep the source's ISO timestamps.
+            + xref: scripts/run_prints.py:print_codex
+        - Its budget is taken from the work role by the rules of `--help budget`, and its elapsed time is marked `past budget` where it exceeds that budget.
+            + xref: scripts/run_prints.py:print_codex
+        - A `review required` mark means the budget is unknown or the work evidence is incomplete.
+            + xref: scripts/run_prints.py:print_codex
+        - A role, budget, duration or complete cost the evidence cannot establish is unknown.
+            + xref: scripts/run_prints.py:print_codex
     - One run of a subagent also prints, after `report to the parent:`, the latest entry of its parent's transcripts after the parent's latest message to it that gives a report of it, with the entry's time, its kind and the start of its text.
         - Where no entry does, it prints `none after the message at` and that message's time.
         - The parent's transcripts are, under each session of the run, the main transcript where the parent is `main`, and otherwise the transcripts of the parent's run.

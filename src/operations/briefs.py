@@ -624,8 +624,11 @@ def step_tickets(brief: str) -> list[str]:
 DEFERRED_TITLES = mctx("list the titles under `tickets/deferred/` in one `grep -m1 -H '^# '` call, "
                        "and read no ticket's body to match")
 
+# The user's choice, session 2384db39, 2026-10-20T21:45:12Z, "3 ensure":
+# "Reviews check what Codex itself did in each run." Ticket 11-2530.
 TRANSCRIPT_REVIEW = mctx("""
-    - Review the transcript of run {run}, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` reads.
+    - Review run {run}: read its launcher transcript with the commands that `python3 ~/.claude/skills/retrieve/transcripts.py --help` gives, and all its attributable Codex work with `uv run python scripts/codex_transcript.py {run}`. Report each gap in coverage.
+        + xref: scripts/codex_transcript.py:main
     - File each ticket by the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), {filing}.
     - Find each place where the run explored to find what a docstring or a document line could have led it to.
     - Before you give your first case, {deferred_titles}.
@@ -729,8 +732,11 @@ def standing_doc_review(reader: str, tag: str, commit: str, operator: str) -> st
 
 # "file none": the user's words on change 6-313's filing rule, "will it
 # cause a flood of won't fix" (ticket 10-212).
+# The user's choice, session 2384db39, 2026-10-20T21:45:12Z, "3 ensure":
+# "Reviews check what Codex itself did in each run." Ticket 11-2530.
 BATCH_PROFILE = mctx("""
     - Run `uv run python scripts/profile_runs.py --each <id> ...` once, with the agent ids of all these runs as `<id> ...`: {runs}.
+    - Judge each run from its launcher profile and its Codex section.
     - Before you give your first case, {deferred_titles}.
     - For each cause across these runs that you judge worth fixing, by the test that a change to a tool or a document could cut the time or the token cost it made, take each run the cause cost time or tokens in, in turn:
         - Where a ticket outside `tickets/closed/` and `tickets/deferred/` records the cause, file none.
@@ -747,9 +753,12 @@ REVIEW_COST = 0.08
 
 # "launch no further review": ticket 6-584 records a batch profile that
 # launched 14 transcript reviews after the filing crash was known.
+# The user's choice, session 2384db39, 2026-10-20T21:45:12Z, "3 ensure":
+# "Reviews check what Codex itself did in each run." Ticket 11-2530.
 REVIEW = mctx("""
-    - Launch a transcript review of each of these runs that is no solver work and of which the output of that `--each` call marks a message `past budget`, and of no other run: {reviewable}.
-    - Launch no transcript review of a run whose token cost, as that `--each` call prints it, is below ${cost:.2f}, the cost of a review. A run whose token cost that call gives as unknown keeps the review the other conditions give it.
+    - Launch one transcript review per launcher id of each of these runs that is no solver work and whose `--each` output marks a message or Codex work `past budget`, or Codex work `review required`, and of no other run: {reviewable}.
+        + xref: scripts/run_prints.py:print_codex, scripts/run_prints.py:print_messages
+    - Launch no transcript review of a run whose complete token cost, as that `--each` call prints it, is below ${cost:.2f}, the cost of a review. A run whose complete token cost that call gives as unknown keeps the review the other conditions give it.
     - Once a ticket filing of yours, or the reply of a review you launched, gives that a command the brief of a transcript review has it run failed, launch no further review.
     - A transcript review is a `general-purpose` agent, with `{model}` as the Agent call's `model`, and with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
     """)

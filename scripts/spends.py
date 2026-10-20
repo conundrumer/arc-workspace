@@ -165,9 +165,12 @@ def codex_spend(owner: dict[Path, str], before: float | None = None,
     launches: dict[Path, list[codex_reads.Call]] = {}
     for path in owner:
         try:
-            for call in codex_reads.calls(list(run_entries(path))):
+            gaps: list[str] = []
+            for call in codex_reads.calls(list(run_entries(path)), gaps):
                 if before is None or call.started is None or call.started <= before:
                     launches.setdefault(call.scratch, []).append(replace(call, transcript=path))
+            sources.extend(CodexSource(str(path), owner[path], None, None, None, gap)
+                           for gap in gaps)
         except (OSError, ValueError, KeyError, IndexError) as exc:
             sources.append(CodexSource(str(path), owner[path], None, None, None,
                                        "launcher evidence unreadable: " + str(exc)))
@@ -197,7 +200,7 @@ def codex_spend(owner: dict[Path, str], before: float | None = None,
             elif len(records) == len(calls) and not any("started" in r for r in records):
                 record = records[index]
             else:
-                sources.append(CodexSource(source, call.role, None, None, None,
+                sources.append(CodexSource(source, call.work_name, None, None, None,
                                            "call record missing or ambiguous", call.ended is None))
                 continue
             if record.get("refused") is True:
@@ -229,7 +232,8 @@ def codex_spend(owner: dict[Path, str], before: float | None = None,
                 reason = "accepted turn identity unavailable"
             elif usage is not None:
                 reason = codex_rollout.usage_reason(usage, turn)
-            item = CodexSource(source, call.role, thread, turn, usage, reason, running)
+            item = CodexSource(source, call.work_name,
+                               thread, turn, usage, reason, running)
             if thread is None or turn is None:
                 sources.append(item)
             else:

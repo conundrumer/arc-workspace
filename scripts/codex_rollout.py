@@ -5,6 +5,7 @@ import shlex
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,11 @@ def difference(after: CodexUsage, before: CodexUsage) -> CodexUsage:
     return CodexUsage(**values)
 
 
+class TurnEnd(StrEnum):
+    COMPLETE = "task_complete"
+    ABORTED = "turn_aborted"
+
+
 @dataclass
 class Turn:
     """A rollout turn's cumulative boundaries and time interval."""
@@ -56,6 +62,8 @@ class Turn:
     ended: float | None = None
     before: CodexUsage | None = None
     after: CodexUsage | None = None
+    activity: list[dict[str, Any]] = field(default_factory=list)
+    end_state: TurnEnd | None = None
 
     @property
     def usage(self) -> CodexUsage | None:
@@ -80,25 +88,36 @@ def rollout_path(thread: str, home: Path) -> Path:
 
 def rows(path: Path) -> list[dict[str, Any]]:
     """Read complete JSONL lines, leaving a concurrent append's tail unread."""
-    return [json.loads(line) for line in path.read_bytes().splitlines(keepends=True)
-            if line.endswith(b"\n")]
+    complete = [json.loads(line) for line in path.read_bytes().splitlines(keepends=True)
+                if line.endswith(b"\n")]
+    if any(not isinstance(row, dict) for row in complete):
+        raise ValueError("Codex JSONL row is not an object")
+    return complete
 
 
 def turns(thread: str, home: Path) -> list[Turn]:
     """Usage deltas within accepted turn boundaries, never lifetime totals."""
+    return read_turns(rollout_path(thread, home))
+
+
+def read_turns(path: Path) -> list[Turn]:
+    """Read turn activity and usage from the same complete source lines."""
     out: list[Turn] = []
     latest: CodexUsage | None = None
     current: Turn | None = None
-    for row in rows(rollout_path(thread, home)):
-        if row["type"] != "event_msg":
-            continue
-        p = row["payload"]
-        if p["type"] == "task_started":
+    for row in rows(path):
+        p = row.get("payload", {})
+        if not isinstance(p, dict):
+            raise ValueError("Codex rollout payload is not an object")
+        kind = p.get("type") if row.get("type") == "event_msg" else None
+        if kind == "task_started":
             boundary = latest if current is None else None
             current = Turn(p["turn_id"], datetime.fromisoformat(row["timestamp"]).timestamp(),
                            before=boundary)
             out.append(current)
-        elif p["type"] == "token_count" and p.get("info") is not None:
+        if current is not None:
+            current.activity.append(row)
+        if kind == "token_count" and p.get("info") is not None:
             latest = tokens(p["info"]["total_token_usage"])
             if current is not None:
                 if len(out) == 1 and current.after is None and current.before is None:
@@ -106,9 +125,10 @@ def turns(thread: str, home: Path) -> list[Turn]:
                     if latest is not None and last is not None and latest == last:
                         current.before = difference(latest, last)
                 current.after = latest
-        elif p["type"] in ("task_complete", "turn_aborted") and current is not None:
+        elif kind in ("task_complete", "turn_aborted") and current is not None:
             if p.get("turn_id") == current.turn:
                 current.ended = datetime.fromisoformat(row["timestamp"]).timestamp()
+                current.end_state = TurnEnd(kind)
                 latest = current.after
                 current = None
     return out

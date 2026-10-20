@@ -19,7 +19,7 @@ from codex_agent import FRESH_REFUSAL
 from command_labels import segment_program, simple_commands
 from run_reads import blocks, is_prompt
 
-from operations.roles import Role
+from operations.roles import GENERAL, Role
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,11 @@ class Call:
     until: float | None
     call_id: str
     transcript: Path | None = None
+    work_role: Role | None = None
+
+    @property
+    def work_name(self) -> str:
+        return self.work_role.value if self.role == GENERAL and self.work_role else self.role
 
 
 def timestamp(entry: dict[str, Any]) -> float | None:
@@ -39,7 +44,7 @@ def timestamp(entry: dict[str, Any]) -> float | None:
     return datetime.fromisoformat(value).timestamp() if isinstance(value, str) else None
 
 
-def commands(entry: dict[str, Any]):
+def launches(entry: dict[str, Any]):
     """Find turn launches, leaving help and session controls out."""
     for block in blocks(entry, "tool_use"):
         if entry.get("type") != "assistant" or block.get("name") != "Bash":
@@ -53,7 +58,8 @@ def commands(entry: dict[str, Any]):
                 continue
             if len(args) < 5:
                 raise ValueError("the Codex call gives no matching role and scratch directory")
-            agent_type = Role(args[0]).agent_type
+            role = Role(args[0])
+            agent_type = role.agent_type
             for i, arg in enumerate(args):
                 if arg == "--agent-type":
                     agent_type = args[i + 1]
@@ -62,17 +68,41 @@ def commands(entry: dict[str, Any]):
             directory = Path(args[1])
             if not directory.is_absolute():
                 raise ValueError("the Codex scratch directory must be absolute")
-            yield block["id"], agent_type, directory
+            yield block["id"], agent_type, directory, role
 
 
-def calls(entries: list[dict[str, Any]]) -> list[Call]:
+def commands(entry: dict[str, Any]):
+    for call, kind, directory, _ in launches(entry):
+        yield call, kind, directory
+
+
+def fresh_refusals(entries: list[dict[str, Any]]):
+    return {b.get("tool_use_id") for entry in entries
+            for b in blocks(entry, "tool_result")
+            if isinstance(b.get("content"), str)
+            and b["content"].strip() in ("codex_agent: " + FRESH_REFUSAL,
+                                         "Exit code 1\ncodex_agent: " + FRESH_REFUSAL)}
+
+
+def calls(entries: list[dict[str, Any]], gaps: list[str] | None = None) -> list[Call]:
     ends = {}
     for entry in entries:
         for block in blocks(entry, "tool_result"):
             ends[block.get("tool_use_id")] = timestamp(entry)
     until = max((t for e in entries if (t := timestamp(e)) is not None), default=None)
-    return [Call(role, directory, timestamp(entry), ends.get(call), until, call)
-            for entry in entries for call, role, directory in commands(entry)]
+    refused = fresh_refusals(entries)
+    out = []
+    for index, entry in enumerate(entries):
+        try:
+            for call, role, directory, work in launches(entry):
+                if call not in refused and not unrecorded_launch(entries, index, call, directory):
+                    out.append(Call(role, directory, timestamp(entry), ends.get(call), until,
+                                    call, work_role=work))
+        except (OSError, ValueError, KeyError, IndexError) as exc:
+            if gaps is None:
+                raise
+            gaps.append(f"launcher entry {index}: {exc}")
+    return out
 
 
 def launch_output(entries: list[dict[str, Any]], call_id: str) -> str:
@@ -193,11 +223,7 @@ def walk_entries(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any
     records: list[dict[str, Any]] = []
     used = 0
     started = False
-    refused = {b.get("tool_use_id") for entry in entries
-               for b in blocks(entry, "tool_result")
-               if isinstance(b.get("content"), str)
-               and b["content"].strip() in ("codex_agent: " + FRESH_REFUSAL,
-                                            "Exit code 1\ncodex_agent: " + FRESH_REFUSAL)}
+    refused = fresh_refusals(entries)
     for index, entry in enumerate(entries):
         if is_prompt(entry):
             out.append(entry)
