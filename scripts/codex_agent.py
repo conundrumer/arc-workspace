@@ -36,6 +36,7 @@ import codex_rollout
 
 from controlled_markdown import mctx
 from engine import checkout
+from handbook.context import codex_config_value, codex_permissions
 from operations.roles import ANALYST_NAMES, CODEX_ROLES, GENERAL, Role
 from operations.state import CodexUsage
 
@@ -287,9 +288,10 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
     if daemon_message is not None:
         return daemon_message
     argv = ["codex", "exec", "-m", model, "-c", f'model_reasoning_effort="{effort}"',
-            "-c", "project_doc_max_bytes=0", "-s", "workspace-write",
-            "-c", "sandbox_workspace_write.network_access=true",
-            "-c", 'approval_policy="never"', *(a for d in writable for a in ("--add-dir", str(d))),
+            "-c", "project_doc_max_bytes=0",
+            *(a for k, v in codex_permissions([*writable, cwd / ".codex"]).items()
+              for a in ("-c", f"{k}={codex_config_value(v)}")),
+            "-c", 'approval_policy="never"',
             "--skip-git-repo-check", "-C", str(cwd), "-o", str(last), "--json"]
     if instructions is not None:
         argv.extend(["-c", "developer_instructions=" + json.dumps(instructions)])

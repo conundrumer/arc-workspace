@@ -38,15 +38,21 @@ class Transport:
                 "approvalPolicy": params["approvalPolicy"],
                 "reasoningEffort": params["config"]["model_reasoning_effort"],
                 "instructionSources": [],
+                "activePermissionProfile": {"id": params["permissions"], "extends": ":workspace"},
                 "sandbox": {
                     "type": "workspaceWrite",
-                    "networkAccess": params["config"]["sandbox_workspace_write.network_access"],
-                    "writableRoots": params["config"]["sandbox_workspace_write.writable_roots"],
+                    "networkAccess": params["config"]["permissions"]["project"]["network"]["enabled"],
+                    "writableRoots": [k for k, v in
+                                      params["config"]["permissions"]["project"]["filesystem"].items()
+                                      if v == "write"],
                 },
             }
             if self.ignored:
                 target, key = self.ignored
-                (result["sandbox"] if target == "sandbox" else result)[key] = None
+                if key == "codexGrant":
+                    result["sandbox"]["writableRoots"].remove(str(Path(params["cwd"]) / ".codex"))
+                else:
+                    (result["sandbox"] if target == "sandbox" else result)[key] = None
             return result
         if method == "thread/read":
             return {"thread": {"turns": [{"id": "turn", "status": "inProgress"}]}}
@@ -203,6 +209,8 @@ def test_refusal_falls_back_and_keeps_walk_record(files, refuse, capsys):
         ("", "approvalPolicy"),
         ("", "reasoningEffort"),
         ("", "instructionSources"),
+        ("", "activePermissionProfile"),
+        ("sandbox", "codexGrant"),
         ("sandbox", "networkAccess"),
         ("sandbox", "writableRoots"),
         ("sandbox", "type"),

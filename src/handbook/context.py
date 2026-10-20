@@ -329,6 +329,30 @@ def uncommented(text: str) -> str:
     return re.sub(r" ?<!--.*?-->", "", text, flags=re.S)
 
 
+def codex_permissions(writable: Sequence[Path] = ()) -> dict[str, object]:
+    """Explicit profile overrides, including protected workspace config access.
+
+    These overrides also work before the workspace has a project config.
+    """
+    return {
+        "default_permissions": CODEX_PROFILE,
+        "permissions": {CODEX_PROFILE: {
+            "extends": ":workspace",
+            "filesystem": {":workspace_roots": {".codex": "write"},
+                           **{str(path): "write" for path in writable}},
+            "network": {"enabled": True},
+        }},
+    }
+
+
+def codex_config_value(value: object) -> str:
+    """A TOML value for a Codex config override or generated config."""
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"{json.dumps(k)} = {codex_config_value(v)}"
+                               for k, v in value.items()) + "}"
+    return json.dumps(value)
+
+
 def codex_config(style: str | None) -> str:
     """The project config: the style as the developer instructions when
     there is one, the doc budget, and the permissions that let a session
@@ -337,17 +361,8 @@ def codex_config(style: str | None) -> str:
     if style is not None:
         keys["developer_instructions"] = uncommented(style)
     keys["project_doc_max_bytes"] = CODEX_DOC_BYTES
-    keys["default_permissions"] = CODEX_PROFILE
-    # json.dumps gives a TOML basic string: the escapes agree on these
-    # values.
-    head = "".join(f"{k} = {json.dumps(v)}\n" for k, v in keys.items())
-    return head + f"""
-[permissions.{CODEX_PROFILE}]
-extends = ":workspace"
-
-[permissions.{CODEX_PROFILE}.filesystem.":workspace_roots"]
-".codex" = "write"
-"""
+    keys.update(codex_permissions())
+    return "".join(f"{k} = {codex_config_value(v)}\n" for k, v in keys.items())
 
 
 def codex_renderings(root: Path = REPO_ROOT, lib: Path = LIB_SRC,

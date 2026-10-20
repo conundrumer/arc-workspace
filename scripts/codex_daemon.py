@@ -17,6 +17,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from handbook.context import CODEX_PROFILE, codex_permissions
+
 
 class Refused(ValueError):
     """An RPC response explicitly rejected a request, before it could run."""
@@ -169,8 +171,7 @@ def start(
     config = {
         "project_doc_max_bytes": 0,
         "model_reasoning_effort": effort,
-        "sandbox_workspace_write.network_access": True,
-        "sandbox_workspace_write.writable_roots": list(map(str, writable)),
+        **codex_permissions([*writable, cwd / ".codex"]),
     }
     if instructions is not None:
         config["developer_instructions"] = instructions
@@ -178,21 +179,22 @@ def start(
         "cwd": str(cwd),
         "model": model,
         "approvalPolicy": "never",
-        "sandbox": "workspace-write",
+        "permissions": CODEX_PROFILE,
         "config": config,
     }
     if thread is not None:
         params["threadId"] = thread
     result = client.call("thread/resume" if thread else "thread/start", params)
-    policy = result["sandbox"]
+    policy = result.get("sandbox") or {}
     if (
         result["model"] != model
         or result["cwd"] != str(cwd)
         or result["approvalPolicy"] != "never"
         or result["reasoningEffort"] != effort
-        or policy["type"] != "workspaceWrite"
+        or result.get("activePermissionProfile") != {"id": CODEX_PROFILE, "extends": ":workspace"}
+        or policy.get("type") != "workspaceWrite"
         or policy.get("networkAccess") is not True
-        or not set(map(str, writable)) <= set(policy.get("writableRoots") or [])
+        or not set(map(str, [*writable, cwd / ".codex"])) <= set(policy.get("writableRoots") or [])
         or result.get("instructionSources") != []
     ):
         raise ValueError("shared daemon did not apply the requested Codex settings")
