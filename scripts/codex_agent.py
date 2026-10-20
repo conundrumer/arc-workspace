@@ -24,8 +24,10 @@ import json
 import os
 import subprocess
 import sys
+import time
 import tomllib
 from collections.abc import Callable
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +37,7 @@ import codex_rollout
 from controlled_markdown import mctx
 from engine import checkout
 from operations.roles import ANALYST_NAMES, CODEX_ROLES, GENERAL, Role
+from operations.state import CodexUsage
 
 DONE = "codex-done"
 """The file under the scratch directory that the command makes once it ends,
@@ -107,10 +110,51 @@ class TurnFailed(ValueError):
         self.message = message
 
 
+def usage_record(thread: str | None, events: list[dict[str, Any]], started: float,
+                 ended: float, home: Path,
+                 baseline: CodexUsage | None = None) -> dict[str, Any]:
+    """Keep accepted identity and usage even when a turn fails."""
+    accepted = next((e.get("turn_id") for e in events if e.get("turn_id")), None)
+    usage = None
+    running = thread is not None and not any(
+        e.get("type") in ("turn.completed", "turn.failed") for e in events)
+    if thread is not None:
+        try:
+            turn = codex_rollout.call_turn(thread, home, started, ended, accepted)
+        except (OSError, ValueError, KeyError):
+            turn = None
+        if turn is not None:
+            accepted, usage, running = turn.turn, turn.usage, turn.ended is None
+    cumulative = [codex_rollout.tokens(e.get("cumulative")) for e in events
+                  if e.get("type") == "usage.updated" and e.get("cumulative") is not None]
+    if usage is None and baseline is not None and cumulative and cumulative[-1] is not None:
+        usage = codex_rollout.difference(cumulative[-1], baseline)
+    # Exec reports per-turn usage. Daemon cumulative readings need boundaries.
+    direct = [e.get("usage") for e in events
+              if e.get("type") in ("turn.completed", "turn.failed") and e.get("usage") is not None]
+    if direct:
+        usage = codex_rollout.tokens(direct[-1])
+    reason = codex_rollout.usage_reason(usage, accepted)
+    return {"turn": accepted, "usage": asdict(usage) if usage is not None else None,
+            "usage_reason": reason, "running": running, "started": started, "ended": ended,
+            "refused": thread is None and bool(events) and
+                       all(e.get("type") == "error" for e in events)}
+
+
 def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
                 cwd: Path, model: str, effort: str, writable: list[Path],
-                transport: Callable[[], Any], instructions: str | None = None) -> str | None:
+                transport: Callable[[], Any], instructions: str | None = None,
+                home: Path | None = None) -> str | None:
     """Try the daemon; only a refusal before turn submission permits fallback."""
+    call_started = time.time()
+    baseline = CodexUsage(0, 0, 0, 0, 0) if thread is None else None
+    if thread is not None:
+        try:
+            previous = codex_rollout.turns(thread, home or Path.home())
+            if previous and previous[-1].ended is not None:
+                baseline = previous[-1].after
+        except (OSError, ValueError, KeyError):
+            pass
     original_thread = thread
     client = None
     events: list[dict[str, Any]] = []
@@ -148,6 +192,7 @@ def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
             print(f"codex_agent: shared daemon refused: {exc}; falling back to codex exec",
                   file=sys.stderr)
             return None
+        events.append({"type": "turn.started", "turn_id": started["turn"]["id"]})
         message, ok = codex_daemon.collect(client, thread, started["turn"]["id"], emit)
         (scratch / "codex-last.md").write_text(message)
         ok = ok and bool(message.strip())
@@ -160,12 +205,17 @@ def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
             raise
         raise TurnFailed(f"daemon turn failed (not replayed): {exc}", message) from exc
     finally:
-        if submitted:
-            with (scratch / "codex-events.jsonl").open("a") as record:
-                record.write(json.dumps({"thread": thread, "input": item,
-                    "output": "\n".join(map(json.dumps, events)), "ok": ok}) + "\n")
-        if client is not None:
-            client.close()
+        try:
+            if submitted:
+                evidence = usage_record(thread, events, call_started, time.time(),
+                                        home or Path.home(), baseline)
+                with (scratch / "codex-events.jsonl").open("a") as record:
+                    record.write(json.dumps({"thread": thread, "input": item,
+                        "output": "\n".join(map(json.dumps, events)), "ok": ok,
+                        **evidence}) + "\n")
+        finally:
+            if client is not None:
+                client.close()
 
 
 def control(argv: list[str], transport: Callable[[], Any] = codex_daemon.Proxy) -> int:
@@ -233,7 +283,7 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
                 *([git_dir] if git_dir != main / ".git" else []), main / ".cache",
                 home / ".cache" / "uv", home / ".cargo", scratch]
     daemon_message = daemon_turn(scratch, thread, prompt, item, cwd, model, effort,
-                                 writable, transport, instructions)
+                                 writable, transport, instructions, home)
     if daemon_message is not None:
         return daemon_message
     argv = ["codex", "exec", "-m", model, "-c", f'model_reasoning_effort="{effort}"',
@@ -243,8 +293,10 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
             "--skip-git-repo-check", "-C", str(cwd), "-o", str(last), "--json"]
     if instructions is not None:
         argv.extend(["-c", "developer_instructions=" + json.dumps(instructions)])
+    call_started = time.time()
     done = runner([*argv, *(["resume", thread] if thread is not None else []), prompt])
     errors: list[str] = []
+    events: list[dict[str, Any]] = []
     for line in done.stdout.splitlines():
         try:
             event = json.loads(line)
@@ -252,6 +304,7 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
             continue
         if not isinstance(event, dict):
             continue
+        events.append(event)
         if thread is None and isinstance(found := event.get("thread_id"), str) and found:
             thread = found
             session.write_text(thread + "\n")
@@ -263,7 +316,8 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
     message = last.read_text() if last.exists() else ""
     ok = not (done.returncode or errors or not message.strip() or thread is None)
     with (scratch / "codex-events.jsonl").open("a") as record:
-        record.write(json.dumps({"thread": thread, "input": item, "output": done.stdout, "ok": ok}) + "\n")
+        record.write(json.dumps({"thread": thread, "input": item, "output": done.stdout, "ok": ok,
+            **usage_record(thread, events, call_started, time.time(), home)}) + "\n")
     if not ok:
         details = "\n".join([*errors, done.stderr.strip()]).strip()
         raise ValueError(details or

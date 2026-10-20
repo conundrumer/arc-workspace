@@ -5,9 +5,12 @@ it."""
 import json
 import statistics
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from enum import Enum
 from pathlib import Path
+
+import codex_reads
+import codex_rollout
 
 from agent_launches import runs_under
 from agent_turns import first_time, has_ended, last_time
@@ -18,14 +21,15 @@ from ticket_files import listed_tickets, ticket_name
 from ticket_log import moved
 from ticket_reads import held_ticket
 from token_prices import run_cost
-from transcripts import chain, held_find
+from transcripts import chain, held_find, project_dirs
 from entry_reads import entries_back
 from transcript_snapshots import Refused
 
 from controlled_markdown import mctx
 from engine.memo import write_whole
 from operations.roles import Role
-from operations.state import Budget, Spend, Ticket
+from operations.state import (Budget, Spend, Ticket, CodexUsage, CodexSource, CodexSpend,
+                              UnpricedSpend)
 from ticketing.vocabulary import Kind, Resolution, Status
 
 
@@ -48,11 +52,11 @@ a record for a ticket."""
 
 
 class Unknown(Enum):
-    """The record of a change whose spend no later read can make known."""
+    """A legacy record with no known dollar spend."""
     SPEND = "unknown"
 
 
-type Recorded = Spend | Unknown | None
+type Recorded = Spend | UnpricedSpend | Unknown | None
 """What the file under `SPENDS` of a change records: its spend, no known
 spend, or, as None, no file."""
 
@@ -107,11 +111,146 @@ def cost_of(path: Path, undecided: list[str]) -> float | None:
     return run_cost(run_entries(path), undecided)
 
 
-def priced(owner: dict[Path, str], undecided: list[str]) -> Spend | None:
-    """The spend of the transcripts `owner` gives, each under its agent
-    type, or None where one has no price. A transcript with no timed entry
-    spent nothing and adds no time."""
+def fingerprint(path: Path) -> tuple[str, int | None, int | None]:
+    """A source revision, including a missing source."""
+    try:
+        stat = path.stat()
+        return str(path), stat.st_mtime_ns, stat.st_size
+    except FileNotFoundError:
+        return str(path), None, None
+
+
+def legacy_turn_records(records: list[dict], home: Path,
+                        inputs: set[Path]) -> list[dict]:
+    """Recover legacy call boundaries only when accepted record order is exact.
+    A partial or unmatched accepted history cannot establish that correspondence.
+    """
+    recovered: list[dict] = []
+    for thread in sorted({r["thread"] for r in records if isinstance(r.get("thread"), str)}):
+        accepted = []
+        for record in records:
+            if record.get("thread") != thread or "turn" in record:
+                continue
+            try:
+                events = [json.loads(line) for line in record["output"].splitlines()]
+            except (KeyError, ValueError):
+                continue
+            if any(e.get("type") in ("turn.completed", "turn.failed") for e in events):
+                accepted.append(record)
+        if not accepted:
+            continue
+        try:
+            inputs.add(codex_rollout.rollout_path(thread, home))
+            turns = codex_rollout.turns(thread, home)
+        except (OSError, ValueError, KeyError):
+            continue
+        if len(accepted) != len(turns):
+            continue
+        for record, turn in zip(accepted, turns):
+            recovered.append({**record, "turn": turn.turn,
+                "usage": None if turn.usage is None else asdict(turn.usage),
+                "running": turn.ended is None, "started": turn.started,
+                "ended": turn.ended})
+    return recovered
+
+
+def codex_spend(owner: dict[Path, str], before: float | None = None,
+                home: Path | None = None) -> CodexSpend:
+    """Count accepted turns once across the change's launcher calls.
+    Missing or ambiguous boundaries remain explicit source components.
+    """
+    home = home or Path.home()
+    sources: list[CodexSource] = []
+    inputs: set[Path] = {p for path in owner for p in chain(path)}
+    launches: dict[Path, list[codex_reads.Call]] = {}
+    for path in owner:
+        try:
+            for call in codex_reads.calls(list(run_entries(path))):
+                if before is None or call.started is None or call.started <= before:
+                    launches.setdefault(call.scratch, []).append(replace(call, transcript=path))
+        except (OSError, ValueError, KeyError, IndexError) as exc:
+            sources.append(CodexSource(str(path), owner[path], None, None, None,
+                                       "launcher evidence unreadable: " + str(exc)))
+    seen: dict[tuple[str, str], CodexSource] = {}
+    for scratch, calls in launches.items():
+        calls.sort(key=lambda c: c.started if c.started is not None else float("inf"))
+        record_path = scratch / "codex-events.jsonl"
+        inputs.update((record_path, scratch / "codex-session"))
+        try:
+            records = codex_rollout.rows(record_path)
+        except (OSError, ValueError) as exc:
+            records = []
+        recovered = legacy_turn_records(records, home, inputs)
+        for index, call in enumerate(calls):
+            source = f"{call.transcript}:{call.call_id}"
+            next_call = calls[index + 1].started if index + 1 < len(calls) else None
+            limits = [t for t in (next_call, before) if t is not None]
+            next_start = min(limits) if limits else None
+            legacy_limits = [t for t in (next_start, call.until) if t is not None]
+            legacy_end = min(legacy_limits) if legacy_limits else None
+            timed = [r for batch, limit in ((records, next_start), (recovered, legacy_end))
+                     for r in batch if isinstance(r.get("started"), (int, float))
+                     and call.started is not None and r["started"] >= call.started
+                     and (limit is None or r["started"] < limit)]
+            if len(timed) == 1:
+                record = timed[0]
+            elif len(records) == len(calls) and not any("started" in r for r in records):
+                record = records[index]
+            else:
+                sources.append(CodexSource(source, call.role, None, None, None,
+                                           "call record missing or ambiguous", call.ended is None))
+                continue
+            if record.get("refused") is True:
+                continue
+            thread, turn = record.get("thread"), record.get("turn")
+            usage = codex_rollout.tokens(record.get("usage"))
+            running = record.get("running", False)
+            reason = record.get("usage_reason", "turn usage unavailable")
+            if thread is not None and (usage is None or turn is None or running):
+                try:
+                    rollout = codex_rollout.rollout_path(thread, home)
+                    inputs.add(rollout)
+                    start = record.get("started", call.started)
+                    end = record.get("ended", legacy_end)
+                    evidence = (codex_rollout.call_turn(thread, home, start, end, turn)
+                                if start is not None and end is not None else None)
+                    if evidence is not None:
+                        turn, usage = evidence.turn, evidence.usage
+                        running = evidence.ended is None
+                except (OSError, ValueError, KeyError) as exc:
+                    reason = "rollout evidence unavailable: " + str(exc)
+                    # Watch existing directories for a later rollout arrival.
+                    inputs.add(home / ".codex" / "sessions")
+                    sessions = home / ".codex" / "sessions"
+                    if sessions.exists():
+                        inputs.update(p for p in sessions.rglob("*") if p.is_dir())
+            if turn is None:
+                usage = None
+                reason = "accepted turn identity unavailable"
+            elif usage is not None:
+                reason = codex_rollout.usage_reason(usage, turn)
+            item = CodexSource(source, call.role, thread, turn, usage, reason, running)
+            if thread is None or turn is None:
+                sources.append(item)
+            else:
+                key = thread, turn
+                previous = seen.get(key)
+                if previous is None:
+                    seen[key] = item
+                elif previous.role != item.role or previous.usage != item.usage:
+                    seen[key] = replace(previous, usage=None, reason="conflicting turn evidence")
+    sources.extend(seen.values())
+    return CodexSpend(tuple(sources), tuple(fingerprint(p) for p in sorted(inputs)))
+
+
+def priced(owner: dict[Path, str], undecided: list[str],
+           before: float | None = None) -> Spend | UnpricedSpend:
+    """Independent Claude dollars and Codex tokens of the owned transcripts.
+    A missing Claude price preserves measured tokens in UnpricedSpend.
+    A transcript with no timed entry adds no time.
+    """
     total = 0.0
+    known = True
     spans: list[tuple[float, float]] = []
     by_role: dict[str, float] = {}
     for p, role in owner.items():
@@ -120,11 +259,14 @@ def priced(owner: dict[Path, str], undecided: list[str]) -> Spend | None:
             continue
         cost = cost_of(p, undecided)
         if cost is None:
-            return None
-        total += cost
-        by_role[role] = by_role.get(role, 0.0) + cost
+            known = False
+        else:
+            total += cost
+            by_role[role] = by_role.get(role, 0.0) + cost
         spans.append((start, end))
-    return Spend(total, union_seconds(spans), by_role)
+    codex = codex_spend(owner, before)
+    seconds = union_seconds(spans)
+    return Spend(total, seconds, by_role, codex) if known else UnpricedSpend(seconds, codex)
 
 
 def known_owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | Unknown | None:
@@ -142,7 +284,8 @@ def spend(runs: list[str], pending: Mapping[str, str], undecided: list[str]) -> 
     `pending` gives still running, as `owners` and `priced` give it, or
     None where a read is refused."""
     owner = known_owners(runs, pending)
-    return priced(owner, undecided) if isinstance(owner, dict) else None
+    result = priced(owner, undecided) if isinstance(owner, dict) else None
+    return result if isinstance(result, Spend) else None
 
 
 def stopped(path: Path) -> bool:
@@ -156,29 +299,52 @@ def stopped(path: Path) -> bool:
     return False
 
 
+def unresolved_spend(path: Path, runs: list[str], before: float) -> UnpricedSpend:
+    """Preserve attributable components while another run's evidence is absent."""
+    known = [run for run in runs if isinstance(known_owners([run], {}), dict)]
+    owner = known_owners(known, {})
+    measured = codex_spend(owner, before) if isinstance(owner, dict) else CodexSpend()
+    sources = [*measured.sources, *(CodexSource(run, "unknown", None, None, None,
+                    "run transcript or role unavailable") for run in runs if run not in known)]
+    if not runs:
+        sources.append(CodexSource(str(path), "unknown", None, None, None,
+                                   "closing line gives no change runs"))
+    watched = {path}
+    for directory in project_dirs():
+        watched.add(directory)
+        watched.update(p for p in directory.rglob("*") if p.is_dir())
+    for run in runs:
+        transcript = held_find(run)
+        if transcript is not None:
+            watched.add(transcript)
+            watched.add(transcript.with_suffix(".meta.json"))
+    inputs = tuple(sorted({*measured.inputs, *(fingerprint(p) for p in watched)}))
+    return UnpricedSpend(None, CodexSpend(tuple(sources), inputs))
+
+
 def change_spend(path: Path, undecided: list[str]) -> Spend | None:
-    """The spend of the `change` at `path`, closed `fixed`: that of the
-    runs its last `fixed` closing line gives, as `spend` gives it, or None
-    where there is no such line or the line gives no run.
-    The record under `SPENDS` it writes, where none is written yet, is no
-    known spend where that line gives no run or `known_owners` gives
-    `Unknown.SPEND`, and the spend once it is settled: `priced` gives it
-    with no `undecided` line and each run it read has stopped."""
+    """Dollar spend of a closed fixed change, with independent tokens recorded.
+    Legacy records refresh from source runs while their dollars and time stand.
+    Source revisions invalidate settled and unresolved measurements.
+    """
     found = recorded_spend(path)
-    if found is not None:
-        return None if found is Unknown.SPEND else found
+    codex = found.codex if isinstance(found, (Spend, UnpricedSpend)) else None
+    if codex is not None and all(fingerprint(Path(p)) == (p, m, n) for p, m, n in codex.inputs):
+        return found if isinstance(found, Spend) else None
     closing = [line for line in held_closed(path).log if line.status is Status.CLOSED
                and line.resolution is Resolution.FIXED]
     runs = closing[-1].note.split()[3:] if closing else []
     owner = None if not closing else known_owners(runs, {}) if runs else Unknown.SPEND
     lines = len(undecided)
-    s = priced(owner, undecided) if isinstance(owner, dict) else None
-    record = (owner if owner is Unknown.SPEND
-              else s if s is not None and isinstance(owner, dict) and len(undecided) == lines
-              and all_stopped(owner, closing[-1].time) else None)
-    if record is not None:
-        write_record(spend_record(path), None if record is Unknown.SPEND else asdict(record))
-    return s
+    measured = priced(owner, undecided, closing[-1].time) if isinstance(owner, dict) else None
+    if measured is None and closing:
+        measured = unresolved_spend(path, runs, closing[-1].time)
+    if isinstance(found, Spend) and measured is not None:
+        measured = replace(found, codex=measured.codex)
+    if measured is not None and len(undecided) == lines and (
+            not isinstance(owner, dict) or all_stopped(owner, closing[-1].time)):
+        write_record(spend_record(path), encoded(measured))
+    return measured if isinstance(measured, Spend) else None
 
 
 def all_stopped(owner: dict[Path, str], at: float) -> bool:
@@ -199,13 +365,35 @@ def spend_record(path: Path) -> Path:
     return path.parent.parent / SPENDS / f"{ticket_name(path).number}.json"
 
 
+def encoded(spend: Spend | UnpricedSpend) -> dict:
+    """The dollar record and the independent Codex measurement."""
+    value = asdict(spend)
+    if isinstance(spend, UnpricedSpend):
+        value.update(dollars=None, by_role=None)
+    if spend.codex is not None:
+        value["codex"].update(status=spend.codex.status, totals=asdict(spend.codex.totals()),
+            by_role={role: asdict(spend.codex.totals(role))
+                     for role in sorted({s.role for s in spend.codex.sources})})
+    return value
+
+
 def recorded_spend(path: Path) -> Recorded:
-    """What the file under `SPENDS` of the change at `path` records."""
+    """Read legacy and extended records without assuming missing usage is zero."""
     record = spend_record(path)
     if stat_read(record) is None:
         return None
     value = json.loads(file_text(record))
-    return Unknown.SPEND if value is None else Spend(**value)
+    if value is None:
+        return Unknown.SPEND
+    codex = value.get("codex")
+    measurement = None if codex is None else CodexSpend(tuple(
+        CodexSource(**{**s, "usage": codex_rollout.tokens(s["usage"])})
+        for s in codex["sources"]), tuple(tuple(row) for row in codex["inputs"]))
+    if value["dollars"] is None:
+        if measurement is None:
+            return Unknown.SPEND
+        return UnpricedSpend(value["seconds"], measurement)
+    return Spend(value["dollars"], value["seconds"], value["by_role"], measurement)
 
 
 @dataclass(frozen=True)
@@ -232,9 +420,7 @@ def closed_changes(tickets: Path) -> tuple[Closed, ...]:
 
 @state_cache(DERIVED)
 def closed_spends(tickets: Path) -> tuple[tuple[Closed, Recorded], ...]:
-    """Each change of `closed_changes`, with its `recorded_spend`, so that
-    a read of the changes like a change reads again only the changes that
-    no file records."""
+    """Closed changes and their recorded spends, held by record revisions."""
     return tuple((c, recorded_spend(c.path)) for c in closed_changes(tickets))
 
 
@@ -263,10 +449,10 @@ def like_changes(tickets: Path, editors: frozenset[Role], before: float,
     known spend whose `editors` set is `editors`, or of each such change
     whatever its `editors` where fewer than `FEWEST_LIKE` have it."""
     every: list[tuple[tuple[Role, ...] | None, Spend]] = []
-    for c, recorded in closed_spends(tickets):
+    for c, _ in closed_spends(tickets):
         if c.at >= before:
             continue
-        s = change_spend(c.path, undecided) if recorded is None else recorded
+        s = change_spend(c.path, undecided)
         if isinstance(s, Spend):
             every.append((c.editors, s))
     like = [s for e, s in every if e is not None and frozenset(e) == editors]
@@ -281,7 +467,7 @@ def budget(tickets: Path, editors: frozenset[Role], before: float,
     like = like_changes(tickets, editors, before, undecided)
     if not like:
         undecided.append(mctx("budget unknown: no change closed `fixed` before the take has a "
-                              "known spend"))
+                              "known dollar spend"))
         return None
     return Budget(OVERRUN * statistics.median(s.dollars for s in like),
                   OVERRUN * statistics.median(s.seconds for s in like))

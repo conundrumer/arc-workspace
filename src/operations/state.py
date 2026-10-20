@@ -455,14 +455,83 @@ class Reader:
 
 
 @dataclass(frozen=True)
+class CodexUsage:
+    """Token counts from one attributable turn; absent counts are unknown.
+    Cached input is included in input; reasoning output is included in output.
+    """
+    input_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    output_tokens: int | None = None
+    reasoning_output_tokens: int | None = None
+    total_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class CodexSource:
+    """A launcher's call record and its accepted turn, with missing evidence.
+    A running source keeps its aggregate measurement partial.
+    """
+    source: str
+    role: str
+    thread: str | None
+    turn: str | None
+    usage: CodexUsage | None
+    reason: str | None
+    running: bool = False
+
+
+class CodexStatus(StrEnum):
+    ZERO = "zero"
+    UNKNOWN = "unknown"
+    PARTIAL = "partial"
+    COMPLETE = "complete"
+
+
+@dataclass(frozen=True)
+class CodexSpend:
+    """Attributable Codex sources; None on Spend means no source read yet.
+    Totals preserve measured counts when other sources are unknown.
+    """
+    sources: tuple[CodexSource, ...] = ()
+    inputs: tuple[tuple[str, int | None, int | None], ...] = ()
+
+    @property
+    def status(self) -> CodexStatus:
+        if not self.sources:
+            return CodexStatus.ZERO
+        if all(s.usage is None for s in self.sources):
+            return CodexStatus.UNKNOWN
+        if any(s.reason is not None or s.running for s in self.sources):
+            return CodexStatus.PARTIAL
+        return CodexStatus.COMPLETE
+
+    def totals(self, role: str | None = None) -> CodexUsage:
+        sources = [s for s in self.sources if role is None or s.role == role]
+        values = {}
+        for name in CodexUsage.__dataclass_fields__:
+            counts = [getattr(s.usage, name) for s in sources if s.usage is not None]
+            known = [v for v in counts if v is not None]
+            values[name] = sum(known) if known or not sources else None
+        return CodexUsage(**values)
+
+
+@dataclass(frozen=True)
+class UnpricedSpend:
+    """Measured Codex spend when Claude dollar spend is unknown."""
+    seconds: float | None
+    codex: CodexSpend
+
+
+@dataclass(frozen=True)
 class Spend:
-    """The spend of runs: their token cost and that of the runs under
-    them, their agent-running time, the union of the wall time of all
-    those runs, and their cost by the agent type of each run, the runs
-    under it summed with it (`scripts/spends.py`)."""
+    """Claude dollars, the union of run wall times in seconds, dollar
+    costs by owning role, and independent Codex tokens (`scripts/spends.py`).
+    An absent Codex measurement has not been read from the source runs.
+    """
     dollars: float
     seconds: float
     by_role: dict[str, float]
+    codex: CodexSpend | None = None
 
 
 @dataclass(frozen=True)

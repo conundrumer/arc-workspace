@@ -213,7 +213,10 @@ def collect(
         if params.get("threadId") != thread:
             continue
         method = event.get("method")
-        if method == "item/commandExecution/outputDelta" and params.get("turnId") == turn:
+        if method == "thread/tokenUsage/updated" and params.get("turnId") == turn:
+            emit({"type": "usage.updated", "turn_id": turn,
+                  "cumulative": params.get("tokenUsage", {}).get("total")})
+        elif method == "item/commandExecution/outputDelta" and params.get("turnId") == turn:
             output_deltas.setdefault(params["itemId"], []).append(params["delta"])
         elif method == "item/completed" and params.get("turnId") == turn:
             item = params["item"]
@@ -267,6 +270,7 @@ def collect(
                 {
                     "type": "turn.completed" if ok else "turn.failed",
                     "status": completed["status"],
+                    "turn_id": turn,
                     "error": completed.get("error"),
                 }
             )

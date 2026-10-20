@@ -8,6 +8,106 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from operations.state import CodexUsage
+
+
+def tokens(value: object) -> CodexUsage | None:
+    """Decode transport token counts, refusing negative and noninteger counts."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("invalid Codex token usage")
+    names = {"input_tokens": "inputTokens", "cached_input_tokens": "cachedInputTokens",
+             "output_tokens": "outputTokens", "reasoning_output_tokens": "reasoningOutputTokens",
+             "total_tokens": "totalTokens"}
+    counts = {}
+    for name, camel in names.items():
+        count = value.get(name, value.get(camel))
+        if count is not None and (type(count) is not int or count < 0):
+            raise ValueError("invalid Codex token count")
+        counts[name] = count
+    return CodexUsage(**counts)
+
+
+def usage_reason(usage: CodexUsage | None, turn: str | None) -> str | None:
+    """Explain the unknown component of a turn measurement."""
+    if turn is None:
+        return "accepted turn identity unavailable"
+    if usage is None:
+        return "turn usage unavailable"
+    missing = [k for k in CodexUsage.__dataclass_fields__ if getattr(usage, k) is None]
+    return "missing token counts: " + ", ".join(missing) if missing else None
+
+
+def difference(after: CodexUsage, before: CodexUsage) -> CodexUsage:
+    """Subtract cumulative boundaries; a reset or absent boundary is unknown."""
+    values = {}
+    for name in CodexUsage.__dataclass_fields__:
+        a, b = getattr(after, name), getattr(before, name)
+        values[name] = a - b if a is not None and b is not None and a >= b else None
+    return CodexUsage(**values)
+
+
+@dataclass
+class Turn:
+    """A rollout turn's cumulative boundaries and time interval."""
+    turn: str
+    started: float
+    ended: float | None = None
+    before: CodexUsage | None = None
+    after: CodexUsage | None = None
+
+    @property
+    def usage(self) -> CodexUsage | None:
+        if self.after is None or self.before is None:
+            return None
+        return difference(self.after, self.before)
+
+
+def rollout_path(thread: str, home: Path) -> Path:
+    if not thread or not all(c.isascii() and (c.isalnum() or c == "-") for c in thread):
+        raise ValueError("invalid Codex session id")
+    paths = list((home / ".codex" / "sessions").rglob(f"rollout-*-{thread}.jsonl"))
+    if len(paths) != 1:
+        raise ValueError(f"expected one live rollout for {thread}, found {len(paths)}")
+    return paths[0]
+
+
+def rows(path: Path) -> list[dict[str, Any]]:
+    """Read complete JSONL lines, leaving a concurrent append's tail unread."""
+    return [json.loads(line) for line in path.read_bytes().splitlines(keepends=True)
+            if line.endswith(b"\n")]
+
+
+def turns(thread: str, home: Path) -> list[Turn]:
+    """Usage deltas within accepted turn boundaries, never lifetime totals."""
+    out: list[Turn] = []
+    latest: CodexUsage | None = None
+    current: Turn | None = None
+    for row in rows(rollout_path(thread, home)):
+        if row["type"] != "event_msg":
+            continue
+        p = row["payload"]
+        if p["type"] == "task_started":
+            boundary = latest if current is None else None
+            current = Turn(p["turn_id"], datetime.fromisoformat(row["timestamp"]).timestamp(),
+                           before=boundary)
+            out.append(current)
+        elif p["type"] == "token_count" and p.get("info") is not None:
+            latest = tokens(p["info"]["total_token_usage"])
+            if current is not None:
+                if len(out) == 1 and current.after is None and current.before is None:
+                    last = tokens(p["info"].get("last_token_usage"))
+                    if latest is not None and last is not None and latest == last:
+                        current.before = difference(latest, last)
+                current.after = latest
+        elif p["type"] in ("task_complete", "turn_aborted") and current is not None:
+            if p.get("turn_id") == current.turn:
+                current.ended = datetime.fromisoformat(row["timestamp"]).timestamp()
+                latest = current.after
+                current = None
+    return out
+
 
 @dataclass
 class Rollout:
@@ -49,16 +149,8 @@ def short(text: str) -> str:
 def read(scratch: Path, home: Path) -> Rollout:
     """Read complete JSONL lines only; a concurrent append may leave a tail."""
     thread = (scratch / "codex-session").read_text().strip()
-    if not thread or not all(c.isascii() and (c.isalnum() or c == "-") for c in thread):
-        raise ValueError("invalid Codex session id")
-    paths = list((home / ".codex" / "sessions").rglob(f"rollout-*-{thread}.jsonl"))
-    if len(paths) != 1:
-        raise ValueError(f"expected one live rollout for {thread}, found {len(paths)}")
     state = Rollout(thread)
-    for line in paths[0].read_bytes().splitlines(keepends=True):
-        if not line.endswith(b"\n"):
-            break
-        row = json.loads(line)
+    for row in rows(rollout_path(thread, home)):
         if row["type"] != "event_msg":
             continue
         payload = row["payload"]
@@ -70,7 +162,10 @@ def read(scratch: Path, home: Path) -> Rollout:
             state.turn = None
             state.started = None
         elif kind == "token_count" and payload.get("info") is not None:
-            state.tokens = payload["info"]["total_token_usage"]
+            usage = tokens(payload["info"]["total_token_usage"])
+            state.tokens = None if usage is None else {
+                k: v for k in CodexUsage.__dataclass_fields__
+                if (v := getattr(usage, k)) is not None}
         elif kind == "item_completed":
             item = payload["item"]
             if item["type"] == "CommandExecution":
@@ -88,3 +183,12 @@ def read(scratch: Path, home: Path) -> Rollout:
         elif kind == "agent_message":
             state.messages.append(payload["message"])
     return state
+
+
+def call_turn(thread: str, home: Path, started: float, ended: float,
+              accepted: str | None = None) -> Turn | None:
+    """Locate exactly one accepted turn within a call's recorded interval."""
+    found = [t for t in turns(thread, home)
+             if (t.turn == accepted if accepted is not None
+                 else started <= t.started <= ended)]
+    return found[0] if len(found) == 1 else None
