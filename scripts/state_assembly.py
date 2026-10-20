@@ -501,7 +501,7 @@ def computed_read(state: State, tickets_dir: Path, undecided: list[str],
         to_settle=tuple(str(n) for n in to_settle(tickets_dir, state.tracker.index,
                                                   state.sessions.adopted, given)
                         if str(n) in tickets),
-        spent=spent, budgets=change_budgets(state, spent, tickets_dir, undecided),
+        spent=spent, budgets=change_budgets(state, tickets_dir, undecided),
         doc_budgets=doc_budgets(state, tickets_dir, undecided),
         run_starts=run_starts, run_takes=run_takes,
         pace=(pacing.with_five_hour(pace_reads(given_pace, usage), usage) if isinstance(given_pace, Path)

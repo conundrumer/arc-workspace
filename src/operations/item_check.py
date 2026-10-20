@@ -90,7 +90,8 @@ def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
     item checker was launched on the change `t`, and on the accepted gate
     outputs of `checked_outputs`, with each editor of `editors` it checks,
     and what the agents before it settled (`change_agents.settled`).
-    `past` gives the time the overrun ticket of the change was filed,
+    `past` gives the time of the stop line of the change
+    (`change_budget.stopped`),
     where the change is past its cost budget, so that a checker launched
     before the overrun does not take its step key."""
     reports = latest_reports([a for a in needing if is_checked(a)])

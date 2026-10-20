@@ -14,7 +14,8 @@ LOG = ("## Log\n2026-10-17T02:14:06Z draft [ticket-analyst]: filed\n"
        "2026-10-17T02:23:18Z approved [ticket-reviewer ab225add95550521a]: reviewed\n"
        "2026-10-17T02:23:56Z assigned [operator {me}]: taking: budget 2.43 dollars, 1951 s\n"
        "2026-10-17T02:24:00Z assigned [operator {me}]: worktree {w}\n")
-TRIP = "2026-10-17T03:00:00Z"
+STOP = ("2026-10-17T03:00:00Z assigned [operator {me}]: past its cost budget of 2.43 dollars: "
+        "spent 9.00 dollars, code-editor 9.00 dollars\n")
 
 
 def git(cwd: Path, *argv: str) -> None:
@@ -36,18 +37,15 @@ def worktree(tmp_path: Path) -> Path:
     return w
 
 
-def tickets(tmp_path: Path, w: Path):
+def change(tmp_path: Path, w: Path):
+    """The change past its budget, with its stop line."""
     script("file_ticket")
     reads = script("ticket_reads")
-    change = tmp_path / "tickets" / "assigned" / "9-1_change_x_ticket-analyst.md"
-    change.parent.mkdir(parents=True)
-    change.write_text("---\nkind: change\neditors: code-editor\n---\n# x: y\n\n"
-                      + LOG.format(me=ME, w=w))
-    trip = tmp_path / "tickets" / "new" / "9-2_change_9-1_operator.md"
-    trip.parent.mkdir(parents=True)
-    trip.write_text(f"---\nkind: performance\n---\n# change 9-1: past\n\n## Log\n"
-                    f"{TRIP} new [operator {ME}]: filed\n")
-    return reads.held_ticket(change), reads.held_ticket(trip)
+    path = tmp_path / "tickets" / "assigned" / "9-1_change_x_ticket-analyst.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("---\nkind: change\neditors: code-editor\n---\n# x: y\n\n"
+                    + LOG.format(me=ME, w=w) + STOP.format(me=ME))
+    return reads.held_ticket(path)
 
 
 def agent(agent_id: str, role, w: Path, launched: float, reports):
@@ -58,24 +56,25 @@ def agent(agent_id: str, role, w: Path, launched: float, reports):
 
 
 def state(tmp_path: Path, w: Path, reported: bool, told: bool):
-    """The state of a change past its budget whose code editor reported,
-    where `reported` gives it, after its take, was told to end after that,
-    where `told` gives it, and whose item checker and design reviewer
-    reported after it."""
+    """The state of a change past its budget, with its stop line, whose
+    code editor reported, where `reported` gives it, after its take, was
+    told to end after that, where `told` gives it, and whose item checker
+    and design reviewer reported after it."""
     from operations import messages
     from operations.journal import Close, Entry, Journal, Outcome
     from operations.roles import Role
     from operations.state import (Computed, GitRead, HeldRead, Report, SessionsRead, Spend,
                                   State, Tool, TrackerRead, TranscriptsRead)
-    t, trip = tickets(tmp_path, w)
-    late = trip.filed + 1000
+    t = change(tmp_path, w)
+    begun, stop = t.log[-2].time, t.last_time
+    late = stop + 1000
     agents = [
-        agent(EDITOR, Role.CODE_EDITOR, w, t.last_time + 10,
-              [Report(t.last_time + 20, "done")] if reported else []),
+        agent(EDITOR, Role.CODE_EDITOR, w, begun + 10,
+              [Report(begun + 20, "done")] if reported else []),
         agent(CHECKER, Role.ITEM_CHECKER, w, late,
               [Report(late + 10, "## Left for a decision\n- item 2 is not done")]),
         agent(REVIEWER, Role.DESIGN_REVIEWER, w, late, [Report(late + 10, "no finding")])]
-    sent = trip.filed + 10
+    sent = stop + 10
     entries = (Entry("k", "d", "o", ME, sent, Tool.SEND_MESSAGE, EDITOR,
                      messages.over_budget(t.number, False), None, t.number,
                      Close(Outcome.DONE, sent, "")),) if told else ()
@@ -83,7 +82,7 @@ def state(tmp_path: Path, w: Path, reported: bool, told: bool):
         me=ME, now=late + 100, session="s", started=0.0, transcripts_dir=tmp_path,
         main_tree=w.parents[2], scratch=tmp_path, operators=(ME,), open_operators=frozenset(),
         past_bound=False, open_holders=frozenset(), session_holders=frozenset(),
-        tracker=TrackerRead({t.number: t, trip.number: trip}, (), 1),
+        tracker=TrackerRead({t.number: t}, (), 1),
         transcripts=TranscriptsRead(tuple(agents), (), (), {}, {}, {}, {}, {}, (), {}, {}),
         git=GitRead((), frozenset({w}), {}, {}, {}, frozenset(), {}, None, {}),
         taken_up=frozenset(), held=HeldRead({}, {}),
@@ -122,3 +121,4 @@ def test_a_change_past_its_budget_whose_told_editor_gave_no_report_moves_to_draf
 def test_a_change_past_its_budget_whose_editor_never_reported_moves_to_draft(
         tmp_path: Path) -> None:
     assert overrun_line(carried(tmp_path, reported=False))
+

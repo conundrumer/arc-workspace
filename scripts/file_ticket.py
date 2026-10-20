@@ -20,8 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from controlled_markdown import mctx
-from operations.change_budget import EDITORS_NOTE, budget_fields
-from operations.roles import EDITORS, Role
+from operations.roles import EDITORS
 from engine import checkout
 from handbook.paths import scripts_importable
 
@@ -33,7 +32,7 @@ from ticket_citations import (CITING_HELP, CLOSED_ON_HELP, EMPTY,  # noqa: E402
                               citing_command, closed_on_command)
 from tree_reads import main_tree, run_in_main  # noqa: E402
 from ticket_form import (DESIGN, FormRefused, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402
-                         RETIRED, VALIDATES, checked_kind, front, section, sections_example, ticket_kind,
+                         RETIRED, VALIDATES, checked_kind, section, sections_example,
                          title_line)
 from ticket_log import (CLOSED_BY, DUPLICATE_OF, UNBLOCKED_BY, VALIDATED,  # noqa: E402
                         WAITS_ON_NEXT, Wait, log_lines, log_moves, logged, read_ticket, resolution_of)
@@ -44,8 +43,7 @@ from ticket_settle import to_settle  # noqa: E402
 from ticket_allows import ALLOWED_HELP, allowed_list  # noqa: E402
 from ticket_subjects import filed_subject  # noqa: E402
 from idle_sessions import MAIN, name_main, read_sessions  # noqa: E402
-from ticket_reads import editors_field  # noqa: E402
-from spends import budget  # noqa: E402
+from ticket_editors import editors_command  # noqa: E402
 from ticket_watch import (CAP, CHANGES, Case,  # noqa: E402
                           Thresholds, case_loss, evict, fix_field)
 from ticket_sweep import (AGENT_FIELD, COMMAND_FIELD, COMMAND_SECONDS, EXERCISED_FIELD,  # noqa: E402
@@ -268,38 +266,6 @@ def settle_command(*given: str) -> str:
     return "\n".join(map(str, numbers)) if numbers else EMPTY
 
 
-EDITORS_LINE = re.compile(r"^editors: .*$", re.MULTILINE)
-
-
-def editors_command(ref: str, editor: str, agent: str, agent_id: str) -> Path:
-    """Adds `editor` to the `editors` field of the held change `ref`, and
-    logs the change's budget for its new `editors` set."""
-    tickets = main_tickets()
-    number = ticket_number(ref)
-    path = ticket_path(tickets, number)
-    text = read_ticket(path)
-    fields = front(text)
-    if ticket_kind(text) != Kind.CHANGE or ticket_status(path) is not Status.ASSIGNED:
-        raise Refused(mctx("{path} is no `{change}` that stands under `{assigned}`").format(
-            path=path, change=Kind.CHANGE, assigned=Status.ASSIGNED))
-    given = editors_field(fields)
-    added = next((r for r in EDITORS if r.value == editor), None)
-    if given is None or added is None or added in given:
-        raise Refused(mctx("{path} gives no `editors` field that `{editor}` is an editor to add "
-                           "to").format(path=path, editor=editor))
-    roles = [r for r in EDITORS if r in given or r is added]
-    undecided: list[str] = []
-    b = budget(tickets, frozenset(roles), time.time(), undecided)
-    if b is None:
-        print_undecided(undecided)
-        raise Refused(mctx("the budget of {path} is unknown").format(path=path))
-    names = ", ".join(map(str, roles))
-    path.write_text(EDITORS_LINE.sub(f"editors: {names}", text, count=1))
-    note = EDITORS_NOTE.format(editors=names, **budget_fields(b))
-    return log_moves(tickets, number, Status.ASSIGNED, agent, Status.ASSIGNED, agent_id,
-                     note).moved[0]
-
-
 def show_command(*given: str) -> str:
     """The ticket `given[0]`, whole where `given` names no section, and
     otherwise its title line and each section `given[1:]` names."""
@@ -445,7 +411,7 @@ SUBCOMMANDS = {
     "editors": Subcommand(mctx("adds an editor to a held change's `editors` field, with the "
                                "change's budget for its new `editors` set"),
                           " <number> <editor> <agent> <agent id>", EDITORS_HELP, EDITORS_RULES, 4,
-                          editors_command, True),
+                          lambda *given: editors_command(main_tickets(), *given), True),
     "main": Subcommand(mctx("sets the main session"), " <session id>", MAIN_HELP, MAIN_RULES, 1,
                        main_command, True),
     "show": Subcommand(mctx("prints a ticket, or only the sections the call names"),

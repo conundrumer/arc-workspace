@@ -5,9 +5,9 @@ from pathlib import Path
 
 from spends import budget, spend
 
-from operations import change_agents, change_budget, change_fragments, change_take, changes
+from operations import change_agents, change_fragments, change_take, changes
 from operations.roles import Role, launched_type
-from operations.state import Budget, Spend, State, Ticket
+from operations.state import Budget, Spend, State
 from operations.worktrees import worktree
 
 
@@ -26,30 +26,19 @@ def change_spend(state: State, undecided: list[str]) -> dict[str, Spend]:
     return out
 
 
-def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
-                   undecided: list[str]) -> dict[str, Budget]:
+def change_budgets(state: State, tickets: Path, undecided: list[str]) -> dict[str, Budget]:
     """The budgets `Computed.budgets` gives, each change of `change_take.ready`
     standing for those of `change_take.takeable`, which reads the `Computed`
     values this read has not yet given."""
-    known: dict[tuple[frozenset[str], float], Budget | None] = {}
-
-    def of(t: Ticket, before: float) -> Budget | None:
-        if t.editors is None:
-            return None
-        key = (frozenset(t.editors), before)
-        if key not in known:
-            known[key] = budget(tickets, key[0], before, undecided)
-        return known[key]
-
+    known: dict[frozenset[Role], Budget | None] = {}
     out: dict[str, Budget] = {}
     for t in change_take.ready(state):
-        if (b := of(t, state.now)) is not None:
-            out[t.number] = b
-    for t in changes.held(state):
-        take = change_budget.taken(t)
-        s = spent.get(t.number)
-        if take is not None and s is not None and change_budget.past_budget(take, s) \
-                and (b := of(t, take.budgeted)) is not None:
+        if t.editors is None:
+            continue
+        key = frozenset(t.editors)
+        if key not in known:
+            known[key] = budget(tickets, key, state.now, undecided)
+        if (b := known[key]) is not None:
             out[t.number] = b
     return out
 

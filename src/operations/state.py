@@ -72,8 +72,10 @@ class Ticket:
     `## Motivation` section gives, `log` holds the lines of its log other
     than its allow lines, `allowers` the session ids of those allow lines,
     each once, in the order of their first lines, `holder` is the
-    holder `file_ticket.py log --help-all` defines, and `goal` is the text
-    of its `## Goal` section, None where it has none."""
+    holder `file_ticket.py log --help-all` defines, `goal` is the text
+    of its `## Goal` section, None where it has none, and `cost` is the
+    dollar figure of the Cost line of its `## Design` section
+    (`ticket_reads.design_cost`), None where none reads."""
     number: str
     order: tuple[int, int]
     session: int | None
@@ -94,6 +96,7 @@ class Ticket:
     holder: str | None
     path: Path
     goal: str | None = None
+    cost: float | None = None
 
     @property
     def last_time(self) -> float:
@@ -464,12 +467,10 @@ class Spend:
 
 @dataclass(frozen=True)
 class Budget:
-    """A change's cost budget in dollars and its time budget in seconds,
-    with the median spend of each agent type over the changes the budget
-    is taken over (`scripts/spends.py`)."""
+    """A change's cost budget in dollars and its time budget in seconds
+    (`scripts/spends.py`)."""
     dollars: float
     seconds: float
-    role_medians: dict[str, float]
 
 
 @dataclass(frozen=True)
@@ -711,9 +712,7 @@ class Computed:
     `tracker.tickets` holds. `spent` gives, for each
     change `me` holds, the spend of the agents `change_agents.of_change` gives
     for it. `budgets` gives the budget of each change of `change_take.takeable`,
-    taken at `State.now`, and of each held change whose spend passes
-    the budget its take gives, taken at the line that gives that budget
-    (`change_budget.Take`). `doc_budgets` gives, for each held change where
+    taken at `State.now`. `doc_budgets` gives, for each held change where
     `change_fragments.fragments_due` holds and that
     `change_fragments.lacking_doc_editor` gives an `editors` field for, the budget,
     taken at `State.now`, of that field's set with the doc editor.

@@ -277,14 +277,11 @@ def budget(tickets: Path, editors: frozenset[Role], before: float,
            undecided: list[str]) -> Budget | None:
     """The budget of a change with the `editors` set `editors` taken at
     `before`, or None, with an `undecided` line, where no earlier change
-    has a known spend. A role with no run on a change spent nothing on
-    it."""
+    has a known spend."""
     like = like_changes(tickets, editors, before, undecided)
     if not like:
         undecided.append(mctx("budget unknown: no change closed `fixed` before the take has a "
                               "known spend"))
         return None
-    roles = sorted({r for s in like for r in s.by_role})
     return Budget(OVERRUN * statistics.median(s.dollars for s in like),
-                  OVERRUN * statistics.median(s.seconds for s in like),
-                  {r: statistics.median(s.by_role.get(r, 0.0) for s in like) for r in roles})
+                  OVERRUN * statistics.median(s.seconds for s in like))

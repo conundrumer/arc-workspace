@@ -48,7 +48,7 @@ def state(tmp_path: Path, tickets: dict[str, str], budgets=()):
         taken_up=frozenset(), held=HeldRead({}, {}),
         sessions=SessionsRead(frozenset(), frozenset(), False, False, None),
         journal=Journal(()), listing=None,
-        computed=Computed(budgets={n: Budget(1.0, 100.0, {}) for n in budgets}, pace=Until(0.0)))
+        computed=Computed(budgets={n: Budget(1.0, 100.0) for n in budgets}, pace=Until(0.0)))
 
 
 def test_a_ticket_long_without_progress_is_not_stalled_at_the_read_that_first_finds_it_due(

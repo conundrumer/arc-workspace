@@ -1,29 +1,28 @@
 """The cost budget of a change: the take line that gives it, the period
 its spend is counted over, the test of that spend against it, and the
-`performance` ticket filed on a change past it.
+stop line written on a change past it.
 
 A take writes in its log line the change's cost budget and time budget,
 taken over the changes closed `fixed` before it with the same `editors`
-(`scripts/spends.py`). A line that gives the held change a new
-`editors` field writes the budgets of that field's set, which stand in
-place of the take's from then on. The agents of a change are those launched
-since its last move out of `tickets/draft/`, and its spend is theirs and
-that of the runs under them. Once that spend passes the cost budget, the
-command files a `performance` ticket on the change, on the agent type
-whose spend most exceeds its median over those changes. The line before a
-merge gives the change's agent-running time since its take; neither time
-figure stops anything."""
+(`scripts/spends.py`), and the cost budget is at least the dollar figure
+of the Cost line of the change's Design (`Ticket.cost`). A line that
+gives the held change a new `editors` field writes the budgets of that
+field's set, with the same floor, which stand in place of the take's from
+then on. The agents of a change are those launched since its last move
+out of `tickets/draft/`, and its spend is theirs and that of the runs
+under them. Once that spend passes the cost budget, the command writes
+the stop line on the change. The line before a merge gives the change's
+agent-running time since its take; neither time figure stops anything."""
 
 import re
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import NamedTuple
 
-from controlled_markdown import form, mctx
-from operations.state import Agent, Budget, Spend, State, Ticket
-from operations.steps import Step
-from operations.log_commands import AGENT, file_ticket
-from ticketing.text import ticket_text
-from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind, Note, Status
+from controlled_markdown import form
+from operations.state import Budget, Spend, Ticket
+from operations.log_commands import AGENT
+from ticketing.vocabulary import Note, Status
 
 
 BUDGET_NOTE = "budget {dollars} dollars, {seconds} s"
@@ -31,6 +30,12 @@ BUDGET_NOTE = "budget {dollars} dollars, {seconds} s"
 budget."""
 
 BUDGET_HOLES = {"dollars": r"(?P<dollars>[0-9.]+)", "seconds": r"(?P<seconds>[0-9]+)"}
+
+
+def with_cost(b: Budget, cost: float | None) -> Budget:
+    """`b` with its cost budget raised to `cost`, the dollar figure of a
+    change's Cost line, where `cost` is given and above it."""
+    return b if cost is None or cost <= b.dollars else replace(b, dollars=cost)
 
 
 def budget_fields(b: Budget) -> dict[str, str]:
@@ -98,49 +103,32 @@ def past_budget(take: Take, spent: Spend) -> bool:
     return spent.dollars > take.dollars
 
 
-def overrun_ticket(state: State, t: Ticket, since: float) -> Ticket | None:
-    """The `performance` ticket an operator filed on the change `t` at or
-    after `since`."""
-    return next((p for p in sorted(state.tracker.tickets.values(), key=lambda p: p.order)
-                 if p.kind is Kind.PERFORMANCE and p.domain is Domain.CHANGE
-                 and p.subject == t.number and p.filer == AGENT and p.filed >= since), None)
-
-
-def at_fault(spent: Spend, budget: Budget) -> str:
-    """The agent type whose spend most exceeds its median spend over the
-    changes the budget is taken over; an agent type with no median spent
-    nothing on them (ticket 6-634)."""
-    return max(sorted(spent.by_role),
-               key=lambda r: spent.by_role[r] - budget.role_medians.get(r, 0.0))
-
-
 def by_role(dollars: Mapping[str, float]) -> str:
     return ", ".join(f"{r} {d:.2f} dollars" for r, d in sorted(dollars.items()))
 
 
-def file_overrun(t: Ticket, spent: Spend, budget: Budget, limit: float,
-                 agents: list[Agent]) -> Step:
-    """The command that files the `performance` ticket on the change `t`
-    past its cost budget `limit`, on the agent type at fault."""
-    role = at_fault(spent, budget)
-    ids = [a.agent_id for a in agents if a.role.agent_type == role and a.agent_id is not None]
-    title = mctx("change {number}: {role} spent most over its usual spend, past the change's "
-                 "cost budget").format(number=t.number, role=role)
-    impact, evidence = DEFECT_SECTIONS
-    text = ticket_text(Kind.PERFORMANCE, title, {
-        impact: mctx("Change {number} spent {spent} dollars, past its cost budget of {limit} "
-                     "dollars, and its work in flight ended.").format(
-                         number=t.number, spent=f"{spent.dollars:.2f}", limit=f"{limit:.2f}"),
-        evidence: "\n".join([
-            mctx("Spend by role: {spend}.").format(spend=by_role(spent.by_role)),
-            mctx("Median spend by role over the changes the budget is taken over: "
-                 "{medians}.").format(medians=by_role(budget.role_medians)),
-            mctx("Agents of {role} on the change: {ids}.").format(
-                role=role, ids=", ".join(ids) or "none")])})
-    return file_ticket(Domain.CHANGE, t.number, text, f"{t.number} past its budget",
-                       occasion=str(t.last_time))
+PAST_OPENING = "past its cost budget"
+
+PAST_NOTE = PAST_OPENING + " of {limit} dollars: spent {spent} dollars, {roles}"
+"""The note of the stop line, the log line that gives that a change's
+spend passed its cost budget `limit`, with that spend and its part by
+role."""
 
 
-OVERRUN_FINDING = f"{Note.FINDING}: past its cost budget"
+def past_note(limit: float, spent: Spend) -> str:
+    """`PAST_NOTE` for the cost budget `limit` and the spend `spent`."""
+    return PAST_NOTE.format(limit=f"{limit:.2f}", spent=f"{spent.dollars:.2f}",
+                            roles=by_role(spent.by_role))
+
+
+def stopped(t: Ticket) -> float | None:
+    """The time of the last stop line of `t` since its last move out of
+    `tickets/draft/`, or None where none stands."""
+    since = left_draft(t)
+    return max((ln.time for ln in t.log if ln.time >= since and ln.agent == AGENT
+                and ln.note.startswith(PAST_OPENING)), default=None)
+
+
+OVERRUN_FINDING = f"{Note.FINDING}: {PAST_OPENING}"
 """The opening of the note of the line that moves a change past its cost
 budget to `tickets/draft/`."""

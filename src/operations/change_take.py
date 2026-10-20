@@ -16,7 +16,7 @@ from collections.abc import Callable, Mapping
 from controlled_markdown import mctx
 from operations import rank
 from operations.admission import refusal
-from operations.change_budget import TAKE_NOTE, budget_fields
+from operations.change_budget import TAKE_NOTE, budget_fields, with_cost
 from operations.directives import Directive, numbers, paused
 from operations.log_commands import log
 from operations.parties import Hold, OnTicket, Party
@@ -156,7 +156,7 @@ def take(state: State) -> Step | None:
         if b is None:
             return Undecided(mctx("the budget of change {number} is unknown").format(
                 number=t.number))
-        note = TAKE_NOTE.format(**budget_fields(b))
+        note = TAKE_NOTE.format(**budget_fields(with_cost(b, t.cost)))
         commands.append(log(t.number, Status.ASSIGNED, t.status, note, state.me))
         taken.append(t.number)
     if commands:

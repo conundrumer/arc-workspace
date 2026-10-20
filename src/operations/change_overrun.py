@@ -2,11 +2,11 @@
 
 `change_budget` gives a change's cost budget. Once its spend passes
 that budget, at the command's next call, whether or not an agent of the
-change is at work, the command files the `performance` ticket on the
-change that `change_budget` gives. Each agent of the change at work
-before that ticket, other than its design reviewer, is told once to end
+change is at work, the command writes the stop line on the change that
+`change_budget` gives. Each agent of the change launched before that
+line and at work, other than its design reviewer, is told once to end
 (`messages.over_budget`). Once none is at work, the change moves to
-`tickets/draft/` with a line that opens with `OVERRUN_FINDING`, which
+`tickets/draft/` with a line that opens with `change_budget.OVERRUN_FINDING`, which
 `drafts` reads as findings, where its worktree holds no work
 (`worktrees.holds_work`), or where an editor gave no report, or none
 after it was told to end, so that no edit no report gives merges.
@@ -24,8 +24,7 @@ from pathlib import Path
 from controlled_markdown import mctx
 from operations import messages
 from operations.change_agents import change_editors, editors_in, latest_editors, latest_of_role
-from operations.change_budget import (OVERRUN_FINDING, by_role, file_overrun, left_draft,
-                                      overrun_ticket, past_budget, taken)
+from operations.change_budget import past_budget, past_note, stopped, taken
 from operations.design_review import design_review
 from operations.doc_review import with_ids
 from operations.handled import sent, sent_at
@@ -35,7 +34,7 @@ from operations.state import Agent, Spend, State, Ticket, last_reported
 from operations.steps import Bash, Pause, Send, Step, Undecided, agent_ids
 from operations.log_commands import log
 from operations.worktrees import holds_work
-from ticketing.vocabulary import Status
+from ticketing.vocabulary import Note, Status
 
 
 @dataclass(frozen=True)
@@ -59,9 +58,8 @@ def to_draft(state: State, t: Ticket, limit: float, spent: Spend, case: str,
     """The move of the change `t` past its budget `limit` to
     `tickets/draft/`, with its spend `spent` and the `case` that moves it."""
     return Bash(log(t.number, Status.DRAFT, Status.ASSIGNED, mctx(
-        "{opening} of {limit} dollars: spent {spent} dollars, {roles}; {case}").format(
-            opening=OVERRUN_FINDING, limit=f"{limit:.2f}", spent=f"{spent.dollars:.2f}",
-            roles=by_role(spent.by_role), case=case),
+        "{finding}: {past}; {case}").format(
+            finding=Note.FINDING, past=past_note(limit, spent), case=case),
         state.me), f"{t.number} overrun", occasion=str(occasion))
 
 
@@ -96,17 +94,13 @@ def over_budget(state: State, t: Ticket, w: Path,
     if not past_budget(take_line, spent):
         return Pause.CLEAR
     limit = take_line.dollars
-    trip = overrun_ticket(state, t, left_draft(t))
-    if trip is None:
-        budget = state.computed.budgets.get(t.number)
-        if budget is None:
-            return Undecided(mctx("the median spend by role of the changes the budget of "
-                                  "change {number} is taken over is unknown").format(
-                                      number=t.number))
-        return file_overrun(t, spent, budget, limit, agents)
+    stop = stopped(t)
+    if stop is None:
+        return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED, past_note(limit, spent),
+                        state.me), f"{t.number} past its budget", occasion=str(t.last_time))
     for a in agents:
         reviewer = TOLD_AS.get(a.role, False)
-        if a.pending and a.agent_id is not None and a.launched < trip.filed \
+        if a.pending and a.agent_id is not None and a.launched < stop \
                 and reviewer is not None:
             message = messages.over_budget(t.number, reviewer)
             if not sent(state, a.agent_id, message):
@@ -119,7 +113,7 @@ def over_budget(state: State, t: Ticket, w: Path,
         return to_draft(state, t, limit, spent, mctx(
             "its worktree holds no change against `master` and no untracked file git "
             "does not ignore"),
-            max(trip.filed, last_reported(latest)))
+            max(stop, last_reported(latest)))
     quiet, told = silent(state, t, latest)
     if quiet:
         ids = agent_ids(quiet)
@@ -127,14 +121,14 @@ def over_budget(state: State, t: Ticket, w: Path,
             return ids
         return to_draft(state, t, limit, spent, mctx(
             "each of {agents} gave no report, or none after it was told to end").format(
-                agents=", ".join(ids)), max(told, trip.filed))
+                agents=", ".join(ids)), max(told, stop))
     checked = [a for a in latest if is_checked(a)]
 
     def check() -> Step:
         editors = with_ids(latest)
         if isinstance(editors, Undecided):
             return editors
-        return check_items(state, t, w, latest, editors, state.me, past=trip.filed)
+        return check_items(state, t, w, latest, editors, state.me, past=stop)
 
     if checked and (step := latest_of_role(agents, Role.ITEM_CHECKER, last_reported(checked),
                                            t.number, check)) is not None:

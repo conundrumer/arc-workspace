@@ -19,7 +19,7 @@ from transcript_snapshots import Refused
 from operations.reports import TOP_ITEM, section_items
 from operations.roles import Role, editors_of
 from operations.state import LogLine, Ticket, Unread
-from ticketing.text import SECTIONS, heading
+from ticketing.text import DESIGN, SECTIONS, heading
 from ticketing.vocabulary import TICKET_NUMBER, Domain, Kind, Status
 
 
@@ -71,6 +71,30 @@ def after_merge(text: str) -> str | None:
     return "\n".join(items) if items else None
 
 
+COST = re.compile(r"\bCost:(?P<cost>.*)")
+"""The Cost line of a change's Design, from the words after its `Cost:`."""
+
+COST_END = re.compile(r"\boverhead\b|\bGain\b")
+"""What ends the part of a Cost line that gives the change's own cost: the
+change's overhead, which its budget holds already, or the line's gain."""
+
+DOLLARS = re.compile(r"\$(?P<dollars>[0-9][0-9,]*(?:\.[0-9]+)?)")
+
+
+def design_cost(text: str) -> float | None:
+    """The top of the dollar range of the first Cost line of the `## Design`
+    section of a ticket's `text`: the largest dollar figure after its
+    `Cost:` and before `COST_END`, or None where the ticket has no such
+    section, no such line, or no figure there."""
+    if section_head(text, DESIGN) is None:
+        return None
+    line = COST.search(section(text, DESIGN))
+    if line is None:
+        return None
+    own = COST_END.split(line["cost"], maxsplit=1)[0]
+    return max((float(f.replace(",", "")) for f in DOLLARS.findall(own)), default=None)
+
+
 def read_ticket(path: Path) -> Ticket:
     text = path.read_text()
     return ticket_of(path, text, log_lines(text))
@@ -106,7 +130,8 @@ def ticket_of(path: Path, text: str, found: list[re.Match[str]]) -> Ticket:
         after_merge=after_merge(text), mechanical="mechanical" in fields,
         log=lines,
         allowers=allowers(found),
-        holder=holder_of(found), path=path, goal=goal(text))
+        holder=holder_of(found), path=path, goal=goal(text),
+        cost=design_cost(text))
 
 
 def read_tickets(tickets: Path) -> tuple[dict[str, Ticket], tuple[Unread, ...]]:
