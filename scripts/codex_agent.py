@@ -65,6 +65,61 @@ PREAMBLE = mctx(
     "what remains unfinished and why. Write the report and final reply "
     "your documents give; the launcher delivers your final reply.")
 
+NATIVE_PREAMBLE = mctx(
+    "Do the work your role's documents and brief give. Where your role has a "
+    "checklist, run `uv run python scripts/step.py <role>` yourself, starting "
+    "with its first item, and walk it through its end. Do each item and run "
+    "the step command it gives to go on, including choosing whether to enter "
+    "conditional parts. Where blocked, use your checklist's `--stop` call "
+    "and report what remains unfinished and why. Use the operations agent "
+    "id in your assignment for commands that take your agent id.")
+
+NATIVE_RULES = mctx({
+    "launch": (
+        "For each agent launch your documents give, use its filed assignment "
+        "to call `spawn_agent` with `fork_turns=\"none\"` and the assigned "
+        "role instructions, brief, model and reasoning effort. Keep the "
+        "operations agent id and native agent id as separate identities."),
+    "messages": (
+        "Deliver each message your documents give within this ticket's "
+        "native tree. Use `send_message` for a running recipient and "
+        "`followup_task` for a finished child. If a recipient finishes "
+        "before delivery, explicitly follow up that child. Use the native "
+        "id for native tools. File substantive assignment changes before "
+        "delivery so the changed assignment requires a new validated result."),
+    "external-decision": (
+        "Where work needs an external decision, write the unfinished "
+        "findings to your assigned report, use your checklist's `--stop` "
+        "call where applicable, and finish with a needs-operator outcome. "
+        "The root collects that outcome and joins its descendants before "
+        "returning it to the owning operator."),
+    "waiting": (
+        "Use `list_agents` to observe descendants and `wait_agent` to wait "
+        "for their updates. Join every descendant before ending the root "
+        "turn. A runtime completed status does not validate a report. "
+        "Accept each result through the shared report validator before "
+        "using it to release a dependency. Explicitly follow up a finished "
+        "child whose result is invalid; if no valid result can be obtained, "
+        "join live descendants and return an unfinished outcome."),
+    "review": (
+        "Run `uv run python scripts/operate.py review <agent id>` with your "
+        "operations agent id, and make each filed native check launch it "
+        "prints. Run it again after each launch. Keep each required review "
+        "and its round cap. Use the validated checker reports for findings "
+        "and corrections within this tree."),
+    "root-resume": (
+        "Keep editor reports separate from root dispatch results. On a new "
+        "root assignment, start a fresh checker for work addressed to an "
+        "old child, using its filed findings and predecessor reference. "
+        "External input comes from the owning operator after the root turn "
+        "and its descendants end."),
+    "final-reply": (
+        "Write your final reply to the assigned report file, then return "
+        "that file's path alone. Complete the assignment only with a report "
+        "that passes the shared validator for that assignment revision and "
+        "its inputs. A needs-operator report leaves the change unapproved."),
+})
+
 
 def without_front(text: str) -> str:
     """Remove the rendered document's leading YAML front matter."""
