@@ -150,7 +150,7 @@ def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
                 cwd: Path, model: str, effort: str, writable: list[Path],
                 transport: Callable[[], Any], instructions: str | None = None,
                 home: Path | None = None) -> str | None:
-    """Try the daemon; only a refusal before turn submission permits fallback."""
+    """Try the daemon; only a new thread may fall back before turn submission."""
     call_started = time.time()
     baseline = CodexUsage(0, 0, 0, 0, 0) if thread is None else None
     if thread is not None:
@@ -179,6 +179,9 @@ def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
             client = transport()
             loaded = codex_daemon.start(client, thread, cwd, model, effort, writable, instructions)
         except (OSError, ValueError) as exc:
+            # With no daemon connected, no daemon holds the thread, so exec can resume it.
+            if original_thread is not None and client is not None:
+                raise TurnFailed(str(exc), message) from exc
             print(f"codex_agent: shared daemon unavailable or refused: {exc}; "
                   "falling back to codex exec", file=sys.stderr)
             return None
@@ -192,8 +195,9 @@ def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
                                   "input": [{"type": "text", "text": prompt}]})
         except codex_daemon.Refused as exc:
             submitted = False
-            if original_thread is None:
-                (scratch / "codex-session").unlink()
+            if original_thread is not None:
+                raise TurnFailed(str(exc), message) from exc
+            (scratch / "codex-session").unlink()
             print(f"codex_agent: shared daemon refused: {exc}; falling back to codex exec",
                   file=sys.stderr)
             return None

@@ -39,7 +39,7 @@ tools: Bash, Agent, SendMessage, TaskStop
     + xref: scripts/codex_agent.py:control
 - After the turn ends, add `--resume` to the same launch command to pass back a requested result or a message. Codex then continues its walk.
     + xref: scripts/codex_agent.py:main
-- The launch command uses the shared daemon where available and reports an exec fallback on stderr where the daemon is unavailable or refuses. Exec turns take new input only after they end.
+- The launch command uses the shared daemon where available and reports an exec fallback on stderr where the daemon is unavailable, or refuses a new thread. Report a refused resume of an existing thread as a blocker. Exec turns take new input only after they end.
     + xref: scripts/codex_agent.py:daemon_turn
 - Where Codex reports a blocker other than waiting for a call or message above, or the command exits nonzero, give its work so far and what remains unfinished with the reason and any error. Do no unfinished work yourself.
     + xref: scripts/codex_agent.py:main

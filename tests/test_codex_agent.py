@@ -4,6 +4,7 @@ import io
 import json
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,7 +18,8 @@ reads = script("codex_reads")
 
 
 class Transport:
-    def __init__(self, status="completed", refuse=None, ignored=None, disconnect=False):
+    def __init__(self, status="completed", refuse=None, ignored=None, disconnect=False,
+                 initialized=True):
         self.calls = []
         self.events = []
         self.closed = False
@@ -25,9 +27,17 @@ class Transport:
         self.refuse = refuse
         self.ignored = ignored
         self.disconnect = disconnect
+        self.experimental_api = False
+        if initialized:
+            self.call("initialize", {"capabilities": {"experimentalApi": True}})
 
     def call(self, method, params):
+        if method == "initialize":
+            self.experimental_api = params.get("capabilities", {}).get("experimentalApi") is True
+            return {}
         self.calls.append((method, params))
+        if "permissions" in params and not self.experimental_api:
+            raise agent.codex_daemon.Refused("permissions requires capabilities.experimentalApi")
         if method == self.refuse:
             raise agent.codex_daemon.Refused("already has an active writer")
         if method in ("thread/start", "thread/resume"):
@@ -99,6 +109,42 @@ class Transport:
         self.closed = True
 
 
+@pytest.mark.parametrize("capabilities", [{}, {"experimentalApi": False}])
+def test_transport_permissions_require_experimental_api(capabilities):
+    transport = Transport(initialized=False)
+    transport.call("initialize", {"capabilities": capabilities})
+    with pytest.raises(agent.codex_daemon.Refused, match="experimentalApi"):
+        transport.call("thread/start", {"permissions": "project"})
+
+
+def test_proxy_declares_experimental_api(files, monkeypatch):
+    daemon = agent.codex_daemon
+    transport = Transport(initialized=False)
+    process = SimpleNamespace(stdin=io.BytesIO(), stdout=io.BytesIO(),
+                              poll=lambda: 0, wait=lambda timeout: 0)
+    monkeypatch.setattr(daemon.subprocess, "Popen", lambda *a, **kw: process)
+
+    def fill(proxy, deadline):
+        key = proxy.input.getvalue().split(b"Sec-WebSocket-Key: ", 1)[1].split(b"\r\n", 1)[0]
+        accept = daemon.base64.b64encode(
+            daemon.hashlib.sha1(key + b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest()
+        )
+        proxy.buffer = (
+            b"HTTP/1.1 101 Switching Protocols\r\nSec-WebSocket-Accept: " + accept + b"\r\n\r\n"
+        )
+
+    monkeypatch.setattr(daemon.Proxy, "fill", fill)
+    monkeypatch.setattr(
+        daemon.Proxy, "call", lambda self, method, params: transport.call(method, params)
+    )
+    proxy = daemon.Proxy()
+    try:
+        assert transport.experimental_api
+        daemon.start(proxy, None, files[0], "gpt-6.1-sol", "low", [files[-1]])
+    finally:
+        proxy.close()
+
+
 @pytest.fixture
 def files(tmp_path, monkeypatch):
     monkeypatch.delenv("CODEX_HOME", raising=False)
@@ -168,12 +214,10 @@ def test_start_resume_and_walk_record(files):
     assert transport.calls[1][1]["input"][0]["text"] == "first item"
 
 
-@pytest.mark.parametrize("refuse", ["thread/start", "thread/resume", "turn/start"])
+@pytest.mark.parametrize("refuse", ["thread/start", "turn/start"])
 def test_refusal_falls_back_and_keeps_walk_record(files, refuse, capsys):
     root, home, brief, scratch = files
     scratch.mkdir()
-    if refuse == "thread/resume":
-        (scratch / "codex-session").write_text("thread\n")
     calls = []
 
     def runner(argv):
@@ -184,24 +228,61 @@ def test_refusal_falls_back_and_keeps_walk_record(files, refuse, capsys):
         )
 
     transport = Transport(refuse=refuse)
-    assert run(files, transport, runner, resume=refuse == "thread/resume") == "exec reply"
+    assert run(files, transport, runner) == "exec reply"
     assert transport.closed
     assert "falling back to codex exec" in capsys.readouterr().err
-    assert ("resume" in calls[0]) == (refuse == "thread/resume")
+    assert "resume" not in calls[0]
     overrides = [arg for arg in calls[0] if arg.startswith("developer_instructions=")]
-    if refuse == "thread/resume":
-        assert not overrides
-        assert calls[0][-1] == "first item"
-    else:
-        assert json.loads(overrides[0].split("=", 1)[1]) == "\n\n".join(
-            [agent.PREAMBLE, "repo instructions"]
-        )
-        assert calls[0][-1] == "brief body\n\nfirst item"
+    assert json.loads(overrides[0].split("=", 1)[1]) == "\n\n".join(
+        [agent.PREAMBLE, "repo instructions"]
+    )
+    assert calls[0][-1] == "brief body\n\nfirst item"
     record = json.loads((scratch / "codex-events.jsonl").read_text())
     assert record["ok"] is True and record["input"] == "first item"
     assert json.loads(record["output"].splitlines()[-1])["type"] == "turn.completed"
 
 
+@pytest.mark.parametrize("refuse", ["thread/resume", "turn/start"])
+def test_refused_resume_raises_without_exec(files, refuse, capsys):
+    scratch = files[-1]
+    scratch.mkdir()
+    (scratch / "codex-session").write_text("thread\n")
+    transport = Transport(refuse=refuse)
+    with pytest.raises(ValueError, match="^already has an active writer$"):
+        run(files, transport, resume=True)
+    assert transport.closed
+    assert (scratch / "codex-session").read_text() == "thread\n"
+    assert not (scratch / "codex-events.jsonl").exists()
+    assert "falling back" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("refuse,ignored,error", [
+    ("thread/resume", None, "already has an active writer"),
+    ("turn/start", None, "already has an active writer"),
+    (None, ("", "model"), "shared daemon did not apply the requested Codex settings"),
+])
+def test_resumed_daemon_failure_exits_nonzero(files, monkeypatch, capsys, refuse, ignored, error):
+    root, home, brief, scratch = files
+    scratch.mkdir()
+    (scratch / "codex-session").write_text("thread\n")
+    transport = Transport(refuse=refuse, ignored=ignored)
+    real_run = agent.run
+
+    def no_exec(_):
+        pytest.fail("work was replayed through exec")
+
+    monkeypatch.setattr(
+        agent, "run", lambda *a, **kw: real_run(*a, **kw, runner=no_exec, transport=lambda: transport)
+    )
+    assert agent.main([
+        "code-reviewer", str(scratch), str(brief), "gpt-6.1-sol", "low",
+        "--agent-type", "general-purpose", "--cwd", str(root), "--resume",
+    ]) == 1
+    assert capsys.readouterr().err == f"codex_agent: {error}\n"
+    assert transport.closed
+
+
+@pytest.mark.parametrize("resume", [False, True])
 @pytest.mark.parametrize(
     "ignored",
     [
@@ -217,14 +298,15 @@ def test_refusal_falls_back_and_keeps_walk_record(files, refuse, capsys):
         ("sandbox", "type"),
     ],
 )
-def test_silently_ignored_options_refuse_work(files, ignored):
+def test_silently_ignored_options_refuse_work(files, ignored, resume):
     transport = Transport(ignored=ignored)
     scratch = files[-1]
     scratch.mkdir()
-    assert (
-        agent.daemon_turn(
+
+    def attempt():
+        return agent.daemon_turn(
             scratch,
-            None,
+            "thread" if resume else None,
             "prompt",
             "input",
             files[0],
@@ -233,9 +315,13 @@ def test_silently_ignored_options_refuse_work(files, ignored):
             [scratch],
             lambda: transport,
         )
-        is None
-    )
-    assert [m for m, _ in transport.calls] == ["thread/start"]
+
+    if resume:
+        with pytest.raises(ValueError, match="shared daemon did not apply the requested Codex settings"):
+            attempt()
+    else:
+        assert attempt() is None
+    assert [m for m, _ in transport.calls] == ["thread/resume" if resume else "thread/start"]
     assert not (scratch / "codex-events.jsonl").exists()
 
 
@@ -350,19 +436,21 @@ def test_controls_only_target_running_turn(files, capsys, action, completed):
         assert transport.closed
 
 
-def test_unavailable_daemon_falls_back(files, capsys):
+@pytest.mark.parametrize("resume", [False, True])
+def test_unavailable_daemon_falls_back_to_exec(files, capsys, resume):
     scratch = files[-1]
     scratch.mkdir()
 
     def unavailable():
         raise OSError("no socket")
 
-    assert (
-        agent.daemon_turn(
-            scratch, None, "prompt", "input", files[0], "gpt-6.1-sol", "low", [scratch], unavailable
+    def attempt():
+        return agent.daemon_turn(
+            scratch, "thread" if resume else None, "prompt", "input", files[0],
+            "gpt-6.1-sol", "low", [scratch], unavailable
         )
-        is None
-    )
+
+    assert attempt() is None
     assert "falling back to codex exec" in capsys.readouterr().err
 
 
