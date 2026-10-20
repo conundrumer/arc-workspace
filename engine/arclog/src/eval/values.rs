@@ -19,9 +19,10 @@ use crate::terms::{Constant, ReachedMarginBound, Term, TermId};
 /// machine.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Caps {
-    /// The bindings a clause's join, or a native construction, may try.
+    /// The bindings the join of one part of a body, or a native
+    /// construction, may try.
     pub bindings: u64,
-    /// The rows the parts of a relation may hold.
+    /// The rows one part of a body, or a native construction, may hold.
     pub rows: u64,
     /// The models of one case on one input.
     pub models: u64,
