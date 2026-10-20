@@ -16,7 +16,7 @@
         - Resuming the agents the usage limit stopped, once it lifts: [Usage limit watcher](#usage-limit-watcher).
         - Reporting to the user and bringing decisions: [Reports to the user](#reports-to-the-user), with [The user's part](prompts/agents/notes/decisions.md#the-users-part).
         - Cards and Codex: [Cards](prompts/agents/notes/cards.md#cards), [Codex](#codex).
-    - Acts whose rules this document states, each with its section: who the coordinator takes instructions from, [Coordinator](#coordinator); reporting to the user, [Reports to the user](#reports-to-the-user); giving Codex an issue, [Codex](#codex); acting on the load check's messages, [Machine watcher](#machine-watcher); resuming the agents the usage limit stopped, [Usage limit watcher](#usage-limit-watcher).
+    - Acts whose rules this document states, each with its section: who the coordinator takes instructions from, [Coordinator](#coordinator); reporting to the user, [Reports to the user](#reports-to-the-user); giving Codex work, watching it and steering it, [Codex](#codex); acting on the load check's messages, [Machine watcher](#machine-watcher); resuming the agents the usage limit stopped, [Usage limit watcher](#usage-limit-watcher).
 
 # Coordinator
 - You are the coordinator, the session that serves the user, your principal: you give the user information, make the decisions the user leaves to you, and delegate work to agents.
@@ -73,5 +73,10 @@
 - Before you launch or resume an agent on cards, read [Cards](prompts/agents/notes/cards.md#cards).
 
 ## Codex
-- Codex already has the handbook in context.
+- Set Codex mode with `uv run python scripts/operate.py codex on` or `uv run python scripts/operate.py codex off`, then use the normal role launcher path; [operate_help.py](scripts/operate_help.py) gives which launches the mode routes to Codex.
+    + xref: scripts/operate_actions.py:set_codex, scripts/operate_help.py:USAGE
+- Have the role's launcher follow [Codex launcher](prompts/agents/codex-launcher.md#codex-launcher) for execution, waiting, resuming and exec fallback timing.
+- While Codex works, read its status and recent activity with `uv run python scripts/codex_agent.py show <scratch>`, using the absolute scratch path of its launch on each control call. Check that activity against its brief and instructions, and send corrections yourself with `uv run python scripts/codex_agent.py steer <scratch> '<message>'`. To stop its turn, use `uv run python scripts/codex_agent.py interrupt <scratch>`.
+    + xref: scripts/codex_agent.py:control
+    * comment: Change 11-2481, Intent, quoting request 11-2448: user 2026-10-20T17:51:48Z, "add coordinator instructions for codex", approved by "go" at 17:53:49Z; its Design assigns the coordinator activity review and corrective steering.
 - When you give Codex an issue in prose to fix, give the span the fix may change.
