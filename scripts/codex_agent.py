@@ -21,6 +21,10 @@ from controlled_markdown import mctx
 from engine import checkout
 from operations.roles import CODEX_ROLES
 
+DONE = "codex-done"
+"""The file under the scratch directory that the command makes once it ends,
+which the Codex launcher's foreground wait checks for."""
+
 PREAMBLE = mctx(
     "You do the work of one item of your agent's checklist at a time, given "
     "by a Claude agent. That agent runs `step.py`, makes every Agent call "
@@ -79,11 +83,15 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
     prompt = item if thread is not None else first_prompt(root, home, agent, brief, item)
     last = scratch / "codex-last.md"
     last.unlink(missing_ok=True)
+    # The repository's commands write the main tree's tickets, git data and
+    # caches, and uv's and cargo's caches, from any worktree.
+    writable = [main / "tickets", main / ".git", main / ".cache", home / ".cache" / "uv",
+                home / ".cargo", scratch]
     argv = ["codex", "exec", "-m", model, "-c", f'model_reasoning_effort="{effort}"',
             "-c", "project_doc_max_bytes=0", "-s", "workspace-write",
-            "-c", 'approval_policy="never"', "--add-dir", str(main / "tickets"),
-            "--add-dir", str(scratch), "--skip-git-repo-check", "-C", str(cwd),
-            "-o", str(last), "--json"]
+            "-c", "sandbox_workspace_write.network_access=true",
+            "-c", 'approval_policy="never"', *(a for d in writable for a in ("--add-dir", str(d))),
+            "--skip-git-repo-check", "-C", str(cwd), "-o", str(last), "--json"]
     done = runner([*argv, *(["resume", thread] if thread is not None else []), prompt])
     errors: list[str] = []
     for line in done.stdout.splitlines():
@@ -119,6 +127,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("effort", choices=("low", "medium", "high", "xhigh"))
     parser.add_argument("--cwd", type=Path, default=Path.cwd())
     args = parser.parse_args(argv)
+    done = args.scratch / DONE
+    done.unlink(missing_ok=True)
     try:
         message = run(args.agent, args.scratch, args.brief, args.model, args.effort,
                       sys.stdin.read(), checkout.ROOT, Path.home(),
@@ -126,8 +136,12 @@ def main(argv: list[str]) -> int:
     except (OSError, ValueError) as exc:
         print(f"codex_agent: {exc}", file=sys.stderr)
         return 1
-    print(message, end="" if message.endswith("\n") else "\n")
-    return 0
+    else:
+        print(message, end="" if message.endswith("\n") else "\n", flush=True)
+        return 0
+    finally:
+        if args.scratch.is_dir():
+            done.touch()
 
 
 if __name__ == "__main__":

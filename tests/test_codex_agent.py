@@ -44,7 +44,10 @@ def test_start_then_resume(files):
     argv = calls[0]
     assert argv[:-1] == ["codex", "exec", "-m", "gpt-6-astra", "-c", 'model_reasoning_effort="high"',
                         "-c", "project_doc_max_bytes=0", "-s", "workspace-write",
+                        "-c", "sandbox_workspace_write.network_access=true",
                         "-c", 'approval_policy="never"', "--add-dir", str(root / "tickets"),
+                        "--add-dir", str(root / ".git"), "--add-dir", str(root / ".cache"),
+                        "--add-dir", str(home / ".cache" / "uv"), "--add-dir", str(home / ".cargo"),
                         "--add-dir", str(scratch), "--skip-git-repo-check", "-C", str(root),
                         "-o", str(scratch / "codex-last.md"), "--json"]
     assert argv[-1] == "\n\n".join([agent.PREAMBLE, "agent body", "repo instructions",
@@ -81,6 +84,7 @@ def test_cwd(files, monkeypatch, explicit):
     monkeypatch.setattr(agent.subprocess, "run", lambda argv, **_: runner(argv))
     args = ["code-editor", str(scratch), str(brief), "gpt-6.1-sol", "high"]
     assert agent.main([*args, *(["--cwd", str(worktree)] if explicit else [])]) == 0
+    assert (scratch / agent.DONE).exists()
     argv = calls[0]
     assert argv[argv.index("-C") + 1] == str(worktree if explicit else root)
     assert argv[-1] == "\n\n".join([agent.PREAMBLE, "agent body", "repo instructions",
