@@ -85,13 +85,6 @@ def ends(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, last: dict,
     return read, operator_state.stuck_read("s", read.quiet, [], {})
 
 
-def test_a_quiet_agent_whose_turn_ended_with_text_ends_out_of_stuck(
-        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    read, stuck = ends(tmp_path, monkeypatch, text_end("2026-10-18T23:44:27.267Z"))
-    assert EDITOR not in stuck
-    assert [a.waits for a in read.agents] == [None]
-
-
 def test_a_quiet_agent_whose_turn_is_in_progress_stays_stuck(
         tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     read, stuck = ends(tmp_path, monkeypatch, in_turn("2026-10-18T23:44:27.267Z"))

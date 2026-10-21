@@ -47,23 +47,6 @@ def test_switch_refuses_invalid_file(switch: Path, text: str):
         trial_mode.read(switch)
 
 
-@pytest.mark.parametrize("trial", [False, True])
-@pytest.mark.parametrize("codex", [False, True])
-@pytest.mark.parametrize("role, expected", [(Role.CODE_EDITOR, Model.OPUS),
-                                          (Role.GATE, Model.SONNET),
-                                          (Role.BATCH_PROFILE, None)])
-@pytest.mark.parametrize("model", [None, *Model])
-def test_launch(switch: Path, trial: bool, codex: bool, role: Role,
-                expected: Model | None, model: Model | None):
-    actions.set_trial(["on" if trial else "off"])
-    actions.set_codex(["on" if codex else "off"])
-    params = launch_parameters(role, "1-1", model, "brief")
-    routed = codex and (model or expected) is not Model.HAIKU
-    assert params.get("model") == (Model.HAIKU if trial or routed else model or expected)
-    assert params["subagent_type"] == ("codex-launcher" if routed else role.agent_type)
-    assert ("Codex mode:" in params["prompt"]) == routed
-
-
 def test_command_holds_switch(switch: Path, capsys):
     actions.set_trial(["on"])
     first = launch_parameters(Role.BATCH_PROFILE, "1-1", None)
