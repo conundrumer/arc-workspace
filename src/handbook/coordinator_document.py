@@ -12,8 +12,9 @@ hook gives the rendering to a session the user talks with, and nothing to a
 point it inherits is `cli`, and keeps any other, such as `claude-desktop`.
 So a session whose entry point is `cli` is one the user talks with, and the
 hook gives nothing to a session whose entry point is a kept one and whose
-process, `CLAUDE_PID`, was started with `-p` or `--print`. The hook's text
-reaches the session whole only up to `HOOK_TEXT_CAP` characters, so a
+process, `CLAUDE_PID`, was started with `-p` or `--print`. A launcher can
+request user-session instructions through `SESSION_INTERACTION_ENV`.
+The hook's text reaches the session whole only up to `HOOK_TEXT_CAP` characters, so a
 longer rendering is a fault.
 
 The rendering's source gives its budget below that cap (`handbook.budget`).
@@ -61,6 +62,9 @@ file that holds the text."""
 ENTRY_POINT_ENV = "CLAUDE_CODE_ENTRYPOINT"
 SESSION_PID_ENV = "CLAUDE_PID"
 PRINT_FLAGS = frozenset({"-p", "--print"})
+SESSION_INTERACTION_ENV = "CLAUDE_CONFIG_SESSION_INTERACTION"
+"""An explicit opt-in to user-session instructions, shared with the global
+session-interaction hook. Its enabled value is `1`."""
 
 SESSION_READER_ENV = "ARC_SESSION_READER"
 """The environment variable an entry point sets to the name of the reader
@@ -178,15 +182,17 @@ def session_start_text(env: Mapping[str, str], path: Path = COORDINATOR_PATH,
     coordinator's document, written to `path` first, for a session the user
     talks with, and nothing for a `claude -p` session: one whose entry
     point is none of `USER_ENTRY_POINTS`, or is one of `KEPT_ENTRY_POINTS`
-    where `print_session` holds. Claude Code puts a
+    where `print_session` holds, unless `SESSION_INTERACTION_ENV` is `1`.
+    Claude Code puts a
     hook's output in the session's context only where the hook exits 0, so
     where the write fails, the hook gives the failure's text and then the
     rendering. That text does not count against `HOOK_TEXT_CAP`: past the
     cap, the session's preview opens with it, and the file Claude Code
     names holds the rest."""
     point = entry_point(env)
-    if point not in USER_ENTRY_POINTS or (point in KEPT_ENTRY_POINTS
-                                          and print_session(env)):
+    opted_in = env.get(SESSION_INTERACTION_ENV) == "1"
+    if not opted_in and (point not in USER_ENTRY_POINTS or (
+            point in KEPT_ENTRY_POINTS and print_session(env))):
         return ""
     rendering = Rendering(path, coordinator_text(doc))
     try:
