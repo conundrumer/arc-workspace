@@ -56,6 +56,7 @@
 - When you end your turn while a command of yours runs on in the background and no agent you launched is running, the harness reports you to the session that launched you as stopped. It does not while an agent you launched is running.
 - While an agent you launched is running, no line of [waiting-on-commands](#waiting-on-commands) holds: run each command that can outlast the Bash call's default timeout in the background, and when no other work is ready, start your keep-alive timer, then end your turn with a line that gives each agent you launched and each command of yours that is still running, and run no other command to wait on them. The harness resumes you when an agent sends you a message, when one of them that no agent has resumed by SendMessage completes, or when a command of yours that runs in the background completes.
     + xref: prompts/agents/notes/commands.md#waiting-on-commands
+    * comment: Two agents of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a` ended their turn after a notification that an agent had not reported yet, the harness demanded their report, and each handed back mid-batch: agent `aa217e04abc30c823`, lines 266 to 270, and agent `ad4b827e59837a39f`, lines 228 to 232.
     - Run a call of `operate.py review` in the foreground.
         * comment: Doc editor `ad19de37b20661c0e` on change 9-1704 ran `review` in a background loop and then `cat` on its output; that left its `review` call uncounted for about 30 minutes while the code editor waited on it: ticket 11-2297.
     * comment: The cases this rule covers: waiting while an agent you launched runs; the start of the keep-alive timer before you end your turn; waiting, once no agent you launched runs, on each command you ran in the background, which [waiting-on-commands](#waiting-on-commands) covers once this rule no longer holds.
@@ -68,10 +69,8 @@
 - Once no agent you launched is running, and before anything else, end your keep-alive timer: run `uv run python scripts/agent_timer.py stop keep-alive <agent id>`.
     + xref: scripts/agent_timer.py:Action.STOP
     - Each start of that timer has completed once `pgrep -f 'agent_timer[.]py start keep-alive <agent id>'` prints nothing.
-- A notification that says an agent you launched has not reported yet means that agent has stopped without its report while background work of its own runs, and it counts as not running from then on. Until it reports, while no other agent you launched is running, wait on it in place of ending your turn, and call no SubagentHandback, also where the harness asks for your report: run a Bash call whose loop runs on time alone, led by `: 'unattended-wait: <the agent id>, which has not reported yet';`, and repeat it.
-    * comment: Two agents of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a` ended their turn after this notification, the harness demanded their report, and each handed back mid-batch: agent `aa217e04abc30c823`, lines 266 to 270, and agent `ad4b827e59837a39f`, lines 228 to 232.
-    * unless: codex
-        - Set a timeout of 240000 ms on the Bash call, and have its loop give up just under that timeout.
+- A notification that says an agent you launched has not reported yet means that agent has stopped without its report while background work of its own runs. Treat that agent as running while that work runs.
+    * comment: The user's words, session `2384db39-7d21-4d8d-8dda-bfd52bd69360`, 2026-10-20T23:53:32Z: "go", approving the coordinator's 23:52:30Z proposal that Codex launchers end their turn and operators treat a launcher whose Codex run continues as still running. Request 11-2607.
 
 ## denied-calls
 - Where the harness or the permission classifier denies a call your documents give and you leave its work unfinished, give the call and the denial's text in your reply.

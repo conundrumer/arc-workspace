@@ -1,4 +1,4 @@
-"""An agent that waits as at work and is quiet ends with the reports it
+"""A quiet pending agent ends with the reports it
 has where its own transcript shows its turn ended with no work of its own
 still running, and no stuck alert names it; where its turn is in
 progress, it stays stuck."""
@@ -53,7 +53,8 @@ def in_turn(t: str) -> dict:
                         "stop_reason": "tool_use"}}
 
 
-def ends(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, last: dict):
+def ends(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, last: dict,
+         *, still_running: bool = False, live_work: bool = False):
     """`ends_read` of the doc editor of change 11-1683 as session
     2384db39 read it: a resume by another agent's message after its report
     was delivered, then `last`, and no sign after it in any transcript of
@@ -73,8 +74,13 @@ def ends(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, last: dict):
     launch = agent_launches.Launch(EDITOR, path, since, None, "c1", ())
     listing = [open_agents.Listed(ME, path, launch, run_profiler.profile(path, []),
                                   agent_turns.has_ended(path), None, None)]
+    if live_work:
+        listing[0].running = [sys.modules["run_records"].Span("Bash", "codex", since, "task")]
+    report_file = tmp_path / "reply.txt"
+    report_file.write_text("completed role report")
     agent = Agent(EDITOR, ME, Role.DOC_EDITOR, "11-1683", "brief", since - 600, since - 4,
-                  Waits.AT_WORK, (Report(since - 600, "done"),), True)
+                  Waits.STILL_RUNNING if still_running else Waits.AT_WORK,
+                  (Report(since - 600, "done"),), True, report_file)
     read = operator_state.ends_read([agent], ME, listing, [], since + STUCK_SECONDS + 1, [])
     return read, operator_state.stuck_read("s", read.quiet, [], {})
 
@@ -91,3 +97,15 @@ def test_a_quiet_agent_whose_turn_is_in_progress_stays_stuck(
     read, stuck = ends(tmp_path, monkeypatch, in_turn("2026-10-18T23:44:27.267Z"))
     assert EDITOR in stuck
     assert read.agents[0].waits is not None
+
+
+@pytest.mark.parametrize("live_work", [True, False])
+def test_a_yielded_quiet_agent_accepts_its_report_only_after_work_ends(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, live_work: bool) -> None:
+    read, stuck = ends(tmp_path, monkeypatch, text_end("2026-10-18T23:44:27.267Z"),
+                       still_running=True, live_work=live_work)
+    agent = read.agents[0]
+    assert agent.pending is live_work
+    assert (EDITOR in read.ended) is not live_work
+    assert (EDITOR in stuck) is live_work
+    assert (agent.reports[-1].text == "completed role report") is not live_work

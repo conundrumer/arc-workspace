@@ -140,8 +140,8 @@ class Waits(Enum):
     transcript shows its turn ended with no work of its own still running,
     it no longer waits, as `Agent` gives. `STILL_RUNNING`: it stopped
     with work of its own still running, has not reported yet, and the
-    operator's turn may not end on it. `LIMITED`: the usage limit stopped it, it has not
-    ended its work, it has not run since, and it waits for a resume (`limit_resume`)."""
+    operator's turn may end while it waits on that work. `LIMITED`: the
+    usage limit stopped it, it has not ended its work, it has not run since, and it waits for a resume (`limit_resume`)."""
     AT_WORK = "at work"
     STILL_RUNNING = "still running"
     LIMITED = "limited"
@@ -188,11 +188,11 @@ class Agent:
     that operator or is the path of a report file alone, read from that
     file, then ends its `reports`. `notifies` holds where that
     operator launched or last resumed it itself, so the notification of
-    its end and its final reply reach that operator. Where it stopped
-    with work of its own still running and it is quiet
-    (`TranscriptsRead.quiet`), or where it waits as at work, it is quiet,
-    and its own transcript shows its turn ended with no work of its own
-    still running, it no longer waits, and its work ends with the reports
+    its end and its final reply reach that operator. Where it waits as at
+    work or still running, is quiet
+    (`TranscriptsRead.quiet`), and its own transcript shows its turn ended
+    with no work of its own still running, it no longer waits, and its work
+    ends with the reports
     it has, as for an agent of another operator whose work is no longer
     open.
     `report_file` is the report file the brief it was launched with gives
@@ -608,8 +608,8 @@ class TranscriptsRead:
     agent of `agents` that is quiet, as `quiet_since` in
     `scripts/open_agents.py` gives it, by agent id, read while it was
     pending and the usage limit had not stopped it (`limit_resume` covers
-    that agent), other than an agent that waited as at work and that its
-    quiet ended (`Agent`). `stuck` gives, by agent id, each agent of `quiet`, each
+    that agent), other than an agent that its quiet ended (`Agent`).
+    `stuck` gives, by agent id, each agent of `quiet`, each
     live holder of a ticket held elsewhere (`plan.elsewhere`) and each
     operator of `plan.earlier_open` that is quiet, and each watched agent
     whose `Watched.stuck` holds.
