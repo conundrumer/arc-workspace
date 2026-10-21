@@ -28,7 +28,8 @@ tools: Bash, Agent, SendMessage, TaskStop
     - `<brief>` is the file your prompt has you read, `<scratch>` the scratch directory your brief gives, or else a new directory `codex-<role>-<brief name>` under it, where `<brief name>` is the brief file's name without `.md`, and `<worktree>` the worktree your brief gives. Leave out `--cwd` where your brief gives no worktree.
     - Use an absolute path for `<scratch>`, and use it on each call.
         + xref: scripts/codex_reads.py:walk_entries
-- While a Codex launch command runs, handle any message that reaches you and wait as [waiting-on-commands](prompts/agents/notes/commands.md#waiting-on-commands) gives. On completion, read Codex's reply from the command's output file.
+- While a Codex launch command runs, handle any message that reaches you and keep your turn open. In a foreground Bash call with `timeout: 240000`, run `: 'unattended-wait: Codex launch command'; sleep 60`, and repeat until its completion notification reaches you, as [waiting-on-commands](prompts/agents/notes/commands.md#waiting-on-commands) gives. Read the command's output file after completion, in a separate call.
+    - A wait must not read the harness task's output file, even with that prefix. If a wait is denied, use the call above. If a handback hook demands a report while Codex runs, continue that wait; hand back after Codex ends and gives its reply.
     * comment: In session 2384db39-7d21-4d8d-8dda-bfd52bd69360, launchers a5a0a428b098e579e and a2a977b91a0321101 ended their turns while Codex ran, received handback demands and missing-turn-record refusals, and stopped without reports. The Bash result warned that a final response terminates its background command.
 - Make the Agent calls and SendMessage calls Codex asks for where the role's documents allow them, including each launch that `uv run python scripts/operate.py review <agent-id>` prints.
     + xref: scripts/operate_review.py:review

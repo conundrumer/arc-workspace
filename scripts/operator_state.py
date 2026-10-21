@@ -3,7 +3,7 @@ beside the reads of the tracker, git and the transcripts: the ends of the
 operators' agents, with the quiet and the stuck ones."""
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from filed_texts import gone_line
@@ -56,22 +56,61 @@ def ends_read(agents: Sequence[Agent], me: str, listing: list[Listed],
     of its own still running (`turn_ended_idle`). An agent so ended is left
     out of the `quiet` it returns, so no stuck alert names it. A watched agent that
     no operator launched, and that the coordinator launched, has its stall
-    read too."""
+    read too. Work still running takes precedence over a turn-ending
+    notification or a stall: that attempt stays pending. An ended Codex
+    attempt must have a readable completed walk (`require_codex_end`)."""
+    idle = turn_ended_idle(listing)
+    live = {x.launch.agent for x in listing if x.launch.agent is not None
+            and x.launch.agent not in idle}
+    agents = tuple(replace(a, waits=Waits.STILL_RUNNING)
+                   if a.agent_id in live and not a.pending else a for a in agents)
     launched = {a.agent_id for a in agents if a.agent_id}
     watched_ids = {w.agent_id for w in now_watched}
     coordinators = {aid: x.launch.since for x in listing
                     if (aid := x.launch.agent) in watched_ids and aid not in launched}
     stalled = stalled_reports(list(agents), coordinators,
-                              [w.agent_id for w in now_watched if w.stalled is not None])
-    ended: dict[str, Report | None] = {**ended_elsewhere(list(agents), me, undecided), **stalled}
+                              [w.agent_id for w in now_watched
+                               if w.stalled is not None and w.agent_id not in live])
+    ended: dict[str, Report | None] = {
+        aid: report for aid, report in
+        {**ended_elsewhere(list(agents), me, undecided), **stalled}.items() if aid not in live}
     quiet = quiet_read([a for a in agents if a.agent_id not in ended], listing, now)
-    idle = turn_ended_idle(listing)
     ended_idle = [a for a in agents if a.waits in (Waits.AT_WORK, Waits.STILL_RUNNING)
                   and a.agent_id is not None and a.agent_id not in ended and a.agent_id in idle]
     ended.update({a.agent_id: reply_to(ended_with(a, None), a.since, undecided) for a in ended_idle
                   if a.agent_id is not None})
     quiet = {aid: q for aid, q in quiet.items() if aid not in ended}
-    return EndsRead(tuple(ended_by(agents, ended)), ended, stalled, quiet)
+    closed = tuple(ended_by(agents, ended))
+    for a in closed:
+        if not a.pending and a.agent_id is not None:
+            require_codex_end(a.agent_id)
+    return EndsRead(closed, ended, stalled, quiet)
+
+
+def require_codex_end(agent: str) -> None:
+    """Refuse an ended Codex attempt whose saved walk cannot prove completion.
+
+    The launcher process can end while its daemon turn still runs.
+    """
+    from codex_reads import walk_entries
+    from controlled_markdown import mctx
+    from entry_reads import entries_forward
+    from operations.roles import CODEX_LAUNCHER
+    from run_reads import agent_type, role_type
+    from transcript_snapshots import Refused
+
+    path = launched_find(agent)
+    if path is None or agent_type(path) != CODEX_LAUNCHER:
+        return
+    try:
+        kind = role_type(path)
+        if kind is None:
+            raise ValueError("the Codex role is unknown")
+        walk_entries(list(entries_forward(path)), kind)
+    except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError) as exc:
+        raise Refused(mctx("{agent}: cannot end or replace this Codex attempt: {error}. "
+                           "Its daemon turn may still run; recover the existing launcher "
+                           "and its turn record.").format(agent=agent, error=exc)) from exc
 
 
 def quiet_read(agents: Sequence[Agent], listing: list[Listed], now: float) -> dict[str, float]:

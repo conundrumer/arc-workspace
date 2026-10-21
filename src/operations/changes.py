@@ -403,7 +403,8 @@ def editor_change(state: State, editor: str,
     report file its brief gives (`state.Agent.report_file`), at its
     `Agent.reviewing`, or at `State.now` where that is None, so each later
     call of a run of its calls of the command keeps the time of the first.
-    Where the editor is none of those, or its report file is not there,
+    Only a pending editor owns the checks; after it ends, the operator
+    owns them. Where the editor is none of those, or its report file is not there,
     it gives the line for that, and where its ticket, the ticket's
     editors, the change's worktree or its report file is not read, an
     `Undecided`."""
@@ -411,6 +412,9 @@ def editor_change(state: State, editor: str,
             if a.agent_id == editor and a.role in LAUNCHING_EDITORS]
     if not mine:
         return NO_OPERATOR.format(agent=editor)
+    if not mine[-1].pending:
+        return mctx("Your work has ended, so the operator takes the change's next step: "
+                    "give your final reply.")
     t = state.tracker.tickets.get(mine[-1].subject)
     if t is None:
         return Undecided(mctx("the ticket of change {number} of {role} {agent} is not "
