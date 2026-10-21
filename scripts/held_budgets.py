@@ -27,13 +27,15 @@ def change_spend(state: State, undecided: list[str]) -> dict[str, Spend]:
 
 
 def change_budgets(state: State, tickets: Path, undecided: list[str]) -> dict[str, Budget]:
-    """The budgets `Computed.budgets` gives, each change of `change_take.ready`
-    standing for those of `change_take.takeable`, which reads the `Computed`
-    values this read has not yet given."""
+    """The budgets of the ready changes not held by `change_take.ready_hold`.
+    Admission's run takes and pace must already be computed. Filter before
+    reading history, without ranking, which needs these budgets itself.
+    """
     known: dict[frozenset[Role], Budget | None] = {}
     out: dict[str, Budget] = {}
+    held = change_take.ready_hold(state)
     for t in change_take.ready(state):
-        if t.editors is None:
+        if t.editors is None or held(t) is not None:
             continue
         key = frozenset(t.editors)
         if key not in known:
