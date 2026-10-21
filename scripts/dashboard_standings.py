@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from dashboard_reads import OPEN, change_of
 from shown_state import Hold, OnTicket, ShownAgent
 from operations.state import Ticket
+from operations.taking import taken_before
 from ticketing.vocabulary import Kind, Status
 
 if TYPE_CHECKING:
@@ -195,6 +196,8 @@ class Standings:
             return Standing.NO_OPERATOR
         if t.session in self.own_scope and not self.owned(t):
             return Standing.OWN_SCOPE
+        if v.holds.get(t.number) is None and t.status is Status.ASSIGNED and taken_before(t):
+            return Standing.WORKING
         match v.holds.get(t.number):
             case Hold.OWN_SCOPE:
                 return Standing.OWN_SCOPE

@@ -96,7 +96,9 @@ def role_words(r: Role) -> str:
 
 
 def at_work(w: list[ShownAgent], now: float) -> str:
-    """The words on the latest of the agents `w` at work."""
+    """The words on open work and its latest agent, where one runs."""
+    if not w:
+        return "work open · no agent running"
     a = max(w, key=lambda a: a.launched)
     return f"{role_words(a.role)} at work, {ago(now - a.launched)}"
 
@@ -199,7 +201,7 @@ def strip(v: View, working: int) -> str:
     held = [lead.strip() for lead, h in per_session(v, lambda s: s.start_hold is not None) if h]
     starts = ("" if not held else ' · <span class="w">agent starts held'
               + ("" if held == [""] else f" ({esc(', '.join(held))})") + "</span>")
-    return (f'<div class="strip"><div class="r1">{ops} · {working} in flight{starts}</div>'
+    return (f'<div class="strip"><div class="r1">{ops} · {working} active{starts}</div>'
             f'{usage_bar(v.usage, WindowName.SEVEN_DAY, "Week")}'
             f'{usage_bar(v.usage, WindowName.FIVE_HOUR, "5 h")}'
             f'{codex_bar(v.codex, v.now)}</div>')
@@ -295,20 +297,25 @@ def link(n: str) -> str:
 
 
 def active(v: View, st: Standings) -> tuple[str, int]:
-    """The HTML of Active, the rows whose subject an agent is at work on,
+    """The HTML of Active, including taken work between agent runs,
     expedited and user work first, then in the order of their takes,
     the newest first among those of one time, and the count of its rows."""
     rows: list[tuple[float, float, Row, str]] = []
     for r in st.rows:
-        if st.shown(r) and (w := st.row_agents(r)):
-            a = max(w, key=lambda a: a.launched)
+        w = st.row_agents(r)
+        if st.shown(r) and (w or (r.subject.status is not Status.DRAFT
+                                 and st.state(r.subject)[0] is Standing.WORKING)):
             b = basis(v, r)
-            s = stage([x.role for x in w], b)
-            if (p := progress(v, r)) is not None:
-                s = max(s, p.stage)
+            if w:
+                a = max(w, key=lambda a: a.launched)
+                s = stage([x.role for x in w], b)
+                if (p := progress(v, r)) is not None:
+                    s = max(s, p.stage)
+                right = f"{stage_bar(s, Mark.AT_WORK)}{s.name.capitalize()} · {ago(v.now - a.launched)}"
+            else:
+                right = f"{stopped_bar(v, r)}{at_work(w, v.now).capitalize()}"
             take = taken(b)
-            rows.append((r.subject.filed if take is None else take.time, -r.subject.filed, r,
-                         f"{stage_bar(s, Mark.AT_WORK)}{s.name.capitalize()} · {ago(v.now - a.launched)}"))
+            rows.append((r.subject.filed if take is None else take.time, -r.subject.filed, r, right))
     rows.sort(key=lambda x: (*priority(v, x[2]), *x[:2]))
     if not rows:
         return '<div class="meta">Nothing is being worked on.</div>', 0
@@ -384,7 +391,7 @@ def tab_set(key: str, panes: list[tuple[int | None, str, str]]) -> str:
 
 def queued(v: View, st: Standings) -> str:
     """The HTML of Queued: a tab for each session that filed the ticket
-    of a row shown whose subject is not at work, and in it, its operator's
+    of a row shown whose subject has no active work, and in it, its operator's
     state, its rows ready (`Next`, or `Next on resume` in a paused
     session), those waiting, drafts, and the held ones in a group for each hold.
     Drafts have no operator standing or start order. Analyst-filed drafts

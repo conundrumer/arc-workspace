@@ -2,7 +2,8 @@
 
     uv run python scripts/codex_agent.py <agent> <scratch> <brief> <model> <effort> [--cwd <dir>] [--resume]
 
-Give the starting instruction or a later result or message on stdin. The
+Give the starting instruction or a later result or message on stdin, closed
+within five seconds. An open input fails before the launch. The
 first call supplies the rendered agent document and rendered repo and user
 CLAUDE.md files as developer instructions, with the configured Codex style.
 The brief and starting instruction are user input. A fresh call refuses existing
@@ -24,8 +25,10 @@ Show reads the live rollout; steer and interrupt reach the running daemon turn.
 """
 
 import argparse
+import io
 import json
 import os
+import select
 import subprocess
 import sys
 import time
@@ -430,6 +433,24 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
     return message
 
 
+def input_text() -> str:
+    """Read input through EOF within five seconds, before starting a turn."""
+    if isinstance(sys.stdin, io.StringIO):
+        return sys.stdin.read()
+    if sys.stdin.isatty():
+        raise ValueError("stdin is a terminal; supply input with a closed pipe or file")
+    deadline = time.monotonic() + 5
+    chunks: list[bytes] = []
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not select.select([sys.stdin], [], [], remaining)[0]:
+            raise ValueError("stdin did not close within five seconds; use a closed pipe or file")
+        chunk = os.read(sys.stdin.fileno(), 65536)
+        if not chunk:
+            return b"".join(chunks).decode(sys.stdin.encoding or "utf-8")
+        chunks.append(chunk)
+
+
 def main(argv: list[str]) -> int:
     if argv and argv[0] in ("show", "steer", "interrupt"):
         try:
@@ -451,6 +472,7 @@ def main(argv: list[str]) -> int:
                         help="continue the saved thread; required for later turns")
     args = parser.parse_args(argv)
     try:
+        item = input_text()
         saved_thread(args.scratch, args.resume)
     except (OSError, ValueError) as exc:
         print(f"codex_agent: {exc}", file=sys.stderr)
@@ -459,7 +481,7 @@ def main(argv: list[str]) -> int:
     done.unlink(missing_ok=True)
     try:
         message = run(args.agent, args.scratch, args.brief, args.model, args.effort,
-                      sys.stdin.read(), checkout.ROOT, Path.home(),
+                      item, checkout.ROOT, Path.home(),
                       checkout.main_worktree(checkout.ROOT), args.cwd.resolve(),
                       agent_type=args.agent_type, resume=args.resume)
     except (OSError, ValueError) as exc:

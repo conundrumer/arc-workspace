@@ -136,7 +136,7 @@ class LateResume:
 
 class Waits(Enum):
     """How a pending agent waits. `AT_WORK`: no sign in a transcript of
-    the session gives its turn ended; where it is quiet and its own
+    the session gives its turn ended; where its own
     transcript shows its turn ended with no work of its own still running,
     it no longer waits, as `Agent` gives. `STILL_RUNNING`: it stopped
     with work of its own still running, has not reported yet, and the
@@ -189,8 +189,7 @@ class Agent:
     file, then ends its `reports`. `notifies` holds where that
     operator launched or last resumed it itself, so the notification of
     its end and its final reply reach that operator. Where it waits as at
-    work or still running, is quiet
-    (`TranscriptsRead.quiet`), and its own transcript shows its turn ended
+    work or still running, and its own transcript shows its turn ended
     with no work of its own still running, it no longer waits, and its work
     ends with the reports
     it has, as for an agent of another operator whose work is no longer

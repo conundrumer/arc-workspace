@@ -22,10 +22,10 @@ item of the checklist, is held to the whole walk. The result of a stop
 holds no item.
 
 For a Codex launcher, `codex_reads.walk_entries` reads Codex's command
-results instead. An unreadable or incomplete Codex walk is denied on each
+results instead. Unreadable or incomplete Codex turn records are denied on each
 attempt; the launcher must pass the refusal back to Codex by a resume.
 
-A denied Claude call is recorded with the id of the agent's last step call, in a
+A denied call is recorded with the id of the agent's last step call, in a
 file named by its agent id under `STOPS` of its session directory, and no
 call is denied again while that step call is still the last: a fault in
 the check, or a checklist that changed under the run, then cannot hold the
@@ -201,7 +201,7 @@ def check(hook: dict[str, Any]) -> str | None:
     if gap is None:
         return None
     last = calls[-1][0] if calls else NO_CALL
-    if not codex and not first_at(hook, STOPS, agent, last):
+    if not first_at(hook, STOPS, agent, last):
         print(f"{HOOK}: allowed: a handback was denied at step call {last}, "
               "and the agent made no step call since", file=sys.stderr)
         return None

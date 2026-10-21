@@ -127,10 +127,10 @@ def test_a_launcher_with_no_codex_evidence_is_always_denied(tmp_path: Path) -> N
     assert denied(stdin)
 
 
-def test_a_launcher_with_a_partial_walk_is_always_denied(tmp_path: Path) -> None:
+def test_a_launcher_with_a_partial_walk_is_denied_once(tmp_path: Path) -> None:
     stdin = session(tmp_path, whole_walk()[:3], kind="codex-launcher")
     assert denied(stdin)
-    assert denied(stdin)
+    assert not denied(stdin)
 
 
 def test_a_codex_stop_is_bounded_until_a_message(tmp_path: Path) -> None:

@@ -15,7 +15,7 @@ scripts_importable()
 
 from file_ticket import Call, file_ticket, main_tickets, run  # noqa: E402
 from run_reads import blocks, message_text  # noqa: E402
-from senders import Origin, origin  # noqa: E402
+from senders import Origin, is_interrupt_note, is_notification, origin  # noqa: E402
 from ticket_files import ticket_name, ticket_path, ticket_status  # noqa: E402
 import ticket_form  # noqa: E402
 from ticket_form import DEPENDS_ON, GOAL, bounds, check_depends_on, list_items, section, section_head, with_field  # noqa: E402
@@ -148,7 +148,12 @@ def message(entry: Entry) -> Message | None:
     if entry.get("type") == "assistant":
         text = "\n".join(b.get("text", "") for b in blocks(entry, "text")).strip()
         return Message(time, Sender.COORDINATOR, text) if text else None
-    if origin(entry)[1] is Origin.HUMAN:
+    if ((origin(entry)[1] is Origin.HUMAN
+         or entry.get("type") == "user" and origin(entry)[0] is None)
+            and not entry.get("isMeta") and not entry.get("isCompactSummary")
+            and not is_notification(entry) and not is_interrupt_note(entry)
+            and re.sub(r"<system-reminder>.*?</system-reminder>", "", message_text(entry),
+                       flags=re.S).strip()):
         return Message(time, Sender.USER, message_text(entry))
     return None
 

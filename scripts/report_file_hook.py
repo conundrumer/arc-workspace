@@ -15,9 +15,9 @@ The brief is the first message of the agent's own transcript, with each
 file it gives by `FILED_LINE` read in (`filed_texts.unfiled`).
 
 A Codex launcher must have readable turn records (`codex_reads`), and its
-brief and report must be readable. Its refusals apply on each attempt.
+brief and report must be readable.
 
-A denied Claude call is recorded with the id of the last message the agent got,
+A denied call is recorded with the id of the last message the agent got,
 in a file named by its agent id under `STOPS` of its session directory,
 and no call is denied again while that message is still the last. A denial
 gives the agent no message, so a fault in the check cannot hold the agent
@@ -128,7 +128,7 @@ def check(hook: Hook) -> str | None:
     if given == wanted and written_since(wanted, entries_back(path)):
         return None
     last = last_message(entries_back(path))
-    if not codex and not first_at(hook, STOPS, agent, last):
+    if not first_at(hook, STOPS, agent, last):
         print(f"{HOOK}: allowed: a handback was denied after message {last}, "
               "and the agent got no message since", file=sys.stderr)
         return None

@@ -44,6 +44,14 @@ class Listed:
     running: list[Span] = field(default_factory=list)
 
 
+def turn_ended_idle(listing: list[Listed]) -> frozenset[str]:
+    """The agents whose turns ended with no running commands or children."""
+    parents = {x.parent for x in listing}
+    return frozenset(aid for x in listing
+                     if (aid := x.launch.agent) is not None and x.ended and not x.running
+                     and aid not in parents)
+
+
 type CallTimes = dict[str, list[float]]
 """The durations of the ended calls of some runs by label, each list
 sorted."""

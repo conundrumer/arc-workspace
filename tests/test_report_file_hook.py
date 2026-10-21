@@ -160,11 +160,11 @@ def test_handback_after_a_killed_launch_and_recorded_resume(tmp_path: Path, hook
     assert code == 0 and not out and "failed" not in err, (out, err)
 
 
-def test_a_codex_report_before_a_resumed_message_is_always_denied(tmp_path: Path) -> None:
+def test_a_codex_report_before_a_resumed_message_is_denied_once(tmp_path: Path) -> None:
     stdin = codex_session(tmp_path, str(tmp_path / NAME), prompt("u1", BRIEF_AT + 20, "Continue."))
     written(tmp_path, BRIEF_AT + 10)
     assert denied(stdin)
-    assert denied(stdin)
+    assert not denied(stdin)
 
 
 def test_a_codex_report_with_missing_evidence_is_always_denied(tmp_path: Path) -> None:
