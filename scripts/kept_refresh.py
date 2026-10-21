@@ -9,9 +9,9 @@ after the merge reads them from the store and does not compute them.
 released, with each `--held` an open descriptor `<fd>` of the refresh lock
 of `<session>` (`refresh_locks`), locked since before the merge's
 fast-forward, and the merging session's first. The script refreshes each
-of those sessions in turn, by a child process of the second form with
-`CLAUDE_CODE_SESSION_ID` set to that session, and releases the session's
-lock once its child ends. A session where no operator ran
+session through its resident service, where one owns it, and otherwise by
+a child of the second form with `CLAUDE_CODE_SESSION_ID` set to that
+session. It releases the session's lock once that refresh ends. A session where no operator ran
 `operate.py next` has no child. Once the merging session's lock is
 released, or at the start where no merging session is given, the script
 writes `REFRESHED` and a newline on stdout, which the merge waits for,
@@ -37,6 +37,7 @@ from handbook.paths import scripts_importable
 scripts_importable()
 
 import kept_reads  # noqa: E402
+import operate_service  # noqa: E402
 import state_assembly  # noqa: E402
 from operator_reads import operator_runs  # noqa: E402
 from refresh_locks import REFRESH  # noqa: E402
@@ -46,14 +47,15 @@ REFRESHED = "refreshed"
 
 
 def refresh_session(main: Path, session: str) -> None:
-    """Runs the child of the session `session` in the main tree `main`,
-    where an operator of it ran `operate.py next`."""
+    """Refresh the last operator of `session` through its resident or a child."""
     runs = operator_runs(session, "")
     if runs:
-        subprocess.run(("uv", "run", "python", *REFRESH, "read", runs[-1][0]), cwd=main,
-                       env={**os.environ, script_calls.SESSION_ENV: session},
-                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL)
+        def standalone() -> None:
+            subprocess.run(("uv", "run", "python", *REFRESH, "read", runs[-1][0]), cwd=main,
+                           env={**os.environ, script_calls.SESSION_ENV: session},
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+        operate_service.refresh_resident(main, session, runs[-1][0], standalone)
 
 
 def said_refreshed() -> None:

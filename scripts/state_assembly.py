@@ -6,6 +6,7 @@ monitor's steps read (`monitor_reads`)."""
 
 import atexit
 import time
+from contextvars import ContextVar
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -72,8 +73,8 @@ from operator_state import (EndsRead, ends_read, not_given, stuck_read, undecide
                             work_of)
 
 STARTED = time.time()
-"""The start of the process: a step given to `me` before it, with no call
-of it made, is one `me` ran `next` again before it made."""
+REQUEST_STARTED: ContextVar[float] = ContextVar("request_started", default=STARTED)
+"""The call cutoff for journal entries, with process start for standalone reads."""
 
 DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.CONSOLE, ReaderName.SURVEY,
                         ReaderName.WORKFLOW})
@@ -112,7 +113,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     paths = dict(runs.runs)
     journal, journaled = step_journal.read(
         scratch(session), ops.calls,
-        lambda e: e.given >= STARTED if e.operator == me
+        lambda e: e.given >= REQUEST_STARTED.get() if e.operator == me
         else e.operator in paths and work_open(paths[e.operator], undecided),
         time.time(), since is None)
     ops = replace(ops, calls=(*ops.calls, *step_journal.run_calls(

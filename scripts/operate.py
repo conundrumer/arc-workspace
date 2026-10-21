@@ -13,6 +13,9 @@ import argparse
 import gc
 import os
 import sys
+import time
+
+from engine.checkout import ROOT
 
 import script_calls
 from controlled_markdown import mctx
@@ -22,6 +25,7 @@ console_importable()
 scripts_importable()
 
 import kept_reads  # noqa: E402
+import operate_service  # noqa: E402
 import step_journal  # noqa: E402
 from usage_limit import USAGE_STALE  # noqa: E402
 from agent_reports import RATE_LIMIT  # noqa: E402
@@ -72,8 +76,16 @@ def main(argv: list[str]) -> int:
         args = parser.parse_args(argv)
         match OperateAction(args.action):
             case OperateAction.NEXT:
+                if operate_service.CURRENT.get() is None:
+                    return operate_service.client(args.ident)
                 return block(args.ident, Action.NEXT, lambda deadline: operator_step(args.ident, deadline))
             case OperateAction.RELAY:
+                from relay_reads import session_id
+                try:
+                    operate_service.prepare(ROOT, session_id(),
+                                           time.monotonic() + operate_service.START_SECONDS)
+                except (OSError, operate_service.Expired):
+                    pass
                 return block(args.ident, Action.RELAY, lambda deadline: relay_step(args.ident, deadline))
             case OperateAction.WAIT:
                 if args.rest:

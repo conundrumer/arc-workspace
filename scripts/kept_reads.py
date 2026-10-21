@@ -24,6 +24,7 @@ import pickle
 import sqlite3
 import sys
 import time
+import weakref
 from collections.abc import Iterable
 from pathlib import Path, PosixPath, WindowsPath
 from typing import Any
@@ -58,7 +59,11 @@ UNREADABLE = (pickle.UnpicklingError, EOFError, AttributeError, ImportError,
 """What `pickle.loads` raises on a record it cannot read."""
 
 
-_paths: dict[str, Path] = {}
+class HeldPath(type(Path())):
+    __slots__ = ("__weakref__",)
+
+
+_paths: weakref.WeakValueDictionary[str, Path] = weakref.WeakValueDictionary()
 """The one `Path` of each text that the records this process read, and the
 arguments of its reads, give."""
 
@@ -70,7 +75,7 @@ def held_path(text: str) -> Path:
     gives, a lookup by it compares no text, and its text is made once."""
     found = _paths.get(text)
     if found is None:
-        found = _paths[text] = Path(text)
+        found = _paths[text] = HeldPath(text)
     return found
 
 
@@ -86,7 +91,7 @@ def reduce_path(path: Path | PathText) -> tuple[Any, tuple[str]]:
 
 
 PICKLED = {**copyreg.dispatch_table, PosixPath: reduce_path, WindowsPath: reduce_path,
-           PathText: reduce_path}
+           PathText: reduce_path, HeldPath: reduce_path}
 """How a record pickles: each path as `held_path` of its text."""
 
 
@@ -335,9 +340,14 @@ def code_of(module: str) -> str:
     only once its bytes change, or once `KEEP_SECONDS` pass from the parse
     that wrote them."""
     if module not in _codes:
-        files = closure_files(module)
-        _codes[module] = checkout.files_digest({path: files[path] for path in sorted(files)})
+        _codes[module] = fresh_code(module)
     return _codes[module]
+
+
+def fresh_code(module: str) -> str:
+    """The current import closure identity, with no process-lifetime lookup."""
+    files = closure_files(module)
+    return checkout.files_digest({path: files[path] for path in sorted(files)})
 
 
 def closure_files(module: str) -> dict[Path, bytes]:

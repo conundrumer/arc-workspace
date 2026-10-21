@@ -271,10 +271,18 @@ def start_run(scratch: Path, step: Bash, operator: str, cwd: Path, time: float) 
     base.parent.mkdir(parents=True, exist_ok=True)
     out, status = base.with_suffix(".out"), base.with_suffix(".status")
     script = f'( {step.command}\n) > "$1" 2>&1; echo $? > "$2.tmp" && mv "$2.tmp" "$2"'
-    proc = subprocess.Popen(["/bin/bash", "-c", script, "bash", str(out), str(status)],
-                            cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL, start_new_session=True)
-    append(scratch, [given_record(ident, step, operator, time, Run(proc.pid, out, status))])
+    read_fd, write_fd = os.pipe()
+    try:
+        script = f"IFS= read -r _ <&{read_fd} || exit; exec {read_fd}<&-; " + script
+        proc = subprocess.Popen(["/bin/bash", "-c", script, "bash", str(out), str(status)],
+                                cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, start_new_session=True,
+                                pass_fds=(read_fd,))
+        append(scratch, [given_record(ident, step, operator, time, Run(proc.pid, out, status))])
+        os.write(write_fd, b"\n")
+    finally:
+        os.close(read_fd)
+        os.close(write_fd)
     return ident
 
 

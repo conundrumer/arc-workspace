@@ -17,6 +17,7 @@ from collections.abc import Callable
 
 import file_events
 import script_calls
+import operate_service
 import step_journal
 import ticket_log
 import tree_reads
@@ -116,14 +117,18 @@ def arm_watchdog(me: str) -> None:
     """Print a failure report for the coordinator and end the process once
     `LIMIT_SECONDS` have passed, as `--help next` gives it."""
     def expire(_signum: int, _frame: object) -> None:
-        step = Send(COORDINATOR, STATE_READ_TIMEOUT.format(agent=me, seconds=LIMIT_SECONDS),
-                    "state-read-timeout")
-        print(AFTER_TIMEOUT, flush=True)
-        print(printed(step, me, Path()), flush=True)
+        timeout_output(me)
         script_calls.record()
         os._exit(1)
     signal.signal(signal.SIGALRM, expire)
     signal.alarm(LIMIT_SECONDS)
+
+
+def timeout_output(me: str) -> None:
+    step = Send(COORDINATOR, STATE_READ_TIMEOUT.format(agent=me, seconds=LIMIT_SECONDS),
+                "state-read-timeout")
+    print(AFTER_TIMEOUT, flush=True)
+    print(printed(step, me, Path()), flush=True)
 
 
 NOT_SERVED = mctx("{agent} is no {kind} of the session, so no step is printed: give your final "
@@ -157,21 +162,23 @@ def block(me: str, action: Action,
     if not served(me, action):
         return 0
     (steps, scratch), accepted = waited(me, read_again(step_at), lambda out: not isinstance(out[0][0], Poll))
+    operate_service.check()
     head = steps[0]
     if isinstance(head, EndTurn | Wait) and accepted:
         head = Poll()
         steps = (head,)
-    if action is Action.NEXT:
-        step_journal.give(scratch, [s for s in steps if isinstance(s, CALLS)], me, time.time())
-        if isinstance(head, EndTurn) and (hold := head.hold) is not None and head.wait is not None:
-            held = hold.launch
-            step_journal.give_failed(scratch, held, me, time.time(), listing_line(held))
-    if len(steps) > 1:
-        print(batch_line(steps, me, action))
-    elif isinstance(head, CALLS):
-        print(key_line(head, me, action))
-    for step in steps:
-        print_step(prepared(step, scratch), scratch, me)
+    with operate_service.side_effect():
+        if action is Action.NEXT:
+            step_journal.give(scratch, [s for s in steps if isinstance(s, CALLS)], me, time.time())
+            if isinstance(head, EndTurn) and (hold := head.hold) is not None and head.wait is not None:
+                held = hold.launch
+                step_journal.give_failed(scratch, held, me, time.time(), listing_line(held))
+        if len(steps) > 1:
+            print(batch_line(steps, me, action))
+        elif isinstance(head, CALLS):
+            print(key_line(head, me, action))
+        for step in steps:
+            print_step(prepared(step, scratch), scratch, me)
     return 0
 
 
@@ -205,8 +212,9 @@ def waited[T](me: str, out_at: Callable[[float], T], ready: Callable[[T], bool])
     read at the deadline, `BLOCK_SECONDS` from the call (`watched`). The
     call is the one of `me` that runs (`single_instance`), and its watchdog
     (`arm_watchdog`) is disarmed at its return."""
-    single_instance(me)
-    arm_watchdog(me)
+    if operate_service.CURRENT.get() is None:
+        single_instance(me)
+        arm_watchdog(me)
     path = find(me)
     since = last_delivered(path)
 
@@ -214,7 +222,8 @@ def waited[T](me: str, out_at: Callable[[float], T], ready: Callable[[T], bool])
         return out_at(deadline), accepted_after(path, since, [])
 
     out, accepted = watched(read, lambda o: ready(o[0]) or o[1], BLOCK_SECONDS)
-    signal.alarm(0)
+    if operate_service.CURRENT.get() is None:
+        signal.alarm(0)
     return out, accepted
 
 
@@ -225,16 +234,19 @@ def watched[T](out_at: Callable[[float], T], ready: Callable[[T], bool], seconds
     is."""
     reads = Reads(time.monotonic() + seconds)
     changed: set[str] | None = None
-    while True:
-        started, cpu = time.monotonic(), cpu_seconds()
-        reads.start(started, changed)
-        stats_stand_but(changed)
-        out = out_at(reads.deadline)
-        spent = cpu_seconds() - cpu
-        more, changed = reads.after(changed, ready(out), started, spent)
-        if not more:
-            break
-    reads.close()
+    try:
+        while True:
+            started, cpu = time.monotonic(), cpu_seconds()
+            reads.start(started, changed)
+            stats_stand_but(changed)
+            operate_service.check()
+            out = out_at(reads.deadline)
+            spent = cpu_seconds() - cpu
+            more, changed = reads.after(changed, ready(out), started, spent)
+            if not more:
+                break
+    finally:
+        reads.close()
     return out
 
 
@@ -287,7 +299,7 @@ class Reads:
             except file_events.Unwatched:
                 self.unwatched = True
         if self.changes is None or self.unwatched:
-            time.sleep(POLL_SECONDS)
+            operate_service.pause(POLL_SECONDS)
             return True, None
         return True, self.changed_paths(self.changes, started, spent)
 
@@ -298,8 +310,16 @@ class Reads:
         last read for a partial read, or None for a full read."""
         full_due = min(self.full_at + FALLBACK_SECONDS, self.deadline - POLL_SECONDS)
         earliest = started + max(POLL_SECONDS, READ_SHARE * spent)
-        time.sleep(max(min(earliest, full_due) - time.monotonic(), 0))
-        changes.wait(full_due - time.monotonic())
+        operate_service.pause(max(min(earliest, full_due) - time.monotonic(), 0))
+        if operate_service.CURRENT.get() is None:
+            changes.wait(full_due - time.monotonic())
+        else:
+            while time.monotonic() < full_due:
+                current = operate_service.CURRENT.get()
+                assert current is not None
+                current.check(code=False)
+                if changes.wait(min(full_due - time.monotonic(), 0.2)):
+                    break
         return changes.take() if time.monotonic() < full_due else None
 
     def close(self) -> None:
@@ -330,7 +350,8 @@ def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
         state, watch = read_and_record(me, here)
         step = plan.next_step(state, watch, wait_running(me))
         if isinstance(step, Bash) and not partial():
-            step_journal.start_run(here, step, me, state.main_tree, time.time())
+            with operate_service.side_effect():
+                step_journal.start_run(here, step, me, state.main_tree, time.time())
             continue
         if isinstance(step, Launch) and step.reread:
             state, watch = read_and_record(me, here)
@@ -347,9 +368,11 @@ def read_and_record(me: str, here: Path) -> tuple[State, MonitorState]:
     those of that state, and the record of the state the ticket dashboard
     shows (`shown_state.Shown`) holds that state's."""
     state, watch = read_state(me)
-    write_record(here, DUE_SINCE, ticket_stall.due_times(state))
-    write_record(here, UNWAITED_SINCE, unwaited.times(state))
-    write_shown(here, state)
+    operate_service.check()
+    with operate_service.side_effect():
+        write_record(here, DUE_SINCE, ticket_stall.due_times(state))
+        write_record(here, UNWAITED_SINCE, unwaited.times(state))
+        write_shown(here, state)
     return state, watch
 
 
@@ -359,7 +382,7 @@ def ran(scratch: Path, deadline: float) -> bool:
     while step_journal.running(scratch, time.time()):
         if time.monotonic() + RUN_POLL_SECONDS > deadline:
             return False
-        time.sleep(RUN_POLL_SECONDS)
+        operate_service.pause(RUN_POLL_SECONDS)
     return True
 
 

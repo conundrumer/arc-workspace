@@ -39,7 +39,7 @@ SUFFIX = ".jsonl"
 SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
 
 _LINE = ('{{"key": "{key}", "start": {start:.3f}, "wall": {wall:.3f}, "cpu": {cpu:.3f}, '
-         '"peak": {peak}, "session": "{session}", "lifts": [{lifts}]}}\n')
+         '"peak": {peak}, "session": "{session}", "lifts": [{lifts}], "retained": {retained}}}\n')
 
 _KIB = sys.platform != "darwin"
 """Whether `ru_maxrss` counts KiB, as on Linux, in place of bytes, as on
@@ -65,6 +65,10 @@ def key(script: str, args: list[str]) -> str:
     return script
 
 
+_cpu_started = 0.0
+_retained = False
+
+
 _started: tuple[str, str, float, float] | None = None
 """The day file, the key, the start time and the monotonic clock at the
 start of this process's call, once `start` started its record."""
@@ -79,6 +83,23 @@ def start(tree: str, script: str, args: list[str]) -> None:
     if name and all(c in _NAME for c in name):
         now = time.time()
         _started = (day_file(os.path.join(tree, RECORDS), now), key(name, args), now, time.monotonic())
+
+
+def start_service(tree: str) -> None:
+    """Keep startup CPU accounting when a service runs in a linked checkout too."""
+    if _started is None:
+        start(tree, "operate_service.py", ["startup"])
+
+
+def start_request(tree: str, script: str, args: list[str]) -> None:
+    """Start a resident request's CPU delta and retained process peak record."""
+    global _cpu_started, _retained, _credited
+    record()
+    start(tree, script, args)
+    _cpu_started = cpu_seconds()
+    _retained = True
+    _lifts.clear()
+    _credited = 0
 
 
 def grew(figure: float, usual: float, margin: float) -> bool:
@@ -148,8 +169,8 @@ def record() -> None:
     if s is None:
         return
     path, k, begun, clock = s
-    line = _LINE.format(key=k, start=begun, wall=time.monotonic() - clock, cpu=cpu_seconds(),
-                        peak=peak(), session=os.environ.get(SESSION_ENV, ""),
+    line = _LINE.format(key=k, start=begun, wall=time.monotonic() - clock, cpu=cpu_seconds() - _cpu_started,
+                        peak=peak(), retained="true" if _retained else "false", session=os.environ.get(SESSION_ENV, ""),
                         lifts=", ".join(f'["{name}", {rise}]' for name, rise in lifts()))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
@@ -161,11 +182,12 @@ def record() -> None:
 
 class Call:
     """One line of the record. A line written before the record gave
-    `lifts` has none."""
-    __slots__ = ("key", "start", "wall", "cpu", "peak", "session", "lifts")
+    `lifts` has none. `retained` identifies a resident process peak."""
+    __slots__ = ("key", "start", "wall", "cpu", "peak", "session", "lifts", "retained")
 
     def __init__(self, key: str, start: float, wall: float, cpu: float, peak: int,
-                 session: str, lifts: tuple[tuple[str, int], ...] = ()) -> None:
+                 session: str, lifts: tuple[tuple[str, int], ...] = (), retained: bool = False) -> None:
+        self.retained = retained
         self.key, self.start, self.wall, self.cpu, self.peak, self.session, self.lifts = (
             key, start, wall, cpu, peak, session, lifts)
 
