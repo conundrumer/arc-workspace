@@ -5,6 +5,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import operate_service
+
 from agent_deliveries import delivery, handback_accepted, succeeded
 from agent_launches import launched_or_resumed
 from file_reads import Named
@@ -33,6 +35,34 @@ class Tail:
     calls: dict[str, tuple[Entry, float]] = field(default_factory=dict)
     results: dict[str, tuple[Entry, float]] = field(default_factory=dict)
 
+    last_user: float = 0.0
+    deliveries: list[tuple[Entry, Entry, float, float]] = field(default_factory=list)
+
+    def record(self, entry: Entry) -> None:
+        if not entry.get("timestamp"):
+            return
+        at = epoch(entry["timestamp"])
+        changed: list[str] = []
+        if entry.get("type") == "assistant":
+            for block in blocks(entry, "tool_use"):
+                if block.get("name") in {"SendMessage", "SubagentHandback"}:
+                    ident = block.get("id", "")
+                    self.calls[ident] = block, at
+                    changed.append(ident)
+        elif entry.get("type") == "user":
+            self.last_user = max(self.last_user, at)
+            if isinstance(result := entry.get("toolUseResult"), dict):
+                for block in blocks(entry, "tool_result"):
+                    ident = block.get("tool_use_id", "")
+                    self.results[ident] = result, at
+                    changed.append(ident)
+        for ident in changed:
+            if ident not in self.calls or ident not in self.results:
+                continue
+            call, started = self.calls.pop(ident)
+            result, ended = self.results.pop(ident)
+            self.deliveries.append((call, result, started, ended))
+
     def read(self, path: Path) -> list[Entry]:
         try:
             stat = path.stat()
@@ -46,21 +76,26 @@ class Tail:
                     self.calls.clear()
                     self.results.clear()
                     self.own = False
+                    self.last_user = 0.0
+                    self.deliveries.clear()
                 meta = read_meta(path) or {}
                 call = meta.get("toolUseId") if meta.get("isFork") is True else None
                 self.own = self.own or not isinstance(call, str)
                 stream.seek(self.offset)
                 entries: list[Entry] = []
-                for line in stream:
+                for number, line in enumerate(stream):
+                    if number % 128 == 0:
+                        operate_service.check()
                     if not line.endswith(b"\n"):
                         break
-                    self.offset += len(line)
                     for entry in parse(line):
                         if not self.own:
                             assert isinstance(call, str)
                             self.own = own_result(entry, call)
                         if self.own:
+                            self.record(entry)
                             entries.append(entry)
+                    self.offset += len(line)
                 self.revision = stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
                 return entries
         except FileNotFoundError:
@@ -75,6 +110,10 @@ class Inventory:
     agents: frozenset[str]
 
 
+_resident_tails: dict[Path, Tail] = {}
+"""Only the resident serving thread uses these; every tail verifies its file revision."""
+
+
 class Inbox:
     """Acceptance since the recipient's frozen last-delivery boundary.
     Each check parses only complete records appended since its previous check."""
@@ -85,7 +124,8 @@ class Inbox:
         self.sessions = run_sessions(path)
         self.roots = {s.parent for s in self.sessions}
         self.directories: dict[Path, tuple[tuple[int, int, int], tuple[Named, ...]]] = {}
-        self.tails: dict[Path, Tail] = {}
+        self.tails: dict[Path, Tail] = ({} if operate_service.CURRENT.get() is None
+                                       else _resident_tails)
         self.inventories: dict[Path, Inventory] = {}
         self.agent = agent_id(path)
         self.names = {self.agent}
@@ -96,8 +136,9 @@ class Inbox:
             candidates = [main_transcript(session), *self.subagents(session).paths]
             for p in candidates:
                 if agent_id(p) == self.agent:
-                    self.since = max(self.since, *(epoch(e["timestamp"])
-                        for e in Tail().read(p) if e.get("type") == "user" and e.get("timestamp")), 0.0)
+                    tail = self.tails.setdefault(p, Tail())
+                    tail.read(p)
+                    self.since = max(self.since, tail.last_user)
         self.mine = launched_or_resumed(path, undecided, before=entered)
 
     def entries(self, path: Path) -> tuple[Named, ...]:
@@ -146,19 +187,8 @@ class Inbox:
         for session in self.sessions:
             for path in [main_transcript(session), *self.subagents(session).paths]:
                 tail = self.tails.setdefault(path, Tail())
-                for e in tail.read(path):
-                    if not e.get("timestamp"):
-                        continue
-                    if e.get("type") == "assistant":
-                        for b in blocks(e, "tool_use"):
-                            if b.get("name") in {"SendMessage", "SubagentHandback"}:
-                                tail.calls[b.get("id", "")] = b, epoch(e["timestamp"])
-                    elif e.get("type") == "user" and isinstance(r := e.get("toolUseResult"), dict):
-                        for b in blocks(e, "tool_result"):
-                            tail.results[b.get("tool_use_id", "")] = r, epoch(e["timestamp"])
-                for ident in list(tail.calls.keys() & tail.results.keys()):
-                    call, started = tail.calls.pop(ident)
-                    result, at = tail.results.pop(ident)
+                tail.read(path)
+                for call, result, started, at in tail.deliveries:
                     if at <= self.since or at < started:
                         continue
                     if (call.get("name") == "SubagentHandback" and agent_id(path) in self.mine

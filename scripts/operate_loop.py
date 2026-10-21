@@ -234,7 +234,11 @@ def watched[T](out_at: Callable[[float], T], ready: Callable[[T], bool], seconds
     for, or else the output of the full read at the deadline, `seconds`
     from the call. `Reads` gives when each read starts and which read it
     is."""
-    reads = Reads(time.monotonic() + seconds)
+    deadline = time.monotonic() + seconds
+    current = operate_service.CURRENT.get()
+    if current is not None:
+        deadline = min(deadline, current.deadline - operate_service.FINISH_SECONDS)
+    reads = Reads(deadline)
     changed: set[str] | None = None
     try:
         while True:
@@ -246,6 +250,10 @@ def watched[T](out_at: Callable[[float], T], ready: Callable[[T], bool], seconds
             out = out_at(reads.deadline)
             read_interrupts.checkpoint(force=True)
             spent = cpu_seconds() - cpu
+            if current is not None:
+                reads.deadline = min(reads.deadline, current.deadline
+                                     - operate_service.FINISH_SECONDS
+                                     - (time.monotonic() - started))
             more, changed = reads.after(changed, ready(out), started, spent)
             if not more:
                 return out

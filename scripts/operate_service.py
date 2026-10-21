@@ -21,7 +21,7 @@ import time
 import traceback
 from collections.abc import Callable, Iterator
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TextIO
 
@@ -43,7 +43,7 @@ class Replaced(BaseException):
 
 
 class Disconnected(BaseException):
-    """The request's client has gone or a replacement request waits."""
+    """The request's client has gone."""
 
 
 class Expired(BaseException):
@@ -65,17 +65,75 @@ class Request:
     stdout: TextIO
     stderr: TextIO
     phase: str = "state"
+    pending: "Pending | None" = None
 
     def check(self, code: bool = False) -> None:
         if time.monotonic() >= self.deadline:
             raise Expired
-        readable, _, _ = select.select([self.connection, self.listener], [], [], 0)
-        if self.listener in readable or self.connection in readable:
+        if self.pending is not None:
+            self.pending.poll()
+        readable, _, _ = select.select([self.connection], [], [], 0)
+        if self.connection in readable:
             raise Disconnected
         if code:
             import kept_reads
             if kept_reads.fresh_code("operate") != self.code:
                 raise Replaced
+
+
+@dataclass
+class Pending:
+    """Accept queued deadlines during cooperative reads, without executing them."""
+    listener: socket.socket
+    connections: dict[socket.socket, tuple[float, dict | None]] = field(default_factory=dict)
+    read_seconds: float = 0.0
+
+    def poll(self) -> None:
+        while select.select([self.listener], [], [], 0)[0]:
+            connection, _ = self.listener.accept()
+            connection.setblocking(False)
+            self.connections[connection] = time.monotonic(), None
+        for connection, (arrived, message) in list(self.connections.items()):
+            try:
+                if message is None:
+                    if not select.select([connection], [], [], 0)[0]:
+                        if time.monotonic() - arrived < START_SECONDS:
+                            continue
+                        raise ValueError("incomplete queued request")
+                    line = connection.recv(65537, socket.MSG_PEEK)
+                    if not line:
+                        raise ValueError("disconnected queued request")
+                    if b"\n" not in line:
+                        if len(line) <= 65536 and time.monotonic() - arrived < START_SECONDS:
+                            continue
+                        raise ValueError("incomplete queued request")
+                    message = json.loads(line.split(b"\n", 1)[0])
+                    if not isinstance(message, dict) or not isinstance(message["operator"], str):
+                        raise ValueError("invalid queued request")
+                    self.connections[connection] = arrived, message
+                if float(message["deadline"]) - time.monotonic() <= FINISH_SECONDS + self.read_seconds:
+                    response = {"status": 1, "stdout": "", "retry": False,
+                                "stderr": "operate: request could not start before its deadline "
+                                          "while queued behind another resident request; "
+                                          "no state read was started\n"}
+                    connection.sendall((json.dumps(response) + "\n").encode())
+                    raise ValueError("queued deadline exhausted")
+            except (OSError, ValueError, KeyError, TypeError):
+                connection.close()
+                self.connections.pop(connection, None)
+
+    def take(self) -> socket.socket | None:
+        self.poll()
+        for connection, (_, message) in self.connections.items():
+            if message is not None:
+                self.connections.pop(connection)
+                return connection
+        return None
+
+    def close(self) -> None:
+        for connection in self.connections:
+            connection.close()
+        self.connections.clear()
 
 
 CURRENT: ContextVar[Request | None] = ContextVar("operate_request", default=None)
@@ -110,8 +168,11 @@ def reading() -> Iterator[None]:
         exhausted()
     handler = signal.signal(signal.SIGALRM, exhausted)
     signal.setitimer(signal.ITIMER_REAL, remaining)
+    begun = time.monotonic()
     try:
         yield
+        if current.pending is not None:
+            current.pending.read_seconds = time.monotonic() - begun
     finally:
         signal.signal(signal.SIGALRM, handler)
         signal.setitimer(signal.ITIMER_REAL, max(current.deadline - time.monotonic(), 0.001))
@@ -182,7 +243,7 @@ def pause(seconds: float) -> None:
     end = time.monotonic() + max(seconds, 0)
     while time.monotonic() < end:
         request.check(code=False)
-        select.select([request.connection, request.listener], [], [], max(min(end - time.monotonic(), 0.2), 0))
+        select.select([request.connection], [], [], max(min(end - time.monotonic(), 0.2), 0))
     request.check(code=False)
 
 
@@ -346,7 +407,8 @@ def refresh_resident(main: Path, session: str, operator: str,
     return True
 
 
-def serve_request(connection: socket.socket, listener: socket.socket, code: str) -> bool:
+def serve_request(connection: socket.socket, listener: socket.socket, code: str,
+                  pending: Pending | None = None) -> bool:
     """Serve one request; false retires this interpreter after a code change."""
     import kept_reads
     import operate
@@ -365,7 +427,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str)
         raise ValueError("invalid request")
     stdout, stderr = io.StringIO(), io.StringIO()
     current = Request(message["operator"], float(message["started"]), float(message["deadline"]),
-                      connection, listener, code, stdout, stderr)
+                      connection, listener, code, stdout, stderr, pending=pending)
     token = CURRENT.set(current)
     cutoff = state_assembly.REQUEST_STARTED.set(current.started)
     codex_mode.enabled.cache_clear()
@@ -470,19 +532,24 @@ def serve() -> None:
             listener.bind(str(path))
             listener.listen()
             listener.settimeout(IDLE_SECONDS)
+            pending = Pending(listener)
+            idle_until = time.monotonic() + IDLE_SECONDS
             try:
-                while True:
-                    try:
-                        connection, _ = listener.accept()
-                    except TimeoutError:
-                        break
+                while time.monotonic() < idle_until:
+                    connection = pending.take()
+                    if connection is None:
+                        select.select([listener], [], [], 0.05)
+                        continue
+                    idle_until = time.monotonic() + IDLE_SECONDS
                     with connection:
                         try:
-                            if not serve_request(connection, listener, code):
+                            if not serve_request(connection, listener, code, pending):
                                 break
                         except (OSError, ValueError, KeyError, TypeError):
                             continue
+                    idle_until = time.monotonic() + IDLE_SECONDS
             finally:
+                pending.close()
                 path.unlink(missing_ok=True)
                 kept_reads.flush()
 

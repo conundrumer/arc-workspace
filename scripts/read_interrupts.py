@@ -7,17 +7,26 @@ from contextvars import ContextVar
 from functools import wraps
 from typing import ParamSpec, TypeVar
 
+import operate_service
+
 
 class Accepted(BaseException):
     """An inbox accepted a message while a foreground call was waiting."""
 
 
 _callback: ContextVar[Callable[[], bool] | None] = ContextVar("read_inbox", default=None)
+_transport_due: ContextVar[float] = ContextVar("read_transport_due", default=0.0)
 _due: ContextVar[float] = ContextVar("read_inbox_due", default=0.0)
 _deferred: ContextVar[int] = ContextVar("read_inbox_deferred", default=0)
 
 
 def checkpoint(*, force: bool = False) -> None:
+    if _deferred.get():
+        return
+    now = time.monotonic()
+    if force or now >= _transport_due.get():
+        operate_service.check()
+        _transport_due.set(now + 0.05)
     callback = _callback.get()
     if callback is None or _deferred.get() or (not force and time.monotonic() < _due.get()):
         return
