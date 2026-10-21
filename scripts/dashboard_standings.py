@@ -58,7 +58,7 @@ HOLD_WORD: Mapping[Standing, str] = {
 
 @dataclass(frozen=True)
 class Row:
-    """A work row's lead, live change, and complete open membership."""
+    """A work row's lead, live change, and membership, or a draft alone."""
     lead: Ticket
     change: Ticket | None
     members: tuple[Ticket, ...]
@@ -75,7 +75,9 @@ def merged(t: Ticket) -> bool:
 
 
 class Standings:
-    """One row per live change with complete membership, and one row per uncovered open ticket."""
+    """Rows for live changes, uncovered open tickets, and standalone drafts.
+    Drafts stay outside open membership so their display cannot regroup
+    the open tickets or pool those tickets' agents into a draft's row."""
 
     def __init__(self, v: View) -> None:
         self.v = v
@@ -115,7 +117,7 @@ class Standings:
                 if h is not t:
                     self.changes.setdefault(h.number, []).append(t)
         for t in v.all_.values():
-            if t.status in OPEN and t.number not in covered:
+            if t.status is Status.DRAFT or (t.status in OPEN and t.number not in covered):
                 self.rows.append(Row(t, None, (t,)))
         for r in self.rows:
             workers = self.pooled.setdefault(r.subject.number, [])
@@ -160,6 +162,12 @@ class Standings:
     def agents(self, t: Ticket) -> list[ShownAgent]:
         """The agents whose work the standing of `t` counts (`pooled`)."""
         return self.pooled.get(t.number, [])
+
+    def row_agents(self, r: Row) -> list[ShownAgent]:
+        """The workers displayed on a row. A draft shows its direct
+        workers without changing its standing as another ticket's blocker."""
+        return (self.v.agents.get(r.subject.number, []) if r.subject.status is Status.DRAFT
+                else self.agents(r.subject))
 
     def blocker(self, t: Ticket) -> Ticket | None:
         """The first open dependency, the ticket holding a start, or the

@@ -199,10 +199,10 @@ assert set(ROLE_STAGE) == set(Role), "each role has a stage"
 def stage(roles: list[Role], change: Ticket | None) -> Stage:
     """The stage of a ticket at whose work, or that of its change
     `change`, agents of `roles` are: the highest of theirs, and at least
-    Design for a change in `tickets/draft/` and Build for a change past
+    Design for a ticket in `tickets/draft/` and Build for a change past
     it."""
-    floor = (Stage.TRIAGE if change is None or change.kind is not Kind.CHANGE
-             else Stage.DESIGN if change.status is Status.DRAFT else Stage.BUILD)
+    floor = (Stage.DESIGN if change is not None and change.status is Status.DRAFT
+             else Stage.TRIAGE if change is None or change.kind is not Kind.CHANGE else Stage.BUILD)
     return max([floor, *(ROLE_STAGE[r] for r in roles)])
 
 

@@ -26,7 +26,7 @@ from ticket_reads import read_tickets
 from usage_limit import Reading
 
 from operations.change_budget import taken
-from operations.roles import Role
+from operations.roles import ANALYST_NAMES, Role
 from operations.pacing import Capped, Until, Usage, WindowName
 from operations.parties import Hold, OnTicket
 from operations.state import NotComputed, Ticket
@@ -300,7 +300,7 @@ def active(v: View, st: Standings) -> tuple[str, int]:
     the newest first among those of one time, and the count of its rows."""
     rows: list[tuple[float, float, Row, str]] = []
     for r in st.rows:
-        if st.shown(r) and (w := st.agents(r.subject)):
+        if st.shown(r) and (w := st.row_agents(r)):
             a = max(w, key=lambda a: a.launched)
             b = basis(v, r)
             s = stage([x.role for x in w], b)
@@ -386,13 +386,20 @@ def queued(v: View, st: Standings) -> str:
     """The HTML of Queued: a tab for each session that filed the ticket
     of a row shown whose subject is not at work, and in it, its operator's
     state, its rows ready (`Next`, or `Next on resume` in a paused
-    session), those waiting, and the held ones in a group for each hold.
+    session), those waiting, drafts, and the held ones in a group for each hold.
+    Drafts have no operator standing or start order. Analyst-filed drafts
+    with a log entry in the last day show above the fold; others fold as parked.
     Each list puts expedited work first, then other work of the user.
     Within those priorities, ready and waiting rows keep the start order,
     followed by rows without a start; remaining ties go newest first."""
-    sessions: dict[int | None, list[tuple[Row, Standing, Ticket]]] = {}
+    sessions: dict[int | None, list[tuple[Row, Standing | None, Ticket]]] = {}
     for r in st.rows:
-        k, root = st.state(r.subject)
+        if r.subject.status is Status.DRAFT:
+            if st.row_agents(r):
+                continue
+            k, root = None, r.subject
+        else:
+            k, root = st.state(r.subject)
         if k is not Standing.WORKING:
             sessions.setdefault(r.lead.session, []).append((r, k, root))
     if not sessions:
@@ -419,9 +426,21 @@ def queued(v: View, st: Standings) -> str:
                      + "".join(row(v, r.lead, f"{stopped_bar(v, r)}<span>after {link(st.state(r.subject)[1].number)}</span>",
                                  r.change, members=r.members) for r in waiting)
                      + "</div>")
+        drafts = sorted((r for r, k, _ in items if k is None),
+                        key=lambda r: (*priority(v, r), -r.subject.filed))
+        if drafts:
+            fresh: list[str] = []
+            parked: list[str] = []
+            for r in drafts:
+                t = r.subject
+                pipeline = bool(t.log and t.log[0].agent in ANALYST_NAMES and v.now - t.last_time < DAY)
+                (fresh if pipeline else parked).append(row(v, r.lead, stopped_bar(v, r), r.change, r.members))
+            fold = (f'<details><summary>Parked · {len(parked)}</summary>{"".join(parked)}</details>'
+                    if parked else "")
+            body += f'<div class="gh">Draft</div><div class="wl">{"".join(fresh)}{fold}</div>'
         groups: dict[Standing, list[tuple[Row, Ticket]]] = {}
         for r, k, root in items:
-            if k not in MOVING:
+            if k is not None and k not in MOVING:
                 groups.setdefault(k, []).append((r, root))
         for k, xs in sorted(groups.items(), key=lambda g: list(HELD_HEAD).index(g[0])):
             label = HELD_HEAD[k]
