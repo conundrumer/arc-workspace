@@ -7,7 +7,10 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from engine import checkout
+from handbook.checklist import Checklist
 from handbook.paths import scripts_importable
 from tests.hookrun import run_hook
 from tests.codex_run import turn
@@ -122,6 +125,39 @@ def test_a_codex_report_written_after_the_last_message_is_allowed(tmp_path: Path
     stdin = codex_session(tmp_path, str(tmp_path / NAME))
     written(tmp_path, BRIEF_AT + 10)
     assert not denied(stdin)
+
+
+@pytest.mark.parametrize("hook_name", ["report_file_hook", "checklist_walk_hook"])
+def test_handback_after_a_killed_launch_and_recorded_resume(tmp_path: Path, hook_name: str) -> None:
+    stdin = codex_session(tmp_path, str(tmp_path / NAME))
+    written(tmp_path, BRIEF_AT + 10)
+    path = tmp_path / "s" / "subagents" / f"agent-{AGENT}.jsonl"
+    entries = [json.loads(line) for line in path.read_text().splitlines()]
+    killed = entries[-1]
+    killed["timestamp"] = at(BRIEF_AT + 1)
+    killed["message"]["content"][0]["id"] = "killed"
+    output = tmp_path / "killed.output"
+    output.write_text("warning: environment mismatch\n\n[killed]\n")
+    entries.append({"type": "user", "message": {"content": [{
+        "type": "tool_result", "tool_use_id": "killed",
+        "content": f"Output is being written to: {output}."}]}})
+    checklist = Checklist("code-reviewer")
+    results = [checklist.first(), *(checklist.after(i.heading.text) for i in checklist.items[:-1])]
+    resumed = turn(tmp_path / "codex", [
+        ("uv run python scripts/step.py code-reviewer", r) for r in results])
+    resumed["timestamp"] = at(BRIEF_AT + 2)
+    block = resumed["message"]["content"][0]
+    block["id"] = "resumed"
+    block["input"]["command"] = block["input"]["command"].replace(
+        " <<'INPUT'", " --resume <<'INPUT'")
+    entries.append(resumed)
+    path.write_text("".join(json.dumps(e) + "\n" for e in entries))
+    records = tmp_path / "codex" / "codex-events.jsonl"
+    record = json.loads(records.read_text())
+    record.update(started=BRIEF_AT + 3, ended=BRIEF_AT + 4)
+    records.write_text(json.dumps(record) + "\n")
+    code, out, err = run_hook(checkout.scripts() / f"{hook_name}.py", stdin)
+    assert code == 0 and not out and "failed" not in err, (out, err)
 
 
 def test_a_codex_report_before_a_resumed_message_is_always_denied(tmp_path: Path) -> None:

@@ -1,10 +1,11 @@
 """The command results of a launcher's Codex turns, saved by codex_agent.
 
-The launcher's calls locate the scratch directory. Each call must have a
-record, in order. Failed attempts before session creation contribute no
-walk. A fresh-call refusal proved by its tool result permits a retry in
-a new directory before any call is accepted. Once a session exists,
-records must match codex-session, and the latest turn must have completed.
+The launcher's calls locate the scratch directory. Calls need records in
+order, except that a killed process with no record in its interval
+may be followed by a recorded resume in the same directory. Failed attempts
+before session creation contribute no walk. A fresh-call refusal proved by
+its tool result permits a retry in a new directory before any call is accepted.
+Once a session exists, records must match codex-session, and the latest turn must have completed.
 Missing or unreadable evidence refuses handback, including a repeated handback.
 The results are given in the transcript form the checklist hook reads.
 """
@@ -128,13 +129,16 @@ def launch_output(entries: list[dict[str, Any]], call_id: str) -> str:
 
 
 def unrecorded_launch(entries: list[dict[str, Any]], index: int,
-                      call_id: str, scratch: Path, used: int = 0) -> bool:
-    """Require a failed launch and evidence that it owns no turn record.
+                      call_id: str, scratch: Path, used: int = 0,
+                      *, recover_killed: bool = False) -> bool:
+    """Require a failed or killed launch and evidence that it owns no turn record.
 
     Output filters may discard the exit status or most of a traceback. Saved
     preparation failures can instead be bound by their id or call interval.
     Otherwise require failure output and an empty scratch or records outside
     this call's interval. Missing records alone never prove a failed launch.
+    Saved walks may recover killed processes; accounting retains those calls
+    so their missing usage evidence remains visible.
     """
     import re
     from run_reads import output_file
@@ -146,6 +150,19 @@ def unrecorded_launch(entries: list[dict[str, Any]], index: int,
     start = timestamp(entries[index])
     later = next((timestamp(e) for e in entries[index + 1:]
                   for _, _, directory in commands(e) if directory == scratch), None)
+    if recover_killed and re.search(r"(?:^|\n)\[killed\]$", output):
+        # A killed launcher may leave its daemon turn running without writing
+        # a record. Only a later call in this directory can recover it; that
+        # call still has to supply its own readable, completed turn record.
+        if start is None or later is None or later <= start:
+            return False
+        path = scratch / "codex-events.jsonl"
+        records = ([json.loads(line) for line in path.read_text().splitlines()]
+                   if path.exists() else [])
+        # Earlier records belong to earlier launch ids in this same directory.
+        return bool(records) and all(isinstance(r.get("started"), (int, float))
+                                     and (r["started"] < start or r["started"] >= later)
+                                     for r in records)
     end = next((timestamp(e) for e in entries[index + 1:]
                 for b in blocks(e, "tool_result") if b.get("tool_use_id") == call_id), None)
     # A background acknowledgement is not the end of preparation. Its next
@@ -275,7 +292,7 @@ def saved_entries(entries: list[dict[str, Any]], kind: str,
             if agent_type != kind:
                 raise ValueError("the Codex call gives no matching agent type")
             if unrecorded_launch(entries, index, call_id, directory,
-                                 used if directory == scratch else 0):
+                                 used if directory == scratch else 0, recover_killed=True):
                 continue
             if scratch is None:
                 scratch = directory

@@ -491,6 +491,94 @@ def test_saved_preparation_failure_survives_output_filters(tmp_path, pipe, proof
             reads.walk_entries(entries, "code-reviewer")
 
 
+def killed_and_resumed(tmp_path, *, prior=False, background=True):
+    """A killed process leaves no record; its resume saves a completed turn."""
+    killed, result = preparation_failure(tmp_path, background=background,
+                                        output="warning: environment mismatch\n\n[killed]\n")
+    entries = []
+    if prior:
+        first = turn(tmp_path, [(STEP, "earlier")])
+        first["timestamp"] = "2026-10-19T23:59:00Z"
+        first["message"]["content"][0]["id"] = "earlier"
+        path = tmp_path / "codex-events.jsonl"
+        record = json.loads(path.read_text())
+        record.update(started=1792454341, ended=1792454342)
+        path.write_text(json.dumps(record) + "\n")
+        entries.append(first)
+        killed["message"]["content"][0]["input"]["command"] += " --resume"
+    entries.extend([killed, result])
+    resumed = turn(tmp_path, [(STEP, "recovered")], first=not prior)
+    resumed["timestamp"] = "2026-10-20T00:01:00Z"
+    resumed["message"]["content"][0]["id"] = "resumed"
+    command = resumed["message"]["content"][0]["input"]["command"]
+    resumed["message"]["content"][0]["input"]["command"] = command.replace(
+        " <<'INPUT'", " --resume <<'INPUT'")
+    path = tmp_path / "codex-events.jsonl"
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    records[-1].update(started=1792454461, ended=1792454462)
+    path.write_text("".join(json.dumps(r) + "\n" for r in records))
+    return [*entries, resumed]
+
+
+@pytest.mark.parametrize("prior", [False, True])
+@pytest.mark.parametrize("background", [False, True])
+def test_a_killed_launch_can_hand_back_its_recorded_resume(tmp_path, prior, background):
+    entries = killed_and_resumed(tmp_path, prior=prior, background=background)
+    expected = ([("1:0", "earlier")] if prior else []) + [
+        ("2:0" if prior else "1:0", "recovered")]
+    assert walk.step_calls(reads.walk_entries(entries, "code-reviewer"), "code-reviewer") == expected
+    assert [c.call_id for c in reads.calls(entries)] == (
+        (["earlier"] if prior else []) + ["failed", "resumed"])
+
+
+@pytest.mark.parametrize("bad", ["missing", "unreadable", "failed", "incomplete", "wrong-thread",
+                                 "wrong-interval", "missing-kill"])
+def test_recovery_still_requires_a_readable_completed_last_record(tmp_path, bad):
+    entries = killed_and_resumed(tmp_path, background=False)
+    path = tmp_path / "codex-events.jsonl"
+    record = json.loads(path.read_text())
+    match bad:
+        case "missing":
+            path.write_text("")
+        case "unreadable":
+            path.write_text("{broken")
+        case "failed":
+            record["ok"] = False
+        case "incomplete":
+            record["output"] = '{"type":"turn.started"}'
+        case "wrong-thread":
+            record["thread"] = "other"
+        case "wrong-interval":
+            record.update(started=1792454399)
+        case "missing-kill":
+            entries[1]["message"]["content"][0]["content"] = "running"
+    if bad not in {"missing", "unreadable"}:
+        path.write_text(json.dumps(record) + "\n")
+    with pytest.raises((OSError, ValueError)):
+        reads.walk_entries(entries, "code-reviewer")
+
+
+def test_a_killed_last_launch_cannot_use_a_previous_launch_record(tmp_path):
+    entries = killed_and_resumed(tmp_path, prior=True, background=False)
+    entries.pop()
+    path = tmp_path / "codex-events.jsonl"
+    path.write_text(path.read_text().splitlines()[0] + "\n")
+    with pytest.raises(ValueError, match="launch failed has no turn record"):
+        reads.walk_entries(entries, "code-reviewer")
+
+
+def test_a_killed_launch_with_its_own_record_keeps_that_record(tmp_path):
+    entries = killed_and_resumed(tmp_path, background=False)
+    path = tmp_path / "codex-events.jsonl"
+    resumed = json.loads(path.read_text())
+    killed = {**resumed, "started": 1792454401, "ended": 1792454402, "ok": False}
+    killed["output"] = json.dumps({"type": "item.completed", "item": {
+        "type": "command_execution", "command": STEP, "aggregated_output": "before kill"}})
+    path.write_text(json.dumps(killed) + "\n" + json.dumps(resumed) + "\n")
+    assert walk.step_calls(reads.walk_entries(entries, "code-reviewer"), "code-reviewer") == [
+        ("1:0", "before kill"), ("2:0", "recovered")]
+
+
 def test_exhausted_records_name_the_unaccounted_launch(tmp_path):
     first = turn(tmp_path, [])
     second = json.loads(json.dumps(first))
