@@ -75,11 +75,28 @@ def names(text: str, name: str) -> bool:
 def refers(text: str, name: str, forms: Iterable[str]) -> bool:
     """`names` of `text` and `name`, with `forms` the `word_forms` of
     `name`, for a caller that judges many texts against one name."""
-    return ("/" in name and name in text) or any(whole_word(text, f) for f in forms)
+    return PreparedReference(name, forms)(text)
+
+
+class PreparedReference:
+    """The `names` rule for one name and its forms, prepared for reuse
+    across texts. `forms` gives the `word_forms` of `name`."""
+
+    def __init__(self, name: str, forms: Iterable[str]) -> None:
+        self.path = name if "/" in name else None
+        self.words = tuple(whole_word_pattern(f) for f in forms)
+
+    def __call__(self, text: str) -> bool:
+        return (self.path is not None and self.path in text) \
+            or any(p.search(text) is not None for p in self.words)
+
+
+def whole_word_pattern(word: str) -> re.Pattern[str]:
+    return re.compile(BEFORE + re.escape(word) + AFTER)
 
 
 def whole_word(text: str, word: str) -> bool:
-    return re.search(BEFORE + re.escape(word) + AFTER, text) is not None
+    return whole_word_pattern(word).search(text) is not None
 
 
 WORD = re.compile(rf"[{PATH_CHARS}]+")

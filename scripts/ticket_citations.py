@@ -12,7 +12,7 @@ from engine import checkout
 from ticket_files import listed_tickets, ticket_name, ticket_status
 from ticket_form import TICKET_HEAD, front_kind, title
 from ticket_log import Moved, log_lines, read_ticket
-from ticketing.references import refers, word_forms
+from ticketing.references import PreparedReference, word_forms
 from ticketing.vocabulary import Kind, Status
 from tree_reads import main_tree
 
@@ -36,17 +36,17 @@ CITED_NAME = mctx("{name}: names: {names}")
 @dataclass(frozen=True)
 class Names:
     """A name a call gives, with the paths it had before on `master`, as
-    `git log --follow --name-only` gives them, and the `word_forms` of
-    each, worked out once for every title judged against them."""
+    `git log --follow --name-only` gives them, with their reference matchers
+    prepared for reuse across titles."""
     name: str
-    forms: tuple[tuple[str, list[str]], ...]
+    references: tuple[tuple[str, PreparedReference], ...]
 
     @property
     def known(self) -> list[str]:
-        return [n for n, _ in self.forms]
+        return [n for n, _ in self.references]
 
     def cited_by(self, text: str) -> bool:
-        return any(refers(text, n, forms) for n, forms in self.forms)
+        return any(reference(text) for _, reference in self.references)
 
 
 def names_of(main: Path, name: str) -> Names:
@@ -58,7 +58,7 @@ def names_of(main: Path, name: str) -> Names:
     if "/" in name and not (main / name).is_dir():
         known |= {line for line in checkout.git_out(
             main, "log", "--follow", "--name-only", "--format=", "master", "--", name).splitlines() if line}
-    return Names(name, tuple((n, word_forms(n)) for n in sorted(known)))
+    return Names(name, tuple((n, PreparedReference(n, word_forms(n))) for n in sorted(known)))
 
 
 @dataclass(frozen=True)
