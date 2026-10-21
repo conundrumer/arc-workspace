@@ -107,6 +107,39 @@ def test_initial_acceptance_needs_no_state(inbox, monkeypatch: pytest.MonkeyPatc
     assert isinstance(loop.waited(ME, never, lambda out: True), loop.MessageAccepted)
 
 
+def test_slow_inbox_scan_leaves_time_for_the_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = 0.0
+    scans = 0
+
+    def accepted():
+        nonlocal now, scans
+        scans += 1
+        now += 2.0
+        if scans > 2:
+            raise TimeoutError("inbox scans exhausted the foreground bound")
+        return False
+
+    class SlowInbox:
+        def __init__(self, *args):
+            pass
+
+        def accepted(self):
+            return accepted()
+
+    monkeypatch.setattr(loop, "Inbox", SlowInbox)
+    monkeypatch.setattr(loop, "find", lambda me: Path(me))
+    monkeypatch.setattr(loop, "single_instance", lambda me: None)
+    monkeypatch.setattr(loop, "arm_watchdog", lambda me: None)
+    monkeypatch.setattr(interrupts.time, "monotonic", lambda: now)
+
+    def read(deadline):
+        for _ in range(10):
+            interrupts.checkpoint()
+        return "planned"
+
+    assert loop.waited(ME, read, lambda out: True) == "planned"
+
+
 def test_acceptance_during_read_has_no_full_confirmation(inbox, monkeypatch: pytest.MonkeyPatch) -> None:
     reader, child = inbox
     monkeypatch.setattr(loop, "Inbox", lambda *args: reader)

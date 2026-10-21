@@ -21,8 +21,9 @@ def checkpoint(*, force: bool = False) -> None:
     callback = _callback.get()
     if callback is None or _deferred.get() or (not force and time.monotonic() < _due.get()):
         return
+    accepted = callback()
     _due.set(time.monotonic() + 1.0)
-    if callback():
+    if accepted:
         raise Accepted()
 
 
