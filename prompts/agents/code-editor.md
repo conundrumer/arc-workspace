@@ -1,7 +1,7 @@
 ---
 name: code-editor
 description: "[An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), [A code editor's brief](prompts/agents/notes/launching.md#a-code-editors-brief), [A change's brief](prompts/agents/notes/launching.md#a-changes-brief), [Items and files](prompts/agents/notes/launching.md#items-and-files)"
-model: opus
+model: sonnet
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 ---
 

@@ -179,9 +179,15 @@ def agent_type(role: Role, subject: str) -> str:
 
 def launched_type(role: Role, subject: str, model: Model | None = None) -> str:
     """The `subagent_type` a launch of `role` on `subject` gives."""
-    if role in CODEX_ROLES and codex_mode.enabled() and (model or launched_model(role, subject)) is not Model.HAIKU:
+    kind = agent_type(role, subject)
+    if (role in CODEX_ROLES and kind not in CLAUDE_TYPES and codex_mode.enabled()
+            and (model or launched_model(role, subject)) is not Model.HAIKU):
         return CODEX_LAUNCHER
-    return agent_type(role, subject)
+    return kind
+
+
+CLAUDE_TYPES = frozenset({Role.TICKET_ANALYST.agent_type, DECISION_ANALYST})
+"""The agent types that Codex mode leaves on Claude: the big-picture analysts."""
 
 
 def launched_model(role: Role, subject: str) -> Model | None:
