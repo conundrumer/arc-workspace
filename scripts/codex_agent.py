@@ -30,6 +30,7 @@ import time
 import tomllib
 from collections.abc import Callable
 from dataclasses import asdict
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +39,9 @@ import codex_rollout
 
 from controlled_markdown import mctx
 from engine import checkout
+from handbook.agent_documents import agent_dir, agent_doc
 from handbook.context import codex_config_value, codex_permissions, entry_text
+from handbook.listings import listings
 from operations.roles import ANALYST_NAMES, CODEX_ROLES, GENERAL, Role
 from operations.state import CodexUsage
 
@@ -121,23 +124,13 @@ NATIVE_RULES = mctx({
 })
 
 
-def without_front(text: str) -> str:
-    """Remove the rendered document's leading YAML front matter."""
-    lines = text.splitlines(keepends=True)
-    if lines and lines[0].strip() == "---":
-        for i, line in enumerate(lines[1:], 1):
-            if line.strip() == "---":
-                return "".join(lines[i + 1:]).lstrip("\n")
-        raise ValueError("agent document has unclosed front matter")
-    return text
-
-
 def role_instructions(root: Path, home: Path, agent: str,
                       agent_type: str | None = None) -> str:
     user = home / ".claude" / "CLAUDE.md"
     kind = agent_type or Role(agent).agent_type
+    values = partial(listings, codex=True)
     document = ([] if kind == GENERAL else
-                [without_front((root / ".claude" / "agents" / f"{kind}.md").read_text())])
+                [entry_text(agent_doc(kind, agent_dir(root)), values=values)])
     styles = []
     for config in (Path(os.environ.get("CODEX_HOME", home / ".codex")) / "config.toml",
                    checkout.main_worktree(root) / ".codex" / "config.toml"):
@@ -149,7 +142,7 @@ def role_instructions(root: Path, home: Path, agent: str,
                 styles.append(style)
     return "\n\n".join([
         *styles, PREAMBLE, *document,
-        entry_text((root / "CLAUDE.md").resolve()),
+        entry_text((root / "CLAUDE.md").resolve(), values=values),
         *([user.read_text()] if user.exists() else [])])
 
 

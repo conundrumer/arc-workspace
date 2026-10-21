@@ -1,8 +1,6 @@
-"""The lists an entry document's render gives as the values of the
-variables the document reads: each variable names a list, computed from
-the files it lists at each render, so the list follows those files with no
-edit of a document. A render of a document that reads no variable computes
-no list."""
+"""The values an entry document's render supplies: lists computed from
+their source files, and `codex`, true for Codex instructions and false
+for ordinary rendering. A render computes only the values it reads."""
 
 from __future__ import annotations
 
@@ -34,8 +32,8 @@ PROPOSERS_UNPARSED = mctx(
     "A render of a document that lists its proposers fails until it parses.")
 
 NO_LISTING = mctx(
-    "{path} reads the variable `{name}`, and an entry document's render "
-    "gives a value only to a variable that names a list: {lists}.")
+    "{path} reads unknown variable `{name}`; the supported variables are "
+    "`codex` and {lists}.")
 
 
 @cache
@@ -84,11 +82,13 @@ def unlisted(_document: nm.Node, _registry: nm.Registry) -> None:
     return None
 
 
-def listings(document: nm.Node, registry: nm.Registry) -> dict[str, str] | None:
+def listings(document: nm.Node, registry: nm.Registry, *,
+             codex: bool = False) -> dict[str, str] | None:
     """The value of each variable the entry document `document` reads; None
     where it reads none, so its render fills nothing."""
     names = nm.variables(document, registry)
     if not names:
         return None
-    return {name: _listing_text(_listing(name, document, registry))
+    return {name: ("true" if codex else "") if name == "codex" else
+            _listing_text(_listing(name, document, registry))
             for name in sorted(names)}

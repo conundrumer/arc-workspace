@@ -10,6 +10,7 @@
         - Waiting on an agent resumed by SendMessage, and resuming it after a usage-limit stop: [resumed-agents](#resumed-agents).
         - Sending the answer a message asks for: [message-answers](#message-answers).
         - Giving the final reply: [final-reply](#final-reply), with [coordinator](#coordinator) and [report-file](#report-file), and [final-report](#final-report), which inlines it with the two sections above.
+    - Conditional Bash-call bounds: request 11-2601, user session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-20T23:37:28Z–23:37:54Z: "the solution is to make the timeout instruction conditionally rendered".
 
 # Command notes
 - The statements on commands, and on sending a final reply, that more than one entry point inlines.
@@ -17,18 +18,23 @@
 ## commands
 * inline: #waiting-on-commands
 * inline: #ending-commands
-- Run in the background each command whose run time, as your brief or a ticket it gives estimates it, passes the timeout of a foreground Bash call, under a `timeout` of about twice that estimate.
-    * comment: Code editor a79711fe1c59dd1f4 on change 9-1741 left unfinished the run its item asked for, of `scripts/corpus_survey.py`, estimated at about 30 minutes, under the `timeout 180` bound of foreground-commands and the 240000 ms foreground timeout: ticket 9-1933.
+* unless: codex
+    - Run in the background each command whose run time, as your brief or a ticket it gives estimates it, passes the timeout of a foreground Bash call, under a `timeout` of about twice that estimate.
+        * comment: Code editor a79711fe1c59dd1f4 on change 9-1741 left unfinished the run its item asked for, of `scripts/corpus_survey.py`, estimated at about 30 minutes, under the `timeout 180` bound of foreground-commands and the 240000 ms foreground timeout: ticket 9-1933.
 
 ## foreground-commands
-- Run each command in the foreground, with a timeout of 240000 ms on the Bash call, where no other line of your documents has you run it in the background.
+- Run each command in the foreground, where no other line of your documents has you run it in the background.
+    * unless: codex
+        - Set a timeout of 240000 ms on the Bash call.
 - Run each script you wrote under `timeout 60`, or a longer bound where a stopped script needs one, of at most `timeout 180` in the foreground, with its output unbuffered, as `python -u` gives it.
     * comment: Scripts an agent wrote ran past the Bash call's timeout, so the call moved to the background and the run spent calls stopping it, and a search piped to `tail` showed none of its output: tickets 10-591 (runs ab654598162d2ebec and aad3d038eb7ae06e5), 10-739 (runs a9335527d5f64ec96 and ac50865438dc0b06d), 10-754 (run a8d05b229bc75be5d) and 10-377.
 
 ## waiting-on-commands
 * inline: #foreground-commands
-- Before you end your turn, and before your final reply, wait on each command of yours that runs in the background until its completion notification reaches you: run a foreground Bash call with a timeout of 240000 ms, whose until-loop gives up just under that timeout, and repeat the call.
+- Before you end your turn, and before your final reply, wait on each command of yours that runs in the background until its completion notification reaches you: run a foreground Bash call and repeat it.
     * comment: The cases this rule covers: a command you started that has not finished at the end of your turn; a command the harness moved to the background; a command whose completion notification your final reply waits on.
+    * unless: codex
+        - Set a timeout of 240000 ms on the Bash call, and have its until-loop give up just under that timeout.
     - Lead its command with `: 'unattended-wait: <the command you wait on>';`. A command so led is exempt from the PreToolUse hook that blocks waits, unless that command reads the output file the harness gave a command of yours that runs in the background.
         + xref: scripts/pending_wait_hook.py:main
     - Loop on the completion where you can observe it, and otherwise on the time alone.
@@ -62,8 +68,10 @@
 - Once no agent you launched is running, and before anything else, end your keep-alive timer: run `uv run python scripts/agent_timer.py stop keep-alive <agent id>`.
     + xref: scripts/agent_timer.py:Action.STOP
     - Each start of that timer has completed once `pgrep -f 'agent_timer[.]py start keep-alive <agent id>'` prints nothing.
-- A notification that says an agent you launched has not reported yet means that agent has stopped without its report while background work of its own runs, and it counts as not running from then on. Until it reports, while no other agent you launched is running, wait on it in place of ending your turn, and call no SubagentHandback, also where the harness asks for your report: run a Bash call with a timeout of 240000 ms whose loop, on time alone, gives up just under that timeout, led by `: 'unattended-wait: <the agent id>, which has not reported yet';`, and repeat it.
+- A notification that says an agent you launched has not reported yet means that agent has stopped without its report while background work of its own runs, and it counts as not running from then on. Until it reports, while no other agent you launched is running, wait on it in place of ending your turn, and call no SubagentHandback, also where the harness asks for your report: run a Bash call whose loop runs on time alone, led by `: 'unattended-wait: <the agent id>, which has not reported yet';`, and repeat it.
     * comment: Two agents of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a` ended their turn after this notification, the harness demanded their report, and each handed back mid-batch: agent `aa217e04abc30c823`, lines 266 to 270, and agent `ad4b827e59837a39f`, lines 228 to 232.
+    * unless: codex
+        - Set a timeout of 240000 ms on the Bash call, and have its loop give up just under that timeout.
 
 ## denied-calls
 - Where the harness or the permission classifier denies a call your documents give and you leave its work unfinished, give the call and the denial's text in your reply.

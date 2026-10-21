@@ -55,8 +55,8 @@ def role_file(name: str, roles: Path = ROLE_DIR) -> Path:
 def entry_text(doc: Path, lib: Path = LIB_SRC,
                values: Values = listings) -> str:
     """One entry document as its reader gets it: the document rendered, with
-    the values `values` gives, by default the list each variable it reads
-    names (`handbook.listings`), then the lib as the document's `lib`
+    the values `values` gives (`handbook.listings` supplies the defaults),
+    then the lib as the document's `lib`
     attribute says."""
     return composed(doc, lib, values)[0]
 
