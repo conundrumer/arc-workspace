@@ -37,7 +37,8 @@ import file_reads
 from state_reads import opened
 from agent_turns import first_time
 from token_prices import priced_requests, request_cost
-from transcript_entries import META, TRANSCRIPT, epoch, meta_transcript, own_range, read_meta
+from transcript_entries import epoch
+from transcript_ownership import META, TRANSCRIPT, meta_transcript, own_range, read_meta
 from transcripts import walked_entries
 from transcript_snapshots import Refused, snapshot
 

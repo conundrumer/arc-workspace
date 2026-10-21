@@ -21,7 +21,8 @@ from state_reads import DERIVED, Kept, state_cache
 from transcripts import (agent_id, chain, first_parent, is_subagent, main_transcript,
                          session_agent_transcripts, session_directory)
 from entry_reads import read_entries
-from transcript_entries import blocks, epoch, meta_path, transcript_meta
+from transcript_entries import epoch
+from transcript_ownership import blocks, meta_path, transcript_meta
 from transcript_snapshots import Entry, Refused
 
 UNKNOWN_TYPE = mctx("the agent type of `{path}` is unknown: its .meta.json is "

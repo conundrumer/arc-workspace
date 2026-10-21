@@ -16,6 +16,7 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, BinaryIO
 
+import read_interrupts
 from file_reads import FileStat, stat_of, state_stat
 from state_reads import state_cache
 
@@ -286,6 +287,7 @@ def span_crc(read: Callable[[int, int], bytes], start: int, end: int, crc: int =
     given an offset and a length, gives of a file folded in, read `SPAN`
     bytes at a time, in order."""
     for k in range(start, end, SPAN):
+        read_interrupts.checkpoint()
         crc = zlib.crc32(read(k, min(SPAN, end - k)), crc)
     return crc
 
@@ -297,6 +299,7 @@ def line_chunks(read: Callable[[int, int], bytes], end: int) -> Iterator[tuple[i
     one line is longer. The chunks end early where the file does."""
     pos = 0
     while pos < end:
+        read_interrupts.checkpoint()
         buf = read(pos, min(SPAN, end - pos))
         while pos + len(buf) < end and b"\n" not in buf:
             more = read(pos + len(buf), min(SPAN, end - pos - len(buf)))

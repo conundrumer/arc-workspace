@@ -300,14 +300,9 @@ def launched(path: Path, undecided: list[str]) -> list[Launch]:
                                  others.get(a.agent or "", 0.0))) for a in found]
 
 
-def callees(path: Path, undecided: list[str], before: float | None = None) -> set[str]:
-    """The agent ids of the agents whose last launch or resume was a call
-    of the run at `path`, so that their reports go to that run, and with
-    `before` the same among the calls earlier than it, so that their reports
-    go to that run at that time."""
-    found = [a for a in launches(path, undecided) if before is None or a.since < before]
-    own, others = resume_times(path, found, undecided, before)
-    mine = {a.agent: a.since for a in found if a.agent}
-    for aid, t in own.items():
-        note_latest(mine, aid, t)
-    return {aid for aid, t in mine.items() if t >= others.get(aid, 0.0)}
+def launched_or_resumed(path: Path, undecided: list[str], before: float | None = None) -> set[str]:
+    """Agents this run launched or resumed, optionally before a time.
+    Another run's later resume does not remove an agent from this set."""
+    return ({a.agent for a in launches(path, undecided)
+             if a.agent and (before is None or a.since < before)}
+            | set(resumes(path, undecided, before)))

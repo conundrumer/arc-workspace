@@ -6,13 +6,16 @@ from a fold's state (`Makes`), each made anew only where a value it is
 made from changed since the last read of the same state."""
 
 from collections.abc import Callable, Hashable, Sequence
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import read_interrupts
 import kept_reads
 from state_reads import canonical
-from transcript_entries import own_range, selected_lines
+from transcript_entries import selected_lines
+from transcript_ownership import own_range
 from transcript_snapshots import Entry, Snapshot, parse, read_at, snapshot, span_crc
 
 
@@ -96,6 +99,9 @@ def fold[S](step: Step[S], start: Callable[[], S], run: Hashable, paths: Sequenc
     now = [(p, snapshot(p), own_range(p)) for p in paths]
     if held is not None and goes_on(held[1], now):
         state, marks = held[0], held[1]
+        if any(j >= len(marks) or marks[j].done < min(own.stop, snap.settled())
+               for j, (_, snap, own) in enumerate(now)):
+            state = deepcopy(state)
     else:
         state, marks = start(), ()
     kept: list[Folded] = []
@@ -173,6 +179,7 @@ def fold_lines[S](state: S, step: Step[S], path: Path, snap: Snapshot, lines: ra
     of its words."""
     found = selected_lines(snap, lines, naming)
     for i, line in zip(found, snap.lines(found)):
+        read_interrupts.checkpoint()
         for e in parse(line):
             step(state, path, i, e)
 

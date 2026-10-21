@@ -14,6 +14,7 @@ from itertools import chain
 from pathlib import Path
 from typing import Any, cast
 
+import read_interrupts
 import kept_reads
 import script_calls
 from kept_reads import PathText
@@ -655,6 +656,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
         def run_with(key: Call, positional: bool, args: tuple[Any, ...],
                      kwargs: dict[str, Any]) -> Held:
             """`run` of `key`, whose arguments are `args` and `kwargs`."""
+            read_interrupts.checkpoint()
             hit = held.get(key)
             if hit is not None and unrun(hit):
                 hit.state = _state
@@ -714,6 +716,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
 
         @wraps(read)
         def at_state(*given: P.args, **named: P.kwargs) -> R:
+            read_interrupts.checkpoint()
             args: tuple[Any, ...] = tuple(given)
             kwargs: dict[str, Any] = dict(named)
             sink: list[str] | None = None

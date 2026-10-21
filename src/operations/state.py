@@ -128,7 +128,7 @@ class Report:
 class LateResume:
     """A resume of an operator after `later`, a later operator of the
     session, made its first entry, at `later_first`, as `resumed_at` in
-    `scripts/operator_reads.py` gives a resume, at `time`."""
+    `scripts/operator_resumes.py` gives a resume, at `time`."""
     time: float
     later: str
     later_first: float
@@ -599,7 +599,7 @@ class TranscriptsRead:
     them, as the step journal gives it (`scripts/step_journal.py`), in the
     order of their time, and `messages` the messages that reached any of
     them. `late_resumes` gives, for each operator of
-    `State.operators`, its resumes, as `resumed_at` in `scripts/operator_reads.py`
+    `State.operators`, its resumes, as `resumed_at` in `scripts/operator_resumes.py`
     gives them, after
     the next operator of `State.operators` made its first entry, in the
     order of their time. `stalled` gives the final reply in the transcript

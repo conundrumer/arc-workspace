@@ -9,7 +9,7 @@ from controlled_markdown import mctx
 from ticket_log import log_moves, status_of
 from ticket_numbers import ticket_number
 from ticketing.vocabulary import Status
-from transcript_entries import Refused
+from transcript_snapshots import Refused
 
 LOG_HELP = mctx("""
     - `<status>` and `<current status>` are each one of {statuses}.

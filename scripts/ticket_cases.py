@@ -16,7 +16,7 @@ from ticket_numbers import TicketNumber, ticket_number
 from ticket_sweep import sweep
 from ticket_watch import Thresholds, add_evidence, case_loss, route
 from ticketing.vocabulary import Kind, Status
-from transcript_entries import Refused
+from transcript_snapshots import Refused
 
 CASE_HELP = mctx("""
     - In both forms below, `<agent id>` is the run the case was lost in, and `<start>` and `<end>` are the span of its extra calls, each in the form `{time_form}`.

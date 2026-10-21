@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import IO
 
 import script_calls
+import read_interrupts
 from engine import checkout
 
 LOCKS = "kept-refresh"
@@ -70,7 +71,7 @@ def wait_free(session: str) -> None:
             except BlockingIOError:
                 if time.monotonic() >= end:
                     return
-                time.sleep(POLL_SECONDS)
+                read_interrupts.sleep(POLL_SECONDS)
     finally:
         os.close(fd)
 

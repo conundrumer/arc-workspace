@@ -16,13 +16,13 @@ from pathlib import Path
 from collections.abc import Callable
 
 import file_events
+import read_interrupts
 import script_calls
 import operate_service
 import step_journal
 import ticket_log
 import tree_reads
-from accepted_messages import accepted_after
-from agent_deliveries import last_delivered
+from accepted_messages import Inbox
 from budgets import budget_of
 from context_bound_hook import ACTIONS
 from controlled_markdown import mctx
@@ -161,12 +161,14 @@ def block(me: str, action: Action,
     worktree or a file it reads is gone (`read_again`)."""
     if not served(me, action):
         return 0
-    (steps, scratch), accepted = waited(me, read_again(step_at), lambda out: not isinstance(out[0][0], Poll))
+    outcome = waited(me, read_again(step_at), lambda out: not isinstance(out[0][0], Poll))
     operate_service.check()
+    if isinstance(outcome, MessageAccepted):
+        with operate_service.side_effect():
+            print_step(Poll(), Path(), me)
+        return 0
+    steps, scratch = outcome
     head = steps[0]
-    if isinstance(head, EndTurn | Wait) and accepted:
-        head = Poll()
-        steps = (head,)
     with operate_service.side_effect():
         if action is Action.NEXT:
             step_journal.give(scratch, [s for s in steps if isinstance(s, CALLS)], me, time.time())
@@ -205,26 +207,26 @@ def cpu_seconds() -> float:
     return t.user + t.system + t.children_user + t.children_system
 
 
-def waited[T](me: str, out_at: Callable[[float], T], ready: Callable[[T], bool]) -> tuple[T, bool]:
-    """The first output `out_at` gives at a full read that `ready` holds
-    for, or that a message reached `me` at since the last delivery to it,
-    with whether such a message reached it, or else the output of the full
-    read at the deadline, `BLOCK_SECONDS` from the call (`watched`). The
-    call is the one of `me` that runs (`single_instance`), and its watchdog
-    (`arm_watchdog`) is disarmed at its return."""
-    if operate_service.CURRENT.get() is None:
+class MessageAccepted:
+    """A successful inbox wake-up, with no planned output."""
+
+
+def waited[T](me: str, out_at: Callable[[float], T], ready: Callable[[T], bool]) -> T | MessageAccepted:
+    """Wait for confirmed planned output or an accepted inbox message.
+    Inbox acceptance needs no completed state read."""
+    standalone = operate_service.CURRENT.get() is None
+    if standalone:
         single_instance(me)
         arm_watchdog(me)
-    path = find(me)
-    since = last_delivered(path)
-
-    def read(deadline: float) -> tuple[T, bool]:
-        return out_at(deadline), accepted_after(path, since, [])
-
-    out, accepted = watched(read, lambda o: ready(o[0]) or o[1], BLOCK_SECONDS)
-    if operate_service.CURRENT.get() is None:
-        signal.alarm(0)
-    return out, accepted
+    try:
+        inbox = Inbox(find(me), [])
+        with read_interrupts.scope(inbox.accepted):
+            return watched(out_at, ready, BLOCK_SECONDS)
+    except read_interrupts.Accepted:
+        return MessageAccepted()
+    finally:
+        if standalone:
+            signal.alarm(0)
 
 
 def watched[T](out_at: Callable[[float], T], ready: Callable[[T], bool], seconds: float) -> T:
@@ -236,18 +238,19 @@ def watched[T](out_at: Callable[[float], T], ready: Callable[[T], bool], seconds
     changed: set[str] | None = None
     try:
         while True:
+            read_interrupts.checkpoint()
             started, cpu = time.monotonic(), cpu_seconds()
             reads.start(started, changed)
             stats_stand_but(changed)
             operate_service.check()
             out = out_at(reads.deadline)
+            read_interrupts.checkpoint(force=True)
             spent = cpu_seconds() - cpu
             more, changed = reads.after(changed, ready(out), started, spent)
             if not more:
-                break
+                return out
     finally:
         reads.close()
-    return out
 
 
 class Reads:
@@ -299,7 +302,7 @@ class Reads:
             except file_events.Unwatched:
                 self.unwatched = True
         if self.changes is None or self.unwatched:
-            operate_service.pause(POLL_SECONDS)
+            read_interrupts.sleep(POLL_SECONDS, operate_service.pause)
             return True, None
         return True, self.changed_paths(self.changes, started, spent)
 
@@ -310,16 +313,18 @@ class Reads:
         last read for a partial read, or None for a full read."""
         full_due = min(self.full_at + FALLBACK_SECONDS, self.deadline - POLL_SECONDS)
         earliest = started + max(POLL_SECONDS, READ_SHARE * spent)
-        operate_service.pause(max(min(earliest, full_due) - time.monotonic(), 0))
-        if operate_service.CURRENT.get() is None:
-            changes.wait(full_due - time.monotonic())
-        else:
-            while time.monotonic() < full_due:
-                current = operate_service.CURRENT.get()
-                assert current is not None
+        read_interrupts.sleep(max(min(earliest, full_due) - time.monotonic(), 0),
+                              operate_service.pause)
+        while time.monotonic() < full_due:
+            read_interrupts.checkpoint()
+            current = operate_service.CURRENT.get()
+            if current is not None:
                 current.check(code=False)
-                if changes.wait(min(full_due - time.monotonic(), 0.2)):
-                    break
+            interval = 0.2 if current is not None else 1.0
+            changes.wait(min(interval, full_due - time.monotonic()))
+            paths = changes.take()
+            if paths:
+                return paths
         return changes.take() if time.monotonic() < full_due else None
 
     def close(self) -> None:
@@ -348,6 +353,7 @@ def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
         if not ran(here, deadline):
             return (Poll(),), here
         state, watch = read_and_record(me, here)
+        read_interrupts.checkpoint()
         step = plan.next_step(state, watch, wait_running(me))
         if isinstance(step, Bash) and not partial():
             with operate_service.side_effect():
@@ -369,11 +375,16 @@ def read_and_record(me: str, here: Path) -> tuple[State, MonitorState]:
     shows (`shown_state.Shown`) holds that state's."""
     state, watch = read_state(me)
     operate_service.check()
+    record_state(here, state)
+    return state, watch
+
+
+@read_interrupts.deferred
+def record_state(here: Path, state: State) -> None:
     with operate_service.side_effect():
         write_record(here, DUE_SINCE, ticket_stall.due_times(state))
         write_record(here, UNWAITED_SINCE, unwaited.times(state))
         write_shown(here, state)
-    return state, watch
 
 
 def ran(scratch: Path, deadline: float) -> bool:
@@ -382,7 +393,7 @@ def ran(scratch: Path, deadline: float) -> bool:
     while step_journal.running(scratch, time.time()):
         if time.monotonic() + RUN_POLL_SECONDS > deadline:
             return False
-        operate_service.pause(RUN_POLL_SECONDS)
+        read_interrupts.sleep(RUN_POLL_SECONDS, operate_service.pause)
     return True
 
 

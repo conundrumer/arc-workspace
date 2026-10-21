@@ -1,5 +1,5 @@
 """The reads of the transcripts of a session's operators: the operators
-that ran `operate.py` and their resumes, the text of a message an operator
+that ran `operate.py`, the text of a message an operator
 received from its parent, the agents operators launched, merged across
 operators, and the reports of solver passes (`operator_transcript` reads
 one operator's transcript, and `agent_ends` the final replies of
@@ -11,20 +11,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agent_launches import launches
-from agent_resumes import resumes
 from agent_turns import first_time
 from controlled_markdown import mctx
 from filed_texts import unfiled
-from run_reads import (MAIN, agent_messages, agent_type, blocks, is_prompt,
-                       message_text, notifications, run_entries,
+from run_reads import (MAIN, agent_messages, agent_type, blocks,
+                       message_text,
                        session_agents)
 from file_reads import file_text, is_dir, is_file, listed, mtime
 from state_reads import DERIVED, Kept, state_cache
 from ticket_numbers import TICKET_NUMBER
 from transcripts import find, session_directory
 from entry_reads import read_entries
-from transcript_entries import epoch
 
 from operations.reports import CONCEPT_FAULTS, TICKETS_FILED, section, section_items
 from operations.roles import Role
@@ -86,42 +83,6 @@ def session_operators(session: str, me: str) -> tuple[tuple[str, Path], ...]:
             if agent_type(p) == Role.OPERATOR.agent_type and (aid == me or ran_command(p))
             and (t := first_time(p)) is not None]
     return tuple((aid, p) for aid, p, _ in sorted(runs, key=lambda r: r[2]))
-
-
-@state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
-def resumed_at(aid: str, path: Path, undecided: list[str]) -> list[float]:
-    """The time of each resume of the agent `aid` whose transcript is at
-    `path`. A resume is as `ALERTS` in `src/operations/monitor.py` gives
-    it."""
-    out: list[float] = []
-    ended = False
-    for e in run_entries(path):
-        if e.get("toolEndsTurn"):
-            ended = True
-        elif e.get("type") == "assistant":
-            ended = False
-        elif ended and is_prompt(e):
-            ended = False
-            if e.get("timestamp"):
-                t = epoch(e["timestamp"])
-                if not by_callees(path, e, t, undecided):
-                    out.append(t)
-            else:
-                undecided.append(mctx("{run}: a prompt resumed it after its run ended, yet its "
-                                      "entry gives no time, so it counts as no "
-                                      "resume").format(run=aid))
-    return out
-
-
-def by_callees(path: Path, e: dict[str, Any], t: float, undecided: list[str]) -> bool:
-    senders = [s for s, _ in agent_messages(e)]
-    notes = notifications(e)
-    if not senders and not notes:
-        return False
-    mine = {a.agent for a in launches(path, undecided) if a.agent and a.since < t}
-    mine |= resumes(path, undecided, before=t).keys()
-    return (all(s in mine for s in senders)
-            and all(any(i in mine for i in n.ids) for n in notes))
 
 
 WRAP = ("The coordinator sent a message while you were working:",

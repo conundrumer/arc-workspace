@@ -1,13 +1,15 @@
 """Read the entries of a Claude Code transcript, from the lines of its
 snapshot (`transcript_snapshots`) that are its run's own
-(`transcript_entries.own_range`), each line parsed only when it is
+(`transcript_ownership.own_range`), each line parsed only when it is
 reached, so a reader holds only the entries it keeps."""
 
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 
+import read_interrupts
 from state_reads import DERIVED, Kept, state_cache
-from transcript_entries import own_range, selected_lines
+from transcript_entries import selected_lines
+from transcript_ownership import own_range
 from transcript_snapshots import Entry, last_snapshot, parse, snapshot
 
 
@@ -26,6 +28,7 @@ def numbered_entries(path: Path, naming: Iterable[str] | None = None
     lines = entries_naming(path, None if naming is None else frozenset(naming))
     snap = last_snapshot(path)
     for i, line in zip(lines, snap.lines(lines)):
+        read_interrupts.checkpoint()
         for e in parse(line):
             yield i, e
 
@@ -52,6 +55,7 @@ def entries_forward(path: Path) -> Iterator[Entry]:
     process is in, in their order, each line parsed only when it is reached."""
     snap = snapshot(path)
     for i in own_range(path):
+        read_interrupts.checkpoint()
         yield from snap.entry(i)
 
 
@@ -60,4 +64,5 @@ def entries_back(path: Path) -> Iterator[Entry]:
     process is in, last first, each line parsed only when it is reached."""
     snap = snapshot(path)
     for i in reversed(own_range(path)):
+        read_interrupts.checkpoint()
         yield from snap.entry(i)

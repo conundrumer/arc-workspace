@@ -2,7 +2,7 @@
 project directories: the project directories, the main and subagent
 transcripts of sessions and agents, the runs they make up, and the lookup
 of a transcript by id, each read held for one state of the process
-(`state_cache`). `transcript_entries` reads their entries."""
+(`state_cache`). `entry_reads` reads their entries."""
 
 import filecmp
 import os

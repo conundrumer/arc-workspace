@@ -240,7 +240,7 @@ def launch_type(hook: dict[str, Any]) -> str:
     that give none are a fault."""
     from run_reads import caller_id, hook_session
     from subagent_paths import SUBAGENTS
-    from transcript_entries import transcript_meta
+    from transcript_ownership import transcript_meta
 
     kind = hook.get("agent_type")
     if not isinstance(kind, str):
@@ -257,7 +257,7 @@ def predicted_texts(hook: dict[str, Any]) -> tuple[str, str] | None:
     `SubagentStart` input `hook` starts, as the module docstring gives
     them, or None where no earlier launch of its type gives them."""
     from run_reads import caller_id, hook_session, session_agents
-    from transcript_entries import meta_path, transcript_meta
+    from transcript_ownership import meta_path, transcript_meta
 
     kind, own = launch_type(hook), caller_id(hook)
     launched = sorted(((path.stat().st_birthtime, path) for aid, path

@@ -22,6 +22,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+import read_interrupts
 from merge_reads import merge_outcome
 
 from controlled_markdown import mctx
@@ -72,6 +73,7 @@ class Record:
     run: Run | None
 
 
+@read_interrupts.deferred
 def append(scratch: Path, records: Sequence[dict[str, Any]]) -> None:
     """Append `records` to the journal of `scratch`, under its lock."""
     if not records:
@@ -217,6 +219,7 @@ def output(run: Run) -> str:
     return run.output.read_text(errors="replace") if run.output.exists() else ""
 
 
+@read_interrupts.deferred
 def read(scratch: Path, calls: Sequence[Call], live: Callable[[Entry], bool], now: float,
          start: bool) -> tuple[Journal, list[Record]]:
     """The journal of `scratch`, with the outcome of each step in flight
@@ -262,6 +265,7 @@ def run_calls(found: Sequence[Record], subjects: Mapping[str, float],
     return out
 
 
+@read_interrupts.deferred
 def start_run(scratch: Path, step: Bash, operator: str, cwd: Path, time: float) -> str:
     """Start the command of `step` in a process group of its own under
     `cwd`, which outlives the command `next`, record that `next` gave it to

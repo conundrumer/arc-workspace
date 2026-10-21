@@ -12,6 +12,7 @@ from pathlib import Path
 import codex_reads
 import codex_rollout
 
+import read_interrupts
 from agent_launches import runs_under
 from agent_turns import first_time, has_ended, last_time
 from run_reads import agent_type, run_entries
@@ -37,6 +38,7 @@ def union_seconds(spans: list[tuple[float, float]]) -> float:
     """The seconds the spans cover, counting an overlap once."""
     total, end = 0.0, float("-inf")
     for a, b in sorted(spans):
+        read_interrupts.checkpoint()
         if b > end:
             total += b - max(a, end)
             end = b
@@ -77,6 +79,7 @@ def owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | Non
     held: set[Path] = set()
     trees: list[tuple[str, list[Path]]] = []
     for run in runs:
+        read_interrupts.checkpoint()
         top = held_find(run)
         launch = pending.get(run)
         if top is None:
@@ -91,7 +94,9 @@ def owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | Non
         trees.append((role, [top, *runs_under(top, pending, held)]))
     owner: dict[Path, tuple[int, str]] = {}
     for role, tree in trees:
+        read_interrupts.checkpoint()
         for p in tree:
+            read_interrupts.checkpoint()
             if p not in owner or len(tree) < owner[p][0]:
                 owner[p] = (len(tree), role)
     return {p: role for p, (_, role) in owner.items()}
@@ -127,8 +132,10 @@ def legacy_turn_records(records: list[dict], home: Path,
     """
     recovered: list[dict] = []
     for thread in sorted({r["thread"] for r in records if isinstance(r.get("thread"), str)}):
+        read_interrupts.checkpoint()
         accepted = []
         for record in records:
+            read_interrupts.checkpoint()
             if record.get("thread") != thread or "turn" in record:
                 continue
             try:
@@ -147,6 +154,7 @@ def legacy_turn_records(records: list[dict], home: Path,
         if len(accepted) != len(turns):
             continue
         for record, turn in zip(accepted, turns):
+            read_interrupts.checkpoint()
             recovered.append({**record, "turn": turn.turn,
                 "usage": None if turn.usage is None else asdict(turn.usage),
                 "running": turn.ended is None, "started": turn.started,
@@ -164,9 +172,11 @@ def codex_spend(owner: dict[Path, str], before: float | None = None,
     inputs: set[Path] = {p for path in owner for p in chain(path)}
     launches: dict[Path, list[codex_reads.Call]] = {}
     for path in owner:
+        read_interrupts.checkpoint()
         try:
             gaps: list[str] = []
             for call in codex_reads.calls(list(run_entries(path)), gaps):
+                read_interrupts.checkpoint()
                 if before is None or call.started is None or call.started <= before:
                     launches.setdefault(call.scratch, []).append(replace(call, transcript=path))
             sources.extend(CodexSource(str(path), owner[path], None, None, None, gap)
@@ -176,6 +186,7 @@ def codex_spend(owner: dict[Path, str], before: float | None = None,
                                        "launcher evidence unreadable: " + str(exc)))
     seen: dict[tuple[str, str], CodexSource] = {}
     for scratch, calls in launches.items():
+        read_interrupts.checkpoint()
         calls.sort(key=lambda c: c.started if c.started is not None else float("inf"))
         record_path = scratch / "codex-events.jsonl"
         inputs.update((record_path, scratch / "codex-session"))
@@ -185,6 +196,7 @@ def codex_spend(owner: dict[Path, str], before: float | None = None,
             records = []
         recovered = legacy_turn_records(records, home, inputs)
         for index, call in enumerate(calls):
+            read_interrupts.checkpoint()
             source = f"{call.transcript}:{call.call_id}"
             next_call = calls[index + 1].started if index + 1 < len(calls) else None
             limits = [t for t in (next_call, before) if t is not None]
@@ -258,6 +270,7 @@ def priced(owner: dict[Path, str], undecided: list[str],
     spans: list[tuple[float, float]] = []
     by_role: dict[str, float] = {}
     for p, role in owner.items():
+        read_interrupts.checkpoint()
         start, end = first_time(p), last_time(p)
         if start is None or end is None:
             continue
@@ -298,7 +311,9 @@ def stopped(path: Path) -> bool:
     if has_ended(path):
         return True
     for p in reversed(chain(path)):
+        read_interrupts.checkpoint()
         for e in entries_back(p):
+            read_interrupts.checkpoint()
             return e.get("isApiErrorMessage") is True
     return False
 
@@ -315,6 +330,7 @@ def transcript_directories(directory: Path) -> frozenset[Path]:
     while todo:
         parent = todo.pop()
         for entry in listed(parent):
+            read_interrupts.checkpoint()
             if entry.is_dir:
                 child = parent / entry.name
                 found.add(child)
@@ -335,8 +351,10 @@ def unresolved_spend(path: Path, runs: list[str], before: float) -> UnpricedSpen
                                    "closing line gives no change runs"))
     watched = {path}
     for directory in project_dirs():
+        read_interrupts.checkpoint()
         watched.update(transcript_directories(directory))
     for run in runs:
+        read_interrupts.checkpoint()
         transcript = held_find(run)
         if transcript is not None:
             watched.add(transcript)
@@ -377,6 +395,7 @@ def all_stopped(owner: dict[Path, str], at: float) -> bool:
     return all(stopped(p) or (last_time(p) or 0.0) <= at for p in owner)
 
 
+@read_interrupts.deferred
 def write_record(record: Path, value: object) -> None:
     """Write `value` as JSON to the file `record` under `SPENDS`."""
     record.parent.mkdir(exist_ok=True)
@@ -435,6 +454,7 @@ def closed_changes(tickets: Path) -> tuple[Closed, ...]:
     `ticket_reads.held_ticket` reads it."""
     out: list[Closed] = []
     for path in listed_tickets(tickets, Status.CLOSED):
+        read_interrupts.checkpoint()
         t = held_closed(path)
         if t.kind is Kind.CHANGE:
             out.append(Closed(path, t.editors, t.last_time))
@@ -473,6 +493,7 @@ def like_changes(tickets: Path, editors: frozenset[Role], before: float,
     whatever its `editors` where fewer than `FEWEST_LIKE` have it."""
     every: list[tuple[tuple[Role, ...] | None, Spend]] = []
     for c, _ in closed_spends(tickets):
+        read_interrupts.checkpoint()
         if c.at >= before:
             continue
         s = change_spend(c.path, undecided)

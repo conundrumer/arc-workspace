@@ -19,7 +19,8 @@ from run_reads import agent_type
 from ticketing.vocabulary import Kind, Status, Verdict, last_move_into
 from validation_checks import AGENT_FIELD, COMMAND_FIELD, EXERCISED_FIELD, Check, check_of
 from transcripts import chain, find
-from transcript_entries import epoch, own_range
+from transcript_entries import epoch
+from transcript_ownership import own_range
 from transcript_snapshots import Refused, snapshot
 from tree_reads import main_tree
 

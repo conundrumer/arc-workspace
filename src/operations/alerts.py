@@ -26,7 +26,7 @@ in it while it stands outside `tickets/closed/`.
 
 A resume of an operator of the session after the next operator of the
 session made its first entry (`TranscriptsRead.late_resumes`), as `resumed_at` in
-`scripts/operator_reads.py` gives a resume, is recorded the same
+`scripts/operator_resumes.py` gives a resume, is recorded the same
 way, in one `bug` ticket of its own kind (`late_resumes`): each line is on
 one operator, and gives each of its resumes that no earlier line on it
 gives.

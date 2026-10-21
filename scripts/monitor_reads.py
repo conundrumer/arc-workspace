@@ -9,7 +9,7 @@ from agent_reports import parent_transcripts
 from agent_turns import first_time, last_time
 from context_bound_hook import OPERATORS
 from open_agents import Listed, quiet_since
-from operator_reads import resumed_at
+from operator_resumes import resumed_at
 from run_reads import (bash_ids, bash_spans, repeated_runs, result_texts, run_entries,
                        same_since)
 from transcript_entries import epoch
