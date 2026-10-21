@@ -19,6 +19,7 @@ console_importable()
 scripts_importable()
 
 from agents_pending import pending_agents  # noqa: E402
+import kept_reads  # noqa: E402
 from budgets import group_budgets, print_budgets, run_budget  # noqa: E402
 from open_agents import call_times, running_agents, work_open  # noqa: E402
 from run_prints import (print_codex, print_messages,  # noqa: E402
@@ -102,8 +103,12 @@ def under_mode(args: argparse.Namespace, undecided: list[str]) -> int:
 
 
 def running_mode(args: argparse.Namespace, undecided: list[str]) -> int:
-    print_running(running_agents(find(args.running), undecided), time.time(), args.calls_since,
-                  undecided)
+    kept_reads.open_store()
+    try:
+        print_running(running_agents(find(args.running), undecided), time.time(), args.calls_since,
+                      undecided)
+    finally:
+        kept_reads.flush()
     return 0
 
 
