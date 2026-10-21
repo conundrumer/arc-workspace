@@ -38,9 +38,13 @@ def transcript_meta(path: Path) -> dict[str, Any] | None:
 
 def read_meta(path: Path) -> dict[str, Any] | None:
     """The `.meta.json` of the transcript at `path`, parsed, None where it
-    is no file, read with no held read."""
+    is no file or has invalid JSON or a non-object value, read with no held read."""
     m = meta_path(path)
-    return json.loads(m.read_bytes()) if m.is_file() else None
+    try:
+        value = json.loads(m.read_bytes()) if m.is_file() else None
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
 
 
 def blocks(entry: Entry, kind: str) -> list[dict[str, Any]]:

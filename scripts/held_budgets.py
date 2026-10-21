@@ -4,6 +4,8 @@ change it takes next, as `operations.state.Computed` gives them."""
 from pathlib import Path
 
 from spends import budget, spend
+from transcript_snapshots import SUBJECT_FAULTS
+from controlled_markdown import mctx
 
 from operations import change_agents, change_fragments, change_take, changes
 from operations.roles import Role, launched_type
@@ -21,7 +23,14 @@ def change_spend(state: State, undecided: list[str]) -> dict[str, Spend]:
                                           *change_agents.elsewhere_on(state, t.number))
                   if a.agent_id is not None}
         pending = {i: launched_type(a.role, a.subject) for i, a in agents.items() if a.pending}
-        if (s := spend(list(agents), pending, undecided)) is not None:
+        try:
+            s = spend(list(agents), pending, undecided)
+        except SUBJECT_FAULTS as exc:
+            undecided.append(mctx("{run}: the spend of change {change} is unknown ({error}), "
+                                  "so no budget overrun acts on it").format(
+                                      run=state.me, change=t.number, error=exc))
+            continue
+        if s is not None:
             out[t.number] = s
     return out
 
@@ -39,7 +48,7 @@ def change_budgets(state: State, tickets: Path, undecided: list[str]) -> dict[st
             continue
         key = frozenset(t.editors)
         if key not in known:
-            known[key] = budget(tickets, key, state.now, undecided)
+            known[key] = budget(tickets, key, state.now, undecided, state.me)
         if (b := known[key]) is not None:
             out[t.number] = b
     return out
@@ -57,7 +66,7 @@ def doc_budgets(state: State, tickets: Path, undecided: list[str]) -> dict[str, 
         editors = change_fragments.lacking_doc_editor(t, w, state)
         if editors is None:
             continue
-        b = budget(tickets, frozenset({*editors, Role.DOC_EDITOR}), state.now, undecided)
+        b = budget(tickets, frozenset({*editors, Role.DOC_EDITOR}), state.now, undecided, state.me)
         if b is not None:
             out[t.number] = b
     return out

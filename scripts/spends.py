@@ -25,7 +25,7 @@ from ticket_reads import held_ticket
 from token_prices import run_cost
 from transcripts import chain, held_find, project_dirs
 from entry_reads import entries_back
-from transcript_snapshots import Refused
+from transcript_snapshots import Refused, SUBJECT_FAULTS
 
 from controlled_markdown import mctx
 from engine.memo import write_whole
@@ -461,6 +461,19 @@ class Closed:
     at: float
 
 
+@dataclass(frozen=True)
+class SpendFault:
+    """A closed change whose metadata or spend could not be read."""
+    path: Path
+    why: str
+
+
+def closed_change(path: Path) -> Closed | None:
+    """The closed change at `path`, or None for another ticket kind."""
+    t = held_closed(path)
+    return Closed(path, t.editors, t.last_time) if t.kind is Kind.CHANGE else None
+
+
 @state_cache(DERIVED)
 def closed_changes(tickets: Path) -> tuple[Closed, ...]:
     """Each ticket under `tickets/closed/` of kind `change`, as
@@ -468,16 +481,25 @@ def closed_changes(tickets: Path) -> tuple[Closed, ...]:
     out: list[Closed] = []
     for path in listed_tickets(tickets, Status.CLOSED):
         read_interrupts.checkpoint()
-        t = held_closed(path)
-        if t.kind is Kind.CHANGE:
-            out.append(Closed(path, t.editors, t.last_time))
+        if (c := closed_change(path)) is not None:
+            out.append(c)
     return tuple(out)
 
 
 @state_cache(DERIVED)
-def closed_spends(tickets: Path) -> tuple[tuple[Closed, Recorded], ...]:
-    """Closed changes and their recorded spends, held by record revisions."""
-    return tuple((c, recorded_spend(c.path)) for c in closed_changes(tickets))
+def closed_spends(tickets: Path) -> tuple[tuple[Closed, Recorded] | SpendFault, ...]:
+    """Closed changes and their recorded spends, held by record revisions.
+    A fault of a ticket or its spend is kept for the budget read to report."""
+    out: list[tuple[Closed, Recorded] | SpendFault] = []
+    for path in listed_tickets(tickets, Status.CLOSED):
+        read_interrupts.checkpoint()
+        try:
+            c = closed_change(path)
+            if c is not None:
+                out.append((c, recorded_spend(path)))
+        except SUBJECT_FAULTS as exc:
+            out.append(SpendFault(path, str(exc)))
+    return tuple(out)
 
 
 def held_closed(path: Path) -> Ticket:
@@ -500,16 +522,30 @@ budget is taken over; with fewer, it is taken over every earlier one."""
 
 
 def like_changes(tickets: Path, editors: frozenset[Role], before: float,
-                 undecided: list[str]) -> list[Spend]:
+                 undecided: list[str], me: str = "") -> list[Spend]:
     """The spend of each `change` closed `fixed` before `before` with a
     known spend whose `editors` set is `editors`, or of each such change
     whatever its `editors` where fewer than `FEWEST_LIKE` have it."""
     every: list[tuple[tuple[Role, ...] | None, Spend]] = []
-    for c, _ in closed_spends(tickets):
+    for item in closed_spends(tickets):
         read_interrupts.checkpoint()
-        if c.at >= before:
+        fault = item if isinstance(item, SpendFault) else None
+        if fault is None:
+            assert isinstance(item, tuple)
+            c, _ = item
+            if c.at >= before:
+                continue
+            try:
+                s = change_spend(c.path, undecided)
+            except SUBJECT_FAULTS as exc:
+                fault = SpendFault(c.path, str(exc))
+        if fault is not None:
+            line = mctx("{run}: the spend of {path} is unknown ({error}), "
+                        "so it is left out of the cost history").format(
+                            run=me, path=fault.path, error=fault.why)
+            if line not in undecided:
+                undecided.append(line)
             continue
-        s = change_spend(c.path, undecided)
         if isinstance(s, Spend):
             every.append((c.editors, s))
     like = [s for e, s in every if e is not None and frozenset(e) == editors]
@@ -517,11 +553,11 @@ def like_changes(tickets: Path, editors: frozenset[Role], before: float,
 
 
 def budget(tickets: Path, editors: frozenset[Role], before: float,
-           undecided: list[str]) -> Budget | None:
+           undecided: list[str], me: str = "") -> Budget | None:
     """The budget of a change with the `editors` set `editors` taken at
     `before`, or None, with an `undecided` line, where no earlier change
     has a known spend."""
-    like = like_changes(tickets, editors, before, undecided)
+    like = like_changes(tickets, editors, before, undecided, me)
     if not like:
         undecided.append(mctx("budget unknown: no change closed `fixed` before the take has a "
                               "known dollar spend"))

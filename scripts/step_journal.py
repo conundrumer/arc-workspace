@@ -142,10 +142,16 @@ def records(scratch: Path) -> list[Record]:
         return []
     given: dict[str, dict[str, Any]] = {}
     closes: dict[str, Close] = {}
-    for line in path.read_text().splitlines():
+    rows = path.read_bytes().splitlines(keepends=True)
+    for i, line in enumerate(rows):
         if not line.strip():
             continue
-        r = json.loads(line)
+        try:
+            r = json.loads(line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            if i == len(rows) - 1 and not line.endswith(b"\n"):
+                continue
+            raise
         if r["event"] == Event.GIVEN:
             given[r["id"]] = r
         elif r["event"] == Event.CLOSED and r["id"] not in closes:
@@ -196,7 +202,10 @@ def run_close(r: Record, now: float) -> Close | None:
     if r.run is None:
         return None
     if r.run.status.exists():
-        text = r.run.status.read_text().strip()
+        try:
+            text = r.run.status.read_text(errors="replace").strip()
+        except OSError:
+            return None
         if not text.lstrip("-").isdigit():
             return None
         if int(text) == 0:

@@ -31,17 +31,19 @@ def read_git(main: Path) -> GitRead:
 
 
 def sessions(tickets: Path, index: int, session: str, now: float,
-             sessions_running: frozenset[str] | None) -> SessionsRead:
+             sessions_running: frozenset[str] | None, undecided: list[str], me: str) -> SessionsRead:
     """The read of `idle_sessions`. The read after `take_main` reads again,
     so that the session adopts the idle indexes at once, and `want_main`
     lets one session ask the user to pick a main (`triage.main_wanted`)."""
-    read = read_sessions(tickets, index, session, now)
+    notes: list[str] = []
+    read = read_sessions(tickets, index, session, now, notes, me)
     if not read.main:
         take_main(tickets, session, sessions_running)
-        read = read_sessions(tickets, index, session, now)
+        read = read_sessions(tickets, index, session, now, notes, me)
     if read.idle and not read.main and not read.main_live:
         want_main(tickets, session)
         read = replace(read, main_wanted=main_wanted(tickets))
+    undecided.extend(line for line in dict.fromkeys(notes) if line not in undecided)
     return read
 
 

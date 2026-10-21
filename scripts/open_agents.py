@@ -21,7 +21,7 @@ from run_reads import is_prompt, parent_label
 from file_reads import mtime
 from state_reads import DERIVED, Kept, state_cache
 from entry_reads import entries_back
-from transcript_snapshots import Entry
+from transcript_snapshots import Entry, SUBJECT_FAULTS
 from transcripts import agent_id, chain, is_subagent
 
 from operations.constants import BLOCK_SECONDS, stuck_reached
@@ -162,6 +162,7 @@ class Launched:
     under: tuple["Launched", ...] | None
     settled: bool
     in_progress: bool
+    fault: str | None = None
 
 
 @dataclass
@@ -177,6 +178,7 @@ class Node:
     in_progress: bool
     own: list[str] | None = None
     busy: bool | None = None
+    fault: str | None = None
 
     @property
     def parent(self) -> str:
@@ -203,7 +205,7 @@ def walked(found: Launched) -> Node:
     """The `Node` of `found`, and of each agent under it that it gives, for
     one read of `listing`."""
     return Node(found, None if found.under is None else [walked(f) for f in found.under],
-                found.in_progress)
+                found.in_progress, fault=found.fault)
 
 
 def turn_open(path: Path, sign: float | None, undecided: list[str]) -> bool:
@@ -236,7 +238,21 @@ def notified_turns(nodes: list[Node]) -> dict[str, float]:
     left = [n for n in nodes if n.in_progress and n.launch.agent]
     if not left:
         return {}
-    starts = [last_time(n.path, is_turn_entry) for n in left]
+    starts: list[float | None] = []
+    readable: list[Node] = []
+    for n in left:
+        if n.fault is not None:
+            continue
+        try:
+            start = last_time(n.path, is_turn_entry)
+        except SUBJECT_FAULTS as exc:
+            n.fault = str(exc)
+            continue
+        readable.append(n)
+        starts.append(start)
+    left = readable
+    if not left:
+        return {}
     return notified_after([(n.launcher, n.launch) for n in left],
                           min(n.launch.since if t is None else t
                               for n, t in zip(left, starts)))
@@ -245,9 +261,17 @@ def notified_turns(nodes: list[Node]) -> dict[str, float]:
 def settle_turns(nodes: list[Node], undecided: list[str]) -> None:
     told = notified_turns(nodes)
     for n in nodes:
-        t = told.get(n.launch.agent or "")
-        if n.in_progress and t is not None:
-            n.in_progress = turn_open(n.path, t, undecided)
+        if n.fault is not None:
+            continue
+        notes: list[str] = []
+        try:
+            t = told.get(n.launch.agent or "")
+            if n.in_progress and t is not None:
+                n.in_progress = turn_open(n.path, t, notes)
+        except SUBJECT_FAULTS as exc:
+            n.fault = str(exc)
+        else:
+            undecided.extend(notes)
 
 
 def listing(n: Node, parent_open: bool, undecided: list[str]) -> Listed | None:
@@ -345,9 +369,20 @@ def turn_ended(n: Node, undecided: list[str]) -> Listed:
 def is_busy(n: Node, undecided: list[str]) -> bool:
     """Whether the agent of `n` is work of its own of each run above it, as
     `profile_runs.py --help running` gives that work."""
+    if n.fault is not None:
+        return True
     if n.busy is None:
-        n.busy = (n.in_progress or bool(own_work(n, undecided))
-                  or any(is_busy(m, undecided) for m in nodes_under(n, undecided)))
+        n.busy = n.in_progress or bool(own_work(n, undecided))
+        if not n.busy:
+            for child in nodes_under(n, undecided):
+                try:
+                    busy = is_busy(child, undecided)
+                except SUBJECT_FAULTS as exc:
+                    child.fault = str(exc)
+                    busy = True
+                if busy:
+                    n.busy = True
+                    break
     return n.busy
 
 
@@ -422,7 +457,12 @@ def ancestry(path: Path, undecided: list[str]) -> list[Node]:
                                   "agent it launched whose turn has ended is listed as "
                                   "under a parent whose work is open").format(run=aid))
             break
-        out.append(walked(launched(found[-1], launch, launch.path, None, undecided)))
+        try:
+            node = launched(found[-1], launch, launch.path, None, undecided)
+        except SUBJECT_FAULTS as exc:
+            node = Launched(parent_label(found[-1]), found[-1], launch, launch.path,
+                            None, False, True, str(exc))
+        out.append(walked(node))
         path = found[-1]
     return out[::-1]
 
@@ -433,7 +473,16 @@ def open_along(up: list[Node], undecided: list[str]) -> bool:
     True."""
     is_open = True
     for n in up:
-        is_open = listing(n, is_open, undecided) is not None
+        try:
+            if n.fault is None:
+                is_open = listing(n, is_open, undecided) is not None
+        except SUBJECT_FAULTS as exc:
+            n.fault = str(exc)
+        if n.fault is not None:
+            undecided.append(mctx("{run}: whether its work is open is unknown ({fault}), "
+                                  "so it counts as open").format(
+                                      run=n.launch.agent, fault=n.fault))
+            is_open = True
     return is_open
 
 
@@ -453,12 +502,18 @@ def held_under(path: Path, undecided: list[str]) -> tuple[Launched, ...]:
         child = a.path
         if child is None:
             continue
-        under = held_under(child, undecided) if children_of(path, agent_id(child)) else ()
-        out.append(launched(path, a, child, under, undecided))
+        try:
+            under = held_under(child, undecided) if children_of(path, agent_id(child)) else ()
+            node = launched(path, a, child, under, undecided)
+        except SUBJECT_FAULTS as exc:
+            node = Launched(parent_label(path), path, a, child, (), False, True, str(exc))
+        out.append(node)
     return tuple(out)
 
 
 def nodes_under(n: Node, undecided: list[str]) -> list[Node]:
+    if n.fault is not None:
+        return []
     if n.under is None:
         n.under = launched_under(n.path, undecided)
         settle_turns(every_node(n.under, undecided), undecided)
@@ -466,8 +521,16 @@ def nodes_under(n: Node, undecided: list[str]) -> list[Node]:
 
 
 def every_node(nodes: list[Node], undecided: list[str]) -> list[Node]:
-    return [m for n in nodes
-            for m in (n, *every_node(nodes_under(n, undecided), undecided))]
+    out: list[Node] = []
+    for n in nodes:
+        out.append(n)
+        try:
+            under = nodes_under(n, undecided)
+        except SUBJECT_FAULTS as exc:
+            n.fault = str(exc)
+            continue
+        out.extend(every_node(under, undecided))
+    return out
 
 
 def listed_under(nodes: list[Node], parent_open: bool,
@@ -480,14 +543,26 @@ def listed_under(nodes: list[Node], parent_open: bool,
     transcript gives, and `unreached` the others."""
     out: list[Listed] = []
     for n in nodes:
-        under = nodes_under(n, undecided)
-        listed = listing(n, parent_open, undecided)
+        start = len(undecided)
+        listed = None
+        try:
+            under = nodes_under(n, undecided)
+            if n.fault is None:
+                listed = listing(n, parent_open, undecided)
+                if listed and not under and listed.run.backgrounded:
+                    unreached(listed, undecided)
+        except SUBJECT_FAULTS as exc:
+            n.fault = str(exc)
+        if n.fault is not None:
+            del undecided[start:]
+            undecided.append(mctx("{run}: its run cannot be read ({fault}), "
+                                  "so it is left out of the running agents").format(
+                                      run=n.launch.agent, fault=n.fault))
+            continue
         below = listed_under(under, listed is not None, undecided)
         if listed:
-            if not under and listed.run.backgrounded:
-                unreached(listed, undecided)
             shown = {b.launch.call for b in below}
-            closed = {c.launch.call for c in under} - shown
+            closed = {c.launch.call for c in under if c.fault is None} - shown
             listed.running = [m for m in listed.run.backgrounded
                               if m.call not in closed]
             out.append(listed)

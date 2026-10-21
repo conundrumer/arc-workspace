@@ -12,7 +12,7 @@ from ticket_log import read_ticket
 from ticket_numbers import TicketNumber, ticket_number
 from ticketing.exits import Exit, exit_of
 from ticketing.vocabulary import UNTAKEN, Domain, Kind, Status
-from transcript_snapshots import Refused
+from transcript_snapshots import Refused, SUBJECT_FAULTS
 
 def settled_elsewhere(tickets: Path, path: Path, name: TicketName) -> bool:
     """Whether the list of `to-settle` leaves out the untaken ticket at
@@ -31,12 +31,24 @@ def settled_elsewhere(tickets: Path, path: Path, name: TicketName) -> bool:
 
 
 def to_settle(tickets: Path, session: int, adopted: Collection[int],
-              given: Iterable[TicketNumber]) -> list[TicketNumber]:
+              given: Iterable[TicketNumber], undecided: list[str] | None = None,
+              me: str = "") -> list[TicketNumber]:
     """The numbers of the list of `to-settle`, for the session with index
     `session`, the indexes it adopts (`state.SessionsRead.adopted`) and
     the numbers `given`."""
-    names = {p: ticket_name(p) for status in UNTAKEN for p in ticket_files(tickets, status)}
-    paths = {p for p, name in names.items() if acted_on(name.number.session, session, adopted)}
-    paths.update(p for p in (listed_ticket_path(tickets, number) for number in given) if p in names)
-    numbers = [names[p].number for p in sorted(paths) if not settled_elsewhere(tickets, p, names[p])]
+    if undecided is None:
+        undecided = []
+    given = set(given)
+    numbers: list[TicketNumber] = []
+    for status in UNTAKEN:
+        for path in ticket_files(tickets, status):
+            try:
+                name = ticket_name(path)
+                if (acted_on(name.number.session, session, adopted) or name.number in given
+                        ) and not settled_elsewhere(tickets, path, name):
+                    numbers.append(name.number)
+            except SUBJECT_FAULTS as exc:
+                undecided.append(mctx("{run}: ticket {path} cannot be read ({error}), "
+                                      "so it is left out of tickets to settle").format(
+                                          run=me, path=path, error=exc))
     return sorted(numbers, key=lambda number: number.order)

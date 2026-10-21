@@ -22,7 +22,7 @@ from ticket_numbers import SESSIONS, indexes, link_new, session_index, session_l
 from ticketing.vocabulary import SETTLED, Status
 from file_reads import state_stat
 from transcripts import mains_named, project_dirs, session_directory, session_subagents
-from transcript_snapshots import Refused
+from transcript_snapshots import Refused, SUBJECT_FAULTS
 
 MAIN = "main"
 
@@ -105,10 +105,22 @@ def named_main(tickets: Path) -> str | None:
     return held[0] if held else None
 
 
-def read_sessions(tickets: Path, index: int, session: str, now: float) -> SessionsRead:
+def read_sessions(tickets: Path, index: int, session: str, now: float,
+                  undecided: list[str] | None = None, me: str = "") -> SessionsRead:
+    if undecided is None:
+        undecided = []
     ids = indexes(tickets)
-    held = {ticket_name(p).number.session for s in Status if s not in SETTLED
-            for p in listed_tickets(tickets, s)}
+    held: set[int | None] = set()
+    for status in Status:
+        if status in SETTLED:
+            continue
+        for path in listed_tickets(tickets, status):
+            try:
+                held.add(ticket_name(path).number.session)
+            except SUBJECT_FAULTS as exc:
+                undecided.append(mctx("{run}: ticket {path} cannot be read ({error}), "
+                                      "so its session is not counted as holding tickets").format(
+                                          run=me, path=path, error=exc))
     known = {*ids, *(i for i in held if i is not None)}
     ended = frozenset(i for i in known if i != index
                       and not any(live(sid, now) for sid in ids.get(i, [])))

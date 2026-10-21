@@ -30,6 +30,13 @@ def restore_records(text: str) -> dict[str, tuple[Restore, ...]]:
     """The `restore` calls the text of `restores_file` records, by task,
     each task's in order."""
     out: dict[str, list[Restore]] = {}
-    for r in map(json.loads, text.splitlines()):
+    rows = text.splitlines(keepends=True)
+    for i, row in enumerate(rows):
+        try:
+            r = json.loads(row)
+        except json.JSONDecodeError:
+            if i == len(rows) - 1 and not row.endswith("\n"):
+                continue
+            raise
         out.setdefault(r["task"], []).append(Restore(float(r["time"]), r["argument"]))
     return {task: tuple(found) for task, found in out.items()}

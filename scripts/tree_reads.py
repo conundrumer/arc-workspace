@@ -204,6 +204,8 @@ def changed_fragments(tree: Path, base: str) -> tuple[Place, ...]:
         old = {f.text for f in fragments_at(tree, base, name)}
         try:
             now = fragments_of(path.read_text(), path, name)
+        except (OSError, UnicodeDecodeError):
+            continue
         except SyntaxError as e:
             out.append(Place(name, e.lineno or 1, None))
             continue

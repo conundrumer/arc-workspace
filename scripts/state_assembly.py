@@ -16,6 +16,7 @@ import operate_service
 import step_journal
 from agent_turns import last_time
 from audit_window import window
+from controlled_markdown import mctx
 from context_bound_hook import context_bound, past_bound
 from elsewhere_reads import editor_checks, elsewhere_agents
 from git_session_reads import given_lines, read_git, sessions, started
@@ -40,7 +41,7 @@ from ticket_reads import read_tickets
 from ticket_settle import to_settle
 from transcripts import find
 from entry_reads import entries_back
-from transcript_snapshots import Refused
+from transcript_snapshots import Refused, SUBJECT_FAULTS
 from tree_reads import (
     main_tree,
     scratch,
@@ -147,24 +148,24 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     main_path = find(session)
     sessions_running = running(session)
     operate_service.read_phase("ticket holders and sessions")
-    holders = holders_read(tickets, session, main_path, sessions_running)
+    holders = holders_read(tickets, session, main_path, sessions_running, watching, me)
     lifted, usage = read_usage(now, watching)
     state = State(
         me=me, now=now, session=session, started=started(session),
         transcripts_dir=main_path.parent, main_tree=main,
         scratch=scratch(session), operators=runs.operators, parents=runs.parents,
-        open_operators=open_operators(runs.runs, me),
+        open_operators=open_operators(runs.runs, me, watching),
         past_bound=bound_read(runs.runs, me, main),
         open_holders=holders.open, session_holders=holders.session,
         tracker=TrackerRead(tickets, unread, index), transcripts=transcripts,
         git=tree, taken_up=took_up, held=read_held(tickets, me, tree),
         readers=readers_read(),
         limit_lifted=lifted, machine_alerts=alert_files(main, session),
-        sessions=sessions(tickets_dir, index, session, now, sessions_running),
+        sessions=sessions(tickets_dir, index, session, now, sessions_running, watching, me),
         journal=journal, listing=ops.listing, due_since=record_read(scratch(session), DUE_SINCE),
         unwaited_since=record_read(scratch(session), UNWAITED_SINCE))
     state = replace(state, journal=state.journal.since(given_again(state)))
-    state = with_quiet_holders(state, holders.found, listing, running_work)
+    state = with_quiet_holders(state, holders.found, listing, running_work, watching)
     computed_lines: list[str] = []
     operate_service.read_phase("spends, budgets and audit history")
     state = replace(state, computed=computed_read(state, tickets_dir, computed_lines, usage))
@@ -212,10 +213,23 @@ def operators_since(runs: list[tuple[str, Path]], me: str,
             if since is None or aid == me or (t := last_time(path)) is not None and t >= since]
 
 
-def open_operators(runs: list[tuple[str, Path]], me: str) -> frozenset[str]:
+def open_operators(runs: list[tuple[str, Path]], me: str, undecided: list[str]) -> frozenset[str]:
     """`State.open_operators`: the operators of `runs` other than `me`
     whose work is open."""
-    return frozenset(aid for aid, p in runs if aid != me and work_open(p, []))
+    opened: set[str] = set()
+    for aid, path in runs:
+        if aid == me:
+            continue
+        try:
+            is_open = work_open(path, undecided)
+        except SUBJECT_FAULTS as exc:
+            undecided.append(mctx("{run}: whether operator {operator}'s work is open is unknown "
+                                  "({error}), so it counts as open").format(
+                                      run=me, operator=aid, error=exc))
+            is_open = True
+        if is_open:
+            opened.add(aid)
+    return frozenset(opened)
 
 
 def transcripts_read(ops: OperatorRead, ends: "EndsRead",
@@ -268,7 +282,7 @@ def computed_read(state: State, tickets_dir: Path, undecided: list[str],
     given_pace = pace(state)
     computed = Computed(
         to_settle=tuple(str(n) for n in to_settle(tickets_dir, state.tracker.index,
-                                                  state.sessions.adopted, given)
+                                                  state.sessions.adopted, given, undecided, state.me)
                         if str(n) in tickets),
         spent=spent,
         run_starts=run_starts, run_takes=run_takes,

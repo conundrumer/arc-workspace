@@ -33,8 +33,19 @@ def recorded_lines(main_tree: Path, session: str) -> list[tuple[float, str]]:
     """The lines of the session's store, each with the time of its record,
     in the order of their records, or none where the store has no file."""
     try:
-        raw = store_file(main_tree, session).read_text()
+        raw = store_file(main_tree, session).read_bytes()
     except FileNotFoundError:
         return []
-    return [(float(d["time"]), str(d["text"])) for row in raw.splitlines() if row.strip()
-            for d in [json.loads(row)]]
+    out: list[tuple[float, str]] = []
+    rows = raw.splitlines(keepends=True)
+    for i, row in enumerate(rows):
+        if not row.strip():
+            continue
+        try:
+            d = json.loads(row)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            if i == len(rows) - 1 and not row.endswith(b"\n"):
+                continue
+            raise
+        out.append((float(d["time"]), str(d["text"])))
+    return out

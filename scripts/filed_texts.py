@@ -43,7 +43,11 @@ def unfiled(text: str, where: str, undecided: list[str]) -> str:
         if not is_file(path):
             undecided.append(GONE_FILE.format(where=where, path=path))
             return m.group(0)
-        return file_text(path).rstrip("\n")
+        try:
+            return file_text(path).rstrip("\n")
+        except (OSError, UnicodeDecodeError):
+            undecided.append(GONE_FILE.format(where=where, path=path))
+            return m.group(0)
     return FILED_LINE.sub(read, text)
 
 
@@ -69,7 +73,10 @@ def written_report(path: Path) -> str | None:
     The read is noted either way, so a kept read sees the file once its
     agent writes it."""
     note_read(path)
-    return file_text(path).strip() if is_file(path) else None
+    try:
+        return file_text(path).strip() if is_file(path) else None
+    except (OSError, UnicodeDecodeError):
+        return None
 
 
 def report_text(path: Path, where: str, undecided: list[str]) -> str | None:
