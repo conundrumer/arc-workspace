@@ -19,7 +19,7 @@ from dashboard_standings import HOLD_WORD, HELD_HEAD, MOVING, Row, Standing, Sta
 from dashboard_usage import codex_bar, usage_bar
 from dashboard_words import clock, hold_text, start_hold_text
 from dashboard_reads import (DAY, OPEN, STALE_RECORD, CodexWindow, OperatorRecords, Stage, change_of, hits_full,
-                             journal_work, logged, phrase, stage, users, Work)
+                             journal_work, log_work, phrase, stage, users, Work)
 from dashboard_template import DONE_TAB, EVENTS, LAST_LOOK, QUEUED_TAB, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
 from shown_state import ScriptAdmits, Shown, ShownAgent, ShownParty, Start
 from ticket_reads import read_tickets
@@ -248,16 +248,24 @@ def basis(v: View, r: Row) -> Ticket:
     return r.change or change_of(r.lead, v.all_) or r.lead
 
 
+def progress(v: View, r: Row) -> Work | None:
+    """The furthest recorded work of the row's members and its change,
+    retaining the latest result at that stage. Filing alone is no work."""
+    tickets = {t.number: t for t in (*r.members, basis(v, r))}
+    work = [w for t in tickets.values() for w in (*log_work(t)[1:], *v.work.get(t.number, []))]
+    return max(work, key=lambda w: (w.stage, w.at), default=None)
+
+
 def stopped_bar(v: View, r: Row) -> str:
-    """The stage bar of `r`, whose subject no agent works on, from where
-    the work on its change stands (`dashboard_reads.logged`), where that
-    work reached past Triage; else nothing."""
-    c = basis(v, r)
-    c = None if c.kind is not Kind.CHANGE else c
-    w = None if c is None else logged(c, v.work.get(c.number, []))
-    if w is None or w.stage is Stage.TRIAGE:
-        return ""
-    return stage_bar(w.stage, Mark.FINISHED if w.finished else Mark.STOPPED)
+    """The row's recorded progress while no agent is at work on it."""
+    w = progress(v, r)
+    return "" if w is None else stage_bar(w.stage, Mark.FINISHED if w.finished else Mark.STOPPED)
+
+
+def priority(v: View, r: Row) -> tuple[bool, bool]:
+    """Expedited work first, then other work of the user, across a bundle."""
+    return (not any(t.number in v.expedited for t in r.members),
+            not any(v.mine(t) for t in r.members))
 
 
 def row(v: View, t: Ticket, right: str, change: Ticket | None,
@@ -288,18 +296,20 @@ def link(n: str) -> str:
 
 def active(v: View, st: Standings) -> tuple[str, int]:
     """The HTML of Active, the rows whose subject an agent is at work on,
-    in the order of their takes, the newest first among those of one
-    time, and the count of its rows."""
+    expedited and user work first, then in the order of their takes,
+    the newest first among those of one time, and the count of its rows."""
     rows: list[tuple[float, float, Row, str]] = []
     for r in st.rows:
         if st.shown(r) and (w := st.agents(r.subject)):
             a = max(w, key=lambda a: a.launched)
             b = basis(v, r)
             s = stage([x.role for x in w], b)
+            if (p := progress(v, r)) is not None:
+                s = max(s, p.stage)
             take = taken(b)
             rows.append((r.subject.filed if take is None else take.time, -r.subject.filed, r,
                          f"{stage_bar(s, Mark.AT_WORK)}{s.name.capitalize()} · {ago(v.now - a.launched)}"))
-    rows.sort(key=lambda x: x[:2])
+    rows.sort(key=lambda x: (*priority(v, x[2]), *x[:2]))
     if not rows:
         return '<div class="meta">Nothing is being worked on.</div>', 0
     return '<div class="wl">' + "".join(row(v, r.lead, right, r.change, members=r.members) for _, _, r, right in rows) + "</div>", len(rows)
@@ -377,10 +387,9 @@ def queued(v: View, st: Standings) -> str:
     of a row shown whose subject is not at work, and in it, its operator's
     state, its rows ready (`Next`, or `Next on resume` in a paused
     session), those waiting, and the held ones in a group for each hold.
-    The rows ready and those waiting go in the order of their starts, and
-    the rows no start orders after them; those rows, and the held ones, go
-    the user's tickets first, then the expedited ones, then the newest
-    first."""
+    Each list puts expedited work first, then other work of the user.
+    Within those priorities, ready and waiting rows keep the start order,
+    followed by rows without a start; remaining ties go newest first."""
     sessions: dict[int | None, list[tuple[Row, Standing, Ticket]]] = {}
     for r in st.rows:
         k, root = st.state(r.subject)
@@ -390,8 +399,8 @@ def queued(v: View, st: Standings) -> str:
         return '<div class="meta">Nothing is queued.</div>'
 
     def ordered(xs: list[Row]) -> list[Row]:
-        return sorted(xs, key=lambda r: (st.position.get(r.subject.number, len(st.position)), not v.mine(r.lead),
-                                         r.lead.number not in v.expedited, -r.subject.filed))
+        return sorted(xs, key=lambda r: (*priority(v, r),
+                                         st.position.get(r.subject.number, len(st.position)), -r.subject.filed))
 
     keys = sorted(sessions, key=lambda s: (s not in st.live, s in st.paused, -len(sessions[s])))
     panes: list[tuple[int | None, str, str]] = []
@@ -416,7 +425,7 @@ def queued(v: View, st: Standings) -> str:
                 groups.setdefault(k, []).append((r, root))
         for k, xs in sorted(groups.items(), key=lambda g: list(HELD_HEAD).index(g[0])):
             label = HELD_HEAD[k]
-            xs.sort(key=lambda x: (not v.mine(x[0].lead), x[0].lead.number not in v.expedited, -x[0].subject.filed))
+            xs.sort(key=lambda x: (*priority(v, x[0]), -x[0].subject.filed))
             rows = [row(v, r.lead, stopped_bar(v, r) + (f"<span>after {link(root.number)} · {esc(HOLD_WORD[st.own(root)])}</span>"
                                                         if k is Standing.BEHIND else ""), r.change, members=r.members)
                     for r, root in xs]

@@ -21,6 +21,12 @@ shown = script("shown_state")
 standings = script("dashboard_standings")
 
 
+def element(root: ET.Element, path: str) -> ET.Element:
+    found = root.find(path)
+    assert found is not None, path
+    return found
+
+
 def ticket(n: int, **kwargs) -> Ticket:
     return replace(Ticket(
         number=f"1-{n}", order=(1, n), session=1, status=Status.NEW,
@@ -70,17 +76,17 @@ def test_queued_group_order_and_rows_without_ordinals(paused):
     outside = ticket(8)
     deferred = ticket(9, status=Status.DEFERRED)
     tickets = [ready, waiting, held, behind, request, no_operator, on_hold, outside, deferred]
-    v = view(tickets, paused=paused, own_scope=True,
+    v = view(tickets, paused=paused, own_scope=True, starts=[shown.Start(held.number, shown.Hold.TAKES)],
              in_scope=frozenset(t.number for t in tickets if t is not outside))
     root = ET.fromstring(dashboard.queued(v, standings.Standings(v)).replace(" open>", ' open="">'))
-    pane = root.find("./div[@class='pane']")
-    labels = ["".join((el.find("summary") if el.tag == "details" else el).itertext()).split(" · ")[0]
+    pane = element(root, "./div[@class='pane']")
+    labels = ["".join((element(el, "summary") if el.tag == "details" else el).itertext()).split(" · ")[0]
               for el in pane if el.get("class") == "gh" or el.tag == "details"]
     assert labels == ["Next on resume" if paused else "Next", "Waiting", "Held by a line",
                       "Behind held work", "No operator running", "On hold by you",
                       "Outside its own work", "Deferred"]
     assert root.find(".//span[@class='wq']") is None
-    assert all("ld" not in el.get("class").split() for el in root.iter("div"))
+    assert all("ld" not in el.get("class", "").split() for el in root.iter("div"))
 
 
 def test_next_rows_keep_operator_order():
@@ -89,6 +95,78 @@ def test_next_rows_keep_operator_order():
     root = ET.fromstring(dashboard.queued(v, standings.Standings(v)))
     assert [row.get("data-n") for row in root.findall(".//div[@class='wr me tk']")] == [
         t.number for t in tickets]
+
+
+@pytest.mark.parametrize("status", [Status.ASSIGNED, Status.WAITING, Status.APPROVED])
+@pytest.mark.parametrize("hold, expected", [
+    (None, standings.Standing.READY),
+    (shown.Hold.PAUSE, standings.Standing.READY),
+    (shown.Hold.PACE, standings.Standing.READY),
+    (shown.Hold.TAKES, standings.Standing.HELD),
+    (shown.Hold.OWN_SCOPE, standings.Standing.OWN_SCOPE),
+])
+def test_only_an_actual_line_holds_idle_work(status, hold, expected):
+    t = ticket(1, status=status)
+    v = view([t], starts=[] if hold is None else [shown.Start(t.number, hold)], paused=True)
+    assert standings.Standings(v).state(t)[0] is expected
+
+
+@pytest.mark.parametrize("draft", [False, True])
+@pytest.mark.parametrize("start_hold", [False, True])
+def test_waiting_work_keeps_its_blocker(draft, start_hold):
+    blocker = ticket(2, kind=Kind.CHANGE, status=Status.DRAFT if draft else Status.ASSIGNED)
+    t = ticket(1, status=Status.WAITING, log=(
+        LogLine(50, Status.WAITING, "ticket-analyst", None, "waiting", False,
+                None if start_hold else blocker.number, True, None, None, None),))
+    v = view([t, blocker], starts=[shown.Start(t.number, shown.OnTicket(blocker.number))] if start_hold else [])
+    assert standings.Standings(v).state(t) == (standings.Standing.WAITING, blocker)
+
+
+@pytest.mark.parametrize("status, hold", [
+    (Status.ASSIGNED, None), (Status.ASSIGNED, shown.Hold.TAKES),
+    (Status.BLOCKED, None), (Status.DEFERRED, None),
+])
+@pytest.mark.parametrize("stage", [reads.Stage.TRIAGE, reads.Stage.REVIEW])
+@pytest.mark.parametrize("finished", [False, True])
+def test_recorded_progress_survives_idle_standings(status, hold, stage, finished):
+    t = ticket(1, status=status)
+    v = view([t], starts=[] if hold is None else [shown.Start(t.number, hold)])
+    v = replace(v, work={t.number: [reads.Work(100, stage, finished)]})
+    root = ET.fromstring(dashboard.queued(v, standings.Standings(v)).replace(" open>", ' open="">'))
+    row = element(root, f".//div[@data-n='{t.number}']")
+    bar = row.find(".//span[@class='mb']")
+    assert bar is not None
+    assert bar.findall("b")[stage].get("class") == ("d" if finished else "x")
+
+
+def test_triage_log_progress_survives_waiting_on_a_new_draft():
+    draft = ticket(2, kind=Kind.CHANGE, status=Status.DRAFT)
+    t = ticket(1, status=Status.WAITING, log=(
+        LogLine(1, Status.NEW, "coordinator", None, "filed", False, None, False, None, None, None),
+        LogLine(50, Status.WAITING, "ticket-analyst", None, "waiting", False,
+                draft.number, True, None, None, None),))
+    untouched = ticket(3, log=(t.log[0],))
+    v = view([t, draft, untouched])
+    st = standings.Standings(v)
+    root = ET.fromstring(dashboard.queued(v, st))
+    assert root.find(f".//div[@data-n='{t.number}']//b[@class='d']") is not None
+    assert root.find(f".//div[@data-n='{untouched.number}']//span[@class='mb']") is None
+
+
+@pytest.mark.parametrize("working", [False, True])
+def test_expedited_bundle_precedes_routine_work(working):
+    routine = ticket(1)
+    request = ticket(2, filer="ticket-analyst")
+    change = ticket(3, kind=Kind.CHANGE, filer="ticket-analyst", motivation=(request.number,))
+    agents = [shown.ShownAgent(Role.CODE_EDITOR, 990, (routine.number, change.number))] if working else []
+    v = view([routine, request, change], agents=agents,
+             starts=[shown.Start(routine.number, None), shown.Start(change.number, None)])
+    v = replace(v, expedited=frozenset({request.number}))
+    st = standings.Standings(v)
+    text = dashboard.active(v, st)[0] if working else dashboard.queued(v, st)
+    root = ET.fromstring(text)
+    rows = [r.get("data-n") for r in root.iter("div") if "wr" in r.get("class", "").split()]
+    assert rows == [request.number, routine.number]
 
 
 @pytest.mark.parametrize("count", [2, 3, 5])
@@ -111,8 +189,8 @@ def test_bundle_title_members_stage_and_fold(count, working):
     root = ET.fromstring(html)
     row = root.find(f".//div[@data-n='{change.number}']")
     assert row is not None
-    assert row.find("./span[@class='wp']").text == change.title
-    members = row.find("./div[@class='members']")
+    assert element(row, "./span[@class='wp']").text == change.title
+    members = element(row, "./div[@class='members']")
     links = members.findall(".//a")
     assert [(a.get("data-n"), a.text) for a in links] == [
         (t.number, f"{t.number} · {t.goal}") for t in requests]
@@ -120,11 +198,11 @@ def test_bundle_title_members_stage_and_fold(count, working):
     fold = members.find("details")
     if count > 3:
         assert fold is not None and "open" not in fold.attrib
-        assert fold.find("summary").text == f"+{count - 3} more"
+        assert element(fold, "summary").text == f"+{count - 3} more"
     else:
         assert fold is None
     if working:
-        assert "Review ·" in "".join(row.find("./span[@class='ws']").itertext())
+        assert "Review ·" in "".join(element(row, "./span[@class='ws']").itertext())
         assert row.find(".//b[@class='n']") is not None
     else:
         assert row.find(".//b[@class='d']") is not None
@@ -135,9 +213,9 @@ def test_single_request_keeps_its_row_form():
     change = ticket(2, kind=Kind.CHANGE, motivation=(request.number,))
     v = view([request, change], agents=[shown.ShownAgent(Role.CODE_EDITOR, 990, (change.number,))])
     root = ET.fromstring(dashboard.active(v, standings.Standings(v))[0])
-    row = root.find(f".//div[@data-n='{request.number}']")
-    assert row.find("./span[@class='wp']").text == request.goal
-    assert row.find("./span[@class='wn']/small/a").get("data-n") == change.number
+    row = element(root, f".//div[@data-n='{request.number}']")
+    assert element(row, "./span[@class='wp']").text == request.goal
+    assert element(row, "./span[@class='wn']/small/a").get("data-n") == change.number
 
 
 def test_bundle_folds_members_after_three():
@@ -146,10 +224,10 @@ def test_bundle_folds_members_after_three():
     change = ticket(6, kind=Kind.CHANGE, motivation=tuple(t.number for t in [*requests, bug]))
     v = view([*requests, bug, change])
     root = ET.fromstring(dashboard.queued(v, standings.Standings(v)))
-    members = root.find(".//div[@class='members']")
+    members = element(root, ".//div[@class='members']")
     assert [a.get("data-n") for a in members.findall("./a")] == [
         requests[0].number, requests[1].number, requests[2].number]
-    assert members.find("./details/summary").text == "+2 more"
+    assert element(members, "./details/summary").text == "+2 more"
     assert [a.get("data-n") for a in members.findall("./details/a")] == [requests[3].number, bug.number]
 
 

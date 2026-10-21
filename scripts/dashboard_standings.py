@@ -8,9 +8,9 @@ from enum import Enum, auto
 from typing import TYPE_CHECKING
 
 from dashboard_reads import OPEN, change_of
-from shown_state import Hold, ShownAgent
+from shown_state import Hold, OnTicket, ShownAgent
 from operations.state import Ticket
-from ticketing.vocabulary import UNTAKEN, Kind, Status
+from ticketing.vocabulary import Kind, Status
 
 if TYPE_CHECKING:
     from dashboard_html import View
@@ -162,13 +162,16 @@ class Standings:
         return self.pooled.get(t.number, [])
 
     def blocker(self, t: Ticket) -> Ticket | None:
-        """The first open ticket `depends-on` of `t` gives, else the open
-        change `t` waits on."""
+        """The first open dependency, the ticket holding a start, or the
+        unfinished change `t` waits on, including a draft."""
         deps = [d for d in t.depends_on if d in self.v.all_ and self.v.all_[d].status in OPEN]
         if deps:
             return self.v.all_[deps[0]]
+        if isinstance(h := self.v.holds.get(t.number), OnTicket):
+            if (held := self.v.all_.get(h.number)) is not None and held.status is not Status.CLOSED and not merged(held):
+                return held
         c = change_of(t, self.v.all_)
-        return c if c is not None and c.status in OPEN and not merged(c) else None
+        return c if c is not None and c.status is not Status.CLOSED and not merged(c) else None
 
     def own(self, t: Ticket) -> Standing:
         """The standing of `t` apart from its blockers."""
@@ -184,9 +187,13 @@ class Standings:
             return Standing.NO_OPERATOR
         if t.session in self.own_scope and not self.owned(t):
             return Standing.OWN_SCOPE
-        if t.number in self.position or (t.status in UNTAKEN and t.number not in v.holds):
-            return Standing.READY
-        return Standing.HELD
+        match v.holds.get(t.number):
+            case Hold.OWN_SCOPE:
+                return Standing.OWN_SCOPE
+            case Hold.TAKES:
+                return Standing.HELD
+            case _:
+                return Standing.READY
 
     def owned(self, t: Ticket) -> bool:
         """Whether the operator of the session of `t`, which has a record,
