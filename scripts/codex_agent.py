@@ -7,6 +7,8 @@ first call supplies the rendered agent document and rendered repo and user
 CLAUDE.md files as developer instructions, with the configured Codex style.
 The brief and starting instruction are user input. A fresh call refuses existing
 thread or turn history without changing it.
+Each work call requires the calling Claude session identity and passes it to
+worker shells through request-local configuration. Control calls need no identity.
 `--resume` requires the thread in <scratch>/codex-session and continues it
 with its initial instructions and only the new input.
 `--cwd` sets the directory Codex works in, defaulting to the current directory.
@@ -36,6 +38,7 @@ from typing import Any
 
 import codex_daemon
 import codex_rollout
+import ticket_numbers
 
 from controlled_markdown import mctx
 from engine import checkout
@@ -197,9 +200,11 @@ def usage_record(thread: str | None, events: list[dict[str, Any]], started: floa
 
 def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
                 cwd: Path, model: str, effort: str, writable: list[Path],
-                transport: Callable[[], Any], instructions: str | None = None,
+                transport: Callable[[], Any], worker_config: dict[str, str],
+                instructions: str | None = None,
                 home: Path | None = None) -> str | None:
-    """Try the daemon; only a new thread may fall back before turn submission."""
+    """Try the daemon with the caller's worker configuration; only a new thread
+    may fall back before turn submission."""
     call_started = time.time()
     baseline = CodexUsage(0, 0, 0, 0, 0) if thread is None else None
     if thread is not None:
@@ -226,7 +231,8 @@ def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
     try:
         try:
             client = transport()
-            loaded = codex_daemon.start(client, thread, cwd, model, effort, writable, instructions)
+            loaded = codex_daemon.start(client, thread, cwd, model, effort, writable,
+                                        worker_config, instructions)
         except (OSError, ValueError) as exc:
             # With no daemon connected, no daemon holds the thread, so exec can resume it.
             if original_thread is not None and client is not None:
@@ -344,7 +350,9 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
         transport: Callable[[], Any] = codex_daemon.Proxy,
         resume: bool = False) -> str:
     """Return the last message, or raise with the CLI's error. Save a thread
-    id even on failure so a later call can continue the same session."""
+    id even on failure so a later call can continue the same session.
+    Require the calling Claude session before work and configure both transports
+    to give worker shells that identity on every call."""
     scratch = scratch.resolve()
     import codex_ticket
 
@@ -354,6 +362,9 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
     session = scratch / "codex-session"
     preparing = time.time()
     try:
+        worker_config = {
+            "shell_environment_policy.set." + ticket_numbers.SESSION_VAR: ticket_numbers.session_id(),
+        }
         instructions = None if thread is not None else role_instructions(root, home, agent, agent_type)
         prompt = item if thread is not None else "\n\n".join([brief.read_text(), item])
         last = scratch / "codex-last.md"
@@ -375,12 +386,13 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
             record.write(json.dumps(failure) + "\n")
         raise ValueError(f"launch failed before Codex started [{failure['id']}]: {exc}") from exc
     daemon_message = daemon_turn(scratch, thread, prompt, item, cwd, model, effort,
-                                 writable, transport, instructions, home)
+                                 writable, transport, worker_config, instructions, home)
     if daemon_message is not None:
         return daemon_message
     argv = ["codex", "exec", "-m", model, "-c", f'model_reasoning_effort="{effort}"',
             "-c", "project_doc_max_bytes=0",
-            *(a for k, v in codex_permissions([*writable, cwd / ".codex"]).items()
+            *(a for k, v in {**codex_permissions([*writable, cwd / ".codex"]),
+                           **worker_config}.items()
               for a in ("-c", f"{k}={codex_config_value(v)}")),
             "-c", 'approval_policy="never"',
             "--skip-git-repo-check", "-C", str(cwd), "-o", str(last), "--json"]

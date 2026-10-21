@@ -1,6 +1,7 @@
 """A JSON-RPC client of the shared Codex daemon, through its WebSocket proxy.
 
-Closing this client stops only its proxy process, never the shared daemon.
+Work requests supply the calling session's worker shell configuration on start
+and resume. Closing this client stops only its proxy process, never the shared daemon.
 """
 
 import base64
@@ -166,10 +167,12 @@ class Proxy:
 
 def start(
     client: Any, thread: str | None, cwd: Path, model: str, effort: str, writable: list[Path],
-    instructions: str | None = None,
+    worker_config: dict[str, str], instructions: str | None = None,
 ) -> dict[str, Any]:
-    """Load a thread and check effective settings before starting any work."""
+    """Load a thread with the caller's worker shell configuration on start or
+    resume, and check effective settings before starting any work."""
     config = {
+        **worker_config,
         "project_doc_max_bytes": 0,
         "model_reasoning_effort": effort,
         **codex_permissions([*writable, cwd / ".codex"]),

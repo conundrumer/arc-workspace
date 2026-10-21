@@ -140,7 +140,8 @@ def test_proxy_declares_experimental_api(files, monkeypatch):
     proxy = daemon.Proxy()
     try:
         assert transport.experimental_api
-        daemon.start(proxy, None, files[0], "gpt-6.1-sol", "low", [files[-1]])
+        daemon.start(proxy, None, files[0], "gpt-6.1-sol", "low", [files[-1]],
+                     {"shell_environment_policy.set.CLAUDE_CODE_SESSION_ID": "test-session"})
     finally:
         proxy.close()
 
@@ -148,6 +149,7 @@ def test_proxy_declares_experimental_api(files, monkeypatch):
 @pytest.fixture
 def files(tmp_path, monkeypatch):
     monkeypatch.delenv("CODEX_HOME", raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "test-session")
     root, home = tmp_path / "repo", tmp_path / "home"
     root.mkdir()
     (root / "CLAUDE.md").write_text("+ lib: none\n- repo instructions\n")
@@ -314,6 +316,7 @@ def test_silently_ignored_options_refuse_work(files, ignored, resume):
             "low",
             [scratch],
             lambda: transport,
+            {"shell_environment_policy.set.CLAUDE_CODE_SESSION_ID": "test-session"},
         )
 
     if resume:
@@ -447,7 +450,8 @@ def test_unavailable_daemon_falls_back_to_exec(files, capsys, resume):
     def attempt():
         return agent.daemon_turn(
             scratch, "thread" if resume else None, "prompt", "input", files[0],
-            "gpt-6.1-sol", "low", [scratch], unavailable
+            "gpt-6.1-sol", "low", [scratch], unavailable,
+            {"shell_environment_policy.set.CLAUDE_CODE_SESSION_ID": "test-session"}
         )
 
     assert attempt() is None
@@ -576,7 +580,7 @@ def test_resume_requires_saved_thread(files):
     assert not files[-1].exists()
 
 
-@pytest.mark.parametrize("phase", ["instructions", "brief", "git"])
+@pytest.mark.parametrize("phase", ["instructions", "brief", "git", "session"])
 def test_preparation_failure_is_proved_without_turn_history_and_can_retry(
         files, monkeypatch, capsys, phase):
     from controlled_markdown.nodes import ControlledMarkdownError, Rule
@@ -596,7 +600,9 @@ def test_preparation_failure_is_proved_without_turn_history_and_can_retry(
                 raise ControlledMarkdownError("/home/CLAUDE.md", 3, Rule.NO_MARKER, "bad line")
             raise OSError("git directory unavailable")
 
-        if phase == "instructions":
+        if phase == "session":
+            preparation.delenv("CLAUDE_CODE_SESSION_ID")
+        elif phase == "instructions":
             preparation.setattr(agent, "role_instructions", fail)
         elif phase == "brief":
             brief.unlink()
