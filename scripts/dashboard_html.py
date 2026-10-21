@@ -96,9 +96,7 @@ def role_words(r: Role) -> str:
 
 
 def at_work(w: list[ShownAgent], now: float) -> str:
-    """The words on open work and its latest agent, where one runs."""
-    if not w:
-        return "work open · no agent running"
+    """The words on work with workers and its latest agent."""
     a = max(w, key=lambda a: a.launched)
     return f"{role_words(a.role)} at work, {ago(now - a.launched)}"
 
@@ -303,8 +301,7 @@ def active(v: View, st: Standings) -> tuple[str, int]:
     rows: list[tuple[float, float, Row, str]] = []
     for r in st.rows:
         w = st.row_agents(r)
-        if st.shown(r) and (w or (r.subject.status is not Status.DRAFT
-                                 and st.state(r.subject)[0] is Standing.WORKING)):
+        if st.shown(r) and st.active(r):
             b = basis(v, r)
             if w:
                 a = max(w, key=lambda a: a.launched)
@@ -313,7 +310,7 @@ def active(v: View, st: Standings) -> tuple[str, int]:
                     s = max(s, p.stage)
                 right = f"{stage_bar(s, Mark.AT_WORK)}{s.name.capitalize()} · {ago(v.now - a.launched)}"
             else:
-                right = f"{stopped_bar(v, r)}{at_work(w, v.now).capitalize()}"
+                right = f"{stopped_bar(v, r)}Idle"
             take = taken(b)
             rows.append((r.subject.filed if take is None else take.time, -r.subject.filed, r, right))
     rows.sort(key=lambda x: (*priority(v, x[2]), *x[:2]))
@@ -361,7 +358,7 @@ def change_states(v: View, st: Standings, t: Ticket) -> list[ChangeState]:
             case Standing.WORKING:
                 words = at_work(st.agents(c), v.now)
             case Standing.READY:
-                words = "next to start"
+                words = "idle" if st.active(Row(c, c, (c,))) else "next to start"
             case Standing.WAITING:
                 words = f"after {root.number}"
             case Standing.BEHIND:
@@ -401,14 +398,13 @@ def queued(v: View, st: Standings) -> str:
     followed by rows without a start; remaining ties go newest first."""
     sessions: dict[int | None, list[tuple[Row, Standing | None, Ticket]]] = {}
     for r in st.rows:
+        if st.active(r):
+            continue
         if r.subject.status is Status.DRAFT:
-            if st.row_agents(r):
-                continue
             k, root = None, r.subject
         else:
             k, root = st.state(r.subject)
-        if k is not Standing.WORKING:
-            sessions.setdefault(r.lead.session, []).append((r, k, root))
+        sessions.setdefault(r.lead.session, []).append((r, k, root))
     if not sessions:
         return '<div class="meta">Nothing is queued.</div>'
 

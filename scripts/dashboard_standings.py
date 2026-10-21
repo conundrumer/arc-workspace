@@ -170,6 +170,12 @@ class Standings:
         return (self.v.agents.get(r.subject.number, []) if r.subject.status is Status.DRAFT
                 else self.agents(r.subject))
 
+    def active(self, r: Row) -> bool:
+        """Whether the row has workers or a taken assignment ready to continue."""
+        t = r.subject
+        return bool(self.row_agents(r)) or (t.status is Status.ASSIGNED
+                                           and taken_before(t) and self.state(t)[0] is Standing.READY)
+
     def blocker(self, t: Ticket) -> Ticket | None:
         """The first open dependency, the ticket holding a start, or the
         unfinished change `t` waits on, including a draft."""
@@ -196,8 +202,6 @@ class Standings:
             return Standing.NO_OPERATOR
         if t.session in self.own_scope and not self.owned(t):
             return Standing.OWN_SCOPE
-        if v.holds.get(t.number) is None and t.status is Status.ASSIGNED and taken_before(t):
-            return Standing.WORKING
         match v.holds.get(t.number):
             case Hold.OWN_SCOPE:
                 return Standing.OWN_SCOPE
