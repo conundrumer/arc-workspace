@@ -66,7 +66,7 @@ def design_review(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
     whose agents, those of other sessions and those its editors launched
     included, are `agents`, or `Pause.CLEAR` where none is due or
     the one due is at work or has reported. A reviewer that ended with no
-    report holds the change, since the merge waits on its judgment."""
+    report is replaced, since the merge still needs its judgment."""
     if not builds_code(editors):
         return Pause.CLEAR
     since = due_since(t, here)

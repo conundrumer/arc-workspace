@@ -47,10 +47,9 @@ end. Where a ticket reviewer returned and left a draft in
 `tickets/draft/` with no finding and no suggestion, or a ticket analyst
 returned with no revision written, the review of that draft holds until a
 `Op decision:` line rules it with one of the choices the command gives it
-(`directives.ruling`). A ticket reviewer that ended with no report
-(`Agent.unreported`) and wrote no line on the draft is no review of it,
-and the draft is ready for another, unless an earlier ticket reviewer
-launched on it since its last `filed` or `revised` line also ended so."""
+(`directives.ruling`). An attempt that stopped without a result and
+wrote no line on the draft leaves that draft ready for another review;
+repeated interruptions do not turn into a completed review."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -63,6 +62,7 @@ from operations.taking import STALLED, purview
 from operations.directives import Decision, Directive, named, numbers, ruling
 from operations.roles import ANALYST_NAMES, Purpose, Role, analyst_subject, joined, subjects
 from operations.parties import Agents
+from operations.completion import decided, occupies
 from operations.reports import left_for_decision
 from operations.state import Agent, LogLine, State, Ticket
 from ticketing.vocabulary import Note, Status, last_move_into, queued
@@ -350,8 +350,10 @@ def draft_step(state: State, t: Ticket) -> Step | Joined | None:
     last_i = last_index(t, FILED_OR_REVISED)
     if found or suggested or stated:
         analyst_done = [a for a in agents if a.role is Role.TICKET_ANALYST
-                        and a.launched > t.log[-1].time]
+                        and a.launched > t.log[-1].time and occupies(a)]
         writer = resumable(state, t) if not (found or stated) else None
+        if writer is not None and not occupies(writer):
+            writer = None
         if writer is not None and writer.agent_id is not None:
             message = briefs.weigh_suggestions(t.number, list(dict.fromkeys(suggested)),
                                                at_cap(t))
@@ -371,11 +373,10 @@ def draft_step(state: State, t: Ticket) -> Step | Joined | None:
         return None
     given = since if by_log else t.log[-1].time
     reviewed = [a for a in agents if a.role is Role.TICKET_REVIEWER and a.launched > since
-                and a.launched >= given]
-    silent = [a for a in reviewed if a.unreported and a.agent_id not in writers]
+                and a.launched >= given and (occupies(a) or a.agent_id in writers)]
     if not reviewed:
         return Joined(Group.READY, 0.0)
-    if silent == [reviewed[-1]]:
+    if reviewed[-1].agent_id not in writers and not decided(reviewed[-1]):
         return Joined(Group.READY, reviewed[-1].since)
     what = mctx("ticket reviewer {agent} left draft {number} under `tickets/draft/` with "
                 "no finding").format(agent=reviewed[-1].agent_id, number=t.number)

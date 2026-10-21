@@ -65,6 +65,7 @@ from operations.directives import (
     unread,
 )
 from operations import briefs
+from operations.completion import replacement
 from operations.pacing import Capped, Pace
 from operations.roles import PASSES, Purpose, Role, launch_parameters, launched_type
 from operations.state import Agent, Call, NotComputed, State, Tool, Waits, memoized
@@ -148,6 +149,7 @@ def place(state: State, s: Step | None) -> tuple[Step | None, Undecided | None, 
     it placed is one the journal retired (`Due.RETIRED`), of which it gives
     no step."""
     while s is not None:
+        s = replacement(state, s)
         if isinstance(s, Launch):
             s = lineage.held(state, s)
         if isinstance(s, Launch | Send | Bash) and due(state.journal, s, state.now) is Due.RETIRED:
@@ -156,7 +158,7 @@ def place(state: State, s: Step | None) -> tuple[Step | None, Undecided | None, 
             return None, s if isinstance(s, Undecided) else None, False
         on = s if isinstance(s, Undecided) else None
         if on is not None:
-            s = decisions.launch(state, on)
+            s = replacement(state, decisions.launch(state, on))
         if not (isinstance(s, Launch) and s.role in PASSES) and (
                 ruling := passed(s, state)) is not None:
             s = None if on is not None else Undecided(mctx(

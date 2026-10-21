@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterable
 
 from controlled_markdown import mctx
 from operations import messages
+from operations.completion import finished, occupies, replacement
 from operations.constants import COORDINATOR
 from operations.journal import Due, Entry, due
 from operations.roles import Purpose
@@ -18,7 +19,7 @@ def decided_by(state: State, step: Undecided) -> list[Agent]:
     """The ticket analysts of any operator of the session launched on
     `step`, in the order of their launch."""
     k = analyst_key(step)
-    return [a for a, purpose, keys in state.analysts() if purpose is Purpose.STEP and keys == [k]]
+    return [a for a, purpose, keys in state.analysts() if purpose is Purpose.STEP and keys == [k] and occupies(a)]
 
 
 def on_subject(state: State, step: Undecided) -> bool:
@@ -44,6 +45,7 @@ def repeated(step: Step, state: State) -> bool:
     an operator gave it to the coordinator, as
     `steps.UNDECIDED` and its `what`, or in a message that holds each of its
     `given`. Its procedure then waits on the answer."""
+    step = replacement(state, step)
     if held_aside(state, step):
         return True
     match step:
@@ -69,7 +71,8 @@ def answered(step: Send, state: State) -> bool:
         return False
     of = [a for a in state.transcripts.agents if a.agent_id == step.to]
     return not any(a.pending for a in of) and any(
-        r.time > max(times) for a in of for r in a.reports)
+        finished(a) and (r := a.last_report) is not None and r.time > max(times)
+        for a in of)
 
 
 def sendings(step: Send, state: State) -> list[float]:

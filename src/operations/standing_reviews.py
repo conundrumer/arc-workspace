@@ -27,6 +27,7 @@ from dataclasses import dataclass
 
 from controlled_markdown import mctx
 from operations import briefs
+from operations.completion import decided, occupies
 from operations.main_session import main_only
 from operations.occasions import opened
 from operations.state import Agent, Reader, State
@@ -43,13 +44,17 @@ points at, past which the reader is overdue where a later commit of
 @main_only
 def standing_review(state: State) -> Step | None:
     """The launch of a standing doc review, where one is due."""
-    past = STANDING.agents(state)
+    past = [a for a in STANDING.agents(state) if occupies(a)]
     if opened(state, past) is None:
         return None
     if not past:
         due = any(c.time > state.started for c in state.git.commits)
     else:
-        due = not at_head(state, past[-1])
+        last = past[-1]
+        tags = state.git.doc_reviews
+        tagged = (tags is not None and tags.get(last.subject, float("-inf"))
+                  >= state.git.commits[0].time)
+        due = not at_head(state, last) or (not tagged and not decided(last))
     return doc_review(state) if due else None
 
 
@@ -66,7 +71,7 @@ def overdue_review(state: State) -> Step | None:
     free = free_readers(state)
     if not isinstance(free, Free):
         return free
-    reviewed = {a.subject for a in STANDING.agents(state) if at_head(state, a)}
+    reviewed = {a.subject for a in STANDING.agents(state) if (a.pending or decided(a)) and at_head(state, a)}
 
     def overdue(r: Reader) -> bool:
         t = free.times.get(r.tag)

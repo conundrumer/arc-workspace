@@ -18,6 +18,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from operations import briefs
+from operations.completion import occupies
 from operations.change_agents import latest_editors, settled
 from operations.filing import editor_scratch
 from operations.roles import BUILDERS, Role
@@ -53,8 +54,9 @@ def fragments_due(here: list[Agent]) -> bool:
     `here` are due a doc editor. `held_budgets.doc_budgets` reads a change's
     doc budget only where this holds, so it reads `HeldRead.fragments` only
     where `fragments_step` may need the budget."""
+    fragments = [a for a in here if briefs.gives_fragments(a)]
     return (not any(a.pending for a in here) and bool(drafter_reports(here))
-            and not any(briefs.gives_fragments(a) for a in here))
+            and (not fragments or not occupies(fragments[-1])))
 
 
 def fragments_step(state: State, t: Ticket, w: Path,

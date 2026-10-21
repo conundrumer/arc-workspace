@@ -16,6 +16,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from operations import briefs
+from operations.completion import finished, occupies
 from operations.change_budget import left_draft
 from operations.change_holds import (Hold, findings_hold, left_hold, questions_hold,
                                      unreplied_hold)
@@ -54,23 +55,15 @@ def agents_by_change(state: State) -> Mapping[str, tuple[Agent, ...]]:
     return {n: tuple(agents) for n, agents in out.items()}
 
 
-def unreported(a: Agent, number: str) -> Undecided:
-    """The hold on the agent `a` of the change `number`, which ended with
-    no report."""
-    return Undecided(mctx("{role} {agent} on change {number} ended with no report").format(
-        role=a.role, agent=a.agent_id, number=number))
-
-
 def latest_of_role(agents: list[Agent], role: Role, since: float, number: str,
                    launch: Callable[[], Step]) -> Step | None:
     """The step on the latest of the agents of `role` among `agents`, those
     of the change `number`, launched after `since`: `launch` where there
-    is none, its hold (`unreported`) where it ended with no report, and
-    otherwise None."""
+    is no active or completed attempt, and otherwise None."""
     found = [a for a in agents if a.role is role and a.launched > since]
-    if not found:
+    if not found or not occupies(found[-1]):
         return launch()
-    return unreported(found[-1], number) if found[-1].unreported else None
+    return None
 
 
 def worktree_occasion(t: Ticket, w: Path) -> str:
@@ -133,8 +126,12 @@ def change_editors(t: Ticket) -> tuple[Role, ...] | Undecided:
 
 def unstaffed(editors: tuple[Role, ...], here: list[Agent]) -> list[Role]:
     """The editor roles of `editors` with no agent among `here`, the
-    editors in the change's worktree, in the order of `EDITORS`."""
-    return [r for r in EDITORS if r in editors and not any(a.role is r for a in here)]
+    editors in the change's worktree, or whose latest attempt in a part
+    stopped without a result, in the order of `EDITORS`."""
+    latest = latest_editors([a for a in here if briefs.FRAGMENTS_PART not in a.brief])
+    return [r for r in EDITORS if r in editors and (
+        not any(a.role is r for a in latest)
+        or any(a.role is r and not occupies(a) for a in latest))]
 
 
 def latest_editors(here: list[Agent]) -> list[Agent]:
@@ -170,7 +167,7 @@ class Settled:
     (`analysts`); the latest report of each earlier agent of `role` there,
     for an editor only of its own part (`earlier`); whether an earlier
     agent of `role` there, for an editor only of its own part, was
-    launched, whether or not it reported (`launched_before`); and each hold
+    launched and still occupies its work (`launched_before`); and each hold
     of the change that a ruling decided with a choice that goes on past it
     (`ruled`)."""
     number: str
@@ -193,7 +190,7 @@ def reported_at(a: Agent) -> float | None:
 
 def reported(agents: list[Agent]) -> tuple[Reported, ...]:
     return tuple(Reported(a.agent_id, r) for a in agents
-                 if a.agent_id is not None and (r := a.last_report) is not None)
+                 if a.agent_id is not None and finished(a) and (r := a.last_report) is not None)
 
 
 def settled(state: State, t: Ticket, role: Role, part: briefs.Part | None) -> Settled:
@@ -230,7 +227,7 @@ def settled(state: State, t: Ticket, role: Role, part: briefs.Part | None) -> Se
             reply = reported([on]) if on is not None else ()
             ruled.append(Ruled(hold.text, given.choice, hold.choices[given.choice],
                                reply[0] if reply else None))
-    return Settled(number, role, tuple(reported(analysts)), earlier, bool(before),
+    return Settled(number, role, tuple(reported(analysts)), earlier, any(occupies(a) for a in before),
                    tuple(ruled))
 
 

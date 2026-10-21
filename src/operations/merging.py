@@ -92,6 +92,7 @@ from operations.change_agents import of_change, settled
 from operations.change_holds import open_questions
 from operations.change_budget import TIME_NOTE, TIME_OPENING, left_draft, taken
 from operations.filing import editor_scratch
+from operations.completion import occupies
 from operations.reports import splits, unread_split
 from operations.roles import Role
 from operations.constants import COORDINATOR
@@ -562,7 +563,7 @@ def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent],
     refusal `last` reports, whose `QUOTE_LINE` matches are `quotes`, or
     None where it reports none or such an editor launched after it."""
     if quotes:
-        if any(a.role is Role.CODE_EDITOR and a.launched > last.time for a in latest):
+        if any(a.role is Role.CODE_EDITOR and a.launched > last.time and occupies(a) for a in latest):
             return None
         files = sorted({m["path"] for m in quotes})
         return Launch(Role.CODE_EDITOR, t.number, briefs.quotes_fix(
@@ -664,6 +665,7 @@ def close(state: State, t: Ticket, agents: list[Agent], evidence: str | None = N
     head = state.git.commits[0].hash
     if t.after_merge is not None:
         runs = state.agents_of(Role.AFTER_MERGE, t.number)
+        runs = [a for a in runs if occupies(a)]
         if not runs:
             return Launch(Role.AFTER_MERGE, t.number, briefs.after_merge(
                 t.number, t.after_merge, head, evidence), occasion=head)

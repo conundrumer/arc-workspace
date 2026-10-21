@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterable
 from controlled_markdown import mctx
 from operations import change_take, changes, decisions, drafts, passes, runs, taking, triage
 from operations.arrivals import received
+from operations.completion import occupies
 from operations.directives import NUMBER, TASK, Directive, Line, Pipeline, lines
 from operations.final_reply import ending_step, final_sends, final_text, first_line
 from operations.nesting import nested
@@ -92,7 +93,7 @@ def expedite_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
 
 
 def merged_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
-    if any(a.launched > ln.message.time for a in state.agents_of(Role.BATCH_PROFILE)):
+    if any(a.launched > ln.message.time and occupies(a) for a in state.agents_of(Role.BATCH_PROFILE)):
         return []
     return [mctx("no batch profile has launched since the line was given")]
 

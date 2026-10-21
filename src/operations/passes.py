@@ -51,6 +51,7 @@ from datetime import UTC, datetime
 from controlled_markdown import mctx
 from operations import briefs, messages, runs
 from operations.directives import Line, Pipeline, lines, overrides, passed, pipelines, session_lines
+from operations.completion import decided, occupies
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
 from operations.state import Agent, Call, Restore, State, Ticket, last_reported, memoized
@@ -115,7 +116,12 @@ def ran(state: State, command: str, since: float) -> list[bool]:
 
 def latest(state: State, role: Role, subject: str, since: float) -> Agent | None:
     found = [a for a in state.agents_of(role, subject) if a.launched >= since]
-    return found[-1] if found else None
+    if not found:
+        return None
+    a = found[-1]
+    complete = (tickets_listed(state, a.agent_id) is not None if role in PASSES
+                else occupies(a))
+    return a if a.pending or complete else None
 
 
 def review_tickets(state: State, task: str, review: Agent) -> list[str]:
@@ -174,7 +180,7 @@ def reviews(state: State, task: str, ended: list[Ended]) -> tuple[Step | None] |
             return (reviewer,)
         numbers = [*standing(state, filed), *review_tickets(state, task, review)]
         analyst = [x for x, purpose, nums in state.analysts()
-                   if purpose is Purpose.PASS and nums[0] == task and settles(x, reviewer[0])]
+                   if purpose is Purpose.PASS and nums[0] == task and settles(x, reviewer[0]) and occupies(x)]
         if numbers and not analyst:
             subject = analyst_subject(Purpose.PASS, joined([task, *numbers]))
             return (Launch(Role.TICKET_ANALYST, subject, briefs.pass_settle(
@@ -194,7 +200,7 @@ def interference(state: State, p: Pipeline) -> str | bool:
         if blocked_on_user(t) is not None:
             return mctx("interference ticket {number} waits on the user").format(number=t.number)
         given = [x for x, _, nums in state.analysts()
-                 if t.number in nums and x.launched > t.filed]
+                 if t.number in nums and x.launched > t.filed and occupies(x)]
         if (t.status in UNTAKEN or t.status is Status.ASSIGNED) and given and not any(
                 x.pending for x in given):
             return mctx("the ticket analyst left interference ticket {number} open").format(
@@ -529,8 +535,8 @@ def fixes(state: State) -> list[Fix]:
     """The `interference` tickets whose solver fix is due, in the tracker's
     order. The record that a fix is done is the line its agent writes on
     the ticket, which the tracker shares across sessions; a ticket closed
-    again after that line gets a fix of its new closure. A fix agent that
-    returned with no such line gets no second launch in its session. A
+    again after that line gets a fix of its new closure. An interrupted
+    fix with no completion line leaves that closure due. A
     solver pass on the task launched since the closure wrote the solver
     with the closure in place, so it leaves no fix due."""
     out: list[Fix] = []
@@ -540,8 +546,10 @@ def fixes(state: State) -> list[Fix]:
             continue
         at = resolved(state, t)
         i = closing(t)
-        if at is None or i is None or at < FIXES_FROM or fixers(state, t, at) or any(
-                a.launched >= at for role in PASSES for a in state.agents_of(role, t.subject)):
+        if at is None or i is None or at < FIXES_FROM or any(
+                a.pending or decided(a) for a in fixers(state, t, at)) or any(
+                a.launched >= at and (a.pending or tickets_listed(state, a.agent_id) is not None)
+                for role in PASSES for a in state.agents_of(role, t.subject)):
             continue
         if any(ln.note.startswith(f"{briefs.FIX_MARK}:") for ln in t.log[i + 1:]):
             continue
@@ -570,8 +578,10 @@ def releases(state: State) -> list[tuple[str, Agent]]:
     claim is the fix's."""
     on = {p.task for p in running(state)}
     latest_fix = {task: a for task, a in fix_agents(state)}
+    due = {f.task for f in fixes(state)}
     return [(task, a) for task, a in latest_fix.items()
-            if not a.pending and task not in on and state.git.claims.get(task) == state.session
+            if not a.pending and task not in on and task not in due
+            and state.git.claims.get(task) == state.session
             and not ran(state, release_command(task), a.launched)]
 
 
@@ -611,9 +621,11 @@ def fix_step(state: State) -> Step | None:
     for f in fixes(state):
         if f.task in pending:
             continue
+        past = fixers(state, f.ticket, f.closed)
+        occasion = f"{f.closed} {past[-1].since}" if past else str(f.closed)
         launch = Launch(Role.SOLVER_FIX, f.ticket.number,
                         briefs.solver_fix(f.task, f.ticket.number, waited_on(f.ticket), state.me),
-                        occasion=str(f.closed))
+                        occasion=occasion)
         if any(a.pending for p in on if p.task == f.task for a in passes_of(state, p)):
             continue
         holder = state.git.claims.get(f.task)

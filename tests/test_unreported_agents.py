@@ -1,7 +1,6 @@
 """An agent that ended with no report since its launch or its last resume
-did none of the work it was given: a second ticket reviewer or doc
-reviewer so ended holds its review, and an editor so ended holds its
-change in place of its merge. The merge of a change closes only its open
+leaves its work for another attempt: ticket and doc reviews retry, and
+an editor is replaced before its change can merge. A merge closes only its open
 `question` tickets."""
 
 from pathlib import Path
@@ -55,10 +54,9 @@ def state(tmp_path: Path, tickets: list, agents: list, w: Path, commits=()):
                                  for t in tickets}))
 
 
-def test_two_ticket_reviewers_that_gave_no_report_hold_the_draft(tmp_path: Path) -> None:
-    from operations.drafts import draft_step
+def test_two_ticket_reviewers_that_gave_no_report_leave_the_draft_ready(tmp_path: Path) -> None:
+    from operations.drafts import Group, Joined, draft_step
     from operations.roles import Role
-    from operations.steps import Undecided
     t = ticket(tmp_path, "draft", "9-1_change_x_ticket-analyst.md",
                "---\nkind: change\neditors: code-editor\n---\n# x: y\n\n## Log\n"
                "2026-10-17T02:14:06Z draft [ticket-analyst]: filed\n")
@@ -66,7 +64,7 @@ def test_two_ticket_reviewers_that_gave_no_report_hold_the_draft(tmp_path: Path)
                        t.last_time + n, []) for n, i in ((10, FIRST), (20, SECOND))]
     w = tmp_path / "main" / ".claude" / "worktrees" / "w"
     step = draft_step(state(tmp_path, [t], reviewers, w), t)
-    assert isinstance(step, Undecided)
+    assert step == Joined(Group.READY, 0.0)
 
 
 def change(tmp_path: Path, w: Path, editors: str = "code-editor"):
@@ -79,10 +77,9 @@ def change(tmp_path: Path, w: Path, editors: str = "code-editor"):
 def test_an_unreported_editor_blocks_review_and_merge(tmp_path: Path, resumed: bool) -> None:
     from operations import briefs
     from operations.changes import carry, next_step
-    from operations.journal import Close, Entry, Journal, Outcome
-    from operations.state import Tool, Waits
+    from operations.state import Waits
     from operations.roles import Role
-    from operations.steps import Send, Undecided, analyst_key
+    from operations.steps import Launch
     w = worktree(tmp_path)
     (w / "a.txt").write_text("b\n")
     t = change(tmp_path, w)
@@ -92,31 +89,17 @@ def test_an_unreported_editor_blocks_review_and_merge(tmp_path: Path, resumed: b
                    [launched + 50] if resumed else [])
     initial = state(tmp_path, [t], [editor], w)
     step = next_step(initial, t)
-    assert isinstance(step, Send) and step.to == FIRST
-    resumed_at = editor.since + 10
-    entry = Entry(None, "", step.origin, ME, resumed_at, Tool.SEND_MESSAGE,
-                  FIRST, step.message, None, t.number,
-                  Close(Outcome.DONE, resumed_at + 1, ""))
-    recovery = replace(initial, journal=Journal((entry,)),
-                       transcripts=replace(initial.transcripts,
-                           agents=(replace(editor, since=resumed_at),)))
-    failed = next_step(recovery, t)
-    assert isinstance(failed, Undecided) and FIRST in failed.what and str(w) in failed.what
-    again = next_step(replace(recovery, now=recovery.now + 100), t)
-    assert isinstance(again, Undecided) and analyst_key(again) == analyst_key(failed)
-    running = replace(recovery, transcripts=replace(recovery.transcripts,
-        agents=(replace(editor, since=resumed_at, waits=Waits.AT_WORK),)))
+    assert isinstance(step, Launch) and step.role is Role.CODE_EDITOR
+    running = replace(initial, transcripts=replace(initial.transcripts,
+        agents=(replace(editor, waits=Waits.AT_WORK),)))
     assert carry(running, t) is None
-    independent = replace(recovery, transcripts=replace(recovery.transcripts,
-        agents=(replace(editor, since=resumed_at + 10),)))
-    assert isinstance(next_step(independent, t), Send)
 
 
-def test_two_doc_reviewers_that_gave_no_reply_hold_the_review(tmp_path: Path) -> None:
+def test_two_doc_reviewers_that_gave_no_reply_leave_another_review_due(tmp_path: Path) -> None:
     from operations import briefs
     from operations.doc_review import doc_review
     from operations.roles import Role
-    from operations.steps import Undecided
+    from operations.steps import Launch
     w = worktree(tmp_path)
     t = change(tmp_path, w, "doc-editor")
     launched = t.last_time + 10
@@ -127,7 +110,7 @@ def test_two_doc_reviewers_that_gave_no_reply_hold_the_review(tmp_path: Path) ->
                  for n, i in ((20, FIRST), (40, SECOND))]
     agents = [editor, *reviewers]
     assert isinstance(doc_review(state(tmp_path, [t], agents, w), t, w, [editor], agents, ME),
-                      Undecided)
+                      Launch)
 
 
 def test_the_merge_closes_no_question_that_waits(tmp_path: Path) -> None:

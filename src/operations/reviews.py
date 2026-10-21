@@ -3,8 +3,8 @@
 Each launches at any step where a commit of `master` that changes the
 paths it reviews is one the tag of its last baseline does not reach, and
 no reviewer of its role of the session runs. Its occasion is the newest
-such commit, so a review that ended with no tag launches again only once
-newer code of its paths merges. Where the read gives no baseline
+such commit. A reviewer that ends without its baseline or a decision
+leaves that same review due again. Where the read gives no baseline
 (`NoBaseline`), the unreviewed commits are unknown, and the step is
 undecided: on the newest commit of `master` that changes its paths, so
 that an operator hands it on once for each such commit, or, where no
@@ -16,6 +16,7 @@ from collections.abc import Callable
 
 from controlled_markdown import mctx
 from operations import briefs
+from operations.completion import decided
 from operations.filing import scratch_dir
 from operations.main_session import main_only
 from operations.state import NoBaseline, Review, State
@@ -49,6 +50,10 @@ def review(state: State, of: Review) -> Step | None:
     if not baseline.unreviewed:
         return None
     number = baseline.number + 1
+    past = state.agents_of(of.role, of.tag(number))
+    occasion = baseline.unreviewed[0]
+    if past and not decided(past[-1]):
+        occasion += f" replacement {past[-1].since}"
     return Launch(of.role, of.tag(number),
                   briefs.review(of, baseline.number, number, scratch_dir(of.stem, state.scratch)),
-                  occasion=baseline.unreviewed[0])
+                  occasion=occasion)

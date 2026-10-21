@@ -12,6 +12,7 @@ from gating.commands import Command, command_of
 from operations import briefs
 from operations.change_agents import change_editors, of_roles_since_draft, settled
 from operations.constants import REVIEW_ROUNDS
+from operations.completion import occupies
 from operations.reports import done
 from operations.roles import Role
 from operations.state import Agent, State, Ticket, last_reported
@@ -60,13 +61,13 @@ def checked_outputs(t: Ticket, outputs: tuple[str, ...]) -> list[str] | Undecide
 
 def check_round(state: State, t: Ticket) -> briefs.Round:
     """The round of the launch of an item checker on the change `t`. The
-    round of a launch is one more than the count of item checkers launched
-    on `t` since its last move out of `tickets/draft/`, those of other
+    round of a launch is one more than the count of item checkers that
+    still run or reported their result on `t` since its last move out of `tickets/draft/`, those of other
     sessions included: `REVIEW_ROUNDS` is its last round, and each launch
     after it is the check after the cap. The cap of another kind of review
     ends no round of the item check, so the decided edits at that cap get
     the next round."""
-    launched = len(of_roles_since_draft(state, t, (Role.ITEM_CHECKER,)))
+    launched = sum(occupies(a) for a in of_roles_since_draft(state, t, (Role.ITEM_CHECKER,)))
     if launched >= REVIEW_ROUNDS:
         return briefs.Round.AFTER_CAP
     return briefs.Round.LAST if launched + 1 == REVIEW_ROUNDS else briefs.Round.OPEN

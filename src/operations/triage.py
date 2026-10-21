@@ -75,6 +75,7 @@ from collections.abc import Callable, Mapping
 from controlled_markdown import mctx
 from operations import admission, briefs, changes, messages, taking
 from operations.reports import Label, items_of, mislabeled
+from operations.completion import decided, occupies
 from operations.parties import Agents, ByExit, Hold, Party
 from operations.passes import awaits_analyst
 from operations.roles import ANALYST_NAMES, Purpose, Role, analyst_subject, joined
@@ -105,15 +106,23 @@ def given_to(state: State, number: str) -> list[Agent]:
     event that freed it, and not sent that event's line, judged the ticket
     as it stood before it. An analyst that no longer runs and was launched
     before the last line of the form `taking.NOT_OWN` on it is not counted
-    where `judged_apart` does not give it."""
+    where `judged_apart` does not give it. A stopped attempt without a result
+    leaves the ticket available. An automatic release after its launch
+    also cancels that attempt, unless it returned a decision."""
     t = state.tracker.tickets[number]
     event = freed(t.log, t.kind, t.filed)
     line = event.line
-    judged = max((ln.time for ln in t.log if taking.NOT_OWN_LINE.fullmatch(ln.note)), default=None)
+    released = max((ln.time for ln in t.log if ln.status is Status.RELEASED
+                    and taking.RELEASED_LINE.fullmatch(ln.note)), default=None)
+    judgment = max((ln.time for ln in t.log if taking.NOT_OWN_LINE.fullmatch(ln.note)), default=None)
+    judged = judgment
     if judged is not None and judged_apart(state)(number):
         judged = None
     return [a for a, purpose, nums in state.analysts()
             if purpose in GIVEN and number in nums
+            and (occupies(a) or (judgment is not None and a.launched < judgment))
+            and (released is None or a.pending or a.launched > released
+                 or decided(a))
             and (judged is None or a.pending or a.launched > judged) and (
                 a.pending or a.launched > event.time or (
                     a.agent_id is not None and line is not None
@@ -379,7 +388,8 @@ def unfinished(state: State) -> Step | None:
     passes over an analyst with no agent id, of which `replied` gives
     none, so that the type checker reads the agent id as known."""
     for a, purpose, _, key in replied(state):
-        if a.agent_id is None or purpose is Purpose.STEP or items_of(a, list(Label)) is None:
+        if (a.agent_id is None or purpose is Purpose.STEP or not occupies(a)
+                or items_of(a, list(Label)) is None):
             continue
         open_items = None if purpose is Purpose.CHANGE else items_of(a, [Label.UNFINISHED])
         items = [*([open_items] if open_items else []), *mislabeled(a)]

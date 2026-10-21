@@ -4,6 +4,7 @@ next launch of a kind counts what stands (`opened`), whether a change
 merged since a time (`merged`, `merged_since`), and the number of the
 next launch of a kind (`next_number`)."""
 
+from operations.completion import occupies
 from operations.directives import Directive, numbers
 from operations.state import Agent, Merge, State
 
@@ -23,7 +24,9 @@ def opened(state: State, past: list[Agent]) -> float | None:
     """The time from which the next launch of the kind whose launches are
     `past`, those the session's operators made, counts what stands: the
     launch of the last of `past`, or the session's start where `past` is
-    empty. None where the last of `past` runs."""
+    empty. Interrupted attempts advance no window. None where the last
+    attempt still occupying its work runs."""
+    past = [a for a in past if occupies(a)]
     if past and past[-1].pending:
         return None
     return past[-1].launched if past else state.started

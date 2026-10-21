@@ -23,9 +23,8 @@ analyst launched on it since it has replied, which `changes.leftover`
 launches, and then the review passes, whatever editors report after it, and
 that reviewer is asked to review the change no more. A reply in any other form holds the review.
 A doc reviewer that ended with no report (`state.Agent.unreported`) is
-no review, and another is launched, unless an earlier doc reviewer of
-the worktree also ended so, and then the review is held as on a reviewer
-that has not replied. The command launches no editor for a reviewer's findings: that
+no review. Its replacement gets the current editors' reports, even if
+more than one earlier attempt ended without a result. The command launches no editor for a reviewer's findings: that
 reviewer sends them to the editors of its brief.
 
 A doc editor that `change_fragments` launches on a change's `mctx` fragments after
@@ -38,6 +37,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from operations import briefs, messages
+from operations.completion import occupies
 from operations.change_agents import settled
 from operations.change_holds import Hold, findings_hold, unreplied_hold
 from operations.directives import Decision, ruling
@@ -69,14 +69,14 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
     as the launcher of each doc reviewer it launches, `Pause.WAIT` where it
     waits on an agent, or `Pause.CLEAR` where it has passed."""
     r = latest_reviewer(agents, w)
-    if r is None:
+    if r is None or not occupies(r):
         return review_launch(state, t, w, here, launcher, 0.0)
     if r.pending:
         return Pause.WAIT
     reply = r.last_report
     if reply is not None and at_cap(r):
         judged = any(a.role is Role.TICKET_ANALYST and a.launched > reply.time
-                     and briefs.on_cap_reply(a) and a.last_report is not None for a in agents)
+                     and briefs.on_cap_reply(a) and occupies(a) and not a.pending for a in agents)
         return Pause.CLEAR if judged else Pause.WAIT
     if reply is not None and (late := [a for a in here if (rep := a.last_report) is not None
                                        and rep.time > reply.time]):
@@ -84,8 +84,6 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
     if reply is not None and no_finding(r):
         return Pause.CLEAR
     if reply is None:
-        if r.unreported and not any(a.unreported for a in reviewers_of(agents, w)[:-1]):
-            return review_launch(state, t, w, here, launcher, r.since)
         return unreplied(state, t, w, here, r, launcher)
     return review_decided(state, t, w, here, findings_hold(r, t.number), launcher)
 

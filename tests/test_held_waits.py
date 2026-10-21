@@ -91,7 +91,7 @@ def test_later_reply_waits_on_the_analyst_of_an_earlier_reply(tmp_path: Path, pe
               "---\nkind: change\neditors: code-editor\n---\n# x: y\n\n## Log\n"
               "2026-10-17T02:14:06Z draft [ticket-analyst]: filed\n")
     w = tmp_path / "main" / ".claude" / "worktrees" / "w"
-    reply = "Done.\n\n## For the coordinator\n- unfinished: item a\n"
+    reply = "Done.\n\n## For the coordinator\n- decision: choose item a\n- unfinished: item a\n"
 
     def analyst(replies: tuple[float, ...]) -> Launched:
         return Launched("a8e99dabca9ddb4de", ME, Role.TICKET_ANALYST,

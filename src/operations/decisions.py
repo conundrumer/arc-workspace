@@ -46,6 +46,7 @@ from controlled_markdown import mctx
 from operations import briefs, messages
 from operations.change_agents import settled
 from operations.directives import reply_decisions
+from operations.completion import finished, occupies
 from operations.reports import Label, items_of
 from operations.roles import Purpose, Role, analyst_of, analyst_subject, described
 from operations.state import Agent, State, Tool, Unread, own
@@ -129,7 +130,7 @@ def returned(state: State) -> list[Agent]:
     replies do not go back, as `scripts/operate.py --help rulings` gives."""
     return [a for a, purpose, _ in state.analysts()
             if purpose is Purpose.STEP and not a.pending and a.agent_id is not None
-            and a.reports and not tickets_closed(state, a) and applier(state, a) == state.me]
+            and finished(a) and not tickets_closed(state, a) and applier(state, a) == state.me]
 
 
 def tickets_closed(state: State, a: Agent) -> bool:
@@ -193,7 +194,8 @@ def failed(state: State) -> list[str]:
                                own(str(c.input.get("prompt", ""))))
     out: list[str] = []
     for subject, (time, what, why, prompt) in last.items():
-        if not why or any(a.launched > time for a in state.agents_of(Role.TICKET_ANALYST, subject)):
+        if not why or any(a.launched > time and occupies(a)
+                          for a in state.agents_of(Role.TICKET_ANALYST, subject)):
             continue
         out.append(mctx("- The launch `{what}` of a ticket analyst on the held step its brief "
                         "gives failed: {why}").format(what=what, why=why))

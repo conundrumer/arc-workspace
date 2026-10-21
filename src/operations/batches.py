@@ -21,6 +21,7 @@ batch filed is the one `triage` launches on any open ticket."""
 
 from controlled_markdown import mctx
 from operations import briefs
+from operations.completion import occupies
 from operations.taking import release
 from operations.occasions import merged, next_number
 from operations.state import Agent, State, memoized_by_transcripts
@@ -36,9 +37,10 @@ with members pending, and the least span between two gate launches."""
 
 def start(state: State, before: float | None = None) -> float:
     """The launch time of the last profile launch, of those before
-    `before` where it is given, or 0.0 where there is none."""
+    `before` where it is given, that runs or reported its result, or 0.0
+    where there is none."""
     return max((p.launched for p in PROFILE.agents(state)
-                if before is None or p.launched < before), default=0.0)
+                if occupies(p) and (before is None or p.launched < before)), default=0.0)
 
 
 def members(state: State, since: float) -> list[Agent]:

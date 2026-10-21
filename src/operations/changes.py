@@ -111,6 +111,7 @@ from operations.design_review import design_review, reviewing
 from operations.doc_review import doc_review, latest_reviewer, with_ids
 from operations.directives import Decision, give_again_line, held_on, ruling
 from operations.item_check import check_items, is_checked, latest_reports, unfinished
+from operations.completion import occupies, replacement
 from operations.reports import Label, at_cap, items_of, left_for_decision, shows_current
 from operations.roles import (CHECKS, LAUNCHING_EDITORS, Purpose, Role, analyst_of,
                               analyst_subject)
@@ -300,7 +301,7 @@ def reported_step(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
     if (step := fragments_step(state, t, w, here)) is not None:
         return step
     latest = latest_editors(here)
-    if (hold := editor_unreported(state, t, w, latest)) is not None:
+    if (hold := editor_replacement(state, t, w, latest)) is not None:
         return hold
     context = StageContext(state, t, w, editors, here, latest,
                             with_elsewhere(state, t.number, agents, REVIEWER_ROLES), launcher)
@@ -515,37 +516,14 @@ def check_or_line(state: State, c: EditorChange, agents: list[Agent]) -> Step | 
         number=c.t.number)
 
 
-def editor_unreported(state: State, t: Ticket, w: Path,
+def editor_replacement(state: State, t: Ticket, w: Path,
                       latest: list[Agent]) -> Step | None:
-    """The recovery of the first unreported editor of `t`, or the
-    unresolved step where that recovery ended without a fresh report."""
-    for a in latest:
-        if not a.unreported:
-            continue
-        if a.agent_id is None:
-            return Undecided(mctx("{role} on change {number} in {worktree} ended without "
-                                  "a report and has no agent identity for recovery").format(
-                role=a.role, number=t.number, worktree=w))
-        recovery = Send(a.agent_id, mctx(
-            "Change {number}: your turn since {time} ended without a report. "
-            "Finish the work your latest brief or finding gave you in {worktree}, "
-            "write your report, and hand back its report path.").format(
-                number=t.number, time=utc_stamp(a.since), worktree=w),
-            f"recover unreported {t.number}", since=a.since, change=t.number)
-        attempts = [e for e in state.journal.sent(a.agent_id)
-                    if e.origin == recovery.origin and e.change == t.number
-                    and e.close is not None and e.close.time >= a.since]
-        if attempts:
-            attempt = attempts[-1]
-            subject = f"failed editor recovery {t.number} {a.agent_id} {attempt.given}"
-            return Undecided(mctx(
-                "{role} {agent} on change {number} in {worktree} ended without a fresh "
-                "report after recovery sent at {time}. The work "
-                "from its latest brief or finding remains unreported; "
-                "settle recovery or replacement before review or merge.").format(
-                    role=a.role, agent=a.agent_id, number=t.number, worktree=w,
-                    time=utc_stamp(attempt.given)), subject=subject)
-        return recovery
+    """Replace an editor whose last attempt ended without a result."""
+    if any(not occupies(a) for a in latest if briefs.FRAGMENTS_PART not in a.brief):
+        editors = change_editors(t)
+        if isinstance(editors, Undecided):
+            return editors
+        return staff_editor(state, t, w, editors, of_change(state, t))
     return None
 
 
@@ -623,8 +601,8 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     """The step on what the editors leave, with `launcher` as the launcher
     of the agent it launches, or `Pause.CLEAR` where they leave nothing;
     `past_budget` gives that the change is past its cost budget."""
-    checkers = [a for a in agents if a.role is Role.ITEM_CHECKER]
-    analysts = [a for a in agents if a.role is Role.TICKET_ANALYST]
+    checkers = [a for a in agents if a.role is Role.ITEM_CHECKER and occupies(a)]
+    analysts = [a for a in agents if a.role is Role.TICKET_ANALYST and occupies(a)]
     if any(a.pending for a in checkers + analysts):
         return Pause.WAIT
     editors = with_ids(latest)
@@ -715,6 +693,7 @@ def due_step(state: State, t: Ticket, s: Step | None) -> Step | None:
     otherwise."""
     if s is None:
         return None
+    s = replacement(state, s)
     if not repeated(s, state):
         return s
     if (other := no_step(state, t, s)) is not None and not repeated(other, state):
