@@ -35,15 +35,16 @@ START_SECONDS = 30
 CODE_ENV = "ARC_OPERATE_CODE"
 
 
-class Replaced(Exception):
+# Request cancellation must escape the state cache's failed-read handlers.
+class Replaced(BaseException):
     """The interpreter must be replaced before the request can continue."""
 
 
-class Disconnected(Exception):
+class Disconnected(BaseException):
     """The request's client has gone or a replacement request waits."""
 
 
-class Expired(Exception):
+class Expired(BaseException):
     """The request reached its foreground deadline."""
 
 

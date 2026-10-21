@@ -1,5 +1,6 @@
 """Resident request races and source/code invalidation in isolated checkouts."""
 
+import contextlib
 import json
 import os
 import socket
@@ -8,6 +9,7 @@ import sys
 import textwrap
 import time
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -135,6 +137,72 @@ def test_code_replacement_during_a_request_discards_the_old_step(resident):
     assert result[1].startswith("new op ready ")
     assert result[2] == ""
     assert len(processes) == 2
+
+
+def test_first_request_after_code_replacement_uses_a_fresh_service(resident):
+    root, processes = resident
+    assert call(root)[0] == 0
+    (root / "code").write_text("new")
+    result = call(root)
+    assert result[0] == 0
+    assert result[1].startswith("new op ready ")
+    assert len(processes) == 2
+
+
+@pytest.mark.parametrize("cancel", [service.Replaced, service.Disconnected, service.Expired])
+def test_request_cancellation_escapes_cache_validation(monkeypatch, cancel):
+    monkeypatch.syspath_prepend(str(SCRIPTS))
+    reads = script("state_reads")
+
+    def interrupted(*_):
+        raise cancel
+
+    monkeypatch.setattr(reads, "stamp_now", interrupted)
+    with pytest.raises(cancel):
+        reads.holds((reads.By.STAMP, "fixture", (), (), None))
+
+
+def test_deadline_during_cache_validation_retires_the_service(monkeypatch):
+    import io
+    import signal
+    monkeypatch.syspath_prepend(str(SCRIPTS))
+    operate = script("operate")
+    reads = script("state_reads")
+    kept = script("kept_reads")
+    files = script("file_reads")
+    continued = []
+
+    def slow_stamp(*_):
+        time.sleep(0.2)
+
+    def main(_):
+        reads.holds((reads.By.STAMP, "fixture", (), (), None))
+        continued.append(True)
+        return 0
+
+    monkeypatch.setattr(reads, "stamp_now", slow_stamp)
+    monkeypatch.setattr(operate, "main", main)
+    monkeypatch.setattr(service, "executor", contextlib.nullcontext)
+    monkeypatch.setattr(service.select, "select", lambda *_: ([], [], []))
+    monkeypatch.setattr(kept, "fresh_code", lambda _: "current")
+    monkeypatch.setattr(kept, "flush", lambda: None)
+    monkeypatch.setattr(files, "stats_stand_but", lambda _: None)
+    monkeypatch.setattr(service.script_calls, "start_request", lambda *_: None)
+    monkeypatch.setattr(service.script_calls, "record", lambda: None)
+    monkeypatch.setattr(service, "timeout_output", lambda _: print("expired"))
+    message = {"operator": "fixture", "started": time.time(),
+               "deadline": time.monotonic() + 0.05, "refresh": False}
+    connection = Mock()
+    connection.makefile.return_value = io.BytesIO((json.dumps(message) + "\n").encode())
+    handler = signal.getsignal(signal.SIGALRM)
+    try:
+        assert service.serve_request(connection, Mock(), "current") is False
+    finally:
+        signal.signal(signal.SIGALRM, handler)
+    assert not continued
+    response = json.loads(connection.sendall.call_args.args[0])
+    assert response["status"] == 1
+    assert response["stdout"] == "expired\n"
 
 
 def test_disconnect_after_a_journaled_start_does_not_repeat_bash(resident):
