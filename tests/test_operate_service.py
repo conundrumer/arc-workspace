@@ -29,6 +29,7 @@ def until(path: Path) -> None:
 @pytest.fixture
 def resident(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     scripts = SCRIPTS
+    monkeypatch.syspath_prepend(str(scripts))
     (tmp_path / "scripts").mkdir()
     (tmp_path / "code").write_text("old")
     (tmp_path / "source").write_text("ready")
@@ -82,7 +83,8 @@ def resident(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             kwargs["env"] = {"PATH": os.defpath, "CLAUDE_CODE_SESSION_ID": "isolated-service",
                              "ARC_OPERATE_CODE": (tmp_path / "code").read_text()}
             super().__init__(argv, **kwargs)
-            processes.append(self)
+            if str(runner) in argv:
+                processes.append(self)
 
     monkeypatch.setattr(service.subprocess, "Popen", Started)
     driver_started = service.script_calls.cpu_seconds()
@@ -246,6 +248,39 @@ def test_fresh_import_closure_refuses_a_replaced_dependency(tmp_path, monkeypatc
                                   io.StringIO(), io.StringIO())
         with pytest.raises(service.Replaced):
             current.check()
+
+
+def test_cold_service_code_identity_survives_importing_operate(tmp_path):
+    """Use real import resolution: the transport fixtures replace the digest."""
+    done = subprocess.run(
+        [sys.executable, "-c", textwrap.dedent(f'''
+            import sys
+            from pathlib import Path
+            sys.path.insert(0, {str(SCRIPTS)!r})
+            import operate_service as service
+            import kept_reads
+            store = kept_reads.open_store
+            kept_reads.open_store = lambda: store(Path({str(tmp_path / "reads.sqlite")!r}))
+            endpoint = service.endpoint
+            path = endpoint(Path({str(tmp_path)!r}), "cold-code")
+            service.endpoint = lambda *_: path
+            service.IDLE_SECONDS = 0.001
+            service.script_calls.start_service = lambda *_: None
+            service.script_calls.record = lambda: None
+            digests = []
+            fresh = kept_reads.fresh_code
+            def digest(module):
+                value = fresh(module)
+                digests.append(value)
+                return value
+            kept_reads.fresh_code = digest
+            service.serve()
+            path.with_suffix(".owner").unlink()
+            assert len(digests) == 2
+            assert digests[0] == digests[1], digests
+        ''')], env={k: v for k, v in os.environ.items() if k != service.CODE_ENV},
+        capture_output=True, text=True, timeout=20)
+    assert done.returncode == 0, done.stdout + done.stderr
 
 
 def test_resident_work_is_present_in_the_cost_records(resident):
