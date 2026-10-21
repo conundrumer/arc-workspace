@@ -2,7 +2,7 @@
 operations, on a phone, from the main tree's tracker, the usage cache and
 the states the last reads of each session's operators recorded, what is
 moving, what is next and the week's pace, and updates itself in the
-browser as the tracker changes.
+browser as the tracker, usage observations or operator record sources change.
 
     uv run python scripts/ticket_dashboard.py <address> <port>
 
@@ -15,9 +15,9 @@ search's hits of the `q` parameter among the entries of the latest render,
 and `TICKET_ROUTE` the sheet of the ticket its `n` parameter gives; each
 renders the page first where none has run. The server gzips the body of
 each where the request accepts it. `EVENTS` is a Server-Sent Events stream that sends an
-event at the first read of `fingerprint`, every `POLL` seconds while the
-client is connected, that differs from the one of the last event and comes
-`MIN_EVENT` seconds or more after it; on that event the page fetches `/`
+event when the stream opens, then at the first read of `fingerprint`, every
+`POLL` seconds while the client is connected, that differs from the one of
+the last event and comes `MIN_EVENT` seconds or more after it; on that event the page fetches `/`
 and replaces its content in place, and the page holds no stream while it
 is hidden. The server serves no ticket file, and writes no file.
 
@@ -48,6 +48,10 @@ from dashboard_reads import CodexLimits, CodexWindow, operator_records
 from dashboard_search import results, sheet, words
 from dashboard_template import EVENTS, SEARCH_ROUTE, TICKET_ROUTE
 from file_ticket import main_tickets
+from idle_sessions import MAIN, named_main
+from shown_state import SHOWN
+from ticket_numbers import SESSIONS, indexes
+from tree_reads import scratch
 from state_reads import new_state
 from usage_limit import read, usage_file
 
@@ -72,31 +76,41 @@ ROOT = Path(__file__).resolve().parents[1]
 CODEX = CodexLimits(Path.home())
 
 
-type Stamp = tuple[str, int, int] | None
+type Stamp = tuple[Path, tuple[int, int, int, int] | None]
 
 
 def stamp(path: Path) -> Stamp:
-    """The name, modification time and size of `path`, or None where it
-    does not exist."""
+    """The path with its device, inode, modification time and size, or
+    with None where its metadata is unavailable."""
     try:
         st = path.stat()
     except OSError:
-        return None
-    return (path.name, st.st_mtime_ns, st.st_size)
+        return (path, None)
+    return (path, (st.st_dev, st.st_ino, st.st_mtime_ns, st.st_size))
 
 
-def fingerprint(tickets: Path) -> tuple[Stamp | CodexWindow, ...]:
+def fingerprint(tickets: Path) -> tuple[Stamp | CodexWindow | None, ...]:
     """The stamps of each status directory of `tickets`, of each ticket file
     outside `tickets/closed/` (a log line appended to a file changes its
-    time and not its directory's), of the usage cache, and of the current
-    Codex weekly observation. The page answers
-    a change of it with a render."""
+    time and not its directory's), of session selection files and candidate
+    operator records before freshness or parse filters, of the usage cache,
+    and of the current Codex weekly observation. Missing record paths are
+    included. The page answers a change of it with a render."""
     out: list[Stamp] = []
     for s in Status:
         d = tickets / s.value
         out.append(stamp(d))
         if s is not Status.CLOSED and d.is_dir():
             out.extend(stamp(p) for p in sorted(d.iterdir()))
+    ids = indexes(tickets)
+    sessions = {session for names in ids.values() for session in names}
+    main = named_main(tickets)
+    if main is not None:
+        sessions.add(main)
+    sources = {tickets / MAIN, tickets / SESSIONS,
+               *(tickets / SESSIONS / str(i) for i in ids),
+               *(scratch(session) / SHOWN for session in sessions)}
+    out.extend(stamp(p) for p in sorted(sources))
     return (*out, stamp(usage_file()), CODEX.read(time.time()))
 
 
@@ -243,13 +257,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def stream(self) -> None:
-        """Sends an event at the first read of `fingerprint` that differs
-        from the one at the last event, or at the stream's open, and comes
-        `MIN_EVENT` seconds or more after it, and a comment line at each
-        other read, so that a closed client ends the loop."""
+        """Sends an event on opening, then at the first read of `fingerprint`
+        that differs from the one at the last event and comes `MIN_EVENT`
+        seconds or more after it, and a comment line at each other read,
+        so that a closed client ends the loop."""
         sent, sent_at = fingerprint(self.tickets), time.monotonic()
         try:
-            self.wfile.write(b": open\n\n")
+            self.wfile.write(b"data: changed\n\n")
             self.wfile.flush()
             while True:
                 time.sleep(POLL)
