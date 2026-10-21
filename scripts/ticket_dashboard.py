@@ -1,6 +1,7 @@
 """The ticket dashboard: an HTTP server whose page gives an overseer of the
 operations, on a phone, from the main tree's tracker, the usage cache and
-the states the last reads of each session's operators recorded, what is
+the states the last reads of each session's operators recorded and the
+live agents from their transcripts, what is
 moving, what is next and the week's pace, and updates itself in the
 browser as the tracker, usage observations or operator record sources change.
 
@@ -43,6 +44,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+import kept_reads
 from dashboard_html import Rendered, page
 from dashboard_reads import CodexLimits, CodexWindow, operator_records
 from dashboard_search import results, sheet, words
@@ -89,13 +91,14 @@ def stamp(path: Path) -> Stamp:
     return (path, (st.st_dev, st.st_ino, st.st_mtime_ns, st.st_size))
 
 
-def fingerprint(tickets: Path) -> tuple[Stamp | CodexWindow | None, ...]:
+def fingerprint(tickets: Path) -> tuple[Stamp | CodexWindow | int | None, ...]:
     """The stamps of each status directory of `tickets`, of each ticket file
     outside `tickets/closed/` (a log line appended to a file changes its
     time and not its directory's), of session selection files and candidate
     operator records before freshness or parse filters, of the usage cache,
     and of the current Codex weekly observation. Missing record paths are
-    included. The page answers a change of it with a render."""
+    included. A time bucket also refreshes live agent activity every
+    `MIN_EVENT` seconds."""
     out: list[Stamp] = []
     for s in Status:
         d = tickets / s.value
@@ -111,7 +114,7 @@ def fingerprint(tickets: Path) -> tuple[Stamp | CodexWindow | None, ...]:
                *(tickets / SESSIONS / str(i) for i in ids),
                *(scratch(session) / SHOWN for session in sessions)}
     out.extend(stamp(p) for p in sorted(sources))
-    return (*out, stamp(usage_file()), CODEX.read(time.time()))
+    return (*out, stamp(usage_file()), CODEX.read(time.time()), int(time.time() // MIN_EVENT))
 
 
 def code_files() -> list[Path]:
@@ -132,8 +135,10 @@ def render(tickets: Path) -> Rendered:
     held reads (`state_reads.new_state`), so that no read gives a file as
     an earlier render read it."""
     now = new_state()
+    if kept_reads.store() is None:
+        kept_reads.open_store()
     undecided: list[str] = []
-    return page(tickets, now, read(now, undecided), operator_records(tickets, now), undecided, CODEX.read(now))
+    return page(tickets, now, read(now, undecided), operator_records(tickets, now, undecided), undecided, CODEX.read(now))
 
 
 def accepts_gzip(header: str | None) -> bool:

@@ -146,7 +146,7 @@ class Rendered:
 class View:
     """What the sections of one render read: the tracker's tickets in its
     order, the records of the sessions' operators, the usage, the time, the
-    tickets expedited, the pending agents by ticket number, the tickets the
+    tickets expedited, the agents at work by ticket number, the tickets the
     operators start next, the party that holds each of them that one
     holds, and the work on each change the step journals record, by its
     number (`dashboard_reads.journal_work`)."""
@@ -222,7 +222,7 @@ def health(v: View, notes: list[str]) -> str:
             for lead, h in per_session(v, lambda s: s.start_hold) if h is not None]
     out += [f'<div class="alert">⚠ {esc(lead)}No operator has read the state since {clock(at, v.now)}</div>'
             for lead, at in per_session(v, lambda s: s.at if v.now - s.at > STALE_RECORD else None) if at is not None]
-    if not v.agents:
+    if not v.records.any_running():
         out.append('<div class="alert">⚠ No agent is at work</div>')
     return "".join(out) or '<div class="ok">✓ All moving</div>'
 

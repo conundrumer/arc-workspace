@@ -1,5 +1,6 @@
 """The reads the ticket dashboard (`ticket_dashboard`) renders from: the
-recorded states of the operators of each session, and of a ticket its phrase,
+recorded states of the operators of each session, live agents from their
+transcripts, and of a ticket its phrase,
 the change it waits on, whether it is the user's, the stage of the work
 on it and the work on its change, from the change's log and the sessions'
 step journals; the Codex weekly account limit from local rollouts; and the
@@ -20,12 +21,15 @@ from typing import Any
 
 from codex_rollout import rollout_files
 from idle_sessions import live, named_main
+from open_agents import Listed, running_agents
 from shown_state import Shown, ShownAgent, ShownParty, Start, shown_read
 from step_journal import records
 from ticket_numbers import indexed, indexes, parsed_number
 from tree_reads import scratch
+from transcripts import mains_named
 
 from operations.filing import files_of
+from operations.lineage import tickets as agent_tickets
 from operations.journal import Outcome
 from operations.pacing import WINDOW_SECONDS, Usage, WindowName
 from operations.printed_forms import REPORT_SUFFIX
@@ -55,22 +59,32 @@ class SessionRecord:
 class OperatorRecords:
     """The records the page is rendered from: the main session's first,
     then each other session's by index; and why the main session has none,
-    where it has none."""
+    where it has none; with the live agent listing where supplied."""
     records: tuple[SessionRecord, ...]
     main_missing: str | None
+    running: tuple[Listed, ...] | None = None
 
     def expedited(self) -> frozenset[str]:
         """The tickets any record gives as expedited."""
         return frozenset(n for r in self.records for n in r.shown.expedited)
 
     def agents(self) -> dict[str, list[ShownAgent]]:
-        """The agents of every record, by the numbers of their tickets."""
+        """The live agents by ticket, or the recorded agents where no live
+        read was supplied."""
         out: dict[str, list[ShownAgent]] = {}
-        for r in self.records:
-            for a in r.shown.agents:
-                for n in a.tickets:
-                    out.setdefault(n, []).append(a)
+        agents = (tuple(a for r in self.records for a in r.shown.agents)
+                  if self.running is None else
+                  tuple(ShownAgent(d.role, x.launch.since, tuple(agent_tickets(d.role, d.subject)))
+                        for x in self.running if (d := described(x.run.description)) is not None))
+        for a in agents:
+            for n in a.tickets:
+                out.setdefault(n, []).append(a)
         return out
+
+    def any_running(self) -> bool:
+        """Whether an agent runs, including one with no ticket or known role."""
+        return (any(r.shown.agents for r in self.records) if self.running is None
+                else bool(self.running))
 
     def unwaited(self) -> dict[str, float]:
         """The tickets any record gives as waiting on nothing, each with
@@ -101,13 +115,15 @@ class OperatorRecords:
         return out
 
 
-def operator_records(tickets: Path, now: float) -> OperatorRecords:
+def operator_records(tickets: Path, now: float, undecided: list[str] | None = None) -> OperatorRecords:
     """The records of the last reads of the operators of each session that
     `ticket_numbers.indexes` gives (`shown_state.write_shown`): the main
     session's, or why it has none; each other session's whose time is
     within `STALE_RECORD` of `now`, or whose session `idle_sessions.live`
     gives as live; and none of another session whose record is missing or
-    does not parse."""
+    does not parse; with the agents `open_agents.running_agents` gives
+    under the indexed sessions and the main session, independently of
+    those records and their ages."""
     ids = indexes(tickets)
     main = named_main(tickets)
     records: list[SessionRecord] = []
@@ -127,7 +143,13 @@ def operator_records(tickets: Path, now: float) -> OperatorRecords:
             shown = shown_read(scratch(session))
             if not isinstance(shown, str) and (now - shown.at <= STALE_RECORD or live(session, now)):
                 records.append(SessionRecord(i, shown))
-    return OperatorRecords(tuple(records), missing)
+    sessions = {s for names in ids.values() for s in names}
+    if main is not None:
+        sessions.add(main)
+    notes = [] if undecided is None else undecided
+    running = tuple(x for session in sorted(sessions) for path in mains_named(session)
+                    for x in running_agents(path, notes))
+    return OperatorRecords(tuple(records), missing, running)
 
 
 def served_request(t: Ticket, all_: Mapping[str, Ticket], seen: frozenset[str] = frozenset()) -> Ticket | None:
