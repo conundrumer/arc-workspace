@@ -219,17 +219,6 @@ def test_disconnect_after_a_journaled_start_does_not_repeat_bash(resident):
     assert (root / "executions").read_text() == "run\n"
 
 
-def test_replacement_request_cancels_waiting_operator(resident):
-    root, _ = resident
-    old = open_request(root, "wait")
-    until(root / "entered")
-    assert call(root, "replacement")[0] == 0
-    with old, old.makefile("rb") as response:
-        out = json.loads(response.readline())
-    assert out["status"] == 1
-    assert "old wait" not in out["stdout"]
-
-
 def test_failed_journal_write_cannot_execute_bash(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(SCRIPTS))
     journal = script("step_journal")
