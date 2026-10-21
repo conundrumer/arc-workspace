@@ -1,5 +1,8 @@
 """PreToolUse check on Bash: a Codex launcher delegates repository edits.
 
+It also refuses a Bash call whose Codex launches the walk readers cannot read
+(`codex_reads.work_calls`), or that holds more than one launch.
+
 Recognize interpreter runs and common shell writes, including redirects,
 against the main repository and its worktrees. This checks shell commands,
 not the effects of the repository's own scripts and modules.
@@ -163,11 +166,20 @@ def check(hook: Hook) -> str | None:
         return None
     if agent_type(caller_transcript(hook)) != CODEX_LAUNCHER:
         return None
+    import codex_reads
     from controlled_markdown import mctx
     from engine import checkout
 
+    command = hook["tool_input"]["command"]
+    try:
+        found = codex_reads.work_calls(command)
+    except ValueError as exc:
+        return mctx("Blocked: the Codex call cannot be read: {error}. Write each launch "
+                    "command with literal arguments and an absolute scratch directory.").format(error=exc)
+    if len(found) > 1:
+        return mctx("Blocked: give each Codex launch command its own Bash call.")
     cwd = Path(hook.get("cwd") or checkout.ROOT)
-    if not writes_repository(hook["tool_input"]["command"], cwd,
+    if not writes_repository(command, cwd,
                              checkout.main_worktree(checkout.ROOT)):
         return None
     return mctx("Blocked: a Codex launcher gives the work to Codex through "

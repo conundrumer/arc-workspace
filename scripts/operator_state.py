@@ -18,12 +18,15 @@ from controlled_markdown import mctx
 
 from operations.monitor import Watched
 from operations.plan import unknown_line
+from operations.roles import Role, analyst_of, subjects
 from operations.state import (
     Agent,
     Report,
+    Ticket,
     Waits,
     Stuck,
 )
+from ticketing.vocabulary import Status
 
 
 def watched_read(listing: list[Listed], agents: Sequence[Agent], undecided: list[str],
@@ -53,8 +56,29 @@ class EndsRead:
     held: frozenset[str] = frozenset()
 
 
+def ticket_numbers(a: Agent) -> list[str]:
+    """The ticket numbers of an agent's subject, with an analyst's purpose removed."""
+    if a.role is Role.TICKET_ANALYST:
+        parsed = analyst_of(a.subject)
+        return subjects(parsed[1]) if parsed is not None else []
+    return subjects(a.subject)
+
+
+def closes_of(tickets: Mapping[str, Ticket]) -> dict[str, float]:
+    """The time of the last CLOSED log line of each closed ticket that has one."""
+    return {n: line.time for n, ticket in tickets.items() if ticket.status is Status.CLOSED
+            for line in ticket.log if line.status is Status.CLOSED}
+
+
+def outlived(a: Agent, closes: Mapping[str, float]) -> bool:
+    """Whether each ticket of an agent's subject closed after its launch."""
+    numbers = ticket_numbers(a)
+    return bool(numbers) and all(n in closes and closes[n] > a.launched for n in numbers)
+
+
 def ends_read(agents: Sequence[Agent], me: str, listing: list[Listed],
-              now_watched: Sequence[Watched], now: float, undecided: list[str]) -> EndsRead:
+              now_watched: Sequence[Watched], now: float, undecided: list[str],
+              *, closes: Mapping[str, float]) -> EndsRead:
     """`agents`, each pending one ended where a stall alert fired on it, where
     it is of another operator whose work is no longer open
     (`ended_elsewhere`), or where it waits as at work or still running and
@@ -64,12 +88,16 @@ def ends_read(agents: Sequence[Agent], me: str, listing: list[Listed],
     no operator launched, and that the coordinator launched, has its stall
     read too. Work still running takes precedence over a turn-ending
     notification or a stall: that attempt stays pending. An ended Codex
-    attempt is held while its turn runs or while that is unknown (`codex_end`)."""
+    attempt is held while its turn runs or while that is unknown (`codex_end`).
+    An agent each of whose subject's tickets closed after its launch is ended,
+    and is not held, unless its work still runs (`outlived`)."""
     idle = turn_ended_idle(listing)
     live = {x.launch.agent for x in listing if x.launch.agent is not None
             and x.launch.agent not in idle}
     agents = tuple(replace(a, waits=Waits.STILL_RUNNING)
                    if a.agent_id in live and not a.pending else a for a in agents)
+    done = {a.agent_id for a in agents
+            if a.agent_id and a.agent_id not in live and outlived(a, closes)}
     launched = {a.agent_id for a in agents if a.agent_id}
     watched_ids = {w.agent_id for w in now_watched}
     coordinators = {aid: x.launch.since for x in listing
@@ -80,6 +108,9 @@ def ends_read(agents: Sequence[Agent], me: str, listing: list[Listed],
     ended: dict[str, Report | None] = {
         aid: report for aid, report in
         {**ended_elsewhere(list(agents), me, undecided), **stalled}.items() if aid not in live}
+    ended.update({a.agent_id: reply_to(ended_with(a, None), a.since, undecided) for a in agents
+                  if a.pending and a.agent_id in done and a.agent_id not in ended
+                  and a.agent_id is not None})
     quiet = quiet_read([a for a in agents if a.agent_id not in ended], listing, now, undecided)
     ended_idle = [a for a in agents if a.waits in (Waits.AT_WORK, Waits.STILL_RUNNING)
                   and a.agent_id is not None and a.agent_id not in ended and a.agent_id in idle]
@@ -90,7 +121,7 @@ def ends_read(agents: Sequence[Agent], me: str, listing: list[Listed],
     by_id = {a.agent_id: a for a in agents if a.agent_id}
     held: set[str] = set()
     for a in closed:
-        if a.pending or a.agent_id is None:
+        if a.pending or a.agent_id is None or a.agent_id in done:
             continue
         read = codex_end(a.agent_id)
         if read.end is not CodexEnd.DONE:

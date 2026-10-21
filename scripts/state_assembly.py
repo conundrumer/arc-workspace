@@ -71,7 +71,7 @@ from operations.state import (
     TranscriptsRead,
 )
 from holder_reads import holders_read, read_held, with_quiet_holders
-from operator_state import (EndsRead, ends_read, not_given, stuck_read, undecided_lines, watched_read,
+from operator_state import (EndsRead, closes_of, ends_read, not_given, stuck_read, undecided_lines, watched_read,
                             work_of)
 
 STARTED = time.time()
@@ -129,11 +129,12 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     listing = running_agents(find(session), watching)
     now_watched = watched_read(listing, ops.agents, watching, opened)
     now = time.time()
-    ends = ends_read(ops.agents, me, listing, now_watched, now, undecided)
-    running_work = work_of(listing)
-    stuck = stuck_read(session, ends.quiet, now_watched, running_work)
     operate_service.read_phase("tickets")
     tickets, unread = read_tickets(tickets_dir)
+    ends = ends_read(ops.agents, me, listing, now_watched, now, undecided,
+                     closes=closes_of(tickets))
+    running_work = work_of(listing)
+    stuck = stuck_read(session, ends.quiet, now_watched, running_work)
     others = elsewhere_agents(tickets, me, frozenset(runs.operators), main, undecided)
     transcripts = transcripts_read(ops, ends, late, stuck, others)
     took_up = taken_up(me, runs.operators, transcripts.calls, runs.parents)

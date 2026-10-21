@@ -44,13 +44,13 @@ def test_help_and_launch_in_one_bash_call(tmp_path: Path):
 
 @pytest.mark.parametrize("args", ["", "code-reviewer", "/tmp/brief model high",
                                  "code-reviewer /tmp/brief model high"])
-def test_launch_without_role_or_scratch_still_refuses(tmp_path: Path, args: str):
+def test_args_without_a_launch_do_not_consume_records(tmp_path: Path, args: str):
     entry = turn(tmp_path, [(STEP, "item")])
     malformed = {"type": "assistant", "message": {"content": [{
         "type": "tool_use", "name": "Bash", "id": "malformed",
         "input": {"command": f"uv run python scripts/codex_agent.py {args}"}}]}}
-    with pytest.raises(ValueError, match="no matching role and scratch directory"):
-        reads.walk_entries([entry, malformed], "code-reviewer")
+    assert walk.step_calls(reads.walk_entries([entry, malformed], "code-reviewer"),
+                           "code-reviewer") == [("1:0", "item")]
 
 
 def test_help_word_after_option_terminator_is_a_launch_argument(tmp_path: Path):
@@ -180,7 +180,7 @@ def test_refused_fresh_launch_can_retry_in_new_directory(tmp_path: Path, proof: 
             reads.walk_entries([first, result, new], "code-reviewer")
 
 
-@pytest.mark.parametrize("extra", ["work", "show", "steer", "interrupt"])
+@pytest.mark.parametrize("extra", ["work"])
 def test_refusal_cannot_hide_multiple_codex_commands(tmp_path: Path, extra: str):
     first = turn(tmp_path / "old", [(STEP, "unrelated")])
     block = first["message"]["content"][0]
@@ -192,7 +192,7 @@ def test_refusal_cannot_hide_multiple_codex_commands(tmp_path: Path, extra: str)
         "content": "codex_agent: " + reads.FRESH_REFUSAL}]}}
     retry = turn(tmp_path / "new", [(STEP, "accepted")])
     retry["message"]["content"][0]["id"] = "retry"
-    with pytest.raises(ValueError, match="more than one Codex command"):
+    with pytest.raises(ValueError, match="more than one Codex launch"):
         reads.walk_entries([first, result, retry], "code-reviewer")
 
 
@@ -378,7 +378,7 @@ def test_unproved_missing_record_still_refuses(tmp_path, bad):
                 reads.walk_entries([failed, result], "code-reviewer")
             return
     path.write_text(json.dumps(record) + "\n")
-    with pytest.raises(ValueError, match="no (matching )?turn record|more than one Codex command"):
+    with pytest.raises(ValueError, match="no (matching )?turn record|more than one Codex launch"):
         reads.walk_entries([failed, result, retry], "code-reviewer")
 
 

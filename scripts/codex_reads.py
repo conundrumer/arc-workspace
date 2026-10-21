@@ -1,5 +1,9 @@
 """The command results of a launcher's Codex turns, saved by codex_agent.
 
+A `codex_agent.py` call is a launch where `codex_agent.work_args` gives its
+arguments; a call it refuses runs no turn. A launch with an argument the shell
+expands, or with a relative scratch directory, cannot be read.
+
 The launcher's calls locate the scratch directory. Calls need records in
 order, except that a killed process with no record in its interval
 may be followed by a recorded resume in the same directory. Failed attempts
@@ -18,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import codex_agent
 from codex_agent import FRESH_REFUSAL
 from command_labels import segment_program, simple_commands
 from run_reads import blocks, is_prompt
@@ -47,30 +52,35 @@ def timestamp(entry: dict[str, Any]) -> float | None:
     return datetime.fromisoformat(value).timestamp() if isinstance(value, str) else None
 
 
+def work_calls(command: str) -> list[tuple[Role, Path, str, bool]]:
+    """The role, absolute scratch directory, agent type and resume flag of each
+    work call, in order. Raise ValueError where a call cannot be read."""
+    found = []
+    for words in simple_commands(command):
+        program, args = segment_program(words)
+        if program != "codex_agent.py":
+            continue
+        if args and args[0] in codex_agent.CONTROLS:
+            continue
+        if any("$" in arg or "`" in arg for arg in args):
+            raise ValueError(f"the Codex call {shlex.join(args)} has an argument the shell expands")
+        ns = codex_agent.work_args(args)
+        if ns is None:
+            continue
+        if not ns.scratch.is_absolute():
+            raise ValueError("the Codex scratch directory must be absolute")
+        role = Role(ns.agent)
+        found.append((role, ns.scratch, ns.agent_type or role.agent_type, ns.resume))
+    return found
+
+
 def launches(entry: dict[str, Any]):
-    """Find turn launches, leaving help and session controls out."""
+    """Find turn launches: the work calls `work_calls` gives."""
     for block in blocks(entry, "tool_use"):
         if entry.get("type") != "assistant" or block.get("name") != "Bash":
             continue
-        for words in simple_commands(str((block.get("input") or {}).get("command", ""))):
-            program, args = segment_program(words)
-            if program != "codex_agent.py" or (args and args[0] in ("show", "steer", "interrupt")):
-                continue
-            options = args[:args.index("--")] if "--" in args else args
-            if any(arg in ("-h", "--help") for arg in options):
-                continue
-            if len(args) < 5:
-                raise ValueError("the Codex call gives no matching role and scratch directory")
-            role = Role(args[0])
-            agent_type = role.agent_type
-            for i, arg in enumerate(args):
-                if arg == "--agent-type":
-                    agent_type = args[i + 1]
-                elif arg.startswith("--agent-type="):
-                    agent_type = arg.partition("=")[2]
-            directory = Path(args[1])
-            if not directory.is_absolute():
-                raise ValueError("the Codex scratch directory must be absolute")
+        for role, directory, agent_type, _ in work_calls(
+                str((block.get("input") or {}).get("command", ""))):
             yield block["id"], agent_type, directory, role
 
 
@@ -213,15 +223,14 @@ def unrecorded_launch(entries: list[dict[str, Any]], index: int,
             return False
 
     block = next(b for b in blocks(entries[index], "tool_use") if b.get("id") == call_id)
-    launches = [args for program, args in map(segment_program, simple_commands(
-        str((block.get("input") or {}).get("command", "")))) if program == "codex_agent.py"]
+    launches = work_calls(str((block.get("input") or {}).get("command", "")))
     if len(launches) != 1:
-        raise ValueError("the failed Bash call contains more than one Codex command")
+        raise ValueError("the failed Bash call contains more than one Codex launch")
     if failure:
         # The matching identifier is written only by preparation's exception
         # handler. It cannot consume a turn record, even on a failed resume.
         return True
-    if interval is None and "--resume" in launches[0]:
+    if interval is None and launches[0][3]:
         return False
     path = scratch / "codex-events.jsonl"
     records = ([json.loads(line) for line in path.read_text().splitlines()]
@@ -281,11 +290,9 @@ def saved_entries(entries: list[dict[str, Any]], kind: str,
         for call_id, agent_type, directory in commands(entry):
             if call_id in refused:
                 block = next(b for b in blocks(entry, "tool_use") if b.get("id") == call_id)
-                launches = [program for program, _ in map(segment_program, simple_commands(
-                    str((block.get("input") or {}).get("command", ""))))
-                    if program == "codex_agent.py"]
+                launches = work_calls(str((block.get("input") or {}).get("command", "")))
                 if len(launches) != 1:
-                    raise ValueError("the refused Bash call contains more than one Codex command")
+                    raise ValueError("the refused Bash call contains more than one Codex launch")
                 if scratch is not None:
                     raise ValueError("a fresh launch was refused after an accepted Codex call")
                 continue

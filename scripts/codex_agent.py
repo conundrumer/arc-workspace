@@ -34,6 +34,7 @@ import sys
 import time
 import tomllib
 from collections.abc import Callable
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import asdict
 from functools import partial
 from pathlib import Path
@@ -52,6 +53,7 @@ from operations.roles import ANALYST_NAMES, CODEX_ROLES, GENERAL, Role
 from operations.state import CodexUsage
 
 FRESH_REFUSAL = "fresh launch refused: existing Codex history; no thread or turn accepted"
+CONTROLS = ("show", "steer", "interrupt")
 
 DONE = "codex-done"
 """The file under the scratch directory that the command makes once it ends,
@@ -288,7 +290,7 @@ def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
 def control(argv: list[str], transport: Callable[[], Any] = codex_daemon.Proxy) -> int:
     """Show live evidence or deliver a steer/interrupt without resuming a thread."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("show", "steer", "interrupt"))
+    parser.add_argument("action", choices=CONTROLS)
     parser.add_argument("scratch", type=Path)
     parser.add_argument("message", nargs="?")
     args = parser.parse_args(argv)
@@ -451,13 +453,8 @@ def input_text() -> str:
         chunks.append(chunk)
 
 
-def main(argv: list[str]) -> int:
-    if argv and argv[0] in ("show", "steer", "interrupt"):
-        try:
-            return control(argv)
-        except (OSError, ValueError) as exc:
-            print(f"codex_agent: {exc}", file=sys.stderr)
-            return 1
+def work_parser() -> argparse.ArgumentParser:
+    """The parser for `main`'s work calls."""
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("agent", choices=sorted(r.value for r in CODEX_ROLES))
@@ -470,7 +467,29 @@ def main(argv: list[str]) -> int:
                                                      | ANALYST_NAMES))
     parser.add_argument("--resume", action="store_true",
                         help="continue the saved thread; required for later turns")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def work_args(argv: list[str]) -> argparse.Namespace | None:
+    """The arguments `main` runs a turn with, or None where `argv` is a control
+    call or `main` exits before its turn (help, or arguments its parser refuses)."""
+    if argv and argv[0] in CONTROLS:
+        return None
+    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        try:
+            return work_parser().parse_args(argv)
+        except SystemExit:
+            return None
+
+
+def main(argv: list[str]) -> int:
+    if argv and argv[0] in CONTROLS:
+        try:
+            return control(argv)
+        except (OSError, ValueError) as exc:
+            print(f"codex_agent: {exc}", file=sys.stderr)
+            return 1
+    args = work_parser().parse_args(argv)
     try:
         item = input_text()
         saved_thread(args.scratch, args.resume)

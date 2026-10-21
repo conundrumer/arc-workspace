@@ -81,7 +81,7 @@ def ends(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, last: dict,
     agent = Agent(EDITOR, ME, Role.DOC_EDITOR, "11-1683", "brief", since - 600, since - 4,
                   Waits.STILL_RUNNING if still_running else Waits.AT_WORK,
                   (Report(since - 600, "done"),), True, report_file)
-    read = operator_state.ends_read([agent], ME, listing, [], since + STUCK_SECONDS + 1, [])
+    read = operator_state.ends_read([agent], ME, listing, [], since + STUCK_SECONDS + 1, [], closes={})
     return read, operator_state.stuck_read("s", read.quiet, [], {})
 
 

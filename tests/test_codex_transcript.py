@@ -99,7 +99,8 @@ def test_unmatched_record_is_gap_and_no_calls_is_distinct(tmp_path, monkeypatch)
 
 def test_bad_launcher_entry_does_not_hide_accepted_work(tmp_path, monkeypatch):
     bad = launch(tmp_path, call="bad")
-    bad["message"]["content"][0]["input"]["command"] = "uv run python scripts/codex_agent.py"
+    bad["message"]["content"][0]["input"]["command"] = (
+        "uv run python scripts/codex_agent.py code-editor $SCRATCH brief gpt-6.1-sol high")
     launcher, _ = fixture(tmp_path, monkeypatch, [record()], [
         event("task_started", turn_id="turn"),
         response("function_call_output", call_id="inner", output="visible result"),
