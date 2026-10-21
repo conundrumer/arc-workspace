@@ -165,6 +165,21 @@ class Proxy:
         self.errors.close()
 
 
+def turn_status(thread: str, turn: str) -> str:
+    """The status the shared daemon gives turn `turn` of thread `thread`
+    (`thread/read`), such as `inProgress`. Raises ValueError where the
+    daemon gives no such turn."""
+    client = Proxy()
+    try:
+        found = client.call("thread/read", {"threadId": thread, "includeTurns": True})
+    finally:
+        client.close()
+    for t in found["thread"]["turns"]:
+        if t["id"] == turn:
+            return str(t["status"])
+    raise ValueError(f"the Codex daemon gives no turn {turn} on thread {thread}")
+
+
 def start(
     client: Any, thread: str | None, cwd: Path, model: str, effort: str, writable: list[Path],
     worker_config: dict[str, str], instructions: str | None = None,

@@ -152,7 +152,11 @@ class CodexRead:
 
 def codex_end(agent: str, home: Path | None = None) -> CodexRead:
     """A completed walk ends an attempt; otherwise its thread decides whether
-    it can end. An unreadable thread holds the attempt."""
+    it can end: a turn its rollout gives as open runs only where the shared
+    Codex daemon gives it in progress (`codex_daemon.turn_status`). A thread
+    or a daemon that cannot be read, or a daemon that gives no such turn,
+    holds the attempt."""
+    import codex_daemon
     import codex_reads
     import codex_rollout
     from entry_reads import entries_forward
@@ -185,10 +189,13 @@ def codex_end(agent: str, home: Path | None = None) -> CodexRead:
         if not (scratch / "codex-session").exists():
             return CodexRead(CodexEnd.DEAD, why, scratch)
         rollout = codex_rollout.read(scratch, home or Path.home())
+        if rollout.turn is None:
+            return CodexRead(CodexEnd.DEAD, why, scratch)
+        status = codex_daemon.turn_status(rollout.thread, rollout.turn)
+        return CodexRead(CodexEnd.LIVE if status == "inProgress" else CodexEnd.DEAD,
+                         why, scratch)
     except SUBJECT_FAULTS as exc:
         return CodexRead(CodexEnd.UNKNOWN, f"{why}; {exc}", scratch)
-    return CodexRead(CodexEnd.LIVE if rollout.turn is not None else CodexEnd.DEAD,
-                     why, scratch)
 
 
 def codex_line(agent: str, read: CodexRead) -> str:
@@ -199,8 +206,8 @@ def codex_line(agent: str, read: CodexRead) -> str:
                         "and no Codex turn runs on its thread, so the attempt counts as ended"
                         ).format(run=agent, why=read.why)
         case CodexEnd.LIVE:
-            return mctx("{run}: a Codex turn still runs on its thread in {scratch} after "
-                        "its launcher ended, so the attempt counts as running"
+            return mctx("{run}: the Codex daemon gives a turn in progress on its thread "
+                        "in {scratch} after its launcher ended, so the attempt counts as running"
                         ).format(run=agent, scratch=read.scratch)
         case CodexEnd.UNKNOWN:
             return mctx("{run}: whether a Codex turn runs for it is unknown ({why}), so the "
