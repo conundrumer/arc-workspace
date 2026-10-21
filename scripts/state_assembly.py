@@ -12,6 +12,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import kept_reads
+import operate_service
 import step_journal
 from agent_turns import last_time
 from audit_window import window
@@ -82,6 +83,7 @@ DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.CONSOLE, ReaderName.SURVEY,
 reads."""
 
 
+@operate_service.reading()
 def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState]:
     """The state the operator's procedures read, and the state the
     monitor's steps read. Where `since` is given, the transcripts read for
@@ -102,6 +104,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         wait_free(session)
         kept_reads.open_store()
         atexit.register(kept_reads.flush)
+    operate_service.read_phase("cached source revisions")
     opened = new_state()
     main = main_tree()
     tickets_dir = main / "tickets"
@@ -109,6 +112,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     runs = runs_read(session, me)
     tree = read_git(main)
     read = operators_since(runs.runs, me, since)
+    operate_service.read_phase("operator transcripts")
     ops = operators_read(read, me, main, undecided, tree)
     paths = dict(runs.runs)
     journal, journaled = step_journal.read(
@@ -120,12 +124,14 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         journaled, commit_subjects(tree), undecided)))
     late = late_resumes(read, undecided)
     watching: list[str] = []
+    operate_service.read_phase("running agents")
     listing = running_agents(find(session), watching)
     now_watched = watched_read(listing, ops.agents, watching, opened)
     now = time.time()
     ends = ends_read(ops.agents, me, listing, now_watched, now, undecided)
     running_work = work_of(listing)
     stuck = stuck_read(session, ends.quiet, now_watched, running_work)
+    operate_service.read_phase("tickets")
     tickets, unread = read_tickets(tickets_dir)
     others = elsewhere_agents(tickets, me, frozenset(runs.operators), main, undecided)
     transcripts = transcripts_read(ops, ends, late, stuck, others)
@@ -140,6 +146,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     index = session_index(tickets_dir, session)
     main_path = find(session)
     sessions_running = running(session)
+    operate_service.read_phase("ticket holders and sessions")
     holders = holders_read(tickets, session, main_path, sessions_running)
     lifted, usage = read_usage(now, watching)
     state = State(
@@ -159,6 +166,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     state = replace(state, journal=state.journal.since(given_again(state)))
     state = with_quiet_holders(state, holders.found, listing, running_work)
     computed_lines: list[str] = []
+    operate_service.read_phase("spends, budgets and audit history")
     state = replace(state, computed=computed_read(state, tickets_dir, computed_lines, usage))
     watching.extend(ungiven(computed_lines))
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(ends.stalled),

@@ -84,7 +84,7 @@ def main(argv: list[str]) -> int:
                 try:
                     operate_service.prepare(ROOT, session_id(),
                                            time.monotonic() + operate_service.START_SECONDS)
-                except (OSError, operate_service.Expired):
+                except (OSError, operate_service.Expired, operate_service.Unavailable):
                     pass
                 return block(args.ident, Action.RELAY, lambda deadline: relay_step(args.ident, deadline))
             case OperateAction.WAIT:
@@ -150,8 +150,10 @@ if __name__ == "__main__":
     # back its memory at the exit.
     gc.disable()
     kept_reads.open_store()
-    code = main(sys.argv[1:])
-    kept_reads.flush()
+    try:
+        code = main(sys.argv[1:])
+    finally:
+        kept_reads.flush()
     sys.stdout.flush()
     sys.stderr.flush()
     # `os._exit` skips the `atexit` call that writes the record's line.

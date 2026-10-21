@@ -109,11 +109,13 @@ def test_legacy_record_refresh_and_source_invalidation(tmp_path, monkeypatch):
     launcher.write_text("launcher resumed")
     with events.open("a") as out:
         out.write(json.dumps(record(22, "resumed", 21)) + '\n')
+    state_reads.new_state()
     resumed = spends.change_spend(ticket, [])
     assert resumed.codex.totals().total_tokens == 34
     assert spends.change_spend(ticket, []).codex.totals().total_tokens == 34
     # JSON null does not prove zero; unknown dollars preserve measured tokens.
     saved.write_text('null\n')
+    state_reads.new_state()
     assert spends.change_spend(ticket, []) is None
     measured = spends.recorded_spend(ticket)
     assert measured.codex.totals().total_tokens == 34
@@ -162,3 +164,69 @@ def test_unresolved_sources_follow_directory_changes(tmp_path, monkeypatch):
     watched -= {added, link}
     state_reads.new_state()
     assert inputs() == tuple(sorted(spends.fingerprint(p) for p in watched))
+
+
+def test_shared_spend_inputs_are_statted_once_and_refresh_at_next_state(tmp_path, monkeypatch):
+    """Old tickets share watched directories; their revisions still invalidate."""
+    source = tmp_path / "source"
+    source.mkdir()
+    import os
+    original = os.stat
+    seen = []
+
+    def stat(path, *args, **kwargs):
+        if str(path) == str(source):
+            seen.append(path)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", stat)
+    state_reads.new_state()
+    before = spends.fingerprint(source)
+    assert all(spends.fingerprint(source) == before for _ in range(100))
+    assert len(seen) == 1
+    (source / "new").write_text("")
+    state_reads.new_state()
+    assert spends.fingerprint(source) != before
+
+
+def test_spend_history_is_shared_by_budgets_and_rechecked_next_state(tmp_path, monkeypatch):
+    ticket = tmp_path / "closed/11-1_change_example_code-editor.md"
+    ticket.parent.mkdir()
+    ticket.write_text("ticket")
+    monkeypatch.setattr(spends, "project_dirs", lambda: [])
+    monkeypatch.setattr(spends, "held_closed", lambda _: SimpleNamespace(log=[SimpleNamespace(
+        status=spends.Status.CLOSED, resolution=spends.Resolution.FIXED,
+        note="fixed 11-1 commit", time=30)]))
+    saved = []
+    monkeypatch.setattr(spends, "write_record", lambda _, value: saved.append(value))
+    state_reads.new_state()
+    assert spends.change_spend(ticket, []) is None
+    assert spends.change_spend(ticket, []) is None
+    assert len(saved) == 1
+    ticket.write_text("changed ticket")
+    state_reads.new_state()
+    assert spends.change_spend(ticket, []) is None
+    assert len(saved) == 2
+    assert saved[0]["codex"]["inputs"] != saved[1]["codex"]["inputs"]
+
+
+def test_shared_owner_walk_refreshes_after_a_source_changes(tmp_path, monkeypatch):
+    source = tmp_path / "owner"
+    source.write_text("code-editor")
+    walked = []
+
+    def children(*_):
+        walked.append(True)
+        return []
+
+    monkeypatch.setattr(spends, "held_find", lambda _: source)
+    monkeypatch.setattr(spends, "counted_type", lambda *_: source.read_text())
+    monkeypatch.setattr(spends, "runs_under", children)
+    state_reads.new_state()
+    walked.clear()
+    assert spends.known_owners(["run"], {}) == {source: "code-editor"}
+    assert spends.known_owners(["run"], {}) == {source: "code-editor"}
+    assert len(walked) == 1
+    source.write_text("code-reviewer")
+    state_reads.new_state()
+    assert spends.known_owners(["run"], {}) == {source: "code-reviewer"}

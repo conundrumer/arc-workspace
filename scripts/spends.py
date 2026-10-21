@@ -16,7 +16,7 @@ import read_interrupts
 from agent_launches import runs_under
 from agent_turns import first_time, has_ended, last_time
 from run_reads import agent_type, run_entries
-from file_reads import file_text, listed, stat_read
+from file_reads import file_text, listed, stat_read, state_stat
 from state_reads import DERIVED, Kept, state_cache
 from ticket_files import listed_tickets, ticket_name
 from ticket_log import moved
@@ -91,7 +91,8 @@ def owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | Non
             return None
         if launch is not None:
             held.add(top)
-        trees.append((role, [top, *runs_under(top, pending, held)]))
+        children = runs_under(top, pending, held) if pending else closed_tree(top)
+        trees.append((role, [top, *children]))
     owner: dict[Path, tuple[int, str]] = {}
     for role, tree in trees:
         read_interrupts.checkpoint()
@@ -100,6 +101,13 @@ def owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | Non
             if p not in owner or len(tree) < owner[p][0]:
                 owner[p] = (len(tree), role)
     return {p: role for p, (_, role) in owner.items()}
+
+
+@state_cache(None)
+def closed_tree(top: Path) -> list[Path]:
+    """The run tree shared by closed changes in this state, walked again
+    in the next state in case a transcript appeared or a run resumed."""
+    return runs_under(top)
 
 
 def counted_type(top: Path, launch: str | None) -> str | None:
@@ -117,12 +125,14 @@ def cost_of(path: Path, undecided: list[str]) -> float | None:
 
 
 def fingerprint(path: Path) -> tuple[str, int | None, int | None]:
-    """A source revision, including a missing source."""
-    try:
-        stat = path.stat()
-        return str(path), stat.st_mtime_ns, stat.st_size
-    except FileNotFoundError:
-        return str(path), None, None
+    """A source revision in this state, including a missing source.
+
+    Hundreds of old spends watch the same transcript directories. Share
+    their stats with the other state reads instead of statting each again.
+    """
+    text = str(path)
+    stat = state_stat(text)
+    return (text, None, None) if stat is None else (text, stat.mtime_ns, stat.size)
 
 
 def legacy_turn_records(records: list[dict], home: Path,
@@ -363,10 +373,12 @@ def unresolved_spend(path: Path, runs: list[str], before: float) -> UnpricedSpen
     return UnpricedSpend(None, CodexSpend(tuple(sources), inputs))
 
 
+@state_cache(None, notes="undecided")
 def change_spend(path: Path, undecided: list[str]) -> Spend | None:
     """Dollar spend of a closed fixed change, with independent tokens recorded.
     Legacy records refresh from source runs while their dollars and time stand.
-    Source revisions invalidate settled and unresolved measurements.
+    Source revisions invalidate settled and unresolved measurements. Each
+    state checks a change once, shared by the budgets of all editor sets.
     """
     found = recorded_spend(path)
     codex = found.codex if isinstance(found, (Spend, UnpricedSpend)) else None

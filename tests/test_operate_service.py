@@ -124,14 +124,17 @@ def test_sources_and_operator_cutoff_are_current_without_events(resident):
     assert len(processes) == 1
 
 
-def test_code_replacement_during_a_request_discards_the_old_step(resident):
+def test_code_replacement_during_a_request_finishes_before_retirement(resident):
     root, processes = resident
     connection = open_request(root, "wait")
     until(root / "entered")
     (root / "code").write_text("new")
     (root / "release").write_text("")
     with connection, connection.makefile("rb") as response:
-        assert json.loads(response.readline())["retry"] is True
+        out = json.loads(response.readline())
+        assert out["retry"] is False
+        assert out["status"] == 0
+        assert out["stdout"].startswith("old wait ready ")
     result = call(root)
     assert result[0] == 0
     assert result[1].startswith("new op ready ")
@@ -185,7 +188,7 @@ def test_deadline_during_cache_validation_retires_the_service(monkeypatch):
     monkeypatch.setattr(service, "executor", contextlib.nullcontext)
     monkeypatch.setattr(service.select, "select", lambda *_: ([], [], []))
     monkeypatch.setattr(kept, "fresh_code", lambda _: "current")
-    monkeypatch.setattr(kept, "flush", lambda: None)
+    monkeypatch.setattr(kept, "flush", lambda: True)
     monkeypatch.setattr(files, "stats_stand_but", lambda _: None)
     monkeypatch.setattr(service.script_calls, "start_request", lambda *_: None)
     monkeypatch.setattr(service.script_calls, "record", lambda: None)
@@ -315,7 +318,7 @@ def test_fresh_import_closure_refuses_a_replaced_dependency(tmp_path, monkeypatc
         current = service.Request("op", 1, time.monotonic() + 10, a, c, code,
                                   io.StringIO(), io.StringIO())
         with pytest.raises(service.Replaced):
-            current.check()
+            current.check(code=True)
 
 
 def test_cold_service_code_identity_survives_importing_operate(tmp_path):
@@ -328,7 +331,7 @@ def test_cold_service_code_identity_survives_importing_operate(tmp_path):
             import operate_service as service
             import kept_reads
             store = kept_reads.open_store
-            kept_reads.open_store = lambda: store(Path({str(tmp_path / "reads.sqlite")!r}))
+            kept_reads.open_store = lambda **kwargs: store(Path({str(tmp_path / "reads.sqlite")!r}))
             endpoint = service.endpoint
             path = endpoint(Path({str(tmp_path)!r}), "cold-code")
             service.endpoint = lambda *_: path
@@ -362,3 +365,133 @@ def test_resident_work_is_present_in_the_cost_records(resident):
     assert startup[0].cpu > 0
     assert len(requests) >= 3
     assert all(c.retained and c.cpu >= 0 and c.session == "isolated-service" for c in requests)
+
+
+@pytest.mark.parametrize("outcome", ["change", "expiry", "disconnect", "read_budget"])
+def test_inflight_code_change_responds_and_flushes_before_retiring(tmp_path, monkeypatch, outcome):
+    """Force the merge between completed reads and response publication."""
+    import io
+    import signal
+    monkeypatch.syspath_prepend(str(SCRIPTS))
+    operate = script("operate")
+    kept = script("kept_reads")
+    files = script("file_reads")
+    reads = script("state_reads")
+    source = tmp_path / "source"
+    source.write_text("completed")
+    monkeypatch.setattr(kept, "_store", None)
+    kept.open_store(tmp_path / "reads.sqlite")
+    monkeypatch.setattr(service, "executor", contextlib.nullcontext)
+    monkeypatch.setattr(service, "side_effect", contextlib.nullcontext)
+    monkeypatch.setattr(service.select, "select", lambda *_: ([], [], []))
+    code = ["old"]
+    monkeypatch.setattr(kept, "fresh_code", lambda _: code[0])
+    monkeypatch.setattr(files, "stats_stand_but", lambda _: None)
+    monkeypatch.setattr(service.script_calls, "start_request", lambda *_: None)
+    monkeypatch.setattr(service.script_calls, "record", lambda: None)
+
+    @reads.state_cache(reads.DERIVED, kept=reads.Kept.DISK)
+    def completed(path):
+        return files.file_text(path)
+
+    def main(_):
+        reads.new_state()
+        print(completed(source))
+        if outcome == "read_budget":
+            service.read_phase("budget history")
+            with service.reading():
+                signal.raise_signal(signal.SIGALRM)
+        if outcome == "expiry":
+            raise service.Expired
+        if outcome == "disconnect":
+            raise service.Disconnected
+        code[0] = "new"
+        service.check()
+        return 0
+
+    monkeypatch.setattr(operate, "main", main)
+    monkeypatch.setattr(service, "timeout_output", lambda _: print("expired"))
+    message = {"operator": "fixture", "started": time.time(),
+               "deadline": time.monotonic() + 20, "refresh": False}
+    connection = Mock()
+    connection.makefile.return_value = io.BytesIO((json.dumps(message) + "\n").encode())
+    handler = signal.getsignal(signal.SIGALRM)
+    try:
+        assert service.serve_request(connection, Mock(), "old") is (outcome == "disconnect")
+    finally:
+        signal.signal(signal.SIGALRM, handler)
+    out = json.loads(connection.sendall.call_args.args[0])
+    if outcome == "read_budget":
+        assert out["retry"] is False and out["status"] == 1
+        assert out["stdout"] == ""
+        assert "budget history" in out["stderr"]
+        assert "preserve completed reads" in out["stderr"]
+    else:
+        assert out == {"retry": False, "status": 0 if outcome == "change" else 1,
+                       "stdout": "completed\n" if outcome == "change" else "expired\n", "stderr": ""}
+    # Only the final flush makes the completed read visible to another store.
+    other = kept.Store(kept.store().path)
+    name = reads.name_of(completed)
+    key = repr(reads.canonical(reads.split(reads.call_of((source,), ()))))
+    assert other.held(name, key)[1] == "completed"
+    other.close()
+
+
+def test_failed_startup_reports_the_cause_without_retrying(tmp_path, monkeypatch):
+    monkeypatch.setattr(service, "connect", Mock(side_effect=FileNotFoundError))
+    process = Mock(returncode=7)
+    process.poll.return_value = 7
+
+    def start(*_, **kwargs):
+        kwargs["stderr"].write("fixture startup failure\n")
+        kwargs["stderr"].flush()
+        return process
+
+    started = Mock(side_effect=start)
+    monkeypatch.setattr(service.subprocess, "Popen", started)
+    kept = script("kept_reads")
+    monkeypatch.setattr(kept, "fresh_code", lambda _: "current")
+    with pytest.raises(service.Unavailable, match="fixture startup failure"):
+        call(tmp_path)
+    assert started.call_count == 1
+
+
+def test_read_without_time_for_flush_fails_before_reading(monkeypatch):
+    import io
+    current = service.Request("fixture", time.time(), time.monotonic() + 1,
+                              Mock(), Mock(), "old", io.StringIO(), io.StringIO())
+    token = service.CURRENT.set(current)
+    try:
+        service.read_phase("budget history")
+        with pytest.raises(service.Unavailable, match="budget history"):
+            with service.reading():
+                pytest.fail("a read with no time to finish must not start")
+    finally:
+        service.CURRENT.reset(token)
+
+
+def test_standalone_exception_flushes_completed_reads(tmp_path, monkeypatch):
+    import argparse
+    import gc
+    import runpy
+    kept = script("kept_reads")
+    opened = kept.open_store
+    monkeypatch.setattr(kept, "_store", None)
+    monkeypatch.setattr(kept, "open_store", lambda: opened(tmp_path / "reads.sqlite"))
+    monkeypatch.setattr(sys, "argv", ["operate.py", "wait", "fixture"])
+
+    def interrupted(*_):
+        kept.store().keep("fixture:read", "key", "completed")
+        raise RuntimeError("fixture interrupted")
+
+    monkeypatch.setattr(argparse.ArgumentParser, "parse_args", interrupted)
+    collected = gc.isenabled()
+    try:
+        with pytest.raises(RuntimeError, match="fixture interrupted"):
+            runpy.run_path(str(SCRIPTS / "operate.py"), run_name="__main__")
+    finally:
+        if collected:
+            gc.enable()
+    other = kept.Store(kept.store().path)
+    assert other.held("fixture:read", "key") == "completed"
+    other.close()

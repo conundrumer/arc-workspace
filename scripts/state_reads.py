@@ -184,7 +184,9 @@ def new_state() -> float:
     reads, and each other held source that no change marks stands as held
     where a read reaches it (`partial`)."""
     global _state, _marking, _stands, _brought, _full, _opened
-    kept_reads.flush()
+    if not kept_reads.flush() and (store := kept_reads.store()) is not None and store.required:
+        raise kept_reads.Unavailable(f"kept-read store {store.path} cannot preserve completed "
+                                     f"reads before the next state: {store.write_error}")
     _state += 1
     late = list(_marked_late)
     _marked_late.clear()

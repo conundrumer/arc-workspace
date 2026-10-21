@@ -38,7 +38,7 @@ KEEP_SECONDS = 3600
 worktree that runs other code within that time keeps its records, and the
 records of code a merge replaced are dropped."""
 
-LOCK_WAIT_SECONDS = 30
+LOCK_WAIT_SECONDS = 1
 """How long a process waits on the lock another process holds on the
 store before it reads or writes nothing of it."""
 
@@ -57,6 +57,10 @@ CREATE TABLE IF NOT EXISTS imports (file TEXT PRIMARY KEY, names BLOB, written R
 UNREADABLE = (pickle.UnpicklingError, EOFError, AttributeError, ImportError,
               IndexError, TypeError, ValueError)
 """What `pickle.loads` raises on a record it cannot read."""
+
+
+class Unavailable(BaseException):
+    """A required store failed; escape the cache's failed-read handlers."""
 
 
 class HeldPath(type(Path())):
@@ -113,6 +117,7 @@ class StoreFile:
         self.schema = schema
         self.db: sqlite3.Connection | None = None
         self.failed: sqlite3.Error | OSError | None = None
+        self.write_error: sqlite3.Error | OSError | None = None
 
     def connect(self) -> sqlite3.Connection:
         """The connection this process holds open to the store, opened and
@@ -151,14 +156,14 @@ class StoreFile:
             self.db = None
 
     def put(self, writes: list[tuple[str, list[tuple[Any, ...]]]], used: Iterable[str],
-            keep: float) -> None:
+            keep: float) -> bool:
         """Run each statement of `writes` over each of its rows, in one
         transaction with `mark_used` of each code of `used`, and give back
         to the system the pages of the records it drops. Where the store
         cannot be written, nothing is."""
         used = sorted(used)
         if not any(rows for _, rows in writes) and not used:
-            return
+            return True
         now = time.time()
         try:
             db = self.connect()
@@ -167,18 +172,25 @@ class StoreFile:
                     db.executemany(statement, rows)
                 for code in used:
                     mark_used(db, code, now, keep)
-            if used:
+        except (sqlite3.Error, OSError) as exc:
+            self.write_error = exc
+            return False
+        self.write_error = None
+        if used:
+            try:
                 db.execute("PRAGMA incremental_vacuum").fetchall()
-        except (sqlite3.Error, OSError):
-            pass
+            except sqlite3.Error:
+                pass  # The records have already committed.
+        return True
 
 
 class Store(StoreFile):
     """The records of one process: those computed since the last `flush`
     are written together by it."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, required: bool = False) -> None:
         super().__init__(path, SCHEMA)
+        self.required = required
         self.used: set[str] = set()
         self.new: dict[tuple[str, str], bytes] = {}
         self.new_bytes = 0
@@ -197,7 +209,9 @@ class Store(StoreFile):
                 row = self.connect().execute(
                     "SELECT record FROM records WHERE code = ? AND read = ? AND key = ?",
                     (code, read, key)).fetchone()
-            except (sqlite3.Error, OSError):
+            except (sqlite3.Error, OSError) as exc:
+                if self.required:
+                    raise Unavailable(f"kept-read store {self.path} cannot be read: {exc}") from exc
                 return None
             if row is None:
                 return None
@@ -219,20 +233,25 @@ class Store(StoreFile):
         self.new[(read, key)] = data
         self.new_bytes += len(data)
         self.used.add(code_of(module_of(read)))
-        if self.new_bytes > WRITE_BYTES:
-            self.write(set())
+        if self.new_bytes > WRITE_BYTES and self.write_error is None:
+            if not self.write(set()) and self.required:
+                raise Unavailable(f"kept-read store {self.path} cannot preserve completed reads: "
+                                  f"{self.write_error}")
         return True
 
-    def flush(self) -> None:
+    def flush(self) -> bool:
         """Write the records held since the last flush, note as used the
         code of each read this process looked up or wrote records of, drop
         the records of code that no process has used for `KEEP_SECONDS`,
         and close the connection."""
-        self.write(self.used)
-        self.used = set()
+        written = self.write(self.used)
+        if written:
+            self.used = set()
         self.close()
+        self.failed = None  # A later flush can retry a transient open/lock failure.
+        return written
 
-    def write(self, used: set[str]) -> None:
+    def write(self, used: set[str]) -> bool:
         """Write the records and the parses held, and hold none of them
         after. Where it writes parses, drop those written more than
         `KEEP_SECONDS` ago. The writes, the drop and `mark_used` of each code
@@ -241,14 +260,16 @@ class Store(StoreFile):
         now = time.time()
         parsed = [(d, pickle.dumps(s, pickle.HIGHEST_PROTOCOL), now)
                   for d, s in sorted(self.parses.items())]
-        self.new = {}
-        self.new_bytes = 0
-        self.parses = {}
         writes = [("INSERT OR REPLACE INTO records VALUES (?, ?, ?, ?)", written)]
         if parsed:
             writes += [("INSERT OR REPLACE INTO imports VALUES (?, ?, ?)", parsed),
                        ("DELETE FROM imports WHERE written < ?", [(now - KEEP_SECONDS,)])]
-        self.put(writes, used, KEEP_SECONDS)
+        if not self.put(writes, used, KEEP_SECONDS):
+            return False
+        self.new = {}
+        self.new_bytes = 0
+        self.parses = {}
+        return True
 
 
 def mark_used(db: sqlite3.Connection, code: str, now: float, keep: float) -> None:
@@ -329,6 +350,18 @@ def named_modules(module: str, path: Path, statement: Import) -> list[str]:
 
 
 _codes: dict[str, str] = {}
+_code_files: dict[Path, bytes] | None = None
+
+
+def pin_code(module: str) -> None:
+    """Keep the source of this interpreter's reads across a mid-call merge.
+
+    Fresh retirement checks still read disk. A read first reached after
+    the merge must not label an old interpreter's result with the new code.
+    """
+    global _code_files
+    _code_files = closure_files(module)
+    _codes.clear()
 
 
 def code_of(module: str) -> str:
@@ -340,7 +373,8 @@ def code_of(module: str) -> str:
     only once its bytes change, or once `KEEP_SECONDS` pass from the parse
     that wrote them."""
     if module not in _codes:
-        _codes[module] = fresh_code(module)
+        files = closure_files(module, _code_files)
+        _codes[module] = checkout.files_digest({path: files[path] for path in sorted(files)})
     return _codes[module]
 
 
@@ -350,7 +384,7 @@ def fresh_code(module: str) -> str:
     return checkout.files_digest({path: files[path] for path in sorted(files)})
 
 
-def closure_files(module: str) -> dict[Path, bytes]:
+def closure_files(module: str, pinned: dict[Path, bytes] | None = None) -> dict[Path, bytes]:
     """The files of the import closure of `module` that `code_of` digests,
     each with its bytes. The parses it makes are held in the open store
     for its next `Store.write`."""
@@ -366,9 +400,12 @@ def closure_files(module: str) -> dict[Path, bytes]:
             continue
         seen.add(name)
         path = module_file(name)
-        if path is None or path in files or not path.is_file():
+        if path is None or path in files:
             continue
-        data = files[path] = path.read_bytes()
+        if (pinned is None or path not in pinned) and not path.is_file():
+            continue
+        data = files[path] = (pinned[path] if pinned is not None and path in pinned
+                              else path.read_bytes())
         digest = hashlib.sha256(data).hexdigest()
         statements = known.get(digest) or found.get(digest)
         if statements is None and db is not None:
@@ -401,11 +438,11 @@ def _imports_db() -> sqlite3.Connection | None:
 _store: Store | None = None
 
 
-def open_store(path: Path | None = None) -> None:
+def open_store(path: Path | None = None, *, required: bool = False) -> None:
     """Read and write the records of this process through the store at
     `path`, `STORE_NAME` under `.cache/` of the main worktree by default."""
     global _store
-    _store = Store(path or checkout.caches() / STORE_NAME)
+    _store = Store(path or checkout.caches() / STORE_NAME, required=required)
 
 
 def store() -> Store | None:
@@ -413,7 +450,8 @@ def store() -> Store | None:
     return _store
 
 
-def flush() -> None:
+def flush() -> bool:
     """`Store.flush` of the open store, where one is open."""
     if _store is not None:
-        _store.flush()
+        return _store.flush()
+    return True

@@ -32,6 +32,8 @@ from operations.constants import LIMIT_SECONDS
 
 IDLE_SECONDS = 1800
 START_SECONDS = 30
+FINISH_SECONDS = 5
+"""Time left for the kept-read flush and the response after a state read stops."""
 CODE_ENV = "ARC_OPERATE_CODE"
 
 
@@ -48,6 +50,10 @@ class Expired(BaseException):
     """The request reached its foreground deadline."""
 
 
+class Unavailable(BaseException):
+    """A resident cannot serve this call; retrying the transport will not help."""
+
+
 @dataclass
 class Request:
     operator: str
@@ -58,8 +64,9 @@ class Request:
     code: str
     stdout: TextIO
     stderr: TextIO
+    phase: str = "state"
 
-    def check(self, code: bool = True) -> None:
+    def check(self, code: bool = False) -> None:
         if time.monotonic() >= self.deadline:
             raise Expired
         readable, _, _ = select.select([self.connection, self.listener], [], [], 0)
@@ -72,6 +79,42 @@ class Request:
 
 
 CURRENT: ContextVar[Request | None] = ContextVar("operate_request", default=None)
+
+
+def read_phase(phase: str) -> None:
+    """Name the current read in a failure diagnostic."""
+    if (request := CURRENT.get()) is not None:
+        request.phase = phase
+
+
+@contextlib.contextmanager
+def reading() -> Iterator[None]:
+    """Leave time to preserve completed reads and report an unfinished read.
+
+    A read cannot be assumed to finish under arbitrary I/O or machine
+    load. Stop it before the foreground watchdog can discard its cause
+    and its completed work. A read begun too late is refused immediately.
+    """
+    current = CURRENT.get()
+    if current is None:
+        yield
+        return
+
+    def exhausted(*_: object) -> None:
+        raise Unavailable(f"state read could not finish before the foreground deadline "
+                          f"while reading {current.phase}; {FINISH_SECONDS} s reserved "
+                          "to preserve completed reads and return this response")
+
+    remaining = current.deadline - FINISH_SECONDS - time.monotonic()
+    if remaining <= 0:
+        exhausted()
+    handler = signal.signal(signal.SIGALRM, exhausted)
+    signal.setitimer(signal.ITIMER_REAL, remaining)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGALRM, handler)
+        signal.setitimer(signal.ITIMER_REAL, max(current.deadline - time.monotonic(), 0.001))
 
 
 def check() -> None:
@@ -188,21 +231,24 @@ def ensure(main: Path, session: str, deadline: float) -> socket.socket:
                 path.unlink(missing_ok=True)
                 import kept_reads
                 expected = kept_reads.fresh_code("operate")
-                process = subprocess.Popen(
-                    [sys.executable, "-B", "-X", f"pycache_prefix={path.with_suffix('.pyc')}",
-                     str(main / "scripts/operate_service.py"), "startup"], cwd=main,
-                    env={**os.environ, script_calls.SESSION_ENV: session, CODE_ENV: expected},
-                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL, start_new_session=True)
+                with path.with_suffix(".log").open("w") as errors:
+                    process = subprocess.Popen(
+                        [sys.executable, "-B", "-X", f"pycache_prefix={path.with_suffix('.pyc')}",
+                         str(main / "scripts/operate_service.py"), "startup"], cwd=main,
+                        env={**os.environ, script_calls.SESSION_ENV: session, CODE_ENV: expected},
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                        stderr=errors, start_new_session=True)
         until = min(deadline, time.monotonic() + START_SECONDS)
         while time.monotonic() < until:
             if process is not None and process.poll() is not None:
-                raise ConnectionAbortedError("resident startup ended")
+                detail = path.with_suffix(".log").read_text()[-4096:].strip()
+                raise Unavailable(f"resident startup exited ({process.returncode}): "
+                                  f"{detail or 'no diagnostic from the resident'}")
             try:
                 return connect(path, deadline - time.monotonic())
             except OSError:
                 time.sleep(0.05)
-        raise Expired
+        raise Unavailable(f"resident did not open its socket within {START_SECONDS} s")
 
 
 def prepare(main: Path, session: str, deadline: float) -> None:
@@ -248,7 +294,10 @@ def client(operator: str) -> int:
     try:
         result = request(checkout.ROOT,
                          session_id(), operator, started, deadline, False)
-    except (Expired, OSError, ValueError):
+    except (Unavailable, OSError, ValueError) as exc:
+        print(f"operate: {exc}", file=sys.stderr)
+        return 1
+    except Expired:
         timeout_output(operator)
         return 1
     finally:
@@ -329,7 +378,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str)
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(Expired()))
             signal.setitimer(signal.ITIMER_REAL, max(current.deadline - time.monotonic(), 0.001))
-            current.check()
+            current.check(code=True)
             if message["refresh"]:
                 state_assembly.read_state(current.operator)
                 status = 0
@@ -350,6 +399,11 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str)
         stdout.truncate(0)
         with contextlib.redirect_stdout(stdout):
             timeout_output(current.operator)
+    except (Unavailable, kept_reads.Unavailable) as exc:
+        keep = False
+        stdout.seek(0)
+        stdout.truncate(0)
+        print(f"operate: {exc}", file=stderr)
     except Exception:
         stdout.seek(0)
         stdout.truncate(0)
@@ -357,7 +411,14 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str)
         keep = False
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
-        kept_reads.flush()
+        if not kept_reads.flush():
+            status, retry, keep = 1, False, False
+            stdout.seek(0)
+            stdout.truncate(0)
+            store = kept_reads.store()
+            print(f"operate: kept-read store cannot preserve completed reads: "
+                  f"{store.path if store is not None else ''}: "
+                  f"{store.write_error if store is not None else ''}", file=stderr)
     response = {"status": status, "stdout": stdout.getvalue(), "stderr": stderr.getvalue(),
                 "retry": retry}
     connection.settimeout(1)
@@ -366,10 +427,6 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str)
             try:
                 with side_effect():
                     connection.sendall((json.dumps(response) + "\n").encode())
-            except Replaced:
-                response = {"status": 1, "stdout": "", "stderr": "", "retry": True}
-                connection.sendall((json.dumps(response) + "\n").encode())
-                keep = False
             except (Disconnected, Expired):
                 pass
         else:
@@ -380,7 +437,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str)
         script_calls.record()
         CURRENT.reset(token)
         state_assembly.REQUEST_STARTED.reset(cutoff)
-    return keep
+    return keep and kept_reads.fresh_code("operate") == code
 
 
 def serve() -> None:
@@ -399,12 +456,14 @@ def serve() -> None:
         # and every cold interpreter retires as though its code had changed.
         console_importable()
         gc.disable()
-        kept_reads.open_store()
+        kept_reads.open_store(required=True)
         code = kept_reads.fresh_code("operate")
         import operate  # noqa: F401
+        kept_reads.pin_code("operate")
         if (kept_reads.fresh_code("operate") != code
                 or os.environ.get(CODE_ENV, code) != code):
-            return
+            kept_reads.flush()
+            raise Unavailable("code changed during resident startup; no state read was started")
         script_calls.record()
         with socket.socket(socket.AF_UNIX) as listener:
             path.unlink(missing_ok=True)
