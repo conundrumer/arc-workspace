@@ -215,7 +215,9 @@ def test_disconnect_after_a_journaled_start_does_not_repeat_bash(resident):
     connection.close()
     (root / "release").write_text("")
     assert call(root, "journal")[0] == 0
-    until(root / "executions")
+    run = script("step_journal").records(root)[0].run
+    assert run is not None
+    until(run.status)
     assert (root / "executions").read_text() == "run\n"
 
 

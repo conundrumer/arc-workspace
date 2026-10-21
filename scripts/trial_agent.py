@@ -1,6 +1,5 @@
-"""Run a doc reviewer's trial of a reader at a change as a `claude -p`
-process that saves no session, and read what the trial did, as HELP
-gives."""
+"""Run a doc reviewer's trial on the reader's runtime and read its output,
+as HELP gives."""
 
 import json
 import os
@@ -10,17 +9,21 @@ import sys
 import time
 import uuid
 from collections.abc import Iterator
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 from controlled_markdown import Registry, mctx
 from controlled_markdown.renderers import render
 from engine import checkout
-from handbook.agent_documents import agent_meta
+from handbook.agent_documents import agent_doc, agent_meta
+from handbook.context import entry_text
+from handbook.listings import listings
 from handbook.paths import scripts_importable
 from handbook.reader_names import ReaderName
 from handbook.readers import context_text, reader_named
-from operations.roles import Model
+from operations.roles import (CODEX_LAUNCHER, CODEX_ROLES, Model, Purpose, Role,
+                              agent_type, analyst_subject, launched_type)
 
 scripts_importable()
 
@@ -32,32 +35,33 @@ from transcript_ownership import blocks  # noqa: E402
 from transcript_snapshots import Refused, print_refused  # noqa: E402
 from transcripts import find  # noqa: E402
 from trial_bounds_check import bounds  # noqa: E402
+import trial_codex  # noqa: E402
 
 HELP = mctx("""
     - Usage:
         ```
         uv run python scripts/trial_agent.py run <change number> <reader> [args] <case time> <case commit>  # run a trial of that reader at that change, with its brief on stdin
-        uv run python scripts/trial_agent.py cached <output file>                                           # wait until that trial's system prompt is cached
-        uv run python scripts/trial_agent.py calls <output file>                                            # print that trial's calls, its reply and its cache figures
+        uv run python scripts/trial_agent.py cached <output file>                                           # wait for that trial's first response
+        uv run python scripts/trial_agent.py calls <output file>                                            # print that trial's calls, results, reply and usage figures
         uv run python scripts/trial_agent.py --help | -h                                                    # print this text
         ```
     - Run each form in the change's worktree.
-    - `run` runs `claude -p` on the brief, with no session saved, and ends when that run ends, with its exit code.
-        - It prints the path of the trial's output file at its start: the run's `stream-json` output, under `.cache/trials/` of the worktree.
-        - The run's model is the reader's model.
-            - For `agent <name>`, it is the `model` of the front matter of that agent's prompt under `prompts/agents/`.
-            - For `coordinator`, `user-session` and `session`, it is the alias of the family of the `message.model` of the last assistant entry of the transcript of the session `$CLAUDE_CODE_SESSION_ID` gives.
-            - For any other reader, and where no model is found, the command refuses and runs nothing.
+    - `run` runs the brief on the reader's runtime, saves no session, and ends with that run's exit code.
+        - It prints the path of the trial's output file at its start: the runtime's native JSONL events, under `.cache/trials/` of the worktree.
+        - For `agent <name>`, where that agent's role launches on Codex in the current mode, the trial runs `codex exec` with that role's configured model and reasoning effort.
+        - Other trials run `claude -p` with the reader's model: the `model` in an agent prompt's front matter, or, for `coordinator`, `user-session` and `session`, the family alias of the last assistant `message.model` in the transcript of `$CLAUDE_CODE_SESSION_ID`.
+        - Where the reader is unsupported or no model is found, the command refuses and runs nothing.
         - The trial's shared part is the file `.cache/trials/<change number>-<reader slug>.md` of the worktree.
             - `<reader slug>` is `<reader>` and each of `[args]`, joined by `-`.
             - The shared part is a lead, then the user's global `CLAUDE.md` of the Claude config directory (`$CLAUDE_CONFIG_DIR`, or `~/.claude` where that is unset), then the worktree's `CLAUDE.md` as `uv run python -m controlled_markdown render CLAUDE.md` prints it, then what `uv run python scripts/context.py context <reader> [args]` prints in the worktree.
-            - For `agent <name>`, the shared part is the run's whole system prompt, and for the session readers it is appended to Claude Code's own.
+            - Claude uses the shared part as an agent's whole system prompt, or appends it to Claude Code's own for a session reader. Codex receives it as developer instructions, with comments removed.
             - Where the user's global `CLAUDE.md` does not exist, the command refuses and runs nothing.
-        - The run has each of the tools `Read`, `Grep`, `Glob` and `Bash` that its reader has, no setting source, no plugin and no claude.ai connector, the permission mode `auto`, and one hook: `scripts/trial_bounds_check.py` with the case time and the case commit, on each Bash call.
-            - Where the case time is not `YYYY-MM-DDTHH:MM:SSZ` in UTC, or the case commit is not 7 to 40 hex digits, the command refuses and runs nothing.
-    - `cached` ends once that output file holds its first `assistant` event, and prints nothing.
-        - Where the file holds a `result` event and no `assistant` event, it refuses.
-    - `calls` prints each tool call of the trial with its result, then the trial's reply, then the `cache_creation_input_tokens` and the `cache_read_input_tokens` of its first request.
+        - Claude has each of the tools `Read`, `Grep`, `Glob` and `Bash` that its reader has, no setting source, no plugin and no claude.ai connector, the permission mode `auto`, and one hook: `scripts/trial_bounds_check.py` with the case time and the case commit, on each Bash call.
+        - Codex runs in the worktree with its native tools under a read-only sandbox, without inherited user configuration, plugins, connectors or automatic project instructions. Those tools have no Claude Bash hook; [Trials](prompts/agents/doc-reviewer/trials.md#trials) gives the audit of case bounds.
+        - Where the case time is not `YYYY-MM-DDTHH:MM:SSZ` in UTC, or the case commit is not 7 to 40 hex digits, the command refuses and runs nothing.
+    - `cached` ends after Claude's first `assistant` event or Codex's first completed agent message, and prints nothing. If the trial ends before that response, it refuses. A Codex response does not prove a cache hit.
+    - `calls` prints Claude's calls with their results, then its reply and first-request cache creation and cache read token counts. For Codex, it prints every native event, including failures and unknown event forms, the available input, cached input and output token counts, and process status.
+        - A missing token figure prints as `?`; Codex cache creation tokens are unknown.
     - A form that refuses prints the reason after `refused:` on stderr and exits 1.
     """)
 
@@ -118,6 +122,18 @@ def reader_model(reader: str, args: list[str]) -> str:
         reader=" ".join([reader, *args])))
 
 
+def codex_runtime(reader: str, args: list[str]) -> tuple[str, str] | None:
+    if reader != ReaderName.AGENT or len(args) != 1:
+        return None
+    for role in Role:
+        for subject in ("", *(analyst_subject(purpose, "trial") for purpose in Purpose)):
+            if agent_type(role, subject) != args[0]:
+                continue
+            if launched_type(role, subject) == CODEX_LAUNCHER:
+                return CODEX_ROLES[role]
+    return None
+
+
 def instructions() -> str:
     """The worktree's `CLAUDE.md` as `controlled_markdown render` prints it."""
     registry = Registry(checkout.ROOT)
@@ -151,12 +167,17 @@ def shared_part(reader: str, args: list[str]) -> str:
     """The text that each trial of the reader at the change shares."""
     user = config_dir() / "CLAUDE.md"
     must_exist(user)
-    context = context_text(reader_named(reader), args)
+    codex = codex_runtime(reader, args) is not None
+    values = partial(listings, codex=True)
+    context = (entry_text(agent_doc(args[0]), values=values) if codex else
+               context_text(reader_named(reader), args))
+    project = (entry_text((checkout.ROOT / "CLAUDE.md").resolve(), values=values)
+               if codex else instructions())
     lead = mctx("Below, the user's global instructions are between the lines "
                 "`<user-claude-md>` and `</user-claude-md>`, and the project's instructions "
                 "are between the lines `<project-claude-md>` and `</project-claude-md>`.")
     return (f"{lead}\n\n<user-claude-md>\n{user.read_text()}</user-claude-md>\n\n"
-            f"<project-claude-md>\n{instructions()}</project-claude-md>\n\n{context}")
+            f"<project-claude-md>\n{project}</project-claude-md>\n\n{context}")
 
 
 def write_shared(number: TicketNumber, reader: str, args: list[str]) -> Path:
@@ -185,13 +206,14 @@ def settings(case_time: str, case_commit: str) -> str:
 
 def run(number: TicketNumber, reader: str, args: list[str], case_time: str, case_commit: str,
         brief: str) -> int:
-    # The model is looked up before the context renders, so a reader with no
-    # model refuses at once.
-    model = reader_model(reader, args)
+    runtime = codex_runtime(reader, args)
+    model = reader_model(reader, args) if runtime is None else None
     shared = write_shared(number, reader, args)
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     out = trials_dir() / f"{number}-{slug(reader, args)}-{stamp}-{uuid.uuid4().hex[:8]}.jsonl"
     print(out, flush=True)
+    if runtime is not None:
+        return trial_codex.run(checkout.ROOT, shared, out, brief, *runtime)
     env = {k: v for k, v in os.environ.items() if k != PLUGIN_VAR} | {CACHE_TTL_VAR: "5m"}
     command = ["claude", "-p", "--no-session-persistence", "--model", model, "--tools", ",".join(reader_tools(reader, args)),
                "--output-format", "stream-json", "--verbose", "--setting-sources", "",
@@ -211,14 +233,14 @@ def events(path: Path) -> Iterator[dict[str, Any]]:
 
 
 def cached(path: Path) -> None:
-    """Waits for the trial's first assistant event: its first request has
-    then been answered, so the cache holds its system prompt."""
+    """The first-response barrier described by HELP."""
     while True:
-        kinds = {e.get("type") for e in events(path)} if path.is_file() else set()
-        if "assistant" in kinds:
+        found = list(events(path)) if path.is_file() else []
+        if any(e.get("type") == "assistant" or trial_codex.ready(e) for e in found):
             return
-        if "result" in kinds:
-            raise Refused(mctx("{path} holds a `result` event and no `assistant` event").format(
+        if (any(e.get("type") == "result" or trial_codex.terminal(e) for e in found) or
+                trial_codex.status(path).get("returncode") is not None):
+            raise Refused(mctx("trial {path} ended before its first response").format(
                 path=path))
         time.sleep(POLL_SECONDS)
 
@@ -230,6 +252,10 @@ def indented(text: str) -> str:
 def calls(path: Path) -> list[str]:
     must_exist(path)
     found = list(events(path))
+    status = trial_codex.status(path)
+    if status or any(str(e.get("type", "")).startswith(("thread.", "turn.", "item.")) or
+           trial_codex.failed(e) for e in found):
+        return [*trial_codex.calls(found), *([json.dumps(status)] if status else [])]
     results = {i: text for e in found for i, _, text in tool_results(e)}
     lines: list[str] = []
     for e in found:
