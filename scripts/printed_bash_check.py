@@ -42,6 +42,18 @@ def printed_call(result: str) -> tuple[Tool, str] | None:
     return None if send is None else (Tool.SEND_MESSAGE, send_text(*send))
 
 
+def prints_no_call(result: str) -> bool:
+    """Whether `result`, a result of the command, prints no call of any
+    tool, a call that the result cut before its closing fence included."""
+    import re
+
+    from operations.printing import printed_launches, send_opening
+
+    return (printed_call(result) is None and not printed_launches(result)
+            and re.search(f"^{send_opening()}", result, re.MULTILINE) is None
+            and re.search(r"^call [A-Za-z]+\s*$", result, re.MULTILINE) is None)
+
+
 def made_since(entries: list[dict[str, Any]], tool: Tool, current: str) -> bool:
     """Whether `entries`, the transcript after a result of the command,
     holds a call of `tool` other than the call `current` the hook holds,

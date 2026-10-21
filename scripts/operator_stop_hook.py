@@ -8,6 +8,11 @@ is held the same way to the result of `operate.py relay`
 (`context_bound_hook.ACTIONS`). Either may also stop where that result
 is the end of its turn (`printing.printed_end_turn`).
 
+Where the last call of that command failed (the harness gives its result
+as an error) and printed no call (`printed_bash_check.prints_no_call`), the
+stop and the call pass: no call is left to make, and the agent's report
+gives the failure.
+
 The SubagentHandback call is held to the same condition as the stop, so no
 reader of agent signs takes a handback as the operator's end while the stop
 would still be blocked.
@@ -27,6 +32,7 @@ from typing import Any
 
 from hook_entry import not_registered, run_pre_tool_use, run_subagent_stop
 from printed_launch_hook import first_at, operator_next
+from printed_bash_check import prints_no_call
 
 HOOK = "operator_stop_hook"
 STOPS = "operator-stops"
@@ -59,8 +65,12 @@ def check(hook: dict[str, Any]) -> str | None:
         print(f"{HOOK}: allowed: the transcript of {agent} holds no result of `next`",
               file=sys.stderr)
         return None
-    call, result = found
+    call, result = found.call, found.text
     if printed_end_turn(result) or (printed_reply(result) and printed_send(result) is None):
+        return None
+    if found.error and prints_no_call(result):
+        print(f"{HOOK}: allowed: the last call of `{command}`, {call}, failed and printed no call",
+              file=sys.stderr)
         return None
     if not first_at(hook, STOPS, agent, call):
         print(f"{HOOK}: allowed: a stop or a handback was blocked at call {call} of `next`, "

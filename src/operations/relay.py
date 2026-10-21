@@ -19,8 +19,12 @@ A text that opens with `final_reply.FOR_WAIT` gives, while no message of the
 coordinator's waits, the launcher's call of the command's `wait` in the
 background and the end of its turn (`steps.Wait`), and, once that call has
 completed or a message waits, the step as after `FOR_CONTEXT`. An operator's
-end with no final reply gives the step as after `FOR_CONTEXT` too, other
-than where the operator launched before it also ended with none and each
+end with no final reply after a failed call of `next` that printed no call
+gives the launcher's final reply, with that call's output, and launches no
+other operator until a message of the coordinator's reaches the launcher
+after that reply. Any other end with no final reply gives the step as
+after `FOR_CONTEXT` too, other than where the operator launched before it
+also ended with none and each
 of the two ended within `WAIT_SECONDS_IDLE` of its launch. Any other text,
 and an operator's end with none in that case, goes to the coordinator,
 after a line that gives the operator's agent id, and the launcher then
@@ -49,12 +53,15 @@ class Run:
     sent the launcher its final reply gives (`final_reply.final_sends`,
     `final_reply.final_text`), or None where it sent none, and the time of
     its end: the time of the last timestamped entry of its transcript
-    (`agent_turns.latest_time`), or of its launch where it has none."""
+    (`agent_turns.latest_time`), or of its launch where it has none, and the
+    output of its last call of `next` where that call failed and printed
+    no call (`printed_bash_check.prints_no_call`), or None otherwise."""
     agent_id: str | None
     launched: float
     pending: bool
     final: str | None
     ended: float
+    failed: str | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +82,8 @@ FRESH_LAUNCHER = mctx("I ended for my context: launch a fresh operator launcher 
                       "the text below.")
 CARRIED = mctx("Operator {operator} ended with the final reply below.")
 NO_REPLY = mctx("Operator {operator} ended with no final reply.")
+FAILED = mctx("Operator {operator} ended after its last call of `operate.py next` failed with "
+              "the output below, which prints no call, so I launch no other operator.")
 
 
 def sent(relay: Relay, to: str, message: str, since: float) -> bool:
@@ -137,6 +146,22 @@ def quick(run: Run) -> bool:
     return not run.pending and run.final is None and run.ended - run.launched < WAIT_SECONDS_IDLE
 
 
+def failed_step(relay: Relay, run: Run, lines: list[Message]) -> Step:
+    """The step after `run` ended with no final reply after a failed call of
+    `next` that printed no call: the launcher's final reply that gives that
+    call's output, then the launch of the next operator for the messages of
+    the coordinator's that reached the launcher after that reply, or the
+    reply where none did."""
+    text = FAILED.format(operator=run.agent_id) + "\n" + (run.failed or "")
+    message = final_message(text)
+    times = [c.time for c in sends_in(relay.calls, COORDINATOR)
+             if c.time > run.launched and c.message.startswith(message)]
+    if not times:
+        return ending(relay, text)
+    later = [m for m in lines if m.time > times[-1]]
+    return after(relay, later) if later else Reply(COORDINATOR)
+
+
 def next_step(relay: Relay) -> Step:
     if not relay.runs:
         return operator_launch(relay, relay.lines[0].text)
@@ -156,6 +181,8 @@ def next_step(relay: Relay) -> Step:
             return Wait(relay.me)
     if run.final is not None and (for_context(run.final) or for_wait(run.final)):
         return after(relay, lines)
+    if run.final is None and run.failed is not None:
+        return failed_step(relay, run, lines)
     if run.final is None and not (len(relay.runs) > 1 and quick(run) and quick(relay.runs[-2])):
         return after(relay, lines)
     carried = (CARRIED.format(operator=run.agent_id) + "\n" + run.final if run.final is not None

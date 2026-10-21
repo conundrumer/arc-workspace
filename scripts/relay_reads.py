@@ -9,6 +9,7 @@ from pathlib import Path
 from agent_turns import latest_time
 from context_bound_hook import context_bound, past_bound
 from operator_transcript import read_operator
+from printed_bash_check import prints_no_call
 from run_reads import context_size
 from transcripts import find, launched_find
 from entry_reads import entries_back
@@ -16,6 +17,8 @@ from transcript_snapshots import Refused
 from tree_reads import main_tree, scratch
 
 from controlled_markdown import mctx
+from operations.command_words import is_next
+from operations.state import Tool
 from operations.final_reply import final_sends_in, sent_final_text
 from operations.relay import Relay, Run
 from operations.roles import Role
@@ -43,6 +46,7 @@ def read_relay(me: str) -> tuple[Relay, Path]:
         if a.role is not Role.OPERATOR:
             continue
         final = None
+        failed = None
         ended = a.launched
         their_path = launched_find(a.agent_id) if a.agent_id is not None else None
         if a.agent_id is not None and their_path is not None:
@@ -50,7 +54,13 @@ def read_relay(me: str) -> tuple[Relay, Path]:
             ended = latest_time(their_path) or a.launched
             sends = [c for c in final_sends_in(theirs, a.agent_id, me) if c.time > a.launched]
             final = sent_final_text(sends[-1]) if sends else None
-        runs.append(Run(a.agent_id, a.launched, a.pending, final, ended))
+            nexts = [c for c in theirs if c.tool == Tool.BASH and c.result is not None
+                     and is_next(str(c.input.get("command", "")), a.agent_id)]
+            last = max(nexts, key=lambda c: c.time, default=None)
+            if (last is not None and last.error and last.result is not None
+                    and prints_no_call(last.result)):
+                failed = last.result.strip()
+        runs.append(Run(a.agent_id, a.launched, a.pending, final, ended, failed))
     relay = Relay(me, tuple(sorted((m for m in own.messages if m.sender is None),
                                    key=lambda m: m.time)),
                   tuple(runs), tuple(sorted(own.calls, key=lambda c: c.time)),

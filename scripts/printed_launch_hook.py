@@ -53,24 +53,31 @@ def differing(printed: dict[str, str], inp: dict[str, Any]) -> list[tuple[str, s
     return out
 
 
+class NextResult(NamedTuple):
+    call: str
+    text: str
+    error: bool
+
+
 def last_next_call(entries: Iterable[dict[str, Any]], agent: str,
-                   action: Action) -> tuple[str, str] | None:
-    """The id and the result of the last call of `operate.py` with `action`
+                   action: Action) -> NextResult | None:
+    """The id, the result and whether the harness gave that result as an
+    error, of the last call of `operate.py` with `action`
     for the agent `agent` among `entries`, read last first, or None where
     none has a result."""
     from operations.command_words import is_next
     from run_reads import blocks, tool_results
 
-    results: dict[str, str] = {}
+    results: dict[str, tuple[str, bool]] = {}
     for e in entries:
-        for call, _, text in tool_results(e):
-            results.setdefault(call, text)
+        for call, block, text in tool_results(e):
+            results.setdefault(call, (text, block.get("is_error") is True))
         if e.get("type") == "assistant":
             for b in reversed(blocks(e, "tool_use")):
                 command = str((b.get("input") or {}).get("command", ""))
                 if (b.get("name") == "Bash" and is_next(command, agent, action)
                         and b.get("id", "") in results):
-                    return b["id"], results[b["id"]]
+                    return NextResult(b["id"], *results[b["id"]])
     return None
 
 
@@ -78,7 +85,7 @@ class NextCaller(NamedTuple):
     agent: str
     action: Action
     command: str
-    found: tuple[str, str] | None
+    found: NextResult | None
 
 
 def held_action(kind: str, inp: dict[str, Any]) -> Action | None:

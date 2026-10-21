@@ -239,7 +239,8 @@ PARTS = {
         - Where an operator's final reply ends it for its context, it launches a fresh operator.
             - Where the launcher's context is past the bound `uv run python scripts/operate.py bound` prints, it sends the coordinator instead the launcher's final reply, which asks for a fresh operator launcher whose brief is that of the next operator, and gives it.
         - Where an operator's final reply ends it for a wait, and no message of the coordinator's waits, it prints a call of `wait` in the background and that the launcher ends its turn, or, where that call runs, the end of the turn alone; once that call has completed, or once a message waits, it acts as after a final reply for the operator's context.
-        - Where an operator ends with no final reply, it acts as after a final reply for the operator's context, unless the operator launched before it also ended with no final reply and each of the two ended within {idle} seconds of its launch.
+        - Where an operator ends with no final reply after its last call of `next` failed and printed no call, it sends the coordinator the launcher's final reply, with that operator's agent id and that call's output, and launches no other operator; a message of the coordinator's that reaches the launcher after that reply goes into the brief of the next operator it launches.
+        - Where an operator ends with no final reply in any other case, it acts as after a final reply for the operator's context, unless the operator launched before it also ended with no final reply and each of the two ended within {idle} seconds of its launch.
         - It sends the coordinator any other final reply of an operator, and the end with no final reply that follows a quick end with none, after a line that gives that operator's agent id.
             - It then prints the launcher's final reply, unless a message of the coordinator's waits for a next operator.
     """),
