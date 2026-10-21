@@ -169,7 +169,8 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     operate_service.read_phase("spends, budgets and audit history")
     state = replace(state, computed=computed_read(state, tickets_dir, computed_lines, usage))
     watching.extend(ungiven(computed_lines))
-    return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(ends.stalled),
+    watched = tuple(replace(w, stalled=None) if w.agent_id in ends.held else w for w in now_watched)
+    return state, MonitorState(watched=watched, stalled=frozenset(ends.stalled),
                                undecided=tuple(watching))
 
 

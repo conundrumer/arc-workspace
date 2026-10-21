@@ -10,14 +10,22 @@ from final_replies import final_reply
 from filed_texts import filed_report, report_file, report_text, written_report
 from open_agents import work_open
 from transcripts import find, launched_find
+from transcript_snapshots import SUBJECT_FAULTS
+
+from controlled_markdown import mctx
 
 from operations.state import Agent, Report
 
 
-def reply_since(agent: str, since: float) -> Report | None:
+def reply_since(agent: str, since: float, undecided: list[str]) -> Report | None:
     """The final reply in the transcript of `agent`, where it gives one
-    after `since`."""
-    r = final_reply(find(agent))
+    after `since`, or None where that transcript cannot be read."""
+    try:
+        r = final_reply(find(agent))
+    except SUBJECT_FAULTS as exc:
+        undecided.append(mctx("{run}: its transcript cannot be read ({error}), "
+                              "so its final reply is not read").format(run=agent, error=exc))
+        return None
     return r if r is not None and r.time > since else None
 
 
@@ -46,7 +54,7 @@ def reply_to(a: Agent, since: float, undecided: list[str]) -> Report | None:
     written = written_reply(a, since)
     if written is not None:
         return written
-    r = reply_since(a.agent_id, since) if a.agent_id else None
+    r = reply_since(a.agent_id, since, undecided) if a.agent_id else None
     path = report_file(r.text) if r is not None else None
     if r is None or path is None:
         return r if a.notifies else None
@@ -55,7 +63,7 @@ def reply_to(a: Agent, since: float, undecided: list[str]) -> Report | None:
 
 
 def stalled_reports(agents: list[Agent], coordinators: dict[str, float],
-                    stalls: list[str]) -> dict[str, Report]:
+                    stalls: list[str], undecided: list[str]) -> dict[str, Report]:
     """The final reply in the transcript of each agent of `stalls`, the
     agents whose `stall` reading fired (`operations.monitor`), that is
     pending, or that the coordinator launched, by `coordinators`, their
@@ -66,7 +74,7 @@ def stalled_reports(agents: list[Agent], coordinators: dict[str, float],
         since = launched[agent] if agent in launched else coordinators.get(agent)
         if since is None or agent in out:
             continue
-        r = reply_since(agent, since)
+        r = reply_since(agent, since, undecided)
         if r is not None:
             out[agent] = r
     return out
@@ -96,8 +104,14 @@ def ended_elsewhere(agents: list[Agent], me: str,
     for a in agents:
         if not a.pending or a.operator == me or a.agent_id is None or a.agent_id in out:
             continue
-        path = launched_find(a.agent_id)
-        if path is None or work_open(path, []):
+        try:
+            path = launched_find(a.agent_id)
+            if path is None or work_open(path, []):
+                continue
+        except SUBJECT_FAULTS as exc:
+            undecided.append(mctx("{run}: whether its work is open cannot be read ({error}), "
+                                  "so the agent counts as running"
+                                  ).format(run=a.agent_id, error=exc))
             continue
         out[a.agent_id] = reply_to(ended_with(a, None), a.launched, undecided)
     return out

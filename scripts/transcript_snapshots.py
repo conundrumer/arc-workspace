@@ -38,6 +38,12 @@ class Refused(Exception):
     """A call the command does not run, with the reason."""
 
 
+SUBJECT_FAULTS = (Refused, OSError, ValueError, KeyError, IndexError, TypeError,
+                  AttributeError, StopIteration)
+"""The exceptions that a read of one subject's own data can raise: a
+loop over subjects catches them for one subject (see each caller)."""
+
+
 def print_refused(reason: object) -> None:
     print(mctx("refused: {reason}").format(reason=reason), file=sys.stderr)
 
