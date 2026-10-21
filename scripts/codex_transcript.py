@@ -1,7 +1,11 @@
-"""Read the accepted Codex turns of a launcher, including incomplete work."""
+"""Read the accepted Codex turns of a launcher, including incomplete work.
+
+Entries appear as text, with JSON for unknown event forms.
+"""
 
 import argparse
 import json
+import shlex
 import sys
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
@@ -13,6 +17,7 @@ from handbook.paths import scripts_importable
 scripts_importable()
 
 import codex_rollout
+from controlled_markdown import mctx
 from operations.state import CodexSource, CodexSpend
 from spends import codex_spend
 from transcripts import find
@@ -114,11 +119,74 @@ def activity(turn: codex_rollout.Turn) -> list[dict[str, Any]]:
     return out
 
 
+def readable(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict) and value:
+        return '\n'.join(f'{key}: {readable(item)}' for key, item in value.items())
+    if isinstance(value, list) and value:
+        return '\n'.join(readable(item) for item in value)
+    return json.dumps(value, ensure_ascii=False)
+
+
+def result_value(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except ValueError:
+            return value
+        return result_value(decoded) if isinstance(decoded, (dict, list)) else value
+    if isinstance(value, list):
+        return [result_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: result_value(item) if key in
+                {'output', 'result', 'content', 'text', 'aggregated_output'} else item
+                for key, item in value.items()}
+    return value
+
+
+def display(row: dict[str, Any]) -> str:
+    payload = row.get('payload')
+    if not isinstance(payload, dict):
+        return json.dumps(row, ensure_ascii=False)
+    known = {
+        'response_item': {'message', 'reasoning', 'function_call', 'custom_tool_call',
+                          'function_call_output', 'custom_tool_call_output'},
+        'event_msg': {'agent_message', 'user_message', 'agent_reasoning', 'task_started',
+                      'task_complete', 'turn_aborted', 'token_count', 'item_started',
+                      'item_completed', 'exec_command_begin', 'exec_command_end'},
+    }
+    row_type = row.get('type')
+    if not isinstance(row_type, str) or payload.get('type') not in known.get(row_type, set()):
+        return json.dumps(row, ensure_ascii=False)
+    projected = dict(payload)
+    if payload.get('type') in {'function_call_output', 'custom_tool_call_output',
+                               'exec_command_end'}:
+        projected = result_value(projected)
+    if payload.get('type') == 'function_call' and isinstance(payload.get('arguments'), str):
+        try:
+            projected['arguments'] = json.loads(payload['arguments'])
+        except ValueError:
+            pass
+    metadata = {key: value for key, value in row.items() if key != 'payload'}
+    return readable(metadata) + '\n' + readable(projected)
+
+
+def command(launcher: str, offset: int, limit: int, full: bool) -> str:
+    return shlex.join(['uv', 'run', 'python', 'scripts/codex_transcript.py', launcher,
+                       '--offset', str(offset), '--limit', str(limit),
+                       *(['--full'] if full else [])])
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("launcher", help="launcher agent id")
-    ap.add_argument("--offset", type=int, default=0, help="activity row to start at")
-    ap.add_argument("--limit", type=int, default=200, help="maximum activity rows")
+    ap.add_argument("--offset", type=int, default=0,
+                    help="zero-based deduplicated activity row to start at (default: %(default)s)")
+    ap.add_argument("--limit", type=int, default=200,
+                    help="maximum activity rows (default: %(default)s)")
+    ap.add_argument("--full", action="store_true",
+                    help="show full contents of selected rows (long entries are shortened by default)")
     args = ap.parse_args(argv)
     if args.offset < 0 or args.limit < 1:
         ap.error("offset must be nonnegative and limit must be positive")
@@ -135,10 +203,16 @@ def main(argv: list[str]) -> int:
     end = min(len(rows), args.offset + args.limit)
     for index in range(args.offset, end):
         source, row = rows[index]
-        print(f"{index} {source.thread}/{source.turn} {json.dumps(row, ensure_ascii=False)}")
+        content = display(row)
+        print(f"{index} {source.thread}/{source.turn}")
+        if not args.full and len(content) > 4000:
+            print(content[:4000])
+            print(mctx("[shortened; full entry: {command}]").format(
+                command=command(args.launcher, index, 1, True)))
+        else:
+            print(content)
     if end < len(rows):
-        print(f"continue: uv run python scripts/codex_transcript.py {args.launcher} "
-              f"--offset {end} --limit {args.limit}")
+        print(f"continue: {command(args.launcher, end, args.limit, args.full)}")
     else:
         print("end of attributable activity")
     return 0
