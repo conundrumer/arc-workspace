@@ -526,3 +526,54 @@ def test_identified_preparation_failure_requires_its_saved_evidence(tmp_path, pr
     else:
         with pytest.raises(ValueError, match="no turn record"):
             reads.walk_entries([accepted, failed, result], "code-reviewer")
+
+
+def test_hook_refusal_is_removed_from_call_enumeration(tmp_path):
+    refused = turn(tmp_path, [])
+    refused['message']['content'][0]['id'] = 'blocked'
+    refused['message']['content'][0]['input']['command'] = 'uv run python scripts/codex_agent.py broken'
+    proof = {'type': 'user', 'message': {'content': [{'type': 'tool_result',
+        'tool_use_id': 'blocked', 'is_error': True,
+        'content': 'PreToolUse:Bash hook error: blocked'}]}}
+    retry = turn(tmp_path, [(STEP, 'accepted')])
+    entries = [refused, proof, retry]
+    assert [c.call_id for c in reads.calls(entries)] == ['codex']
+    assert walk.step_calls(reads.walk_entries(entries, 'code-reviewer'), 'code-reviewer') == [
+        ('1:0', 'accepted')]
+
+
+@pytest.mark.parametrize('bad', [None, 'missing-result', 'wrong-interval', 'wrong-thread', 'wrong-turn', 'ended'])
+def test_live_baseline_uses_only_completed_commands_of_current_turn(tmp_path, bad):
+    entry = turn(tmp_path, [])
+    entry['timestamp'] = '2026-10-20T00:00:00Z'
+    (tmp_path / 'codex-events.jsonl').unlink()
+    directory = tmp_path / '.codex' / 'sessions'
+    directory.mkdir(parents=True)
+    rows = [
+        {'type': 'event_msg', 'payload': {'type': 'task_started', 'turn_id': 'current'}},
+        {'type': 'response_item', 'payload': {'type': 'function_call', 'name': 'exec_command',
+            'call_id': 'step', 'arguments': json.dumps({'cmd': STEP})}},
+        {'type': 'response_item', 'payload': {'type': 'function_call_output',
+            'call_id': 'step', 'output': 'completed item'}},
+        {'type': 'response_item', 'payload': {'type': 'function_call', 'name': 'exec_command',
+            'call_id': 'pending', 'arguments': json.dumps({'cmd': STEP})}},
+    ]
+    if bad == 'missing-result':
+        rows.pop(2)
+    if bad == 'wrong-turn':
+        rows.append({'type': 'event_msg', 'payload': {'type': 'task_started', 'turn_id': 'other'}})
+    if bad == 'ended':
+        rows.append({'type': 'event_msg', 'payload': {'type': 'task_complete', 'turn_id': 'current'}})
+    stamp = '2026-10-19T00:00:01Z' if bad == 'wrong-interval' else '2026-10-20T00:00:01Z'
+    path = directory / ('rollout-now-other.jsonl' if bad == 'wrong-thread' else 'rollout-now-thread.jsonl')
+    path.write_text(''.join(json.dumps({'timestamp': stamp, **row}) + '\n' for row in rows)
+                    + '{"partial":')
+    if bad in ('wrong-thread', 'wrong-interval', 'wrong-turn', 'ended'):
+        with pytest.raises(ValueError):
+            reads.baseline_entries([entry], 'code-reviewer', tmp_path)
+    else:
+        results = walk.step_calls(reads.baseline_entries([entry], 'code-reviewer', tmp_path),
+                                  'code-reviewer')
+        assert results == ([] if bad else [('step', 'completed item')])
+    with pytest.raises(ValueError):
+        reads.walk_entries([entry], 'code-reviewer')

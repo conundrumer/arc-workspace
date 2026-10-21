@@ -3,6 +3,8 @@ that passes with items unprinted ends a review on items the reviewer never
 received, and nothing in the run shows it."""
 
 import json
+
+import pytest
 from pathlib import Path
 
 from engine import checkout
@@ -174,3 +176,19 @@ def test_a_resume_input_removes_a_codex_stops_bound(tmp_path: Path) -> None:
                                text="The requested result is ready. Continue your walk.")) + "\n")
     assert denied(stdin)
     assert denied(stdin)
+
+
+@pytest.mark.parametrize('writer', [
+    "python -c \"print('uv run python scripts/step.py code-reviewer report')\"",
+    "cat <<'REPORT'\nuv run python scripts/step.py code-reviewer report\nREPORT",
+])
+def test_report_writer_after_a_real_stop_preserves_the_bound(tmp_path, writer):
+    stdin = session(tmp_path, *stopped(whole_walk(), 2))
+    path = tmp_path / 's' / 'subagents' / f'agent-{AGENT}.jsonl'
+    with path.open('a') as out:
+        out.write(json.dumps({'type': 'assistant', 'message': {'content': [{
+            'type': 'tool_use', 'name': 'Bash', 'id': 'writer',
+            'input': {'command': writer}}]}}) + '\n')
+        out.write(json.dumps({'type': 'user', 'message': {'content': [{
+            'type': 'tool_result', 'tool_use_id': 'writer', 'content': ''}]}}) + '\n')
+    assert not denied(stdin)

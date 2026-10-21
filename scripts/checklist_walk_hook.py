@@ -32,8 +32,10 @@ the check, or a checklist that changed under the run, then cannot hold the
 agent in a loop of denials. Where the hook cannot tell the agent type, it
 allows the call and says why on stderr."""
 
-import re
 import sys
+from pathlib import Path
+
+from command_labels import segment_program, simple_commands
 
 from controlled_markdown import mctx
 from collections.abc import Iterable
@@ -50,24 +52,35 @@ NO_CALL = "none"
 """The record of an agent denied before it made any step call."""
 
 
-def _step(agent: str) -> str:
-    """The pattern of a step call of `agent` (`checklist.step_call`), up to
-    its agent argument."""
+def step_arguments(command: str, agent: str):
+    """Executable step calls, including shell command-string wrappers."""
     from handbook.checklist import STEP_SCRIPT
 
-    return rf"{re.escape(STEP_SCRIPT)}\s+{re.escape(agent)}"
+    for words in simple_commands(command):
+        program, args = segment_program(words)
+        # segment_program treats combined shell flags as interpreter options.
+        # Normalize those flags before asking it for the command string.
+        normalized = ["-c" if w.startswith("-") and "c" in w[1:]
+                      and set(w[1:]) <= set("lic") else w for w in words]
+        shell, rest = segment_program(normalized)
+        if shell in {"bash", "sh", "zsh"} and rest:
+            yield from step_arguments(rest[0], agent)
+        elif program == Path(STEP_SCRIPT).name and args and args[0] == agent:
+            script = words[len(words) - len(args) - 1]
+            if script == STEP_SCRIPT or script.endswith("/" + STEP_SCRIPT):
+                yield args[1:]
 
 
 def runs_step(command: str, agent: str) -> bool:
-    return re.search(rf"{_step(agent)}(?![\w-])", command) is not None
+    return next(step_arguments(command, agent), None) is not None
 
 
 def stop_item(command: str, agent: str) -> str | None:
     """The item a `--stop` step call of `agent` in `command` names, or None
     where `command` makes no such call."""
-    found = re.search(rf"{_step(agent)}\s+--stop\s+"
-                      r"""(?:'([^']*)'|"([^"]*)"|([^\s;|&)]+))""", command)
-    return None if found is None else next(g for g in found.groups() if g is not None)
+    calls = list(step_arguments(command, agent))
+    args = calls[-1] if calls else []
+    return args[1] if len(args) == 2 and args[0] == "--stop" else None
 
 
 def _calls(entries: Iterable[dict[str, Any]], agent: str) -> list[tuple[str, str, str]]:

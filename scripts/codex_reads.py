@@ -10,6 +10,8 @@ The results are given in the transcript form the checklist hook reads.
 """
 
 import json
+import shlex
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -85,6 +87,7 @@ def fresh_refusals(entries: list[dict[str, Any]]):
 
 
 def calls(entries: list[dict[str, Any]], gaps: list[str] | None = None) -> list[Call]:
+    entries = without_hook_refusals(entries)
     ends = {}
     for entry in entries:
         for block in blocks(entry, "tool_result"):
@@ -242,6 +245,12 @@ def walk_entries(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any
     """The Codex command results among a launcher's entries, with its
     prompts kept in order so a message after a stop removes its bound.
     Raise where a call, record or completed turn cannot be read."""
+    return saved_entries(entries, kind, latest_complete=True)
+
+
+def saved_entries(entries: list[dict[str, Any]], kind: str,
+                  *, latest_complete: bool) -> list[dict[str, Any]]:
+    """Project saved turns; strict consumers also require final completion."""
     entries = without_hook_refusals(entries)
     out: list[dict[str, Any]] = []
     scratch: Path | None = None
@@ -303,7 +312,7 @@ def walk_entries(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any
                 raise ValueError("the Codex input is not text")
             out.append({"type": "user", "message": {"content": text}})
             events = [json.loads(line) for line in record["output"].splitlines()]
-            if used == len(records) and (record["ok"] is not True
+            if latest_complete and used == len(records) and (record["ok"] is not True
                     or not any(e.get("type") == "turn.completed" for e in events)):
                 raise ValueError("the Codex turn did not complete")
             for n, event in enumerate(events):
@@ -318,15 +327,102 @@ def walk_entries(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any
                     continue
                 call = f"{used}:{n}"
                 command, result = item["command"], item["aggregated_output"]
-                if not isinstance(command, str) or not isinstance(result, str):
-                    raise ValueError("the Codex command or output is not text")
-                out.extend([
-                    {"type": "assistant", "message": {"content": [
-                        {"type": "tool_use", "name": "Bash", "id": call,
-                         "input": {"command": command}}]}},
-                    {"type": "user", "message": {"content": [
-                        {"type": "tool_result", "tool_use_id": call, "content": result}]}},
-                ])
+                out.extend(command_entries(call, command, result))
     if used != len(records):
         raise ValueError("the launcher's calls do not match the Codex turn records")
+    return out
+
+
+def command_entries(call: str, command: str, result: str) -> list[dict[str, Any]]:
+    """A completed command in the transcript form the step reader accepts."""
+    if not isinstance(command, str) or not isinstance(result, str):
+        raise ValueError("the Codex command or output is not text")
+    return [
+        {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "Bash", "id": call,
+             "input": {"command": command}}]}},
+        {"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": call, "content": result}]}},
+    ]
+
+
+def live_commands(activity: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Pair completed rollout results with commands from this turn only."""
+    pending: dict[str, str] = {}
+    completed: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for row in activity:
+        p = row["payload"]
+        kind = p.get("type")
+        if row.get("type") == "response_item" and kind == "function_call":
+            if p.get("name") in ("exec_command", "functions.exec_command"):
+                args = json.loads(p["arguments"])
+                pending[p["call_id"]] = args["cmd"]
+        elif kind == "exec_command_begin":
+            pending[p["call_id"]] = shlex.join(p["command"])
+        elif ((row.get("type") == "response_item" and kind == "function_call_output")
+              or kind == "exec_command_end"):
+            identity = p["call_id"]
+            if identity not in pending or identity in completed:
+                continue
+            result = p["output"]
+            # A running exec returns an acknowledgement, not a completed result.
+            if "Process running with session ID" in result:
+                continue
+            out.extend(command_entries(identity, pending[identity], result))
+            completed.add(identity)
+        elif kind == "item_completed" and p["item"].get("type") == "CommandExecution":
+            item = p["item"]
+            identity = item["id"]
+            if identity not in completed:
+                command = item["command"]
+                out.extend(command_entries(identity, shlex.join(command) if isinstance(command, list)
+                                           else command, item["aggregated_output"]))
+                completed.add(identity)
+    return out
+
+
+def baseline_entries(entries: list[dict[str, Any]], kind: str,
+                     home: Path | None = None) -> list[dict[str, Any]]:
+    """Read the saved walk and the completed prefix of its current live turn.
+
+    Only the last launcher call may lack its final record. Its accepted
+    thread must have exactly one turn in that call's interval.
+    """
+    import codex_rollout
+
+    entries = without_hook_refusals(entries)
+    accepted = calls(entries)
+    if not accepted:
+        return walk_entries(entries, kind)
+    last = accepted[-1]
+    if any(c.role != kind or c.scratch != last.scratch for c in accepted):
+        raise ValueError("the Codex baseline calls change role or scratch directory")
+    path = last.scratch / "codex-events.jsonl"
+    records = codex_rollout.rows(path) if path.exists() else []
+    if len(records) >= len(accepted):
+        return walk_entries(entries, kind)
+    if len(records) != len(accepted) - 1 or last.started is None:
+        raise ValueError("the Codex baseline has unmatched launcher calls")
+    if any(isinstance(r.get(key), (int, float)) and r[key] >= last.started
+           for r in records for key in ("started", "ended")):
+        raise ValueError("a saved Codex turn overlaps the current launcher call")
+    prior = []
+    for entry in entries:
+        if any(b.get("id") == last.call_id for b in blocks(entry, "tool_use")):
+            message = entry["message"]
+            entry = {**entry, "message": {**message, "content": [
+                b for b in message["content"] if not (
+                    b.get("type") == "tool_use" and b.get("id") == last.call_id)]}}
+        prior.append(entry)
+    out = saved_entries(prior, kind, latest_complete=False)
+    thread = (last.scratch / "codex-session").read_text().strip()
+    turns = codex_rollout.read_turns(codex_rollout.rollout_path(thread, home or Path.home()))
+    end = time.time()
+    found = [t for t in turns if last.started <= t.started <= end]
+    if len(found) != 1 or found[0].ended is not None:
+        raise ValueError("the Codex baseline has no unique current turn")
+    if any(r.get("turn") == found[0].turn for r in records):
+        raise ValueError("the current Codex turn already belongs to a saved call")
+    out.extend(live_commands(found[0].activity))
     return out

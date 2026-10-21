@@ -107,3 +107,19 @@ def test_bad_launcher_entry_does_not_hide_accepted_work(tmp_path, monkeypatch):
     result = reader.read(launcher, tmp_path)
     assert result.gaps
     assert "visible result" in json.dumps(reader.activity(result.turns[0][2]))
+
+
+def test_hook_refused_launch_contributes_no_profile_source_or_gap(tmp_path, monkeypatch):
+    blocked = launch(tmp_path, 9, call='blocked')
+    blocked['message']['content'][0]['input']['command'] = 'uv run python scripts/codex_agent.py malformed'
+    proof = {'type': 'user', 'timestamp': at(10), 'message': {'content': [{
+        'type': 'tool_result', 'tool_use_id': 'blocked', 'is_error': True,
+        'content': 'PreToolUse:Bash hook error: denied'}]}}
+    launcher, _ = fixture(tmp_path, monkeypatch, [record()], [
+        event('task_started', turn_id='turn'), event('task_complete', turn_id='turn')],
+        entries=[blocked, proof, launch(tmp_path)])
+    result = reader.read(launcher, tmp_path)
+    assert result.coverage is reader.Coverage.ATTRIBUTED
+    assert len(result.spend.sources) == 1
+    assert result.spend.totals().total_tokens == 12
+    assert len(result.turns) == 1

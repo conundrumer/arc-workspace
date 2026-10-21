@@ -40,7 +40,7 @@ HELP = mctx("""
     - `commit` records the review's commit, with `<n>`, the review's number, in its message: the tree of `HEAD` with the paths `<reviewer>` reviews as the working tree it runs from holds them, untracked files included, as a commit whose parent is `HEAD`.
         - It prints the commit's hash on one line, then the git pathspecs that select those paths, one on a line.
     - The form with `<commit>` makes the tag of the review's baseline.
-        - It reads the transcripts of the reviewer `<agent id>`, and checks that the tool results of its Bash calls whose command runs `scripts/step.py <reviewer>` hold, whole, each item the step command gives from the first item of the checklist of the main tree, as it stands at the command's call, up to the item after that item, each after the item before it, in a later result or later in the same result.
+        - It reads the transcripts of the reviewer `<agent id>`, and checks that the completed results of its commands that run `scripts/step.py <reviewer>` hold, whole, each item the step command gives from the first item of the checklist of the main tree, as it stands at the command's call, up to the item after that item, each after the item before it, in a later result or later in the same result.
             - Where that checklist holds no such item, the command fails and names the item it wants.
         - Where the results hold each of those items, it runs `git tag <prefix><m> <commit>` for the least `<m>` from `<n>` up that git accepts, and prints the tag.
         - Where they do not, it makes no tag, exits non-zero, and prints, as one command, the step calls that print each item from the first item they do not hold, to be run in one Bash call, with each item from the first one it prints up to this command done, before the command is run again.
@@ -107,7 +107,15 @@ def review_tag(review: Review, n: int, commit: str, agent: str) -> str:
         raise Refused(NO_TRANSCRIPT.format(agent=agent))
     item = review.facts.item
     checklist = Checklist(review.role.value, main_tree())
-    gap = step_gap((e for p in paths for e in read_entries(p)), checklist, item)
+    from codex_reads import baseline_entries, launches, without_hook_refusals
+
+    entries = without_hook_refusals([e for p in paths for e in read_entries(p)])
+    try:
+        if any(list(launches(e)) for e in entries):
+            entries = baseline_entries(entries, review.role.value)
+    except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
+        raise Refused(str(exc)) from exc
+    gap = step_gap(entries, checklist, item)
     if gap is not None:
         raise Refused(NO_STEP.format(agent=agent, missing=gap.item.heading.text, item=item,
                                      command=gap.command))
