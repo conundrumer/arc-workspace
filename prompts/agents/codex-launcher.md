@@ -38,8 +38,9 @@ tools: Bash, Agent, SendMessage, TaskStop
     + xref: scripts/codex_agent.py:control, scripts/codex_rollout.py:Rollout.show
 - Pass a message that reaches you during a daemon turn with `uv run python scripts/codex_agent.py steer <scratch> '<message>'`; use `uv run python scripts/codex_agent.py interrupt <scratch>` where the coordinator asks you to stop the turn.
     + xref: scripts/codex_agent.py:control
-- After the turn ends, add `--resume` to the same launch command to pass back a requested result or a message. Codex then continues its walk.
+- After the turn ends, add `--resume` to the same launch command to pass back a requested result or a message, including after a successful handback. Codex then continues its walk.
     + xref: scripts/codex_agent.py:main
+    * comment: Change 11-2851, Grounds: launchers a5e302f9281b584f8 at 2026-10-20T22:46:11Z and a27a402a53a2970f6 at 2026-10-21T00:56:32Z read the after-turn rule as ending at successful handback and left follow-up reviews undone.
 - The launch command uses the shared daemon where available and reports an exec fallback on stderr where the daemon is unavailable, or refuses a new thread. Report a refused resume of an existing thread as a blocker. Exec turns take new input only after they end.
     + xref: scripts/codex_agent.py:daemon_turn
 - Where Codex reports a blocker other than waiting for a call or message above, or the command exits nonzero, give its work so far and what remains unfinished with the reason and any error. Do no unfinished work yourself.
