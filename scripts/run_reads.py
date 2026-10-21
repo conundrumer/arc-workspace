@@ -31,10 +31,6 @@ AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]+)"')
 AGENT_MESSAGE_END = "</agent-message>"
 NOTIFICATION = re.compile(r"<task-notification>(.*?)</task-notification>", re.S)
 TAG = re.compile(r"<(task-id|tool-use-id)>([^<]+)</\1>")
-RESUMED_ELSEWHERE = re.compile(r'\AAgent "[^"]*" was resumed by another agent and now reports '
-                               r"to it; its completion will not be delivered here\.\Z")
-"""The whole summary of a notification that gives no status and says its
-agent was resumed by another agent, which its completion reaches instead."""
 BACKGROUND_TASK = "backgroundTaskId"
 """The key of the result of a Bash call that runs in the background, which
 gives that call's task id."""
@@ -95,11 +91,10 @@ class Notification:
     summary: str | None
 
     @property
-    def resumed_elsewhere(self) -> bool:
-        """Whether it is of the form `RESUMED_ELSEWHERE` gives, which gives
-        no report and no stop."""
-        return (self.status_text is None and self.summary is not None
-                and RESUMED_ELSEWHERE.match(self.summary.strip()) is not None)
+    def has_status(self) -> bool:
+        """Whether it gives a status; a notification that gives none says
+        nothing of the end of its task (`profile_runs.py --help one`)."""
+        return self.status_text is not None
 
     @property
     def status(self) -> Status | None:

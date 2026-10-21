@@ -147,6 +147,7 @@ PARTS = {
             - An earlier report that gives that path, and a report whose file is gone, keep the path as its text.
     - Where the latest message from the parent is unknown, or no transcript of the parent is found, it prints `?`.
     - A notification or a launch result whose status is of no known form gives no report, and where no `.meta.json` of the run gives a `toolUseId`, no launch result is matched to it.
+    - A notification that gives no status, such as a Monitor event or one that says the agent was resumed, gives no report and no sign that the agent stopped.
     - A launch result whose status is of no known form counts as not in the background, wherever it is read.
     """),
     HelpPart.MANY: mctx("""
@@ -212,12 +213,13 @@ PARTS = {
     - Of the agents the run launched, the agents those launched, and so on, an agent's work is open where its turn is in progress, whether or not its parent's work is open, or where its turn has ended, its parent's work is open, and its work is not closed.
         - A parent's work is open where the parent is `main` or listed, and the run ID's work is open where it is `main` or would be listed under `main`.
         - An agent's turn counts as ended where it has ended, as `--help runs` gives when a turn ends, or where its parent has its result, or a transcript of the sessions of its run or of its parent's run holds a notification of it, and its transcript holds no `user` or `assistant` entry timestamped after the latest of those.
+            - Where the turn of its parent, other than `main`, has ended, and the transcripts of its parent's run hold no result of the Agent call that launched it, that call was cut off with its parent's turn. Its turn then counts as ended where its transcript holds no `user` or `assistant` entry timestamped after the end of its parent's turn: the end of its parent's own call, where that call was cut off; else the time of its parent's last timestamped entry.
     - A report of an agent that reached its parent after the parent's latest message to it closes its work.
         - A report is one as `--help one` gives it, read here from each transcript of the parent's run.
     - Each of these after the latest message the agent received from anyone closes its work:
         - a report;
         - a result of the agent's own SubagentHandback call that says the harness delivered its report;
-        - a notification of it whose status is not `running` and whose note does not say that the agent stopped with background work of its own still running;
+        - a notification of it of a known status other than `running`, whose note does not say that the agent stopped with background work of its own still running;
         - the harness's note that the user interrupted the run, which is itself no message the agent received.
     - Where the parent's latest message to an agent is unknown, only the entries of that list close its work.
     - Where no transcript of the parent of the run ID, or of a parent above it, gives its launch, whether its work is open is unknown, and it counts as open.

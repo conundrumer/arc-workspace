@@ -135,13 +135,15 @@ class Launch:
     the time of the run's last sign that it reported, or None where the
     run holds none, the id of the call that launched it, and the
     `AgentEntry` of each entry of the run's transcripts to which
-    `report_ids` gives its agent id or the id of that call."""
+    `report_ids` gives its agent id or the id of that call, and whether
+    the run's transcripts hold a result of that call."""
     agent: str | None
     path: Path | None
     since: float
     done: float | None
     call: str
     entries: tuple[AgentEntry, ...]
+    answered: bool = True
 
     def reports(self, since: float, undecided: list[str]) -> list[Report]:
         return reports_after(self.entries, since, self.agent, self.call, undecided)
@@ -210,12 +212,17 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
     background. An Agent call whose result is an error launched no agent,
     unless a transcript gives it as its launch or its result gives an
     `agentId`. A launch is made anew only where a value it is made from
-    changed since the last read on the same fold."""
+    changed since the last read on the same fold. An Agent call that the
+    transcripts give more than once is one launch, from its first entry."""
     read = fold(LaunchLines.step, LaunchLines, path, chain(path))
     making = _made.read(path, read)
     out: list[Launch] = []
+    taken: set[str] = set()
     for at, b in read.calls:
         tid = b.get("id", "")
+        if tid in taken:
+            continue
+        taken.add(tid)
         child = launched_by(path, tid)
         _, launch = making.item(
             tid, lambda m: (read.results.get(tid), child, launch_signs(read, tid, m[0])),
@@ -258,7 +265,8 @@ def make_launch(path: Path, read: LaunchLines, at: str, tid: str, child: Path | 
     named = dict.fromkeys(line for v in (tid, *([aid] if aid else []))
                           for line in read.naming.get(v, []))
     launch = Launch(aid, child, epoch(at), done, tid,
-                    agent_entries((n for p, i in named for n in line_entries(p, i)), aid, tid))
+                    agent_entries((n for p, i in named for n in line_entries(p, i)), aid, tid),
+                    answered=tid in read.answered)
     return agents, launch
 
 

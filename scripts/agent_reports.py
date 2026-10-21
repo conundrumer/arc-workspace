@@ -287,12 +287,12 @@ def report_ids(entry: Entry) -> list[str]:
 def agent_notifications(e: Entry, aid: str | None, call: str | None,
                         undecided: list[str]) -> list[Notification]:
     """The notifications of the agent `aid`, launched by call `call`, that
-    the timestamped entry `e` gives, other than one that says the agent was
-    resumed by another agent, and one whose status is of no known form,
+    the timestamped entry `e` gives, other than one that gives no status
+    (`Notification.has_status`), and one whose status is of no known form,
     which an `undecided` line names."""
     out: list[Notification] = []
     for n in notifications(e):
-        if ((aid is None or aid not in n.ids) and call not in n.ids) or n.resumed_elsewhere:
+        if ((aid is None or aid not in n.ids) and call not in n.ids) or not n.has_status:
             continue
         if n.status is None:
             undecided.append(mctx("{run}: a notification of it at {time} gives "

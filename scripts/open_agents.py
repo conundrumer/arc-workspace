@@ -2,7 +2,7 @@
 `profile_runs` lists them."""
 
 from bisect import bisect_left
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -172,13 +172,16 @@ class Node:
     `nodes_under` has not read them, and `in_progress` as `found` gives it
     until `settle_turns` reads it, and from then on with the latest
     notification of it as well. `own` is what `own_work` gives and `busy`
-    what `is_busy` gives, each None where it has not been read."""
+    what `is_busy` gives, each None where it has not been read. `cut` is
+    the end of its launcher's turn, where `cut_off` found its call cut off
+    with that turn."""
     found: Launched
     under: list["Node"] | None
     in_progress: bool
     own: list[str] | None = None
     busy: bool | None = None
     fault: str | None = None
+    cut: float | None = None
 
     @property
     def parent(self) -> str:
@@ -272,6 +275,40 @@ def settle_turns(nodes: list[Node], undecided: list[str]) -> None:
             n.fault = str(exc)
         else:
             undecided.extend(notes)
+
+
+def turn_ended_at(n: Node) -> float | None:
+    """The end of the turn of `n`, whose turn is not in progress."""
+    if n.cut is not None:
+        return n.cut
+    return last_time(n.path)
+
+
+def cut_off(pairs: Iterable[tuple[Node, Node]], undecided: list[str]) -> None:
+    """Apply the parent turn cutoff of `profile_runs.py --help running`
+    to each launcher and agent of `pairs`, each launcher before the agents
+    under it. Each agent keeps the end of its launcher's turn as `cut`."""
+    for up, n in pairs:
+        if (up.fault is not None or n.fault is not None or up.in_progress
+                or not n.in_progress or n.launch.answered):
+            continue
+        notes: list[str] = []
+        try:
+            n.cut = turn_ended_at(up)
+            n.in_progress = turn_open(n.path, n.cut, notes)
+        except SUBJECT_FAULTS as exc:
+            n.fault = str(exc)
+        else:
+            undecided.extend(notes)
+
+
+def descents(nodes: list[Node]) -> Iterator[tuple[Node, Node]]:
+    """Each launcher and agent under `nodes` at any depth that has been
+    read, each launcher before the agents under it."""
+    for n in nodes:
+        for m in n.under or []:
+            yield n, m
+        yield from descents(n.under or [])
 
 
 def listing(n: Node, parent_open: bool, undecided: list[str]) -> Listed | None:
@@ -411,6 +448,7 @@ def running_agents(path: Path, undecided: list[str]) -> list[Listed]:
     if up:
         up[-1].under = down
     settle_turns([*up, *every_node(down, undecided)], undecided)
+    cut_off([*zip(up, up[1:]), *descents(up[-1:] if up else down)], undecided)
     return listed_under(down, open_along(up, undecided), undecided)
 
 
@@ -436,6 +474,7 @@ def work_open(path: Path, undecided: list[str]) -> bool:
     its parents by `ancestry`, with one `settle_turns` over them."""
     up = ancestry(path, undecided)
     settle_turns(up, undecided)
+    cut_off(zip(up, up[1:]), undecided)
     return open_along(up, undecided)
 
 
@@ -517,6 +556,7 @@ def nodes_under(n: Node, undecided: list[str]) -> list[Node]:
     if n.under is None:
         n.under = launched_under(n.path, undecided)
         settle_turns(every_node(n.under, undecided), undecided)
+        cut_off(descents([n]), undecided)
     return n.under
 
 

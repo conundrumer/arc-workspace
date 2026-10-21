@@ -208,8 +208,8 @@ def strip(v: View, working: int) -> str:
 def health(v: View, notes: list[str]) -> str:
     """The HTML of Health: the user's tickets that wait on nothing, the
     hold of agent starts, a stale record, no agent at work, and `notes`,
-    the lines of the reads that did not decide."""
-    out = [f'<div class="alert">⚠ {esc(n)}</div>' for n in notes]
+    each once, the lines of the reads that did not decide."""
+    out = [f'<div class="alert">⚠ {esc(n)}</div>' for n in dict.fromkeys(notes)]
     if v.records.main_missing is not None:
         out.append(f'<div class="alert">⚠ {esc(v.records.main_missing)}</div>')
     if not v.records.records:

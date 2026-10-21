@@ -177,7 +177,7 @@ class OperatorLines(LaunchingLines):
     what `LaunchingLines` reads, with each call of any tool, the text of
     each call's result and whether it is an error, the task and output file
     of each call the harness ran or moved to the background, and the status
-    each notification gives each id."""
+    each notification that gives a status gives each id."""
     results: dict[str, tuple[str | None, bool]] = field(default_factory=dict)
     moved: dict[str, tuple[str, Path | None]] = field(default_factory=dict)
     tasks: dict[str, TaskStatus | None] = field(default_factory=dict)
@@ -196,8 +196,9 @@ class OperatorLines(LaunchingLines):
                     self.moved[call] = (str(result[BACKGROUND_TASK]), output_file(b))
         if e.get("type") != "assistant":
             for n in notifications(e):
-                for v in n.ids:
-                    self.tasks[v] = n.status
+                if n.has_status:
+                    for v in n.ids:
+                        self.tasks[v] = n.status
         self.add_prompt(p, i, e)
 
 
