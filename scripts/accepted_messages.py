@@ -27,6 +27,7 @@ def listing(path: Path) -> tuple[Named, ...]:
 class Tail:
     """Complete own records read from one file, with unmatched calls and results."""
     identity: tuple[int, int] | None = None
+    revision: tuple[int, int, int, int] | None = None
     offset: int = 0
     own: bool = False
     calls: dict[str, tuple[Entry, float]] = field(default_factory=dict)
@@ -34,6 +35,9 @@ class Tail:
 
     def read(self, path: Path) -> list[Entry]:
         try:
+            stat = path.stat()
+            if self.revision == (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns):
+                return []
             with path.open("rb") as stream:
                 stat = os.fstat(stream.fileno())
                 identity = stat.st_dev, stat.st_ino
@@ -57,9 +61,18 @@ class Tail:
                             self.own = own_result(entry, call)
                         if self.own:
                             entries.append(entry)
+                self.revision = stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
                 return entries
         except FileNotFoundError:
             return []
+
+
+@dataclass
+class Inventory:
+    """Transcript paths and ids, shared while every traversed listing stands."""
+    directories: dict[Path, tuple[Named, ...]]
+    paths: tuple[Path, ...]
+    agents: frozenset[str]
 
 
 class Inbox:
@@ -73,14 +86,16 @@ class Inbox:
         self.roots = {s.parent for s in self.sessions}
         self.directories: dict[Path, tuple[tuple[int, int, int], tuple[Named, ...]]] = {}
         self.tails: dict[Path, Tail] = {}
-        self.names = {agent_id(path)}
+        self.inventories: dict[Path, Inventory] = {}
+        self.agent = agent_id(path)
+        self.names = {self.agent}
         if name := (read_meta(path) or {}).get("name"):
             self.names.add(str(name))
         self.since = 0.0
         for session in self.sessions:
-            candidates = [main_transcript(session), *subagent_transcripts(session, listing)]
+            candidates = [main_transcript(session), *self.subagents(session).paths]
             for p in candidates:
-                if agent_id(p) == agent_id(path):
+                if agent_id(p) == self.agent:
                     self.since = max(self.since, *(epoch(e["timestamp"])
                         for e in Tail().read(p) if e.get("type") == "user" and e.get("timestamp")), 0.0)
         self.mine = launched_or_resumed(path, undecided, before=entered)
@@ -98,17 +113,38 @@ class Inbox:
             self.directories[path] = before
         return before[1]
 
+    def subagents(self, session: Path) -> Inventory:
+        """Reuse paths and ids; stat every traversed directory before reusing them.
+
+        A new nested directory changes one of those listings. Transcript
+        appends need no inventory rebuild: each tail still checks its file.
+        """
+        before = self.inventories.get(session)
+        if before is None or any(self.entries(p) is not entries
+                                 for p, entries in before.directories.items()):
+            directories: dict[Path, tuple[Named, ...]] = {}
+
+            def listed(path: Path) -> tuple[Named, ...]:
+                entries = self.entries(path)
+                directories[path] = entries
+                return entries
+
+            paths = tuple(subagent_transcripts(session, listed))
+            before = self.inventories[session] = Inventory(
+                directories, paths, frozenset(agent_id(p) for p in paths))
+        return before
+
     def accepted(self) -> bool:
         for root in self.roots:
             for entry in self.entries(root):
                 session = root / entry.name
                 if not entry.is_dir or session in self.sessions:
                     continue
-                paths = subagent_transcripts(session, self.entries)
-                if any(agent_id(p) == agent_id(self.path) for p in paths):
+                inventory = self.subagents(session)
+                if self.agent in inventory.agents:
                     self.sessions.append(session)
         for session in self.sessions:
-            for path in [main_transcript(session), *subagent_transcripts(session, self.entries)]:
+            for path in [main_transcript(session), *self.subagents(session).paths]:
                 tail = self.tails.setdefault(path, Tail())
                 for e in tail.read(path):
                     if not e.get("timestamp"):

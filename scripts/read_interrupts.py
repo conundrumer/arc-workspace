@@ -43,17 +43,22 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 
-def deferred(function: Callable[P, R]) -> Callable[P, R]:
-    """Finish a persistent operation before checking the inbox again."""
+def deferred(function: Callable[P, R], *, force: bool = True) -> Callable[P, R]:
+    """Finish a persistent operation before checking the inbox again.
+
+    Issued work forces checks on both sides. A cache write uses `force=False`
+    to share the normal poll interval with reads; keeping a result issues
+    no work, and need not scan the whole inbox for every stored record.
+    """
     @wraps(function)
     def run(*args: P.args, **kwargs: P.kwargs) -> R:
-        checkpoint(force=True)
+        checkpoint(force=force)
         token = _deferred.set(_deferred.get() + 1)
         try:
             result = function(*args, **kwargs)
         finally:
             _deferred.reset(token)
-        checkpoint(force=True)
+        checkpoint(force=force)
         return result
     return run
 

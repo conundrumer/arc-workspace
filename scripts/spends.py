@@ -7,6 +7,7 @@ import statistics
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, replace
 from enum import Enum
+from functools import partial
 from pathlib import Path
 
 import codex_reads
@@ -407,7 +408,7 @@ def all_stopped(owner: dict[Path, str], at: float) -> bool:
     return all(stopped(p) or (last_time(p) or 0.0) <= at for p in owner)
 
 
-@read_interrupts.deferred
+@partial(read_interrupts.deferred, force=False)
 def write_record(record: Path, value: object) -> None:
     """Write `value` as JSON to the file `record` under `SPENDS`."""
     record.parent.mkdir(exist_ok=True)
