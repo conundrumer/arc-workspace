@@ -57,11 +57,13 @@ gets that step on what its agents leave, with that analyst's brief
 giving the change past its cost budget, and merges once that step
 leaves nothing, in place of the steps below.
 
-An editor of a change with an agent id that ended with no report since
-its launch or its last resume gets one recovery message to finish that work and report.
-While that editor runs, the change waits. If that recovery ends without
-a fresh report, an explicit unresolved step goes to a ticket analyst
-to settle recovery or replacement. The steps below wait for fresh reports.
+An editor of a change with an agent id whose latest attempt ended with
+no report since its launch or its last resume, or with a report that gives
+its work as unfinished (`completion.finished`), gets one message that
+resumes it (`editor_resume`), once per attempt, so that it keeps its context.
+While it runs, the change waits. Where it ends again with no finished
+report, a new editor is launched in its place (`staff_editor`). The steps
+below wait for fresh reports.
 
 Once no editor of a change with an editor that builds code runs, and
 after the doc editor of its fragments is launched where `change_fragments`
@@ -128,6 +130,12 @@ from operations.tracker import last_index
 from operations.worktrees import WORKTREE, worktree
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Domain, Kind, Note, Status
+
+
+EDITOR_RESUME = mctx(
+    "Your attempt on change {number} ended with no report, or with a report that gives "
+    "work as unfinished. Finish that work as your documents give, run again each command "
+    "whose output it waits on, then give your final reply.")
 
 
 def holds(t: Ticket, me: str) -> bool:
@@ -278,6 +286,8 @@ def carry(state: State, t: Ticket) -> Step | None:
         case step:
             return step
     here = editors_in(agents, w)
+    if (resume := editor_resume(state, t, editors, here)) is not None:
+        return resume
     if unstaffed(editors, here):
         return staff_editor(state, t, w, editors, agents)
     if any(a.pending for a in here):
@@ -520,13 +530,30 @@ def check_or_line(state: State, c: EditorChange, agents: list[Agent]) -> Step | 
         number=c.t.number)
 
 
+def editor_resume(state: State, t: Ticket, editors: tuple[Role, ...],
+                  here: list[Agent]) -> Send | None:
+    """One recovery message per editor attempt without a finished report,
+    or None where no such message is due."""
+    for a in latest_editors([a for a in here if briefs.FRAGMENTS_PART not in a.brief]):
+        if a.role not in editors or a.agent_id is None or occupies(a):
+            continue
+        step = Send(a.agent_id, EDITOR_RESUME.format(number=t.number),
+                    f"resume {t.number} {a.agent_id}", since=a.launched, change=t.number)
+        if not repeated(step, state):
+            return step
+    return None
+
+
 def editor_replacement(state: State, t: Ticket, w: Path,
                       latest: list[Agent]) -> Step | None:
-    """Replace an editor whose last attempt ended without a result."""
+    """Resume an editor whose last attempt ended without a result
+    (`editor_resume`), or, once that resume was sent, replace it."""
     if any(not occupies(a) for a in latest if briefs.FRAGMENTS_PART not in a.brief):
         editors = change_editors(t)
         if isinstance(editors, Undecided):
             return editors
+        if (resume := editor_resume(state, t, editors, latest)) is not None:
+            return resume
         return staff_editor(state, t, w, editors, of_change(state, t))
     return None
 

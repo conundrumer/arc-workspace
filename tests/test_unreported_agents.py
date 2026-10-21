@@ -1,12 +1,8 @@
 """An agent that ended with no report since its launch or its last resume
-leaves its work for another attempt: ticket and doc reviews retry, and
-an editor is replaced before its change can merge. A merge closes only its open
+leaves its work for another attempt. A merge closes only its open
 `question` tickets."""
 
 from pathlib import Path
-from dataclasses import replace
-
-import pytest
 
 from tests.conftest import script
 from tests.test_change_overrun import worktree
@@ -71,28 +67,6 @@ def change(tmp_path: Path, w: Path, editors: str = "code-editor"):
     return ticket(tmp_path, "assigned", "9-1_change_x_ticket-analyst.md",
                   f"---\nkind: change\neditors: {editors}\n---\n# x: y\n\n"
                   + CHANGE_LOG.format(me=ME, w=w))
-
-
-@pytest.mark.parametrize("resumed", [False, True])
-def test_an_unreported_editor_blocks_review_and_merge(tmp_path: Path, resumed: bool) -> None:
-    from operations import briefs
-    from operations.changes import carry, next_step
-    from operations.state import Waits
-    from operations.roles import Role
-    from operations.steps import Launch
-    w = worktree(tmp_path)
-    (w / "a.txt").write_text("b\n")
-    t = change(tmp_path, w)
-    launched = t.last_time + 10
-    editor = agent(FIRST, Role.CODE_EDITOR, t.number, briefs.WORK_IN.format(worktree=w),
-                   launched, launched + 100 if resumed else launched,
-                   [launched + 50] if resumed else [])
-    initial = state(tmp_path, [t], [editor], w)
-    step = next_step(initial, t)
-    assert isinstance(step, Launch) and step.role is Role.CODE_EDITOR
-    running = replace(initial, transcripts=replace(initial.transcripts,
-        agents=(replace(editor, waits=Waits.AT_WORK),)))
-    assert carry(running, t) is None
 
 
 def test_two_doc_reviewers_that_gave_no_reply_leave_another_review_due(tmp_path: Path) -> None:

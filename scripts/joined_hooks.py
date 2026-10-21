@@ -4,7 +4,8 @@ caller gets the reason of each check that denies, in the order of the
 list, and a check that denies is recorded only when its reason reaches the
 caller (`hook_entry.run_pre_tool_use`). The argument names the matcher:
 `handback` for `SubagentHandback`, whose checks are those of
-`operator_stop_hook`, `checklist_walk_hook` and `report_file_hook`, `send`
+`operator_stop_hook`, `codex_relay_hook`, `checklist_walk_hook` and
+`report_file_hook`, `send`
 for `SendMessage`, whose check is that of `printed_send_hook`, and `agent`
 for `Agent`, whose checks are those of `context_bound_hook` and
 `printed_launch_hook`, and `bash` for `Bash|Monitor`, whose checks are
@@ -27,12 +28,14 @@ def main() -> int:
     match sys.argv[1:]:
         case [arg] if arg == HANDBACK:
             import checklist_walk_hook
+            import codex_relay_hook
             import operator_stop_hook
             import report_file_hook
             from reader_delivery import reader_update
 
-            return run_pre_tool_use(HOOK, [operator_stop_hook.check, checklist_walk_hook.check,
-                                           report_file_hook.check], reader_update)
+            return run_pre_tool_use(HOOK, [operator_stop_hook.check, codex_relay_hook.check,
+                                           checklist_walk_hook.check, report_file_hook.check],
+                                    reader_update)
         case [arg] if arg == SEND:
             import printed_send_hook
             from reader_delivery import reader_update
