@@ -62,14 +62,13 @@ pub fn write_solver(solver: &Solver) -> SolverText {
 /// argument's `name`, so the file reads that field at that site. Each name
 /// so taken is reserved in its scope, as [`crate::program::LabelId`] gives
 /// a scope, before any other label is named. Each other label takes the
-/// name of the column or field of its first site, PascalCase, a first site
-/// being the first in the order of the token stream, in which an input's
-/// body comes before its head, and the head's sites come in the order of the
-/// port's columns, with the
+/// name of the column or field of the site that makes it, PascalCase, in the
+/// order of the labels' ids, which a decode gives in the order of the labels'
+/// makes, with the
 /// least digit suffix that gives a name no other label of its scope holds
 /// or has reserved: in `(:a *A2) (:key *A)`, where the site at `:key` holds a
-/// `NamedLabel { name: A }` and the label at `:a` is another label whose
-/// first site is `:a`, the label at `:key` is written `A` and the label at
+/// `NamedLabel { name: A }` and the label at `:a` is another label made at
+/// `:a`, the label at `:key` is written `A` and the label at
 /// `:a` is written `A2`.
 ///
 /// Two labels take one name only where [`Node::apply`](crate::program::Node::apply)
@@ -116,7 +115,7 @@ mod synthesized {
     use crate::layout::{Layout, NodeLayout, SourceFile, SourcePlace};
     use crate::program::path::NodePath;
     use crate::program::*;
-    use crate::registry::{Component, Registry};
+    use crate::registry::Registry;
     use crate::resolver::registry_columns::{component, proposer_columns};
     use crate::trace::render::label_name;
 
@@ -216,15 +215,16 @@ mod synthesized {
             }
         }
 
-        /// The name of each label of `form`, in the order of the labels'
-        /// first use.
+        /// The name of each label of `form`: the reserved names, then the
+        /// other labels in the order of their ids.
         fn label_names(&self, form: &Form) -> Vec<(LabelId, Box<str>)> {
             let mut uses = Uses::default();
             self.form_uses(form, &mut uses);
             let reserved: Vec<&str> = uses.reserved.iter().map(|(_, name)| &**name).collect();
             let mut names: Vec<(LabelId, Box<str>)> = uses.reserved.iter().cloned().collect();
             names.dedup_by_key(|(id, _)| *id);
-            for (label, base) in &uses.ordered {
+            uses.made.sort_by_key(|(label, _)| label.0);
+            for (label, base) in &uses.made {
                 if names.iter().any(|(id, _)| id == label) {
                     continue;
                 }
@@ -239,27 +239,20 @@ mod synthesized {
                 Form::Clause(clause) => self.body_uses(clause.value().body.value(), uses),
                 Form::Instance(instance) => {
                     let instance = instance.value();
-                    let component = component(self.registry, &instance.component).expect("the lib names the component");
                     if let Some(key) = &instance.key {
                         self.body_uses(key.value().key.body.value(), uses);
-                        key.value().inputs.iter().for_each(|input| self.input_uses(input.value(), component, uses));
+                        key.value().inputs.iter().for_each(|input| self.input_uses(input.value(), uses));
                     }
-                    instance.inputs.iter().for_each(|input| self.input_uses(input.value(), component, uses));
+                    instance.inputs.iter().for_each(|input| self.input_uses(input.value(), uses));
                 }
                 _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET and INIT"),
             }
         }
 
-        /// The uses of an input in the order of the token stream: its body,
-        /// then each head site in the order of the columns of the input's
-        /// port, as `stream/write.rs` writes them.
-        fn input_uses(&self, input: &InstanceInput, component: &Component, uses: &mut Uses) {
+        /// The uses of an input: its body, then its head.
+        fn input_uses(&self, input: &InstanceInput, uses: &mut Uses) {
             self.body_uses(input.body.value(), uses);
-            let port = component.inputs.iter().find(|port| port.port.name == input.name).expect("the component has the input");
-            let at_column = |site: &Site| port.port.columns.iter().position(|column| column.name == site.column).expect("the port has the head site's column");
-            let mut head: Vec<&Site> = input.head.iter().collect();
-            head.sort_by_key(|site| at_column(site));
-            head.into_iter().for_each(|site| self.site_uses(None, site, uses));
+            input.head.iter().for_each(|site| self.site_uses(None, site, uses));
         }
 
         fn body_uses(&self, body: &Body, uses: &mut Uses) {
@@ -271,9 +264,10 @@ mod synthesized {
                 Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => atom.value().sites.iter().for_each(|site| self.site_uses(Some(&atom.value().relation), site, uses)),
                 Conjunct::Not(Negated::Form(inner)) => self.conjunct_uses(inner, uses),
                 Conjunct::Constraint(constraint) => {
-                    uses.ordered.push((constraint.first.label, "V".to_owned()));
-                    if let Some(second) = constraint_second(constraint) {
-                        uses.ordered.push((second.label, "V".to_owned()));
+                    for operand in [Some(constraint.first), constraint_second(constraint)].into_iter().flatten() {
+                        if operand.fresh {
+                            uses.made.push((operand.label, "V".to_owned()));
+                        }
                     }
                 }
                 Conjunct::Or(branches) => branches.iter().for_each(|branch| self.body_uses(branch.value(), uses)),
@@ -286,11 +280,12 @@ mod synthesized {
             let column = self.column_text(relation, &site.column);
             for arg in site.value.args.iter() {
                 match arg {
-                    SiteArg::Label(LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id)) => uses.ordered.push((*id, column.clone())),
-                    SiteArg::Label(LabelUse::Zero) => {}
-                    SiteArg::NamedLabel { name, label: LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id) } => match written(name) {
+                    SiteArg::Label(LabelUse::Fresh(id) | LabelUse::Key(id)) => uses.made.push((*id, column.clone())),
+                    SiteArg::Label(LabelUse::Join(_) | LabelUse::Zero) => {}
+                    SiteArg::NamedLabel { name, label: label @ (LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id)) } => match written(name) {
                         Some(name) => uses.reserved.push((*id, name.into())),
-                        None => uses.ordered.push((*id, column.clone())),
+                        None if matches!(label, LabelUse::Join(_)) => {}
+                        None => uses.made.push((*id, column.clone())),
                     },
                     SiteArg::NamedLabel { label: LabelUse::Zero, .. } => {}
                     SiteArg::Field(_) => panic!("write_synthesized writes no record site"),
@@ -368,13 +363,13 @@ mod synthesized {
         }
     }
 
-    /// The uses of labels in one form, in the order the form writes them.
+    /// The labels of one form, collected in any order.
     #[derive(Default)]
     struct Uses {
         /// The labels a `NamedLabel` names, with the names, which no other
         /// label of the scope takes.
         reserved: Vec<(LabelId, Box<str>)>,
-        /// Each label use that names a label by the column of its site.
-        ordered: Vec<(LabelId, String)>,
+        /// Each label with the column of the site that makes it.
+        made: Vec<(LabelId, String)>,
     }
 }
