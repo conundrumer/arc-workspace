@@ -414,6 +414,8 @@ def exchange(connection: socket.socket, operator: str, started: float,
         connection.settimeout(max(deadline - time.monotonic(), 0.001))
         connection.sendall((json.dumps({"subject": operator, "started": started,
                                        "deadline": deadline, "kind": kind}) + "\n").encode())
+        global REQUEST_SENT
+        REQUEST_SENT = True
         with connection.makefile("rb") as stream:
             line = stream.readline()
         if not line.endswith(b"\n"):
@@ -430,9 +432,40 @@ def exchange(connection: socket.socket, operator: str, started: float,
         return response["status"], response["stdout"], response["stderr"]
 
 
+REQUEST_SENT = False
+"""Whether this client has sent its request line to a resident."""
+
+
 def timeout_output(operator: str) -> None:
     from operate_loop import timeout_output as output
     output(operator)
+
+
+def silent_before(operator: str, kind: Kind) -> bool:
+    """Whether the operator's last call of the same action printed `RESIDENT_SILENT`."""
+    try:
+        from entry_reads import entries_back
+        from operations.command_words import Action
+        from operations.printed_forms import RESIDENT_SILENT
+        from printed_launch_hook import last_next_call
+        from transcripts import find
+        action = Action.REVIEW if kind == Kind.REVIEW else Action.NEXT
+        previous = last_next_call(entries_back(find(operator)), operator, action)
+        return previous is not None and RESIDENT_SILENT.format(seconds=LIMIT_SECONDS) in previous.text
+    except Exception:
+        return False
+
+
+def expired_output(operator: str, repeated: bool = False) -> int:
+    """Print the output of an expired call and return its exit status: where the
+    request reached a resident and the last call did not end the same way, the
+    line that has the operator run the command again; else the failure report."""
+    if REQUEST_SENT and not repeated:
+        from operations.printed_forms import RESIDENT_SILENT
+        print(RESIDENT_SILENT.format(seconds=LIMIT_SECONDS), flush=True)
+        return 0
+    timeout_output(operator)
+    return 1
 
 
 def client(operator: str, kind: Kind = Kind.NEXT) -> int:
@@ -446,7 +479,10 @@ def client(operator: str, kind: Kind = Kind.NEXT) -> int:
     import kept_reads
     loaded_code = kept_reads.fresh_code("operate")
     single_instance(operator)
-    arm_watchdog(operator)
+    global REQUEST_SENT
+    REQUEST_SENT = False
+    repeated = silent_before(operator, kind)
+    arm_watchdog(operator, lambda me: expired_output(me, repeated))
     started, deadline = time.time(), time.monotonic() + LIMIT_SECONDS
     try:
         result = request(checkout.ROOT, session_id(), operator, started, deadline, kind)
@@ -477,8 +513,7 @@ def client(operator: str, kind: Kind = Kind.NEXT) -> int:
         print(f"operate: {exc}", file=sys.stderr)
         return 1
     except Expired:
-        timeout_output(operator)
-        return 1
+        return expired_output(operator, repeated)
     finally:
         signal.alarm(0)
 

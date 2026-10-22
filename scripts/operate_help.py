@@ -120,7 +120,9 @@ PARTS = {
         - Where its calls in a row have found no step ready for {idle} seconds or more, from the start of the first of them, it prints, in place of that the operator runs it again:
             - Where an agent the operator launched is pending, or a call of `wait` by the operator runs, that the operator ends its turn, after a call of `wait` in the background where none runs.
             - Otherwise the final reply for a wait, which hands the operator's lines to the operator launched after it.
-        - Where state read/planning has no result after {limit} seconds, it prints a failure report for the coordinator and ends with failure. Send the report, then run the command again to continue your procedure.
+        - Where state read/planning has no result after {limit} seconds:
+            - Where the request reached the resident, and the last call of the same action did not end this way, it prints that the resident gave no result and that the operator runs the command again, and ends with success. It does not print that no work is ready.
+            - Otherwise it prints a failure report for the coordinator and ends with failure. Send the report, then run the command again to continue your procedure.
             * comment: Change 11-2484: 11-2473 records repeated interrupted reads reported as nothing ready.
         - A call of `next` or `relay` ends each call of either for the same agent id that runs.
     - Before the call it prints, `next` prints that step's key, on a line that gives the command to run after the call, and before several launches, one line that gives each launch's key, in their order, and the command to run after them.

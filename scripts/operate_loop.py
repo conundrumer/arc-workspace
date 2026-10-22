@@ -113,13 +113,18 @@ def single_instance(me: str) -> None:
     os.pwrite(fd, f"{os.getpid()}\n".encode(), 0)
 
 
-def arm_watchdog(me: str) -> None:
+def arm_watchdog(me: str, output: Callable[[str], int] | None = None) -> None:
     """Print a failure report for the coordinator and end the process once
-    `LIMIT_SECONDS` have passed, as `--help next` gives it."""
+    `LIMIT_SECONDS` have passed, as `--help next` gives it. A caller can pass
+    `output`, which prints and returns the exit status."""
     def expire(_signum: int, _frame: object) -> None:
-        timeout_output(me)
+        status = 1
+        if output is None:
+            timeout_output(me)
+        else:
+            status = output(me)
         script_calls.record()
-        os._exit(1)
+        os._exit(status)
     signal.signal(signal.SIGALRM, expire)
     signal.alarm(LIMIT_SECONDS)
 

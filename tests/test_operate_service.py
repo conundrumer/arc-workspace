@@ -571,7 +571,7 @@ def test_review_foreground_refuses_publication(resident, monkeypatch, capsys, fa
     published = Mock()
     monkeypatch.setattr(operate_review, "publish", published)
     monkeypatch.setattr(operate_loop, "single_instance", lambda _: None)
-    monkeypatch.setattr(operate_loop, "arm_watchdog", lambda _: None)
+    monkeypatch.setattr(operate_loop, "arm_watchdog", lambda *_: None)
     monkeypatch.setattr(kept_reads, "fresh_code", lambda _: "loaded")
     monkeypatch.setattr(service, "timeout_output", lambda _: print("expired"))
     monkeypatch.setattr(service, "request", lambda *_: service.ReviewPlan(
