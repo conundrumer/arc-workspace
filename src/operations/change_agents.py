@@ -17,7 +17,7 @@ from pathlib import Path
 from controlled_markdown import mctx
 from operations import briefs
 from operations.completion import finished, occupies
-from operations.change_budget import left_draft
+from operations.change_budget import left_draft, taken
 from operations.change_holds import (Hold, findings_hold, left_hold, questions_hold,
                                      unreplied_hold)
 from operations.directives import Decision, Ruling, ruling
@@ -95,6 +95,16 @@ def of_change(state: State, t: Ticket) -> list[Agent]:
     move out of `tickets/draft/`."""
     since = left_draft(t)
     return [a for a in launched_on(state, t.number) if a.launched > since]
+
+
+def since_take(state: State, t: Ticket) -> list[Agent]:
+    """The agents of the change `t`, those `of_change` gives and those of
+    `elsewhere_on`, launched since its latest take, or since its last move
+    out of `tickets/draft/` where no take applies."""
+    take = taken(t)
+    since = left_draft(t) if take is None else take.time
+    return [a for a in (*of_change(state, t), *elsewhere_on(state, t.number))
+            if a.launched > since]
 
 
 def of_roles_since_draft(state: State, t: Ticket, roles: tuple[Role, ...]) -> list[Agent]:

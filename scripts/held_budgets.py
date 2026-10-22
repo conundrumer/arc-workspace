@@ -16,12 +16,11 @@ from operations.worktrees import worktree
 
 def change_spend(state: State, undecided: list[str]) -> dict[str, Spend | UnpricedSpend]:
     """The spend of each change `state.me` holds whose spend reads, that of
-    the agents of `change_agents.elsewhere_on` included, each pending one
-    read as still running."""
+    the agents of `change_agents.elsewhere_on` included, those launched
+    since its take, each pending one read as still running."""
     out: dict[str, Spend | UnpricedSpend] = {}
     for t in changes.held(state):
-        agents = {a.agent_id: a for a in (*change_agents.of_change(state, t),
-                                          *change_agents.elsewhere_on(state, t.number))
+        agents = {a.agent_id: a for a in change_agents.since_take(state, t)
                   if a.agent_id is not None}
         pending = {i: launched_type(a.role, a.subject) for i, a in agents.items() if a.pending}
         try:

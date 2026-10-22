@@ -9,9 +9,8 @@ of the Cost line of the change's Design (`Ticket.cost`); raising that budget
 raises its Codex token budget by the same factor. A line that
 gives the held change a new `editors` field writes the budgets of that
 field's set, with the same floor, which stand in place of the take's from
-then on. The agents of a change are those launched since its last move
-out of `tickets/draft/`, and its spend is theirs and that of the runs
-under them. Once that spend passes the cost budget, the command writes
+then on. The spend of a change is that of the agents launched since its
+take, and of the runs under them. Once that spend passes the cost budget, the command writes
 the stop line on the change. The line before a merge gives the change's
 agent-running time since its take; neither time figure stops anything."""
 
@@ -160,9 +159,11 @@ def past_note(overrun: Overrun) -> str:
 
 
 def stopped(t: Ticket) -> float | None:
-    """The time of the last stop line of `t` since its last move out of
-    `tickets/draft/`, or None where none stands."""
-    since = left_draft(t)
+    """The time of the last stop line of `t` at or after its take, or
+    since its last move out of `tickets/draft/` where no take applies, or
+    None where none stands."""
+    take = taken(t)
+    since = left_draft(t) if take is None else take.time
     return max((ln.time for ln in t.log if ln.time >= since and ln.agent == AGENT
                 and ln.note.startswith(PAST_OPENING)), default=None)
 
