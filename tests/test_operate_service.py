@@ -66,7 +66,7 @@ def resident(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             if operator in ("wait", "journal"):
                 if operator == "journal" and not step_journal.records(root):
                     with service.side_effect():
-                        step_journal.start_run(root, Bash("echo run >> executions; while [ ! -e release ]; do sleep 0.02; done", "fixture", occasion="once"),
+                        step_journal.start_run(root, Bash("echo run >> executions; while [ ! -e release ] && [ $SECONDS -lt 60 ]; do sleep 0.02; done", "fixture", occasion="once"),
                                                operator, root, time.time())
                 (root / "entered").write_text(operator)
                 if operator == "journal":
