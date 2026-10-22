@@ -9,9 +9,13 @@ transcript within it. An index is idle where none of the session ids
 `tickets/sessions/<index>` gives is live. `file_ticket.py main --help-all`
 gives the files `tickets/main` and `tickets/main-wanted`."""
 
+import calendar
+import ctypes
+import ctypes.util
 import json
 import os
-import subprocess
+import struct
+import time
 from pathlib import Path
 
 from operations.constants import FOREGROUND_MS
@@ -48,7 +52,7 @@ HARNESS_SESSIONS = "sessions"
 """The directory, beside `projects/` in the harness's config directory, in
 which the harness keeps a file `<pid>.json` for each running session, with
 its `sessionId`, its `pid`, and its `procStart`, the start of that process
-as `ps -o lstart=` prints it in UTC."""
+in UTC, in the form `ps -o lstart=` prints."""
 
 
 def harness_processes() -> dict[int, str] | None:
@@ -68,7 +72,8 @@ def harness_processes() -> dict[int, str] | None:
                 return None
             if "procStart" not in entry:
                 return None
-            if process_started(entry["pid"]) == entry["procStart"].split():
+            started = calendar.timegm(time.strptime(entry["procStart"], PROC_START_FORMAT))
+            if process_started(entry["pid"]) == started:
                 out[entry["pid"]] = entry["sessionId"]
     return out
 
@@ -84,12 +89,29 @@ def running(reader: str) -> frozenset[str] | None:
     return frozenset(held.values())
 
 
-def process_started(pid: int) -> list[str] | None:
-    """The words of the start of process `pid`, or None where it does not
-    run."""
-    done = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True,
-                          text=True, env={**os.environ, "TZ": "UTC"})
-    return done.stdout.split() if done.returncode == 0 else None
+LIBC = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+
+PROC_START_FORMAT = "%a %b %d %H:%M:%S %Y"
+
+CTL_KERN, KERN_PROC, KERN_PROC_PID = 1, 14, 1
+
+KINFO_PROC_SIZE = 648
+"""The size of macOS's `struct kinfo_proc`, whose first field, `kp_proc.p_starttime.tv_sec`,
+is a 64-bit integer."""
+
+
+def process_started(pid: int) -> int | None:
+    """The start of process `pid`, in seconds since the epoch, or None where
+    it does not run. Raises OSError where `sysctl` fails."""
+    mib = (ctypes.c_int * 4)(CTL_KERN, KERN_PROC, KERN_PROC_PID, pid)
+    buf = ctypes.create_string_buffer(KINFO_PROC_SIZE)
+    size = ctypes.c_size_t(KINFO_PROC_SIZE)
+    if LIBC.sysctl(mib, 4, buf, ctypes.byref(size), None, 0) != 0:
+        raise OSError(ctypes.get_errno(), os.strerror(ctypes.get_errno()))
+    if size.value == 0:
+        return None
+    (seconds,) = struct.unpack_from("q", buf.raw, 0)
+    return seconds
 
 
 def read_session(path: Path) -> tuple[str, float] | None:

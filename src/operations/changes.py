@@ -62,7 +62,10 @@ no finished report since its launch or its last resume
 (`completion.finished`), gets one message that
 resumes it (`editor_resume`), once per attempt, so that it keeps its context.
 While it runs, the change waits. Where it ends again with no finished
-report, a new editor is launched in its place (`staff_editor`). The steps
+report, a new editor is launched in its place (`staff_editor`), and where
+that one also ends with none after its own resume, the coordinator gets a message
+(`completion.replacement`) and no further editor is launched until an
+`Op override: give again` ruling. The steps
 below wait for fresh reports.
 
 Once no editor of a change with an editor that builds code runs, and

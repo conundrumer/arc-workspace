@@ -1,13 +1,16 @@
-"""Which attempts occupy their work, and the identity of a replacement."""
+"""Which attempts occupy their work, and the identity of a replacement, or the
+message that gives none."""
 
 import re
 from dataclasses import replace
 
-from operations.directives import reply_decisions
+from controlled_markdown import mctx
+from operations.constants import COORDINATOR
+from operations.directives import give_again_line, given_again, reply_decisions
 from operations.reports import FOR_COORDINATOR, LABELED, Label, heading_part
 from operations.roles import Purpose, Role, analyst_of
 from operations.state import Agent, State
-from operations.steps import Launch, Step, rulable
+from operations.steps import Launch, Send, Step, key, rulable
 
 
 def decided(a: Agent) -> bool:
@@ -49,17 +52,58 @@ def occupies(a: Agent) -> bool:
     return a.pending or finished(a)
 
 
+STOPS_BOUND = 2
+"""How many attempts of one role and subject in a row may stop with no
+result before `replacement` gives no further launch."""
+
+STOPPED = mctx("Role {role} on {subject} has stopped with no result in each of its last "
+               "{count} attempts, {agents}, so the operator launches no further attempt. "
+               "Its last report: {head}. The line `{line}` lets the launches go on once "
+               "the fault is fixed.")
+"""The message to the coordinator that `replacement` gives in place of a
+launch."""
+
+
+def stopped_attempts(state: State, step: Launch) -> list[Agent]:
+    """The attempts of the role and subject of `step`, after the last
+    `Op override: give again` ruling on its key, of which the last
+    `STOPS_BOUND` all stopped with no result, or an empty list where they
+    did not. An attempt the usage limit stopped
+    (`TranscriptsRead.limited`) does not count, as `limit_resume` resumes it."""
+    again = given_again(state).get(key(step), 0.0)
+    past = [a for a in state.agents_of(step.role, step.subject) if a.launched > again]
+    last = past[-STOPS_BOUND:]
+    if len(last) < STOPS_BOUND or any(
+            occupies(a) or a.agent_id in state.transcripts.limited for a in last):
+        return []
+    return last
+
+
 def replacement(state: State, step: Step) -> Step:
     """Give a retry its own occasion, past the interrupted launch's journal.
 
     Keep the procedure's brief and admission rules. The suffix is stable
-    across reads, and changes again if the replacement also stops.
+    across reads, and changes again if the replacement also stops. Where
+    the last `STOPS_BOUND` attempts of the step's role and subject all
+    stopped with no result, give in its place one message to the
+    coordinator (`STOPPED`), which `give_again_line` makes the launches go
+    on from.
     """
     if not isinstance(step, Launch):
         return step
     past = state.agents_of(step.role, step.subject)
     if not past or occupies(past[-1]):
         return step
+    if stopped := stopped_attempts(state, step):
+        last = stopped[-1].last_report
+        head = "no report" if last is None or not last.text.strip() else \
+            last.text.strip().split("\n", 1)[0]
+        return Send(COORDINATOR, STOPPED.format(
+            role=step.role, subject=step.subject, count=len(stopped),
+            agents=", ".join(str(a.agent_id) for a in stopped), head=head,
+            line=give_again_line(key(step))),
+            f"stopped {step.role} {step.subject}", since=stopped[-1].launched,
+            change=step.change)
     a = past[-1]
     suffix = f" replacement {a.agent_id} {a.launched} {a.since}"
     return step if step.occasion.endswith(suffix) else replace(
