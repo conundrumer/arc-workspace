@@ -19,6 +19,16 @@ def review_again(time: float) -> str:
     return REVIEW_AGAIN.format(time=utc_stamp(time))
 
 
+def decided_edits(number: str, analyst: str, text: str) -> str:
+    """The message that gives an editor of the change `number` the text of
+    the section of decision analyst `analyst`'s reply addressed to its
+    role."""
+    return mctx("Decision analyst {analyst} decided the edits below for your part of change "
+                "{number}. Make each that the worktree does not hold yet, run the checks each "
+                "gives, then give your final reply.").format(
+        number=number, analyst=analyst) + f"\n{text}"
+
+
 def merge_finding(number: str, output: str) -> str:
     return mctx("A finding of your checks on change {number}: the merge refused it, as "
                 "below.").format(number=number) + f"\n{output}"

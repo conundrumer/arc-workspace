@@ -37,7 +37,11 @@ doc reviewer that opens with `reports.AT_CAP`, where it follows that
 launch, which a `merge` ruling on that analyst's items does not settle, and the
 open `question` tickets filed on the change go to one ticket analyst.
 A change whose only editor is that agent gets no item checker.
-That analyst's reply leaves nothing more, unless its part for the
+That analyst's reply gives each kept finding and each decided edit for an
+editor under `reports.TO_EDITOR` for its role, and the command delivers
+each such section once per reply to that role's running editor
+(`deliver_decided`), or gives it in the brief of the editor launched in
+its place (`undelivered`). That analyst's reply leaves nothing more, unless its part for the
 coordinator gives a `decision:` or an `unfinished:` item and no item
 checker was launched since its launch: then the change is held on those
 items, in place of its merge, and a ruling of another analyst gives that
@@ -117,7 +121,7 @@ from operations.doc_review import doc_review, latest_reviewer, with_ids
 from operations.directives import Decision, give_again_line, held_on, ruling
 from operations.item_check import check_items, is_checked, latest_reports, unfinished
 from operations.completion import occupies, replacement
-from operations.reports import Label, at_cap, items_of, left_for_decision, shows_current
+from operations.reports import Label, at_cap, items_of, left_for_decision, shows_current, to_editor
 from operations.roles import (CHECKS, LAUNCHING_EDITORS, Purpose, Role, analyst_of,
                               analyst_subject)
 from operations.state import Agent, Report, State, Ticket, last_reported
@@ -250,12 +254,76 @@ def staff_editor(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
     editor = part if isinstance(part, briefs.EditorPart) else briefs.DocEditor(
         part, state.held.fragments.get(w, ()), tuple(drafters))
     occasion = worktree_occasion(t, w)
+    decided = undelivered(state, t, role, here)
+    if decided is not None:
+        finding = decided if finding is None else f"{finding}\n{decided}"
     return Launch(role, t.number, briefs.editor(
         editor, t.number, w,
         editor_scratch(t.number, role, state.scratch), state.me, known,
         before=None if before is None else briefs.Before(before[0].agent_id, before[1]),
         finding=finding),
         model=t.model(role), occasion=occasion if finding is None else f"{occasion} {finding}")
+
+
+def decided_send(state: State, t: Ticket, analyst: Agent, role: Role,
+                 editor: Agent | None) -> tuple[Send, str] | None:
+    """The message that gives the editor `editor` of `role` the section of
+    the last reply of the ticket analyst `analyst` addressed to that role
+    (`reports.to_editor`), with that section, or None where the reply has
+    none. The journal's key for it is one per reply and editor."""
+    r = analyst.last_report
+    text = to_editor(analyst, role)
+    if r is None or text is None or analyst.agent_id is None:
+        return None
+    to = "" if editor is None or editor.agent_id is None else editor.agent_id
+    return Send(to, messages.decided_edits(t.number, analyst.agent_id, text),
+                f"decided {t.number} {analyst.agent_id} {role}", since=r.time,
+                change=t.number), text
+
+
+def undelivered(state: State, t: Ticket, role: Role, here: list[Agent]) -> str | None:
+    """The message that gives a new editor of `role` the text of the last
+    ticket analyst's section for that role, where the text is undelivered:
+    no done delivery of that reply and role is followed by a report of an
+    editor of that role. None otherwise."""
+    analysts = [a for a in of_change(state, t) if a.role is Role.TICKET_ANALYST]
+    if not analysts:
+        return None
+    text = None
+    for editor in (a for a in here if a.role is role):
+        if (given := decided_send(state, t, analysts[-1], role, editor)) is None:
+            return None
+        send, text = given
+        closes = [e.close.time for e in state.journal.of(key(send))
+                  if e.done and e.close is not None]
+        if closes and any((r := a.last_report) is not None and r.time > closes[0]
+                          for a in here if a.role is role):
+            return None
+    if text is None:
+        given = decided_send(state, t, analysts[-1], role, None)
+        text = None if given is None else given[1]
+    return None if text is None else messages.decided_edits(
+        t.number, analysts[-1].agent_id or "", text)
+
+
+def deliver_decided(state: State, t: Ticket, latest: list[Agent],
+                    analysts: list[Agent]) -> Step | None:
+    """The delivery to each running editor of `latest` of the section of
+    the last report of the last of `analysts` addressed to its role, once
+    per reply and role, or None where none is due. A role's doc editor of
+    the documents takes precedence over the doc editor of the fragments."""
+    reported_by = [a for a in analysts if a.last_report is not None]
+    if not reported_by:
+        return None
+    for role in (Role.CODE_EDITOR, Role.DOC_EDITOR, Role.HANDBOOK_EXPANDED):
+        of_role = [a for a in latest if a.role is role and occupies(a)]
+        own = [a for a in of_role if briefs.FRAGMENTS_PART not in a.brief]
+        for editor in (own or of_role)[:1]:
+            given = decided_send(state, t, reported_by[-1], role, editor)
+            if given is not None and given[1] not in editor.brief \
+                    and not repeated(given[0], state):
+                return given[0]
+    return None
 
 
 def carry(state: State, t: Ticket) -> Step | None:
@@ -640,6 +708,8 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     analysts = [a for a in agents if a.role is Role.TICKET_ANALYST and occupies(a)]
     if any(a.pending for a in checkers + analysts):
         return Pause.WAIT
+    if (delivery := deliver_decided(state, t, latest, analysts)) is not None:
+        return delivery
     editors = with_ids(latest)
     if isinstance(editors, Undecided):
         return editors

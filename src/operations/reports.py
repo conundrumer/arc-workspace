@@ -53,6 +53,11 @@ FOR_COORDINATOR = "## For the coordinator"
 """The heading at the end of a ticket analyst's reply, over the part of it
 for the coordinator: the decisions it brings the user, the changes it
 tells the user, and the items it leaves unfinished."""
+TO_EDITOR = "## To {role}"
+"""The heading in a ticket analyst's reply, before `FOR_COORDINATOR`, over
+the findings it keeps and the edits it decides for the editor of the role
+`Role.value` fills in; the command delivers that section to that editor
+(`to_editor`)."""
 LEFT_FOR_DECISION = "## Left for a decision"
 """The heading at the end of an item checker's reply, over the findings
 and the items the editors' reports leave for a decision and the `refactor`
@@ -73,6 +78,17 @@ def section(text: str, heading: str) -> str | None:
     to the next `## ` heading, or None where no line is `heading`."""
     body = heading_part(text, heading)
     return None if body is None else body.split("\n## ", 1)[0]
+
+
+def to_editor(a: Agent, role: Role) -> str | None:
+    """The text of the section under `TO_EDITOR` for `role` in the last
+    report of the analyst `a`, up to the next `## ` heading, or None where
+    `a` has no report or no such section, or the section holds only
+    whitespace or `none`."""
+    r = a.last_report
+    body = None if r is None else section(r.text, TO_EDITOR.format(role=role.value))
+    text = (body or "").strip()
+    return None if not text or NONE_ITEM.match(text) else text
 
 
 def section_items(text: str, heading: str) -> tuple[str, ...]:
