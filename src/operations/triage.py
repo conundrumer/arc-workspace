@@ -78,9 +78,9 @@ from operations.reports import Label, items_of, mislabeled
 from operations.completion import decided, occupies
 from operations.parties import Agents, ByExit, Hold, Party
 from operations.passes import awaits_analyst
-from operations.roles import ANALYST_NAMES, Purpose, Role, analyst_subject, joined
+from operations.roles import ANALYST_NAMES, Model, Purpose, Role, analyst_subject, joined
 from operations.state import Agent, LogLine, State, Ticket, kept_across_reads, memoized
-from ticketing.vocabulary import SETTLED, Status
+from ticketing.vocabulary import SETTLED, Kind, Status
 from operations.constants import COORDINATOR
 from operations.final_reply import carrier, replies_by_operator, session_operator
 from operations.nesting import nested
@@ -245,15 +245,22 @@ def party(state: State, number: str) -> Party | None:
 
 
 def settle(state: State) -> Step | None:
-    """The launch of a ticket analyst on the tickets of `selected`, which
-    settles those of `judged_apart` only where it judges that the session's
-    line of work needs them."""
+    """The next triage launch: admitted refactor tickets on Sonnet first,
+    then the rest on the analyst document's model. The analyst settles
+    those of `judged_apart` only where it judges that the session's line
+    of work needs them."""
     numbers = selected(state)
     if not numbers:
         return None
     apart = judged_apart(state)
+    refactors = [n for n in numbers
+                 if state.tracker.tickets[n].kind is Kind.REFACTOR and not apart(n)]
+    model = Model.SONNET if refactors else None
+    if refactors:
+        numbers = refactors
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.TRIAGE, joined(numbers)),
                   briefs.settle(numbers, [n for n in numbers if apart(n)], state.me),
+                  model=model,
                   items=len(numbers),
                   occasion=str(max(state.tracker.tickets[n].last_time for n in numbers)))
 
