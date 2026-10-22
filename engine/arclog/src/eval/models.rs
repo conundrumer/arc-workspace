@@ -14,6 +14,7 @@
 //! the values downstream of that factor alone, and the result cache serves
 //! the clauses of the values dropped whose reads did not change.
 
+use std::cell::RefCell;
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
@@ -29,6 +30,7 @@ use crate::program::OutputStep;
 use crate::relations::{Row, RowSet};
 use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::terms::Example;
+use crate::trace::{RunRecord, RunTrace};
 use crate::types::GraphRelation;
 
 /// The entry of a factor: its node, and its example, or `None` for a
@@ -245,7 +247,36 @@ impl Evaluation<'_> {
         example: Option<Example>,
         visit: &mut dyn FnMut(&RelationValue) -> ControlFlow<()>,
     ) -> Outcome<ModelsEnd> {
-        let driver = Driver::new(self);
+        self.enumerate(None, relation, example, visit)
+    }
+
+    /// [`Evaluation::models`], with the records of the evaluation of
+    /// `relation` at each model appended to `trace`, as
+    /// [`Evaluation::relation_traced`] appends them, and, once the
+    /// enumeration ends without a fault, one last record of `relation` on
+    /// `example`: the enumeration's, which holds the models visited and the
+    /// bound of a [`ModelsEnd::Stopped`].
+    pub fn models_traced(
+        &self,
+        relation: &GraphRelation,
+        example: Option<Example>,
+        visit: &mut dyn FnMut(&RelationValue) -> ControlFlow<()>,
+        trace: &mut RunTrace,
+    ) -> Outcome<ModelsEnd> {
+        let cell = RefCell::new(std::mem::take(trace));
+        let end = self.enumerate(Some(&cell), relation, example, visit);
+        *trace = cell.into_inner();
+        end
+    }
+
+    fn enumerate(
+        &self,
+        trace: Option<&RefCell<RunTrace>>,
+        relation: &GraphRelation,
+        example: Option<Example>,
+        visit: &mut dyn FnMut(&RelationValue) -> ControlFlow<()>,
+    ) -> Outcome<ModelsEnd> {
+        let driver = Driver::nested(self, trace);
         *driver.met.borrow_mut() = Some(Vec::new());
         let graph = &self.program.program.graph;
         let mut readers = vec![Vec::new(); graph.nodes.len()];
@@ -255,7 +286,15 @@ impl Evaluation<'_> {
             }
         }
         let mut enumeration = Enumeration { driver: &driver, relation, example, visit, readers, seen: 0 };
-        Ok(enumeration.level(Vec::new())?.unwrap_or(ModelsEnd::Exhausted))
+        let end = enumeration.level(Vec::new())?.unwrap_or(ModelsEnd::Exhausted);
+        if let Some(trace) = trace {
+            let stop = match &end {
+                ModelsEnd::Stopped(stop) => Some(stop.bound.into()),
+                ModelsEnd::Visitor | ModelsEnd::Exhausted => None,
+            };
+            trace.borrow_mut().push(RunRecord { relation: relation.clone(), example, rows: None, models: enumeration.seen, values_determined: 0, stop });
+        }
+        Ok(end)
     }
 }
 

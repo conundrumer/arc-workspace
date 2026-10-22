@@ -5,6 +5,7 @@
 
 mod native;
 
+use std::cell::RefCell;
 use std::sync::{Arc, OnceLock};
 
 use super::driver::Driver;
@@ -19,6 +20,7 @@ use crate::registry::{LibEntry, LibName, Proposer, ProposerKind, Registry, PROPO
 use crate::relations::RowSet;
 use crate::task::Task;
 use crate::terms::Example;
+use crate::trace::RunTrace;
 
 /// What a proposer runs on: the task of the evaluation, its train pairs
 /// and its test inputs, or one of its inputs alone, with no output.
@@ -28,10 +30,12 @@ pub enum Evidence {
     Input(Example),
 }
 
-/// The rows of `proposer` over `evidence`, in the proposer's column order.
+/// The rows of `proposer` over `evidence`, in the proposer's column order,
+/// with a record appended to `trace` for each relation that a proposer
+/// written in arclog evaluates.
 /// A fault, or a stop of the evaluation of a proposer written in arclog,
 /// stands at `form`, the clause that reads the rows.
-pub fn rows(evaluation: &Evaluation<'_>, proposer: &LibName, evidence: Evidence, form: &NodePath) -> Outcome<RelationValue> {
+pub fn rows(evaluation: &Evaluation<'_>, trace: Option<&RefCell<RunTrace>>, proposer: &LibName, evidence: Evidence, form: &NodePath) -> Outcome<RelationValue> {
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
     let Some(LibEntry::Proposer(declaration)) = evaluation.registry.entry(proposer) else {
         return Err(fault(format!("`{}` is no proposer of the registry", proposer.0)));
@@ -57,7 +61,7 @@ pub fn rows(evaluation: &Evaluation<'_>, proposer: &LibName, evidence: Evidence,
         }
         ProposerKind::Arclog { .. } => {
             let clause = arclog_proposers().get(proposer).ok_or_else(|| fault(format!("`{}` has no checked clause", proposer.0)))?;
-            clause.rows(evaluation, task, form)
+            clause.rows(evaluation, trace, task, form)
         }
     }
 }
@@ -74,10 +78,10 @@ struct ArclogProposer {
 impl ArclogProposer {
     /// The rows of the proposer over `task`, evaluated in the session of
     /// `evaluation`, each fault and stop at `form`.
-    fn rows(&self, evaluation: &Evaluation<'_>, task: &Task, form: &NodePath) -> Outcome<RelationValue> {
+    fn rows(&self, evaluation: &Evaluation<'_>, trace: Option<&RefCell<RunTrace>>, task: &Task, form: &NodePath) -> Outcome<RelationValue> {
         let parameters = ParameterValues::default();
         let inner = Evaluation { program: &self.program, concept: None, task, parameters: &parameters, ..*evaluation };
-        let value = Driver::new(&inner).clause(&self.form, None).map_err(|fault| RunFault { form: form.clone(), ..fault })?;
+        let value = Driver::nested(&inner, trace).clause(&self.form, None).map_err(|fault| RunFault { form: form.clone(), ..fault })?;
         Ok(match value {
             RelationValue::Rows(relation) => {
                 let mut rows = RowSet::empty(self.positions.len() as u16);

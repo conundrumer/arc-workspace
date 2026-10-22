@@ -166,9 +166,9 @@ impl Evaluation<'_> {
     /// relation the request evaluates, in the order it evaluates them. An
     /// evaluation that keeps no trace appends none.
     pub fn relation_traced(&self, relation: &GraphRelation, example: Option<Example>, trace: &mut crate::trace::RunTrace) -> Outcome<RelationValue> {
-        let driver = Driver { trace: Some(std::cell::RefCell::new(std::mem::take(trace))), ..Driver::new(self) };
-        let value = driver.value(relation, example);
-        *trace = driver.trace.expect("the trace the driver was given").into_inner();
+        let cell = std::cell::RefCell::new(std::mem::take(trace));
+        let value = Driver::nested(self, Some(&cell)).value(relation, example);
+        *trace = cell.into_inner();
         value
     }
 

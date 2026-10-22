@@ -3,13 +3,15 @@
 //! under a flag; the stop of a decode counted under the bound it reached; and
 //! the program form that `write_synthesized` gives.
 
+use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
 use arclog::decode::Decoder;
 use arclog::eval::instance::Constructions;
 use arclog::eval::values::Caps;
-use arclog::eval::{relation_of, Cancellation, Evaluation, Limits, ParameterValues};
+use arclog::eval::{relation_of, Cancellation, Evaluation, Limits, ParameterValues, RelationValue};
+use arclog::types::GraphRelation;
 use arclog::program::{DeclaredName, ProgramRelation, RelationName};
 use arclog::judge::candidates::{PairCandidates, Section, World};
 use arclog::read::read_solver;
@@ -217,6 +219,21 @@ fn a_decode_stopped_at_a_cap_or_cancelled_counts_under_that_bound() {
     assert!((shares.share(Stop::Rows) - 1.0 / 3.0).abs() < 1e-9);
 }
 
+/// `text` as a declared relation of `program`.
+fn declared(program: &CheckedProgram, text: &str) -> GraphRelation {
+    relation_of(program, &ProgramRelation::Declared(RelationName(DeclaredName::Written(text.into())))).expect("the relation")
+}
+
+/// Calls `run` with an evaluation of `program` over `task` under `caps`.
+fn evaluating<T>(program: &CheckedProgram, task: &Task, caps: Caps, run: impl FnOnce(&Evaluation<'_>) -> T) -> T {
+    let registry = Registry::get();
+    let parameters = ParameterValues::default();
+    let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, caps);
+    let limits = Limits { deadline: None, cancellation: Cancellation::default() };
+    let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
+    run(&Evaluation { program, concept: None, task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits })
+}
+
 #[test]
 fn a_run_with_a_trace_records_each_relation_it_evaluates_and_a_run_without_one_none() {
     let solver = read_solver("runs", "(RULE &a (input *P *Col))\n(RULE &b (&a *P *Col) (!= Col 0))\n", "", &|_| None).expect("the file reads").value;
@@ -224,23 +241,46 @@ fn a_run_with_a_trace_records_each_relation_it_evaluates_and_a_run_without_one_n
     let program = resolve(&solver.concept_case().program, None, &solver.derived_relations(), registry).value;
     let program = check_program(program, &SolverClauses::of(&solver, registry), registry, &mut CheckCache::default()).expect("every check passes");
     let task = Task { train: Box::new([TrainPair { input: grid(&[1, 2]), output: grid(&[1, 2]) }]), test: Box::new([]) };
-    let parameters = ParameterValues::default();
-    let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
-    let limits = Limits { deadline: None, cancellation: Cancellation::default() };
-    let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
-    let evaluation = Evaluation { program: &program, concept: None, task: &task, parameters: &parameters, session: &session, registry, constructions: &constructions, limits: &limits };
-    let name = |text: &str| relation_of(&program, &ProgramRelation::Declared(RelationName(DeclaredName::Written(text.into())))).expect("the relation");
-    let mut trace = RunTrace::default();
-    evaluation.relation_traced(&name("&b"), Some(Example::at(0)), &mut trace).expect("the run");
-    let records = trace.records();
-    assert_eq!(records.iter().map(|record| (record.relation.clone(), record.rows)).collect::<Vec<_>>(), vec![(name("&a"), Some(2)), (name("&b"), Some(2))]);
-    assert!(records.iter().all(|record| record.models == 1 && record.values_determined == 0));
-    assert!(records.iter().all(|record| record.example == Some(Example::at(0)) && record.stop.is_none()));
-    let mut untraced = RunTrace::default();
-    evaluation.relation(&name("&b"), Some(Example::at(0))).expect("the run");
-    assert!(untraced.is_empty());
-    untraced.push(records[0].clone());
-    assert_eq!(untraced.len(), 1);
+    evaluating(&program, &task, Caps::CORPUS, |evaluation| {
+        let name = |text: &str| declared(&program, text);
+        let mut trace = RunTrace::default();
+        evaluation.relation_traced(&name("&b"), Some(Example::at(0)), &mut trace).expect("the run");
+        let records = trace.records();
+        assert_eq!(records.iter().map(|record| (record.relation.clone(), record.rows)).collect::<Vec<_>>(), vec![(name("&a"), Some(2)), (name("&b"), Some(2))]);
+        assert!(records.iter().all(|record| record.models == 1 && record.values_determined == 0));
+        assert!(records.iter().all(|record| record.example == Some(Example::at(0)) && record.stop.is_none()));
+        let mut untraced = RunTrace::default();
+        evaluation.relation(&name("&b"), Some(Example::at(0))).expect("the run");
+        assert!(untraced.is_empty());
+        untraced.push(records[0].clone());
+        assert_eq!(untraced.len(), 1);
+    });
+}
+
+/// The records of a traced enumeration of `&out`, which reads a pick of one model per
+/// cell, over an input of three cells, under `caps`, with a visitor that
+/// breaks at its `break_at`-th model where that is given.
+fn enumerated(caps: Caps, break_at: Option<u64>) -> Vec<(u64, Option<Stop>)> {
+    let program = checked("(RULE &pick (input *P *Col)\n  (ONE))\n(RULE &out (&pick *P *Col))\n");
+    let task = Task { train: Box::new([TrainPair { input: grid(&[1, 2, 3]), output: grid(&[1, 2, 3]) }]), test: Box::new([]) };
+    let relation = declared(&program, "&out");
+    evaluating(&program, &task, caps, |evaluation| {
+        let mut trace = RunTrace::default();
+        let mut visited = 0;
+        let visit = &mut |_: &RelationValue| {
+            visited += 1;
+            if Some(visited) == break_at { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
+        };
+        evaluation.models_traced(&relation, Some(Example::at(0)), visit, &mut trace).expect("the enumeration");
+        trace.records().iter().filter(|record| record.relation == relation).map(|record| (record.models, record.stop)).collect()
+    })
+}
+
+#[test]
+fn a_traced_enumeration_ends_in_a_record_of_the_models_it_visited_and_its_stop() {
+    assert_eq!(enumerated(Caps::CORPUS, None), vec![(1, None), (1, None), (1, None), (3, None)]);
+    assert_eq!(enumerated(Caps::CORPUS, Some(2)), vec![(1, None), (1, None), (2, None)]);
+    assert_eq!(enumerated(Caps { models: 2, ..Caps::CORPUS }, None), vec![(1, None), (1, None), (1, None), (2, Some(Stop::Models))]);
 }
 
 /// `program`, a decoded program, checked.

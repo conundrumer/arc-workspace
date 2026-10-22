@@ -532,7 +532,7 @@ The trace form is the program's tree with the engine's forced tokens in brackets
 (RULE (&axis_len (:B *[B]) (:N *[N]))
       (&axis_len (:B *[B2]) (:N *[N2]))
       (OR ((> N N2))
-          OR
+          ALSO
           ((= N N2)
            (&larger (:B B) (:B2 B2)))
           END)

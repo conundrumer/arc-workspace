@@ -200,8 +200,9 @@ pub struct RunRecord {
     pub example: Option<Example>,
     /// The rows of the relation, `None` where it is undefined or stopped.
     pub rows: Option<u64>,
-    /// The models of the case that this evaluation enumerated: 1, since a
-    /// traced request evaluates at the case's one model.
+    /// The models of the case that this record counts: 1 for the evaluation
+    /// at one model, and, for the record of an enumeration of models, the
+    /// models it visited.
     pub models: u64,
     /// The `DET` relations read while this relation was evaluated, those of
     /// the relations it reads included.

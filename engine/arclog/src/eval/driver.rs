@@ -39,7 +39,7 @@ pub(super) struct Driver<'e, 'a> {
     pub(super) det: Option<GraphNodeIndex>,
     /// The run trace that each relation this driver evaluates appends a
     /// record to, where the request asked for one.
-    pub(super) trace: Option<RefCell<RunTrace>>,
+    pub(super) trace: Option<&'e RefCell<RunTrace>>,
     /// The `DET` relations whose values this driver has read.
     pub(super) determined: std::cell::Cell<u64>,
 }
@@ -47,6 +47,12 @@ pub(super) struct Driver<'e, 'a> {
 impl<'e, 'a> Driver<'e, 'a> {
     pub(super) fn new(evaluation: &'e Evaluation<'a>) -> Self {
         Driver { evaluation, values: RefCell::default(), model: RefCell::default(), met: RefCell::default(), det: None, trace: None, determined: std::cell::Cell::new(0) }
+    }
+
+    /// The driver of `evaluation`, a nested one of a driver that keeps
+    /// `trace`, which its relations then append their records to.
+    pub(super) fn nested(evaluation: &'e Evaluation<'a>, trace: Option<&'e RefCell<RunTrace>>) -> Self {
+        Driver { trace, ..Driver::new(evaluation) }
     }
 
     /// The driver of the domain of the `DET` node `det`.
@@ -77,7 +83,7 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// Appends the record of the evaluation of `relation` on `example`
     /// that gave `value`, where the driver keeps a run trace.
     fn record_run(&self, relation: &GraphRelation, example: Option<Example>, value: &RelationValue, determined: u64) {
-        let Some(trace) = &self.trace else { return };
+        let Some(trace) = self.trace else { return };
         let (rows, stop) = match value {
             RelationValue::Rows(rows) => (Some(rows.len()), None),
             RelationValue::Undefined => (None, None),
@@ -453,7 +459,7 @@ impl<'e, 'a> Driver<'e, 'a> {
             })
             .collect();
         let evidence = example.map_or(proposers::Evidence::Task, proposers::Evidence::Input);
-        let relation = match proposers::rows(self.evaluation, proposer, evidence, form)? {
+        let relation = match proposers::rows(self.evaluation, self.trace, proposer, evidence, form)? {
             RelationValue::Rows(relation) => relation,
             other => return Ok(other),
         };

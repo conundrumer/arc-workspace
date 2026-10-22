@@ -54,7 +54,7 @@ pub fn pick_options(bodies: &FormBodies<'_>, node: GraphNodeIndex, example: Opti
     let driver = bodies.driver;
     let evaluation = driver.evaluation;
     if let Some((concept, node)) = evaluation.in_concept(node) {
-        return pick_options(&super::driver::Driver::new(&concept).bodies(), node, example);
+        return pick_options(&super::driver::Driver::nested(&concept, driver.trace).bodies(), node, example);
     }
     let program = driver.program();
     let DependencyKind::Chosen(name) = &program.graph.nodes[node.0 as usize].kind else {
