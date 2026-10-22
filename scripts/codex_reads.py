@@ -696,6 +696,26 @@ def command_entries(call: str, command: str, result: str) -> list[dict[str, Any]
     ]
 
 
+def output_blocks(output: Any) -> list[str]:
+    """The texts of a result given as `input_text` blocks, else none."""
+    if (isinstance(output, list) and output
+            and all(isinstance(b, dict) and b.get("type") == "input_text" and isinstance(b.get("text"), str)
+                    for b in output)):
+        return [b["text"] for b in output]
+    return []
+
+
+def command_output(blocks: list[str]) -> str:
+    """The command's output text: the `output` of a trailing JSON block, else the joined blocks."""
+    try:
+        decoded = json.loads(blocks[-1])
+    except ValueError:
+        decoded = None
+    if isinstance(decoded, dict) and isinstance(decoded.get("output"), str):
+        return decoded["output"]
+    return "".join(blocks)
+
+
 def live_commands(activity: list[dict[str, Any]], *, include_prompts: bool = False) -> list[dict[str, Any]]:
     """Pair completed rollout results with commands from this turn only."""
     pending: dict[str, str] = {}
@@ -720,10 +740,12 @@ def live_commands(activity: list[dict[str, Any]], *, include_prompts: bool = Fal
             identity = p["call_id"]
             if identity not in pending or identity in completed:
                 continue
-            result = p["output"]
+            output = p["output"]
+            texts = output_blocks(output)
             # A running exec returns an acknowledgement, not a completed result.
-            if "Process running with session ID" in result:
+            if "Process running with session ID" in ("".join(texts) if texts else output):
                 continue
+            result = command_output(texts) if texts else output
             out.extend(command_entries(identity, pending[identity], result))
             completed.add(identity)
         elif kind == "item_completed" and p["item"].get("type") == "CommandExecution":
