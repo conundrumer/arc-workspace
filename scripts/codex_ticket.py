@@ -24,6 +24,7 @@ import json
 import re
 import secrets
 import sys
+import tempfile
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from enum import StrEnum
@@ -184,7 +185,11 @@ class Store:
             state.update(ticket=assignment.ticket, operator=assignment.operator)
             return path
 
-    def reserve(self, assignment: Assignment, parent: str | None = None) -> str:
+    def role_file(self, kind: str) -> Path:
+        """The config file of the Codex agent role `kind` in this store."""
+        return self.path / "roles" / f"{kind}.toml"
+
+    def reserve(self, assignment: Assignment, parent: str | None = None, role: bool = False) -> str:
         """Reserve a turn before transport submission, without holding a wait lock."""
         with self.locked() as state:
             filed = Assignment.read(self.path / "assignments" / f"{assignment.agent}-{assignment.revision}.json")
@@ -221,7 +226,8 @@ class Store:
                 "root_turn": token if parent is None else agents[parent]["root_turn"],
                 "native": old["native"] if old is not None else None,
                 "runtime": old.get("runtime") if old is not None else None,
-                "turn": None, "validated": False}
+                "turn": None, "validated": False,
+                "role": old.get("role", False) if old is not None else role}
             import time
             agents[assignment.agent]["reserved"] = time.time()
             return token
@@ -386,6 +392,37 @@ def register(store: Path, session_scratch: Path, root: str):
     temporary.replace(pointer)
 
 
+def child_types() -> list[str]:
+    """The agent types of a Codex child: those outside `CLAUDE_TYPES`."""
+    from operations.roles import ANALYST_TYPES, CLAUDE_TYPES, CODEX_ROLES
+
+    return sorted({*(r.agent_type for r in CODEX_ROLES), *ANALYST_TYPES.values()} - CLAUDE_TYPES)
+
+
+def role_declarations(store: Store) -> dict[str, str]:
+    """The `agents.<type>` config of each Codex child type's role whose file
+    `store` holds."""
+    return {key: value for kind in child_types() if store.role_file(kind).exists()
+            for key, value in (
+        (f"agents.{kind}.description", kind),
+        (f"agents.{kind}.config_file", str(store.role_file(kind))))}
+
+
+def write_atomically(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", dir=path.parent, suffix=".tmp", delete=False) as output:
+        output.write(text)
+    Path(output.name).replace(path)
+
+
+def declare_roles(store: Store) -> None:
+    """Write a stub file for each child type's role that has none, so that a
+    thread started now loads the declaration."""
+    for kind in child_types():
+        if not store.role_file(kind).exists():
+            write_atomically(store.role_file(kind), f"name = {json.dumps(kind)}\n")
+
+
 def prepare(scratch: Path, parameters: dict[str, Any], home: Path,
             previous: str | None = None) -> dict[str, Any]:
     """File and reserve a printed launch before returning native tool arguments."""
@@ -440,15 +477,23 @@ def prepare(scratch: Path, parameters: dict[str, Any], home: Path,
     manifest = store.manifest(assignment.agent, assignment.revision)
     context = role_instructions(checkout.main_worktree(owner.worktree), home, description.role.value, assignment.actual_type)
     identity = NATIVE_IDENTITY.format(agent=agent, scratch=assignment.scratch, manifest=manifest)
-    message = "\n\n".join([context, identity,
+    kind = assignment.actual_type
+    role = store.role_file(kind)
+    declared = role.exists()
+    roled = state["agents"][agent].get("role", False) if previous else declared
+    if declared:
+        write_atomically(role, "developer_instructions = " + json.dumps(context) + "\n")
+    message = "\n\n".join([*([] if roled else [context]), identity,
         NATIVE_PARENT.format(parent=parent.get("runtime") or parent["native"]), text,
-        opening(assignment.actual_type)])
+        opening(kind)])
     launch = {"task_name": agent, "fork_turns": "none", "model": model,
               "reasoning_effort": effort, "message": message}
+    if declared and not previous:
+        launch["agent_type"] = kind
     if previous:
         launch = {"target": state["agents"][agent].get("runtime") or state["agents"][agent]["native"], "message": message}
     store.file(assignment)
-    token = store.reserve(assignment, binding.agent)
+    token = store.reserve(assignment, binding.agent, roled)
     return {"assignment": str(manifest), "token": token, "call": launch,
             "tool": "followup_task" if previous else "spawn_agent"}
 

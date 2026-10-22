@@ -6,6 +6,8 @@ Give optional starting material or a later result or message on stdin, closed
 within five seconds. An open input fails before the launch. The
 first call supplies the rendered agent document and rendered repo and user
 CLAUDE.md files as developer instructions, with the configured Codex style.
+A store-backed call declares an agent role for each Codex child type, so that a
+child's developer instructions come from its role's file in the store.
 A fresh call requires `--agent-id`, the launcher's agent id, and puts its id line
 before the brief and starting instruction in user input. A fresh call refuses
 existing thread or turn history without changing it.
@@ -400,6 +402,9 @@ def work(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: 
             prompt = item
         if admission is not None:
             store, assignment, _ = admission
+            if thread is None:
+                codex_ticket.declare_roles(store)
+            worker_config.update(codex_ticket.role_declarations(store))
             if thread is not None:
                 prompt = brief.read_text()
             prompt += "\n\n" + codex_ticket.NATIVE_IDENTITY.format(
