@@ -10,7 +10,9 @@ use std::time::Instant;
 use super::Decoder;
 use crate::check::{check_shared_program, CheckCache, CheckedProgram, SolverClauses};
 use crate::eval::examples::{scope_of, ExampleScope};
+use crate::eval::ir::atom_modes;
 use crate::eval::{BodyValue, Limits, Outcome, ParameterValues, RelationValue, RunFault, Stop};
+use crate::registry::Registry;
 use crate::judge::candidates::PairCandidates;
 use crate::judge::determination::{dets_read, descend_assignments, distinct_values, walk, Assignment, End, EvaluationInputs, Walked};
 use crate::program::path::{NodePath, PathStep};
@@ -230,7 +232,7 @@ impl<'a> Decoder<'a> {
         let open = open?;
         let (last, finished) = program.value().forms.split_last().expect("a partial program holds its partial form");
         let form = NodePath::top(finished.len() as u32);
-        let (clause, kept) = open_clause(last, &open)?;
+        let (clause, kept) = open_clause(last, &open, self.context.registry)?;
         let mut labels = Vec::new();
         for conjunct in &kept {
             if let Conjunct::Atom(atom) = conjunct {
@@ -329,7 +331,7 @@ impl<'a> Decoder<'a> {
 /// which a `from` clause inside a `for` clause follows with the conjuncts
 /// of that `for` clause. `None` where `form` is neither or holds no open
 /// clause.
-fn open_clause(form: &Form, open: &NodePath) -> Option<(Clause, Vec<Conjunct>)> {
+fn open_clause(form: &Form, open: &NodePath, registry: &Registry) -> Option<(Clause, Vec<Conjunct>)> {
     match form {
         Form::Clause(clause) => {
             let clause = clause.value();
@@ -337,14 +339,14 @@ fn open_clause(form: &Form, open: &NodePath) -> Option<(Clause, Vec<Conjunct>)> 
                 [PathStep(0), PathStep(at), ..] => Some(*at as usize),
                 _ => None,
             };
-            Some((clause.clone(), complete_or_atoms(&clause.body, open_at)))
+            Some((clause.clone(), complete_or_atoms(&clause.body, open_at, registry)))
         }
         Form::Choose(choose) => {
             let choose = choose.value();
             let [PathStep(at), within @ ..] = &*open.0 else { return None };
             let open_at = within.first().map(|step| step.0 as usize);
             let (body, before) = open_part(choose, choose.parts().nth(*at as usize)?)?;
-            let conjuncts = before.iter().flat_map(|body| body.conjuncts.iter().cloned()).chain(complete_or_atoms(body, open_at)).collect();
+            let conjuncts = before.iter().flat_map(|body| body.conjuncts.iter().cloned()).chain(complete_or_atoms(body, open_at, registry)).collect();
             let clause = Clause {
                 keyword: ClauseKeyword::Rule,
                 derives: ProgramRelation::Declared(choose.name.clone()),
@@ -370,10 +372,20 @@ fn open_part(choose: &Choose, part: ChoosePart) -> Option<(&Node<Body>, Option<&
     }
 }
 
-/// The conjuncts of `body` that are complete or are positive atoms, where
-/// the conjunct at `open_at` is the one in progress.
-fn complete_or_atoms(body: &Node<Body>, open_at: Option<usize>) -> Vec<Conjunct> {
-    let kept = |(index, conjunct): &(usize, &Conjunct)| open_at != Some(*index) || matches!(conjunct, Conjunct::Atom(_));
+/// The conjuncts of `body` that are complete, or are positive atoms of a
+/// relation with no mode or with a mode that has a site at each of its
+/// bound columns, where the conjunct at `open_at` is the one in progress.
+/// An atom of an algebra relation bounds the completion's rows only once
+/// one of its modes has its sites; a site in progress with no argument yet
+/// is no site.
+fn complete_or_atoms(body: &Node<Body>, open_at: Option<usize>, registry: &Registry) -> Vec<Conjunct> {
+    let kept = |(index, conjunct): &(usize, &Conjunct)| {
+        open_at != Some(*index)
+            || matches!(conjunct, Conjunct::Atom(atom) if {
+                let modes = atom_modes(registry, atom.value());
+                modes.is_empty() || modes.iter().any(|mode| mode.bound.iter().all(|column| atom.value().sites.iter().any(|site| &site.column == column && !site.value.args.is_empty())))
+            })
+    };
     body.value().conjuncts.iter().enumerate().filter(kept).map(|(_, conjunct)| conjunct.clone()).collect()
 }
 
@@ -416,7 +428,7 @@ mod tests {
         let program = solver.concept_case().program.clone();
         let form = program.value().forms.last().expect("a form").clone();
         let open = NodePath(open.iter().copied().map(PathStep).collect());
-        open_clause(&form, &open).map_or(0, |(_, conjuncts)| conjuncts.len())
+        open_clause(&form, &open, Registry::get()).map_or(0, |(_, conjuncts)| conjuncts.len())
     }
 
     #[test]

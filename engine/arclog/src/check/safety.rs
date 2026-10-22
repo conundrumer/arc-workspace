@@ -6,7 +6,7 @@ use super::reads::forms_within;
 use super::types::result;
 use super::{Check, CheckId, CheckInput, CheckResult, LabelInScope, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::eval::ir::atom_modes;
-use crate::safety::{body_labels, conjunct_labels, each_label_use_at, bound_labels, list_of, parts_of};
+use crate::safety::{body_labels, conjunct_labels, each_label_use_at, bound_labels, list_of, mode_holds, orientation_labels, parts_of};
 use crate::hash::StableHashSet;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
@@ -36,11 +36,12 @@ impl Check for SafetyCheck {
     }
 
     /// Refuses each label of a body of the form that the body leaves
-    /// unbound: one pass over each list in its written order, each prefix
+    /// unbound, and each positive atom of an algebra relation with modes at
+    /// which no mode holds from the conjuncts written before it: one pass over each list in its written order, each prefix
     /// bound by [`crate::safety::bound_labels`], with the modes of
     /// the algebra relations and relation macros. A label is refused at its first use
     /// in the body, or at the site of an atom that no mode of its relation
-    /// binds from the conjuncts written before it, or at a `NOT` or an
+    /// binds from the conjuncts written before it, or at that atom itself, or at a `NOT` or an
     /// `ALL` written before the conjuncts that bind its outer label.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let registry = input.scope.registry;
@@ -260,7 +261,7 @@ impl Walk<'_> {
         let bound = bound_labels(form_body.body.value(), &given, &outside, &|atom| atom_modes(self.registry, atom), self.types);
         let mut check_use = |at: &NodePath, use_: LabelUse| {
             if let Some(label) = use_label(use_).filter(|label| !bound.contains(label)) {
-                found.push((label, "the body leaves the label unbound", at.clone()));
+                found.push((Some(label), "the body leaves the label unbound", at.clone()));
             }
         };
         each_label_use_at(NodeRef::Body(form_body.body.value()), &form_body.at, &mut check_use);
@@ -269,10 +270,10 @@ impl Walk<'_> {
         }
         let held = body_labels(form_body.body.value());
         for &label in form_body.columns.iter().filter(|label| !bound.contains(label) && !held.contains(label)) {
-            found.push((label, "the body leaves the label of a column unbound", form_body.at.clone()));
+            found.push((Some(label), "the body leaves the label of a column unbound", form_body.at.clone()));
         }
         let mut seen = StableHashSet::default();
-        found.into_iter().filter(|(label, _, _)| seen.insert(*label)).map(|(_, message, at)| (message, at)).collect()
+        found.into_iter().filter(|(label, _, _)| label.is_none_or(|label| seen.insert(label))).map(|(_, message, at)| (message, at)).collect()
     }
 
     /// The labels that the conjuncts of `list` bind from `given`, with
@@ -286,7 +287,7 @@ impl Walk<'_> {
     /// uses before the conjuncts written before it bind it, from `given`,
     /// with `outside` the labels that stand outside `list`, and so for the
     /// parts of each of its forms.
-    fn ordered(&self, list: &[(NodePath, &Conjunct)], given: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>, found: &mut Vec<(LabelId, &'static str, NodePath)>) {
+    fn ordered(&self, list: &[(NodePath, &Conjunct)], given: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>, found: &mut Vec<(Option<LabelId>, &'static str, NodePath)>) {
         for (i, (at, conjunct)) in list.iter().enumerate() {
             let mut from = outside.clone();
             from.extend(list_labels(list[i..].iter().map(|(_, conjunct)| *conjunct)));
@@ -295,19 +296,24 @@ impl Walk<'_> {
             around.extend(list_labels(list.iter().enumerate().filter(|&(k, _)| k != i).map(|(_, (_, conjunct))| *conjunct)));
             match conjunct {
                 Conjunct::Atom(atom) if !atom_modes(self.registry, atom.value()).is_empty() => {
+                    let mut written = before.clone();
+                    written.extend(orientation_labels(atom.value(), self.types));
+                    if !mode_holds(atom.value(), &written, atom_modes(self.registry, atom.value())) {
+                        found.push((None, "no mode of the atom's relation has its columns written and bound by the conjuncts written before it", at.clone()));
+                    }
                     let mut after_outside = outside.clone();
                     after_outside.extend(list_labels(list[i + 1..].iter().map(|(_, conjunct)| *conjunct)));
                     let after = self.bind(&list[..=i], given, &after_outside);
                     each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |path, use_| {
                         if let Some(label) = use_label(use_).filter(|label| !after.contains(label)) {
-                            found.push((label, "no mode of the atom's relation has its columns bound by the conjuncts written before it", path.clone()));
+                            found.push((Some(label), "no mode of the atom's relation has its columns bound by the conjuncts written before it", path.clone()));
                         }
                     });
                 }
                 Conjunct::Not(_) | Conjunct::All { .. } => {
                     each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |path, use_| {
                         if let Some(label) = use_label(use_).filter(|label| around.contains(label) && !before.contains(label)) {
-                            found.push((label, "the `NOT` or the `ALL` stands before the conjuncts that bind the label", path.clone()));
+                            found.push((Some(label), "the `NOT` or the `ALL` stands before the conjuncts that bind the label", path.clone()));
                         }
                     });
                 }

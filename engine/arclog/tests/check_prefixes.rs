@@ -89,3 +89,10 @@ fn an_order_on_a_label_that_only_zero_types_is_refused_once_the_form_is_complete
     let found = first_refused("(RULE &w (dir_elem *D))\n(RULE &w (= *D 0) (< D D))", CheckId::Types);
     assert_eq!(found, Some((path(&[]), vec![path(&[0, 1]), path(&[0, 1])])));
 }
+
+#[test]
+fn an_algebra_atom_that_leaves_out_an_input_no_mode_leaves_out_is_refused_once_the_atom_stands() {
+    let arclog = "(RULE &x (input *P (:Col *C)) (dir_elem *D) (axis_inset D (:K1 C) (:B P)))";
+    let found = first_refused(arclog, CheckId::Safety);
+    assert_eq!(found, Some((path(&[0, 2]), vec![path(&[0, 2])])));
+}

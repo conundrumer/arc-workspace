@@ -15,7 +15,7 @@ use arclog::judge::candidates::{PairCandidates, Section, World};
 use arclog::program::ProgramRelation;
 use arclog::relations::Relation;
 use arclog::read::read_solver;
-use arclog::registry::Registry;
+use arclog::registry::{LibName, Registry};
 use arclog::resolver::resolve;
 use arclog::session::{SessionBound, TaskSession};
 use arclog::stream::{token_stream, Control, DecodeSettings, Emitter, Token, Vocabulary};
@@ -217,4 +217,19 @@ fn a_choose_form_with_its_from_clause_open_gives_the_rows_of_that_clause() {
     let counts = |counted: &[(Vec<Assignment>, Option<u64>)]| counted.iter().map(|(_, count)| *count).collect::<Vec<_>>();
     assert_eq!(counts(&written), counts(&expected));
     assert!(written[0].1.is_some_and(|count| count > 0), "{written:?}");
+}
+
+#[test]
+fn a_prefix_inside_an_algebra_atom_without_the_sites_of_a_mode_gives_the_rows_of_the_conjuncts_before_it() {
+    let inputs = inputs(&[3, 3], Caps::CORPUS);
+    let tokens = model_tokens("(RULE &output (input *P *Col) (axis_elem *A) (split P A (:Along *Q)))\n");
+    let at = tokens.iter().position(|token| *token == Token::Lib(LibName("split".into()))).expect("a `split` atom");
+    let rows_after = |prefix: &[Token]| {
+        let mut decoder = decoder(&inputs);
+        walk(&mut decoder, prefix);
+        decoder.rows(Some(Example::at(0))).expect("a clause in progress").expect("the sub-body checks")
+    };
+    let before = rows_after(&tokens[..at]);
+    let inside = rows_after(&tokens[..=at]);
+    assert_eq!(format!("{:?}", inside.at), format!("{:?}", before.at));
 }

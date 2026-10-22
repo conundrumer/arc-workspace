@@ -155,7 +155,7 @@ impl Walk<'_, '_> {
         match conjunct {
             Conjunct::Atom(atom) => {
                 let atom = atom.value();
-                if self.mode_holds(atom, bound) {
+                if mode_holds(atom, bound, (self.modes)(atom)) {
                     atom.sites.iter().for_each(|site| site_labels(site, bound));
                 }
             }
@@ -176,23 +176,31 @@ impl Walk<'_, '_> {
             }
         }
     }
+}
 
-    /// Whether `atom` binds its labels where `bound` are bound: its
-    /// relation has no mode, or every label at the sites of one mode's
-    /// columns is bound.
-    fn mode_holds(&self, atom: &Atom, bound: &StableHashSet<LabelId>) -> bool {
-        let modes = (self.modes)(atom);
-        modes.is_empty()
-            || modes.iter().any(|mode| {
-                mode.bound.iter().all(|column| {
-                    atom.sites.iter().find(|site| &site.column == column).is_some_and(|site| {
-                        let mut labels = StableHashSet::default();
-                        site_labels(site, &mut labels);
-                        labels.iter().all(|label| bound.contains(label))
-                    })
+/// Whether `atom` binds its labels where `bound` are bound, given the
+/// `modes` of its relation: there is no mode, or every label at the sites
+/// of one mode's columns is bound.
+pub(crate) fn mode_holds(atom: &Atom, bound: &StableHashSet<LabelId>, modes: &[Mode]) -> bool {
+    modes.is_empty()
+        || modes.iter().any(|mode| {
+            mode.bound.iter().all(|column| {
+                atom.sites.iter().find(|site| &site.column == column).is_some_and(|site| {
+                    let mut labels = StableHashSet::default();
+                    site_labels(site, &mut labels);
+                    labels.iter().all(|label| bound.contains(label))
                 })
             })
-    }
+        })
+}
+
+/// The labels at the sites of `atom` to which `types` gives an orientation
+/// type, which count as bound.
+pub(crate) fn orientation_labels(atom: &Atom, types: &dyn Fn(LabelId) -> Option<ValueType>) -> StableHashSet<LabelId> {
+    let mut labels = StableHashSet::default();
+    atom.sites.iter().for_each(|site| site_labels(site, &mut labels));
+    labels.retain(|&label| types(label).as_ref().is_some_and(is_orientation));
+    labels
 }
 
 /// The labels that an `OR` or an `IF` binds, from `per_branch`, the labels
