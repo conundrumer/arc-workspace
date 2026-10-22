@@ -490,10 +490,14 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
             assert thread is not None
             try:
                 previous = codex_rollout.turns(thread, home)
-            except ValueError as exc:
-                if str(exc) != f"expected one live rollout for {thread}, found 0":
+            except (OSError, ValueError, KeyError) as exc:
+                if isinstance(exc, ValueError) and str(exc) == f"expected one live rollout for {thread}, found 0":
+                    previous = []
+                elif assignment is not None:
+                    raise codex_ticket.Refused(mctx("agent {agent}: {reason}").format(
+                        agent=assignment.agent, reason=exc)) from exc
+                else:
                     raise
-                previous = []
             if previous and previous[-1].ended is None:
                 raise launch_failure(scratch, time.time(), ValueError(
                     "saved turn is active; use show or interrupt, wait for its end, then resume"))
@@ -509,8 +513,10 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
             store = codex_ticket.Store(store_path)
             store.file(assignment)
             from tree_reads import scratch as session_scratch
-            resumed = store.snapshot()["agents"].get(assignment.agent)
-            if (resumed is not None and resumed["phase"] != codex_ticket.Phase.ENDED
+            agents = store.snapshot()["agents"]
+            resumed = agents.get(assignment.agent)
+            if (resumed is not None
+                    and any(item["phase"] != codex_ticket.Phase.ENDED for item in agents.values())
                     and (scratch / "codex-session").exists()):
                 codex_ticket.reconcile(
                     scratch, assignment.agent, (scratch / "codex-session").read_text().strip(), home)

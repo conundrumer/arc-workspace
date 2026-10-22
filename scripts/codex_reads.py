@@ -201,7 +201,8 @@ def native_shell_call(payload: dict[str, Any]) -> str | None:
 def native_receipt(item: Native, home: Path | None = None):
     """Revalidate the current report bytes and terminal execution on every read."""
     from codex_reports import Evidence, Outcome, Validated, validate
-    from codex_ticket import Phase, Terminal, matching_input
+    from codex_ticket import Phase, Terminal
+    from codex_reconcile import matching_input
     from codex_rollout import TurnEnd
 
     if (not item.state["validated"] or item.state["phase"] != Phase.ENDED
