@@ -226,10 +226,10 @@ class Checklist:
         up to the last item, that no result of `results` holds, or None.
         `results` are the results of the agent's step calls, in order. The
         place of an item is a result and the end of the item's text in it.
-        An item is held by its text, both with trailing whitespace stripped,
-        where it stands after the place of the item before it: in a later
+        An item is held by its heading line, both with trailing whitespace
+        stripped, where it stands after the place of the item before it: in a later
         result, or later in the same result. Its place is then in the last
-        result where its text so stands, at the first such stand there, so a
+        result where its heading line so stands, at the first such stand there, so a
         later round that prints an item again needs each item after it
         printed again. A part's items are in the walk where a result holds
         its first item by the same rule, and a result at or before the one
@@ -242,7 +242,7 @@ class Checklist:
         at, end = -1, 0
 
         def holding(text: str) -> tuple[int, int] | None:
-            want = text.rstrip()
+            want = text.split("\n", 1)[0].rstrip()
             for n in range(len(texts) - 1, max(at, 0) - 1, -1):
                 found = texts[n].find(want, end if n == at else 0)
                 if found >= 0:
@@ -257,7 +257,7 @@ class Checklist:
         for item, call, opens in walk:
             place = holding(self.text(item))
             if place is None or (opens is not None and not any(
-                    self._file(opens) in t for t in texts[:place[0] + 1])):
+                    self._file(opens).split("\n", 1)[0] in t for t in texts[:place[0] + 1])):
                 return Gap(item, call)
             at, end = place
             if item is target:

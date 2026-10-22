@@ -77,7 +77,7 @@ def test_a_result_of_no_step_call_of_the_reviewer_is_refused(
 
 def test_an_item_cut_short_is_refused(checklist: Checklist) -> None:
     results = walk(checklist)
-    results[1] = results[1].splitlines()[0]
+    results[1] = results[1].split("\n", 1)[1]
     gap = review_tag.step_gap(run([("Bash", STEP, r) for r in results]), checklist,
                               "Find the line-level places")
     assert gap is not None and gap.item.heading.text == "Find the line-level places"

@@ -118,7 +118,7 @@ def test_an_entered_part_puts_its_items_in_the_walk(root: Path) -> None:
 def test_a_result_cut_short_leaves_its_item_unprinted(root: Path) -> None:
     c = Checklist("a", root)
     results = walk_results(c, False)
-    results[0] = results[0].splitlines()[0]
+    results[0] = results[0].split("\n", 1)[1]
     gap = c.gap(results)
     assert gap is not None
     assert gap.call == "uv run python scripts/step.py a"
