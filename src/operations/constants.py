@@ -19,8 +19,8 @@ agent's previous request, less the longest measured time past the interval
 from that request to the agent's next one, 27.6 s."""
 
 STUCK_SECONDS = 1800
-"""The bound on a stretch with no new transcript entry
-(`open_agents.quiet_since` in `scripts/open_agents.py`), or repeated Bash
+"""The bound on a stretch with no write to a transcript or Codex rollout
+(`open_agents.latest_write` in `scripts/open_agents.py`), or repeated Bash
 calls with the same results (`stuck_at` in `scripts/monitor_reads.py`),
 before an operator stops waiting on the agent and the coordinator hears of it."""
 

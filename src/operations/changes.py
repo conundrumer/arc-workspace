@@ -118,7 +118,7 @@ from operations.completion import occupies, replacement
 from operations.reports import Label, at_cap, items_of, left_for_decision, shows_current, to_editor
 from operations.roles import (CHECKS, LAUNCHING_EDITORS, Purpose, Role, analyst_of,
                               analyst_subject)
-from operations.state import Agent, Report, State, Ticket, last_reported
+from operations.state import Agent, Ended, Report, State, Ticket, last_reported
 from operations.filing import editor_scratch
 from operations.final_reply import live_holder
 from operations.handled import (answered, decided_by, held_aside, repeated, sendings, sent,
@@ -534,7 +534,8 @@ def as_ended(a: Agent, at: float, text: str, path: Path) -> Agent:
     """The editor `a` read as ended with the report `text` of its report
     file `path` at `at`, as `editor_step` reads an editor that has
     reported."""
-    return replace(a, waits=None, reports=(*a.reports, Report(at, text, path)))
+    report = Report(at, text, path)
+    return replace(a, state=Ended(report, a.refused), reports=(*a.reports, report))
 
 
 def peers_ended(c: EditorChange, written: Callable[[Path], str | None],

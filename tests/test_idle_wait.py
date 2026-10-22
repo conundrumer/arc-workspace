@@ -22,8 +22,8 @@ def next_call(time: float, result: str | None, operator: str = EARLY):
 
 def pending(operator: str, agent_id: str = "a0000000000000007"):
     from operations.roles import Role
-    from operations.state import Agent, Waits
-    return Agent(agent_id, operator, Role.CODE_EDITOR, "1-1", "brief", 0.0, 0.0, Waits.AT_WORK,
+    from operations.state import Agent, Running, Waits
+    return Agent(agent_id, operator, Role.CODE_EDITOR, "1-1", "brief", 0.0, 0.0, Running(Waits.AT_WORK),
                  (), True)
 
 

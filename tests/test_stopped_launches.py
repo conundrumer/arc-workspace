@@ -7,7 +7,7 @@ import pytest
 
 from operations.roles import Purpose, Role, analyst_subject
 from operations.pacing import Until
-from operations.state import Agent, Message, Report, Waits
+from operations.state import Agent, Ended, Message, Report, Running, Waits
 from operations.steps import Launch, Undecided
 from tests.test_own_work import state
 from tests.test_unreported_agents import ticket
@@ -16,7 +16,7 @@ from tests.test_unreported_agents import ticket
 def attempt(role: Role, subject: str = "9-1", reply: str | None = None,
             pending: bool = False, launched: float = 10.0) -> Agent:
     return Agent("a0000000000000001", "op", role, subject, "", launched, launched,
-                 Waits.AT_WORK if pending else None,
+                 Running(Waits.AT_WORK) if pending else Ended(),
                  () if reply is None else (Report(launched + 1, reply),), True)
 
 
@@ -131,7 +131,7 @@ def test_a_done_launch_entry_does_not_hide_the_retry(tmp_path: Path) -> None:
     assert key(ready) == key(launch)
     assert place(s, ready)[0] == ready
     running = replace(s, transcripts=replace(s.transcripts, agents=(
-        replace(a, waits=Waits.AT_WORK),)))
+        replace(a, state=Running(Waits.AT_WORK)),)))
     assert repeated(launch, running)
 
 

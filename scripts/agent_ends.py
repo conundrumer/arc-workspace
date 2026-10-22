@@ -2,20 +2,19 @@
 operator that launched them or in a report file, and the agents read as
 ended with them."""
 
-from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
 import codex_reads
 from file_reads import stat_read
 from final_replies import final_reply
-from filed_texts import filed_report, report_file, report_text, written_report
+from filed_texts import report_file, report_text, written_report
 from open_agents import work_open
 from transcripts import find, launched_find
 from transcript_snapshots import SUBJECT_FAULTS
 
 from controlled_markdown import mctx
 
-from operations.state import Agent, Report
+from operations.state import Agent, Ended, Report
 
 
 def reply_since(agent: str, since: float, undecided: list[str]) -> Report | None:
@@ -82,41 +81,26 @@ def stalled_reports(agents: list[Agent], coordinators: dict[str, float],
 
 
 def ended_with(a: Agent, reply: Report | None) -> Agent:
-    """`a` as no longer pending, with `reply` as its last report."""
-    return replace(a, waits=None, reports=a.reports if reply is None else (*a.reports, reply))
+    """`a` as ended (`Ended`), with `reply` as its last report."""
+    return replace(a, state=Ended(reply), reports=a.reports if reply is None else (*a.reports, reply))
 
 
-def ended_by(agents: Sequence[Agent], ended: Mapping[str, Report | None]) -> list[Agent]:
-    """`agents`, each pending one of `ended` ended with the report it gives
-    (`ended_with`), read as `filed_report` gives."""
-    return [filed_report(ended_with(a, ended[a.agent_id]))
-            if a.pending and a.agent_id is not None and a.agent_id in ended else a
-            for a in agents]
-
-
-def ended_elsewhere(agents: list[Agent], me: str,
-                    undecided: list[str]) -> dict[str, Report | None]:
-    """For each pending agent of another operator whose work is no longer
-    open, an agent whose report reaches no running operator, and whose
-    transcript is written (`transcripts.launched_find`) or that is an enrolled
-    native Codex attempt (its thread then decides, in `codex_end`), the report that
-    `reply_to` gives after its launch for it as no longer waiting
-    (`ended_with`), or None."""
-    out: dict[str, Report | None] = {}
-    for a in agents:
-        if not a.pending or a.operator == me or a.agent_id is None or a.agent_id in out:
-            continue
-        try:
-            path = launched_find(a.agent_id)
-            if path is None:
-                if codex_reads.native_find(a.agent_id) is None:
-                    continue
-            elif work_open(path, []):
-                continue
-        except SUBJECT_FAULTS as exc:
-            undecided.append(mctx("{run}: whether its work is open cannot be read ({error}), "
-                                  "so the agent counts as running"
-                                  ).format(run=a.agent_id, error=exc))
-            continue
-        out[a.agent_id] = reply_to(ended_with(a, None), a.launched, undecided)
-    return out
+def elsewhere_ended(a: Agent, me: str, undecided: list[str]) -> bool:
+    """Whether `a`, a pending agent of an operator other than `me`, has no
+    work open: its transcript is written (`transcripts.launched_find`) or it
+    is an enrolled native Codex attempt, and its work is no longer open
+    (`open_agents.work_open`). Where that cannot be read, or where neither
+    is so, an agent whose report reaches no running operator cannot be told
+    from one that runs, and an `undecided` line names a read that failed."""
+    if not a.pending or a.operator == me or a.agent_id is None:
+        return False
+    try:
+        path = launched_find(a.agent_id)
+        if path is None:
+            return codex_reads.native_find(a.agent_id) is not None
+        return not work_open(path, [])
+    except SUBJECT_FAULTS as exc:
+        undecided.append(mctx("{run}: whether its work is open cannot be read ({error}), "
+                              "so the agent counts as running"
+                              ).format(run=a.agent_id, error=exc))
+        return False

@@ -187,7 +187,7 @@ def test_joined_bash_denies_a_launcher_write(tmp_path: Path, monkeypatch, capsys
 def test_reviewer_recognition_uses_exact_worktree_command(tmp_path: Path, wording: str):
     from operations import briefs, doc_review
     from operations.roles import Role
-    from operations.state import Agent
+    from operations.state import Agent, Ended
 
     worktree = tmp_path / "change"
     command = briefs.fingerprint_command(worktree)
@@ -200,6 +200,6 @@ def test_reviewer_recognition_uses_exact_worktree_command(tmp_path: Path, wordin
     elif wording == "different":
         text = briefs.fingerprint_line(tmp_path / "other")
     role = Role.CODE_REVIEWER if wording == "wrong-role" else Role.DOC_REVIEWER
-    reviewer = Agent("reviewer", "operator", role, "change", text, 0, 0, None, (), False)
+    reviewer = Agent("reviewer", "operator", role, "change", text, 0, 0, Ended(), (), False)
     expected = [reviewer] if wording in ("old", "new") else []
     assert doc_review.reviewers_of([reviewer], worktree) == expected

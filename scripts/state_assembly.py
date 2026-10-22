@@ -52,7 +52,6 @@ from session_records import DUE_SINCE, UNWAITED_SINCE, record_read
 from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
 from operations import pacing
-from operations.completion import with_refusals
 from operations.pacing import Usage
 from operations.directives import given_again, named, pace
 from operations.taking import allowed
@@ -134,12 +133,12 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     operate_service.read_phase("tickets")
     tickets, unread = read_tickets(tickets_dir)
     ends = ends_read(ops.agents, me, listing, now_watched, now, undecided,
-                     closes=closes_of(tickets))
+                     closes=closes_of(tickets), calls=ops.calls)
     running_work = work_of(listing)
     stuck = stuck_read(session, ends.quiet,
                        [w for w in now_watched if w.agent_id not in ends.held], running_work,
                        ends.unknown)
-    others = elsewhere_agents(tickets, me, frozenset(runs.operators), main, undecided)
+    others = elsewhere_agents(tickets, me, frozenset(runs.operators), main, undecided, ops.calls)
     transcripts = transcripts_read(ops, ends, late, stuck, others)
     took_up = taken_up(me, runs.operators, transcripts.calls, runs.parents)
     given = given_lines(runs.runs, me, list(ops.calls))
@@ -258,10 +257,10 @@ def transcripts_read(ops: OperatorRead, ends: "EndsRead",
     both = joined([ops.launched, others])
     calls = tuple(sorted(ops.calls, key=lambda c: c.time))
     return TranscriptsRead(
-        agents=with_refusals(sorted(ends.agents, key=lambda a: a.launched), calls),
+        agents=tuple(sorted(ends.agents, key=lambda a: a.launched)),
         calls=calls, messages=tuple(ops.messages),
         late_resumes=late, stalled=ends.stalled, quiet=ends.quiet,
-        stuck=stuck, pass_reports=ops.passes, elsewhere=with_refusals(others.agents, calls),
+        stuck=stuck, pass_reports=ops.passes, elsewhere=others.agents,
         messaged=both.messaged, limited=both.limited)
 
 

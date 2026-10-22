@@ -68,7 +68,7 @@ from operations import briefs
 from operations.completion import replacement
 from operations.pacing import Capped, Pace
 from operations.roles import PASSES, Purpose, Role, launch_parameters, launched_type
-from operations.state import Agent, Call, NotComputed, State, Tool, Waits, memoized
+from operations.state import Agent, Call, NotComputed, Running, State, Tool, Waits, memoized
 from operations.handled import held_aside, repeated
 from operations.constants import COORDINATOR
 from operations.journal import BOUND, Due, due, failures
@@ -258,7 +258,7 @@ def made(state: State, step: Launch) -> State:
     call = Call(operator=state.me, time=state.now, tool=Tool.AGENT, result=None, error=False,
                 input=launch_parameters(step.role, step.subject, step.model, step.brief))
     agent = Agent(agent_id=None, operator=state.me, role=step.role, subject=step.subject,
-                  brief=call.input["prompt"], launched=state.now, since=state.now, waits=Waits.AT_WORK, reports=(),
+                  brief=call.input["prompt"], launched=state.now, since=state.now, state=Running(Waits.AT_WORK), reports=(),
                   notifies=True)
     t = state.transcripts
     return replace(state, transcripts=replace(t, calls=(*t.calls, call),

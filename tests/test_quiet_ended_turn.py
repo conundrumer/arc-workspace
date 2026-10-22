@@ -4,6 +4,7 @@ still running, and no stuck alert names it; where its turn is in
 progress, it stays stuck."""
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -61,7 +62,7 @@ def ends(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, last: dict,
     the session, read past `STUCK_SECONDS`."""
     from operations.constants import STUCK_SECONDS
     from operations.roles import Role
-    from operations.state import Agent, Report, Waits
+    from operations.state import Agent, Report, Running, Waits
     monkeypatch.setattr(transcripts, "project_dirs", lambda: [tmp_path])
     path = tmp_path / "p" / "s" / "subagents" / f"agent-{EDITOR}.jsonl"
     path.parent.mkdir(parents=True)
@@ -71,6 +72,8 @@ def ends(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, last: dict,
                                                           "description": "x"}))
     state_reads.new_state()
     since = agent_turns.last_time(path)
+    os.utime(path, (since, since))
+    state_reads.new_state()
     launch = agent_launches.Launch(EDITOR, path, since, None, "c1", ())
     listing = [open_agents.Listed(ME, path, launch, run_profiler.profile(path, []),
                                   agent_turns.has_ended(path), None, None)]
@@ -79,7 +82,7 @@ def ends(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, last: dict,
     report_file = tmp_path / "reply.txt"
     report_file.write_text("completed role report")
     agent = Agent(EDITOR, ME, Role.DOC_EDITOR, "11-1683", "brief", since - 600, since - 4,
-                  Waits.STILL_RUNNING if still_running else Waits.AT_WORK,
+                  Running(Waits.STILL_RUNNING if still_running else Waits.AT_WORK),
                   (Report(since - 600, "done"),), True, report_file)
     read = operator_state.ends_read([agent], ME, listing, [], since + STUCK_SECONDS + 1, [], closes={})
     return read, operator_state.stuck_read("s", read.quiet, [], {})

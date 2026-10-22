@@ -36,7 +36,7 @@ from transcript_snapshots import Entry
 from operations.merge_outcomes import call_conflicts
 from operations.roles import LAUNCHING_EDITORS, PASSES, Role, described
 from operations.state import (
-    Agent, Call, Message, PassReport, Report, Tool, Waits,
+    Agent, AttemptState, Call, Ended, Message, PassReport, Report, Running, Tool, Waits,
 )
 from operations.command_words import is_next
 from operations.printing import unfenced
@@ -335,7 +335,7 @@ def launches_of(aid: str, path: Path, main: Path, uses: Uses,
             signed = None
         prompt = str(use[1].get("prompt", ""))
         a = Agent(launch.agent, aid, d.role, d.subject, prompt,
-                  use[0], launch.since, waits(signed, launch.pending), reports,
+                  use[0], launch.since, sign_state(signed, launch.pending), reports,
                   notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)),
                   report_file=brief_report_file(prompt),
                   reviewing=read_anchor(session_scratch, launch.agent)
@@ -364,19 +364,20 @@ def ran_since(path: Path | None, at: float) -> bool:
     return path is not None and (t := latest_time(path)) is not None and t > at
 
 
-def waits(signed: tuple[Sign, float] | None, pending: bool) -> Waits | None:
-    """`Agent.waits` of a launch whose latest sign is the first of
+def sign_state(signed: tuple[Sign, float] | None, pending: bool) -> AttemptState:
+    """`Agent.state` of a launch whose latest sign is the first of
     `signed`, where `pending` gives whether the launch's result has not
-    reached its operator."""
+    reached its operator: `Running` with the `Waits` the sign gives, or
+    `Ended`."""
     match signed:
         case (Sign.STILL_RUNNING, _):
-            return Waits.STILL_RUNNING
+            return Running(Waits.STILL_RUNNING)
         case (Sign.LIMITED, _):
-            return Waits.LIMITED
+            return Running(Waits.LIMITED)
         case (sign, _) if sign in ENDED:
-            return None
+            return Ended()
         case _:
-            return Waits.AT_WORK if pending else None
+            return Running(Waits.AT_WORK) if pending else Ended()
 
 
 def background_output(aid: str, call: str, task: str, output: Path | None,

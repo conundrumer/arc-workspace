@@ -225,7 +225,7 @@ def native_agents(owner: str, session_scratch: Path | None = None,
                   home: Path | None = None):
     """Assemble launches and validated reports for the existing operations joins."""
     from operator_reads import AgentsRead
-    from operations.state import Agent, Report, Waits
+    from operations.state import Agent, Ended, Report, Running, Waits
     from codex_reports import Outcome
     from codex_ticket import Phase
     from review_anchor import read_anchor
@@ -260,7 +260,7 @@ def native_agents(owner: str, session_scratch: Path | None = None,
         agents.append(Agent(assignment.agent, parent, assignment.role,
             assignment.subject or assignment.ticket, assignment.brief.read_text(),
             launched[assignment.agent], state["reserved"],
-            None if receipt or state["phase"] == Phase.ENDED else Waits.AT_WORK,
+            Ended() if receipt or state["phase"] == Phase.ENDED else Running(Waits.AT_WORK),
             reports, True, report_file=(assignment.report if receipt is not None
                 or assignment.role in (Role.CODE_EDITOR, Role.DOC_EDITOR) else None), reviewing=reviewing))
         try:

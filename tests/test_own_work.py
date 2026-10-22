@@ -104,14 +104,14 @@ def test_an_analyst_before_a_not_own_judgment_settles_the_ticket_only_outside_th
     from dataclasses import replace
     from datetime import datetime
     from operations.roles import Purpose, Role, analyst_subject
-    from operations.state import Agent, Computed, Message
+    from operations.state import Agent, Computed, Ended, Message
     from operations.triage import unsettled_open
     tickets = tmp_path / "tickets"
     given = [ticket(tickets, "9-3_agent_a0000000000000002_code-reviewer", "bug", "x: slow",
                     more="2026-10-17T04:00:00Z new [ticket-analyst]: not own: no change of the line\n")]
     launched = datetime.fromisoformat("2026-10-17T03:00:00+00:00").timestamp()
     analyst = Agent("a0000000000000009", "op", Role.TICKET_ANALYST,
-                    analyst_subject(Purpose.TRIAGE, "9-3"), "", launched, launched, None, (), True)
+                    analyst_subject(Purpose.TRIAGE, "9-3"), "", launched, launched, Ended(), (), True)
 
     def at(messages: tuple = ()):
         s = state(tmp_path, given, messages=messages)

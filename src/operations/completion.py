@@ -12,7 +12,7 @@ from operations.constants import COORDINATOR
 from operations.directives import give_again_line, given_again, reply_decisions
 from operations.reports import FOR_COORDINATOR, Label, heading_part, labeled_items
 from operations.roles import Purpose, Role, analyst_of
-from operations.state import Agent, Call, State, Tool
+from operations.state import Agent, Call, Report, State, Tool
 from operations.steps import Launch, Send, Step, key, rulable
 
 
@@ -53,9 +53,9 @@ def finished(a: Agent) -> bool:
 
 
 def occupies(a: Agent) -> bool:
-    """Whether this attempt still runs or has delivered its result, and the
-    harness has not refused a message to it (`Agent.refused`): a refused
-    agent ended with no result."""
+    """Whether this attempt still runs (`Running` or `Unknown`) or has
+    delivered its result, and the harness has not refused a message to it
+    (`Ended.refused`): a refused agent ended with no result."""
     return a.pending or (finished(a) and a.refused is None)
 
 
@@ -69,21 +69,21 @@ def refused_message(c: Call) -> bool:
     return c.tool == Tool.SEND_MESSAGE and isinstance(given, dict) and given.get("success") is False
 
 
-def with_refusals(agents: Iterable[Agent], calls: Iterable[Call]) -> tuple[Agent, ...]:
-    """`agents`, each with `Agent.refused` set from the SendMessage `calls`
-    of the session."""
-    latest: dict[str, Call] = {}
-    for c in sorted(calls, key=lambda c: c.time):
-        if c.tool == Tool.SEND_MESSAGE and not c.error and c.result is not None:
-            latest[str(c.input.get("to"))] = c
-    out = []
-    for a in agents:
-        c = latest.get(a.agent_id) if a.agent_id is not None else None
-        if (c is not None and not a.pending and refused_message(c) and c.time > a.since
-                and not any(r.time > c.time for r in a.reports)):
-            a = replace(a, refused=c.time)
-        out.append(a)
-    return tuple(out)
+def refusal_of(agent_id: str, since: float, reports: Iterable[Report],
+               calls: Iterable[Call]) -> float | None:
+    """The time of the latest SendMessage call of `calls` to `agent_id` that
+    the harness refused (`refused_message`), where that call is later than
+    `since`, the time of its launch or last resume, and no report of
+    `reports` is later than it, and None otherwise."""
+    latest: Call | None = None
+    for c in calls:
+        if (c.tool == Tool.SEND_MESSAGE and not c.error and c.result is not None
+                and str(c.input.get("to")) == agent_id and (latest is None or c.time >= latest.time)):
+            latest = c
+    if (latest is not None and refused_message(latest) and latest.time > since
+            and not any(r.time > latest.time for r in reports)):
+        return latest.time
+    return None
 
 
 STOPS_BOUND = 2

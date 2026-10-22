@@ -83,7 +83,7 @@ def test_later_reply_waits_on_the_analyst_of_an_earlier_reply(tmp_path: Path, pe
                                                              held: bool) -> None:
     from operations.briefs import held_step
     from operations.roles import Purpose, Role, analyst_subject
-    from operations.state import Agent as Launched, Report, Waits
+    from operations.state import Agent as Launched, Ended, Report, Running, Waits
     from operations.steps import Undecided
     from operations.triage import unfinished
     from tests.test_unreported_agents import ME, state, ticket as filed
@@ -95,7 +95,7 @@ def test_later_reply_waits_on_the_analyst_of_an_earlier_reply(tmp_path: Path, pe
 
     def analyst(replies: tuple[float, ...]) -> Launched:
         return Launched("a8e99dabca9ddb4de", ME, Role.TICKET_ANALYST,
-                        analyst_subject(Purpose.DRAFT, "9-1"), "", 10.0, 10.0, None,
+                        analyst_subject(Purpose.DRAFT, "9-1"), "", 10.0, 10.0, Ended(),
                         tuple(Report(r, reply) for r in replies), True)
 
     earlier = unfinished(state(tmp_path, [t], [analyst((100.0,))], w))
@@ -103,7 +103,7 @@ def test_later_reply_waits_on_the_analyst_of_an_earlier_reply(tmp_path: Path, pe
     on_earlier = Launched("afea5a8bdac482d84", ME, Role.TICKET_ANALYST,
                           analyst_subject(Purpose.STEP, "k"),
                           held_step(earlier.text, ME, False, None), 150.0, 150.0,
-                          Waits.AT_WORK if pending else None, (), True)
+                          Running(Waits.AT_WORK) if pending else Ended(), (), True)
     later = unfinished(state(tmp_path, [t], [analyst((100.0, 200.0)), on_earlier], w))
     assert (later is None) is held
 

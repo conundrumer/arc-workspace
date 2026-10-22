@@ -173,6 +173,40 @@ class Waits(Enum):
     LIMITED = "limited"
 
 
+@dataclass(frozen=True)
+class Running:
+    """An attempt that runs, as `waits` gives, with its lease `until`: the
+    time of the latest write of its transcript, its descendants'
+    transcripts and its Codex rollout, plus `STUCK_SECONDS`, or None where
+    no such write is known."""
+    waits: Waits
+    until: float | None = None
+
+
+@dataclass(frozen=True)
+class Unknown:
+    """An attempt that counts as running while whether its Codex turn runs
+    is unknown, with `reason`, the diagnostic that gives why, and its lease
+    `until`, which is as `Running.until` gives it."""
+    reason: str
+    until: float | None
+
+
+@dataclass(frozen=True)
+class Ended:
+    """An attempt that no longer runs, with `report`, the report that its
+    end adds to `Agent.reports`, or None where it adds none, and
+    `refused`, the time of the latest SendMessage to it that the harness
+    refused (`completion.refusal_of`), where it takes no further
+    message."""
+    report: Report | None = None
+    refused: float | None = None
+
+
+type AttemptState = Running | Unknown | Ended
+"""The state of an attempt, which `liveness.attempt_state` decides."""
+
+
 SETTLED = mctx("What is already settled on change {number} follows.")
 """The line that opens the block of a brief on a change that gives what
 the agents launched on it before settled (`briefs.settled_lines`)."""
@@ -200,34 +234,15 @@ class Agent:
     """An agent an operator of any session launched with a description the
     command gave, or a check that an editor an operator launched
     launched (`changes.editor_step`), which is read as a launch of that
-    editor's, with the editor as its `operator`. `waits` is None where it
-    no longer waits: where that operator holds the result of a launch in the
-    foreground, or a sign since its launch or its last resume, in any
-    transcript of the session, that its turn ended, as
-    `agent_reports.last_sign` gives the latest sign: a notification that
-    it stopped, or its SubagentHandback message. A notification that it
-    stopped with work of its own still running, or that the usage limit
-    stopped it where it has not run since, leaves it waiting, as
-    `Waits.STILL_RUNNING` and `Waits.LIMITED` give.
-    Where a sign ends it and no report of it reached that operator since
-    its launch or its last resume, its report file (`report_file`), where
-    that file was last written after them, gives its report, whatever its
-    turn ended with, with the file's text at its write time; otherwise the
-    final reply in its transcript, where it gives one after them and it
-    went to that operator or is the path of a report file alone, read from
-    that file, ends its `reports`.
-    It no longer waits either where it is in `TranscriptsRead.stalled`, or
-    is an agent of another operator whose work is no longer open, and
-    the final reply in its transcript, where it gives one and it went to
-    that operator or is the path of a report file alone, read from that
-    file, then ends its `reports`. `notifies` holds where that
-    operator launched or last resumed it itself, so the notification of
-    its end and its final reply reach that operator. Where it waits as at
-    work or still running, and its own transcript shows its turn ended
-    with no work of its own still running, it no longer waits, and its work
-    ends with the reports
-    it has, as for an agent of another operator whose work is no longer
-    open.
+    editor's, with the editor as its `operator`. `state` is whether it
+    runs, has ended, or is unknown, as `liveness.attempt_state` decides it,
+    and `reports` are the reports that reached that operator, with the one
+    its end adds (`Ended.report`). `notifies` holds where that operator
+    launched or last resumed it itself, so the notification of its end and
+    its final reply reach that operator. Where `Agent` is built, `state`
+    holds what its sign gives: `Running` with the `Waits` the sign gives,
+    or `Ended`, and `scripts/operator_state.attempt_reads` then sets it
+    from `liveness.attempt_state`.
     `report_file` is the report file the brief it was launched with gives
     (`briefs.REPORT_FILE`, `briefs.REPORT_RULE`), or None where it gives
     none. Where that file is there, its last report, whatever its last
@@ -244,12 +259,9 @@ class Agent:
     where it has none. Where it waits and the fingerprint of its work
     equals the anchor's, the time of the anchor is the time from which it
     has reported (`change_agents.reported_at`); otherwise it has not.
-    `refused` is the time of the latest SendMessage call of any operator
-    of the session to it whose result the harness gave as `success: false`
-    (a message it does not take, as to an agent it "won't resume"), where
-    no report of it and no resume of it follows that call and it does not
-    wait, and None otherwise. Such an agent takes no further message, so
-    it holds no place on its work (`completion.occupies`)."""
+    `refused` gives `Ended.refused`: an agent the harness refused a message
+    to takes no further message, so it holds no place on its work
+    (`completion.occupies`)."""
     agent_id: str | None
     operator: str
     role: Role
@@ -257,19 +269,34 @@ class Agent:
     brief: str
     launched: float
     since: float
-    waits: Waits | None
+    state: AttemptState
     reports: tuple[Report, ...]
     notifies: bool
     report_file: Path | None = None
     reviewing: Anchor | None = None
-    refused: float | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "brief", own(self.brief))
 
     @property
     def pending(self) -> bool:
-        return self.waits is not None
+        return not isinstance(self.state, Ended)
+
+    @property
+    def waits(self) -> Waits | None:
+        """How it waits, or None where it has ended: `STILL_RUNNING` for an
+        attempt of unknown state."""
+        match self.state:
+            case Running(waits):
+                return waits
+            case Unknown():
+                return Waits.STILL_RUNNING
+            case Ended():
+                return None
+
+    @property
+    def refused(self) -> float | None:
+        return self.state.refused if isinstance(self.state, Ended) else None
 
     @property
     def last_report(self) -> Report | None:
@@ -608,11 +635,11 @@ class TranscriptsRead:
     the next operator of `State.operators` made its first entry, in the
     order of their time. `stalled` gives the final reply in the transcript
     of each agent a stall alert names that reached no operator as a
-    report. `quiet` gives the time of the latest sign of progress of each
-    agent of `agents` that is quiet, as `quiet_since` in
-    `scripts/open_agents.py` gives it, by agent id, read while it was
-    pending and the usage limit had not stopped it (`limit_resume` covers
-    that agent), other than an agent that its quiet ended (`Agent`).
+    report. `quiet` gives the time of the latest write of each agent of
+    `agents` whose state is `Running` or `Unknown` and whose lease
+    (`Running.until`) has run out, as `latest_write` in
+    `scripts/open_agents.py` gives it, by agent id, other than an agent the
+    usage limit stopped (`limit_resume` covers that agent).
     `stuck` gives, by agent id, each agent of `quiet`, each
     live holder of a ticket held elsewhere (`plan.elsewhere`) and each
     operator of `plan.earlier_open` that is quiet, and each watched agent

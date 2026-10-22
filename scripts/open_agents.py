@@ -18,13 +18,14 @@ from run_profiler import profile
 from senders import is_interrupt_note
 from run_records import Run, Span
 from run_reads import is_prompt, parent_label
-from file_reads import mtime
+from file_reads import mtime, stat_read
 from state_reads import DERIVED, Kept, state_cache
 from entry_reads import entries_back
 from transcript_snapshots import Entry, SUBJECT_FAULTS
 from transcripts import agent_id, chain, is_subagent
 
 from operations.constants import BLOCK_SECONDS, stuck_reached
+from operations.liveness import Written
 
 
 @dataclass
@@ -461,13 +462,41 @@ def agent_paths(agent: str, path: Path, listing: list[Listed]) -> list[Path]:
     return [path, *(x.path for x in listing if x.launch.agent in reached - {agent})]
 
 
+def latest_write(agent: str, path: Path | None, listing: list[Listed],
+                 rollout: Path | None = None, floor: float | None = None) -> Written:
+    """The time of the latest write among the transcript of `agent` at
+    `path`, the transcripts of the agents under it in `listing`
+    (`agent_paths`), its Codex rollout `rollout` where given, and `floor`
+    where given, with what could not be read: each source whose write time
+    is not available, and the transcript where `path` is None. A source
+    that cannot be read leaves the others' times in use."""
+    limits: list[str] = []
+    paths: list[Path] = []
+    if path is None:
+        limits.append(mctx("its transcript was not found"))
+    else:
+        paths = agent_paths(agent, path, listing)
+    times = [] if floor is None else [floor]
+    for source in [*paths, *([] if rollout is None else [rollout])]:
+        try:
+            stat = stat_read(source)
+        except OSError as exc:
+            limits.append(mctx("the write time of {path} cannot be read ({error})").format(
+                path=source, error=exc))
+            continue
+        if stat is None:
+            limits.append(mctx("{path} does not exist").format(path=source))
+        else:
+            times.append(stat.mtime)
+    return Written(max(times, default=None), tuple(limits))
+
+
 def quiet_since(agent: str, path: Path, listing: list[Listed], now: float) -> float | None:
-    """The time of the latest timestamped entry of the transcripts
-    `agent_paths` gives, where the stretch from that
-    entry to `now` has reached `STUCK_SECONDS` (`stuck_reached`), and None
-    otherwise, or where no such transcript gives a time."""
-    paths = agent_paths(agent, path, listing)
-    latest = max((t for p in paths if (t := last_time(p)) is not None), default=None)
+    """The time of the latest write `latest_write` gives for `agent`, where
+    the stretch from it to `now` has reached `STUCK_SECONDS`
+    (`stuck_reached`), and None otherwise, or where no write time is
+    known."""
+    latest = latest_write(agent, path, listing).time
     return latest if latest is not None and stuck_reached(latest, now) else None
 
 

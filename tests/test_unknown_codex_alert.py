@@ -28,7 +28,7 @@ def held(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, read, *, transcript_ag
     `read` gives, its transcript last written `transcript_age` seconds before
     `NOW` and its rollout `rollout_age` seconds before, where that is given."""
     from operations.roles import Role
-    from operations.state import Agent, Report, Waits
+    from operations.state import Agent, Report, Running, Waits
     monkeypatch.setattr(transcripts, "project_dirs", lambda: [tmp_path])
     path = tmp_path / "p" / "s" / "subagents" / f"agent-{EDITOR}.jsonl"
     path.parent.mkdir(parents=True)
@@ -49,7 +49,7 @@ def held(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, read, *, transcript_ag
     report_file = tmp_path / "reply.txt"
     report_file.write_text("report")
     a = Agent(EDITOR, ME, Role.DOC_EDITOR, "11-1683", "brief", NOW - 4000, NOW - 3000,
-              Waits.STILL_RUNNING, (Report(NOW - 3500, "done"),), True, report_file)
+              Running(Waits.STILL_RUNNING), (Report(NOW - 3500, "done"),), True, report_file)
     out = operator_state.ends_read([a], ME, listing, [], NOW, [], closes={})
     return out, operator_state.stuck_read("s", out.quiet, [], {}, out.unknown)
 

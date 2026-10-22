@@ -46,12 +46,12 @@ def reaches(s) -> bool:
 def test_a_draft_a_running_ticket_analyst_may_have_filed_does_not_reach_the_coordinator(
         tmp_path: Path, agent_id: str | None) -> None:
     from operations.roles import Purpose, Role, analyst_subject
-    from operations.state import Agent, Waits
+    from operations.state import Agent, Running, Waits
     s = state(tmp_path, {"draft/9-1_change_x_ticket-analyst.md": ""})
     filed = s.tracker.tickets["9-1"].filed
     analyst = Agent(agent_id, ME, Role.TICKET_ANALYST,
                     analyst_subject(Purpose.TRIAGE, "9-5"), "", filed - 10, filed - 10,
-                    Waits.AT_WORK, (), True)
+                    Running(Waits.AT_WORK), (), True)
     assert not reaches(replace(s, transcripts=replace(s.transcripts, agents=(analyst,))))
 
 

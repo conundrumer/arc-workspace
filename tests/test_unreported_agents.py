@@ -26,8 +26,8 @@ def ticket(tmp_path: Path, status: str, name: str, text: str):
 
 def agent(agent_id: str, role, subject: str, brief: str, launched: float, since: float,
           reports: list[float]):
-    from operations.state import Agent, Report
-    return Agent(agent_id, ME, role, subject, brief, launched, since, None,
+    from operations.state import Agent, Ended, Report
+    return Agent(agent_id, ME, role, subject, brief, launched, since, Ended(),
                  tuple(Report(r, "done") for r in reports), True)
 
 

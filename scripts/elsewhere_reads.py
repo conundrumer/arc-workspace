@@ -5,8 +5,8 @@ their editors launched."""
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from agent_ends import ended_by, ended_elsewhere
 from operator_reads import AgentsRead, kept
+from operator_state import attempt_reads, closes_of
 from operator_transcript import read_launches
 from transcripts import find, launched_find
 from transcript_snapshots import Refused
@@ -17,7 +17,7 @@ from operations.change_budget import left_draft
 from operations.changes import holds
 from operations.log_commands import AGENT
 from operations.roles import CHECKS, LAUNCHING_EDITORS
-from operations.state import Agent, Ticket
+from operations.state import Agent, Call, Ticket
 
 
 def editor_checks(agents: Sequence[Agent], main: Path, undecided: list[str]) -> AgentsRead:
@@ -55,11 +55,14 @@ def editor_checks(agents: Sequence[Agent], main: Path, undecided: list[str]) -> 
 
 
 def elsewhere_agents(tickets: Mapping[str, Ticket], me: str, operators: frozenset[str],
-                     main: Path, undecided: list[str]) -> AgentsRead:
+                     main: Path, undecided: list[str],
+                     calls: Sequence[Call] = ()) -> AgentsRead:
     """`TranscriptsRead.elsewhere` over the changes of `tickets` `me` holds, where
-    `operators` gives the operators of the session. Where the transcript of
-    an operator of another session is not found, an `undecided` line names
-    it."""
+    `operators` gives the operators of the session, with the state of each
+    agent decided as for the session's own (`operator_state.attempt_reads`),
+    where `calls` gives the SendMessage calls of the session. Where the
+    transcript of an operator of another session is not found, an
+    `undecided` line names it."""
     out: list[Agent] = []
     reads: list[AgentsRead] = []
     for t in (t for t in tickets.values() if holds(t, me)):
@@ -84,5 +87,6 @@ def elsewhere_agents(tickets: Mapping[str, Ticket], me: str, operators: frozense
             reviewers = editor_checks(theirs, main, undecided)
             reads += [one.launched, reviewers]
             theirs += [r for r in reviewers.agents if kept_on(r)]
-            out += ended_by(theirs, ended_elsewhere(theirs, me, undecided))
+            out += attempt_reads(theirs, me, calls, undecided,
+                                 closes=closes_of(tickets)).agents
     return kept(sorted(out, key=lambda a: a.launched), reads)

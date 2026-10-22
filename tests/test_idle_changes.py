@@ -45,14 +45,14 @@ def test_a_change_that_waits_on_a_named_party_gets_no_message(tmp_path: Path) ->
     from operations import idle_changes
     from operations.constants import AGAIN_SECONDS, COORDINATOR
     from operations.journal import Journal
-    from operations.state import Waits
+    from operations.state import Running, Waits
     from operations.steps import NoStep
     st, t = idle_state(tmp_path)
     waiting = NoStep("waits")
     editor = st.transcripts.agents[0]
     waits = [
         replace(st, transcripts=replace(st.transcripts, agents=(
-            replace(editor, waits=Waits.AT_WORK),))),
+            replace(editor, state=Running(Waits.AT_WORK)),))),
         replace(st, journal=Journal((entry(None, "launch", t.number,
                                            st.now - AGAIN_SECONDS / 2),))),
         replace(st, journal=Journal((entry(COORDINATOR, f"On change {t.number}.", None,

@@ -14,7 +14,7 @@ def test_decision_goes_to_the_coordinator_once(tmp_path: Path, later: str, sends
     from operations.constants import COORDINATOR
     from operations.journal import Close, Entry, Journal, Outcome
     from operations.roles import Purpose, Role, analyst_subject
-    from operations.state import Agent as Launched, Report, Tool
+    from operations.state import Agent as Launched, Ended, Report, Tool
     from operations.steps import Send
     from operations.triage import for_coordinator
     from tests.test_unreported_agents import ME, state, ticket as filed
@@ -25,7 +25,7 @@ def test_decision_goes_to_the_coordinator_once(tmp_path: Path, later: str, sends
 
     def analyst(*parts: tuple[float, str]) -> Launched:
         return Launched("a8e99dabca9ddb4de", ME, Role.TICKET_ANALYST,
-                        analyst_subject(Purpose.DRAFT, "9-1"), "", 10.0, 10.0, None,
+                        analyst_subject(Purpose.DRAFT, "9-1"), "", 10.0, 10.0, Ended(),
                         tuple(Report(r, "Done.\n\n## For the coordinator\n" + p + "\n")
                               for r, p in parts), True)
 
@@ -44,7 +44,7 @@ def test_decision_sent_with_other_appended_text_goes_no_second_time(tmp_path: Pa
     from operations.constants import COORDINATOR
     from operations.journal import Close, Entry, Journal, Outcome
     from operations.roles import Purpose, Role, analyst_subject
-    from operations.state import Agent as Launched, Report, Tool
+    from operations.state import Agent as Launched, Ended, Report, Tool
     from operations.steps import labeled
     from operations.triage import for_coordinator
     from tests.test_unreported_agents import ME, state, ticket as filed
@@ -54,7 +54,7 @@ def test_decision_sent_with_other_appended_text_goes_no_second_time(tmp_path: Pa
     w = tmp_path / "main" / ".claude" / "worktrees" / "w"
     items = "- decision: keep a\n- decision: drop b"
     a = Launched("a8e99dabca9ddb4de", ME, Role.TICKET_ANALYST,
-                 analyst_subject(Purpose.DRAFT, "9-1"), "", 10.0, 10.0, None,
+                 analyst_subject(Purpose.DRAFT, "9-1"), "", 10.0, 10.0, Ended(),
                  (Report(100.0, "Done.\n\n## For the coordinator\n" + items + "\n"),), True)
     key = "ticket analyst a8e99dabca9ddb4de, reply at 100"
     done = Entry("k", "k", "d", "o", ME, 150.0, Tool.SEND_MESSAGE, COORDINATOR,
@@ -69,7 +69,7 @@ def test_a_retired_relay_gives_way_to_the_next_analysts(tmp_path: Path) -> None:
     from operations.journal import Close, Entry, Journal, Outcome
     from operations.order import placed
     from operations.roles import Purpose, Role, analyst_subject
-    from operations.state import Agent as Launched, Report, Tool
+    from operations.state import Agent as Launched, Ended, Report, Tool
     from operations.steps import Send, key
     from operations.triage import for_coordinator
     from tests.test_unreported_agents import ME, state, ticket as filed
@@ -81,7 +81,7 @@ def test_a_retired_relay_gives_way_to_the_next_analysts(tmp_path: Path) -> None:
 
     def analyst(agent_id: str, n: int, at: float) -> Launched:
         return Launched(agent_id, ME, Role.TICKET_ANALYST, analyst_subject(Purpose.DRAFT, f"9-{n}"),
-                        "", 10.0, 10.0, None,
+                        "", 10.0, 10.0, Ended(),
                         (Report(at, f"Done.\n\n## For the coordinator\n- decision: keep {n}\n"),),
                         True)
 
@@ -97,7 +97,7 @@ def test_a_retired_relay_gives_way_to_the_next_analysts(tmp_path: Path) -> None:
 
 def test_an_analyst_whose_tickets_all_stand_closed_gets_no_relay(tmp_path: Path) -> None:
     from operations.roles import Purpose, Role, analyst_subject
-    from operations.state import Agent as Launched, Report
+    from operations.state import Agent as Launched, Ended, Report
     from operations.triage import for_coordinator
     from tests.test_unreported_agents import ME, state, ticket as filed
     t = filed(tmp_path, "closed", "9-1_change_x_ticket-analyst.md",
@@ -105,6 +105,6 @@ def test_an_analyst_whose_tickets_all_stand_closed_gets_no_relay(tmp_path: Path)
               "2026-10-17T02:14:06Z closed [ticket-analyst]: wontfix: x\n")
     w = tmp_path / "main" / ".claude" / "worktrees" / "w"
     a = Launched("a0000000000000001", ME, Role.TICKET_ANALYST, analyst_subject(Purpose.DRAFT, "9-1"),
-                 "", 10.0, 10.0, None,
+                 "", 10.0, 10.0, Ended(),
                  (Report(100.0, "Done.\n\n## For the coordinator\n- decision: keep 1\n"),), True)
     assert for_coordinator(state(tmp_path, [t], [a], w)) is None

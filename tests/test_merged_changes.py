@@ -103,7 +103,7 @@ def test_a_merge_line_cannot_take_a_merged_blocked_change(tmp_path: Path) -> Non
 def test_an_unassigned_merged_change_still_runs_its_after_merge_work(tmp_path: Path) -> None:
     from operations import changes
     from operations.roles import Role
-    from operations.state import Agent, Report, Waits
+    from operations.state import Agent, Ended, Report, Running, Waits
     from operations.steps import Bash, Launch
 
     s = merged_state(tmp_path, "directive")
@@ -113,10 +113,10 @@ def test_an_unassigned_merged_change_still_runs_its_after_merge_work(tmp_path: P
     assert isinstance(step, Launch) and step.role is Role.AFTER_MERGE
     assert step.subject == t.number
     a = Agent(OTHER, ME, Role.AFTER_MERGE, t.number, step.brief, s.now, s.now,
-              Waits.AT_WORK, (), True)
+              Running(Waits.AT_WORK), (), True)
     running = replace(s, transcripts=replace(s.transcripts, agents=(a,)))
     assert changes.step(running, lambda *_: None) is None
-    ended = replace(a, waits=None, reports=(Report(s.now + 10, "done"),))
+    ended = replace(a, state=Ended(), reports=(Report(s.now + 10, "done"),))
     done = replace(s, transcripts=replace(s.transcripts, agents=(ended,)))
     step = changes.step(done, lambda *_: None)
     assert isinstance(step, Bash) and "--from released" in step.command
