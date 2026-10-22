@@ -535,10 +535,11 @@ class Spend:
 
 @dataclass(frozen=True)
 class Budget:
-    """A change's cost budget in dollars and its time budget in seconds
-    (`scripts/spends.py`)."""
+    """A change's cost limits and its time budget in seconds
+    (`scripts/spend_history.py`). None means no Codex token limit."""
     dollars: float
     seconds: float
+    codex_tokens: int | None = None
 
 
 @dataclass(frozen=True)
@@ -798,7 +799,7 @@ class Computed:
     until the read computes it. `audit_window` is the window of the next
     cost audit (`audit_window`), NotComputed until the read computes it."""
     to_settle: tuple[str, ...] = ()
-    spent: Mapping[str, Spend] = field(default_factory=dict)
+    spent: Mapping[str, Spend | UnpricedSpend] = field(default_factory=dict)
     budgets: Mapping[str, Budget] = field(default_factory=dict)
     doc_budgets: Mapping[str, Budget] = field(default_factory=dict)
     run_starts: Mapping[str, Starts] = field(default_factory=dict)

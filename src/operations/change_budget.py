@@ -4,8 +4,9 @@ stop line written on a change past it.
 
 A take writes in its log line the change's cost budget and time budget,
 taken over the changes closed `fixed` before it with the same `editors`
-(`scripts/spends.py`), and the cost budget is at least the dollar figure
-of the Cost line of the change's Design (`Ticket.cost`). A line that
+(`scripts/spend_history.py`). The dollar budget is at least the dollar figure
+of the Cost line of the change's Design (`Ticket.cost`); raising that budget
+raises its Codex token budget by the same factor. A line that
 gives the held change a new `editors` field writes the budgets of that
 field's set, with the same floor, which stand in place of the take's from
 then on. The agents of a change are those launched since its last move
@@ -20,34 +21,41 @@ from dataclasses import replace
 from typing import NamedTuple
 
 from controlled_markdown import form
-from operations.state import Budget, Spend, Ticket
+from operations.state import Budget, CodexSpend, Spend, UnpricedSpend, Ticket
 from operations.log_commands import AGENT
 from ticketing.vocabulary import Note, Status
 
 
-BUDGET_NOTE = "budget {dollars} dollars, {seconds} s"
+BUDGET_NOTE = "budget {dollars} dollars, {codex} Codex tokens, {seconds} s"
 """The part of a log note that gives a change's cost budget and time
 budget."""
 
-BUDGET_HOLES = {"dollars": r"(?P<dollars>[0-9.]+)", "seconds": r"(?P<seconds>[0-9]+)"}
+BUDGET_HOLES = {"dollars": r"(?P<dollars>[0-9.]+)", "seconds": r"(?P<seconds>[0-9]+)",
+                "codex": r"(?P<codex>[0-9]+|none)"}
 
 
 def with_cost(b: Budget, cost: float | None) -> Budget:
     """`b` with its cost budget raised to `cost`, the dollar figure of a
     change's Cost line, where `cost` is given and above it."""
-    return b if cost is None or cost <= b.dollars else replace(b, dollars=cost)
+    if cost is None or cost <= b.dollars:
+        return b
+    if b.codex_tokens is None or b.dollars == 0:
+        return replace(b, dollars=cost)
+    return replace(b, dollars=cost, codex_tokens=round(b.codex_tokens * cost / b.dollars))
 
 
 def budget_fields(b: Budget) -> dict[str, str]:
     """The values of the holes of `BUDGET_NOTE` for `b`."""
-    return {"dollars": f"{b.dollars:.2f}", "seconds": f"{b.seconds:.0f}"}
+    return {"dollars": f"{b.dollars:.2f}", "seconds": f"{b.seconds:.0f}",
+            "codex": str(b.codex_tokens) if b.codex_tokens is not None else "none"}
 
 
 TAKE_NOTE = "taking: " + BUDGET_NOTE
 """The note of the log line of a take, with the change's cost budget and
 time budget."""
 
-TAKEN = re.compile(form(TAKE_NOTE, BUDGET_HOLES))
+TAKEN = re.compile(r"taking: .*")
+TAKE_BUDGET = re.compile(form(TAKE_NOTE, BUDGET_HOLES))
 
 EDITORS_NOTE = "editors: {editors}; " + BUDGET_NOTE
 """The note of the log line that gives a held change a new `editors`
@@ -79,28 +87,50 @@ class Take(NamedTuple):
     time: float
     dollars: float
     budgeted: float
+    codex_tokens: int | None
 
 
 def taken(t: Ticket) -> Take | None:
     """The last take of `t` since its last move out of `tickets/draft/`,
     with the cost budget of the last line since that take that gives one,
-    or None where no take line gives one."""
+    or None where no current-form budget applies to that take."""
     since = left_draft(t)
-    rebudget: tuple[float, float] | None = None
+    rebudget: tuple[float, float, int | None] | None = None
     for ln in reversed(t.log):
         if ln.time < since:
             break
-        if rebudget is None and (m := REBUDGETED.fullmatch(ln.note)) is not None:
-            rebudget = (float(m["dollars"]), ln.time)
-        if (m := TAKEN.fullmatch(ln.note)) is not None:
-            dollars, budgeted = (float(m["dollars"]), ln.time) if rebudget is None else rebudget
-            return Take(ln.time, dollars, budgeted)
+        if rebudget is None:
+            m = REBUDGETED.fullmatch(ln.note) or TAKE_BUDGET.fullmatch(ln.note)
+            if m is not None:
+                rebudget = (float(m["dollars"]), ln.time,
+                            None if m["codex"] == "none" else int(m["codex"]))
+        if TAKEN.fullmatch(ln.note) is not None:
+            return Take(ln.time, *rebudget) if rebudget is not None else None
     return None
 
 
-def past_budget(take: Take, spent: Spend) -> bool:
-    """Whether `spent` is past the cost budget `take` gives."""
-    return spent.dollars > take.dollars
+class DollarOverrun(NamedTuple):
+    limit: float
+    spent: Spend
+
+
+class TokenOverrun(NamedTuple):
+    limit: int
+    spent: CodexSpend
+
+
+type Overrun = DollarOverrun | TokenOverrun
+
+
+def past_budget(take: Take, spent: Spend | UnpricedSpend) -> Overrun | None:
+    """An independently measured cost component past its limit, if any."""
+    if isinstance(spent, Spend) and spent.dollars > take.dollars:
+        return DollarOverrun(take.dollars, spent)
+    if spent.codex is not None and take.codex_tokens is not None:
+        tokens = spent.codex.totals().total_tokens
+        if tokens is not None and tokens > take.codex_tokens:
+            return TokenOverrun(take.codex_tokens, spent.codex)
+    return None
 
 
 def by_role(dollars: Mapping[str, float]) -> str:
@@ -109,16 +139,24 @@ def by_role(dollars: Mapping[str, float]) -> str:
 
 PAST_OPENING = "past its cost budget"
 
-PAST_NOTE = PAST_OPENING + " of {limit} dollars: spent {spent} dollars, {roles}"
+PAST_NOTE = PAST_OPENING + " of {limit} {unit}: spent {spent} {unit}, {roles}"
 """The note of the stop line, the log line that gives that a change's
 spend passed its cost budget `limit`, with that spend and its part by
 role."""
 
 
-def past_note(limit: float, spent: Spend) -> str:
-    """`PAST_NOTE` for the cost budget `limit` and the spend `spent`."""
-    return PAST_NOTE.format(limit=f"{limit:.2f}", spent=f"{spent.dollars:.2f}",
-                            roles=by_role(spent.by_role))
+def past_note(overrun: Overrun) -> str:
+    """The stop note for an established cost overrun."""
+    if isinstance(overrun, DollarOverrun):
+        return PAST_NOTE.format(limit=f"{overrun.limit:.2f}",
+                                spent=f"{overrun.spent.dollars:.2f}", unit="dollars",
+                                roles=by_role(overrun.spent.by_role))
+    codex = overrun.spent
+    roles = ", ".join(f"{role} {codex.totals(role).total_tokens} Codex tokens"
+                      for role in sorted({s.role for s in codex.sources})
+                      if codex.totals(role).total_tokens is not None)
+    return PAST_NOTE.format(limit=overrun.limit, spent=codex.totals().total_tokens,
+                            unit="Codex tokens", roles=roles)
 
 
 def stopped(t: Ticket) -> float | None:

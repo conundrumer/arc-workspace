@@ -12,7 +12,7 @@ ME = "a00000000000000f1"
 EDITOR, CHECKER, REVIEWER = "a0000000000000001", "a0000000000000002", "a0000000000000003"
 LOG = ("## Log\n2026-10-17T02:14:06Z draft [ticket-analyst]: filed\n"
        "2026-10-17T02:23:18Z approved [ticket-reviewer ab225add95550521a]: reviewed\n"
-       "2026-10-17T02:23:56Z assigned [operator {me}]: taking: budget 2.43 dollars, 1951 s\n"
+       "2026-10-17T02:23:56Z assigned [operator {me}]: taking: budget 2.43 dollars, none Codex tokens, 1951 s\n"
        "2026-10-17T02:24:00Z assigned [operator {me}]: worktree {w}\n")
 STOP = ("2026-10-17T03:00:00Z assigned [operator {me}]: past its cost budget of 2.43 dollars: "
         "spent 9.00 dollars, code-editor 9.00 dollars\n")

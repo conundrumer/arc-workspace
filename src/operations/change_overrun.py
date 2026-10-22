@@ -24,13 +24,13 @@ from pathlib import Path
 from controlled_markdown import mctx
 from operations import messages
 from operations.change_agents import change_editors, editors_in, latest_editors, latest_of_role
-from operations.change_budget import past_budget, past_note, stopped, taken
+from operations.change_budget import Overrun, past_budget, past_note, stopped, taken
 from operations.design_review import design_review
 from operations.doc_review import with_ids
 from operations.handled import sent, sent_at
 from operations.item_check import check_items, is_checked
 from operations.roles import Role
-from operations.state import Agent, Spend, State, Ticket, last_reported
+from operations.state import Agent, UnpricedSpend, State, Ticket, last_reported
 from operations.steps import Bash, Pause, Send, Step, Undecided, agent_ids
 from operations.log_commands import log
 from operations.worktrees import holds_work
@@ -53,13 +53,13 @@ change passes its budget: the `reviewer` argument of
 that is no reviewer's is told with `reviewer` False."""
 
 
-def to_draft(state: State, t: Ticket, limit: float, spent: Spend, case: str,
+def to_draft(state: State, t: Ticket, overrun: Overrun, case: str,
              occasion: float) -> Bash:
-    """The move of the change `t` past its budget `limit` to
-    `tickets/draft/`, with its spend `spent` and the `case` that moves it."""
+    """The move of the change `t` past its budget to
+    `tickets/draft/`, with its established overrun and the `case` that moves it."""
     return Bash(log(t.number, Status.DRAFT, Status.ASSIGNED, mctx(
         "{finding}: {past}; {case}").format(
-            finding=Note.FINDING, past=past_note(limit, spent), case=case),
+            finding=Note.FINDING, past=past_note(overrun), case=case),
         state.me), f"{t.number} overrun", occasion=str(occasion))
 
 
@@ -91,12 +91,17 @@ def over_budget(state: State, t: Ticket, w: Path,
     if spent is None:
         return Undecided(mctx("the spend of change {number} since its take is unknown").format(
             number=t.number))
-    if not past_budget(take_line, spent):
+    overrun = past_budget(take_line, spent)
+    if overrun is None:
+        if isinstance(spent, UnpricedSpend) or (take_line.codex_tokens is not None
+                and (spent.codex is None or spent.codex.totals().total_tokens is None)):
+            return Undecided(mctx(
+                "change {number}: a cost measurement is incomplete or unavailable"
+            ).format(number=t.number))
         return Pause.CLEAR
-    limit = take_line.dollars
     stop = stopped(t)
     if stop is None:
-        return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED, past_note(limit, spent),
+        return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED, past_note(overrun),
                         state.me), f"{t.number} past its budget", occasion=str(t.last_time))
     for a in agents:
         reviewer = TOLD_AS.get(a.role, False)
@@ -110,7 +115,7 @@ def over_budget(state: State, t: Ticket, w: Path,
     here = editors_in(agents, w)
     latest = latest_editors(here)
     if not holds_work(w):
-        return to_draft(state, t, limit, spent, mctx(
+        return to_draft(state, t, overrun, mctx(
             "its worktree holds no change against `master` and no untracked file git "
             "does not ignore"),
             max(stop, last_reported(latest)))
@@ -119,7 +124,7 @@ def over_budget(state: State, t: Ticket, w: Path,
         ids = agent_ids(quiet)
         if isinstance(ids, Undecided):
             return ids
-        return to_draft(state, t, limit, spent, mctx(
+        return to_draft(state, t, overrun, mctx(
             "each of {agents} gave no report, or none after it was told to end").format(
                 agents=", ".join(ids)), max(told, stop))
     checked = [a for a in latest if is_checked(a)]

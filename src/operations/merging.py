@@ -396,8 +396,8 @@ def merge(state: State, t: Ticket, w: Path, latest: list[Agent], staff: Staff) -
     take_line = taken(t)
     start = take_line.time if take_line is not None else left_draft(t)
     spent = state.computed.spent.get(t.number)
-    if spent is not None and not any(ln.time >= start and ln.note.startswith(TIME_OPENING)
-                                     for ln in t.log):
+    if spent is not None and spent.seconds is not None and not any(
+            ln.time >= start and ln.note.startswith(TIME_OPENING) for ln in t.log):
         return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED,
                         TIME_NOTE.format(seconds=spent.seconds), state.me), f"{t.number} time",
                     occasion=str(t.last_time))

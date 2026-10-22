@@ -3,21 +3,22 @@ change it takes next, as `operations.state.Computed` gives them."""
 
 from pathlib import Path
 
-from spends import budget, spend
+from spend_history import budget
+from spends import spend
 from transcript_snapshots import SUBJECT_FAULTS
 from controlled_markdown import mctx
 
 from operations import change_agents, change_fragments, change_take, changes
 from operations.roles import Role, launched_type
-from operations.state import Budget, Spend, State
+from operations.state import Budget, Spend, UnpricedSpend, State
 from operations.worktrees import worktree
 
 
-def change_spend(state: State, undecided: list[str]) -> dict[str, Spend]:
+def change_spend(state: State, undecided: list[str]) -> dict[str, Spend | UnpricedSpend]:
     """The spend of each change `state.me` holds whose spend reads, that of
     the agents of `change_agents.elsewhere_on` included, each pending one
     read as still running."""
-    out: dict[str, Spend] = {}
+    out: dict[str, Spend | UnpricedSpend] = {}
     for t in changes.held(state):
         agents = {a.agent_id: a for a in (*change_agents.of_change(state, t),
                                           *change_agents.elsewhere_on(state, t.number))

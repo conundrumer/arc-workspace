@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from run_reads import run_entries
-from spends import change_spend, closed_changes
+from spends import change_spend
+from spend_history import closed_changes
 from ticket_files import ticket_files, ticket_name
 from ticket_form import bounds, check_fix, front, ticket_kind, title
 from ticket_log import line_time, log_lines, log_moves, read_ticket

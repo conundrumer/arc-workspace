@@ -9,7 +9,7 @@ from pathlib import Path
 from controlled_markdown import mctx
 from operations.change_budget import EDITORS_NOTE, budget_fields, with_cost
 from operations.roles import EDITORS
-from spends import budget
+from spend_history import budget
 from ticket_cases import print_undecided
 from ticket_files import ticket_path, ticket_status
 from ticket_form import front, ticket_kind

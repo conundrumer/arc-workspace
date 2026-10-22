@@ -1,11 +1,9 @@
 """The spend of a change by role, recorded under `tickets/spends/` once it
-is settled, and the budget of a change taken over the changes like
-it."""
+is settled. `spend_history` computes budgets from those records."""
 
 import json
-import statistics
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, replace
 from enum import Enum
 from functools import partial
 from pathlib import Path
@@ -20,7 +18,7 @@ from agent_turns import first_time, has_ended, last_time
 from run_reads import agent_type, run_entries
 from file_reads import file_text, listed, stat_read
 from state_reads import DERIVED, Kept, state_cache
-from ticket_files import listed_tickets, ticket_name
+from ticket_files import ticket_name
 from ticket_log import moved
 from ticket_reads import held_ticket
 from token_prices import run_cost
@@ -31,9 +29,9 @@ from transcript_snapshots import Refused, SUBJECT_FAULTS
 from controlled_markdown import mctx
 from engine.memo import write_whole
 from operations.roles import Role
-from operations.state import (Budget, Spend, Ticket, CodexUsage, CodexSource, CodexSpend,
+from operations.state import (Spend, Ticket, CodexUsage, CodexSource, CodexSpend,
                               UnpricedSpend)
-from ticketing.vocabulary import Kind, Resolution, Status
+from ticketing.vocabulary import Resolution, Status
 
 
 def union_seconds(spans: list[tuple[float, float]]) -> float:
@@ -205,13 +203,12 @@ def known_owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str]
     return Unknown.SPEND if owner is None else owner
 
 
-def spend(runs: list[str], pending: Mapping[str, str], undecided: list[str]) -> Spend | None:
+def spend(runs: list[str], pending: Mapping[str, str], undecided: list[str]) -> Spend | UnpricedSpend | None:
     """The spend of the runs `runs` and of the runs under them, those that
     `pending` gives still running, as `owners` and `priced` give it, or
-    None where a read is refused."""
+    None where ownership is unavailable or a read is refused."""
     owner = known_owners(runs, pending)
-    result = priced(owner, undecided) if isinstance(owner, dict) else None
-    return result if isinstance(result, Spend) else None
+    return priced(owner, undecided) if isinstance(owner, dict) else None
 
 
 def stopped(path: Path) -> bool:
@@ -349,57 +346,6 @@ def recorded_spend(path: Path) -> Recorded:
     return Spend(value["dollars"], value["seconds"], value["by_role"], measurement)
 
 
-@dataclass(frozen=True)
-class Closed:
-    """A ticket under `tickets/closed/` of kind `change`: its path, the
-    roles its `editors` field gives (`ticket_reads.editors_field`), and the
-    time of its last log line."""
-    path: Path
-    editors: tuple[Role, ...] | None
-    at: float
-
-
-@dataclass(frozen=True)
-class SpendFault:
-    """A closed change whose metadata or spend could not be read."""
-    path: Path
-    why: str
-
-
-def closed_change(path: Path) -> Closed | None:
-    """The closed change at `path`, or None for another ticket kind."""
-    t = held_closed(path)
-    return Closed(path, t.editors, t.last_time) if t.kind is Kind.CHANGE else None
-
-
-@state_cache(DERIVED)
-def closed_changes(tickets: Path) -> tuple[Closed, ...]:
-    """Each ticket under `tickets/closed/` of kind `change`, as
-    `ticket_reads.held_ticket` reads it."""
-    out: list[Closed] = []
-    for path in listed_tickets(tickets, Status.CLOSED):
-        read_interrupts.checkpoint()
-        if (c := closed_change(path)) is not None:
-            out.append(c)
-    return tuple(out)
-
-
-@state_cache(DERIVED)
-def closed_spends(tickets: Path) -> tuple[tuple[Closed, Recorded] | SpendFault, ...]:
-    """Closed changes and their recorded spends, held by record revisions.
-    A fault of a ticket or its spend is kept for the budget read to report."""
-    out: list[tuple[Closed, Recorded] | SpendFault] = []
-    for path in listed_tickets(tickets, Status.CLOSED):
-        read_interrupts.checkpoint()
-        try:
-            c = closed_change(path)
-            if c is not None:
-                out.append((c, recorded_spend(path)))
-        except SUBJECT_FAULTS as exc:
-            out.append(SpendFault(path, str(exc)))
-    return tuple(out)
-
-
 def held_closed(path: Path) -> Ticket:
     """`ticket_reads.held_ticket` of `path`, refused (`ticket_log.moved`)
     where its file moved."""
@@ -408,57 +354,3 @@ def held_closed(path: Path) -> Ticket:
     except FileNotFoundError:
         raise moved(path)
 
-
-OVERRUN = 8
-"""The multiple of the median of the changes like a change that is its
-budget."""
-
-
-FEWEST_LIKE = 5
-"""The fewest earlier changes with the change's `editors` set that its
-budget is taken over; with fewer, it is taken over every earlier one."""
-
-
-def like_changes(tickets: Path, editors: frozenset[Role], before: float,
-                 undecided: list[str], me: str = "") -> list[Spend]:
-    """The spend of each `change` closed `fixed` before `before` with a
-    known spend whose `editors` set is `editors`, or of each such change
-    whatever its `editors` where fewer than `FEWEST_LIKE` have it."""
-    every: list[tuple[tuple[Role, ...] | None, Spend]] = []
-    for item in closed_spends(tickets):
-        read_interrupts.checkpoint()
-        fault = item if isinstance(item, SpendFault) else None
-        if fault is None:
-            assert isinstance(item, tuple)
-            c, _ = item
-            if c.at >= before:
-                continue
-            try:
-                s = change_spend(c.path, undecided)
-            except SUBJECT_FAULTS as exc:
-                fault = SpendFault(c.path, str(exc))
-        if fault is not None:
-            line = mctx("{run}: the spend of {path} is unknown ({error}), "
-                        "so it is left out of the cost history").format(
-                            run=me, path=fault.path, error=fault.why)
-            if line not in undecided:
-                undecided.append(line)
-            continue
-        if isinstance(s, Spend):
-            every.append((c.editors, s))
-    like = [s for e, s in every if e is not None and frozenset(e) == editors]
-    return like if len(like) >= FEWEST_LIKE else [s for _, s in every]
-
-
-def budget(tickets: Path, editors: frozenset[Role], before: float,
-           undecided: list[str], me: str = "") -> Budget | None:
-    """The budget of a change with the `editors` set `editors` taken at
-    `before`, or None, with an `undecided` line, where no earlier change
-    has a known spend."""
-    like = like_changes(tickets, editors, before, undecided, me)
-    if not like:
-        undecided.append(mctx("budget unknown: no change closed `fixed` before the take has a "
-                              "known dollar spend"))
-        return None
-    return Budget(OVERRUN * statistics.median(s.dollars for s in like),
-                  OVERRUN * statistics.median(s.seconds for s in like))
