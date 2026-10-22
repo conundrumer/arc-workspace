@@ -628,12 +628,10 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
             signal.setitimer(signal.ITIMER_REAL, 0)
             if not kept_reads.flush():
                 store = kept_reads.store()
-                stdout.seek(0)
-                stdout.truncate(0)
-                if store is not None and store.locked():
-                    # A lock is transient: the records stay held for the retry's flush.
-                    status, retry = 1, True
-                else:
+                if store is None or not store.locked():
+                    # A lock is transient: the records stay held for the next request's flush.
+                    stdout.seek(0)
+                    stdout.truncate(0)
                     status, retry, keep = 1, False, False
                     print(f"operate: kept-read store cannot preserve completed reads: "
                           f"{store.path if store is not None else ''}: "

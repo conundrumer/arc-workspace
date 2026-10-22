@@ -40,7 +40,7 @@ records of code a merge replaced are dropped."""
 
 LOCK_WAIT_SECONDS = 1
 """How long a process waits on the lock another process holds on the
-store before it reads or writes nothing of it."""
+store before it writes nothing of it. A read does not wait on it."""
 
 WRITE_BYTES = 16 * 1024 * 1024
 """How many bytes of records a process holds before it writes them, so
@@ -194,6 +194,8 @@ class Store(StoreFile):
         self.used: set[str] = set()
         self.new: dict[tuple[str, str], bytes] = {}
         self.new_bytes = 0
+        self.write_at = WRITE_BYTES
+        """The bytes of records held at which `keep` next writes them."""
         self.parses: dict[str, list[Import]] = {}
         """The `import` statements `closure_files` parsed since the last
         write, by the sha256 of the file's bytes: a lookup takes no write
@@ -233,8 +235,13 @@ class Store(StoreFile):
         self.new[(read, key)] = data
         self.new_bytes += len(data)
         self.used.add(code_of(module_of(read)))
-        if self.new_bytes > WRITE_BYTES and self.write_error is None:
-            if not self.write(set()) and self.required:
+        if self.new_bytes > self.write_at and (self.write_error is None or self.locked()):
+            if self.write(set()):
+                self.write_at = WRITE_BYTES
+            elif self.locked():
+                # A lock is transient: the records stay held, and the next batch tries again.
+                self.write_at = self.new_bytes + WRITE_BYTES
+            elif self.required:
                 raise Unavailable(f"kept-read store {self.path} cannot preserve completed reads: "
                                   f"{self.write_error}")
         return True
@@ -247,6 +254,7 @@ class Store(StoreFile):
         written = self.write(self.used)
         if written:
             self.used = set()
+            self.write_at = WRITE_BYTES
         self.close()
         self.failed = None  # A later flush can retry a transient open/lock failure.
         return written

@@ -134,8 +134,7 @@ def test_required_store_refuses_a_failed_batch_and_retains_it(tmp_path, monkeypa
     store.connect()
     with sqlite3.connect(store.path) as locked:
         locked.execute("BEGIN IMMEDIATE")
-        with pytest.raises(kept_reads.Unavailable, match="cannot preserve completed reads"):
-            store.keep("fixture:read", "key", "completed")
+        store.keep("fixture:read", "key", "completed")
     kept_reads.flush()
     assert kept_reads.Store(store.path).held("fixture:read", "key") == "completed"
 
@@ -150,9 +149,13 @@ def test_next_state_refuses_a_failed_required_flush(tmp_path, monkeypatch):
     store.keep("fixture:read", "key", "completed")
     with sqlite3.connect(store.path) as locked:
         locked.execute("BEGIN IMMEDIATE")
-        with pytest.raises(kept_reads.Unavailable, match="before the next state"):
-            state_reads.new_state()
+        state_reads.new_state()
     assert kept_reads.flush()
     other = kept_reads.Store(store.path)
     assert other.held("fixture:read", "key") == "completed"
     other.close()
+    monkeypatch.setattr(kept_reads, "_store", None)
+    kept_reads.open_store(tmp_path / "reads.sqlite" / "unopenable", required=True)
+    kept_reads.store().keep("fixture:read", "key", "completed")
+    with pytest.raises(kept_reads.Unavailable, match="before the next state"):
+        state_reads.new_state()
