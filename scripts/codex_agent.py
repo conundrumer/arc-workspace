@@ -77,11 +77,15 @@ which the Codex launcher's foreground wait checks for."""
 
 # Ticket 11-3130: code editor a146cdfffb1c48735 ran a step call and
 # other commands in one exec call despite the Bash-call isolation rule.
+# Ticket 11-3295: ticket reviewer a8076fb7db06ec68c and doc reviewer
+# a5de1ecfe33e01cf9 read a part's file that `--enter` printed above an item
+# as the instruction, and did a later item's work before its step call.
 STEP_OPENING = mctx(
-    "Run `{call}` now, as the only command of its exec call. What it prints "
-    "is your instruction: do it fully, then run the call it gives in the "
-    "same way. Only that call "
-    "prints the next item. Your documents are reference for how to do each "
+    "Run `{call}` now, as the only command of its exec call. The last item "
+    "it prints is your instruction: do it fully, then run the call it gives "
+    "in the same way. Only that call "
+    "prints the next item. Text it prints above that item, and your "
+    "documents, are reference for how to do each "
     "item; your brief is its material.")
 
 WORK_OPENING = mctx("Do the work your documents and brief give.")
