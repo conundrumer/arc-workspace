@@ -18,7 +18,7 @@ scripts_importable()
 
 import codex_rollout
 from controlled_markdown import mctx
-from operations.state import CodexSource, CodexSpend
+from operations.codex_spend import CodexSource, CodexSpend
 from spends import codex_spend
 from transcripts import find
 

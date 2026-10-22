@@ -29,8 +29,9 @@ from transcript_snapshots import Refused, SUBJECT_FAULTS
 from controlled_markdown import mctx
 from engine.memo import write_whole
 from operations.roles import Role
-from operations.state import (Spend, Ticket, CodexUsage, CodexSource, CodexSpend,
-                              UnpricedSpend)
+from operations.codex_spend import CodexSource, CodexSpend
+from operations.state import Spend, Ticket, UnpricedSpend
+from ticketing.subscription import CLAUDE_LIST_TO_SUBSCRIPTION
 from ticketing.vocabulary import Resolution, Status
 
 
@@ -54,8 +55,13 @@ a record for a ticket."""
 
 
 class Unknown(Enum):
-    """A legacy record with no known dollar spend."""
+    """A record with no known dollar spend."""
     SPEND = "unknown"
+    UNMIGRATED = "unmigrated"
+    """A record whose Codex sources hold no `model` key, the form before
+    Codex costs counted in subscription dollars. Its spend is unknown, and
+    no reader re-measures or overwrites it before its migration, which
+    gives each source its model or an explicit null."""
 
 
 type Recorded = Spend | UnpricedSpend | Unknown | None
@@ -168,7 +174,8 @@ def cost_of(path: Path, undecided: list[str]) -> float | None:
 
 def priced(owner: dict[Path, str], undecided: list[str],
            before: float | None = None) -> Spend | UnpricedSpend:
-    """Independent Claude dollars and Codex tokens of the owned transcripts.
+    """Claude and Codex measurements of the owned transcripts, the Claude
+    cost in subscription dollars.
     A missing Claude price preserves measured tokens in UnpricedSpend.
     A transcript with no timed entry adds no time.
     """
@@ -277,6 +284,8 @@ def change_spend(path: Path, undecided: list[str]) -> Spend | None:
     state checks a change once, shared by the budgets of all editor sets.
     """
     found = recorded_spend(path)
+    if found is Unknown.UNMIGRATED:
+        return None
     codex = found.codex if isinstance(found, (Spend, UnpricedSpend)) else None
     if codex is not None and all(fingerprint(Path(p)) == (p, m, n) for p, m, n in codex.inputs):
         return found if isinstance(found, Spend) else None
@@ -316,19 +325,29 @@ def spend_record(path: Path) -> Path:
 
 
 def encoded(spend: Spend | UnpricedSpend) -> dict:
-    """The dollar record and the independent Codex measurement."""
-    value = asdict(spend)
-    if isinstance(spend, UnpricedSpend):
-        value.update(dollars=None, by_role=None)
+    """The record of a spend: what was measured, the Claude cost at list
+    prices and the Codex counts by source with each source's model, so that a
+    refinement of `CLAUDE_WEEK_LIST` and the Codex rates reach every record."""
+    value = {"dollars": list_price(spend.claude) if isinstance(spend, Spend) else None,
+             "seconds": spend.seconds,
+             "by_role": {r: list_price(d) for r, d in spend.claude_by_role.items()}
+             if isinstance(spend, Spend) else None, "codex": None}
     if spend.codex is not None:
-        value["codex"].update(status=spend.codex.status, totals=asdict(spend.codex.totals()),
-            by_role={role: asdict(spend.codex.totals(role))
-                     for role in sorted({s.role for s in spend.codex.sources})})
+        value["codex"] = {**asdict(spend.codex), "status": spend.codex.status,
+            "totals": asdict(spend.codex.totals()),
+            "by_role": {role: asdict(spend.codex.totals(role))
+                        for role in sorted({s.role for s in spend.codex.sources})}}
     return value
 
 
+def list_price(dollars: float) -> float:
+    """The Claude list-price cost of `dollars` subscription dollars."""
+    return round(dollars / CLAUDE_LIST_TO_SUBSCRIPTION, 9)
+
+
 def recorded_spend(path: Path) -> Recorded:
-    """Read legacy and extended records without assuming missing usage is zero."""
+    """Read records without assuming missing usage is zero. A record whose
+    Codex sources lack a `model` key is `Unknown.UNMIGRATED`."""
     record = spend_record(path)
     if stat_read(record) is None:
         return None
@@ -336,6 +355,8 @@ def recorded_spend(path: Path) -> Recorded:
     if value is None:
         return Unknown.SPEND
     codex = value.get("codex")
+    if codex is not None and any("model" not in s for s in codex["sources"]):
+        return Unknown.UNMIGRATED
     measurement = None if codex is None else CodexSpend(tuple(
         CodexSource(**{**s, "usage": codex_rollout.tokens(s["usage"])})
         for s in codex["sources"]), tuple(tuple(row) for row in codex["inputs"]))
@@ -343,7 +364,9 @@ def recorded_spend(path: Path) -> Recorded:
         if measurement is None:
             return Unknown.SPEND
         return UnpricedSpend(value["seconds"], measurement)
-    return Spend(value["dollars"], value["seconds"], value["by_role"], measurement)
+    return Spend(value["dollars"] * CLAUDE_LIST_TO_SUBSCRIPTION, value["seconds"],
+                 {r: d * CLAUDE_LIST_TO_SUBSCRIPTION for r, d in value["by_role"].items()},
+                 measurement)
 
 
 def held_closed(path: Path) -> Ticket:

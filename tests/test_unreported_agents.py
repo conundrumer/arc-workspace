@@ -11,7 +11,7 @@ ME = "a00000000000000f1"
 FIRST, SECOND = "a0000000000000001", "a0000000000000002"
 CHANGE_LOG = ("## Log\n2026-10-17T02:14:06Z draft [ticket-analyst]: filed\n"
               "2026-10-17T02:23:18Z approved [ticket-reviewer ab225add95550521a]: reviewed\n"
-              "2026-10-17T02:23:56Z assigned [operator {me}]: taking: budget 2.43 dollars, "
+              "2026-10-17T02:23:56Z assigned [operator {me}]: taking: budget 2.43 subscription dollars, "
               "1951 s\n"
               "2026-10-17T02:24:00Z assigned [operator {me}]: worktree {w}\n")
 

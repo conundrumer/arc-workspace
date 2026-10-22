@@ -180,7 +180,7 @@ def test_the_fresh_operator_releases_the_change_of_an_operator_that_ended_with_n
     from operations import change_take, taking
     from operations.steps import Bash
     from tests.test_ticket_stall import FILED, state
-    taken = f"{FILED} assigned [operator {EARLY}]: taking: budget 1 dollars, 100 s\n"
+    taken = f"{FILED} assigned [operator {EARLY}]: taking: budget 1 subscription dollars, 100 s\n"
     s = state(tmp_path, {"assigned/9-1_change_x_ticket-analyst.md": taken})
     s = replace(s, me=LATE, operators=(EARLY, LATE), parents={EARLY: LAUNCHER, LATE: LAUNCHER},
                 session_holders=frozenset({EARLY, LATE}),

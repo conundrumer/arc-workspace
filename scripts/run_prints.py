@@ -13,7 +13,7 @@ from codex_transcript import Coverage, activity, read as codex_transcript
 from context_bound_hook import bounded, context_bound, past_bound
 from controlled_markdown import mctx
 from open_agents import Listed, received_reports
-from run_profile import clock, minutes, minutes_or_unknown, one_line
+from run_profile import clock, dollars, minutes, minutes_or_unknown, one_line
 from run_records import Run, Span
 from run_reads import MAIN
 from ticketing.times import utc_stamp
@@ -30,7 +30,13 @@ def print_codex(r: Run, budgets: GroupBudget | None) -> None:
     if result.coverage is Coverage.NONE:
         return
     print(f"    transcript: uv run python scripts/codex_transcript.py {r.label}")
-    print("    total run cost: unknown (Codex tokens unpriced)")
+    codex = result.spend
+    if r.cost is not None and codex.dollars_known:
+        print(f"    total run cost: {dollars(r.cost + codex.dollars())} subscription dollars")
+    else:
+        print(f"    total run cost: unknown, at least "
+              f"{dollars((r.cost or 0.0) + codex.dollars())} subscription dollars "
+              f"(Claude cost unknown or Codex usage unpriced)")
     for role in sorted({s.role for s in result.spend.sources}):
         turns = [(s, t) for s, _, t in result.turns if s.role == role]
         sources = [s for s in result.spend.sources if s.role == role]
@@ -49,6 +55,8 @@ def print_codex(r: Run, budgets: GroupBudget | None) -> None:
                 if budget is None or elapsed is None or result.gaps else "within budget")
         print(f"    role {role}: elapsed {elapsed if elapsed is not None else 'unknown'} s; "
               f"budget {budget if budget is not None else 'unknown'} s; {mark}")
+        print(f"      cost: {dollars(codex.dollars(role))} subscription dollars"
+              + ("" if all(s.dollars is not None for s in sources) else " (some usage unpriced)"))
         print(f"      tokens: {json.dumps(asdict(result.spend.totals(role)))}")
     for source, path, turn in result.turns:
         rows = activity(turn)

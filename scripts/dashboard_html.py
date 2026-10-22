@@ -31,11 +31,8 @@ from operations.pacing import Capped, Until, Usage, WindowName
 from operations.parties import Hold, OnTicket
 from operations.state import NotComputed, Ticket
 from operations.tracker import blocked_on_user
+from ticketing.subscription import CLAUDE_WEEK_PRICE, CODEX_WEEK_PRICE
 from ticketing.vocabulary import COORDINATOR, Kind, Resolution, Status
-
-WEEKLY_LIMIT = 8400.0
-"""The weekly usage limit in dollars, as
-`prompts/agents/notes/decisions.md#cost-and-time` gives it."""
 
 NOTE_WORDS = 18
 """The most words of a log line's note the page gives."""
@@ -521,7 +518,8 @@ def pace(v: View) -> str:
         rows.append(kv("Week resets", time.strftime("%a %b %-d, %-I:%M %p", time.localtime(wk.resets_at))))
     if v.codex is not None and v.codex.resets_at > v.now:
         rows.append(kv("Codex resets", time.strftime("%a %b %-d, %-I:%M %p", time.localtime(v.codex.resets_at))))
-    rows.append(kv("1% of the week", f"${WEEKLY_LIMIT / 100:,.0f}"))
+    rows.append(kv("1% of the week", f"${CLAUDE_WEEK_PRICE / 100:.2f} Claude, "
+                                      f"${CODEX_WEEK_PRICE / 100:.2f} Codex"))
     return f"<details><summary>{head}</summary>{''.join(rows)}</details>"
 
 

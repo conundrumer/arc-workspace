@@ -5,7 +5,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from handbook.paths import scripts_importable
+from ticketing.subscription import CLAUDE_LIST_TO_SUBSCRIPTION
 from tests.conftest import script
 
 scripts_importable()
@@ -102,7 +105,7 @@ def test_legacy_record_refresh_and_source_invalidation(tmp_path, monkeypatch):
     saved.parent.mkdir()
     saved.write_text(json.dumps({"dollars": 2.0, "seconds": 99.0, "by_role": {"code-editor": 2.0}}))
     first = spends.change_spend(ticket, [])
-    assert first.dollars == 2.0 and first.seconds == 99.0
+    assert first.dollars == pytest.approx(2.0 * CLAUDE_LIST_TO_SUBSCRIPTION) and first.seconds == 99.0
     assert first.codex.totals().total_tokens == 12
     assert spends.change_spend(ticket, []).codex.totals().total_tokens == 12
     # A resumed call invalidates the record; repeated reads do not add it twice.
@@ -268,4 +271,4 @@ def test_recovered_record_refreshes_after_rollout_arrival_and_append(tmp_path, m
     result = spends.change_spend(ticket, [])
     assert result.codex.totals().total_tokens == 12
     assert not result.codex.sources[0].running
-    assert result.dollars == 2.0 and result.seconds == 99.0
+    assert result.dollars == pytest.approx(2.0) and result.seconds == 99.0

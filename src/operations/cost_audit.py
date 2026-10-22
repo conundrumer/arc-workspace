@@ -11,10 +11,12 @@ from operations.occasions import next_number, opened
 from operations.state import NotComputed, State
 from operations.steps import Launch, Step, Undecided
 from operations.unbatched import COST_AUDIT
+from ticketing.subscription import CLAUDE_WEEK_PRICE
 
 
-AUDIT_AFTER = 840.0
-"""The spend, in dollars, of a cost audit's window at which it launches."""
+AUDIT_AFTER = 0.1 * CLAUDE_WEEK_PRICE
+"""The spend, in subscription dollars, of a cost audit's window at which it
+launches: 10% of the Claude week."""
 
 
 @main_only

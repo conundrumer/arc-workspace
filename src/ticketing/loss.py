@@ -1,30 +1,33 @@
-"""The loss of a fault, in dollars: the priced loss of a spend, the case
+"""The loss of a fault, in subscription dollars: the priced loss of a spend, the case
 line of a ticket's log that records one, and the loss rate of a ticket's
 cases over the days since its first."""
 
 import re
 from collections.abc import Iterable
 
-SECOND_PRICE = 5 / 1800
-"""The dollars a second of wall time is worth: the user's preference to
-count about 30 minutes saved as worth about $5 of token cost
-(`prompts/agents/notes/decisions.md`, The user's preferences)."""
+from ticketing.subscription import CLAUDE_LIST_TO_SUBSCRIPTION
+
+SECOND_PRICE = 5 * CLAUDE_LIST_TO_SUBSCRIPTION / 1800
+"""The subscription dollars a second of wall time is worth: the user's
+preference to count about 30 minutes saved as worth about $5 of list-price
+token cost (`prompts/agents/notes/decisions.md`, The user's preferences),
+converted."""
 
 DAY = 86400
 
 
 def loss(dollars: float, seconds: float) -> float:
-    """The loss of a spend of `dollars` of tokens and `seconds` of wall
-    time, in dollars."""
+    """The loss of a spend of `dollars` subscription dollars of tokens and
+    `seconds` of wall time, in subscription dollars."""
     return dollars + seconds * SECOND_PRICE
 
 
-CASE = "case {run} {start} {end}: {dollars:.4f} dollars, {seconds:.0f} s"
+CASE = "case {run} {start} {end}: {dollars:.6f} subscription dollars, {seconds:.0f} s"
 """The note of the log line that records a case."""
 
 
 CASE_NOTE = re.compile(r"case (?P<run>\S+) (?P<start>\S+) (?P<end>\S+): "
-                       r"(?P<dollars>[0-9.]+) dollars, (?P<seconds>[0-9]+) s")
+                       r"(?P<dollars>[0-9.]+) subscription dollars, (?P<seconds>[0-9]+) s")
 
 
 type Found = tuple[float, float, float]

@@ -24,7 +24,7 @@
 - Before you give another agent a draft `change` ticket that you filed or revised, in your reply or otherwise, read [A draft's outcome](prompts/agents/notes/launching.md#a-drafts-outcome).
 - Split work off to another agent where what the split saves outweighs its overhead. A split can save wall-clock, tokens, or your own context; its overhead is the documents the new agent loads before it starts, and the brief.
     * comment: The user's words, session 7fd429fb, 2026-10-16, on a fixed ratio of wall-clock to token cost: "that seems overly rigid", "also saves on context rot", and on the overhead: "that sounds right": ticket 6-1416.
-    - Token cost is the list price of the tokens a run uses: each request's uncached input, cache writes, cache reads and output, each at its own price on the model that ran the request.
+    - Token cost is the subscription dollars of the tokens a run uses: Claude requests at their list price, each request's uncached input, cache writes, cache reads and output at its own price on the model that ran it, and Codex turns at the credit rates of their model, each as a share of its plan's week times the plan's price per week.
 - Take each token cost you give or write into a brief from `uv run python scripts/profile_runs.py <agent id>`, and give a repriced token cost, from its `--price-at <model>`, as repriced. Take each price you give from the price table of [token_prices.py](scripts/token_prices.py).
     + xref: scripts/profile_runs.py:parser, scripts/token_prices.py
 - Resume an agent that the usage limit stopped by a message, in place of launching it again, where you launched it or the agent that launched it has given its final reply.

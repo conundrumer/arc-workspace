@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from handbook.paths import scripts_importable
+from ticketing.subscription import CLAUDE_LIST_TO_SUBSCRIPTION
 from tests.conftest import script
 
 
@@ -32,6 +33,6 @@ def test_case_span(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
             watch.case_loss(str(path), start, end, undecided)
     else:
         case = watch.case_loss(str(path), start, end, undecided)
-        assert case.dollars == pytest.approx(0.0015)
+        assert case.dollars == pytest.approx(0.0015 * CLAUDE_LIST_TO_SUBSCRIPTION)
         assert case.seconds == 10
     assert not undecided

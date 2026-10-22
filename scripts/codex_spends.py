@@ -8,7 +8,7 @@ import codex_reads
 import codex_rollout
 import read_interrupts
 from file_reads import state_stat
-from operations.state import CodexSource, CodexSpend
+from operations.codex_spend import CodexSource, CodexSpend
 from run_reads import run_entries
 from transcripts import chain
 
@@ -22,6 +22,55 @@ def fingerprint(path: Path) -> tuple[str, int | None, int | None]:
     text = str(path)
     stat = state_stat(text)
     return (text, None, None) if stat is None else (text, stat.mtime_ns, stat.size)
+
+
+def turn_model(turn: codex_rollout.Turn) -> str | None:
+    """The model that the `turn_context` rows of `turn` give, or None where
+    they give no model or more than one."""
+    models = {row["payload"].get("model") for row in turn.activity
+              if row.get("type") == "turn_context" and isinstance(row.get("payload"), dict)}
+    only = next(iter(models)) if len(models) == 1 else None
+    return only if isinstance(only, str) else None
+
+
+class Rollouts:
+    """The parsed rollouts of the threads one measurement or migration reads,
+    each read once, with the model of a saved turn."""
+
+    def __init__(self, home: Path, inputs: set[Path] | None = None):
+        self.home = home
+        self.inputs = inputs if inputs is not None else set()
+        self.read: dict[str, list[codex_rollout.Turn] | Exception] = {}
+
+    def turns(self, thread: str) -> list[codex_rollout.Turn]:
+        """The turns of `thread`'s rollout, raising what its read raised."""
+        if thread not in self.read:
+            try:
+                path = codex_rollout.rollout_path(thread, self.home)
+                self.inputs.add(path)
+                self.read[thread] = codex_rollout.read_turns(path)
+            except (OSError, ValueError, KeyError) as exc:
+                self.read[thread] = exc
+                watch_rollouts(self.home, self.inputs)
+        found = self.read[thread]
+        if isinstance(found, Exception):
+            raise found
+        return found
+
+    def model(self, thread: str | None, turn: str | None) -> str | None:
+        """The model that the `turn_context` rows of the one turn of `thread`
+        that is `turn` give, or None where the rollout is missing or
+        unreadable, the turn is not unique, or its contexts give no model or
+        more than one."""
+        if thread is None or turn is None:
+            return None
+        try:
+            found = [t for t in self.turns(thread) if t.turn == turn]
+        except (OSError, ValueError, KeyError):
+            return None
+        if len(found) != 1:
+            return None
+        return turn_model(found[0])
 
 
 def legacy_turn_records(records: list[dict], home: Path,
@@ -88,6 +137,7 @@ def codex_spend(owner: dict[Path, str], before: float | None = None,
     home = home or Path.home()
     sources: list[CodexSource] = []
     inputs: set[Path] = {p for path in owner for p in chain(path)}
+    rollouts = Rollouts(home, inputs)
     launches: dict[Path, list[codex_reads.Call]] = {}
     for path in owner:
         read_interrupts.checkpoint()
@@ -196,7 +246,8 @@ def codex_spend(owner: dict[Path, str], before: float | None = None,
             elif usage is not None:
                 reason = codex_rollout.usage_reason(usage, turn)
             item = CodexSource(source, call.work_name,
-                               thread, turn, usage, reason, running)
+                               thread, turn, usage, reason, running,
+                               rollouts.model(thread, turn))
             if thread is None or turn is None:
                 sources.append(item)
             else:
@@ -207,7 +258,7 @@ def codex_spend(owner: dict[Path, str], before: float | None = None,
                 elif previous.role != item.role or previous.usage != item.usage:
                     seen[key] = replace(previous, usage=None, reason="conflicting turn evidence")
     sources.extend(seen.values())
-    native_sources = native_turn_sources(launches, owner, before, home, inputs)
+    native_sources = native_turn_sources(launches, owner, before, rollouts)
     accepted = {(item.thread, item.turn): item for item in native_sources
                 if item.thread is not None and item.turn is not None}
     sources = [item for item in sources if (item.thread, item.turn) not in accepted]
@@ -218,12 +269,13 @@ def codex_spend(owner: dict[Path, str], before: float | None = None,
 
 
 def native_turn_sources(launches: dict[Path, list[codex_reads.Call]], owner: dict[Path, str],
-                        before: float | None, home: Path, inputs: set[Path]) -> list[CodexSource]:
+                        before: float | None, rollouts: Rollouts) -> list[CodexSource]:
     """Measure enrolled roots and descendants from the shared assignment projection."""
     from codex_ticket import Binding
     from run_reads import session_of
     from tree_reads import scratch as session_scratch
 
+    home, inputs = rollouts.home, rollouts.inputs
     stores = {binding.store for directory in launches
               if (binding := Binding.read(directory)) is not None}
     native_sources = []
@@ -238,8 +290,10 @@ def native_turn_sources(launches: dict[Path, list[codex_reads.Call]], owner: dic
             usage = None
             reason = "native submission has no accepted rollout evidence"
             running = True
+            model = None
             try:
                 turn = codex_reads.native_turn(item, home)
+                model = turn_model(turn)
                 inputs.add(codex_rollout.rollout_path(item.state["native"], home))
                 usage = turn.usage
                 reason = codex_rollout.usage_reason(usage, turn.turn)
@@ -247,5 +301,5 @@ def native_turn_sources(launches: dict[Path, list[codex_reads.Call]], owner: dic
             except (OSError, ValueError, KeyError) as exc:
                 reason = "native rollout evidence unavailable: " + str(exc)
             native_sources.append(CodexSource(str(item.manifest), item.assignment.role.value,
-                item.state["native"], item.state["turn"], usage, reason, running))
+                item.state["native"], item.state["turn"], usage, reason, running, model))
     return native_sources

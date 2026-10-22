@@ -17,6 +17,7 @@ from operations.roles import Role
 from operations.state import SETTLED, Agent, Place, Review, Ticket
 from operations.log_commands import AGENT, FILE_TICKET
 from operations.nesting import nested
+from ticketing.subscription import CLAUDE_LIST_TO_SUBSCRIPTION, figure
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import TICKET_NUMBER
 
@@ -746,9 +747,10 @@ BATCH_PROFILE = mctx("""
     """)
 
 
-# The cost of one transcript review in dollars: ticket 11-1885 measured 40
-# `Review run` runs for $3.35 and 17 reviews of item-checker runs for $1.34.
-REVIEW_COST = 0.08
+# The cost of one transcript review in subscription dollars: ticket 11-1885
+# measured 40 `Review run` runs for $3.35 and 17 reviews of item-checker runs
+# for $1.34 at list prices, $0.08 a review, converted.
+REVIEW_COST = 0.08 * CLAUDE_LIST_TO_SUBSCRIPTION
 
 
 # "launch no further review": ticket 6-584 records a batch profile that
@@ -758,7 +760,7 @@ REVIEW_COST = 0.08
 REVIEW = mctx("""
     - Launch one transcript review per launcher id of each of these runs that is no solver work and whose `--each` output marks a message or Codex work `past budget`, or Codex work `review required`, and of no other run: {reviewable}.
         + xref: scripts/run_prints.py:print_codex, scripts/run_prints.py:print_messages
-    - Launch no transcript review of a run whose complete token cost, as that `--each` call prints it, is below ${cost:.2f}, the cost of a review. A run whose complete token cost that call gives as unknown keeps the review the other conditions give it.
+    - Launch no transcript review of a run whose complete token cost, as that `--each` call prints it, is below ${cost} subscription dollars, the cost of a review. A run whose complete token cost that call gives as unknown keeps the review the other conditions give it.
     - Once a ticket filing of yours, or the reply of a review you launched, gives that a command the brief of a transcript review has it run failed, launch no further review.
     - A transcript review is a `general-purpose` agent, with `{model}` as the Agent call's `model`, and with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
     """)
@@ -776,7 +778,7 @@ def batch_profile(runs: list[str], reviewable: list[str], commit: str) -> str:
                                     deferred_titles=DEFERRED_TITLES)
     review = REVIEW.format(reviewable=", ".join(reviewable),
                            review_brief=mctx("the block below"), run=RUN,
-                           model=Role.TRANSCRIPT_REVIEW.model, cost=REVIEW_COST)
+                           model=Role.TRANSCRIPT_REVIEW.model, cost=figure(REVIEW_COST))
     text = BATCH_PROFILE.format(runs=", ".join(runs), filing=filing, review=review,
                                 deferred_titles=DEFERRED_TITLES)
     brief = transcript_review(RUN, "agent", RUN, False, ())

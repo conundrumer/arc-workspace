@@ -27,9 +27,9 @@ CASE_HELP = mctx("""
     """)
 
 CASE_RULES = mctx("""
-    - The command prices a case: its dollars are the token cost of the run's requests in the span, plus the growth of the run's context across the span at the cache-read price of the run's model once for each later request of the run, and its seconds are the span's wall time.
+    - The command prices a case: its dollars are the token cost, in subscription dollars, of the run's requests in the span, plus the growth of the run's context across the span at the cache-read price of the run's model once for each later request of the run, and its seconds are the span's wall time.
         - It records them in a log line of the ticket.
-    - The loss of a case or of a change is its dollars plus its seconds at {hour_price} dollars an hour.
+    - The loss of a case or of a change is its dollars plus its seconds at {hour_price} subscription dollars an hour, the user's $5 of list-price cost per 30 minutes converted.
     - The threshold of an editor is the median loss of the most recent {changes} `{change_kind}` tickets closed `{fixed}` with a known cost whose `editors` give that editor.
         - A change's dollars are the token cost of the runs the line that closes it gives and of the runs under them, and its seconds are the wall time those runs cover.
     - A group is the `{delay}` tickets under `tickets/{deferred}/` with one `fix` and one key: the first file path in the target of the ticket's title, the text before its first `: `, or, where the target holds none, the whole target.

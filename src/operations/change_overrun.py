@@ -93,8 +93,8 @@ def over_budget(state: State, t: Ticket, w: Path,
             number=t.number))
     overrun = past_budget(take_line, spent)
     if overrun is None:
-        if isinstance(spent, UnpricedSpend) or (take_line.codex_tokens is not None
-                and (spent.codex is None or spent.codex.totals().total_tokens is None)):
+        if isinstance(spent, UnpricedSpend) or spent.codex is None \
+                or not spent.codex.dollars_known:
             return Undecided(mctx(
                 "change {number}: a cost measurement is incomplete or unavailable"
             ).format(number=t.number))

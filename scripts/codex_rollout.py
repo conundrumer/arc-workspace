@@ -9,7 +9,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from operations.state import CodexUsage
+from operations.codex_spend import CodexUsage
 
 
 def tokens(value: object) -> CodexUsage | None:

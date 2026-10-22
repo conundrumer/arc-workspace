@@ -15,7 +15,7 @@ ME = "a00000000000000f1"
 FILED = "2026-10-17T02:00:00Z"
 
 
-TAKEN = f"{FILED} assigned [operator {ME}]: taking: budget 1 dollars, 100 s\n"
+TAKEN = f"{FILED} assigned [operator {ME}]: taking: budget 1 subscription dollars, 100 s\n"
 
 
 def state(tmp_path: Path, tickets: dict[str, str], budgets=()):

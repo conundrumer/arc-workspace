@@ -59,7 +59,7 @@ from handbook.checklist import checklist_agents, step_call
 from handbook.context import codex_config_value, codex_permissions, entry_text
 from handbook.listings import listings
 from operations.roles import ANALYST_NAMES, CODEX_ROLES, GENERAL, ReasoningEffort, Role
-from operations.state import CodexUsage
+from operations.codex_spend import CodexUsage
 
 FRESH_REFUSAL = "fresh launch refused: existing Codex history; no thread or turn accepted"
 CONTROLS = ("show", "steer", "interrupt")

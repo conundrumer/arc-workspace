@@ -77,11 +77,11 @@ budget is taken over; with fewer, it is taken over every earlier one."""
 
 
 def like_changes(tickets: Path, editors: frozenset[Role], before: float,
-                 undecided: list[str], me: str = "", *, codex: bool = False) -> list[Spend]:
+                 undecided: list[str], me: str = "") -> list[Spend]:
     """The spend of each `change` closed `fixed` before `before` with a
     known spend whose `editors` set is `editors`, or of each such change
-    whatever its `editors` where fewer than `FEWEST_LIKE` have it.
-    With `codex`, only known nonzero Codex totals enter either set."""
+    whatever its `editors` where fewer than `FEWEST_LIKE` have it. A spend
+    is in subscription dollars, Claude and Codex."""
     every: list[tuple[tuple[Role, ...] | None, Spend]] = []
     for item in closed_spends(tickets):
         read_interrupts.checkpoint()
@@ -102,8 +102,7 @@ def like_changes(tickets: Path, editors: frozenset[Role], before: float,
             if line not in undecided:
                 undecided.append(line)
             continue
-        if isinstance(s, Spend) and (not codex or (s.codex is not None
-                and s.codex.totals().total_tokens not in (None, 0))):
+        if isinstance(s, Spend):
             every.append((c.editors, s))
     like = [s for e, s in every if e is not None and frozenset(e) == editors]
     return like if len(like) >= FEWEST_LIKE else [s for _, s in every]
@@ -116,13 +115,8 @@ def budget(tickets: Path, editors: frozenset[Role], before: float,
     has a known spend."""
     like = like_changes(tickets, editors, before, undecided, me)
     if not like:
-        undecided.append(mctx("budget unknown: no dollar spend is known for a change "
+        undecided.append(mctx("budget unknown: no spend is known for a change "
                               "closed `fixed` before the take"))
         return None
-    tokens = [s.codex.totals().total_tokens for s in
-              like_changes(tickets, editors, before, undecided, me, codex=True)
-              if s.codex is not None]
-    known = [n for n in tokens if n is not None]
     return Budget(OVERRUN * statistics.median(s.dollars for s in like),
-                  OVERRUN * statistics.median(s.seconds for s in like),
-                  int(OVERRUN * statistics.median(known)) if known else None)
+                  OVERRUN * statistics.median(s.seconds for s in like))

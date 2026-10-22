@@ -112,10 +112,10 @@
 
 #### Cost and time
 * comment: The user's words, session 2384db39, 2026-10-19T12:37:34Z: "I guess it's just one short sentence with one number? \"Week has $X\"?"
-- The weekly usage limit is about $8,400 of token cost at API prices, so $84 is 1% of it.
-- A change spends about $7 after the decision beyond its ticket's budget, in its ticket review and revisions, the operator's turns and the reviews of its runs.
+- A cost is in subscription dollars, a plan's price per week times the share of its weekly usage window the work uses: the Claude week is about $46 and the Codex week about $23.
+- A change spends about $0.15 after the decision beyond its ticket's budget, in its ticket review and revisions, the operator's turns and the reviews of its runs.
     * comment: The user's words, session 2384db39, 2026-10-19T12:46:01Z: "Expedite the cost fix". Measure: the ticket-reviewer, draft-analyst, operator, general-purpose, code-reviewer and lib-reviewer costs of `uv run python scripts/profile_runs.py 2384db39-7d21-4d8d-8dda-bfd52bd69360 129de8fc-2a0d-4d4d-b950-3a0194c762e2 f44896df-9faa-48b9-b4ce-992d850c46df 62ca2ad1-bd13-4adc-82f3-20fb26d2049a --since 2026-10-18T17:54:30Z`, $1,038.75 in sum, divided by the 154 `change` tickets closed `fixed` in that window, counted by `grep -l '^kind: change' tickets/closed/*.md | xargs grep -h -E '^20[0-9-]+T[0-9:]+Z closed \[[^]]*\]: fixed' | awk '$1 >= "2026-10-18T17:54:30Z"' | wc -l` at 2026-10-19T13:25Z. The types leave out the build and its decision analysts, which a ticket's budget gives. Failure: the estimate of ticket 11-1958 priced only the doc editor's runs.
-- Save token cost first and time second, and count about 30 minutes saved as worth about $5 of token cost: split work that can run in parallel on disjoint files and run its parts at once, with no contention and no excess coordination between agents.
+- Save token cost first and time second, and count about 30 minutes saved as worth about $0.11 of token cost: split work that can run in parallel on disjoint files and run its parts at once, with no contention and no excess coordination between agents.
 
 #### Agents' choices
 - An agent's choice that departs from its documents is no fault of its documents.

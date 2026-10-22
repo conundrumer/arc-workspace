@@ -6,6 +6,7 @@ import time
 
 from controlled_markdown import mctx
 from run_records import Group, Key, Part, Run
+from ticketing.subscription import figure
 from ticketing.times import MINUTE_FORM
 
 # The characters of a call's command or of an agent's text output that
@@ -50,7 +51,7 @@ def by_agent_type(runs: list[Run]) -> dict[str, list[Run]]:
 
 
 def dollars(cost: float | None) -> str:
-    return f"${cost:.2f}" if cost is not None else "?"
+    return f"${figure(cost)}" if cost is not None else "?"
 
 
 def print_costs(by_type: dict[str, list[Run]], order: list[str]) -> None:

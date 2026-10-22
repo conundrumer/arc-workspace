@@ -1,4 +1,4 @@
-"""The list prices of the tokens a request uses, in dollars per million tokens, keyed by the model ids the transcripts give, and the token cost of a run's requests at those prices.
+"""The list prices of the tokens a request uses, in dollars per million tokens, keyed by the model ids the transcripts give, and the token cost of a run's requests, in subscription dollars: the list-price cost times `CLAUDE_LIST_TO_SUBSCRIPTION` (`ticketing.subscription`), the one conversion point of a Claude cost. Every figure this module computes is in subscription dollars, and `PRICES` alone holds list prices. `ticketing.subscription.codex_cost` prices Codex turns in the same unit.
 
 - Source: Anthropic's pricing page and release notes, https://platform.claude.com/docs/en/release-notes/overview, which give price changes the bundled claude-api skill lags. 5-minute cache writes are 1.25x input and 1-hour cache writes 2x input.
 - A request is the entries of one message id, and an entry with no message id makes the cost unknown. Its usage is, for each count, the most any of its entries gives, where an entry gives its top-level counts, or the sum over its `iterations` where that sum is larger.
@@ -9,6 +9,7 @@ from dataclasses import dataclass, fields
 from typing import Any
 
 from controlled_markdown import mctx
+from ticketing.subscription import CLAUDE_LIST_TO_SUBSCRIPTION
 from transcript_entries import epoch
 
 
@@ -28,6 +29,9 @@ class Usage:
     def total(self) -> float:
         return sum(getattr(self, f.name) for f in fields(Usage))
 
+    def scaled(self, factor: float) -> "Usage":
+        return Usage(*(getattr(self, f.name) * factor for f in fields(Usage)))
+
     def cost(self, price: "Usage") -> float:
         return sum(getattr(self, f.name) * getattr(price, f.name)
                    for f in fields(Usage)) / 1e6
@@ -44,6 +48,10 @@ class Price:
     base: Usage
     above: float | None = None
     over: Usage | None = None
+
+    def scaled(self, factor: float) -> "Price":
+        return Price(self.base.scaled(factor), self.above,
+                     None if self.over is None else self.over.scaled(factor))
 
     def at(self, request_input: float) -> Usage:
         if self.above is not None and self.over is not None and request_input > self.above:
@@ -115,12 +123,13 @@ def unknown(undecided: list[str], reason: str) -> None:
 
 
 def model_price(model: Any, undecided: list[str]) -> Price | None:
-    """The prices of `model`, or None where the table gives none, with an
-    `undecided` line for it."""
+    """The prices of `model` in subscription dollars per million tokens, its
+    list prices times `CLAUDE_LIST_TO_SUBSCRIPTION`, or None where the table
+    gives none, with an `undecided` line for it."""
     if model not in PRICES:
         unknown(undecided, mctx("no price for model {model}").format(model=model))
         return None
-    return PRICES[model]
+    return PRICES[model].scaled(CLAUDE_LIST_TO_SUBSCRIPTION)
 
 
 def grouped(entries: Iterable[dict[str, Any]]) -> dict[str | None, list[dict[str, Any]]]:
@@ -161,7 +170,7 @@ or at the request's own, as `request_cost` gives it."""
 
 def run_cost(entries: Iterable[dict[str, Any]], undecided: list[str],
              at: str | None = None) -> float | None:
-    """The token cost in dollars of the requests `priced_requests` gives,
+    """The token cost in subscription dollars of the requests `priced_requests` gives,
     each as `request_cost` prices it, or None where a request that used
     tokens has no price, with an `undecided` line for it."""
     return groups_cost(grouped(entries), undecided, at)
@@ -180,7 +189,7 @@ def groups_cost(groups: dict[str | None, list[dict[str, Any]]], undecided: list[
 
 def request_cost(group: list[dict[str, Any]], undecided: list[str],
                  at: str | None = None) -> float | None:
-    """The token cost in dollars of the request whose entries are `group`,
+    """The token cost in subscription dollars of the request whose entries are `group`,
     at the prices of the model that made it, at the tier of its largest
     `request_input`, or of the model `at` where one is given, or None where
     an entry that used tokens has no price, with an `undecided` line for
@@ -212,7 +221,7 @@ def request_cost(group: list[dict[str, Any]], undecided: list[str],
 
 def span_cost(entries: Iterable[dict[str, Any]], start: float, end: float,
               undecided: list[str]) -> float | None:
-    """The token cost in dollars of the span from `start` to `end`, in epoch
+    """The token cost in subscription dollars of the span from `start` to `end`, in epoch
     seconds, of a run: its requests in the span, priced as `run_cost`
     prices them, plus the growth of its context across the span, from the
     last request before the span to the first after it, at the cache-read

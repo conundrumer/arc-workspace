@@ -98,9 +98,10 @@ PARTS = {
         - Where none follows, it runs while a process holds open the output file its result names, and where no process holds that file, it ended when the file was last written, or, where that file is gone, at the run's last entry.
         - Where its result names no file, whether it runs is unknown, and it counts as running.
         - Where `lsof` writes to stderr, which files a process holds open is unknown, and the ID is refused.
-    - A launcher's token cost is the list price of the tokens its requests used, from the price table of `token_prices`, each request priced once at the full usage its entries give.
+    - A launcher's token cost is in subscription dollars: the list price of the tokens its requests used, from the price table of `token_prices`, each request priced once at the full usage its entries give, as a share of the Claude week times the Claude plan's price per week.
         - A launcher with a request whose model or usage the table does not price has an unknown cost, printed `?`.
-        - A run with unpriced Codex work has an unknown complete cost; the launcher's dollars and Codex token counts stay separate.
+        - Codex work is priced too, in subscription dollars: each turn's tokens at the credit rates of the model that ran it, as a share of the Codex week times the Codex plan's price per week; the run's total cost sums Claude and Codex.
+        - A run whose Codex work has an unpriced turn, or a launcher with an unknown cost, has an unknown complete cost, printed with the known part as a lower bound.
             + xref: scripts/run_prints.py:print_codex
     - `--price-at MODEL` prices each launcher request at the prices the table gives MODEL, in place of those of the model that made it, and a MODEL the table does not price is refused.
         - Where it is given, the tool first prints `price at MODEL:` and that {repriced}.
