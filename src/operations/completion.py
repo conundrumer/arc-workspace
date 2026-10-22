@@ -1,6 +1,7 @@
 """Which attempts occupy their work, and the identity of a replacement, or the
 message that gives none."""
 
+import hashlib
 import re
 from dataclasses import replace
 
@@ -10,7 +11,8 @@ from operations.directives import give_again_line, given_again, reply_decisions
 from operations.reports import FOR_COORDINATOR, LABELED, Label, heading_part
 from operations.roles import Purpose, Role, analyst_of
 from operations.state import Agent, State
-from operations.steps import Launch, Send, Step, key, rulable
+from operations.printed_forms import KEY_LENGTH
+from operations.steps import Launch, Send, Step, rulable, with_change
 
 
 def decided(a: Agent) -> bool:
@@ -64,13 +66,22 @@ STOPPED = mctx("Role {role} on {subject} has stopped with no result in each of i
 launch."""
 
 
+def stop_key(step: Launch) -> str:
+    """The key of the stop-hold on the role and subject of `step`, which the
+    `Op override: give again` ruling that releases it names. It is taken over
+    the role, the subject and the change alone, so it holds across later
+    takes of the change and across the suffix `replacement` gives."""
+    named = f"stopped {step.role} {step.subject}"
+    return with_change(step, hashlib.sha1(named.encode()).hexdigest()[:KEY_LENGTH])
+
+
 def stopped_attempts(state: State, step: Launch) -> list[Agent]:
     """The attempts of the role and subject of `step`, after the last
-    `Op override: give again` ruling on its key, of which the last
+    `Op override: give again` ruling on its `stop_key`, of which the last
     `STOPS_BOUND` all stopped with no result, or an empty list where they
     did not. An attempt the usage limit stopped
     (`TranscriptsRead.limited`) does not count, as `limit_resume` resumes it."""
-    again = given_again(state).get(key(step), 0.0)
+    again = given_again(state).get(stop_key(step), 0.0)
     past = [a for a in state.agents_of(step.role, step.subject) if a.launched > again]
     last = past[-STOPS_BOUND:]
     if len(last) < STOPS_BOUND or any(
@@ -101,8 +112,8 @@ def replacement(state: State, step: Step) -> Step:
         return Send(COORDINATOR, STOPPED.format(
             role=step.role, subject=step.subject, count=len(stopped),
             agents=", ".join(str(a.agent_id) for a in stopped), head=head,
-            line=give_again_line(key(step))),
-            f"stopped {step.role} {step.subject}", since=stopped[-1].launched,
+            line=give_again_line(stop_key(step))),
+            f"stopped {step.role} {step.subject} {stop_key(step)}", since=stopped[-1].launched,
             change=step.change)
     a = past[-1]
     suffix = f" replacement {a.agent_id} {a.launched} {a.since}"
