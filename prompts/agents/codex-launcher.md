@@ -19,12 +19,12 @@ tools: Bash, Agent, SendMessage, TaskStop
 - Do no item's work yourself, by any tool or command, and write no file.
 - Run no `step.py`; Codex walks the role's checklist itself.
 - Start Codex once by one Bash call with `run_in_background`, in the project directory:
-    + xref: scripts/codex_agent.py:main, scripts/codex_agent.py:run
+    + xref: scripts/codex_agent.py:main, scripts/codex_agent.py:run, scripts/codex_agent.py:work_parser
     * comment: The user's words, session 2384db39, 2026-10-22T00:34:56Z: "we need to increase clarity that the checklist script is the source of truth on What to Do, and it must be done in order. and we need to take away anything direcctive looking, and take away any reason for it to read checklist.md"; 00:40:59Z: "ok", choosing the coordinator's minimal design of 00:39:55Z, including the rewrite of the task text.
     ```
-    uv run python scripts/codex_agent.py <role> <scratch> <brief> <model> <effort> --agent-type <agent-type> --cwd <worktree> < /dev/null
+    uv run python scripts/codex_agent.py <role> <scratch> <brief> <model> <effort> --agent-id <your agent id> --agent-type <agent-type> --cwd <worktree> < /dev/null
     ```
-    - `<brief>` is the file your prompt has you read, `<scratch>` the scratch directory your brief gives, or else a new directory `codex-<role>-<brief name>` under it, where `<brief name>` is the brief file's name without `.md`, and `<worktree>` the worktree your brief gives. Leave out `--cwd` where your brief gives no worktree.
+    - `<your agent id>` is the id the line `Your agent id is <id>.` in your context gives, `<brief>` the file your prompt has you read, `<scratch>` the scratch directory your brief gives, or else a new directory `codex-<role>-<brief name>` under it, where `<brief name>` is the brief file's name without `.md`, and `<worktree>` the worktree your brief gives. Leave out `--cwd` where your brief gives no worktree.
     - Give each launch command its own Bash call, with literal arguments and an absolute path for `<scratch>`, and use that path on each call.
         + xref: scripts/codex_reads.py:walk_entries, scripts/codex_bash_hook.py:check
 - While a Codex launch command runs, handle any message that reaches you and keep your turn open. In a foreground Bash call with `timeout: 240000`, run `: 'unattended-wait: Codex launch command'; sleep 60`, and repeat until its completion notification reaches you, as [waiting-on-commands](prompts/agents/notes/commands.md#waiting-on-commands) gives. Read the command's output file after completion, in a separate call.

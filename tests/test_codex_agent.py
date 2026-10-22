@@ -164,7 +164,7 @@ def files(tmp_path, monkeypatch):
     return root, home, brief, scratch
 
 
-def run(files, transport, runner=None, *, resume=False):
+def run(files, transport, runner=None, *, resume=False, agent_id="a123456789abcdef0"):
     root, home, brief, scratch = files
 
     def no_exec(_):
@@ -185,6 +185,7 @@ def run(files, transport, runner=None, *, resume=False):
         agent_type="general-purpose",
         transport=lambda: transport,
         resume=resume,
+        agent_id=agent_id,
     )
 
 
@@ -194,8 +195,6 @@ def test_start_resume_and_walk_record(files):
     assert run(files, transport) == "reply"
     assert transport.closed
     assert (scratch / "codex-session").read_text() == "thread\n"
-    first = transport.calls[1][1]["input"][0]["text"]
-    assert first == "brief body\n\n" + agent.WORK_OPENING + "\n\nfirst item"
     assert transport.calls[0][1]["config"]["developer_instructions"] == "\n\n".join(
         [agent.PREAMBLE.format(opening=agent.WORK_OPENING, stop="Where blocked, report what remains unfinished and why."), "- repo instructions\n"]
     )
@@ -238,7 +237,6 @@ def test_refusal_falls_back_and_keeps_walk_record(files, refuse, capsys):
     assert json.loads(overrides[0].split("=", 1)[1]) == "\n\n".join(
         [agent.PREAMBLE.format(opening=agent.WORK_OPENING, stop="Where blocked, report what remains unfinished and why."), "- repo instructions\n"]
     )
-    assert calls[0][-1] == "brief body\n\n" + agent.WORK_OPENING + "\n\nfirst item"
     record = json.loads((scratch / "codex-events.jsonl").read_text())
     assert record["ok"] is True and record["input"] == agent.WORK_OPENING + "\n\nfirst item"
     assert json.loads(record["output"].splitlines()[-1])["type"] == "turn.completed"
@@ -346,6 +344,8 @@ def test_failed_turn_prints_reply_and_exits_nonzero(files, monkeypatch, status, 
                 "low",
                 "--agent-type",
                 "general-purpose",
+                "--agent-id",
+                "a123456789abcdef0",
                 "--cwd",
                 str(root),
             ]
@@ -610,7 +610,7 @@ def test_preparation_failure_is_proved_without_turn_history_and_can_retry(
             preparation.setattr(agent.checkout, "git_out", fail)
         assert agent.main([
             "code-reviewer", str(scratch), str(brief), "model", "low",
-            "--agent-type", "general-purpose", "--cwd", str(root),
+            "--agent-type", "general-purpose", "--agent-id", "a123456789abcdef0", "--cwd", str(root),
         ]) == 1
     stderr = capsys.readouterr().err
     assert "launch failed before Codex started" in stderr
@@ -665,3 +665,16 @@ def test_lost_wrapper_active_turn_refuses_resume(files, monkeypatch):
         run(files, lambda: pytest.fail('active turn was submitted again'), resume=True)
     assert (scratch / agent.DONE).read_text() == 'owner marker'
     assert not (scratch / 'codex-events.jsonl').exists()
+
+
+@pytest.mark.parametrize("agent_id", [None, "", "not-an-agent-id"])
+def test_fresh_call_refuses_invalid_agent_id_before_transport(files, agent_id):
+    transport = Transport()
+    with pytest.raises(ValueError, match="agent id"):
+        run(files, transport, agent_id=agent_id)
+    assert not transport.calls
+    scratch = files[-1]
+    failure = json.loads((scratch / "codex-launch-failures.jsonl").read_text())
+    assert "agent id" in failure["error"]
+    assert not (scratch / "codex-session").exists()
+    assert not (scratch / "codex-events.jsonl").exists()

@@ -1,13 +1,14 @@
 """Run the agent's checklist on the shared Codex daemon, with exec fallback.
 
-    uv run python scripts/codex_agent.py <agent> <scratch> <brief> <model> <effort> [--cwd <dir>] [--resume]
+    uv run python scripts/codex_agent.py <agent> <scratch> <brief> <model> <effort> [--agent-id <id>] [--cwd <dir>] [--resume]
 
 Give optional starting material or a later result or message on stdin, closed
 within five seconds. An open input fails before the launch. The
 first call supplies the rendered agent document and rendered repo and user
 CLAUDE.md files as developer instructions, with the configured Codex style.
-The brief and starting instruction are user input. A fresh call refuses existing
-thread or turn history without changing it.
+A fresh call requires `--agent-id`, the launcher's agent id, and puts its id line
+before the brief and starting instruction in user input. A fresh call refuses
+existing thread or turn history without changing it.
 A scratch directory permits one work call at a time. Contention accepts no turn;
 wait for its owner, then retry. A resume refuses an active rollout turn; use
 show or interrupt and wait for that turn to end before retrying. Controls remain
@@ -48,6 +49,7 @@ from typing import Any
 import codex_daemon
 import codex_rollout
 import ticket_numbers
+from subagent_start_hook import context
 
 from controlled_markdown import mctx
 from engine import checkout
@@ -377,7 +379,7 @@ def work(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: 
         runner: Callable[[list[str]], subprocess.CompletedProcess[str]] = execute,
         agent_type: str | None = None,
         transport: Callable[[], Any] = codex_daemon.Proxy,
-        resume: bool = False) -> str:
+        resume: bool = False, agent_id: str | None = None) -> str:
     """Return the last message, or raise with the CLI's error. Save a thread
     id even on failure so a later call can continue the same session.
     Require the calling Claude session before work and configure both transports
@@ -396,8 +398,12 @@ def work(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: 
         }
         instructions = None if thread is not None else role_instructions(root, home, agent, agent_type)
         if thread is None:
+            if agent_id is None:
+                raise ValueError(mctx("The fresh call is missing its agent id (--agent-id)."))
             item = "\n\n".join(filter(None, [opening(agent_type or Role(agent).agent_type), item]))
-        prompt = item if thread is not None else "\n\n".join([brief.read_text(), item])
+            prompt = "\n\n".join([context(agent_id), brief.read_text(), item])
+        else:
+            prompt = item
         last = scratch / "codex-last.md"
         last.unlink(missing_ok=True)
         git_dir = Path(checkout.git_out(cwd, "rev-parse", "--absolute-git-dir").strip())
@@ -476,7 +482,7 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
         runner: Callable[[list[str]], subprocess.CompletedProcess[str]] = execute,
         agent_type: str | None = None,
         transport: Callable[[], Any] = codex_daemon.Proxy,
-        resume: bool = False) -> str:
+        resume: bool = False, agent_id: str | None = None) -> str:
     """Hold exclusive ownership from validation through completion publication."""
     import codex_ticket
 
@@ -505,7 +511,7 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
         done.unlink(missing_ok=True)
         try:
             return work(agent, scratch, brief, model, effort, item, root, home, main, cwd,
-                        runner, agent_type, transport, resume)
+                        runner, agent_type, transport, resume, agent_id)
         finally:
             done.touch()
 
@@ -540,6 +546,7 @@ def work_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cwd", type=Path, default=Path.cwd())
     parser.add_argument("--agent-type", choices=sorted({r.agent_type for r in CODEX_ROLES}
                                                      | ANALYST_NAMES))
+    parser.add_argument("--agent-id")
     parser.add_argument("--resume", action="store_true",
                         help="continue the saved thread; required for later turns")
     return parser
@@ -574,7 +581,7 @@ def main(argv: list[str]) -> int:
         message = run(args.agent, args.scratch, args.brief, args.model, args.effort,
                       item, checkout.ROOT, Path.home(),
                       checkout.main_worktree(checkout.ROOT), args.cwd.resolve(),
-                      agent_type=args.agent_type, resume=args.resume)
+                      agent_type=args.agent_type, resume=args.resume, agent_id=args.agent_id)
     except (OSError, ValueError) as exc:
         if isinstance(exc, TurnFailed) and exc.message:
             print(exc.message, flush=True)
