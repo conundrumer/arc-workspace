@@ -527,19 +527,21 @@ def client(operator: str, kind: Kind = Kind.NEXT) -> int:
     """Return resident output and publish review plans within the foreground bound."""
     from operate_loop import arm_watchdog, single_instance
     from relay_reads import session_id
-    if kind == Kind.REVIEW:
-        from operate_review import qualification
-        if qualification(operator) is None:
-            return 0
-    import kept_reads
-    loaded_code = kept_reads.fresh_code("operate")
-    single_instance(operator)
+    from transcript_snapshots import Refused
     global REQUEST_SENT
-    REQUEST_SENT = False
-    repeated = silent_before(operator, kind)
-    arm_watchdog(operator, lambda me: expired_output(me, repeated))
-    started, deadline = time.time(), time.monotonic() + LIMIT_SECONDS
+    repeated = False
     try:
+        if kind == Kind.REVIEW:
+            from operate_review import qualification
+            if qualification(operator) is None:
+                return 0
+        import kept_reads
+        loaded_code = kept_reads.fresh_code("operate")
+        single_instance(operator)
+        REQUEST_SENT = False
+        repeated = silent_before(operator, kind)
+        arm_watchdog(operator, lambda me: expired_output(me, repeated))
+        started, deadline = time.time(), time.monotonic() + LIMIT_SECONDS
         result = request(checkout.ROOT, session_id(), operator, started, deadline, kind)
         if isinstance(result, ReviewPlan):
             from refresh_locks import try_shared
@@ -562,13 +564,15 @@ def client(operator: str, kind: Kind = Kind.NEXT) -> int:
         sys.stdout.write(stdout)
         sys.stderr.write(stderr)
         return status
-    except (Unavailable, OSError, ValueError, KeyError, TypeError) as exc:
-        if kind == Kind.NEXT:
-            return failed_next(operator, 1, "", f"operate: {exc}\n")
-        print(f"operate: {exc}", file=sys.stderr)
-        return 1
     except Expired:
         return expired_output(operator, repeated)
+    except (Unavailable, Exception) as exc:
+        cause = (f"operate: {exc}\n" if isinstance(exc, (Refused, Unavailable))
+                 else traceback.format_exc())
+        if kind == Kind.NEXT:
+            return failed_next(operator, 1, "", cause)
+        print(cause, end="", file=sys.stderr)
+        return 1
     finally:
         signal.alarm(0)
 
@@ -589,7 +593,13 @@ def failed_next(operator: str, status: int, stdout: str, stderr: str) -> int:
 
     output = stdout + stderr
     if prints_no_call(output):
-        previous = last_next_call(entries_back(find(operator)), operator, Action.NEXT)
+        try:
+            previous = last_next_call(entries_back(find(operator)), operator, Action.NEXT)
+        except Exception as exc:
+            sys.stdout.write(stdout)
+            sys.stderr.write(stderr)
+            print(f"operate: the last call of next is unreadable: {exc}", file=sys.stderr)
+            return status
         report = NEXT_FAILED.format(agent=operator)
         if previous is None or report not in previous.text:
             step = Send(COORDINATOR, report + "\n" + output.strip(), "next-failed")
