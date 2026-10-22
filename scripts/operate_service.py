@@ -158,6 +158,7 @@ class Request:
             pass
 
     def check(self, code: bool = False) -> None:
+        beat(self.listener)
         if self.waiting and not self.committed and time.monotonic() >= self.deadline - FINISH_SECONDS:
             self.detach(read_running(self))
         from refresh_locks import try_shared
@@ -178,6 +179,37 @@ class Request:
             import kept_reads
             if kept_reads.fresh_code("operate") != self.code:
                 raise Replaced
+
+
+BEAT_EVERY = 5.0
+BEAT_FRESH = 60.0
+_beaten = 0.0
+
+
+def beat_path(endpoint_path: Path) -> Path:
+    """The file whose mtime is the time of the resident's last checkpoint."""
+    return endpoint_path.with_suffix(".beat")
+
+
+def beat(listener: socket.socket) -> None:
+    """Touch the beat file of the resident that owns `listener`, at most once per `BEAT_EVERY` seconds."""
+    global _beaten
+    now = time.monotonic()
+    if now - _beaten < BEAT_EVERY:
+        return
+    _beaten = now
+    try:
+        beat_path(Path(listener.getsockname())).touch()
+    except Exception:
+        pass
+
+
+def beat_fresh(operator_endpoint: Path) -> bool:
+    """Whether the resident at `operator_endpoint` passed a checkpoint less than `BEAT_FRESH` seconds ago."""
+    try:
+        return time.time() - beat_path(operator_endpoint).stat().st_mtime < BEAT_FRESH
+    except OSError:
+        return False
 
 
 def success(stdout: str) -> bytes:
@@ -442,12 +474,30 @@ def prepare(main: Path, session: str, deadline: float) -> None:
     ensure(main, session, deadline).close()
 
 
-def inbox_of(operator: str):
-    """The inbox of the caller `operator`, or None where it cannot be read."""
-    try:
-        from accepted_messages import Inbox
+class Queued:
+    """The transcript of the caller `operator`, read from the size it has at creation:
+    `arrived` is true once a `queued_command` entry is appended after that point."""
+
+    def __init__(self, operator: str) -> None:
         from transcripts import find
-        return Inbox(find(operator), [])
+        self.path = find(operator)
+        self.offset = self.path.stat().st_size
+
+    def arrived(self) -> bool:
+        with self.path.open("rb") as stream:
+            stream.seek(self.offset)
+            data = stream.read()
+        end = data.rfind(b"\n") + 1
+        self.offset += end
+        return any(b'"queued_command"' in line and
+                   json.loads(line).get("attachment", {}).get("type") == "queued_command"
+                   for line in data[:end].splitlines() if line.strip())
+
+
+def queued_of(operator: str) -> Queued | None:
+    """The reader of the caller's transcript, or None where it cannot be read."""
+    try:
+        return Queued(operator)
     except Exception:
         return None
 
@@ -479,13 +529,13 @@ def exchange(connection: socket.socket, operator: str, started: float,
                                        "deadline": deadline, "kind": kind}) + "\n").encode())
         global REQUEST_SENT
         REQUEST_SENT = True
-        inbox = inbox_of(operator) if kind != Kind.REFRESH else None
+        inbox = queued_of(operator) if kind != Kind.REFRESH else None
         while not select.select([connection], [], [], 1.0)[0]:
             if time.monotonic() >= deadline:
                 break
             if inbox is not None:
                 try:
-                    if inbox.accepted():
+                    if inbox.arrived():
                         return 0, message_output(operator, kind), ""
                 except Exception:
                     inbox = None
@@ -531,11 +581,21 @@ def silent_before(operator: str, kind: Kind) -> bool:
         return False
 
 
+def resident_beats() -> bool:
+    """Whether this session's resident has passed a checkpoint within `BEAT_FRESH` seconds."""
+    try:
+        from relay_reads import session_id
+        return beat_fresh(endpoint(checkout.ROOT, session_id()))
+    except Exception:
+        return False
+
+
 def expired_output(operator: str, repeated: bool = False) -> int:
     """Print the output of an expired call and return its exit status: where the
-    request reached a resident and the last call did not end the same way, the
-    line that has the operator run the command again; else the failure report."""
-    if REQUEST_SENT and not repeated:
+    request reached a resident and either the last call did not end the same way or
+    the resident's beat is less than `BEAT_FRESH` seconds old, the line that has the
+    operator run the command again; else the failure report."""
+    if REQUEST_SENT and (not repeated or resident_beats()):
         from operations.printed_forms import RESIDENT_SILENT
         print(RESIDENT_SILENT.format(seconds=LIMIT_SECONDS), flush=True)
         return 0
