@@ -1,0 +1,4 @@
+{"id": "conundrumer/arclog-aba27056-offline", "title": "arclog aba27056 offline", "code_file": "notebook.ipynb",
+ "language": "python", "kernel_type": "notebook", "is_private": true, "enable_gpu": false,
+ "enable_internet": false, "dataset_sources": ["conundrumer/arclog-aba27056"],
+ "competition_sources": ["arc-prize-2026-arc-agi-2"], "kernel_sources": []}
