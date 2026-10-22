@@ -28,8 +28,10 @@ or the transcript is shorter than its record's offset, its fold starts at
 its first own line (`own_range`). Where the store holds no record of the
 start, every `.meta.json` file is read."""
 
+import copy
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -46,7 +48,7 @@ from token_prices import priced_requests, request_cost
 from transcript_entries import epoch
 from transcript_ownership import META, TRANSCRIPT, meta_transcript, own_range, read_meta
 from transcripts import walked_entries
-from transcript_snapshots import Refused, snapshot
+from transcript_snapshots import SUBJECT_FAULTS, Refused, snapshot
 
 from controlled_markdown import mctx
 from operations.roles import Role, described
@@ -151,16 +153,30 @@ def start_and_spend(root: Path, main_tree: Path, started: float, undecided: list
     subscription dollars of the window's priced Claude requests under
     `root` and Codex turns from runs whose working directories are under
     `main_tree`, a lower bound of its spend.
-    Each request or turn it cannot price gives an `undecided` line."""
+    Each request or turn it cannot price gives an `undecided` line.
+    A record file whose spend cannot be read adds 0 and an `undecided` line."""
     began = opened()
     held = recalled(START, str(root))
     held = held if isinstance(held, Start) else Start(None, float("-inf"))
     listed = listing(root, held.listed)
     start = audit_start(root, held, listed, began)
     start = started if start is None else start
-    priced = sum(priced_spend(p, start, undecided)
+    priced = sum(file_spend(priced_spend, p, start, undecided)
                  for p in sorted(Path(p) for p, mtime in listed.transcripts.items() if mtime >= start))
     return start, priced + codex_spend(Path.home(), main_tree, start, undecided)
+
+
+def file_spend(read: Callable[..., float], path: Path, start: float,
+               undecided: list[str], *args: object) -> float:
+    """`read(path, *args, start, undecided)`, the spend of the record file
+    at `path`, or 0.0 with an `undecided` line where that file's data
+    cannot be read."""
+    try:
+        return read(path, *args, start, undecided)
+    except SUBJECT_FAULTS as exc:
+        undecided.append(mctx("{path}: its spend cannot be read ({error}), "
+                              "so the cost audit's window omits it").format(path=path, error=exc))
+        return 0.0
 
 
 def audit_start(root: Path, held: Start, listed: Listing, began: float) -> float | None:
@@ -283,6 +299,54 @@ def turn_cost(turn: codex_rollout.Turn, undecided: list[str]) -> float:
     return codex_cost(usage, turn_model(turn), undecided) or 0.0
 
 
+def rollout_spend(path: Path, main_tree: Path, start: float, undecided: list[str]) -> float:
+    """Subscription dollars of the project turns of the rollout at `path`
+    started in the window, folded on from its record where the store holds
+    one for `start`. A read that fails keeps no record."""
+    stat = path.stat()
+    if stat.st_mtime < start:
+        return 0.0
+    held = recalled(CODEX_FOLD, str(path))
+    fold = (copy.deepcopy(held) if isinstance(held, CodexFold) and held.start == start
+            and held.offset <= stat.st_size else CodexFold(start))
+    if fold.cwd is not None and not fold.cwd.is_relative_to(main_tree):
+        return 0.0
+    with path.open("rb") as fh:
+        fh.seek(fold.offset)
+        for line in fh:
+            if not line.endswith(b"\n"):
+                break
+            row = json.loads(line)
+            fold.offset += len(line)
+            if row.get("type") == "session_meta":
+                fold.cwd = Path(row["payload"]["cwd"]).resolve()
+                if not fold.cwd.is_relative_to(main_tree):
+                    break
+            # Only contexts affect pricing; other activity can be large.
+            if row.get("type") not in ("event_msg", "turn_context"):
+                continue
+            fold.reader.feed(row)
+            if fold.reader.current is not None:
+                fold.reader.current.activity[:] = [
+                    r for r in fold.reader.current.activity
+                    if r.get("type") == "turn_context"]
+            completed = [t for t in fold.reader.turns if t is not fold.reader.current]
+            for turn in completed:
+                if turn.started >= start:
+                    fold.cost += turn_cost(turn, fold.lines)
+            fold.reader.turns = ([fold.reader.current]
+                                 if fold.reader.current is not None else [])
+    keep(CODEX_FOLD, str(path), fold)
+    if fold.cwd is None or not fold.cwd.is_relative_to(main_tree):
+        return 0.0
+    lines = list(fold.lines)
+    cost = fold.cost
+    if fold.reader.current is not None and fold.reader.current.started >= start:
+        cost += turn_cost(fold.reader.current, lines)
+    undecided.extend(dict.fromkeys(lines))
+    return cost
+
+
 def codex_spend(home: Path, main_tree: Path, start: float, undecided: list[str]) -> float:
     """Subscription dollars of project turns started in the window.
 
@@ -292,46 +356,5 @@ def codex_spend(home: Path, main_tree: Path, start: float, undecided: list[str])
     total = 0.0
     main_tree = main_tree.resolve()
     for path in codex_rollout.rollout_files(home):
-        stat = path.stat()
-        if stat.st_mtime < start:
-            continue
-        held = recalled(CODEX_FOLD, str(path))
-        fold = (held if isinstance(held, CodexFold) and held.start == start
-                and held.offset <= stat.st_size else CodexFold(start))
-        if fold.cwd is not None and not fold.cwd.is_relative_to(main_tree):
-            continue
-        with path.open("rb") as fh:
-            fh.seek(fold.offset)
-            for line in fh:
-                if not line.endswith(b"\n"):
-                    break
-                row = json.loads(line)
-                fold.offset += len(line)
-                if row.get("type") == "session_meta":
-                    fold.cwd = Path(row["payload"]["cwd"]).resolve()
-                    if not fold.cwd.is_relative_to(main_tree):
-                        break
-                # Only contexts affect pricing; other activity can be large.
-                if row.get("type") not in ("event_msg", "turn_context"):
-                    continue
-                fold.reader.feed(row)
-                if fold.reader.current is not None:
-                    fold.reader.current.activity[:] = [
-                        r for r in fold.reader.current.activity
-                        if r.get("type") == "turn_context"]
-                completed = [t for t in fold.reader.turns if t is not fold.reader.current]
-                for turn in completed:
-                    if turn.started >= start:
-                        fold.cost += turn_cost(turn, fold.lines)
-                fold.reader.turns = ([fold.reader.current]
-                                     if fold.reader.current is not None else [])
-        keep(CODEX_FOLD, str(path), fold)
-        if fold.cwd is None or not fold.cwd.is_relative_to(main_tree):
-            continue
-        lines = list(fold.lines)
-        cost = fold.cost
-        if fold.reader.current is not None and fold.reader.current.started >= start:
-            cost += turn_cost(fold.reader.current, lines)
-        undecided.extend(dict.fromkeys(lines))
-        total += cost
+        total += file_spend(rollout_spend, path, start, undecided, main_tree)
     return total
