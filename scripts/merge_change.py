@@ -39,8 +39,9 @@ the command line of `master`'s copy. The checks are:
     uv run python scripts/context.py --write
     uv run python scripts/gate.py --affected <base> <out>
     cargo test --manifest-path engine/Cargo.toml --workspace --offline --no-fail-fast
+    env RUSTDOCFLAGS=-D warnings cargo doc --manifest-path engine/Cargo.toml --workspace --no-deps --offline
 
-The last runs only where the changes touch a path under `engine/`. The
+The last two run only where the changes touch a path under `engine/`. The
 checks run concurrently. A check passes when it exits 0, and a refusal
 names every check that fails. The gate's dependency record decides which
 of its commands a change affects, so the gate runs on every change, with

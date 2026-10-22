@@ -353,3 +353,14 @@ def test_the_checks_refuse_an_engine_whose_test_fails(trees, monkeypatch):
     base = git(worktree, "rev-parse", "HEAD").strip()
     failed = steps.checks(worktree, base, str(worktree / "out"))
     assert len(failed) == 1 and "one_is_two" in failed[0]
+
+
+def test_the_checks_refuse_an_engine_whose_doc_links_a_private_item(trees, monkeypatch):
+    """A change under `engine/` whose crate compiles, passes its tests and
+    holds a public doc link to a private item is refused, by the doc build."""
+    steps, worktree = engine_change(
+        trees, monkeypatch,
+        "/// Gives [`hidden`].\npub fn shown() {}\nfn hidden() {}\n")
+    base = git(worktree, "rev-parse", "HEAD").strip()
+    failed = steps.checks(worktree, base, str(worktree / "out"))
+    assert len(failed) == 1 and "private item" in failed[0] and "cargo doc" in failed[0]

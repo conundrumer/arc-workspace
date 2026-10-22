@@ -24,7 +24,7 @@ impl Check for EqualityAndZeroCheck {
 
     /// The base key with, after its signatures, those of the clauses of the
     /// form's relation across the solver's blocks, as
-    /// [`zero_clause_signatures`] gives them.
+    /// `zero_clause_signatures` gives them.
     fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey> {
         let mut key = at.base(self.id());
         let signatures = key.signatures.iter().cloned().chain(zero_clause_signatures(at.form, at.clauses).cloned());

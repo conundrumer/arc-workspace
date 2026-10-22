@@ -48,17 +48,24 @@ ENGINE_CHECK = ("cargo", "test", "--manifest-path", f"{ENGINE}Cargo.toml",
 under `ENGINE`, from the crates already fetched, and runs every test of
 those crates, giving each test that fails."""
 
+ENGINE_DOC_CHECK = ("env", "RUSTDOCFLAGS=-D warnings", "cargo", "doc", "--manifest-path",
+                    f"{ENGINE}Cargo.toml", "--workspace", "--no-deps", "--offline")
+"""The check that builds the documentation of each crate of the workspace
+under `ENGINE`, from the crates already fetched, and fails on each
+rustdoc warning, such as a link from a public item's doc to a private
+item."""
+
 
 def checks(tree: Path, base: str, gate_out: str) -> list[str]:
     """Run in `tree` the checks of changes from the commit `base`: the
     output of each that fails. The compile and the tests of the engine
-    (`ENGINE_CHECK`) are among them where the changes touch a path under
-    `ENGINE`."""
+    (`ENGINE_CHECK`) and its documentation build (`ENGINE_DOC_CHECK`) are
+    among them where the changes touch a path under `ENGINE`."""
     engine = any(p.startswith(ENGINE) for p in changed_outside_work(tree, base))
     with contextlib.redirect_stdout(sys.stderr):
         return failures(tree, [*map(Check, DOCUMENT_CHECKS),
                                Check(("uv", "run", "python", "scripts/gate.py", "--affected", base, gate_out)),
-                               *([Check(ENGINE_CHECK)] if engine else [])])
+                               *(map(Check, (ENGINE_CHECK, ENGINE_DOC_CHECK)) if engine else ())])
 
 
 def after(tree: Path, gate_out: str) -> bool:
