@@ -7,14 +7,16 @@
     uv run python scripts/codex_ticket.py dispatch <scratch> [--call <call-json>]
 
 Prepare files and reserves a launch, then returns its native tool arguments.
-Reconcile requires accepted rollout evidence. Accept validates the report of a
+Reconcile requires accepted rollout evidence, and settles the unresolved
+descendants of its agent first. Accept validates the report of a
 terminal turn; outcome is finished or needs-operator. Target resolves a native
 recipient. Dispatch records input needed from the owning operator.
 
 Bindings live in the session scratch directory. Each scratch directory has a
 pointer to its ticket store. All mutations use that store's nonblocking lock;
 accepted or interrupted turns remain unresolved until actual completion evidence
-is reconciled.
+is reconciled, which the next reconcile of the turn or of an ancestor does, and a
+root resume does before it reserves.
 """
 
 import fcntl
@@ -188,8 +190,10 @@ class Store:
                 raise Refused("submission does not match its filed assignment")
             agents = state["agents"]
             if parent is None:
-                if any(a["phase"] != Phase.ENDED for a in agents.values()):
-                    raise Refused("ticket has live or unresolved turns; input was not queued")
+                unresolved = ", ".join(f"{aid} {a['phase']}" for aid, a in agents.items()
+                                       if a["phase"] != Phase.ENDED)
+                if unresolved:
+                    raise Refused(f"ticket has live or unresolved turns ({unresolved}); input was not queued")
                 root = state.get("root")
                 if root is not None and root != assignment.agent:
                     raise Refused("ticket already owns a different root")
@@ -454,39 +458,57 @@ NATIVE_FINDINGS = mctx("Previous report from `{predecessor}`:")
 
 
 def reconcile(scratch: Path, agent: str, native: str, home: Path) -> dict[str, Any]:
-    """Use the child's own accepted rollout to reconcile a reserved submission."""
+    """Settle the agent's unresolved descendants, deepest first, then the agent.
+
+    Each turn is settled from its own accepted rollout evidence, so a turn or
+    reservation left unresolved by an earlier failed read is settled here. A
+    descendant that cannot be settled raises its refusal under its operations id."""
+    _, store = bound(scratch)
+    agents = store.snapshot()["agents"]
+
+    def depth(aid: str) -> int | None:
+        """Parent links from `aid` up to `agent`, or None where `agent` is no ancestor."""
+        steps, parent = 0, agents[aid]["parent"]
+        while parent is not None:
+            steps += 1
+            if parent == agent:
+                return steps
+            parent = agents[parent]["parent"]
+        return None
+
+    below = {aid: steps for aid, item in agents.items()
+             if item["phase"] != Phase.ENDED and (steps := depth(aid)) is not None}
+    for aid in sorted(below, key=lambda aid: -below[aid]):
+        try:
+            settle(store, aid, agents[aid]["native"], home)
+        except Refused as exc:
+            raise Refused(f"child {aid}: {exc}") from exc
+    return settle(store, agent, native, home)
+
+
+def settle(store: Store, agent: str, native: str | None, home: Path) -> dict[str, Any]:
+    """Use the agent's own accepted rollout to settle its entry.
+
+    A native of None or a runtime path (starting with `/`) is resolved by the
+    child-rollout search. A reserved child no rollout and no parent activity shows
+    is released, once its parent's turn has ended."""
     import codex_rollout
 
-    _, store = bound(scratch)
     item = store.snapshot()["agents"][agent]
     assignment = Assignment.read(store.manifest(agent, item["revision"]))
     runtime = native
-    if "/" in native:
-        if item["parent"] is None or native.rsplit("/", 1)[-1] != agent:
+    if native is None or "/" in native:
+        if item["parent"] is None or (native is not None and native.rsplit("/", 1)[-1] != agent):
             raise Refused("runtime child identity does not match its reserved task name")
-        if item["native"] is not None and item.get("runtime") == native:
+        if native is not None and item["native"] is not None and item.get("runtime") == native:
             native = item["native"]
         else:
-            candidates = []
-            parent = store.snapshot()["agents"][item["parent"]]
-            for candidate in codex_rollout.rollout_files(home):
-                if candidate.stat().st_mtime < item["reserved"]:
-                    continue
-                rows = codex_rollout.rows(candidate)
-                metadata = [row["payload"] for row in rows if row.get("type") == "session_meta"]
-                if len(metadata) != 1 or native_parent(metadata[0]) != parent["native"]:
-                    continue
-                for turn in codex_rollout.read_turns(candidate):
-                    if turn.started < item["reserved"]:
-                        continue
-                    try:
-                        matching_input(assignment, store.manifest(agent, item["revision"]), turn)
-                    except Refused:
-                        continue
-                    candidates.append(metadata[0]["id"])
-            if len(candidates) != 1:
-                raise Refused("runtime child has no unique accepted assignment rollout")
-            native = candidates[0]
+            found = child_rollout(store, agent, item, home)
+            if found is None:
+                release_unaccepted(store, agent, item, home)
+                return store.snapshot()["agents"][agent]
+            native = found
+    assert native is not None
     path = codex_rollout.rollout_path(native, home)
     if item["parent"] is not None:
         metadata = [row["payload"] for row in codex_rollout.rows(path) if row.get("type") == "session_meta"]
@@ -509,6 +531,61 @@ def reconcile(scratch: Path, agent: str, native: str, home: Path) -> dict[str, A
     return store.snapshot()["agents"][agent]
 
 
+def child_rollout(store: Store, agent: str, item: dict[str, Any], home: Path) -> str | None:
+    """The one rollout of the child's identity with a turn from its reservation, or None.
+
+    The identity is the parent's native thread and an agent path ending in the
+    child's operations id; its input is checked afterward by `matching_input`."""
+    import codex_rollout
+
+    parent = store.snapshot()["agents"][item["parent"]]
+    if parent["native"] is None:
+        raise Refused("native parent has no accepted identity")
+    candidates = []
+    for candidate in codex_rollout.rollout_files(home):
+        if candidate.stat().st_mtime < item["reserved"]:
+            continue
+        metadata = [row["payload"] for row in codex_rollout.rows(candidate)
+                    if row.get("type") == "session_meta"]
+        if (len(metadata) != 1 or native_parent(metadata[0]) != parent["native"]
+                or not str(metadata[0].get("agent_path")).endswith("/" + agent)):
+            continue
+        if any(turn.started >= item["reserved"] for turn in codex_rollout.read_turns(candidate)):
+            candidates.append(metadata[0]["id"])
+    if len(candidates) > 1:
+        raise Refused("runtime child has no unique accepted assignment rollout")
+    return candidates[0] if candidates else None
+
+
+def release_unaccepted(store: Store, agent: str, item: dict[str, Any], home: Path):
+    """Release a reserved child that neither its rollouts nor its parent's turn show.
+
+    While the parent's turn runs, or where the parent's turn shows the child
+    started, the absence of a child rollout is a refusal."""
+    import codex_rollout
+    from datetime import datetime
+
+    if item["phase"] != Phase.RESERVED or item["native"] is not None:
+        raise Refused("runtime child has no unique accepted assignment rollout")
+    parent = store.snapshot()["agents"][item["parent"]]
+    try:
+        turns = [turn for turn in codex_rollout.turns(parent["native"], home)
+                 if turn.turn == parent["turn"]]
+    except ValueError as exc:
+        raise Refused(f"native parent rollout is unreadable: {exc}") from exc
+    if len(turns) != 1 or turns[0].ended is None:
+        raise Refused("runtime child has no rollout, and its parent's turn has not ended")
+    for row in turns[0].activity:
+        payload = row.get("payload", {})
+        activity = payload.get("item", {}) if payload.get("type") == "item_completed" else {}
+        if (activity.get("type") == "SubAgentActivity"
+                and str(activity.get("agent_path")).endswith("/" + agent)
+                and datetime.fromisoformat(row["timestamp"]).timestamp() >= item["reserved"]):
+            raise Refused("inconsistent evidence: its parent's turn started the child, "
+                          "and no rollout of the child is found")
+    store.refused(agent, item["token"])
+
+
 def native_parent(metadata: dict[str, Any]) -> str | None:
     source = metadata.get("source")
     subagent = source.get("subagent") if isinstance(source, dict) else None
@@ -517,7 +594,12 @@ def native_parent(metadata: dict[str, Any]) -> str | None:
 
 
 def matching_input(assignment: Assignment, manifest: Path, turn: Any):
-    """Require the filed input and execution parameters in accepted rollout evidence."""
+    """Require the filed input and execution parameters in accepted rollout evidence.
+
+    A native child's task arrives as an `agent_message` addressed to its task path,
+    whose payload is encrypted; the message's presence and recipient are proved, and
+    its encrypted content is not compared. Any other turn must hold the filed brief
+    and manifest in a plaintext user prompt."""
     if assignment.model is not None:
         contexts = [row["payload"] for row in turn.activity if row.get("type") == "turn_context"]
         if not contexts or any((context.get("model"), context.get("effort")) != (
@@ -525,6 +607,13 @@ def matching_input(assignment: Assignment, manifest: Path, turn: Any):
             raise Refused("accepted turn does not use its assigned model and effort")
     from codex_reads import rollout_message
 
+    encrypted = any(
+        row.get("type") == "response_item" and row["payload"].get("type") == "agent_message"
+        and str(row["payload"].get("recipient")).endswith("/" + assignment.agent)
+        and any(part.get("type") == "encrypted_content" for part in row["payload"]["content"])
+        for row in turn.activity)
+    if encrypted:
+        return
     prompts = [message[1] for row in turn.activity
                if (message := rollout_message(row)) is not None and message[0] == "user"]
     if not any(assignment.brief.read_text() in prompt and str(manifest) in prompt for prompt in prompts):

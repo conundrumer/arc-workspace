@@ -508,6 +508,11 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
             store = codex_ticket.Store(store_path)
             store.file(assignment)
             from tree_reads import scratch as session_scratch
+            resumed = store.snapshot()["agents"].get(assignment.agent)
+            if (resumed is not None and resumed["phase"] != codex_ticket.Phase.ENDED
+                    and (scratch / "codex-session").exists()):
+                codex_ticket.reconcile(
+                    scratch, assignment.agent, (scratch / "codex-session").read_text().strip(), home)
             token = store.reserve(assignment)
             try:
                 codex_ticket.register(store.path, session_scratch(ticket_numbers.session_id()), assignment.agent)
