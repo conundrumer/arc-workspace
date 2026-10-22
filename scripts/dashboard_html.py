@@ -569,7 +569,7 @@ def page(tickets: Path, now: float, usage: Reading, records: OperatorRecords,
     work, working = active(v, st)
     stuck, waits = blocked(v)
     sections = [
-        ("health", "Health", health(v, waits)),
+        ("health", "Health", health(v)),
         ("sl", "", updates(v, cleared)),
         ("active", "Active", work),
         ("queued", "Queued", queued(v, st)),

@@ -13,12 +13,10 @@ if TYPE_CHECKING:
     from dashboard_html import View
 
 
-def health(v: View, waits: int) -> str:
-    from dashboard_html import ago, esc, per_session, tap
+def health(v: View) -> str:
+    from dashboard_html import ago, esc, per_session, session_name, tap
 
     out: list[str] = []
-    if waits:
-        out.append(f'<a class="alert" href="#blocked">! Blocked · {waits}</a>')
     for n, since in v.records.unwaited().items():
         if n not in v.all_:
             continue
@@ -28,11 +26,10 @@ def health(v: View, waits: int) -> str:
             age = v.now - since
             minutes = ago(age) if 60 <= age < 3600 else f"{int(age // 60)} min"
             out.append(tap(n, f"⚠ {esc(v.phrase(t))} · {minutes}", "alert"))
-    out += [f'<div class="alert">⚠ No operator · {clock(at, v.now)}</div>'
-            for _, at in per_session(v, lambda s: s.at if v.now - s.at > STALE_RECORD else None)
-            if at is not None]
+    out += [f'<div class="alert">⚠ {"Main" if r.index is None else session_name(r.index)} · No operator · {clock(r.shown.at, v.now)}</div>'
+            for r in v.records.records if v.now - r.shown.at > STALE_RECORD]
     if v.records.main_missing is not None:
-        out.append('<div class="alert">⚠ No operator</div>')
+        out.append('<div class="alert">⚠ No main session</div>')
     for _, h in per_session(v, lambda s: s.start_hold):
         if h is not None:
             value = f" · {clock(h.time, v.now)}" if isinstance(h, Until) else ""
