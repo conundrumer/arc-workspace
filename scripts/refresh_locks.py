@@ -10,7 +10,6 @@ The module imports none of the state reads, so the merge call that takes
 the locks does not import them."""
 
 import fcntl
-import os
 import subprocess
 import time
 from pathlib import Path
@@ -55,25 +54,34 @@ def hold(session: str) -> IO[str]:
     return f
 
 
-def wait_free(session: str) -> None:
-    """Returns once no process holds the refresh lock of `session`, or
-    once `WAIT_SECONDS` have passed."""
+def try_shared(session: str) -> IO[str] | None:
+    """Return an open shared lock, or None while an exclusive holder owns it."""
+    path = lock_path(session)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock = path.open("a")
     try:
-        fd = os.open(lock_path(session), os.O_RDONLY)
-    except FileNotFoundError:
-        return
-    try:
-        end = time.monotonic() + WAIT_SECONDS
-        while True:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
-                return
-            except BlockingIOError:
-                if time.monotonic() >= end:
-                    return
-                read_interrupts.sleep(POLL_SECONDS)
-    finally:
-        os.close(fd)
+        fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock.close()
+        return None
+    except BaseException:
+        lock.close()
+        raise
+    return lock
+
+
+def wait_free(session: str, deadline: float | None = None) -> bool:
+    """Report whether the lock became free before an absolute monotonic deadline.
+
+    Calls without a deadline wait at most `WAIT_SECONDS`.
+    """
+    end = time.monotonic() + WAIT_SECONDS if deadline is None else deadline
+    while time.monotonic() < end:
+        if (lock := try_shared(session)) is not None:
+            lock.close()
+            return True
+        read_interrupts.sleep(min(POLL_SECONDS, max(end - time.monotonic(), 0)))
+    return False
 
 
 def live_sessions(main: Path, since: float) -> list[str]:
@@ -119,12 +127,11 @@ class MergeLocks:
             self.close()
             return None
         fds = {s: f.fileno() for s, f in self.files.items()}
-        merging = ("--merging", self.merging) if self.merging is not None else ()
         held = [a for s, fd in fds.items() for a in ("--held", s, str(fd))]
         try:
             return subprocess.Popen(
-                ("uv", "run", "python", *REFRESH, *merging, *held), cwd=self.main,
-                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                ("uv", "run", "python", *REFRESH, *held), cwd=self.main,
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 pass_fds=tuple(fds.values()), start_new_session=True)
         finally:
             self.close()

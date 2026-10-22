@@ -85,9 +85,7 @@ starts `uv run python scripts/kept_refresh.py` in the main tree, as a
 process in a session of its own that outlives the script, and hands it
 the locks, still held. That process writes the state reads of those
 sessions into the store of the kept reads, as its `--help` gives. The
-script waits for the merging session's part to end, up to a margin short
-of the bound on an operator's foreground Bash call from the script's
-start, and then ends with the rest of the refresh still running. Where no
+script continues without waiting for that refresh. Where no
 such fast-forward succeeded, the script releases the locks.
 
 `document_pass.py` reads the size of each document against its
@@ -199,7 +197,6 @@ a failed step, 2 when the call itself is malformed.
 
 import argparse
 import os
-import select
 import shutil
 import subprocess
 import sys
@@ -787,26 +784,10 @@ def merge(pairs: Sequence[tuple[Path, str]]) -> bool:
             refresh_kept(locks)
 
 
-REFRESH_MARGIN_SECONDS = 30
-"""The room the merge call leaves, past its wait for the merging
-session's refresh, under the bound on a foreground call."""
-
-
 def refresh_kept(locks: MergeLocks) -> None:
-    """Starts the refresh with `locks` (`MergeLocks.start`), where it starts
-    one, and waits for the merging session's refresh to end, up to
-    `REFRESH_MARGIN_SECONDS` short of the bound on a foreground call from
-    this process's start."""
-    proc = locks.start()
-    if proc is None:
-        return
-    say("refreshing the kept reads in the main tree", flush=True)
-    assert proc.stdout is not None
-    left = FOREGROUND_MS / 1000 - REFRESH_MARGIN_SECONDS - (time.monotonic() - STARTED)
-    with proc.stdout:
-        ready, _, _ = select.select([proc.stdout], [], [], max(left, 0))
-    if not ready:
-        say("the refresh of the kept reads goes on past the merge", flush=True)
+    """Start the refresh described by the module's help text."""
+    if locks.start() is not None:
+        say("refreshing the kept reads in the main tree", flush=True)
 
 
 def land_all(main: Path, changes: Sequence[Change], locks: MergeLocks) -> bool:

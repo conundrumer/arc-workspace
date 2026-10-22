@@ -23,6 +23,12 @@ assert service.__file__ is not None
 SCRIPTS = Path(service.__file__).parent
 
 
+@pytest.fixture(autouse=True)
+def refresh_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "isolated-service")
+    monkeypatch.setattr(service.checkout, "caches", lambda: tmp_path / ".cache")
+
+
 def until(path: Path) -> None:
     deadline = time.monotonic() + 20
     while not path.exists():
@@ -51,7 +57,7 @@ def resident(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         import script_calls
         script_calls.start(str(root), "operate_service.py", ["startup"])
         import operate_service as service
-        import kept_reads, operate, state_assembly, state_reads, file_reads, step_journal, read_interrupts
+        import kept_reads, operate, operate_loop, state_assembly, state_reads, file_reads, step_journal, read_interrupts
         from operations.steps import Bash
         kept_reads.fresh_code = lambda _: (root / "code").read_text()
         loaded = (root / "code").read_text()
@@ -60,11 +66,14 @@ def resident(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             if operator in ("wait", "journal"):
                 if operator == "journal" and not step_journal.records(root):
                     with service.side_effect():
-                        step_journal.start_run(root, Bash("echo run >> executions", "fixture", occasion="once"),
+                        step_journal.start_run(root, Bash("echo run >> executions; while [ ! -e release ]; do sleep 0.02; done", "fixture", occasion="once"),
                                                operator, root, time.time())
                 (root / "entered").write_text(operator)
-                while not (root / "release").exists():
-                    read_interrupts.sleep(0.02)
+                if operator == "journal":
+                    operate_loop.ran(root, time.monotonic() + 20)
+                else:
+                    while not (root / "release").exists():
+                        read_interrupts.sleep(0.02)
             state_reads.new_state()
             text = file_reads.file_text(root / "source")
             print(loaded, operator, text, state_assembly.REQUEST_STARTED.get())
@@ -304,6 +313,7 @@ def test_fresh_import_closure_refuses_a_replaced_dependency(tmp_path, monkeypatc
     monkeypatch.setattr(kept, "module_file", files.get)
     monkeypatch.setattr(kept, "_store", None)
     monkeypatch.setattr(kept.checkout, "ROOT", tmp_path)
+    monkeypatch.setattr(kept.checkout, "caches", lambda: tmp_path / "cache")
     code = kept.fresh_code("operate")
     dependency.write_text("value = 2\n")
     a, b = socket.socketpair()
@@ -361,7 +371,7 @@ def test_resident_work_is_present_in_the_cost_records(resident):
     assert all(c.retained and c.cpu >= 0 and c.session == "isolated-service" for c in requests)
 
 
-@pytest.mark.parametrize("outcome", ["change", "expiry", "disconnect", "read_budget"])
+@pytest.mark.parametrize("outcome", ["change", "expiry", "disconnect", "read_budget", "refresh_send"])
 def test_inflight_code_change_responds_and_flushes_before_retiring(tmp_path, monkeypatch, outcome):
     """Force the merge between completed reads and response publication."""
     import io
@@ -376,7 +386,20 @@ def test_inflight_code_change_responds_and_flushes_before_retiring(tmp_path, mon
     monkeypatch.setattr(kept, "_store", None)
     kept.open_store(tmp_path / "reads.sqlite")
     monkeypatch.setattr(service, "executor", contextlib.nullcontext)
-    monkeypatch.setattr(service, "side_effect", contextlib.nullcontext)
+    held = []
+    ready_to_send = []
+    if outcome == "refresh_send":
+        locks = script("refresh_locks")
+        monkeypatch.setattr(locks.checkout, "caches", lambda: tmp_path / "cache")
+        flush = kept.flush
+        def flush_and_lock():
+            result = flush()
+            if ready_to_send and not held:
+                held.append(locks.hold(script("relay_reads").session_id()))
+            return result
+        monkeypatch.setattr(kept, "flush", flush_and_lock)
+    else:
+        monkeypatch.setattr(service, "side_effect", contextlib.nullcontext)
     monkeypatch.setattr(service.select, "select", lambda *_: ([], [], []))
     code = ["old"]
     monkeypatch.setattr(kept, "fresh_code", lambda _: code[0])
@@ -399,7 +422,9 @@ def test_inflight_code_change_responds_and_flushes_before_retiring(tmp_path, mon
             raise service.Expired
         if outcome == "disconnect":
             raise service.Disconnected
-        code[0] = "new"
+        ready_to_send.append(True)
+        if outcome != "refresh_send":
+            code[0] = "new"
         service.check()
         return 0
 
@@ -414,8 +439,12 @@ def test_inflight_code_change_responds_and_flushes_before_retiring(tmp_path, mon
         assert service.serve_request(connection, Mock(), "old") is (outcome == "disconnect")
     finally:
         signal.signal(signal.SIGALRM, handler)
+    for lock in held:
+        lock.close()
     out = json.loads(connection.sendall.call_args.args[0])
-    if outcome == "read_budget":
+    if outcome == "refresh_send":
+        assert out == {"retry": True, "status": 1, "stdout": "", "stderr": ""}
+    elif outcome == "read_budget":
         assert out["retry"] is False and out["status"] == 1
         assert out["stdout"] == ""
         assert "budget history" in out["stderr"]
@@ -489,3 +518,32 @@ def test_standalone_exception_flushes_completed_reads(tmp_path, monkeypatch):
     other = kept.Store(kept.store().path)
     assert other.held("fixture:read", "key") == "completed"
     other.close()
+
+
+def test_refresh_retires_inflight_wait_without_reissuing_journaled_work(resident, monkeypatch):
+    root, _ = resident
+    locks = script("refresh_locks")
+    monkeypatch.setattr(locks.checkout, "caches", lambda: root / ".cache")
+    connection = open_request(root, "journal")
+    until(root / "entered")
+    with locks.hold("isolated-service"):
+        with connection, connection.makefile("rb") as stream:
+            response = json.loads(stream.readline())
+        assert response["retry"] and response["stdout"] == ""
+        assert service.request(root, "isolated-service", "op", time.time(),
+                               time.monotonic() + 20, True)[0] == 0
+    (root / "release").write_text("")
+    assert call(root, "journal")[0] == 0
+    until(root / "executions")
+    assert (root / "executions").read_text().splitlines() == ["run"]
+
+
+def test_request_deadline_during_refresh_does_not_send(tmp_path, monkeypatch):
+    locks = script("refresh_locks")
+    monkeypatch.setattr(locks.checkout, "caches", lambda: tmp_path / "cache")
+    sent = Mock()
+    monkeypatch.setattr(service, "ensure", sent)
+    with locks.hold("blocked"):
+        with pytest.raises(service.Expired):
+            service.request(tmp_path, "blocked", "op", time.time(), time.monotonic() + 0.02, False)
+    sent.assert_not_called()

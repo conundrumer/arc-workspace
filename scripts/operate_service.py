@@ -40,7 +40,7 @@ CODE_ENV = "ARC_OPERATE_CODE"
 
 # Request cancellation must escape the state cache's failed-read handlers.
 class Replaced(BaseException):
-    """The interpreter must be replaced before the request can continue."""
+    """A code change or refresh requires a retry in a replacement interpreter."""
 
 
 class Disconnected(BaseException):
@@ -65,12 +65,20 @@ class Request:
     code: str
     stdout: TextIO
     stderr: TextIO
+    refresh: bool = False
     phase: str = "state"
     pending: "Pending | None" = None
 
     def check(self, code: bool = False) -> None:
         if time.monotonic() >= self.deadline:
             raise Expired
+        if not self.refresh:
+            from refresh_locks import try_shared
+            from relay_reads import session_id
+            lock = try_shared(session_id())
+            if lock is None:
+                raise Replaced
+            lock.close()
         if self.pending is not None:
             self.pending.poll()
         readable, _, _ = select.select([self.connection], [], [], 0)
@@ -196,17 +204,12 @@ def side_effect() -> Iterator[None]:
     if current is None:
         yield
         return
-    from refresh_locks import lock_path
+    from refresh_locks import try_shared
     from relay_reads import session_id
-    path = lock_path(session_id())
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a") as lock:
-        while True:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                pause(0.05)
+    lock = try_shared(session_id())
+    if lock is None:
+        raise Replaced
+    with lock:
         current.check()
         previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
         try:
@@ -326,7 +329,7 @@ def prepare(main: Path, session: str, deadline: float) -> None:
 
 def exchange(connection: socket.socket, operator: str, started: float,
              deadline: float, refresh: bool) -> tuple[int, str, str] | None:
-    """A complete response, or None when a replacement interpreter is required."""
+    """A complete response, or None when transport or request validation needs a retry."""
     with connection:
         connection.settimeout(max(deadline - time.monotonic(), 0.001))
         connection.sendall((json.dumps({"operator": operator, "started": started,
@@ -373,7 +376,10 @@ def client(operator: str) -> int:
 def request(main: Path, session: str, operator: str, started: float,
             deadline: float, refresh: bool) -> tuple[int, str, str]:
     """Retry transport failures from journal state within the original deadline."""
+    from refresh_locks import wait_free
     while time.monotonic() < deadline:
+        if not refresh and not wait_free(session, deadline):
+            raise Expired
         try:
             result = exchange(ensure(main, session, deadline), operator, started, deadline, refresh)
             if result is not None:
@@ -410,7 +416,7 @@ def refresh_resident(main: Path, session: str, operator: str,
 
 def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                   pending: Pending | None = None) -> bool:
-    """Serve one request; false retires this interpreter after a code change."""
+    """Serve one request; false retires this interpreter for a code change or refresh."""
     import kept_reads
     import operate
     import state_assembly
@@ -428,7 +434,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
         raise ValueError("invalid request")
     stdout, stderr = io.StringIO(), io.StringIO()
     current = Request(message["operator"], float(message["started"]), float(message["deadline"]),
-                      connection, listener, code, stdout, stderr, pending=pending)
+                      connection, listener, code, stdout, stderr, refresh=message["refresh"], pending=pending)
     with read_interrupts.request_scope(check):
         token = CURRENT.set(current)
         cutoff = state_assembly.REQUEST_STARTED.set(current.started)
@@ -487,7 +493,8 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                     print(f"operate: kept-read store cannot preserve completed reads: "
                           f"{store.path if store is not None else ''}: "
                           f"{store.write_error if store is not None else ''}", file=stderr)
-        response = {"status": status, "stdout": stdout.getvalue(), "stderr": stderr.getvalue(),
+        response = {"status": status, "stdout": "" if retry else stdout.getvalue(),
+                    "stderr": "" if retry else stderr.getvalue(),
                     "retry": retry}
         connection.settimeout(1)
         try:
@@ -495,6 +502,10 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                 try:
                     with side_effect():
                         connection.sendall((json.dumps(response) + "\n").encode())
+                except Replaced:
+                    keep = False
+                    connection.sendall((json.dumps({"status": 1, "stdout": "", "stderr": "",
+                                                    "retry": True}) + "\n").encode())
                 except (Disconnected, Expired):
                     pass
             else:

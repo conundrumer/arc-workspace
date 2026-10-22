@@ -41,8 +41,7 @@ def is_held(session: str) -> bool:
 def test_refresh_releases_each_lock_after_its_child(
         caches: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Every session's lock is held from the first child on, and each until
-    its own child ends; the merging session's end is written before the
-    others run; a session with no operator has no child."""
+    its own child ends; a session with no operator has no child."""
     events: list[Any] = []
     monkeypatch.setattr(kept_refresh, "operator_runs",
                         lambda s, me: [] if s == "idle" else [(f"op-{s}", Path(s))])
@@ -52,10 +51,9 @@ def test_refresh_releases_each_lock_after_its_child(
         events.append((session, argv[-1], [s for s in ("m", "a", "b") if is_held(s)]))
 
     monkeypatch.setattr(kept_refresh.subprocess, "run", run)
-    monkeypatch.setattr(kept_refresh, "said_refreshed", lambda: events.append("said"))
     held = {s: refresh_locks.hold(s) for s in ("m", "a", "idle", "b")}
-    kept_refresh.refresh(caches, "m", held)
-    assert events == [("m", "op-m", ["m", "a", "b"]), "said", ("a", "op-a", ["a", "b"]),
+    kept_refresh.refresh(caches, held)
+    assert events == [("m", "op-m", ["m", "a", "b"]), ("a", "op-a", ["a", "b"]),
                       ("b", "op-b", ["b"])]
     assert not any(is_held(s) for s in ("m", "a", "b", "idle"))
 
