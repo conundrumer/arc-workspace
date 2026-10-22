@@ -127,7 +127,7 @@ PARTS = {
             * comment: Change 11-2484: 11-2473 records repeated interrupted reads reported as nothing ready.
         - A call of `next` or `relay` ends each call of either for the same agent id that runs.
     - Before the call it prints, `next` prints that step's key, on a line that gives the command to run after the call, and before several launches, one line that gives each launch's key, in their order, and the command to run after them.
-        - The key is the same at each read of the state that gives the same step.
+        - The key is the same at each read of the state that gives the same step: across a later take of its change, a later line of its log and a replacement of a stopped attempt.
     - A ticket file whose read refuses or fails, other than a file that moved during the read, leaves its ticket out of every procedure.
         - A ticket that depends on it waits.
         - `next` gives that file, once for each content it has and once its last write is {write} seconds old, to a ticket analyst it launches, as a step it cannot place, with the read's failure, and goes on with every other procedure.
@@ -138,12 +138,12 @@ PARTS = {
         - Before it reads the state, it waits for each Bash step of the session that runs, that of another operator of the session included, for up to {block} seconds from its start, and where one still runs then, it prints that the operator runs it again.
         - A Bash step runs with the environment of `next`, which `uv run` sets, with no input, and its output goes to a file under the session's scratchpad, which `next` reads once the step ends.
         - It ends a Bash step that runs past {run} seconds, and that step counts as failed.
-    - `next` records each step it gives, by its key, in the session's step journal, `{journal}` under the session's scratchpad, and tells from that journal alone whether a step is in flight, done or failed.
+    - `next` records each step it gives, by its key and its occurrence, in the session's step journal, `{journal}` under the session's scratchpad, and tells from that journal alone whether a step is in flight, done or failed.
         - A printed message counts as made by a SendMessage call to its recipient that holds its text, and a printed launch by an Agent call that gives its description, that the operator made after the call of `next` that printed it and before its next call of `next`, and the step's outcome is that call's.
         - Where the operator ran `next` again first, or its work ended with no such call, the step counts as failed.
         - A step in flight is not given again, to that operator or to one that takes over.
-        - A step's key is taken over what the step is, what it acts on and the event it answers, never over its text.
-            - The key of a launch or a command of a held change also takes in the version of the change's inputs: the time of the latest of the change's filing, a report of an agent that an operator of any session launched on it, the filing of a ticket on it, and a line of its log that no operator wrote, other than a take or a release.
+        - A step's key is taken over what the step is and what it acts on, never over its text, and never over the event it answers.
+            - The journal tells the occurrences of a step apart by the event each answers, the version of the change's inputs for a launch or a command of a held change, and, for a launch, the count of its stopped attempts: the version is the time of the latest of the change's filing, a report of an agent that an operator of any session launched on it, the filing of a ticket on it, and a line of its log that no operator wrote, other than a take or a release.
         - A step that is done is not given again, other than a launch or a command of a held change that the change's procedure still gives once a wait has passed after its done outcome, which `next` gives once more.
             - Where that step is done a second time, `next` gives in its place, once that wait has passed after that outcome, a message to the coordinator on the change, with the line that makes the step due once more.
         - The times a step was given in a row are the times it was given and failed, other than a launch the harness refused at its limit of {subagents} concurrent subagents.
@@ -152,13 +152,13 @@ PARTS = {
         - An end of turn that `next` prints with the launch of an agent whose end resumes the operator counts as a time the launch it holds back was given and failed.
         - Once a step was given {bound} times in a row, `next` gives it no more: it retires the step for each operator of the session, files one `bug` on it with its key and the function that gives it, and goes on to the next step, and the final reply gives the step.
             - Where a held change's procedure still gives a retired launch or command, `next` gives in its place the message to the coordinator on the change that a step done a second time gets.
-            - The retirement of a launch or a command of a held change holds at each version of the change's inputs, until an `Op override: give again` ruling on the step's key without the version.
+            - The retirement of a step holds for each occurrence of it, until an `Op override: give again` ruling on the step's key.
     """),
     HelpPart.RULINGS: mctx("""
     - `next` applies the rulings that the coordinator gives an operator of the session, and that the reply of a ticket analyst on a held step gives, each a line in one of these forms, matched whole, past a list marker:
         - `Op decision: <decision key> <choice>` rules a held step, with one of the choices that step gives.
         - `Op override: <task id> <pass> <override>` gives the override, labelled as an override, in the brief of the next launch of that pass on that task.
-        - `Op override: pass over <step key>` passes over the step whose key it gives, for each operator.
+        - `Op override: pass over <step key>` passes over the step whose key it gives, for each operator, in each occurrence of it whose inputs' version is not later than the ruling; a step whose inputs changed after the ruling is given.
             - `next` gives that step, once, as one its procedure waits on, to a ticket analyst it launches to rule it, other than a launch of a ticket analyst to rule a step, and goes on with the other procedures.
             - A pipeline whose next pass is passed over stops instead.
             - A ruling on a solver pass holds for each pipeline on its task, unless the work set aside for an earlier pipeline on that task went back (`restore`) after the ruling and before that pipeline's line or `start` call.

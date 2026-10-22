@@ -20,7 +20,7 @@ from dataclasses import replace
 from typing import NamedTuple
 
 from controlled_markdown import form
-from operations.state import Budget, Spend, UnpricedSpend, Ticket
+from operations.state import TAKEN, Budget, Spend, UnpricedSpend, Ticket
 from operations.log_commands import AGENT
 from ticketing.subscription import figure
 from ticketing.vocabulary import Note, Status
@@ -48,7 +48,6 @@ TAKE_NOTE = "taking: " + BUDGET_NOTE
 """The note of the log line of a take, with the change's cost budget and
 time budget."""
 
-TAKEN = re.compile(r"taking: .*")
 TAKE_BUDGET = re.compile(form(TAKE_NOTE, BUDGET_HOLES))
 
 EDITORS_NOTE = "editors: {editors}; " + BUDGET_NOTE

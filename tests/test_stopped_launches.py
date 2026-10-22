@@ -118,16 +118,17 @@ def test_a_done_launch_entry_does_not_hide_the_retry(tmp_path: Path) -> None:
     from operations.journal import Close, Entry, Journal, Outcome
     from operations.order import place
     from operations.state import Tool
-    from operations.steps import digest, key
+    from operations.steps import digest, entry_key, key
     a = attempt(Role.LOAD_CHECK, "alert-1")
     launch = Launch(a.role, a.subject, "check", occasion="alert-1")
-    entry = Entry(key(launch), digest(launch), launch.origin, "op", 9.0, Tool.AGENT,
+    entry = Entry(key(launch), entry_key(launch), digest(launch), launch.origin, "op", 9.0, Tool.AGENT,
                   None, "", None, None, Close(Outcome.DONE, 10.0, ""))
     s = replace(with_agents(tmp_path, [a]), journal=Journal((entry,)))
     assert not repeated(launch, s)
     ready, _, _ = place(s, launch)
     assert isinstance(ready, Launch)
-    assert key(ready) != key(launch)
+    assert entry_key(ready) != entry_key(launch)
+    assert key(ready) == key(launch)
     assert place(s, ready)[0] == ready
     running = replace(s, transcripts=replace(s.transcripts, agents=(
         replace(a, waits=Waits.AT_WORK),)))
@@ -247,7 +248,7 @@ def test_an_interrupted_analyst_report_does_not_replace_retry_with_a_handoff(tmp
 def test_a_review_without_its_baseline_is_due_again(tmp_path: Path, role: Role) -> None:
     from operations.reviews import review
     from operations.state import Baseline, Review
-    from operations.steps import key
+    from operations.steps import entry_key, key
     of = next(r for r in Review if r.role is role)
     s = with_agents(tmp_path, [])
     s = replace(s, git=replace(s.git, reviews={of: Baseline(1, ("a" * 40,))}))
@@ -256,7 +257,8 @@ def test_a_review_without_its_baseline_is_due_again(tmp_path: Path, role: Role) 
     a = attempt(role, first.subject, "stopped before writing the baseline")
     s = replace(s, transcripts=replace(s.transcripts, agents=(a,)))
     again = review(s, of)
-    assert isinstance(again, Launch) and key(again) != key(first)
+    assert isinstance(again, Launch) and entry_key(again) != entry_key(first)
+    assert key(again) == key(first)
 
 
 def test_a_solver_fix_without_its_completion_line_is_due_again(tmp_path: Path) -> None:
@@ -314,4 +316,16 @@ def test_a_fragments_editor_is_no_attempt_of_the_documents_editor(tmp_path: Path
     assert attempts(s, step) == [docs]
     again = replacement(s, step)
     assert isinstance(again, Launch)
-    assert again.occasion == "o replacement a0000000000000001 10.0 30.0"
+    assert again.attempt == 1 and again.occasion == "o"
+
+
+def test_a_replacement_keeps_its_key_and_takes_its_own_entry_key(tmp_path: Path) -> None:
+    from operations.completion import replacement
+    from operations.steps import entry_key, key
+    a = attempt(Role.LOAD_CHECK, "alert-1")
+    launch = Launch(a.role, a.subject, "check", occasion="alert-1")
+    s = with_agents(tmp_path, [a])
+    again = replacement(s, launch)
+    assert isinstance(again, Launch) and again.attempt == 1
+    assert key(again) == key(launch) and entry_key(again) != entry_key(launch)
+    assert replacement(s, again) == again and entry_key(replacement(s, again)) == entry_key(again)

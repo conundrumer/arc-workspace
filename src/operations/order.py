@@ -73,8 +73,8 @@ from operations.handled import held_aside, repeated
 from operations.constants import COORDINATOR
 from operations.journal import BOUND, Due, due, failures
 from operations.log_commands import file_ticket
-from operations.steps import (Bash, Journaled, Launch, Send, Step, Undecided, key,
-                              retirement_key, unread_line)
+from operations.steps import (Bash, Journaled, Launch, Send, Step, Undecided, entry_key,
+                              key, unread_line)
 from ticketing.text import ticket_text
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind
@@ -184,7 +184,7 @@ def retire(state: State, step: Journaled) -> Bash:
     gives as given `journal.BOUND` times in a row, and that retires it
     for the session."""
     k = key(step)
-    given = failures(state.journal.of(k))[-BOUND:]
+    given = failures(state.journal.of(entry_key(step)))[-BOUND:]
     title = mctx("`scripts/operate.py next`: gives step {key} of `{origin}` {bound} times in "
                  "a row").format(key=k, origin=step.origin, bound=BOUND)
     impact = mctx("`next` retired step {key}, which `{origin}` gives, for the session.").format(
@@ -197,8 +197,7 @@ def retire(state: State, step: Journaled) -> Bash:
                             for e in given)])
     impact_section, evidence_section = DEFECT_SECTIONS
     text = ticket_text(Kind.BUG, title, {impact_section: impact, evidence_section: evidence})
-    retiring = retirement_key(step)
-    return file_ticket(Domain.AGENT, state.me, text, retiring, retires=retiring, occasion=retiring)
+    return file_ticket(Domain.AGENT, state.me, text, k, retires=k, occasion=k)
 
 
 GIVE_LINE = mctx("- {time}, to {operator}: {outcome} {why}")

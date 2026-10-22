@@ -188,7 +188,7 @@ def retired_lines(state: State) -> list[str]:
     """A line on each step the operator `me` retired (`order.retire`)."""
     return [RETIRED_LINE.format(key=e.retires, origin=of[-1].origin, bound=BOUND)
             for e in state.journal.retiring(state.me)
-            if e.retires is not None and (of := state.journal.of(e.retires))]
+            if e.retires is not None and (of := state.journal.under(e.retires))]
 
 
 def stands(state: State, head: str, step: Step | NoStep | None) -> tuple[str, bool]:

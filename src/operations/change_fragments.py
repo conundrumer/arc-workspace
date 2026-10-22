@@ -74,7 +74,7 @@ def fragments_step(state: State, t: Ticket, w: Path,
         if t.number not in state.computed.doc_budgets:
             return Undecided(mctx("the budget of change {number} with a doc editor is "
                                   "unknown").format(number=t.number))
-        return Bash(add_editor(t.number, Role.DOC_EDITOR, state.me), f"{t.number} doc editor", occasion=str(t.last_time))
+        return Bash(add_editor(t.number, Role.DOC_EDITOR, state.me), f"{t.number} doc editor", occasion=str(t.input_time))
     drafters = drafter_ids(here)
     if isinstance(drafters, Undecided):
         return drafters

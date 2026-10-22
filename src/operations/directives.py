@@ -74,8 +74,8 @@ from operations.reports import LIST_MARKER
 from operations.pacing import Preset, line_pace
 from operations.roles import PASSES, Purpose, Role
 from operations.state import Agent, Message, Report, State, memoized, memoized_by_transcripts
-from operations.steps import (STEP_KEY, Step, Undecided, bare, decision_key, digest,
-                              held, key)
+from operations.steps import (STEP_KEY, Bash, Launch, Step, Undecided, bare, decision_key, digest,
+                              held, input_time, key)
 
 
 class Decision(StrEnum):
@@ -372,10 +372,17 @@ def given_again(state: State) -> dict[str, float]:
 def passed(step: Step, state: State) -> Line | None:
     """The ruling that passes `step` over, by its key or by its digest
     (`steps.digest`), the key a ruling written before the journal gave,
-    or None. Whether a ruling on a solver pass holds for a pipeline is
-    `passes.run`'s to decide."""
+    or None. A ruling on a key holds for a step whose inputs' time
+    (`steps.input_time`) is not later than the ruling's message time, and
+    for a step with none. Whether a ruling on a solver pass holds for a
+    pipeline is `passes.run`'s to decide."""
     over = passed_over(state)
-    return over.get(key(step)) or over.get(digest(step))
+    ruling = over.get(key(step)) or over.get(digest(step))
+    if ruling is None or not isinstance(step, Launch | Bash) or (
+            isinstance(step, Launch) and step.role in PASSES):
+        return ruling
+    inputs = input_time(step)
+    return ruling if inputs is None or inputs <= ruling.message.time else None
 
 
 def overrides(state: State, task: str, role: Role, since: float) -> list[str]:

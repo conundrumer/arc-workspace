@@ -1,6 +1,6 @@
 """The step journal: each Agent call, message and Bash command
 (`steps.Journaled`) that `next` gave an operator of the session, under its
-key (`steps.key`), from the time `next` gave it to its outcome, which `next` reads as
+entry key (`steps.entry_key`) and its key (`steps.key`), from the time `next` gave it to its outcome, which `next` reads as
 `scripts/operate.py --help journal` gives (`due`);
 `scripts/step_journal.py` writes it and reads it back."""
 
@@ -12,7 +12,7 @@ from controlled_markdown import mctx
 from operations.command_words import is_next
 from operations.constants import BACKOFF_CAP, BACKOFF_SECONDS
 from operations.state import Call, Tool
-from operations.steps import Journaled, Repeatable, key, retirement_key
+from operations.steps import Journaled, Repeatable, entry_key, key
 
 BOUND = 3
 """How many times in a row a step is given before it is retired."""
@@ -36,15 +36,16 @@ class Close:
 @dataclass(frozen=True)
 class Entry:
     """A step `next` gave the operator `operator` at `given`: its key, its
-    digest (`steps.digest`) and its origin (`steps.Launch.origin`), the
+    entry key (`steps.entry_key`), its digest (`steps.digest`) and its origin (`steps.Launch.origin`), the
     tool of its call, a message's recipient, the message, the command or
     the launch's description (`roles.description`), the key of the step
     whose retirement the command files its bug on (`steps.Bash.retires`),
     the change it serves (`steps.Launch.change`), and its outcome, None
-    while it is in flight. `key` is None for a
+    while it is in flight. `key` and `entry_key` are None for a
     message seeded from a SendMessage call an operator made before the
     journal of its session was started (`scripts/step_journal.py`)."""
     key: str | None
+    entry_key: str | None
     digest: str
     origin: str
     operator: str
@@ -76,7 +77,13 @@ class Journal:
         flight is given twice."""
         return Journal(tuple(e for e in self.entries if not cut(e, cuts)), cuts)
 
-    def of(self, key: str) -> list[Entry]:
+    def of(self, entry_key: str) -> list[Entry]:
+        """The entries of the occurrence of a step under `entry_key`."""
+        return [e for e in self.entries if e.entry_key == entry_key]
+
+    def under(self, key: str) -> list[Entry]:
+        """The entries of every occurrence of the step of key `key`
+        (`steps.key`)."""
         return [e for e in self.entries if e.key == key]
 
     def sent(self, to: str) -> list[Entry]:
@@ -122,7 +129,9 @@ class Due(StrEnum):
 
 
 def retired(journal: Journal, key: str) -> bool:
-    """Whether the command that files the bug on the step `key` was given."""
+    """Whether the command that files the bug on the step of key `key`
+    (`steps.key`) was given: a retirement holds for each occurrence of the
+    step."""
     return any(e.retires == key for e in journal.entries)
 
 
@@ -179,8 +188,8 @@ def due(journal: Journal, step: Journaled, now: float) -> Due:
     (`changes.step`). Its
     failures count from the cut that lifted its retirement, where one
     did."""
-    entries = journal.of(key(step))
-    retiring = retirement_key(step)
+    entries = journal.of(entry_key(step))
+    retiring = key(step)
     if retired(journal, retiring):
         return Due.RETIRED
     if any(e.close is None for e in entries):
@@ -197,7 +206,7 @@ def due(journal: Journal, step: Journaled, now: float) -> Due:
 
 def backing_off(journal: Journal, now: float) -> bool:
     """Whether a step waits at `now` after a refusal (`backoff`)."""
-    keys = dict.fromkeys(e.key for e in journal.entries if e.key is not None)
+    keys = dict.fromkeys(e.entry_key for e in journal.entries if e.entry_key is not None)
     return any((until := backoff(journal.of(k))) is not None and now < until for k in keys)
 
 

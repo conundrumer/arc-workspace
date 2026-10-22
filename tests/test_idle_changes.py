@@ -13,7 +13,7 @@ from tests.test_unreported_agents import FIRST, agent, change, state
 def entry(to: str | None, text: str, change_number: str | None, closed: float | None, key="k"):
     from operations.journal import Close, Entry, Outcome
     from operations.state import Tool
-    return Entry(key, "d", "o", "op", 0.0, Tool.SEND_MESSAGE if to else Tool.BASH, to, text,
+    return Entry(key, key, "d", "o", "op", 0.0, Tool.SEND_MESSAGE if to else Tool.BASH, to, text,
                  None, change_number, None if closed is None else Close(Outcome.DONE, closed, ""))
 
 

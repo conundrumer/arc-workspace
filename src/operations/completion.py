@@ -1,7 +1,6 @@
 """Which attempts occupy their work, and the identity of a replacement, or the
 message that gives none."""
 
-import hashlib
 import json
 import re
 from collections.abc import Iterable
@@ -14,8 +13,7 @@ from operations.directives import give_again_line, given_again, reply_decisions
 from operations.reports import FOR_COORDINATOR, Label, heading_part, labeled_items
 from operations.roles import Purpose, Role, analyst_of
 from operations.state import Agent, Call, State, Tool
-from operations.printed_forms import KEY_LENGTH
-from operations.steps import Launch, Send, Step, rulable, with_change
+from operations.steps import Launch, Send, Step, key, rulable
 
 
 def decided(a: Agent) -> bool:
@@ -100,13 +98,11 @@ STOPPED = mctx("Role {role} on {subject} has stopped with no result in each of i
 launch."""
 
 
-def stop_key(step: Launch) -> str:
-    """The key of the stop-hold on the role and subject of `step`, which the
-    `Op override: give again` ruling that releases it names. It is taken over
-    the role, the subject and the change alone, so it holds across later
-    takes of the change and across the suffix `replacement` gives."""
-    named = f"stopped {step.role} {step.subject}"
-    return with_change(step, hashlib.sha1(named.encode()).hexdigest()[:KEY_LENGTH])
+def since_ruling(state: State, step: Launch) -> list[Agent]:
+    """The attempts of the role and subject of `step` launched after the
+    last `Op override: give again` ruling on its `key`."""
+    again = given_again(state).get(key(step), 0.0)
+    return [a for a in attempts(state, step) if a.launched > again]
 
 
 def attempts(state: State, step: Launch) -> list[Agent]:
@@ -119,13 +115,11 @@ def attempts(state: State, step: Launch) -> list[Agent]:
 
 def stopped_attempts(state: State, step: Launch) -> list[Agent]:
     """The attempts of the role and subject of `step`, after the last
-    `Op override: give again` ruling on its `stop_key`, of which the last
+    `Op override: give again` ruling on its key, of which the last
     `STOPS_BOUND` all stopped with no result, or an empty list where they
     did not. An attempt the usage limit stopped
     (`TranscriptsRead.limited`) does not count, as `limit_resume` resumes it."""
-    again = given_again(state).get(stop_key(step), 0.0)
-    past = [a for a in attempts(state, step) if a.launched > again]
-    last = past[-STOPS_BOUND:]
+    last = since_ruling(state, step)[-STOPS_BOUND:]
     if len(last) < STOPS_BOUND or any(
             occupies(a) or a.agent_id in state.transcripts.limited for a in last):
         return []
@@ -133,14 +127,17 @@ def stopped_attempts(state: State, step: Launch) -> list[Agent]:
 
 
 def replacement(state: State, step: Step) -> Step:
-    """Give a retry its own occasion, past the interrupted launch's journal.
+    """Give a retry its own journal entry (`steps.entry_key`), past the
+    interrupted launch's.
 
-    Keep the procedure's brief and admission rules. The suffix is stable
-    across reads, and changes again if the replacement also stops. Where
-    the last `STOPS_BOUND` attempts of the step's role and subject all
-    stopped with no result, give in its place one message to the
-    coordinator (`STOPPED`), which `give_again_line` makes the launches go
-    on from.
+    Keep the procedure's brief and admission rules. The `attempt` is the
+    count of the attempts of the step's role and subject launched after the
+    last `Op override: give again` ruling on its `key` that stopped with no
+    result: stable across reads, and one more if the replacement also
+    stops. Where the last `STOPS_BOUND` attempts of the step's role and
+    subject all stopped with no result, give in its place one message to
+    the coordinator (`STOPPED`), which `give_again_line` makes the launches
+    go on from.
     """
     if not isinstance(step, Launch):
         return step
@@ -154,10 +151,7 @@ def replacement(state: State, step: Step) -> Step:
         return Send(COORDINATOR, STOPPED.format(
             role=step.role, subject=step.subject, count=len(stopped),
             agents=", ".join(str(a.agent_id) for a in stopped), head=head,
-            line=give_again_line(stop_key(step))),
-            f"stopped {step.role} {step.subject} {stop_key(step)}", since=stopped[-1].launched,
+            line=give_again_line(key(step))),
+            f"stopped {step.role} {step.subject} {key(step)}", since=stopped[-1].launched,
             change=step.change)
-    a = past[-1]
-    suffix = f" replacement {a.agent_id} {a.launched} {a.since}"
-    return step if step.occasion.endswith(suffix) else replace(
-        step, occasion=step.occasion + suffix)
+    return replace(step, attempt=sum(not occupies(a) for a in since_ruling(state, step)))

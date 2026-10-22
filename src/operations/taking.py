@@ -27,7 +27,7 @@ from operations.directives import Directive, named, NUMBER, numbers_in, session_
 from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.merging import merge_commit
-from operations.state import LogLine, State, Ticket, kept_across_reads, memoized
+from operations.state import RELEASED, LogLine, State, Ticket, kept_across_reads, memoized
 from operations.steps import Bash, Step
 from operations.tracker import exits, final_run, wait_line
 from ticketing.exits import Exit
@@ -266,10 +266,6 @@ def held_filed_for(tickets: Mapping[str, Ticket]) -> dict[str, list[Ticket]]:
     return out
 
 
-RELEASED = mctx("released: holder {holder} is not live")
-RELEASED_LINE = re.compile(form(RELEASED, {"holder": r"\S+"}))
-
-
 def release(state: State) -> Step | None:
     """The move to `tickets/released/` of each ticket of `purview` under
     `tickets/assigned/` whose holder is not live (`live_holder`), in one
@@ -281,7 +277,7 @@ def release(state: State) -> Step | None:
     return moves([log(n, Status.RELEASED, Status.ASSIGNED,
                       RELEASED.format(holder=t.holder or 'none'), None)
                   for n, t in released.items()], f"release {' '.join(released)}",
-                 str(max((t.last_time for t in released.values()), default=0.0)))
+                 str(max((status_since(t) for t in released.values()), default=0.0)))
 
 
 def moves(commands: list[str], about: str, occasion: str) -> Bash | None:

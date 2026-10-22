@@ -36,5 +36,5 @@ def over_budget(state: State, t: Ticket) -> Step | None:
         return None
     if stopped(t) is None:
         return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED, past_note(overrun),
-                        state.me), f"{t.number} past its budget", occasion=str(t.last_time))
+                        state.me), f"{t.number} past its budget", occasion=str(t.taken))
     return None

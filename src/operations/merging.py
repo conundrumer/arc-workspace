@@ -407,7 +407,7 @@ def merge(state: State, t: Ticket, w: Path, latest: list[Agent],
             ln.time >= start and ln.note.startswith(TIME_OPENING) for ln in t.log):
         return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED,
                         TIME_NOTE.format(seconds=spent.seconds), state.me), f"{t.number} time",
-                    occasion=str(t.last_time))
+                    occasion=str(t.taken))
     for a in latest:
         if a.agent_id is None or not unread_split(a):
             continue
@@ -454,7 +454,7 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent],
     on_step = [] if message is None else decided_by(state, unmoved(t, message))
     reported = [r.time for a in [*of_change(state, t), *on_step]
                 if (r := a.last_report) is not None]
-    at = f"{t.last_time} {max(reported, default=0.0)} {'' if last is None else last.time}"
+    at = f"{t.input_time} {max(reported, default=0.0)} {'' if last is None else last.time}"
     empty = None if last is None else NO_CHANGE_LINE.search(last.result or "")
     if last is not None and empty is not None and not came_back(t, last.time):
         decision = empty_ruling(state, t, w, last)
@@ -564,7 +564,7 @@ def hand_off(state: State, t: Ticket, command: str, w: Path, outcome: str) -> Ba
     note = HANDED_OFF.format(command=command, outcome=outcome, worktree=w)
     return Bash(log(t.number, Status.RELEASED, Status.ASSIGNED, note, None) + " && "
                 + log(t.number, Status.ASSIGNED, Status.RELEASED, note, state.session),
-                f"{t.number} hand off", occasion=str(t.last_time))
+                f"{t.number} hand off", occasion=str(t.taken))
 
 
 def came_back(t: Ticket, since: float) -> bool:
@@ -774,10 +774,10 @@ def close(state: State, t: Ticket, agents: list[Agent],
     if questions := open_questions(state, t.number):
         q = questions[0]
         return Bash(log(q.number, Status.CLOSED, q.status, note, None), f"{q.number} close",
-                    occasion=str(q.last_time))
+                    occasion=str(q.input_time))
     ids = [a.agent_id for a in agents]
     # An agent with no known id leaves the line with no run, and the
     # change with no known cost (`scripts/spends.py`).
     runs = "" if None in ids else "".join(f" {i}" for i in ids)
     return Bash(log(t.number, Status.CLOSED, t.status, note + runs, None),
-                f"{t.number} close", occasion=str(t.last_time))
+                f"{t.number} close", occasion=str(t.input_time))

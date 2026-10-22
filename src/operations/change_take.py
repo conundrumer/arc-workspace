@@ -163,7 +163,7 @@ def take(state: State) -> Step | None:
         taken.append(t.number)
     if commands:
         return moves(commands, f"take {' '.join(taken)}", str(max(
-            state.tracker.tickets[n].last_time for n in taken)))
+            status_since(state.tracker.tickets[n]) for n in taken)))
     for n, time in numbers(state, Directive.MERGE):
         t = state.tracker.tickets.get(n)
         if (t is not None and Exit.MERGE_LINE in exits(state, t).by

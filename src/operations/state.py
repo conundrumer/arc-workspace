@@ -64,6 +64,13 @@ class Unread:
     session: int | None
 
 
+TAKEN = re.compile(r"taking: .*")
+"""The note of a take line of a change's log (`Ticket.taken`)."""
+
+RELEASED = mctx("released: holder {holder} is not live")
+RELEASED_LINE = re.compile(form(RELEASED, {"holder": r"\S+"}))
+
+
 @dataclass(frozen=True, slots=True)
 class Ticket:
     """A ticket of the tracker. `editors` is None where a `change` gives no
@@ -102,9 +109,27 @@ class Ticket:
     @property
     def last_time(self) -> float:
         """The time of the last line of its log, or of its filing where the
-        log has none: the occasion of a step on it with no event of its
-        own (`steps.key`)."""
+        log has none."""
         return self.log[-1].time if self.log else self.filed
+
+    @property
+    def input_time(self) -> float:
+        """The time of its filing or of the latest line of its log that no
+        operator wrote and that is no take (`TAKEN`) and no release
+        (`RELEASED_LINE`): the occasion of a step on it with no
+        event of its own (`steps.entry_key`), and the time of its inputs
+        (`changes.version`)."""
+        return max([self.filed, *(ln.time for ln in self.log
+                                  if ln.agent != Role.OPERATOR.value
+                                  and TAKEN.fullmatch(ln.note) is None
+                                  and RELEASED_LINE.fullmatch(ln.note) is None)])
+
+    @property
+    def taken(self) -> float:
+        """The time of the latest take line of its log, or of its filing
+        where it has none: the occasion of a step whose effect a later take
+        undoes."""
+        return max([self.filed, *(ln.time for ln in self.log if TAKEN.fullmatch(ln.note))])
 
     def model(self, role: Role) -> Model | None:
         """The model a launch of `role` on this ticket gives: Sonnet for a

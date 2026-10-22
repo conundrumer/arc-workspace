@@ -36,7 +36,10 @@ class Launch(Repeatable):
     gives (`roles.launched_model`). `items` is the
     number of items a brief that gives several items of the same work
     gives (`briefs.ITEM_LINES`), and None for any other brief; it stays
-    out of the step's key, which its brief already fixes. `reread` is the
+    out of the step's key, which its brief already fixes. `attempt` is the
+    count of the attempts of its role and subject that stopped before the
+    launch (`completion.replacement`), which gives each replacement its own
+    journal entry (`entry_key`) and no other key. `reread` is the
     mark of the `Undecided` step a launch of a ticket analyst is on, and
     stays out of the step's key and its equality. `occasion` identifies
     the event the launch answers (`key`); `change` and `origin` are as
@@ -51,6 +54,7 @@ class Launch(Repeatable):
     change: str | None = field(default=None, repr=False, compare=False)
     origin: str = field(default="", repr=False, compare=False)
     occasion: str = field(kw_only=True, repr=False, compare=False)
+    attempt: int = field(default=0, repr=False, compare=False, kw_only=True)
 
     def __post_init__(self) -> None:
         given(self)
@@ -320,28 +324,57 @@ def given(step: Journaled) -> None:
 
 
 def subject(step: Journaled) -> str:
-    """What `step` acts on, with the event it answers: a launch's role,
-    subject, `occasion` and `version`, a message's recipient, `about` and
-    `since`, and a command's `about`, `occasion` and `version`."""
+    """What `step` acts on: a launch's role and subject, a message's
+    recipient, `about` and `since`, and a command's `about`. It holds no
+    event the step answers."""
     match step:
-        case Launch(role, on, occasion=occasion, version=version):
-            return f"{role} {on} {at(occasion, version)}"
+        case Launch(role, on):
+            return f"{role} {on}"
         case Send(to, about=about, since=since):
             return f"{to} {about}" if since is None else f"{to} {about} {since}"
-        case Bash(about=about, occasion=occasion, version=version):
-            return f"{about} {at(occasion, version)}"
+        case Bash(about=about):
+            return about
+
+
+def occurrence(step: Journaled) -> str:
+    """The event `step` answers, with the inputs' version and the attempt:
+    what tells one occurrence of a step from another (`entry_key`). A
+    message has none."""
+    match step:
+        case Launch(occasion=occasion, version=version, attempt=attempt):
+            return at(occasion, version) + (f" attempt {attempt}" if attempt else "")
+        case Bash(occasion=occasion, version=version):
+            return at(occasion, version)
+        case Send():
+            return ""
 
 
 def at(occasion: str, version: float | None) -> str:
     return occasion if version is None else f"{occasion} {version}"
 
 
+def input_time(step: Journaled) -> float | None:
+    """The time of the inputs `step` answers: its `version`, else its
+    `occasion` where that is a time, else None for a step whose occasion
+    names its own event."""
+    if isinstance(step, Send):
+        return None
+    if step.version is not None:
+        return step.version
+    try:
+        return float(step.occasion)
+    except ValueError:
+        return None
+
+
 def key(step: Step) -> str:
     """The key of `step`, which is the same at each read of the state that
-    gives the same step: the key an `Op override: pass over` ruling gives
-    (`directives.passed_over`), the key an `Op override: give again` ruling
-    gives (`directives.given_again`), and the one the journal records it under
-    (`journal`). It is taken over the step's kind, its `origin` and its
+    gives the same step, across later takes of its change, later lines of
+    its log and replacements of a stopped attempt: the key an `Op override:
+    pass over` ruling gives (`directives.passed`), the key an `Op override:
+    give again` ruling gives (`directives.given_again`), the key a
+    retirement is recorded and read under (`journal.retired`), and the one
+    `next` prints. It is taken over the step's kind, its `origin` and its
     `subject`, and, for a step the journal does not record, over the step
     as given (`digest`). A solver pass's key is its task id and its
     pass, `<task id>-<pass>`, so that the writer of a ruling can form it,
@@ -354,6 +387,19 @@ def key(step: Step) -> str:
     if not isinstance(step, Launch | Send | Bash):
         return digest(step)
     named = f"{type(step).__name__} {step.origin} {subject(step)}"
+    return with_change(step, hashlib.sha1(named.encode()).hexdigest()[:KEY_LENGTH])
+
+
+def entry_key(step: Step) -> str:
+    """The key the journal records an occurrence of `step` under: `key`
+    where `key` is the step's identity alone (a message, a solver pass, a
+    step the journal does not record), and otherwise taken over `key`'s
+    fields and the step's `occurrence`, so that each event the step answers,
+    each version of the change's inputs and each replacement attempt has
+    its own entries (`journal.of`)."""
+    if isinstance(step, Launch) and step.role in PASSES or not isinstance(step, Launch | Bash):
+        return key(step)
+    named = f"{type(step).__name__} {step.origin} {subject(step)} {occurrence(step)}"
     return with_change(step, hashlib.sha1(named.encode()).hexdigest()[:KEY_LENGTH])
 
 
@@ -376,13 +422,6 @@ def served[S: Step | NoStep](s: S, t: Ticket, version: float) -> S:
     if isinstance(s, Repeatable):
         return replace(s, change=t.number, version=version)
     return replace(s, change=t.number) if isinstance(s, OF_CHANGE) else s
-
-
-def retirement_key(step: Journaled) -> str:
-    """The key the retirement of `step` is recorded and read under
-    (`order.retire`, `journal.due`): its key without the version of its
-    change's inputs, so a retirement holds at each version."""
-    return key(replace(step, version=None) if isinstance(step, Repeatable) else step)
 
 
 def with_change(step: Step, digest: str) -> str:

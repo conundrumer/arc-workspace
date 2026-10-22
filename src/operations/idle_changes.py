@@ -29,7 +29,7 @@ from operations.directives import NUMBER
 from operations.handled import decided_by, held_aside
 from operations.journal import backoff
 from operations.state import State, Ticket
-from operations.steps import NoStep, Send, Step, Undecided, key
+from operations.steps import NoStep, Send, Step, Undecided, entry_key, key
 from operations.ticket_stall import progress
 from ticketing.times import utc_stamp
 
@@ -82,7 +82,7 @@ def step_waits(state: State, s: Step | NoStep) -> bool:
         return False
     if held_aside(state, s):
         return True
-    until = backoff(state.journal.of(key(s)))
+    until = backoff(state.journal.of(entry_key(s)))
     return until is not None and state.now < until
 
 

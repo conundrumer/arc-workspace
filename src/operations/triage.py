@@ -79,7 +79,7 @@ from operations.completion import decided, occupies
 from operations.parties import Agents, ByExit, Hold, Party
 from operations.passes import awaits_analyst
 from operations.roles import ANALYST_NAMES, Model, Purpose, Role, analyst_subject, joined
-from operations.state import Agent, LogLine, State, Ticket, kept_across_reads, memoized
+from operations.state import RELEASED_LINE, Agent, LogLine, State, Ticket, kept_across_reads, memoized
 from ticketing.vocabulary import SETTLED, Kind, Status
 from operations.constants import COORDINATOR
 from operations.final_reply import carrier, replies_by_operator, session_operator
@@ -113,7 +113,7 @@ def given_to(state: State, number: str) -> list[Agent]:
     event = freed(t.log, t.kind, t.filed)
     line = event.line
     released = max((ln.time for ln in t.log if ln.status is Status.RELEASED
-                    and taking.RELEASED_LINE.fullmatch(ln.note)), default=None)
+                    and RELEASED_LINE.fullmatch(ln.note)), default=None)
     judgment = max((ln.time for ln in t.log if taking.NOT_OWN_LINE.fullmatch(ln.note)), default=None)
     judged = judgment
     if judged is not None and judged_apart(state)(number):
@@ -262,7 +262,7 @@ def settle(state: State) -> Step | None:
                   briefs.settle(numbers, [n for n in numbers if apart(n)], state.me),
                   model=model,
                   items=len(numbers),
-                  occasion=str(max(state.tracker.tickets[n].last_time for n in numbers)))
+                  occasion=str(max(state.tracker.tickets[n].input_time for n in numbers)))
 
 
 def unsettled(state: State) -> list[str]:

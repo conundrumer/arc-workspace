@@ -267,7 +267,7 @@ def review_step(state: State, t: Ticket) -> Step | None:
 def occasion(group: list[Ticket], at: dict[str, float]) -> str:
     """The occasion of a launch on the drafts `group`, which joined
     `ready` or `waiting` with the ruling times `at` (`draft_step`)."""
-    return str(max(max(t.last_time, at[t.number]) for t in group))
+    return str(max(max(t.input_time, at[t.number]) for t in group))
 
 
 def due(state: State) -> set[str]:
@@ -358,7 +358,7 @@ def draft_step(state: State, t: Ticket) -> Step | Joined | None:
             message = briefs.weigh_suggestions(t.number, list(dict.fromkeys(suggested)),
                                                at_cap(t))
             if not sent(state, writer.agent_id, message):
-                return Send(writer.agent_id, message, f"suggestions {t.number} {t.last_time}")
+                return Send(writer.agent_id, message, f"suggestions {t.number} {t.input_time}")
             analyst_done = [writer]
         if not analyst_done:
             return Joined(Group.WAITING, 0.0)
@@ -387,7 +387,7 @@ def draft_step(state: State, t: Ticket) -> Step | Joined | None:
     if r.choice is Decision.APPROVE:
         return Bash(log(t.number, queued(Status.DRAFT, t.kind), Status.DRAFT,
                         f"opened by the decision {decision_key(what)}", None),
-                    f"{t.number} open", occasion=str(t.last_time))
+                    f"{t.number} open", occasion=str(t.input_time))
     return Joined(Group.READY, r.time)
 
 
@@ -406,7 +406,7 @@ def open_last(t: Ticket) -> Step:
     `tickets/approved/`."""
     return Bash(log(t.number, queued(Status.DRAFT, t.kind), Status.DRAFT,
                     f"{Note.LAST_REVISION}: opens with no further ticket review", None),
-                f"{t.number} open", occasion=str(t.last_time))
+                f"{t.number} open", occasion=str(t.input_time))
 
 
 def linked(first: Ticket, waiting: list[Ticket]) -> list[Ticket]:

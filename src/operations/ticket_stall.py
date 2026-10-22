@@ -50,7 +50,7 @@ from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.parties import Hold, Holder, Party
 from operations.roles import AGENT_ID
-from operations.state import (Agent, DueEntry, State, Ticket, kept_across_reads, memoized,
+from operations.state import (RELEASED_LINE, Agent, DueEntry, State, Ticket, kept_across_reads, memoized,
                               memoized_by_transcripts)
 from operations.handled import held_aside
 from operations.steps import Bash, NoStep, Step
@@ -183,7 +183,7 @@ def progress(state: State, t: Ticket) -> float | None:
                        *([completion.time] if completion is not None else []),
                        *([merge.time] if merge is not None else []),
                        *(ln.time for ln in t.log
-                         if TAKEN.fullmatch(ln.note) is None and taking.RELEASED_LINE.fullmatch(ln.note) is None),
+                         if TAKEN.fullmatch(ln.note) is None and RELEASED_LINE.fullmatch(ln.note) is None),
                        *(a.launched for a in agents),
                        *(r.time for a in agents for r in a.reports)])
     return next((ln.time for ln in t.log

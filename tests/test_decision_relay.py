@@ -32,7 +32,7 @@ def test_decision_goes_to_the_coordinator_once(tmp_path: Path, later: str, sends
     sent = "- decision: keep a\n- decision: drop b"
     first = for_coordinator(state(tmp_path, [t], [analyst((100.0, sent))], w))
     assert isinstance(first, Send)
-    done = Entry("k", "d", "o", ME, 150.0, Tool.SEND_MESSAGE, COORDINATOR, first.message,
+    done = Entry("k", "k", "d", "o", ME, 150.0, Tool.SEND_MESSAGE, COORDINATOR, first.message,
                  None, None, Close(Outcome.DONE, 151.0, ""))
     s = state(tmp_path, [t], [analyst((100.0, sent), (200.0, later))], w)
     step = for_coordinator(replace(s, journal=Journal((done,))))
@@ -57,7 +57,7 @@ def test_decision_sent_with_other_appended_text_goes_no_second_time(tmp_path: Pa
                  analyst_subject(Purpose.DRAFT, "9-1"), "", 10.0, 10.0, None,
                  (Report(100.0, "Done.\n\n## For the coordinator\n" + items + "\n"),), True)
     key = "ticket analyst a8e99dabca9ddb4de, reply at 100"
-    done = Entry("k", "d", "o", ME, 150.0, Tool.SEND_MESSAGE, COORDINATOR,
+    done = Entry("k", "k", "d", "o", ME, 150.0, Tool.SEND_MESSAGE, COORDINATOR,
                  labeled(key, items + "\n\nRule it by the line `Decision: abc <choice>`."),
                  None, None, Close(Outcome.DONE, 151.0, ""))
     s = state(tmp_path, [t], [a], w)
@@ -70,7 +70,7 @@ def test_a_retired_relay_gives_way_to_the_next_analysts(tmp_path: Path) -> None:
     from operations.order import placed
     from operations.roles import Purpose, Role, analyst_subject
     from operations.state import Agent as Launched, Report, Tool
-    from operations.steps import Send, retirement_key
+    from operations.steps import Send, key
     from operations.triage import for_coordinator
     from tests.test_unreported_agents import ME, state, ticket as filed
     log = "\n## Log\n2026-10-17T02:14:06Z draft [ticket-analyst]: filed\n"
@@ -89,8 +89,8 @@ def test_a_retired_relay_gives_way_to_the_next_analysts(tmp_path: Path) -> None:
                                   analyst("a0000000000000002", 2, 200.0)], w)
     first = for_coordinator(s)
     assert isinstance(first, Send) and "keep 1" in first.message
-    retiring = Entry("r", "d", "o", ME, 150.0, Tool.BASH, None, "file the bug",
-                     retirement_key(first), None, Close(Outcome.DONE, 151.0, ""))
+    retiring = Entry("r", "r", "d", "o", ME, 150.0, Tool.BASH, None, "file the bug",
+                     key(first), None, Close(Outcome.DONE, 151.0, ""))
     step, _ = placed(replace(s, journal=Journal((retiring,))), for_coordinator)
     assert isinstance(step, Send) and "keep 2" in step.message
 

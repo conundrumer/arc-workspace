@@ -31,7 +31,7 @@ from operations.merge_outcomes import call_conflicts
 from operations.journal import Close, Entry, Journal, Outcome, closing
 from operations.roles import description
 from operations.state import Call, Tool
-from operations.steps import Bash, Journaled, Launch, Send, digest, key
+from operations.steps import Bash, Journaled, Launch, Send, digest, entry_key, key
 
 JOURNAL = "step-journal.jsonl"
 RUNS = "step-journal"
@@ -108,7 +108,7 @@ def given_record(ident: str, step: Journaled, operator: str, time: float,
         case Bash(command):
             tool, to, text = Tool.BASH, None, command
     return entry_record(ident, Entry(
-        key=key(step), digest=digest(step), origin=step.origin, operator=operator, given=time,
+        key=key(step), entry_key=entry_key(step), digest=digest(step), origin=step.origin, operator=operator, given=time,
         tool=tool, to=to, text=text, retires=step.retires if isinstance(step, Bash) else None,
         change=step.change, close=None), run)
 
@@ -135,7 +135,8 @@ def give_failed(scratch: Path, step: Launch, operator: str, time: float, why: st
 
 def records(scratch: Path) -> list[Record]:
     """The entries of the journal of `scratch`, each with the first outcome
-    recorded for it, in the order they were given; none where it is not
+    recorded for it (a record written before `entry_key` took its own field
+    has the one key, which was the entry key's formula), in the order they were given; none where it is not
     started."""
     path = journal_path(scratch)
     if not path.exists():
@@ -160,7 +161,7 @@ def records(scratch: Path) -> list[Record]:
     for ident, r in given.items():
         run = r["run"]
         out.append(Record(ident, Entry(
-            key=r["key"], digest=r["digest"], origin=r["origin"], operator=r["operator"],
+            key=r["key"], entry_key=r["entry_key"] if "entry_key" in r else r["key"], digest=r["digest"], origin=r["origin"], operator=r["operator"],
             given=r["given"], tool=Tool(r["tool"]), to=r["to"], text=r["text"],
             retires=r["retires"], change=r["change"], close=closes.get(ident)),
             None if run is None else Run(run["pid"], Path(run["output"]), Path(run["status"]))))
@@ -176,7 +177,7 @@ def seed(scratch: Path, calls: Sequence[Call]) -> None:
             continue
         ident = uuid.uuid4().hex
         seeded += [entry_record(ident, Entry(
-            key=None, digest="", origin=SEEDED, operator=c.operator, given=c.time,
+            key=None, entry_key=None, digest="", origin=SEEDED, operator=c.operator, given=c.time,
             tool=Tool.SEND_MESSAGE, to=str(c.input["to"]), text=c.message, retires=None,
             change=None, close=None), None),
                    closed_record(ident, Close(Outcome.DONE, c.time, ""))]

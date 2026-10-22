@@ -101,7 +101,6 @@ from dataclasses import dataclass, replace
 
 from controlled_markdown import mctx
 from operations import briefs, merging, messages
-from operations.change_budget import TAKEN
 from operations.constants import AGAIN_SECONDS, COORDINATOR
 from operations.journal import AGAIN_LIMIT, backoff, done_of, retired
 from operations.change_agents import (REVIEWER_ROLES, change_editors, editors_in, elsewhere_on,
@@ -125,10 +124,10 @@ from operations.final_reply import live_holder
 from operations.handled import (answered, decided_by, held_aside, repeated, sendings, sent,
                                 sent_at, unmoved)
 from operations.steps import (UNDECIDED, Bash, Launch, NoStep, Pause, Poll, Repeatable, Send, Step,
-                              Undecided, agent_ids, key, retirement_key, served)
+                              Undecided, agent_ids, entry_key, key, served)
 from operations.log_commands import AGENT
 from operations.change_take import take
-from operations.taking import RELEASED_LINE, purview
+from operations.taking import purview
 from operations.tracker import last_index
 from operations.worktrees import WORKTREE, worktree
 from ticketing.times import utc_stamp
@@ -290,7 +289,7 @@ def undelivered(state: State, t: Ticket, role: Role, here: list[Agent]) -> str |
         if (given := decided_send(state, t, analysts[-1], role, editor)) is None:
             return None
         send, text = given
-        closes = [e.close.time for e in state.journal.of(key(send))
+        closes = [e.close.time for e in state.journal.of(entry_key(send))
                   if e.done and e.close is not None]
         if closes and any((r := a.last_report) is not None and r.time > closes[0]
                           for a in here if a.role is role):
@@ -334,7 +333,7 @@ def carry(state: State, t: Ticket) -> Step | NoStep:
     agents = of_change(state, t)
     w = worktree(t, state)
     if w is None or revised_since_worktree(t):
-        return Bash(make_worktree(t.number, state.me), f"{t.number} worktree", occasion=str(t.last_time))
+        return Bash(make_worktree(t.number, state.me), f"{t.number} worktree", occasion=str(t.taken))
     staff = partial(staff_editor, state, t, w, editors, agents)
     if (step := over_budget(state, t)) is not None:
         return step
@@ -855,9 +854,9 @@ def no_step(state: State, t: Ticket, s: Step) -> Step | NoStep:
         case _:
             raise AssertionError(f"`repeated` passes over no {type(s).__name__}")
     k = key(s)
-    if retired(state.journal, retirement_key(s)):
+    if retired(state.journal, k):
         return stuck(t, s, retired_step=True)
-    entries = state.journal.of(k)
+    entries = state.journal.of(entry_key(s))
     if flying := [e for e in entries if e.close is None]:
         return NoStep(IN_FLIGHT.format(key=k, time=utc_stamp(flying[0].given)))
     done = done_of(entries)
@@ -888,7 +887,7 @@ def held_back(state: State, s: Step) -> NoStep:
     until a later time."""
     if isinstance(s, Send):
         return sent_wait(state, None, s)
-    until = backoff(state.journal.of(key(s)))
+    until = backoff(state.journal.of(entry_key(s)))
     if until is None:
         return NoStep(HELD_BACK.format(key=key(s)))
     return NoStep(BACKING_OFF.format(key=key(s), time=utc_stamp(until)))
@@ -909,7 +908,7 @@ def sent_wait(state: State, t: Ticket | None, s: Send) -> NoStep:
     the sending, the `NoStep` says so. `t` is None where the message is that
     of `stuck` to the coordinator, which no agent of the change
     receives."""
-    times = [*sendings(s, state), *(e.close.time for e in state.journal.of(key(s))
+    times = [*sendings(s, state), *(e.close.time for e in state.journal.of(entry_key(s))
                                     if e.done and e.close is not None)]
     if not times:
         return NoStep(mctx("waits on {agent} for {key}, whose sending gives no time").format(
@@ -953,12 +952,10 @@ def undecided_wait(state: State, s: Undecided) -> NoStep:
     return NoStep(line + NO_PARTY)
 
 
-DONE_TWICE = mctx("it was done twice, and the line gives its key, which takes in the version of the "
-                  "change's inputs")
+DONE_TWICE = mctx("it was done twice")
 """Why `next` gives the step of `stuck` no more, where it was done twice."""
 
-RETIRED = mctx("it was retired, which holds at each version of the change's inputs, and the line "
-               "gives its key without that version")
+RETIRED = mctx("it was retired")
 """Why `next` gives the step of `stuck` no more, where it was retired."""
 
 
@@ -966,7 +963,7 @@ def stuck(t: Ticket, s: Launch | Bash, *, retired_step: bool) -> Send:
     """The message to the coordinator on the change `t`, whose procedure
     gives `s`, a step the journal gives as retired, or else as done
     twice."""
-    k = retirement_key(s) if retired_step else key(s)
+    k = key(s)
     line = give_again_line(k)
     return Send(COORDINATOR, mctx("Change {number} has no step: `{origin}` still gives its step "
                                   "{key}, which `next` gives no more, since {why}. The line "
@@ -986,9 +983,7 @@ def version(state: State, t: Ticket) -> float:
                   for r in a.reports),
                 *(q.filed for q in state.tracker.tickets.values()
                   if q.domain is Domain.CHANGE and q.subject == t.number),
-                *(ln.time for ln in t.log
-                  if ln.agent != AGENT and TAKEN.fullmatch(ln.note) is None
-                  and RELEASED_LINE.fullmatch(ln.note) is None)])
+                t.input_time])
 
 
 def next_step(state: State, t: Ticket) -> Step | NoStep:

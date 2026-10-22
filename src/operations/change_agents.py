@@ -81,7 +81,7 @@ def waiting_on(agents: list[Agent]) -> NoStep:
 
 def worktree_occasion(t: Ticket, w: Path) -> str:
     """The `occasion` of a launch on the change `t` in its worktree `w`."""
-    return f"{w} {t.last_time}"
+    return f"{w} {t.taken}"
 
 
 def launched_on(state: State, number: str) -> list[Agent]:

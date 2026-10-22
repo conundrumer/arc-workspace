@@ -12,7 +12,7 @@ from operations.journal import Due, Entry, due
 from operations.roles import Purpose
 from operations.state import Agent, Call, State, Ticket, Tool, memoized_by_transcripts
 from operations.steps import (UNDECIDED, Bash, Journaled, Launch, Send, Step, Undecided,
-                              analyst_key, key)
+                              analyst_key, entry_key, key)
 
 
 def decided_by(state: State, step: Undecided) -> list[Agent]:
@@ -85,7 +85,7 @@ def sendings(step: Send, state: State) -> list[float]:
 def done(state: State, step: Journaled) -> bool:
     """Whether the journal gives `step` as done: a procedure whose step is
     done goes on past it."""
-    return any(e.done for e in state.journal.of(key(step)))
+    return any(e.done for e in state.journal.of(entry_key(step)))
 
 
 def sent(state: State, to: str, message: str, mark: str | None = None) -> bool:
