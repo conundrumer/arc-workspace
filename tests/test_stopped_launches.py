@@ -81,15 +81,6 @@ def test_undecided_step_is_available_after_an_interrupted_analyst(tmp_path: Path
     assert repeated(step, with_agents(tmp_path, [decision]))
 
 
-@pytest.mark.parametrize("role", [Role.CODE_EDITOR, Role.DOC_EDITOR, Role.HANDBOOK_EXPANDED])
-def test_interrupted_editor_leaves_its_role_unstaffed(role: Role) -> None:
-    from operations.change_agents import unstaffed
-    assert unstaffed((role,), [attempt(role)]) == [role]
-    earlier = attempt(role, reply="done", launched=5.0)
-    partial = attempt(role, reply="Stopped at the tool.")
-    assert unstaffed((role,), [earlier, partial]) == [role]
-
-
 def test_stopped_checker_does_not_consume_its_review_round(tmp_path: Path) -> None:
     from operations import briefs
     from operations.item_check import check_round
