@@ -32,7 +32,7 @@
 
 mod components;
 mod coverage;
-mod evaluation;
+pub(crate) mod evaluation;
 mod free_choices;
 mod inputs;
 mod records;

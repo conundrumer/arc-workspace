@@ -214,7 +214,7 @@ pub(super) fn term_id(value: &Value, ty: &ValueType) -> Result<TermId, String> {
     term.encode().map_err(|reached| format!("a Box past the margin bound: {:?}", reached.margins))
 }
 
-pub(super) fn value_json(id: TermId, ty: &ValueType) -> Value {
+pub(crate) fn value_json(id: TermId, ty: &ValueType) -> Value {
     match Term::decode(id, ty) {
         Term::Number(Number(n)) => Value::from(n),
         Term::Box(m) => json!([m.top, m.bottom, m.left, m.right]),
