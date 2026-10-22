@@ -116,7 +116,7 @@ PARTS = {
             - Once the cache gives the limit as lifted, after that stop, `next` prints, ahead of every other step, a SendMessage call that asks the agent to continue its work, once for each such stop.
         - Where no other step is ready and a launch it would give is of an agent type that the operator's agent listing lacks and whose rendered definition `.claude/agents/<agent type>.md` stands in the main tree, it prints the launch of an agent whose end resumes the operator, unless one such runs, then that the operator ends its turn.
         - Where no step is ready, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
-            - The block also ends, and it prints that the operator runs it again, once a message to the operator waits that the harness accepted after the latest `user` entry of the operator's transcript before the call, also where the call still waits in the resident's queue.
+            - The block also ends, and it prints that the operator runs it again, once a message to the operator waits that the harness accepted after the latest `user` entry of the operator's transcript before the call.
             - Once the block has found a step, a later message does not end the call, and `next` prints that step.
         - Where its calls in a row have found no step ready for {idle} seconds or more, from the start of the first of them, it prints, in place of that the operator runs it again:
             - Where an agent the operator launched is pending, or a call of `wait` by the operator runs, that the operator ends its turn, after a call of `wait` in the background where none runs.
@@ -259,7 +259,7 @@ PARTS = {
             - Where each other editor there that has not ended has reported, and each agent another editor of the change launched has given its final reply, of the editor and those editors, the one whose report is latest, or of those with the latest, the one of the first agent id in sort order, gets with no block the line this help gives where each of the others had ended, and each other one blocks.
         - Where that step is none and an agent the editor launched has not given its final reply, it prints that the editor waits on each such agent, and runs `review` again each time one of them gives its final reply.
         - Otherwise it prints that the editor gives its final reply.
-        - It reads the state as the editor's operator's `next` reads it, where a read outlasts the foreground bound it prints that the state read runs and that the editor runs `review` again, as `next` does. A message to the editor that the harness accepted ends the call as it ends `next`, also where the call still waits in the resident's queue, and not once the review has found a step.
+        - It reads the state as the editor's operator's `next` reads it, where a read outlasts the foreground bound it prints that the state read runs and that the editor runs `review` again, as `next` does. A message to the editor that the harness accepted ends the call as it ends `next`, and not once the review has found a step.
     """),
     HelpPart.WAIT: mctx("""
     - `wait` blocks for the operator whose agent id it is given, or, for an operator launcher's, for the last operator that launcher launched, and prints nothing: its caller runs `next` or `relay` again once it completes.

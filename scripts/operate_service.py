@@ -4,10 +4,12 @@ The journal owns issued work. Connections own requests and responses; an
 incomplete response is discarded and a retry computes from the journal.
 Only the serving thread accesses held reads. Idle expiry does no state read.
 A state read belongs to the resident: a request whose bound arrives first gets
-a response that says the read runs, and the run goes on without it.
+a response that says the read runs, and the run goes on; the same agent's next
+call of the same kind takes over its result. Where a run ends with no client,
+that agent's next call of the same kind goes first once in the queue.
 A refresh request gives way to a client request: the queue serves each `next`
 or `review` request first, and a refresh read ends where one arrives. A call
-that waits in the queue ends where a message to its caller arrives. Once the
+that waits in the queue waits for its response or its bound. Once the
 resident serves a call, the resident alone decides the output. A run that has
 journaled a give answers with its own output, and no bound or message replaces it.
 """
@@ -146,6 +148,8 @@ class Request:
     """Whether the client still waits for a response."""
     committed: bool = False
     """Whether the run journaled a give, after which its output is the response."""
+    first: bool = False
+    """Whether the queue served this request ahead of the others for a run that ended with no client."""
 
     def detach(self, stdout: str = "") -> None:
         """Answer the waiting client with a successful `stdout`; the run goes on without it."""
@@ -243,6 +247,11 @@ class Pending:
     running: Request | None = None
     queued: float = 0.0
     """The seconds the request that `take` gave last waited in the queue."""
+    first: bool = False
+    """Whether `take` gave its last request ahead of the others."""
+    left: dict[tuple[str, str], float] = field(default_factory=dict)
+    """The end time of each client run that ended with no client, by subject and kind;
+    the next request of that subject and kind goes first, once."""
 
     def poll(self) -> None:
         while select.select([self.listener], [], [], 0)[0]:
@@ -266,6 +275,8 @@ class Pending:
                     message = json.loads(line.split(b"\n", 1)[0])
                     request_message(message)
                     self.connections[connection] = arrived, message
+                if self.adopt(connection, message):
+                    continue
                 if (self.running is not None
                         and float(message["deadline"]) - time.monotonic() <= FINISH_SECONDS):
                     connection.sendall(success(read_running(self.running)))
@@ -274,19 +285,52 @@ class Pending:
                 connection.close()
                 self.connections.pop(connection, None)
 
+    def adopt(self, connection: socket.socket, message: dict) -> bool:
+        """Give the connection of a complete request to the run of `running` where that run
+        has no client and the request has its subject and kind; true where it did."""
+        running = self.running
+        if (running is None or running.waiting or running.kind is Kind.REFRESH
+                or message["kind"] != running.kind or message["subject"] != running.operator):
+            return False
+        peeked = connection.recv(65537, socket.MSG_PEEK)
+        connection.recv(len(peeked.split(b"\n", 1)[0]) + 1)
+        connection.settimeout(START_SECONDS)
+        connection.sendall(TAKEN)
+        self.connections.pop(connection, None)
+        with contextlib.suppress(OSError):
+            running.connection.close()
+        running.connection = connection
+        running.deadline = float(message["deadline"])
+        running.waiting = True
+        arm(running)
+        return True
+
     def client_queued(self) -> bool:
         """Whether a complete `next` or `review` request waits in the queue."""
         return any(message is not None and message["kind"] != Kind.REFRESH
                    for _, message in self.connections.values())
 
     def take(self) -> socket.socket | None:
-        """The first complete `next` or `review` request, else the first complete refresh request."""
+        """The first complete request of a subject and kind whose run ended with no client,
+        within `START_SECONDS` + `LIMIT_SECONDS` of that end; else the first complete `next`
+        or `review` request, else the first complete refresh request."""
         self.poll()
+        now = time.monotonic()
+        self.left = {key: end for key, end in self.left.items()
+                     if now - end <= START_SECONDS + LIMIT_SECONDS}
+
+        def rank(entry: tuple[socket.socket, float, dict]) -> int:
+            message = entry[2]
+            if (message["subject"], message["kind"]) in self.left:
+                return 0
+            return 2 if message["kind"] == Kind.REFRESH else 1
+
         complete = [(connection, arrived, message) for connection, (arrived, message)
                     in self.connections.items() if message is not None]
-        for connection, arrived, message in sorted(complete, key=lambda c: c[2]["kind"] == Kind.REFRESH):
+        for connection, arrived, message in sorted(complete, key=rank):
             self.connections.pop(connection)
-            self.queued = time.monotonic() - arrived
+            self.queued = now - arrived
+            self.first = self.left.pop((message["subject"], message["kind"]), None) is not None
             return connection
         return None
 
@@ -474,71 +518,20 @@ def prepare(main: Path, session: str, deadline: float) -> None:
     ensure(main, session, deadline).close()
 
 
-class Queued:
-    """The transcript of the caller `operator`, read from the size it has at creation:
-    `arrived` is true once a `queued_command` entry is appended after that point."""
-
-    def __init__(self, operator: str) -> None:
-        from transcripts import find
-        self.path = find(operator)
-        self.offset = self.path.stat().st_size
-
-    def arrived(self) -> bool:
-        with self.path.open("rb") as stream:
-            stream.seek(self.offset)
-            data = stream.read()
-        end = data.rfind(b"\n") + 1
-        self.offset += end
-        return any(b'"queued_command"' in line and
-                   json.loads(line).get("attachment", {}).get("type") == "queued_command"
-                   for line in data[:end].splitlines() if line.strip())
-
-
-def queued_of(operator: str) -> Queued | None:
-    """The reader of the caller's transcript, or None where it cannot be read."""
-    try:
-        return Queued(operator)
-    except Exception:
-        return None
-
-
-def message_output(operator: str, kind: Kind) -> str:
-    """What the resident prints where a message to `operator` is accepted during a call of `kind`."""
-    from operations.steps import Poll
-    output = io.StringIO()
-    with contextlib.redirect_stdout(output):
-        if kind == Kind.REVIEW:
-            from operations.printing import printed
-            print(printed(Poll(), operator, Path()))
-        else:
-            from operate_loop import print_step
-            print_step(Poll(), Path(), operator)
-    return output.getvalue()
-
-
 def exchange(connection: socket.socket, operator: str, started: float,
              deadline: float, kind: Kind) -> tuple[int, str, str] | ReviewPlan | None:
     """A complete response, or None when transport or request validation needs a retry.
-    Where a message to `operator` is accepted while the request waits in the queue,
-    the call ends with what the resident prints for that message, and the request is
-    left. The resident sends `TAKEN` once it serves the request; after that, the call
-    waits for the response."""
+    The call waits for the response or its bound. The resident sends `TAKEN` once it
+    serves the request, or takes over the run of an earlier request."""
     with connection:
         connection.settimeout(max(deadline - time.monotonic(), 0.001))
         connection.sendall((json.dumps({"subject": operator, "started": started,
                                        "deadline": deadline, "kind": kind}) + "\n").encode())
         global REQUEST_SENT
         REQUEST_SENT = True
-        inbox = queued_of(operator) if kind != Kind.REFRESH else None
         while not select.select([connection], [], [], 1.0)[0]:
             if time.monotonic() >= deadline:
                 break
-            if inbox is not None:
-                try:
-                    if inbox.arrived():
-                        return 0, message_output(operator, kind), ""
-                except Exception:
-                    inbox = None
         with connection.makefile("rb") as stream:
             line = stream.readline()
             if line == TAKEN:
@@ -757,7 +750,8 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
     global client_began
     stdout, stderr = io.StringIO(), io.StringIO()
     current = Request(subject, started, deadline,
-                      connection, listener, code, stdout, stderr, kind=kind, pending=pending)
+                      connection, listener, code, stdout, stderr, kind=kind, pending=pending,
+                      first=pending.first if pending is not None else False)
     if kind != Kind.REFRESH:
         connection.sendall(TAKEN)
     with read_interrupts.request_scope(check):
@@ -830,26 +824,30 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
         if isinstance(status, ReviewPlan):
             response["plan"] = {"tag": "review-plan", "launch": asdict(status.launch),
                                 "scratch": str(status.scratch), "code": status.code}
-        connection.settimeout(1)
+        current.connection.settimeout(1)
         try:
             if not current.waiting:
                 pass
             elif not retry and response["status"] == 0:
                 try:
                     with side_effect():
-                        connection.sendall((json.dumps(response) + "\n").encode())
+                        current.connection.sendall((json.dumps(response) + "\n").encode())
                 except Replaced:
                     keep = False
-                    connection.sendall((json.dumps({"status": 1, "stdout": "", "stderr": "",
+                    current.connection.sendall((json.dumps({"status": 1, "stdout": "", "stderr": "",
                                                     "retry": True}) + "\n").encode())
                 except Detached:
                     pass
             else:
-                connection.sendall((json.dumps(response) + "\n").encode())
+                current.connection.sendall((json.dumps(response) + "\n").encode())
         except OSError:
             pass
         finally:
+            if current.connection is not connection:
+                current.connection.close()
             if pending is not None:
+                if kind != Kind.REFRESH and not current.waiting and not current.first:
+                    pending.left[(subject, kind)] = time.monotonic()
                 pending.running = None
             script_calls.record()
             CURRENT.reset(token)
