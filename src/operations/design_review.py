@@ -79,10 +79,10 @@ def design_review(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
     return Pause.CLEAR if step is None else step
 
 
-def reviewing(agents: list[Agent]) -> bool:
-    """Whether a design reviewer among `agents` is at work, which holds the
+def reviewing(agents: list[Agent]) -> list[Agent]:
+    """The design reviewers among `agents` that are at work, which hold the
     merge."""
-    return any(a.pending for a in agents if a.role is Role.DESIGN_REVIEWER)
+    return [a for a in agents if a.pending and a.role is Role.DESIGN_REVIEWER]
 
 
 def design_launch(state: State, t: Ticket, w: Path, launcher: str) -> Launch:

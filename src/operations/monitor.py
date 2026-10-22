@@ -60,10 +60,11 @@ ALERTS = mctx("""
     - The operator records in one `bug` ticket each resume of an operator of the session after the next operator of the session made its first entry: it files that ticket, or, where that ticket stands, writes a line in its log.
         - A resume of an operator is a prompt that reached it after its turn ended and that no agent it launched or resumed sent.
     - The operator sends the coordinator once, and records in a `bug` ticket, each agent that an operator of the session or the coordinator launched whose transcript meets this condition: {stuck_rule}. The message gives the agent's recorded running work. No alert goes to the agent.
+        - A Codex attempt that its launcher's end left held, because whether its turn runs is unknown, stays held and is no ended agent. Where no write reaches its transcript, its descendants' transcripts or its Codex rollout for {minutes} minutes, counted from its latest write or from its launch or last resume, the operator sends the coordinator once per such stretch, and records in a `bug` ticket, that the attempt's state is unknown.
     - `next` sends the coordinator each `undecided` line from the read of the session's running agents or usage once.
     - An operator stops waiting on an agent or a holder that is stuck, and, where the operator waits on nothing else, gives its final reply with each such wait.
     """).format(stuck_rule=STUCK_RULE.format(stretch=mctx("the last {minutes} minutes").format(
-        minutes=STUCK_SECONDS // 60)), poll_again=POLL_AGAIN, **{k.value: READING[k] for k in AlertKind})
+        minutes=STUCK_SECONDS // 60)), minutes=STUCK_SECONDS // 60, poll_again=POLL_AGAIN, **{k.value: READING[k] for k in AlertKind})
 """The alerts of `step`, which `scripts/operate.py --help alerts` gives."""
 
 

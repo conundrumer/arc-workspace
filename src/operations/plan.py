@@ -48,7 +48,7 @@ from collections.abc import Iterable, Mapping, Sequence
 
 from controlled_markdown import mctx
 from operations import admission, change_take, decisions, monitor, triage, taking
-from operations.state import Call, State
+from operations.state import Call, State, Stuck
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Status
 from operations.constants import WAIT_SECONDS_IDLE
@@ -124,6 +124,19 @@ def idle_since(calls: Iterable[Call], me: str) -> float | None:
     return since
 
 
+def stopped_waiting(agent: str, s: Stuck) -> str:
+    """The line of the final reply on the agent `agent`, stuck as `s` gives,
+    that the operator stopped waiting on: the diagnostic of a held Codex
+    attempt whose turn is unknown, where `s` has one, and otherwise the
+    transcript condition."""
+    if s.unknown is not None:
+        return mctx("- Stopped waiting on {agent}, which stays held with no write to its "
+                    "transcripts or its Codex rollout since {time}: {diagnostic}").format(
+            agent=agent, time=utc_stamp(s.since), diagnostic=s.unknown)
+    return mctx("- Stopped waiting on {agent}: no new transcript activity or unchanged Bash "
+                "results since {time}.").format(agent=agent, time=utc_stamp(s.since))
+
+
 def ready_step(state: State, watch: monitor.MonitorState) -> Step:
     """The operator's next step as the module docstring gives it, where
     `watch` is the state the monitor's steps read, with no wait for
@@ -162,8 +175,7 @@ def ready_step(state: State, watch: monitor.MonitorState) -> Step:
             or any(decisions.writing(state, u) for u in state.tracker.unread)
             or backing_off(state.journal, state.now)):
         return Poll(pace)
-    quiet = [mctx("- Stopped waiting on {agent}: no new transcript activity or unchanged Bash results since {time}.").format(
-        agent=w, time=utc_stamp(stuck[w].since)) for w in dict.fromkeys(waits) if w is not None]
+    quiet = [stopped_waiting(w, stuck[w]) for w in dict.fromkeys(waits) if w is not None]
     return ending(state, "\n".join([final(state, holding(state)), *quiet, *unknown]))
 
 

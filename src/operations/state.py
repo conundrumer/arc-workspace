@@ -559,10 +559,15 @@ class Stuck:
     """An agent with no new transcript activity for `STUCK_SECONDS`, or whose
     Bash calls repeated with the same result for it: its `session`, the
     start of that stretch (`since`), and the command line of each span of
-    its recorded running work (`running`)."""
+    its recorded running work (`running`). `unknown` is, for a Codex attempt
+    held because whether its turn runs is unknown, the diagnostic that
+    gives why, the command that shows its turn and what could not be read
+    of its activity, and then `since` is the time of its latest known
+    activity; it is None for any other agent."""
     session: str
     since: float
     running: tuple[str, ...]
+    unknown: str | None = None
 
 
 @dataclass(frozen=True)

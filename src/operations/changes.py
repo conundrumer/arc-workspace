@@ -103,11 +103,11 @@ from controlled_markdown import mctx
 from operations import briefs, merging, messages
 from operations.change_budget import TAKEN
 from operations.constants import AGAIN_SECONDS, COORDINATOR
-from operations.journal import AGAIN_LIMIT, done_of, retired
+from operations.journal import AGAIN_LIMIT, backoff, done_of, retired
 from operations.change_agents import (REVIEWER_ROLES, change_editors, editors_in, elsewhere_on,
-                                      latest_editors, launched_on, of_change, Reported, reported,
-                                      reported_at, settled, unstaffed, with_before,
-                                      with_elsewhere, worktree_occasion)
+                                      latest_editors, launched_on, named, of_change, Reported, reported,
+                                      reported_at, settled, unstaffed, waiting_on,
+                                      with_before, with_elsewhere, worktree_occasion)
 from operations.change_holds import Hold, left_hold, open_questions, questions_given, questions_hold
 from operations.change_fragments import drafter_ids, fragments_step
 from operations.change_overrun import over_budget
@@ -122,9 +122,10 @@ from operations.roles import (CHECKS, LAUNCHING_EDITORS, Purpose, Role, analyst_
 from operations.state import Agent, Report, State, Ticket, last_reported
 from operations.filing import editor_scratch
 from operations.final_reply import live_holder
-from operations.handled import answered, held_aside, repeated, sent, unmoved
-from operations.steps import (Bash, Launch, Pause, Poll, Repeatable, Send, Step, Undecided,
-                              agent_ids, key, retirement_key, served)
+from operations.handled import (answered, decided_by, held_aside, repeated, sendings, sent,
+                                sent_at, unmoved)
+from operations.steps import (UNDECIDED, Bash, Launch, NoStep, Pause, Poll, Repeatable, Send, Step,
+                              Undecided, agent_ids, key, retirement_key, served)
 from operations.log_commands import AGENT
 from operations.change_take import take
 from operations.taking import RELEASED_LINE, purview
@@ -321,9 +322,9 @@ def deliver_decided(state: State, t: Ticket, latest: list[Agent],
     return None
 
 
-def carry(state: State, t: Ticket) -> Step | None:
-    """The next step on the change `t` the operator holds, or None where it
-    waits on an agent."""
+def carry(state: State, t: Ticket) -> Step | NoStep:
+    """The next step on the change `t` the operator holds, or the
+    `NoStep` that gives what it waits on."""
     if merging.ready_to_close(state, t):
         return merging.close(state, t, of_change(state, t),
                              merging.NO_MERGE_EVIDENCE if not merging.merged(state, t) else None)
@@ -340,27 +341,35 @@ def carry(state: State, t: Ticket) -> Step | None:
     here = editors_in(agents, w)
     if (resume := editor_resume(state, t, editors, here)) is not None:
         return resume
-    if unstaffed(editors, here):
+    if missing := unstaffed(editors, here):
+        theirs = [a for a in editors_in(elsewhere_on(state, t.number), w) if a.role in missing]
         return staff_editor(state, t, w, editors, agents,
-                            merging.unreceived_finding(state, t, w, here))
-    if any(a.pending for a in here):
-        return None
+                            merging.unreceived_finding(state, t, w, here)) or NoStep(
+            ELSEWHERE.format(
+                agents=named(theirs) if theirs else ", ".join(f"{r} editor" for r in missing),
+                time=utc_stamp(max((a.since for a in theirs), default=t.last_time))))
+    if pending := [a for a in here if a.pending]:
+        return waiting_on(pending)
     match reported_step(state, t, w, editors, here, agents, state.me):
         case Pause.CLEAR:
             return merging.merge(state, t, w, latest_editors(here), staff)
-        case Pause.WAIT:
-            return None
         case step:
             return step
 
 
+ELSEWHERE = mctx("waits on {agents} of another session, since {time}")
+"""Why `carry` gives a change no step, where a role of its editors has none in its
+worktree and one of that role runs in another session."""
+
+
 def reported_step(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
                   here: list[Agent], agents: list[Agent],
-                  launcher: str) -> Step | Pause:
+                  launcher: str) -> Step | NoStep | Pause:
     """The step of the change `t`, whose editors are `editors`, once each
     of its editors in its worktree `w`, `here`, has ended, with
-    `launcher` as the launcher of each check it launches, or `Pause.CLEAR`
-    where the change merges. `agents` are the change's agents."""
+    `launcher` as the launcher of each check it launches, the `NoStep` of
+    a stage that waits, or `Pause.CLEAR` where the change merges.
+    `agents` are the change's agents."""
     if (step := fragments_step(state, t, w, here)) is not None:
         return step
     latest = latest_editors(here)
@@ -390,15 +399,15 @@ class StageContext:
     launcher: str
 
 
-def design_stage(r: StageContext) -> Step | Pause:
+def design_stage(r: StageContext) -> Step | NoStep | Pause:
     return design_review(r.state, r.t, r.w, r.editors, r.here, r.agents, r.launcher)
 
 
-def leftover_stage(r: StageContext) -> Step | Pause:
+def leftover_stage(r: StageContext) -> Step | NoStep | Pause:
     return leftover(r.state, r.t, r.w, r.latest, r.agents, r.launcher)
 
 
-def doc_stage(r: StageContext) -> Step | Pause:
+def doc_stage(r: StageContext) -> Step | NoStep | Pause:
     """The step of the review of the change's documents, where its editors
     include a doc editor."""
     if Role.DOC_EDITOR not in r.editors:
@@ -406,15 +415,17 @@ def doc_stage(r: StageContext) -> Step | Pause:
     return doc_review(r.state, r.t, r.w, r.here, r.agents, r.launcher)
 
 
-def reviewing_stage(r: StageContext) -> Step | Pause:
-    """The hold of the merge while a design reviewer of the change runs."""
-    return Pause.WAIT if reviewing(r.agents) else Pause.CLEAR
+def reviewing_stage(r: StageContext) -> Step | NoStep | Pause:
+    """The wait on the design reviewer of the change that runs, which holds
+    the merge."""
+    running = reviewing(r.agents)
+    return waiting_on(running) if running else Pause.CLEAR
 
 
-STAGES: tuple[Callable[[StageContext], Step | Pause], ...] = (
+STAGES: tuple[Callable[[StageContext], Step | NoStep | Pause], ...] = (
     design_stage, leftover_stage, doc_stage, reviewing_stage)
 """The review stages of a change, in the order `reported_step` walks
-them: each gives its step, `Pause.WAIT`, or `Pause.CLEAR`, which goes on
+them: each gives its step, a `NoStep`, or `Pause.CLEAR`, which goes on
 to the next stage."""
 
 
@@ -589,7 +600,7 @@ def check_or_line(state: State, c: EditorChange, agents: list[Agent]) -> Step | 
     if isinstance(step, Launch) and step.role in CHECKS:
         return step
     waited = [a for a in agents if a.operator == c.editor and a.pending]
-    if step is Pause.WAIT and waited:
+    if isinstance(step, NoStep) and waited:
         ids = agent_ids(waited)
         if isinstance(ids, Undecided):
             return ids
@@ -697,13 +708,15 @@ def left(state: State, t: Ticket, latest: list[Agent], checkers: list[Agent],
 
 
 def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
-             agents: list[Agent], launcher: str) -> Step | Pause:
+             agents: list[Agent], launcher: str) -> Step | NoStep | Pause:
     """The step on what the editors leave, with `launcher` as the launcher
-    of the agent it launches, or `Pause.CLEAR` where they leave nothing."""
+    of the agent it launches, the `NoStep` that waits on an item checker,
+    a ticket analyst or the user, or `Pause.CLEAR` where they leave
+    nothing."""
     checkers = [a for a in agents if a.role is Role.ITEM_CHECKER and occupies(a)]
     analysts = [a for a in agents if a.role is Role.TICKET_ANALYST and occupies(a)]
-    if any(a.pending for a in checkers + analysts):
-        return Pause.WAIT
+    if running := [a for a in checkers + analysts if a.pending]:
+        return waiting_on(running)
     if (delivery := deliver_decided(state, t, latest, analysts)) is not None:
         return delivery
     editors = with_ids(latest)
@@ -734,12 +747,14 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
             None if given.capped is None else (given.capped[0], given.capped[1].text)),
             occasion=str(max(given.given, at)))
 
-    def on_hold(hold: Hold, on_user: bool, parts: str | None) -> Step | Pause:
-        """The step on `hold`, by its ruling: a wait where it is not ruled
-        and the hold is on the user, `on_user`."""
+    def on_hold(hold: Hold, on_user: bool, parts: str | None) -> Step | NoStep | Pause:
+        """The step on `hold`, by its ruling: a wait on the user where it is
+        not ruled and the hold is on the user, `on_user`."""
         r = ruling(state, hold.text, hold.choices)
         if isinstance(r, Undecided):
-            return Pause.WAIT if on_user else r
+            return NoStep(ON_USER.format(agent=analysts[-1].agent_id, time=utc_stamp(
+                analysts[-1].last_report.time if analysts[-1].last_report is not None
+                else analysts[-1].since))) if on_user else r
         if r.choice is not Decision.MERGE:
             return launch(parts, r.time)
         return Pause.CLEAR if given.capped is None else launch(fresh, r.time)
@@ -754,6 +769,12 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     return launch(fresh, 0.0)
 
 
+ON_USER = mctx("waits on the user for a ruling on what ticket analyst {agent} holds, since "
+               "{time}")
+"""Why `leftover` gives a change no step, where the analyst's hold is on the user and no
+ruling answers it."""
+
+
 def cap_reply(reviewer: Agent | None, judged: float) -> tuple[str, Report] | None:
     """The agent id and reply of the change's doc reviewer `reviewer`,
     where that reply opens with `reports.AT_CAP` and follows `judged`, the
@@ -765,61 +786,171 @@ def cap_reply(reviewer: Agent | None, judged: float) -> tuple[str, Report] | Non
 
 
 def step(state: State,
-         idle: Callable[[State, Ticket, Step | None], Step | None]) -> Step | None:
+         idle: Callable[[State, Ticket, Step | NoStep, NoStep], Step | None]) -> Step | None:
     """The next step of the changes: a message to an agent on a change no
     longer held, a take, then the closing sequence of each unassigned
     merged change (`closing`), then the step of each change the operator
     holds (`due_step`), or, where it has none, the step `idle` gives for
     it, other than a step an operator already made or handled
-    (`repeated`). Where each step is such a step, the step is that of the
-    message or the take, so the procedure waits on it."""
+    (`repeated`). `idle` gets the change's `next_step` and the `NoStep`
+    `due_step` gives for it. Where each step is such a step, the step is
+    that of the message or the take, so the procedure waits on it."""
     before = [s for s in (give_up(state), take(state)) if s is not None]
     for s in before:
         if not repeated(s, state):
             return s
     for t in [*closing(state), *held(state)]:
         s = next_step(state, t)
-        if (due := due_step(state, t, s)) is not None:
+        due = due_step(state, t, s)
+        if not isinstance(due, NoStep):
             return due
-        if (other := idle(state, t, s)) is not None and not repeated(other, state):
+        if (other := idle(state, t, s, due)) is not None and not repeated(other, state):
             return other
     return before[0] if before else None
 
 
-def due_step(state: State, t: Ticket, s: Step | None) -> Step | None:
+def due_step(state: State, t: Ticket, s: Step | NoStep) -> Step | NoStep:
     """The step of the change `t` the operator holds, whose `next_step`
     is `s`: `s`, or, where `repeated` passes it over, the one `no_step`
-    gives in its place, where `repeated` does not pass that over. None
-    otherwise."""
-    if s is None:
-        return None
+    gives in its place, where `repeated` does not pass that over. The
+    `NoStep` that gives why the change waits otherwise."""
+    if isinstance(s, NoStep):
+        return s
     s = replacement(state, s)
     if not repeated(s, state):
         return s
-    if (other := no_step(state, t, s)) is not None and not repeated(other, state):
+    other = no_step(state, t, s)
+    if isinstance(other, NoStep) or not repeated(other, state):
         return other
-    return None
+    return held_back(state, other)
 
 
-def no_step(state: State, t: Ticket, s: Step) -> Step | None:
+def hold_reason(state: State, t: Ticket, s: Step | NoStep) -> str | None:
+    """Why the change `t` the operator holds waits, where `due_step` gives
+    it, with its `next_step` `s`, a `NoStep`, and otherwise None."""
+    due = due_step(state, t, s)
+    return due.reason if isinstance(due, NoStep) else None
+
+
+def no_step(state: State, t: Ticket, s: Step) -> Step | NoStep:
     """The step in place of `s`, the step of the held change `t` that
     `repeated` passes over, where the journal gives it as done and no
     other read holds it back: `s` once more, once its done entry closed
     `AGAIN_SECONDS` before, or, once it is done more than
     `journal.AGAIN_LIMIT` times so, or retired, the
-    message to the coordinator on the change (`stuck`). None otherwise."""
-    if not isinstance(s, Repeatable) or held_aside(state, s):
-        return None
+    message to the coordinator on the change (`stuck`). Otherwise the
+    `NoStep` that gives the party the change waits on and the time it
+    waits from: a step set aside, a message whose recipient has not
+    reported, a decision on an undecided step, a call in flight, or the
+    time `AGAIN_SECONDS` lets the step be given again."""
+    if held_aside(state, s):
+        return NoStep(ASIDE.format(key=key(s)))
+    match s:
+        case Send():
+            return sent_wait(state, t, s)
+        case Undecided():
+            return undecided_wait(state, s)
+        case Repeatable():
+            pass
+        case _:
+            raise AssertionError(f"`repeated` passes over no {type(s).__name__}")
     k = key(s)
     if retired(state.journal, retirement_key(s)):
         return stuck(t, s, retired_step=True)
     entries = state.journal.of(k)
-    if any(e.close is None for e in entries):
-        return None
+    if flying := [e for e in entries if e.close is None]:
+        return NoStep(IN_FLIGHT.format(key=k, time=utc_stamp(flying[0].given)))
     done = done_of(entries)
-    if done.last is None or state.now - done.last < AGAIN_SECONDS:
-        return None
+    if done.last is None:
+        return held_back(state, s)
+    if state.now - done.last < AGAIN_SECONDS:
+        return NoStep(DONE_RECENTLY.format(key=k, done=utc_stamp(done.last),
+                                           again=utc_stamp(done.last + AGAIN_SECONDS)))
     return replace(s, again=True) if done.count <= AGAIN_LIMIT else stuck(t, s, retired_step=False)
+
+
+ASIDE = mctx("waits on the batch that sets step {key} aside: the state records no time for "
+            "that")
+IN_FLIGHT = mctx("waits on step {key}, whose call is in flight since {time}")
+DONE_RECENTLY = mctx("waits on the clock: step {key} was done at {done}, and is given again at "
+                     "{again}")
+BACKING_OFF = mctx("waits on the clock: step {key} was refused, and is given again at {time}")
+HELD_BACK = mctx("waits on step {key}, which is held back with no call in flight, no done entry and no refusal "
+                 "that gives its time")
+"""Why `no_step` and `held_back` give a change no step."""
+
+
+def held_back(state: State, s: Step) -> NoStep:
+    """The `NoStep` of the held change whose step `s` `repeated` passes
+    over, and whose replacement `no_step` gives is passed over too: a
+    message to the coordinator or a recipient already sent
+    (`sent_wait`), or a step the journal holds back after a refusal
+    until a later time."""
+    if isinstance(s, Send):
+        return sent_wait(state, None, s)
+    until = backoff(state.journal.of(key(s)))
+    if until is None:
+        return NoStep(HELD_BACK.format(key=key(s)))
+    return NoStep(BACKING_OFF.format(key=key(s), time=utc_stamp(until)))
+
+
+SENT_WAIT = mctx("waits on {agent} for {key} since {time}")
+REFUSED = mctx(", and the harness refused it at {time}")
+SENT_ANSWERED = mctx("waits on a new step from the change's agents or the coordinator: {agent} "
+                     "answered {key}, sent at {time}, and nothing on the change has moved since")
+
+
+def sent_wait(state: State, t: Ticket | None, s: Send) -> NoStep:
+    """The `NoStep` of the held change `t` where `repeated` passes over
+    the message `s`: the recipient, the sending's key and time, and, where
+    the harness refused it (`Agent.refused`), that refusal, where its
+    recipient has not reported after it; and that the recipient reported
+    where it has. Where the journal and the transcripts give no time of
+    the sending, the `NoStep` says so. `t` is None where the message is that
+    of `stuck` to the coordinator, which no agent of the change
+    receives."""
+    times = [*sendings(s, state), *(e.close.time for e in state.journal.of(key(s))
+                                    if e.done and e.close is not None)]
+    if not times:
+        return NoStep(mctx("waits on {agent} for {key}, whose sending gives no time").format(
+            key=key(s), agent=s.to))
+    at = max(times)
+    agent = next((a for a in ([] if t is None else [*launched_on(state, t.number),
+                                                    *elsewhere_on(state, t.number)])
+                  if a.agent_id == s.to), None)
+    if agent is not None and any(r.time > at for r in agent.reports):
+        return NoStep(SENT_ANSWERED.format(agent=s.to, key=key(s), time=utc_stamp(at)))
+    line = SENT_WAIT.format(agent=s.to, key=key(s), time=utc_stamp(at))
+    if agent is not None and agent.refused is not None:
+        line += REFUSED.format(time=utc_stamp(agent.refused))
+    return NoStep(line)
+
+
+UNDECIDED_WAIT = mctx("waits on a decision on the undecided step {what}")
+ON_ANALYST = mctx(", by {agents}, at work since {time}")
+NO_PARTY = mctx(", and no analyst that runs and no message to the coordinator gives who decides "
+                "or from when")
+ON_COORDINATOR = mctx(", by the coordinator, to whom it went at {time}")
+
+
+def undecided_wait(state: State, s: Undecided) -> NoStep:
+    """The `NoStep` of the held change whose undecided step `s` an operator
+    already handled (`repeated`): the ticket analysts launched on it, or on
+    a step of its subject, that run, or the coordinator it was given to,
+    with the time; where `repeated` holds and none of these shows who
+    decides, the `NoStep` says so (`NO_PARTY`)."""
+    line = UNDECIDED_WAIT.format(what=s.what)
+    running = [a for a in decided_by(state, s) if a.pending]
+    running += [a for a, purpose, _ in state.analysts() if s.subject is not None
+                and purpose is Purpose.STEP and a.pending and s.subject in a.brief
+                and a not in running]
+    if running:
+        return NoStep(line + ON_ANALYST.format(agents=named(running),
+                                               time=utc_stamp(max(a.since for a in running))))
+    given = sent_at(state, COORDINATOR, f"{UNDECIDED} {s.what}")
+    if given:
+        return NoStep(line + ON_COORDINATOR.format(time=utc_stamp(max(given))))
+    return NoStep(line + NO_PARTY)
 
 
 DONE_TWICE = mctx("it was done twice, and the line gives its key, which takes in the version of the "
@@ -860,11 +991,11 @@ def version(state: State, t: Ticket) -> float:
                   and RELEASED_LINE.fullmatch(ln.note) is None)])
 
 
-def next_step(state: State, t: Ticket) -> Step | None:
+def next_step(state: State, t: Ticket) -> Step | NoStep:
     """The step of the change `t` the operator holds: the one `carry`
     gives, or, where that is a message its recipient already answered,
     the one `unmoved` gives, with the version of the change's inputs
-    (`version`)."""
+    (`version`), or the `NoStep` `carry` gives."""
     v = version(state, t)
     s = served(carry(state, t), t, v)
     if isinstance(s, Send) and answered(s, state):

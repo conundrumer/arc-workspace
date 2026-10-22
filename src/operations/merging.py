@@ -80,6 +80,7 @@ the change (`change_holds.open_questions`), then the change's own ticket."""
 
 import re
 import shlex
+from typing import TYPE_CHECKING
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import replace
 from functools import cache
@@ -91,7 +92,7 @@ from engine.duration import FOOTER_RE
 from operations import briefs, messages
 from operations.directives import (Decision, Directive, Ruling, held_on, numbers_in, ruling,
                                    session_lines)
-from operations.change_agents import of_change, settled
+from operations.change_agents import of_change, settled, waiting_on
 from operations.change_holds import open_questions
 from operations.change_budget import TIME_NOTE, TIME_OPENING, left_draft, taken
 from operations.filing import editor_scratch
@@ -103,10 +104,14 @@ from operations.state import (Agent, Call, Commit, LogLine, Merge, State, Ticket
                               memoized_by_transcripts)
 from operations.command_words import command_words
 from operations.handled import ask_again, decided_by, held_aside, sent, unmoved
-from operations.steps import Bash, Launch, Send, Step, Undecided, labeled
+from operations.steps import Bash, Launch, NoStep, Send, Step, Undecided, labeled
 from operations.log_commands import log
 from operations.tracker import last_index
 from operations.worktrees import WORKTREE
+from ticketing.times import utc_stamp
+
+if TYPE_CHECKING:
+    from operations.recovery import Pending
 from ticketing.vocabulary import MANY_IDEAS, Kind, Note, Resolution, Status
 
 MERGE_SCRIPT = "scripts/merge_change.py"
@@ -385,14 +390,16 @@ type Staff = Callable[[str | None], Step | None]
 brief, where one is given."""
 
 
-def merge(state: State, t: Ticket, w: Path, latest: list[Agent], staff: Staff) -> Step | None:
+def merge(state: State, t: Ticket, w: Path, latest: list[Agent],
+          staff: Staff) -> Step | NoStep:
     """The line that gives the change's agent-running time since its take,
     where none follows that take and that time reads; then, for each code
     editor whose latest report holds a `split:` item that `reports.SPLIT`
     does not read, the request to send that report again, and the wait for
     its reply, while the change's worktree, which the merge removes, still
     stands; and then the merge. A reply that still holds such an item goes
-    on to the merge."""
+    on to the merge. Where the change waits on an agent's reply or on its
+    merge call, the `NoStep` that gives which."""
     take_line = taken(t)
     start = take_line.time if take_line is not None else left_draft(t)
     spent = state.computed.spent.get(t.number)
@@ -408,14 +415,30 @@ def merge(state: State, t: Ticket, w: Path, latest: list[Agent], staff: Staff) -
             case Send() as asked:
                 return asked
             case False:
-                return None
+                return NoStep(SPLIT_WAIT.format(agent=a.agent_id, time=utc_stamp(a.reports[-1].time)))
             case True:
                 pass
     return merge_steps(state, t, w, latest, staff)
 
 
+SPLIT_WAIT = mctx("waits on {agent} to send its report of {time} again in the form of its "
+                  "`split:` items")
+MERGE_RUNNING = mctx("waits on its merge call of {worktree}, made at {time}")
+MERGE_FINDING = mctx("waits on the editors of the change to take the finding of its merge call "
+                     "of {worktree} made at {time}")
+MERGE_DONE = mctx("waits for its closing sequence: its merge call of {worktree} made at {time} "
+                  "merged")
+"""Why `merge` gives a change no step."""
+
+
+def finding_wait(w: Path, last: Call) -> NoStep:
+    """The wait of a change on its editors to take the finding of the merge
+    call `last` of its worktree `w`."""
+    return NoStep(MERGE_FINDING.format(worktree=w, time=utc_stamp(last.time)))
+
+
 def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent],
-                staff: Staff) -> Step | None:
+                staff: Staff) -> Step | NoStep:
     """The merge of the change in `w`, once its editors and its review have
     passed, again after a call that left the worktree with changes made
     after its commit or that a report of an agent on the change follows,
@@ -450,13 +473,13 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent],
             if to is not None and to.agent_id is not None:
                 return Send(to.agent_id, missing,
                             f"empty merge rework {t.number} {decision.time}")
-            return staff(missing)
+            return staff(missing) or finding_wait(w, last)
     if (last is None or (reported and max(reported) > last.time)
             or came_back(t, last.time)):
         return Bash(command, f"{t.number} merge {w}", occasion=at)
     match last.merge:
         case None:
-            return None
+            return NoStep(MERGE_RUNNING.format(worktree=w, time=utc_stamp(last.time)))
         case Merge.NOT_RUN:
             first = (last.result or "").strip().splitlines()
             return hand_off(state, t, command, w, NOT_RUN.format(
@@ -473,18 +496,19 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent],
                 return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED, CONFLICT_NOTE.format(
                     conflict=Note.CONFLICT, paths=PATHS_SEP.join(last.conflicts)), state.me),
                             f"{t.number} conflict", occasion=str(last.time))
-            return message or unreceived(t, last, calls, latest, quotes, staff)
+            return message or unreceived(t, last, calls, latest, quotes, staff) or finding_wait(w, last)
         case Merge.REFUSED if any(p.fullmatch(refusal_line(last.result or "") or "")
                                  for p in MAIN_TREE):
             return hand_off(state, t, command, w, MAIN_TREE_NOTE.format(
                 refusal=refusal_line(last.result or "")))
         case Merge.REFUSED:
             return (refused(state, t, w, last, latest, quotes) or message
-                    or unreceived(t, last, calls, latest, quotes, staff))
+                    or unreceived(t, last, calls, latest, quotes, staff)
+                    or finding_wait(w, last))
         case Merge.LEFT_EDITS:
             return Bash(command, f"{t.number} merge {w}", occasion=at)
         case Merge.MERGED:
-            return None
+            return NoStep(MERGE_DONE.format(worktree=w, time=utc_stamp(last.time)))
 
 
 EMPTY_CHOICES = {
@@ -699,11 +723,21 @@ def unsplit(t: Ticket) -> str:
     return f"left unsplit by change {t.number}"
 
 
-def close(state: State, t: Ticket, agents: list[Agent], evidence: str | None = None) -> Step | None:
-    """The closing sequence admitted by a merge or readiness ruling, or None while its `after-merge`
-    agent runs. A split step is given while its `refactor` ticket holds no
+RECOVERING = mctx("waits on {agent}, whose work the `recover` request of {time} awaits")
+
+
+def recovery_wait(pending: "Pending") -> NoStep:
+    """The wait on the agent `recovery.step` names in `pending`, which has no
+    step, from the time of the request it answers."""
+    return NoStep(RECOVERING.format(agent=pending.waits_on, time=utc_stamp(pending.since or 0.0)))
+
+
+def close(state: State, t: Ticket, agents: list[Agent],
+          evidence: str | None = None) -> Step | NoStep:
+    """The closing sequence admitted by a merge or readiness ruling, or the
+    `NoStep` that waits on its `after-merge` agent while it runs. A split step is given while its `refactor` ticket holds no
     line that the step logs as left unsplit (`unsplit`)."""
-    from operations.recovery import step as recover
+    from operations.recovery import Pending, step as recover
 
     head = state.git.commits[0].hash
     if t.after_merge is not None:
@@ -711,16 +745,16 @@ def close(state: State, t: Ticket, agents: list[Agent], evidence: str | None = N
         if runs and not runs[-1].pending:
             pending = recover(state, t)
             if pending is not None:
-                return pending.step
+                return pending.step or recovery_wait(pending)
         runs = [a for a in runs if occupies(a)]
         if not runs:
             return Launch(Role.AFTER_MERGE, t.number, briefs.after_merge(
                 t.number, t.after_merge, head, evidence), occasion=head)
         if runs[-1].pending:
-            return None
+            return waiting_on(runs[-1:])
     pending = recover(state, t)
     if pending is not None:
-        return pending.step
+        return pending.step or recovery_wait(pending)
     commit = merge_commit(state, t)
     proof = evidence if evidence is not None else head if commit is None else commit.hash
     note = f"{Resolution.FIXED.value} {t.number} {proof}"

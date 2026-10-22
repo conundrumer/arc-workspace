@@ -451,17 +451,22 @@ def running_agents(path: Path, undecided: list[str]) -> list[Listed]:
     return listed_under(down, open_along(up, undecided), undecided)
 
 
-def quiet_since(agent: str, path: Path, listing: list[Listed], now: float) -> float | None:
-    """The time of the latest timestamped entry of the transcript at `path`,
-    the run of `agent`, and of the transcript of each agent under it in
-    `listing`, at any depth by `Listed.parent`, where the stretch from that
-    entry to `now` has reached `STUCK_SECONDS` (`stuck_reached`), and None
-    otherwise, or where no such transcript gives a time."""
+def agent_paths(agent: str, path: Path, listing: list[Listed]) -> list[Path]:
+    """The transcript at `path`, the run of `agent`, and the transcript of
+    each agent under it in `listing`, at any depth by `Listed.parent`."""
     reached = {agent}
     while added := {aid for x in listing if x.parent in reached
                     and (aid := x.launch.agent) is not None and aid not in reached}:
         reached |= added
-    paths = [path, *(x.path for x in listing if x.launch.agent in reached - {agent})]
+    return [path, *(x.path for x in listing if x.launch.agent in reached - {agent})]
+
+
+def quiet_since(agent: str, path: Path, listing: list[Listed], now: float) -> float | None:
+    """The time of the latest timestamped entry of the transcripts
+    `agent_paths` gives, where the stretch from that
+    entry to `now` has reached `STUCK_SECONDS` (`stuck_reached`), and None
+    otherwise, or where no such transcript gives a time."""
+    paths = agent_paths(agent, path, listing)
     latest = max((t for p in paths if (t := last_time(p)) is not None), default=None)
     return latest if latest is not None and stuck_reached(latest, now) else None
 

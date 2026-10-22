@@ -23,7 +23,8 @@ from operations.change_holds import (Hold, findings_hold, left_hold, questions_h
 from operations.directives import Decision, Ruling, ruling
 from operations.roles import EDITORS, Purpose, Role, analyst_of, subjects
 from operations.state import Agent, Report, State, Ticket, memoized_by_transcripts
-from operations.steps import Step, Undecided
+from operations.steps import NoStep, Step, Undecided
+from ticketing.times import utc_stamp
 
 REVIEWER_ROLES = (Role.DOC_REVIEWER, Role.DESIGN_REVIEWER, Role.ITEM_CHECKER)
 """The roles of the reviewers of a change."""
@@ -64,6 +65,18 @@ def latest_of_role(agents: list[Agent], role: Role, since: float, number: str,
     if not found or not occupies(found[-1]):
         return launch()
     return None
+
+
+def named(agents: list[Agent]) -> str:
+    """`agents`, each by its role and agent id."""
+    return ", ".join(f"{a.role} {a.agent_id or 'with no known id'}" for a in agents)
+
+
+def waiting_on(agents: list[Agent]) -> NoStep:
+    """The wait on `agents`, which are at work, with the time of the
+    latest of their launches and last resumes."""
+    return NoStep(mctx("waits on {agents}, at work since {time}").format(
+        agents=named(agents), time=utc_stamp(max(a.since for a in agents))))
 
 
 def worktree_occasion(t: Ticket, w: Path) -> str:

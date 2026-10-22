@@ -136,7 +136,9 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     ends = ends_read(ops.agents, me, listing, now_watched, now, undecided,
                      closes=closes_of(tickets))
     running_work = work_of(listing)
-    stuck = stuck_read(session, ends.quiet, now_watched, running_work)
+    stuck = stuck_read(session, ends.quiet,
+                       [w for w in now_watched if w.agent_id not in ends.held], running_work,
+                       ends.unknown)
     others = elsewhere_agents(tickets, me, frozenset(runs.operators), main, undecided)
     transcripts = transcripts_read(ops, ends, late, stuck, others)
     took_up = taken_up(me, runs.operators, transcripts.calls, runs.parents)
@@ -182,7 +184,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         recovery_agents = tuple(a for a in all_agents if (a.role, a.subject) in work)
         state = replace(state, recovery=Deferred(lambda: recovery_read(recovery_agents)))
     state = replace(state, journal=state.journal.since(given_again(state)))
-    state = with_quiet_holders(state, holders.found, listing, running_work, watching)
+    state = with_quiet_holders(state, holders.found, listing, running_work, watching, ends.held)
     computed_lines: list[str] = []
     operate_service.read_phase("spends, budgets and audit history")
     state = replace(state, computed=computed_read(state, tickets_dir, computed_lines, usage))

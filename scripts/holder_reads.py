@@ -74,11 +74,14 @@ def holders_read(tickets: Mapping[str, Ticket], session: str, main_path: Path,
 
 def with_quiet_holders(state: State, found: Mapping[str, Path], listing: list[Listed],
                        running_work: Mapping[str, tuple[str, ...]],
-                       undecided: list[str] | None = None) -> State:
+                       undecided: list[str] | None = None,
+                       held: frozenset[str] = frozenset()) -> State:
     """`state` with each live holder of a ticket of `plan.elsewhere`, and
     each operator of `plan.earlier_open`, that is quiet in
     `TranscriptsRead.stuck`, where `found` gives each holder's
-    transcript."""
+    transcript, other than a holder of `held`, the attempts
+    held while their Codex turn runs or is unknown
+    (`operator_state.EndsRead.held`), whose time `ends_read` gives."""
     stuck = state.transcripts.stuck
     if undecided is None:
         undecided = []
@@ -86,7 +89,7 @@ def with_quiet_holders(state: State, found: Mapping[str, Path], listing: list[Li
              if (h := state.tracker.tickets[n].holder) is not None and h in found}
     quiet: dict[str, float] = {}
     for h in sorted(set(paths) | set(earlier_open(state))):
-        if h in stuck:
+        if h in stuck or h in held:
             continue
         try:
             path = paths[h] if h in paths else find(h)

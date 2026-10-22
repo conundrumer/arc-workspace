@@ -35,8 +35,12 @@ class Request:
 
 @dataclass(frozen=True)
 class Pending:
-    """Unresolved recovery, with a ready dispatch or held-step judgment."""
+    """Unresolved recovery, with a ready dispatch or held-step judgment, or,
+    where `step` is None, the agent whose work is awaited (`waits_on`) and
+    the time of the request it answers (`since`)."""
     step: Step | None
+    waits_on: str | None = None
+    since: float | None = None
 
 
 def requests(ticket: Ticket) -> tuple[Request, ...] | str:
@@ -101,10 +105,10 @@ def step(state: State, ticket: Ticket) -> Pending | None:
                     and identity in evidence and evidence[identity].accepted]
         if any(consumed(state, a) for a in accepted):
             continue
-        if any(a.pending for a in attempts):
-            return Pending(None)
+        if running := [a for a in attempts if a.pending]:
+            return Pending(None, running[0].agent_id or request.agent, request.time)
         if any(a.role in EDITORS and finished(a) for a in accepted):
-            return Pending(None)
+            return Pending(None, request.agent, request.time)
         if accepted and any(finished(a) for a in accepted):
             return held(ticket, request.agent, mctx("accepted result consumption cannot be established for this role"))
         retry = Send(request.agent, DELIVER.format(agent=request.agent, operator=state.me),

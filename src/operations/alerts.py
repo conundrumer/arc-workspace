@@ -286,15 +286,35 @@ STUCK_RULE = mctx("no entry of its transcript, or of an agent under it, falls wi
 
 def stuck_text(agent: str, s: Stuck) -> str:
     """The text on `agent`, stuck as `s` gives, of the message to the
-    coordinator and of the `bug` ticket's Evidence."""
+    coordinator and of the `bug` ticket's Evidence. For a Codex attempt held
+    because whether its turn runs is unknown, the text gives that state,
+    its diagnostic and the time of its latest known activity."""
+    if s.unknown is not None:
+        return UNKNOWN_STUCK.format(agent=agent, session=s.session, time=utc_stamp(s.since),
+                                    diagnostic=s.unknown) + running_text(s)
     stretch = mctx("the time since then")
     head = mctx("Agent {agent} of session {session} has met this transcript condition since {time}: "
                 "{rule}.").format(agent=agent, session=s.session, time=utc_stamp(s.since),
                                   rule=STUCK_RULE.format(stretch=stretch))
+    return head + running_text(s)
+
+
+UNKNOWN_STUCK = mctx("Agent {agent} of session {session} is a Codex attempt that stays held, with no "
+                     "write to its transcripts or its Codex rollout since {time}: {diagnostic}")
+"""The text `stuck_text` gives for a held attempt whose Codex turn is unknown."""
+
+
+def running_text(s: Stuck) -> str:
+    """The recorded running work of `s`, or that none is recorded."""
     if not s.running:
-        return head + " " + mctx("No running work is recorded.")
-    return (head + " " + mctx("Its recorded running work:") + "\n"
+        return " " + mctx("No running work is recorded.")
+    return (" " + mctx("Its recorded running work:") + "\n"
             + "\n".join(f"- `{c}`" for c in s.running))
+
+
+STUCK_INSTANCE = mctx("no new transcript activity or unchanged Bash results since {time}")
+UNKNOWN_INSTANCE = mctx("Codex turn unknown, and no write to its transcripts or rollout since "
+                        "{time}")
 
 
 def stuck(state: State) -> Step | None:
@@ -307,7 +327,8 @@ def stuck(state: State) -> Step | None:
         if not repeated(sent, state):
             return sent
         t = ticket_step(state, BugKind.STUCK, Domain.AGENT, agent, s.since,
-                        mctx("no new transcript activity or unchanged Bash results since {time}").format(time=utc_stamp(s.since)),
+                        (UNKNOWN_INSTANCE if s.unknown is not None else STUCK_INSTANCE).format(
+                            time=utc_stamp(s.since)),
                         text)
         if t is not None:
             return t

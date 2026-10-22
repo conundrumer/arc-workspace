@@ -290,11 +290,18 @@ def analyst_key(step: Undecided) -> str:
 type Step = Launch | Send | Undecided | Bash | Poll | EndTurn | Wait | Reply
 
 
+@dataclass(frozen=True)
+class NoStep:
+    """What a procedure of a change gives in place of a step where the
+    change waits: `reason`, the party it waits on and the time it waits
+    from. It is no step, so no `key` is taken over it."""
+    reason: str
+
+
 class Pause(Enum):
     """What a stage of a change's procedure gives in place of a step:
-    `WAIT`, a wait on an agent, or `CLEAR`, nothing left to the stage, so
-    that the procedure goes on to its next stage."""
-    WAIT = "wait"
+    `CLEAR`, nothing left to the stage, so that the procedure goes on to
+    its next stage. A wait is a `NoStep`."""
     CLEAR = "clear"
 
 
@@ -362,7 +369,7 @@ OF_CHANGE = (Launch, Send, Bash, Undecided)
 """The steps that hold the number of the change they serve."""
 
 
-def served[S: Step | None](s: S, t: Ticket, version: float) -> S:
+def served[S: Step | NoStep](s: S, t: Ticket, version: float) -> S:
     """`s`, a step of the change `t`, with the number of `t` (`key`), and,
     for a launch or a command, `version`, the version of the change's
     inputs (`changes.version`), so its key moves with those inputs."""

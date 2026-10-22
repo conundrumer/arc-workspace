@@ -17,7 +17,7 @@ from operations.journal import BOUND
 from operations.roles import Role
 from operations.state import State, Ticket
 from operations.order import PROCEDURES, placed
-from operations.steps import Step, Undecided, analyst_key
+from operations.steps import NoStep, Step, Undecided, analyst_key
 from ticketing.vocabulary import Status
 
 
@@ -191,7 +191,7 @@ def retired_lines(state: State) -> list[str]:
             if e.retires is not None and (of := state.journal.of(e.retires))]
 
 
-def stands(state: State, head: str, step: Step | None) -> tuple[str, bool]:
+def stands(state: State, head: str, step: Step | NoStep | None) -> tuple[str, bool]:
     """The line of the final reply on a draft or a change that stands, by
     `head`, with its step: where that step is undecided and went to a
     ticket analyst, the line gives that step, which its procedure waits
@@ -200,6 +200,19 @@ def stands(state: State, head: str, step: Step | None) -> tuple[str, bool]:
         return head + mctx(": it waits on a decision of the step: {what}").format(
             what=step.text), True
     return head, False
+
+
+def held_stands(state: State, t: Ticket) -> tuple[str, bool]:
+    """The line of the final reply on the change `t` that stays under
+    `tickets/assigned/`, with `stands`' second value: where its step is not
+    an undecided step that went to a ticket analyst, the line gives why it
+    waits (`changes.hold_reason`)."""
+    head = "- " + mctx("Change {n} stays under `tickets/assigned/`").format(n=t.number)
+    step = changes.next_step(state, t)
+    line, asked = stands(state, head, step)
+    if asked or (why := changes.hold_reason(state, t, step)) is None:
+        return line, asked
+    return mctx("{head}: it {why}").format(head=head, why=why), False
 
 
 def final(state: State, held: set[str]) -> str:
@@ -213,9 +226,7 @@ def final(state: State, held: set[str]) -> str:
                        drafts.alone(state, t)) for t in drafts.unended(state)]
     standing += [(f"- {sentence(settled_open(n))}", False)
                  for n in triage.unsettled(state)]
-    standing += [stands(state, "- " + mctx("Change {n} stays under `tickets/assigned/`").format(
-                            n=t.number),
-                        changes.next_step(state, t)) for t in changes.held(state)]
+    standing += [held_stands(state, t) for t in changes.held(state)]
     out += [line for line, _ in standing]
     head = (mctx("Done: no procedure has a step left other than those that wait on a "
                  "decision, as the lines below give.")

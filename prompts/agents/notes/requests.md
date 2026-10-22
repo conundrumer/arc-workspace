@@ -77,6 +77,6 @@
 - To learn when a ticket you wait on closes, run `uv run python scripts/file_ticket.py await-close <number> ...` in the background: its completion notification gives how the ticket closed.
     + xref: scripts/file_ticket.py:SUBCOMMANDS
     * comment: The user's words, session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-13T02:21:38Z: "File ticket for ability to be notified on ticket close".
-- To learn why a ticket does not move, run `uv run python scripts/operate.py waits <number>`: it prints each path of links from the ticket to each ticket on its chains that is not closed, each marked with why it does not move.
+- To learn why a ticket does not move, run `uv run python scripts/operate.py waits <number>`: it prints each path of links from the ticket to each ticket on its chains that is not closed, each marked with why it does not move, and, for a change the session's latest operator holds, why that change waits.
     + xref: scripts/operate_actions.py:OperateAction.WAITS
     * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-18T14:19:37Z: "Why only the root", and 14:32:26Z: "Go", on the coordinator's "Each wait shows its paths and the tickets stuck on them".

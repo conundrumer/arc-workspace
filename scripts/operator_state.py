@@ -2,20 +2,23 @@
 beside the reads of the tracker, git and the transcripts: the ends of the
 operators' agents, with the quiet and the stuck ones."""
 
+import shlex
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 
+from file_reads import stat_read
 from filed_texts import gone_line
 from monitor_reads import watched
-from open_agents import Listed, quiet_since, turn_ended_idle
+from open_agents import Listed, agent_paths, quiet_since, turn_ended_idle
 from agent_ends import ended_by, ended_elsewhere, ended_with, reply_to, stalled_reports
 from transcripts import launched_find
 from transcript_snapshots import SUBJECT_FAULTS
 
 from controlled_markdown import mctx
 
+from operations.constants import stuck_reached
 from operations.monitor import Watched
 from operations.plan import unknown_line
 from operations.roles import Role, analyst_of, subjects
@@ -48,12 +51,17 @@ class EndsRead:
     that end them, by agent id, or None where none does (`ended`), the
     part of those of stalled agents (`TranscriptsRead.stalled`), and
     `TranscriptsRead.quiet`, and the attempts held while their Codex turn
-    runs or is unknown (`held`), which raise no stall alert."""
+    runs or is unknown (`held`), which raise no stall alert. `quiet` gives
+    a held attempt whose turn is unknown at the time of its latest known
+    activity (`unknown_since`), where that has reached `STUCK_SECONDS`, and
+    `unknown` gives that attempt's diagnostic (`unknown_diagnostic`) by agent
+    id."""
     agents: tuple[Agent, ...]
     ended: Mapping[str, Report | None]
     stalled: Mapping[str, Report]
     quiet: Mapping[str, float]
     held: frozenset[str] = frozenset()
+    unknown: Mapping[str, str] = field(default_factory=dict)
 
 
 def ticket_numbers(a: Agent) -> list[str]:
@@ -120,6 +128,7 @@ def ends_read(agents: Sequence[Agent], me: str, listing: list[Listed],
     closed = tuple(ended_by(agents, ended))
     by_id = {a.agent_id: a for a in agents if a.agent_id}
     held: set[str] = set()
+    unknown: dict[str, CodexRead] = {}
     for a in closed:
         if a.pending or a.agent_id is None or a.agent_id in done:
             continue
@@ -128,11 +137,19 @@ def ends_read(agents: Sequence[Agent], me: str, listing: list[Listed],
             undecided.append(codex_line(a.agent_id, read))
         if read.end in (CodexEnd.LIVE, CodexEnd.UNKNOWN):
             held.add(a.agent_id)
+        if read.end is CodexEnd.UNKNOWN:
+            unknown[a.agent_id] = read
     closed = tuple(hold(by_id[a.agent_id]) if a.agent_id in held else a for a in closed)
     ended = {k: v for k, v in ended.items() if k not in held}
     stalled = {k: v for k, v in stalled.items() if k not in held}
     quiet = {k: v for k, v in quiet.items() if k not in held}
-    return EndsRead(closed, ended, stalled, quiet, frozenset(held))
+    diagnostics: dict[str, str] = {}
+    for aid, read in unknown.items():
+        since, limits = unknown_since(by_id[aid], read, listing)
+        if stuck_reached(since, now):
+            quiet[aid] = since
+            diagnostics[aid] = unknown_diagnostic(read, limits)
+    return EndsRead(closed, ended, stalled, quiet, frozenset(held), diagnostics)
 
 
 class CodexEnd(StrEnum):
@@ -144,10 +161,15 @@ class CodexEnd(StrEnum):
 
 @dataclass(frozen=True)
 class CodexRead:
-    """An attempt's completion or thread state, with the failed walk's reason."""
+    """An attempt's completion or thread state, with the failed walk's reason.
+    Where its state is unknown, `scratch` and `rollout`, its scratch
+    directory and its Codex rollout, are as far as they were recovered
+    before the read failed, and `limits` gives what could not be."""
     end: CodexEnd
     why: str = ""
     scratch: Path | None = None
+    rollout: Path | None = None
+    limits: tuple[str, ...] = ()
 
 
 def codex_end(agent: str, home: Path | None = None) -> CodexRead:
@@ -187,17 +209,19 @@ def codex_end(agent: str, home: Path | None = None) -> CodexRead:
                 why = "native assignment has no accepted turn"
                 reserved = native.state.get("reserved")
                 dead = reserved is not None and stuck_reached(reserved, time.time())
-                return CodexRead(CodexEnd.DEAD if dead else CodexEnd.UNKNOWN, why, scratch)
+                if dead:
+                    return CodexRead(CodexEnd.DEAD, why, scratch)
+                return unknown_read(why, scratch, None, home)
             try:
                 status = codex_daemon.turn_status(thread, turn)
             except SUBJECT_FAULTS as exc:
-                return CodexRead(CodexEnd.UNKNOWN,
-                                 f"native assignment has no current validated result; {exc}",
-                                 scratch)
+                return unknown_read(
+                    f"native assignment has no current validated result; {exc}", scratch, thread,
+                    home)
             return CodexRead(CodexEnd.LIVE if status == "inProgress" else CodexEnd.DEAD,
                              "native assignment has no current validated result", scratch)
     except SUBJECT_FAULTS as exc:
-        return CodexRead(CodexEnd.UNKNOWN, str(exc))
+        return unknown_read(str(exc), None, None, home)
 
     path = launched_find(agent)
     if path is None:
@@ -207,7 +231,7 @@ def codex_end(agent: str, home: Path | None = None) -> CodexRead:
             return CodexRead(CodexEnd.DONE)
         entries = list(entries_forward(path))
     except SUBJECT_FAULTS as exc:
-        return CodexRead(CodexEnd.UNKNOWN, str(exc))
+        return unknown_read(str(exc), None, None, home)
     try:
         kind = role_type(path)
         if kind is None:
@@ -231,7 +255,74 @@ def codex_end(agent: str, home: Path | None = None) -> CodexRead:
         return CodexRead(CodexEnd.LIVE if status == "inProgress" else CodexEnd.DEAD,
                          why, scratch)
     except SUBJECT_FAULTS as exc:
-        return CodexRead(CodexEnd.UNKNOWN, f"{why}; {exc}", scratch)
+        return unknown_read(f"{why}; {exc}", scratch, None, home)
+
+
+def unknown_read(why: str, scratch: Path | None, thread: str | None,
+                 home: Path | None) -> CodexRead:
+    """The `CodexEnd.UNKNOWN` read of an attempt for `why`, with the scratch
+    directory `scratch` and Codex thread `thread` recovered so far, and
+    from them its rollout, where the rollout lookup finds it: the thread of
+    `scratch` where `thread` is None. What it could not recover is in its
+    `limits`."""
+    import codex_rollout
+
+    limits: list[str] = []
+    rollout = None
+    try:
+        if thread is None and scratch is not None:
+            thread = codex_rollout.saved_thread(scratch)
+        if thread is None:
+            limits.append(mctx("its Codex rollout is not known"))
+        else:
+            rollout = codex_rollout.rollout_path(thread, home or Path.home())
+    except SUBJECT_FAULTS as exc:
+        limits.append(mctx("its Codex rollout cannot be located ({error})").format(error=exc))
+    return CodexRead(CodexEnd.UNKNOWN, why, scratch, rollout, tuple(limits))
+
+
+def unknown_since(a: Agent, read: CodexRead, listing: list[Listed]) -> tuple[float, list[str]]:
+    """The time of the latest write among the transcript of the attempt `a`,
+    the transcripts of the agents under it in `listing`, its Codex
+    rollout (`read.rollout`), and `a.since`, the time of its launch or its
+    last resume, with what could not be read: `read.limits`, and each
+    source whose write time is not available. A source that is not
+    readable leaves the others' times in use."""
+    limits = list(read.limits)
+    paths: list[Path] = []
+    try:
+        path = launched_find(a.agent_id) if a.agent_id is not None else None
+        if path is None:
+            limits.append(mctx("its transcript was not found"))
+        else:
+            paths = agent_paths(a.agent_id or "", path, listing)
+    except SUBJECT_FAULTS as exc:
+        limits.append(mctx("its transcript cannot be read ({error})").format(error=exc))
+    times = [a.since]
+    for source in [*paths, *([] if read.rollout is None else [read.rollout])]:
+        try:
+            stat = stat_read(source)
+        except OSError as exc:
+            limits.append(mctx("the write time of {path} cannot be read ({error})").format(
+                path=source, error=exc))
+            continue
+        if stat is None:
+            limits.append(mctx("{path} does not exist").format(path=source))
+        else:
+            times.append(stat.mtime)
+    return max(times), limits
+
+
+def unknown_diagnostic(read: CodexRead, limits: Sequence[str]) -> str:
+    """The text on a held attempt of unknown state (`unknown_text`), with
+    each source of activity that could not be read, where the time
+    of its activity then rests on the others and on its launch or last
+    resume."""
+    if not limits:
+        return unknown_text(read)
+    return unknown_text(read) + " " + mctx(
+        "Its activity time leaves out what could not be read: {limits}.").format(
+            limits="; ".join(limits))
 
 
 def codex_line(agent: str, read: CodexRead) -> str:
@@ -246,11 +337,20 @@ def codex_line(agent: str, read: CodexRead) -> str:
                         "in {scratch} after its launcher ended, so the attempt counts as running"
                         ).format(run=agent, scratch=read.scratch)
         case CodexEnd.UNKNOWN:
-            return mctx("{run}: whether a Codex turn runs for it is unknown ({why}), so the "
-                        "attempt counts as running; `uv run python scripts/codex_agent.py "
-                        "show <scratch>` shows its turn").format(run=agent, why=read.why)
+            return f"{agent}: {unknown_text(read)}"
         case CodexEnd.DONE:
             raise ValueError("a completed Codex attempt has no undecided line")
+
+
+def unknown_text(read: CodexRead) -> str:
+    """Why an attempt of unknown state counts as running, with the command
+    that shows its turn where its scratch path is recovered, and otherwise
+    that the path is not."""
+    shown = (mctx("`uv run python scripts/codex_agent.py show {scratch}` shows its turn").format(
+        scratch=shlex.quote(str(read.scratch))) if read.scratch is not None
+        else mctx("its scratch path is not recovered"))
+    return mctx("whether a Codex turn runs for it is unknown ({why}), so the attempt counts as "
+                "running; {shown}").format(why=read.why, shown=shown)
 
 
 def hold(a: Agent) -> Agent:
@@ -283,12 +383,15 @@ def quiet_read(agents: Sequence[Agent], listing: list[Listed], now: float,
 
 
 def stuck_read(session: str, quiet: Mapping[str, float], now_watched: Sequence[Watched],
-               running_work: Mapping[str, tuple[str, ...]]) -> dict[str, Stuck]:
+               running_work: Mapping[str, tuple[str, ...]],
+               unknown: Mapping[str, str] | None = None) -> dict[str, Stuck]:
     """`TranscriptsRead.stuck` of the agents of `quiet` and `now_watched`,
     where `running_work` gives the command lines of each agent's work
-    still running. A watched agent's `Watched.stuck` stands in place of
-    its time in `quiet`."""
-    return {aid: Stuck(session, q, running_work.get(aid, ()))
+    still running, and `unknown`, where given, the diagnostic of each held
+    attempt of unknown state (`EndsRead.unknown`). A watched agent's
+    `Watched.stuck` stands in place of its time in `quiet`."""
+    known = unknown or {}
+    return {aid: Stuck(session, q, running_work.get(aid, ()), known.get(aid))
             for aid, q in [*quiet.items(), *((w.agent_id, w.stuck) for w in now_watched)]
             if q is not None}
 

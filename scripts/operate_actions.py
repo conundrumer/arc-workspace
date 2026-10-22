@@ -24,7 +24,7 @@ from ticketing.vocabulary import COORDINATOR, Kind, Status, queued
 from transcript_snapshots import Refused
 from tree_reads import main_tree
 
-from operations import directives, relay, runs, ticket_stall, waits
+from operations import changes, directives, relay, runs, ticket_stall, waits
 from operations import codex_mode, trial_mode
 from operations.mode_switch import ModeSwitch, Scope
 from operations.constants import WAKE
@@ -135,14 +135,20 @@ def expedited_requests(tickets: Path, texts: list[str]) -> list[TicketNumber]:
 
 def print_waits(number: str) -> int:
     """Print the paths of links from ticket `number` (`waits.paths`), from
-    the state `next` reads for the session's latest operator, or fail
-    where no operator of the session ran `next`."""
+    the state `next` reads for the session's latest operator, then, where
+    that operator holds the change `number`, the reason it waits
+    (`changes.hold_reason`), or fail where no operator of the session ran
+    `next`."""
     operators = operator_runs(session_id(), "")
     if not operators:
         print(mctx("operate: no operator of the session ran `next`"), file=sys.stderr)
         return 1
     state, _ = read_state(operators[-1][0])
     print(waits.rendered(state, waits.paths(state, number, ticket_stall.stalled(state))))
+    t = state.tracker.tickets.get(number)
+    if t is not None and changes.holds(t, state.me) and (
+            why := changes.hold_reason(state, t, changes.next_step(state, t))) is not None:
+        print(mctx("Change {number} {why}").format(number=number, why=why))
     return 0
 
 

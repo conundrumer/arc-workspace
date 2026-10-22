@@ -38,14 +38,15 @@ from pathlib import Path
 from controlled_markdown import mctx
 from operations import briefs, messages
 from operations.completion import occupies
-from operations.change_agents import settled
+from operations.change_agents import settled, waiting_on
 from operations.change_holds import Hold, findings_hold, unreplied_hold
 from operations.directives import Decision, ruling
 from operations.handled import sent
 from operations.reports import at_cap, no_finding, shows_current
 from operations.roles import Role
 from operations.state import Agent, State, Ticket, last_reported
-from operations.steps import Launch, Pause, Send, Step, Undecided, agent_ids
+from operations.steps import Launch, NoStep, Pause, Send, Step, Undecided, agent_ids
+from ticketing.times import utc_stamp
 
 
 def reviewers_of(agents: list[Agent], w: Path) -> list[Agent]:
@@ -64,20 +65,21 @@ def latest_reviewer(agents: list[Agent], w: Path) -> Agent | None:
 
 
 def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
-               agents: list[Agent], launcher: str) -> Step | Pause:
+               agents: list[Agent], launcher: str) -> Step | NoStep | Pause:
     """The step of the review of the change's documents, with `launcher`
-    as the launcher of each doc reviewer it launches, `Pause.WAIT` where it
+    as the launcher of each doc reviewer it launches, the `NoStep` where it
     waits on an agent, or `Pause.CLEAR` where it has passed."""
     r = latest_reviewer(agents, w)
     if r is None or not occupies(r):
         return review_launch(state, t, w, here, launcher, 0.0)
     if r.pending:
-        return Pause.WAIT
+        return waiting_on([r])
     reply = r.last_report
     if reply is not None and at_cap(r):
         judged = any(a.role is Role.TICKET_ANALYST and a.launched > reply.time
                      and briefs.on_cap_reply(a) and occupies(a) and not a.pending for a in agents)
-        return Pause.CLEAR if judged else Pause.WAIT
+        return Pause.CLEAR if judged else NoStep(AT_CAP.format(
+            agent=r.agent_id, time=utc_stamp(reply.time)))
     if reply is not None and (late := [a for a in here if (rep := a.last_report) is not None
                                        and rep.time > reply.time]):
         return review_stale(state, t, w, here, r, reply.time, late, launcher)
@@ -86,6 +88,12 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
     if reply is None:
         return unreplied(state, t, w, here, r, launcher)
     return review_decided(state, t, w, here, findings_hold(r, t.number), launcher)
+
+
+AT_CAP = mctx("waits on a ticket analyst to rule on the reply of doc reviewer {agent}, given at "
+              "{time} at its round cap")
+"""Why `doc_review` gives a change no step, where the reviewer's reply stands at its
+round cap and no ticket analyst has judged it."""
 
 
 def unreplied(state: State, t: Ticket, w: Path, here: list[Agent],

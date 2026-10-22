@@ -53,7 +53,7 @@ from operations.roles import AGENT_ID
 from operations.state import (Agent, DueEntry, State, Ticket, kept_across_reads, memoized,
                               memoized_by_transcripts)
 from operations.handled import held_aside
-from operations.steps import Bash, Step
+from operations.steps import Bash, NoStep, Step
 from operations.tracker import exits
 from ticketing.exits import Exit
 from ticketing.times import utc_stamp
@@ -130,8 +130,12 @@ def holder(t: Ticket) -> Holder | None:
 
 
 def change_step(state: State, t: Ticket) -> Step | None:
-    """The next step on a change held by this operator."""
-    return changes.next_step(state, t) if changes.holds(t, state.me) else None
+    """The next step on a change held by this operator, or None where it
+    has none (`steps.NoStep`) or is not held."""
+    if not changes.holds(t, state.me):
+        return None
+    step = changes.next_step(state, t)
+    return None if isinstance(step, NoStep) else step
 
 
 def review_held(state: State, number: str) -> bool:

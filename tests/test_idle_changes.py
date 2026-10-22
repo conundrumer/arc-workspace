@@ -30,12 +30,14 @@ def test_an_idle_change_gets_the_message_then_the_bug_step(tmp_path: Path) -> No
     from operations import idle_changes
     from operations.constants import COORDINATOR
     from operations.journal import Journal
-    from operations.steps import Bash, Send, key
+    from operations.steps import Bash, NoStep, Send, key
     st, t = idle_state(tmp_path)
-    sent = idle_changes.step(st, t, None)
+    waiting = NoStep("waits on the clock: step x is set aside")
+    sent = idle_changes.step(st, t, waiting, waiting)
     assert isinstance(sent, Send) and sent.to == COORDINATOR
+    assert waiting.reason in sent.message
     done = entry(COORDINATOR, sent.message, t.number, st.now - 100, key(sent))
-    after = idle_changes.step(replace(st, journal=Journal((done,))), t, None)
+    after = idle_changes.step(replace(st, journal=Journal((done,))), t, waiting, waiting)
     assert isinstance(after, Bash)
 
 
@@ -44,7 +46,9 @@ def test_a_change_that_waits_on_a_named_party_gets_no_message(tmp_path: Path) ->
     from operations.constants import AGAIN_SECONDS, COORDINATOR
     from operations.journal import Journal
     from operations.state import Waits
+    from operations.steps import NoStep
     st, t = idle_state(tmp_path)
+    waiting = NoStep("waits")
     editor = st.transcripts.agents[0]
     waits = [
         replace(st, transcripts=replace(st.transcripts, agents=(
@@ -55,4 +59,12 @@ def test_a_change_that_waits_on_a_named_party_gets_no_message(tmp_path: Path) ->
                                            st.now - 100),))),
         replace(st, transcripts=replace(st.transcripts, limited={FIRST: st.now - 100})),
     ]
-    assert [idle_changes.step(s, t, None) for s in waits] == [None] * len(waits)
+    assert [idle_changes.step(s, t, waiting, waiting) for s in waits] == [None] * len(waits)
+
+
+def test_a_recovery_hold_names_the_agent_it_waits_on_and_the_request_time() -> None:
+    from operations.merging import recovery_wait
+    from operations.recovery import Pending
+    from ticketing.times import utc_stamp
+    why = recovery_wait(Pending(None, "a0000000000000042", 1000.0)).reason
+    assert "a0000000000000042" in why and utc_stamp(1000.0) in why

@@ -184,9 +184,14 @@ def short(text: str) -> str:
     return text[:397] + "..." if len(text) > 400 else text
 
 
+def saved_thread(scratch: Path) -> str:
+    """The Codex session the scratch directory `scratch` saved."""
+    return (scratch / "codex-session").read_text().strip()
+
+
 def read(scratch: Path, home: Path) -> Rollout:
     """Read complete JSONL lines only; a concurrent append may leave a tail."""
-    thread = (scratch / "codex-session").read_text().strip()
+    thread = saved_thread(scratch)
     state = Rollout(thread)
     for row in rows(rollout_path(thread, home)):
         if row["type"] != "event_msg":
