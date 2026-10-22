@@ -2,8 +2,9 @@
 from a transcript: the key of a step (`STEP_KEY`), the line that gives the
 file a brief or a message is in (`FILED_LINE`), the name of a report file
 (`REPORT_NAME`), the report of an agent that sent its final reply by
-SendMessage (`SENT_BY_MESSAGE`), and the last line of a poll
-(`POLL_AGAIN`). They stand apart from the modules that
+SendMessage (`SENT_BY_MESSAGE`), the last line of a poll
+(`POLL_AGAIN`), and the line of a call that a running state read outlasts
+(`READ_RUNNING`). They stand apart from the modules that
 print them so that the import closure of a script that reads them, which
 `scripts/kept_reads.py` keys its records on, holds none of the code that
 plans a step."""
@@ -67,6 +68,11 @@ SENT_BY_MESSAGE = re.compile(
 
 POLL_AGAIN = mctx("Run the command again: nothing is ready.")
 """The last line of what the command prints for a poll."""
+
+
+READ_RUNNING = mctx("The state read runs in the resident ({phase}, {seconds} s so far).")
+"""The line, printed before `POLL_AGAIN`, of a call whose bound came while the
+state read it waited on was running, with the read's phase and its seconds so far."""
 
 
 STATE_READ_TIMEOUT = mctx("State read/planning failed for agent {agent}: the foreground bound "

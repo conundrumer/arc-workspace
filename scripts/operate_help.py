@@ -93,6 +93,7 @@ WAITS_HELP = mctx("""
 PARTS = {
     HelpPart.NEXT: mctx("""
     - `next` prints the next step of the operator whose agent id it is given: one call to make, or several launches to make in one message, with their parameters, or the final reply.
+        - Where the call's bound comes while the session's resident is still reading the state, the call prints that the state read runs, with its phase and seconds so far, and the line `Run the command again: nothing is ready.`. The read goes on in the resident, and a later call prints the step.
         - Where a call of `next` fails and its output prints no call, it prints instead a step that sends the coordinator that output with the operator's agent id, and then has the operator run the command again. Where the operator's previous call of `next` printed that step, it prints the failure's output alone and the operator hands back.
         - With a launch, it also prints each further launch that it gives on the state with the launches before it made, until one of these holds:
             - A step that `next` prints ahead of every launch is ready and the output does not hold it.

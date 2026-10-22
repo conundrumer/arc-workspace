@@ -84,7 +84,6 @@ DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.CONSOLE, ReaderName.SURVEY,
 reads."""
 
 
-@operate_service.reading()
 def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState]:
     """The state the operator's procedures read, and the state the
     monitor's steps read. Where `since` is given, the transcripts read for

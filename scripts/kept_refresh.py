@@ -1,96 +1,61 @@
-"""Write into the store of `kept_reads` the state reads of the sessions a
-merge hands over, so that the first `operate.py next` call of each session
-after the merge reads them from the store and does not compute them.
+"""Have the resident of each session read the state, so that the first
+`operate.py next` call of the session after a merge reads the reads of the
+new code from the store and does not compute them.
 
-    uv run python scripts/kept_refresh.py [--held <session> <fd> ...]
-    uv run python scripts/kept_refresh.py read <operator>
+    uv run python scripts/kept_refresh.py [<session> ...]
 
-`scripts/merge_change.py` runs the first form once the merge lock is
-released, with each `--held` an open descriptor `<fd>` of the refresh lock
-of `<session>` (`refresh_locks`), locked since before the merge's
-fast-forward, and the merging session's first. The script refreshes each
-session through its resident service, where one owns it, and otherwise by
-a child of the second form with `CLAUDE_CODE_SESSION_ID` set to that
-session. It releases the session's lock once that refresh ends, whether
-the resident or the child did it. A session where no operator ran
-`operate.py next` has no child.
+`scripts/merge_change.py` runs it once its fast-forward has landed and its
+refresh locks (`refresh_locks`) are released, with the sessions it locked,
+the merging session first. For each session where an operator ran
+`operate.py next`, the script starts the session's resident service where
+none runs, and asks it to read the state of that session's last operator.
+The resident answers once it accepts the request, and the read goes on in
+the resident: a `next` call that arrives during it waits in the resident's
+queue, and gets the step, or the line that says the read runs, within its
+bound. The script does not wait for a read. It exits 1 where a session's
+request failed, after it has asked every other session.
 
-The second form opens the store, reads the state of `<operator>` in the
-session `CLAUDE_CODE_SESSION_ID` gives (`state_assembly.read_state`), and
-writes the store's records at its exit.
-
-Neither form prints a step or starts a run."""
+It prints no step and starts no run."""
 
 import argparse
-import os
-import subprocess
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from pathlib import Path
-from typing import IO
 
-import script_calls
 from handbook.paths import scripts_importable
 
 scripts_importable()
 
-import kept_reads  # noqa: E402
 import operate_service  # noqa: E402
-import state_assembly  # noqa: E402
 from operator_reads import operator_runs  # noqa: E402
-from refresh_locks import REFRESH  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 
 
 def refresh_session(main: Path, session: str) -> None:
-    """Refresh the last operator of `session` through its resident or a child."""
+    """Have the resident of `session` read the state of the session's last operator."""
     runs = operator_runs(session, "")
     if runs:
-        def standalone() -> None:
-            subprocess.run(("uv", "run", "python", *REFRESH, "read", runs[-1][0]), cwd=main,
-                           env={**os.environ, script_calls.SESSION_ENV: session},
-                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL)
-        operate_service.refresh_resident(main, session, runs[-1][0], standalone)
+        operate_service.refresh_resident(main, session, runs[-1][0])
 
 
-def refresh(main: Path, held: Mapping[str, IO[str]]) -> None:
-    """Refreshes each session of `held`, in its order, closing its lock's
-    file once its resident or child refresh ends, as the module docstring gives."""
-    locks = dict(held)
-    try:
-        for session in list(locks):
-            try:
-                refresh_session(main, session)
-            finally:
-                locks.pop(session).close()
-    finally:
-        for f in locks.values():
-            f.close()
-
-
-def read(operator: str) -> None:
-    """The child: reads the state of `operator` with the store open."""
-    kept_reads.open_store()
-    try:
-        state_assembly.read_state(operator)
-    finally:
-        kept_reads.flush()
+def refresh(main: Path, sessions: Sequence[str]) -> bool:
+    """Ask the resident of each session of `sessions`, in order, and whether every request was accepted."""
+    done = True
+    for session in sessions:
+        try:
+            refresh_session(main, session)
+        except (OSError, ValueError, RuntimeError, operate_service.Expired,
+                operate_service.Unavailable) as exc:
+            print(f"kept_refresh: {session}: {exc}", file=sys.stderr)
+            done = False
+    return done
 
 
 def main(argv: Sequence[str]) -> int:
-    if argv[:1] == ["read"]:
-        ap = argparse.ArgumentParser(prog="kept_refresh.py read")
-        ap.add_argument("operator", help="the agent id of the operator whose state is read")
-        read(ap.parse_args(argv[1:]).operator)
-        return 0
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--held", nargs=2, action="append", default=[], metavar=("SESSION", "FD"),
-                    help="a session and the descriptor of its refresh lock, held")
-    a = ap.parse_args(argv)
-    refresh(main_tree(), {s: os.fdopen(int(fd), "a") for s, fd in a.held})
-    return 0
+    ap.add_argument("sessions", nargs="*", metavar="SESSION", help="a session whose resident reads the state")
+    return 0 if refresh(main_tree(), ap.parse_args(argv).sessions) else 1
 
 
 if __name__ == "__main__":

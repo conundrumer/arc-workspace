@@ -164,7 +164,7 @@ def test_first_request_after_code_replacement_uses_a_fresh_service(resident):
     assert len(processes) == 2
 
 
-@pytest.mark.parametrize("cancel", [service.Replaced, service.Disconnected, service.Expired])
+@pytest.mark.parametrize("cancel", [service.Replaced, service.Expired])
 def test_request_cancellation_escapes_cache_validation(monkeypatch, cancel):
     monkeypatch.syspath_prepend(str(SCRIPTS))
     reads = script("state_reads")
@@ -177,7 +177,7 @@ def test_request_cancellation_escapes_cache_validation(monkeypatch, cancel):
         reads.holds((reads.By.STAMP, "fixture", (), (), None))
 
 
-def test_deadline_during_cache_validation_retires_the_service(monkeypatch):
+def test_bound_during_cache_validation_answers_the_client_and_keeps_reading(monkeypatch):
     import io
     import signal
     monkeypatch.syspath_prepend(str(SCRIPTS))
@@ -204,20 +204,21 @@ def test_deadline_during_cache_validation_retires_the_service(monkeypatch):
     monkeypatch.setattr(files, "stats_stand_but", lambda _: None)
     monkeypatch.setattr(service.script_calls, "start_request", lambda *_: None)
     monkeypatch.setattr(service.script_calls, "record", lambda: None)
-    monkeypatch.setattr(service, "timeout_output", lambda _: print("expired"))
     message = {"operator": "fixture", "started": time.time(),
                "deadline": time.monotonic() + 0.05, "refresh": False}
     connection = Mock()
     connection.makefile.return_value = io.BytesIO((json.dumps(message) + "\n").encode())
     handler = signal.getsignal(signal.SIGALRM)
     try:
-        assert service.serve_request(connection, Mock(), "current") is False
+        assert service.serve_request(connection, Mock(), "current") is True
     finally:
         signal.signal(signal.SIGALRM, handler)
-    assert not continued
+    assert continued
+    assert connection.sendall.call_count == 1
     response = json.loads(connection.sendall.call_args.args[0])
-    assert response["status"] == 1
-    assert response["stdout"] == "expired\n"
+    assert response["status"] == 0
+    assert response["stdout"].endswith("Run the command again: nothing is ready.\n")
+    assert "state read runs" in response["stdout"]
 
 
 def test_disconnect_after_a_journaled_start_does_not_repeat_bash(resident):
@@ -290,15 +291,13 @@ def test_failed_service_restarts(resident):
     assert len(processes) == 2
 
 
-def test_merge_refresh_uses_the_resident_while_its_lock_is_held(resident, monkeypatch):
+def test_refresh_uses_the_resident_after_a_code_change(resident, monkeypatch):
     root, processes = resident
     monkeypatch.syspath_prepend(str(SCRIPTS))
-    locks = script("refresh_locks")
-    monkeypatch.setattr(locks.checkout, "caches", lambda: root / ".cache")
+    script("refresh_locks")
     assert call(root)[0] == 0
-    with locks.hold("isolated-service"):
-        (root / "code").write_text("merged")
-        assert service.refresh_resident(root, "isolated-service", "op")
+    (root / "code").write_text("merged")
+    service.refresh_resident(root, "isolated-service", "op")
     assert call(root)[1].startswith("merged op ready ")
     assert len(processes) == 2
 
@@ -371,7 +370,7 @@ def test_resident_work_is_present_in_the_cost_records(resident):
     assert all(c.retained and c.cpu >= 0 and c.session == "isolated-service" for c in requests)
 
 
-@pytest.mark.parametrize("outcome", ["change", "expiry", "disconnect", "read_budget", "refresh_send"])
+@pytest.mark.parametrize("outcome", ["change", "refresh_send"])
 def test_inflight_code_change_responds_and_flushes_before_retiring(tmp_path, monkeypatch, outcome):
     """Force the merge between completed reads and response publication."""
     import io
@@ -414,14 +413,6 @@ def test_inflight_code_change_responds_and_flushes_before_retiring(tmp_path, mon
     def main(_):
         reads.new_state()
         print(completed(source))
-        if outcome == "read_budget":
-            service.read_phase("budget history")
-            with service.reading():
-                signal.raise_signal(signal.SIGALRM)
-        if outcome == "expiry":
-            raise service.Expired
-        if outcome == "disconnect":
-            raise service.Disconnected
         ready_to_send.append(True)
         if outcome != "refresh_send":
             code[0] = "new"
@@ -429,14 +420,13 @@ def test_inflight_code_change_responds_and_flushes_before_retiring(tmp_path, mon
         return 0
 
     monkeypatch.setattr(operate, "main", main)
-    monkeypatch.setattr(service, "timeout_output", lambda _: print("expired"))
     message = {"operator": "fixture", "started": time.time(),
                "deadline": time.monotonic() + 20, "refresh": False}
     connection = Mock()
     connection.makefile.return_value = io.BytesIO((json.dumps(message) + "\n").encode())
     handler = signal.getsignal(signal.SIGALRM)
     try:
-        assert service.serve_request(connection, Mock(), "old") is (outcome == "disconnect")
+        assert service.serve_request(connection, Mock(), "old") is False
     finally:
         signal.signal(signal.SIGALRM, handler)
     for lock in held:
@@ -444,14 +434,8 @@ def test_inflight_code_change_responds_and_flushes_before_retiring(tmp_path, mon
     out = json.loads(connection.sendall.call_args.args[0])
     if outcome == "refresh_send":
         assert out == {"retry": True, "status": 1, "stdout": "", "stderr": ""}
-    elif outcome == "read_budget":
-        assert out["retry"] is False and out["status"] == 1
-        assert out["stdout"] == ""
-        assert "budget history" in out["stderr"]
-        assert "preserve completed reads" in out["stderr"]
     else:
-        assert out == {"retry": False, "status": 0 if outcome == "change" else 1,
-                       "stdout": "completed\n" if outcome == "change" else "expired\n", "stderr": ""}
+        assert out == {"retry": False, "status": 0, "stdout": "completed\n", "stderr": ""}
     # Only the final flush makes the completed read visible to another store.
     other = kept.Store(kept.store().path)
     name = reads.name_of(completed)
@@ -477,20 +461,6 @@ def test_failed_startup_reports_the_cause_without_retrying(tmp_path, monkeypatch
     with pytest.raises(service.Unavailable, match="fixture startup failure"):
         call(tmp_path)
     assert started.call_count == 1
-
-
-def test_read_without_time_for_flush_fails_before_reading(monkeypatch):
-    import io
-    current = service.Request("fixture", time.time(), time.monotonic() + 1,
-                              Mock(), Mock(), "old", io.StringIO(), io.StringIO())
-    token = service.CURRENT.set(current)
-    try:
-        service.read_phase("budget history")
-        with pytest.raises(service.Unavailable, match="budget history"):
-            with service.reading():
-                pytest.fail("a read with no time to finish must not start")
-    finally:
-        service.CURRENT.reset(token)
 
 
 def test_standalone_exception_flushes_completed_reads(tmp_path, monkeypatch):
@@ -530,8 +500,8 @@ def test_refresh_retires_inflight_wait_without_reissuing_journaled_work(resident
         with connection, connection.makefile("rb") as stream:
             response = json.loads(stream.readline())
         assert response["retry"] and response["stdout"] == ""
-        assert service.request(root, "isolated-service", "op", time.time(),
-                               time.monotonic() + 20, True)[0] == 0
+    assert service.request(root, "isolated-service", "op", time.time(),
+                           time.monotonic() + 20, True)[0] == 0
     (root / "release").write_text("")
     assert call(root, "journal")[0] == 0
     until(root / "executions")

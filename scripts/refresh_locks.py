@@ -1,10 +1,11 @@
 """The refresh locks of the sessions' kept reads: a file per session under
 `checkout.caches()`, which a merge locks exclusively before the
-fast-forward that makes the kept reads of its code stale, and which
-`scripts/kept_refresh.py` holds, once the merge hands it over, until it
-has written that session's reads. A state read waits for its session's
-lock (`wait_free`), so it reads those reads from the store in place of
-computing them.
+fast-forward that makes the kept reads of its code stale, and releases once
+that fast-forward has landed. A state read waits for its session's lock
+(`wait_free`) while a merge is in progress, and a request of a resident
+that meets the lock is replaced. `scripts/kept_refresh.py` then has each
+session's resident read the state, so that the reads of the new code are
+kept.
 
 The module imports none of the state reads, so the merge call that takes
 the locks does not import them."""
@@ -35,8 +36,8 @@ LIVE_SECONDS = 1800
 NEXT_KEY = script_calls.key("operate.py", ["next"])
 
 REFRESH = ("scripts/kept_refresh.py",)
-"""The command, after `uv run python`, that writes the kept reads of the
-sessions whose locks it is handed."""
+"""The command, after `uv run python`, that has the residents of the sessions
+it is given read the state."""
 
 
 def lock_path(session: str) -> Path:
@@ -96,14 +97,15 @@ class MergeLocks:
     """The refresh locks one merge call holds: those of the merging
     session, where one is given, first, and of the live sessions, taken
     before the first fast-forward of `master` that changes a `.py` file
-    (`take`), and handed to the refresh once the merge lock is released
-    (`start`), or released (`close`)."""
+    (`take`), released once that fast-forward has landed (`mark_landed`)
+    or at `close`, and the sessions whose locks a landed fast-forward
+    released, whose residents the refresh reads (`start`)."""
 
     def __init__(self, main: Path, merging: str | None) -> None:
         self.main = main
         self.merging = merging
         self.files: dict[str, IO[str]] = {}
-        self.landed = False
+        self.landed: dict[str, None] = {}
 
     def take(self, top: str) -> None:
         """Takes the locks, where none is held and the commits from the
@@ -116,25 +118,22 @@ class MergeLocks:
         self.files = {s: hold(s) for s in dict.fromkeys([*first, *live])}
 
     def mark_landed(self) -> None:
-        """Records a fast-forward that succeeded, where the locks are held."""
-        self.landed = self.landed or bool(self.files)
+        """Records a fast-forward that succeeded, where the locks are held,
+        and releases them."""
+        self.landed.update(dict.fromkeys(self.files))
+        self.close()
 
     def start(self) -> subprocess.Popen[bytes] | None:
         """Starts the refresh in the main tree, as a process in a session
-        of its own, with the locks held where `landed` is set, and then
-        closes this process's copies; None where no refresh starts."""
-        if not (self.files and self.landed):
-            self.close()
+        of its own, for the sessions of the fast-forwards that landed, and
+        releases any lock still held; None where no refresh starts."""
+        self.close()
+        if not self.landed:
             return None
-        fds = {s: f.fileno() for s, f in self.files.items()}
-        held = [a for s, fd in fds.items() for a in ("--held", s, str(fd))]
-        try:
-            return subprocess.Popen(
-                ("uv", "run", "python", *REFRESH, *held), cwd=self.main,
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                pass_fds=tuple(fds.values()), start_new_session=True)
-        finally:
-            self.close()
+        return subprocess.Popen(
+            ("uv", "run", "python", *REFRESH, *self.landed), cwd=self.main,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
 
     def close(self) -> None:
         """Closes this process's copies of the locks' files."""

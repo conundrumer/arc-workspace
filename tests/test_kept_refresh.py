@@ -1,7 +1,6 @@
 """The refresh locks of the sessions' kept reads: a merge takes them
-before its fast-forward and hands them to the refresh, which releases each
-once that session's child ends, and a state read waits for them, so that
-a read does not compute the reads the merge made stale."""
+before its fast-forward and releases them once it has landed, and a state
+read waits for them; the refresh then asks each session's resident to read."""
 
 import fcntl
 import os
@@ -17,7 +16,7 @@ import pytest
 from tests.conftest import script
 
 kept_refresh = script("kept_refresh")
-refresh_locks = sys.modules["refresh_locks"]
+refresh_locks = script("refresh_locks")
 
 ENV = {"PATH": os.environ["PATH"], "HOME": os.environ["HOME"], "GIT_AUTHOR_NAME": "t",
        "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
@@ -38,24 +37,22 @@ def is_held(session: str) -> bool:
         return False
 
 
-def test_refresh_releases_each_lock_after_its_child(
-        caches: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every session's lock is held from the first child on, and each until
-    its own child ends; a session with no operator has no child."""
-    events: list[Any] = []
+def test_refresh_asks_each_session_with_an_operator_and_goes_on_after_a_failure(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """A session with no operator is not asked, and a session whose request
+    fails does not stop the sessions after it."""
+    asked: list[tuple[str, str]] = []
     monkeypatch.setattr(kept_refresh, "operator_runs",
                         lambda s, me: [] if s == "idle" else [(f"op-{s}", Path(s))])
 
-    def run(argv: tuple[str, ...], env: dict[str, str], **_: Any) -> None:
-        session = env["CLAUDE_CODE_SESSION_ID"]
-        events.append((session, argv[-1], [s for s in ("m", "a", "b") if is_held(s)]))
+    def ask(main: Path, session: str, operator: str) -> None:
+        asked.append((session, operator))
+        if session == "a":
+            raise RuntimeError("fixture failure")
 
-    monkeypatch.setattr(kept_refresh.subprocess, "run", run)
-    held = {s: refresh_locks.hold(s) for s in ("m", "a", "idle", "b")}
-    kept_refresh.refresh(caches, held)
-    assert events == [("m", "op-m", ["m", "a", "b"]), ("a", "op-a", ["a", "b"]),
-                      ("b", "op-b", ["b"])]
-    assert not any(is_held(s) for s in ("m", "a", "b", "idle"))
+    monkeypatch.setattr(kept_refresh.operate_service, "refresh_resident", ask)
+    assert kept_refresh.refresh(Path("."), ["m", "a", "idle", "b"]) is False
+    assert asked == [("m", "op-m"), ("a", "op-a"), ("b", "op-b")]
 
 
 def repo(tmp_path: Path, name: str) -> tuple[Path, str]:
@@ -89,26 +86,24 @@ def test_merge_locks_released_where_nothing_lands(caches: Path, tmp_path: Path) 
     assert locks.files == {}
 
 
-def test_merge_locks_handed_to_the_refresh(caches: Path, tmp_path: Path,
-                                           monkeypatch: pytest.MonkeyPatch) -> None:
-    """The refresh process holds the locks once the merge's copies are
-    closed, until it ends."""
+def test_merge_locks_released_at_landing_and_the_refresh_gets_the_sessions(
+        caches: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No lock is held once the fast-forward has landed, and the refresh
+    process is started with the sessions it locked."""
     main, top = repo(tmp_path, "m.py")
-    go = tmp_path / "go"
+    given = tmp_path / "given"
     stub = tmp_path / "stub.py"
-    stub.write_text(f"import os, time\nwhile not os.path.exists({str(go)!r}):\n"
-                    "    time.sleep(0.05)\n")
+    stub.write_text(f"import sys\nopen({str(given)!r}, 'w').write(' '.join(sys.argv[1:]))\n")
     monkeypatch.setattr(refresh_locks, "REFRESH", (str(stub),))
     locks = refresh_locks.MergeLocks(main, "m")
     locks.take(top)
+    assert is_held("m")
     locks.mark_landed()
+    assert not is_held("m")
     proc = locks.start()
     assert proc is not None
-    assert locks.files == {}
-    assert is_held("m")
-    go.write_text("")
     proc.wait()
-    assert not is_held("m")
+    assert given.read_text() == "m"
 
 
 def test_read_waits_for_refresh(caches: Path) -> None:

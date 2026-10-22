@@ -78,15 +78,17 @@ Before the first fast-forward of `master` of the call whose commits change
 a `.py` file, the script locks the refresh locks
 (`refresh_locks`) of the merging session, the one
 `CLAUDE_CODE_SESSION_ID` gives where the environment gives one, and of
-the live sessions, so that a state read of those sessions waits from then
-on in place of computing the reads that the new code made stale. Once the
-merge lock is released, where such a fast-forward succeeded, the script
-starts `uv run python scripts/kept_refresh.py` in the main tree, as a
-process in a session of its own that outlives the script, and hands it
-the locks, still held. That process writes the state reads of those
-sessions into the store of the kept reads, as its `--help` gives. The
-script continues without waiting for that refresh. Where no
-such fast-forward succeeded, the script releases the locks.
+the live sessions, so that a call of `operate.py next` of those sessions
+that meets a lock is replaced and does not compute reads of the old code.
+Once that fast-forward has landed, the script releases the locks, so a lock
+is held only while a fast-forward is. Once the merge lock is released,
+where such a fast-forward succeeded, the script starts
+`uv run python scripts/kept_refresh.py` in the main tree, as a process in a
+session of its own that outlives the script, with those sessions. That
+process has the resident service of each session read the state of the new
+code into the store of the kept reads, as its `--help` gives. The script
+continues without waiting for that refresh. Where no such fast-forward
+succeeded, the script releases the locks when it ends.
 
 `document_pass.py` reads the size of each document against its
 budget on the new `master`. Where some document stands past its budget

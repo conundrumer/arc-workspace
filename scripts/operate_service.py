@@ -3,6 +3,8 @@
 The journal owns issued work. Connections own requests and responses; an
 incomplete response is discarded and a retry computes from the journal.
 Only the serving thread accesses held reads. Idle expiry does no state read.
+A state read belongs to the resident: a request whose bound arrives first gets
+a response that says the read runs, and the run goes on without it.
 """
 
 import contextlib
@@ -19,7 +21,7 @@ import subprocess
 import sys
 import time
 import traceback
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,7 +36,9 @@ from operations.constants import LIMIT_SECONDS
 IDLE_SECONDS = 1800
 START_SECONDS = 30
 FINISH_SECONDS = 5
-"""Time left for the kept-read flush and the response after a state read stops."""
+"""Time left, at a request's bound, to answer a client that still waits."""
+CARRY_SECONDS = 600
+"""How long a request's run may last, from its start, once it has no client."""
 CODE_ENV = "ARC_OPERATE_CODE"
 CODE_CHANGED = 75
 """The exit status of a resident startup that finds the code changed while it
@@ -46,12 +50,12 @@ class Replaced(BaseException):
     """A code change or refresh requires a retry in a replacement interpreter."""
 
 
-class Disconnected(BaseException):
-    """The request's client has gone."""
+class Detached(BaseException):
+    """The request has no client waiting, so its run publishes nothing."""
 
 
 class Expired(BaseException):
-    """The request reached its foreground deadline."""
+    """A client's call reached its foreground deadline."""
 
 
 class Unavailable(BaseException):
@@ -71,34 +75,60 @@ class Request:
     refresh: bool = False
     phase: str = "state"
     pending: "Pending | None" = None
+    begun: float = field(default_factory=time.monotonic)
+    waiting: bool = True
+    """Whether the client still waits for a response."""
+
+    def detach(self, stdout: str = "") -> None:
+        """Answer the waiting client with a successful `stdout`; the run goes on without it."""
+        if not self.waiting:
+            return
+        self.waiting = False
+        try:
+            self.connection.sendall(success(stdout))
+        except OSError:
+            pass
 
     def check(self, code: bool = False) -> None:
-        if time.monotonic() >= self.deadline:
-            raise Expired
-        if not self.refresh:
-            from refresh_locks import try_shared
-            from relay_reads import session_id
-            lock = try_shared(session_id())
-            if lock is None:
-                raise Replaced
-            lock.close()
+        if self.waiting and time.monotonic() >= self.deadline - FINISH_SECONDS:
+            self.detach(read_running(self))
+        from refresh_locks import try_shared
+        from relay_reads import session_id
+        lock = try_shared(session_id())
+        if lock is None:
+            raise Replaced
+        lock.close()
         if self.pending is not None:
             self.pending.poll()
-        readable, _, _ = select.select([self.connection], [], [], 0)
-        if self.connection in readable:
-            raise Disconnected
+        if self.waiting:
+            readable, _, _ = select.select([self.connection], [], [], 0)
+            if self.connection in readable:
+                self.waiting = False
         if code:
             import kept_reads
             if kept_reads.fresh_code("operate") != self.code:
                 raise Replaced
 
 
+def success(stdout: str) -> bytes:
+    """The response line of a call that succeeded with the output `stdout`."""
+    return (json.dumps({"status": 0, "stdout": stdout, "stderr": "", "retry": False}) + "\n").encode()
+
+
+def read_running(request: Request) -> str:
+    """What a call prints where the state read of `request` outlasts the call."""
+    from operations.printed_forms import POLL_AGAIN, READ_RUNNING
+    return READ_RUNNING.format(phase=request.phase,
+                               seconds=round(time.monotonic() - request.begun)) + "\n" + POLL_AGAIN + "\n"
+
+
 @dataclass
 class Pending:
-    """Accept queued deadlines during cooperative reads, without executing them."""
+    """Accept queued requests during cooperative reads, without executing them,
+    and answer each at its bound while the run of `running` goes on."""
     listener: socket.socket
     connections: dict[socket.socket, tuple[float, dict | None]] = field(default_factory=dict)
-    read_seconds: float = 0.0
+    running: Request | None = None
 
     def poll(self) -> None:
         while select.select([self.listener], [], [], 0)[0]:
@@ -123,13 +153,10 @@ class Pending:
                     if not isinstance(message, dict) or not isinstance(message["operator"], str):
                         raise ValueError("invalid queued request")
                     self.connections[connection] = arrived, message
-                if float(message["deadline"]) - time.monotonic() <= FINISH_SECONDS + self.read_seconds:
-                    response = {"status": 1, "stdout": "", "retry": False,
-                                "stderr": "operate: request could not start before its deadline "
-                                          "while queued behind another resident request; "
-                                          "no state read was started\n"}
-                    connection.sendall((json.dumps(response) + "\n").encode())
-                    raise ValueError("queued deadline exhausted")
+                if (self.running is not None
+                        and float(message["deadline"]) - time.monotonic() <= FINISH_SECONDS):
+                    connection.sendall(success(read_running(self.running)))
+                    raise ValueError("queued request answered at its bound")
             except (OSError, ValueError, KeyError, TypeError):
                 connection.close()
                 self.connections.pop(connection, None)
@@ -157,39 +184,6 @@ def read_phase(phase: str) -> None:
         request.phase = phase
 
 
-@contextlib.contextmanager
-def reading() -> Iterator[None]:
-    """Leave time to preserve completed reads and report an unfinished read.
-
-    A read cannot be assumed to finish under arbitrary I/O or machine
-    load. Stop it before the foreground watchdog can discard its cause
-    and its completed work. A read begun too late is refused immediately.
-    """
-    current = CURRENT.get()
-    if current is None:
-        yield
-        return
-
-    def exhausted(*_: object) -> None:
-        raise Unavailable(f"state read could not finish before the foreground deadline "
-                          f"while reading {current.phase}; {FINISH_SECONDS} s reserved "
-                          "to preserve completed reads and return this response")
-
-    remaining = current.deadline - FINISH_SECONDS - time.monotonic()
-    if remaining <= 0:
-        exhausted()
-    handler = signal.signal(signal.SIGALRM, exhausted)
-    signal.setitimer(signal.ITIMER_REAL, remaining)
-    begun = time.monotonic()
-    try:
-        yield
-        if current.pending is not None:
-            current.pending.read_seconds = time.monotonic() - begun
-    finally:
-        signal.signal(signal.SIGALRM, handler)
-        signal.setitimer(signal.ITIMER_REAL, max(current.deadline - time.monotonic(), 0.001))
-
-
 def check() -> None:
     """Validate the active request before a side effect or published result."""
     if (request := CURRENT.get()) is not None:
@@ -200,8 +194,10 @@ def check() -> None:
 def side_effect() -> Iterator[None]:
     """Exclude a merge while validated request code issues work or publishes a step.
 
-    The deadline signal is deferred until a started Bash run is journaled.
-    Standalone commands keep their existing exclusion and watchdog.
+    The bound's signal is deferred until a started Bash run is journaled.
+    A request with no client waiting issues and publishes nothing: it raises
+    `Detached` before the block runs. Standalone commands keep their existing
+    exclusion and watchdog.
     """
     current = CURRENT.get()
     if current is None:
@@ -214,6 +210,8 @@ def side_effect() -> Iterator[None]:
         raise Replaced
     with lock:
         current.check()
+        if not current.waiting:
+            raise Detached
         previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
         try:
             yield
@@ -418,7 +416,7 @@ def request(main: Path, session: str, operator: str, started: float,
     """Retry transport failures from journal state within the original deadline."""
     from refresh_locks import wait_free
     while time.monotonic() < deadline:
-        if not refresh and not wait_free(session, deadline):
+        if not wait_free(session, deadline):
             raise Expired
         try:
             result = exchange(ensure(main, session, deadline), operator, started, deadline, refresh)
@@ -431,27 +429,31 @@ def request(main: Path, session: str, operator: str, started: float,
     raise Expired
 
 
-def refresh_resident(main: Path, session: str, operator: str,
-                     standalone: Callable[[], None] | None = None) -> bool:
-    """Refresh an existing resident through its replacement, if one owns the session."""
-    path = endpoint(main, session)
-    with path.with_suffix(".start").open("a") as startup:
-        fcntl.flock(startup, fcntl.LOCK_EX)
-        with path.with_suffix(".owner").open("a") as owner:
-            try:
-                fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                pass
-            else:
-                if standalone is not None:
-                    standalone()
-                    return True
-                return False
+def refresh_resident(main: Path, session: str, operator: str) -> None:
+    """Have the resident of `session`, started where none runs, read the state
+    of `operator`. The resident answers once it accepts the request, and the
+    read goes on in it."""
     status, _, _ = request(main, session, operator, time.time(),
                            time.monotonic() + LIMIT_SECONDS, True)
     if status:
         raise RuntimeError("resident refresh failed")
-    return True
+
+
+def arm(current: Request) -> None:
+    """Answer the client of `current` at its bound, end its run at `CARRY_SECONDS`,
+    and set the alarm for the earlier of those that has not come."""
+    now = time.monotonic()
+    end = current.begun + CARRY_SECONDS
+    if now >= end:
+        raise Unavailable(f"state read did not finish within {CARRY_SECONDS} s "
+                          f"while reading {current.phase}")
+    due = end
+    if current.waiting:
+        if now >= current.deadline - FINISH_SECONDS:
+            current.detach(read_running(current))
+        else:
+            due = min(due, current.deadline - FINISH_SECONDS)
+    signal.setitimer(signal.ITIMER_REAL, max(due - now, 0.001))
 
 
 def serve_request(connection: socket.socket, listener: socket.socket, code: str,
@@ -484,12 +486,15 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
         from file_reads import stats_stand_but
         stats_stand_but(None)
         status, retry, keep = 1, False, True
+        if pending is not None:
+            pending.running = current
         try:
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-                signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(Expired()))
-                signal.setitimer(signal.ITIMER_REAL, max(current.deadline - time.monotonic(), 0.001))
+                signal.signal(signal.SIGALRM, lambda *_: arm(current))
+                arm(current)
                 current.check(code=True)
-                if message["refresh"]:
+                if current.refresh:
+                    current.detach()
                     state_assembly.read_state(current.operator)
                     status = 0
                 else:
@@ -498,17 +503,8 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                 current.check()
         except Replaced:
             retry, keep = True, False
-        except Disconnected:
-            stdout.seek(0)
-            stdout.truncate(0)
-            with contextlib.redirect_stdout(stdout):
-                timeout_output(current.operator)
-        except Expired:
-            keep = False
-            stdout.seek(0)
-            stdout.truncate(0)
-            with contextlib.redirect_stdout(stdout):
-                timeout_output(current.operator)
+        except Detached:
+            pass
         except (Unavailable, kept_reads.Unavailable) as exc:
             keep = False
             stdout.seek(0)
@@ -538,7 +534,9 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                     "retry": retry}
         connection.settimeout(1)
         try:
-            if not retry and status == 0 and not message["refresh"]:
+            if not current.waiting:
+                pass
+            elif not retry and status == 0:
                 try:
                     with side_effect():
                         connection.sendall((json.dumps(response) + "\n").encode())
@@ -546,13 +544,15 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                     keep = False
                     connection.sendall((json.dumps({"status": 1, "stdout": "", "stderr": "",
                                                     "retry": True}) + "\n").encode())
-                except (Disconnected, Expired):
+                except Detached:
                     pass
             else:
                 connection.sendall((json.dumps(response) + "\n").encode())
         except OSError:
             pass
         finally:
+            if pending is not None:
+                pending.running = None
             script_calls.record()
             CURRENT.reset(token)
             state_assembly.REQUEST_STARTED.reset(cutoff)
