@@ -25,8 +25,11 @@ before a turn starts; a lost connection after submission is reported, not replay
     uv run python scripts/codex_agent.py show <scratch>
     uv run python scripts/codex_agent.py steer <scratch> <message>
     uv run python scripts/codex_agent.py interrupt <scratch>
+    uv run python scripts/codex_agent.py wait <scratch>
 
 Show reads the live rollout; steer and interrupt reach the running daemon turn.
+Wait silently returns when the work lock is free or after 60 seconds. If it
+starts with a free lock, it allows three seconds for work to start.
 """
 
 import argparse
@@ -62,7 +65,7 @@ from operations.roles import ANALYST_NAMES, CODEX_ROLES, GENERAL, ReasoningEffor
 from operations.codex_spend import CodexUsage
 
 FRESH_REFUSAL = "fresh launch refused: existing Codex history; no thread or turn accepted"
-CONTROLS = ("show", "steer", "interrupt")
+CONTROLS = ("show", "steer", "interrupt", "wait")
 
 BUSY_REFUSAL = "work call refused: scratch is busy; no thread or turn accepted; wait for its owner, then retry"
 
@@ -262,13 +265,56 @@ def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
                 client.close()
 
 
+def work_lock(scratch: Path) -> Path:
+    return scratch.parent / ("." + scratch.name + ".codex-work.lock")
+
+
+def work_lock_probe(scratch: Path) -> Path:
+    """Serialize lock probes with work admission so probes cannot refuse work."""
+    return work_lock(scratch).with_suffix(".probe.lock")
+
+
+def wait(scratch: Path) -> None:
+    scratch = scratch.resolve()
+    scratch.parent.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic()
+    deadline = started + 60
+    start_deadline = started + 3
+    observed_work = False
+    with work_lock(scratch).open("a") as lock, work_lock_probe(scratch).open("a") as probe:
+        while True:
+            try:
+                fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                pass
+            else:
+                try:
+                    try:
+                        fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        observed_work = True
+                    else:
+                        fcntl.flock(lock, fcntl.LOCK_UN)
+                        if observed_work or time.monotonic() >= start_deadline:
+                            return
+                finally:
+                    fcntl.flock(probe, fcntl.LOCK_UN)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            time.sleep(min(0.1, remaining))
+
+
 def control(argv: list[str], transport: Callable[[], Any] = codex_daemon.Proxy) -> int:
-    """Show live evidence or deliver a steer/interrupt without resuming a thread."""
+    """Control or wait for work without resuming a thread."""
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=CONTROLS)
     parser.add_argument("scratch", type=Path)
     parser.add_argument("message", nargs="?")
     args = parser.parse_args(argv)
+    if args.action == "wait":
+        wait(args.scratch)
+        return 0
     if args.action == "steer" and not args.message:
         parser.error("steer requires a message")
     import codex_ticket
@@ -479,11 +525,13 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
     if assignment is None:
         codex_ticket.legacy_guard(scratch)
     scratch.parent.mkdir(parents=True, exist_ok=True)
-    with (scratch.parent / ("." + scratch.name + ".codex-work.lock")).open("a") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise ValueError(BUSY_REFUSAL) from exc
+    with work_lock(scratch).open("a") as lock:
+        with work_lock_probe(scratch).open("a") as probe:
+            fcntl.flock(probe, fcntl.LOCK_EX)
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise ValueError(BUSY_REFUSAL) from exc
         thread = saved_thread(scratch, resume)
         scratch.mkdir(parents=True, exist_ok=True)
         if resume:

@@ -653,3 +653,52 @@ def test_fresh_call_refuses_invalid_agent_id_before_transport(files, agent_id):
     assert "agent id" in failure["error"]
     assert not (scratch / "codex-session").exists()
     assert not (scratch / "codex-events.jsonl").exists()
+
+
+@pytest.mark.parametrize("acquire,release,expected", [
+    (None, None, 3), (0, 0.5, 0.5), (1, 2, 2), (0, None, 60),
+])
+def test_wait_observes_work_lock_without_reading_output(
+        tmp_path, monkeypatch, capsys, acquire, release, expected):
+    import fcntl
+
+    scratch = tmp_path / "work"
+    now = 0.0
+    held = False
+    with (tmp_path / ".work.codex-work.lock").open("a") as owner:
+        def interleave(seconds):
+            nonlocal now, held
+            now += seconds
+            if acquire is not None and now >= acquire and not held:
+                fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                held = True
+            if release is not None and now >= release and held:
+                fcntl.flock(owner, fcntl.LOCK_UN)
+                held = False
+
+        interleave(0)
+        monkeypatch.setattr(agent, "time", SimpleNamespace(
+            monotonic=lambda: now, sleep=interleave))
+        assert agent.main(["wait", str(scratch)]) == 0
+        assert now == pytest.approx(expected, abs=0.1)
+        assert not scratch.exists()
+        assert capsys.readouterr() == ("", "")
+
+
+def test_wait_is_bounded_while_admission_lock_is_held(tmp_path, monkeypatch, capsys):
+    import fcntl
+
+    scratch = tmp_path / "work"
+    now = 0.0
+
+    def advance(seconds):
+        nonlocal now
+        now += seconds
+
+    with (tmp_path / ".work.codex-work.probe.lock").open("a") as admission:
+        fcntl.flock(admission, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        monkeypatch.setattr(agent, "time", SimpleNamespace(
+            monotonic=lambda: now, sleep=advance))
+        assert agent.main(["wait", str(scratch)]) == 0
+        assert now == pytest.approx(60)
+        assert capsys.readouterr() == ("", "")
