@@ -9,7 +9,7 @@ import math
 import re
 import time
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -18,7 +18,7 @@ from dashboard_standings import HOLD_WORD, HELD_HEAD, MOVING, Row, Standing, Sta
 from dashboard_usage import codex_bar, usage_bar
 from dashboard_words import clock, hold_text, start_hold_text
 from dashboard_reads import (DAY, OPEN, STALE_RECORD, CodexWindow, OperatorRecords, Stage, change_of, hits_full,
-                             journal_work, log_work, phrase, stage, users, Work)
+                             journal_work, latest, log_work, phrase, spans, stage, users, Span, Work)
 from dashboard_template import CLEAR_ROUTE, EVENTS, FOLD, QUEUED_TAB, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
 from shown_state import ScriptAdmits, Shown, ShownAgent, ShownParty, Start
 from ticket_reads import read_tickets
@@ -228,11 +228,24 @@ class Mark(Enum):
     FINISHED = "d"
 
 
-def stage_bar(s: Stage, mark: Mark) -> str:
+def stage_bar(s: Stage, mark: Mark, runs: Sequence[Span] = ()) -> str:
     """A bar of one cell for each stage, done up to `s`, and at `s` as
-    `mark` gives."""
-    cells = "".join(f'<b class="{"d" if k < s else mark.value if k == s else ""}"></b>' for k in Stage)
-    return f'<span class="mb">{cells}</span>'
+    `mark` gives. The cells of a run in `runs` are a group of the width of
+    its stages, that holds the run once for each of its passes, the earlier
+    passes done and `s` in the last."""
+    def cell(k: Stage, last: bool) -> str:
+        return f'<b class="{"d" if not last or k < s else mark.value if k == s else ""}"></b>'
+    out: list[str] = []
+    for k in Stage:
+        run = next((r for r in runs if r.first <= k <= r.last), None)
+        if run is None:
+            out.append(cell(k, True))
+        elif k == run.first:
+            width = run.last - run.first + 1
+            inner = "".join(cell(Stage(j), p == run.passes - 1) for p in range(run.passes)
+                            for j in range(run.first, run.last + 1))
+            out.append(f'<i style="flex:{width}">{inner}</i>')
+    return f'<span class="mb">{"".join(out)}</span>'
 
 
 def basis(v: View, r: Row) -> Ticket:
@@ -244,15 +257,27 @@ def basis(v: View, r: Row) -> Ticket:
 def progress(v: View, r: Row) -> Work | None:
     """The furthest recorded work of the row's members and its change,
     retaining the latest result at that stage. Filing alone is no work."""
-    tickets = {t.number: t for t in (*r.members, basis(v, r))}
-    work = [w for t in tickets.values() for w in (*log_work(t)[1:], *v.work.get(t.number, []))]
+    work = row_work(v, r)
+    if spans(change_work(v, basis(v, r))):
+        return latest(work)
     return max(work, key=lambda w: (w.stage, w.at), default=None)
+
+
+def change_work(v: View, c: Ticket) -> list[Work]:
+    """The work on the change `c`: its log's and its agents'."""
+    return [*log_work(c)[1:], *v.work.get(c.number, [])]
+
+
+def row_work(v: View, r: Row) -> list[Work]:
+    tickets = {t.number: t for t in (*r.members, basis(v, r))}
+    return [w for t in tickets.values() for w in change_work(v, t)]
 
 
 def stopped_bar(v: View, r: Row) -> str:
     """The row's recorded progress while no agent is at work on it."""
     w = progress(v, r)
-    return "" if w is None else stage_bar(w.stage, Mark.FINISHED if w.finished else Mark.STOPPED)
+    return "" if w is None else stage_bar(w.stage, Mark.FINISHED if w.finished else Mark.STOPPED,
+                                          spans(change_work(v, basis(v, r))))
 
 
 def priority(v: View, r: Row) -> tuple[bool, bool]:
@@ -264,9 +289,9 @@ def priority(v: View, r: Row) -> tuple[bool, bool]:
 def row(v: View, t: Ticket, right: str, change: Ticket | None,
         members: tuple[Ticket, ...] = ()) -> str:
     """The row of `t`, with its change number below its own and `right`
-    at its end. A bundle leads with its change, and members fold after three."""
+    on the line above it. A bundle leads with its change, and members fold after three."""
     if merged(t):
-        right = f'{esc(t.status.value.capitalize())} · merged, awaiting tracker closure'
+        right = f'<span>{esc(t.status.value.capitalize())} · merged, awaiting tracker closure</span>'
     star = '<span class="star">★</span>' if t.number in v.expedited else ""
     under = "" if change is None or change is t else f'<small>{link(change.number)}</small>'
     bundle = t is change and sum(m.kind is Kind.REQUEST for m in members) > 1
@@ -278,9 +303,10 @@ def row(v: View, t: Ticket, right: str, change: Ticket | None,
     more = "" if not rest else f'<details><summary>+{len(rest)} more</summary>{"".join(rest)}</details>'
     related_html = f'<div class="members">{"".join(visible)}{more}</div>' if related else ""
     title = t.title if bundle else capitalized(v.phrase(t))
+    top = f'<span class="wt">{right}</span>' if right else ""
     return tap(t.number,
-               f'<span class="wn">{esc(t.number)}{under}</span><span class="wp">{star}{esc(title)}</span>'
-               f'<span class="ws">{right}</span>{related_html}', "wr" + (" me" if v.mine(t) else ""))
+               f'{top}<span class="wn">{esc(t.number)}{under}</span><span class="wp">{star}{esc(title)}</span>'
+               f'{related_html}', "wr" + (" me" if v.mine(t) else ""))
 
 
 def link(n: str) -> str:
@@ -299,12 +325,14 @@ def active(v: View, st: Standings) -> tuple[str, int]:
             if w:
                 a = max(w, key=lambda a: a.launched)
                 s = stage([x.role for x in w], b)
-                if (p := progress(v, r)) is not None:
+                runs = spans(change_work(v, b))
+                if (p := progress(v, r)) is not None and not runs:
                     s = max(s, p.stage)
-                right = f"{stage_bar(s, Mark.AT_WORK)}{s.name.capitalize()} · {ago(v.now - a.launched)}"
-            else:
-                right = f"{stopped_bar(v, r)}Idle"
+                right = f"{stage_bar(s, Mark.AT_WORK, runs)}<span>{s.name.capitalize()} · {ago(v.now - a.launched)}</span>"
             take = taken(b)
+            if not w:
+                last = max([x.at for x in row_work(v, r)] + ([] if take is None else [take.time]), default=r.subject.filed)
+                right = f"{stopped_bar(v, r)}<span>Idle · {ago(v.now - last)}</span>"
             rows.append((r.subject.filed if take is None else take.time, -r.subject.filed, r, right))
     rows.sort(key=lambda x: (*priority(v, x[2]), *x[:2]))
     if not rows:

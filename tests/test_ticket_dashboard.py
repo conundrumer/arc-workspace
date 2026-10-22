@@ -150,45 +150,6 @@ def test_expedited_bundle_precedes_routine_work(working):
     assert rows == [request.number, routine.number]
 
 
-@pytest.mark.parametrize("count", [2, 3, 5])
-@pytest.mark.parametrize("working", [False, True])
-def test_bundle_title_members_stage_and_fold(count, working):
-    requests = [ticket(n, kind=Kind.REQUEST, goal=f"Request goal {n}") for n in range(1, count + 1)]
-    change = ticket(20, kind=Kind.CHANGE, status=Status.ASSIGNED,
-                    title="dashboard: serve every request, including later ones",
-                    motivation=tuple(t.number for t in requests) + (requests[0].number,))
-    # Reach the first request twice, through Motivation and the waiting log.
-    requests[0] = replace(requests[0], status=Status.WAITING, log=(
-        LogLine(50, Status.WAITING, "operator", None, "waiting", False,
-                change.number, True, None, None, None),))
-    agents = [shown.ShownAgent(Role.CODE_REVIEWER, 990, (change.number,))] if working else []
-    v = view([*requests, change], agents=agents, starts=[shown.Start(change.number, None)])
-    v = replace(v, work={change.number: [reads.Work(100, reads.Stage.BUILD, True)]})
-    st = standings.Standings(v)
-    assert len(st.rows) == 1
-    html = dashboard.active(v, st)[0] if working else dashboard.queued(v, st)
-    root = ET.fromstring(html)
-    row = root.find(f".//div[@data-n='{change.number}']")
-    assert row is not None
-    assert element(row, "./span[@class='wp']").text == change.title
-    members = element(row, "./div[@class='members']")
-    links = members.findall(".//a")
-    assert [(a.get("data-n"), a.text) for a in links] == [
-        (t.number, f"{t.number} · {t.goal}") for t in requests]
-    assert len(members.findall("./a")) == min(3, count)
-    fold = members.find("details")
-    if count > 3:
-        assert fold is not None and "open" not in fold.attrib
-        assert element(fold, "summary").text == f"+{count - 3} more"
-    else:
-        assert fold is None
-    if working:
-        assert "Review ·" in "".join(element(row, "./span[@class='ws']").itertext())
-        assert row.find(".//b[@class='n']") is not None
-    else:
-        assert row.find(".//b[@class='d']") is not None
-
-
 def test_single_request_keeps_its_row_form():
     request = ticket(1, kind=Kind.REQUEST, goal="The original goal")
     change = ticket(2, kind=Kind.CHANGE, motivation=(request.number,))

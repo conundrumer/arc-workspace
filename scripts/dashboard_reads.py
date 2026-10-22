@@ -261,7 +261,7 @@ def stage(roles: list[Role], change: Ticket | None) -> Stage:
     return max([floor, *(ROLE_STAGE[r] for r in roles)])
 
 
-ROLES: Mapping[str, Role] = {r.value: r for r in Role}
+ROLES: Mapping[str, Role] = {**{r.value: r for r in Role}, "draft-analyst": Role.TICKET_ANALYST}
 """Each role by the name a log line's bracket gives it."""
 
 
@@ -272,6 +272,7 @@ class Work:
     at: float
     stage: Stage
     finished: bool
+    role: Role | None = None
 
 
 def log_work(change: Ticket) -> list[Work]:
@@ -287,7 +288,7 @@ def log_work(change: Ticket) -> list[Work]:
         role = ROLES.get(ln.agent)
         if i == 0 or role is not None:
             out.append(Work(ln.time, Stage.TRIAGE if role is None or i == 0 else ROLE_STAGE[role],
-                            i == 0 or ln.status is not before))
+                            i == 0 or ln.status is not before, None if i == 0 else role))
         before = ln.status
     return out
 
@@ -325,8 +326,45 @@ def journal_work(tickets: Path) -> dict[str, list[Work]]:
                 continue
             launched[e.digest] += 1
             out.setdefault(change, []).append(
-                Work(e.given, ROLE_STAGE[d.role], launched[e.digest] <= reports(names, e.digest)))
+                Work(e.given, ROLE_STAGE[d.role], launched[e.digest] <= reports(names, e.digest), d.role))
     return out
+
+
+@dataclass(frozen=True)
+class Span:
+    """A run of stages, `first` to `last`, that the work went through
+    `passes` times."""
+    first: Stage
+    last: Stage
+    passes: int
+
+
+def spans(work: Sequence[Work]) -> list[Span]:
+    """The runs of stages that `work` repeats, apart, in their order. Work
+    at a lower stage than the work before it follows a result that asked for
+    more, and adds a pass to the stages from the lower to the earlier one;
+    runs that overlap are one run. Work of Triage counts only for a ticket
+    analyst, whose revising of a draft follows a finding of Design; the
+    operator's takes and releases are no pass, and work of Triage or Design
+    after work of Build is none either."""
+    steps: list[Work] = []
+    for w in sorted(work, key=lambda w: w.at):
+        past = any(x.stage >= Stage.BUILD for x in steps)
+        if (w.stage > Stage.TRIAGE or w.role is Role.TICKET_ANALYST) and (w.stage >= Stage.BUILD or not past):
+            steps.append(w)
+    back = [(b.stage, a.stage) for a, b in zip(steps, steps[1:]) if b.stage < a.stage]
+    out: list[Span] = []
+    for first, last in sorted(back):
+        if out and first <= out[-1].last:
+            out[-1] = Span(out[-1].first, max(out[-1].last, last), out[-1].passes + 1)
+        else:
+            out.append(Span(first, last, 2))
+    return out
+
+
+def latest(work: Sequence[Work]) -> Work | None:
+    """The newest of `work`."""
+    return max(work, key=lambda w: w.at, default=None)
 
 
 @dataclass(frozen=True)
