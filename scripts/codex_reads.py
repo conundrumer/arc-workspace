@@ -358,7 +358,14 @@ def commands(entry: dict[str, Any]):
 
 
 def no_turn(entries: list[dict[str, Any]], call: str, scratch: Path) -> bool:
-    """Decode only proved no-turn diagnostics from this call's own result."""
+    """Prove no turn from the scratch path or this call's own diagnostics.
+
+    If scratch exists and is not a directory, codex_agent.run reaches no
+    transport: a fresh call fails at the latest at scratch.mkdir, and a resume
+    at saved_thread's read of codex-session.
+    """
+    if scratch.exists() and not scratch.is_dir():
+        return True
     output = launch_output(entries, call)
     lines = output.removeprefix("Exit code 1\n").splitlines()
     lines = [line for line in lines if line.strip()]

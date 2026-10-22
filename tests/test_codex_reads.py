@@ -698,6 +698,28 @@ def test_background_fresh_refusal_with_uv_warning_permits_valid_retry(tmp_path):
         ('1:0', 'accepted')]
 
 
+def test_resume_with_file_as_scratch_does_not_consume_a_turn(tmp_path: Path):
+    scratch = tmp_path / 'scratch'
+    first = turn(scratch, [(STEP, 'first')])
+    brief = tmp_path / 'brief'
+    brief.write_text('Do the work.')
+    failed = {'type': 'assistant', 'message': {'content': [{
+        'type': 'tool_use', 'name': 'Bash', 'id': 'failed',
+        'input': {'command': (
+            f'uv run python scripts/codex_agent.py code-reviewer {brief} '
+            f'{brief} gpt-6.1-sol high --resume')}}]}}
+    result = {'type': 'user', 'message': {'content': [{
+        'type': 'tool_result', 'tool_use_id': 'failed',
+        'content': f"codex_agent: [Errno 20] Not a directory: '{brief}/codex-session'"}]}}
+    resumed = turn(scratch, [(STEP, 'second')], first=False)
+    resumed['message']['content'][0]['id'] = 'resumed'
+    entries = [first, failed, result, resumed]
+    assert walk.step_calls(reads.walk_entries(entries, 'code-reviewer'), 'code-reviewer') == [
+        ('1:0', 'first'), ('2:0', 'second')]
+    assert [(call.call_id, call.scratch) for call in reads.calls(entries)] == [
+        ('codex', scratch), ('resumed', scratch)]
+
+
 def test_duplicate_accepted_turn_cannot_certify_two_inputs(tmp_path):
     first = turn(tmp_path, [(STEP, 'first')])
     second = turn(tmp_path, [(STEP, 'second')], first=False)
