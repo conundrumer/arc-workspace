@@ -33,7 +33,7 @@ in its purview or not, a ticket whose last read that found it due is
 from the read at hand.
 
 A change that waits for a ticket that holds it up (`holding`), one under
-`tickets/blocked/` or one that is stalled, moves to `tickets/draft/` with
+`tickets/blocked/` or one that has been stalled for `STUCK_SECONDS`, moves to `tickets/draft/` with
 a line whose note is `taking.STALL_FINDING` on that ticket, once after the
 time from which that ticket holds it up (`stall`)."""
 
@@ -45,7 +45,7 @@ from typing import assert_never
 from operations import (change_take, changes, drafts, lineage, merging, start_holds, taking, triage,
                         waits)
 from operations.change_budget import TAKEN
-from operations.constants import ticket_stuck_reached
+from operations.constants import stuck_reached, ticket_stuck_reached
 from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.parties import Hold, Holder, Party
@@ -293,8 +293,10 @@ def holding(state: State, u: Ticket, stalls: Mapping[str, float]) -> tuple[float
 def stall(state: State) -> Step | None:
     """The move to `tickets/draft/` of a change that `waiting()` gives that
     waits for a ticket that `holding` gives, where no line of its log
-    since the time `holding` gives gives `taking.STALL_FINDING` on it."""
-    stalls = stalled(state)
+    since the time `holding` gives gives `taking.STALL_FINDING` on it. A
+    ticket holds up a change only once it has stalled for `STUCK_SECONDS`, not
+    for `TICKET_STUCK_SECONDS`."""
+    stalls = {n: t for n, t in stalled(state).items() if stuck_reached(t, state.now)}
     for n, deps in change_take.waiting(state):
         t = state.tracker.tickets[n]
         for d in deps:
