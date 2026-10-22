@@ -115,11 +115,15 @@ def success(stdout: str) -> bytes:
     return (json.dumps({"status": 0, "stdout": stdout, "stderr": "", "retry": False}) + "\n").encode()
 
 
+def running_text(phase: str, seconds: float) -> str:
+    """What a call prints where a state read in `phase`, `seconds` old, outlasts the call."""
+    from operations.printed_forms import POLL_AGAIN, READ_RUNNING
+    return READ_RUNNING.format(phase=phase, seconds=round(seconds)) + "\n" + POLL_AGAIN + "\n"
+
+
 def read_running(request: Request) -> str:
     """What a call prints where the state read of `request` outlasts the call."""
-    from operations.printed_forms import POLL_AGAIN, READ_RUNNING
-    return READ_RUNNING.format(phase=request.phase,
-                               seconds=round(time.monotonic() - request.begun)) + "\n" + POLL_AGAIN + "\n"
+    return running_text(request.phase, time.monotonic() - request.begun)
 
 
 @dataclass
@@ -178,10 +182,17 @@ class Pending:
 CURRENT: ContextVar[Request | None] = ContextVar("operate_request", default=None)
 
 
+standalone_phase = "state"
+"""The phase of the read of a call that runs with no resident request."""
+
+
 def read_phase(phase: str) -> None:
     """Name the current read in a failure diagnostic."""
+    global standalone_phase
     if (request := CURRENT.get()) is not None:
         request.phase = phase
+    else:
+        standalone_phase = phase
 
 
 def check() -> None:

@@ -26,7 +26,7 @@ from operations import changes  # noqa: E402
 from operations.command_words import Action, next_command  # noqa: E402
 from operations.roles import LAUNCHING_EDITORS, Role  # noqa: E402
 from operations.steps import Launch, Poll, Step, Undecided  # noqa: E402
-from operate_loop import MessageAccepted, prepared, print_step, read_again, waited  # noqa: E402
+from operate_loop import MessageAccepted, Running, prepared, print_step, read_again, waited  # noqa: E402
 
 from controlled_markdown import mctx  # noqa: E402
 
@@ -76,6 +76,9 @@ def review(editor: str) -> int:
     outcome = waited(editor, read_again(step_at), lambda out: not isinstance(out[0], Poll))
     if isinstance(outcome, MessageAccepted):
         print_step(Poll(), Path(), editor)
+        return 0
+    if isinstance(outcome, Running):
+        print(outcome.text())
         return 0
     step, scratch = outcome
     if isinstance(step, str):

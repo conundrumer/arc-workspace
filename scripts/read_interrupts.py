@@ -12,6 +12,10 @@ class Accepted(BaseException):
     """An inbox accepted a message while a foreground call was waiting."""
 
 
+class Bounded(BaseException):
+    """A standalone call's bound for finishing a read came while it ran."""
+
+
 _callback: ContextVar[Callable[[], bool] | None] = ContextVar("read_inbox", default=None)
 _request_check: ContextVar[Callable[[], None] | None] = ContextVar("read_request_check", default=None)
 _transport_due: ContextVar[float] = ContextVar("read_transport_due", default=0.0)

@@ -10,7 +10,7 @@ import math
 import os
 import signal
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from collections.abc import Callable
@@ -167,6 +167,9 @@ def block(me: str, action: Action,
         with operate_service.side_effect():
             print_step(Poll(), Path(), me)
         return 0
+    if isinstance(outcome, Running):
+        print(outcome.text())
+        return 0
     steps, scratch = outcome
     head = steps[0]
     with operate_service.side_effect():
@@ -211,23 +214,50 @@ class MessageAccepted:
     """A successful inbox wake-up, with no planned output."""
 
 
-def waited[T](me: str, out_at: Callable[[float], T], ready: Callable[[T], bool]) -> T | MessageAccepted:
+@dataclass
+class Running:
+    """A standalone call whose state read outlasts its bound, with the
+    seconds the call has run; the read's kept results let the call made
+    again go on from them."""
+    seconds: float
+
+    def text(self) -> str:
+        """What the call prints: that the read runs, and to run it again."""
+        return operate_service.running_text(operate_service.standalone_phase, self.seconds)
+
+
+def waited[T](me: str, out_at: Callable[[float], T],
+              ready: Callable[[T], bool]) -> T | MessageAccepted | Running:
     """Wait for confirmed planned output or an accepted inbox message.
-    Inbox acceptance needs no completed state read."""
+    Inbox acceptance needs no completed state read. A standalone call whose
+    read is still running `operate_service.FINISH_SECONDS` before
+    `LIMIT_SECONDS` end returns `Running` at its next checkpoint, and the
+    watchdog stays armed for a read that reaches none."""
     current = operate_service.CURRENT.get()
     standalone = current is None
+    started = time.monotonic()
     if standalone:
         single_instance(me)
-        limit = time.monotonic() + LIMIT_SECONDS
+        limit = started + LIMIT_SECONDS
         arm_watchdog(me)
     else:
         limit = current.deadline
+    finish = limit - operate_service.FINISH_SECONDS
+
+    def bounded() -> None:
+        if time.monotonic() >= finish:
+            raise read_interrupts.Bounded()
     try:
         inbox = Inbox(find(me), [])
         with read_interrupts.scope(inbox.accepted):
-            return watched(out_at, ready, BLOCK_SECONDS, limit - operate_service.FINISH_SECONDS)
+            if not standalone:
+                return watched(out_at, ready, BLOCK_SECONDS, finish)
+            with read_interrupts.request_scope(bounded):
+                return watched(out_at, ready, BLOCK_SECONDS, finish)
     except read_interrupts.Accepted:
         return MessageAccepted()
+    except read_interrupts.Bounded:
+        return Running(time.monotonic() - started)
     finally:
         if standalone:
             signal.alarm(0)

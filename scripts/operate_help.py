@@ -259,7 +259,7 @@ PARTS = {
             - Where each other editor there that has not ended has reported, and each agent another editor of the change launched has given its final reply, of the editor and those editors, the one whose report is latest, or of those with the latest, the one of the first agent id in sort order, gets with no block the line this help gives where each of the others had ended, and each other one blocks.
         - Where that step is none and an agent the editor launched has not given its final reply, it prints that the editor waits on each such agent, and runs `review` again each time one of them gives its final reply.
         - Otherwise it prints that the editor gives its final reply.
-        - It reads the state as the editor's operator's `next` reads it, with the same foreground bound and timeout report.
+        - It reads the state as the editor's operator's `next` reads it, where a read outlasts the foreground bound it prints that the state read runs and that the editor runs `review` again, as `next` does.
     """),
     HelpPart.WAIT: mctx("""
     - `wait` blocks for the operator whose agent id it is given, or, for an operator launcher's, for the last operator that launcher launched, and prints nothing: its caller runs `next` or `relay` again once it completes.

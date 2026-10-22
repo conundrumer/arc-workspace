@@ -165,6 +165,24 @@ def test_acceptance_during_read_has_no_full_confirmation(inbox, monkeypatch: pyt
         assert isinstance(loop.waited(ME, state, lambda out: True), loop.MessageAccepted)
     finally:
         sender_thread.join(5)
+    now = 0.0
+
+    class Quiet:
+        def __init__(self, *args):
+            pass
+
+        def accepted(self):
+            return False
+
+    def slow(deadline):
+        nonlocal now
+        now = 1000.0
+        interrupts.checkpoint(force=True)
+        pytest.fail("a read past the bound must unwind")
+    monkeypatch.setattr(loop, "Inbox", Quiet)
+    monkeypatch.setattr(interrupts.time, "monotonic", lambda: now)
+    monkeypatch.setattr(loop.time, "monotonic", lambda: now)
+    assert isinstance(loop.waited(ME, slow, lambda out: True), loop.Running)
 
 
 def test_launch_record_is_atomic_with_inbox_release(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
