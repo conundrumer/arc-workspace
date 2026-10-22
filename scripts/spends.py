@@ -10,6 +10,7 @@ from enum import Enum
 from functools import partial
 from pathlib import Path
 
+import codex_reads
 import codex_rollout
 from codex_spends import codex_spend, fingerprint
 
@@ -67,7 +68,10 @@ spend, or, as None, no file."""
 def owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | None:
     """The transcript of each of the runs `runs` and of the runs under them,
     with the agent type it counts under, or None where a run has no
-    transcript or no agent type. Each transcript counts once, under the
+    transcript or no agent type, other than a native Codex agent whose store
+    root is a transcribed run of `runs`: `codex_spend` measures that store
+    through the root, so such an agent counts as measured and adds no
+    transcript. Each transcript counts once, under the
     agent type of the nearest run of `runs` at or above it, so a run of
     `runs` launched under another keeps its own type. A refused read of a
     transcript raises `Refused`.
@@ -79,13 +83,14 @@ def owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | Non
     type of its launch."""
     held: set[Path] = set()
     trees: list[tuple[str, list[Path]]] = []
+    unresolved: list[str] = []
     for run in runs:
         read_interrupts.checkpoint()
         top = held_find(run)
         launch = pending.get(run)
         if top is None:
             if launch is None:
-                return None
+                unresolved.append(run)
             continue
         role = counted_type(top, launch)
         if role is None:
@@ -94,6 +99,10 @@ def owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | Non
             held.add(top)
         children = runs_under(top, pending, held) if pending else closed_tree(top)
         trees.append((role, [top, *children]))
+    if unresolved:
+        natives = native_agents(runs)
+        if not all(measured_through_root(natives, runs, run) for run in unresolved):
+            return None
     owner: dict[Path, tuple[int, str]] = {}
     for role, tree in trees:
         read_interrupts.checkpoint()
@@ -102,6 +111,39 @@ def owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | Non
             if p not in owner or len(tree) < owner[p][0]:
                 owner[p] = (len(tree), role)
     return {p: role for p, (_, role) in owner.items()}
+
+
+def native_agents(runs: list[str]) -> dict[str, "codex_reads.Native"]:
+    """Each native Codex agent in the stores of the sessions of the
+    transcribed runs of `runs`, by agent id."""
+    from run_reads import session_of
+    from tree_reads import scratch
+
+    natives = {}
+    for run in runs:
+        top = held_find(run)
+        if top is not None:
+            for item in codex_reads.native_assignments(scratch(session_of(top).name),
+                                                       include_history=True):
+                natives[item.assignment.agent] = item
+    return natives
+
+
+def measured_through_root(natives: "dict[str, codex_reads.Native]", runs: list[str],
+                          run: str) -> bool:
+    """Whether `run` is a native Codex agent below the root of its store,
+    and that root is a run of `runs` with a transcript."""
+    item = natives.get(run)
+    if item is None or item.state["parent"] is None:
+        return False
+    seen = {run}
+    while item.state["parent"] is not None:
+        parent = item.state["parent"]
+        if parent in seen or parent not in natives:
+            return False
+        seen.add(parent)
+        item = natives[parent]
+    return item.assignment.agent in runs and held_find(item.assignment.agent) is not None
 
 
 @state_cache(None)
