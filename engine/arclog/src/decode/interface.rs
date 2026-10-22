@@ -201,7 +201,7 @@ impl<'a> Decoder<'a> {
         let limits = self.limits();
         let inputs = self.inputs(&sub.program, &limits);
         let root = derived_at(&sub.program, &sub.form).node;
-        let dets: Vec<_> = dets_read(&sub.program, root).into_iter().filter(|det| !det.pick).collect();
+        let dets: Vec<_> = dets_read(&sub.program, root).into_iter().filter(|det| !det.pick && det.node != root).collect();
         let mut at = Vec::new();
         let mut leaf = |evaluation: &crate::eval::Evaluation<'_>, assigned: &[Assignment]| {
             at.push((assigned.to_vec(), evaluation.body(&sub.form, &sub.kept, example).map_err(End::Fault)?));
@@ -390,13 +390,14 @@ fn complete_or_atoms(body: &Node<Body>, open_at: Option<usize>, registry: &Regis
 }
 
 /// The relation that the clause at `form` derives in `program`: a clause
-/// relation, or a chosen relation where the clause has `ONE` marks.
+/// relation, a chosen relation where the clause has `ONE` marks, or the
+/// parameter of a `DET` clause with no `ONE` mark.
 fn derived_at(program: &CheckedProgram, form: &NodePath) -> GraphRelation {
     let resolved = &program.program;
     let node = (0..resolved.graph.nodes.len())
         .map(|index| GraphNodeIndex(u32::try_from(index).expect("fewer than 2^32 nodes")))
         .find(|&node| {
-            matches!(resolved.graph.nodes[node.0 as usize].kind, DependencyKind::Clause(_) | DependencyKind::Chosen(_)) && resolved.forms_of(node).contains(form)
+            matches!(resolved.graph.nodes[node.0 as usize].kind, DependencyKind::Clause(_) | DependencyKind::Parameter(_) | DependencyKind::Chosen(_)) && resolved.forms_of(node).contains(form)
         })
         .expect("a checked clause derives its relation");
     GraphRelation { node, output: None }

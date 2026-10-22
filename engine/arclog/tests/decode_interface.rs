@@ -233,3 +233,23 @@ fn a_prefix_inside_an_algebra_atom_without_the_sites_of_a_mode_gives_the_rows_of
     let inside = rows_after(&tokens[..=at]);
     assert_eq!(format!("{:?}", inside.at), format!("{:?}", before.at));
 }
+
+#[test]
+fn a_det_clause_in_progress_gives_the_rows_of_its_kept_conjuncts() {
+    let inputs = inputs(&[3, 3], Caps::CORPUS);
+    let tokens = model_tokens("(DET &cells (ex_input *E *P *Col))\n(RULE &output (input (:P *Q)) (&cells (:Col *Col)))\n");
+    let at = tokens.iter().position(|token| *token == Token::Control(Control::Det)).expect("a `DET` form");
+    let after = |count: usize| {
+        let mut decoder = decoder(&inputs);
+        walk(&mut decoder, &tokens[..count]);
+        let counts = decoder.counts().expect("a clause in progress");
+        let [counted] = &*counts else { panic!("a task-wide clause gives one entry: {counts:?}") };
+        let counted = counted.as_ref().expect("the sub-body checks").at.clone();
+        let rows = decoder.rows(None).expect("a clause in progress").expect("the sub-body checks");
+        assert_eq!(rows.at.len(), 1, "the clause's own `DET` is not assigned");
+        (counted, rows)
+    };
+    after(at + 1);
+    let (counted, _) = after(at + 4);
+    assert!(counted[0].1.is_some_and(|count| count > 0), "{counted:?}");
+}
