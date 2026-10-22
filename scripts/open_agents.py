@@ -276,10 +276,12 @@ def settle_turns(nodes: list[Node], undecided: list[str]) -> None:
 
 
 def turn_ended_at(n: Node) -> float | None:
-    """The end of the turn of `n`, whose turn is not in progress."""
+    """The end of the turn of `n`, whose turn is not in progress, as
+    `profile_runs.py --help running` gives it."""
     if n.cut is not None:
         return n.cut
-    return last_time(n.path)
+    return max((t for t in (last_time(n.path), n.launch.done) if t is not None),
+               default=None)
 
 
 def cut_off(pairs: Iterable[tuple[Node, Node]], undecided: list[str]) -> None:

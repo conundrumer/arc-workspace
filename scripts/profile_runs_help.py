@@ -214,7 +214,11 @@ PARTS = {
     - Of the agents the run launched, the agents those launched, and so on, an agent's work is open where its turn is in progress, whether or not its parent's work is open, or where its turn has ended, its parent's work is open, and its work is not closed.
         - A parent's work is open where the parent is `main` or listed, and the run ID's work is open where it is `main` or would be listed under `main`.
         - An agent's turn counts as ended where it has ended, as `--help runs` gives when a turn ends, or where its parent has its result, or a transcript of the sessions of its run or of its parent's run holds a notification of it, and its transcript holds no `user` or `assistant` entry timestamped after the latest of those.
-            - Where the turn of its parent, other than `main`, has ended, and the transcripts of its parent's run hold no result of the Agent call that launched it, that call was cut off with its parent's turn. Its turn then counts as ended where its transcript holds no `user` or `assistant` entry timestamped after the end of its parent's turn: the end of its parent's own call, where that call was cut off; else the time of its parent's last timestamped entry.
+            - Where the turn of its parent, other than `main`, has ended, and the transcripts of its parent's run hold no result of the Agent call that launched it, that call was cut off with its parent's turn.
+                + xref: scripts/open_agents.py:cut_off
+                - Its turn then counts as ended where its transcript holds no `user` or `assistant` entry timestamped after the end of its parent's turn.
+                - The end of its parent's turn is the end of its parent's own call, where that call was cut off; else the later of the time of its parent's last timestamped entry and the time of the latest result or notification of its parent in the transcripts of the run that launched its parent.
+                    + xref: scripts/open_agents.py:turn_ended_at
     - A report of an agent received after the parent's latest message to it closes its work.
         - A report and the transcripts it is read from are as `--help one` gives them.
     - Each of these after the latest message the agent received from anyone closes its work:
