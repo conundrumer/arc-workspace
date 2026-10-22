@@ -726,8 +726,8 @@ class HeldRead:
 @dataclass(frozen=True)
 class AuditWindow:
     """The window of the next cost audit: its start, and the spend in
-    dollars of its priced requests alone, a lower bound of its spend
-    (`audit_records.start_and_spend`)."""
+    subscription dollars of its priced Claude requests and Codex turns,
+    a lower bound of its spend (`audit_records.start_and_spend`)."""
     start: float
     priced_spend: float
 

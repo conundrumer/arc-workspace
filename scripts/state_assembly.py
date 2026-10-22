@@ -311,9 +311,10 @@ def computed_read(state: State, tickets_dir: Path, undecided: list[str],
 
 
 def audit_window_read(state: State, undecided: list[str]) -> AuditWindow | NotComputed:
-    """The window of the next cost audit under the session's transcript
-    directory, or why it does not read."""
+    """The window of the next cost audit: Claude spend from the session's
+    transcript directory and Codex spend from runs in its main tree, in
+    subscription dollars, or why it does not read."""
     try:
-        return window(state.transcripts_dir, state.started, undecided)
+        return window(state.transcripts_dir, state.main_tree, state.started, undecided)
     except Refused as exc:
         return NotComputed(str(exc))

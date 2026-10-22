@@ -102,36 +102,49 @@ def turns(thread: str, home: Path) -> list[Turn]:
 
 def read_turns(path: Path) -> list[Turn]:
     """Read turn activity and usage from the same complete source lines."""
-    out: list[Turn] = []
+    reader = TurnReader()
+    for row in rows(path):
+        reader.feed(row)
+    return reader.turns
+
+
+@dataclass
+class TurnReader:
+    """Incremental turn boundaries, activity and cumulative token usage."""
+
+    turns: list[Turn] = field(default_factory=list)
     latest: CodexUsage | None = None
     current: Turn | None = None
-    for row in rows(path):
+    count: int = 0
+
+    def feed(self, row: dict[str, Any]) -> None:
+        """Fold one complete rollout row into the turn history."""
         p = row.get("payload", {})
         if not isinstance(p, dict):
             raise ValueError("Codex rollout payload is not an object")
         kind = p.get("type") if row.get("type") == "event_msg" else None
         if kind == "task_started":
-            boundary = latest if current is None else None
-            current = Turn(p["turn_id"], datetime.fromisoformat(row["timestamp"]).timestamp(),
+            boundary = self.latest if self.current is None else None
+            self.current = Turn(p["turn_id"], datetime.fromisoformat(row["timestamp"]).timestamp(),
                            before=boundary)
-            out.append(current)
-        if current is not None:
-            current.activity.append(row)
+            self.turns.append(self.current)
+            self.count += 1
+        if self.current is not None:
+            self.current.activity.append(row)
         if kind == "token_count" and p.get("info") is not None:
-            latest = tokens(p["info"]["total_token_usage"])
-            if current is not None:
-                if len(out) == 1 and current.after is None and current.before is None:
+            self.latest = tokens(p["info"]["total_token_usage"])
+            if self.current is not None:
+                if self.count == 1 and self.current.after is None and self.current.before is None:
                     last = tokens(p["info"].get("last_token_usage"))
-                    if latest is not None and last is not None and latest == last:
-                        current.before = difference(latest, last)
-                current.after = latest
-        elif kind in ("task_complete", "turn_aborted") and current is not None:
-            if p.get("turn_id") == current.turn:
-                current.ended = datetime.fromisoformat(row["timestamp"]).timestamp()
-                current.end_state = TurnEnd(kind)
-                latest = current.after
-                current = None
-    return out
+                    if self.latest is not None and last is not None and self.latest == last:
+                        self.current.before = difference(self.latest, last)
+                self.current.after = self.latest
+        elif kind in ("task_complete", "turn_aborted") and self.current is not None:
+            if p.get("turn_id") == self.current.turn:
+                self.current.ended = datetime.fromisoformat(row["timestamp"]).timestamp()
+                self.current.end_state = TurnEnd(kind)
+                self.latest = self.current.after
+                self.current = None
 
 
 @dataclass

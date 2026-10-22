@@ -42,7 +42,7 @@ def new_process() -> None:
 
 def spend(root: Path) -> float:
     new_process()
-    return audit_window.window(root, epoch(START), []).priced_spend
+    return audit_window.window(root, root, epoch(START), []).priced_spend
 
 
 def cost(entries: list[dict[str, object]]) -> float:
@@ -56,6 +56,7 @@ def test_fold(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     after it was written anew shorter, is the cost of its entries in the
     window as they stand."""
     monkeypatch.setattr(kept_reads, "_store", None)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
     kept_reads.open_store(tmp_path / "store.sqlite")
     root = tmp_path / "projects"
     path = root / "session" / "t.jsonl"
@@ -79,6 +80,7 @@ def test_new_audit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A cost audit launched in a directory the record of the start was
     listed with starts the window at the next call."""
     monkeypatch.setattr(kept_reads, "_store", None)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
     kept_reads.open_store(tmp_path / "store.sqlite")
     root = tmp_path / "projects"
     agents = root / "session" / "subagents"
@@ -90,10 +92,10 @@ def test_new_audit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     run("a1", "op editor x", "2026-10-16T10:10:00Z")
     new_process()
-    assert audit_window.window(root, epoch(START), []).start == epoch(START)
+    assert audit_window.window(root, root, epoch(START), []).start == epoch(START)
     run("a2", "op cost-audit x", "2026-10-16T10:30:00Z")
     new_process()
-    assert audit_window.window(root, epoch(START), []).start == epoch("2026-10-16T10:30:00Z")
+    assert audit_window.window(root, root, epoch(START), []).start == epoch("2026-10-16T10:30:00Z")
 
 
 def test_audit_after_state_opened(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -101,6 +103,7 @@ def test_audit_after_state_opened(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     listings up to date, and before that state's read of the window, starts
     the window at a later call."""
     monkeypatch.setattr(kept_reads, "_store", None)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
     kept_reads.open_store(tmp_path / "store.sqlite")
     root = tmp_path / "projects"
     agents = root / "session" / "subagents"
@@ -108,10 +111,77 @@ def test_audit_after_state_opened(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     (agents / "agent-a1.meta.json").write_text(json.dumps({"description": "op editor x"}))
     (agents / "agent-a1.jsonl").write_text(json.dumps(entry("m", "2026-10-16T10:10:00Z", 10)) + "\n")
     new_process()
-    audit_window.window(root, epoch(START), [])
+    audit_window.window(root, root, epoch(START), [])
     state_reads.new_state()
     (agents / "agent-a2.meta.json").write_text(json.dumps({"description": "op cost-audit x"}))
     (agents / "agent-a2.jsonl").write_text(json.dumps(entry("m", "2026-10-16T10:30:00Z", 10)) + "\n")
-    audit_window.window(root, epoch(START), [])
+    audit_window.window(root, root, epoch(START), [])
     new_process()
-    assert audit_window.window(root, epoch(START), []).start == epoch("2026-10-16T10:30:00Z")
+    assert audit_window.window(root, root, epoch(START), []).start == epoch("2026-10-16T10:30:00Z")
+
+
+def test_codex_project_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stored project spend follows growing turns and changed audit windows."""
+    from types import SimpleNamespace
+    state_assembly = script("state_assembly")
+    from operations.codex_spend import CodexUsage
+    from ticketing.subscription import codex_cost
+
+    home = tmp_path / 'home'
+    monkeypatch.setattr(Path, 'home', lambda: home)
+    monkeypatch.setattr(kept_reads, '_store', None)
+    kept_reads.open_store(tmp_path / 'store.sqlite')
+    root, main = tmp_path / 'transcripts', tmp_path / 'repo'
+    root.mkdir()
+    directory = home / '.codex' / 'sessions'
+    directory.mkdir(parents=True)
+    at = '2026-10-16T10:01:00Z'
+
+    def row(kind: str, payload: dict) -> dict:
+        return {'timestamp': at, 'type': kind, 'payload': payload}
+
+    def usage(n: int) -> dict:
+        return {'input_tokens': n, 'cached_input_tokens': 0, 'output_tokens': n,
+                'reasoning_output_tokens': 0, 'total_tokens': n * 2}
+
+    def counts(n: int) -> dict:
+        return row('event_msg', {'type': 'token_count', 'info': {
+            'total_token_usage': usage(n), 'last_token_usage': usage(n)}})
+
+    def write(path: Path, rows: list[dict], mode: str = 'w') -> None:
+        with path.open(mode) as fh:
+            fh.write(''.join(json.dumps(r) + '\n' for r in rows))
+
+    def rollout(name: str, cwd: Path, model: str = 'gpt-6.1-sol') -> Path:
+        path = directory / f'rollout-{name}.jsonl'
+        write(path, [row('session_meta', {'cwd': str(cwd)}),
+                     row('event_msg', {'type': 'task_started', 'turn_id': name}),
+                     row('turn_context', {'model': model}), counts(100)])
+        return path
+
+    path = rollout('main', main)
+    rollout('worktree', main / '.claude' / 'worktrees' / 'change')
+    rollout('sibling', tmp_path / 'repo-other')
+    rollout('unknown', main, 'unknown')
+
+    def read(start: float = epoch(START)) -> tuple[float, list[str]]:
+        new_process()
+        lines: list[str] = []
+        state = SimpleNamespace(transcripts_dir=root, main_tree=main, started=start)
+        result = state_assembly.audit_window_read(state, lines)
+        return result.priced_spend, lines
+
+    unit = codex_cost(CodexUsage(**usage(100)), 'gpt-6.1-sol', [])
+    assert unit is not None
+    value, lines = read()
+    assert value == pytest.approx(2 * unit)
+    assert lines
+    assert read()[0] == pytest.approx(2 * unit)
+    write(path, [counts(200)], 'a')
+    assert read()[0] == pytest.approx(3 * unit)
+    assert read()[0] == pytest.approx(3 * unit)
+    assert read(epoch('2026-10-16T10:02:00Z'))[0] == 0
+    assert read()[0] == pytest.approx(3 * unit)
+    # A replacement shorter than the saved offset resets the stored fold.
+    write(path, [row('session_meta', {'cwd': str(main)})])
+    assert read()[0] == pytest.approx(unit)

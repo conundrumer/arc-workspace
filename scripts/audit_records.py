@@ -1,10 +1,12 @@
 """The start and the spend of the window of the next cost audit
-(`audit_window`), under the project's transcript directory.
+(`audit_window`): Claude requests under the project's transcript directory
+and Codex turns from runs whose working directories are under the main
+tree, in subscription dollars.
 
 Each `operate.py next` call is its own process, so both reads keep their
 records in the store of `kept_reads`, under the transcript directory for
-the start and under each transcript's path for its spend. This module
-imports none of the modules that call it, so that a commit to those
+the start and under each transcript's or rollout's path for its spend.
+This module imports none of the modules that call it, so that a commit to those
 leaves the records standing (`kept_reads.code_of`):
 
 - The record of the start holds the latest launch found, and a time no
@@ -28,9 +30,13 @@ start, every `.meta.json` file is read."""
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import codex_rollout
+from codex_spends import turn_model
+from ticketing.subscription import codex_cost
 
 import kept_reads
 import file_reads
@@ -139,12 +145,13 @@ def listing(root: Path, since: float) -> Listing:
     return Listing(transcripts, metas)
 
 
-def start_and_spend(root: Path, started: float, undecided: list[str]) -> tuple[float, float]:
+def start_and_spend(root: Path, main_tree: Path, started: float, undecided: list[str]) -> tuple[float, float]:
     """The start of the window of the next cost audit under `root`, or
     `started` where no cost audit under it launched, and the spend in
-    dollars of the window's priced requests alone, a lower bound of its
-    spend. Each request it cannot price, for an unknown price or a missing
-    message id, gives an `undecided` line."""
+    subscription dollars of the window's priced Claude requests under
+    `root` and Codex turns from runs whose working directories are under
+    `main_tree`, a lower bound of its spend.
+    Each request or turn it cannot price gives an `undecided` line."""
     began = opened()
     held = recalled(START, str(root))
     held = held if isinstance(held, Start) else Start(None, float("-inf"))
@@ -153,7 +160,7 @@ def start_and_spend(root: Path, started: float, undecided: list[str]) -> tuple[f
     start = started if start is None else start
     priced = sum(priced_spend(p, start, undecided)
                  for p in sorted(Path(p) for p, mtime in listed.transcripts.items() if mtime >= start))
-    return start, priced
+    return start, priced + codex_spend(Path.home(), main_tree, start, undecided)
 
 
 def audit_start(root: Path, held: Start, listed: Listing, began: float) -> float | None:
@@ -250,3 +257,81 @@ def folded(path: Path, fold: Fold) -> Fold:
             message = entry["message"]
             last.append({"message": {k: message.get(k) for k in ("id", "model", "usage")}})
     return Fold(fold.start, end, cost, tuple(dict.fromkeys(lines)), tuple(last))
+
+
+CODEX_FOLD = f"{__name__}:codex"
+
+
+@dataclass
+class CodexFold:
+    """A rollout's offset, directory, completed spend and active turn."""
+
+    start: float
+    offset: int = 0
+    cwd: Path | None = None
+    cost: float = 0.0
+    lines: list[str] = field(default_factory=list)
+    reader: codex_rollout.TurnReader = field(default_factory=codex_rollout.TurnReader)
+
+
+def turn_cost(turn: codex_rollout.Turn, undecided: list[str]) -> float:
+    """Price a turn's usage so far, with an explicit unknown component."""
+    usage = turn.usage
+    if usage is None:
+        undecided.append(mctx("Codex cost unknown: turn usage is unavailable"))
+        return 0.0
+    return codex_cost(usage, turn_model(turn), undecided) or 0.0
+
+
+def codex_spend(home: Path, main_tree: Path, start: float, undecided: list[str]) -> float:
+    """Subscription dollars of project turns started in the window.
+
+    Records retain whole-line offsets and turn boundaries across reads.
+    A shorter rollout or a new window starts its fold again.
+    """
+    total = 0.0
+    main_tree = main_tree.resolve()
+    for path in codex_rollout.rollout_files(home):
+        stat = path.stat()
+        if stat.st_mtime < start:
+            continue
+        held = recalled(CODEX_FOLD, str(path))
+        fold = (held if isinstance(held, CodexFold) and held.start == start
+                and held.offset <= stat.st_size else CodexFold(start))
+        if fold.cwd is not None and not fold.cwd.is_relative_to(main_tree):
+            continue
+        with path.open("rb") as fh:
+            fh.seek(fold.offset)
+            for line in fh:
+                if not line.endswith(b"\n"):
+                    break
+                row = json.loads(line)
+                fold.offset += len(line)
+                if row.get("type") == "session_meta":
+                    fold.cwd = Path(row["payload"]["cwd"]).resolve()
+                    if not fold.cwd.is_relative_to(main_tree):
+                        break
+                # Only contexts affect pricing; other activity can be large.
+                if row.get("type") not in ("event_msg", "turn_context"):
+                    continue
+                fold.reader.feed(row)
+                if fold.reader.current is not None:
+                    fold.reader.current.activity[:] = [
+                        r for r in fold.reader.current.activity
+                        if r.get("type") == "turn_context"]
+                completed = [t for t in fold.reader.turns if t is not fold.reader.current]
+                for turn in completed:
+                    if turn.started >= start:
+                        fold.cost += turn_cost(turn, fold.lines)
+                fold.reader.turns = ([fold.reader.current]
+                                     if fold.reader.current is not None else [])
+        keep(CODEX_FOLD, str(path), fold)
+        if fold.cwd is None or not fold.cwd.is_relative_to(main_tree):
+            continue
+        lines = list(fold.lines)
+        cost = fold.cost
+        if fold.reader.current is not None and fold.reader.current.started >= start:
+            cost += turn_cost(fold.reader.current, lines)
+        undecided.extend(dict.fromkeys(lines))
+        total += cost
+    return total

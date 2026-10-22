@@ -9,9 +9,8 @@ from ticketing.subscription import CLAUDE_LIST_TO_SUBSCRIPTION
 
 SECOND_PRICE = 5 * CLAUDE_LIST_TO_SUBSCRIPTION / 1800
 """The subscription dollars a second of wall time is worth: the user's
-preference to count about 30 minutes saved as worth about $5 of list-price
-token cost (`prompts/agents/notes/decisions.md`, The user's preferences),
-converted."""
+preference to count about 30 minutes saved as worth about $0.11 of token
+cost (`prompts/agents/notes/decisions.md#the-users-preferences`)."""
 
 DAY = 86400
 

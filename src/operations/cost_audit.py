@@ -1,7 +1,7 @@
-"""A cost audit launches at any step once the priced spend of its window
-(`state.AuditWindow`), a lower bound of its spend, is at least
-`AUDIT_AFTER`, and the last cost audit
-an operator of the session launched does not run."""
+"""A cost audit launches at any step once the priced Claude and Codex spend
+of its window (`state.AuditWindow`), in subscription dollars, a lower bound
+of its spend, is at least `AUDIT_AFTER`, and the last cost audit an operator
+of the session launched does not run."""
 
 from controlled_markdown import mctx
 from operations import briefs
