@@ -51,7 +51,7 @@ def state_stat(path: str) -> FileStat | None:
         return _stats[path]
     try:
         st = os.stat(path)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         found = None
     else:
         found = FileStat(st.st_mtime, st.st_mtime_ns, st.st_size, st.st_dev, st.st_ino,
@@ -70,7 +70,7 @@ def stat_of(path: Path) -> tuple[int, int] | None:
         return None if found is None else (found.mtime_ns, found.size)
     try:
         st = path.stat()
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         return None
     return st.st_mtime_ns, st.st_size
 
