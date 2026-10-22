@@ -214,14 +214,18 @@ class MessageAccepted:
 def waited[T](me: str, out_at: Callable[[float], T], ready: Callable[[T], bool]) -> T | MessageAccepted:
     """Wait for confirmed planned output or an accepted inbox message.
     Inbox acceptance needs no completed state read."""
-    standalone = operate_service.CURRENT.get() is None
+    current = operate_service.CURRENT.get()
+    standalone = current is None
     if standalone:
         single_instance(me)
+        limit = time.monotonic() + LIMIT_SECONDS
         arm_watchdog(me)
+    else:
+        limit = current.deadline
     try:
         inbox = Inbox(find(me), [])
         with read_interrupts.scope(inbox.accepted):
-            return watched(out_at, ready, BLOCK_SECONDS)
+            return watched(out_at, ready, BLOCK_SECONDS, limit - operate_service.FINISH_SECONDS)
     except read_interrupts.Accepted:
         return MessageAccepted()
     finally:
@@ -229,36 +233,54 @@ def waited[T](me: str, out_at: Callable[[float], T], ready: Callable[[T], bool])
             signal.alarm(0)
 
 
-def watched[T](out_at: Callable[[float], T], ready: Callable[[T], bool], seconds: float) -> T:
-    """The first output `out_at` gives at a full read that `ready` holds
-    for, or else the output of the full read at the deadline, `seconds`
-    from the call. `Reads` gives when each read starts and which read it
-    is."""
-    deadline = time.monotonic() + seconds
-    current = operate_service.CURRENT.get()
-    if current is not None:
-        deadline = min(deadline, current.deadline - operate_service.FINISH_SECONDS)
-    reads = Reads(deadline)
+def watched[T](out_at: Callable[[float], T], ready: Callable[[T], bool], seconds: float,
+               finish: float | None = None) -> T:
+    """The first full actionable output, or the last full pending output
+    when the block ends. With an absolute `finish` limit, each read after
+    the first reserves the greatest completed read's wall duration; a
+    partial read also reserves its full confirmation. Without that limit,
+    the block ends with a full read at its scheduling deadline."""
+    reads = Reads(time.monotonic() + seconds)
     changed: set[str] | None = None
+    duration = 0.0
+    pending: tuple[T] | None = None
     try:
         while True:
             read_interrupts.checkpoint()
+            if finish is not None and pending is not None:
+                remaining = finish - time.monotonic()
+                if remaining < duration:
+                    read_interrupts.checkpoint(force=True)
+                    return pending[0]
+                if remaining < 2 * duration:
+                    changed = None
             started, cpu = time.monotonic(), cpu_seconds()
             reads.start(started, changed)
             stats_stand_but(changed)
             operate_service.check()
-            out = out_at(reads.deadline)
+            deadline = reads.deadline
+            if finish is not None:
+                deadline = min(deadline, finish - duration)
+            out = out_at(deadline)
             read_interrupts.checkpoint(force=True)
+            duration = max(duration, time.monotonic() - started)
             spent = cpu_seconds() - cpu
-            if current is not None:
-                reads.deadline = min(reads.deadline, current.deadline
-                                     - operate_service.FINISH_SECONDS
-                                     - (time.monotonic() - started))
-            else:
-                reads.deadline = min(reads.deadline, deadline - (time.monotonic() - started))
-            more, changed = reads.after(changed, ready(out), started, spent)
+            ends = ready(out)
+            if changed is None:
+                if ends:
+                    return out
+                pending = (out,)
+            if finish is not None:
+                reads.deadline = min(reads.deadline, finish - duration)
+                if time.monotonic() + duration > finish:
+                    assert pending is not None
+                    read_interrupts.checkpoint(force=True)
+                    return pending[0]
+            more, changed = reads.after(changed, ends, started, spent)
             if not more:
-                return out
+                assert pending is not None
+                read_interrupts.checkpoint(force=True)
+                return pending[0]
     finally:
         reads.close()
 
@@ -271,7 +293,9 @@ class Reads:
 
     A full read comes at the first read, at most `FALLBACK_SECONDS` after
     the last full read, before the deadline, and after a partial read whose
-    output would end the call. Between them, the call waits on the file
+    output would end the call, where `watched` admits that read. When no
+    full read fits the call limit, `watched` returns its last full pending
+    output. Between them, the call waits on the file
     events of the paths whose stats it holds (`file_events.Changes`), and a
     read that a change starts is a partial read. A read starts no sooner
     than `POLL_SECONDS`, nor `READ_SHARE` times the CPU seconds of the read
@@ -298,7 +322,8 @@ class Reads:
         full read where it is None, that started at `started`, took `spent`
         CPU seconds, and whose output would end the call where `ends`; and,
         once the wait for it is over, the paths of that read, or None for a
-        full read."""
+        full read. `watched` checks admission after this wait and can
+        return the preceding full pending output."""
         if ends:
             return changed is not None, None
         if changed is None and time.monotonic() + POLL_SECONDS > self.deadline:
@@ -320,7 +345,9 @@ class Reads:
                       spent: float) -> set[str] | None:
         """Wait for the read after the one that started at `started` and
         took `spent` CPU seconds, and give the paths that changed since the
-        last read for a partial read, or None for a full read."""
+        last read for a partial read, or None for a full read. `watched`
+        can convert that partial read to a full read or return its last
+        full pending output when the call limit admits no full read."""
         full_due = min(self.full_at + FALLBACK_SECONDS, self.deadline - POLL_SECONDS)
         earliest = started + max(POLL_SECONDS, READ_SHARE * spent)
         read_interrupts.sleep(max(min(earliest, full_due) - time.monotonic(), 0),
