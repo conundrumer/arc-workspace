@@ -280,7 +280,12 @@ def turn_ended_at(n: Node) -> float | None:
     `profile_runs.py --help running` gives it."""
     if n.cut is not None:
         return n.cut
-    return max((t for t in (last_time(n.path), n.launch.done) if t is not None),
+    ids = {n.launch.call}
+    if n.launch.agent is not None:
+        ids.add(n.launch.agent)
+    notified = (e.time for e in n.launch.entries if e.time > n.launch.since
+                and any(who in ids for who, _ in e.signs))
+    return max((t for t in (last_time(n.path), n.launch.done, *notified) if t is not None),
                default=None)
 
 
