@@ -1,10 +1,20 @@
 //! The tokens of a stream, one variant per token set of
 //! `docs/arclog/arclog.md#token-stream`, and which side emits each token.
 
+use std::fmt;
+
 use crate::program::{ConstraintOp, FactRelation};
+use crate::read::spelling::{self as sp, spelling};
 use crate::registry::LibName;
 
 /// A token of the stream.
+///
+/// `Display` writes the token's name, its spelling in
+/// `docs/arclog/arclog.md#token-stream`: a control token its text, a lib
+/// relation, relation macro, component or proposer its name, a fact
+/// relation its name, and a relation, column or label, which has no text,
+/// `&r<slot>`, `:<position>` or `L<slot>`. The names of the tokens of one
+/// vocabulary are distinct.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Token {
     Control(Control),
@@ -48,7 +58,43 @@ pub enum Control {
     Op(ConstraintOp),
 }
 
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Token::Control(control) => f.write_str(control.text()),
+            Token::Lib(LibName(name)) | Token::Proposer(LibName(name)) => write!(f, "{name}"),
+            Token::Fact(fact) => f.write_str(spelling(sp::FACT_RELATIONS, fact)),
+            Token::Relation(slot) => write!(f, "&r{slot}"),
+            Token::Column(position) => write!(f, ":{position}"),
+            Token::Label(slot) => write!(f, "L{slot}"),
+        }
+    }
+}
+
 impl Control {
+    /// The text of the control token.
+    pub fn text(self) -> &'static str {
+        match self {
+            Control::Rule => "RULE",
+            Control::Det => "DET",
+            Control::Init => "INIT",
+            Control::One => "ONE",
+            Control::Choose => "CHOOSE",
+            Control::RigidDet => "RIGID_DET",
+            Control::Or => "OR",
+            Control::If => "IF",
+            Control::All => "ALL",
+            Control::End => "END",
+            Control::Skip => "SKIP",
+            Control::Also => "ALSO",
+            Control::Not => "NOT",
+            Control::Fresh => "*",
+            Control::Key => "^",
+            Control::Zero => "0",
+            Control::Op(op) => spelling(sp::CONSTRAINT_OPS, &op),
+        }
+    }
+
     /// Every control token, in the order of the vocabulary's slots.
     pub const ALL: [Control; 22] = [
         Control::Rule,

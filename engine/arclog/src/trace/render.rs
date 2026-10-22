@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use super::{DecodeRecord, DecodeTrace, Stop, TopK};
 use crate::program::{column_spelled, RelationRef};
 use crate::read::spelling::{self as sp, spelling};
-use crate::registry::{Component, LibName, Registry};
+use crate::registry::{Component, Registry};
 use crate::resolver::registry_columns::{component, typed_columns};
 use crate::stream::{Control, Emitter, Token, Vocabulary};
 
@@ -156,12 +156,10 @@ impl<'a> Renderer<'a> {
     /// whose site is being read.
     fn spell(&self, token: &Token, columns: Option<&[String]>) -> String {
         match token {
-            Token::Control(control) => control_text(*control).to_owned(),
-            Token::Lib(LibName(name)) | Token::Proposer(LibName(name)) => name.to_string(),
-            Token::Fact(fact) => spelling(sp::FACT_RELATIONS, fact).to_owned(),
+            Token::Control(_) | Token::Lib(_) | Token::Proposer(_) | Token::Fact(_) => token.to_string(),
             Token::Relation(slot) => self.relation_name(*slot),
-            Token::Column(position) => format!(":{}", columns.and_then(|columns| columns.get(*position as usize)).cloned().unwrap_or_else(|| position.to_string())),
-            Token::Label(slot) => self.labels.get(*slot as usize).cloned().unwrap_or_else(|| format!("L{slot}")),
+            Token::Column(position) => columns.and_then(|columns| columns.get(*position as usize)).map_or_else(|| token.to_string(), |name| format!(":{name}")),
+            Token::Label(slot) => self.labels.get(*slot as usize).cloned().unwrap_or_else(|| Token::Label(*slot).to_string()),
         }
     }
 
@@ -181,7 +179,7 @@ impl<'a> Renderer<'a> {
     }
 
     fn relation_name(&self, slot: u32) -> String {
-        self.options.relations.get(slot as usize).cloned().unwrap_or_else(|| format!("&r{slot}"))
+        self.options.relations.get(slot as usize).cloned().unwrap_or_else(|| Token::Relation(slot).to_string())
     }
 
     fn form(&mut self) -> Block {
@@ -230,7 +228,7 @@ impl<'a> Renderer<'a> {
         if let Some(end) = self.take_control(Control::End) {
             pieces.push(vec![self.symbol(end, "END")]);
         }
-        let mut lines = hang(&format!("({} ", self.symbol(record, control_text(keyword))), pieces, ")");
+        let mut lines = hang(&format!("({} ", self.symbol(record, keyword.text())), pieces, ")");
         let declared = self.declarations();
         if let Some(slot) = declared.first() {
             self.columns.insert(*slot, self.made.clone());
@@ -346,7 +344,7 @@ impl<'a> Renderer<'a> {
     /// named from `base`.
     fn mark(&mut self, base: &str, mark: Control) -> String {
         let record = self.next().expect("the mark");
-        let symbol = self.symbol(record, control_text(mark));
+        let symbol = self.symbol(record, mark.text());
         match self.peek() {
             Some(DecodeRecord { token: Token::Label(slot), emitter: Emitter::Engine, .. }) => {
                 self.next();
@@ -505,28 +503,6 @@ fn hang(prefix: &str, blocks: Vec<Block>, close: &str) -> Block {
     }
     lines.last_mut().expect("a line").push_str(close);
     lines
-}
-
-fn control_text(control: Control) -> &'static str {
-    match control {
-        Control::Rule => "RULE",
-        Control::Det => "DET",
-        Control::Init => "INIT",
-        Control::One => "ONE",
-        Control::Choose => "CHOOSE",
-        Control::RigidDet => "RIGID_DET",
-        Control::Or => "OR",
-        Control::If => "IF",
-        Control::All => "ALL",
-        Control::End => "END",
-        Control::Skip => "SKIP",
-        Control::Also => "ALSO",
-        Control::Not => "NOT",
-        Control::Fresh => "*",
-        Control::Key => "^",
-        Control::Zero => "0",
-        Control::Op(op) => spelling(sp::CONSTRAINT_OPS, &op),
-    }
 }
 
 /// The name of a label made at a site on the column `base`: the column's name
