@@ -1,8 +1,6 @@
 """The split of a transcript's wall time into parts, which a misread entry
-shifts without any failure, the agents pending to a run, which a hook
-reads to deny a wait and which a misread entry drops without any failure,
-and the runs `--under` takes, which a misread call drops without any
-failure.
+shifts without any failure, and the agents pending to a run, which a hook
+reads to deny a wait and which a misread entry drops without any failure.
 The hook allows a call where its check fails, so a check that fails on its
 own error is silent too."""
 
@@ -220,57 +218,3 @@ def test_hook_denies(tmp_path: Path) -> None:
     assert done.stdout, done.stderr
     decision = json.loads(done.stdout)["hookSpecificOutput"]
     assert decision["permissionDecision"] == "deny", done.stderr
-
-
-def test_under(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`--under` takes the runs under the run, the agents its agents
-    launched among them, whose work is not open and that ran after an
-    operator's previous call of it that completed in the foreground with no
-    error, or that call's `left open:` line gives; a call by an agent of
-    another type, one that failed, one the harness moved to the background
-    and one whose output was cut before that line count as none."""
-    op, c1, c2, g, editor, other, busy, late = (f"a{n:016x}" for n in range(1, 9))
-    agents = tmp_path / "proj" / "s" / "subagents"
-    agents.mkdir(parents=True)
-    out = f"left open: {late}\nruns taken: 0\nprevious call: none\n"
-
-    def call(tid: str, s: float, result: dict, error: bool = False) -> list[dict]:
-        done = [{"type": "tool_result", "tool_use_id": tid, "content": result.get("content", out),
-                 "is_error": error}]
-        return [assistant(s, bash(tid, f"cd x && uv run python scripts/profile_runs.py "
-                                       f"--under agent-{op} 2>&1")),
-                user(s + 1, done, result)]
-
-    def said(s: float) -> dict:
-        return assistant(s, {"type": "text", "text": "a"})
-
-    cut = {"content": "<persisted-output>\nOutput too large (35.3KB).",
-           "stdout": f"left open: {late}\nruns taken: 1 {late}", "stderr": ""}
-    runs = {op: ("operator", None, [user(0, "brief"), *call("u1", 30, {})]),
-            c1: ("editor", op, [user(1, "brief"), said(10)]),
-            c2: ("editor", op, [user(2, "brief"), said(35)]),
-            g: ("editor", c1, [user(3, "brief"), said(60)]),
-            busy: ("editor", op, [user(4, "brief"), said(70)]),
-            late: ("editor", op, [user(5, "brief"), said(20)]),
-            editor: ("code-editor", None, [user(0, "brief"), *call("u2", 40, {})]),
-            other: ("operator", None, [user(0, "brief"), *call("u3", 45, {}, error=True),
-                                       *call("u4", 47, {"backgroundTaskId": "b",
-                                                        "assistantAutoBackgrounded": True}),
-                                       *call("u5", 50, cut)])}
-    for aid, (kind, parent, entries) in runs.items():
-        write_jsonl(agents / f"agent-{aid}.jsonl", entries)
-        (agents / f"agent-{aid}.meta.json").write_text(json.dumps(
-            {"agentType": kind, **({"parentAgentId": parent} if parent else {})}))
-    monkeypatch.setattr(transcripts, "project_dirs", lambda: [tmp_path])
-    monkeypatch.setattr(tree_reads, "scratch", lambda session: tmp_path / "none")
-    monkeypatch.setattr(under_runs, "work_open",
-                        lambda p, undecided: transcripts.agent_id(p) == busy)
-    transcripts.new_state()
-    try:
-        taken = under_runs.runs_since(agents / f"agent-{op}.jsonl", op, [])
-        previous = under_runs.previous_call(agents / f"agent-{op}.jsonl", op, [])
-    finally:
-        transcripts.new_state()
-    assert previous == under_runs.Previous(transcript_entries.epoch(at(30)), op,
-                                             frozenset([late]))
-    assert sorted(transcripts.agent_id(p) for p in taken) == sorted([c2, g, late])

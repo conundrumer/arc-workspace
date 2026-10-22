@@ -1,21 +1,18 @@
 """The refresh locks of the sessions' kept reads: a merge takes them
 before its fast-forward and releases them once it has landed, and a state
-read waits for them; the refresh then asks each session's resident to read."""
+read waits for them."""
 
 import fcntl
 import os
 import subprocess
-import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from tests.conftest import script
 
-kept_refresh = script("kept_refresh")
 refresh_locks = script("refresh_locks")
 
 ENV = {"PATH": os.environ["PATH"], "HOME": os.environ["HOME"], "GIT_AUTHOR_NAME": "t",
@@ -35,24 +32,6 @@ def is_held(session: str) -> bool:
         except BlockingIOError:
             return True
         return False
-
-
-def test_refresh_asks_each_session_with_an_operator_and_goes_on_after_a_failure(
-        monkeypatch: pytest.MonkeyPatch) -> None:
-    """A session with no operator is not asked, and a session whose request
-    fails does not stop the sessions after it."""
-    asked: list[tuple[str, str]] = []
-    monkeypatch.setattr(kept_refresh, "operator_runs",
-                        lambda s, me: [] if s == "idle" else [(f"op-{s}", Path(s))])
-
-    def ask(main: Path, session: str, operator: str) -> None:
-        asked.append((session, operator))
-        if session == "a":
-            raise RuntimeError("fixture failure")
-
-    monkeypatch.setattr(kept_refresh.operate_service, "refresh_resident", ask)
-    assert kept_refresh.refresh(Path("."), ["m", "a", "idle", "b"]) is False
-    assert asked == [("m", "op-m"), ("a", "op-a"), ("b", "op-b")]
 
 
 def repo(tmp_path: Path, name: str) -> tuple[Path, str]:

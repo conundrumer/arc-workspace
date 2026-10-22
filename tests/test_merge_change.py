@@ -4,22 +4,16 @@ its submodules, and, before the commit alone, submodule
 commits that only the worktree's own copies of the submodules' repositories
 hold. Before the removal, the script also moves the files under its
 `work/` to the main tree's, and fails on a file whose path there is
-taken. A file the main tree holds untracked and a change holds a copy of keeps
-its main-tree content where a pass edited it after the copy, which the
-merge refuses, and where the fast-forward fails after its removal, which
-writes it back; a copied file the change left as copied is in no
-commit. The merge makes the readers' tree of the old `master` before the
-fast-forward, and fast-forwards where that make fails. The checks run by
-the command lines of the tree they check, by the main tree's copy of
-`merge_steps.py` where the changes touch it, and refuse changes to `engine/`
-where the engine does not compile or a test of it fails."""
+taken. The checks run by the command lines of the tree they check, by the
+main tree's copy of `merge_steps.py` where the changes touch it, and refuse
+changes to `engine/` where the engine does not compile or a test of it
+fails."""
 
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-from types import SimpleNamespace
 
 import pytest
 
@@ -101,39 +95,6 @@ def test_unlisted_gitlink_is_refused(merge_change, trees, tmp_path):
     assert git(worktree, "diff", "--cached", "--name-only") == ""
 
 
-def test_change_refused_in_a_stack_reaches_master_through_no_other(
-        merge_change, tmp_path, monkeypatch):
-    """A change stacked on a refused one merges alone, without the refused
-    change's commit beneath it."""
-    sub, main = tmp_path / "sub", tmp_path / "main"
-    first, second = tmp_path / "first", tmp_path / "second"
-    for repo in (sub, main):
-        repo.mkdir()
-        git(repo, "init", "-q", "-b", "master")
-        commit_file(repo, "a")
-    git(main, "submodule", "add", "-q", str(sub), "s")
-    git(main, "commit", "-q", "-m", "s")
-    git(main, "worktree", "add", "-q", str(first), "-b", "first")
-    git(main, "worktree", "add", "-q", str(second), "-b", "second")
-    main, first, second = main.resolve(), first.resolve(), second.resolve()
-    (first / "bad").write_text("bad")
-    (second / "good").write_text("good")
-
-    def check(tree: Path, main: Path, base: str, touched: set[str]) -> None:
-        if (tree / "bad").exists():
-            raise merge_change.Refused("bad")
-
-    monkeypatch.setattr(merge_change, "check", check)
-    monkeypatch.setattr(merge_change, "run_in",
-                        lambda tree, argv: subprocess.CompletedProcess(argv, 0, "", ""))
-    for k in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"):
-        monkeypatch.setenv(k, ENV[k])
-    assert not merge_change.merge([(first, "first"), (second, "second")])
-    assert git(main, "ls-tree", "--name-only", "master").split() == [
-        ".gitmodules", "a", "good", "s"]
-    assert git(first, "status", "--porcelain").split() == ["??", "bad"]
-
-
 def test_untracked_file_in_submodule_keeps_the_worktree(merge_change, trees):
     main, worktree = trees
     (worktree / "s" / "new").write_text("new")
@@ -185,81 +146,6 @@ def test_work_link_is_removed_alone(merge_change, trees):
     assert (main / "work" / "kept").read_text() == "kept"
 
 
-@pytest.fixture
-def carrying(trees, tmp_path, merge_change, monkeypatch):
-    """The main tree of `trees` with the untracked file `p/u`, which the
-    worktree holds a copy of, and the checks and the main tree's commands stubbed
-    out."""
-    main, worktree = trees
-    (main / "p").mkdir()
-    (main / "p" / "u").write_text("pass")
-    ticket = tmp_path / "ticket.md"
-    ticket.write_text("# t\n\n## Scope\n- `p/u`\n")
-    script("change_worktree").copy_scope_untracked(main, worktree, SimpleNamespace(path=ticket))
-    (worktree / "p" / "u").write_text("edited")
-    monkeypatch.setattr(merge_change, "check", lambda *a: tmp_path)
-    monkeypatch.setattr(merge_change, "run_in",
-                        lambda tree, argv: subprocess.CompletedProcess(argv, 0, "", ""))
-    for k in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"):
-        monkeypatch.setenv(k, ENV[k])
-    return main, worktree
-
-
-def test_carried_file_edited_in_the_main_tree_is_refused(merge_change, carrying):
-    main, worktree = carrying
-    (main / "p" / "u").write_text("pass, edited")
-    assert not merge_change.merge([(worktree, "m")])
-    assert (main / "p" / "u").read_text() == "pass, edited"
-
-
-def test_carried_file_left_as_copied_is_in_no_commit(merge_change, carrying):
-    main, worktree = carrying
-    (worktree / "p" / "u").write_text("pass")
-    (worktree / "b").write_text("b")
-    assert merge_change.merge([(worktree, "m")])
-    assert git(main, "ls-files", "--", "p/u") == ""
-    assert (main / "p" / "u").read_text() == "pass"
-
-
-def test_carried_file_is_written_back_where_the_fast_forward_fails(
-        merge_change, carrying, monkeypatch):
-    main, worktree = carrying
-    git_ = merge_change.checkout.git
-
-    def failing(tree, *argv, **kw):
-        if argv[:1] == ("merge",):
-            return subprocess.CompletedProcess(argv, 1, "", "")
-        return git_(tree, *argv, **kw)
-
-    monkeypatch.setattr(merge_change.checkout, "git", failing)
-    with pytest.raises(merge_change.Failed):
-        merge_change.merge([(worktree, "m")])
-    assert (main / "p" / "u").read_text() == "pass"
-
-
-def test_the_tree_is_made_before_the_fast_forward_and_its_failure_merges(
-        merge_change, carrying, monkeypatch):
-    main, worktree = carrying
-    steps: list[str] = []
-    git_ = merge_change.checkout.git
-
-    def run_in(tree, argv):
-        steps.append(" ".join(argv))
-        return subprocess.CompletedProcess(argv, 0 if "--keep-tree" not in argv else 1, "", "")
-
-    def recorded(tree, *argv, **kw):
-        if argv[:1] == ("merge",):
-            steps.append("merge")
-        return git_(tree, *argv, **kw)
-
-    monkeypatch.setattr(merge_change, "run_in", run_in)
-    monkeypatch.setattr(merge_change.checkout, "git", recorded)
-    merge_change.merge([(worktree, "m")])
-    keep = " ".join(("uv", "run", "python", *merge_change.TREE_KEEP))
-    assert steps[:2] == [keep, "merge"]
-    assert (main / "p" / "u").read_text() == "edited"
-
-
 GATE = '''import argparse
 ap = argparse.ArgumentParser()
 ap.add_argument("--since")
@@ -290,7 +176,6 @@ def test_the_checks_run_the_command_lines_of_the_tree_checked(merge_change, tree
         STEPS.replace('"--since"', '"--affected"'))
     with pytest.raises(merge_change.Refused, match="unrecognized arguments: --affected"):
         merge_change.check(worktree, main, base, {"p"})
-
 
 
 def test_a_change_to_merge_steps_is_checked_by_the_main_trees_copy(merge_change, trees):

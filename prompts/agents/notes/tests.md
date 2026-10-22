@@ -20,6 +20,8 @@
     - A check, hook, or gate that must refuse or report: the test feeds it the bad case and asserts the refusal.
 - When a run would show the failure (a wrong grid, a failed command, an error message, a changed line in a file, the page or the feed), the run is the check, and the test is not written.
 - A test asserts what a caller sees: outputs, files, exit codes, refusals. It does not assert function signatures, module names, enum values, message wording, or cache internals.
+* comment: The user's words, session 2384db39, 2026-10-22T22:20:24Z: "delete and ban mock-heavy tests", which answered the coordinator's report of 22:16:26Z: "65 of them (12%) stub collaborators on the call path, which is the kind that failed on 7b7de877."
+- A test runs the repo's code that its subject calls, with no stub or fake in place of any of it. It may replace a constant, module state, or code that gives a path (with a path under `tmp_path`), and a process the repo does not hold, at that process's boundary, such as a subprocess or a socket peer.
 - A test does not read `data/upstream/`, the live transcripts, or the session's environment variables. It builds what it reads in `tmp_path` and clears the environment it passes to a subprocess.
 - A concurrency test does not depend on timing. It forces the interleaving with a barrier or a held lock.
 - A test written to fail before the code exists is not by that fact a test that stays.

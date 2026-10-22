@@ -32,20 +32,6 @@ def test_the_input_time_is_the_version_else_an_occasion_that_is_a_time() -> None
     assert input_time(launch("abc def")) is None
 
 
-def test_a_pass_over_ruling_holds_for_a_step_whose_inputs_did_not_change(monkeypatch) -> None:
-    from types import SimpleNamespace
-    from typing import Any, cast
-    from operations import directives
-    ruling = SimpleNamespace(message=SimpleNamespace(time=10.0))
-    first = launch("1.0", 8.0)
-    monkeypatch.setattr(directives, "passed_over", lambda state: {key(first): ruling})
-    state = cast(Any, None)
-    assert directives.passed(first, state) is ruling
-    assert directives.passed(launch("3.0", 10.0), state) is ruling
-    assert directives.passed(launch("3.0", 11.0), state) is None
-    assert directives.passed(launch("worktree 3.0"), state) is ruling
-
-
 def test_a_take_and_a_release_each_move_the_occasion_of_the_next_one(tmp_path) -> None:
     from dataclasses import replace
     from operations.state import LogLine

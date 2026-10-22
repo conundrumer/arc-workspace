@@ -1,12 +1,7 @@
-"""A line pace that admits work caps the running agents by its slack, and
-at the cap a step that starts an agent's run is held and its procedure
-gives its next step in its place."""
+"""A line pace that admits work caps the running agents by its slack."""
 
 import math
-from dataclasses import replace
 from pathlib import Path
-
-from tests.test_ticket_stall import state
 
 
 def usage(used: float, elapsed: float, now: float = 9000.0):
@@ -25,34 +20,6 @@ def test_a_line_pace_that_admits_work_caps_the_running_agents_by_its_slack() -> 
     assert by(usage(85, 0.0), 10000.0, WindowName.FIVE_HOUR) == Until(9000.0, 10)
     assert DEFAULT(usage(85, 90)) == Until(9000.0)
     assert asap(usage(85, 90)) == Until(-math.inf)
-
-
-def test_at_the_cap_a_launch_is_held_and_the_batch_stops(tmp_path: Path, monkeypatch) -> None:
-    from operations import codex_mode
-    monkeypatch.setattr(codex_mode, "enabled", lambda: False)
-    from operations import order
-    from operations.handled import held_aside
-    from operations.monitor import MonitorState
-    from operations.pacing import Until
-    from operations.roles import Role
-    from operations.steps import Bash, Launch
-    base = state(tmp_path, {"approved/9-1_change_x_ticket-analyst.md": ""})
-    launch = Launch(Role.TICKET_REVIEWER, "9-1", "brief", occasion="1")
-    move = Bash("true", "move", occasion="1")
-
-    def procedure(s):
-        return move if held_aside(s, launch) else launch
-
-    one = replace(base, computed=replace(base.computed, pace=Until(base.now, 1)))
-    assert order.placed(one, procedure)[0] == launch
-    assert order.batch(one, MonitorState((), frozenset(), (), ()), launch) == (launch,)
-    running = order.made(one, launch)
-    assert order.placed(running, procedure)[0] == move
-    uncapped = replace(running, computed=replace(running.computed, pace=Until(base.now)))
-    for _ in range(25):
-        uncapped = order.made(uncapped, launch)
-    assert order.placed(uncapped, procedure)[0] == launch
-
 
 
 def test_presets_joined_by_a_semicolon_admit_work_only_where_each_admits_it(tmp_path: Path) -> None:

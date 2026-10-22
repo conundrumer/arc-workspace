@@ -1,37 +1,17 @@
-"""A fake engine and builders of hand-made programs, for the solver tests:
-the `souffle` engine is not what these tests are about."""
+"""Builders of hand-made programs and grids, for the solver tests."""
 
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
-from pathlib import Path
+from collections.abc import Sequence
 
 from engine import (
-    Atom,
-    BodyLiteral,
     Comment,
     DeclId,
     Grid,
-    GridLayout,
-    GridValue,
-    Index,
-    InputValue,
-    Limits,
-    ParseFailure,
     Program,
-    RelationName,
-    RelationValue,
-    RemovalTarget,
-    Rendered,
-    RunResult,
     Scope,
     Span,
-    Term,
     Unit,
     UnitId,
 )
-from engine.engine import Classed, GridMisfit
-from souffle.text import TextMethods
-from souffle.index import index_of
 from engine.program import (
     TypeName,
     AdtType,
@@ -73,32 +53,6 @@ def relation(id: int, name: str, line: int, scope: tuple[str, ...] = (),
         span(line, file=file))
 
 
-def component(id: int, name: str, first: int, last: int,
-              file: str | None = None) -> Component:
-    return Component(DeclId(id), name, Scope(()), (), None, (),
-                     span(first, last, file))
-
-
-def instance(id: int, name: str, comp: str, line: int) -> Instance:
-    return Instance(DeclId(id), name, Scope(()), comp, (), span(line))
-
-
-def atom(line: int, relation: str, *args: Term) -> Atom:
-    """An atom on `relation`, written as a clause reads it:
-    `params.bg`."""
-    path, _dot, name = relation.rpartition(".")
-    return Atom(RelationName(tuple(path.split(".")) if path else (), name),
-                args, line)
-
-
-def unit(id: int, line: int, head: Atom,
-         body: Sequence[BodyLiteral] | None = None,
-         scope: tuple[str, ...] = ()) -> Unit:
-    """A clause of the solver's own text; a fact where `body` is None."""
-    return Unit(UnitId(id), Scope(scope), head,
-                None if body is None else tuple(body), None, span(line))
-
-
 def program(*, types: Sequence[TypeDecl] = (),
             relations: Sequence[RelationDecl] = (),
             components: Sequence[Component] = (),
@@ -109,74 +63,6 @@ def program(*, types: Sequence[TypeDecl] = (),
     return Program(tuple(types), tuple(relations), tuple(components),
                    tuple(instances), (), tuple(units), (), tuple(comments),
                    (Include("../lib.dl", 1, file=None),), ())
-
-
-@dataclass
-class FakeEngine(TextMethods):
-    """An engine whose parse gives one program and whose runs a function
-    scripts; the rewrites record themselves and change nothing."""
-
-    parsed: Program | ParseFailure
-    runs: Callable[[Program, Mapping[RelationName, InputValue],
-                    Sequence[RelationName]], RunResult]
-    fixed: list[tuple[RelationName, RelationValue]] = field(
-        default_factory=list[tuple[RelationName, RelationValue]])
-
-    def parse(self, text: str, base_dir: Path) -> Program | ParseFailure:
-        return self.parsed
-
-    def parse_including(self, text: str, included: str,
-                        base_dir: Path) -> Program | ParseFailure:
-        return self.parsed
-
-    def index(self, program: Program) -> Index:
-        return index_of(program)
-
-    def fix_relation(self, program: Program, relation: RelationName,
-                     value: RelationValue) -> Program:
-        self.fixed.append((relation, value))
-        return program
-
-    def place_grid(self, layout: GridLayout, mark: tuple[int, int] | None,
-                   value: GridValue) -> GridValue | GridMisfit:
-        raise NotImplementedError
-
-    def remove(self, program: Program, target: RemovalTarget) -> Program:
-        return program
-
-    def d4_images(self, lib: Path, types: Sequence[TypeName],
-                  kept: frozenset[int]) -> Program | ParseFailure:
-        raise NotImplementedError
-
-    def lib_probe(self, lib: Path, relation: str, bound: Sequence[int],
-                  domains: Sequence[int]) -> Program | ParseFailure:
-        raise NotImplementedError
-
-    def instantiate(self, program: Program, component: str,
-                    name: str) -> Program:
-        return program
-
-    def runtime_identity(self) -> bytes:
-        return b"fake"
-
-    def run(self, program: Program, inputs: Mapping[RelationName, InputValue],
-            outputs: Sequence[RelationName], limits: Limits,
-            caps: Mapping[RelationName, int] | None = None) -> RunResult:
-        return self.runs(program, inputs, outputs)
-
-    def classify(self, program: Program, relation: RelationName,
-                 key: tuple[int, ...]) -> Classed:
-        raise NotImplementedError
-
-    def expand(self, program: Program) -> Program:
-        return program
-
-    def grounded_without(self, program: Program, unit: Unit,
-                         atom: Atom) -> bool:
-        raise NotImplementedError
-
-    def render(self, program: Program) -> Rendered:
-        return Rendered(())
 
 
 def grid(*rows: str) -> Grid:

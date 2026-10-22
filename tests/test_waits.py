@@ -1,8 +1,7 @@
 """A change that waits on its `depends-on` reaches the coordinator with its
 paths of links where a ticket on them does not move for a cause no
-operator's step removes, once per occasion, and not where the usage pace
-or a line of the user holds it; the paths give each ticket two paths
-share in full once, and the hold of a ticket so held."""
+operator's step removes, once per occasion; the paths give each ticket two
+paths share in full once."""
 
 from dataclasses import replace
 from pathlib import Path
@@ -86,34 +85,6 @@ def test_a_ticket_two_paths_share_is_given_in_full_once(tmp_path: Path) -> None:
         "        - 9-4 (`tickets/blocked/`): it waits on the user, since 2026-10-17T03:00:00Z",
         "    - 9-3 (`tickets/approved/`)",
         "        - 9-4, given above"]) in first.message
-
-
-def test_a_chain_held_by_the_pace_or_the_pause_reaches_no_one_and_moves_no_change(
-        tmp_path: Path, monkeypatch) -> None:
-    from operations import codex_mode
-    monkeypatch.setattr(codex_mode, "enabled", lambda: False)
-    from operations import change_take, waits
-    from operations.state import Message
-    from operations.ticket_stall import stall, stalled
-    from tests.conftest import script
-    tickets = tmp_path / "tickets"
-    s = at(tmp_path, [ticket(tickets, "9-1", depends="9-2"), ticket(tickets, "9-2")],
-           messages=[Message("op", 1.0, None, "Op scope: all.")])
-    path = tickets / "released" / "9-3_ticket_x_coordinator.md"
-    path.parent.mkdir(parents=True)
-    path.write_text(f"---\nkind: request\n---\n# x: y\n\n## Log\n{FILED} new [coordinator]: filed\n"
-                    f"{FILED} released [coordinator]: merged at 98d23618\n")
-    paused = at(tmp_path, [ticket(tickets, "9-4", depends="9-3"),
-                           script("ticket_reads").read_ticket(path)],
-                messages=[Message("op", 1.0, None, "Op pause.")])
-    paused = replace(paused, computed=replace(paused.computed, to_settle=("9-3",)))
-    for given, change, line in ((s, "9-1", "- 9-2 (`tickets/approved/`): the usage pace holds it"),
-                                (paused, "9-4",
-                                 "- 9-3 (`tickets/released/`): the `Op pause.` line holds it")):
-        assert sent_twice(given) == (None, None)
-        assert stall(given) is None
-        assert any(n == change for n, _ in change_take.waiting(given))
-        assert line in waits.rendered(given, waits.paths(given, change, stalled(given)))
 
 
 def test_a_change_with_a_log_line_within_the_stall_time_gives_no_message(tmp_path: Path) -> None:
