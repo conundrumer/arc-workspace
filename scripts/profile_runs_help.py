@@ -228,7 +228,7 @@ PARTS = {
         - the harness's note that the user interrupted the run, which is itself no message the agent received.
     - Where the parent's latest message to an agent is unknown, only the entries of that list close its work.
     - Where no transcript of the parent of the run ID, or of a parent above it, gives its launch, whether its work is open is unknown, and it counts as open.
-    - Where the rules above give the work of an agent, of the run ID or of a run above it as not open, while its turn has ended and work of its own still runs, whether its work is open is unknown, and it counts as open.
+    - Where the rules above give the work of an agent, of the run ID or of a run above it as not open, while its turn has ended and work of its own still runs, its work is open.
         - An agent's work of its own is:
             - each command it backgrounded that is still running;
             - each agent it launched in the background that this rule does not reach, as `running:` gives such an agent, and whose launch no notification has followed;

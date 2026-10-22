@@ -320,12 +320,12 @@ def listing(n: Node, parent_open: bool, undecided: list[str]) -> Listed | None:
     """The agent of `n` where its work is open, by the rule
     `profile_runs.py --help running` gives, with the work of its parent open
     where `parent_open` holds: by `by_rule`, or where that gives it as not
-    open, by `unknown_work`."""
-    return by_rule(n, parent_open, undecided) or unknown_work(n, undecided)
+    open, by `own_work_open`."""
+    return by_rule(n, parent_open, undecided) or own_work_open(n, undecided)
 
 
 def by_rule(n: Node, parent_open: bool, undecided: list[str]) -> Listed | None:
-    """`listing` but for the case of `unknown_work`. A settled agent has
+    """`listing` but for the case of `own_work_open`. A settled agent has
     ended its turn after every message it received, and only the end of its
     transcript is read. The parent's latest message comes from the agent's
     profile, so it is read only where the other reads leave the work
@@ -384,20 +384,14 @@ message."""
 CLOSING_SIGNS: tuple[ClosingSign, ...] = (reported_after, stopped, interrupted, handed_back)
 
 
-def unknown_work(n: Node, undecided: list[str]) -> Listed | None:
-    """The agent of `n` where its turn has ended and work of its own still
-    runs, as `profile_runs.py --help running` gives that
-    work, with the `undecided` line that names it with that work: the
-    agents under it that `is_busy` gives, and `own_work`."""
+def own_work_open(n: Node, undecided: list[str]) -> Listed | None:
+    """The agent of `n` where the own-work rule of
+    `profile_runs.py --help running` gives its work as open."""
     below = [agent_id(m.path) for m in every_node(nodes_under(n, undecided), undecided)
              if is_busy(m, undecided)]
     own = own_work(n, undecided)
     if not below and not own:
         return None
-    undecided.append(mctx("{run}: its turn has ended while work of its own still "
-                          "runs: {work}; whether its work is open is unknown, and "
-                          "it counts as open").format(
-        run=agent_id(n.path), work=", ".join([*below, *own])))
     return turn_ended(n, undecided)
 
 
