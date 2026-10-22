@@ -13,7 +13,10 @@ from unittest.mock import Mock
 
 import pytest
 
+from handbook.paths import scripts_importable
 from tests.conftest import script
+
+scripts_importable()
 
 service = script("operate_service")
 assert service.__file__ is not None
@@ -48,7 +51,7 @@ def resident(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         import script_calls
         script_calls.start(str(root), "operate_service.py", ["startup"])
         import operate_service as service
-        import kept_reads, operate, state_assembly, state_reads, file_reads, step_journal
+        import kept_reads, operate, state_assembly, state_reads, file_reads, step_journal, read_interrupts
         from operations.steps import Bash
         kept_reads.fresh_code = lambda _: (root / "code").read_text()
         loaded = (root / "code").read_text()
@@ -61,7 +64,7 @@ def resident(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                                                operator, root, time.time())
                 (root / "entered").write_text(operator)
                 while not (root / "release").exists():
-                    service.pause(0.02)
+                    read_interrupts.sleep(0.02)
             state_reads.new_state()
             text = file_reads.file_text(root / "source")
             print(loaded, operator, text, state_assembly.REQUEST_STARTED.get())

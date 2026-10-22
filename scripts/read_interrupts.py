@@ -7,14 +7,13 @@ from contextvars import ContextVar
 from functools import wraps
 from typing import ParamSpec, TypeVar
 
-import operate_service
-
 
 class Accepted(BaseException):
     """An inbox accepted a message while a foreground call was waiting."""
 
 
 _callback: ContextVar[Callable[[], bool] | None] = ContextVar("read_inbox", default=None)
+_request_check: ContextVar[Callable[[], None] | None] = ContextVar("read_request_check", default=None)
 _transport_due: ContextVar[float] = ContextVar("read_transport_due", default=0.0)
 _due: ContextVar[float] = ContextVar("read_inbox_due", default=0.0)
 _deferred: ContextVar[int] = ContextVar("read_inbox_deferred", default=0)
@@ -25,7 +24,8 @@ def checkpoint(*, force: bool = False) -> None:
         return
     now = time.monotonic()
     if force or now >= _transport_due.get():
-        operate_service.check()
+        if (check := _request_check.get()) is not None:
+            check()
         _transport_due.set(now + 0.05)
     callback = _callback.get()
     if callback is None or _deferred.get() or (not force and time.monotonic() < _due.get()):
@@ -34,6 +34,17 @@ def checkpoint(*, force: bool = False) -> None:
     _due.set(time.monotonic() + 1.0)
     if accepted:
         raise Accepted()
+
+
+@contextmanager
+def request_scope(check: Callable[[], None]) -> Iterator[None]:
+    token = _request_check.set(check)
+    due = _transport_due.set(0.0)
+    try:
+        yield
+    finally:
+        _request_check.reset(token)
+        _transport_due.reset(due)
 
 
 @contextmanager

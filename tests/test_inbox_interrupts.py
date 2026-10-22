@@ -251,3 +251,67 @@ def test_wait_phases_release_without_another_state(inbox, monkeypatch: pytest.Mo
                     return False
                 monkeypatch.setattr(loop.Reads, "after", lambda *args: (True, {str(child)}))
                 loop.watched(state, bool, 90)
+
+
+def test_request_scopes_restore_checks_and_poll_deadlines(monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr(interrupts.time, "monotonic", lambda: now[0])
+    checked = []
+    with interrupts.request_scope(lambda: checked.append("outer")):
+        interrupts.checkpoint()
+        with interrupts.request_scope(lambda: checked.append("inner")):
+            interrupts.checkpoint()
+        interrupts.checkpoint()
+        assert checked == ["outer", "inner"]
+        interrupts.checkpoint(force=True)
+        now[0] += 0.1
+        interrupts.checkpoint()
+    interrupts.checkpoint(force=True)
+    with interrupts.request_scope(lambda: checked.append("later")):
+        interrupts.checkpoint()
+    assert checked == ["outer", "inner", "outer", "outer", "later"]
+
+
+def test_request_cancellation_waits_for_persistent_write_and_restores_scope():
+    events = []
+    invalid = False
+
+    def check():
+        if invalid:
+            raise RuntimeError("invalid request")
+
+    @interrupts.deferred
+    def write():
+        nonlocal invalid
+        invalid = True
+        interrupts.checkpoint(force=True)
+        events.append("written")
+
+    with pytest.raises(RuntimeError):
+        with interrupts.request_scope(check):
+            write()
+    interrupts.checkpoint(force=True)
+    assert events == ["written"]
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_invalid_request_is_refused_before_the_next_inbox_poll(monkeypatch, force):
+    now = [100.0]
+    invalid = False
+    inbox_checks = []
+    monkeypatch.setattr(interrupts.time, "monotonic", lambda: now[0])
+
+    def check():
+        if invalid:
+            raise RuntimeError("invalid request")
+
+    def poll_inbox():
+        inbox_checks.append(True)
+        return False
+
+    with interrupts.request_scope(check), interrupts.scope(poll_inbox):
+        invalid = True
+        now[0] += 0.1
+        with pytest.raises(RuntimeError):
+            interrupts.checkpoint(force=force)
+    assert inbox_checks == [True]

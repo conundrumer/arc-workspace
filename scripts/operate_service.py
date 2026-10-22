@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TextIO
 
+import read_interrupts
 import script_calls
 
 from engine import checkout
@@ -428,82 +429,83 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
     stdout, stderr = io.StringIO(), io.StringIO()
     current = Request(message["operator"], float(message["started"]), float(message["deadline"]),
                       connection, listener, code, stdout, stderr, pending=pending)
-    token = CURRENT.set(current)
-    cutoff = state_assembly.REQUEST_STARTED.set(current.started)
-    codex_mode.enabled.cache_clear()
-    trial_mode.enabled.cache_clear()
-    script_calls.start_request(str(checkout.ROOT), "operate.py", ["next"])
-    from file_reads import stats_stand_but
-    stats_stand_but(None)
-    status, retry, keep = 1, False, True
-    try:
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(Expired()))
-            signal.setitimer(signal.ITIMER_REAL, max(current.deadline - time.monotonic(), 0.001))
-            current.check(code=True)
-            if message["refresh"]:
-                state_assembly.read_state(current.operator)
-                status = 0
-            else:
-                with executor():
-                    status = operate.main(["next", current.operator])
-            current.check()
-    except Replaced:
-        retry, keep = True, False
-    except Disconnected:
-        stdout.seek(0)
-        stdout.truncate(0)
-        with contextlib.redirect_stdout(stdout):
-            timeout_output(current.operator)
-    except Expired:
-        keep = False
-        stdout.seek(0)
-        stdout.truncate(0)
-        with contextlib.redirect_stdout(stdout):
-            timeout_output(current.operator)
-    except (Unavailable, kept_reads.Unavailable) as exc:
-        keep = False
-        stdout.seek(0)
-        stdout.truncate(0)
-        print(f"operate: {exc}", file=stderr)
-    except Exception:
-        stdout.seek(0)
-        stdout.truncate(0)
-        traceback.print_exc(file=stderr)
-        keep = False
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        if not kept_reads.flush():
-            store = kept_reads.store()
+    with read_interrupts.request_scope(check):
+        token = CURRENT.set(current)
+        cutoff = state_assembly.REQUEST_STARTED.set(current.started)
+        codex_mode.enabled.cache_clear()
+        trial_mode.enabled.cache_clear()
+        script_calls.start_request(str(checkout.ROOT), "operate.py", ["next"])
+        from file_reads import stats_stand_but
+        stats_stand_but(None)
+        status, retry, keep = 1, False, True
+        try:
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(Expired()))
+                signal.setitimer(signal.ITIMER_REAL, max(current.deadline - time.monotonic(), 0.001))
+                current.check(code=True)
+                if message["refresh"]:
+                    state_assembly.read_state(current.operator)
+                    status = 0
+                else:
+                    with executor():
+                        status = operate.main(["next", current.operator])
+                current.check()
+        except Replaced:
+            retry, keep = True, False
+        except Disconnected:
             stdout.seek(0)
             stdout.truncate(0)
-            if store is not None and store.locked():
-                # A lock is transient: the records stay held for the retry's flush.
-                status, retry = 1, True
+            with contextlib.redirect_stdout(stdout):
+                timeout_output(current.operator)
+        except Expired:
+            keep = False
+            stdout.seek(0)
+            stdout.truncate(0)
+            with contextlib.redirect_stdout(stdout):
+                timeout_output(current.operator)
+        except (Unavailable, kept_reads.Unavailable) as exc:
+            keep = False
+            stdout.seek(0)
+            stdout.truncate(0)
+            print(f"operate: {exc}", file=stderr)
+        except Exception:
+            stdout.seek(0)
+            stdout.truncate(0)
+            traceback.print_exc(file=stderr)
+            keep = False
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            if not kept_reads.flush():
+                store = kept_reads.store()
+                stdout.seek(0)
+                stdout.truncate(0)
+                if store is not None and store.locked():
+                    # A lock is transient: the records stay held for the retry's flush.
+                    status, retry = 1, True
+                else:
+                    status, retry, keep = 1, False, False
+                    print(f"operate: kept-read store cannot preserve completed reads: "
+                          f"{store.path if store is not None else ''}: "
+                          f"{store.write_error if store is not None else ''}", file=stderr)
+        response = {"status": status, "stdout": stdout.getvalue(), "stderr": stderr.getvalue(),
+                    "retry": retry}
+        connection.settimeout(1)
+        try:
+            if not retry and status == 0 and not message["refresh"]:
+                try:
+                    with side_effect():
+                        connection.sendall((json.dumps(response) + "\n").encode())
+                except (Disconnected, Expired):
+                    pass
             else:
-                status, retry, keep = 1, False, False
-                print(f"operate: kept-read store cannot preserve completed reads: "
-                      f"{store.path if store is not None else ''}: "
-                      f"{store.write_error if store is not None else ''}", file=stderr)
-    response = {"status": status, "stdout": stdout.getvalue(), "stderr": stderr.getvalue(),
-                "retry": retry}
-    connection.settimeout(1)
-    try:
-        if not retry and status == 0 and not message["refresh"]:
-            try:
-                with side_effect():
-                    connection.sendall((json.dumps(response) + "\n").encode())
-            except (Disconnected, Expired):
-                pass
-        else:
-            connection.sendall((json.dumps(response) + "\n").encode())
-    except OSError:
-        pass
-    finally:
-        script_calls.record()
-        CURRENT.reset(token)
-        state_assembly.REQUEST_STARTED.reset(cutoff)
-    return keep and kept_reads.fresh_code("operate") == code
+                connection.sendall((json.dumps(response) + "\n").encode())
+        except OSError:
+            pass
+        finally:
+            script_calls.record()
+            CURRENT.reset(token)
+            state_assembly.REQUEST_STARTED.reset(cutoff)
+        return keep and kept_reads.fresh_code("operate") == code
 
 
 def serve() -> None:
