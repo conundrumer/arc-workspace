@@ -2,7 +2,7 @@
 that waits on a ticket that holds it up.
 
 A ticket of `taking.purview` is stalled (`stalled`) where an operator's step
-is due on it (`due`) and `STUCK_SECONDS` have passed since the later of its
+is due on it (`due`) and `TICKET_STUCK_SECONDS` have passed since the later of its
 last progress and the time from which a step has been due on it
 (`due_times`), whatever the cause that held it. A step is due on it by an
 exit of `tracker.exits` that an operator's step makes, read by the
@@ -28,7 +28,7 @@ those since which each such read found the step due on it, as
 the step due. A read that finds a ticket of its `taking.purview` not due
 drops that time, and keeps the times of tickets outside it; at each read,
 in its purview or not, a ticket whose last read that found it due is
-`STUCK_SECONDS` or more before the read at hand loses its time
+`TICKET_STUCK_SECONDS` or more before the read at hand loses its time
 (`live_entries`); a ticket that `State.due_since` does not hold is due
 from the read at hand.
 
@@ -45,7 +45,7 @@ from typing import assert_never
 from operations import (change_take, changes, drafts, lineage, merging, start_holds, taking, triage,
                         waits)
 from operations.change_budget import TAKEN
-from operations.constants import stuck_reached
+from operations.constants import ticket_stuck_reached
 from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.parties import Hold, Holder, Party
@@ -206,14 +206,14 @@ def due(state: State) -> frozenset[str]:
 
 def live_entries(state: State) -> dict[str, DueEntry]:
     """The entries of `State.due_since` whose last read that found the
-    step due has not reached `STUCK_SECONDS` at `state.now`."""
+    step due has not reached `TICKET_STUCK_SECONDS` at `state.now`."""
     return live(state.due_since, state.now)
 
 
 def live(record: Mapping[str, DueEntry], now: float) -> dict[str, DueEntry]:
     """The entries of `record` whose last read has not reached
-    `STUCK_SECONDS` at `now`."""
-    return {n: e for n, e in record.items() if not stuck_reached(e.last, now)}
+    `TICKET_STUCK_SECONDS` at `now`."""
+    return {n: e for n, e in record.items() if not ticket_stuck_reached(e.last, now)}
 
 
 def due_times(state: State) -> dict[str, DueEntry]:
@@ -239,7 +239,7 @@ def stalled(state: State) -> Mapping[str, float]:
     for n in sorted(due(state)):
         if (last := progress(state, state.tracker.tickets[n])) is not None:
             start = max(last, since[n].since)
-            if stuck_reached(start, state.now):
+            if ticket_stuck_reached(start, state.now):
                 out[n] = start
     return out
 

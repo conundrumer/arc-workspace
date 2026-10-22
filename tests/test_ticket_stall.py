@@ -54,15 +54,15 @@ def state(tmp_path: Path, tickets: dict[str, str], budgets=()):
 def test_a_ticket_long_without_progress_is_not_stalled_at_the_read_that_first_finds_it_due(
         tmp_path: Path) -> None:
     from operations import ticket_stall
-    from operations.constants import STUCK_SECONDS
+    from operations.constants import TICKET_STUCK_SECONDS
     s = state(tmp_path, {"assigned/9-1_change_x_ticket-analyst.md": TAKEN})
     n = "9-1"
     assert n in ticket_stall.due(s)
     assert ticket_stall.stalled(s) == {}
     first = ticket_stall.due_times(s)
     assert first[n].since == s.now
-    middle = ticket_stall.due_times(replace(s, now=s.now + STUCK_SECONDS / 2, due_since=first))
-    later = replace(s, now=s.now + STUCK_SECONDS, due_since=middle)
+    middle = ticket_stall.due_times(replace(s, now=s.now + TICKET_STUCK_SECONDS / 2, due_since=first))
+    later = replace(s, now=s.now + TICKET_STUCK_SECONDS, due_since=middle)
     assert ticket_stall.stalled(later) == {n: s.now}
 
 
@@ -84,7 +84,7 @@ def test_an_unreadable_record_gives_no_due_times(tmp_path: Path,
 def test_a_change_behind_the_head_of_the_take_is_not_stalled_at_the_read_where_it_reaches_it(
         tmp_path: Path) -> None:
     from operations import change_take, ticket_stall
-    from operations.constants import STUCK_SECONDS
+    from operations.constants import TICKET_STUCK_SECONDS
     released = TAKEN + f"{FILED} released [operator {ME}]: released\n"
     tickets = {"released/9-1_change_x_ticket-analyst.md": released,
                "released/9-2_change_x_ticket-analyst.md": released}
@@ -92,7 +92,7 @@ def test_a_change_behind_the_head_of_the_take_is_not_stalled_at_the_read_where_i
     head, behind = (t.number for t in change_take.batch(s))
     waits = state(tmp_path / "waits", tickets, [head])
     assert ticket_stall.due(waits) == {head}
-    reached = replace(s, now=s.now + STUCK_SECONDS, due_since=ticket_stall.due_times(waits),
+    reached = replace(s, now=s.now + TICKET_STUCK_SECONDS, due_since=ticket_stall.due_times(waits),
                       tracker=replace(s.tracker, tickets={behind: s.tracker.tickets[behind]}))
     assert ticket_stall.due(reached) == {behind}
     assert ticket_stall.stalled(reached) == {}
@@ -101,31 +101,31 @@ def test_a_change_behind_the_head_of_the_take_is_not_stalled_at_the_read_where_i
 def test_a_ticket_whose_record_lapsed_is_not_stalled_at_the_read_where_it_is_due_again(
         tmp_path: Path) -> None:
     from operations import ticket_stall
-    from operations.constants import STUCK_SECONDS
+    from operations.constants import TICKET_STUCK_SECONDS
     s = state(tmp_path, {"assigned/9-1_change_x_ticket-analyst.md": TAKEN})
     n = "9-1"
     first = ticket_stall.due_times(s)
-    outside = replace(s, now=s.now + STUCK_SECONDS, due_since=first,
+    outside = replace(s, now=s.now + TICKET_STUCK_SECONDS, due_since=first,
                       tracker=replace(s.tracker, tickets={}))
     assert n not in ticket_stall.due_times(outside)
     for due_since in (first, ticket_stall.due_times(replace(s, now=s.now + 1, due_since=first,
                                                             tracker=replace(s.tracker, tickets={})))):
-        back = replace(s, now=s.now + 2 * STUCK_SECONDS, due_since=due_since)
+        back = replace(s, now=s.now + 2 * TICKET_STUCK_SECONDS, due_since=due_since)
         assert ticket_stall.stalled(back) == {}
         assert ticket_stall.due_times(back)[n].since == back.now
-        middle = ticket_stall.due_times(replace(back, now=back.now + STUCK_SECONDS / 2,
+        middle = ticket_stall.due_times(replace(back, now=back.now + TICKET_STUCK_SECONDS / 2,
                                                 due_since=ticket_stall.due_times(back)))
-        later = replace(back, now=back.now + STUCK_SECONDS, due_since=middle)
+        later = replace(back, now=back.now + TICKET_STUCK_SECONDS, due_since=middle)
         assert ticket_stall.stalled(later) == {n: back.now}
 
 
 def test_a_ticket_due_at_every_read_keeps_its_time(tmp_path: Path) -> None:
     from operations import ticket_stall
-    from operations.constants import STUCK_SECONDS
+    from operations.constants import TICKET_STUCK_SECONDS
     s = state(tmp_path, {"assigned/9-1_change_x_ticket-analyst.md": TAKEN})
     record = ticket_stall.due_times(s)
     for k in range(1, 4):
-        record = ticket_stall.due_times(replace(s, now=s.now + k * STUCK_SECONDS / 3,
+        record = ticket_stall.due_times(replace(s, now=s.now + k * TICKET_STUCK_SECONDS / 3,
                                                 due_since=record))
-    assert ticket_stall.stalled(replace(s, now=s.now + STUCK_SECONDS, due_since=record)) == {
+    assert ticket_stall.stalled(replace(s, now=s.now + TICKET_STUCK_SECONDS, due_since=record)) == {
         "9-1": s.now}

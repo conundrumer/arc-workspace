@@ -1,7 +1,7 @@
 """A held change with no step, no agent at work, no step in flight and no
 named wait reaches the coordinator, and one that waits on a named party
 does not, since a change so left otherwise stands silent until the
-`STUCK_SECONDS` stall."""
+`TICKET_STUCK_SECONDS` stall."""
 
 from dataclasses import replace
 from pathlib import Path

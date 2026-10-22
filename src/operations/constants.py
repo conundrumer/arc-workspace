@@ -30,6 +30,19 @@ def stuck_reached(since: float, now: float) -> bool:
     with the same results, starting at `since`, reached `STUCK_SECONDS` at `now`."""
     return now - since >= STUCK_SECONDS
 
+
+TICKET_STUCK_SECONDS = 600
+"""The bound on a ticket with a step due and no progress (`ticket_stall`), and
+on a change ticket's log with no line while the change waits
+(`alerts.stuck_waits`), before the coordinator hears of it."""
+
+
+def ticket_stuck_reached(since: float, now: float) -> bool:
+    """Whether a ticket's stretch with a step due and no progress, starting
+    at `since`, reached `TICKET_STUCK_SECONDS` at `now`."""
+    return now - since >= TICKET_STUCK_SECONDS
+
+
 FOREGROUND_MS = 240000
 """The bound `scripts/pending_wait_hook.py` holds a subagent's foreground
 Bash call's timeout to."""

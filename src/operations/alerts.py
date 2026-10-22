@@ -179,8 +179,8 @@ TICKETS = {
              "with the same result. A message on the agent then went to the coordinator.")),
     BugKind.TICKET_STALL: (
         mctx("the progress of a ticket: no step was made on it, and no agent worked on it, "
-             "for `STUCK_SECONDS`"),
-        mctx("The ticket made no progress for `STUCK_SECONDS` while a step of an operator "
+             "for `TICKET_STUCK_SECONDS`"),
+        mctx("The ticket made no progress for `TICKET_STUCK_SECONDS` while a step of an operator "
              "was due on it, and then a message on the ticket went to the coordinator.")),
     BugKind.IDLE: (
         mctx("the steps of a held change: the operator's command gave it no step, with no agent "

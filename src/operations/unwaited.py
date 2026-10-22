@@ -15,7 +15,7 @@ read of the state, by an operator of the session, of those since which
 each such read found it a candidate, as `State.unwaited_since` records it
 with the time of the last read that found it one (`times`). A read drops
 the time of a ticket that is no candidate, and an entry whose last read
-is `STUCK_SECONDS` or more before the read at hand is lost. A candidate
+is `TICKET_STUCK_SECONDS` or more before the read at hand is lost. A candidate
 waits on nothing (`unwaited`) once that time is `AGAIN_SECONDS` or more
 before the read: a shorter stretch can be the lag of one read, or the
 operator's own move of a wait on to the next change of a chain.
