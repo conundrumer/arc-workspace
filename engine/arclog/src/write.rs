@@ -62,11 +62,15 @@ pub fn write_solver(solver: &Solver) -> SolverText {
 /// argument's `name`, so the file reads that field at that site. Each name
 /// so taken is reserved in its scope, as [`crate::program::LabelId`] gives
 /// a scope, before any other label is named. Each other label takes the
-/// name of the column or field of its first site, PascalCase, with the
+/// name of the column or field of its first site, PascalCase, a first site
+/// being the first in the order of the token stream, in which an input's
+/// body comes before its head, and the head's sites come in the order of the
+/// port's columns, with the
 /// least digit suffix that gives a name no other label of its scope holds
-/// or has reserved: in `(:a *A) (:key *A2)`, where
-/// `A2` is the label of `NamedLabel { name: A }`, `A2` is written `A` and the
-/// label at `(:a ...)` is written `A2`.
+/// or has reserved: in `(:a *A2) (:key *A)`, where the site at `:key` holds a
+/// `NamedLabel { name: A }` and the label at `:a` is another label whose
+/// first site is `:a`, the label at `:key` is written `A` and the label at
+/// `:a` is written `A2`.
 ///
 /// Two labels take one name only where [`Node::apply`](crate::program::Node::apply)
 /// gives them one, so the file reads back to the same labels:
@@ -112,7 +116,7 @@ mod synthesized {
     use crate::layout::{Layout, NodeLayout, SourceFile, SourcePlace};
     use crate::program::path::NodePath;
     use crate::program::*;
-    use crate::registry::Registry;
+    use crate::registry::{Component, Registry};
     use crate::resolver::registry_columns::{component, proposer_columns};
     use crate::trace::render::label_name;
 
@@ -235,19 +239,27 @@ mod synthesized {
                 Form::Clause(clause) => self.body_uses(clause.value().body.value(), uses),
                 Form::Instance(instance) => {
                     let instance = instance.value();
+                    let component = component(self.registry, &instance.component).expect("the lib names the component");
                     if let Some(key) = &instance.key {
                         self.body_uses(key.value().key.body.value(), uses);
-                        key.value().inputs.iter().for_each(|input| self.input_uses(input.value(), uses));
+                        key.value().inputs.iter().for_each(|input| self.input_uses(input.value(), component, uses));
                     }
-                    instance.inputs.iter().for_each(|input| self.input_uses(input.value(), uses));
+                    instance.inputs.iter().for_each(|input| self.input_uses(input.value(), component, uses));
                 }
                 _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET and INIT"),
             }
         }
 
-        fn input_uses(&self, input: &InstanceInput, uses: &mut Uses) {
-            input.head.iter().for_each(|site| self.site_uses(None, site, uses));
+        /// The uses of an input in the order of the token stream: its body,
+        /// then each head site in the order of the columns of the input's
+        /// port, as `stream/write.rs` writes them.
+        fn input_uses(&self, input: &InstanceInput, component: &Component, uses: &mut Uses) {
             self.body_uses(input.body.value(), uses);
+            let port = component.inputs.iter().find(|port| port.port.name == input.name).expect("the component has the input");
+            let at_column = |site: &Site| port.port.columns.iter().position(|column| column.name == site.column).expect("the port has the head site's column");
+            let mut head: Vec<&Site> = input.head.iter().collect();
+            head.sort_by_key(|site| at_column(site));
+            head.into_iter().for_each(|site| self.site_uses(None, site, uses));
         }
 
         fn body_uses(&self, body: &Body, uses: &mut Uses) {

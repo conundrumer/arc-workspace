@@ -31,6 +31,7 @@ use arclog::trace::{DecodeTrace, RunTrace, Stop, TopK};
 const BG: &str = "(RULE &bg (input (:Col *C)))\n";
 const FG: &str = "(RULE &fg (input *P *Col) (&bg (:C *V)) (!= Col V))\n";
 const COMPS: &str = "(INIT &comps Connectivity (node ((:P P)) (&fg *P)))\n";
+const CONNECTED: &str = "(INIT &c2 Connectivity (node ((:P Q)) (&comps.connected *P *Q)))\n";
 const AXIS: &str = "(RULE &axis_len (input (:P *B)) (frame_extent (:P B) (:N *N)))\n(RULE &larger (&axis_len *B) (&axis_len (:B *B2)))\n";
 const PRIOR: &str = "(RULE &prior (&axis_len *B *N) (&axis_len (:B *B2) (:N *N2)) (OR ((> N N2)) ((= N N2) (&larger B B2))))\n";
 
@@ -309,4 +310,13 @@ fn the_program_form_of_a_decode_reads_back_to_its_content() {
     assert_eq!(text, "(RULE &r0 (input (:Col *Col)))\n(RULE &r1 (input (:P *P) (:Col *Col)) (&r0 (:Col *Col2)) (!= Col Col2))\n");
     reads_back(&format!("{AXIS}{PRIOR}"));
     reads_back(&format!("{BG}{FG}{COMPS}"));
+}
+
+#[test]
+fn the_program_form_of_a_decode_names_each_label_as_its_trace_form_does() {
+    let arclog = format!("{BG}{FG}{COMPS}{CONNECTED}");
+    let trace = rendered(&arclog, &["&comps.connected"], false);
+    assert!(trace.contains("((&r3 (:P *[P]) (:Q *[Q])) END\n   [node key] (END)\n   [node P] (Q END))"), "{trace}");
+    let program = reads_back(&arclog);
+    assert!(program.ends_with("(INIT &r7 Connectivity (node ((:P Q)) (&r2.connected (:P *P) (:Q *Q))))\n"), "{program}");
 }
