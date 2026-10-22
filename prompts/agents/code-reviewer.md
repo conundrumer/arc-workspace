@@ -45,5 +45,5 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 * inline: notes/tickets.md#ticket-files
 * inline: notes/tickets.md#ticket-fields
 * inline: notes/tickets.md#reading-tickets
-* inline: notes/tickets.md#performance-tickets
+* inline: notes/tickets.md#delay-tickets
 * inline: notes/tickets.md#noticed-faults

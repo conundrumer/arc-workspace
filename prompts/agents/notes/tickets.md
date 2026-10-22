@@ -4,7 +4,7 @@
     - Acts, each with its section:
         - A solver pass's tickets: [pass-tickets](#pass-tickets).
         - Filing a ticket: [Ticket files](#ticket-files), [Ticket fields](#ticket-fields), and [Ticket subjects](#ticket-subjects) where no other line of its reader's documents gives its `<domain>` and `<subject>`.
-        - A `performance` ticket: [performance-tickets](#performance-tickets).
+        - A `delay` ticket on a slow step: [delay-tickets](#delay-tickets).
         - A noticed fault: [Noticed faults](#noticed-faults).
         - Finding, moving and closing a ticket: [Tracking](#tracking) with its part [Reading tickets](#reading-tickets), which the code reviewer, the lib reviewer and the design reviewer inline in place of Tracking.
         - A `change` ticket's fields: [Change tickets](#change-tickets).
@@ -20,15 +20,15 @@
     - Give each ticket the kind `interference` or `delay`.
     - Cite the target as a link as this rendering shows it, a step and the phrase quoted, or a command.
     - Write under `Impact` what it cost the pass, and for `interference`, what was wrong in the output and whether it still is.
-- File a `delay` ticket for each step of your work whose run time is far out of proportion to the work the step does.
 
 ## Ticket files
 - Where your instructions, your brief or a later message ask you to file a ticket, file it with `uv run python scripts/file_ticket.py`, in the form its `--help` gives, and, where no other line of your documents gives its `<domain>` and `<subject>`, with those that [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects) gives.
     + xref: scripts/file_ticket.py:SUBCOMMANDS, prompts/agents/notes/tickets.md#ticket-subjects
     - Where the ticket has an `Evidence` section, write under it the line quoted, or the command and its output, or the grid, as you saw it, and leave out what the fix should be.
 
-## performance-tickets
-- File a `performance` ticket for each step of your work whose run time is far out of proportion to the work the step does.
+## delay-tickets
+- File a `delay` ticket, with its case in the form `uv run python scripts/file_ticket.py case --help` gives, for each step of your work whose run time is far out of proportion to the work the step does.
+    + xref: scripts/ticket_vocabulary.py:FILER_KINDS, scripts/file_ticket.py:SUBCOMMANDS
 
 ## Noticed faults
 - File a `bug` ticket on each fault you notice in a tool, a document or an agent's run, when you notice it, whether or not it lies within your work, where no other line of your documents has you fix, send, report or file it, and no ticket of any session outside `tickets/closed/` records it.

@@ -48,6 +48,8 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 ## Tickets
 * inline: notes/tickets.md#pass-tickets
 
+* inline: notes/tickets.md#delay-tickets
+
 * inline: notes/tickets.md#ticket-files
 
 ## Analyze

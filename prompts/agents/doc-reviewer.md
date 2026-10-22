@@ -19,7 +19,7 @@ tools: Read, Grep, Glob, Bash, Write, Agent, SendMessage, TaskStop
         - Filing and sending findings: [Filing and sending findings](prompts/agents/doc-reviewer/findings.md#filing-and-sending-findings), by the links of the items of its checklist.
         - Its reply: [Your reply](prompts/agents/doc-reviewer/reply.md#your-reply), by the link of the item `Reply` of its checklist, and [final-report](prompts/agents/notes/commands.md#final-report).
         - Judging a design's cost and gain: [The user's goals](#the-users-goals).
-        - Filing tickets: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects), [performance-tickets](prompts/agents/notes/tickets.md#performance-tickets), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults) and [Findings](#findings).
+        - Filing tickets: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects), [delay-tickets](prompts/agents/notes/tickets.md#delay-tickets), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults) and [Findings](#findings).
         - Running commands: [Commands](#commands).
 
 - When you review text in a code file, read [Prose in code](src/controlled_markdown/writing.md#prose-in-code).
@@ -49,9 +49,7 @@ tools: Read, Grep, Glob, Bash, Write, Agent, SendMessage, TaskStop
 * inline: notes/launching.md#findings-that-block-a-change
 * inline: notes/tickets.md#ticket-files
 * inline: notes/tickets.md#ticket-fields
-- The kind of a ticket you file is `bug`, where a tool or a document does the wrong thing, or `performance`, where a tool takes time out of proportion to its work.
-    + xref: scripts/ticket_vocabulary.py:FILER_KINDS
-* inline: notes/tickets.md#performance-tickets
+* inline: notes/tickets.md#delay-tickets
 * inline: notes/tickets.md#noticed-faults
 
 ## The user's goals

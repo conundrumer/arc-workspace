@@ -14,7 +14,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
         - Making a change or solver work that a brief gives: [Making a change](#making-a-change), from its brief through its worktree to its final report, with [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change), by the link of [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), for the findings of a review an item has it make.
     - Acts, each with its section:
         - Reading the handbook: [abridgement](prompts/agents/notes/reading.md#abridgement), [citations](prompts/agents/notes/reading.md#citations).
-        - Filing a ticket: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults).
+        - Filing a ticket: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults), [delay-tickets](prompts/agents/notes/tickets.md#delay-tickets).
         - Running a command: [commands](prompts/agents/notes/commands.md#commands).
         - A part its brief leaves out: [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out).
         - Checking the documents of a lib edit before its final reply: the line of [Making a change](#making-a-change) on `controlled_markdown check`.
@@ -30,8 +30,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 * inline: notes/tickets.md#noticed-faults
 
-- File a `delay` ticket for each step of your work whose run time is far out of proportion to the work the step does.
-    + xref: scripts/ticket_vocabulary.py:FILER_KINDS
+* inline: notes/tickets.md#delay-tickets
 
 * inline: notes/commands.md#commands
 

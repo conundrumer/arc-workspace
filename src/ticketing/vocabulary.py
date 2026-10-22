@@ -111,7 +111,7 @@ class Domain(StrEnum):
 
 PASS_KINDS = frozenset({Kind.INTERFERENCE, Kind.DELAY})
 EDITOR_KINDS = frozenset({Kind.QUESTION, Kind.BUG})
-REVIEW_KINDS = frozenset({Kind.BUG, Kind.PERFORMANCE})
+REVIEW_KINDS = frozenset({Kind.BUG, Kind.DELAY})
 
 
 DEFECT_SECTIONS = ("Impact", "Evidence")

@@ -34,7 +34,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 ## Tickets
 * inline: notes/tickets.md#ticket-fields
-* inline: notes/tickets.md#performance-tickets
+* inline: notes/tickets.md#delay-tickets
 * inline: notes/tickets.md#noticed-faults
 - When you file a ticket, read [Ticket files](prompts/agents/notes/tickets.md#ticket-files).
 
