@@ -99,8 +99,9 @@ def role_instructions(root: Path, home: Path, agent: str,
     import controlled_markdown as nm
 
     native_path = "prompts/agents/notes/native-agents.md"
-    registry = nm.Registry(root)
-    native_document = registry.load(root / native_path)
+    native_root = root if (root / native_path).exists() else checkout.main_worktree(root)
+    registry = nm.Registry(native_root)
+    native_document = registry.load(native_root / native_path)
     native_section = registry.ids[native_document.source]["native-tools"]
     native = nm.render(nm.section_document(native_document, native_section), registry)
     native = native.replace("](#", "](" + native_path + "#")
