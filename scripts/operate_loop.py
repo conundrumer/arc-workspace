@@ -254,6 +254,8 @@ def watched[T](out_at: Callable[[float], T], ready: Callable[[T], bool], seconds
                 reads.deadline = min(reads.deadline, current.deadline
                                      - operate_service.FINISH_SECONDS
                                      - (time.monotonic() - started))
+            else:
+                reads.deadline = min(reads.deadline, deadline - (time.monotonic() - started))
             more, changed = reads.after(changed, ready(out), started, spent)
             if not more:
                 return out
