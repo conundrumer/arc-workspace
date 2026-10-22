@@ -12,7 +12,9 @@ from pathlib import Path
 from run_reads import run_entries
 from spends import change_spend
 from spend_history import closed_changes
-from ticket_files import ticket_files, ticket_name
+from ticket_files import ticket_files, ticket_name, ticket_path
+from ticket_numbers import ticket_number
+from ticket_reads import held_ticket
 from ticket_form import bounds, check_fix, front, ticket_kind, title
 from ticket_log import line_time, log_lines, log_moves, read_ticket
 from ticket_numbers import TicketNumber
@@ -23,6 +25,7 @@ from transcript_snapshots import Refused
 
 from controlled_markdown import mctx
 from operations.roles import Role
+from operations.tracker import runs as status_runs
 from ticketing.loss import CASE, Found, loss, rate
 from ticketing.loss import cases as loss_cases
 from ticketing.times import TIME_FORM, stamp_time
@@ -41,7 +44,7 @@ CAP = 100
 
 @dataclass(frozen=True)
 class Case:
-    """A span of extra calls in a run, with its loss."""
+    """A measured interval from a run or a ticket log, with its loss."""
     run: str
     start: str
     end: str
@@ -55,18 +58,51 @@ class Case:
                            dollars=self.dollars, seconds=self.seconds)
 
 
-def case_loss(run: str, start: str, end: str, undecided: list[str]) -> Case:
-    """The case of the run `run` from `start` to `end`, times in
-    `TIME_FORM`, with its dollars None where a request of the run has no
-    price, with an `undecided` line for it. Refuses a span that starts
-    before the run's first entry or ends after the time of the call."""
+@dataclass(frozen=True)
+class RunSource:
+    ident: str
+
+
+@dataclass(frozen=True)
+class TicketSource:
+    number: TicketNumber
+
+
+def case_source(source: str) -> RunSource | TicketSource:
+    return (TicketSource(ticket_number(source.removeprefix("ticket:")))
+            if source.startswith("ticket:") else RunSource(source))
+
+
+def case_loss(run: str, start: str, end: str, undecided: list[str],
+              tickets: Path | None = None) -> Case:
+    """Measure a case under `file_ticket.py case --help-all`.
+
+    Ticket sources require the caller's main tracker path. Refuse invalid
+    bounds before a caller writes any evidence or log line.
+    """
     try:
         begin, finish = stamp_time(start), stamp_time(end)
     except ValueError:
         raise Refused(mctx("a case's span is two times of the form `{form}`").format(form=TIME_FORM))
     if finish < begin:
         raise Refused(mctx("the span of the case ends before it starts"))
-    entries = list(run_entries(find(run)))
+    source = case_source(run)
+    if isinstance(source, TicketSource):
+        if tickets is None:
+            raise Refused(mctx("a ticket case needs the main tracker path"))
+        try:
+            ticket = held_ticket(ticket_path(tickets, source.number))
+        except (OSError, ValueError) as exc:
+            raise Refused(mctx("ticket case unreadable: {error}").format(error=exc)) from exc
+        if ticket.status is not Status.CLOSED or not ticket.log:
+            raise Refused(mctx("a ticket case needs a closed ticket with a log"))
+        closing = [ticket.log[r.start] for r in status_runs(ticket)
+                   if r.status is Status.CLOSED]
+        close = closing[-1].time
+        if begin < ticket.log[0].time or finish > close:
+            raise Refused(mctx("the case bounds are outside the ticket's recorded life"))
+        return Case(run, start, end, 0.0, finish - begin)
+    entries = list(run_entries(find(source.ident)))
     first = entries[0]["timestamp"]
     if begin < epoch(first) or finish > time.time():
         raise Refused(mctx("the case's span starts before the run's first entry at {first} "

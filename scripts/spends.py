@@ -21,6 +21,7 @@ from state_reads import DERIVED, Kept, state_cache
 from ticket_files import ticket_name
 from ticket_log import moved
 from ticket_reads import held_ticket
+from ticket_run_roots import ticket_runs as ticket_runs
 from token_prices import run_cost
 from transcripts import chain, held_find, project_dirs
 from entry_reads import entries_back
@@ -291,7 +292,7 @@ def change_spend(path: Path, undecided: list[str]) -> Spend | None:
         return found if isinstance(found, Spend) else None
     closing = [line for line in held_closed(path).log if line.status is Status.CLOSED
                and line.resolution is Resolution.FIXED]
-    runs = closing[-1].note.split()[3:] if closing else []
+    runs = ticket_runs(held_closed(path))
     owner = None if not closing else known_owners(runs, {}) if runs else Unknown.SPEND
     lines = len(undecided)
     measured = priced(owner, undecided, closing[-1].time) if isinstance(owner, dict) else None

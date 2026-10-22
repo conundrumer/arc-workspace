@@ -51,7 +51,7 @@ HELP = mctx("""
     - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`.
         - A `change` or a `request` takes `change` as `<domain>` and `<namespace>-<short-title>` as `<subject>`, with `-` in place of each `_`.
     - `<agent>` is your agent's name.
-    - A `{delay}` may give one case, `--case <agent id> <start> <end>` after `<agent>`, and then gives `fix: <editor>` in its front matter: `{invocation} case --help` gives the case's form, and `{invocation} case {full_flag}` how the command prices it and where the ticket files.
+    - A `{delay}` may give one case, `--case <source> <start> <end>` after `<agent>`, and then gives `fix: <editor>` in its front matter: `{invocation} case --help` gives the case's form, and `{invocation} case {full_flag}` how the command prices it and where the ticket files.
     {further}
     """)
 """The help of filing, which `--help` with no subcommand prints, with the

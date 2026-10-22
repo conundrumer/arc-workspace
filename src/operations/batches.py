@@ -5,13 +5,15 @@ the launches `unbatched` declares. So no profile launch waits on them.
 
 After a batch: once every agent of a batch has returned, or once the
 batch has stood `BATCH_SPAN` since its first launch, the release of
-tickets, and an agent on the profile of the batch's runs.
+tickets, and an agent on the profile of the batch's runs and closed
+tickets.
 
 A batch is the agents the session's operators launched since the launch
 of the previous batch's profile agent, other than those no batch holds,
 with the changes merged since: those an operator's merge call merged, as
-`state.Merge` reads it, and those the coordinator gives as merged. The
-launch of the profile agent opens the next batch.
+`state.Merge` reads it, and those the coordinator gives as merged. Tickets
+of the session closed since also call for a profile, including a close
+without a take. The launch of the profile agent opens the next batch.
 
 The profile agent profiles each run `profile_runs.py --under` takes, and
 may launch a transcript review only of those a batch holds: a review of
@@ -23,11 +25,13 @@ from controlled_markdown import mctx
 from operations import briefs
 from operations.completion import occupies
 from operations.taking import release
+from operations.tracker import runs as status_runs
 from operations.occasions import merged, next_number
 from operations.state import Agent, State, memoized_by_transcripts
 from operations.steps import Bash, Launch, Step, Undecided
 from operations.under_reads import last_under, under_calls, under_command
 from operations.unbatched import PROFILE, follows
+from ticketing.vocabulary import Status
 
 
 BATCH_SPAN = 3600
@@ -59,10 +63,29 @@ def followed(state: State, at: float) -> list[Agent]:
     return [a for a in members(state, start(state, at)) if a.launched < at]
 
 
+def closed_tickets(state: State, since: float) -> list[str]:
+    """Session tickets whose latest close is in this batch's window."""
+    actors = {state.session, state.me, *state.operators}
+    actors.update(a.agent_id for a in state.transcripts.agents if a.agent_id is not None)
+    actors.update(a.operator for a in state.transcripts.agents)
+    out: list[str] = []
+    for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order):
+        statuses = status_runs(t)
+        closing = [t.log[r.start] for r in statuses if r.status is Status.CLOSED]
+        takes = [t.log[r.start] for r in statuses if r.status is Status.ASSIGNED]
+        if (t.status is Status.CLOSED and closing
+                and closing[-1].time > max(since, state.started)
+                and (state.mine(t) or closing[-1].agent_id in actors
+                     or bool(takes and takes[-1].agent_id in actors))):
+            out.append(t.number)
+    return out
+
+
 def step(state: State) -> Step | None:
     since = start(state)
     batch = members(state, since)
-    if not batch and not merged(state, since):
+    tickets = closed_tickets(state, since)
+    if not batch and not tickets and not merged(state, since):
         return None
     if any(a.pending for a in batch) and state.now - min(a.launched for a in batch) < BATCH_SPAN:
         return None
@@ -73,7 +96,7 @@ def step(state: State) -> Step | None:
         return runs
     ids = {a.agent_id for a in batched(state)}
     return Launch(PROFILE.role, next_number(PROFILE.agents(state)),
-                  briefs.batch_profile(runs, [r for r in runs if r in ids], state.git.commits[0].hash),
+                  briefs.batch_profile(runs, [r for r in runs if r in ids], state.git.commits[0].hash, tickets),
                   occasion=str(since))
 
 

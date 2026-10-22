@@ -14,21 +14,24 @@ from ticket_form import ticket_kind
 from ticket_log import check_moves, log_moves, read_ticket
 from ticket_numbers import TicketNumber, ticket_number
 from ticket_sweep import sweep
-from ticket_watch import Thresholds, add_evidence, case_loss, route
+from ticket_watch import Case, Thresholds, add_evidence, case_loss, route, evict
+from ticketing.loss import loss
+from operations.roles import Role
 from ticketing.vocabulary import Kind, Status
 from transcript_snapshots import Refused
 
 CASE_HELP = mctx("""
-    - In both forms below, `<agent id>` is the run the case was lost in, and `<start>` and `<end>` are the span of its extra calls, each in the form `{time_form}`.
-    - Filing a `{delay}` with a case: `{invocation} <domain> <subject> <agent> --case <agent id> <start> <end>`.
+    - `<source>` is a run id or `ticket:<number>`, and `<start>` and `<end>` bound the loss, each in the UTC form `{time_form}`.
+    - Filing a `{delay}` with a case: `{invocation} <domain> <subject> <agent> --case <source> <start> <end>`.
         - The text on stdin gives `fix: <editor>` in its front matter, with the editor its fix would need among {editors}.
-    - Appending a case: the usage line above.
-        - `<number>` is the number of a ticket that stands under `tickets/{deferred}/` and is a `{delay}`.
+    - Appending a case takes the number of a `{delay}` ticket under `tickets/{deferred}/` as `<number>`.
     """)
 
 CASE_RULES = mctx("""
-    - The command prices a case: its dollars are the token cost, in subscription dollars, of the run's requests in the span, plus the growth of the run's context across the span at the cache-read price of the run's model once for each later request of the run, and its seconds are the span's wall time.
-        - It records them in a log line of the ticket.
+    - The command records a case's dollars and its span's wall seconds in the ticket's log.
+        - A run case's dollars are the token cost, in subscription dollars, of the run's requests in the span, plus the growth of the run's context across the span at the cache-read price of the run's model once for each later request of the run.
+        - A ticket case's dollars are zero, and its bounds must lie within the closed source ticket's recorded life, from its first log line to its latest close.
+            + xref: scripts/ticket_watch.py:case_loss
     - The loss of a case or of a change is its dollars plus its seconds at {hour_price} subscription dollars an hour, the user's $5 of list-price cost per 30 minutes converted.
     - The threshold of an editor is the median loss of the most recent {changes} `{change_kind}` tickets closed `{fixed}` with a known cost whose `editors` give that editor.
         - A change's dollars are the token cost of the runs the line that closes it gives and of the runs under them, and its seconds are the wall time those runs cover.
@@ -100,7 +103,7 @@ def case_command(tickets: Path, ref: str, agent: str, run: str, start: str,
         raise Refused(mctx("{path} is no `{delay}` that stands under `{deferred}`").format(
             path=path, delay=Kind.DELAY, deferred=Status.DEFERRED))
     undecided: list[str] = []
-    found = case_loss(run, start, end, undecided)
+    found = case_loss(run, start, end, undecided, tickets)
     if found.dollars is None:
         status = Status.REOPENED
         note = mctx("case {run} {start} {end}: cost unknown").format(run=run, start=start, end=end)
@@ -121,3 +124,18 @@ def sweep_command(tickets: Path, *runs: str) -> str:
     moved = sweep(tickets, list(runs), undecided)
     print_undecided(undecided)
     return "\n".join(map(str, moved)) if moved else NONE_MOVED
+
+
+def filing_case(tickets: Path, agent: str, case: list[str], fix: Role,
+                limits: Thresholds, undecided: list[str]) -> tuple[Case, Status]:
+    """Price and route a filing's case before its ticket is written."""
+    source, start, end = case
+    found = case_loss(source, start, end, undecided, tickets)
+    limit = None if found.dollars is None else limits(fix)
+    status = Status.NEW
+    if (found.dollars is not None and limit is not None
+            and loss(found.dollars, found.seconds) < limit):
+        status = Status.DEFERRED
+        routed(tickets, agent, limits, None)
+        evict(tickets, agent)
+    return found, status

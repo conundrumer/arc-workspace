@@ -57,7 +57,7 @@ from ticketing.vocabulary import (ALLOW, DEFECT_SECTIONS, MANY_IDEAS, UNTAKEN, D
 from transcript_snapshots import Refused, print_refused  # noqa: E402
 from filing_help import FORM_PURPOSES, FORMS, HELP, RULES, FormPart  # noqa: E402
 from help_parts import part_lines, print_help  # noqa: E402
-from ticket_cases import (CASE_HELP, CASE_RULES, NONE_MOVED, SWEEP_HELP, SWEEP_RULES,  # noqa: E402
+from ticket_cases import (filing_case, CASE_HELP, CASE_RULES, NONE_MOVED, SWEEP_HELP, SWEEP_RULES,  # noqa: E402
                           case_command, print_undecided, routed, sweep_command)
 
 HELP_RETRY = mctx("{reason}: run `{call} --help{part}`")
@@ -159,7 +159,7 @@ COVERED = mctx("the Scope covers each path the Design gives")
 def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
                 case: list[str] | None = None, filed: str = Note.FILED) -> Path:
     """Writes `text` as a ticket of the agent's session under its first
-    status, with the case `case` gives as run, start and end where it
+    status, with the case `case` gives as source, start and end where it
     gives one, and the note `filed` on the line that files it, and returns
     its path."""
     try:
@@ -180,14 +180,7 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
     undecided: list[str] = []
     limits = Thresholds(tickets, undecided)
     if case is not None and fix is not None:
-        run_id, start, end = case
-        found = case_loss(run_id, start, end, undecided)
-        limit = None if found.dollars is None else limits(fix)
-        if (found.dollars is not None and limit is not None
-                and loss(found.dollars, found.seconds) < limit):
-            status = Status.DEFERRED
-            routed(tickets, agent, limits, None)
-            evict(tickets, agent)
+        found, status = filing_case(tickets, agent, case, fix, limits, undecided)
     number = reserve(tickets, session_index(tickets, session_id()))
     name = TicketName(number, dom, subject, agent).file_name
     path = write_new(tickets / status, logged(text, status, agent, filed), [name])
@@ -395,7 +388,7 @@ SUBCOMMANDS = {
     "index": Subcommand(mctx("prints the index of your session"), "", "", "", 0,
                         lambda: session_index(main_tickets(), session_id()), True),
     "case": Subcommand(mctx("appends a case, with its evidence on stdin, to a deferred `delay` ticket"),
-                       " <number> <agent> <agent id> <start> <end>", CASE_HELP, CASE_RULES, 5,
+                       " <number> <agent> <source> <start> <end>", CASE_HELP, CASE_RULES, 5,
                        lambda *given: case_command(main_tickets(), *given), True),
     "sweep": Subcommand(mctx("moves each `validation` ticket under `tickets/deferred/` whose check decides it, "
                              "and each `delay` there whose group reaches its threshold"),

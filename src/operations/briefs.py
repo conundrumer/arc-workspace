@@ -736,12 +736,13 @@ def standing_doc_review(reader: str, tag: str, commit: str, operator: str) -> st
 # The user's choice, session 2384db39, 2026-10-20T21:45:12Z, "3 ensure":
 # "Reviews check what Codex itself did in each run." Ticket 11-2530.
 BATCH_PROFILE = mctx("""
-    - Run `uv run python scripts/profile_runs.py --each <id> ...` once, with the agent ids of all these runs as `<id> ...`: {runs}.
-    - Judge each run from its launcher profile and its Codex section.
+    {profiles}
+    {lifetimes}
     - Before you give your first case, {deferred_titles}.
-    - For each cause across these runs that you judge worth fixing, by the test that a change to a tool or a document could cut the time or the token cost it made, take each run the cause cost time or tokens in, in turn:
+    - For each cause across these runs and ticket lives that you judge worth fixing, by the test that a change to a tool or a document could cut the time or the token cost it made, take each affected source in turn:
+        - Use run cases for extra calls and tokens, and ticket cases for the affected ticket intervals outside the run cases for that cause.
         - Where a ticket outside `tickets/closed/` and `tickets/deferred/` records the cause, file none.
-        - Otherwise give a case on that run, by `uv run python scripts/file_ticket.py case --help`: append it to the `delay` ticket under `tickets/deferred/` whose title in that listing states the cause, or that you filed on it, and where the cause has none, file a ticket of kind `delay` on the cause with it, {filing}, and the `fix` the cause needs.
+        - Otherwise give a case on that source, by `uv run python scripts/file_ticket.py case --help`: append it to the `delay` ticket under `tickets/deferred/` whose title in that listing states the cause, or that you filed on it, and where the cause has none, file a ticket of kind `delay` on the cause with it, {filing}, and the `fix` the cause needs.
     {review}
     - Reply only once each transcript review you launched has replied, with the tickets you filed, the tickets you appended cases to, and the reviews you launched.
     """)
@@ -770,16 +771,19 @@ NO_REVIEW = mctx("- Launch no transcript review.")
 RUN = "<run>"
 
 
-def batch_profile(runs: list[str], reviewable: list[str], commit: str) -> str:
+def batch_profile(runs: list[str], reviewable: list[str], commit: str,
+                  tickets: list[str]) -> str:
+    profiles = (mctx("- Run `uv run python scripts/profile_runs.py --each {runs}` once, and judge each run from its launcher profile and its Codex section.").format(runs=" ".join(runs)) if runs else "")
+    lifetimes = (mctx("- Run `uv run python scripts/lifetimes.py {tickets}` and judge each part of each ticket's life.").format(tickets=" ".join(tickets)) if tickets else "")
     filing = FILE_AS.format(domain_subject=mctx("`commit` and `{commit}`").format(commit=commit),
                             agent=OPERATOR)
     if not reviewable:
-        return BATCH_PROFILE.format(runs=", ".join(runs), filing=filing, review=NO_REVIEW,
+        return BATCH_PROFILE.format(profiles=profiles, lifetimes=lifetimes, filing=filing, review=NO_REVIEW,
                                     deferred_titles=DEFERRED_TITLES)
     review = REVIEW.format(reviewable=", ".join(reviewable),
                            review_brief=mctx("the block below"), run=RUN,
                            model=Role.TRANSCRIPT_REVIEW.model, cost=figure(REVIEW_COST))
-    text = BATCH_PROFILE.format(runs=", ".join(runs), filing=filing, review=review,
+    text = BATCH_PROFILE.format(profiles=profiles, lifetimes=lifetimes, filing=filing, review=review,
                                 deferred_titles=DEFERRED_TITLES)
     brief = transcript_review(RUN, "agent", RUN, False, ())
     return f"{text}\n\n```\n{brief}\n```"

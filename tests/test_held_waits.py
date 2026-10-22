@@ -118,7 +118,7 @@ def test_refused_case_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyP
             "2026-10-17T00:00:00Z deferred [code-editor]: filed\n\n## Evidence\ne\n")
     path.write_text(text)
     monkeypatch.setattr(module, "case_loss",
-                        lambda run, start, end, undecided: watch.Case(run, start, end, None, 0.0))
+                        lambda run, start, end, undecided, tickets: watch.Case(run, start, end, None, 0.0))
     monkeypatch.setattr("sys.stdin", SimpleNamespace(read=lambda: "more\n"))
     with pytest.raises(module.Refused):
         module.case_command(tmp_path, "9-1", "code-editor", "a" * 17, "1", "2")

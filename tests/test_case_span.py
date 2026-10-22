@@ -36,3 +36,33 @@ def test_case_span(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
         assert case.dollars == pytest.approx(0.0015 * CLAUDE_LIST_TO_SUBSCRIPTION)
         assert case.seconds == 10
     assert not undecided
+
+
+@pytest.mark.parametrize(("start", "end", "refused"), [
+    ("2026-10-18T22:00:00Z", "2026-10-18T22:00:05Z", False),
+    ("2026-10-18T21:59:59Z", "2026-10-18T22:00:01Z", True),
+    ("2026-10-18T22:00:04Z", "2026-10-18T22:00:03Z", True),
+    ("2026-10-18T22:00:04Z", "2026-10-18T22:00:11Z", True),
+    ("2026-10-18T22:00:05Z", "2026-10-18T22:00:10Z", False),
+])
+def test_ticket_case_bounds(tmp_path: Path, start: str, end: str, refused: bool) -> None:
+    scripts_importable()
+    watch = script("ticket_watch")
+    closed = tmp_path / "closed"
+    closed.mkdir()
+    (closed / "9-1_ticket_9-2_code-editor.md").write_text(
+        "---\nkind: bug\n---\n# queue: slow\n\n## Log\n"
+        "2026-10-18T22:00:00Z new [code-editor]: filed\n"
+        "2026-10-18T22:00:03Z closed [operator]: wontfix\n"
+        "2026-10-18T22:00:04Z reopened [operator]: again\n"
+        "2026-10-18T22:00:10Z closed [operator]: wontfix\n"
+        "2026-10-18T22:00:20Z closed [operator]: later note\n")
+    undecided: list[str] = []
+    if refused:
+        with pytest.raises(watch.Refused):
+            watch.case_loss("ticket:9-1", start, end, undecided, tmp_path)
+    else:
+        case = watch.case_loss("ticket:9-1", start, end, undecided, tmp_path)
+        assert case.dollars == 0
+        assert case.seconds == watch.stamp_time(end) - watch.stamp_time(start)
+    assert not undecided
