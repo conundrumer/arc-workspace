@@ -293,8 +293,10 @@ def calls_of(aid: str, path: Path, read: OperatorLines, commits: frozenset[tuple
 def reads_output(tool: str, command: str, aid: str) -> bool:
     """Whether a step may read the text of the result of a call of the
     operator `aid` that is not an error: that of a Bash call other than a
-    call of `next`, such as a merge or a call of `--under`."""
-    return tool == Tool.BASH and not is_next(command, aid)
+    call of `next`, such as a merge or a call of `--under`, or of a
+    SendMessage call, whose result tells whether the harness refused the
+    message (`Agent.refused`)."""
+    return tool == Tool.SEND_MESSAGE or (tool == Tool.BASH and not is_next(command, aid))
 
 
 def launches_of(aid: str, path: Path, main: Path, uses: Uses,

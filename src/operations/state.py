@@ -210,7 +210,13 @@ class Agent:
     waits, is the time of the first of its calls of `operate.py review`
     since its last other tool call, where its last tool call is such a
     call, with or without its result, and None otherwise: its transcript
-    holds a call before the call runs, so a call that still runs counts."""
+    holds a call before the call runs, so a call that still runs counts.
+    `refused` is the time of the latest SendMessage call of any operator
+    of the session to it whose result the harness gave as `success: false`
+    (a message it does not take, as to an agent it "won't resume"), where
+    no report of it and no resume of it follows that call and it does not
+    wait, and None otherwise. Such an agent takes no further message, so
+    it holds no place on its work (`completion.occupies`)."""
     agent_id: str | None
     operator: str
     role: Role
@@ -223,6 +229,7 @@ class Agent:
     notifies: bool
     report_file: Path | None = None
     reviewing: float | None = None
+    refused: float | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "brief", own(self.brief))

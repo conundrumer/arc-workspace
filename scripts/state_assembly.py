@@ -52,6 +52,7 @@ from session_records import DUE_SINCE, UNWAITED_SINCE, record_read
 from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
 from operations import pacing
+from operations.completion import with_refusals
 from operations.pacing import Usage
 from operations.directives import given_again, named, pace
 from operations.taking import allowed
@@ -253,11 +254,12 @@ def transcripts_read(ops: OperatorRead, ends: "EndsRead",
                      others: AgentsRead) -> TranscriptsRead:
     """`TranscriptsRead` of the steps' reads."""
     both = joined([ops.launched, others])
+    calls = tuple(sorted(ops.calls, key=lambda c: c.time))
     return TranscriptsRead(
-        agents=tuple(sorted(ends.agents, key=lambda a: a.launched)),
-        calls=tuple(sorted(ops.calls, key=lambda c: c.time)), messages=tuple(ops.messages),
+        agents=with_refusals(sorted(ends.agents, key=lambda a: a.launched), calls),
+        calls=calls, messages=tuple(ops.messages),
         late_resumes=late, stalled=ends.stalled, quiet=ends.quiet,
-        stuck=stuck, pass_reports=ops.passes, elsewhere=others.agents,
+        stuck=stuck, pass_reports=ops.passes, elsewhere=with_refusals(others.agents, calls),
         messaged=both.messaged, limited=both.limited)
 
 

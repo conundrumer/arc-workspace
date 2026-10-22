@@ -651,9 +651,29 @@ def unreceived(t: Ticket, last: Call, calls: list[Call], latest: list[Agent],
     return staff(messages.merge_finding(t.number, finding_output(last, calls)))
 
 
+def unreceived_finding(state: State, t: Ticket, w: Path, here: list[Agent]) -> str | None:
+    """The message that gives the refusal of the last merge call on `w`
+    (`messages.merge_finding`), where that call was refused or conflicted
+    after the latest report of the editors `here` and is no `QUOTE_LINE`
+    refusal, so that an editor launched in place of one the harness refused
+    a message to (`Agent.refused`) has it in its brief, or None."""
+    calls = [c for c in merge_calls(state, t) if names_any(c, {str(w)})]
+    if not calls or calls[-1].merge not in (Merge.REFUSED, Merge.CONFLICT):
+        return None
+    last = calls[-1]
+    if QUOTE_LINE.search(last.result or "") is not None:
+        return None
+    reported = [r.time for a in here if (r := a.last_report) is not None]
+    if max(reported, default=0.0) > last.time:
+        return None
+    return messages.merge_finding(t.number, finding_output(last, calls))
+
+
 def finding_recipient(last: Call, latest: list[Agent]) -> Agent | None:
     """The agent of `latest` that the finding on the refused merge call
-    `last` goes to."""
+    `last` goes to, leaving out each agent the harness refused a message to
+    (`Agent.refused`)."""
+    latest = [a for a in latest if a.refused is None]
     marked = marker_paths(last.result or "")
     on_documents = (documents_failed(last.result or "")
                     or (last.merge is Merge.CONFLICT and documents_only(last.conflicts))

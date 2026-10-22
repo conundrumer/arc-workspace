@@ -2,7 +2,9 @@
 message that gives none."""
 
 import hashlib
+import json
 import re
+from collections.abc import Iterable
 from dataclasses import replace
 
 from controlled_markdown import mctx
@@ -10,7 +12,7 @@ from operations.constants import COORDINATOR
 from operations.directives import give_again_line, given_again, reply_decisions
 from operations.reports import FOR_COORDINATOR, LABELED, Label, heading_part
 from operations.roles import Purpose, Role, analyst_of
-from operations.state import Agent, State
+from operations.state import Agent, Call, State, Tool
 from operations.printed_forms import KEY_LENGTH
 from operations.steps import Launch, Send, Step, rulable, with_change
 
@@ -50,8 +52,37 @@ def finished(a: Agent) -> bool:
 
 
 def occupies(a: Agent) -> bool:
-    """Whether this attempt still runs or has delivered its result."""
-    return a.pending or finished(a)
+    """Whether this attempt still runs or has delivered its result, and the
+    harness has not refused a message to it (`Agent.refused`): a refused
+    agent ended with no result."""
+    return a.pending or (finished(a) and a.refused is None)
+
+
+def refused_message(c: Call) -> bool:
+    """Whether the harness gave the result of the SendMessage call `c` as a
+    refusal: a JSON object whose `success` is false."""
+    try:
+        given = json.loads(c.result or "")
+    except ValueError:
+        return False
+    return c.tool == Tool.SEND_MESSAGE and isinstance(given, dict) and given.get("success") is False
+
+
+def with_refusals(agents: Iterable[Agent], calls: Iterable[Call]) -> tuple[Agent, ...]:
+    """`agents`, each with `Agent.refused` set from the SendMessage `calls`
+    of the session."""
+    latest: dict[str, Call] = {}
+    for c in sorted(calls, key=lambda c: c.time):
+        if c.tool == Tool.SEND_MESSAGE and not c.error and c.result is not None:
+            latest[str(c.input.get("to"))] = c
+    out = []
+    for a in agents:
+        c = latest.get(a.agent_id) if a.agent_id is not None else None
+        if (c is not None and not a.pending and refused_message(c) and c.time > a.since
+                and not any(r.time > c.time for r in a.reports)):
+            a = replace(a, refused=c.time)
+        out.append(a)
+    return tuple(out)
 
 
 STOPS_BOUND = 2

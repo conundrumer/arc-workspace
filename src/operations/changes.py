@@ -292,7 +292,8 @@ def carry(state: State, t: Ticket) -> Step | None:
     if (resume := editor_resume(state, t, editors, here)) is not None:
         return resume
     if unstaffed(editors, here):
-        return staff_editor(state, t, w, editors, agents)
+        return staff_editor(state, t, w, editors, agents,
+                            merging.unreceived_finding(state, t, w, here))
     if any(a.pending for a in here):
         return None
     match reported_step(state, t, w, editors, here, agents, state.me):
@@ -538,7 +539,7 @@ def editor_resume(state: State, t: Ticket, editors: tuple[Role, ...],
     """One recovery message per editor attempt without a finished report,
     or None where no such message is due."""
     for a in latest_editors([a for a in here if briefs.FRAGMENTS_PART not in a.brief]):
-        if a.role not in editors or a.agent_id is None or occupies(a):
+        if a.role not in editors or a.agent_id is None or occupies(a) or a.refused is not None:
             continue
         step = Send(a.agent_id, EDITOR_RESUME.format(number=t.number),
                     f"resume {t.number} {a.agent_id}", since=a.launched, change=t.number)

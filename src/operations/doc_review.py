@@ -105,7 +105,8 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
     launch of theirs, since its reply reaches its launcher, or where it
     opens so and gives the change's worktree `w` in the state it is in,
     and otherwise, where `r` is of `TranscriptsRead.elsewhere`, which no
-    message reaches, the launch of a new doc reviewer on `w`
+    message reaches, or the harness refused a message to it
+    (`Agent.refused`), the launch of a new doc reviewer on `w`
     (`review_launch`), and where it is not, the message that asks `r` to
     review the change again, or, where `r` has no agent id or was sent
     that message, the step `unreplied` gives."""
@@ -121,7 +122,7 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
             return ids
         if all(i in messaged or i == r.operator for i in ids):
             return Pause.CLEAR
-    if r in state.transcripts.elsewhere:
+    if r in state.transcripts.elsewhere or r.refused is not None:
         return review_launch(state, t, w, here, launcher, since)
     message = messages.review_again(since)
     if r.agent_id is not None and not sent(state, r.agent_id, message):
