@@ -39,15 +39,8 @@ UNCOUNTED = mctx("This call is not counted as your `review` call. A `review` cal
 with `command` the call that counts."""
 
 
-def review(editor: str) -> int:
-    """Print the step `changes.editor_step` gives the editor `editor`,
-    read again within `operate_loop.waited` while it is `steps.Poll`, and
-    once more where a worktree or a file it reads is gone
-    (`operate_loop.read_again`).
-
-    Where `Agent.reviewing` of the editor, as its transcript stands when
-    the call starts, does not count the call, it prints `UNCOUNTED` instead,
-    with no block and no read of the state."""
+def qualification(editor: str) -> str | None:
+    """Return the current eligible editor's parent, or print its refusal."""
     from codex_reads import native_find, native_reviewing
     from run_reads import agent_type
 
@@ -63,9 +56,20 @@ def review(editor: str) -> int:
         counted = reviewing_since(path, editor)
     if kind != Role.OPERATOR.agent_type:
         print(changes.NO_OPERATOR.format(agent=editor))
-        return 0
+        return None
     if counted is None:
         print(UNCOUNTED.format(command=next_command(editor, Action.REVIEW)))
+        return None
+    return parent
+
+
+def plan(editor: str) -> tuple[Launch, Path] | int:
+    """Read current qualification and state, without preparing a launch."""
+    from state_reads import new_state
+
+    new_state()
+    parent = qualification(editor)
+    if parent is None:
         return 0
     filed = change_filed(parent, editor)
 
@@ -75,7 +79,8 @@ def review(editor: str) -> int:
 
     outcome = waited(editor, read_again(step_at), lambda out: not isinstance(out[0], Poll))
     if isinstance(outcome, MessageAccepted):
-        print_step(Poll(), Path(), editor)
+        from operations.printing import printed
+        print(printed(Poll(), editor, Path()))
         return 0
     if isinstance(outcome, Running):
         print(outcome.text())
@@ -89,6 +94,18 @@ def review(editor: str) -> int:
         return 1
     if not isinstance(step, (Launch, Poll)):
         raise TypeError(f"review step {step!r} is no launch")
+    if isinstance(step, Poll):
+        from operations.printing import printed
+        print(printed(step, editor, scratch))
+        return 0
+    return step, scratch
+
+
+def publish(editor: str, step: Launch, scratch: Path) -> int:
+    """Prepare and publish a review launch in the foreground caller."""
+    from codex_reads import native_find
+
+    native = native_find(editor)
     ready = prepared(step, scratch)
     if native is not None and isinstance(ready, Launch):
         import json
@@ -112,6 +129,12 @@ def review(editor: str) -> int:
         return 0
     print_step(ready, scratch, editor)
     return 0
+
+
+def review(editor: str) -> int:
+    """Plan and publish a direct review using current editor qualification."""
+    outcome = plan(editor)
+    return outcome if isinstance(outcome, int) else publish(editor, *outcome)
 
 
 def change_filed(operator: str, editor: str) -> float | None:

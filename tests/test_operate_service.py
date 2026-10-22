@@ -79,12 +79,23 @@ def resident(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             print(loaded, operator, text, state_assembly.REQUEST_STARTED.get())
             return 0
         operate.main = main
+        import operate_review
+        from operations.steps import Launch
+        from operations.roles import Role
+        def review_plan(editor):
+            state_reads.new_state()
+            text = file_reads.file_text(root / "source")
+            return Launch(Role.CODE_REVIEWER, editor, text, occasion="review"), root
+        operate_review.plan = review_plan
         def refresh(operator):
             state_reads.new_state()
             file_reads.file_text(root / "source")
         state_assembly.read_state = refresh
         if (root / "idle").exists():
             service.IDLE_SECONDS = 0.05
+        if (root / "flush-error").exists():
+            kept_reads.flush = lambda: False
+            kept_reads.store = lambda: None
         service.serve()
         import os
         os._exit(0)
@@ -116,14 +127,14 @@ def resident(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 def call(root: Path, operator: str = "op", cutoff: float = 12.0):
     return service.request(root, "isolated-service", operator, cutoff,
-                           time.monotonic() + 20, False)
+                           time.monotonic() + 20, service.Kind.NEXT)
 
 
 def open_request(root: Path, operator: str) -> socket.socket:
     connection = service.ensure(root, "isolated-service", time.monotonic() + 20)
-    connection.sendall((json.dumps({"operator": operator, "started": 10,
+    connection.sendall((json.dumps({"subject": operator, "started": 10,
                                    "deadline": time.monotonic() + 20,
-                                   "refresh": False}) + "\n").encode())
+                                   "kind": "next"}) + "\n").encode())
     return connection
 
 
@@ -204,8 +215,8 @@ def test_bound_during_cache_validation_answers_the_client_and_keeps_reading(monk
     monkeypatch.setattr(files, "stats_stand_but", lambda _: None)
     monkeypatch.setattr(service.script_calls, "start_request", lambda *_: None)
     monkeypatch.setattr(service.script_calls, "record", lambda: None)
-    message = {"operator": "fixture", "started": time.time(),
-               "deadline": time.monotonic() + 0.05, "refresh": False}
+    message = {"subject": "fixture", "started": time.time(),
+               "deadline": time.monotonic() + 0.05, "kind": "next"}
     connection = Mock()
     connection.makefile.return_value = io.BytesIO((json.dumps(message) + "\n").encode())
     handler = signal.getsignal(signal.SIGALRM)
@@ -420,8 +431,8 @@ def test_inflight_code_change_responds_and_flushes_before_retiring(tmp_path, mon
         return 0
 
     monkeypatch.setattr(operate, "main", main)
-    message = {"operator": "fixture", "started": time.time(),
-               "deadline": time.monotonic() + 20, "refresh": False}
+    message = {"subject": "fixture", "started": time.time(),
+               "deadline": time.monotonic() + 20, "kind": "next"}
     connection = Mock()
     connection.makefile.return_value = io.BytesIO((json.dumps(message) + "\n").encode())
     handler = signal.getsignal(signal.SIGALRM)
@@ -501,7 +512,7 @@ def test_refresh_retires_inflight_wait_without_reissuing_journaled_work(resident
             response = json.loads(stream.readline())
         assert response["retry"] and response["stdout"] == ""
     assert service.request(root, "isolated-service", "op", time.time(),
-                           time.monotonic() + 20, True)[0] == 0
+                           time.monotonic() + 20, service.Kind.REFRESH)[0] == 0
     (root / "release").write_text("")
     assert call(root, "journal")[0] == 0
     until(root / "executions")
@@ -515,5 +526,85 @@ def test_request_deadline_during_refresh_does_not_send(tmp_path, monkeypatch):
     monkeypatch.setattr(service, "ensure", sent)
     with locks.hold("blocked"):
         with pytest.raises(service.Expired):
-            service.request(tmp_path, "blocked", "op", time.time(), time.monotonic() + 0.02, False)
+            service.request(tmp_path, "blocked", "op", time.time(), time.monotonic() + 0.02, service.Kind.NEXT)
     sent.assert_not_called()
+
+
+@pytest.mark.parametrize("payload", [None, {}, {"tag": "review-plan", "launch": {},
+                                                "scratch": "/tmp", "code": "current"}])
+def test_malformed_review_plan_is_refused(payload):
+    with pytest.raises(ValueError):
+        service.review_plan(payload)
+
+
+@pytest.mark.parametrize("kind", ["review", "next", "refresh"])
+def test_request_refuses_nonfinite_deadline(kind):
+    with pytest.raises(ValueError):
+        service.request_message({"kind": kind, "subject": "editor", "started": 1,
+                                 "deadline": float("nan")})
+
+
+def test_review_source_change_returns_unprepared_plan(resident):
+    root, _ = resident
+    first = service.request(root, "isolated-service", "editor", 12,
+                            time.monotonic() + 20, service.Kind.REVIEW)
+    assert isinstance(first, service.ReviewPlan)
+    assert first.launch.brief == "ready"
+    (root / "source").write_text("changed")
+    second = service.request(root, "isolated-service", "editor", 13,
+                             time.monotonic() + 20, service.Kind.REVIEW)
+    assert isinstance(second, service.ReviewPlan)
+    assert second.launch.brief == "changed"
+    assert not list(root.glob("**/*launch*.json"))
+
+
+@pytest.mark.parametrize("failure", ["expired", "mismatch"])
+def test_review_foreground_refuses_publication(resident, monkeypatch, capsys, failure):
+    from operations.roles import Role
+    from operations.steps import Launch
+    operate_review = script("operate_review")
+    operate_loop = script("operate_loop")
+    kept_reads = script("kept_reads")
+
+    root, _ = resident
+    monkeypatch.setattr(operate_review, "qualification", lambda _: "parent")
+    published = Mock()
+    monkeypatch.setattr(operate_review, "publish", published)
+    monkeypatch.setattr(operate_loop, "single_instance", lambda _: None)
+    monkeypatch.setattr(operate_loop, "arm_watchdog", lambda _: None)
+    monkeypatch.setattr(kept_reads, "fresh_code", lambda _: "loaded")
+    monkeypatch.setattr(service, "timeout_output", lambda _: print("expired"))
+    monkeypatch.setattr(service, "request", lambda *_: service.ReviewPlan(
+        Launch(Role.CODE_REVIEWER, "change", "brief", occasion="review"), root, "other"))
+    if failure == "expired":
+        monkeypatch.setattr(service, "LIMIT_SECONDS", -1)
+    assert service.client("editor", service.Kind.REVIEW) == (1 if failure == "expired" else 0)
+    published.assert_not_called()
+    assert capsys.readouterr().out
+
+
+def test_review_retry_keeps_original_cutoff_and_deadline(monkeypatch, tmp_path):
+    refresh_locks = script("refresh_locks")
+    received = []
+    monkeypatch.setattr(refresh_locks, "wait_free", lambda *_: True)
+    monkeypatch.setattr(service, "ensure", lambda *_: None)
+
+    def exchange(_connection, _editor, started, deadline, kind):
+        received.append((started, deadline))
+        return None if len(received) == 1 else (0, "done", "")
+
+    monkeypatch.setattr(service, "exchange", exchange)
+    deadline = time.monotonic() + 20
+    assert service.request(tmp_path, "session", "editor", 12, deadline,
+                           service.Kind.REVIEW) == (0, "done", "")
+    assert received == [(12, deadline), (12, deadline)]
+
+
+def test_review_plan_is_discarded_when_flush_fails(resident):
+    root, _ = resident
+    (root / "flush-error").touch()
+    result = service.request(root, "isolated-service", "editor", 12,
+                             time.monotonic() + 20, service.Kind.REVIEW)
+    assert not isinstance(result, service.ReviewPlan)
+    assert result[0] == 1
+    assert "cannot preserve completed reads" in result[2]

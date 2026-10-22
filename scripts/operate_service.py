@@ -1,4 +1,4 @@
-"""Session and checkout scoped transport for resident `operate.py next` reads.
+"""Session and checkout scoped transport for resident next, review and refresh reads.
 
 The journal owns issued work. Connections own requests and responses; an
 incomplete response is discarded and a retry computes from the journal.
@@ -23,9 +23,14 @@ import time
 import traceback
 from collections.abc import Iterator
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from enum import StrEnum
+import math
 from pathlib import Path
-from typing import TextIO
+from typing import TYPE_CHECKING, TextIO
+
+if TYPE_CHECKING:
+    from operations.steps import Launch
 
 import read_interrupts
 import script_calls
@@ -62,6 +67,62 @@ class Unavailable(BaseException):
     """A resident cannot serve this call; retrying the transport will not help."""
 
 
+class Kind(StrEnum):
+    NEXT = "next"
+    REVIEW = "review"
+    REFRESH = "refresh"
+
+
+def request_message(message: object) -> tuple[Kind, str, float, float]:
+    """Validate the same request form in the queue and serving path."""
+    if not isinstance(message, dict) or set(message) != {"kind", "subject", "started", "deadline"}:
+        raise ValueError("invalid request")
+    kind = Kind(message["kind"])
+    if not isinstance(message["subject"], str) or not message["subject"]:
+        raise ValueError("invalid request subject")
+    for name in ("started", "deadline"):
+        if type(message[name]) not in (int, float) or not math.isfinite(message[name]):
+            raise ValueError("invalid request time")
+    return kind, message["subject"], float(message["started"]), float(message["deadline"])
+
+
+@dataclass(frozen=True)
+class ReviewPlan:
+    launch: "Launch"
+    scratch: Path
+    code: str
+
+
+def review_plan(payload: object) -> ReviewPlan:
+    """Refuse malformed launch fields before any foreground preparation."""
+    from dataclasses import fields
+    from operations.roles import Role, Model
+    from operations.steps import Launch
+    if not isinstance(payload, dict) or set(payload) != {"tag", "launch", "scratch", "code"}:
+        raise ValueError("invalid review plan")
+    if payload["tag"] != "review-plan" or not isinstance(payload["scratch"], str) or not isinstance(payload["code"], str):
+        raise ValueError("invalid review plan")
+    values = payload["launch"]
+    if not isinstance(values, dict) or set(values) != {f.name for f in fields(Launch)}:
+        raise ValueError("invalid review launch")
+    values = values.copy()
+    for name in ("subject", "brief", "origin", "occasion"):
+        if not isinstance(values[name], str):
+            raise ValueError("invalid review text")
+    for name in ("again", "reread"):
+        if type(values[name]) is not bool:
+            raise ValueError("invalid review flag")
+    if values["change"] is not None and not isinstance(values["change"], str):
+        raise ValueError("invalid review change")
+    if values["items"] is not None and type(values["items"]) is not int:
+        raise ValueError("invalid review items")
+    if values["version"] is not None and (type(values["version"]) not in (int, float) or not math.isfinite(values["version"])):
+        raise ValueError("invalid review version")
+    values["role"] = Role(values["role"])
+    values["model"] = None if values["model"] is None else Model(values["model"])
+    return ReviewPlan(Launch(**values), Path(payload["scratch"]), payload["code"])
+
+
 @dataclass
 class Request:
     operator: str
@@ -72,7 +133,7 @@ class Request:
     code: str
     stdout: TextIO
     stderr: TextIO
-    refresh: bool = False
+    kind: "Kind" = field(default_factory=lambda: Kind.NEXT)
     phase: str = "state"
     pending: "Pending | None" = None
     begun: float = field(default_factory=time.monotonic)
@@ -154,8 +215,7 @@ class Pending:
                             continue
                         raise ValueError("incomplete queued request")
                     message = json.loads(line.split(b"\n", 1)[0])
-                    if not isinstance(message, dict) or not isinstance(message["operator"], str):
-                        raise ValueError("invalid queued request")
+                    request_message(message)
                     self.connections[connection] = arrived, message
                 if (self.running is not None
                         and float(message["deadline"]) - time.monotonic() <= FINISH_SECONDS):
@@ -348,12 +408,12 @@ def prepare(main: Path, session: str, deadline: float) -> None:
 
 
 def exchange(connection: socket.socket, operator: str, started: float,
-             deadline: float, refresh: bool) -> tuple[int, str, str] | None:
+             deadline: float, kind: Kind) -> tuple[int, str, str] | ReviewPlan | None:
     """A complete response, or None when transport or request validation needs a retry."""
     with connection:
         connection.settimeout(max(deadline - time.monotonic(), 0.001))
-        connection.sendall((json.dumps({"operator": operator, "started": started,
-                                       "deadline": deadline, "refresh": refresh}) + "\n").encode())
+        connection.sendall((json.dumps({"subject": operator, "started": started,
+                                       "deadline": deadline, "kind": kind}) + "\n").encode())
         with connection.makefile("rb") as stream:
             line = stream.readline()
         if not line.endswith(b"\n"):
@@ -361,6 +421,12 @@ def exchange(connection: socket.socket, operator: str, started: float,
         response = json.loads(line)
         if response["retry"]:
             return None
+        if "plan" in response:
+            if kind != Kind.REVIEW or response["status"] != 0:
+                raise ValueError("unexpected review plan")
+            return review_plan(response["plan"])
+        if type(response["status"]) is not int or not all(isinstance(response[k], str) for k in ("stdout", "stderr")):
+            raise ValueError("invalid response")
         return response["status"], response["stdout"], response["stderr"]
 
 
@@ -369,29 +435,52 @@ def timeout_output(operator: str) -> None:
     output(operator)
 
 
-def client(operator: str) -> int:
-    """Return resident output as the foreground next call's own result."""
+def client(operator: str, kind: Kind = Kind.NEXT) -> int:
+    """Return resident output and publish review plans within the foreground bound."""
     from operate_loop import arm_watchdog, single_instance
     from relay_reads import session_id
+    if kind == Kind.REVIEW:
+        from operate_review import qualification
+        if qualification(operator) is None:
+            return 0
+    import kept_reads
+    loaded_code = kept_reads.fresh_code("operate")
     single_instance(operator)
     arm_watchdog(operator)
     started, deadline = time.time(), time.monotonic() + LIMIT_SECONDS
     try:
-        result = request(checkout.ROOT,
-                         session_id(), operator, started, deadline, False)
-    except (Unavailable, OSError, ValueError) as exc:
-        return failed_next(operator, 1, "", f"operate: {exc}\n")
+        result = request(checkout.ROOT, session_id(), operator, started, deadline, kind)
+        if isinstance(result, ReviewPlan):
+            from refresh_locks import try_shared
+            from operate_review import publish
+            from operations.printed_forms import POLL_AGAIN
+            lock = try_shared(session_id())
+            if lock is None:
+                print(POLL_AGAIN)
+                return 0
+            with lock:
+                if time.monotonic() >= deadline:
+                    raise Expired
+                if loaded_code != result.code or kept_reads.fresh_code("operate") != loaded_code:
+                    print(POLL_AGAIN)
+                    return 0
+                return publish(operator, result.launch, result.scratch)
+        status, stdout, stderr = result
+        if status != 0 and kind == Kind.NEXT:
+            return failed_next(operator, status, stdout, stderr)
+        sys.stdout.write(stdout)
+        sys.stderr.write(stderr)
+        return status
+    except (Unavailable, OSError, ValueError, KeyError, TypeError) as exc:
+        if kind == Kind.NEXT:
+            return failed_next(operator, 1, "", f"operate: {exc}\n")
+        print(f"operate: {exc}", file=sys.stderr)
+        return 1
     except Expired:
         timeout_output(operator)
         return 1
     finally:
         signal.alarm(0)
-    status, stdout, stderr = result
-    if status != 0:
-        return failed_next(operator, status, stdout, stderr)
-    sys.stdout.write(stdout)
-    sys.stderr.write(stderr)
-    return status
 
 
 def failed_next(operator: str, status: int, stdout: str, stderr: str) -> int:
@@ -423,19 +512,20 @@ def failed_next(operator: str, status: int, stdout: str, stderr: str) -> int:
 
 
 def request(main: Path, session: str, operator: str, started: float,
-            deadline: float, refresh: bool) -> tuple[int, str, str]:
+            deadline: float, kind: Kind) -> tuple[int, str, str] | ReviewPlan:
     """Retry transport failures from journal state within the original deadline."""
     from refresh_locks import wait_free
     while time.monotonic() < deadline:
         if not wait_free(session, deadline):
             raise Expired
         try:
-            result = exchange(ensure(main, session, deadline), operator, started, deadline, refresh)
+            result = exchange(ensure(main, session, deadline), operator, started, deadline, kind)
             if result is not None:
                 return result
         except (ConnectionError, FileNotFoundError):
             pass
-        started = time.time()
+        if kind != Kind.REVIEW:
+            started = time.time()
         time.sleep(0.05)
     raise Expired
 
@@ -444,9 +534,9 @@ def refresh_resident(main: Path, session: str, operator: str) -> None:
     """Have the resident of `session`, started where none runs, read the state
     of `operator`. The resident answers once it accepts the request, and the
     read goes on in it."""
-    status, _, _ = request(main, session, operator, time.time(),
-                           time.monotonic() + LIMIT_SECONDS, True)
-    if status:
+    result = request(main, session, operator, time.time(),
+                           time.monotonic() + LIMIT_SECONDS, Kind.REFRESH)
+    if isinstance(result, ReviewPlan) or result[0]:
         raise RuntimeError("resident refresh failed")
 
 
@@ -483,20 +573,20 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
     if not line.endswith(b"\n"):
         raise ValueError("incomplete request")
     message = json.loads(line)
-    if not isinstance(message, dict) or not isinstance(message["operator"], str):
-        raise ValueError("invalid request")
+    kind, subject, started, deadline = request_message(message)
     stdout, stderr = io.StringIO(), io.StringIO()
-    current = Request(message["operator"], float(message["started"]), float(message["deadline"]),
-                      connection, listener, code, stdout, stderr, refresh=message["refresh"], pending=pending)
+    current = Request(subject, started, deadline,
+                      connection, listener, code, stdout, stderr, kind=kind, pending=pending)
     with read_interrupts.request_scope(check):
         token = CURRENT.set(current)
         cutoff = state_assembly.REQUEST_STARTED.set(current.started)
         codex_mode.enabled.cache_clear()
         trial_mode.enabled.cache_clear()
-        script_calls.start_request(str(checkout.ROOT), "operate.py", ["next"])
+        script_calls.start_request(str(checkout.ROOT), "operate.py", ["review" if kind == Kind.REVIEW else "next"])
         from file_reads import stats_stand_but
         stats_stand_but(None)
-        status, retry, keep = 1, False, True
+        status: int | ReviewPlan = 1
+        retry, keep = False, True
         if pending is not None:
             pending.running = current
         try:
@@ -504,20 +594,28 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                 signal.signal(signal.SIGALRM, lambda *_: arm(current))
                 arm(current)
                 current.check(code=True)
-                if current.refresh:
+                if current.kind == Kind.REFRESH:
                     current.detach()
                     state_assembly.read_state(current.operator)
                     status = 0
                 else:
                     with executor():
-                        status = operate.main(["next", current.operator])
+                        if current.kind == Kind.REVIEW:
+                            from operate_review import plan
+                            outcome = plan(current.operator)
+                            if isinstance(outcome, int):
+                                status = outcome
+                            else:
+                                status = ReviewPlan(outcome[0], outcome[1], code)
+                        else:
+                            status = operate.main(["next", current.operator])
                 current.check()
         except Replaced:
-            retry, keep = True, False
+            status, retry, keep = 1, True, False
         except Detached:
             pass
         except (Unavailable, kept_reads.Unavailable) as exc:
-            keep = False
+            status, keep = 1, False
             stdout.seek(0)
             stdout.truncate(0)
             print(f"operate: {exc}", file=stderr)
@@ -525,7 +623,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
             stdout.seek(0)
             stdout.truncate(0)
             traceback.print_exc(file=stderr)
-            keep = False
+            status, keep = 1, False
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
             if not kept_reads.flush():
@@ -540,14 +638,18 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                     print(f"operate: kept-read store cannot preserve completed reads: "
                           f"{store.path if store is not None else ''}: "
                           f"{store.write_error if store is not None else ''}", file=stderr)
-        response = {"status": status, "stdout": "" if retry else stdout.getvalue(),
+        response = {"status": 0 if isinstance(status, ReviewPlan) else status,
+                    "stdout": "" if retry else stdout.getvalue(),
                     "stderr": "" if retry else stderr.getvalue(),
                     "retry": retry}
+        if isinstance(status, ReviewPlan):
+            response["plan"] = {"tag": "review-plan", "launch": asdict(status.launch),
+                                "scratch": str(status.scratch), "code": status.code}
         connection.settimeout(1)
         try:
             if not current.waiting:
                 pass
-            elif not retry and status == 0:
+            elif not retry and response["status"] == 0:
                 try:
                     with side_effect():
                         connection.sendall((json.dumps(response) + "\n").encode())

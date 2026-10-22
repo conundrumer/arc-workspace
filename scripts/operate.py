@@ -95,7 +95,7 @@ def main(argv: list[str]) -> int:
                 if args.rest:
                     parser.error(mctx("review takes an agent id alone"))
                 status = run_in_main("operate.py", argv)
-                return review(args.ident) if status is None else status
+                return operate_service.client(args.ident, operate_service.Kind.REVIEW) if status is None else status
             case OperateAction.START:
                 if args.run is None or runs.start_of(args.ident, args.rest) is None:
                     parser.error(mctx("start takes {run_option} with its run, a task id, and one or more of {pass_list}")
