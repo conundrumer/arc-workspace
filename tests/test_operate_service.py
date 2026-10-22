@@ -154,6 +154,7 @@ def test_code_replacement_during_a_request_finishes_before_retirement(resident):
     (root / "code").write_text("new")
     (root / "release").write_text("")
     with connection, connection.makefile("rb") as response:
+        assert response.readline() == service.TAKEN
         out = json.loads(response.readline())
         assert out["retry"] is False
         assert out["status"] == 0
@@ -225,7 +226,8 @@ def test_bound_during_cache_validation_answers_the_client_and_keeps_reading(monk
     finally:
         signal.signal(signal.SIGALRM, handler)
     assert continued
-    assert connection.sendall.call_count == 1
+    assert connection.sendall.call_count == 2
+    assert connection.sendall.call_args_list[0].args[0] == service.TAKEN
     response = json.loads(connection.sendall.call_args.args[0])
     assert response["status"] == 0
     assert response["stdout"].endswith("Run the command again: nothing is ready.\n")
@@ -509,6 +511,7 @@ def test_refresh_retires_inflight_wait_without_reissuing_journaled_work(resident
     until(root / "entered")
     with locks.hold("isolated-service"):
         with connection, connection.makefile("rb") as stream:
+            assert stream.readline() == service.TAKEN
             response = json.loads(stream.readline())
         assert response["retry"] and response["stdout"] == ""
     assert service.request(root, "isolated-service", "op", time.time(),

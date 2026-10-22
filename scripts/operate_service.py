@@ -6,8 +6,10 @@ Only the serving thread accesses held reads. Idle expiry does no state read.
 A state read belongs to the resident: a request whose bound arrives first gets
 a response that says the read runs, and the run goes on without it.
 A refresh request gives way to a client request: the queue serves each `next`
-or `review` request first, and a refresh read ends where one arrives. A waiting
-call ends where a message to its caller arrives, as the resident ends a read.
+or `review` request first, and a refresh read ends where one arrives. A call
+that waits in the queue ends where a message to its caller arrives. Once the
+resident serves a call, the resident alone decides the output. A run that has
+journaled a give answers with its own output, and no bound or message replaces it.
 """
 
 import contextlib
@@ -142,6 +144,8 @@ class Request:
     begun: float = field(default_factory=time.monotonic)
     waiting: bool = True
     """Whether the client still waits for a response."""
+    committed: bool = False
+    """Whether the run journaled a give, after which its output is the response."""
 
     def detach(self, stdout: str = "") -> None:
         """Answer the waiting client with a successful `stdout`; the run goes on without it."""
@@ -154,7 +158,7 @@ class Request:
             pass
 
     def check(self, code: bool = False) -> None:
-        if self.waiting and time.monotonic() >= self.deadline - FINISH_SECONDS:
+        if self.waiting and not self.committed and time.monotonic() >= self.deadline - FINISH_SECONDS:
             self.detach(read_running(self))
         from refresh_locks import try_shared
         from relay_reads import session_id
@@ -179,6 +183,12 @@ class Request:
 def success(stdout: str) -> bytes:
     """The response line of a call that succeeded with the output `stdout`."""
     return (json.dumps({"status": 0, "stdout": stdout, "stderr": "", "retry": False}) + "\n").encode()
+
+
+TAKEN = b'{"taken": true}\n'
+"""The line the resident sends a `next` or `review` client once it serves the request.
+From then on, only the resident's block ends the call on a message
+(`operate_loop.waited`, which checks the inbox through `read_interrupts.scope`)."""
 
 
 def running_text(phase: str, seconds: float) -> str:
@@ -278,6 +288,12 @@ def check() -> None:
     """Validate the active request before a side effect or published result."""
     if (request := CURRENT.get()) is not None:
         request.check()
+
+
+def commit() -> None:
+    """Record that the active request journaled a give; its output is now the response."""
+    if (request := CURRENT.get()) is not None:
+        request.committed = True
 
 
 @contextlib.contextmanager
@@ -453,8 +469,10 @@ def message_output(operator: str, kind: Kind) -> str:
 def exchange(connection: socket.socket, operator: str, started: float,
              deadline: float, kind: Kind) -> tuple[int, str, str] | ReviewPlan | None:
     """A complete response, or None when transport or request validation needs a retry.
-    Where a message to `operator` is accepted while the request waits, the call ends
-    with what the resident prints for that message, and the request is left."""
+    Where a message to `operator` is accepted while the request waits in the queue,
+    the call ends with what the resident prints for that message, and the request is
+    left. The resident sends `TAKEN` once it serves the request; after that, the call
+    waits for the response."""
     with connection:
         connection.settimeout(max(deadline - time.monotonic(), 0.001))
         connection.sendall((json.dumps({"subject": operator, "started": started,
@@ -473,6 +491,8 @@ def exchange(connection: socket.socket, operator: str, started: float,
                     inbox = None
         with connection.makefile("rb") as stream:
             line = stream.readline()
+            if line == TAKEN:
+                line = stream.readline()
         if not line.endswith(b"\n"):
             return None
         response = json.loads(line)
@@ -649,7 +669,7 @@ def arm(current: Request) -> None:
         raise Unavailable(f"state read did not finish within {CARRY_SECONDS} s "
                           f"while reading {current.phase}")
     due = end
-    if current.waiting:
+    if current.waiting and not current.committed:
         if now >= current.deadline - FINISH_SECONDS:
             current.detach(read_running(current))
         else:
@@ -678,6 +698,8 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
     stdout, stderr = io.StringIO(), io.StringIO()
     current = Request(subject, started, deadline,
                       connection, listener, code, stdout, stderr, kind=kind, pending=pending)
+    if kind != Kind.REFRESH:
+        connection.sendall(TAKEN)
     with read_interrupts.request_scope(check):
         token = CURRENT.set(current)
         cutoff = state_assembly.REQUEST_STARTED.set(current.started)

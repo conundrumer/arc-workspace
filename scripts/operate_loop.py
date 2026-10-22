@@ -177,7 +177,9 @@ def block(me: str, action: Action,
         return 0
     steps, scratch = outcome
     head = steps[0]
+    shown = [prepared(step, scratch) for step in steps]
     with operate_service.side_effect():
+        operate_service.commit()
         if action is Action.NEXT:
             step_journal.give(scratch, [s for s in steps if isinstance(s, CALLS)], me, time.time())
             if isinstance(head, EndTurn) and (hold := head.hold) is not None and head.wait is not None:
@@ -187,8 +189,8 @@ def block(me: str, action: Action,
             print(batch_line(steps, me, action))
         elif isinstance(head, CALLS):
             print(key_line(head, me, action))
-        for step in steps:
-            print_step(prepared(step, scratch), scratch, me)
+        for step in shown:
+            print_step(step, scratch, me)
     return 0
 
 
