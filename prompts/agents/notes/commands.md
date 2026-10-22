@@ -31,14 +31,16 @@
 
 ## waiting-on-commands
 * inline: #foreground-commands
-- Before you end your turn, and before your final reply, wait on each command of yours that runs in the background until its completion notification reaches you: run a foreground Bash call and repeat it.
-    * comment: The cases this rule covers: a command you started that has not finished at the end of your turn; a command the harness moved to the background; a command whose completion notification your final reply waits on.
-    * unless: codex
+* unless: codex
+    - Before you end your turn, and before your final reply, wait on each command of yours that runs in the background until its completion notification reaches you: run a foreground Bash call and repeat it.
+        * comment: The cases this rule covers: a command you started that has not finished at the end of your turn; a command the harness moved to the background; a command whose completion notification your final reply waits on.
         - Set a timeout of 240000 ms on the Bash call, and have its until-loop give up just under that timeout.
-    - Lead its command with `: 'unattended-wait: <the command you wait on>';`. A command so led is exempt from the PreToolUse hook that blocks waits, unless that command reads the output file the harness gave a command of yours that runs in the background.
-        + xref: scripts/pending_wait_hook.py:main
-    - Loop on the completion where you can observe it, and otherwise on the time alone.
-    - Where a wait call that you started after the command completed ends with no notification of it, stop waiting on it.
+        - Lead its command with `: 'unattended-wait: <the command you wait on>';`. A command so led is exempt from the PreToolUse hook that blocks waits, unless that command reads the output file the harness gave a command of yours that runs in the background.
+            + xref: scripts/pending_wait_hook.py:main
+        - Loop on the completion where you can observe it, and otherwise on the time alone.
+        - Where a wait call that you started after the command completed ends with no notification of it, stop waiting on it.
+* if: codex
+    - Wait for a running command with one empty `write_stdin` poll with `yield_time_ms` 300000; it returns when the command ends.
 
 ## ending-commands
 - End a command of yours that runs in the background with the command a line of your documents gives to end it, and where none does, with `TaskStop` and the ID the harness gave that command. Call `TaskStop` on nothing else, and signal no process that you pick by its name or by its command line.
