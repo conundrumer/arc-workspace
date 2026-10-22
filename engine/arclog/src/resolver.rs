@@ -289,6 +289,16 @@ impl ResolvedProgram {
         at.unwrap_or(&self.examples[node.0 as usize])
     }
 
+    /// The name of each row position of the relation of `node`, in row
+    /// order: a column's name, and, for a record, `<record>.<field>` once
+    /// per field. A name that has no text (`ColumnName::Slot`) is `c<position>`,
+    /// its row position. `None` where the columns of `node`
+    /// are not known.
+    pub fn column_names(&self, node: GraphNodeIndex) -> Option<Vec<String>> {
+        let columns = self.names.node_columns.get(node.0 as usize)?.as_ref()?;
+        Some(columns.row_names())
+    }
+
     /// The signature of the name read at `path`.
     pub fn signature(&self, path: &NodePath) -> Option<&Signature> {
         self.signatures.get(path)

@@ -36,6 +36,14 @@ pub(crate) fn pose() -> ColumnName {
     written(POSE)
 }
 
+/// The text of `name`, or `c<position>` where the name has none.
+fn text(name: &ColumnName, position: usize) -> String {
+    match name {
+        ColumnName::Written(text) => text.to_string(),
+        ColumnName::Slot(_) => format!("c{position}"),
+    }
+}
+
 /// One column of a relation as a site names it: a column of one row
 /// position, or a record, one row position per field.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -89,6 +97,27 @@ impl Columns {
 
     pub(crate) fn names(&self) -> impl Iterator<Item = &ColumnName> + '_ {
         self.0.iter().map(Slot::name)
+    }
+
+    /// The name of each row position, in row order: a column's name, and
+    /// a record's `<record>.<field>` per field. A name with no text is
+    /// `c<position>`, its row position.
+    pub(super) fn row_names(&self) -> Vec<String> {
+        let mut names = Vec::new();
+        for slot in self.0.iter() {
+            let position = names.len();
+            match slot {
+                Slot::Column(name) => names.push(text(name, position)),
+                Slot::Record { name, fields } => {
+                    let record = text(name, position);
+                    for field in fields.iter() {
+                        let field = text(field, names.len());
+                        names.push(format!("{record}.{field}"));
+                    }
+                }
+            }
+        }
+        names
     }
 
     /// The place of the column at `path`: a column's name, then, on a
@@ -166,4 +195,29 @@ pub(crate) fn projection(site: &Site) -> Option<Box<[ColumnName]>> {
 
 pub(super) fn key_fields(key: &KeyBody) -> Box<[ColumnName]> {
     key.columns.iter().map(|column| column.name.clone()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn row_names_give_a_records_fields_as_record_dot_field() {
+        let columns = Columns(Box::new([
+            Slot::Column(written("P")),
+            Slot::Record { name: written("key"), fields: Box::new([written("A"), written("B")]) },
+            Slot::Column(written("Z")),
+        ]));
+        assert_eq!(columns.row_names(), ["P", "key.A", "key.B", "Z"]);
+    }
+
+    #[test]
+    fn row_names_give_a_name_with_no_text_as_c_and_its_row_position() {
+        let columns = Columns(Box::new([
+            Slot::Column(written("P")),
+            Slot::Column(ColumnName::Slot(7)),
+            Slot::Record { name: ColumnName::Slot(8), fields: Box::new([ColumnName::Slot(9)]) },
+        ]));
+        assert_eq!(columns.row_names(), ["P", "c1", "c2.c2"]);
+    }
 }

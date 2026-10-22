@@ -10,7 +10,7 @@
 //! With `--over <n> --rows <dir>`, each model of a relation and example that
 //! holds more than `n` rows also has its rows written, each model's apart, to `<dir>/<task_id>/<example>/<relation>.<model>.json` (the `/` of an example written `-`), a JSON
 //! object of `solver`, `input`, `relation`, `model`, `columns` (each
-//! `{"name", "type"}`) and `rows` (each row an array of values as
+//! `{"name", "type"}`, the name the solver's program gives the column, a record's field `<record>.<field>`, or `c<i>` for a column of an output of a shared node) and `rows` (each row an array of values as
 //! `value_json` gives them, in the order of the rows' JSON text). Where a
 //! clause makes the relation, one line per form of the clause follows the
 //! relation's line:
@@ -168,12 +168,13 @@ impl Dump<'_> {
             written.push((value.to_string(), value));
         });
         written.sort_by(|a, b| a.0.cmp(&b.0));
+        let names = column_names(evaluation, relation, types.len());
         let file = json!({
             "solver": self.solver,
             "input": self.input,
             "relation": self.relation,
             "model": model,
-            "columns": types.iter().enumerate().map(|(index, ty)| json!({"name": format!("c{index}"), "type": type_name(ty)})).collect::<Vec<_>>(),
+            "columns": types.iter().zip(&names).map(|(ty, name)| json!({"name": name, "type": type_name(ty)})).collect::<Vec<_>>(),
             "rows": written.into_iter().map(|(_, value)| value).collect::<Vec<_>>(),
         });
         let dir = self.dump.dir.join(self.solver).join(self.input.replace('/', "-"));
@@ -181,6 +182,22 @@ impl Dump<'_> {
         let path = dir.join(format!("{}.{model}.json", self.relation));
         let text = serde_json::to_string(&file).map_err(|error| error.to_string())?;
         std::fs::write(&path, text).map_err(|error| format!("{}: {error}", path.display()))
+    }
+}
+
+/// The names of the `count` columns of `relation` in a rows file: the names
+/// the solver's program gives them (a record's fields as `<record>.<field>`)
+/// for the one relation of a node, and `c<i>` otherwise: for one of several
+/// outputs of a shared node, whose columns the program records per node, and
+/// where the program's count of columns differs from `count`.
+fn column_names(evaluation: &Evaluation<'_>, relation: &GraphRelation, count: usize) -> Vec<String> {
+    let declared = match relation.output {
+        None => evaluation.program.program.column_names(relation.node),
+        Some(_) => None,
+    };
+    match declared {
+        Some(names) if names.len() == count => names,
+        _ => (0..count).map(|index| format!("c{index}")).collect(),
     }
 }
 
