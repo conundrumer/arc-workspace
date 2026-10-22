@@ -12,6 +12,8 @@ use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
 use arclog::eval::{Caps, ReachedBound, RelationValue};
 use arclog::judge::candidates::{PairCandidates, Section, World};
+use arclog::program::ProgramRelation;
+use arclog::relations::Relation;
 use arclog::read::read_solver;
 use arclog::registry::Registry;
 use arclog::resolver::resolve;
@@ -19,6 +21,8 @@ use arclog::session::{SessionBound, TaskSession};
 use arclog::stream::{token_stream, Control, DecodeSettings, Emitter, Token, Vocabulary};
 use arclog::task::{Grid, JudgedPair, JudgedTask, Task, TrainPair};
 use arclog::terms::{Color, Example};
+
+type Assignment = (ProgramRelation, Arc<Relation>);
 
 /// The input of the one train pair: one row of two cells.
 const INPUT: &[u8] = &[1, 2];
@@ -115,8 +119,9 @@ fn a_prefix_past_the_row_cap_is_stopped_at_the_cap() {
     let (end, prefix) = tokens.split_last().expect("a stream");
     assert_eq!(*end, Token::Control(Control::End));
     walk(&mut decoder, prefix);
-    let value = decoder.rows(Some(Example::at(0))).expect("a clause in progress").expect("the sub-body checks");
-    let RelationValue::Stopped(stop) = value.0 else { panic!("a stop: {value:?}") };
+    let rows = decoder.rows(Some(Example::at(0))).expect("a clause in progress").expect("the sub-body checks");
+    let [(_, value)] = &rows.at[..] else { panic!("one entry: {rows:?}") };
+    let RelationValue::Stopped(stop) = &value.0 else { panic!("a stop: {value:?}") };
     assert_eq!(stop.bound, ReachedBound::Rows { cap: 1 });
 }
 
@@ -143,4 +148,73 @@ fn a_batch_of_decodes_gives_the_results_of_each_decode_alone() {
     }
     let batched: Vec<String> = batched.into_iter().map(|steps| steps.join("\n")).collect();
     assert_eq!(batched, alone);
+}
+
+/// The counts of the sub-body of the clause in progress after `tokens`, at
+/// each assignment, with the assignments.
+fn counts_after(inputs: &Inputs, tokens: &[Token]) -> Vec<(Vec<Assignment>, Option<u64>)> {
+    let mut decoder = decoder(inputs);
+    walk(&mut decoder, tokens);
+    let counts = decoder.counts().expect("a clause in progress");
+    let [counted] = &*counts else { panic!("one example: {counts:?}") };
+    let counted = counted.as_ref().expect("the sub-body checks");
+    assert!(counted.stop.is_none());
+    counted.at.clone()
+}
+
+const BG: &str = "(RULE &bg (input (:Col *C)))\n";
+const FG: &str = "(RULE &fg (input *P *Col) (&bg (:C *V)) (!= Col V))\n";
+
+#[test]
+fn a_prefix_that_reads_a_det_of_two_values_gives_its_rows_at_each_value() {
+    let inputs = inputs(&[2, 2], Caps::CORPUS);
+    let tokens = model_tokens("(DET &c ColorDomain)\n(RULE &output (input *P) (&c (:C *Col)))\n");
+    let (_, prefix) = tokens.split_last().expect("a stream");
+    let counted = counts_after(&inputs, prefix);
+    let values: Vec<_> = counted.iter().map(|(assigned, _)| assigned.clone()).collect();
+    assert_eq!(values.len(), 2, "one entry for each value of `&c`: {counted:?}");
+    assert!(values.iter().all(|assigned| assigned.len() == 1));
+    assert!(format!("{:?}", values[0][0].1) != format!("{:?}", values[1][0].1), "the two entries hold two values of `&c`");
+    assert!(counted.iter().all(|(_, count)| count.is_some()));
+    let mut decoder = decoder(&inputs);
+    walk(&mut decoder, prefix);
+    let rows = decoder.rows(Some(Example::at(0))).expect("a clause in progress").expect("the sub-body checks");
+    assert_eq!(rows.at.len(), 2);
+}
+
+#[test]
+fn a_prefix_that_reads_no_det_of_several_values_gives_one_entry() {
+    let inputs = inputs(&[3, 3], Caps::CORPUS);
+    let tokens = model_tokens(COPIES);
+    let (_, prefix) = tokens.split_last().expect("a stream");
+    let counted = counts_after(&inputs, prefix);
+    assert!(matches!(&counted[..], [(assigned, _)] if assigned.is_empty()), "{counted:?}");
+}
+
+#[test]
+fn a_prefix_past_the_assignment_cap_gives_the_stop() {
+    let caps = Caps { assignments: 1, ..Caps::CORPUS };
+    let inputs = inputs(&[3, 3], caps);
+    let tokens = model_tokens("(DET &c ColorDomain)\n(RULE &output (input *P) (&c (:C *Col)))\n");
+    let (_, prefix) = tokens.split_last().expect("a stream");
+    let mut decoder = decoder(&inputs);
+    walk(&mut decoder, prefix);
+    let rows = decoder.rows(Some(Example::at(0))).expect("a clause in progress").expect("the sub-body checks");
+    assert_eq!(rows.at.len(), 1);
+    assert_eq!(rows.stop.expect("a stop").bound, ReachedBound::Assignments { cap: 1 });
+}
+
+#[test]
+fn a_choose_form_with_its_from_clause_open_gives_the_rows_of_that_clause() {
+    let inputs = inputs(&[3, 3], Caps::CORPUS);
+    let pick = "(CHOOSE &pick (from (&fg *P *Col)) (never (&fg *P *Col) (&fg (:P *P2) Col) (!= P P2) (&bg (:C Col))))\n";
+    let tokens = model_tokens(&format!("{BG}{FG}{pick}"));
+    let at = tokens.iter().position(|token| *token == Token::Control(Control::Choose)).expect("a `CHOOSE` form");
+    let written = counts_after(&inputs, &tokens[..at + 7]);
+    let rule = model_tokens(&format!("{BG}{FG}(RULE &copy (&fg *P *Col))\n"));
+    let (_, plain) = rule.split_last().expect("a stream");
+    let expected = counts_after(&inputs, plain);
+    let counts = |counted: &[(Vec<Assignment>, Option<u64>)]| counted.iter().map(|(_, count)| *count).collect::<Vec<_>>();
+    assert_eq!(counts(&written), counts(&expected));
+    assert!(written[0].1.is_some_and(|count| count > 0), "{written:?}");
 }

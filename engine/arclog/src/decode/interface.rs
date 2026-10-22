@@ -12,9 +12,9 @@ use crate::check::{check_shared_program, CheckCache, CheckedProgram, SolverClaus
 use crate::eval::examples::{scope_of, ExampleScope};
 use crate::eval::{BodyValue, Limits, Outcome, ParameterValues, RunFault, Stop};
 use crate::judge::candidates::PairCandidates;
-use crate::judge::determination::{dets_read, distinct_values, walk, End, EvaluationInputs, Walked};
+use crate::judge::determination::{dets_read, descend_assignments, distinct_values, walk, Assignment, End, EvaluationInputs, Walked};
 use crate::program::path::{NodePath, PathStep};
-use crate::program::{Body, Clause, ClauseKeyword, Conjunct, Form, Node, Program, ProgramRelation};
+use crate::program::{Body, Choose, ChoosePart, Clause, ClauseKeyword, Conjunct, Form, Node, Program, ProgramRelation};
 use crate::relations::Relation;
 use crate::stream::Token;
 use crate::terms::Example;
@@ -49,6 +49,24 @@ pub struct Step {
     pub forced: Box<[Token]>,
     pub consistency: Option<Consistency>,
     pub(super) columns: Option<crate::eval::output::GridColumns>,
+}
+
+/// What a prefix gives at each joint assignment of the `DET`s it reads, in
+/// the order of the walk, as `docs/engine/synthesis.md#decode-interface`
+/// gives it: a prefix that reads no `DET` of several values gives one
+/// entry, at the empty assignment.
+#[derive(Clone, Debug)]
+pub struct Assigned<T> {
+    pub at: Vec<(Vec<Assignment>, T)>,
+    /// The bound that ended the walk before its last assignment: the
+    /// assignment cap, a bound of a run, the deadline or a cancellation.
+    pub stop: Option<Stop>,
+}
+
+impl<T> Assigned<T> {
+    fn map<U>(self, mut f: impl FnMut(T) -> U) -> Assigned<U> {
+        Assigned { at: self.at.into_iter().map(|(assigned, value)| (assigned, f(value))).collect(), stop: self.stop }
+    }
 }
 
 /// The sub-body of the clause in progress, as a complete clause of its own
@@ -100,27 +118,32 @@ impl<'a> Decoder<'a> {
         })())
     }
 
-    /// The rows of the sub-body of the clause in progress on `example`,
+    /// The rows of the sub-body of the clause in progress on `example`, at
+    /// each joint assignment of the `DET`s that it reads, less the picks, which
+    /// no clause reads before its form ends,
     /// `None` for a task-wide clause, such as a `DET`'s: the conjuncts of
     /// its body that are positive atoms, the open one with the sites given
     /// so far, and the complete conjuncts, from their entries in the result
     /// cache, as `docs/engine/reader.md#programs-as-values` gives. Their
     /// relation holds a column for each label of the positive atoms. A
-    /// `ONE` mark is left out. `None` where no clause is in progress. Where
-    /// the sub-body does not check or does not compile, this gives a
-    /// [`RunFault`] at the clause.
+    /// `ONE` mark is left out. Where the form in progress is a `CHOOSE`
+    /// form, the clause in progress is its open `for`, `from` or `never`
+    /// clause, and the conjuncts of a `for` clause that a `from` clause
+    /// inside it follows are complete conjuncts of that sub-body. `None`
+    /// where no clause is in progress. Where the sub-body does not check or
+    /// does not compile, this gives a [`RunFault`] at the clause.
     ///
     /// Asking a per-example clause with `None`, or a task-wide clause on an
     /// example, is a fault of the caller, so this panics on one.
-    pub fn rows(&self, example: Option<Example>) -> Option<Outcome<BodyValue>> {
-        Some(self.sub_body()?.and_then(|sub| self.sub_body_rows(&sub, example)))
+    pub fn rows(&self, example: Option<Example>) -> Option<Outcome<Assigned<BodyValue>>> {
+        Some(self.sub_body()?.and_then(|sub| self.assigned_rows(&sub, example)))
     }
 
     /// The count of the rows of the sub-body that [`Decoder::rows`] gives on
-    /// each example of the task, or once for a task-wide clause, `None` in
-    /// a count where the body is undefined or stopped. `None` where no
-    /// clause is in progress.
-    pub fn counts(&self) -> Option<Box<[Outcome<Option<u64>>]>> {
+    /// each example of the task, or once for a task-wide clause, at each
+    /// assignment, `None` in a count where the body is undefined or
+    /// stopped. `None` where no clause is in progress.
+    pub fn counts(&self) -> Option<Box<[Outcome<Assigned<Option<u64>>>]>> {
         let sub = match self.sub_body()? {
             Ok(sub) => sub,
             Err(fault) => return Some(Box::new([Err(fault)])),
@@ -129,13 +152,24 @@ impl<'a> Decoder<'a> {
             ExampleScope::PerExample => self.task.examples().map(Some).collect(),
             ExampleScope::TaskWide => vec![None],
         };
-        Some(examples.into_iter().map(|example| self.sub_body_rows(&sub, example).map(|value| value.count())).collect())
+        Some(examples.into_iter().map(|example| self.assigned_rows(&sub, example).map(|rows| rows.map(|value| value.count()))).collect())
     }
 
-    fn sub_body_rows(&self, sub: &SubBody, example: Option<Example>) -> Outcome<BodyValue> {
-        let parameters = ParameterValues::determined([]);
+    fn assigned_rows(&self, sub: &SubBody, example: Option<Example>) -> Outcome<Assigned<BodyValue>> {
         let limits = self.limits();
-        self.inputs(&sub.program, &limits).at(&parameters).body(&sub.form, &sub.kept, example)
+        let inputs = self.inputs(&sub.program, &limits);
+        let root = derived_at(&sub.program, &sub.form).node;
+        let dets: Vec<_> = dets_read(&sub.program, root).into_iter().filter(|det| !det.pick).collect();
+        let mut at = Vec::new();
+        let mut leaf = |evaluation: &crate::eval::Evaluation<'_>, assigned: &[Assignment]| {
+            at.push((assigned.to_vec(), evaluation.body(&sub.form, &sub.kept, example).map_err(End::Fault)?));
+            Ok(())
+        };
+        match descend_assignments(inputs, &dets, root, self.context.settings.caps.assignments, &mut leaf).1 {
+            Ok(()) => Ok(Assigned { at, stop: None }),
+            Err(End::Stop(stop)) => Ok(Assigned { at, stop: Some(stop) }),
+            Err(End::Fault(fault)) => Err(fault),
+        }
     }
 
     /// The bounds of one request: the deadline of the decode settings from
@@ -155,10 +189,8 @@ impl<'a> Decoder<'a> {
         let (program, open) = self.state.partial()?;
         let open = open?;
         let (last, finished) = program.value().forms.split_last().expect("a partial program holds its partial form");
-        let Form::Clause(clause) = last else { return None };
-        let clause = clause.value();
         let form = NodePath::top(finished.len() as u32);
-        let kept: Vec<Conjunct> = clause.body.value().conjuncts.iter().enumerate().filter(|(index, conjunct)| complete_or_atom(&open, *index, conjunct)).map(|(_, conjunct)| conjunct.clone()).collect();
+        let (clause, kept) = open_clause(last, &open)?;
         let mut labels = Vec::new();
         for conjunct in &kept {
             if let Conjunct::Atom(atom) = conjunct {
@@ -175,7 +207,7 @@ impl<'a> Decoder<'a> {
         }
         let columns = super::state::slot_columns(distinct, 0);
         let count = u32::try_from(kept.len()).expect("fewer than 2^32 conjuncts");
-        let sub = Clause { body: Node::new(Body { conjuncts: kept.into() }), ones: Arc::from([]), columns, ..clause.clone() };
+        let sub = Clause { body: Node::new(Body { conjuncts: kept.into() }), columns, ..clause };
         let forms = finished.iter().cloned().chain([Form::Clause(Node::new(sub))]).collect();
         let checked = self.checked(&Node::new(Program { forms }), &form);
         Some(checked.map(|program| {
@@ -251,14 +283,58 @@ impl<'a> Decoder<'a> {
     }
 }
 
-/// Whether the conjunct at `index` of the body of a clause whose innermost
-/// open node is at `open` is complete or is a positive atom.
-fn complete_or_atom(open: &NodePath, index: usize, conjunct: &Conjunct) -> bool {
-    let open_at = match &*open.0 {
-        [PathStep(0), PathStep(at), ..] => Some(*at as usize),
+/// The clause in progress of `form`, whose innermost open node is at
+/// `open`, as a clause to build the sub-body on, and the conjuncts of the
+/// sub-body: a clause's own body, or the open clause of a `CHOOSE` form,
+/// which a `from` clause inside a `for` clause follows with the conjuncts
+/// of that `for` clause. `None` where `form` is neither or holds no open
+/// clause.
+fn open_clause(form: &Form, open: &NodePath) -> Option<(Clause, Vec<Conjunct>)> {
+    match form {
+        Form::Clause(clause) => {
+            let clause = clause.value();
+            let open_at = match &*open.0 {
+                [PathStep(0), PathStep(at), ..] => Some(*at as usize),
+                _ => None,
+            };
+            Some((clause.clone(), complete_or_atoms(&clause.body, open_at)))
+        }
+        Form::Choose(choose) => {
+            let choose = choose.value();
+            let [PathStep(at), within @ ..] = &*open.0 else { return None };
+            let open_at = within.first().map(|step| step.0 as usize);
+            let (body, before) = open_part(choose, choose.parts().nth(*at as usize)?)?;
+            let conjuncts = before.iter().flat_map(|body| body.conjuncts.iter().cloned()).chain(complete_or_atoms(body, open_at)).collect();
+            let clause = Clause {
+                keyword: ClauseKeyword::Rule,
+                derives: ProgramRelation::Declared(choose.name.clone()),
+                gloss: None,
+                proposers: Arc::from([]),
+                body: body.clone(),
+                ones: Arc::from([]),
+                columns: Arc::from([]),
+            };
+            Some((clause, conjuncts))
+        }
         _ => None,
-    };
-    open_at != Some(index) || matches!(conjunct, Conjunct::Atom(_))
+    }
+}
+
+/// The body of `part` of `choose`, and the `for` body that precedes it
+/// where `part` is a `from` clause inside the `for` clause.
+fn open_part(choose: &Choose, part: ChoosePart) -> Option<(&Node<Body>, Option<&Body>)> {
+    match part {
+        ChoosePart::For => Some((&choose.rows.as_ref()?.body, None)),
+        ChoosePart::From => Some((&choose.from, choose.rows.as_ref().filter(|_| choose.from_inside_for).map(|rows| rows.body.value()))),
+        ChoosePart::Never(index) => Some((choose.never.get(index)?, None)),
+    }
+}
+
+/// The conjuncts of `body` that are complete or are positive atoms, where
+/// the conjunct at `open_at` is the one in progress.
+fn complete_or_atoms(body: &Node<Body>, open_at: Option<usize>) -> Vec<Conjunct> {
+    let kept = |(index, conjunct): &(usize, &Conjunct)| open_at != Some(*index) || matches!(conjunct, Conjunct::Atom(_));
+    body.value().conjuncts.iter().enumerate().filter(kept).map(|(_, conjunct)| conjunct.clone()).collect()
 }
 
 /// The relation that the clause at `form` derives in `program`: a clause
@@ -272,4 +348,31 @@ fn derived_at(program: &CheckedProgram, form: &NodePath) -> GraphRelation {
         })
         .expect("a checked clause derives its relation");
     GraphRelation { node, output: None }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::read::read_solver;
+
+    /// The number of conjuncts that the clause in progress of a `CHOOSE`
+    /// form with a `for` clause, a `from` clause inside it and a `never`
+    /// clause gives when its innermost open node is at `open`; the last
+    /// conjunct of each clause is not an atom.
+    fn conjuncts_open_at(open: &[u32]) -> usize {
+        let text = "(RULE &a (input *P *C))\n(CHOOSE &pick (for ((&a ^P)) (from (&a P *C) (!= P C))) (never (&a *P *C) (&a (:P *Q) C) (!= P Q)))\n";
+        let solver = read_solver("t", text, "", &|_| None).expect("the file reads").value;
+        let program = solver.concept_case().program.clone();
+        let form = program.value().forms.last().expect("a form").clone();
+        let open = NodePath(open.iter().copied().map(PathStep).collect());
+        open_clause(&form, &open).map_or(0, |(_, conjuncts)| conjuncts.len())
+    }
+
+    #[test]
+    fn a_choose_gives_the_conjuncts_of_its_open_clause() {
+        let (for_clause, from_inside_for, never) = (conjuncts_open_at(&[0, 0]), conjuncts_open_at(&[1, 1]), conjuncts_open_at(&[2, 2]));
+        assert_eq!(for_clause, 1, "the `for` clause");
+        assert_eq!(from_inside_for, 2, "the `for` conjunct, then the `from` atom, and not the open comparison");
+        assert_eq!(never, 2, "the `never` clause");
+    }
 }

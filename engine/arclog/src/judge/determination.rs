@@ -3,8 +3,10 @@
 //! assignments of the `DET`s it reads at which it solves every train pair,
 //! restricted across cases to the values they agree on, and the value, the
 //! open values or the error of each parameter. The walk of a relation's
-//! joint assignments, with the search for its grid columns at each, is
-//! `walk`, which the consistency test of [`crate::decode`] runs too.
+//! joint assignments is `descend_assignments`, and `walk`, which the
+//! consistency test of [`crate::decode`] runs too, searches for the grid
+//! columns at each; the rows of a prefix in [`crate::decode`] are evaluated
+//! at each.
 
 use std::sync::Arc;
 use std::ops::ControlFlow;
@@ -198,7 +200,7 @@ pub(crate) fn dets_read(program: &CheckedProgram, root: GraphNodeIndex) -> Vec<D
 /// case's error where the assignment is left after the restriction.
 #[derive(Clone, Debug)]
 pub(crate) struct Kept {
-    pub(crate) values: Vec<(ProgramRelation, Arc<Relation>)>,
+    pub(crate) values: Vec<Assignment>,
     pub(crate) fault: Option<RunFault>,
     pub(crate) observed: Observed,
 }
@@ -225,9 +227,20 @@ pub(crate) struct Walked {
 /// assignment cap `cap`: at each assignment, the search for the grid
 /// columns of `output` over the train pairs whose candidates are `train`.
 pub(crate) fn walk(inputs: EvaluationInputs<'_>, dets: &[Det], output: &GraphRelation, train: &[PairCandidates<'_>], cap: u64) -> Walked {
-    let mut walk = Walk { inputs, dets, output, train, cap, count: 0, kept: Vec::new(), branching: Vec::new() };
-    let end = walk.descend(0, &mut Vec::new());
-    Walked { kept: walk.kept, branching: walk.branching, end }
+    let mut kept = Vec::new();
+    let mut leaf = |evaluation: &Evaluation<'_>, assigned: &[Assignment]| {
+        let (found, observed) = grid_columns_recorded(evaluation, output, train);
+        let fault = match found {
+            Ok(Found::Columns(_)) => None,
+            Ok(Found::None) => return Ok(()),
+            Ok(Found::Stopped(stop)) => return Err(End::Stop(stop)),
+            Err(fault) => Some(fault),
+        };
+        kept.push(Kept { values: assigned.to_vec(), fault, observed });
+        Ok(())
+    };
+    let (branching, end) = descend_assignments(inputs, dets, output.node, cap, &mut leaf);
+    Walked { kept, branching, end }
 }
 
 /// The determination of the `DET`s of `cases` on the train pairs of
@@ -296,26 +309,45 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
     Determination { parameters, cases }
 }
 
-/// The walk of one case's joint assignments, depth-first in the
-/// dependency order of its `DET`s.
+/// A value for a `DET`.
+pub(crate) type Assignment = (ProgramRelation, Arc<Relation>);
+
+/// The joint assignments of `dets`, depth-first in their dependency order,
+/// under the assignment cap `cap`: `leaf` runs at each, with the
+/// evaluation at it and the values, and a leaf that gives an [`End`] ends
+/// the walk. Also gives the `DET`s met with several values in the domain,
+/// in the order met. `root` is the node of the relation evaluated, whose
+/// form a stop at the cap names where `dets` is empty.
+pub(crate) fn descend_assignments(
+    inputs: EvaluationInputs<'_>,
+    dets: &[Det],
+    root: GraphNodeIndex,
+    cap: u64,
+    leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment]) -> Result<(), End>,
+) -> (Vec<ProgramRelation>, Result<(), End>) {
+    let mut walk = Walk { inputs, dets, root, cap, count: 0, branching: Vec::new(), leaf };
+    let end = walk.descend(0, &mut Vec::new());
+    (walk.branching, end)
+}
+
+/// The walk of one relation's joint assignments.
 struct Walk<'w, 'a> {
     inputs: EvaluationInputs<'a>,
     dets: &'w [Det],
-    output: &'w GraphRelation,
-    train: &'w [PairCandidates<'w>],
+    root: GraphNodeIndex,
     cap: u64,
     /// The complete assignments reached.
     count: u64,
-    kept: Vec<Kept>,
     /// The `DET`s met with several values in the domain, in the order met.
     branching: Vec<ProgramRelation>,
+    leaf: &'w mut dyn FnMut(&Evaluation<'_>, &[Assignment]) -> Result<(), End>,
 }
 
 impl Walk<'_, '_> {
     /// Each assignment that extends `assigned`, the values of the `DET`s
     /// before `at`, with the domain of each later `DET` at the values
     /// before it.
-    fn descend(&mut self, at: usize, assigned: &mut Vec<(ProgramRelation, Arc<Relation>)>) -> Result<(), End> {
+    fn descend(&mut self, at: usize, assigned: &mut Vec<Assignment>) -> Result<(), End> {
         let parameters = ParameterValues::determined(assigned.clone());
         let Some(det) = self.dets.get(at) else {
             let evaluation = self.inputs.at(&parameters);
@@ -323,18 +355,10 @@ impl Walk<'_, '_> {
             let cap = self.cap;
             if self.count > cap {
                 let program = &self.inputs.program.program;
-                let form = self.dets.last().map_or_else(|| program.form_of(self.output.node), |det| program.form_of(det.node));
+                let form = self.dets.last().map_or_else(|| program.form_of(self.root), |det| program.form_of(det.node));
                 return Err(End::Stop(Stop { bound: ReachedBound::Assignments { cap }, form: form.clone() }));
             }
-            let (found, observed) = grid_columns_recorded(&evaluation, self.output, self.train);
-            let fault = match found {
-                Ok(Found::Columns(_)) => None,
-                Ok(Found::None) => return Ok(()),
-                Ok(Found::Stopped(stop)) => return Err(End::Stop(stop)),
-                Err(fault) => Some(fault),
-            };
-            self.kept.push(Kept { values: assigned.clone(), fault, observed });
-            return Ok(());
+            return (self.leaf)(&evaluation, assigned);
         };
         if det.open {
             if let Some(fault) = keyed_one(self.inputs.program, det.node) {
