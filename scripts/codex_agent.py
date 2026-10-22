@@ -98,13 +98,13 @@ def role_instructions(root: Path, home: Path, agent: str,
                 [entry_text(agent_doc(kind, agent_dir(root)), values=values)])
     import controlled_markdown as nm
 
-    native_path = "prompts/agents/notes/native-agents.md"
-    native_root = root if (root / native_path).exists() else checkout.main_worktree(root)
+    native_root = checkout.main_worktree(root)
+    native_file = native_root / "prompts/agents/notes/native-agents.md"
     registry = nm.Registry(native_root)
-    native_document = registry.load(native_root / native_path)
+    native_document = registry.load(native_file)
     native_section = registry.ids[native_document.source]["native-tools"]
     native = nm.render(nm.section_document(native_document, native_section), registry)
-    native = native.replace("](#", "](" + native_path + "#")
+    native = native.replace("](#", "](" + str(native_file) + "#")
     styles = []
     for config in (Path(os.environ.get("CODEX_HOME", home / ".codex")) / "config.toml",
                    checkout.main_worktree(root) / ".codex" / "config.toml"):

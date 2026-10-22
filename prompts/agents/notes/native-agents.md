@@ -13,6 +13,7 @@
 
 ## Native tools
 - This render leaves out the linked procedures.
+- Run each `scripts/codex_ticket.py` command in the main tree.
 - Use your assignment's operations agent id in commands that take an agent id, and native agent ids in native tools.
 - For an Agent call your role's documents give, read [Launches](#launches).
 - For a SendMessage your role's documents give, read [Messages](#messages).

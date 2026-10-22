@@ -23,6 +23,7 @@ import fcntl
 import json
 import re
 import secrets
+import sys
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from enum import StrEnum
@@ -31,6 +32,7 @@ from typing import Any
 from collections.abc import Iterator
 
 from controlled_markdown import mctx
+from engine import checkout
 from operations.roles import AGENT_ID, CODEX_ROLES, ReasoningEffort, Role
 
 BINDING = "codex-ticket.json"
@@ -436,7 +438,7 @@ def prepare(scratch: Path, parameters: dict[str, Any], home: Path,
     from dataclasses import replace
     assignment = replace(assignment, model=model, effort=effort)
     manifest = store.manifest(assignment.agent, assignment.revision)
-    context = role_instructions(owner.worktree, home, description.role.value, assignment.actual_type)
+    context = role_instructions(checkout.main_worktree(owner.worktree), home, description.role.value, assignment.actual_type)
     identity = NATIVE_IDENTITY.format(agent=agent, scratch=assignment.scratch, manifest=manifest)
     message = "\n\n".join([context, identity,
         NATIVE_PARENT.format(parent=parent.get("runtime") or parent["native"]), text,
@@ -514,6 +516,10 @@ def main() -> int:
     dispatch.add_argument("scratch", type=Path)
     dispatch.add_argument("--call", type=Path)
     args = parser.parse_args()
+    main_tree = checkout.main_worktree(checkout.ROOT)
+    if checkout.ROOT != main_tree:
+        print(f"codex_ticket: run in the main tree {main_tree}", file=sys.stderr)
+        return 2
     try:
         if args.action == "prepare":
             out = prepare(args.scratch, json.loads(args.parameters.read_text()), Path.home(), args.previous)
