@@ -6,7 +6,9 @@ from typing import TYPE_CHECKING
 
 from dashboard_reads import STALE_RECORD, hits_full, served_request
 from dashboard_words import clock
-from operations.pacing import Until, WindowName
+from operations.pacing import Capped, Until, WindowName
+from operations.state import NotComputed
+from shown_state import ScriptAdmits
 from ticketing.vocabulary import Kind
 
 if TYPE_CHECKING:
@@ -32,7 +34,15 @@ def health(v: View) -> str:
         out.append('<div class="alert">⚠ No main session</div>')
     for _, h in per_session(v, lambda s: s.start_hold):
         if h is not None:
-            value = f" · {clock(h.time, v.now)}" if isinstance(h, Until) else ""
+            match h:
+                case Until():
+                    value = f" · {clock(h.time, v.now)}"
+                case Capped(cap):
+                    value = f" · cap {cap}"
+                case ScriptAdmits():
+                    value = " · pace script"
+                case NotComputed():
+                    value = " · pace unknown"
             out.append(f'<div class="alert">⏸ Starts held{value}</div>')
     for window, label in ((WindowName.SEVEN_DAY, "Week full"), (WindowName.FIVE_HOUR, "5 h full")):
         full = hits_full(v.usage, window)

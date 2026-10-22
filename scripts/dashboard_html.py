@@ -17,7 +17,7 @@ from pathlib import Path
 from dashboard_health import health
 from dashboard_standings import HOLD_WORD, HELD_HEAD, MOVING, Row, Standing, Standings, merged
 from dashboard_usage import codex_bar, usage_bar
-from dashboard_words import clock, hold_text
+from dashboard_words import clock, hold_text, start_hold_text
 from dashboard_reads import (DAY, OPEN, CodexWindow, OperatorRecords, Stage, change_of, hits_full,
                              journal_work, latest, log_work, phrase, spans, stage, users, Span, Work)
 from dashboard_template import CLEAR_ROUTE, EVENTS, FOLD, QUEUED_TAB, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
@@ -187,9 +187,11 @@ def strip(v: View, working: int) -> str:
     states = per_session(v, lambda s: "paused" if s.paused else "running")
     ops = ("Ops: no record" if not states else f"Ops {states[0][1]}" if len(states) == 1
            else "Ops: " + ", ".join(f"{lead}{x}" for lead, x in states))
-    held = [lead.strip() for lead, h in per_session(v, lambda s: s.start_hold is not None) if h]
-    starts = ("" if not held else ' · <span class="w">agent starts held'
-              + ("" if held == [""] else f" ({esc(', '.join(held))})") + "</span>")
+    held = [(lead.strip(), h) for lead, h in per_session(v, lambda s: s.start_hold) if h is not None]
+    names = [lead for lead, _ in held]
+    why = "; ".join(f"{lead}: " * bool(lead) + start_hold_text(h, v.now) for lead, h in held)
+    starts = ("" if not held else f' · <span class="w" title="{esc(why)}">agent starts held'
+              + ("" if names == [""] else f" ({esc(', '.join(names))})") + "</span>")
     return (f'<div class="strip"><div class="r1">{ops} · {working} active{starts} · Rendered {clock(v.now, v.now)}</div>'
             f'{usage_bar(v.usage, WindowName.SEVEN_DAY, "Week")}'
             f'{usage_bar(v.usage, WindowName.FIVE_HOUR, "5 h")}'
