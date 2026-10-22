@@ -1,5 +1,5 @@
 """The prints of the agents whose work is open under a run, of the messages
-from a run's parent, and of the run's report to that parent, as
+from a run's parent, and of the run's received report, as
 `profile_runs.py --help running` and `profile_runs.py --help one` give them."""
 
 from collections.abc import Callable
@@ -12,7 +12,7 @@ from budgets import GroupBudget, brief_items, of_budget, past_budget, role_group
 from codex_transcript import Coverage, activity, read as codex_transcript
 from context_bound_hook import bounded, context_bound, past_bound
 from controlled_markdown import mctx
-from open_agents import Listed, parent_reports
+from open_agents import Listed, received_reports
 from run_profile import clock, minutes, minutes_or_unknown, one_line
 from run_records import Run, Span
 from run_reads import MAIN
@@ -191,18 +191,18 @@ def print_messages(r: Run, undecided: list[str], budget: float | None) -> None:
 
 def print_report_line(r: Run, found: list[Report] | None) -> None:
     if found is None:
-        print("  " + mctx("report to the parent: ?"))
+        print("  " + mctx("received report: ?"))
     elif not found:
-        print("  " + mctx("report to the parent: none after the message at "
+        print("  " + mctx("received report: none after the message at "
                           "{time}").format(time=clock(r.messages[-1].time)))
     else:
         last = found[-1]
-        print("  " + mctx("report to the parent: {time} {kind}: {text}").format(
+        print("  " + mctx("received report: {time} {kind}: {text}").format(
             time=clock(last.time), kind=last.kind.value, text=one_line(last.text)))
 
 
 def print_report(r: Run, undecided: list[str]) -> None:
-    """Print the latest report of the subagent of `r` that reached its
-    parent after the parent's latest message to it, as `profile_runs.py --help one` gives it."""
+    """Print the latest received report of the subagent of `r`, as
+    `profile_runs.py --help one` gives it."""
     if r.agent_type != MAIN:
-        print_report_line(r, parent_reports(r, undecided))
+        print_report_line(r, received_reports(r, undecided))

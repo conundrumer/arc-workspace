@@ -9,10 +9,10 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from agent_reports import AgentEntry, Report, agent_entries, report_ids, reports_after
+from agent_reports import ENDED, AgentEntry, Report, last_sign, received_entries, reports_after
 from command_labels import AGENT_TOOLS
 from controlled_markdown import mctx
-from run_reads import (blocks, in_background, meta_parent, notified, parent_label, read_meta,
+from run_reads import (blocks, in_background, meta_parent, parent_label, read_meta,
                        results_by_call, run_sessions, session_agents)
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import agent_id, chain, held_find, launched_find
@@ -132,11 +132,10 @@ class Launch:
     gives it, its transcript, where one gives the call as its launch, the
     time of the run's call that launched it, or in `launched` of the last
     call that resumed it, by the run or by any agent of the run's sessions,
-    the time of the run's last sign that it reported, or None where the
-    run holds none, the id of the call that launched it, and the
-    `AgentEntry` of each entry of the run's transcripts to which
-    `report_ids` gives its agent id or the id of that call, and whether
-    the run's transcripts hold a result of that call."""
+    the time of the last sign in those sessions that it reported, or None
+    where they hold none, the id of the call that launched it, and the
+    matched report and end entries across the launcher and child's sessions,
+    and whether the run's transcripts hold a result of that call."""
     agent: str | None
     path: Path | None
     since: float
@@ -160,16 +159,11 @@ class LaunchLines:
     """What `launches` reads of a run's entries that have a time: each
     Agent call with its time, the line of each entry that gives a call's
     result, the time each call was answered, the calls whose result is an
-    error, the time of each id a notification gives, and the lines of the
-    entries to which `report_ids` gives each id. Of the entries that give
-    a result or that `report_ids` names only their lines are kept, so that
-    no call holds the entries of a long transcript parsed at once."""
+    error. Result entries are kept as line references."""
     calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     results: dict[str, tuple[Path, int]] = field(default_factory=dict)
     answered: dict[str | None, float] = field(default_factory=dict)
     failed: set[str] = field(default_factory=set)
-    told: dict[str, float] = field(default_factory=dict)
-    naming: dict[str, list[tuple[Path, int]]] = field(default_factory=dict)
 
     def step(self, p: Path, i: int, e: Entry) -> None:
         """Add the entry `e` of line `i` of the transcript at `p`."""
@@ -187,19 +181,9 @@ class LaunchLines:
                 if b.get("is_error"):
                     self.failed.add(b.get("tool_use_id", ""))
             self.results.update(dict.fromkeys(results_by_call([e]), (p, i)))
-        for v in notified(e):
-            self.told[v] = epoch(e["timestamp"])
-        for v in report_ids(e):
-            self.naming.setdefault(v, []).append((p, i))
 
 
-type CallLaunch = tuple[tuple[str, ...], Launch | None]
-"""A launch as `launches` made it from an Agent call, with the agent ids
-it reads the values of `LaunchLines` for. A launch of None is a call that
-launched no agent."""
-
-
-_made: Makes[CallLaunch] = Makes()
+_made: Makes[Launch | None] = Makes()
 """The launches `launches` last made for each run, by the id of their
 call."""
 
@@ -207,9 +191,9 @@ call."""
 @state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
 def launches(path: Path, undecided: list[str]) -> list[Launch]:
     """The agents the run at `path` launched, in the order of their launch.
-    A sign that an agent reported is the run's notification of it, or a
-    result of its launch that does not say the agent runs in the
-    background. An Agent call whose result is an error launched no agent,
+    Report and end signs are read across the launcher and child sessions.
+    Launch results remain tied to the launcher's call. An Agent call whose
+    result is an error launched no agent,
     unless a transcript gives it as its launch or its result gives an
     `agentId`. A launch is made anew only where a value it is made from
     changed since the last read on the same fold. An Agent call that the
@@ -224,26 +208,25 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
             continue
         taken.add(tid)
         child = launched_by(path, tid)
-        _, launch = making.item(
-            tid, lambda m: (read.results.get(tid), child, launch_signs(read, tid, m[0])),
+        launch = making.item(
+            tid, lambda _: (read.results.get(tid), child, tid in read.failed,
+                            read.answered.get(tid)),
             lambda lines: make_launch(path, read, at, tid, child, lines), undecided)
         if launch is not None:
-            out.append(launch)
+            sessions = tuple(dict.fromkeys(s for p in (path, child) if p
+                                           for s in run_sessions(p)))
+            entries = received_entries(sessions, launch.agent, tid)
+            sign = last_sign(entries, launch.since, {v for v in (launch.agent, tid) if v})
+            done = (sign[1] if sign[0] in ENDED else None) if sign else launch.done
+            if child is None and done is None and launch.answered:
+                undecided.append(mctx("{run}: no transcript gives call {call} as "
+                                      "its launch").format(run=path.stem, call=tid))
+            out.append(replace(launch, entries=entries, done=done))
     return out
 
 
-def launch_signs(read: LaunchLines, call: str, agents: tuple[str, ...]) -> tuple[object, ...]:
-    """The values of `read` that the launch of the Agent call `call` is made
-    from, other than its result and its transcript, where `agents` are the
-    agent ids it reads them for. The lines `naming` gives an id only grow
-    along a fold, so their count stands for them."""
-    return (call in read.failed, read.told.get(call), read.answered.get(call),
-            len(read.naming.get(call, ())),
-            *((read.told.get(a), len(read.naming.get(a, ()))) for a in agents))
-
-
 def make_launch(path: Path, read: LaunchLines, at: str, tid: str, child: Path | None,
-                lines: list[str]) -> CallLaunch:
+                lines: list[str]) -> Launch | None:
     """The launch the Agent call `tid` at `at` of the run at `path` made, as
     `launches` gives it, where `child` is the transcript that gives the call
     as its launch, with the `undecided` lines its making gives added to
@@ -253,21 +236,11 @@ def make_launch(path: Path, read: LaunchLines, at: str, tid: str, child: Path | 
     background = given is not None and in_background(given, lines, tid)
     result = given or {}
     aid = agent_id(child) if child else result.get("agentId")
-    agents = tuple(a for a in (result.get("agentId", ""), aid) if a)
     if tid in read.failed and child is None and "agentId" not in result:
-        return agents, None
-    told = [read.told.get(tid), read.told.get(result.get("agentId", "")),
-            None if background else read.answered.get(tid)]
-    done = max((t for t in told if t is not None), default=None)
-    if child is None and done is None and given is not None:
-        lines.append(mctx("{run}: no transcript gives call {call} as "
-                          "its launch").format(run=path.stem, call=tid))
-    named = dict.fromkeys(line for v in (tid, *([aid] if aid else []))
-                          for line in read.naming.get(v, []))
-    launch = Launch(aid, child, epoch(at), done, tid,
-                    agent_entries((n for p, i in named for n in line_entries(p, i)), aid, tid),
-                    answered=tid in read.answered)
-    return agents, launch
+        return None
+    done = None if background else read.answered.get(tid)
+    launch = Launch(aid, child, epoch(at), done, tid, (), answered=tid in read.answered)
+    return launch
 
 
 @state_cache(DERIVED)

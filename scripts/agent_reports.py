@@ -1,5 +1,5 @@
-"""The reports of an agent that reached its parent, as
-`profile_runs.py --help one` gives them, and the signs in its parent's transcripts that
+"""The received reports of an agent, as
+`profile_runs.py --help one` gives them, and the signs in session transcripts that
 its turn ended.
 
 The forms of the harness that `profile_runs.py --help one` rests on are `HAND_BACK` and
@@ -22,7 +22,10 @@ from run_reads import (MAIN, LaunchStatus, Notification, Status, agent_messages,
                        read_meta, run_sessions, session_agents, text_of)
 from file_reads import is_file
 from transcripts import agent_id, chain, find, main_transcript
-from entry_reads import read_entries
+from entry_reads import line_entries
+from session_changes import agents_facts
+from state_reads import DERIVED, Kept, state_cache
+from transcript_folds import fold
 from transcript_entries import epoch
 from transcript_snapshots import Entry
 
@@ -45,7 +48,7 @@ report."""
 POINTER = re.compile(r'\AThis agent\'s report was delivered to you as a message from "[^"]+" '
                      r"\(its SubagentHandback call\)\. Read it there; it is not repeated here\.\Z")
 """The whole result of a notification whose agent's report reached the
-parent as a SubagentHandback message."""
+receiver as a SubagentHandback message."""
 
 
 def gives_text(text: str) -> bool:
@@ -56,7 +59,7 @@ def gives_text(text: str) -> bool:
 
 
 class ReportKind(Enum):
-    """The entries of a parent's transcript that give a report of an agent,
+    """The entries of a session transcript that give a report of an agent,
     as `profile_runs.py --help one` gives them."""
     NOTIFICATION = "notification"
     RESULT = "result"
@@ -71,7 +74,7 @@ TURN_ENDED = frozenset({ReportKind.NOTIFICATION, ReportKind.RESULT})
 @dataclass
 class Report:
     """A report of an agent. `file` is the report file its text was read
-    from, or None where the text is the report as the parent received it."""
+    from, or None where the text is the received report."""
     kind: ReportKind
     time: float
     text: str
@@ -79,7 +82,7 @@ class Report:
 
 
 class Sign(Enum):
-    """What an entry of a parent's transcripts says of an agent's turn: a
+    """What an entry of session transcripts says of an agent's turn: a
     notification that it stopped (`is_stop`), a SubagentHandback message
     from it, a notification that it stopped with background work of its
     own still running, which says it has not reported yet, a notification
@@ -119,7 +122,7 @@ def sign_of(n: Notification) -> Sign:
 
 
 def entry_signs(e: Entry) -> list[tuple[str, Sign]]:
-    """Each id that `e`, an entry of a parent's transcripts, gives a sign
+    """Each id that `e`, an entry of session transcripts, gives a sign
     of, with that sign: the task id and the tool-use id of a notification,
     and the agent id of a SubagentHandback message."""
     if not can_report(e):
@@ -161,7 +164,7 @@ def can_report(entry: Entry) -> bool:
 
 @dataclass(frozen=True)
 class AgentEntry:
-    """What an entry of a parent's transcripts that can give a report
+    """What an entry of session transcripts that can give a report
     (`can_report`) gives of one agent: its time, its reports
     (`entry_reports`), whether it notifies that the agent stopped
     (`is_stop`), its signs (`entry_signs`), and the `undecided` lines that
@@ -252,27 +255,64 @@ def parent_type(path: Path) -> str | None:
 
 
 def reports(path: Path, since: float, undecided: list[str]) -> list[Report] | None:
-    """Only the lines of the parent's transcripts that hold the agent id of
-    the subagent at `path` or the id of the call that launched it are read,
-    which the line of every entry that gives a report of it holds one
-    of."""
+    """The received reports of the subagent at `path` across its sessions,
+    as `profile_runs.py --help one` gives them."""
     aid = agent_id(path)
-    found = parent_transcripts(path)
-    if not found:
-        undecided.append(mctx("{run}: no transcript of its parent is found, so "
-                              "whether a report reached it is unknown").format(run=aid))
-        return None
     call = (read_meta(path) or {}).get("toolUseId")
     if not call:
         undecided.append(mctx("{run}: no `.meta.json` of its run gives a `toolUseId`, "
                               "so the result of its launch cannot be matched").format(run=aid))
-    words = {aid, call} if call else {aid}
-    return reports_after(agent_entries((e for p in found for e in read_entries(p, naming=words)),
-                                       aid, call), since, aid, call, undecided)
+    return reports_after(received_entries(tuple(run_sessions(path)), aid, call),
+                         since, aid, call, undecided)
+
+
+@dataclass(frozen=True)
+class ReportLine:
+    """A line that can give a report or end sign, and its matching ids."""
+    line: int
+    ids: tuple[str, ...]
+
+
+def delivery_entry(entry: Entry) -> Entry:
+    """Expose an enqueued delivery to the report and sign parsers."""
+    if entry.get("type") == "queue-operation" and entry.get("operation") == "enqueue":
+        return {**entry, "type": "user", "message": {"content": entry.get("content")}}
+    return entry
+
+
+def add_report_line(out: list[ReportLine], _path: Path, line: int, entry: Entry) -> None:
+    if ids := report_ids(delivery_entry(entry)):
+        out.append(ReportLine(line, tuple(ids)))
+
+
+REPORT_WORDS = frozenset({"<task-notification>", "<agent-message from=", '"tool_result"'})
+"""Words present in the lines that `report_ids` can match."""
+
+
+@state_cache(DERIVED, kept=Kept.DISK)
+def report_lines(path: Path) -> tuple[ReportLine, ...]:
+    """Compact report references, incrementally read from one transcript."""
+    return tuple(fold(add_report_line, list[ReportLine], path, [path], REPORT_WORDS))
+
+
+def line_ids(line: ReportLine) -> tuple[str, ...]:
+    return line.ids
+
+
+@state_cache(DERIVED, kept=Kept.VALUE)
+def received_entries(sessions: tuple[Path, ...], aid: str | None,
+                     call: str | None) -> tuple[AgentEntry, ...]:
+    """Report and end entries matched once by agent or launch-call id in
+    `sessions`. Time bounds apply to the decoded entry's timestamp."""
+    ids = tuple(v for v in (aid, call) if v)
+    found = agents_facts(sessions, 0.0, report_lines, line_ids, ids)
+    return agent_entries((delivery_entry(e) for at in found
+                          for e in line_entries(at.path, at.fact.line)),
+                         aid, call)
 
 
 def report_ids(entry: Entry) -> list[str]:
-    """An entry of a parent's transcript that gives a report of an agent
+    """An entry of a session transcript that gives a report of an agent
     gives, among the ids this function returns, the agent id or the id of
     the call that launched it."""
     if not can_report(entry):
@@ -326,7 +366,7 @@ def still_running(n: Notification) -> bool:
 def entry_reports(e: Entry, aid: str | None, call: str | None,
                   undecided: list[str]) -> list[Report]:
     """The reports of the agent `aid`, launched by call `call`, that the
-    timestamped entry `e` of its parent's transcripts gives, as
+    timestamped entry `e` of session transcripts gives, as
     `profile_runs.py --help one` gives them."""
     t = epoch(e["timestamp"])
     out = [Report(ReportKind.NOTIFICATION, t, n.result.strip())

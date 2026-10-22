@@ -64,3 +64,56 @@ def test_launches_kept(tmp_path: Path) -> None:
     whole = tmp_path / "whole.jsonl"
     whole.write_bytes(path.read_bytes())
     assert read(whole) == (launches, lines)
+
+
+def test_reports_received_elsewhere(tmp_path: Path) -> None:
+    """A cached launch sees a delivery at another receiver; a later resume
+    still needs a later report, and quoted or unrelated reports do not count."""
+    path = tmp_path / "s.jsonl"
+    agents = tmp_path / "s" / "subagents"
+    agents.mkdir(parents=True)
+    child = agents / "agent-a1.jsonl"
+    child.write_text("")
+    child.with_suffix(".meta.json").write_text(json.dumps({"toolUseId": "t1"}))
+    receiver = agents / "agent-a2.jsonl"
+    add(path, call("t1", 1), result("t1", 2, "async_launched", "a1"))
+    add(receiver, {"type": "user", "timestamp": at(3), "message": {"content": "brief"}})
+    assert read(path)[0] == [("a1", True)]
+
+    def message(agent: str, s: int, text: str) -> dict:
+        return {"type": "user", "timestamp": at(s), "message": {"content":
+                f'<agent-message from="{agent}">{text}</agent-message>'}}
+
+    text = "[Subagent hand-back] The report follows:\n  finished"
+    add(receiver, message("a3", 4, text), {"type": "user", "timestamp": at(5),
+        "message": {"content": [{"type": "tool_result", "tool_use_id": "quoted",
+                                  "content": message("a1", 5, text)["message"]["content"]}]}})
+    assert read(path)[0] == [("a1", True)]
+    add(receiver, message("a1", 6, text))
+    assert read(path)[0] == [("a1", False)]
+    reports = sys.modules["agent_reports"]
+    launch = agent_launches.launches(path, [])[0]
+    assert [r.text for r in launch.reports(0, [])] == ["finished"]
+    assert [r.text for r in reports.reports(child, 0, [])] == ["finished"]
+    add(receiver, {"type": "assistant", "timestamp": at(7), "message": {"content": [
+        {"type": "tool_use", "id": "resume", "name": "SendMessage",
+         "input": {"to": "a1", "message": "continue"}}]}},
+        {"type": "user", "timestamp": at(7), "toolUseResult": {"resumedAgentId": "a1"},
+         "message": {"content": [{"type": "tool_result", "tool_use_id": "resume",
+                                   "content": "resumed"}]}})
+    transcripts.new_state()
+    resumed = agent_launches.launched(path, [])[0]
+    assert resumed.pending and resumed.reports(resumed.since, []) == []
+    notification = told("t1", "a1", 8)
+    notification["message"]["content"] = notification["message"]["content"].replace(
+        "</task-notification>", "<result>later</result>\n</task-notification>")
+    add(receiver, {"type": "queue-operation", "operation": "enqueue", "timestamp": at(8),
+                   "content": notification["message"]["content"]})
+    assert read(path)[0] == [("a1", False)]
+    transcripts.new_state()
+    assert not agent_launches.launched(path, [])[0].pending
+    assert [r.text for r in reports.reports(child, 0, [])] == ["finished", "later"]
+    latest = agent_launches.launched(path, [])[0]
+    assert [r.text for r in latest.reports(latest.since, [])] == ["later"]
+    assert latest.done is not None
+    assert reports.reports(child, latest.done, []) == []

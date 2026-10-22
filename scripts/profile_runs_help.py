@@ -134,9 +134,10 @@ PARTS = {
             + xref: scripts/run_prints.py:print_codex
         - A role, budget, duration or complete cost the evidence cannot establish is unknown.
             + xref: scripts/run_prints.py:print_codex
-    - One run of a subagent also prints, after `report to the parent:`, the latest entry of its parent's transcripts after the parent's latest message to it that gives a report of it, with the entry's time, its kind and the start of its text.
-        - Where no entry does, it prints `none after the message at` and that message's time.
-        - The parent's transcripts are, under each session of the run, the main transcript where the parent is `main`, and otherwise the transcripts of the parent's run.
+    - One run of a subagent also prints, after `received report:`, the latest report received after the parent's latest message to it, with the entry's time, its kind and the start of its text.
+        - Where no report was received after that message, it prints `none after the message at` and that message's time.
+        - Reports are read from each transcript of the sessions of the agent's run; `--running` also reads the sessions of the run that launched it.
+            + xref: scripts/agent_reports.py:reports, scripts/agent_launches.py:launches
     - An entry gives a report where it is:
         - `notification`: a notification of the agent with the status `completed` and a result, other than one whose note says the agent stopped with background work of its own still running;
         - `result`: the result of a foreground Agent call that launched the agent;
@@ -145,7 +146,7 @@ PARTS = {
         - An entry whose text is the harness's pointer to such a message, or the line an agent gives after it sent its final reply by SendMessage, gives no report.
         - A report whose text is the path alone of a report file that `operate.py next` gives in a brief is that file's text, where it is the latest report that gives that path.
             - An earlier report that gives that path, and a report whose file is gone, keep the path as its text.
-    - Where the latest message from the parent is unknown, or no transcript of the parent is found, it prints `?`.
+    - Where the latest message from the parent is unknown, it prints `?`.
     - A notification or a launch result whose status is of no known form gives no report, and where no `.meta.json` of the run gives a `toolUseId`, no launch result is matched to it.
     - A notification that gives no status, such as a Monitor event or one that says the agent was resumed, gives no report and no sign that the agent stopped.
     - A launch result whose status is of no known form counts as not in the background, wherever it is read.
@@ -214,8 +215,8 @@ PARTS = {
         - A parent's work is open where the parent is `main` or listed, and the run ID's work is open where it is `main` or would be listed under `main`.
         - An agent's turn counts as ended where it has ended, as `--help runs` gives when a turn ends, or where its parent has its result, or a transcript of the sessions of its run or of its parent's run holds a notification of it, and its transcript holds no `user` or `assistant` entry timestamped after the latest of those.
             - Where the turn of its parent, other than `main`, has ended, and the transcripts of its parent's run hold no result of the Agent call that launched it, that call was cut off with its parent's turn. Its turn then counts as ended where its transcript holds no `user` or `assistant` entry timestamped after the end of its parent's turn: the end of its parent's own call, where that call was cut off; else the time of its parent's last timestamped entry.
-    - A report of an agent that reached its parent after the parent's latest message to it closes its work.
-        - A report is one as `--help one` gives it, read here from each transcript of the parent's run.
+    - A report of an agent received after the parent's latest message to it closes its work.
+        - A report and the transcripts it is read from are as `--help one` gives them.
     - Each of these after the latest message the agent received from anyone closes its work:
         - a report;
         - a result of the agent's own SubagentHandback call that says the harness delivered its report;
@@ -238,7 +239,7 @@ PARTS = {
             - for an agent of type `operator`, after its context size, `bound` and the bound in force, as `uv run python scripts/operate.py bound` prints it, in tokens, led by `past` where its context is past that bound;
         - its working directory, as its first entry gives it;
         - for an agent whose turn has ended, after `turn ended:`, the time its turn ended, which is the time of the last timestamped entry of its transcripts that ends a turn, as `--help runs` gives one, and the time since;
-        - for an agent whose turn has ended, after `report to the parent:`, what one run prints there, as `--help one` gives it, from the same transcripts;
+        - for an agent whose turn has ended, after `received report:`, what one run prints there, as `--help one` gives it;
         - its last text output, the end of the text of its last assistant entry that gives text;
         - each call it has in flight, with its label, its command and the time since the call;
         - after `running:`, each command it backgrounded that is still running, and each agent it launched in the background that is itself listed and whose launch no notification in the transcripts of the run that launched it has followed, each with its label, its command and the time since the call;
@@ -249,7 +250,8 @@ PARTS = {
     - `--pending ID` prints the agent id of each agent pending to the run ID, one per line, in launch order, where ID is a session id or an agent id.
         - An agent is pending to the run that launched it from the Agent call that launched it, or from the last SendMessage call that resumed it, until the first of these:
             - the run holds the result of that Agent call, and the result does not say the agent runs in the background;
-            - any transcript of the sessions of the run or of the agent's run holds a notification of the agent, a notification that it stopped with work of its own still running among them.
+            - a transcript read as `--help one` gives for `--running` holds a notification of the agent, a notification that it stopped with work of its own still running among them;
+            - such a transcript holds a message that delivers the agent's SubagentHandback.
         - A SendMessage call that the run or any agent of the run's sessions, main among them, makes resumes the agent.
         - A SendMessage call to an agent whose result says neither that it resumed the agent nor that it queued the message resumes none.
     - `--open ID` prints `open` where the work of the run ID is open, by the rule by which `--running` lists an agent, applied to the run ID, and `not open` otherwise, where ID is an agent id.

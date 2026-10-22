@@ -31,7 +31,7 @@ from operations.constants import BLOCK_SECONDS, stuck_reached
 class Listed:
     """An agent `running_agents` gives. `end` is None where its turn has
     not ended or `agent_turns.turn_end` gives None, and `found`
-    is None where its turn has not ended or `parent_reports` gives None.
+    is None where its turn has not ended or `received_reports` gives None.
     `running` is what its run backgrounded that is still running, as
     `listed_under` gives it."""
     parent: str
@@ -122,23 +122,21 @@ def profiled(path: Path, undecided: list[str]) -> Run:
 
 def reported_since(a: Launch, since: float | None,
                    kinds: frozenset[ReportKind]) -> bool:
-    """Whether the run that launched `a` holds a report of it of one of
+    """Whether the sessions of `a` hold a report of it of one of
     `kinds` after `since`. The `undecided` lines of that read are dropped:
     a report it finds settles the agent whatever they name, and where it
     finds none, the agent's report is read again with them."""
     return since is not None and any(r.kind in kinds for r in a.reports(since, []))
 
 
-def parent_reports(r: Run, undecided: list[str],
-                   launch: Launch | None = None) -> list[Report] | None:
-    """The reports of the subagent of `r` that reached its parent after the
-    parent's latest message to it, as `profile_runs.py --help one` gives them, or None where that
-    message or the parent's transcripts are unknown. With `launch`, its
-    launch, they are read from the transcripts of the run that launched
-    it."""
+def received_reports(r: Run, undecided: list[str],
+                     launch: Launch | None = None) -> list[Report] | None:
+    """The received reports of `r`, as `profile_runs.py --help one` gives
+    them, or None where the parent's latest message is unknown.
+    `launch`, where given, is the launch of `r`."""
     if r.unknown or not r.messages:
         undecided.append(mctx("{run}: the latest message from its parent is "
-                              "unknown, so whether a report reached the parent "
+                              "unknown, so whether a report was received "
                               "after it is unknown").format(run=r.label))
         return None
     since = r.messages[-1].time
@@ -400,7 +398,7 @@ def turn_ended(n: Node, undecided: list[str]) -> Listed:
     """The agent of `n` as listed where its turn has ended."""
     run = profiled(n.path, undecided)
     return Listed(n.parent, n.path, n.launch, run, True,
-                  turn_end(n.path), parent_reports(run, undecided, n.launch))
+                  turn_end(n.path), received_reports(run, undecided, n.launch))
 
 
 def is_busy(n: Node, undecided: list[str]) -> bool:
