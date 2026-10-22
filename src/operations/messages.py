@@ -59,7 +59,7 @@ RESTATE = mctx("""
     """)
 
 PASS_RESEND = mctx("""
-    - When you replied at {time}, your task's work directory held no report that you wrote with a `{heading}` section.
+    - When you replied at {time}, `programs/reports/<task_id>/` held no report that you wrote with a `{heading}` section.
     - Write your report to its file, with that section, and reply with that file's path alone.
     """)
 DECISION_FORM = mctx("a reply that gives, on a line of its own, the ruling on the step, in a "

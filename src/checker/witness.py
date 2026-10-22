@@ -365,7 +365,7 @@ def check_other_verdict(solver: Solver, runs: Runs) -> list[Finding]:
 @quotes("procedure.md", "Witness",
         "Run the solver against `witnesses.json`: `uv run python "
         "scripts/run_dl.py witness <task_id> --file "
-        "work/task/<task_id>/witnesses.json`.")
+        "programs/reports/<task_id>/witnesses.json`.")
 @quotes("procedure.md", "Witness",
         "A branch whose model's output differs from the one `witnesses.json` "
         "gives the branch is an error in the solver to fix, unless "

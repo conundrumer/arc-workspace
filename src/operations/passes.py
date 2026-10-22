@@ -16,7 +16,7 @@ review filed, and the review; a pass's analyst is the one whose brief
 gives that pass's review. The pipeline ends once each review and analyst has returned. For
 the `interference` tickets, the changes that settle them are taken first, as
 `change_take.boosted` gives. A pass's tickets are read from the report file
-it wrote under the task's work directory since its launch, whatever its
+it wrote under the task's reports directory since its launch, whatever its
 reply. Where it wrote no such file with a `## Tickets filed` section, the
 pass gets `messages.PASS_RESEND` on its reply once. The pipeline stops
 where the pass still wrote no such file, once a ticket analyst on its last reply, quoted, as an
@@ -64,8 +64,8 @@ from operations.tracker import blocked_on_user
 
 SETS_ASIDE = (Role.ANALYZE, Role.CREATE)
 
-NO_REPORT = mctx("the {role} pass {agent} wrote, since its launch, no report file under its "
-                 "task's work directory with a `{section}` section")
+NO_REPORT = mctx("the {role} pass {agent} wrote, since its launch, no report file under "
+                 "`programs/reports/<task_id>/` with a `{section}` section")
 
 
 @dataclass(frozen=True)

@@ -13,12 +13,11 @@ from pathlib import Path
 from controlled_markdown import mctx
 from engine import checkout
 from operations.roles import Role
-from operations.task_dirs import CLAIM, refine_report, restores_file, tasks_work
+from operations.task_dirs import CLAIM, refine_report, restores_file, task_reports, tasks_work
 from solver.vocabulary import SOLVER_SUFFIX, WITNESS_SUFFIX
 
-BEFORE_CREATE = ("create.md", "progress.md")
-"""The entries of the task's work directory a Create pass sets aside, with
-each Refine report (`refine_report`)."""
+BEFORE_CREATE = ("progress.md",)
+"""The entries of the task's work directory a Create pass sets aside."""
 
 
 CLAIM_HELD = mctx("the claim on task {task} fails: session {holder} holds it")
@@ -55,8 +54,9 @@ def set_aside(main: Path, task: str, role: Role) -> Path:
     the witness file against `HEAD`, and each of those two files that
     exists. Before an Analyze pass it takes each entry of the task's work
     directory other than the claim and the numbered directories, and before
-    a Create pass the entries `BEFORE_CREATE` gives and each Refine report.
-    Each of the two paths that git tracks is marked skip-worktree."""
+    a Create pass the entries `BEFORE_CREATE` gives. It also takes each
+    report-directory entry before Analyze, or the Create report and each Refine
+    report before Create. Each moved tracked path is marked skip-worktree."""
     work = tasks_work(main) / task
     taken = numbered(work)
     target = work / str((taken[-1] if taken else 0) + 1)
@@ -70,18 +70,27 @@ def set_aside(main: Path, task: str, role: Role) -> Path:
     for entry in sorted(work.iterdir()):
         if entry == target or entry.name == CLAIM or entry.name.isdigit():
             continue
-        if role is Role.ANALYZE or entry.name in BEFORE_CREATE or refine_report(entry.name):
+        if role is Role.ANALYZE or entry.name in BEFORE_CREATE:
             shutil.move(entry, target / entry.name)
-    for p in paths:
-        if checkout.git_out(main, "ls-files", str(p)).strip():
-            checkout.git_out(main, "update-index", "--skip-worktree", str(p))
+    reports = task_reports(main, task)
+    moved_reports: list[Path] = []
+    if reports.is_dir():
+        for entry in sorted(reports.iterdir()):
+            if role is Role.ANALYZE or entry.name == "create.md" or refine_report(entry.name):
+                moved_reports.append(entry.relative_to(main))
+                shutil.move(entry, target / entry.name)
+    for p in (*paths, *moved_reports):
+        for tracked in checkout.git_out(main, "ls-files", "-z", "--", str(p)).split("\0"):
+            if tracked:
+                checkout.git_out(main, "update-index", "--skip-worktree", tracked)
     return target
 
 
 def restore(main: Path, task: str, argument: str | None) -> None:
     """Move back the solver and the witness file the latest set-aside that
     holds each took, where nothing stands at its path, clear their marks,
-    remove the claim, and record the call, with `argument`, the argument
+    clear each tracked report path's mark, remove the claim, and record the
+    call, with `argument`, the argument
     it gave after the task id, in `restores_file`."""
     work = tasks_work(main) / task
     for p in task_paths(task):
@@ -93,6 +102,10 @@ def restore(main: Path, task: str, argument: str | None) -> None:
                     break
         if checkout.git_out(main, "ls-files", str(p)).strip():
             checkout.git_out(main, "update-index", "--no-skip-worktree", str(p))
+    for p in checkout.git_out(main, "ls-files", "-z", "--",
+                              str(task_reports(main, task).relative_to(main))).split("\0"):
+        if p:
+            checkout.git_out(main, "update-index", "--no-skip-worktree", p)
     (work / CLAIM).unlink(missing_ok=True)
     with restores_file(main).open("a") as f:
         f.write(json.dumps({"task": task, "time": time.time(), "argument": argument}) + "\n")

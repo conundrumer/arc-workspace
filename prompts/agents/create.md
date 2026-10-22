@@ -22,7 +22,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
         - Reading the lib: [The lib](#the-lib).
 
 # Create agent
-- Your brief gives one task, whose Analyze files stand under `work/task/<task_id>/`.
+- Your brief gives one task, whose Analyze files stand under `programs/reports/<task_id>/`.
 * inline: notes/solver-pass.md#brief-form
 
 - Create its solver by the operations below, Write through Prune, in this order, then write the report.
@@ -86,7 +86,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
 * inline: notes/tickets.md#ticket-files
 
 ## Report
-- Write the report to `work/task/<task_id>/create.md`.
+- Write the report to `programs/reports/<task_id>/create.md`.
 * inline: notes/solver-pass.md#report-form
 
 ## The lib

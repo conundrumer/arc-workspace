@@ -22,7 +22,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
         - Reading the lib: [The lib](#the-lib).
 
 # Refine agent
-- Your brief gives one task, whose Analyze files and earlier reports stand under `work/task/<task_id>/`.
+- Your brief gives one task, whose Analyze files and earlier reports stand under `programs/reports/<task_id>/`.
 * inline: notes/solver-pass.md#brief-form
 
 - Refine its solver by the operations below: Reconcile, which runs the others as it says, then Simplify and Prune once. Then write the report.
@@ -86,7 +86,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
 * inline: notes/tickets.md#ticket-files
 
 ## Report
-- Write the report to `work/task/<task_id>/refine-<n>.md`, with `n` one more than the highest such report present, and 1 when there is none.
+- Write the report to `programs/reports/<task_id>/refine-<n>.md`, with `n` one more than the highest such report present, and 1 when there is none.
 * inline: notes/solver-pass.md#report-form
 - Report what this pass changed or judged anew, and keep each item of the latest report that still stands, with the report that first gave it, outside `## Tickets filed`.
     + xref: src/operations/reports.py:TICKETS_FILED

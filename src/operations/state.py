@@ -624,7 +624,7 @@ class TranscriptsRead:
     that the work of such an agent of `agents` is resumed once the limit
     lifts. `pass_reports` gives, for each
     solver pass with an agent id, the read of the report file it wrote
-    under the task's work directory since its launch (`PassReport`),
+    under the task's reports directory since its launch (`PassReport`),
     whatever its reply. `elsewhere` holds, for each change `State.me`
     holds whose log gives a line of an operator of another session since
     its last move out of `tickets/draft/`, the agents that operator

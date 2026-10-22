@@ -5,6 +5,7 @@ import json
 import re
 from pathlib import Path
 
+from engine.checkout import REPORTS
 from operations.state import Restore
 
 CLAIM = "claim"
@@ -18,6 +19,11 @@ def tasks_work(main: Path) -> Path:
     """The directory of each task's work and claim, in the main worktree
     `main`."""
     return main / "work" / "task"
+
+
+def task_reports(main: Path, task: str) -> Path:
+    """The task's reports directory in the main worktree `main`."""
+    return main / REPORTS / task
 
 
 def restores_file(main: Path) -> Path:

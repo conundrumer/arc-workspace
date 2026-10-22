@@ -281,6 +281,8 @@ def programs() -> Path:
     return ROOT / "programs"
 
 
+REPORTS = Path("programs/reports")
+
 SOLVERS = Path("programs/solvers")
 """The directory of the solver files, from the root of a worktree."""
 

@@ -46,7 +46,7 @@
         - The command and the rule on piping and chaining are here as well as under Every pass because the Analyze render does not include Every pass.
             + xref: docs/handbook/procedure.md#every-pass, prompts/agents/analyze.md
     - A pair's `alt` of kind `rule` is a second candidate, and of kind `tiebreak` a tiebreak.
-2. Write the concept to `work/task/<task_id>/concept.md`, in this form:
+2. Write the concept to `programs/reports/<task_id>/concept.md`, in this form:
     ```
     # <task_id>
 
@@ -117,13 +117,13 @@
         - its plausibility and verdict
         - the invariant of the inputs it breaks, when its plausibility is below `ordinary`
     - A branch with no witness: why there is none.
-4. Write each witness step 3 gives to `work/task/<task_id>/witnesses.json` in the shape [Witness file](docs/handbook/solver-file.md#witness-file) gives, with an `assign` that reassigns each parameter whose value the assignment step 3 gives it changes, and, in each witness whose verdict is not `other`, each fitting branch in the group of the output the branch's model gives at that witness's assignment.
+4. Write each witness step 3 gives to `programs/reports/<task_id>/witnesses.json` in the shape [Witness file](docs/handbook/solver-file.md#witness-file) gives, with an `assign` that reassigns each parameter whose value the assignment step 3 gives it changes, and, in each witness whose verdict is not `other`, each fitting branch in the group of the output the branch's model gives at that witness's assignment.
     + xref: docs/handbook/solver-file.md#witness-file
     * comment: Runs that read this step with no link looked for the witness file's shape in `witness --help` and in other tasks' witness files: tickets 10-354, 10-751 (run a690b8262f699d72a) and 10-771 (run ac50865438dc0b06d).
     * comment: An Analyze pass on a1aa0c1e read this step without the verdict clause and reported that its `other` witness `four-rungs` had no place for its fitting branches (console session `622904c2`, 2026-09-23).
-    - `uv run python scripts/run_dl.py witness --file work/task/<task_id>/witnesses.json` checks the file's shape.
+    - `uv run python scripts/run_dl.py witness --file programs/reports/<task_id>/witnesses.json` checks the file's shape.
         + xref: src/cli/audit.py:cmd_witness
-5. Write the report to `work/task/<task_id>/analyze.md`, in this form:
+5. Write the report to `programs/reports/<task_id>/analyze.md`, in this form:
 
     ```
     # <task_id>
@@ -151,9 +151,9 @@
     ```
 
 ### Write
-1. Read the Analyze files, one at a time: `work/task/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`.
+1. Read the Analyze files, one at a time: `programs/reports/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`.
     - The concept file gives the concept case's claims, and `analyze.md` gives each branch's standing.
-2. Write the solver (`programs/solvers/<task_id>.dl`), and copy `witnesses.json` to the witness file: `cp work/task/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`.
+2. Write the solver (`programs/solvers/<task_id>.dl`), and copy `witnesses.json` to the witness file: `cp programs/reports/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`.
     - Write the header's `@scene` and `@rule` lines from the concept file's claims, and `Params` from its Parameters section, under their names. The `@scene` line written from a claim gives the value of each parameter in its Scene parameters section that the claim reads.
     - A rule that `analyze.md` restates takes the restated text, and the concept file's text stands under it as its `@approximated:` line when the restated text has no relational form.
     - Each branch that `analyze.md` gives a witness, other than one that derives a parameter's value by a built-in derivation or stores a value the program derives, is a constructor, named as `analyze.md` names it and nested as `analyze.md` nests its choice point.
@@ -238,7 +238,7 @@
     - The audit runs the same check.
 - `uv run python scripts/run_dl.py witness <task_id>` reads the solver against `programs/witnesses/<task_id>.wit.json`, whose shape [Witness file](docs/handbook/solver-file.md#witness-file) gives.
     + xref: docs/handbook/solver-file.md#witness-file, src/cli/audit.py:cmd_witness
-- Run the solver against `witnesses.json`: `uv run python scripts/run_dl.py witness <task_id> --file work/task/<task_id>/witnesses.json`.
+- Run the solver against `witnesses.json`: `uv run python scripts/run_dl.py witness <task_id> --file programs/reports/<task_id>/witnesses.json`.
     + xref: src/checker/witness.py:check_concept_output
     - A branch whose model's output differs from the one `witnesses.json` gives the branch is an error in the solver to fix, unless `witnesses.json` erred; then it goes in the review as a departure, with why.
         + xref: src/checker/witness.py:check_concept_output, docs/handbook/procedure.md#develop, docs/handbook/procedure.md#witness
@@ -292,14 +292,14 @@
 - Do not compress it into a telegraphic style.
 
 ### Reconcile
-- Read the Analyze files `work/task/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`, the latest report, which is the highest-numbered `work/task/<task_id>/refine-<n>.md` when one exists and `create.md` otherwise, the solver, and the witness file.
+- Read the Analyze files `programs/reports/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`, the latest report, which is the highest-numbered `programs/reports/<task_id>/refine-<n>.md` when one exists and `create.md` otherwise, the solver, and the witness file.
     * comment:
         - The Analyze files are listed here as well as in Write because the Refine render does not include Write.
             + xref: docs/handbook/procedure.md#write, prompts/agents/refine.md
 - Run these in this order.
 - **Overrides.** An override in your brief decides an item of that report. Apply each override, and quote it in the report where you apply it. Then run again each operation from [Develop](#develop) through [Witness](#witness) that applying the overrides touches.
     + xref: docs/handbook/procedure.md#develop, docs/handbook/procedure.md#witness
-- **Departures.** Judge each departure and open item of that report, and each `## Fixes elsewhere` item on this task's files in another task's latest report (among the files `grep -l <task_id> work/task/*/create.md work/task/*/refine-*.md` prints, only the file that is its task's latest report, as the first line defines it), under the current docs, from the solver, the witness file, and the pairs; an item on an Analyze file is judged as a departure, and a `## Fixes elsewhere` item that holds is applied to the solver or the witness file.
+- **Departures.** Judge each departure and open item of that report, and each `## Fixes elsewhere` item on this task's files in another task's latest report (among the files `grep -l <task_id> programs/reports/*/create.md programs/reports/*/refine-*.md` prints, only the file that is its task's latest report, as the first line defines it), under the current docs, from the solver, the witness file, and the pairs; an item on an Analyze file is judged as a departure, and a `## Fixes elsewhere` item that holds is applied to the solver or the witness file.
     - Run the solver against `witnesses.json`, as [Witness](#witness) says.
         + xref: docs/handbook/procedure.md#witness
     - A departure holds when what it rests on is true and each case it adds or keeps meets every case condition, and each case it drops fails one in a `witness --every-case` run with that case restored. Restore its clauses with it.

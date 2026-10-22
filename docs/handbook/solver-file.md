@@ -318,7 +318,7 @@
                 | Grid                           // when the verdict is other: the annotator's judged output
       }] }
 
-    Group: { "cases": <name>[],           // the fewest names whose cases together are exactly the cases that give this output; in work/task/<task_id>/witnesses.json, the branches whose models give it
+    Group: { "cases": <name>[],           // the fewest names whose cases together are exactly the cases that give this output; in programs/reports/<task_id>/witnesses.json, the branches whose models give it
              "grid": Grid | Grid[] | null }  // null for undefined; a list of the grids the cases give, when they give more than one
     Grid: number[][]                      // rows of colors
     Fact: Arg[]                           // the arguments of one fact
