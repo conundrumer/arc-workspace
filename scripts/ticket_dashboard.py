@@ -168,6 +168,8 @@ class Latest:
     began: float = field(default_factory=time.time)
     poke: threading.Event = field(default_factory=threading.Event)
     """Set to make the render thread publish at once."""
+    published: float = 0.0
+    """The `time.monotonic()` of the last publish."""
 
 
 def render_loop(tickets: Path, latest: Latest) -> None:
@@ -179,6 +181,7 @@ def render_loop(tickets: Path, latest: Latest) -> None:
         with latest.condition:
             latest.rendered = rendered
             latest.version += 1
+            latest.published = time.monotonic()
             latest.condition.notify_all()
         return state
 
@@ -295,8 +298,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def serve_page(self, path: str, query: str) -> None:
         began = time.monotonic()
-        with self.latest.condition:
-            rendered = self.latest.rendered
+        latest = self.latest
+        with latest.condition:
+            stale = latest.rendered is not None and time.monotonic() - latest.published >= MIN_EVENT
+        if stale:
+            # The render thread publishes unasked only while a stream watches.
+            # This request serves the older render, and the next one is fresh.
+            latest.poke.set()
+        with latest.condition:
+            rendered = latest.rendered
         if path not in ("/", SEARCH_ROUTE, TICKET_ROUTE):
             self.send_error(404)
             return
