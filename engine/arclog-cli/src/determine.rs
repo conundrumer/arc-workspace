@@ -34,7 +34,7 @@ use arclog::solver::{CaseName, Exclusion};
 use arclog::terms::{Ident, Term, TermId};
 use arclog::types::{GraphRelation, ValueType};
 
-use crate::concept_case::{check_case, corpus_limits, corpus_session, read_corpus_task, CorpusTask};
+use crate::concept_case::{case_spelled, check_case, check_cases, corpus_limits, corpus_session, determined_cases, read_corpus_task, CorpusTask};
 use crate::engine_run::constructions;
 use crate::renaming::{renaming_exists, same_without_idents, term_leaves, EngineLeaf, Leaf};
 use crate::select::selected;
@@ -100,18 +100,10 @@ fn findings(corpus: &Path, tasks: &Path, id: &str) -> Result<Vec<Finding>, Strin
     let mut cache = CheckCache::default();
     let concept = check_case(cases.concept(), &clauses, &mut cache, "the concept case")?;
     let bases = solver.base_case_names(Exclusion::WithoutExcluded);
-    let mut programs: Vec<(CaseName, CheckedProgram)> = Vec::new();
-    for case in cases.cases().filter(|case| bases.contains(&case.case.name)) {
-        let what = format!("the case {}", case_spelled(&case.case.name));
-        programs.push((case.case.name.clone(), check_case(case, &clauses, &mut cache, &what)?));
-    }
+    let programs = check_cases(&cases, &clauses, &mut cache, &|name| bases.contains(name))?;
     let session = corpus_session();
     let limits = corpus_limits();
-    let constructions = constructions()?;
-    let determined: Vec<DeterminedCase<'_>> = programs
-        .iter()
-        .map(|(name, program)| DeterminedCase { name, program, concept: &concept, task: &task, session: &session, registry, constructions, limits: &limits })
-        .collect();
+    let determined = determined_cases(&programs, &concept, &task, &session, constructions()?, &limits);
     let determination = determine(&determined, &judged, World::Closed);
     let mut findings: Vec<Finding> = determination.cases.iter().filter_map(|(name, outcome, _)| case_fault(name, outcome)).collect();
     let records: Vec<(&ProgramRelation, &ParamValue)> = solver.arcdata.value().params.iter().map(|param| (&param.value().name, &param.value().value)).collect();
@@ -139,12 +131,6 @@ fn case_fault(name: &CaseName, outcome: &CaseOutcome) -> Option<Finding> {
 /// A fault of a run as a line gives it, with its form.
 fn fault_text(fault: &RunFault) -> String {
     format!("a fault of the run at {:?}: {}", fault.form, fault.message)
-}
-
-/// The name of a case as a line gives it: its alts, or `concept` for the
-/// case that takes none.
-fn case_spelled(name: &CaseName) -> String {
-    if name.0.is_empty() { "concept".to_owned() } else { name.0.iter().map(|alt| &*alt.0).collect::<Vec<_>>().join(" ") }
 }
 
 /// One relation's rows on both sides, as [`renaming_exists`] takes them: the

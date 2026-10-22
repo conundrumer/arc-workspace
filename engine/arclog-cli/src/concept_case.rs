@@ -13,9 +13,11 @@ use arclog::harness::read_corpus_solver;
 use arclog::judge::candidates::World;
 use arclog::judge::run::{judged_run, Depth, JudgedRun};
 use arclog::registry::Registry;
-use arclog::resolver::{resolve_cases, ResolvedCase};
+use arclog::eval::instance::Constructions;
+use arclog::judge::determination::DeterminedCase;
+use arclog::resolver::{resolve_cases, ResolvedCase, ResolvedCases};
 use arclog::session::{SessionBound, TaskSession};
-use arclog::solver::{Case, Solver};
+use arclog::solver::{Case, CaseName, Solver};
 use arclog::task::{read_judged_task, read_task, JudgedTask, Task};
 
 use crate::engine_run::{constructions, SESSION_BYTES};
@@ -93,4 +95,37 @@ pub(crate) fn with_concept_case<T>(corpus: &Path, tasks: &Path, id: &str, body: 
     let limits = corpus_limits();
     let evaluation = Evaluation { program: &program, concept: None, task: &task, parameters: &parameters, session: &session, registry, constructions: constructions()?, limits: &limits };
     body(&ConceptCase { evaluation, solver: &solver, case: &concept.case, judged: &judged })
+}
+
+/// The name of a case as a line gives it: its alts, or `concept` for the
+/// case that takes none.
+pub(crate) fn case_spelled(name: &CaseName) -> String {
+    if name.0.is_empty() { "concept".to_owned() } else { name.0.iter().map(|alt| &*alt.0).collect::<Vec<_>>().join(" ") }
+}
+
+/// The checked program of each case of `cases` whose name `wanted` holds,
+/// in the order of the cases, or the first refusal.
+pub(crate) fn check_cases(cases: &ResolvedCases, clauses: &SolverClauses, cache: &mut CheckCache, wanted: &dyn Fn(&CaseName) -> bool) -> Result<Vec<(CaseName, CheckedProgram)>, String> {
+    let mut programs = Vec::new();
+    for case in cases.cases().filter(|case| wanted(&case.case.name)) {
+        let what = format!("the case {}", case_spelled(&case.case.name));
+        programs.push((case.case.name.clone(), check_case(case, clauses, cache, &what)?));
+    }
+    Ok(programs)
+}
+
+/// The cases of `programs` as the determination takes them, on the task
+/// `task` in `session`.
+pub(crate) fn determined_cases<'a>(
+    programs: &'a [(CaseName, CheckedProgram)],
+    concept: &'a CheckedProgram,
+    task: &'a Task,
+    session: &'a TaskSession,
+    constructions: &'a Constructions,
+    limits: &'a Limits,
+) -> Vec<DeterminedCase<'a>> {
+    programs
+        .iter()
+        .map(|(name, program)| DeterminedCase { name, program, concept, task, session, registry: Registry::get(), constructions, limits })
+        .collect()
 }
