@@ -45,7 +45,7 @@ def test_at_the_cap_a_launch_is_held_and_the_batch_stops(tmp_path: Path, monkeyp
 
     one = replace(base, computed=replace(base.computed, pace=Until(base.now, 1)))
     assert order.placed(one, procedure)[0] == launch
-    assert order.batch(one, MonitorState((), frozenset(), ()), launch) == (launch,)
+    assert order.batch(one, MonitorState((), frozenset(), (), ()), launch) == (launch,)
     running = order.made(one, launch)
     assert order.placed(running, procedure)[0] == move
     uncapped = replace(running, computed=replace(running.computed, pace=Until(base.now)))

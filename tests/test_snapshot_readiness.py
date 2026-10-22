@@ -32,7 +32,7 @@ else:
     base = state(path.parent, messages=read.messages)
     fixed = replace(base, transcripts=replace(base.transcripts, calls=read.calls),
                     listing=frozenset())
-    step = ready_step(fixed, MonitorState((), frozenset(), ()))
+    step = ready_step(fixed, MonitorState((), frozenset(), (), ()))
     print(pickle.dumps(step).hex())
 '''
 

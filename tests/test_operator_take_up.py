@@ -43,7 +43,7 @@ def test_an_operator_does_not_end_for_a_later_one_that_has_given_its_final_reply
     from operations.steps import Send
     s = operator_state(tmp_path, EARLY, (EARLY, LATE), (send(100.0, "Done: 1-5 merged", LATE),),
                        open_operators=frozenset({LATE}))
-    step = next_step(s, MonitorState((), frozenset(), ()))
+    step = next_step(s, MonitorState((), frozenset(), (), ()))
     assert not (isinstance(step, Send) and hands_over(final_text(step.message) or ""))
 
 

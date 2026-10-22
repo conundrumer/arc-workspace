@@ -126,7 +126,9 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     late = late_resumes(read, undecided)
     watching: list[str] = []
     operate_service.read_phase("running agents")
-    listing = running_agents(find(session), watching)
+    diagnostics: list[str] = []
+    listing = running_agents(find(session), diagnostics)
+    watching.extend(diagnostics)
     now_watched = watched_read(listing, ops.agents, watching, opened)
     now = time.time()
     operate_service.read_phase("tickets")
@@ -150,7 +152,10 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     sessions_running = running(session)
     operate_service.read_phase("ticket holders and sessions")
     holders = holders_read(tickets, session, main_path, sessions_running, watching, me)
-    lifted, usage = read_usage(now, watching)
+    usage_diagnostics: list[str] = []
+    lifted, usage = read_usage(now, usage_diagnostics)
+    diagnostics.extend(usage_diagnostics)
+    watching.extend(usage_diagnostics)
     state = State(
         me=me, now=now, session=session, started=started(session),
         transcripts_dir=main_path.parent, main_tree=main,
@@ -184,7 +189,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     watching.extend(ungiven(computed_lines))
     watched = tuple(replace(w, stalled=None) if w.agent_id in ends.held else w for w in now_watched)
     return state, MonitorState(watched=watched, stalled=frozenset(ends.stalled),
-                               undecided=tuple(watching))
+                               diagnostics=tuple(diagnostics), undecided=tuple(watching))
 
 
 @dataclass(frozen=True)

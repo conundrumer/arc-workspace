@@ -22,7 +22,8 @@ The modules keep these rules:
   that form (`handled.ask_again`), and is undecided only where the answer is
   still in no such form.
 - The coordinator gets from the command only what the coordinator alone
-  can act on: the items for the user (`triage`), and its own lines in no
+  can act on: the items for the user (`triage`), read diagnostics that need
+  its action (`monitor`), and its own lines in no
   form the command reads, which go back to it (`steps.unread_line`), since
   only their writer knows what they meant.
 
@@ -66,5 +67,6 @@ main session's operators make),
 of one output), `plan` (the operator's next step and the block),
 `standing` (the step that ends the operator and the lines of what stands
 at its end),
-and `monitor` (the monitor's steps: the alerts on the watched agents' runs).
+and `monitor` (the alerts on watched agents' runs and diagnostic messages
+to the coordinator).
 `ticketing.exits` gives what takes a ticket out of each status."""

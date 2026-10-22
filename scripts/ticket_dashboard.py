@@ -134,7 +134,7 @@ def render(tickets: Path, live_agents: bool = True) -> Rendered:
     if kept_reads.store() is None:
         kept_reads.open_store()
     undecided: list[str] = []
-    return page(tickets, now, read(now, undecided), operator_records(tickets, now, undecided, live_agents), undecided, CODEX.read(now), cleared())
+    return page(tickets, now, read(now, undecided), operator_records(tickets, now, undecided, live_agents), CODEX.read(now), cleared())
 
 
 def accepts_gzip(header: str | None) -> bool:

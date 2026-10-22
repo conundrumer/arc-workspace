@@ -43,7 +43,7 @@ def idle_state(tmp_path: Path, first_poll: float, mine: bool):
 def step_of(s, waiting: bool = False):
     from operations.monitor import MonitorState
     from operations.plan import next_step
-    return next_step(s, MonitorState((), frozenset(), ()), waiting)
+    return next_step(s, MonitorState((), frozenset(), (), ()), waiting)
 
 
 def test_an_operator_with_nothing_ready_for_the_idle_time_and_no_agent_pending_gives_its_final_reply_for_a_wait(

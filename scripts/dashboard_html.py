@@ -14,10 +14,11 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from dashboard_health import health
 from dashboard_standings import HOLD_WORD, HELD_HEAD, MOVING, Row, Standing, Standings, merged
 from dashboard_usage import codex_bar, usage_bar
-from dashboard_words import clock, hold_text, start_hold_text
-from dashboard_reads import (DAY, OPEN, STALE_RECORD, CodexWindow, OperatorRecords, Stage, change_of, hits_full,
+from dashboard_words import clock, hold_text
+from dashboard_reads import (DAY, OPEN, CodexWindow, OperatorRecords, Stage, change_of, hits_full,
                              journal_work, latest, log_work, phrase, spans, stage, users, Span, Work)
 from dashboard_template import CLEAR_ROUTE, EVENTS, FOLD, QUEUED_TAB, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
 from shown_state import ScriptAdmits, Shown, ShownAgent, ShownParty, Start
@@ -193,31 +194,6 @@ def strip(v: View, working: int) -> str:
             f'{usage_bar(v.usage, WindowName.SEVEN_DAY, "Week")}'
             f'{usage_bar(v.usage, WindowName.FIVE_HOUR, "5 h")}'
             f'{codex_bar(v.codex, v.now)}</div>')
-
-
-def health(v: View, notes: list[str]) -> str:
-    """The HTML of Health: the user's tickets that wait on nothing, the
-    hold of agent starts, a stale record, the live agent read in progress
-    or no agent at work, and `notes`,
-    each once, the lines of the reads that did not decide."""
-    out = [f'<div class="alert">⚠ {esc(n)}</div>' for n in dict.fromkeys(notes)]
-    if v.records.main_missing is not None:
-        out.append(f'<div class="alert">⚠ {esc(v.records.main_missing)}</div>')
-    if v.records.running is None:
-        out.append('<div class="meta">The live list of agents is being read</div>')
-    if not v.records.records:
-        return "".join(out)
-    out += [tap(n, f"⚠ <b>{esc(n)}</b> {esc(v.phrase(v.all_[n]))} · waits on nothing for {ago(v.now - since)}", "alert")
-            for n, since in v.records.unwaited().items() if n in v.all_ and v.mine(v.all_[n])]
-    out += [f'<div class="alert">⏸ {esc(lead)}{esc(start_hold_text(h, v.now))}</div>'
-            for lead, h in per_session(v, lambda s: s.start_hold) if h is not None]
-    out += [f'<div class="alert">⚠ {esc(lead)}No operator has read the state since {clock(at, v.now)}</div>'
-            for lead, at in per_session(v, lambda s: s.at if v.now - s.at > STALE_RECORD else None) if at is not None]
-    if v.records.running is not None and not v.records.any_running():
-        out.append('<div class="alert">⚠ No agent is at work</div>')
-    return "".join(out) or '<div class="ok">✓ All moving</div>'
-
-
 
 
 class Mark(Enum):
@@ -582,10 +558,9 @@ def blocked(v: View) -> tuple[str, int]:
 
 
 def page(tickets: Path, now: float, usage: Reading, records: OperatorRecords,
-         undecided: list[str], codex: CodexWindow | None = None, cleared: float = 0.0) -> Rendered:
-    """The page at `now`, with the `undecided` lines of its reads and Updates
-    cleared up to `cleared`."""
-    read, unread = read_tickets(tickets)
+         codex: CodexWindow | None = None, cleared: float = 0.0) -> Rendered:
+    """The page at `now`, with Updates cleared up to `cleared`."""
+    read, _ = read_tickets(tickets)
     all_ = dict(sorted(read.items(), key=lambda kv: kv[1].order))
     starts = records.starts()
     v = View(all_, records, usage.usage, now, records.expedited(), records.agents(), starts,
@@ -594,7 +569,7 @@ def page(tickets: Path, now: float, usage: Reading, records: OperatorRecords,
     work, working = active(v, st)
     stuck, waits = blocked(v)
     sections = [
-        ("health", "Health", health(v, [*undecided, *(f"unread: {u.path}: {u.why}" for u in unread)])),
+        ("health", "Health", health(v, waits)),
         ("sl", "", updates(v, cleared)),
         ("active", "Active", work),
         ("queued", "Queued", queued(v, st)),
