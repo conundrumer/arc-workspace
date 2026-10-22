@@ -256,11 +256,17 @@ FRAGMENTS = mctx("Judge whether the text of each `mctx` fragment below, which a 
 FRAGMENT = mctx("- `{file}`, line {line}")
 
 
+def gives_fragments_alone(brief: str) -> bool:
+    """Whether `brief` gives the part of the doc editor of a change's
+    fragments alone, `FRAGMENTS_PART`."""
+    return FRAGMENTS_PART in brief
+
+
 def gives_fragments(agent: Agent) -> bool:
     """Whether `agent` is a doc editor whose brief gave it fragments of its
     change: `FRAGMENTS_PART`, or the `FRAGMENTS` line that leads the
     `FRAGMENT` lines."""
-    return agent.role is Role.DOC_EDITOR and (FRAGMENTS_PART in agent.brief
+    return agent.role is Role.DOC_EDITOR and (gives_fragments_alone(agent.brief)
                                               or FRAGMENTS in agent.brief)
 
 

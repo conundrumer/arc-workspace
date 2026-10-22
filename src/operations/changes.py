@@ -313,7 +313,7 @@ def deliver_decided(state: State, t: Ticket, latest: list[Agent],
         return None
     for role in (Role.CODE_EDITOR, Role.DOC_EDITOR, Role.HANDBOOK_EXPANDED):
         of_role = [a for a in latest if a.role is role and occupies(a)]
-        own = [a for a in of_role if briefs.FRAGMENTS_PART not in a.brief]
+        own = [a for a in of_role if not briefs.gives_fragments_alone(a.brief)]
         for editor in (own or of_role)[:1]:
             given = decided_send(state, t, reported_by[-1], role, editor)
             if given is not None and given[1] not in editor.brief \
@@ -614,7 +614,7 @@ def editor_resume(state: State, t: Ticket, editors: tuple[Role, ...],
                   here: list[Agent]) -> Send | None:
     """One recovery message per editor attempt without a finished report,
     or None where no such message is due."""
-    for a in latest_editors([a for a in here if briefs.FRAGMENTS_PART not in a.brief]):
+    for a in latest_editors([a for a in here if not briefs.gives_fragments_alone(a.brief)]):
         if a.role not in editors or a.agent_id is None or occupies(a) or a.refused is not None:
             continue
         step = Send(a.agent_id, EDITOR_RESUME.format(number=t.number),
@@ -628,7 +628,7 @@ def editor_replacement(state: State, t: Ticket, w: Path,
                       latest: list[Agent]) -> Step | None:
     """Resume an editor whose last attempt ended without a result
     (`editor_resume`), or, once that resume was sent, replace it."""
-    if any(not occupies(a) for a in latest if briefs.FRAGMENTS_PART not in a.brief):
+    if any(not occupies(a) for a in latest if not briefs.gives_fragments_alone(a.brief)):
         editors = change_editors(t)
         if isinstance(editors, Undecided):
             return editors

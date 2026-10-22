@@ -290,3 +290,28 @@ def test_a_standing_review_without_its_tag_is_due_again(tmp_path: Path) -> None:
                 readers=Deferred(lambda: (reader,)))
     assert isinstance(standing_review(s), Launch)
     assert isinstance(overdue_review(s), Launch)
+
+
+def test_a_nested_decision_is_no_result_of_an_unfinished_item() -> None:
+    from operations.completion import decided, finished
+    nested = attempt(Role.TICKET_ANALYST, "9-1", "## For the coordinator\n"
+                     "- unfinished: work stopped\n  - decision: choose after work is complete")
+    assert not decided(nested)
+    assert not finished(nested)
+    top = attempt(Role.TICKET_ANALYST, "9-1", "## For the coordinator\n- decision: choose")
+    assert decided(top) and finished(top)
+
+
+def test_a_fragments_editor_is_no_attempt_of_the_documents_editor(tmp_path: Path) -> None:
+    from operations import briefs
+    from operations.completion import attempts, replacement
+    docs = replace(attempt(Role.DOC_EDITOR, "9-1", None, launched=10.0), brief="documents",
+                   since=30.0)
+    fragments = replace(attempt(Role.DOC_EDITOR, "9-1", "done", launched=20.0),
+                        agent_id="a0000000000000002", brief=briefs.FRAGMENTS_PART)
+    s = with_agents(tmp_path, [docs, fragments])
+    step = Launch(Role.DOC_EDITOR, "9-1", "documents", occasion="o")
+    assert attempts(s, step) == [docs]
+    again = replacement(s, step)
+    assert isinstance(again, Launch)
+    assert again.occasion == "o replacement a0000000000000001 10.0 30.0"

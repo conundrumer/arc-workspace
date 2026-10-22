@@ -333,3 +333,14 @@ def test_invalid_request_is_refused_before_the_next_inbox_poll(monkeypatch, forc
         with pytest.raises(RuntimeError):
             interrupts.checkpoint(force=force)
     assert inbox_checks == [True]
+
+
+def test_a_launch_between_requests_is_accepted(inbox, monkeypatch: pytest.MonkeyPatch) -> None:
+    _, child = inbox
+    launched: set[str] = set()
+    monkeypatch.setattr(inboxes, "launched_or_resumed", lambda *args, **kwargs: set(launched))
+    reader = inboxes.Inbox(child.with_name(f"agent-{ME}.jsonl"), [])
+    launched.add(CHILD)
+    call(child)
+    result(child)
+    assert reader.accepted()

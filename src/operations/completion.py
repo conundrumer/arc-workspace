@@ -8,9 +8,10 @@ from collections.abc import Iterable
 from dataclasses import replace
 
 from controlled_markdown import mctx
+from operations import briefs
 from operations.constants import COORDINATOR
 from operations.directives import give_again_line, given_again, reply_decisions
-from operations.reports import FOR_COORDINATOR, LABELED, Label, heading_part
+from operations.reports import FOR_COORDINATOR, Label, heading_part, labeled_items
 from operations.roles import Purpose, Role, analyst_of
 from operations.state import Agent, Call, State, Tool
 from operations.printed_forms import KEY_LENGTH
@@ -22,9 +23,13 @@ def decided(a: Agent) -> bool:
     r = a.last_report
     if r is None or r.time <= a.since:
         return False
-    return bool(reply_decisions(a, r)) or any(
-        (m := LABELED.match(ln)) is not None and m["label"].lower() == Label.DECISION
-        for ln in (heading_part(r.text, FOR_COORDINATOR) or "").splitlines())
+    return bool(reply_decisions(a, r)) or Label.DECISION in top_labels(r.text)
+
+
+def top_labels(text: str) -> set[Label]:
+    """The labels of the top-level items of the part of `text` for the
+    coordinator."""
+    return {label for label, _ in labeled_items(heading_part(text, FOR_COORDINATOR) or "")[0]}
 
 
 def finished(a: Agent) -> bool:
@@ -39,9 +44,7 @@ def finished(a: Agent) -> bool:
     r = a.last_report
     if r is None or r.time <= a.since or not r.text.strip():
         return False
-    labels = {m["label"].lower() for ln in
-              (heading_part(r.text, FOR_COORDINATOR) or "").splitlines()
-              if (m := LABELED.match(ln)) is not None}
+    labels = top_labels(r.text)
     if decided(a):
         return True
     purpose = analyst_of(a.subject) if a.role is Role.TICKET_ANALYST else None
@@ -106,6 +109,14 @@ def stop_key(step: Launch) -> str:
     return with_change(step, hashlib.sha1(named.encode()).hexdigest()[:KEY_LENGTH])
 
 
+def attempts(state: State, step: Launch) -> list[Agent]:
+    """The agents of the role and subject of `step` that took the editor
+    part of its brief: the fragments alone, or the documents."""
+    wanted = briefs.gives_fragments_alone(step.brief)
+    return [a for a in state.agents_of(step.role, step.subject)
+            if briefs.gives_fragments_alone(a.brief) == wanted]
+
+
 def stopped_attempts(state: State, step: Launch) -> list[Agent]:
     """The attempts of the role and subject of `step`, after the last
     `Op override: give again` ruling on its `stop_key`, of which the last
@@ -113,7 +124,7 @@ def stopped_attempts(state: State, step: Launch) -> list[Agent]:
     did not. An attempt the usage limit stopped
     (`TranscriptsRead.limited`) does not count, as `limit_resume` resumes it."""
     again = given_again(state).get(stop_key(step), 0.0)
-    past = [a for a in state.agents_of(step.role, step.subject) if a.launched > again]
+    past = [a for a in attempts(state, step) if a.launched > again]
     last = past[-STOPS_BOUND:]
     if len(last) < STOPS_BOUND or any(
             occupies(a) or a.agent_id in state.transcripts.limited for a in last):
@@ -133,7 +144,7 @@ def replacement(state: State, step: Step) -> Step:
     """
     if not isinstance(step, Launch):
         return step
-    past = state.agents_of(step.role, step.subject)
+    past = attempts(state, step)
     if not past or occupies(past[-1]):
         return step
     if stopped := stopped_attempts(state, step):

@@ -151,7 +151,7 @@ def unstaffed(editors: tuple[Role, ...], here: list[Agent]) -> list[Role]:
     """The editor roles of `editors` with no agent among `here`, the
     editors in the change's worktree, or whose latest attempt in a part
     stopped without a result, in the order of `EDITORS`."""
-    latest = latest_editors([a for a in here if briefs.FRAGMENTS_PART not in a.brief])
+    latest = latest_editors([a for a in here if not briefs.gives_fragments_alone(a.brief)])
     return [r for r in EDITORS if r in editors and (
         not any(a.role is r for a in latest)
         or any(a.role is r and not occupies(a) for a in latest))]
@@ -161,7 +161,7 @@ def latest_editors(here: list[Agent]) -> list[Agent]:
     """The latest editor of `here` of each role, with the doc editor of
     the fragments (`briefs.FRAGMENTS_PART`) apart from the doc editor of
     the documents."""
-    return list({(a.role, briefs.FRAGMENTS_PART in a.brief): a for a in here}.values())
+    return list({(a.role, briefs.gives_fragments_alone(a.brief)): a for a in here}.values())
 
 
 @dataclass(frozen=True)

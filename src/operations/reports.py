@@ -225,10 +225,17 @@ def coordinator_part(a: Agent) -> tuple[list[tuple[Label, list[str]]], list[str]
     part = None if r is None else heading_part(r.text, FOR_COORDINATOR)
     if a.role is not Role.TICKET_ANALYST or part is None:
         return [], []
+    return labeled_items(part)
+
+
+def labeled_items(text: str) -> tuple[list[tuple[Label, list[str]]], list[str]]:
+    """The `LABELED` items of a part for the coordinator, each by its label
+    with its lines and the lines nested under it, and the other lines. A
+    labeled line nested under an item belongs to that item."""
     labeled: list[tuple[Label, list[str]]] = []
     other: list[str] = []
     top: int | None = None
-    for line in part.splitlines():
+    for line in text.splitlines():
         if top is not None and (not line.strip() or indent(line) > top):
             labeled[-1][1].append(line)
             continue

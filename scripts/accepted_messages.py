@@ -119,7 +119,8 @@ class Inbox:
     Each check parses only complete records appended since its previous check."""
 
     def __init__(self, path: Path, undecided: list[str]) -> None:
-        entered = time.time()
+        self.entered = time.time()
+        self.undecided = undecided
         self.path = path
         self.sessions = run_sessions(path)
         self.roots = {s.parent for s in self.sessions}
@@ -139,7 +140,6 @@ class Inbox:
                     tail = self.tails.setdefault(p, Tail())
                     tail.read(p)
                     self.since = max(self.since, tail.last_user)
-        self.mine = launched_or_resumed(path, undecided, before=entered)
 
     def entries(self, path: Path) -> tuple[Named, ...]:
         try:
@@ -176,6 +176,7 @@ class Inbox:
         return before
 
     def accepted(self) -> bool:
+        mine = launched_or_resumed(self.path, self.undecided, before=self.entered)
         for root in self.roots:
             for entry in self.entries(root):
                 session = root / entry.name
@@ -191,7 +192,7 @@ class Inbox:
                 for call, result, started, at in tail.deliveries:
                     if at <= self.since or at < started:
                         continue
-                    if (call.get("name") == "SubagentHandback" and agent_id(path) in self.mine
+                    if (call.get("name") == "SubagentHandback" and agent_id(path) in mine
                             and handback_accepted(result)):
                         return True
                     if (call.get("name") == "SendMessage" and succeeded(result)
