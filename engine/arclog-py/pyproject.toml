@@ -1,0 +1,13 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "arclog"
+version = "0.1.0"
+requires-python = ">=3.12"
+description = "Python bindings of the arclog engine"
+
+[tool.maturin]
+module-name = "arclog"
+features = ["extension-module"]

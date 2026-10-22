@@ -20,7 +20,8 @@ use arclog::session::{SessionBound, TaskSession};
 use arclog::solver::{Case, CaseName, Solver};
 use arclog::task::{read_judged_task, read_task, JudgedTask, Task};
 
-use crate::engine_run::{constructions, SESSION_BYTES};
+use arclog::session::SESSION_BYTES;
+use arclog_constructions::shared as constructions;
 
 /// The concept case of a solver, set up for its run at its stored `param`
 /// records, over the table of the lib's constructions, with the solver, the

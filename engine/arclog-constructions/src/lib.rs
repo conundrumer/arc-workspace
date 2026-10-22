@@ -16,6 +16,16 @@ pub mod wallpaper;
 
 use arclog::eval::instance::{Construction, Constructions, ConstructionsFault};
 use arclog::registry::Registry;
+use std::sync::OnceLock;
+
+/// The table of every construction, built once, for the runs that share it.
+pub fn shared() -> Result<&'static Constructions, String> {
+    static TABLE: OnceLock<Result<Constructions, String>> = OnceLock::new();
+    TABLE
+        .get_or_init(|| constructions(Registry::get()).map_err(|fault| format!("no table of constructions: {fault:?}")))
+        .as_ref()
+        .map_err(Clone::clone)
+}
 
 /// Declares the table of the constructions listed, [`constructions`], and
 /// gives each its registry name, the name of its type, as `NAME`.

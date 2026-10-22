@@ -4,6 +4,21 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[lib]
+# The crate is named apart from the core crate it depends on. maturin names
+# the Python module `arclog`, as `pyproject.toml` gives.
+name = "arclog_py"
+crate-type = ["cdylib"]
+
+[features]
+# maturin enables this feature, since an extension module links no Python
+# library. `cargo build` and `cargo test` build the crate without it.
+extension-module = ["pyo3/extension-module"]
+
 [dependencies]
 # The bindings expose the core crate's entry points to Python.
 arclog = { path = "../arclog" }
+# The table of the lib's constructions, which every decode is evaluated with.
+arclog-constructions = { path = "../arclog-constructions" }
+# The abi3 wheel runs on Python 3.12 and later.
+pyo3 = { version = "0.27.2", features = ["abi3-py312"] }

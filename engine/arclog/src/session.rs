@@ -404,6 +404,9 @@ pub struct Counts {
     pub rows: u64,
 }
 
+/// The bound on the bytes of a task session of the engine's runs.
+pub const SESSION_BYTES: usize = 1 << 32;
+
 /// The bound on a task session's bytes, which the intern table's and the
 /// result cache's bytes count toward. Reaching it is an alert.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

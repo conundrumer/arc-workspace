@@ -43,7 +43,7 @@ use arclog::task::{JudgedTask, Task};
 use arclog::terms::{Example, TermId};
 
 use crate::concept_case::{case_spelled, check_case, check_cases, corpus_limits, corpus_session, determined_cases, read_corpus_task, CorpusTask};
-use crate::engine_run::constructions;
+use arclog_constructions::shared as constructions;
 use crate::select::selected;
 
 const USAGE: &str = "usage: arclog-cli decode <corpus-dir> <tasks-dir> [--cases concept|all] [<task_id> ...]";

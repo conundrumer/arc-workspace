@@ -11,7 +11,6 @@ mod concept_case;
 mod decode;
 mod determine;
 mod determinism;
-mod engine_run;
 mod lib_compare;
 mod renaming;
 mod row_counts;

@@ -82,8 +82,31 @@ struct TaskJson<'a> {
 impl<'a> TaskJson<'a> {
     fn read(path: &'a Path) -> Result<TaskJson<'a>, TaskError> {
         let text = std::fs::read_to_string(path).map_err(|error| TaskError::Unreadable { path: path.to_owned(), error })?;
-        let json = serde_json::from_str(&text).map_err(|error| malformed(path, &error.to_string()))?;
+        TaskJson::parse(path, &text)
+    }
+
+    /// The JSON of `text`, which `path` names in a fault.
+    fn parse(path: &'a Path, text: &str) -> Result<TaskJson<'a>, TaskError> {
+        let json = serde_json::from_str(text).map_err(|error| malformed(path, &error.to_string()))?;
         Ok(TaskJson { path, json })
+    }
+
+    fn task(&self) -> Result<Task, TaskError> {
+        let train = self
+            .pairs("train")?
+            .iter()
+            .map(|pair| Ok(TrainPair { input: self.field(pair, "input")?, output: self.field(pair, "output")? }))
+            .collect::<Result<Box<[TrainPair]>, TaskError>>()?;
+        let test = self.pairs("test")?.iter().map(|pair| self.field(pair, "input")).collect::<Result<Box<[Grid]>, TaskError>>()?;
+        Ok(Task { train, test })
+    }
+
+    /// The judge's view of the pairs under `key`.
+    fn judged(&self, key: &str) -> Result<Box<[JudgedPair]>, TaskError> {
+        self.pairs(key)?
+            .iter()
+            .map(|pair| Ok(JudgedPair { output: self.field(pair, "output")?, alt: self.alt(pair)? }))
+            .collect()
     }
 
     fn malformed(&self, message: &str) -> TaskError {
@@ -135,14 +158,15 @@ fn malformed(path: &Path, message: &str) -> TaskError {
 
 /// The task of the file at `path`.
 pub fn read_task(path: &Path) -> Result<Task, TaskError> {
-    let file = TaskJson::read(path)?;
-    let train = file
-        .pairs("train")?
-        .iter()
-        .map(|pair| Ok(TrainPair { input: file.field(pair, "input")?, output: file.field(pair, "output")? }))
-        .collect::<Result<Box<[TrainPair]>, TaskError>>()?;
-    let test = file.pairs("test")?.iter().map(|pair| file.field(pair, "input")).collect::<Result<Box<[Grid]>, TaskError>>()?;
-    Ok(Task { train, test })
+    TaskJson::read(path)?.task()
+}
+
+/// The path that a fault of a task read from text names.
+const TEXT_PATH: &str = "<text>";
+
+/// The task of the JSON `text`, in the ARC form of a task file.
+pub fn read_task_text(text: &str) -> Result<Task, TaskError> {
+    TaskJson::parse(Path::new(TEXT_PATH), text)?.task()
 }
 
 /// The kind of an alt output, as `docs/handbook/solver-file.md#alt-outputs`
@@ -180,13 +204,13 @@ pub struct JudgedTask {
 /// The judged task of the file at `path`.
 pub fn read_judged_task(path: &Path) -> Result<JudgedTask, TaskError> {
     let file = TaskJson::read(path)?;
-    let section = |key: &str| {
-        file.pairs(key)?
-            .iter()
-            .map(|pair| Ok(JudgedPair { output: file.field(pair, "output")?, alt: file.alt(pair)? }))
-            .collect::<Result<Box<[JudgedPair]>, TaskError>>()
-    };
-    Ok(JudgedTask { train: section("train")?, test: section("test")? })
+    Ok(JudgedTask { train: file.judged("train")?, test: file.judged("test")? })
+}
+
+/// The judged train pairs of the JSON `text`, which may hold no test
+/// outputs, as Kaggle's task files hold none.
+pub fn read_judged_train_text(text: &str) -> Result<Box<[JudgedPair]>, TaskError> {
+    TaskJson::parse(Path::new(TEXT_PATH), text)?.judged("train")
 }
 
 impl Task {

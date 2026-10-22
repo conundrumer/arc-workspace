@@ -35,7 +35,7 @@ use arclog::terms::{Ident, Term, TermId};
 use arclog::types::{GraphRelation, ValueType};
 
 use crate::concept_case::{case_spelled, check_case, check_cases, corpus_limits, corpus_session, determined_cases, read_corpus_task, CorpusTask};
-use crate::engine_run::constructions;
+use arclog_constructions::shared as constructions;
 use crate::renaming::{renaming_exists, same_without_idents, term_leaves, EngineLeaf, Leaf};
 use crate::select::selected;
 
