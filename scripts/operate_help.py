@@ -264,7 +264,6 @@ PARTS = {
     HelpPart.WAIT: mctx("""
     - `wait` blocks for the operator whose agent id it is given, or, for an operator launcher's, for the last operator that launcher launched, and prints nothing: its caller runs `next` or `relay` again once it completes.
         - It reads the state as that operator's `next` reads it, and blocks as the block of `next` does, until a step is ready other than that the operator runs `next` again and its final reply for a wait, the pace's hold on the operator's steps ends, or {cap} seconds pass.
-        - Where the pace holds the operator's steps until a time, the block ends by that time.
         - Where a call of `wait` for the same agent id runs, it ends at once.
     """),
     HelpPart.ALERTS: ALERTS + "\n" + WAITS_HELP + "\n" + concept_faults.HELP,
