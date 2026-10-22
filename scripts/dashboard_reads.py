@@ -28,6 +28,7 @@ from ticket_numbers import indexed, indexes, parsed_number
 from tree_reads import scratch
 from transcripts import mains_named
 
+from engine import checkout
 from operations.filing import files_of
 from operations.lineage import tickets as agent_tickets
 from operations.journal import Outcome
@@ -37,6 +38,36 @@ from operations.roles import BARE_BRIEFS, Role, described
 from operations.state import Ticket, Tool
 from operations.tracker import wait_line
 from ticketing.vocabulary import COORDINATOR, Kind, Status
+
+CLEARED_FILE = "dashboard-cleared"
+"""The file, under `.cache/` of the main tree, that holds the time of the
+newest event the user cleared from Updates."""
+
+CLEAR_LOCK = threading.Lock()
+
+
+def cleared() -> float:
+    """The time the user cleared Updates up to; 0 where the file is missing
+    or unreadable."""
+    try:
+        at = float((checkout.caches() / CLEARED_FILE).read_text())
+    except (OSError, ValueError):
+        return 0.0
+    return at if math.isfinite(at) else 0.0
+
+
+def clear(at: float) -> None:
+    """Move the mark to `at`, unless it is already later. The write goes
+    through a rename, so a reader sees the old value or the new one."""
+    path = checkout.caches() / CLEARED_FILE
+    with CLEAR_LOCK:
+        if at <= cleared():
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(repr(at))
+        os.replace(tmp, path)
+
 
 OPEN = frozenset(Status) - {Status.CLOSED, Status.DRAFT}
 DAY = 86400.0

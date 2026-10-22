@@ -5,7 +5,6 @@ texts of times and of a ticket's status they give, and the page whole in
 the template of `dashboard_template`, with the search's entries of each ticket kept beside it (`Rendered`)."""
 
 import html
-import json
 import math
 import re
 import time
@@ -20,7 +19,7 @@ from dashboard_usage import codex_bar, usage_bar
 from dashboard_words import clock, hold_text, start_hold_text
 from dashboard_reads import (DAY, OPEN, STALE_RECORD, CodexWindow, OperatorRecords, Stage, change_of, hits_full,
                              journal_work, log_work, phrase, stage, users, Work)
-from dashboard_template import DONE_TAB, EVENTS, LAST_LOOK, QUEUED_TAB, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
+from dashboard_template import CLEAR_ROUTE, EVENTS, FOLD, QUEUED_TAB, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
 from shown_state import ScriptAdmits, Shown, ShownAgent, ShownParty, Start
 from ticket_reads import read_tickets
 from usage_limit import Reading
@@ -31,7 +30,7 @@ from operations.pacing import Capped, Until, Usage, WindowName
 from operations.parties import Hold, OnTicket
 from operations.state import NotComputed, Ticket
 from operations.tracker import blocked_on_user
-from ticketing.vocabulary import Kind, Resolution, Status
+from ticketing.vocabulary import COORDINATOR, Kind, Resolution, Status
 
 WEEKLY_LIMIT = 8400.0
 """The weekly usage limit in dollars, as
@@ -43,21 +42,12 @@ NOTE_WORDS = 18
 GROUP_SHOWN = 6
 """The most rows a group of held tickets gives above its fold."""
 
-DONE_SECONDS = DAY
-"""How far back Done reads the closes."""
-
-LIST_SHOWN = 8
-"""The most rows a tab of Done or Since you looked gives above its fold."""
-
-CLOSE_WORDS: Mapping[Resolution | None, str] = {
-    Resolution.FIXED: "Fixed", Resolution.DUPLICATE: "Duplicate",
-    Resolution.CANNOT_REPRODUCE: "Can't reproduce", Resolution.WONTFIX: "Won't fix",
-    Resolution.INVALID: "Invalid", None: "Closed"}
-"""The words of each resolution a close gives, and of a close that gives
-none."""
+MARKS = {"merged": ("✓", "m"), "ended": ("⊘", "x"), "blocked": ("!", "b")}
+"""The glyph at the start of an Updates row and the class that colours it,
+by the kind of its event."""
 
 SINCE_SECONDS = 2 * DAY
-"""How far back Since you looked reads the tracker."""
+"""How far back Updates reads the tracker."""
 
 QUEUE_DAYS = 7
 
@@ -461,53 +451,38 @@ def queued(v: View, st: Standings) -> str:
     return tab_set(QUEUED_TAB, panes)
 
 
-def done(v: View) -> str:
-    """The HTML of Done: a tab for each session that filed a ticket closed
-    in the last `DONE_SECONDS`, with the count of its closes, and in it
-    those tickets newest first by their closes and then by their filings,
-    each with how and when it closed. A
-    closed ticket whose merge closed one of them (`LogLine.closed_by`), or
-    whose Motivation gives one of them, shows as that one, with its number
-    under that one's."""
-    closes = {t.number: ln for t in v.all_.values() if t.status is Status.CLOSED
-              and (ln := t.log[-1]).status is Status.CLOSED and v.now - ln.time <= DONE_SECONDS}
-    within = {n: v.all_[n] for n in closes}
-    waited = {ln.closed_by for ln in closes.values() if ln.closed_by is not None}
-    shown = sorted((t for n, t in within.items() if n not in waited and not any(m in closes for m in t.motivation)),
-                   key=lambda t: (-closes[t.number].time, -t.filed))
-    if not shown:
-        return '<div class="meta">Nothing closed in the last day.</div>'
-    sessions: dict[int | None, list[Ticket]] = {}
-    for t in shown:
-        sessions.setdefault(t.session, []).append(t)
-
-    def change(t: Ticket) -> Ticket | None:
-        by = closes[t.number].closed_by
-        c = None if by is None else v.all_.get(by)
-        return c if c is not None else next((x for x in within.values() if x.kind is Kind.CHANGE
-                                             and t.number in x.motivation), None)
-
-    def right(t: Ticket) -> str:
-        ln = closes[t.number]
-        return f"{CLOSE_WORDS[ln.resolution]} · {clock(ln.time, v.now)}"
-    return tab_set(DONE_TAB, [(s, str(len(ts)), folded([row(v, t, right(t), change(t)) for t in ts], LIST_SHOWN))
-                              for s, ts in sessions.items()])
-
-
-def events(v: View) -> list[dict[str, object]]:
-    """The filings and the merges of the last `SINCE_SECONDS`, newest
-    first, each with its ticket's number and phrase and whether the ticket
-    is the user's."""
-    found: list[tuple[float, str, Ticket]] = []
+def updates(v: View, cleared: float) -> str:
+    """Updates: what concerns the user within `SINCE_SECONDS` and is newer
+    than `cleared`: the merges of changes, the ends of the tickets the
+    coordinator filed, and those of them that wait on the user. The groups
+    run in that order, each newest first, under a Clear that sends the time
+    of the newest. Each row ends with the span from the ticket's filing to its event,
+    then the time of the event."""
+    found: list[tuple[int, float, tuple[str, str], str, Ticket]] = []
     for t in v.all_.values():
-        if v.now - t.filed <= SINCE_SECONDS:
-            found.append((t.filed, "filed", t))
         if t.kind is Kind.CHANGE:
-            found.extend((ln.time, "merged", t) for ln in t.log if ln.status is Status.CLOSED
-                         and ln.resolution is Resolution.FIXED and v.now - ln.time <= SINCE_SECONDS)
-    found.sort(key=lambda e: (-e[0], -e[2].filed))
-    return [{"t": round(at), "k": kind, "n": t.number, "u": v.mine(t), "s": capitalized(v.phrase(t))}
-            for at, kind, t in found]
+            found.extend((0, ln.time, MARKS["merged"], "", t) for ln in t.log if ln.status is Status.CLOSED
+                         and ln.resolution is Resolution.FIXED)
+        if t.filer != COORDINATOR:
+            continue
+        end = t.log[-1] if t.log else None
+        if t.status is Status.CLOSED and end is not None and end.status is Status.CLOSED:
+            if t.kind is not Kind.CHANGE or end.resolution is not Resolution.FIXED:
+                word = end.resolution.value if end.resolution else "closed"
+                mark = MARKS["merged"] if end.resolution is Resolution.FIXED else MARKS["ended"]
+                found.append((1, end.time, mark, f" · {word}", t))
+        elif t.status is Status.BLOCKED:
+            found.extend((2, ln.time, MARKS["blocked"], "", t) for ln in t.log[-1:] if ln.status is Status.BLOCKED)
+    fresh = sorted((e for e in found if e[1] > cleared and v.now - e[1] <= SINCE_SECONDS),
+                   key=lambda e: (e[0], -e[1], -e[4].filed))
+    rows = "".join(f'<div class="wr tk{" me" if v.mine(t) else ""}" data-n="{esc(t.number)}">'
+                   f'<span class="wn"><i class="{cls}">{mark}</i> {esc(t.number)}</span>'
+                   f'<span class="wp">{esc(capitalized(v.phrase(t)) + word)}</span><span class="ws">{ago(max(at - t.filed, 60))} · {clock(at, v.now)}</span></div>'
+                   for _, at, (mark, cls), word, t in fresh)
+    body = (f'<button class="tab" id="clear" data-t="{max(e[1] for e in fresh)!r}">Clear</button><div class="wl">{rows}</div>'
+            if fresh else '<div class="meta">Nothing new.</div>')
+    head = f"Updates · {len(fresh)}" if fresh else "Updates"
+    return f'<details data-k="since" class="grp"><summary id="sl">{head}</summary><div id="since">{body}</div></details>'
 
 
 def kv(k: str, val: str) -> str:
@@ -579,8 +554,9 @@ def blocked(v: View) -> tuple[str, int]:
 
 
 def page(tickets: Path, now: float, usage: Reading, records: OperatorRecords,
-         undecided: list[str], codex: CodexWindow | None = None) -> Rendered:
-    """The page at `now`, with the `undecided` lines of its reads."""
+         undecided: list[str], codex: CodexWindow | None = None, cleared: float = 0.0) -> Rendered:
+    """The page at `now`, with the `undecided` lines of its reads and Updates
+    cleared up to `cleared`."""
     read, unread = read_tickets(tickets)
     all_ = dict(sorted(read.items(), key=lambda kv: kv[1].order))
     starts = records.starts()
@@ -591,21 +567,19 @@ def page(tickets: Path, now: float, usage: Reading, records: OperatorRecords,
     stuck, waits = blocked(v)
     sections = [
         ("health", "Health", health(v, [*undecided, *(f"unread: {u.path}: {u.why}" for u in unread)])),
+        ("sl", "", updates(v, cleared)),
         ("active", "Active", work),
         ("queued", "Queued", queued(v, st)),
-        ("sl", "Since you looked", '<div id="since"></div>'),
         ("blocked", f"Blocked on you · {waits}", stuck),
-        ("done", "Done", done(v) + '<div class="key"><span><i></i>filed by you</span><span>★ expedited</span></div>'),
         ("pace", "Pace", pace(v)), ("queue", "Queue", queue(v)),
         ("find", "Find",
          '<input id="q" type="search" placeholder="Number or words" autocomplete="off"><div id="res"></div>'),
     ]
     body = (strip(v, working) + "<main>"
-            + "".join(f'<h2 id="{i}">{esc(h)}</h2>{b}' for i, h, b in sections)
-            + '<script type="application/json" id="events">'
-            + json.dumps(events(v), separators=(",", ":")).replace("<", "\\u003c") + "</script></main>")
+            + "".join((f'<h2 id="{i}">{esc(h)}</h2>' if h else "") + b for i, h, b in sections)
+            + "</main>")
     text = filled(TEMPLATE, {"BODY": body, "EVENTS": EVENTS, "SEARCH": SEARCH_ROUTE, "TICKET": TICKET_ROUTE,
-                             "LASTLOOK": LAST_LOOK, "SHOWN": str(LIST_SHOWN)})
+                             "CLEAR": CLEAR_ROUTE, "FOLD": FOLD})
     entries = {n: Entry(t, v.phrase(t), v.status(t), change_states(v, st, t)) for n, t in all_.items()}
     return Rendered(text, entries, now)
 

@@ -7,7 +7,7 @@ browser as the tracker, usage observations or operator record sources change.
 
     uv run python scripts/ticket_dashboard.py <address> <port>
 
-serves GET alone, at four routes. `/` gives the latest published page,
+serves GET at four routes, and POST at `CLEAR_ROUTE`. `/` gives the latest published page,
 with its search entries available through `SEARCH_ROUTE` and `TICKET_ROUTE`.
 Before the first render, those routes give status 503; `/` gives a page
 that shows when the first read began. The server gzips HTML where accepted.
@@ -30,6 +30,7 @@ the search, and `dashboard_template` the page around its sections."""
 
 import argparse
 import gzip
+import math
 import os
 import sys
 import threading
@@ -41,10 +42,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import kept_reads
-from dashboard_html import LIST_SHOWN, Rendered, filled, page
-from dashboard_reads import CodexLimits, CodexWindow, operator_records
+from dashboard_html import Rendered, filled, page
+from dashboard_reads import CodexLimits, CodexWindow, clear, cleared, operator_records
 from dashboard_search import results, sheet, words
-from dashboard_template import EVENTS, LAST_LOOK, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
+from dashboard_template import CLEAR_ROUTE, EVENTS, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
 from dashboard_words import clock
 from file_ticket import main_tickets
 from idle_sessions import MAIN, named_main
@@ -133,7 +134,7 @@ def render(tickets: Path, live_agents: bool = True) -> Rendered:
     if kept_reads.store() is None:
         kept_reads.open_store()
     undecided: list[str] = []
-    return page(tickets, now, read(now, undecided), operator_records(tickets, now, undecided, live_agents), undecided, CODEX.read(now))
+    return page(tickets, now, read(now, undecided), operator_records(tickets, now, undecided, live_agents), undecided, CODEX.read(now), cleared())
 
 
 def accepts_gzip(header: str | None) -> bool:
@@ -159,6 +160,8 @@ class Latest:
     condition: threading.Condition = field(default_factory=threading.Condition)
     streams: int = 0
     began: float = field(default_factory=time.time)
+    poke: threading.Event = field(default_factory=threading.Event)
+    """Set to make the render thread publish at once."""
 
 
 def render_loop(tickets: Path, latest: Latest) -> None:
@@ -182,12 +185,16 @@ def render_loop(tickets: Path, latest: Latest) -> None:
         except Exception:
             traceback.print_exc()
     while True:
-        time.sleep(POLL)
+        poked = latest.poke.wait(POLL)
+        latest.poke.clear()
         try:
             state = fingerprint(tickets)
             with latest.condition:
                 watched = latest.streams > 0
-            if watched and state != previous and time.monotonic() - began >= MIN_EVENT:
+            if poked:
+                began = time.monotonic()
+                previous = publish(True)
+            elif watched and state != previous and time.monotonic() - began >= MIN_EVENT:
                 began = time.monotonic()
                 previous = publish(True)
         except Exception:
@@ -217,8 +224,8 @@ class Serving:
 
 
 class Handler(BaseHTTPRequestHandler):
-    """Serves `/`, `SEARCH_ROUTE`, `TICKET_ROUTE` and `EVENTS` of the tracker `tickets`, and
-    nothing else. Each render runs on the daemon render thread: the
+    """Serves `/`, `SEARCH_ROUTE`, `TICKET_ROUTE` and `EVENTS` of the tracker `tickets`,
+    and `CLEAR_ROUTE` by POST, and nothing else. Each render runs on the daemon render thread: the
     reads it makes keep a SQLite store (`kept_reads`) that only the thread
     that opened it may use."""
     tickets: Path
@@ -237,6 +244,25 @@ class Handler(BaseHTTPRequestHandler):
         with self.serving:
             self.serve_page(url.path, url.query)
 
+    def do_POST(self) -> None:
+        """Move the mark of Updates to the time in the body, and publish a
+        new render."""
+        if urlsplit(self.path).path != CLEAR_ROUTE:
+            self.send_error(404)
+            return
+        try:
+            at = float(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+            if not math.isfinite(at):
+                raise ValueError
+        except ValueError:
+            self.send_error(400, "the body is not a time")
+            return
+        clear(at)
+        self.latest.poke.set()
+        self.send_response(204)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def serve_page(self, path: str, query: str) -> None:
         began = time.monotonic()
         with self.latest.condition:
@@ -248,7 +274,7 @@ class Handler(BaseHTTPRequestHandler):
             line = f"First read of the state in progress · began {clock(self.latest.began, time.time())}"
             text = filled(TEMPLATE, {"BODY": f'<main><div class="meta">{line}</div></main>',
                                     "EVENTS": EVENTS, "SEARCH": SEARCH_ROUTE, "TICKET": TICKET_ROUTE,
-                                    "LASTLOOK": LAST_LOOK, "SHOWN": str(LIST_SHOWN)}) if path == "/" else line
+                                    "CLEAR": CLEAR_ROUTE}) if path == "/" else line
             self.send_html(text, began, 503)
             return
         match path:

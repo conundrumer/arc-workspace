@@ -45,25 +45,6 @@ def view(tickets, *, agents=(), starts=(), paused=False, own_scope=False, in_sco
                           {s.number: s.held for s in starts if s.held is not None}, {})
 
 
-def test_page_section_order_and_all_open_work(tmp_path, monkeypatch):
-    working = ticket(1)
-    held = ticket(2, status=Status.ASSIGNED, filer="code-reviewer")
-    ready = ticket(3)
-    v = view([working, held, ready], agents=[shown.ShownAgent(Role.CODE_EDITOR, 990, (working.number,))])
-    monkeypatch.setattr(dashboard, "read_tickets", lambda _: (v.all_, []))
-    monkeypatch.setattr(dashboard, "journal_work", lambda _: {})
-    usage = script("usage_limit")
-    rendered = dashboard.page(tmp_path, v.now, usage.Reading(usage.Limit.UNKNOWN, None, v.usage),
-                              v.records, []).text
-    assert re.findall(r'<h2 id="([^"]+)"', rendered) == [
-        "health", "active", "queued", "sl", "blocked", "done", "pace", "queue", "find"]
-    active = rendered.split('<h2 id="active">')[1].split('<h2')[0]
-    queued = rendered.split('<h2 id="queued">')[1].split('<h2')[0]
-    assert f'data-n="{working.number}"' in active
-    assert all(f'data-n="{t.number}"' in queued for t in (held, ready))
-    assert "Your work" not in rendered
-
-
 @pytest.mark.parametrize("paused", [False, True])
 def test_queued_group_order_and_rows_without_ordinals(paused):
     ready = ticket(1)

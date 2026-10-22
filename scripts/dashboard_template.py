@@ -1,9 +1,8 @@
 """The ticket dashboard's page around its sections (`ticket_dashboard`):
 its CSS, in one column with a light and a dark scheme, the sheet of a
-ticket, and the script that fills Since you looked from the time the
-browser keeps, asks the server for the search's hits and for a ticket's
-sheet, shows in each set of tabs the tab the user last chose in it, and
-updates the page on an event of the stream while the page is shown; with
+ticket, and the script that asks the server for the search's hits and for a ticket's
+sheet, shows in each set of tabs the tab the user last chose in it, keeps each
+fold open or shut as the user left it, sends the Clear of Updates, and updates the page on an event of the stream while the page is shown; with
 the routes that script requests."""
 
 EVENTS = "/events"
@@ -15,18 +14,17 @@ SEARCH_ROUTE = "/search"
 TICKET_ROUTE = "/ticket"
 """The route of a ticket's sheet."""
 
-LAST_LOOK = "lastLook"
-"""The key under which `localStorage` holds the time the browser last hid
-the page, and `sessionStorage` the time from which the tab's page counts
-Since you looked."""
+CLEAR_ROUTE = "/clear"
+"""The route that takes the time of the newest event Updates showed, as
+the body of a POST."""
 
 QUEUED_TAB = "queueTab"
 """The key under which `localStorage` holds the session of the tab of
 Queued the user last chose."""
 
-DONE_TAB = "doneTab"
-"""The key under which `localStorage` holds the session of the tab of Done
-the user last chose."""
+FOLD = "fold:"
+"""The prefix of the keys under which `localStorage` holds whether a fold
+of the page is open; a key ends in the fold's section and place in it."""
 
 TEMPLATE = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Ops</title><style>
@@ -80,8 +78,7 @@ input{width:100%;font:inherit;font-size:16px;padding:10px 12px;border:1px solid 
 .wl summary{padding:9px 12px;border-top:1px solid var(--line);color:var(--mute);font-weight:400;font-size:13px}
 details.grp{background:none;border:0;padding:0;margin:0}
 details.grp>summary{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--mute);margin:12px 0 6px;font-weight:400}
-.key{color:var(--mute);font-size:12px;margin-top:2px;display:flex;gap:12px;flex-wrap:wrap}
-.key i{display:inline-block;width:3px;height:12px;background:var(--acc);vertical-align:-2px;margin-right:4px}
+.wn i{font-style:normal}.wn .m{color:var(--ok)}.wn .x{color:var(--mute)}.wn .b{color:var(--warn)}
 .w{color:var(--warn);font-weight:600}.scrim{position:fixed;inset:0;background:rgba(0,0,0,.3);display:none;z-index:4}.scrim.on{display:block}
 </style></head><body>
 <div id="live">@BODY@</div>
@@ -89,20 +86,6 @@ details.grp>summary{font-size:12px;letter-spacing:.04em;text-transform:uppercase
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
-const clk=t=>new Date(t*1000).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
-let last=null;
-function look(load){const now=Date.now()/1000;let v=null;
-try{if(load&&performance.getEntriesByType('navigation')[0]?.type==='reload')v=sessionStorage.getItem('@LASTLOOK@')}catch(e){}
-try{if(!v)v=localStorage.getItem('@LASTLOOK@')}catch(e){}
-last=v?+v:now-3*3600;try{sessionStorage.setItem('@LASTLOOK@',String(last))}catch(e){}}
-function left(){try{localStorage.setItem('@LASTLOOK@',String(Date.now()/1000))}catch(e){}}
-function since(){const box=$('since');if(!box)return;const ev=JSON.parse($('events').textContent).filter(e=>e.t>last);
-$('sl').textContent='Since you looked \\u00b7 '+clk(last);
-let h='';
-for(const k of ['merged','filed']){const xs=ev.filter(e=>e.k===k);if(!xs.length)continue;
-const rows=xs.map(e=>`<div class="wr tk${e.u?' me':''}" data-n="${esc(e.n)}"><span class="wn">${esc(e.n)}</span><span class="wp">${esc(e.s)}</span><span class="ws">${clk(e.t)}</span></div>`),rest=rows.slice(@SHOWN@);
-h+=`<div class="gh">${xs.length} ${k}</div><div class="wl">`+rows.slice(0,@SHOWN@).join('')+(rest.length?`<details><summary>${rest.length} more \\u203a</summary>`+rest.join('')+'</details>':'')+'</div>'}
-box.innerHTML=h||'<div class="meta">Nothing new.</div>'}
 const sheet=$('sheet'),scrim=$('scrim'),sc=$('sc');let shown=null;
 async function open(n){shown=n;sc.innerHTML='<div class="meta">Loading '+esc(n)+'</div>';sheet.classList.add('on');scrim.classList.add('on');
 let h;try{const r=await fetch('@TICKET@?n='+encodeURIComponent(n),{cache:'no-store'});h=await r.text();if(!r.ok)h='<div class="meta">'+esc(r.status+' '+h)+'</div>'}
@@ -115,27 +98,38 @@ const tabs=set.querySelectorAll('.tab');if(!tabs.length)return;
 if(!k||!set.querySelector('.tab[data-s="'+k+'"]'))k=tabs[0].dataset.s;
 tabs.forEach(t=>t.classList.toggle('on',t.dataset.s===k));
 set.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.dataset.s===k))})}
-document.addEventListener('click',e=>{const b=e.target.closest('.tab');if(b){try{localStorage.setItem(b.closest('.tset').dataset.key,b.dataset.s)}catch(x){}tab();return}const g=e.target.closest('.lg'),m=g&&g.querySelector('.more');if(m){const s=g.querySelectorAll('span');s.forEach(x=>x.hidden=!x.hidden);m.textContent=s[1].hidden?'more':'less';return}if(e.target.closest('.members summary'))return;const t=e.target.closest('.tk');if(t){e.preventDefault();open(t.dataset.n)}});
+function fkey(d){return d.dataset.k||d.dataset.fk}
+function folds(){let sec='top',seen={};document.querySelectorAll('#live h2,#live details').forEach(el=>{
+if(el.tagName==='H2'){sec=el.id;return}
+if(!el.dataset.k){const p=el.closest('.pane'),sm=[...el.children].find(c=>c.tagName==='SUMMARY');
+let k=sec+':'+(p?p.dataset.s:'')+':'+((sm?sm.textContent:'').match(/[A-Za-z][A-Za-z' ]*/)||[''])[0].trim();
+seen[k]=(seen[k]||0)+1;el.dataset.fk=seen[k]>1?k+'#'+seen[k]:k}
+let s=null;try{s=localStorage.getItem('@FOLD@'+fkey(el))}catch(e){}
+if(s==='1'||s==='0')el.open=s==='1';else if(el.dataset.k==='since')el.open=false;
+if(el.dataset.k){sec=el.dataset.k}})}
+function fold(d){setTimeout(()=>{try{localStorage.setItem('@FOLD@'+fkey(d),d.open?'1':'0')}catch(e){}},0)}
+document.addEventListener('click',e=>{const sm=e.target.closest('#live summary');if(sm&&sm.parentElement.tagName==='DETAILS')fold(sm.parentElement);const cl=e.target.closest('#clear');if(cl){clear(cl.dataset.t);return}const b=e.target.closest('.tab');if(b){try{localStorage.setItem(b.closest('.tset').dataset.key,b.dataset.s)}catch(x){}tab();return}const g=e.target.closest('.lg'),m=g&&g.querySelector('.more');if(m){const s=g.querySelectorAll('span');s.forEach(x=>x.hidden=!x.hidden);m.textContent=s[1].hidden?'more':'less';return}if(e.target.closest('.members summary'))return;const t=e.target.closest('.tk');if(t){e.preventDefault();open(t.dataset.n)}});
+async function clear(t){$('since').innerHTML='<div class="meta">Nothing new.</div>';$('sl').textContent='Updates';
+let ok=false;try{ok=(await fetch('@CLEAR@',{method:'POST',body:t})).ok}catch(e){}
+if(!ok)update()}
 let asked=0,timer=null;
 async function search(){const q=$('q').value.trim(),n=++asked,res=$('res');if(!q){res.innerHTML='';return}
 let h;try{const r=await fetch('@SEARCH@?q='+encodeURIComponent(q),{cache:'no-store'});h=await r.text();if(!r.ok)h='<div class="meta">'+esc('search failed: '+r.status)+'</div>'}
 catch(e){h='<div class="meta">'+esc('search failed: '+e)+'</div>'}
 if(n===asked)res.innerHTML=h}
 document.addEventListener('input',e=>{if(e.target.id==='q'){clearTimeout(timer);timer=setTimeout(search,250)}});
-look(true);since();tab();
+tab();folds();
 let busy=false,again=false;
 async function update(){if(busy){again=true;return}busy=true;
 try{const r=await fetch('/',{cache:'no-store'});if(r.ok){const d=new DOMParser().parseFromString(await r.text(),'text/html');
-const open=[...document.querySelectorAll('#live details')].map(x=>x.open),q=$('q')?.value,x=window.scrollX,y=window.scrollY;
+const q=$('q')?.value,x=window.scrollX,y=window.scrollY;
 $('live').replaceWith(d.getElementById('live'));
-document.querySelectorAll('#live details').forEach((el,i)=>{if(open[i])el.open=true});
-if(q!==undefined&&$('q'))$('q').value=q;since();tab();if(q&&$('q'))search();window.scrollTo(x,y)}}
+if(q!==undefined&&$('q'))$('q').value=q;tab();folds();if(q&&$('q'))search();window.scrollTo(x,y)}}
 catch(e){}
 busy=false;if(again){again=false;update()}}
 let ev=null;
 function connect(){ev=new EventSource('@EVENTS@');ev.onmessage=()=>update()}
-document.addEventListener('visibilitychange',()=>{if(document.hidden){left();if(ev){ev.close();ev=null}}
-else{look(false);if(!ev){connect();update()}}});
-window.addEventListener('pagehide',left);
+document.addEventListener('visibilitychange',()=>{if(document.hidden){if(ev){ev.close();ev=null}}
+else if(!ev){connect();update()}});
 if(!document.hidden)connect();
 </script></body></html>"""
