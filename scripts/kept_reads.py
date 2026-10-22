@@ -290,8 +290,7 @@ def mark_used(db: sqlite3.Connection, code: str, now: float, keep: float) -> Non
 
 
 def module_of(read: str) -> str:
-    """The module of `read`, a `state_reads.ReadInfo.name` or the name of a
-    fold of `transcript_folds`."""
+    """The module of a persistent read's name, before its first colon."""
     return read.split(":", 1)[0]
 
 

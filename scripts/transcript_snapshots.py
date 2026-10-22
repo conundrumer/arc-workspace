@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 import read_interrupts
+import kept_reads
 from file_reads import FileStat, stat_of, state_stat
 from state_reads import state_cache
 
@@ -201,6 +202,7 @@ class Snapshot:
             self.found.update(found)
             if index:
                 self.agent_ids = agent_ids
+            keep_snapshot(self)
         indexed = self.agent_ids or {}
         return frozenset[int]().union(*(indexed.get(w, ()) for w in ids),
                                       *(self.found[w] for w in words - ids))
@@ -364,6 +366,8 @@ _read: dict[Path, Snapshot] = {}
 """The last snapshot of each transcript, which a later read of a
 transcript that grew goes on from."""
 
+SNAPSHOT_READ = f"{__name__}:snapshot"
+
 OPEN = 64
 """How many transcript files `read_at` holds open."""
 
@@ -402,11 +406,16 @@ def read_snapshot(path: Path) -> Snapshot:
     its last snapshot and the bytes of that snapshot's whole lines still
     give their CRC-32, it goes on from that snapshot: none of those lines
     is parsed or searched again. Otherwise it is read whole, as a new
-    `generation`."""
+    `generation`. Where this process holds none, the open store supplies
+    the last snapshot, subject to the same checks."""
     with path.open("rb") as fh:
         st = os.fstat(fh.fileno())
         file = st.st_dev, st.st_ino
         before = _read.get(path)
+        if before is None and (store := kept_reads.store()) is not None:
+            record = store.held(SNAPSHOT_READ, str(path))
+            if isinstance(record, Snapshot):
+                before = record
         snap = None
         if before is not None and before.file == file and not before.breaks_cr:
             offset = before.settled_end()
@@ -420,7 +429,15 @@ def read_snapshot(path: Path) -> Snapshot:
                             line_chunks(lambda offset, length: os.pread(fd, length, offset),
                                         st.st_size))
     _read[path] = snap
+    if before is None or snap.size != before.size or snap.generation is not before.generation:
+        keep_snapshot(snap)
     return snap
+
+
+def keep_snapshot(snap: Snapshot) -> None:
+    """The open store keeps the offsets and completed indexes of `snap`."""
+    if (store := kept_reads.store()) is not None:
+        store.keep(SNAPSHOT_READ, str(snap.path), snap)
 
 
 def last_snapshot(path: Path) -> Snapshot:

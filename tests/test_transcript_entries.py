@@ -179,3 +179,47 @@ def test_kept_lines_of_a_transcript_rewritten_in_place(tmp_path: Path,
     transcript_snapshots._read[path] = held
     state_reads.new_state()
     assert [c[:7] for c in contents(path, {"ZZTOP"})] == ["y ZZTOP"]
+
+
+def test_snapshot_reuse_after_transcript_changes(tmp_path: Path,
+                                                monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stored indexes follow appends, replacement, rewrites and carriage returns."""
+    kept_reads = open_store(tmp_path, monkeypatch)
+    path = tmp_path / "snapshot.jsonl"
+    add(path, "old ZZTOP", AGENT)
+
+    def read() -> list[object]:
+        return [list(entry_reads.read_entries(path, words))
+                for words in (None, {"ZZTOP"}, {AGENT})]
+
+    def later() -> None:
+        kept_reads.flush()
+        drop_held()
+        transcript_snapshots._read.clear()
+        for fd, _ in transcript_snapshots._open.values():
+            os.close(fd)
+        transcript_snapshots._open.clear()
+        state_reads.new_state()
+
+    read()
+    for change in ("append", "replace", "rewrite", "cr"):
+        later()
+        if change == "append":
+            add(path, "new ZZTOP", AGENT)
+        elif change == "replace":
+            replacement = tmp_path / "replacement"
+            add(replacement, "replacement ZZTOP", AGENT)
+            replacement.replace(path)
+        elif change == "rewrite":
+            path.write_bytes(path.read_bytes().replace(b"replacement", b"overwritten"))
+        else:
+            path.write_bytes(path.read_bytes().replace(b"\n", b"\r"))
+        state_reads.new_state()
+        actual = read()
+        later()
+        monkeypatch.setattr(kept_reads, "_store", None)
+        assert actual == read() == [whole_read(path, words)
+                                  for words in (None, {"ZZTOP"}, {AGENT})]
+        kept_reads.open_store(tmp_path / "store.sqlite")
+        later()
+        read()
