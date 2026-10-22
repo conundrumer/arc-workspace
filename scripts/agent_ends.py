@@ -5,6 +5,7 @@ ended with them."""
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
+import codex_reads
 from file_reads import stat_read
 from final_replies import final_reply
 from filed_texts import filed_report, report_file, report_text, written_report
@@ -97,7 +98,8 @@ def ended_elsewhere(agents: list[Agent], me: str,
                     undecided: list[str]) -> dict[str, Report | None]:
     """For each pending agent of another operator whose work is no longer
     open, an agent whose report reaches no running operator, and whose
-    transcript is written (`transcripts.launched_find`), the report that
+    transcript is written (`transcripts.launched_find`) or that is an enrolled
+    native Codex attempt (its thread then decides, in `codex_end`), the report that
     `reply_to` gives after its launch for it as no longer waiting
     (`ended_with`), or None."""
     out: dict[str, Report | None] = {}
@@ -106,7 +108,10 @@ def ended_elsewhere(agents: list[Agent], me: str,
             continue
         try:
             path = launched_find(a.agent_id)
-            if path is None or work_open(path, []):
+            if path is None:
+                if codex_reads.native_find(a.agent_id) is None:
+                    continue
+            elif work_open(path, []):
                 continue
         except SUBJECT_FAULTS as exc:
             undecided.append(mctx("{run}: whether its work is open cannot be read ({error}), "

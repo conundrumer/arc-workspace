@@ -153,11 +153,13 @@ class CodexRead:
 def codex_end(agent: str, home: Path | None = None) -> CodexRead:
     """An enrolled attempt ends with a current receipt or a terminal store state.
 
-    A completed walk ends a legacy attempt; otherwise its thread decides whether
+    A completed walk ends a legacy attempt, and a validated receipt ends a
+    native one; otherwise its thread decides whether
     it can end: a turn its rollout gives as open runs only where the shared
     Codex daemon gives it in progress (`codex_daemon.turn_status`). A thread
     or a daemon that cannot be read, or a daemon that gives no such turn,
-    holds the attempt."""
+    holds the attempt. A native attempt with no accepted turn ends only once
+    its reservation is `STUCK_SECONDS` old."""
     import codex_daemon
     import codex_reads
     import codex_rollout
@@ -175,9 +177,25 @@ def codex_end(agent: str, home: Path | None = None) -> CodexRead:
                 receipt = None
             if receipt is None and native.state["phase"] == Phase.ENDED:
                 return CodexRead(CodexEnd.DEAD, native.state["status"], native.assignment.scratch)
-            return (CodexRead(CodexEnd.DONE) if receipt is not None else
-                    CodexRead(CodexEnd.UNKNOWN, "native assignment has no current validated result",
-                              native.assignment.scratch))
+            if receipt is not None:
+                return CodexRead(CodexEnd.DONE)
+            scratch = native.assignment.scratch
+            thread, turn = native.state["native"], native.state["turn"]
+            if thread is None or turn is None:
+                import time
+                from operations.constants import stuck_reached
+                why = "native assignment has no accepted turn"
+                reserved = native.state.get("reserved")
+                dead = reserved is not None and stuck_reached(reserved, time.time())
+                return CodexRead(CodexEnd.DEAD if dead else CodexEnd.UNKNOWN, why, scratch)
+            try:
+                status = codex_daemon.turn_status(thread, turn)
+            except SUBJECT_FAULTS as exc:
+                return CodexRead(CodexEnd.UNKNOWN,
+                                 f"native assignment has no current validated result; {exc}",
+                                 scratch)
+            return CodexRead(CodexEnd.LIVE if status == "inProgress" else CodexEnd.DEAD,
+                             "native assignment has no current validated result", scratch)
     except SUBJECT_FAULTS as exc:
         return CodexRead(CodexEnd.UNKNOWN, str(exc))
 
