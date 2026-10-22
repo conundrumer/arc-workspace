@@ -134,7 +134,6 @@ def test_native_review_dispatch_requires_matching_validated_call(tmp_path: Path,
     store.accepted(assignment.agent, token, "native-editor", "turn")
     native = native_reads.Native(store.path, manifest, assignment, store.snapshot()["agents"][assignment.agent])
     monkeypatch.setattr(native_reads, "native_find", lambda _: native)
-    monkeypatch.setattr(native_reads, "native_reviewing", lambda _: 1)
     monkeypatch.setattr(review, "find", lambda _: tmp_path / "operator")
     monkeypatch.setattr(reads, "agent_type", lambda _: Role.OPERATOR.agent_type)
     monkeypatch.setattr(review, "change_filed", lambda *_: None)

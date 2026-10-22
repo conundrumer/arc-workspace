@@ -163,6 +163,14 @@ def own(brief: str) -> str:
 
 
 @dataclass(frozen=True)
+class Anchor:
+    """The time `at` an editor's work was first reviewed, with the
+    `fingerprint` of that work (`scripts/review_anchor.py`)."""
+    at: float
+    fingerprint: str
+
+
+@dataclass(frozen=True)
 class Agent:
     """An agent an operator of any session launched with a description the
     command gave, or a check that an editor an operator launched
@@ -206,11 +214,11 @@ class Agent:
     (`own`), so that no read of it sees the text that block quotes.
     `launched` is the time of its launch, and `since` the time of that
     launch or of the last call of any agent of the session that resumed
-    it. `reviewing`, for an editor of `roles.LAUNCHING_EDITORS` that
-    waits, is the time of the first of its calls of `operate.py review`
-    since its last other tool call, where its last tool call is such a
-    call, with or without its result, and None otherwise: its transcript
-    holds a call before the call runs, so a call that still runs counts.
+    it. `reviewing`, for an editor of `roles.LAUNCHING_EDITORS`, is the
+    anchor its `operate.py review` calls last wrote (`Anchor`), or None
+    where it has none. Where it waits and the fingerprint of its work
+    equals the anchor's, the time of the anchor is the time from which it
+    has reported (`change_agents.reported_at`); otherwise it has not.
     `refused` is the time of the latest SendMessage call of any operator
     of the session to it whose result the harness gave as `success: false`
     (a message it does not take, as to an agent it "won't resume"), where
@@ -228,7 +236,7 @@ class Agent:
     reports: tuple[Report, ...]
     notifies: bool
     report_file: Path | None = None
-    reviewing: float | None = None
+    reviewing: Anchor | None = None
     refused: float | None = None
 
     def __post_init__(self) -> None:

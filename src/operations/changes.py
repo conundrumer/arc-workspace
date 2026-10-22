@@ -424,10 +424,20 @@ NO_OPERATOR = mctx("{agent} is no code editor or doc editor that an operator of 
 an operator launched."""
 
 
-def editor_step(state: State, editor: str,
-                written: Callable[[Path], str | None]) -> Step | str:
+type Fingerprint = Callable[[Path, Path], str]
+"""The fingerprint of an editor's work, given its worktree and its report
+file; it raises a `ValueError` where it cannot read them."""
+type Anchoring = Callable[[str, str, float], float]
+"""The time an editor's work was first reviewed, given its agent id, the
+fingerprint of its work and the time now."""
+
+
+def editor_step(state: State, editor: str, written: Callable[[Path], str | None],
+                fingerprint: Fingerprint, anchoring: Anchoring) -> Step | str:
     """The step the editor `editor` takes at the end of its turn, where
-    `written` gives the text of a report file: the `Launch` of a check of
+    `written` gives the text of a report file, `fingerprint` the
+    fingerprint of an editor's work, and `anchoring` the time it was first
+    reviewed: the `Launch` of a check of
     `CHECKS` it launches, `steps.Poll`, on which it runs the command again,
     an `Undecided`, or the line it is given. It reads its change
     (`editor_change`), lines that hand the change's next step to the
@@ -435,12 +445,12 @@ def editor_step(state: State, editor: str,
     the check it launches (`check_or_line`). The cases in which `review`
     prints each line or blocks are those `scripts/operate.py --help review`
     gives."""
-    change = editor_change(state, editor, written)
+    change = editor_change(state, editor, written, fingerprint, anchoring)
     if not isinstance(change, EditorChange):
         return change
     if (line := handed_on(state, change)) is not None:
         return line
-    agents = peers_ended(change, written)
+    agents = peers_ended(change, written, fingerprint)
     if not isinstance(agents, list):
         return agents
     return check_or_line(state, change, agents)
@@ -459,13 +469,16 @@ class EditorChange:
     agents: list[Agent]
 
 
-def editor_change(state: State, editor: str,
-                  written: Callable[[Path], str | None]) -> EditorChange | Undecided | str:
+def editor_change(state: State, editor: str, written: Callable[[Path], str | None],
+                  fingerprint: Fingerprint, anchoring: Anchoring
+                  ) -> EditorChange | Undecided | str:
     """The change of the editor `editor`, one of `LAUNCHING_EDITORS` an
     operator launched, with its report the text `written` gives of the
-    report file its brief gives (`state.Agent.report_file`), at its
-    `Agent.reviewing`, or at `State.now` where that is None, so each later
-    call of a run of its calls of the command keeps the time of the first.
+    report file its brief gives (`state.Agent.report_file`), at the time
+    `anchoring` gives for the fingerprint of its work: the time of its
+    first review of that work, so each later call of the command keeps that
+    time while the work does not change, and a change to the work moves it
+    to now.
     Only a pending editor owns the checks; after it ends, the operator
     owns them. Where the editor is none of those, or its report file is not there,
     it gives the line for that, and where its ticket, the ticket's
@@ -497,7 +510,11 @@ def editor_change(state: State, editor: str,
     if text is None:
         return mctx("Your report file {path} does not exist: write your report to it, then run "
                     "this command again.").format(path=path)
-    at = mine[-1].reviewing if mine[-1].reviewing is not None else state.now
+    try:
+        at = anchoring(editor, fingerprint(w, path), state.now)
+    except (ValueError, OSError) as e:
+        return Undecided(mctx("the work of {role} {agent} cannot be fingerprinted: {why}").format(
+            role=mine[-1].role, agent=editor, why=e))
     agents = [as_ended(a, at, text, path) if a.agent_id == editor else a
               for a in of_change(state, t)]
     return EditorChange(editor, t, editors, w, at, agents)
@@ -510,11 +527,12 @@ def as_ended(a: Agent, at: float, text: str, path: Path) -> Agent:
     return replace(a, waits=None, reports=(*a.reports, Report(at, text, path)))
 
 
-def peers_ended(c: EditorChange, written: Callable[[Path], str | None]
-                ) -> list[Agent] | Poll | Undecided:
+def peers_ended(c: EditorChange, written: Callable[[Path], str | None],
+                fingerprint: Fingerprint) -> list[Agent] | Poll | Undecided:
     """The agents of the change `c` with each other pending editor in its
     worktree read as ended, each with the text `written` gives of its
-    report file as its report at its `change_agents.reported_at`, where
+    report file as its report at its `change_agents.reported_at` (with
+    `fingerprint`, and an `Undecided` where that raises), where
     each has such a report and that of `c.editor` is the latest of theirs,
     or of the latest the one of the first agent id in sort order; and
     `steps.Poll` where one has none, another's is later, or a check another
@@ -532,7 +550,11 @@ def peers_ended(c: EditorChange, written: Callable[[Path], str | None]
     times = [(-c.at, c.editor)]
     ended: dict[str, Agent] = {}
     for a, i in zip(others, other_ids, strict=True):
-        since = reported_at(a)
+        try:
+            since = reported_at(a, c.w, fingerprint)
+        except (ValueError, OSError) as e:
+            return Undecided(mctx("the work of {role} {agent} cannot be fingerprinted: {why}").format(
+                role=a.role, agent=i, why=e))
         other_text = None if a.report_file is None else written(a.report_file)
         if since is None or a.report_file is None or other_text is None:
             return Poll()

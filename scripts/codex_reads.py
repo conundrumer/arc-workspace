@@ -198,23 +198,6 @@ def native_shell_call(payload: dict[str, Any]) -> str | None:
             return values.get("cmd") if position == len(source) and isinstance(values.get("cmd"), str) else None
 
 
-def native_session_poll(payload: dict[str, Any]) -> bool:
-    """Tell whether a native call only polls or waits on a running session."""
-    if payload.get("type") == "function_call":
-        return payload.get("name") in ("wait", "functions.wait")
-    if payload.get("type") != "custom_tool_call" or payload.get("name") != "exec":
-        return False
-    found = re.fullmatch(r"\s*(?:text\(\s*)?await tools\.write_stdin\(\s*\{(.*)\}\s*\)\s*\)?\s*;?\s*",
-                         payload["input"], re.S)
-    if found is None:
-        return False
-    pairs = re.findall(r'\s*"?(session_id|chars|yield_time_ms|max_output_tokens)"?\s*:\s*("(?:[^"\\]|\\.)*"|\d+)\s*(?:,|$)',
-                       found[1])
-    if len(pairs) != found[1].count(":"):
-        return False
-    return dict(pairs).get("chars") == '""'
-
-
 def native_receipt(item: Native, home: Path | None = None):
     """Revalidate the current report bytes and terminal execution on every read."""
     from codex_reports import Evidence, Outcome, Validated, validate
@@ -245,6 +228,7 @@ def native_agents(owner: str, session_scratch: Path | None = None,
     from operations.state import Agent, Report, Waits
     from codex_reports import Outcome
     from codex_ticket import Phase
+    from review_anchor import read_anchor
 
     agents = []
     messaged: dict[str, frozenset[str]] = {}
@@ -271,7 +255,8 @@ def native_agents(owner: str, session_scratch: Path | None = None,
                 reports = (Report(assignment.report.stat().st_mtime, assignment.report.read_text(), assignment.report),)
         except (OSError, ValueError, KeyError, StopIteration):
             receipt = None
-        reviewing = native_reviewing(item, home) if assignment.role in (Role.CODE_EDITOR, Role.DOC_EDITOR) else None
+        reviewing = (read_anchor(session_scratch, assignment.agent)
+                     if assignment.role in (Role.CODE_EDITOR, Role.DOC_EDITOR) else None)
         agents.append(Agent(assignment.agent, parent, assignment.role,
             assignment.subject or assignment.ticket, assignment.brief.read_text(),
             launched[assignment.agent], state["reserved"],
@@ -283,30 +268,6 @@ def native_agents(owner: str, session_scratch: Path | None = None,
         except (OSError, ValueError, KeyError):
             messaged[assignment.agent] = frozenset()
     return AgentsRead(tuple(agents), messaged, {})
-
-
-def native_reviewing(item: Native, home: Path | None = None) -> float | None:
-    """Count an editor's own isolated review command, including its live call."""
-    from operations.command_words import Action, is_next
-
-    try:
-        turn = native_turn(item, home)
-    except (OSError, ValueError, KeyError):
-        return None
-    first = None
-    for row in turn.activity:
-        payload = row["payload"]
-        if row.get("type") != "response_item" or payload.get("type") not in ("function_call", "custom_tool_call"):
-            continue
-        command = native_shell_call(payload)
-        if command is not None:
-            if is_next(command, item.assignment.agent, Action.REVIEW):
-                first = first or timestamp(row)
-                continue
-        elif native_session_poll(payload):
-            continue
-        first = None
-    return first
 
 
 def native_sent(item: Native, identities: dict[str, str], home: Path | None = None) -> frozenset[str]:

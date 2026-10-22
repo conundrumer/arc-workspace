@@ -12,7 +12,7 @@ from typing import Any
 from agent_launches import children_of, launched
 from agent_resumes import resumes, sent_to
 from agents_pending import turn_signs
-from agent_turns import latest_time, run_back
+from agent_turns import latest_time
 from agent_reports import ENDED, Sign, last_sign
 from controlled_markdown import mctx
 from merge_reads import merge_outcome, merge_subjects
@@ -38,7 +38,7 @@ from operations.roles import LAUNCHING_EDITORS, PASSES, Role, described
 from operations.state import (
     Agent, Call, Message, PassReport, Report, Tool, Waits,
 )
-from operations.command_words import Action, is_next
+from operations.command_words import is_next
 from operations.printing import unfenced
 
 
@@ -309,10 +309,12 @@ def launches_of(aid: str, path: Path, main: Path, uses: Uses,
     messaged: dict[str, frozenset[str]] = {}
     limited: dict[str, float] = {}
     from codex_reads import native_agents
+    from review_anchor import read_anchor
     from run_reads import session_of
     from tree_reads import scratch
 
-    native = native_agents(aid, scratch(session_of(path).name))
+    session_scratch = scratch(session_of(path).name)
+    native = native_agents(aid, session_scratch)
     if not any(tool == Tool.AGENT and described(str(inp.get("description", "")))
                for _, inp, tool in uses.values()):
         return native, {}
@@ -336,7 +338,7 @@ def launches_of(aid: str, path: Path, main: Path, uses: Uses,
                   use[0], launch.since, waits(signed, launch.pending), reports,
                   notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)),
                   report_file=brief_report_file(prompt),
-                  reviewing=reviewing_since(launch.path, launch.agent)
+                  reviewing=read_anchor(session_scratch, launch.agent)
                   if d.role in LAUNCHING_EDITORS and launch.pending else None)
         if d.role in MESSAGING and launch.path and launch.agent is not None:
             messaged[launch.agent] = sent_to(launch.path)
@@ -352,25 +354,6 @@ def launches_of(aid: str, path: Path, main: Path, uses: Uses,
     enrolled = {a.agent_id for a in native.agents}
     return AgentsRead(tuple(a for a in agents if a.agent_id not in enrolled) + native.agents,
                       {**messaged, **native.messaged}, {**limited, **native.limited}), passes
-
-
-def reviewing_since(path: Path | None, agent: str | None) -> float | None:
-    """`Agent.reviewing` of the editor `agent` whose transcript is at
-    `path`, read last first up to its last tool call that is no call of
-    `operate.py review` for it, or None where its transcript or its agent
-    id is not known."""
-    if path is None or agent is None:
-        return None
-    first: float | None = None
-    for e in run_back(path):
-        if e.get("type") != "assistant":
-            continue
-        for b in reversed(blocks(e, "tool_use")):
-            command = str((b.get("input") or {}).get("command", ""))
-            if b.get("name") != Tool.BASH or not is_next(command, agent, Action.REVIEW):
-                return first
-            first = epoch(e["timestamp"])
-    return first
 
 
 def ran_since(path: Path | None, at: float) -> bool:

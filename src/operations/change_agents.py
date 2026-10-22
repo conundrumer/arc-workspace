@@ -188,13 +188,18 @@ class Settled:
     ruled: tuple[Ruled, ...]
 
 
-def reported_at(a: Agent) -> float | None:
-    """The time from which the editor `a` has reported, as
-    `changes.editor_step` reads it: for one that waits,
-    `Agent.reviewing`, and for one that no longer waits, the time of its
-    last report, or None where it has not reported."""
+def reported_at(a: Agent, w: Path, fingerprint: Callable[[Path, Path], str]) -> float | None:
+    """The time from which the editor `a`, with its worktree `w`, has
+    reported, as `changes.editor_step` reads it: for one that waits, the
+    time of its `Agent.reviewing` where the fingerprint of its work, as
+    `fingerprint` gives it for the worktree and the report file, equals
+    the anchor's, and None otherwise; for one that no longer waits, the
+    time of its last report, or None where it has not reported. A
+    `ValueError` of `fingerprint` is raised."""
     if a.pending:
-        return a.reviewing
+        if a.reviewing is None or a.report_file is None:
+            return None
+        return a.reviewing.at if fingerprint(w, a.report_file) == a.reviewing.fingerprint else None
     return None if (r := a.last_report) is None else r.time
 
 
