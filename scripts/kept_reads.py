@@ -251,6 +251,13 @@ class Store(StoreFile):
         self.failed = None  # A later flush can retry a transient open/lock failure.
         return written
 
+    def locked(self) -> bool:
+        """Whether the last failed write failed on a lock another process
+        held; the records stay held, so a later flush can write them."""
+        error = self.write_error
+        return (isinstance(error, sqlite3.OperationalError)
+                and ("locked" in str(error) or "busy" in str(error)))
+
     def write(self, used: set[str]) -> bool:
         """Write the records and the parses held, and hold none of them
         after. Where it writes parses, drop those written more than

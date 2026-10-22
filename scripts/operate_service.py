@@ -474,13 +474,17 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         if not kept_reads.flush():
-            status, retry, keep = 1, False, False
+            store = kept_reads.store()
             stdout.seek(0)
             stdout.truncate(0)
-            store = kept_reads.store()
-            print(f"operate: kept-read store cannot preserve completed reads: "
-                  f"{store.path if store is not None else ''}: "
-                  f"{store.write_error if store is not None else ''}", file=stderr)
+            if store is not None and store.locked():
+                # A lock is transient: the records stay held for the retry's flush.
+                status, retry = 1, True
+            else:
+                status, retry, keep = 1, False, False
+                print(f"operate: kept-read store cannot preserve completed reads: "
+                      f"{store.path if store is not None else ''}: "
+                      f"{store.write_error if store is not None else ''}", file=stderr)
     response = {"status": status, "stdout": stdout.getvalue(), "stderr": stderr.getvalue(),
                 "retry": retry}
     connection.settimeout(1)
