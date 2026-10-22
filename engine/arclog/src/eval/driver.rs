@@ -20,6 +20,7 @@ use crate::relations::{ColumnIndex, Relation, RelationPart, RowSet};
 use crate::resolver::ResolvedContent;
 use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::terms::Example;
+use crate::trace::{RunRecord, RunTrace};
 use crate::types::GraphRelation;
 
 /// The evaluation of the entries one request reaches, each entry once at
@@ -36,11 +37,16 @@ pub(super) struct Driver<'e, 'a> {
     /// The `DET` node whose domain this driver evaluates, outside any
     /// enumeration of models, as [`Evaluation::domain`] gives it.
     pub(super) det: Option<GraphNodeIndex>,
+    /// The run trace that each relation this driver evaluates appends a
+    /// record to, where the request asked for one.
+    pub(super) trace: Option<RefCell<RunTrace>>,
+    /// The `DET` relations whose values this driver has read.
+    pub(super) determined: std::cell::Cell<u64>,
 }
 
 impl<'e, 'a> Driver<'e, 'a> {
     pub(super) fn new(evaluation: &'e Evaluation<'a>) -> Self {
-        Driver { evaluation, values: RefCell::default(), model: RefCell::default(), met: RefCell::default(), det: None }
+        Driver { evaluation, values: RefCell::default(), model: RefCell::default(), met: RefCell::default(), det: None, trace: None, determined: std::cell::Cell::new(0) }
     }
 
     /// The driver of the domain of the `DET` node `det`.
@@ -61,9 +67,23 @@ impl<'e, 'a> Driver<'e, 'a> {
         if let Some(value) = self.values.borrow().get(&key) {
             return Ok(value.clone());
         }
+        let before = self.determined.get();
         let value = self.compute(relation, example)?;
+        self.record_run(relation, example, &value, self.determined.get() - before);
         self.values.borrow_mut().insert(key, value.clone());
         Ok(value)
+    }
+
+    /// Appends the record of the evaluation of `relation` on `example`
+    /// that gave `value`, where the driver keeps a run trace.
+    fn record_run(&self, relation: &GraphRelation, example: Option<Example>, value: &RelationValue, determined: u64) {
+        let Some(trace) = &self.trace else { return };
+        let (rows, stop) = match value {
+            RelationValue::Rows(rows) => (Some(rows.len()), None),
+            RelationValue::Undefined => (None, None),
+            RelationValue::Stopped(stop) => (None, Some(stop.bound.into())),
+        };
+        trace.borrow_mut().push(RunRecord { relation: relation.clone(), example, rows, models: 1, values_determined: determined, stop });
     }
 
     fn compute(&self, relation: &GraphRelation, example: Option<Example>) -> Outcome<RelationValue> {
@@ -108,6 +128,7 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// rows, typed by its columns; at determined values the rows the
     /// assignment gives it, or else its one value.
     pub(super) fn parameter(&self, relation: &GraphRelation, name: &ProgramRelation) -> Outcome<RelationValue> {
+        self.determined.set(self.determined.get() + 1);
         let evaluation = self.evaluation;
         let form = self.program().form_of(relation.node);
         let fault = |message: String| RunFault { message: message.into(), form: form.clone() };

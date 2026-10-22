@@ -108,5 +108,6 @@ pub mod solver;
 pub mod stream;
 pub mod task;
 pub mod terms;
+pub mod trace;
 pub mod types;
 pub mod write;

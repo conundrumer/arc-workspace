@@ -22,7 +22,9 @@
 //! domain of each, which an evaluation at determined values reads.
 //! [`output`] reads a grid from a relation, for the judge. [`proposers`]
 //! gives the rows of a proposer over an evidence, which the driver reads for
-//! a clause that derives by a proposer.
+//! a clause that derives by a proposer. A request made with a
+//! [`crate::trace::RunTrace`] appends one record to it for each relation the
+//! driver evaluates.
 
 pub mod cache;
 pub mod determinations;
@@ -158,6 +160,16 @@ impl Evaluation<'_> {
     /// asked with `None`, is a fault of the caller, so this panics on one.
     pub fn relation(&self, relation: &GraphRelation, example: Option<Example>) -> Outcome<RelationValue> {
         Driver::new(self).value(relation, example)
+    }
+
+    /// [`Evaluation::relation`], with a record appended to `trace` for each
+    /// relation the request evaluates, in the order it evaluates them. An
+    /// evaluation that keeps no trace appends none.
+    pub fn relation_traced(&self, relation: &GraphRelation, example: Option<Example>, trace: &mut crate::trace::RunTrace) -> Outcome<RelationValue> {
+        let driver = Driver { trace: Some(std::cell::RefCell::new(std::mem::take(trace))), ..Driver::new(self) };
+        let value = driver.value(relation, example);
+        *trace = driver.trace.expect("the trace the driver was given").into_inner();
+        value
     }
 
     /// The value of the conjuncts at `kept`, indexes into the body of the

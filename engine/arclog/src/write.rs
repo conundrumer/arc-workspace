@@ -1,8 +1,7 @@
 //! The writer of arclog and arcdata files. Reading a file of the corpus and
 //! writing it again gives the same bytes.
 //!
-//! [`write_solver`] and [`write_synthesized`] stay `todo!()` for later
-//! stages.
+//! [`write_solver`] stays `todo!()` for a later stage.
 
 #![allow(unused_variables, dead_code)]
 
@@ -67,14 +66,17 @@ pub fn write_solver(solver: &Solver) -> SolverText {
 /// least digit suffix that gives a name no other label of its scope holds
 /// or has reserved: in `(:a *A) (:key *A2)`, where
 /// `A2` is the label of `NamedLabel { name: A }`, `A2` is written `A` and the
-/// label at `(:a ...)` is written `A1`.
+/// label at `(:a ...)` is written `A2`.
 ///
 /// Two labels take one name only where [`Node::apply`](crate::program::Node::apply)
 /// gives them one, so the file reads back to the same labels:
 /// `(OR ((r (:key *X))) ((s (:key *X))))` is written with `X` at each site,
 /// and reads back as two labels.
+///
+/// A relation slot `n` is written `&rn`. The writer prints a form of the kinds
+/// a decode builds, `RULE`, `DET` and `INIT`, and refuses a record site.
 pub fn write_synthesized(program: &Node<Program>, registry: &Registry) -> String {
-    todo!()
+    synthesized::write(program, registry)
 }
 
 /// The numbers a writer gives the Idents it writes, private to the crate's
@@ -98,5 +100,269 @@ impl IdentNumbering {
     /// The number written for `ident`.
     pub(crate) fn number(&self, ident: crate::terms::Ident) -> u32 {
         todo!()
+    }
+}
+
+/// The program form of a decoded program: its slots named, its labels named
+/// in the scope of each form, and the program written with that layout.
+mod synthesized {
+    use std::sync::Arc;
+
+    use crate::hash::StableHashMap;
+    use crate::layout::{Layout, NodeLayout, SourceFile, SourcePlace};
+    use crate::program::path::NodePath;
+    use crate::program::*;
+    use crate::registry::Registry;
+    use crate::resolver::registry_columns::{component, proposer_columns};
+    use crate::trace::render::label_name;
+
+    pub(super) fn write(program: &Node<Program>, registry: &Registry) -> String {
+        let mut synth = Synthesizer { registry, columns: StableHashMap::default() };
+        let mut forms = Vec::new();
+        let mut layout = Layout::default();
+        for (index, form) in program.value().forms.iter().enumerate() {
+            let names = synth.label_names(form);
+            let lookup = Names(&names);
+            forms.push(synth.form(form, &lookup));
+            let place = SourcePlace { file: SourceFile::Arclog, start: 0, end: 0, line: index as u32 + 1, column: 1 };
+            let node = NodeLayout { tokens: Box::new([place]), label_names: names.into(), ..NodeLayout::default() };
+            layout.nodes.insert((SourceFile::Arclog, NodePath::top(index as u32)), node);
+        }
+        super::write_arclog(&Node::new(Program { forms: forms.into() }), &layout)
+    }
+
+    struct Names<'n>(&'n [(LabelId, Box<str>)]);
+
+    impl Names<'_> {
+        fn get(&self, label: LabelId) -> &str {
+            self.0.iter().find(|(id, _)| *id == label).map(|(_, name)| &**name).expect("every label of the form is named")
+        }
+    }
+
+    struct Synthesizer<'r> {
+        registry: &'r Registry,
+        /// The written names of the columns of each relation a form before
+        /// the current one declares, by the position of the column.
+        columns: StableHashMap<ProgramRelation, Vec<String>>,
+    }
+
+    fn slot_text(slot: u32) -> String {
+        format!("&r{slot}")
+    }
+
+    fn declared(name: &DeclaredName) -> DeclaredName {
+        match name {
+            DeclaredName::Written(text) => DeclaredName::Written(text.clone()),
+            DeclaredName::Slot(slot) => DeclaredName::Written(slot_text(*slot).into()),
+        }
+    }
+
+    fn output(name: &OutputName) -> OutputName {
+        let of = match &name.of {
+            OutputOwner::Instance(InstanceName(owner)) => OutputOwner::Instance(InstanceName(declared(owner))),
+            OutputOwner::RigidDet(RigidDetName(owner)) => OutputOwner::RigidDet(RigidDetName(declared(owner))),
+        };
+        let path = name.path.iter().map(|step| match step {
+            OutputStep::Part(part) => OutputStep::Part(declared(part)),
+            other => other.clone(),
+        });
+        OutputName { of, path: path.collect() }
+    }
+
+    fn program_relation(relation: &ProgramRelation) -> ProgramRelation {
+        match relation {
+            ProgramRelation::Declared(RelationName(name)) => ProgramRelation::Declared(RelationName(declared(name))),
+            ProgramRelation::Output(name) => ProgramRelation::Output(output(name)),
+        }
+    }
+
+    fn relation_ref(relation: &RelationRef) -> RelationRef {
+        match relation {
+            RelationRef::Declared(RelationName(name)) => RelationRef::Declared(RelationName(declared(name))),
+            RelationRef::Output(name) => RelationRef::Output(output(name)),
+            other => other.clone(),
+        }
+    }
+
+    /// The relation an atom reads, as a key of the declared columns.
+    fn read_relation(relation: &RelationRef) -> Option<ProgramRelation> {
+        match relation {
+            RelationRef::Declared(name) => Some(ProgramRelation::Declared(name.clone())),
+            RelationRef::Output(name) => Some(ProgramRelation::Output(name.clone())),
+            RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) => None,
+        }
+    }
+
+    fn written(column: &ColumnName) -> Option<&str> {
+        match column {
+            ColumnName::Written(text) => Some(text),
+            ColumnName::Slot(_) => None,
+        }
+    }
+
+    impl Synthesizer<'_> {
+        /// The text of `column` of a site on `relation`.
+        fn column_text(&self, relation: Option<&RelationRef>, column: &ColumnName) -> String {
+            match column {
+                ColumnName::Written(text) => text.to_string(),
+                ColumnName::Slot(slot) => {
+                    let names = relation.and_then(read_relation).and_then(|relation| self.columns.get(&relation));
+                    names.and_then(|names| names.get(*slot as usize)).cloned().unwrap_or_else(|| panic!("a column slot {slot} of a relation whose columns no form before declares, or of a record"))
+                }
+            }
+        }
+
+        /// The name of each label of `form`, in the order of the labels'
+        /// first use.
+        fn label_names(&self, form: &Form) -> Vec<(LabelId, Box<str>)> {
+            let mut uses = Uses::default();
+            self.form_uses(form, &mut uses);
+            let reserved: Vec<&str> = uses.reserved.iter().map(|(_, name)| &**name).collect();
+            let mut names: Vec<(LabelId, Box<str>)> = uses.reserved.iter().cloned().collect();
+            names.dedup_by_key(|(id, _)| *id);
+            for (label, base) in &uses.ordered {
+                if names.iter().any(|(id, _)| id == label) {
+                    continue;
+                }
+                let taken = |name: &str| names.iter().any(|(_, held)| &**held == name) || reserved.contains(&name);
+                names.push((*label, label_name(base, taken).into()));
+            }
+            names
+        }
+
+        fn form_uses(&self, form: &Form, uses: &mut Uses) {
+            match form {
+                Form::Clause(clause) => self.body_uses(clause.value().body.value(), uses),
+                Form::Instance(instance) => {
+                    let instance = instance.value();
+                    if let Some(key) = &instance.key {
+                        self.body_uses(key.value().key.body.value(), uses);
+                        key.value().inputs.iter().for_each(|input| self.input_uses(input.value(), uses));
+                    }
+                    instance.inputs.iter().for_each(|input| self.input_uses(input.value(), uses));
+                }
+                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET and INIT"),
+            }
+        }
+
+        fn input_uses(&self, input: &InstanceInput, uses: &mut Uses) {
+            input.head.iter().for_each(|site| self.site_uses(None, site, uses));
+            self.body_uses(input.body.value(), uses);
+        }
+
+        fn body_uses(&self, body: &Body, uses: &mut Uses) {
+            body.conjuncts.iter().for_each(|conjunct| self.conjunct_uses(conjunct, uses));
+        }
+
+        fn conjunct_uses(&self, conjunct: &Conjunct, uses: &mut Uses) {
+            match conjunct {
+                Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => atom.value().sites.iter().for_each(|site| self.site_uses(Some(&atom.value().relation), site, uses)),
+                Conjunct::Not(Negated::Form(inner)) => self.conjunct_uses(inner, uses),
+                Conjunct::Constraint(constraint) => {
+                    uses.ordered.push((constraint.first.label, "V".to_owned()));
+                    if let Some(second) = constraint_second(constraint) {
+                        uses.ordered.push((second.label, "V".to_owned()));
+                    }
+                }
+                Conjunct::Or(branches) => branches.iter().for_each(|branch| self.body_uses(branch.value(), uses)),
+                Conjunct::If { test, then, otherwise } => [test, then, otherwise].into_iter().for_each(|body| self.body_uses(body.value(), uses)),
+                Conjunct::All { domain, body } => [domain, body].into_iter().for_each(|body| self.body_uses(body.value(), uses)),
+            }
+        }
+
+        fn site_uses(&self, relation: Option<&RelationRef>, site: &Site, uses: &mut Uses) {
+            let column = self.column_text(relation, &site.column);
+            for arg in site.value.args.iter() {
+                match arg {
+                    SiteArg::Label(LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id)) => uses.ordered.push((*id, column.clone())),
+                    SiteArg::Label(LabelUse::Zero) => {}
+                    SiteArg::NamedLabel { name, label: LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id) } => match written(name) {
+                        Some(name) => uses.reserved.push((*id, name.into())),
+                        None => uses.ordered.push((*id, column.clone())),
+                    },
+                    SiteArg::NamedLabel { label: LabelUse::Zero, .. } => {}
+                    SiteArg::Field(_) => panic!("write_synthesized writes no record site"),
+                }
+            }
+        }
+
+        fn form(&mut self, form: &Form, names: &Names) -> Form {
+            match form {
+                Form::Clause(clause) => Form::Clause(Node::new(self.clause(clause.value(), names))),
+                Form::Instance(instance) => Form::Instance(Node::new(self.instance(instance.value(), names))),
+                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET and INIT"),
+            }
+        }
+
+        fn clause(&mut self, clause: &Clause, names: &Names) -> Clause {
+            let columns: Arc<[RelationColumn]> = clause.columns.iter().map(|column| RelationColumn { name: ColumnName::Written(names.get(column.label).into()), label: column.label }).collect();
+            let derived: Vec<String> = match (columns.is_empty(), clause.proposers.first()) {
+                (true, Some(proposer)) => proposer_columns(self.registry, proposer).map_or_else(Vec::new, |columns| columns.iter().filter_map(|column| written(column).map(str::to_owned)).collect()),
+                _ => columns.iter().filter_map(|column| written(&column.name).map(str::to_owned)).collect(),
+            };
+            self.columns.insert(clause.derives.clone(), derived);
+            Clause { derives: program_relation(&clause.derives), body: self.body(&clause.body, names), columns, ..clause.clone() }
+        }
+
+        fn instance(&mut self, instance: &Instance, names: &Names) -> Instance {
+            let component_ports = component(self.registry, &instance.component).expect("the lib names the component");
+            let written_inputs: Vec<_> = component_ports.inputs.iter().map(|input| &input.port.name).collect();
+            for port in component_ports.relation_ports(&written_inputs) {
+                let name = OutputName { of: OutputOwner::Instance(instance.name.clone()), path: Arc::from([OutputStep::Port(port.name.clone())]) };
+                self.columns.insert(ProgramRelation::Output(name), port.columns.iter().filter_map(|column| written(&column.name).map(str::to_owned)).collect());
+            }
+            let key = instance.key.as_ref().map(|key| {
+                let value = key.value();
+                let columns = value.key.columns.iter().map(|column| RelationColumn { name: ColumnName::Written(names.get(column.label).into()), label: column.label }).collect();
+                let inputs = value.inputs.iter().map(|input| Node::new(self.input(input.value(), names))).collect();
+                Node::new(KeyClause { key: KeyBody { body: self.body(&value.key.body, names), columns }, inputs })
+            });
+            let inputs = instance.inputs.iter().map(|input| Node::new(self.input(input.value(), names))).collect();
+            Instance { name: InstanceName(declared(&instance.name.0)), component: instance.component.clone(), key, inputs }
+        }
+
+        fn input(&self, input: &InstanceInput, names: &Names) -> InstanceInput {
+            InstanceInput { name: input.name.clone(), head: input.head.iter().map(|site| self.site(None, site, names)).collect(), body: self.body(&input.body, names) }
+        }
+
+        fn body(&self, body: &Node<Body>, names: &Names) -> Node<Body> {
+            Node::new(Body { conjuncts: body.value().conjuncts.iter().map(|conjunct| self.conjunct(conjunct, names)).collect() })
+        }
+
+        fn conjunct(&self, conjunct: &Conjunct, names: &Names) -> Conjunct {
+            let bodies = |bodies: &[Node<Body>]| -> Arc<[Node<Body>]> { bodies.iter().map(|body| self.body(body, names)).collect() };
+            match conjunct {
+                Conjunct::Atom(atom) => Conjunct::Atom(self.atom(atom, names)),
+                Conjunct::Not(Negated::Atom(atom)) => Conjunct::Not(Negated::Atom(self.atom(atom, names))),
+                Conjunct::Not(Negated::Form(inner)) => Conjunct::Not(Negated::Form(Arc::new(self.conjunct(inner, names)))),
+                Conjunct::Constraint(constraint) => Conjunct::Constraint(*constraint),
+                Conjunct::Or(branches) => Conjunct::Or(bodies(branches)),
+                Conjunct::If { test, then, otherwise } => Conjunct::If { test: self.body(test, names), then: self.body(then, names), otherwise: self.body(otherwise, names) },
+                Conjunct::All { domain, body } => Conjunct::All { domain: self.body(domain, names), body: self.body(body, names) },
+            }
+        }
+
+        fn atom(&self, atom: &Node<Atom>, names: &Names) -> Node<Atom> {
+            let atom = atom.value();
+            Node::new(Atom { relation: relation_ref(&atom.relation), sites: atom.sites.iter().map(|site| self.site(Some(&atom.relation), site, names)).collect() })
+        }
+
+        fn site(&self, relation: Option<&RelationRef>, site: &Site, names: &Names) -> Site {
+            let args = site.value.args.iter().map(|arg| match arg {
+                SiteArg::NamedLabel { name: ColumnName::Slot(_), label: label @ (LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id)) } => SiteArg::NamedLabel { name: ColumnName::Written(names.get(*id).into()), label: *label },
+                other => other.clone(),
+            });
+            Site { column: ColumnName::Written(self.column_text(relation, &site.column).into()), value: SiteValue { args: args.collect() } }
+        }
+    }
+
+    /// The uses of labels in one form, in the order the form writes them.
+    #[derive(Default)]
+    struct Uses {
+        /// The labels a `NamedLabel` names, with the names, which no other
+        /// label of the scope takes.
+        reserved: Vec<(LabelId, Box<str>)>,
+        /// Each label use that names a label by the column of its site.
+        ordered: Vec<(LabelId, String)>,
     }
 }

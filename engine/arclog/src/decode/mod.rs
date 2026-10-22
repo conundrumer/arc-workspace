@@ -6,7 +6,8 @@
 //! form, on the program that the token gives. Its interface beside the
 //! mask, in `interface`, gives the rows of the body so far and the
 //! consistency test at a `RULE` clause's end, and its batch form, in
-//! `batch`, steps many decodes at once.
+//! `batch`, steps many decodes at once. The decode keeps a
+//! [`crate::trace::DecodeTrace`] of one record per accepted token.
 
 mod batch;
 mod interface;
@@ -28,8 +29,9 @@ use crate::program::{Node, Program};
 use crate::registry::Registry;
 use crate::resolver::ResolvedProgram;
 use crate::session::TaskSession;
-use crate::stream::{DecodeSettings, Token, Vocabulary};
+use crate::stream::{DecodeSettings, Emitter, Token, Vocabulary};
 use crate::task::Task;
+use crate::trace::{DecodeRecord, DecodeTrace, TopK, Verdict};
 
 /// A decode over a task in a task session.
 #[derive(Clone)]
@@ -47,6 +49,16 @@ pub struct Decoder<'a> {
     output: Option<ProgramRelation>,
     assignments: Vec<Vec<(ProgramRelation, Arc<crate::relations::Relation>)>>,
     columns: Option<crate::eval::output::GridColumns>,
+    /// One record per accepted token, shared with the forks.
+    trace: DecodeTrace,
+}
+
+/// The state after a token and what the step gives, which
+/// [`Decoder::apply`] makes the decode's.
+struct Advanced {
+    token: Token,
+    state: state::State,
+    step: Step,
 }
 
 /// What [`Decoder::step`] gives.
@@ -109,7 +121,7 @@ impl<'a> Decoder<'a> {
         assert_eq!(settings.caps, session.caps, "the caps of the decode settings are those of the session");
         let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings), cache: mask::Cache::default() };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None }
+        Decoder { task, session, constructions, context: Arc::new(context), state, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default() }
     }
 
     /// The ids of the decode's tokens.
@@ -148,16 +160,17 @@ impl<'a> Decoder<'a> {
 
     /// The state after `token`, and what the step gives, which
     /// [`Decoder::apply`] makes the decode's.
-    fn advance(&self, token: &Token) -> Result<(state::State, Step), Refusal> {
+    fn advance(&self, token: &Token) -> Result<Advanced, Refusal> {
         let (state, forced) = self.next(token)?;
         let judged = self.consistency(self.state.program(), state.program());
         let (consistency, columns) = judged.map_or((None, None), |(result, columns)| (Some(result), columns));
-        Ok((state, Step { forced: forced.into(), consistency, columns }))
+        Ok(Advanced { token: token.clone(), state, step: Step { forced: forced.into(), consistency, columns } })
     }
 
-    fn apply(&mut self, advanced: Result<(state::State, Step), Refusal>) -> StepResult {
-        let (state, step) = advanced?;
+    fn apply(&mut self, advanced: Result<Advanced, Refusal>) -> StepResult {
+        let Advanced { token, state, step } = advanced?;
         self.state = state;
+        self.record(token, &step);
         if let Some(Consistency::Consistent { assignments }) = &step.consistency {
             self.assignments = assignments.clone();
             self.columns = step.columns;
@@ -167,6 +180,41 @@ impl<'a> Decoder<'a> {
             self.output = Some(clause.value().derives.clone());
         }
         Ok(step)
+    }
+
+    /// Appends the record of the model's `token`, with the verdict and the
+    /// stop of its consistency test, and the record of each token the
+    /// engine forced after it.
+    fn record(&mut self, token: Token, step: &Step) {
+        let mut record = DecodeRecord::new(token, Emitter::Model);
+        if let Some(consistency) = &step.consistency {
+            let (verdict, stop) = match consistency {
+                Consistency::Consistent { assignments } => (Verdict::Consistent { assignments: assignments.len() }, None),
+                Consistency::NotConsistent => (Verdict::NotConsistent, None),
+                Consistency::SeveralValues { .. } => (Verdict::SeveralValues, None),
+                Consistency::Fault(_) => (Verdict::Fault, None),
+                Consistency::Stopped(stop) => (Verdict::Stopped, Some(stop.bound.into())),
+            };
+            record.consistency = Some(verdict);
+            record.stop = stop;
+        }
+        self.trace.push(record);
+        for forced in step.forced.iter() {
+            self.trace.push(DecodeRecord::new(forced.clone(), Emitter::Engine));
+        }
+    }
+
+    /// The trace of the decode: one record per accepted token, the engine's
+    /// forced tokens among them, in the order of the stream.
+    pub fn trace(&self) -> &DecodeTrace {
+        &self.trace
+    }
+
+    /// Attaches `top_k`, the language model's top tokens at the decision of
+    /// the record at `step` of the trace, to that record in this decode's
+    /// trace alone. Gives `false` where the trace has no such record.
+    pub fn attach_top_k(&mut self, step: usize, top_k: TopK) -> bool {
+        self.trace.update(step, |record| record.top_k = Some(top_k))
     }
 
     /// A second decode from the same state, which shares this one's caches

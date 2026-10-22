@@ -10,7 +10,7 @@ use std::time::Instant;
 use super::Decoder;
 use crate::check::{check_shared_program, CheckCache, CheckedProgram, SolverClauses};
 use crate::eval::examples::{scope_of, ExampleScope};
-use crate::eval::{BodyValue, Limits, Outcome, ParameterValues, RunFault, Stop};
+use crate::eval::{BodyValue, Limits, Outcome, ParameterValues, RelationValue, RunFault, Stop};
 use crate::judge::candidates::PairCandidates;
 use crate::judge::determination::{dets_read, descend_assignments, distinct_values, walk, Assignment, End, EvaluationInputs, Walked};
 use crate::program::path::{NodePath, PathStep};
@@ -19,6 +19,7 @@ use crate::relations::Relation;
 use crate::stream::Token;
 use crate::terms::Example;
 use crate::resolver::{DependencyKind, GraphNodeIndex};
+use crate::trace::{DecodeRecord, RowsSeen};
 use crate::types::{each_site_label, use_label, GraphRelation};
 
 /// The consistency of a relation that a `RULE` clause's `END` finishes,
@@ -144,6 +145,45 @@ impl<'a> Decoder<'a> {
     /// assignment, `None` in a count where the body is undefined or
     /// stopped. `None` where no clause is in progress.
     pub fn counts(&self) -> Option<Box<[Outcome<Assigned<Option<u64>>>]>> {
+        Some(self.sub_body_values()?.into_vec().into_iter().map(|value| value.map(|rows| rows.map(|value| value.count()))).collect())
+    }
+
+    /// [`Decoder::rows`], with its count at the first assignment and its
+    /// stop, if any, recorded on the last record of the trace. This
+    /// decode's trace alone changes.
+    pub fn observe_rows(&mut self, example: Option<Example>) -> Option<Outcome<Assigned<BodyValue>>> {
+        let rows = self.rows(example)?;
+        let (count, stop) = rows.as_ref().map_or((None, None), seen);
+        self.annotate(|record| record.rows.push(RowsSeen { example, count }), stop);
+        Some(rows)
+    }
+
+    /// [`Decoder::counts`], with the counts at the first assignment and the
+    /// first stop, if any, recorded on the last record of the trace. This
+    /// decode's trace alone changes.
+    pub fn observe_counts(&mut self) -> Option<Box<[Outcome<Assigned<Option<u64>>>]>> {
+        let values = self.sub_body_values()?;
+        let seen: Vec<_> = values.iter().map(|value| value.as_ref().map_or((None, None), seen)).collect();
+        let counts: Box<[Option<u64>]> = seen.iter().map(|(count, _)| *count).collect();
+        let stop = seen.iter().find_map(|(_, stop)| *stop);
+        self.annotate(|record| record.counts = Some(counts), stop);
+        Some(values.into_vec().into_iter().map(|value| value.map(|rows| rows.map(|value| value.count()))).collect())
+    }
+
+    /// Changes the last record of the trace, and sets its stop where it has
+    /// none and `stop` is one.
+    fn annotate(&mut self, change: impl FnOnce(&mut DecodeRecord), stop: Option<crate::trace::Stop>) {
+        let Some(last) = self.trace.len().checked_sub(1) else { return };
+        self.trace.update(last, |record| {
+            change(record);
+            record.stop = record.stop.or(stop);
+        });
+    }
+
+    /// The value of the sub-body of the clause in progress on each example
+    /// of the task, or once for a task-wide clause, at each assignment;
+    /// `None` where no clause is in progress.
+    fn sub_body_values(&self) -> Option<Box<[Outcome<Assigned<BodyValue>>]>> {
         let sub = match self.sub_body()? {
             Ok(sub) => sub,
             Err(fault) => return Some(Box::new([Err(fault)])),
@@ -152,7 +192,7 @@ impl<'a> Decoder<'a> {
             ExampleScope::PerExample => self.task.examples().map(Some).collect(),
             ExampleScope::TaskWide => vec![None],
         };
-        Some(examples.into_iter().map(|example| self.assigned_rows(&sub, example).map(|rows| rows.map(|value| value.count()))).collect())
+        Some(examples.into_iter().map(|example| self.assigned_rows(&sub, example)).collect())
     }
 
     fn assigned_rows(&self, sub: &SubBody, example: Option<Example>) -> Outcome<Assigned<BodyValue>> {
@@ -348,6 +388,17 @@ fn derived_at(program: &CheckedProgram, form: &NodePath) -> GraphRelation {
         })
         .expect("a checked clause derives its relation");
     GraphRelation { node, output: None }
+}
+
+/// The count at the first assignment of `rows`, and the stop of that value
+/// or of the walk, as the trace records them.
+fn seen(rows: &Assigned<BodyValue>) -> (Option<u64>, Option<crate::trace::Stop>) {
+    let first = rows.at.first().map(|(_, value)| value);
+    let stopped = first.and_then(|value| match &value.0 {
+        RelationValue::Stopped(stop) => Some(stop.bound.into()),
+        RelationValue::Rows(_) | RelationValue::Undefined => None,
+    });
+    (first.and_then(BodyValue::count), stopped.or(rows.stop.as_ref().map(|stop| stop.bound.into())))
 }
 
 #[cfg(test)]
