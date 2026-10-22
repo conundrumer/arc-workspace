@@ -76,13 +76,18 @@ def test_stopped_walk_does_not_approve(tmp_path: Path):
     os.utime(item.report, ns=(manifest.stat().st_mtime_ns + 1_000_000,) * 2)
     entries = [*evidence.entries,
                {"type": "assistant", "message": {"content": [
+                   {"type": "tool_use", "name": "Bash", "id": "start",
+                    "input": {"command": "uv run python scripts/step.py code-editor"}}]}},
+               {"type": "user", "message": {"content": [
+                   {"type": "tool_result", "tool_use_id": "start", "content": "# Copy the tree"}]}},
+               {"type": "assistant", "message": {"content": [
                    {"type": "tool_use", "name": "Bash", "id": "stop",
                     "input": {"command": "uv run python scripts/step.py code-editor --stop copy-the-tree"}}]}},
                {"type": "user", "message": {"content": [
                    {"type": "tool_result", "tool_use_id": "stop", "content": "stopped"}]}}]
-    with pytest.raises(ticket.Refused):
-        reports.validate(manifest, str(item.report), replace(evidence, revision=2, entries=entries),
-                         reports.Outcome.FINISHED)
+    receipt = reports.validate(manifest, str(item.report), replace(evidence, revision=2, entries=entries),
+                               reports.Outcome.FINISHED)
+    assert receipt.outcome is reports.Outcome.NEEDS_OPERATOR
 
 
 @pytest.mark.parametrize("outcome", ["finished", "needs-operator"])
@@ -118,7 +123,7 @@ def test_native_completion_requires_current_receipt(tmp_path: Path, outcome: str
     script("state_reads").new_state()
     accepted = reads.native_agents(item.operator, tmp_path, tmp_path).agents[0]
     assert not accepted.pending
-    assert (accepted.last_report is not None) == (outcome == "finished")
+    assert accepted.last_report is not None
     item.report.write_text("changed report")
     os.utime(item.report, (started + 4, started + 4))
     script("state_reads").new_state()

@@ -640,7 +640,7 @@ def accept(scratch: Path, agent: str, home: Path, outcome: str) -> dict[str, Any
     value = {key: str(value) if isinstance(value, Path) else value
              for key, value in asdict(receipt).items()}
     store.receipt(agent, item["turn"], value)
-    if outcome == Outcome.NEEDS_OPERATOR:
+    if receipt.outcome == Outcome.NEEDS_OPERATOR:
         dispatch = assignment.scratch / "codex-dispatch.json"
         return {**value, "dispatch": json.loads(dispatch.read_text()) if dispatch.exists()
                 else {"outcome": "needs-operator"}}

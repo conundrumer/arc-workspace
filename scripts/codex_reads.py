@@ -233,6 +233,10 @@ def native_agents(owner: str, session_scratch: Path | None = None,
     items = native_assignments(session_scratch)
     by_native = {item.state["native"]: item.assignment.agent for item in items if item.state["native"]}
     by_native.update({item.state["runtime"]: item.assignment.agent for item in items if item.state.get("runtime")})
+    launched: dict[str, float] = {}
+    for item in native_assignments(session_scratch, include_history=True):
+        launched[item.assignment.agent] = min(item.state["reserved"],
+                                              launched.get(item.assignment.agent, item.state["reserved"]))
     for item in items:
         assignment, state = item.assignment, item.state
         parent = state["parent"] or assignment.operator
@@ -241,7 +245,9 @@ def native_agents(owner: str, session_scratch: Path | None = None,
         reports = ()
         try:
             receipt = native_receipt(item, home)
-            if receipt is not None and receipt.outcome is not Outcome.FINISHED:
+            dispatch = assignment.scratch / "codex-dispatch.json"
+            if (receipt is not None and receipt.outcome is not Outcome.FINISHED
+                    and dispatch.exists() and json.loads(dispatch.read_text()).get("call")):
                 receipt = None
             if receipt is not None:
                 reports = (Report(assignment.report.stat().st_mtime, assignment.report.read_text(), assignment.report),)
@@ -250,7 +256,7 @@ def native_agents(owner: str, session_scratch: Path | None = None,
         reviewing = native_reviewing(item, home) if assignment.role in (Role.CODE_EDITOR, Role.DOC_EDITOR) else None
         agents.append(Agent(assignment.agent, parent, assignment.role,
             assignment.subject or assignment.ticket, assignment.brief.read_text(),
-            state["reserved"], state["reserved"],
+            launched[assignment.agent], state["reserved"],
             None if receipt or state["phase"] == Phase.ENDED else Waits.AT_WORK,
             reports, True, report_file=(assignment.report if receipt is not None
                 or assignment.role in (Role.CODE_EDITOR, Role.DOC_EDITOR) else None), reviewing=reviewing))

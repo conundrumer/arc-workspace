@@ -3,6 +3,7 @@
 A receipt binds report bytes, assignment bytes and input bytes. Runtime
 completion alone supplies no receipt, and a repeated attempt runs every check
 again except the checklist walk, which belongs to the turn that made the receipt.
+A walk that ends in a stop is a needs-operator result, whatever outcome was requested.
 """
 
 import hashlib
@@ -70,8 +71,8 @@ def validate(manifest: Path, reply: str, evidence: Evidence, outcome: Outcome,
     if previous is None and kind in checklist_agents():
         calls = _calls(entries, kind)
         stop = stop_bound(entries, calls, kind)
-        if stop is not None and outcome is not Outcome.NEEDS_OPERATOR:
-            raise Refused("a stopped checklist cannot finish the assignment")
+        if stop is not None:
+            outcome = Outcome.NEEDS_OPERATOR
         gap = walk_gap(kind, calls, stop)
         if gap is not None:
             raise Refused(f"assignment checklist is incomplete: the walk lacks "

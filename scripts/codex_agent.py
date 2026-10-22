@@ -679,14 +679,14 @@ def main(argv: list[str]) -> int:
         if assignment is not None:
             dispatch = args.scratch / "codex-dispatch.json"
             outcome = json.loads(dispatch.read_text())["outcome"] if dispatch.exists() else "finished"
-            codex_ticket.accept(args.scratch, assignment.agent, Path.home(), outcome)
+            accepted = codex_ticket.accept(args.scratch, assignment.agent, Path.home(), outcome)
     except (OSError, ValueError) as exc:
         if isinstance(exc, TurnFailed) and exc.message:
             print(exc.message, flush=True)
         print(f"codex_agent: {exc}", file=sys.stderr)
         return 1
     else:
-        value = json.loads(dispatch.read_text()) if assignment is not None and outcome == "needs-operator" else {}
+        value = accepted["dispatch"] if assignment is not None and accepted["outcome"] == "needs-operator" else {}
         if assignment is not None and value.get("call"):
             value["report"] = str(assignment.report)
             print(json.dumps(value), flush=True)
