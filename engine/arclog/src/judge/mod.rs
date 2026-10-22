@@ -6,6 +6,7 @@
 //! [`run`]. [`determination`] gives the values of a solver's `DET`s from
 //! the train pairs that its base cases solve.
 
+pub mod attempts;
 pub mod candidates;
 pub mod determination;
 pub mod run;

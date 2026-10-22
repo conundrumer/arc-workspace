@@ -5,8 +5,9 @@
 //!
 //! A clause with `ONE` marks gives its rows, each grouped by each mark's
 //! key. A `DET` with `(ONE)` gives at stored values the rows of its stored
-//! `param` record, and at determined values its body's rows, or, where it
-//! names a proposer, the rows its open values give. A
+//! `param` record. At determined values it gives assigned rows where an
+//! assignment gives them, and otherwise its body's rows or its proposer's
+//! open values. A
 //! `CHOOSE` gives the `from` rows of each `for` row, grouped by row, and
 //! its `never` pairs. The options stand in the canonical order by content
 //! of `crate::terms::content_order`, so a stop at a cap does not depend
@@ -73,10 +74,11 @@ pub fn pick_options(bodies: &FormBodies<'_>, node: GraphNodeIndex, example: Opti
         match shape {
             NodeRef::Clause(clause) => {
                 let stored = matches!(evaluation.parameters.source(), ParameterSource::Stored(_));
+                let assigned = matches!(evaluation.parameters.source(), ParameterSource::Determined(values) if values.contains_key(&ProgramRelation::Declared(name.clone())));
                 if let Some(fault) = super::determinations::conversion_fault(clause, at).filter(|_| !stored) {
                     return Err(fault);
                 }
-                let value = if clause.keyword == ClauseKeyword::Det && (stored || !clause.proposers.is_empty()) {
+                let value = if clause.keyword == ClauseKeyword::Det && (stored || assigned || !clause.proposers.is_empty()) {
                     driver.parameter(&relation, &ProgramRelation::Declared(name.clone()))?
                 } else {
                     driver.clause(at, example)?

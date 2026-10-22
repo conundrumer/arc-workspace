@@ -103,6 +103,66 @@ pub fn judged_run(evaluation: &Evaluation<'_>, relation: &GraphRelation, judged:
 /// on every input, this gives the first by column position. A stop at a
 /// bound on an input the search reads ends the search with that stop.
 pub fn grid_columns(evaluation: &Evaluation<'_>, relation: &GraphRelation, train: &[PairCandidates<'_>]) -> Outcome<Found> {
+    grid_columns_by(evaluation, relation, train, &mut |example, columns, comparisons| {
+        output_sets(evaluation, relation, example, columns, comparisons)
+    })
+}
+
+/// Output sets already evaluated during the assignment filter.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Observed(Vec<(Example, GridColumns, bool, OutputSet)>);
+
+pub(crate) fn grid_columns_recorded(evaluation: &Evaluation<'_>, relation: &GraphRelation, train: &[PairCandidates<'_>]) -> (Outcome<Found>, Observed) {
+    let mut observed = Observed::default();
+    let found = grid_columns_by(evaluation, relation, train, &mut |example, columns, comparisons| {
+        recorded_sets(evaluation, relation, &mut observed, example, columns, comparisons)
+    });
+    (found, observed)
+}
+
+fn recorded_sets(evaluation: &Evaluation<'_>, relation: &GraphRelation, observed: &mut Observed, example: Example, columns: &[GridColumns], comparisons: &[Comparison<'_, '_>]) -> Outcome<Vec<OutputSet>> {
+    columns.iter().zip(comparisons).map(|(&columns, &comparison)| {
+        let full = matches!(comparison, Comparison::Full);
+        if let Some((_, _, _, set)) = observed.0.iter().find(|(input, cols, all, set)| *input == example && *cols == columns && (*all == full || (full && matches!(set, OutputSet::Grids(_) | OutputSet::Undefined)))) {
+            return Ok(set.clone());
+        }
+        let set = output_sets(evaluation, relation, example, &[columns], &[comparison])?.pop().expect("one set");
+        observed.0.push((example, columns, full, set.clone()));
+        Ok(set)
+    }).collect()
+}
+
+pub(crate) fn grid_columns_observed(evaluations: &[Evaluation<'_>], observations: &mut [Observed], relation: &GraphRelation, train: &[PairCandidates<'_>]) -> Outcome<Found> {
+    grid_columns_by(&evaluations[0], relation, train, &mut |example, columns, comparisons| {
+        output_sets_observed(evaluations, observations, relation, example, columns, comparisons)
+    })
+}
+
+pub(crate) fn output_sets_observed(evaluations: &[Evaluation<'_>], observations: &mut [Observed], relation: &GraphRelation, example: Example, columns: &[GridColumns], comparisons: &[Comparison<'_, '_>]) -> Outcome<Vec<OutputSet>> {
+        columns.iter().zip(comparisons).map(|(&column, &comparison)| {
+            let mut enumeration = Enumeration::new(comparison);
+            for (evaluation, observed) in evaluations.iter().zip(observations.iter_mut()) {
+                let set = recorded_sets(evaluation, relation, observed, example, &[column], &[comparison])?.pop().expect("one set");
+                let mut next = Next::GoOn;
+                match set {
+                    OutputSet::Grids(grids) => for grid in grids {
+                        next = enumeration.push(GridValue::Grid(grid));
+                        if next == Next::Stop { break; }
+                    },
+                    OutputSet::Undefined => next = enumeration.push(GridValue::Undefined),
+                    OutputSet::Stopped(stop) => next = enumeration.push(GridValue::Stopped(stop)),
+                    OutputSet::Outside => return Ok(OutputSet::Outside),
+                }
+                if next == Next::Stop { break; }
+            }
+            Ok(enumeration.finish())
+        }).collect()
+}
+
+fn grid_columns_by(
+    evaluation: &Evaluation<'_>, relation: &GraphRelation, train: &[PairCandidates<'_>],
+    sets: &mut dyn FnMut(Example, &[GridColumns], &[Comparison<'_, '_>]) -> Outcome<Vec<OutputSet>>,
+) -> Outcome<Found> {
     let form = evaluation.program.program.form_of(relation.node).clone();
     let types = evaluation.program.types.columns(relation).ok_or_else(|| RunFault {
         message: "the columns of the tested relation have no types".into(),
@@ -114,7 +174,7 @@ pub fn grid_columns(evaluation: &Evaluation<'_>, relation: &GraphRelation, train
             break;
         }
         let comparisons = vec![Comparison::Pair(pair); passing.len()];
-        let sets = output_sets(evaluation, relation, example, &passing, &comparisons)?;
+        let sets = sets(example, &passing, &comparisons)?;
         let mut kept = Vec::new();
         for (columns, set) in passing.into_iter().zip(sets) {
             match set {
@@ -129,7 +189,7 @@ pub fn grid_columns(evaluation: &Evaluation<'_>, relation: &GraphRelation, train
     if passing.len() > 1 {
         let comparisons = vec![Comparison::Full; passing.len()];
         for example in evaluation.task.examples() {
-            let sets = output_sets(evaluation, relation, example, &passing, &comparisons)?;
+            let sets = sets(example, &passing, &comparisons)?;
             if let Some(stop) = sets.iter().find_map(|set| if let OutputSet::Stopped(stop) = set { Some(stop) } else { None }) {
                 return Ok(Found::Stopped(stop.clone()));
             }

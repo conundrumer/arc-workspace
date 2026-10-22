@@ -45,6 +45,8 @@ pub struct Decoder<'a> {
     cancellation: Cancellation,
     /// The first relation that was consistent, at which the decode ended.
     output: Option<ProgramRelation>,
+    assignments: Vec<Vec<(ProgramRelation, Arc<crate::relations::Relation>)>>,
+    columns: Option<crate::eval::output::GridColumns>,
 }
 
 /// What [`Decoder::step`] gives.
@@ -107,7 +109,7 @@ impl<'a> Decoder<'a> {
         assert_eq!(settings.caps, session.caps, "the caps of the decode settings are those of the session");
         let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings), cache: mask::Cache::default() };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, train: None, cancellation: Cancellation::default(), output: None }
+        Decoder { task, session, constructions, context: Arc::new(context), state, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None }
     }
 
     /// The ids of the decode's tokens.
@@ -148,14 +150,17 @@ impl<'a> Decoder<'a> {
     /// [`Decoder::apply`] makes the decode's.
     fn advance(&self, token: &Token) -> Result<(state::State, Step), Refusal> {
         let (state, forced) = self.next(token)?;
-        let consistency = self.consistency(self.state.program(), state.program());
-        Ok((state, Step { forced: forced.into(), consistency }))
+        let judged = self.consistency(self.state.program(), state.program());
+        let (consistency, columns) = judged.map_or((None, None), |(result, columns)| (Some(result), columns));
+        Ok((state, Step { forced: forced.into(), consistency, columns }))
     }
 
     fn apply(&mut self, advanced: Result<(state::State, Step), Refusal>) -> StepResult {
         let (state, step) = advanced?;
         self.state = state;
-        if let Some(Consistency::Consistent { .. }) = step.consistency {
+        if let Some(Consistency::Consistent { assignments }) = &step.consistency {
+            self.assignments = assignments.clone();
+            self.columns = step.columns;
             let Some(crate::program::Form::Clause(clause)) = self.state.program().value().forms.last() else {
                 unreachable!("a consistent relation is a clause's")
             };

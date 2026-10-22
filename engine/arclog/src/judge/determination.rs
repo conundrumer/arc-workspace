@@ -7,12 +7,13 @@
 //! `walk`, which the consistency test of [`crate::decode`] runs too.
 
 use std::sync::Arc;
+use std::ops::ControlFlow;
 
 use crate::check::CheckedProgram;
 use crate::eval::determinations::{det_relation, determinations};
 use crate::eval::instance::Constructions;
 use crate::eval::join::{each_row, one_part, union};
-use crate::eval::{output_relation, Domain, Evaluation, Limits, ParameterValues, ReachedBound, RunFault, Stop};
+use crate::eval::{output_relation, Domain, Evaluation, ModelsEnd, RelationValue, Limits, ParameterValues, ReachedBound, RunFault, Stop};
 use crate::hash::StableHashSet;
 use crate::program::path::{node_at, NodeRef};
 use crate::program::{ClauseKeyword, ProgramRelation};
@@ -25,7 +26,7 @@ use crate::task::{JudgedTask, Task};
 use crate::types::GraphRelation;
 
 use super::candidates::{PairCandidates, Section, World};
-use super::run::{grid_columns, Found};
+use super::run::{grid_columns_recorded, Found, Observed};
 
 /// A case that the determination runs: its name, its checked program, the
 /// checked concept program, in which the `DET` forms the case takes from
@@ -173,8 +174,8 @@ pub(crate) struct Det {
     /// Whether it ends in `(ONE)`.
     pub(crate) open: bool,
     /// Whether it ends in `(ONE)` and names no proposer, so that the models
-    /// of the constraint module give its values, and the walk of the
-    /// assignments assigns it nothing.
+    /// of the constraint module give its values. A solver determination
+    /// leaves it unassigned.
     pub(crate) pick: bool,
 }
 
@@ -199,6 +200,7 @@ pub(crate) fn dets_read(program: &CheckedProgram, root: GraphNodeIndex) -> Vec<D
 pub(crate) struct Kept {
     pub(crate) values: Vec<(ProgramRelation, Arc<Relation>)>,
     pub(crate) fault: Option<RunFault>,
+    pub(crate) observed: Observed,
 }
 
 /// What ends the walk of the assignments before its last assignment.
@@ -219,7 +221,7 @@ pub(crate) struct Walked {
 }
 
 /// The walk of the joint assignments of `dets`, the `DET`s that `output`
-/// reads less the picks, depth-first in their dependency order, under the
+/// reads, depth-first in their dependency order, under the
 /// assignment cap `cap`: at each assignment, the search for the grid
 /// columns of `output` over the train pairs whose candidates are `train`.
 pub(crate) fn walk(inputs: EvaluationInputs<'_>, dets: &[Det], output: &GraphRelation, train: &[PairCandidates<'_>], cap: u64) -> Walked {
@@ -324,13 +326,14 @@ impl Walk<'_, '_> {
                 let form = self.dets.last().map_or_else(|| program.form_of(self.output.node), |det| program.form_of(det.node));
                 return Err(End::Stop(Stop { bound: ReachedBound::Assignments { cap }, form: form.clone() }));
             }
-            let fault = match grid_columns(&evaluation, self.output, self.train) {
+            let (found, observed) = grid_columns_recorded(&evaluation, self.output, self.train);
+            let fault = match found {
                 Ok(Found::Columns(_)) => None,
                 Ok(Found::None) => return Ok(()),
                 Ok(Found::Stopped(stop)) => return Err(End::Stop(stop)),
                 Err(fault) => Some(fault),
             };
-            self.kept.push(Kept { values: assigned.clone(), fault });
+            self.kept.push(Kept { values: assigned.clone(), fault, observed });
             return Ok(());
         };
         if det.open {
@@ -338,11 +341,35 @@ impl Walk<'_, '_> {
                 return Err(End::Fault(fault));
             }
         }
-        let domain = match self.inputs.at(&parameters).domain(det.node).map_err(End::Fault)? {
-            Domain::Rows(rows) if det.open => one_row_each(&rows),
-            Domain::Rows(rows) => rows,
-            Domain::Undefined => return self.descend(at + 1, assigned),
-            Domain::Stopped(stop) => return Err(End::Stop(stop)),
+        let evaluation = self.inputs.at(&parameters);
+        let domain = if det.pick {
+            let mut values: Vec<Arc<Relation>> = Vec::new();
+            let mut stop = None;
+            let mut undefined = false;
+            let relation = GraphRelation { node: det.node, output: None };
+            let end = evaluation.models(&relation, None, &mut |value| {
+                match value {
+                    RelationValue::Rows(rows) => {
+                        if !values.iter().any(|value| same_rows(value, rows)) {
+                            values.push(rows.clone());
+                        }
+                    },
+                    RelationValue::Undefined => undefined = true,
+                    RelationValue::Stopped(found) => stop = Some(found.clone()),
+                }
+                ControlFlow::Continue(())
+            }).map_err(End::Fault)?;
+            if let ModelsEnd::Stopped(found) = end { stop = Some(found); }
+            if let Some(stop) = stop { return Err(End::Stop(stop)); }
+            if undefined { return self.descend(at + 1, assigned); }
+            values
+        } else {
+            match evaluation.domain(det.node).map_err(End::Fault)? {
+                Domain::Rows(rows) if det.open => one_row_each(&rows),
+                Domain::Rows(rows) => rows,
+                Domain::Undefined => return self.descend(at + 1, assigned),
+                Domain::Stopped(stop) => return Err(End::Stop(stop)),
+            }
         };
         if domain.len() > 1 && !self.branching.contains(&det.relation) {
             self.branching.push(det.relation.clone());
