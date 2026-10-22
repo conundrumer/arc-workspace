@@ -28,7 +28,9 @@ from step_journal import records
 from ticket_form import section, section_head
 from ticket_numbers import indexed, indexes, parsed_number
 from tree_reads import scratch
-from transcripts import mains_named
+from run_reads import read_meta, session_agents
+from transcript_entries import epoch
+from transcripts import chain, mains_named
 
 from engine import checkout
 from operations.filing import files_of
@@ -327,6 +329,37 @@ def reports(names: Set[str], digest: str) -> int:
     return n
 
 
+SUBAGENT_WORK: dict[Path, list[tuple[str, Work]]] = {}
+"""The work `subagent_work` read from each agent's files, by the agent's
+transcript path, for the life of the process: an agent's description and
+first entry are written once, at its start."""
+
+
+def subagent_work(main: Path) -> list[tuple[str, Work]]:
+    """The agents under the session whose main transcript is `main`, as
+    their `.meta.json` descriptions give them (`roles.described`), by the
+    number of each ticket the launch serves, at the time of the first entry of
+    its transcript. The journal holds no launch that an agent made, such
+    as an editor's item checker. An agent whose description or first entry
+    is not yet written is read again at the next call."""
+    out: list[tuple[str, Work]] = []
+    for path in session_agents(main.with_suffix("")).values():
+        if path not in SUBAGENT_WORK:
+            meta = read_meta(path)
+            try:
+                with open(chain(path)[0]) as f:
+                    first = json.loads(f.readline()).get("timestamp")
+            except (OSError, ValueError):
+                first = None
+            if meta is None or not first:
+                continue
+            d = described(meta.get("description", ""))
+            SUBAGENT_WORK[path] = [] if d is None or d.role in BARE_BRIEFS else [
+                (n, Work(epoch(first), ROLE_STAGE[d.role], True, d.role)) for n in agent_tickets(d.role, d.subject)]
+        out.extend(SUBAGENT_WORK[path])
+    return out
+
+
 def journal_work(tickets: Path) -> dict[str, list[Work]]:
     """The launches of agents on changes that the step journal of each
     session `ticket_numbers.indexes` gives records (`step_journal.records`),
@@ -337,6 +370,9 @@ def journal_work(tickets: Path) -> dict[str, list[Work]]:
     digest finishes with the `k`-th report file of that digest."""
     out: dict[str, list[Work]] = {}
     for session in (s for ids in indexes(tickets).values() for s in ids):
+        for path in mains_named(session):
+            for work in subagent_work(path):
+                out.setdefault(work[0], []).append(work[1])
         found = records(scratch(session))
         files = files_of(scratch(session))
         names = set(os.listdir(files)) if found and files.is_dir() else set()
