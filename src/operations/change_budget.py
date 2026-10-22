@@ -1,6 +1,6 @@
 """The cost budget of a change: the take line that gives it, the period
 its spend is counted over, the test of that spend against it, and the
-stop line written on a change past it.
+line written on a change past it.
 
 A take writes in its log line the change's cost budget, in subscription
 dollars, Claude and Codex together, and its time budget, taken over the
@@ -11,8 +11,8 @@ gives the held change a new `editors` field writes the budgets of that
 field's set, with the same floor, which stand in place of the take's from
 then on. The spend of a change is that of the agents launched since its
 take, and of the runs under them. Once that spend passes the cost budget, the command writes
-the stop line on the change. The line before a merge gives the change's
-agent-running time since its take; neither time figure stops anything."""
+that line on the change, once per take. The line before a merge gives the change's
+agent-running time since its take. None of these figures stops anything."""
 
 import re
 from collections.abc import Mapping
@@ -122,13 +122,13 @@ def by_role(dollars: Mapping[str, float]) -> str:
 PAST_OPENING = "past its cost budget"
 
 PAST_NOTE = PAST_OPENING + " of {limit} subscription dollars: spent {spent} subscription dollars, {roles}"
-"""The note of the stop line, the log line that gives that a change's
+"""The note of the log line that gives that a change's
 spend passed its cost budget `limit`, with that spend and its part by
 role."""
 
 
 def past_note(overrun: Overrun) -> str:
-    """The stop note for an established cost overrun."""
+    """The note of the line for an established cost overrun."""
     spent = overrun.spent
     roles = spent.by_role if isinstance(spent, Spend) else {
         s.role: spent.codex.dollars(s.role) for s in spent.codex.sources}
@@ -137,9 +137,9 @@ def past_note(overrun: Overrun) -> str:
 
 
 def stopped(t: Ticket) -> float | None:
-    """The time of the last stop line of `t` at or after its take, or
-    since its last move out of `tickets/draft/` where no take applies, or
-    None where none stands."""
+    """The time of the last line of `t` that gives its cost overrun at or
+    after its take, or since its last move out of `tickets/draft/` where
+    no take applies, or None where none stands."""
     take = taken(t)
     since = left_draft(t) if take is None else take.time
     return max((ln.time for ln in t.log if ln.time >= since and ln.agent == AGENT

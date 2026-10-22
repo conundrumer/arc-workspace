@@ -84,17 +84,12 @@ def latest_reports(agents: list[Agent]) -> list[tuple[str, str]] | Undecided:
 
 
 def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
-                editors: list[tuple[Agent, str]], launcher: str,
-                past: float | None = None) -> Step:
+                editors: list[tuple[Agent, str]], launcher: str) -> Step:
     """The launch by `launcher` of an item checker on the latest reports of the editors
     `needing` it checks (`is_checked`), which have reported since the last
     item checker was launched on the change `t`, and on the accepted gate
     outputs of `checked_outputs`, with each editor of `editors` it checks,
-    and what the agents before it settled (`change_agents.settled`).
-    `past` gives the time of the stop line of the change
-    (`change_budget.stopped`),
-    where the change is past its cost budget, so that a checker launched
-    before the overrun does not take its step key."""
+    and what the agents before it settled (`change_agents.settled`)."""
     reports = latest_reports([a for a in needing if is_checked(a)])
     if isinstance(reports, Undecided):
         return reports
@@ -102,9 +97,7 @@ def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
     if isinstance(gate, Undecided):
         return gate
     occasion = last_reported(needing)
-    if past is not None:
-        occasion = max(occasion, past)
     return Launch(Role.ITEM_CHECKER, t.number, briefs.item_check(
         t.number, w, reports, gate, [(a, i) for a, i in editors if is_checked(a)], launcher,
-        settled(state, t, Role.ITEM_CHECKER, None), check_round(state, t), past is not None),
+        settled(state, t, Role.ITEM_CHECKER, None), check_round(state, t)),
         occasion=str(occasion))

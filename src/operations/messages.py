@@ -2,7 +2,6 @@
 agent of an event on its work, or asks it for an act or a reply."""
 
 from controlled_markdown import mctx
-from operations.briefs import OVER_BUDGET
 from operations.reports import FOR_COORDINATOR, TICKETS_FILED
 from ticketing.times import utc_stamp
 
@@ -48,19 +47,6 @@ def stop_work(number: str) -> str:
     ticket the operator no longer holds to end."""
     return mctx("Write nothing further on {number}, and end with your open work in your "
                 "reply.").format(number=number)
-
-
-def over_budget(number: str, reviewer: bool) -> str:
-    """The message to an agent at work on the change `number` once the
-    change passes its budget; `reviewer` gives the form of its doc
-    reviewer."""
-    lines = [OVER_BUDGET.format(number=number), mctx(
-        "Launch nothing more on it, end the work at hand, and reply with what stands.")]
-    if reviewer:
-        lines.append(mctx("Before you reply, file each finding of yours that stands as a `bug` "
-                          "ticket, with `change` as its domain and {number} as its "
-                          "subject.").format(number=number))
-    return "\n".join(lines)
 
 
 RESTATE = mctx("""

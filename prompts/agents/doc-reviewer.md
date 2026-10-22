@@ -36,7 +36,6 @@ tools: Read, Grep, Glob, Bash, Write, Agent, SendMessage, TaskStop
     * comment: The user's words, session 2384db39, 2026-10-17T18:18:39Z: "If the deferred procedure is extremely long and repeats later , it should only be loaded once".
 - Where your brief gives rounds of review, make at most that many, your first review among them.
     + xref: prompts/agents/notes/launching.md#a-doc-reviewers-brief
-- Where a message gives the change past its cost budget, act on your findings as that message gives, in place of what your other lines give.
 - Message only the agents a line of your documents has you message, each with only what that line gives.
 - In a review of the change, the one who asked for the change is, for what is settled, your brief and the ticket whose number it gives, with each finding an editor's message gives as dropped and each decision it gives as applied. For an item that a review has you report to that one, it is the editor you send a finding on the item's line to, and the item is a finding that needs a decision.
     + xref: docs/handbook/editing.md#reviewing-a-change

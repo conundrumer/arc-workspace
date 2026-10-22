@@ -6,7 +6,7 @@ review of the documents. The steps perform
 `merging` the merge and what follows it. `change_agents` gives the
 agents of a change and the editors it needs, `item_check` the launch of
 its item checker, `design_review` the launch of its design reviewer, `change_fragments` the doc editor of its `mctx`
-fragments, and `change_overrun` a change past its cost budget.
+fragments, and `change_overrun` the line that gives a change past its cost budget.
 
 A change with no worktree gets one from
 `scripts/change_worktree.py`, which logs its path on the ticket, so a
@@ -55,11 +55,6 @@ Where they give a `decision:` item, the step waits on the coordinator,
 which gets those items with the line that rules the step
 (`triage.for_coordinator`), and otherwise it goes to a ticket analyst
 (`decisions`).
-
-A change past its cost budget that `change_overrun` gives as `Ended`
-gets that step on what its agents leave, with that analyst's brief
-giving the change past its cost budget, and merges once that step
-leaves nothing, in place of the steps below.
 
 An editor of a change with an agent id whose latest attempt ended with
 no finished report since its launch or its last resume
@@ -115,7 +110,7 @@ from operations.change_agents import (REVIEWER_ROLES, change_editors, editors_in
                                       with_elsewhere, worktree_occasion)
 from operations.change_holds import Hold, left_hold, open_questions, questions_given, questions_hold
 from operations.change_fragments import drafter_ids, fragments_step
-from operations.change_overrun import Ended, over_budget
+from operations.change_overrun import over_budget
 from operations.design_review import design_review, reviewing
 from operations.doc_review import doc_review, latest_reviewer, with_ids
 from operations.directives import Decision, give_again_line, held_on, ruling
@@ -340,22 +335,8 @@ def carry(state: State, t: Ticket) -> Step | None:
     if w is None or revised_since_worktree(t):
         return Bash(make_worktree(t.number, state.me), f"{t.number} worktree", occasion=str(t.last_time))
     staff = partial(staff_editor, state, t, w, editors, agents)
-    match over_budget(state, t, w, agents):
-        case Ended(ended):
-            latest = list(ended)
-            match leftover(state, t, w, latest, agents, True, state.me):
-                case Pause.CLEAR:
-                    return merging.merge(state, t, w, latest, staff)
-                case Pause.WAIT:
-                    return None
-                case left:
-                    return left
-        case Pause.WAIT:
-            return None
-        case Pause.CLEAR:
-            pass
-        case step:
-            return step
+    if (step := over_budget(state, t)) is not None:
+        return step
     here = editors_in(agents, w)
     if (resume := editor_resume(state, t, editors, here)) is not None:
         return resume
@@ -414,7 +395,7 @@ def design_stage(r: StageContext) -> Step | Pause:
 
 
 def leftover_stage(r: StageContext) -> Step | Pause:
-    return leftover(r.state, r.t, r.w, r.latest, r.agents, False, r.launcher)
+    return leftover(r.state, r.t, r.w, r.latest, r.agents, r.launcher)
 
 
 def doc_stage(r: StageContext) -> Step | Pause:
@@ -564,15 +545,9 @@ def peers_ended(c: EditorChange, written: Callable[[Path], str | None]
 
 def handed_on(state: State, c: EditorChange) -> str | None:
     """The line that has the editor of the change `c` give its final reply
-    as the operator takes the change's next step: where
-    `change_overrun.over_budget` gives a step, `Ended` or `Pause.WAIT`, or
-    where an editor role of the change has no agent in its worktree or
-    another editor there ended with no report since its launch or its last
-    resume; or None."""
-    if not isinstance(budget := over_budget(state, c.t, c.w, c.agents), Undecided) \
-            and budget is not Pause.CLEAR:
-        return mctx("Change {number} is past its cost budget, so the operator takes its next "
-                    "step: give your final reply.").format(number=c.t.number)
+    as the operator takes the change's next step: where an editor role of
+    the change has no agent in its worktree or another editor there ended
+    with no report since its launch or its last resume; or None."""
     here = editors_in(c.agents, c.w)
     if unstaffed(c.editors, here) or any(a.unreported for a in latest_editors(here)):
         return mctx("Another editor of change {number} has not reported, so the operator "
@@ -700,10 +675,9 @@ def left(state: State, t: Ticket, latest: list[Agent], checkers: list[Agent],
 
 
 def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
-             agents: list[Agent], past_budget: bool, launcher: str) -> Step | Pause:
+             agents: list[Agent], launcher: str) -> Step | Pause:
     """The step on what the editors leave, with `launcher` as the launcher
-    of the agent it launches, or `Pause.CLEAR` where they leave nothing;
-    `past_budget` gives that the change is past its cost budget."""
+    of the agent it launches, or `Pause.CLEAR` where they leave nothing."""
     checkers = [a for a in agents if a.role is Role.ITEM_CHECKER and occupies(a)]
     analysts = [a for a in agents if a.role is Role.TICKET_ANALYST and occupies(a)]
     if any(a.pending for a in checkers + analysts):
@@ -735,8 +709,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
             [i for a, i in editors if a in given.unfinished], launcher,
             settled(state, t, Role.TICKET_ANALYST, None),
             briefs.round_of(checkers[-1], t.number) if checkers else briefs.Round.OPEN,
-            None if given.capped is None else (given.capped[0], given.capped[1].text),
-            past_budget),
+            None if given.capped is None else (given.capped[0], given.capped[1].text)),
             occasion=str(max(given.given, at)))
 
     def on_hold(hold: Hold, on_user: bool, parts: str | None) -> Step | Pause:

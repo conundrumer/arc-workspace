@@ -180,7 +180,7 @@ def test_stopped_checker_is_replaced_before_a_change_can_merge(tmp_path: Path) -
     editor = attempt(Role.CODE_EDITOR, reply="done", launched=t.last_time + 10)
     checker = attempt(Role.ITEM_CHECKER, launched=t.last_time + 20)
     s = with_agents(tmp_path, [editor, checker], [t])
-    step = leftover(s, t, tmp_path, [editor], [editor, checker], False, "op")
+    step = leftover(s, t, tmp_path, [editor], [editor, checker], "op")
     assert isinstance(step, Launch) and step.role is Role.ITEM_CHECKER
 
 
@@ -196,7 +196,7 @@ def test_stopped_change_analyst_leaves_the_checkers_items_due(tmp_path: Path) ->
                       launched=t.last_time + 30)
     agents = [editor, checker, analyst]
     s = with_agents(tmp_path, agents, [t])
-    step = leftover(s, t, tmp_path, [editor], agents, False, "op")
+    step = leftover(s, t, tmp_path, [editor], agents, "op")
     assert isinstance(step, Launch) and step.role is Role.TICKET_ANALYST
 
 

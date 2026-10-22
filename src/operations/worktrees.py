@@ -1,6 +1,5 @@
-"""The worktree of a change: the one its ticket's log gives,
-`fingerprint`, the state of that worktree, and `holds_work`, whether it
-holds work."""
+"""The worktree of a change: the one its ticket's log gives, and
+`fingerprint`, the state of that worktree."""
 
 import hashlib
 import re
@@ -42,12 +41,6 @@ def fingerprint(w: Path) -> str:
 def merge_base(w: Path) -> str:
     """The merge base of the worktree `w`'s `HEAD` with `BASE`."""
     return checkout.git_out(w, "merge-base", "HEAD", BASE).strip()
-
-
-def holds_work(w: Path) -> bool:
-    """Whether the worktree `w` differs from `merge_base`: a commit of its
-    branch, a tracked change, or a file git does not track or ignore."""
-    return bool(checkout.changed_paths(w, merge_base(w)))
 
 
 def worktree(t: Ticket, state: State) -> Path | None:

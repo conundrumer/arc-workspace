@@ -457,16 +457,14 @@ def editor_reports(reports: list[tuple[str, str]]) -> list[str]:
 
 def item_check(number: str, worktree: Path, reports: list[tuple[str, str]], gate: list[str],
                editors: list[tuple[Agent, str]], operator: str, settled: "Settled",
-               round: Round, past: bool = False) -> str:
+               round: Round) -> str:
     """The brief of an item checker that checks the items of the editors
     of a change it checks, by each editor's agent id and latest report,
     and the accepted gate outputs `gate` it reads, with the agent id and
     part of each of those editors, each beside its record in `editors`,
     and what the agents before it settled (`settled_lines`), on the round
-    `round`. `past` gives that the change is past its cost budget."""
+    `round`."""
     lines = [*change_lines(number, worktree), *editor_lines(editors)]
-    if past:
-        lines.append(OVER_BUDGET.format(number=number))
     lines.extend(round.lines(number))
     lines.extend(editor_reports(reports))
     if gate:
@@ -481,7 +479,7 @@ def item_check(number: str, worktree: Path, reports: list[tuple[str, str]], gate
 def findings(number: str, worktree: Path, left: str | None, questions: list[str],
              editors: list[tuple[Agent, str]], reports: list[tuple[str, str]],
              unfinished: list[str], operator: str, settled: "Settled", round: Round,
-             cap_reply: tuple[str, str] | None, past_budget: bool) -> str:
+             cap_reply: tuple[str, str] | None) -> str:
     """The brief of a ticket analyst that judges what a change's editors
     leave for a decision, by the latest item checker's reply from after
     its last `LEFT_FOR_DECISION` line, or the whole reply where it has none,
@@ -494,11 +492,8 @@ def findings(number: str, worktree: Path, left: str | None, questions: list[str]
     settled (`settled_lines`). `round` is the round of the item checker
     whose reply it gives, and `cap_reply` the agent id and reply of a doc
     reviewer at the round cap, where one stands since the last such
-    analyst's launch. `past_budget` gives that the change is past its cost
-    budget, which the brief then gives with `OVER_BUDGET`."""
+    analyst's launch."""
     lines = [*change_lines(number, worktree), *editor_lines(editors), *round.lines(number)]
-    if past_budget:
-        lines.append(OVER_BUDGET.format(number=number))
     if left is not None:
         lines.append(LEFT_REPLY.format(number=number, heading=LEFT_FOR_DECISION))
         lines.append(f"\n{left}\n")
@@ -852,9 +847,6 @@ LOAD_CHECK = mctx("""
 
 def load_check(path: Path, operator: str) -> str:
     return LOAD_CHECK.format(path=path) + "\n" + LAUNCHER.format(operator=operator)
-
-
-OVER_BUDGET = mctx("Change {number} is past its cost budget.")
 
 
 AT_BUDGET = mctx("Where your documents give what you do at your budget, do that at it, and "

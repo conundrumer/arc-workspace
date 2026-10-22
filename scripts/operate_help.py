@@ -252,7 +252,6 @@ PARTS = {
             - A call counts where it is a command of its own, with no word such as `timeout` before it, and no other tool call follows it.
         - It takes as the editor's report the text of the report file the editor's brief gives.
             - Where that file does not exist, it prints that the editor writes it and then runs `review` again.
-        - Where the change is past its cost budget, it prints instead that the operator takes the change's next step, and that the editor gives its final reply.
         - Where an editor the change's ticket gives has no agent in the worktree, or another editor of the change there ended with no report since its launch or its last resume, it prints instead that the operator launches the checks, and that the editor gives its final reply.
         - Where an agent that another editor of the change launched has not given its final reply, or another editor of the change there has not ended, it blocks, as the block of `next` does, until this help gives the editor another line, and then prints that line, or, where the block ends first, that the editor runs `review` again.
             - An editor has reported while its last tool call is a `review` call, from the start of the first of its `review` calls since its last other call.

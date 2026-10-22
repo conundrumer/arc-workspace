@@ -110,7 +110,7 @@
 ### A decision analyst's brief
 - A decision analyst's brief gives one of these:
     - The findings an editor left on a review of its change, the items an editor left unfinished for a decision, the places a code editor's report gives as standing, each with the editor's reasons, the findings of a doc reviewer's reply that opens with `at the round cap`, and the `question` tickets filed on the change.
-        - Where what it gives comes from the item checker's last review round of the change, or from the check after its review round cap, or the change is past its cost budget, it gives that.
+        - Where what it gives comes from the item checker's last review round of the change, or from the check after its review round cap, it gives that.
         - With those, it gives the agent id of each editor of the change, with the part that editor's brief gave it, or the whole change where its brief gave none.
         - It gives the change's worktree, and the number of the change's ticket, or, where the change has none, its intent and what is already settled about it.
     - A step that an operator's command cannot decide, which the operator holds.
@@ -121,7 +121,6 @@
 - It gives the agent id of each editor of the change other than the `handbook-expanded` agent, with the part that editor's brief gave it, or the whole change where its brief gave none.
 - It gives the latest report of each editor of the change other than the `handbook-expanded` agent that has reported since the last item checker launched on the change.
 - Where ticket analysts already decided items on the change, it gives their agent ids and latest reports.
-- Where the change is past its cost budget, it gives that it is.
 - Where the check is the change's last review round, or the check after its review round cap, it gives that it is.
 - Where the change writes accepted gate outputs, it gives them, other than those a `run_dl.py` command writes where the change has the `handbook-expanded` agent.
     + xref: src/gating/commands.py, src/operations/item_check.py:checked_outputs
