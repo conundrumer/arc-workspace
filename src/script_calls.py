@@ -39,7 +39,8 @@ SUFFIX = ".jsonl"
 SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
 
 _LINE = ('{{"key": "{key}", "start": {start:.3f}, "wall": {wall:.3f}, "cpu": {cpu:.3f}, '
-         '"peak": {peak}, "session": "{session}", "lifts": [{lifts}], "retained": {retained}}}\n')
+         '"peak": {peak}, "session": "{session}", "lifts": [{lifts}], "retained": {retained}, '
+         '"queued": {queued:.3f}, "reads": {reads}}}\n')
 
 _KIB = sys.platform != "darwin"
 """Whether `ru_maxrss` counts KiB, as on Linux, in place of bytes, as on
@@ -67,6 +68,10 @@ def key(script: str, args: list[str]) -> str:
 
 _cpu_started = 0.0
 _retained = False
+_queued = 0.0
+"""The seconds this process's request waited in the resident's queue."""
+_reads = 0
+"""The count of the reads of `watched` that this process's call made."""
 
 
 _started: tuple[str, str, float, float] | None = None
@@ -78,7 +83,8 @@ def start(tree: str, script: str, args: list[str]) -> None:
     """Starts the record of this process's call of the script `script` of
     the main tree `tree` with `args`, where its file name is one a line can
     hold."""
-    global _started
+    global _started, _queued, _reads
+    _queued, _reads = 0.0, 0
     name = os.path.basename(script)
     if name and all(c in _NAME for c in name):
         now = time.time()
@@ -91,11 +97,19 @@ def start_service(tree: str) -> None:
         start(tree, "operate_service.py", ["startup"])
 
 
-def start_request(tree: str, script: str, args: list[str]) -> None:
-    """Start a resident request's CPU delta and retained process peak record."""
-    global _cpu_started, _retained, _credited
+def count_read() -> None:
+    """Count one read of `watched` in this process's call."""
+    global _reads
+    _reads += 1
+
+
+def start_request(tree: str, script: str, args: list[str], queued: float = 0.0) -> None:
+    """Start a resident request's CPU delta and retained process peak record;
+    `queued` is the seconds the request waited in the resident's queue."""
+    global _cpu_started, _retained, _credited, _queued
     record()
     start(tree, script, args)
+    _queued = queued
     _cpu_started = cpu_seconds()
     _retained = True
     _lifts.clear()
@@ -171,7 +185,8 @@ def record() -> None:
     path, k, begun, clock = s
     line = _LINE.format(key=k, start=begun, wall=time.monotonic() - clock, cpu=cpu_seconds() - _cpu_started,
                         peak=peak(), retained="true" if _retained else "false", session=os.environ.get(SESSION_ENV, ""),
-                        lifts=", ".join(f'["{name}", {rise}]' for name, rise in lifts()))
+                        lifts=", ".join(f'["{name}", {rise}]' for name, rise in lifts()),
+                        queued=_queued, reads=_reads)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
     try:
@@ -182,12 +197,17 @@ def record() -> None:
 
 class Call:
     """One line of the record. A line written before the record gave
-    `lifts` has none. `retained` identifies a resident process peak."""
-    __slots__ = ("key", "start", "wall", "cpu", "peak", "session", "lifts", "retained")
+    `lifts` has none. `retained` identifies a resident process peak.
+    `queued` is the seconds a resident request waited in the queue, and
+    `reads` the count of its reads of `watched`; a line written before the
+    record gave them has 0."""
+    __slots__ = ("key", "start", "wall", "cpu", "peak", "session", "lifts", "retained", "queued", "reads")
 
     def __init__(self, key: str, start: float, wall: float, cpu: float, peak: int,
-                 session: str, lifts: tuple[tuple[str, int], ...] = (), retained: bool = False) -> None:
+                 session: str, lifts: tuple[tuple[str, int], ...] = (), retained: bool = False,
+                 queued: float = 0.0, reads: int = 0) -> None:
         self.retained = retained
+        self.queued, self.reads = queued, reads
         self.key, self.start, self.wall, self.cpu, self.peak, self.session, self.lifts = (
             key, start, wall, cpu, peak, session, lifts)
 

@@ -10,9 +10,10 @@ the merging session first. For each session where an operator ran
 `operate.py next`, the script starts the session's resident service where
 none runs, and asks it to read the state of that session's last operator.
 The resident answers once it accepts the request, and the read goes on in
-the resident: a `next` call that arrives during it waits in the resident's
-queue, and gets the step, or the line that says the read runs, within its
-bound. The script does not wait for a read. It exits 1 where a session's
+the resident, which serves each queued `next` or `review` request before a
+refresh request, ends a refresh read when such a request arrives during it,
+and skips a refresh request that a client request served after the refresh
+request began. The script does not wait for a read. It exits 1 where a session's
 request failed, after it has asked every other session.
 
 It prints no step and starts no run."""

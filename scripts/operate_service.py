@@ -5,6 +5,9 @@ incomplete response is discarded and a retry computes from the journal.
 Only the serving thread accesses held reads. Idle expiry does no state read.
 A state read belongs to the resident: a request whose bound arrives first gets
 a response that says the read runs, and the run goes on without it.
+A refresh request gives way to a client request: the queue serves each `next`
+or `review` request first, and a refresh read ends where one arrives. A waiting
+call ends where a message to its caller arrives, as the resident ends a read.
 """
 
 import contextlib
@@ -161,6 +164,8 @@ class Request:
         lock.close()
         if self.pending is not None:
             self.pending.poll()
+            if self.kind is Kind.REFRESH and self.pending.client_queued():
+                raise Detached
         if self.waiting:
             readable, _, _ = select.select([self.connection], [], [], 0)
             if self.connection in readable:
@@ -194,6 +199,8 @@ class Pending:
     listener: socket.socket
     connections: dict[socket.socket, tuple[float, dict | None]] = field(default_factory=dict)
     running: Request | None = None
+    queued: float = 0.0
+    """The seconds the request that `take` gave last waited in the queue."""
 
     def poll(self) -> None:
         while select.select([self.listener], [], [], 0)[0]:
@@ -225,12 +232,20 @@ class Pending:
                 connection.close()
                 self.connections.pop(connection, None)
 
+    def client_queued(self) -> bool:
+        """Whether a complete `next` or `review` request waits in the queue."""
+        return any(message is not None and message["kind"] != Kind.REFRESH
+                   for _, message in self.connections.values())
+
     def take(self) -> socket.socket | None:
+        """The first complete `next` or `review` request, else the first complete refresh request."""
         self.poll()
-        for connection, (_, message) in self.connections.items():
-            if message is not None:
-                self.connections.pop(connection)
-                return connection
+        complete = [(connection, arrived, message) for connection, (arrived, message)
+                    in self.connections.items() if message is not None]
+        for connection, arrived, message in sorted(complete, key=lambda c: c[2]["kind"] == Kind.REFRESH):
+            self.connections.pop(connection)
+            self.queued = time.monotonic() - arrived
+            return connection
         return None
 
     def close(self) -> None:
@@ -240,6 +255,10 @@ class Pending:
 
 
 CURRENT: ContextVar[Request | None] = ContextVar("operate_request", default=None)
+
+
+client_began = 0.0
+"""The time at which this resident last began to serve a `next` or `review` request."""
 
 
 standalone_phase = "state"
@@ -407,15 +426,51 @@ def prepare(main: Path, session: str, deadline: float) -> None:
     ensure(main, session, deadline).close()
 
 
+def inbox_of(operator: str):
+    """The inbox of the caller `operator`, or None where it cannot be read."""
+    try:
+        from accepted_messages import Inbox
+        from transcripts import find
+        return Inbox(find(operator), [])
+    except Exception:
+        return None
+
+
+def message_output(operator: str, kind: Kind) -> str:
+    """What the resident prints where a message to `operator` is accepted during a call of `kind`."""
+    from operations.steps import Poll
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        if kind == Kind.REVIEW:
+            from operations.printing import printed
+            print(printed(Poll(), operator, Path()))
+        else:
+            from operate_loop import print_step
+            print_step(Poll(), Path(), operator)
+    return output.getvalue()
+
+
 def exchange(connection: socket.socket, operator: str, started: float,
              deadline: float, kind: Kind) -> tuple[int, str, str] | ReviewPlan | None:
-    """A complete response, or None when transport or request validation needs a retry."""
+    """A complete response, or None when transport or request validation needs a retry.
+    Where a message to `operator` is accepted while the request waits, the call ends
+    with what the resident prints for that message, and the request is left."""
     with connection:
         connection.settimeout(max(deadline - time.monotonic(), 0.001))
         connection.sendall((json.dumps({"subject": operator, "started": started,
                                        "deadline": deadline, "kind": kind}) + "\n").encode())
         global REQUEST_SENT
         REQUEST_SENT = True
+        inbox = inbox_of(operator) if kind != Kind.REFRESH else None
+        while not select.select([connection], [], [], 1.0)[0]:
+            if time.monotonic() >= deadline:
+                break
+            if inbox is not None:
+                try:
+                    if inbox.accepted():
+                        return 0, message_output(operator, kind), ""
+                except Exception:
+                    inbox = None
         with connection.makefile("rb") as stream:
             line = stream.readline()
         if not line.endswith(b"\n"):
@@ -609,6 +664,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
         raise ValueError("incomplete request")
     message = json.loads(line)
     kind, subject, started, deadline = request_message(message)
+    global client_began
     stdout, stderr = io.StringIO(), io.StringIO()
     current = Request(subject, started, deadline,
                       connection, listener, code, stdout, stderr, kind=kind, pending=pending)
@@ -617,7 +673,8 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
         cutoff = state_assembly.REQUEST_STARTED.set(current.started)
         codex_mode.enabled.cache_clear()
         trial_mode.enabled.cache_clear()
-        script_calls.start_request(str(checkout.ROOT), "operate.py", ["review" if kind == Kind.REVIEW else "next"])
+        script_calls.start_request(str(checkout.ROOT), "operate.py", ["review" if kind == Kind.REVIEW else "next"],
+                                   pending.queued if pending is not None else 0.0)
         from file_reads import stats_stand_but
         stats_stand_but(None)
         status: int | ReviewPlan = 1
@@ -631,9 +688,12 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                 current.check(code=True)
                 if current.kind == Kind.REFRESH:
                     current.detach()
-                    state_assembly.read_state(current.operator)
+                    # A client read that began after this request began read the new code.
+                    if current.started >= client_began:
+                        state_assembly.read_state(current.operator)
                     status = 0
                 else:
+                    client_began = time.time()
                     with executor():
                         if current.kind == Kind.REVIEW:
                             from operate_review import plan

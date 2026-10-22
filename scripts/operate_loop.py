@@ -291,6 +291,7 @@ def watched[T](out_at: Callable[[float], T], ready: Callable[[T], bool], seconds
                     changed = None
             started, cpu = time.monotonic(), cpu_seconds()
             reads.start(started, changed)
+            script_calls.count_read()
             stats_stand_but(changed)
             operate_service.check()
             deadline = reads.deadline
