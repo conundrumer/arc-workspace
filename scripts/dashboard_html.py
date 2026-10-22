@@ -199,7 +199,7 @@ def strip(v: View, working: int) -> str:
     held = [lead.strip() for lead, h in per_session(v, lambda s: s.start_hold is not None) if h]
     starts = ("" if not held else ' · <span class="w">agent starts held'
               + ("" if held == [""] else f" ({esc(', '.join(held))})") + "</span>")
-    return (f'<div class="strip"><div class="r1">{ops} · {working} active{starts}</div>'
+    return (f'<div class="strip"><div class="r1">{ops} · {working} active{starts} · Rendered {clock(v.now, v.now)}</div>'
             f'{usage_bar(v.usage, WindowName.SEVEN_DAY, "Week")}'
             f'{usage_bar(v.usage, WindowName.FIVE_HOUR, "5 h")}'
             f'{codex_bar(v.codex, v.now)}</div>')
@@ -207,11 +207,14 @@ def strip(v: View, working: int) -> str:
 
 def health(v: View, notes: list[str]) -> str:
     """The HTML of Health: the user's tickets that wait on nothing, the
-    hold of agent starts, a stale record, no agent at work, and `notes`,
+    hold of agent starts, a stale record, the live agent read in progress
+    or no agent at work, and `notes`,
     each once, the lines of the reads that did not decide."""
     out = [f'<div class="alert">⚠ {esc(n)}</div>' for n in dict.fromkeys(notes)]
     if v.records.main_missing is not None:
         out.append(f'<div class="alert">⚠ {esc(v.records.main_missing)}</div>')
+    if v.records.running is None:
+        out.append('<div class="meta">The live list of agents is being read</div>')
     if not v.records.records:
         return "".join(out)
     out += [tap(n, f"⚠ <b>{esc(n)}</b> {esc(v.phrase(v.all_[n]))} · waits on nothing for {ago(v.now - since)}", "alert")
@@ -220,7 +223,7 @@ def health(v: View, notes: list[str]) -> str:
             for lead, h in per_session(v, lambda s: s.start_hold) if h is not None]
     out += [f'<div class="alert">⚠ {esc(lead)}No operator has read the state since {clock(at, v.now)}</div>'
             for lead, at in per_session(v, lambda s: s.at if v.now - s.at > STALE_RECORD else None) if at is not None]
-    if not v.records.any_running():
+    if v.records.running is not None and not v.records.any_running():
         out.append('<div class="alert">⚠ No agent is at work</div>')
     return "".join(out) or '<div class="ok">✓ All moving</div>'
 

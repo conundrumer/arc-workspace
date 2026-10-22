@@ -115,7 +115,8 @@ class OperatorRecords:
         return out
 
 
-def operator_records(tickets: Path, now: float, undecided: list[str] | None = None) -> OperatorRecords:
+def operator_records(tickets: Path, now: float, undecided: list[str] | None = None,
+                     live_agents: bool = True) -> OperatorRecords:
     """The records of the last reads of the operators of each session that
     `ticket_numbers.indexes` gives (`shown_state.write_shown`): the main
     session's, or why it has none; each other session's whose time is
@@ -123,7 +124,8 @@ def operator_records(tickets: Path, now: float, undecided: list[str] | None = No
     gives as live; and none of another session whose record is missing or
     does not parse; with the agents `open_agents.running_agents` gives
     under the indexed sessions and the main session, independently of
-    those records and their ages."""
+    those records and their ages. Where `live_agents` is false, running is
+    None and the records supply the agents."""
     ids = indexes(tickets)
     main = named_main(tickets)
     records: list[SessionRecord] = []
@@ -148,7 +150,7 @@ def operator_records(tickets: Path, now: float, undecided: list[str] | None = No
         sessions.add(main)
     notes = [] if undecided is None else undecided
     running = tuple(x for session in sorted(sessions) for path in mains_named(session)
-                    for x in running_agents(path, notes))
+                    for x in running_agents(path, notes)) if live_agents else None
     return OperatorRecords(tuple(records), missing, running)
 
 

@@ -125,11 +125,11 @@ document.addEventListener('input',e=>{if(e.target.id==='q'){clearTimeout(timer);
 look(true);since();tab();
 let busy=false,again=false;
 async function update(){if(busy){again=true;return}busy=true;
-try{const r=await fetch('/',{cache:'no-store'});const d=new DOMParser().parseFromString(await r.text(),'text/html');
-const open=[...document.querySelectorAll('#live details')].map(x=>x.open),q=$('q').value,x=window.scrollX,y=window.scrollY;
+try{const r=await fetch('/',{cache:'no-store'});if(r.ok){const d=new DOMParser().parseFromString(await r.text(),'text/html');
+const open=[...document.querySelectorAll('#live details')].map(x=>x.open),q=$('q')?.value,x=window.scrollX,y=window.scrollY;
 $('live').replaceWith(d.getElementById('live'));
 document.querySelectorAll('#live details').forEach((el,i)=>{if(open[i])el.open=true});
-$('q').value=q;since();tab();if(q)search();window.scrollTo(x,y)}
+if(q!==undefined&&$('q'))$('q').value=q;since();tab();if(q&&$('q'))search();window.scrollTo(x,y)}}
 catch(e){}
 busy=false;if(again){again=false;update()}}
 let ev=null;

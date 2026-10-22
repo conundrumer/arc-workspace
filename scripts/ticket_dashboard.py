@@ -7,20 +7,16 @@ browser as the tracker, usage observations or operator record sources change.
 
     uv run python scripts/ticket_dashboard.py <address> <port>
 
-serves GET alone, at four routes. `/` renders the page on each request, as
-one HTML document with its CSS and JavaScript inline: a strip at its top,
-and the sections Health, Active, Queued, Since you looked, Pace, Queue,
-Find and Blocked, the last three of them folded. It keeps
-the search's entries of that render. `SEARCH_ROUTE` gives the HTML of the
-search's hits of the `q` parameter among the entries of the latest render,
-and `TICKET_ROUTE` the sheet of the ticket its `n` parameter gives; each
-renders the page first where none has run. The server gzips the body of
-each where the request accepts it. `EVENTS` is a Server-Sent Events stream that sends an
-event when the stream opens, then at the first read of `fingerprint`, every
-`POLL` seconds while the client is connected, that differs from the one of
-the last event and comes `MIN_EVENT` seconds or more after it; on that event the page fetches `/`
-and replaces its content in place, and the page holds no stream while it
-is hidden. The server serves no ticket file, and writes no file.
+serves GET alone, at four routes. `/` gives the latest published page,
+with its search entries available through `SEARCH_ROUTE` and `TICKET_ROUTE`.
+Before the first render, those routes give status 503; `/` gives a page
+that shows when the first read began. The server gzips HTML where accepted.
+One daemon thread renders first from operator records, then with live agents,
+and polls `fingerprint` every `POLL` seconds. While a page watches, changes
+cause a render at least `MIN_EVENT` seconds after the last began. Failed
+renders leave the published page in place. `EVENTS` sends each published
+version to connected clients, which fetch `/` and replace their content.
+A hidden page closes its stream. The server serves no ticket file.
 
 Where a file of a module the server loaded from the repo's `scripts/` or
 `src/` changes (`code_files`), the server stops taking requests, waits
@@ -38,17 +34,18 @@ import os
 import sys
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from concurrent.futures import ThreadPoolExecutor
+import traceback
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import kept_reads
-from dashboard_html import Rendered, page
+from dashboard_html import LIST_SHOWN, Rendered, filled, page
 from dashboard_reads import CodexLimits, CodexWindow, operator_records
 from dashboard_search import results, sheet, words
-from dashboard_template import EVENTS, SEARCH_ROUTE, TICKET_ROUTE
+from dashboard_template import EVENTS, LAST_LOOK, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
+from dashboard_words import clock
 from file_ticket import main_tickets
 from idle_sessions import MAIN, named_main
 from shown_state import SHOWN
@@ -60,12 +57,10 @@ from usage_limit import read, usage_file
 from ticketing.vocabulary import Status
 
 POLL = 3.0
-"""The seconds between two reads of `fingerprint` for a connected client."""
+"""The seconds between polls by the renderer and waits by a stream."""
 
 MIN_EVENT = 15.0
-"""The fewest seconds between two events of the stream to one client, so
-that renders do not run back to back while the tracker changes every few
-seconds."""
+"""The fewest seconds between the starts of refresh renders."""
 
 
 WATCH = 1.0
@@ -130,7 +125,7 @@ def code_stamps(files: list[Path]) -> tuple[Stamp, ...]:
     return tuple(stamp(p) for p in files)
 
 
-def render(tickets: Path) -> Rendered:
+def render(tickets: Path, live_agents: bool = True) -> Rendered:
     """The page of `tickets` as it stands at the call: a new state of the
     held reads (`state_reads.new_state`), so that no read gives a file as
     an earlier render read it."""
@@ -138,7 +133,7 @@ def render(tickets: Path) -> Rendered:
     if kept_reads.store() is None:
         kept_reads.open_store()
     undecided: list[str] = []
-    return page(tickets, now, read(now, undecided), operator_records(tickets, now, undecided), undecided, CODEX.read(now))
+    return page(tickets, now, read(now, undecided), operator_records(tickets, now, undecided, live_agents), undecided, CODEX.read(now))
 
 
 def accepts_gzip(header: str | None) -> bool:
@@ -158,8 +153,45 @@ def accepts_gzip(header: str | None) -> bool:
 
 @dataclass
 class Latest:
-    """The latest render of a server, None before its first."""
+    """The published render, its version, and the streams that watch it."""
     rendered: Rendered | None = None
+    version: int = 0
+    condition: threading.Condition = field(default_factory=threading.Condition)
+    streams: int = 0
+    began: float = field(default_factory=time.time)
+
+
+def render_loop(tickets: Path, latest: Latest) -> None:
+    """Publish startup renders, then changed state while a stream watches.
+    All cached state reads of the server run on this thread."""
+    def publish(live_agents: bool) -> tuple[Stamp | CodexWindow | int | None, ...]:
+        state = fingerprint(tickets)
+        rendered = render(tickets, live_agents)
+        with latest.condition:
+            latest.rendered = rendered
+            latest.version += 1
+            latest.condition.notify_all()
+        return state
+
+    previous = None
+    began = time.monotonic()
+    for live_agents in (False, True):
+        try:
+            began = time.monotonic()
+            previous = publish(live_agents)
+        except Exception:
+            traceback.print_exc()
+    while True:
+        time.sleep(POLL)
+        try:
+            state = fingerprint(tickets)
+            with latest.condition:
+                watched = latest.streams > 0
+            if watched and state != previous and time.monotonic() - began >= MIN_EVENT:
+                began = time.monotonic()
+                previous = publish(True)
+        except Exception:
+            traceback.print_exc()
 
 
 class Serving:
@@ -186,24 +218,12 @@ class Serving:
 
 class Handler(BaseHTTPRequestHandler):
     """Serves `/`, `SEARCH_ROUTE`, `TICKET_ROUTE` and `EVENTS` of the tracker `tickets`, and
-    nothing else. Each render runs on the one thread of `renderer`: the
+    nothing else. Each render runs on the daemon render thread: the
     reads it makes keep a SQLite store (`kept_reads`) that only the thread
     that opened it may use."""
     tickets: Path
-    renderer: ThreadPoolExecutor
     latest: Latest
     serving: Serving
-
-    def rendered_now(self) -> Rendered:
-        """A render on `renderer`, kept as the latest."""
-        r = self.renderer.submit(render, self.tickets).result()
-        self.latest.rendered = r
-        return r
-
-    def rendered_last(self) -> Rendered:
-        """The latest render, or a render now where none has run."""
-        r = self.latest.rendered
-        return self.rendered_now() if r is None else r
 
     def do_GET(self) -> None:
         url = urlsplit(self.path)
@@ -218,21 +238,31 @@ class Handler(BaseHTTPRequestHandler):
             self.serve_page(url.path, url.query)
 
     def serve_page(self, path: str, query: str) -> None:
+        began = time.monotonic()
+        with self.latest.condition:
+            rendered = self.latest.rendered
+        if path not in ("/", SEARCH_ROUTE, TICKET_ROUTE):
+            self.send_error(404)
+            return
+        if rendered is None:
+            line = f"First read of the state in progress · began {clock(self.latest.began, time.time())}"
+            text = filled(TEMPLATE, {"BODY": f'<main><div class="meta">{line}</div></main>',
+                                    "EVENTS": EVENTS, "SEARCH": SEARCH_ROUTE, "TICKET": TICKET_ROUTE,
+                                    "LASTLOOK": LAST_LOOK, "SHOWN": str(LIST_SHOWN)}) if path == "/" else line
+            self.send_html(text, began, 503)
+            return
         match path:
             case "/":
-                began = time.monotonic()
-                self.send_html(self.rendered_now().text, began)
+                self.send_html(rendered.text, began)
             case p if p == SEARCH_ROUTE:
-                began = time.monotonic()
-                self.send_html(results(self.rendered_last().entries, words(parse_qs(query))), began)
+                self.send_html(results(rendered.entries, words(parse_qs(query))), began)
             case p if p == TICKET_ROUTE:
-                began = time.monotonic()
                 given = parse_qs(query).get("n")
                 if given is None:
                     self.send_error(400, "no ticket number is given (`n`)")
                     return
                 n = given[-1]
-                e = self.rendered_last().entries.get(n)
+                e = rendered.entries.get(n)
                 if e is None:
                     self.send_error(404, f"no ticket {n}")
                     return
@@ -240,7 +270,7 @@ class Handler(BaseHTTPRequestHandler):
             case _:
                 self.send_error(404)
 
-    def send_html(self, text: str, began: float) -> None:
+    def send_html(self, text: str, began: float, status: int = 200) -> None:
         """Sends `text` as the HTML of the response, gzipped where the
         request accepts it, and logs its size and the time since
         `began`."""
@@ -251,7 +281,7 @@ class Handler(BaseHTTPRequestHandler):
             body = gzip.compress(body)
         self.log_message("%s: %d bytes, %d sent, in %.2f s", self.path, size, len(body),
                          time.monotonic() - began)
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         if zipped:
             self.send_header("Content-Encoding", "gzip")
@@ -262,33 +292,34 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def stream(self) -> None:
-        """Sends an event on opening, then at the first read of `fingerprint`
-        that differs from the one at the last event and comes `MIN_EVENT`
-        seconds or more after it, and a comment line at each other read,
-        so that a closed client ends the loop."""
-        sent, sent_at = fingerprint(self.tickets), time.monotonic()
+        """Send published versions and comments until the client closes."""
+        latest = self.latest
+        with latest.condition:
+            latest.streams += 1
+        sent = 0
         try:
-            self.wfile.write(b"data: changed\n\n")
-            self.wfile.flush()
             while True:
-                time.sleep(POLL)
-                now = fingerprint(self.tickets)
-                due = now != sent and time.monotonic() - sent_at >= MIN_EVENT
-                self.wfile.write(b"data: changed\n\n" if due else b": same\n\n")
+                with latest.condition:
+                    latest.condition.wait_for(lambda: latest.version > sent, timeout=POLL)
+                    version = latest.version
+                self.wfile.write(b"data: changed\n\n" if version > sent else b": same\n\n")
                 self.wfile.flush()
-                if due:
-                    sent, sent_at = now, time.monotonic()
+                sent = version
         except (BrokenPipeError, ConnectionResetError):
             return
+        finally:
+            with latest.condition:
+                latest.streams -= 1
 
 
 def serve(address: str, port: int, tickets: Path, serving: Serving) -> ThreadingHTTPServer:
     """A server of `tickets` bound to `address` and `port`, not yet
     serving, that counts its requests in `serving`."""
-    handler = type("Bound", (Handler,), {"tickets": tickets, "latest": Latest(),
-                                         "renderer": ThreadPoolExecutor(max_workers=1), "serving": serving})
+    latest = Latest()
+    handler = type("Bound", (Handler,), {"tickets": tickets, "latest": latest, "serving": serving})
     server = ThreadingHTTPServer((address, port), handler)
     server.daemon_threads = True
+    threading.Thread(target=render_loop, args=(tickets, latest), daemon=True).start()
     return server
 
 
