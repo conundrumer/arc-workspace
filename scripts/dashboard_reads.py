@@ -7,6 +7,7 @@ step journals; the Codex weekly account limit from local rollouts; and the
 time a usage window reaches 100% at its rate so far."""
 
 import os
+import re
 import json
 import math
 import threading
@@ -24,6 +25,7 @@ from idle_sessions import live, named_main
 from open_agents import Listed, running_agents
 from shown_state import Shown, ShownAgent, ShownParty, Start, shown_read
 from step_journal import records
+from ticket_form import section, section_head
 from ticket_numbers import indexed, indexes, parsed_number
 from tree_reads import scratch
 from transcripts import mains_named
@@ -210,6 +212,28 @@ def phrase(t: Ticket, all_: Mapping[str, Ticket]) -> str:
     _, colon, after = t.title.partition(": ")
     cut = (after if colon else t.title).split(", ")[0].split(";")[0]
     return cut[:1].upper() + cut[1:]
+
+
+ABOUT = {Kind.CHANGE: "Intent", Kind.REQUEST: "Goal", Kind.VALIDATION: None}
+"""The section of each kind that says what its ticket is about, None where
+the kind has none; every other kind has `Impact`."""
+
+
+def about(t: Ticket, phrase: str) -> str | None:
+    """The first sentence of the section of `t` that `ABOUT` gives, without
+    backticks and its list mark; None where its kind or file has no such
+    section, or where `phrase` already begins with that sentence."""
+    name = ABOUT.get(t.kind, "Impact")
+    try:
+        text = t.path.read_text()
+    except OSError:
+        return None
+    if name is None or section_head(text, name) is None:
+        return None
+    body = re.sub(r"^(?:- |\d+\. )", "", section(text, name).strip())
+    first = re.split(r"\n|(?<=[.!?])\s+(?=[A-Z`])", body, maxsplit=1)[0]
+    sentence = " ".join(first.replace("`", "").split())
+    return None if not sentence or phrase.startswith(sentence) else sentence
 
 
 def change_of(t: Ticket, all_: Mapping[str, Ticket]) -> Ticket | None:

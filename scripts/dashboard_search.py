@@ -8,6 +8,7 @@ whose rows lead with it."""
 
 from collections.abc import Mapping
 
+from dashboard_reads import about
 from dashboard_html import NOTE_WORDS, Entry, clock, cut, esc, tap
 
 from operations.state import LogLine, Ticket
@@ -50,10 +51,16 @@ def results(entries: Mapping[str, Entry], words: tuple[str, ...]) -> str:
 def log_line(ln: LogLine, now: float) -> str:
     """The HTML of the log line `ln`: its time, status and note, where the
     note is cut, with the cut and the full note and a label that expands it."""
-    head = f"{esc(clock(ln.time, now))} · {esc(ln.status)} · "
-    if len(ln.note.split()) <= NOTE_WORDS:
-        return f'<div class="lg">{head}{esc(ln.note)}</div>'
-    return (f'<div class="lg">{head}<span>{esc(cut(ln.note, NOTE_WORDS))}</span><span hidden>{esc(ln.note)}</span>'
+    return clipped(f"{esc(clock(ln.time, now))} · {esc(ln.status)} · ", ln.note)
+
+
+def clipped(head: str, note: str) -> str:
+    """The HTML of a line of the sheet: the HTML `head`, then `note`, cut
+    where it is long, with the cut and the full note and a label that
+    expands it."""
+    if len(note.split()) <= NOTE_WORDS:
+        return f'<div class="lg">{head}{esc(note)}</div>'
+    return (f'<div class="lg">{head}<span>{esc(cut(note, NOTE_WORDS))}</span><span hidden>{esc(note)}</span>'
             ' <i class="more">more</i></div>')
 
 
@@ -62,7 +69,8 @@ def lines(t: Ticket, now: float) -> str:
 
 
 def sheet(e: Entry, now: float) -> str:
-    """The HTML of the sheet of `e`: its number and kind, its phrase, each
+    """The HTML of the sheet of `e`: its number and kind, its phrase, what
+    the ticket is about (`dashboard_reads.about`) where it says, each
     live change whose row leads with it with the words of that change's
     state, or else the plain sentence on its status, its last
     `SHEET_LINES` log lines, and the last `SHEET_LINES` of each of those
@@ -71,8 +79,10 @@ def sheet(e: Entry, now: float) -> str:
     t, cs = e.ticket, e.changes
     leads = [e.status] if not cs else [f"Work on {c.change.number} · {c.state}" for c in cs]
     tails = [c for c in cs if c.at_work] or cs[:1]
+    said = about(t, e.phrase)
     return (f'<div class="num">{esc(t.number)} · {esc(t.kind)}</div>'
             f'<div class="sh" style="font-size:17px">{esc(e.phrase)}</div>'
+            + ("" if said is None else clipped("", said))
             + "".join(f'<div class="p">{esc(x)}</div>' for x in leads)
             + lines(t, now)
             + "".join(f'<div class="gh">Change {esc(c.change.number)}</div>{lines(c.change, now)}' for c in tails))

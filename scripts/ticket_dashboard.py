@@ -45,7 +45,7 @@ import kept_reads
 from dashboard_html import Rendered, filled, page
 from dashboard_reads import CodexLimits, CodexWindow, clear, cleared, operator_records
 from dashboard_search import results, sheet, words
-from dashboard_template import CLEAR_ROUTE, EVENTS, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
+from dashboard_template import CLEAR_ROUTE, EVENTS, FOLD, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
 from dashboard_words import clock
 from file_ticket import main_tickets
 from idle_sessions import MAIN, named_main
@@ -274,7 +274,7 @@ class Handler(BaseHTTPRequestHandler):
             line = f"First read of the state in progress · began {clock(self.latest.began, time.time())}"
             text = filled(TEMPLATE, {"BODY": f'<main><div class="meta">{line}</div></main>',
                                     "EVENTS": EVENTS, "SEARCH": SEARCH_ROUTE, "TICKET": TICKET_ROUTE,
-                                    "CLEAR": CLEAR_ROUTE}) if path == "/" else line
+                                    "CLEAR": CLEAR_ROUTE, "FOLD": FOLD}) if path == "/" else line
             self.send_html(text, began, 503)
             return
         match path:
