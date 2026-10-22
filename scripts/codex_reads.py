@@ -1,4 +1,8 @@
-"""The command results of a launcher's Codex turns, saved by codex_agent.
+"""Codex assignments, execution evidence and validated reports.
+
+Enrolled identities are projected from the session's registered ticket stores.
+Their own rollouts supply execution and usage; current validator receipts supply
+reports. Launcher command results remain readable for unenrolled calls.
 
 A `codex_agent.py` call is a launch where `codex_agent.work_args` gives its
 arguments; a call it refuses runs no turn. A launch with an argument the shell
@@ -29,6 +33,269 @@ from command_labels import segment_program, simple_commands
 from run_reads import blocks, is_prompt
 
 from operations.roles import GENERAL, Role
+from codex_ticket import Assignment
+
+
+@dataclass(frozen=True)
+class Native:
+    store: Path
+    manifest: Path
+    assignment: Assignment
+    state: dict[str, Any]
+
+
+_native_sessions: dict[str, Path] = {}
+
+
+def rollout_message(row: dict[str, Any]) -> tuple[str, str] | None:
+    payload = row["payload"]
+    kind = payload.get("type")
+    if row.get("type") == "response_item" and kind == "message":
+        return payload["role"], "\n".join(part["text"] for part in payload["content"] if "text" in part)
+    if row.get("type") == "event_msg":
+        if kind in ("user_message", "agent_message"):
+            return ("user" if kind == "user_message" else "assistant"), payload["message"]
+        item = payload.get("item", {})
+        if kind == "item_completed" and item.get("type") in ("UserMessage", "AgentMessage"):
+            return ("user" if item["type"] == "UserMessage" else "assistant"), "\n".join(
+                part["text"] for part in item["content"] if "text" in part)
+    return None
+
+
+def native_assignments(session_scratch: Path | None = None, *, include_history: bool = False) -> list[Native]:
+    """One projection of enrolled operations identities and their current turns."""
+    import codex_ticket
+    from ticket_numbers import session_id
+    from tree_reads import scratch
+    from file_reads import stat_read
+
+    directory = (session_scratch or scratch(session_id())) / "codex-stores"
+    stat_read(directory)
+    result = []
+    for pointer in sorted(directory.glob("*.json")):
+        stat_read(pointer)
+        store = Path(json.loads(pointer.read_text())["store"])
+        stat_read(store / "state.json")
+        state = json.loads((store / "state.json").read_text())
+        records = list(state["agents"].items())
+        if include_history:
+            records += [(item["agent"], item) for item in state.get("history", [])]
+        for agent, item in records:
+            manifest = store / "assignments" / f"{agent}-{item['revision']}.json"
+            stat_read(manifest)
+            assignment = codex_ticket.Assignment.read(manifest)
+            stat_read(assignment.brief)
+            stat_read(assignment.report)
+            if (assignment.agent != agent or assignment.operator != state["operator"]
+                    or assignment.ticket != state["ticket"]):
+                raise ValueError("native assignment differs from its store")
+            result.append(Native(store, manifest, assignment, item))
+            _native_sessions[agent] = directory.parent
+    unique = {(item.assignment.agent, item.assignment.revision): item for item in result}
+    if len(unique) != len(result):
+        raise ValueError("native operations identity occurs in more than one store")
+    return sorted(result, key=lambda item: (item.state["reserved"],
+        item.assignment.subject or item.assignment.ticket, item.assignment.role.value, item.assignment.revision))
+
+
+def native_find(agent: str, session_scratch: Path | None = None) -> Native | None:
+    if session_scratch is None and agent in _native_sessions:
+        session_scratch = _native_sessions[agent]
+    return next((item for item in native_assignments(session_scratch)
+                 if item.assignment.agent == agent), None)
+
+
+def native_turn(item: Native, home: Path | None = None):
+    import codex_rollout
+    from file_reads import stat_read
+
+    thread, turn = item.state["native"], item.state["turn"]
+    if thread is None or turn is None:
+        raise ValueError("native submission has no accepted turn")
+    path = codex_rollout.rollout_path(thread, home or Path.home())
+    stat_read(path)
+    found = [value for value in codex_rollout.read_turns(path) if value.turn == turn]
+    if len(found) != 1:
+        raise ValueError("native assignment has no unique rollout turn")
+    return found[0]
+
+
+def native_execution(assignment: Assignment, state: dict[str, Any], home: Path) -> tuple[list[dict[str, Any]], str]:
+    """Read commands, inputs and the final reply from this assignment's own turn."""
+    from codex_ticket import Binding
+    import codex_rollout
+
+    turn = native_turn(Native(Path(), Path(), assignment, state), home)
+    entries: list[dict[str, Any]] = [{"type": "user", "uuid": str(assignment.revision),
+        "timestamp": datetime.fromtimestamp(turn.started).astimezone().isoformat(),
+        "message": {"content": assignment.brief.read_text()}}]
+    binding = Binding.read(assignment.scratch)
+    history = []
+    if binding is not None:
+        store_state = json.loads((binding.store / "state.json").read_text())
+        accepted = {item["turn"] for item in store_state.get("history", [])
+                    if item["agent"] == assignment.agent and item["native"] == state["native"]}
+        history = [old for old in codex_rollout.turns(state["native"], home) if old.turn in accepted]
+    entries = [entry for old in history for entry in live_commands(old.activity, include_prompts=True)] + entries
+    entries.extend(live_commands(turn.activity, include_prompts=True))
+    reply = ""
+    for row in turn.activity:
+        payload = row["payload"]
+        message = rollout_message(row)
+        if message is not None and message[0] == "assistant":
+            reply = message[1]
+        if payload.get("type") == "task_complete" and isinstance(payload.get("last_agent_message"), str):
+            reply = payload["last_agent_message"]
+        elif (row.get("type") == "response_item" and payload.get("type") == "message"
+              and payload.get("role") == "assistant" and payload.get("phase") == "final"):
+            reply = "\n".join(part["text"] for part in payload["content"] if "text" in part)
+        elif row.get("type") == "event_msg" and payload.get("type") == "agent_message":
+            reply = payload["message"]
+    return entries, reply
+
+
+def native_shell_call(payload: dict[str, Any]) -> str | None:
+    """Read one literal shell call from a native tool invocation; refuse code expressions."""
+    if payload.get("type") == "function_call" and payload.get("name") in ("exec_command", "functions.exec_command"):
+        return json.loads(payload["arguments"])["cmd"]
+    if payload.get("type") != "custom_tool_call" or payload.get("name") != "exec":
+        return None
+    found = re.fullmatch(r"\s*(?:text\(\s*)?await tools\.exec_command\(\s*(\{.*\})\s*\)\s*\)?\s*;?\s*",
+                         payload["input"], re.S)
+    if found is None:
+        return None
+    source = found[1]
+    position = 1
+    values = {}
+    decoder = json.JSONDecoder()
+    while True:
+        key = re.match(r'\s*(?:"([a-z_]+)"|([a-z_]+))\s*:\s*', source[position:])
+        if key is None:
+            return None
+        name = key[1] or key[2]
+        if name in values or name not in {"cmd", "workdir", "yield_time_ms", "max_output_tokens", "login", "tty"}:
+            return None
+        position += key.end()
+        try:
+            value, end = decoder.raw_decode(source[position:])
+        except ValueError:
+            return None
+        values[name] = value
+        position += end
+        tail = re.match(r"\s*([,}])\s*", source[position:])
+        if tail is None:
+            return None
+        position += tail.end()
+        if tail[1] == "}":
+            return values.get("cmd") if position == len(source) and isinstance(values.get("cmd"), str) else None
+
+
+def native_receipt(item: Native, home: Path | None = None):
+    """Revalidate the current report bytes and terminal execution on every read."""
+    from codex_reports import Evidence, Outcome, Validated, validate
+    from codex_ticket import Phase, Terminal, matching_input
+    from codex_rollout import TurnEnd
+
+    if (not item.state["validated"] or item.state["phase"] != Phase.ENDED
+            or item.state.get("status") != Terminal.COMPLETED):
+        return None
+    turn = native_turn(item, home)
+    if turn.ended is None or turn.end_state is not TurnEnd.COMPLETE:
+        raise ValueError("receipt has no terminal rollout evidence")
+    matching_input(item.assignment, item.manifest, turn)
+    value = dict(item.state["receipt"])
+    value["manifest"] = Path(value["manifest"])
+    value["outcome"] = Outcome(value["outcome"])
+    previous = Validated(**value)
+    entries, reply = native_execution(item.assignment, item.state, home or Path.home())
+    return validate(item.manifest, reply, Evidence(item.assignment.agent, item.assignment.revision,
+                    item.assignment.inputs_digest, entries), previous.outcome, previous)
+
+
+def native_agents(owner: str, session_scratch: Path | None = None,
+                  home: Path | None = None):
+    """Assemble launches and validated reports for the existing operations joins."""
+    from operator_reads import AgentsRead
+    from operations.state import Agent, Report, Waits
+    from codex_reports import Outcome
+    from codex_ticket import Phase
+
+    agents = []
+    messaged: dict[str, frozenset[str]] = {}
+    items = native_assignments(session_scratch)
+    by_native = {item.state["native"]: item.assignment.agent for item in items if item.state["native"]}
+    by_native.update({item.state["runtime"]: item.assignment.agent for item in items if item.state.get("runtime")})
+    for item in items:
+        assignment, state = item.assignment, item.state
+        parent = state["parent"] or assignment.operator
+        if parent != owner:
+            continue
+        reports = ()
+        try:
+            receipt = native_receipt(item, home)
+            if receipt is not None and receipt.outcome is not Outcome.FINISHED:
+                receipt = None
+            if receipt is not None:
+                reports = (Report(assignment.report.stat().st_mtime, assignment.report.read_text(), assignment.report),)
+        except (OSError, ValueError, KeyError, StopIteration):
+            receipt = None
+        reviewing = native_reviewing(item, home) if assignment.role in (Role.CODE_EDITOR, Role.DOC_EDITOR) else None
+        agents.append(Agent(assignment.agent, parent, assignment.role,
+            assignment.subject or assignment.ticket, assignment.brief.read_text(),
+            state["reserved"], state["reserved"],
+            None if receipt or state["phase"] == Phase.ENDED else Waits.AT_WORK,
+            reports, True, report_file=(assignment.report if receipt is not None
+                or assignment.role in (Role.CODE_EDITOR, Role.DOC_EDITOR) else None), reviewing=reviewing))
+        try:
+            messaged[assignment.agent] = native_sent(item, by_native, home)
+        except (OSError, ValueError, KeyError):
+            messaged[assignment.agent] = frozenset()
+    return AgentsRead(tuple(agents), messaged, {})
+
+
+def native_reviewing(item: Native, home: Path | None = None) -> float | None:
+    """Count an editor's own isolated review command, including its live call."""
+    from operations.command_words import Action, is_next
+
+    try:
+        turn = native_turn(item, home)
+    except (OSError, ValueError, KeyError):
+        return None
+    first = None
+    for row in turn.activity:
+        payload = row["payload"]
+        if row.get("type") != "response_item" or payload.get("type") not in ("function_call", "custom_tool_call"):
+            continue
+        command = native_shell_call(payload)
+        if command is not None:
+            if is_next(command, item.assignment.agent, Action.REVIEW):
+                first = first or timestamp(row)
+                continue
+        first = None
+    return first
+
+
+def native_sent(item: Native, identities: dict[str, str], home: Path | None = None) -> frozenset[str]:
+    """Recipients of successful native messages in the sender's own rollout."""
+    pending = {}
+    sent = set()
+    for row in native_turn(item, home).activity:
+        payload = row["payload"]
+        if row.get("type") != "response_item":
+            continue
+        if (payload.get("type") == "function_call"
+                and payload.get("name", "").removeprefix("collaboration.") in ("send_message", "followup_task")):
+            pending[payload["call_id"]] = json.loads(payload["arguments"])["target"]
+        elif payload.get("type") == "function_call_output" and payload["call_id"] in pending:
+            output = payload["output"]
+            result = (json.loads(output) if output.strip() else None) if isinstance(output, str) else output
+            if (result is None or (isinstance(result, dict) and not result.get("error") and not result.get("isError")
+                    and (result.get("status") in ("sent", "delivered", "queued", "accepted", "running")
+                         or isinstance(result.get("message_id"), str)))):
+                target = pending[payload["call_id"]]
+                if target in identities:
+                    sent.add(identities[target])
+    return frozenset(sent)
 
 
 @dataclass(frozen=True)
@@ -301,6 +568,19 @@ def walk_entries(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any
     """The Codex command results among a launcher's entries, with its
     prompts kept in order so a message after a stop removes its bound.
     Raise where a call, record or completed turn cannot be read."""
+    from codex_ticket import Binding, Store, Assignment
+
+    bound_calls = [binding for call in calls(entries) if (binding := Binding.read(call.scratch)) is not None]
+    if bound_calls:
+        binding = bound_calls[-1]
+        store = Store(binding.store)
+        state = store.snapshot()["agents"][binding.agent]
+        manifest = store.manifest(binding.agent, state["revision"])
+        assignment = Assignment.read(manifest)
+        item = Native(binding.store, manifest, assignment, state)
+        if (assignment.agent_type or assignment.role.agent_type) != kind or native_receipt(item) is None:
+            raise ValueError("native assignment has no matching validated report")
+        return native_execution(assignment, state, Path.home())[0]
     return saved_entries(entries, kind, latest_complete=True)
 
 
@@ -409,21 +689,26 @@ def command_entries(call: str, command: str, result: str) -> list[dict[str, Any]
     ]
 
 
-def live_commands(activity: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def live_commands(activity: list[dict[str, Any]], *, include_prompts: bool = False) -> list[dict[str, Any]]:
     """Pair completed rollout results with commands from this turn only."""
     pending: dict[str, str] = {}
     completed: set[str] = set()
     out: list[dict[str, Any]] = []
     for row in activity:
+        previous_length = len(out)
         p = row["payload"]
         kind = p.get("type")
-        if row.get("type") == "response_item" and kind == "function_call":
-            if p.get("name") in ("exec_command", "functions.exec_command"):
-                args = json.loads(p["arguments"])
-                pending[p["call_id"]] = args["cmd"]
+        message = rollout_message(row) if include_prompts else None
+        if message is not None and message[0] == "user":
+            out.append({"type": "user", "uuid": str(len(out)),
+                        "message": {"content": message[1]}})
+        if row.get("type") == "response_item" and kind in ("function_call", "custom_tool_call"):
+            command = native_shell_call(p)
+            if command is not None:
+                pending[p["call_id"]] = command
         elif kind == "exec_command_begin":
             pending[p["call_id"]] = shlex.join(p["command"])
-        elif ((row.get("type") == "response_item" and kind == "function_call_output")
+        elif ((row.get("type") == "response_item" and kind in ("function_call_output", "custom_tool_call_output"))
               or kind == "exec_command_end"):
             identity = p["call_id"]
             if identity not in pending or identity in completed:
@@ -442,6 +727,9 @@ def live_commands(activity: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 out.extend(command_entries(identity, shlex.join(command) if isinstance(command, list)
                                            else command, item["aggregated_output"]))
                 completed.add(identity)
+        if include_prompts:
+            for entry in out[previous_length:]:
+                entry["timestamp"] = row["timestamp"]
     return out
 
 

@@ -54,9 +54,12 @@ def check(hook: dict[str, Any]) -> str | None:
         told: dict[str, float] = {}
         started = float("-inf")
         last = ""
+        enrolled = False
         for entry in entries_forward(path):
             note_told(told, entry)
-            for call, *_ in launches(entry):
+            for call, _, scratch, _ in launches(entry):
+                from codex_ticket import Binding
+                enrolled = Binding.read(scratch) is not None
                 started = epoch(entry["timestamp"])
                 last = call
             if entry.get("type") == "assistant":
@@ -64,6 +67,7 @@ def check(hook: dict[str, Any]) -> str | None:
                     if block["name"] == "Bash":
                         command = block["input"]["command"]
                         if any(args and (program, args[0]) in RELAYED
+                               and (not enrolled or (program, args[0]) != ("operate.py", "review"))
                                for program, args in programs(command)):
                             commands[block["id"]] = command
             for call, block, _ in tool_results(entry):

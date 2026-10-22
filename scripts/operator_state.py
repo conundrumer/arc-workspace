@@ -151,7 +151,9 @@ class CodexRead:
 
 
 def codex_end(agent: str, home: Path | None = None) -> CodexRead:
-    """A completed walk ends an attempt; otherwise its thread decides whether
+    """An enrolled attempt ends with a current receipt or a terminal store state.
+
+    A completed walk ends a legacy attempt; otherwise its thread decides whether
     it can end: a turn its rollout gives as open runs only where the shared
     Codex daemon gives it in progress (`codex_daemon.turn_status`). A thread
     or a daemon that cannot be read, or a daemon that gives no such turn,
@@ -159,9 +161,25 @@ def codex_end(agent: str, home: Path | None = None) -> CodexRead:
     import codex_daemon
     import codex_reads
     import codex_rollout
+    from codex_ticket import Phase
     from entry_reads import entries_forward
     from operations.roles import CODEX_LAUNCHER
     from run_reads import agent_type, role_type
+
+    try:
+        native = codex_reads.native_find(agent)
+        if native is not None:
+            try:
+                receipt = codex_reads.native_receipt(native, home)
+            except SUBJECT_FAULTS:
+                receipt = None
+            if receipt is None and native.state["phase"] == Phase.ENDED:
+                return CodexRead(CodexEnd.DEAD, native.state["status"], native.assignment.scratch)
+            return (CodexRead(CodexEnd.DONE) if receipt is not None else
+                    CodexRead(CodexEnd.UNKNOWN, "native assignment has no current validated result",
+                              native.assignment.scratch))
+    except SUBJECT_FAULTS as exc:
+        return CodexRead(CodexEnd.UNKNOWN, str(exc))
 
     path = launched_find(agent)
     if path is None:

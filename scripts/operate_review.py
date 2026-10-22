@@ -48,13 +48,23 @@ def review(editor: str) -> int:
     Where `Agent.reviewing` of the editor, as its transcript stands when
     the call starts, does not count the call, it prints `UNCOUNTED` instead,
     with no block and no read of the state."""
-    path = find(editor)
-    parent = parent_id(path)
-    kind = parent_type(path)
+    from codex_reads import native_find, native_reviewing
+    from run_reads import agent_type
+
+    native = native_find(editor)
+    if native is not None:
+        parent = native.assignment.operator
+        kind = agent_type(find(parent))
+        counted = native_reviewing(native)
+    else:
+        path = find(editor)
+        parent = parent_id(path)
+        kind = parent_type(path)
+        counted = reviewing_since(path, editor)
     if kind != Role.OPERATOR.agent_type:
         print(changes.NO_OPERATOR.format(agent=editor))
         return 0
-    if reviewing_since(path, editor) is None:
+    if counted is None:
         print(UNCOUNTED.format(command=next_command(editor, Action.REVIEW)))
         return 0
     filed = change_filed(parent, editor)
@@ -76,7 +86,28 @@ def review(editor: str) -> int:
         return 1
     if not isinstance(step, (Launch, Poll)):
         raise TypeError(f"review step {step!r} is no launch")
-    print_step(prepared(step, scratch), scratch, editor)
+    ready = prepared(step, scratch)
+    if native is not None and isinstance(ready, Launch):
+        import json
+        from codex_ticket import prepare
+        from operations.filing import filed as filed_steps, filed_line
+        from operations.roles import CLAUDE_TYPES, agent_type, description, launch_parameters
+
+        if agent_type(ready.role, ready.subject) in CLAUDE_TYPES:
+            for target, text in filed_steps(ready, scratch).items():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(text + "\n")
+            parameters = {**launch_parameters(ready.role, ready.subject, ready.model,
+                                             filed_line(ready, scratch)),
+                          "run_in_background": True}
+        else:
+            parameters = {"description": description(ready.role, ready.subject),
+                          "prompt": ready.brief}
+            if ready.model is not None:
+                parameters["model"] = ready.model.value
+        print(json.dumps(prepare(native.assignment.scratch, parameters, Path.home())))
+        return 0
+    print_step(ready, scratch, editor)
     return 0
 
 
@@ -85,9 +116,15 @@ def change_filed(operator: str, editor: str) -> float | None:
     `editor`, of `roles.LAUNCHING_EDITORS`, as the launches of `operator`
     give that change, or None where they give no such launch or that
     ticket is not read."""
-    agents = read_operator(operator, find(operator), main_tree(), [], {}).agents
-    mine = [a for a in agents if a.agent_id == editor and a.role in LAUNCHING_EDITORS]
-    number = parsed_number(mine[-1].subject) if mine else None
+    from codex_reads import native_find
+
+    native = native_find(editor)
+    if native is not None:
+        number = parsed_number(native.assignment.subject or native.assignment.ticket)
+    else:
+        agents = read_operator(operator, find(operator), main_tree(), [], {}).agents
+        mine = [a for a in agents if a.agent_id == editor and a.role in LAUNCHING_EDITORS]
+        number = parsed_number(mine[-1].subject) if mine else None
     if number is None:
         return None
     try:

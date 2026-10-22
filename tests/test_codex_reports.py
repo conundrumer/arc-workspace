@@ -2,7 +2,9 @@
 
 import hashlib
 import os
+import json
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -81,3 +83,42 @@ def test_stopped_walk_does_not_approve(tmp_path: Path):
     with pytest.raises(ticket.Refused):
         reports.validate(manifest, str(item.report), replace(evidence, revision=2, entries=entries),
                          reports.Outcome.FINISHED)
+
+
+@pytest.mark.parametrize("outcome", ["finished", "needs-operator"])
+def test_native_completion_requires_current_receipt(tmp_path: Path, outcome: str):
+    reads = script("codex_reads")
+    item, manifest, _ = prepared(tmp_path)
+    store = ticket.Store(manifest.parent.parent)
+    ticket.register(store.path, tmp_path, item.agent)
+    token = store.reserve(item)
+    store.accepted(item.agent, token, "native-root", "turn")
+    started = store.snapshot()["agents"][item.agent]["reserved"] + 1
+    directory = tmp_path / ".codex" / "sessions"
+    directory.mkdir(parents=True)
+    path = directory / "rollout-test-native-root.jsonl"
+
+    def row(offset, payload):
+        return json.dumps({"type": "event_msg", "timestamp": datetime.fromtimestamp(
+            started + offset, timezone.utc).isoformat(), "payload": payload}) + "\n"
+
+    opening = row(0, {"type": "task_started", "turn_id": "turn"}) + row(
+        1, {"type": "user_message", "message": f"{manifest}\n{item.brief.read_text()}"})
+    path.write_text(opening)
+    assert reads.native_agents(item.operator, tmp_path, tmp_path).agents[0].pending
+    with pytest.raises(ticket.Refused):
+        ticket.accept(item.scratch, item.agent, tmp_path, "finished")
+    path.write_text(opening + row(2, {"type": "task_complete", "turn_id": "turn",
+                                     "last_agent_message": str(item.report)}))
+    store.ended(item.agent, "turn", "completed")
+    os.utime(item.report, (started + 3, started + 3))
+    script("state_reads").new_state()
+    assert reads.native_agents(item.operator, tmp_path, tmp_path).agents[0].last_report is None
+    ticket.accept(item.scratch, item.agent, tmp_path, outcome)
+    accepted = reads.native_agents(item.operator, tmp_path, tmp_path).agents[0]
+    assert not accepted.pending
+    assert (accepted.last_report is not None) == (outcome == "finished")
+    item.report.write_text("changed report")
+    os.utime(item.report, (started + 4, started + 4))
+    script("state_reads").new_state()
+    assert reads.native_agents(item.operator, tmp_path, tmp_path).agents[0].last_report is None

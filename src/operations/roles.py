@@ -20,6 +20,13 @@ class Model(StrEnum):
     HAIKU = "haiku"
 
 
+class ReasoningEffort(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
+
+
 class Role(StrEnum):
     """What an agent the operator launches does, by the word its
     description gives."""
@@ -233,6 +240,21 @@ CODEX_LINE = mctx("Codex mode: role `{role}`, model `{model}`, reasoning effort 
 CODEX_AGENT_LINE = mctx("Codex agent type: `{agent_type}`.")
 
 
+def native_parameters(role: Role, subject: str, model: Model | None = None) -> tuple[str, ReasoningEffort]:
+    """The model and effort of a child launched by a Codex agent.
+
+    Claude-only agent types require the owning operator.
+    """
+    if agent_type(role, subject) in CLAUDE_TYPES:
+        raise ValueError("agent type requires the owning Claude operator")
+    selected, effort = CODEX_ROLES[role]
+    if (model or launched_model(role, subject)) is Model.HAIKU:
+        selected = "gpt-6-luna"
+    if role is Role.CODE_EDITOR and model is Model.SONNET:
+        effort = "medium"
+    return selected, ReasoningEffort(effort)
+
+
 def launch_parameters(role: Role, subject: str, model: Model | None,
                       prompt: str | None = None) -> dict[str, str]:
     """The parameters of the printed call and the operator's record of
@@ -245,9 +267,7 @@ def launch_parameters(role: Role, subject: str, model: Model | None,
         out["model"] = str(given)
     if prompt is not None:
         if codex:
-            codex_model, effort = CODEX_ROLES[role]
-            if role is Role.CODE_EDITOR and model is Model.SONNET:
-                effort = "medium"
+            codex_model, effort = native_parameters(role, subject, model)
             prompt += "\n" + CODEX_LINE.format(role=role.value, model=codex_model, effort=effort)
             prompt += "\n" + CODEX_AGENT_LINE.format(agent_type=agent_type(role, subject))
         out["prompt"] = prompt

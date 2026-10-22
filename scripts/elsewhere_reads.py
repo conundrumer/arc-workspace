@@ -23,18 +23,33 @@ from operations.state import Agent, Ticket
 def editor_checks(agents: Sequence[Agent], main: Path, undecided: list[str]) -> AgentsRead:
     """The checks, of `roles.CHECKS`, that the editors among `agents` of
     `roles.LAUNCHING_EDITORS` launched, with the editor as their
-    `operator`. An editor whose transcript is not written yet
-    (`transcripts.launched_find`) gives none."""
+    `operator`. Enrolled editors use their assignment's native launches;
+    Claude launches also require a readable transcript."""
     out: list[Agent] = []
     reads: list[AgentsRead] = []
     for a in agents:
         if a.role not in LAUNCHING_EDITORS or a.agent_id is None:
             continue
+        from codex_reads import native_agents, native_find
+        from run_reads import session_of
+        from tree_reads import scratch
+
+        try:
+            operator_path = find(a.operator)
+            session_scratch = scratch(session_of(operator_path).name)
+            native = native_find(a.agent_id, session_scratch)
+        except (Refused, OSError, ValueError):
+            native = None
+        if native is not None:
+            checks = native_agents(a.agent_id, session_scratch)
+            out += [r for r in checks.agents if r.role in CHECKS]
+            reads.append(checks)
         path = launched_find(a.agent_id)
         if path is None:
             continue
         theirs = read_launches(a.agent_id, path, main, undecided)
-        out += [r for r in theirs.agents if r.role in CHECKS]
+        existing = {r.agent_id for r in out}
+        out += [r for r in theirs.agents if r.role in CHECKS and r.agent_id not in existing]
         reads.append(theirs.launched)
     return kept(out, reads)
 

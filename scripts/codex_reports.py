@@ -66,7 +66,7 @@ def validate(manifest: Path, reply: str, evidence: Evidence, outcome: Outcome,
         raise Refused("assignment has no readable execution evidence")
     if not written_since(assignment.report, reversed(entries)):
         raise Refused("report predates substantive input")
-    kind = assignment.role.agent_type
+    kind = assignment.actual_type
     if kind in checklist_agents():
         calls = _calls(entries, kind)
         stop = stop_bound(entries, calls, kind)

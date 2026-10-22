@@ -306,9 +306,14 @@ def launches_of(aid: str, path: Path, main: Path, uses: Uses,
     passes: dict[str, PassReport] = {}
     messaged: dict[str, frozenset[str]] = {}
     limited: dict[str, float] = {}
+    from codex_reads import native_agents
+    from run_reads import session_of
+    from tree_reads import scratch
+
+    native = native_agents(aid, scratch(session_of(path).name))
     if not any(tool == Tool.AGENT and described(str(inp.get("description", "")))
                for _, inp, tool in uses.values()):
-        return AgentsRead((), {}, {}), {}
+        return native, {}
     found = launched(path, undecided)
     signs = turn_signs(path, [launch for launch in found if launch.pending])
     own = resumes(path, undecided)
@@ -342,7 +347,9 @@ def launches_of(aid: str, path: Path, main: Path, uses: Uses,
         agents.append(a)
         if d.role in PASSES and launch.agent:
             passes[launch.agent] = pass_read(d.subject, d.role, use[0], main)
-    return AgentsRead(tuple(agents), messaged, limited), passes
+    enrolled = {a.agent_id for a in native.agents}
+    return AgentsRead(tuple(a for a in agents if a.agent_id not in enrolled) + native.agents,
+                      {**messaged, **native.messaged}, {**limited, **native.limited}), passes
 
 
 def reviewing_since(path: Path | None, agent: str | None) -> float | None:

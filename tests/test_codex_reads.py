@@ -15,6 +15,17 @@ walk = script("checklist_walk_hook")
 STEP = "uv run python scripts/step.py code-reviewer"
 
 
+@pytest.mark.parametrize("source", [
+    'if (false) { text(await tools.exec_command({cmd:"review"})); }',
+    'text(await tools.exec_command({cmd:"review", ...override}));',
+    'text(await tools.exec_command({cmd:"review", cmd:"other"}));',
+    'text(await tools.exec_command({cmd:command}));',
+    'text(await tools.exec_command({cmd:"review"})); text("more work");',
+])
+def test_native_review_refuses_nonliteral_or_joined_shell_calls(source):
+    assert reads.native_shell_call({"type": "custom_tool_call", "name": "exec", "input": source}) is None
+
+
 @pytest.mark.parametrize("args", [
     "--help 2>&1 | head -40", "-h", "code-reviewer /tmp/unused /tmp/brief model high --help",
     "show /tmp/unused", "steer /tmp/unused 'keep going'", "interrupt /tmp/unused",
@@ -631,7 +642,8 @@ def test_hook_refusal_is_removed_from_call_enumeration(tmp_path):
 
 
 @pytest.mark.parametrize('bad', [None, 'missing-result', 'wrong-interval', 'wrong-thread', 'wrong-turn', 'ended'])
-def test_live_baseline_uses_only_completed_commands_of_current_turn(tmp_path, bad):
+@pytest.mark.parametrize('custom', [False, True])
+def test_live_baseline_uses_only_completed_commands_of_current_turn(tmp_path, bad, custom):
     entry = turn(tmp_path, [])
     entry['timestamp'] = '2026-10-20T00:00:00Z'
     (tmp_path / 'codex-events.jsonl').unlink()
@@ -646,6 +658,14 @@ def test_live_baseline_uses_only_completed_commands_of_current_turn(tmp_path, ba
         {'type': 'response_item', 'payload': {'type': 'function_call', 'name': 'exec_command',
             'call_id': 'pending', 'arguments': json.dumps({'cmd': STEP})}},
     ]
+    if custom:
+        for row in rows:
+            payload = row['payload']
+            if payload['type'] == 'function_call':
+                payload.update(type='custom_tool_call', name='exec', input=(
+                    'text(await tools.exec_command(' + payload.pop('arguments') + '));'))
+            elif payload['type'] == 'function_call_output':
+                payload['type'] = 'custom_tool_call_output'
     if bad == 'missing-result':
         rows.pop(2)
     if bad == 'wrong-turn':

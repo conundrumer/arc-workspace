@@ -207,5 +207,45 @@ def codex_spend(owner: dict[Path, str], before: float | None = None,
                 elif previous.role != item.role or previous.usage != item.usage:
                     seen[key] = replace(previous, usage=None, reason="conflicting turn evidence")
     sources.extend(seen.values())
+    native_sources = native_turn_sources(launches, owner, before, home, inputs)
+    accepted = {(item.thread, item.turn): item for item in native_sources
+                if item.thread is not None and item.turn is not None}
+    sources = [item for item in sources if (item.thread, item.turn) not in accepted]
+    sources.extend(accepted.values())
+    sources.extend(item for item in native_sources if item.thread is None or item.turn is None)
     return CodexSpend(tuple(sources), tuple(fingerprint(p) for p in sorted(inputs)))
 
+
+
+def native_turn_sources(launches: dict[Path, list[codex_reads.Call]], owner: dict[Path, str],
+                        before: float | None, home: Path, inputs: set[Path]) -> list[CodexSource]:
+    """Measure enrolled roots and descendants from the shared assignment projection."""
+    from codex_ticket import Binding
+    from run_reads import session_of
+    from tree_reads import scratch as session_scratch
+
+    stores = {binding.store for directory in launches
+              if (binding := Binding.read(directory)) is not None}
+    native_sources = []
+    sessions = {session_scratch(session_of(path).name) for path in owner}
+    for directory in sorted(sessions):
+        inputs.add(directory / "codex-stores")
+        for item in codex_reads.native_assignments(directory, include_history=True):
+            if (item.store not in stores or item.state.get("refused")
+                    or (before is not None and item.state["reserved"] > before)):
+                continue
+            inputs.update((item.store / "state.json", item.manifest, item.assignment.brief))
+            usage = None
+            reason = "native submission has no accepted rollout evidence"
+            running = True
+            try:
+                turn = codex_reads.native_turn(item, home)
+                inputs.add(codex_rollout.rollout_path(item.state["native"], home))
+                usage = turn.usage
+                reason = codex_rollout.usage_reason(usage, turn.turn)
+                running = turn.ended is None
+            except (OSError, ValueError, KeyError) as exc:
+                reason = "native rollout evidence unavailable: " + str(exc)
+            native_sources.append(CodexSource(str(item.manifest), item.assignment.role.value,
+                item.state["native"], item.state["turn"], usage, reason, running))
+    return native_sources

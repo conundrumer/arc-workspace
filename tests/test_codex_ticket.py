@@ -54,6 +54,13 @@ def test_root_cannot_resume_until_interrupted_child_ends(tmp_path: Path):
     store.accepted(child.agent, child_token, "native-child", "child-turn")
     assert store.interrupting(root.agent) == ("native-root", "root-turn")
     store.ended(root.agent, "root-turn", "interrupted")
+    ticket.register(store.path, tmp_path, root.agent)
+    reads = script("codex_reads")
+    assert not reads.native_agents(root.operator, tmp_path, tmp_path).agents[0].pending
+    state = script("operator_state")
+    ended = state.codex_end(root.agent, tmp_path)
+    assert ended.end is state.CodexEnd.DEAD
+    assert ended.why == "interrupted" and ended.scratch == root.scratch
     later = replace(root, revision=2)
     store.file(later)
     with pytest.raises(Refused):
@@ -85,6 +92,21 @@ def test_unknown_submission_stays_interrupted(tmp_path: Path):
     assert state["agents"][root.agent]["phase"] == "interrupting"
     with pytest.raises(Refused):
         store.reserve(assignment(tmp_path, store, Role.ITEM_CHECKER), root.agent)
+
+
+def test_runtime_child_id_cannot_establish_acceptance_or_hide_a_live_child(tmp_path: Path):
+    store = Store(tmp_path / "ticket")
+    root = assignment(tmp_path, store)
+    token = store.reserve(root)
+    store.accepted(root.agent, token, "native-root", "root-turn")
+    child = assignment(tmp_path, store, Role.ITEM_CHECKER)
+    store.reserve(child, root.agent)
+    with pytest.raises(Refused):
+        ticket.reconcile(root.scratch, child.agent, f"/root/{child.agent}", tmp_path)
+    state = store.snapshot()["agents"][child.agent]
+    assert state["native"] is None
+    with pytest.raises(Refused):
+        store.ended(root.agent, "root-turn", "completed")
 
 
 def test_cross_ticket_target_and_scratch_reuse_refused(tmp_path: Path):

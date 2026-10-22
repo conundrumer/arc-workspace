@@ -113,6 +113,58 @@ def test_a_launcher_cannot_skip_printed_review_launches(tmp_path: Path, monkeypa
                          "tool_input": {"subagent_type": "codex-launcher"}}) is not None
 
 
+def test_native_review_dispatch_requires_matching_validated_call(tmp_path: Path, monkeypatch, capsys):
+    import hashlib
+    from types import SimpleNamespace
+    from operations.steps import Launch
+
+    native_reads = script("codex_reads")
+    ticket = script("codex_ticket")
+    review = script("operate_review")
+    hook = script("printed_launch_hook")
+    reports = script("codex_reports")
+    brief = tmp_path / "brief.txt"
+    brief.write_text("editor input")
+    assignment = ticket.Assignment("11-2967", "a0123456789abcdef", "a1111111111111111",
+        Role.CODE_EDITOR, 1, tmp_path, brief, tmp_path / "editor", tmp_path / "report.txt",
+        hashlib.sha256(brief.read_bytes()).hexdigest())
+    store = ticket.Store(tmp_path / "store")
+    manifest = store.file(assignment)
+    token = store.reserve(assignment)
+    store.accepted(assignment.agent, token, "native-editor", "turn")
+    native = native_reads.Native(store.path, manifest, assignment, store.snapshot()["agents"][assignment.agent])
+    monkeypatch.setattr(native_reads, "native_find", lambda _: native)
+    monkeypatch.setattr(native_reads, "native_reviewing", lambda _: 1)
+    monkeypatch.setattr(review, "find", lambda _: tmp_path / "operator")
+    monkeypatch.setattr(reads, "agent_type", lambda _: Role.OPERATOR.agent_type)
+    monkeypatch.setattr(review, "change_filed", lambda *_: None)
+    monkeypatch.setattr(review, "read_state", lambda *_: (SimpleNamespace(scratch=tmp_path), None))
+    step = Launch(Role.TICKET_ANALYST, "change:11-2967", "decide the finding", occasion="finding")
+    monkeypatch.setattr(review.changes, "editor_step", lambda *_: step)
+    monkeypatch.setattr(review, "read_again", lambda read: read)
+    monkeypatch.setattr(review, "waited", lambda _, read, __: read(0))
+    assert review.review(assignment.agent) == 0
+    dispatch = json.loads(capsys.readouterr().out)
+    assert json.loads((assignment.scratch / "codex-dispatch.json").read_text()) == dispatch
+    call = dispatch["call"]["arguments"]
+    assert call["subagent_type"] == "decision-analyst"
+    undecided = []
+    assert "decide the finding" in script("filed_texts").unfiled(call["prompt"], "dispatch", undecided)
+    assert not undecided
+
+    monkeypatch.setattr(reads, "agent_type", lambda _: "codex-launcher")
+    monkeypatch.setattr(reads, "caller_transcript", lambda _: tmp_path / "launcher")
+    monkeypatch.setattr(reads, "run_entries", lambda _: [])
+    monkeypatch.setattr(native_reads, "calls", lambda _: [SimpleNamespace(scratch=assignment.scratch)])
+    monkeypatch.setattr(native_reads, "native_receipt", lambda _: SimpleNamespace(outcome=reports.Outcome.NEEDS_OPERATOR))
+    assert hook.check({"tool_name": "Agent", "tool_input": call}) is None
+    visible = {key: value for key, value in call.items() if key != "run_in_background"}
+    assert hook.check({"tool_name": "Agent", "tool_input": visible}) is None
+    assert hook.check({"tool_name": "Agent", "tool_input": {**call, "prompt": "changed"}}) is not None
+    monkeypatch.setattr(native_reads, "native_receipt", lambda _: None)
+    assert hook.check({"tool_name": "Agent", "tool_input": call}) is not None
+
+
 def test_joined_bash_denies_a_launcher_write(tmp_path: Path, monkeypatch, capsys):
     import io
     import sys

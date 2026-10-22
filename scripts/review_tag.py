@@ -100,14 +100,18 @@ def review_commit(review: Review, n: int) -> str:
 
 
 def review_tag(review: Review, n: int, commit: str, agent: str) -> str:
-    paths = transcripts_of(agent)
-    if not paths:
+    from codex_reads import native_execution, native_find
+
+    native = native_find(agent)
+    paths = [] if native is not None else transcripts_of(agent)
+    if native is None and not paths:
         raise Refused(NO_TRANSCRIPT.format(agent=agent))
     item = review.facts.item
     checklist = Checklist(review.role.value, main_tree())
     from codex_reads import baseline_entries, launches, without_hook_refusals
 
-    entries = without_hook_refusals([e for p in paths for e in read_entries(p)])
+    entries = (native_execution(native.assignment, native.state, Path.home())[0] if native is not None
+               else without_hook_refusals([e for p in paths for e in read_entries(p)]))
     try:
         if any(list(launches(e)) for e in entries):
             entries = baseline_entries(entries, review.role.value)

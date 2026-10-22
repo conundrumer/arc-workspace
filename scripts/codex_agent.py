@@ -48,6 +48,7 @@ from typing import Any
 
 import codex_daemon
 import codex_rollout
+import codex_ticket
 import ticket_numbers
 from subagent_start_hook import context
 
@@ -57,7 +58,7 @@ from handbook.agent_documents import agent_dir, agent_doc
 from handbook.checklist import checklist_agents, step_call
 from handbook.context import codex_config_value, codex_permissions, entry_text
 from handbook.listings import listings
-from operations.roles import ANALYST_NAMES, CODEX_ROLES, GENERAL, Role
+from operations.roles import ANALYST_NAMES, CODEX_ROLES, GENERAL, ReasoningEffort, Role
 from operations.state import CodexUsage
 
 FRESH_REFUSAL = "fresh launch refused: existing Codex history; no thread or turn accepted"
@@ -80,72 +81,7 @@ WORK_OPENING = mctx("Do the work your documents and brief give.")
 STEP_STOP = mctx("Where blocked, run `{call} --stop <item>`, and report what remains unfinished and why.")
 WORK_STOP = mctx("Where blocked, report what remains unfinished and why.")
 
-PREAMBLE = mctx(
-    "{opening} You have no Agent or SendMessage "
-    "tool; make no Agent call and no SendMessage. Where your documents give "
-    "one, end your turn with the full call to make, including all arguments "
-    "and the full text to send. The Claude launcher makes the call and "
-    "passes its result or a message back by resuming this session; then "
-    "continue your work. Also ask the launcher to run `operate.py review` "
-    "in its own foreground Bash call where your documents give it. The "
-    "Codex mode procedure is for that launcher; do not run `codex_agent.py` "
-    "yourself. {stop} Write the report and final reply "
-    "your documents give; the launcher delivers your final reply.")
-
-NATIVE_PREAMBLE = mctx(
-    "Do the work your role's documents and brief give. Where your role has a "
-    "checklist, run `uv run python scripts/step.py <role>` yourself, starting "
-    "with its first item, and walk it through its end. Do each item and run "
-    "the step command it gives to go on, including choosing whether to enter "
-    "conditional parts. Where blocked, use your checklist's `--stop` call "
-    "and report what remains unfinished and why. Use the operations agent "
-    "id in your assignment for commands that take your agent id.")
-
-NATIVE_RULES = mctx({
-    "launch": (
-        "For each agent launch your documents give, use its filed assignment "
-        "to call `spawn_agent` with `fork_turns=\"none\"` and the assigned "
-        "role instructions, brief, model and reasoning effort. Keep the "
-        "operations agent id and native agent id as separate identities."),
-    "messages": (
-        "Deliver each message your documents give within this ticket's "
-        "native tree. Use `send_message` for a running recipient and "
-        "`followup_task` for a finished child. If a recipient finishes "
-        "before delivery, explicitly follow up that child. Use the native "
-        "id for native tools. File substantive assignment changes before "
-        "delivery so the changed assignment requires a new validated result."),
-    "external-decision": (
-        "Where work needs an external decision, write the unfinished "
-        "findings to your assigned report, use your checklist's `--stop` "
-        "call where applicable, and finish with a needs-operator outcome. "
-        "The root collects that outcome and joins its descendants before "
-        "returning it to the owning operator."),
-    "waiting": (
-        "Use `list_agents` to observe descendants and `wait_agent` to wait "
-        "for their updates. Join every descendant before ending the root "
-        "turn. A runtime completed status does not validate a report. "
-        "Accept each result through the shared report validator before "
-        "using it to release a dependency. Explicitly follow up a finished "
-        "child whose result is invalid; if no valid result can be obtained, "
-        "join live descendants and return an unfinished outcome."),
-    "review": (
-        "Run `uv run python scripts/operate.py review <agent id>` with your "
-        "operations agent id, and make each filed native check launch it "
-        "prints. Run it again after each launch. Keep each required review "
-        "and its round cap. Use the validated checker reports for findings "
-        "and corrections within this tree."),
-    "root-resume": (
-        "Keep editor reports separate from root dispatch results. On a new "
-        "root assignment, start a fresh checker for work addressed to an "
-        "old child, using its filed findings and predecessor reference. "
-        "External input comes from the owning operator after the root turn "
-        "and its descendants end."),
-    "final-reply": (
-        "Write your final reply to the assigned report file, then return "
-        "that file's path alone. Complete the assignment only with a report "
-        "that passes the shared validator for that assignment revision and "
-        "its inputs. A needs-operator report leaves the change unapproved."),
-})
+PREAMBLE = mctx("{opening} {stop}")
 
 
 def opening(kind: str) -> str:
@@ -160,6 +96,14 @@ def role_instructions(root: Path, home: Path, agent: str,
     values = partial(listings, codex=True)
     document = ([] if kind == GENERAL else
                 [entry_text(agent_doc(kind, agent_dir(root)), values=values)])
+    import controlled_markdown as nm
+
+    native_path = "prompts/agents/notes/native-agents.md"
+    registry = nm.Registry(root)
+    native_document = registry.load(root / native_path)
+    native_section = registry.ids[native_document.source]["native-tools"]
+    native = nm.render(nm.section_document(native_document, native_section), registry)
+    native = native.replace("](#", "](" + native_path + "#")
     styles = []
     for config in (Path(os.environ.get("CODEX_HOME", home / ".codex")) / "config.toml",
                    checkout.main_worktree(root) / ".codex" / "config.toml"):
@@ -173,7 +117,7 @@ def role_instructions(root: Path, home: Path, agent: str,
         *styles, PREAMBLE.format(
             opening=opening(kind),
             stop=(STEP_STOP.format(call=step_call(kind))
-                  if kind in checklist_agents() else WORK_STOP)), *document,
+                  if kind in checklist_agents() else WORK_STOP)), native, *document,
         entry_text((root / "CLAUDE.md").resolve(), values=values),
         *([user.read_text()] if user.exists() else [])])
 
@@ -231,7 +175,8 @@ def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
                 cwd: Path, model: str, effort: str, writable: list[Path],
                 transport: Callable[[], Any], worker_config: dict[str, str],
                 instructions: str | None = None,
-                home: Path | None = None) -> str | None:
+                home: Path | None = None,
+                admission: tuple[codex_ticket.Store, codex_ticket.Assignment, str] | None = None) -> str | None:
     """Try the daemon with the caller's worker configuration; only a new thread
     may fall back before turn submission."""
     call_started = time.time()
@@ -286,6 +231,9 @@ def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
                   file=sys.stderr)
             return None
         events.append({"type": "turn.started", "turn_id": started["turn"]["id"]})
+        if admission is not None:
+            store, assignment, token = admission
+            store.accepted(assignment.agent, token, thread, str(started["turn"]["id"]))
         message, ok = codex_daemon.collect(client, thread, started["turn"]["id"], emit)
         (scratch / "codex-last.md").write_text(message)
         ok = ok and bool(message.strip())
@@ -379,17 +327,13 @@ def work(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: 
         runner: Callable[[list[str]], subprocess.CompletedProcess[str]] = execute,
         agent_type: str | None = None,
         transport: Callable[[], Any] = codex_daemon.Proxy,
-        resume: bool = False, agent_id: str | None = None) -> str:
+        thread: str | None = None,
+        admission: tuple[codex_ticket.Store, codex_ticket.Assignment, str] | None = None,
+        agent_id: str | None = None) -> str:
     """Return the last message, or raise with the CLI's error. Save a thread
     id even on failure so a later call can continue the same session.
     Require the calling Claude session before work and configure both transports
     to give worker shells that identity on every call."""
-    scratch = scratch.resolve()
-    import codex_ticket
-
-    codex_ticket.legacy_guard(scratch)
-    thread = saved_thread(scratch, resume)
-    scratch.mkdir(parents=True, exist_ok=True)
     session = scratch / "codex-session"
     preparing = time.time()
     try:
@@ -404,6 +348,13 @@ def work(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: 
             prompt = "\n\n".join([context(agent_id), brief.read_text(), item])
         else:
             prompt = item
+        if admission is not None:
+            store, assignment, _ = admission
+            if thread is not None:
+                prompt = brief.read_text()
+            prompt += "\n\n" + codex_ticket.NATIVE_IDENTITY.format(
+                agent=assignment.agent, scratch=scratch,
+                manifest=store.manifest(assignment.agent, assignment.revision))
         last = scratch / "codex-last.md"
         last.unlink(missing_ok=True)
         git_dir = Path(checkout.git_out(cwd, "rev-parse", "--absolute-git-dir").strip())
@@ -413,10 +364,12 @@ def work(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: 
         writable = [main / "tickets", main / ".git",
                     *([git_dir] if git_dir != main / ".git" else []), main / ".cache",
                     home / ".cache" / "uv", home / ".cargo", scratch]
+        if admission is not None:
+            writable.extend([admission[0].path, admission[1].report.parent])
     except Exception as exc:
         raise launch_failure(scratch, preparing, exc) from exc
     daemon_message = daemon_turn(scratch, thread, prompt, item, cwd, model, effort,
-                                 writable, transport, worker_config, instructions, home)
+                                 writable, transport, worker_config, instructions, home, admission)
     if daemon_message is not None:
         return daemon_message
     argv = ["codex", "exec", "-m", model, "-c", f'model_reasoning_effort="{effort}"',
@@ -430,7 +383,9 @@ def work(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: 
         argv.extend(["-c", "developer_instructions=" + json.dumps(instructions)])
     call_started = time.time()
     try:
-        done = runner([*argv, *(["resume", thread] if thread is not None else []), prompt])
+        command = [*argv, *(["resume", thread] if thread is not None else []), prompt]
+        done = (execute_native(command, admission, home) if runner is execute and admission is not None
+                else runner(command))
     except OSError as exc:
         raise launch_failure(scratch, call_started, exc) from exc
     errors: list[str] = []
@@ -466,6 +421,36 @@ def work(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: 
     return message
 
 
+def execute_native(argv: list[str], admission: tuple[codex_ticket.Store, codex_ticket.Assignment, str],
+                   home: Path) -> subprocess.CompletedProcess[str]:
+    """Publish exec acceptance while the root can still launch children."""
+    import tempfile
+
+    store, assignment, token = admission
+    output = []
+    native: str | None = None
+    with tempfile.TemporaryFile(mode="w+") as errors:
+        with subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                              stderr=errors, text=True) as process:
+            assert process.stdout is not None
+            for line in process.stdout:
+                output.append(line)
+                try:
+                    event = json.loads(line)
+                    if event.get("thread_id"):
+                        native = str(event["thread_id"])
+                        (assignment.scratch / "codex-session").write_text(native + "\n")
+                    if native is not None and event.get("type") == "turn.started":
+                        turns = codex_rollout.turns(native, home)
+                        if turns and turns[-1].ended is None:
+                            store.accepted(assignment.agent, token, native, turns[-1].turn)
+                except (OSError, ValueError, KeyError):
+                    pass
+            result = process.wait()
+        errors.seek(0)
+        return subprocess.CompletedProcess(argv, result, "".join(output), errors.read())
+
+
 def launch_failure(scratch: Path, started: float, error: Exception) -> ValueError:
     """Record a proved failure before either transport accepted work."""
     from uuid import uuid4
@@ -482,22 +467,26 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
         runner: Callable[[list[str]], subprocess.CompletedProcess[str]] = execute,
         agent_type: str | None = None,
         transport: Callable[[], Any] = codex_daemon.Proxy,
-        resume: bool = False, agent_id: str | None = None) -> str:
+        resume: bool = False,
+        assignment: codex_ticket.Assignment | None = None,
+        store_path: Path | None = None,
+        agent_id: str | None = None) -> str:
     """Hold exclusive ownership from validation through completion publication."""
     import codex_ticket
 
     scratch = scratch.resolve()
-    codex_ticket.legacy_guard(scratch)
+    if assignment is None:
+        codex_ticket.legacy_guard(scratch)
     scratch.parent.mkdir(parents=True, exist_ok=True)
     with (scratch.parent / ("." + scratch.name + ".codex-work.lock")).open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise ValueError(BUSY_REFUSAL) from exc
-        saved_thread(scratch, resume)
+        thread = saved_thread(scratch, resume)
         scratch.mkdir(parents=True, exist_ok=True)
         if resume:
-            thread = (scratch / "codex-session").read_text().strip()
+            assert thread is not None
             try:
                 previous = codex_rollout.turns(thread, home)
             except ValueError as exc:
@@ -509,11 +498,42 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
                     "saved turn is active; use show or interrupt, wait for its end, then resume"))
         done = scratch / DONE
         done.unlink(missing_ok=True)
+        admission = None
+        if assignment is not None:
+            if (store_path is None or assignment.scratch.resolve() != scratch
+                    or assignment.brief.resolve() != brief.resolve()
+                    or assignment.worktree.resolve() != cwd.resolve()
+                    or assignment.role != Role(agent)):
+                raise codex_ticket.Refused("root execution differs from its assignment")
+            store = codex_ticket.Store(store_path)
+            store.file(assignment)
+            from tree_reads import scratch as session_scratch
+            token = store.reserve(assignment)
+            try:
+                codex_ticket.register(store.path, session_scratch(ticket_numbers.session_id()), assignment.agent)
+                (scratch / "codex-dispatch.json").unlink(missing_ok=True)
+            except Exception:
+                store.refused(assignment.agent, token)
+                raise
+            admission = store, assignment, token
         try:
             return work(agent, scratch, brief, model, effort, item, root, home, main, cwd,
-                        runner, agent_type, transport, resume, agent_id)
+                        runner, agent_type, transport, thread, admission, agent_id)
         finally:
-            done.touch()
+            try:
+                if admission is not None:
+                    store, enrolled, token = admission
+                    failures = scratch / "codex-launch-failures.jsonl"
+                    reserved = store.snapshot()["agents"][enrolled.agent]["reserved"]
+                    proved_refused = (failures.exists() and any(
+                        json.loads(line)["started"] >= reserved for line in failures.read_text().splitlines()))
+                    if proved_refused and store.snapshot()["agents"][enrolled.agent]["phase"] == codex_ticket.Phase.RESERVED:
+                        store.refused(enrolled.agent, token)
+                    elif (scratch / "codex-session").exists():
+                        native = (scratch / "codex-session").read_text().strip()
+                        codex_ticket.reconcile(scratch, enrolled.agent, native, home)
+            finally:
+                done.touch()
 
 
 def input_text() -> str:
@@ -549,13 +569,18 @@ def work_parser() -> argparse.ArgumentParser:
     parser.add_argument("--agent-id")
     parser.add_argument("--resume", action="store_true",
                         help="continue the saved thread; required for later turns")
+    parser.add_argument("--operator")
+    parser.add_argument("--subject")
+    parser.add_argument("--identity")
+    parser.add_argument("--report", type=Path)
+    parser.add_argument("--store", type=Path)
     return parser
 
 
 def work_args(argv: list[str]) -> argparse.Namespace | None:
     """The arguments `main` runs a turn with, or None where `argv` is a control
     call or `main` exits before its turn (help, or arguments its parser refuses)."""
-    if argv and argv[0] in CONTROLS:
+    if argv and argv[0] in (*CONTROLS, "enrollment"):
         return None
     with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
         try:
@@ -564,7 +589,44 @@ def work_args(argv: list[str]) -> argparse.Namespace | None:
             return None
 
 
+def enrollment(identity: str) -> dict[str, str]:
+    """Read root enrollment data from the operator's filed Claude launch."""
+    from entry_reads import entries_forward
+    from filed_texts import brief_report_file
+    from operations.roles import described
+    from report_file_hook import brief
+    from run_reads import agent_type, parent_id, read_meta, session_of
+    from transcripts import find
+    from tree_reads import scratch
+
+    path = find(identity)
+    operator = parent_id(path)
+    if agent_type(find(operator)) != Role.OPERATOR.agent_type:
+        raise ValueError("root's owning agent is not an operator")
+    description = described((read_meta(path) or {})["description"])
+    if description is None:
+        raise ValueError("root launch has no operations role and subject")
+    undecided: list[str] = []
+    text = brief(entries_forward(path), "root enrollment", undecided)
+    report = brief_report_file(text) if text is not None else None
+    if undecided or report is None:
+        raise ValueError("root launch has no readable filed brief and report")
+    return {"operator": operator, "subject": description.subject, "identity": identity,
+            "role": description.role.value,
+            "report": str(report), "store": str(scratch(session_of(path).name) / "codex-tickets" / identity)}
+
+
 def main(argv: list[str]) -> int:
+    if argv and argv[0] == "enrollment":
+        parser = argparse.ArgumentParser()
+        parser.add_argument("action", choices=("enrollment",))
+        parser.add_argument("identity")
+        args = parser.parse_args(argv)
+        try:
+            print(json.dumps(enrollment(args.identity)))
+            return 0
+        except (OSError, ValueError, KeyError) as exc:
+            parser.exit(1, f"codex_agent: {exc}\n")
     if argv and argv[0] in CONTROLS:
         try:
             return control(argv)
@@ -572,22 +634,57 @@ def main(argv: list[str]) -> int:
             print(f"codex_agent: {exc}", file=sys.stderr)
             return 1
     args = work_parser().parse_args(argv)
+    enrollment_fields = (args.operator, args.subject, args.identity, args.report, args.store)
+    if any(value is not None for value in enrollment_fields) and not all(value is not None for value in enrollment_fields):
+        raise ValueError("enrollment requires --operator, --subject, --identity, --report and --store")
     try:
         item = input_text()
     except (OSError, ValueError) as exc:
         print(f"codex_agent: {exc}", file=sys.stderr)
         return 1
     try:
-        message = run(args.agent, args.scratch, args.brief, args.model, args.effort,
-                      item, checkout.ROOT, Path.home(),
+        assignment = None
+        if args.store is not None:
+            from codex_reports import digest
+            expected = enrollment(args.identity)
+            supplied = {"operator": args.operator, "subject": args.subject,
+                        "role": args.agent, "report": str(args.report.resolve()),
+                        "store": str(args.store.resolve())}
+            if any(supplied[key] != expected[key] for key in supplied):
+                raise ValueError("root enrollment differs from the owning operator's filed launch")
+            manifests = (args.store / "assignments").glob(f"{args.identity}-*.json")
+            revision = max((int(path.stem.rsplit("-", 1)[1]) for path in manifests), default=0) + 1
+            inputs = args.store / "inputs"
+            inputs.mkdir(parents=True, exist_ok=True)
+            filed_brief = inputs / f"{args.identity}-{revision}-root.txt"
+            with filed_brief.open("x") as output:
+                output.write(item if args.resume else
+                             "\n\n".join(filter(None, [args.brief.read_text(), item])))
+            assignment = codex_ticket.Assignment(args.subject, args.operator, args.identity,
+                Role(args.agent), revision, args.cwd.resolve(), filed_brief.resolve(),
+                args.scratch.resolve(), args.report.resolve(), digest(filed_brief.read_bytes()),
+                subject=args.subject, agent_type=args.agent_type or Role(args.agent).agent_type,
+                model=args.model, effort=ReasoningEffort(args.effort))
+        message = run(args.agent, args.scratch, assignment.brief if assignment else args.brief, args.model, args.effort,
+                      "" if assignment else item, checkout.ROOT, Path.home(),
                       checkout.main_worktree(checkout.ROOT), args.cwd.resolve(),
-                      agent_type=args.agent_type, resume=args.resume, agent_id=args.agent_id)
+                      agent_type=args.agent_type, resume=args.resume,
+                      assignment=assignment, store_path=args.store, agent_id=args.agent_id)
+        if assignment is not None:
+            dispatch = args.scratch / "codex-dispatch.json"
+            outcome = json.loads(dispatch.read_text())["outcome"] if dispatch.exists() else "finished"
+            codex_ticket.accept(args.scratch, assignment.agent, Path.home(), outcome)
     except (OSError, ValueError) as exc:
         if isinstance(exc, TurnFailed) and exc.message:
             print(exc.message, flush=True)
         print(f"codex_agent: {exc}", file=sys.stderr)
         return 1
     else:
+        if assignment is not None and outcome == "needs-operator":
+            value = json.loads(dispatch.read_text())
+            value["report"] = str(assignment.report)
+            print(json.dumps(value), flush=True)
+            return 0
         print(message, end="" if message.endswith("\n") else "\n", flush=True)
         return 0
 

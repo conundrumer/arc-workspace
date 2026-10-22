@@ -29,6 +29,15 @@ def evidence(agent: Agent) -> RecoveryEvidence:
             note_read(target)
             if not (is_dir(target) or is_file(target)):
                 return RecoveryEvidence(False, f"worktree is unavailable: {tree}", False)
+        from codex_reads import native_find, native_receipt
+
+        native = native_find(agent.agent_id)
+        if native is not None:
+            note_read(native.manifest)
+            note_read(native.store / "state.json")
+            if native_receipt(native) is None:
+                return RecoveryEvidence(False, "native execution has no current validator receipt")
+            return RecoveryEvidence(True, "validated native execution")
         path = launched_find(agent.agent_id)
         if path is None:
             return RecoveryEvidence(False, "source transcript is missing", False)

@@ -153,6 +153,9 @@ def files(tmp_path, monkeypatch):
     root, home = tmp_path / "repo", tmp_path / "home"
     root.mkdir()
     (root / "CLAUDE.md").write_text("+ lib: none\n- repo instructions\n")
+    native = root / "prompts/agents/notes/native-agents.md"
+    native.parent.mkdir(parents=True)
+    native.write_text("## Native tools\n- Native tools.\n")
     brief = tmp_path / "brief.md"
     brief.write_text("brief body")
     scratch = tmp_path / "scratch"
@@ -189,32 +192,6 @@ def run(files, transport, runner=None, *, resume=False, agent_id="a123456789abcd
     )
 
 
-def test_start_resume_and_walk_record(files):
-    root, home, brief, scratch = files
-    transport = Transport()
-    assert run(files, transport) == "reply"
-    assert transport.closed
-    assert (scratch / "codex-session").read_text() == "thread\n"
-    assert transport.calls[0][1]["config"]["developer_instructions"] == "\n\n".join(
-        [agent.PREAMBLE.format(opening=agent.WORK_OPENING, stop="Where blocked, report what remains unfinished and why."), "- repo instructions\n"]
-    )
-    # Supply the real walk reader with the record emitted by the daemon path.
-    entry = turn(scratch.parent / "launcher", [])
-    entry["message"]["content"][0]["input"]["command"] = (
-        f"uv run python scripts/codex_agent.py code-reviewer {scratch} /tmp/b model low"
-    )
-    evidence = reads.walk_entries([entry], "code-reviewer")
-    assert evidence[2]["message"]["content"][0]["content"] == "first item"
-    assert evidence[3]["message"]["content"] == "change course"
-    brief.unlink()
-    transport = Transport()
-    assert run(files, transport, resume=True) == "reply"
-    assert transport.calls[0][0] == "thread/resume"
-    assert transport.calls[0][1]["threadId"] == "thread"
-    assert "developer_instructions" not in transport.calls[0][1]["config"]
-    assert transport.calls[1][1]["input"][0]["text"] == "first item"
-
-
 @pytest.mark.parametrize("refuse", ["thread/start", "turn/start"])
 def test_refusal_falls_back_and_keeps_walk_record(files, refuse, capsys):
     root, home, brief, scratch = files
@@ -233,10 +210,6 @@ def test_refusal_falls_back_and_keeps_walk_record(files, refuse, capsys):
     assert transport.closed
     assert "falling back to codex exec" in capsys.readouterr().err
     assert "resume" not in calls[0]
-    overrides = [arg for arg in calls[0] if arg.startswith("developer_instructions=")]
-    assert json.loads(overrides[0].split("=", 1)[1]) == "\n\n".join(
-        [agent.PREAMBLE.format(opening=agent.WORK_OPENING, stop="Where blocked, report what remains unfinished and why."), "- repo instructions\n"]
-    )
     record = json.loads((scratch / "codex-events.jsonl").read_text())
     assert record["ok"] is True and record["input"] == agent.WORK_OPENING + "\n\nfirst item"
     assert json.loads(record["output"].splitlines()[-1])["type"] == "turn.completed"
@@ -567,7 +540,8 @@ def test_fresh_launch_refuses_history_without_changing_evidence(files, history, 
     for name in (history, "codex-last.md", agent.DONE):
         (scratch / name).write_text("saved evidence")
     before = {p.name: p.read_bytes() for p in scratch.iterdir()}
-    assert agent.main(["code-reviewer", str(scratch), str(files[2]), "model", "low"]) == 1
+    assert agent.main(["code-reviewer", str(scratch), str(files[2]), "model", "low",
+                       "--agent-id", "a123456789abcdef0"]) == 1
     assert "no thread or turn accepted" in capsys.readouterr().err
     assert {p.name: p.read_bytes() for p in scratch.iterdir()} == before
 
@@ -651,6 +625,7 @@ def test_contending_work_preserves_owner_evidence(files):
         with pytest.raises(ValueError, match='scratch is busy'):
             agent.run('code-reviewer', scratch, brief, 'model', 'low', 'input',
                       root, home, root, root,
+                      agent_id='a123456789abcdef0',
                       transport=lambda: pytest.fail('contender submitted work'))
     assert {p.name: p.read_bytes() for p in scratch.iterdir()} == before
 

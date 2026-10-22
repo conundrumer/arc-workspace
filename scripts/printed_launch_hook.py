@@ -7,6 +7,9 @@ to it (`context_bound_hook.ACTIONS`), and a code editor's and a doc
 editor's launch of a check of its change to the launch `operate.py
 review` last printed to it (`EDITOR_LAUNCHES`).
 
+An enrolled Codex launcher may make a Claude-only call from its root's
+current validated needs-operator dispatch, with the filed arguments.
+
 The printed launches are read from the result of the last call of `next`
 in the caller's own transcript (`printing.printed_launches`). Where the last
 call of `next` that stands as a command of its own, with no word such as
@@ -169,10 +172,42 @@ def check(hook: dict[str, Any]) -> str | None:
     holds it and it is not the launch its command last printed to its
     caller, and None otherwise."""
     from operations.printing import printed_launches
+    from controlled_markdown import mctx
 
     tool, inp = hook["tool_name"], hook["tool_input"]
     if tool != "Agent":
         raise not_registered("Agent", "tool", tool)
+    from run_reads import agent_type, caller_transcript, run_entries
+    from operations.roles import CLAUDE_TYPES, CODEX_LAUNCHER, parameter
+
+    path = caller_transcript(hook)
+    if agent_type(path) == CODEX_LAUNCHER:
+        from codex_reads import calls
+        from codex_ticket import Binding, Store, Assignment
+        import json
+
+        enrolled = [binding for call in calls(list(run_entries(path)))
+                    if (binding := Binding.read(call.scratch)) is not None]
+        if enrolled:
+            binding = enrolled[-1]
+            try:
+                store = Store(binding.store)
+                state = store.snapshot()["agents"][binding.agent]
+                assignment = Assignment.read(store.manifest(binding.agent, state["revision"]))
+                from codex_reads import Native, native_receipt
+                from codex_reports import Outcome
+
+                receipt = native_receipt(Native(store.path, store.manifest(binding.agent, state["revision"]), assignment, state))
+                dispatch = json.loads((assignment.scratch / "codex-dispatch.json").read_text())
+                if (receipt is not None and receipt.outcome is Outcome.NEEDS_OPERATOR
+                        and inp.get("subagent_type") in CLAUDE_TYPES
+                        and dispatch["call"]["tool"] == "Agent"
+                        and not differing({key: parameter(value) for key, value in
+                                           dispatch["call"]["arguments"].items()}, inp)):
+                    return None
+            except (OSError, ValueError, KeyError, StopIteration):
+                pass
+            return mctx("Blocked: this Agent call has no matching validated `needs-operator` dispatch.")
     if reply_only(inp):
         return None
     caller = operator_next(hook, HOOK)

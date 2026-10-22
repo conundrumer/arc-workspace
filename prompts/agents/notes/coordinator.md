@@ -75,7 +75,7 @@
 ## Codex
 - Set Codex mode with `uv run python scripts/operate.py codex on` or `uv run python scripts/operate.py codex off`, then use the normal role launcher path; [operate_help.py](scripts/operate_help.py) gives which launches the mode routes to Codex.
     + xref: scripts/operate_actions.py:set_codex, scripts/operate_help.py:USAGE
-- For an un-enrolled launch, have the role's launcher follow [Codex launcher](prompts/agents/codex-launcher.md#codex-launcher) for execution, waiting, resuming and exec fallback timing.
+- Have the role's launcher follow [Codex launcher](prompts/agents/codex-launcher.md#codex-launcher) for the enrolled root's execution, waiting, resuming and exec fallback timing.
 - While Codex works, read its status and recent activity with `uv run python scripts/codex_agent.py show <scratch>`, using the absolute scratch path of its launch on each control call, and check that activity against its brief and instructions. Where `show` gives an owning ticket and operator, send corrections to that operator for a root resume after the root turn and its descendants end; use `uv run python scripts/codex_agent.py interrupt <scratch>` for tree-aware interruption. For un-enrolled work, send corrections yourself with `uv run python scripts/codex_agent.py steer <scratch> '<message>'`, and stop its turn with `uv run python scripts/codex_agent.py interrupt <scratch>`.
     + xref: scripts/codex_agent.py:control
     * comment: Change 11-2481, Intent, quoting request 11-2448: user 2026-10-20T17:51:48Z, "add coordinator instructions for codex", approved by "go" at 17:53:49Z; its Design assigns the coordinator activity review and corrective steering.
