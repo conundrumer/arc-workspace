@@ -47,6 +47,7 @@ from dashboard_reads import CodexLimits, CodexWindow, clear, cleared, operator_r
 from dashboard_search import results, sheet, words
 from dashboard_template import CLEAR_ROUTE, EVENTS, FOLD, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
 from dashboard_words import clock
+from engine import checkout
 from file_ticket import main_tickets
 from idle_sessions import MAIN, named_main
 from shown_state import SHOWN
@@ -152,6 +153,11 @@ def accepts_gzip(header: str | None) -> bool:
     return False
 
 
+CLEAR_LOG = "dashboard-clear.log"
+"""The file, under `.cache/` of the main tree, that holds one line for each
+POST to the clear route."""
+
+
 @dataclass
 class Latest:
     """The published render, its version, and the streams that watch it."""
@@ -246,22 +252,46 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         """Move the mark of Updates to the time in the body, and publish a
-        new render."""
-        if urlsplit(self.path).path != CLEAR_ROUTE:
-            self.send_error(404)
-            return
+        new render. Each POST adds a line to `CLEAR_LOG`."""
+        body = ""
+        before = cleared()
+        status = 200
         try:
-            at = float(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
-            if not math.isfinite(at):
-                raise ValueError
-        except ValueError:
-            self.send_error(400, "the body is not a time")
-            return
-        clear(at)
-        self.latest.poke.set()
-        self.send_response(204)
-        self.send_header("Content-Length", "0")
-        self.end_headers()
+            if urlsplit(self.path).path != CLEAR_ROUTE:
+                status = 404
+                self.send_error(404)
+                return
+            try:
+                body = self.rfile.read(int(self.headers.get("Content-Length", "0"))).decode("utf-8", "replace")
+                at = float(body)
+                if not math.isfinite(at):
+                    raise ValueError
+            except ValueError:
+                status = 400
+                self.send_error(400, "the body is not a time")
+                return
+            clear(at)
+            self.latest.poke.set()
+            status = 204
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        except BaseException as error:
+            status = f"{type(error).__name__}"
+            raise
+        finally:
+            self.log_clear(body, before, status)
+
+    def log_clear(self, body: str, before: float, status: int | str) -> None:
+        """Add one line for a POST to `CLEAR_LOG`: time, path, body, the mark
+        before and after, and the status."""
+        try:
+            path = checkout.caches() / CLEAR_LOG
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a") as log:
+                log.write(f"{time.time():.3f} {self.path} body={body!r} before={before!r} after={cleared()!r} status={status}\n")
+        except OSError:
+            pass
 
     def serve_page(self, path: str, query: str) -> None:
         began = time.monotonic()

@@ -111,9 +111,10 @@ if(s==='1'||s==='0')el.open=s==='1';else if(el.dataset.k==='since')el.open=false
 if(el.dataset.k){sec=el.dataset.k}})}
 function fold(d){setTimeout(()=>{try{localStorage.setItem('@FOLD@'+fkey(d),d.open?'1':'0')}catch(e){}},0)}
 document.addEventListener('click',e=>{const sm=e.target.closest('#live summary');if(sm&&sm.parentElement.tagName==='DETAILS')fold(sm.parentElement);const cl=e.target.closest('#clear');if(cl){clear(cl.dataset.t);return}const b=e.target.closest('.tab');if(b){try{localStorage.setItem(b.closest('.tset').dataset.key,b.dataset.s)}catch(x){}tab();return}const g=e.target.closest('.lg'),m=g&&g.querySelector('.more');if(m){const s=g.querySelectorAll('span');s.forEach(x=>x.hidden=!x.hidden);m.textContent=s[1].hidden?'more':'less';return}if(e.target.closest('.members summary'))return;const t=e.target.closest('.tk');if(t){e.preventDefault();open(t.dataset.n)}});
-async function clear(t){$('since').innerHTML='<div class="meta">Nothing new.</div>';$('sl').textContent='Updates';
-let ok=false;try{ok=(await fetch('@CLEAR@',{method:'POST',body:t})).ok}catch(e){}
-if(!ok)update()}
+async function clear(t){
+let f=null;try{const r=await fetch('@CLEAR@',{method:'POST',body:t});if(!r.ok)f=r.status}catch(e){f=e}
+if(f!==null){const b=$('clear');if(b)b.outerHTML='<span class="meta" id="clear-failed">'+esc('Clear failed: '+f)+'</span>';return}
+update()}
 let asked=0,timer=null;
 async function search(){const q=$('q').value.trim(),n=++asked,res=$('res');if(!q){res.innerHTML='';return}
 let h;try{const r=await fetch('@SEARCH@?q='+encodeURIComponent(q),{cache:'no-store'});h=await r.text();if(!r.ok)h='<div class="meta">'+esc('search failed: '+r.status)+'</div>'}
