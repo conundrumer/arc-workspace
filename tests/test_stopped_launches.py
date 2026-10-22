@@ -86,7 +86,7 @@ def test_interrupted_editor_leaves_its_role_unstaffed(role: Role) -> None:
     from operations.change_agents import unstaffed
     assert unstaffed((role,), [attempt(role)]) == [role]
     earlier = attempt(role, reply="done", launched=5.0)
-    partial = attempt(role, reply="- item: unfinished: tool stopped")
+    partial = attempt(role, reply="Stopped at the tool.")
     assert unstaffed((role,), [earlier, partial]) == [role]
 
 

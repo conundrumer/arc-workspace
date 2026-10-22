@@ -58,8 +58,8 @@ giving the change past its cost budget, and merges once that step
 leaves nothing, in place of the steps below.
 
 An editor of a change with an agent id whose latest attempt ended with
-no report since its launch or its last resume, or with a report that gives
-its work as unfinished (`completion.finished`), gets one message that
+no finished report since its launch or its last resume
+(`completion.finished`), gets one message that
 resumes it (`editor_resume`), once per attempt, so that it keeps its context.
 While it runs, the change waits. Where it ends again with no finished
 report, a new editor is launched in its place (`staff_editor`). The steps
