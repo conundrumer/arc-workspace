@@ -198,6 +198,23 @@ def native_shell_call(payload: dict[str, Any]) -> str | None:
             return values.get("cmd") if position == len(source) and isinstance(values.get("cmd"), str) else None
 
 
+def native_session_poll(payload: dict[str, Any]) -> bool:
+    """Tell whether a native call only polls or waits on a running session."""
+    if payload.get("type") == "function_call":
+        return payload.get("name") in ("wait", "functions.wait")
+    if payload.get("type") != "custom_tool_call" or payload.get("name") != "exec":
+        return False
+    found = re.fullmatch(r"\s*(?:text\(\s*)?await tools\.write_stdin\(\s*\{(.*)\}\s*\)\s*\)?\s*;?\s*",
+                         payload["input"], re.S)
+    if found is None:
+        return False
+    pairs = re.findall(r'\s*"?(session_id|chars|yield_time_ms|max_output_tokens)"?\s*:\s*("(?:[^"\\]|\\.)*"|\d+)\s*(?:,|$)',
+                       found[1])
+    if len(pairs) != found[1].count(":"):
+        return False
+    return dict(pairs).get("chars") == '""'
+
+
 def native_receipt(item: Native, home: Path | None = None):
     """Revalidate the current report bytes and terminal execution on every read."""
     from codex_reports import Evidence, Outcome, Validated, validate
@@ -286,6 +303,8 @@ def native_reviewing(item: Native, home: Path | None = None) -> float | None:
             if is_next(command, item.assignment.agent, Action.REVIEW):
                 first = first or timestamp(row)
                 continue
+        elif native_session_poll(payload):
+            continue
         first = None
     return first
 
