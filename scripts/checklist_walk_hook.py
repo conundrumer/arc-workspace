@@ -143,7 +143,7 @@ def refusal(command: str, agent: str) -> str:
              "step call is a stop and no message has reached you since its result, up "
              "to its item, each after the item before it, in a later result or later "
              "in the same result."),
-        mctx("Run `{command}` as a Bash call by itself, do the item it prints, then "
+        mctx("Run `{command}` as the whole command of a Bash call, with no pipe, do the item it prints, then "
              "go on by the call each item ends with. Then give your report again."),
         mctx("Where you find no way to do the item your walk is at, run "
              "`uv run python scripts/step.py {agent} --stop <item>`, with that item as "

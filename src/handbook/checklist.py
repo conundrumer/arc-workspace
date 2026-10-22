@@ -83,11 +83,11 @@ def checklist_agents(root: Path = DOCUMENTS_ROOT) -> list[str]:
 NO_CHECKLIST = mctx("no agent has a checklist")
 
 ENTER = mctx("""
-    - Where the condition above holds, once this item is done, as a Bash call by itself, run `{enter}`, or, where your context still holds this part's file from an earlier entry, `{reenter}`.
-    - Where it does not hold, once this item is done, as a Bash call by itself, run `{skip}`.
+    - Where the condition above holds, once this item is done, as the whole command of a Bash call, with no pipe, run `{enter}`, or, where your context still holds this part's file from an earlier entry, `{reenter}`.
+    - Where it does not hold, once this item is done, as the whole command of a Bash call, with no pipe, run `{skip}`.
     """)
 
-NEXT = mctx("Once this item is done, run `{call}` as a Bash call by itself.")
+NEXT = mctx("Once this item is done, run `{call}` as the whole command of a Bash call, with no pipe.")
 
 NOT_A_CALL = mctx("the item `{item}` calls no conditional part's file")
 
