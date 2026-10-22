@@ -1,0 +1,1025 @@
+{
+ "id": "b0722778",
+ "witnesses": [
+  {
+   "id": "wide-query-gap",
+   "separates": "the query sits three blank columns past the image, and a second band has the usual layout; the concept finds the blocks as components and gives each band's result, and the lattice reading takes the query from the stored columns",
+   "input": [
+    [
+     1,
+     1,
+     0,
+     2,
+     1,
+     0,
+     0,
+     0,
+     3,
+     3
+    ],
+    [
+     2,
+     2,
+     0,
+     2,
+     1,
+     0,
+     0,
+     0,
+     4,
+     4
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     5,
+     6,
+     0,
+     6,
+     5,
+     0,
+     0,
+     0,
+     7,
+     8
+    ],
+    [
+     6,
+     6,
+     0,
+     6,
+     6,
+     0,
+     0,
+     0,
+     8,
+     8
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$QueryByGap",
+      "background=DominantColor",
+      "$RecolorLast",
+      "$DiagMirror",
+      "$DiagLast",
+      "$NewColorRecolor",
+      "$Composite",
+      "$IdentityOutside"
+     ],
+     "grid": [
+      [
+       4,
+       3
+      ],
+      [
+       4,
+       3
+      ],
+      [
+       0,
+       0
+      ],
+      [
+       8,
+       7
+      ],
+      [
+       8,
+       8
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$LatticeBlocks",
+      "$LatticeBlocks & band-gap=SepThickness"
+     ],
+     "grid": [
+      [
+       0,
+       0
+      ],
+      [
+       4,
+       3
+      ],
+      [
+       0,
+       0
+      ],
+      [
+       7,
+       0
+      ],
+      [
+       8,
+       0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "query-first",
+   "separates": "the band runs query, image, sample from the left, the wide gap beside the query; the concept reads the roles from the left edge, and the gap reading takes the query as the block beside the wide gap",
+   "input": [
+    [
+     3,
+     3,
+     0,
+     0,
+     2,
+     1,
+     0,
+     1,
+     1
+    ],
+    [
+     4,
+     4,
+     0,
+     0,
+     2,
+     1,
+     0,
+     2,
+     2
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     5,
+     5,
+     0,
+     0,
+     6,
+     6,
+     0,
+     6,
+     6
+    ],
+    [
+     5,
+     7,
+     0,
+     0,
+     7,
+     6,
+     0,
+     6,
+     7
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$LatticeBlocks",
+      "$LatticeBlocks & band-gap=SepThickness",
+      "background=DominantColor",
+      "$RecolorLast",
+      "$DiagMirror",
+      "$DiagLast",
+      "$NewColorRecolor",
+      "$Composite",
+      "$IdentityOutside"
+     ],
+     "grid": null
+    },
+    {
+     "cases": [
+      "$QueryByGap"
+     ],
+     "grid": [
+      [
+       4,
+       3
+      ],
+      [
+       4,
+       3
+      ],
+      [
+       0,
+       0
+      ],
+      [
+       5,
+       5
+      ],
+      [
+       7,
+       5
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "background=DominantColor",
+   "separates": "one band whose blocks carry nine cells of color 4 against six blank cells; the stored background parses the blocks, and the dominant color reads 4 as background",
+   "input": [
+    [
+     2,
+     4,
+     0,
+     4,
+     2,
+     0,
+     0,
+     4,
+     4
+    ],
+    [
+     4,
+     4,
+     0,
+     4,
+     4,
+     0,
+     0,
+     4,
+     3
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$LatticeBlocks",
+      "$QueryByGap",
+      "$RecolorLast",
+      "$DiagMirror",
+      "$DiagLast",
+      "$NewColorRecolor",
+      "$Composite",
+      "$IdentityOutside"
+     ],
+     "grid": [
+      [
+       4,
+       4
+      ],
+      [
+       3,
+       4
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$LatticeBlocks & band-gap=SepThickness",
+      "background=DominantColor"
+     ],
+     "grid": null
+    }
+   ]
+  },
+  {
+   "id": "band-gap=SepThickness",
+   "separates": "one band, so no separator lattice runs on either axis; the stored band gap reads the blocks, and the derived gap finds no value",
+   "input": [
+    [
+     2,
+     4,
+     0,
+     4,
+     2,
+     0,
+     0,
+     4,
+     4
+    ],
+    [
+     4,
+     4,
+     0,
+     4,
+     4,
+     0,
+     0,
+     4,
+     3
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$LatticeBlocks",
+      "$QueryByGap",
+      "$RecolorLast",
+      "$DiagMirror",
+      "$DiagLast",
+      "$NewColorRecolor",
+      "$Composite",
+      "$IdentityOutside"
+     ],
+     "grid": [
+      [
+       4,
+       4
+      ],
+      [
+       3,
+       4
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$LatticeBlocks & band-gap=SepThickness",
+      "background=DominantColor"
+     ],
+     "grid": null
+    }
+   ]
+  },
+  {
+   "id": "stripes-swap",
+   "separates": "stripes whose image swaps the two colors, a query of the same colors with one odd cell; a recoloring first swaps the query's colors, and a mirror first flips the query top to bottom",
+   "input": [
+    [
+     1,
+     1,
+     0,
+     2,
+     2,
+     0,
+     0,
+     1,
+     2
+    ],
+    [
+     2,
+     2,
+     0,
+     1,
+     1,
+     0,
+     0,
+     1,
+     1
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     3,
+     4,
+     0,
+     4,
+     3,
+     0,
+     0,
+     5,
+     6
+    ],
+    [
+     4,
+     4,
+     0,
+     4,
+     4,
+     0,
+     0,
+     5,
+     5
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$LatticeBlocks",
+      "$LatticeBlocks & band-gap=SepThickness",
+      "$QueryByGap",
+      "background=DominantColor",
+      "$DiagMirror",
+      "$DiagLast",
+      "$Composite",
+      "$IdentityOutside"
+     ],
+     "grid": [
+      [
+       2,
+       1
+      ],
+      [
+       2,
+       2
+      ],
+      [
+       0,
+       0
+      ],
+      [
+       6,
+       5
+      ],
+      [
+       5,
+       5
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$RecolorLast",
+      "$NewColorRecolor"
+     ],
+     "grid": [
+      [
+       1,
+       1
+      ],
+      [
+       1,
+       2
+      ],
+      [
+       0,
+       0
+      ],
+      [
+       6,
+       5
+      ],
+      [
+       5,
+       5
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "odd-cell-swap",
+   "separates": "an odd-cell block whose image swaps the two colors with the layout kept; a recoloring that needs no new color swaps the query's colors, and one that needs a new color finds no change",
+   "input": [
+    [
+     1,
+     2,
+     0,
+     2,
+     1,
+     0,
+     0,
+     2,
+     2
+    ],
+    [
+     2,
+     2,
+     0,
+     1,
+     1,
+     0,
+     0,
+     1,
+     2
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     3,
+     4,
+     0,
+     4,
+     3,
+     0,
+     0,
+     5,
+     6
+    ],
+    [
+     4,
+     4,
+     0,
+     4,
+     4,
+     0,
+     0,
+     5,
+     5
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$LatticeBlocks",
+      "$LatticeBlocks & band-gap=SepThickness",
+      "$QueryByGap",
+      "background=DominantColor",
+      "$RecolorLast",
+      "$DiagMirror",
+      "$DiagLast",
+      "$Composite",
+      "$IdentityOutside"
+     ],
+     "grid": [
+      [
+       1,
+       1
+      ],
+      [
+       2,
+       1
+      ],
+      [
+       0,
+       0
+      ],
+      [
+       6,
+       5
+      ],
+      [
+       5,
+       5
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$NewColorRecolor"
+     ],
+     "grid": null
+    }
+   ]
+  },
+  {
+   "id": "stripes-demo-odd-query",
+   "separates": "stripes turned to vertical, with a query that has one odd cell; a quarter turn moves the odd cell one corner clockwise, and a mirror across the anti-diagonal moves it to the opposite corner",
+   "input": [
+    [
+     1,
+     1,
+     0,
+     2,
+     1,
+     0,
+     0,
+     3,
+     4
+    ],
+    [
+     2,
+     2,
+     0,
+     2,
+     1,
+     0,
+     0,
+     4,
+     4
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     5,
+     6,
+     0,
+     6,
+     5,
+     0,
+     0,
+     7,
+     8
+    ],
+    [
+     6,
+     6,
+     0,
+     6,
+     6,
+     0,
+     0,
+     8,
+     8
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$LatticeBlocks",
+      "$LatticeBlocks & band-gap=SepThickness",
+      "$QueryByGap",
+      "background=DominantColor",
+      "$RecolorLast",
+      "$DiagLast",
+      "$NewColorRecolor",
+      "$Composite",
+      "$IdentityOutside"
+     ],
+     "grid": [
+      [
+       4,
+       3
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       0,
+       0
+      ],
+      [
+       8,
+       7
+      ],
+      [
+       8,
+       8
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$DiagMirror"
+     ],
+     "grid": [
+      [
+       4,
+       4
+      ],
+      [
+       4,
+       3
+      ],
+      [
+       0,
+       0
+      ],
+      [
+       8,
+       7
+      ],
+      [
+       8,
+       8
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "diagonal-mirror-3x3",
+   "separates": "3x3 blocks whose image is the sample mirrored across the main diagonal, which no axis mirror or turn gives; the concept finds no change, and a catalog with diagonal mirrors flips the query",
+   "input": [
+    [
+     1,
+     1,
+     2,
+     0,
+     1,
+     2,
+     2,
+     0,
+     0,
+     3,
+     4,
+     4
+    ],
+    [
+     2,
+     2,
+     2,
+     0,
+     1,
+     2,
+     2,
+     0,
+     0,
+     3,
+     4,
+     4
+    ],
+    [
+     2,
+     2,
+     2,
+     0,
+     2,
+     2,
+     2,
+     0,
+     0,
+     4,
+     4,
+     4
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$LatticeBlocks",
+      "$LatticeBlocks & band-gap=SepThickness",
+      "$QueryByGap",
+      "background=DominantColor",
+      "$RecolorLast",
+      "$NewColorRecolor",
+      "$Composite",
+      "$IdentityOutside"
+     ],
+     "grid": null
+    },
+    {
+     "cases": [
+      "$DiagMirror",
+      "$DiagLast"
+     ],
+     "grid": [
+      [
+       3,
+       3,
+       4
+      ],
+      [
+       4,
+       4,
+       4
+      ],
+      [
+       4,
+       4,
+       4
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "flip-and-recolor",
+   "separates": "an image that is the sample flipped top to bottom and recolored to new colors; the concept finds no change, and a composite change flips and recolors the query",
+   "input": [
+    [
+     1,
+     2,
+     0,
+     3,
+     3,
+     0,
+     0,
+     1,
+     1
+    ],
+    [
+     2,
+     2,
+     0,
+     4,
+     3,
+     0,
+     0,
+     2,
+     1
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     5,
+     6,
+     0,
+     6,
+     5,
+     0,
+     0,
+     7,
+     8
+    ],
+    [
+     6,
+     6,
+     0,
+     6,
+     6,
+     0,
+     0,
+     8,
+     8
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$LatticeBlocks",
+      "$LatticeBlocks & band-gap=SepThickness",
+      "$QueryByGap",
+      "background=DominantColor",
+      "$RecolorLast",
+      "$DiagMirror",
+      "$DiagLast",
+      "$NewColorRecolor",
+      "$IdentityOutside"
+     ],
+     "grid": null
+    },
+    {
+     "cases": [
+      "$Composite"
+     ],
+     "grid": [
+      [
+       3,
+       4
+      ],
+      [
+       4,
+       4
+      ],
+      [
+       0,
+       0
+      ],
+      [
+       8,
+       7
+      ],
+      [
+       8,
+       8
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "unmapped-query-color",
+   "separates": "a recoloring band whose query holds a color the sample lacks; the concept finds no color for it, and the pass-through reading keeps it",
+   "input": [
+    [
+     1,
+     2,
+     0,
+     5,
+     6,
+     0,
+     0,
+     1,
+     3
+    ],
+    [
+     2,
+     2,
+     0,
+     6,
+     6,
+     0,
+     0,
+     3,
+     3
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     5,
+     6,
+     0,
+     6,
+     5,
+     0,
+     0,
+     7,
+     8
+    ],
+    [
+     6,
+     6,
+     0,
+     6,
+     6,
+     0,
+     0,
+     8,
+     8
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$LatticeBlocks",
+      "$LatticeBlocks & band-gap=SepThickness",
+      "$QueryByGap",
+      "background=DominantColor",
+      "$RecolorLast",
+      "$DiagMirror",
+      "$DiagLast",
+      "$NewColorRecolor",
+      "$Composite"
+     ],
+     "grid": null
+    },
+    {
+     "cases": [
+      "$IdentityOutside"
+     ],
+     "grid": [
+      [
+       5,
+       3
+      ],
+      [
+       3,
+       3
+      ],
+      [
+       0,
+       0
+      ],
+      [
+       8,
+       7
+      ],
+      [
+       8,
+       8
+      ]
+     ]
+    }
+   ]
+  }
+ ]
+}

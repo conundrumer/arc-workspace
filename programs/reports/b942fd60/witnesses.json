@@ -1,0 +1,54 @@
+{ "id": "b942fd60",
+  "witnesses": [{
+    "id": "ray-meets-seed",
+    "separates": "A ray runs left along the seed's row toward the seed. Where the seed is no obstacle, the ray runs over it to the edge and ends. Where the seed is an obstacle, the ray stops at (3,1) and branches up and down column 1.",
+    "input": [[0,0,0,0,3,0,0],[0,7,0,0,0,0,0],[0,0,0,0,0,0,0],[2,0,0,0,0,8,0],[0,0,6,0,0,0,0],[0,0,0,0,0,0,0],[0,0,0,0,0,0,0]],
+    "assign": {},
+    "output": [
+      { "cases": ["concept", "$BlockedRayEnds", "$StartFromSeedEdge", "$StoredObstacleColors", "background=DominantColor"],
+        "grid": [[0,0,2,0,3,0,0],[0,7,2,2,2,2,2],[0,0,2,0,2,0,0],[2,2,2,2,2,8,0],[0,0,6,0,2,0,0],[0,0,0,0,2,0,0],[0,0,0,0,2,0,0]] },
+      { "cases": ["$SeedBlocks"],
+        "grid": [[0,0,2,0,3,0,0],[0,7,2,2,2,2,2],[2,2,2,2,2,2,2],[2,2,2,2,2,8,0],[0,2,6,0,2,0,0],[0,2,0,0,2,0,0],[0,2,0,0,2,0,0]] }]
+  }, {
+    "id": "seed-next-to-mark",
+    "separates": "A mark sits right next to the seed, so the first ray has no cell to run over. Where a blocked ray still branches, the line runs up and down the seed's edge column. Where a blocked ray ends, nothing is drawn.",
+    "input": [[0,0,0,0,0,0],[0,0,0,7,0,0],[2,8,0,0,0,0],[0,0,0,0,0,0],[0,0,0,0,6,0],[0,0,0,0,0,0]],
+    "assign": {},
+    "output": [
+      { "cases": ["concept", "$SeedBlocks", "$StartFromSeedEdge", "$StoredObstacleColors", "background=DominantColor"],
+        "grid": [[2,0,0,0,0,0],[2,0,0,7,0,0],[2,8,0,0,0,0],[2,0,0,0,0,0],[2,0,0,0,6,0],[2,0,0,0,0,0]] },
+      { "cases": ["$BlockedRayEnds"],
+        "grid": [[0,0,0,0,0,0],[0,0,0,7,0,0],[2,8,0,0,0,0],[0,0,0,0,0,0],[0,0,0,0,6,0],[0,0,0,0,0,0]] }]
+  }, {
+    "id": "seed-on-top-edge",
+    "separates": "The seed lies on the top edge. The stored start direction sends the first ray right along the top row. The direction derived from the seed's edge sends it down, and it branches before the 8.",
+    "input": [[0,0,2,0,0,0],[0,0,0,0,0,0],[0,0,0,0,7,0],[0,0,0,0,0,0],[0,0,8,0,0,0],[0,0,0,0,0,0]],
+    "assign": {},
+    "output": [
+      { "cases": ["concept", "$SeedBlocks", "$BlockedRayEnds", "$StoredObstacleColors", "background=DominantColor"],
+        "grid": [[0,0,2,2,2,2],[0,0,0,0,0,0],[0,0,0,0,7,0],[0,0,0,0,0,0],[0,0,8,0,0,0],[0,0,0,0,0,0]] },
+      { "cases": ["$StartFromSeedEdge"],
+        "grid": [[0,0,2,0,0,0],[0,0,2,0,0,0],[0,0,2,0,7,0],[2,2,2,2,2,2],[0,0,8,0,0,0],[0,0,0,0,0,0]] }]
+  }, {
+    "id": "mark-of-new-color",
+    "separates": "A 4 stands in the first ray's path. Where every non-background cell is an obstacle, the ray stops before the 4 and branches. Where only the stored colors 3, 6, 7 and 8 block, the ray paints over the 4 and runs to the edge.",
+    "input": [[0,0,0,0,0,0],[0,0,0,3,0,0],[2,0,0,4,0,0],[0,0,0,0,0,0],[0,0,0,0,0,6],[0,0,0,0,0,0]],
+    "assign": {},
+    "output": [
+      { "cases": ["concept", "$SeedBlocks", "$BlockedRayEnds", "$StartFromSeedEdge", "background=DominantColor"],
+        "grid": [[0,0,2,0,0,0],[0,0,2,3,0,0],[2,2,2,4,0,0],[0,0,2,0,0,0],[0,0,2,0,0,6],[0,0,2,0,0,0]] },
+      { "cases": ["$StoredObstacleColors"],
+        "grid": [[0,0,0,0,0,0],[0,0,0,3,0,0],[2,2,2,2,2,2],[0,0,0,0,0,0],[0,0,0,0,0,6],[0,0,0,0,0,0]] }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "8 outnumbers 0. With the stored background 0, the 8s block the rays. With the background derived as the commonest color, 8 is the background, the 0s block, and the rays paint over 8s.",
+    "input": [[8,8,0,0,8],[2,0,0,8,0],[8,0,8,0,8],[0,8,0,8,8]],
+    "assign": {},
+    "output": [
+      { "cases": ["concept", "$BlockedRayEnds", "$StartFromSeedEdge", "$StoredObstacleColors"],
+        "grid": [[8,8,2,0,8],[2,2,2,8,0],[8,0,8,0,8],[0,8,0,8,8]] },
+      { "cases": ["$SeedBlocks"],
+        "grid": [[8,8,2,0,8],[2,2,2,8,0],[8,2,8,0,8],[0,8,0,8,8]] },
+      { "cases": ["background=DominantColor"],
+        "grid": [[2,8,0,0,8],[2,0,0,8,0],[2,0,8,0,8],[0,8,0,8,8]] }]
+  }] }

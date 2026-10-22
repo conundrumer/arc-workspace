@@ -1,0 +1,73 @@
+{ "id": "b7999b51",
+  "witnesses": [{
+    "id": "tied-extents",
+    "separates": "the 2 and 3 rectangles are both 3 tall; the concept is undefined, TieByPlace puts the bar of the rectangle nearer the left edge first, and TieBothOrders gives both orders",
+    "input": [
+      [0,0,0,4,4,0,0,0,0],
+      [2,2,0,4,4,0,0,0,0],
+      [2,2,0,4,4,0,3,3,0],
+      [2,2,0,4,4,0,3,3,0],
+      [0,0,0,4,4,0,3,3,0],
+      [0,0,0,0,0,0,0,0,0]
+    ],
+    "assign": {},
+    "output": [
+      { "cases": ["concept", "background=DominantColor"], "grid": null },
+      { "cases": ["$TieByPlace"], "grid": [
+        [4,2,3],
+        [4,2,3],
+        [4,2,3],
+        [4,0,0],
+        [4,0,0]
+      ] },
+      { "cases": ["$TieBothOrders"], "grid": [
+        [
+          [4,2,3],
+          [4,2,3],
+          [4,2,3],
+          [4,0,0],
+          [4,0,0]
+        ],
+        [
+          [4,3,2],
+          [4,3,2],
+          [4,3,2],
+          [4,0,0],
+          [4,0,0]
+        ]
+      ] }
+    ]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "the 6 rectangle covers more cells than 0; the concept draws bars of 6, 2 and 1 on 0, and the derived background 6 makes 0 a bar color and draws on 6",
+    "input": [
+      [6,6,6,6,6,0,0],
+      [6,6,6,6,6,0,2],
+      [6,6,6,6,6,0,2],
+      [6,6,6,6,6,0,0],
+      [6,6,6,6,6,0,0],
+      [6,6,6,6,6,0,0],
+      [1,1,0,0,0,0,0]
+    ],
+    "assign": {},
+    "output": [
+      { "cases": ["concept", "$TieByPlace", "$TieBothOrders"], "grid": [
+        [6,2,1],
+        [6,2,0],
+        [6,0,0],
+        [6,0,0],
+        [6,0,0],
+        [6,0,0]
+      ] },
+      { "cases": ["background=DominantColor"], "grid": [
+        [0,2,1],
+        [0,2,6],
+        [0,6,6],
+        [0,6,6],
+        [0,6,6],
+        [0,6,6],
+        [0,6,6]
+      ] }
+    ]
+  }]
+}

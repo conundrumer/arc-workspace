@@ -1,0 +1,76 @@
+{ "id": "d90796e8",
+  "witnesses": [{
+    "id": "background=DominantColor",
+    "separates": "a green-red pair on a field of gray: the stored background erases the red cell to black, the derived background erases it to gray, and the reading by objects finds the pair joined to the gray field and changes nothing",
+    "input": [
+      [5,5,5,5],
+      [5,3,2,5],
+      [5,5,5,5]
+    ],
+    "assign": {},
+    "output": [
+      {"cases": ["concept", "$ExclusivePair"], "grid": [
+        [5,5,5,5],
+        [5,8,0,5],
+        [5,5,5,5]
+      ]},
+      {"cases": ["background=DominantColor"], "grid": [
+        [5,5,5,5],
+        [5,8,5,5],
+        [5,5,5,5]
+      ]},
+      {"cases": ["$IsolatedPair"], "grid": [
+        [5,5,5,5],
+        [5,3,2,5],
+        [5,5,5,5]
+      ]}
+    ]
+  }, {
+    "id": "pair-touching-other-color",
+    "separates": "a green-red pair that a gray cell touches: the concept merges the pair, and the reading by objects finds a three-cell object and changes nothing",
+    "input": [
+      [0,0,0,0,0],
+      [0,3,2,5,0],
+      [0,0,0,0,0],
+      [0,5,0,3,0]
+    ],
+    "assign": {},
+    "output": [
+      {"cases": ["concept", "background=DominantColor", "$ExclusivePair"], "grid": [
+        [0,0,0,0,0],
+        [0,8,0,5,0],
+        [0,0,0,0,0],
+        [0,5,0,3,0]
+      ]},
+      {"cases": ["$IsolatedPair"], "grid": [
+        [0,0,0,0,0],
+        [0,3,2,5,0],
+        [0,0,0,0,0],
+        [0,5,0,3,0]
+      ]}
+    ]
+  }, {
+    "id": "red-between-two-greens",
+    "separates": "a red cell with a green cell on each side: the concept turns both greens purple and erases the red, and the readings that merge only a pair with one partner each change nothing",
+    "input": [
+      [0,0,0,0,0],
+      [0,3,2,3,0],
+      [0,0,0,0,0],
+      [0,0,5,0,0]
+    ],
+    "assign": {},
+    "output": [
+      {"cases": ["concept", "background=DominantColor"], "grid": [
+        [0,0,0,0,0],
+        [0,8,0,8,0],
+        [0,0,0,0,0],
+        [0,0,5,0,0]
+      ]},
+      {"cases": ["$IsolatedPair", "$ExclusivePair"], "grid": [
+        [0,0,0,0,0],
+        [0,3,2,3,0],
+        [0,0,0,0,0],
+        [0,0,5,0,0]
+      ]}
+    ]
+  }] }

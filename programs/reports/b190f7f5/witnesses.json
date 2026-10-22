@@ -1,0 +1,22 @@
+{ "id": "b190f7f5",
+  "witnesses": [
+    { "id": "template-in-other-color",
+      "separates": "The shape is drawn in 5, not 8. The concept finds no half that holds only 8 and background, and is undefined. The one-color and fewer-colors readings take the 5 half as the shape and stamp it in each pattern color.",
+      "input": [[2,0,4,0,5,0],[0,3,0,5,5,5],[0,0,0,0,5,0]],
+      "assign": {},
+      "output": [
+        { "cases": ["concept", "$TemplateBbox"], "grid": null },
+        { "cases": ["$MonoTemplate", "$FewerColorsTemplate"],
+          "grid": [[0,2,0,0,0,0,0,4,0],[2,2,2,0,0,0,4,4,4],[0,2,0,0,0,0,0,4,0],[0,0,0,0,3,0,0,0,0],[0,0,0,3,3,3,0,0,0],[0,0,0,0,3,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0]] }
+      ] },
+    { "id": "shape-short-of-square",
+      "separates": "The 8 shape fills only the top-left 2x2 of its 3x3 half. The concept stamps the whole 3x3 half, giving 9x9. The bounding-box reading stamps the 2x2 box of the shape, giving 6x6.",
+      "input": [[2,0,4,8,8,0],[0,3,0,8,0,0],[0,0,0,0,0,0]],
+      "assign": {},
+      "output": [
+        { "cases": ["concept", "$MonoTemplate", "$FewerColorsTemplate"],
+          "grid": [[2,2,0,0,0,0,4,4,0],[2,0,0,0,0,0,4,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,3,3,0,0,0,0],[0,0,0,3,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0]] },
+        { "cases": ["$TemplateBbox"],
+          "grid": [[2,2,0,0,4,4],[2,0,0,0,4,0],[0,0,3,3,0,0],[0,0,3,0,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0]] }
+      ] }
+  ] }

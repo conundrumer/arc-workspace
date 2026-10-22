@@ -1,0 +1,169 @@
+{
+  "id": "d8c310e9",
+  "witnesses": [
+    {
+      "id": "bg=DominantColor",
+      "separates": "Ink of 2 covers more cells than 0, a 3-period strip of 14 columns. The concept takes 0 as background and repeats the 3-column tile to the edge; with 2 taken as background the 0 cells count as ink, the segment runs to the far edge, and the grid stays as it is.",
+      "input": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [2,2,2,2,2,2,2,2,2,2,2,2,2,2,0],
+        [2,2,2,2,2,2,2,2,2,2,2,2,2,2,0],
+        [1,2,2,1,2,2,1,2,2,1,2,2,1,2,0]
+      ],
+      "assign": {},
+      "output": [
+        {
+          "cases": [
+            "concept",
+            "$DirFromScene",
+            "$PerLine",
+            "$GroundPeriod"
+          ],
+          "grid": [
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+            [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+            [1,2,2,1,2,2,1,2,2,1,2,2,1,2,2]
+          ]
+        },
+        {
+          "cases": [
+            "bg=DominantColor"
+          ],
+          "grid": [
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [2,2,2,2,2,2,2,2,2,2,2,2,2,2,0],
+            [2,2,2,2,2,2,2,2,2,2,2,2,2,2,0],
+            [1,2,2,1,2,2,1,2,2,1,2,2,1,2,0]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mirrored-scene",
+      "separates": "The strip starts at the right edge and stops short of the left edge. The concept, reading toward the right, finds ink in the last column and leaves the grid as it is; the derived direction is left, and the strip repeats leftward to the edge.",
+      "input": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,2,2,0,2,2,0],
+        [0,0,0,0,0,0,0,0,1,2,2,1,2,2,1]
+      ],
+      "assign": {},
+      "output": [
+        {
+          "cases": [
+            "concept",
+            "bg=DominantColor",
+            "$PerLine",
+            "$GroundPeriod"
+          ],
+          "grid": [
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,2,2,0,2,2,0],
+            [0,0,0,0,0,0,0,0,1,2,2,1,2,2,1]
+          ]
+        },
+        {
+          "cases": [
+            "$DirFromScene"
+          ],
+          "grid": [
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [2,2,0,2,2,0,2,2,0,2,2,0,2,2,0],
+            [2,2,1,2,2,1,2,2,1,2,2,1,2,2,1]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "short-row-run",
+      "separates": "The segment is 6 columns: one 4-column tile and 2 more columns, and row 2 has one 2 in the segment. The concept repeats the 4-column tile, so row 2 takes 2 at cols 2, 6, 10, 14; read row by row, row 2 repeats with period 3, at cols 2, 5, 8, 11, 14.",
+      "input": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,2,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,2,0,0,0,0,0,0,0,0,0,0,0,0],
+        [3,3,2,1,3,3,0,0,0,0,0,0,0,0,0]
+      ],
+      "assign": {},
+      "output": [
+        {
+          "cases": [
+            "concept",
+            "bg=DominantColor",
+            "$DirFromScene",
+            "$GroundPeriod"
+          ],
+          "grid": [
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,2,0,0,0,2,0,0,0,2,0,0,0,2],
+            [0,0,2,0,0,0,2,0,0,0,2,0,0,0,2],
+            [3,3,2,1,3,3,2,1,3,3,2,1,3,3,2]
+          ]
+        },
+        {
+          "cases": [
+            "$PerLine"
+          ],
+          "grid": [
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,2,0,0,2,0,0,2,0,0,2,0,0,2],
+            [0,0,2,0,0,2,0,0,2,0,0,2,0,0,2],
+            [3,3,2,1,3,3,2,1,3,3,2,1,3,3,2]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ground-faster",
+      "separates": "The ground row repeats every 2 columns and the row above it every 4. The concept repeats the 4-column tile, so row 3 takes 5 at cols 0, 4, 8, 12; by the ground row the tile is 2 columns, and row 3 takes 5 at every even col.",
+      "input": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [5,0,0,0,5,0,0,0,0,0,0,0,0,0,0],
+        [1,2,1,2,1,2,1,2,0,0,0,0,0,0,0]
+      ],
+      "assign": {},
+      "output": [
+        {
+          "cases": [
+            "concept",
+            "bg=DominantColor",
+            "$DirFromScene",
+            "$PerLine"
+          ],
+          "grid": [
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [5,0,0,0,5,0,0,0,5,0,0,0,5,0,0],
+            [1,2,1,2,1,2,1,2,1,2,1,2,1,2,1]
+          ]
+        },
+        {
+          "cases": [
+            "$GroundPeriod"
+          ],
+          "grid": [
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [5,0,5,0,5,0,5,0,5,0,5,0,5,0,5],
+            [1,2,1,2,1,2,1,2,1,2,1,2,1,2,1]
+          ]
+        }
+      ]
+    }
+  ]
+}

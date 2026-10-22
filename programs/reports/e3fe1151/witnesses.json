@@ -1,0 +1,38 @@
+{ "id": "e3fe1151",
+  "witnesses": [{
+    "id": "blank-color-apart",
+    "separates": "the blanks are 0 inside a 7 cross; with the blank color stored apart from the cross color each 0 cell takes its quadrant's missing color, and with one color for both no cell is a blank and the quadrants' missing colors have nowhere to go, so the model is undefined",
+    "input": [
+      [0, 2, 7, 1, 0],
+      [3, 4, 7, 3, 4],
+      [7, 7, 7, 7, 7],
+      [1, 2, 7, 1, 2],
+      [0, 4, 7, 3, 0]],
+    "assign": {"blank_color": [[0]]},
+    "output": [
+      {"cases": ["$OwnBlankColor"], "grid": [
+        [1, 2, 7, 1, 2],
+        [3, 4, 7, 3, 4],
+        [7, 7, 7, 7, 7],
+        [1, 2, 7, 1, 2],
+        [3, 4, 7, 3, 4]]},
+      {"cases": ["concept", "$LineCross"], "grid": null}]
+  }, {
+    "id": "blank-row-across-top",
+    "separates": "the blanks of both top quadrants fill row 0, so row 0 and row 2 are both full rows of 7; the center cross fills each top quadrant with its two missing colors, and the line reading finds two full rows and is undefined",
+    "input": [
+      [7, 7, 7, 7, 7],
+      [2, 2, 7, 1, 1],
+      [7, 7, 7, 7, 7],
+      [1, 2, 7, 2, 1],
+      [2, 1, 7, 1, 2]],
+    "assign": {},
+    "output": [
+      {"cases": ["concept", "$OwnBlankColor"], "grid": [
+        [1, 1, 7, 2, 2],
+        [2, 2, 7, 1, 1],
+        [7, 7, 7, 7, 7],
+        [1, 2, 7, 2, 1],
+        [2, 1, 7, 1, 2]]},
+      {"cases": ["$LineCross"], "grid": null}]
+  }] }

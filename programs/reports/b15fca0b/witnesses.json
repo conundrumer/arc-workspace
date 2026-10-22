@@ -1,0 +1,723 @@
+{
+ "id": "b15fca0b",
+ "witnesses": [
+  {
+   "id": "turns-vs-steps",
+   "separates": "a fewest-step route that turns more often than a longer route around the walls: the concept paints the zigzag down the left channel, and $FewestTurns paints the three-run route along the top edge, down the right column and back along the bottom edge",
+   "input": [
+    [
+     2,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     1,
+     0,
+     1,
+     1,
+     0
+    ],
+    [
+     0,
+     0,
+     1,
+     1,
+     0
+    ],
+    [
+     0,
+     1,
+     1,
+     1,
+     0
+    ],
+    [
+     0,
+     0,
+     1,
+     1,
+     0
+    ],
+    [
+     1,
+     0,
+     1,
+     1,
+     0
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     0
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$PassNonWall",
+      "$TieAny",
+      "$TieUnion",
+      "$NoRouteKeep",
+      "$AllPairs",
+      "background=DominantColor",
+      "endpoint_color=RarestColor"
+     ],
+     "grid": [
+      [
+       2,
+       4,
+       0,
+       0,
+       0
+      ],
+      [
+       1,
+       4,
+       1,
+       1,
+       0
+      ],
+      [
+       4,
+       4,
+       1,
+       1,
+       0
+      ],
+      [
+       4,
+       1,
+       1,
+       1,
+       0
+      ],
+      [
+       4,
+       4,
+       1,
+       1,
+       0
+      ],
+      [
+       1,
+       4,
+       1,
+       1,
+       0
+      ],
+      [
+       2,
+       4,
+       0,
+       0,
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$FewestTurns"
+     ],
+     "grid": [
+      [
+       2,
+       4,
+       4,
+       4,
+       4
+      ],
+      [
+       1,
+       0,
+       1,
+       1,
+       4
+      ],
+      [
+       0,
+       0,
+       1,
+       1,
+       4
+      ],
+      [
+       0,
+       1,
+       1,
+       1,
+       4
+      ],
+      [
+       0,
+       0,
+       1,
+       1,
+       4
+      ],
+      [
+       1,
+       0,
+       1,
+       1,
+       4
+      ],
+      [
+       2,
+       4,
+       4,
+       4,
+       4
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "foreign-color-on-route",
+   "separates": "a cell of a color other than background, wall and endpoint on the straight route: the concept goes around it as an obstacle, and $PassNonWall crosses it and paints it",
+   "input": [
+    [
+     2,
+     0,
+     3,
+     0,
+     2
+    ],
+    [
+     0,
+     1,
+     1,
+     1,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$FewestTurns",
+      "$TieAny",
+      "$TieUnion",
+      "$NoRouteKeep",
+      "$AllPairs",
+      "background=DominantColor"
+     ],
+     "grid": [
+      [
+       2,
+       0,
+       3,
+       0,
+       2
+      ],
+      [
+       4,
+       1,
+       1,
+       1,
+       4
+      ],
+      [
+       4,
+       4,
+       4,
+       4,
+       4
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$PassNonWall"
+     ],
+     "grid": [
+      [
+       2,
+       4,
+       4,
+       4,
+       2
+      ],
+      [
+       0,
+       1,
+       1,
+       1,
+       0
+      ],
+      [
+       0,
+       0,
+       0,
+       0,
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "endpoint_color=RarestColor"
+     ],
+     "grid": null
+    }
+   ]
+  },
+  {
+   "id": "tied-routes",
+   "separates": "two fewest-step routes, one each side of the wall: the concept is undefined, $TieAny gives each route as its own output, and $TieUnion paints both",
+   "input": [
+    [
+     2,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     1,
+     1,
+     1,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     2
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$FewestTurns",
+      "$PassNonWall",
+      "$NoRouteKeep",
+      "$AllPairs",
+      "background=DominantColor",
+      "endpoint_color=RarestColor"
+     ],
+     "grid": null
+    },
+    {
+     "cases": [
+      "$TieAny"
+     ],
+     "grid": [
+      [
+       [
+        2,
+        4,
+        4,
+        4,
+        4
+       ],
+       [
+        0,
+        1,
+        1,
+        1,
+        4
+       ],
+       [
+        0,
+        0,
+        0,
+        0,
+        2
+       ]
+      ],
+      [
+       [
+        2,
+        0,
+        0,
+        0,
+        0
+       ],
+       [
+        4,
+        1,
+        1,
+        1,
+        0
+       ],
+       [
+        4,
+        4,
+        4,
+        4,
+        2
+       ]
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$TieUnion"
+     ],
+     "grid": [
+      [
+       2,
+       4,
+       4,
+       4,
+       4
+      ],
+      [
+       4,
+       1,
+       1,
+       1,
+       4
+      ],
+      [
+       4,
+       4,
+       4,
+       4,
+       2
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "no-route",
+   "separates": "a wall that cuts one endpoint off from the other: the concept is undefined, and $NoRouteKeep gives the input unchanged",
+   "input": [
+    [
+     2,
+     0,
+     1,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     1,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     1,
+     0,
+     2
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$FewestTurns",
+      "$PassNonWall",
+      "$TieAny",
+      "$TieUnion",
+      "$AllPairs",
+      "background=DominantColor",
+      "endpoint_color=RarestColor"
+     ],
+     "grid": null
+    },
+    {
+     "cases": [
+      "$NoRouteKeep"
+     ],
+     "grid": [
+      [
+       2,
+       0,
+       1,
+       0,
+       0
+      ],
+      [
+       0,
+       0,
+       1,
+       0,
+       0
+      ],
+      [
+       0,
+       0,
+       1,
+       0,
+       2
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "three-endpoints",
+   "separates": "three endpoint cells: the concept is undefined, and $AllPairs paints the fewest-step route between each two of them",
+   "input": [
+    [
+     2,
+     0,
+     0,
+     0,
+     2
+    ],
+    [
+     1,
+     1,
+     0,
+     1,
+     1
+    ],
+    [
+     1,
+     1,
+     0,
+     1,
+     1
+    ],
+    [
+     1,
+     1,
+     2,
+     1,
+     1
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$FewestTurns",
+      "$PassNonWall",
+      "$TieAny",
+      "$TieUnion",
+      "$NoRouteKeep",
+      "background=DominantColor",
+      "endpoint_color=RarestColor"
+     ],
+     "grid": null
+    },
+    {
+     "cases": [
+      "$AllPairs"
+     ],
+     "grid": [
+      [
+       2,
+       4,
+       4,
+       4,
+       2
+      ],
+      [
+       1,
+       1,
+       4,
+       1,
+       1
+      ],
+      [
+       1,
+       1,
+       4,
+       1,
+       1
+      ],
+      [
+       1,
+       1,
+       2,
+       1,
+       1
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "background=DominantColor",
+   "separates": "wall cells outnumber background cells: the concept paints the route through background, and the derived background is the wall color, so the route runs through the walls",
+   "input": [
+    [
+     2,
+     0,
+     0,
+     0,
+     2
+    ],
+    [
+     1,
+     1,
+     1,
+     1,
+     1
+    ],
+    [
+     1,
+     1,
+     1,
+     1,
+     1
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$FewestTurns",
+      "$PassNonWall",
+      "$TieAny",
+      "$TieUnion",
+      "$NoRouteKeep",
+      "$AllPairs",
+      "endpoint_color=RarestColor"
+     ],
+     "grid": [
+      [
+       2,
+       4,
+       4,
+       4,
+       2
+      ],
+      [
+       1,
+       1,
+       1,
+       1,
+       1
+      ],
+      [
+       1,
+       1,
+       1,
+       1,
+       1
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "background=DominantColor"
+     ],
+     "grid": [
+      [
+       2,
+       0,
+       0,
+       0,
+       2
+      ],
+      [
+       4,
+       4,
+       4,
+       4,
+       4
+      ],
+      [
+       1,
+       1,
+       1,
+       1,
+       1
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "endpoint_color=RarestColor",
+   "separates": "the two endpoints are of a color other than the stored endpoint color: the concept finds no endpoint and is undefined, and the derived endpoint color is the rarest color, which finds them and paints the route between them",
+   "input": [
+    [
+     3,
+     0,
+     0,
+     0,
+     3
+    ],
+    [
+     1,
+     1,
+     0,
+     1,
+     1
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   ],
+   "assign": {},
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$FewestTurns",
+      "$PassNonWall",
+      "$TieAny",
+      "$TieUnion",
+      "$NoRouteKeep",
+      "$AllPairs",
+      "background=DominantColor"
+     ],
+     "grid": null
+    },
+    {
+     "cases": [
+      "endpoint_color=RarestColor"
+     ],
+     "grid": [
+      [
+       3,
+       4,
+       4,
+       4,
+       3
+      ],
+      [
+       1,
+       1,
+       0,
+       1,
+       1
+      ],
+      [
+       0,
+       0,
+       0,
+       0,
+       0
+      ]
+     ]
+    }
+   ]
+  }
+ ]
+}

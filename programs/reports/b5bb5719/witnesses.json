@@ -1,0 +1,45 @@
+{ "id": "b5bb5719",
+  "witnesses": [
+    { "id": "interior-gap",
+      "separates": "A background cell inside the seed's span with two filled cells to its left: the concept leaves the cell under the gap's left neighbor pair unfilled, and $SpanTriangle fills it.",
+      "input": [[5,2,5,7,5],[7,7,7,7,7],[7,7,7,7,7]],
+      "assign": {},
+      "output": [
+        { "cases": ["concept", "$MixedTakesOtherSide", "background=DominantColor", "$GrowFromSeedEdge"],
+          "grid": [[5,2,5,7,5],[7,2,7,2,7],[7,7,5,7,7]] },
+        { "cases": ["$SpanTriangle"],
+          "grid": [[5,2,5,7,5],[7,2,5,2,7],[7,7,5,7,7]] }
+      ] },
+    { "id": "third-seed-color",
+      "separates": "A seed pair of 5 and a color outside swap: the concept gives the swap of the left cell, 2, and $MixedTakesOtherSide gives the right cell's color, 3.",
+      "input": [[7,5,7,3,7],[7,7,7,7,7],[7,7,7,7,7]],
+      "assign": {},
+      "output": [
+        { "cases": ["concept", "$SpanTriangle", "background=DominantColor", "$GrowFromSeedEdge"],
+          "grid": [[7,5,7,3,7],[7,7,2,7,7],[7,7,7,7,7]] },
+        { "cases": ["$MixedTakesOtherSide"],
+          "grid": [[7,5,7,3,7],[7,7,3,7,7],[7,7,7,7,7]] }
+      ] },
+    { "id": "background=DominantColor",
+      "separates": "A field of 0 in place of 7: the stored background finds no background cell and returns the input, and the derived background 0 grows the pyramid.",
+      "input": [[0,5,0,2,0],[0,0,0,0,0],[0,0,0,0,0]],
+      "assign": {},
+      "output": [
+        { "cases": ["concept", "$SpanTriangle", "$MixedTakesOtherSide"],
+          "grid": [[0,5,0,2,0],[0,0,0,0,0],[0,0,0,0,0]] },
+        { "cases": ["background=DominantColor"],
+          "grid": [[0,5,0,2,0],[0,0,2,0,0],[0,0,0,0,0]] },
+        { "cases": ["$GrowFromSeedEdge"],
+          "grid": null }
+      ] },
+    { "id": "seed-at-bottom",
+      "separates": "The seed on the bottom row: the stored grow direction grows nothing and returns the input, and the grow direction derived from the seed's edge grows the pyramid upward.",
+      "input": [[7,7,7,7,7],[7,7,7,7,7],[7,5,7,2,7]],
+      "assign": {},
+      "output": [
+        { "cases": ["concept", "$SpanTriangle", "$MixedTakesOtherSide", "background=DominantColor"],
+          "grid": [[7,7,7,7,7],[7,7,7,7,7],[7,5,7,2,7]] },
+        { "cases": ["$GrowFromSeedEdge"],
+          "grid": [[7,7,7,7,7],[7,7,2,7,7],[7,5,7,2,7]] }
+      ] }
+  ] }
