@@ -8,6 +8,10 @@ first call supplies the rendered agent document and rendered repo and user
 CLAUDE.md files as developer instructions, with the configured Codex style.
 The brief and starting instruction are user input. A fresh call refuses existing
 thread or turn history without changing it.
+A scratch directory permits one work call at a time. Contention accepts no turn;
+wait for its owner, then retry. A resume refuses an active rollout turn; use
+show or interrupt and wait for that turn to end before retrying. Controls remain
+available while work owns the lock.
 Each work call requires the calling Claude session identity and passes it to
 worker shells through request-local configuration. Control calls need no identity.
 `--resume` requires the thread in <scratch>/codex-session and continues it
@@ -25,6 +29,7 @@ Show reads the live rollout; steer and interrupt reach the running daemon turn.
 """
 
 import argparse
+import fcntl
 import io
 import json
 import os
@@ -54,6 +59,8 @@ from operations.state import CodexUsage
 
 FRESH_REFUSAL = "fresh launch refused: existing Codex history; no thread or turn accepted"
 CONTROLS = ("show", "steer", "interrupt")
+
+BUSY_REFUSAL = "work call refused: scratch is busy; no thread or turn accepted; wait for its owner, then retry"
 
 DONE = "codex-done"
 """The file under the scratch directory that the command makes once it ends,
@@ -270,6 +277,8 @@ def daemon_turn(scratch: Path, thread: str | None, prompt: str, item: str,
                              f"{events[-1].get('error') or ''}".strip(), message)
         return message
     except (OSError, ValueError) as exc:
+        if not submitted:
+            raise launch_failure(scratch, call_started, exc) from exc
         if isinstance(exc, TurnFailed):
             raise
         raise TurnFailed(f"daemon turn failed (not replayed): {exc}", message) from exc
@@ -348,7 +357,7 @@ def saved_thread(scratch: Path, resume: bool) -> str | None:
     return thread
 
 
-def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: str,
+def work(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: str,
         root: Path, home: Path, main: Path, cwd: Path,
         runner: Callable[[list[str]], subprocess.CompletedProcess[str]] = execute,
         agent_type: str | None = None,
@@ -382,14 +391,7 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
                     *([git_dir] if git_dir != main / ".git" else []), main / ".cache",
                     home / ".cache" / "uv", home / ".cargo", scratch]
     except Exception as exc:
-        from uuid import uuid4
-
-        failure = {"id": uuid4().hex, "started": preparing, "ended": time.time(),
-                   "error": str(exc)}
-        # Separate from turn history: a fresh retry must still be possible.
-        with (scratch / "codex-launch-failures.jsonl").open("a") as record:
-            record.write(json.dumps(failure) + "\n")
-        raise ValueError(f"launch failed before Codex started [{failure['id']}]: {exc}") from exc
+        raise launch_failure(scratch, preparing, exc) from exc
     daemon_message = daemon_turn(scratch, thread, prompt, item, cwd, model, effort,
                                  writable, transport, worker_config, instructions, home)
     if daemon_message is not None:
@@ -404,7 +406,10 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
     if instructions is not None:
         argv.extend(["-c", "developer_instructions=" + json.dumps(instructions)])
     call_started = time.time()
-    done = runner([*argv, *(["resume", thread] if thread is not None else []), prompt])
+    try:
+        done = runner([*argv, *(["resume", thread] if thread is not None else []), prompt])
+    except OSError as exc:
+        raise launch_failure(scratch, call_started, exc) from exc
     errors: list[str] = []
     events: list[dict[str, Any]] = []
     for line in done.stdout.splitlines():
@@ -423,6 +428,9 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
         elif event.get("type") == "item.completed" and isinstance(event.get("item"), dict):
             if event["item"].get("type") == "error":
                 errors.append(error_text(event["item"]))
+    if thread is None and events and all(e.get("type") == "error" for e in events):
+        raise launch_failure(scratch, call_started,
+                             ValueError(done.stderr.strip() or "exec accepted no turn"))
     message = last.read_text() if last.exists() else ""
     ok = not (done.returncode or errors or not message.strip() or thread is None)
     with (scratch / "codex-events.jsonl").open("a") as record:
@@ -433,6 +441,56 @@ def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: s
         raise ValueError(details or
                          f"codex exec exited {done.returncode} with no last message or thread id")
     return message
+
+
+def launch_failure(scratch: Path, started: float, error: Exception) -> ValueError:
+    """Record a proved failure before either transport accepted work."""
+    from uuid import uuid4
+
+    failure = {"id": uuid4().hex, "started": started, "ended": time.time(),
+               "error": str(error)}
+    with (scratch / "codex-launch-failures.jsonl").open("a") as record:
+        record.write(json.dumps(failure) + "\n")
+    return ValueError(f"launch failed before Codex started [{failure['id']}]: {error}")
+
+
+def run(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: str,
+        root: Path, home: Path, main: Path, cwd: Path,
+        runner: Callable[[list[str]], subprocess.CompletedProcess[str]] = execute,
+        agent_type: str | None = None,
+        transport: Callable[[], Any] = codex_daemon.Proxy,
+        resume: bool = False) -> str:
+    """Hold exclusive ownership from validation through completion publication."""
+    import codex_ticket
+
+    scratch = scratch.resolve()
+    codex_ticket.legacy_guard(scratch)
+    scratch.parent.mkdir(parents=True, exist_ok=True)
+    with (scratch.parent / ("." + scratch.name + ".codex-work.lock")).open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise ValueError(BUSY_REFUSAL) from exc
+        saved_thread(scratch, resume)
+        scratch.mkdir(parents=True, exist_ok=True)
+        if resume:
+            thread = (scratch / "codex-session").read_text().strip()
+            try:
+                previous = codex_rollout.turns(thread, home)
+            except ValueError as exc:
+                if str(exc) != f"expected one live rollout for {thread}, found 0":
+                    raise
+                previous = []
+            if previous and previous[-1].ended is None:
+                raise launch_failure(scratch, time.time(), ValueError(
+                    "saved turn is active; use show or interrupt, wait for its end, then resume"))
+        done = scratch / DONE
+        done.unlink(missing_ok=True)
+        try:
+            return work(agent, scratch, brief, model, effort, item, root, home, main, cwd,
+                        runner, agent_type, transport, resume)
+        finally:
+            done.touch()
 
 
 def input_text() -> str:
@@ -492,12 +550,9 @@ def main(argv: list[str]) -> int:
     args = work_parser().parse_args(argv)
     try:
         item = input_text()
-        saved_thread(args.scratch, args.resume)
     except (OSError, ValueError) as exc:
         print(f"codex_agent: {exc}", file=sys.stderr)
         return 1
-    done = args.scratch / DONE
-    done.unlink(missing_ok=True)
     try:
         message = run(args.agent, args.scratch, args.brief, args.model, args.effort,
                       item, checkout.ROOT, Path.home(),
@@ -511,9 +566,6 @@ def main(argv: list[str]) -> int:
     else:
         print(message, end="" if message.endswith("\n") else "\n", flush=True)
         return 0
-    finally:
-        if args.scratch.is_dir():
-            done.touch()
 
 
 if __name__ == "__main__":

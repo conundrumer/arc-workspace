@@ -162,7 +162,7 @@ def ready_step(state: State, watch: monitor.MonitorState) -> Step:
             or any(decisions.writing(state, u) for u in state.tracker.unread)
             or backing_off(state.journal, state.now)):
         return Poll(pace)
-    quiet = [mctx("- Stopped waiting on {agent}: no progress since {time}.").format(
+    quiet = [mctx("- Stopped waiting on {agent}: no new transcript activity or unchanged Bash results since {time}.").format(
         agent=w, time=utc_stamp(stuck[w].since)) for w in dict.fromkeys(waits) if w is not None]
     return ending(state, "\n".join([final(state, holding(state)), *quiet, *unknown]))
 

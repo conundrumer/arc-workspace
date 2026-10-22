@@ -581,10 +581,10 @@ class PassReport:
 
 @dataclass(frozen=True)
 class Stuck:
-    """An agent that showed no sign of progress for `STUCK_SECONDS`, or whose
+    """An agent with no new transcript activity for `STUCK_SECONDS`, or whose
     Bash calls repeated with the same result for it: its `session`, the
     start of that stretch (`since`), and the command line of each span of
-    the work of its own still running (`running`)."""
+    its recorded running work (`running`)."""
     session: str
     since: float
     running: tuple[str, ...]
@@ -708,6 +708,14 @@ class GitRead:
     reviews: Mapping[Review, Baseline | NoBaseline]
     doc_reviews: Mapping[str, float] | None
     definitions: Mapping[str, float]
+
+
+@dataclass(frozen=True)
+class RecoveryEvidence:
+    """Execution acceptance and availability of a recovery's source work."""
+    accepted: bool
+    reason: str
+    available: bool = True
 
 
 class Deferred[T]:
@@ -888,7 +896,8 @@ class State:
     empty where that record is missing or unreadable. `unwaited_since`
     holds, the same way, for each ticket, the time from which it has had
     no agent pending and no exit with a party, and the time of the last
-    read that found it so (`unwaited.times`)."""
+    read that found it so (`unwaited.times`). `recovery` defers execution and
+    source-brief evidence for ticket-log recoveries until closure needs it."""
     me: str
     now: float
     session: str
@@ -910,6 +919,7 @@ class State:
     journal: "Journal"
     listing: frozenset[str] | None
     readers: Deferred[tuple[Reader, ...]] = field(default_factory=lambda: Deferred(tuple))
+    recovery: Deferred[Mapping[str, RecoveryEvidence]] = field(default_factory=lambda: Deferred(dict))
     limit_lifted: float | None = None
     machine_alerts: tuple[Path, ...] = ()
     parents: Mapping[str, str] = field(default_factory=dict)

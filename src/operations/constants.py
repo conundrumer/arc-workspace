@@ -1,6 +1,7 @@
 """The values that both the operator's command and the scripts an agent
 runs hold: the address of the coordinator, the interval of the keep-alive
-timer, the bound on a stretch with no progress, the bound on a foreground
+timer, the bound on a stretch with no new transcript entry or repeated
+Bash calls with the same results, the bound on a foreground
 Bash call's timeout, the bound on a Bash step the command runs itself,
 the bounds on a call of the command's `next`, the
 harness's limit of concurrent subagents, the waits of the step journal
@@ -18,16 +19,15 @@ agent's previous request, less the longest measured time past the interval
 from that request to the agent's next one, 27.6 s."""
 
 STUCK_SECONDS = 1800
-"""The bound on the time an agent may show no sign of progress before an
-operator stops waiting on it and the coordinator hears of it
-(`open_agents.quiet_since` in `scripts/open_agents.py`), or may repeat
-its Bash calls with the same result (`stuck_at` in
-`scripts/monitor_reads.py`)."""
+"""The bound on a stretch with no new transcript entry
+(`open_agents.quiet_since` in `scripts/open_agents.py`), or repeated Bash
+calls with the same results (`stuck_at` in `scripts/monitor_reads.py`),
+before an operator stops waiting on the agent and the coordinator hears of it."""
 
 
 def stuck_reached(since: float, now: float) -> bool:
-    """Whether a stretch with no progress that started at `since` has
-    reached `STUCK_SECONDS` at `now`."""
+    """Whether a stretch with no new transcript entry or repeated Bash calls
+    with the same results, starting at `since`, reached `STUCK_SECONDS` at `now`."""
     return now - since >= STUCK_SECONDS
 
 FOREGROUND_MS = 240000

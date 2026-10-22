@@ -662,15 +662,24 @@ def close(state: State, t: Ticket, agents: list[Agent], evidence: str | None = N
     """The closing sequence admitted by a merge or readiness ruling, or None while its `after-merge`
     agent runs. A split step is given while its `refactor` ticket holds no
     line that the step logs as left unsplit (`unsplit`)."""
+    from operations.recovery import step as recover
+
     head = state.git.commits[0].hash
     if t.after_merge is not None:
         runs = state.agents_of(Role.AFTER_MERGE, t.number)
+        if runs and not runs[-1].pending:
+            pending = recover(state, t)
+            if pending is not None:
+                return pending.step
         runs = [a for a in runs if occupies(a)]
         if not runs:
             return Launch(Role.AFTER_MERGE, t.number, briefs.after_merge(
                 t.number, t.after_merge, head, evidence), occasion=head)
         if runs[-1].pending:
             return None
+    pending = recover(state, t)
+    if pending is not None:
+        return pending.step
     commit = merge_commit(state, t)
     proof = evidence if evidence is not None else head if commit is None else commit.hash
     note = f"{Resolution.FIXED.value} {t.number} {proof}"

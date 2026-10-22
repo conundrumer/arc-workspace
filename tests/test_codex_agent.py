@@ -250,7 +250,7 @@ def test_refused_resume_raises_without_exec(files, refuse, capsys):
     scratch.mkdir()
     (scratch / "codex-session").write_text("thread\n")
     transport = Transport(refuse=refuse)
-    with pytest.raises(ValueError, match="^already has an active writer$"):
+    with pytest.raises(ValueError, match="launch failed before Codex started.*already has an active writer"):
         run(files, transport, resume=True)
     assert transport.closed
     assert (scratch / "codex-session").read_text() == "thread\n"
@@ -280,7 +280,7 @@ def test_resumed_daemon_failure_exits_nonzero(files, monkeypatch, capsys, refuse
         "code-reviewer", str(scratch), str(brief), "gpt-6.1-sol", "low",
         "--agent-type", "general-purpose", "--cwd", str(root), "--resume",
     ]) == 1
-    assert capsys.readouterr().err == f"codex_agent: {error}\n"
+    assert error in capsys.readouterr().err
     assert transport.closed
 
 
@@ -636,3 +636,32 @@ def test_preparation_failure_is_proved_without_turn_history_and_can_retry(
     retry["message"]["content"][0]["id"] = "retry"
     evidence = reads.walk_entries([entry, result, retry], "code-reviewer")
     assert evidence[2]["message"]["content"][0]["content"] == "first item"
+
+
+def test_contending_work_preserves_owner_evidence(files):
+    import fcntl
+
+    root, home, brief, scratch = files
+    scratch.mkdir()
+    for name in ('codex-session', 'codex-last.md', agent.DONE, 'codex-events.jsonl'):
+        (scratch / name).write_text('owner evidence')
+    before = {p.name: p.read_bytes() for p in scratch.iterdir()}
+    with (scratch.parent / ('.' + scratch.name + '.codex-work.lock')).open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(ValueError, match='scratch is busy'):
+            agent.run('code-reviewer', scratch, brief, 'model', 'low', 'input',
+                      root, home, root, root,
+                      transport=lambda: pytest.fail('contender submitted work'))
+    assert {p.name: p.read_bytes() for p in scratch.iterdir()} == before
+
+
+def test_lost_wrapper_active_turn_refuses_resume(files, monkeypatch):
+    scratch = files[-1]
+    scratch.mkdir()
+    (scratch / 'codex-session').write_text('thread')
+    (scratch / agent.DONE).write_text('owner marker')
+    monkeypatch.setattr(agent.codex_rollout, 'turns', lambda *_: [SimpleNamespace(ended=None)])
+    with pytest.raises(ValueError, match='saved turn is active'):
+        run(files, lambda: pytest.fail('active turn was submitted again'), resume=True)
+    assert (scratch / agent.DONE).read_text() == 'owner marker'
+    assert not (scratch / 'codex-events.jsonl').exists()

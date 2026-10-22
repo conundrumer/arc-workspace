@@ -54,18 +54,12 @@
     + xref: prompts/agents/notes/commands.md#denied-calls
     * comment: Code editor `af224b57041f5ecc8` (ticket 9-788) ended `blocked` on this refusal, and ticket analysts `a907dcfa6dc70ff5d` (ticket 11-1085) and `af8ca0bd59f4bf834` (session `129de8fc`) stopped on it, each led by the text "Do not retry", though slots free within minutes.
 - When you end your turn while a command of yours runs on in the background and no agent you launched is running, the harness reports you to the session that launched you as stopped. It does not while an agent you launched is running.
-- While an agent you launched is running, no line of [waiting-on-commands](#waiting-on-commands) holds: run each command that can outlast the Bash call's default timeout in the background, and when no other work is ready, start your keep-alive timer, then end your turn with a line that gives each agent you launched and each command of yours that is still running, and run no other command to wait on them. The harness resumes you when an agent sends you a message, when one of them that no agent has resumed by SendMessage completes, or when a command of yours that runs in the background completes.
+- While an agent you launched is running, run each command that can outlast the Bash call's default timeout in the background, and wait on each live background command as [waiting-on-commands](#waiting-on-commands) gives. Once no command of yours runs and no other work is ready, end your turn with a line that gives each agent you launched that is still running. The harness resumes you when an agent sends you a message or when one of them that no agent has resumed by SendMessage completes.
     + xref: prompts/agents/notes/commands.md#waiting-on-commands
     * comment: Two agents of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a` ended their turn after a notification that an agent had not reported yet, the harness demanded their report, and each handed back mid-batch: agent `aa217e04abc30c823`, lines 266 to 270, and agent `ad4b827e59837a39f`, lines 228 to 232.
     - Run a call of `operate.py review` in the foreground.
         * comment: Doc editor `ad19de37b20661c0e` on change 9-1704 ran `review` in a background loop and then `cat` on its output; that left its `review` call uncounted for about 30 minutes while the code editor waited on it: ticket 11-2297.
-    * comment: The cases this rule covers: waiting while an agent you launched runs; the start of the keep-alive timer before you end your turn; waiting, once no agent you launched runs, on each command you ran in the background, which [waiting-on-commands](#waiting-on-commands) covers once this rule no longer holds.
-    - Start your keep-alive timer, where you launched no agent in this turn whose brief asks only for a wait and then a reply, by running this command in the background, with your own agent id as `<agent id>`:
-        + xref: scripts/agent_timer.py:Kind.KEEP_ALIVE
-        ```
-        : 'unattended-wait: keep-alive timer'; uv run python scripts/agent_timer.py start keep-alive <agent id>
-        ```
-    - Where your keep-alive timer has completed 11 times in a row with no message and no other notification reaching you between, start it no more until one does. The runs of that command that complete together count as one completion.
+    * comment: Change 11-2889, Grounds: launchers a5a0a428b098e579e and a2a977b91a0321101 ended their turns while Codex ran and stopped without reports; their Bash results warned that a final response terminates the background command. Waiting applies while a child runs, including to a live keep-alive timer.
 - Once no agent you launched is running, and before anything else, end your keep-alive timer: run `uv run python scripts/agent_timer.py stop keep-alive <agent id>`.
     + xref: scripts/agent_timer.py:Action.STOP
     - Each start of that timer has completed once `pgrep -f 'agent_timer[.]py start keep-alive <agent id>'` prints nothing.

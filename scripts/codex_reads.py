@@ -15,6 +15,7 @@ The results are given in the transcript form the checklist hook reads.
 """
 
 import json
+import re
 import shlex
 import time
 from dataclasses import dataclass
@@ -23,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import codex_agent
-from codex_agent import FRESH_REFUSAL
+from codex_agent import BUSY_REFUSAL, FRESH_REFUSAL
 from command_labels import segment_program, simple_commands
 from run_reads import blocks, is_prompt
 
@@ -89,12 +90,54 @@ def commands(entry: dict[str, Any]):
         yield call, kind, directory
 
 
+def no_turn(entries: list[dict[str, Any]], call: str, scratch: Path) -> bool:
+    """Decode only proved no-turn diagnostics from this call's own result."""
+    output = launch_output(entries, call)
+    lines = output.removeprefix("Exit code 1\n").splitlines()
+    lines = [line for line in lines if line.strip()]
+    if lines and lines[-1] == "[exited with code 1]":
+        lines.pop()
+    if lines and lines[0].startswith("warning: "):
+        lines.pop(0)
+    if lines and re.fullmatch(
+            r"codex_agent: shared daemon (?:unavailable or refused|refused): .*; falling back to codex exec",
+            lines[0]):
+        lines.pop(0)
+    body = "\n".join(lines)
+    if body in ("codex_agent: " + FRESH_REFUSAL, "codex_agent: " + BUSY_REFUSAL):
+        return True
+    failure = re.fullmatch(
+        r"codex_agent: launch failed before Codex started \[([0-9a-f]{32})\]: (.*)",
+        body, re.S)
+    if failure is None:
+        return False
+    return preparation_interval(scratch, failure) is not None
+
+
+def preparation_interval(scratch: Path, failure: re.Match[str]) -> tuple[float, float] | None:
+    """Validate an identifier-bearing diagnostic against its saved record."""
+    path = scratch / "codex-launch-failures.jsonl"
+    saved = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+    matches = [r for r in saved if r.get("id") == failure[1] and r.get("error") == failure[2]]
+    if len(matches) != 1:
+        return None
+    start, end = matches[0].get("started"), matches[0].get("ended")
+    if not isinstance(start, (int, float)) or not isinstance(end, (int, float)) or start > end:
+        return None
+    return start, end
+
+
+
 def fresh_refusals(entries: list[dict[str, Any]]):
-    return {b.get("tool_use_id") for entry in entries
-            for b in blocks(entry, "tool_result")
-            if isinstance(b.get("content"), str)
-            and b["content"].strip() in ("codex_agent: " + FRESH_REFUSAL,
-                                         "Exit code 1\ncodex_agent: " + FRESH_REFUSAL)}
+    refused = set()
+    for entry in entries:
+        try:
+            for call, _, scratch in commands(entry):
+                if no_turn(entries, call, scratch):
+                    refused.add(call)
+        except (OSError, ValueError, KeyError, IndexError):
+            continue
+    return refused
 
 
 def calls(entries: list[dict[str, Any]], gaps: list[str] | None = None) -> list[Call]:
@@ -144,7 +187,8 @@ def unrecorded_launch(entries: list[dict[str, Any]], index: int,
     """Require a failed or killed launch and evidence that it owns no turn record.
 
     Output filters may discard the exit status or most of a traceback. Saved
-    preparation failures can instead be bound by their id or call interval.
+    preparation failures can instead be bound by their call interval.
+    Identifier-bearing diagnostics are decoded only by `no_turn`.
     Otherwise require failure output and an empty scratch or records outside
     this call's interval. Missing records alone never prove a failed launch.
     Saved walks may recover killed processes; accounting retains those calls
@@ -154,6 +198,8 @@ def unrecorded_launch(entries: list[dict[str, Any]], index: int,
     from run_reads import output_file
 
     output = launch_output(entries, call_id)
+    if "codex_agent: launch failed before Codex started [" in output:
+        return False
     body = output.removeprefix("Exit code 1\n").removesuffix("\n\n[exited with code 1]")
     result = next((b for e in entries for b in blocks(e, "tool_result")
                    if b.get("tool_use_id") == call_id), {})
@@ -181,55 +227,39 @@ def unrecorded_launch(entries: list[dict[str, Any]], index: int,
         end = max((t for e in entries if (t := timestamp(e)) is not None), default=None)
     bounds = [t for t in (end, later) if t is not None]
     end = min(bounds) if bounds else None
-    failure = re.fullmatch(
-        r"codex_agent: launch failed before Codex started \[([0-9a-f]{32})\]: (.*)",
-        body, re.S)
     interval = None
     path = scratch / "codex-launch-failures.jsonl"
     saved = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
-    if failure:
-        matches = [r for r in saved if r.get("id") == failure[1]
-                   and r.get("error") == failure[2]]
-        if len(matches) != 1:
-            return False
-        interval = matches[0]["started"], matches[0]["ended"]
-        if not all(isinstance(t, (int, float)) for t in interval) or interval[0] > interval[1]:
-            return False
-    else:
-        if start is not None and end is not None:
-            matches = [r for r in saved
-                       if isinstance(r.get("started"), (int, float))
-                       and isinstance(r.get("ended"), (int, float))
-                       and start <= r["started"] <= r["ended"] <= end]
-            if len(matches) == 1:
-                interval = matches[0]["started"], matches[0]["ended"]
+    if start is not None and end is not None:
+        matches = [r for r in saved
+                   if isinstance(r.get("started"), (int, float))
+                   and isinstance(r.get("ended"), (int, float))
+                   and start <= r["started"] <= r["ended"] <= end]
+        if len(matches) == 1:
+            interval = matches[0]["started"], matches[0]["ended"]
 
-        # Filters may leave just a terminal exception, and a pipeline may
-        # report success despite it. Explicit evidence of turn execution still
-        # refuses: its missing record cannot be explained by preparation.
-        frames = re.findall(r'^  File "([^"\n]+)", line \d+, in (\S+)\n    ([^\n]+)',
-                            body, re.M)
-        executing = any(Path(p).name == "codex_agent.py" and (
-            f in ("daemon_turn", "execute", "usage_record")
-            or (f == "run" and re.search(r"\b(?:daemon_turn|runner|usage_record)\(", code)))
-            for p, f, code in frames)
-        executing = executing or bool(re.search(
-            r'"type"\s*:\s*"(?:thread\.started|turn\.(?:started|completed|failed)|item\.completed)"'
-            r'|codex_agent: (?:daemon turn failed|codex exec exited)', output))
-        failed = (result.get("is_error") is True
-                  or re.search(r"(?:^Exit code [1-9]\d*\n|\[exited with code [1-9]\d*\]$)", output)
-                  or re.search(r"(?:^|\n)(?:\w+\.)*\w*(?:Error|Exception): [^\n]+$", body))
-        if interval is None and (executing or not failed):
-            return False
+    # Filters may leave just a terminal exception, and a pipeline may
+    # report success despite it. Explicit evidence of turn execution still
+    # refuses: its missing record cannot be explained by preparation.
+    frames = re.findall(r'^  File "([^"\n]+)", line \d+, in (\S+)\n    ([^\n]+)',
+                        body, re.M)
+    executing = any(Path(p).name == "codex_agent.py" and (
+        f in ("daemon_turn", "execute", "usage_record")
+        or (f == "run" and re.search(r"\b(?:daemon_turn|runner|usage_record)\(", code)))
+        for p, f, code in frames)
+    executing = executing or bool(re.search(
+        r'"type"\s*:\s*"(?:thread\.started|turn\.(?:started|completed|failed)|item\.completed)"'
+        r'|codex_agent: (?:daemon turn failed|codex exec exited)', output))
+    failed = (result.get("is_error") is True
+              or re.search(r"(?:^Exit code [1-9]\d*\n|\[exited with code [1-9]\d*\]$)", output)
+              or re.search(r"(?:^|\n)(?:\w+\.)*\w*(?:Error|Exception): [^\n]+$", body))
+    if interval is None and (executing or not failed):
+        return False
 
     block = next(b for b in blocks(entries[index], "tool_use") if b.get("id") == call_id)
     launches = work_calls(str((block.get("input") or {}).get("command", "")))
     if len(launches) != 1:
         raise ValueError("the failed Bash call contains more than one Codex launch")
-    if failure:
-        # The matching identifier is written only by preparation's exception
-        # handler. It cannot consume a turn record, even on a failed resume.
-        return True
     if interval is None and launches[0][3]:
         return False
     path = scratch / "codex-events.jsonl"
@@ -283,7 +313,9 @@ def saved_entries(entries: list[dict[str, Any]], kind: str,
     records: list[dict[str, Any]] = []
     used = 0
     started = False
+    owned_turns: set[str] = set()
     refused = fresh_refusals(entries)
+    unanswered = False
     for index, entry in enumerate(entries):
         if is_prompt(entry):
             out.append(entry)
@@ -293,8 +325,7 @@ def saved_entries(entries: list[dict[str, Any]], kind: str,
                 launches = work_calls(str((block.get("input") or {}).get("command", "")))
                 if len(launches) != 1:
                     raise ValueError("the refused Bash call contains more than one Codex launch")
-                if scratch is not None:
-                    raise ValueError("a fresh launch was refused after an accepted Codex call")
+                unanswered = scratch is not None
                 continue
             if agent_type != kind:
                 raise ValueError("the Codex call gives no matching agent type")
@@ -315,6 +346,7 @@ def saved_entries(entries: list[dict[str, Any]], kind: str,
             if used == len(records):
                 raise ValueError(f"the Codex launch {call_id} has no turn record in {scratch}")
             record = records[used]
+            unanswered = False
             call_start = timestamp(entry)
             later = next((timestamp(e) for e in entries[index + 1:]
                           for _, _, d in commands(e) if d == scratch), None)
@@ -330,6 +362,11 @@ def saved_entries(entries: list[dict[str, Any]], kind: str,
                 continue
             if record["thread"] != thread:
                 raise ValueError("the Codex record belongs to another session")
+            turn_id = record.get("turn")
+            if isinstance(turn_id, str):
+                if turn_id in owned_turns:
+                    raise ValueError("a Codex turn belongs to more than one work call")
+                owned_turns.add(turn_id)
             started = True
             text = record["input"]
             if not isinstance(text, str):
@@ -352,6 +389,8 @@ def saved_entries(entries: list[dict[str, Any]], kind: str,
                 call = f"{used}:{n}"
                 command, result = item["command"], item["aggregated_output"]
                 out.extend(command_entries(call, command, result))
+    if unanswered:
+        raise ValueError("a refusal after an accepted Codex call needs a valid retry")
     if used != len(records):
         raise ValueError("the launcher's calls do not match the Codex turn records")
     return out

@@ -609,8 +609,8 @@ def test_identified_preparation_failure_requires_its_saved_evidence(tmp_path, pr
         (tmp_path / "codex-launch-failures.jsonl").write_text(
             (json.dumps(saved) + "\n") * (2 if proof == "duplicate" else 1))
     if proof == "valid":
-        assert walk.step_calls(reads.walk_entries([accepted, failed, result], "code-reviewer"),
-                               "code-reviewer") == [("1:0", "completed")]
+        with pytest.raises(ValueError, match="needs a valid retry"):
+            reads.walk_entries([accepted, failed, result], "code-reviewer")
     else:
         with pytest.raises(ValueError, match="no turn record"):
             reads.walk_entries([accepted, failed, result], "code-reviewer")
@@ -665,3 +665,57 @@ def test_live_baseline_uses_only_completed_commands_of_current_turn(tmp_path, ba
         assert results == ([] if bad else [('step', 'completed item')])
     with pytest.raises(ValueError):
         reads.walk_entries([entry], 'code-reviewer')
+
+
+def test_background_fresh_refusal_with_uv_warning_permits_valid_retry(tmp_path):
+    entries = list(preparation_failure(tmp_path, background=True, output=(
+        "warning: `VIRTUAL_ENV` does not match the project environment path\n"
+        "codex_agent: " + reads.FRESH_REFUSAL + "\n\n[exited with code 1]")))
+    retry = turn(tmp_path / 'retry', [(STEP, 'accepted')])
+    entries.append(retry)
+    assert [c.scratch for c in reads.calls(entries)] == [tmp_path / 'retry']
+    assert walk.step_calls(reads.walk_entries(entries, 'code-reviewer'), 'code-reviewer') == [
+        ('1:0', 'accepted')]
+
+
+def test_duplicate_accepted_turn_cannot_certify_two_inputs(tmp_path):
+    first = turn(tmp_path, [(STEP, 'first')])
+    second = turn(tmp_path, [(STEP, 'second')], first=False)
+    second['message']['content'][0]['id'] = 'second'
+    path = tmp_path / 'codex-events.jsonl'
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    for record in records:
+        record['turn'] = 'shared-turn'
+    path.write_text(''.join(json.dumps(record) + '\n' for record in records))
+    with pytest.raises(ValueError, match='more than one work call'):
+        reads.walk_entries([first, second], 'code-reviewer')
+
+
+@pytest.mark.parametrize('background', [False, True])
+@pytest.mark.parametrize('proof', ['valid', 'wrong-id', 'extra-output'])
+def test_fallback_preparation_failure_cannot_reuse_an_earlier_report(tmp_path, background, proof):
+    first = turn(tmp_path, [(STEP, 'old completed work')])
+    token = 'a' * 32
+    output = ('codex_agent: shared daemon unavailable or refused: offline; falling back to codex exec\n'
+              f'codex_agent: launch failed before Codex started [{token}]: missing executable')
+    if proof == 'extra-output':
+        output = 'unrelated execution output\n' + output
+    failed, result = preparation_failure(tmp_path, output=output, background=background)
+    failed['message']['content'][0]['input']['command'] += ' --resume'
+    failed['timestamp'] = '2026-10-20T00:00:10Z'
+    result['timestamp'] = '2026-10-20T00:00:20Z'
+    (tmp_path / 'codex-launch-failures.jsonl').write_text(json.dumps({
+        'id': token if proof != 'wrong-id' else 'b' * 32,
+        'error': 'missing executable', 'started': 1792454411, 'ended': 1792454412}) + '\n')
+    entries = [first, failed, result]
+    assert reads.no_turn(entries, 'failed', tmp_path) == (proof == 'valid')
+    assert [c.call_id for c in reads.calls(entries)] == (
+        ['codex'] if proof == 'valid' else ['codex', 'failed'])
+    with pytest.raises(ValueError):
+        reads.walk_entries(entries, 'code-reviewer')
+    if proof == 'valid':
+        retry = turn(tmp_path, [(STEP, 'new completed work')], first=False)
+        retry['message']['content'][0]['id'] = 'retry'
+        retry['timestamp'] = '2026-10-20T00:00:30Z'
+        assert walk.step_calls(reads.walk_entries([*entries, retry], 'code-reviewer'),
+                               'code-reviewer')[-1][1] == 'new completed work'

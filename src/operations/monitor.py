@@ -28,8 +28,7 @@ class Watched:
     of `REPEATS` or more identical Bash calls with identical results.
     `stuck` is the start of the stretch where it is stuck, as `stuck_at` in
     `scripts/monitor_reads.py` gives it, or None; it reaches the coordinator
-    through `TranscriptsRead.stuck`, and no alert goes to the agent, since
-    an agent that a system fault holds cannot act on that fault."""
+    through `TranscriptsRead.stuck`, and no alert goes to the agent."""
     agent_id: str
     stalled: float | None
     repeated: tuple[float, ...]
@@ -58,7 +57,7 @@ ALERTS = mctx("""
     - The operator takes the final reply of a stalled agent as its report, sends the final reply of a stalled agent the coordinator launched to the coordinator once, and files a `bug` ticket on the stalled agent.
     - The operator records in one `bug` ticket each resume of an operator of the session after the next operator of the session made its first entry: it files that ticket, or, where that ticket stands, writes a line in its log.
         - A resume of an operator is a prompt that reached it after its turn ended and that no agent it launched or resumed sent.
-    - The operator sends the coordinator once, and records in a `bug` ticket, each agent that an operator of the session or the coordinator launched that is stuck: {stuck_rule}. The message gives the agent's own work that still runs. No alert goes to the agent.
+    - The operator sends the coordinator once, and records in a `bug` ticket, each agent that an operator of the session or the coordinator launched whose transcript meets this condition: {stuck_rule}. The message gives the agent's recorded running work. No alert goes to the agent.
     - An operator stops waiting on an agent or a holder that is stuck, and, where the operator waits on nothing else, gives its final reply with each such wait.
     """).format(stuck_rule=STUCK_RULE.format(stretch=mctx("the last {minutes} minutes").format(
         minutes=STUCK_SECONDS // 60)), poll_again=POLL_AGAIN, **{k.value: READING[k] for k in AlertKind})

@@ -32,8 +32,7 @@ one operator, and gives each of its resumes that no earlier line on it
 gives.
 
 A message on each agent of `TranscriptsRead.stuck` goes to the
-coordinator once per stretch, with the agent's own work that still runs,
-so that the coordinator ends that work or asks the session that runs it,
+coordinator once per stretch, with the agent's recorded running work,
 and the agent is recorded the same way, in one `bug` ticket of its own
 kind (`stuck`).
 
@@ -174,10 +173,10 @@ TICKETS = {
         mctx("The resumed operator ran on its old context after a later operator of the "
              "session had started on a fresh one.")),
     BugKind.STUCK: (
-        mctx("the wait on an agent's work: the agent showed no sign of progress for "
+        mctx("the wait on an agent's work: no new transcript activity or unchanged Bash results for "
              "`STUCK_SECONDS`"),
-        mctx("The agent's work made no progress for `STUCK_SECONDS`, and then a message on "
-             "the agent went to the coordinator.")),
+        mctx("For `STUCK_SECONDS`, the transcript had no new activity or Bash calls repeated "
+             "with the same result. A message on the agent then went to the coordinator.")),
     BugKind.TICKET_STALL: (
         mctx("the progress of a ticket: no step was made on it, and no agent worked on it, "
              "for `STUCK_SECONDS`"),
@@ -289,12 +288,12 @@ def stuck_text(agent: str, s: Stuck) -> str:
     """The text on `agent`, stuck as `s` gives, of the message to the
     coordinator and of the `bug` ticket's Evidence."""
     stretch = mctx("the time since then")
-    head = mctx("Agent {agent} of session {session} has made no progress since {time}: "
+    head = mctx("Agent {agent} of session {session} has met this transcript condition since {time}: "
                 "{rule}.").format(agent=agent, session=s.session, time=utc_stamp(s.since),
                                   rule=STUCK_RULE.format(stretch=stretch))
     if not s.running:
-        return head + " " + mctx("No work of its own still runs.")
-    return (head + " " + mctx("Its work of its own that still runs:") + "\n"
+        return head + " " + mctx("No running work is recorded.")
+    return (head + " " + mctx("Its recorded running work:") + "\n"
             + "\n".join(f"- `{c}`" for c in s.running))
 
 
@@ -304,12 +303,11 @@ def stuck(state: State) -> Step | None:
     stretch, then the step `ticket_step` gives from that start."""
     for agent, s in sorted(state.transcripts.stuck.items()):
         text = stuck_text(agent, s)
-        sent = Send(COORDINATOR, text + "\n" + mctx("End its work, or ask the session that "
-                                                     "runs it."), f"stuck {agent}", s.since)
+        sent = Send(COORDINATOR, text, f"stuck {agent}", s.since)
         if not repeated(sent, state):
             return sent
         t = ticket_step(state, BugKind.STUCK, Domain.AGENT, agent, s.since,
-                        mctx("no progress since {time}").format(time=utc_stamp(s.since)),
+                        mctx("no new transcript activity or unchanged Bash results since {time}").format(time=utc_stamp(s.since)),
                         text)
         if t is not None:
             return t

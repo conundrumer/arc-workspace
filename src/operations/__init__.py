@@ -49,7 +49,7 @@ steps), `drafts` (the review of draft changes), `taking` (the tickets the operat
 (the doc editor of a change's `mctx` fragments), `change_overrun` (a
 change past its cost budget), `change_budget` (the cost budget of a change),
 `doc_review` (the review of a change's documents), `merging` (the merge and
-what follows it), `alerts` (the alerts and the other agents' messages),
+what follows it), `recovery` (ticket-log delivery and replacement before closure), `alerts` (the alerts and the other agents' messages),
 `reports` (the fixed forms of the replies the command reads), `passes` (the
 solver pipelines), `runs` (the pipelines a run script starts),
 `task_work` (the work a pipeline sets aside), `batches` (After a batch),

@@ -165,6 +165,17 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         sessions=sessions(tickets_dir, index, session, now, sessions_running, watching, me),
         journal=journal, listing=ops.listing, due_since=record_read(scratch(session), DUE_SINCE),
         unwaited_since=record_read(scratch(session), UNWAITED_SINCE))
+    from recovery_reads import read as recovery_read
+
+    if any(line.note.startswith("recover ") for ticket in tickets.values() for line in ticket.log):
+        from operations.state import Deferred
+
+        requested = {line.note.split()[1] for ticket in tickets.values() for line in ticket.log
+                     if line.note.startswith("recover ") and len(line.note.split()) > 1}
+        all_agents = (*transcripts.agents, *transcripts.elsewhere)
+        work = {(a.role, a.subject) for a in all_agents if a.agent_id in requested}
+        recovery_agents = tuple(a for a in all_agents if (a.role, a.subject) in work)
+        state = replace(state, recovery=Deferred(lambda: recovery_read(recovery_agents)))
     state = replace(state, journal=state.journal.since(given_again(state)))
     state = with_quiet_holders(state, holders.found, listing, running_work, watching)
     computed_lines: list[str] = []
