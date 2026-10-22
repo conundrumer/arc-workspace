@@ -167,12 +167,12 @@ def test_a_codex_report_before_a_resumed_message_is_denied_once(tmp_path: Path) 
     assert not denied(stdin)
 
 
-def test_a_codex_report_with_missing_evidence_is_always_denied(tmp_path: Path) -> None:
+def test_a_codex_report_with_missing_evidence_is_denied_once(tmp_path: Path) -> None:
     stdin = codex_session(tmp_path, str(tmp_path / NAME))
     written(tmp_path, BRIEF_AT + 10)
     (tmp_path / "codex" / "codex-events.jsonl").unlink()
     assert denied(stdin)
-    assert denied(stdin)
+    assert not denied(stdin)
 
 
 def test_a_codex_report_with_an_unreadable_brief_is_always_denied(tmp_path: Path) -> None:

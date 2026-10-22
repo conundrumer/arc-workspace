@@ -47,5 +47,5 @@
     + xref: scripts/codex_ticket.py:main
 - A `needs-operator` result from `prepare` has already filed that dispatch.
     + xref: scripts/codex_ticket.py:prepare
-- The root's Claude launcher handles the dispatch through the owning operator and resumes the root with the result after its turn and descendants end.
+- The root's Claude launcher makes the dispatch's call and resumes the root with its result after its turn and descendants end. A dispatch with no call reaches the owning operator through the root's report.
     + xref: scripts/codex_agent.py:main

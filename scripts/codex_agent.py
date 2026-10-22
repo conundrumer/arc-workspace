@@ -685,8 +685,8 @@ def main(argv: list[str]) -> int:
         print(f"codex_agent: {exc}", file=sys.stderr)
         return 1
     else:
-        if assignment is not None and outcome == "needs-operator":
-            value = json.loads(dispatch.read_text())
+        value = json.loads(dispatch.read_text()) if assignment is not None and outcome == "needs-operator" else {}
+        if assignment is not None and value.get("call"):
             value["report"] = str(assignment.report)
             print(json.dumps(value), flush=True)
             return 0

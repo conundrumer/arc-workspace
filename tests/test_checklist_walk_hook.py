@@ -120,11 +120,11 @@ def test_a_launcher_with_a_whole_walk_is_allowed(tmp_path: Path) -> None:
     assert not denied(session(tmp_path, whole_walk(), kind="codex-launcher"))
 
 
-def test_a_launcher_with_no_codex_evidence_is_always_denied(tmp_path: Path) -> None:
+def test_a_launcher_with_no_codex_evidence_is_denied_once(tmp_path: Path) -> None:
     stdin = session(tmp_path, whole_walk(), kind="codex-launcher")
     (tmp_path / "codex" / "codex-events.jsonl").unlink()
     assert denied(stdin)
-    assert denied(stdin)
+    assert not denied(stdin)
 
 
 def test_a_launcher_with_a_partial_walk_is_denied_once(tmp_path: Path) -> None:
@@ -150,11 +150,11 @@ def test_a_launcher_cannot_substitute_its_own_walk(tmp_path: Path) -> None:
     assert denied(stdin)
 
 
-def test_malformed_codex_evidence_is_always_denied(tmp_path: Path) -> None:
+def test_malformed_codex_evidence_is_denied_once(tmp_path: Path) -> None:
     stdin = session(tmp_path, whole_walk(), kind="codex-launcher")
     (tmp_path / "codex" / "codex-events.jsonl").write_text("null\n")
     assert denied(stdin)
-    assert denied(stdin)
+    assert not denied(stdin)
 
 
 def test_a_codex_walk_can_continue_across_a_resume(tmp_path: Path) -> None:
@@ -175,7 +175,7 @@ def test_a_resume_input_removes_a_codex_stops_bound(tmp_path: Path) -> None:
         f.write(json.dumps(turn(tmp_path / "codex", [], first=False,
                                text="The requested result is ready. Continue your walk.")) + "\n")
     assert denied(stdin)
-    assert denied(stdin)
+    assert not denied(stdin)
 
 
 @pytest.mark.parametrize('writer', [

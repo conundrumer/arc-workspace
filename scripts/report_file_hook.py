@@ -15,7 +15,9 @@ The brief is the first message of the agent's own transcript, with each
 file it gives by `FILED_LINE` read in (`filed_texts.unfiled`).
 
 A Codex launcher must have readable turn records (`codex_reads`), and its
-brief and report must be readable.
+brief and report must be readable. Unreadable turn records are denied once for
+each `codex_agent` launch call of the launcher; a repeated handback with no new
+launch is allowed, and the reason goes to stderr.
 
 A denied call is recorded with the id of the last message the agent got,
 in a file named by its agent id under `STOPS` of its session directory,
@@ -101,7 +103,7 @@ def check(hook: Hook) -> str | None:
     path = caller_transcript(hook)
     codex = agent_type(path) == CODEX_LAUNCHER
     if codex:
-        from codex_reads import walk_entries
+        from codex_reads import calls as launch_calls, walk_entries
 
         try:
             kind = role_type(path)
@@ -109,6 +111,12 @@ def check(hook: Hook) -> str | None:
                 raise ValueError("the Codex role is unknown")
             walk_entries(list(entries_forward(path)), kind)
         except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError) as exc:
+            launches = launch_calls(list(entries_forward(path)), [])
+            launch = launches[-1].call_id if launches else "none"
+            if not first_at(hook, STOPS, agent, launch):
+                print(f"{HOOK}: allowed: a handback was denied after Codex launch {launch}, "
+                      f"and the launcher made no launch since: {exc}", file=sys.stderr)
+                return None
             return mctx("Blocked: cannot read the Codex report's run: {error}.").format(error=exc)
     undecided: list[str] = []
     try:

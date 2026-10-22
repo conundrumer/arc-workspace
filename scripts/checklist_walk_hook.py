@@ -22,8 +22,11 @@ item of the checklist, is held to the whole walk. The result of a stop
 holds no item.
 
 For a Codex launcher, `codex_reads.walk_entries` reads Codex's command
-results instead. Unreadable or incomplete Codex turn records are denied on each
-attempt; the launcher must pass the refusal back to Codex by a resume.
+results instead. Unreadable or incomplete Codex turn records are denied once
+for each `codex_agent` launch call of the launcher, as a Claude agent's refusal is
+denied once for each step call; the launcher must pass the refusal back to Codex by
+a resume. Where `walk_entries` read a native assignment, its receipt holds the walk
+check, and the hook allows the call.
 
 A denied call is recorded with the id of the agent's last step call, in a
 file named by its agent id under `STOPS` of its session directory, and no
@@ -213,13 +216,22 @@ def check(hook: dict[str, Any]) -> str | None:
         return None
     entries = list(reversed(list(entries_back(path))))
     if codex:
-        from codex_reads import walk_entries
+        from codex_reads import calls as launch_calls, native_walk, walk_entries
 
         try:
-            entries = walk_entries(entries, kind)
+            native = native_walk(entries, kind)
+            entries = walk_entries(entries, kind) if native is None else native
         except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError) as exc:
+            launches = launch_calls(entries, [])
+            launch = launches[-1].call_id if launches else NO_CALL
+            if not first_at(hook, STOPS, agent, launch):
+                print(f"{HOOK}: allowed: a handback was denied after Codex launch {launch}, "
+                      f"and the launcher made no launch since: {exc}", file=sys.stderr)
+                return None
             return mctx("Blocked: cannot read the Codex walk: {error}. "
                         "Resume Codex to finish its walk.").format(error=exc)
+        if native is not None:
+            return None
     calls = _calls(entries, kind)
     gap = walk_gap(kind, calls, stop_bound(entries, calls, kind))
     if gap is None:

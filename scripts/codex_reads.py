@@ -14,7 +14,7 @@ may be followed by a recorded resume in the same directory. Failed attempts
 before session creation contribute no walk. A fresh-call refusal proved by
 its tool result permits a retry in a new directory before any call is accepted.
 Once a session exists, records must match codex-session, and the latest turn must have completed.
-Missing or unreadable evidence refuses handback, including a repeated handback.
+Missing or unreadable evidence refuses handback once for each launch call, so a repeated handback with no new launch is allowed.
 The results are given in the transcript form the checklist hook reads.
 """
 
@@ -575,6 +575,13 @@ def walk_entries(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any
     """The Codex command results among a launcher's entries, with its
     prompts kept in order so a message after a stop removes its bound.
     Raise where a call, record or completed turn cannot be read."""
+    native = native_walk(entries, kind)
+    return saved_entries(entries, kind, latest_complete=True) if native is None else native
+
+
+def native_walk(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any]] | None:
+    """The results of a native assignment's turns, whose receipt holds its
+    walk check, or None where the launcher's calls bind no native assignment."""
     from codex_ticket import Binding, Store, Assignment
 
     bound_calls = [binding for call in calls(entries) if (binding := Binding.read(call.scratch)) is not None]
@@ -588,7 +595,7 @@ def walk_entries(entries: list[dict[str, Any]], kind: str) -> list[dict[str, Any
         if (assignment.agent_type or assignment.role.agent_type) != kind or native_receipt(item) is None:
             raise ValueError("native assignment has no matching validated report")
         return native_execution(assignment, state, Path.home())[0]
-    return saved_entries(entries, kind, latest_complete=True)
+    return None
 
 
 def saved_entries(entries: list[dict[str, Any]], kind: str,

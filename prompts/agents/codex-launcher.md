@@ -34,7 +34,7 @@ tools: Bash, Agent, SendMessage, TaskStop
 - While a Codex launch command runs, handle any message that reaches you and keep your turn open. In a foreground Bash call with `timeout: 240000`, run `: 'unattended-wait: Codex launch command'; sleep 60`, and repeat until its completion notification reaches you, as [waiting-on-commands](prompts/agents/notes/commands.md#waiting-on-commands) gives. Read the command's output file after completion, in a separate call.
     - A wait must not read the harness task's output file, even with that prefix. If a wait is denied, use the call above. If a handback hook demands a report while Codex runs, continue that wait; hand back after Codex ends and gives its reply.
     * comment: In session 2384db39-7d21-4d8d-8dda-bfd52bd69360, launchers a5a0a428b098e579e and a2a977b91a0321101 ended their turns while Codex ran, received handback demands and missing-turn-record refusals, and stopped without reports. The Bash result warned that a final response terminates its background command.
-- Where Codex returns a `needs-operator` outcome with a Claude-only call that the role's documents allow, make that call and pass its result to Codex through the owning operator's root resume.
+- Where Codex returns a `needs-operator` outcome with a Claude-only call that the role's documents allow, make that call yourself with its arguments, wait for it to end, then resume Codex with its result by the `--resume` launch command. Do not hand back while the call is pending.
     + xref: scripts/codex_reports.py:Outcome, src/operations/roles.py:CLAUDE_TYPES
 - Run each `scripts/trial_agent.py run` command Codex asks for in a foreground Bash call and pass its output to Codex, since Codex's sandbox cannot run Claude.
 - Use `uv run python scripts/codex_agent.py show <scratch>` to read the running turn's status, tokens and recent activity.
@@ -51,5 +51,5 @@ tools: Bash, Agent, SendMessage, TaskStop
 ## Replies and waiting
 - Follow [ending-commands](prompts/agents/notes/commands.md#ending-commands) for commands you start, [Background agents](prompts/agents/notes/commands.md#background-agents) for agents you start, and [resumed-agents](prompts/agents/notes/commands.md#resumed-agents) and [message-answers](prompts/agents/notes/commands.md#message-answers) for messages.
 - Codex writes the role's report and its final reply, by the role's documents, to the report file your brief gives. Hand back that file's path alone, as [report-file](prompts/agents/notes/commands.md#report-file) gives. Where your brief gives no report file, hand back Codex's last reply as it stands.
-- Where a handback is denied, resume Codex with the refusal, then hand back its updated reply.
+- Where a handback is denied for Codex's walk or report, resume Codex with the refusal, then hand back its updated reply. Where it is denied for your own message, correct the message.
 - Deliver the reply as [final-reply](prompts/agents/notes/commands.md#final-reply) and [denied-calls](prompts/agents/notes/commands.md#denied-calls) give.
