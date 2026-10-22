@@ -38,23 +38,20 @@ impl_choice($Backed()). impl_choice($Packed()). impl_choice($Free()).
 .decl mark(p: Position)
 mark(P) :- in(P, Col), params.mark(Col).
 
-.init line = Ray<Unit>
-line.dir($U(), D) :- dir_elem(D).
-line.cell($U(), P) :- in(P, _).
-line.mark($U(), P) :- in(P, _).
-
 // --- the placements ---
 
 .decl arm(k: number)
 arm(K) :- in(P, _), axis_elem(A), sub_extent(P, A, K).
 
-// A cell of the arm-K plus centered at C.
-.decl plus(k: number, c: Position, p: Position)
-plus(K, C, P) :- arm(K), line.ray($U(), P, _, J, C), J <= K.
+// P lies J cells from C along a row or a column.
+.decl axial(c: Position, p: Position, j: number) inline
+axial(C, P, J) :-
+    axis_elem(A), same_line(A, C, P),                         // one line of the axis
+    axis_of(D, A), relative(C, P, V), dist(V, D, J), J >= 0.  // the steps from C to P
 
-// The marks that plus reaches.
-.decl covers(k: number, c: Position, m: Position)
-covers(K, C, M) :- plus(K, C, M), mark(M).
+// The marks on the lines of each center, with their distances.
+.decl mark_distance(c: Position, m: Position, j: number)
+mark_distance(C, M, J) :- in(C, _), mark(M), axial(C, M, J).
 
 .decl place(ch: Choice, k: number, c: Position)    // a plus the case admits
 .decl cross(ch: Choice, k: number, c: Position)    // a placement the case reads as a cross
@@ -64,11 +61,15 @@ covers(K, C, M) :- plus(K, C, M), mark(M).
 // Two placements that share a mark — the only ones a mark set can order.
 .decl rival(ch: Choice, k: number, c: Position, c2: Position)
 rival(Ch, K, C, C2) :-
-    place(Ch, K, C), covers(K, C, M),
-    place(Ch, K, C2), covers(K, C2, M), C != C2.
+    place(Ch, K, C), mark_distance(C, M, J), J <= K,
+    place(Ch, K, C2), mark_distance(C2, M, J2), J2 <= K, C != C2.
 
 .decl unmatched(ch: Choice, k: number, c: Position, c2: Position)  // a mark C takes and C2 misses
-unmatched(Ch, K, C, C2) :- rival(Ch, K, C, C2), covers(K, C, M), !covers(K, C2, M).
+unmatched(Ch, K, C, C2) :-
+    rival(Ch, K, C, C2), mark_distance(C, M, J), J <= K,
+    ( !mark_distance(C2, M, _)                     // off C2's lines
+    ; mark_distance(C2, M, J2), J2 > K             // past C2's arm
+    ).
 
 // Out-covered: a rival takes every mark of this placement, and more.
 .decl dominated(ch: Choice, k: number, c: Position)
@@ -77,14 +78,14 @@ dominated(Ch, K, C) :- rival(Ch, K, C, C2), !unmatched(Ch, K, C, C2), unmatched(
 // --- $Backed, $Packed: the backing ---
 
 .decl off(k: number, c: Position)                  // a bg cell inside the plus
-off(K, C) :- plus(K, C, P), in(P, Col), params.bg(Col).
+off(K, C) :- arm(K), in(C, _), in(P, Col), params.bg(Col), axial(C, P, J), J <= K.
 
 // --- the arm the marks bear out ---
 
 // The cross a mark belongs to, at arm K — none, where two crosses take it.
 .type ArmMark = [ch: Choice, k: number, m: Position]
 .init owner = Unanimous<ArmMark, Position>
-owner.item([Ch, K, M], C) :- cross(Ch, K, C), covers(K, C, M).
+owner.item([Ch, K, M], C) :- cross(Ch, K, C), mark_distance(C, M, J), J <= K.
 
 .decl orphan(ch: Choice, k: number)                // a mark with no cross of its own
 orphan(Ch, K) :- impl_choice(Ch), arm(K), mark(M), !owner.value([Ch, K, M], _).
@@ -95,7 +96,8 @@ orphan(Ch, K) :- impl_choice(Ch), arm(K), mark(M), !owner.value([Ch, K, M], _).
 
 .decl completed(ch: Choice, p: Position)
 completed(Ch, P) :-
-    span(Ch, K), cross(Ch, K, C), plus(K, C, P),   // a cell of a cross
+    span(Ch, K), cross(Ch, K, C),
+    in(P, _), axial(C, P, J), J <= K,              // a cell of a cross
     !mark(P).                                      // the marks stay as they are
 
 out(P, Col, Ch) :- in(P, Col), span(Ch, _), !completed(Ch, P).
@@ -103,7 +105,7 @@ out(P, Col, Ch) :- completed(Ch, P), params.fill(Col).
 
 // --- $Backed ---
 
-place($Backed(), K, C) :- covers(K, C, _), !off(K, C).
+place($Backed(), K, C) :- arm(K), mark_distance(C, _, J), J <= K, !off(K, C).
 
 cross($Backed(), K, C) :- place($Backed(), K, C), !dominated($Backed(), K, C).
 
@@ -111,11 +113,11 @@ span($Backed(), K) :- arm(K), !orphan($Backed(), K).
 
 // --- $Packed ---
 
-place($Packed(), K, C) :- covers(K, C, _), !off(K, C).
+place($Packed(), K, C) :- arm(K), mark_distance(C, _, J), J <= K, !off(K, C).
 
 // The placements every exact cover of the marks holds, arm by arm.
 .init packing = CoverForcing<number, Position>
-packing.covers(K, C, M) :- place($Packed(), K, C), covers(K, C, M).
+packing.covers(K, C, M) :- place($Packed(), K, C), mark_distance(C, M, J), J <= K.
 
 cross($Packed(), K, C) :- packing.forced(K, C).
 
@@ -123,7 +125,7 @@ span($Packed(), K) :- arm(K), !orphan($Packed(), K).
 
 // --- $Free ---
 
-place($Free(), K, C) :- covers(K, C, _).
+place($Free(), K, C) :- arm(K), mark_distance(C, _, J), J <= K.
 
 cross($Free(), K, C) :- place($Free(), K, C), !dominated($Free(), K, C).
 

@@ -108,9 +108,10 @@ pruning.conflict(R, Cd, Cd2) :-
     reading_elem(R), covers(Cd, P, _), covers(Cd2, P, _).  // over one cell
 pruning.conflict(R, [O, P_spot], [O2, P_spot2]) :-
     congruent.equals(O, O2), O != O2,                               // interchangeable pieces
-    bbox.box(O, B), bbox.box(O2, B2), reads.before(R, B, B2),       // O sits first
+    bbox.box(O, B), bbox.box(O2, B2),
+    reads.rank(R, B, N1), reads.rank(R, B2, N2), N1 < N2,           // O sits first
     occ.occurrence(O, P_spot), occ.occurrence(O2, P_spot2),
-    reads.before(R, P_spot2, P_spot).                               // but takes the later spot
+    reads.rank(R, P_spot2, N3), reads.rank(R, P_spot, N4), N3 < N4. // but takes the later spot
 
 // --- the output ---
 

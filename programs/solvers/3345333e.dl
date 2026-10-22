@@ -72,15 +72,10 @@ pair_box.cell([P, Q], Q) :- pair(P, Q).
 .decl cand(b: Box)
 cand(B) :- pair_box.box(_, B).
 
-// The frames a mirror may act in.
-.decl mirror_frame(b: Box)
-mirror_frame(B) :- whole.box($U(), B).
-mirror_frame(B) :- cand(B).
-
 // Cells whose views in frame B are flip-related.
-.decl mirror(b: Box, p: Position, q: Position)
+.decl mirror(b: Box, p: Position, q: Position) inline
 mirror(B, P, Q) :-
-    mirror_frame(B), in(P, _), relative(B, P, P_inner),        // the cell as frame B sees it
+    relative(B, P, P_inner),                                   // the cell as frame B sees it
     params.axis(A), flip_of(A, D), apply(D, P_inner, Q_inner), // the flip
     compose(B, Q_inner, Q), in(Q, _).                          // its image, back on the grid
 
@@ -120,7 +115,7 @@ target(P, $Patch()) :- occluder(P).
 // The candidate carries the figure cell onto a figure cell or an occluded
 // one — the two places the whole figure reaches.
 .decl upheld(b: Box, p: Position)
-upheld(B, P) :- mirror(B, P, Q), ( figure(Q, _) ; occluder(Q) ).
+upheld(B, P) :- cand(B), figure(P, _), mirror(B, P, Q), ( figure(Q, _) ; occluder(Q) ).
 
 .decl contradicted(b: Box)
 contradicted(B) :- cand(B), figure(P, _), !upheld(B, P).

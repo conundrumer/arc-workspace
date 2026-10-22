@@ -294,7 +294,8 @@ layer.cell([C, A], P) :- in(P, _), diag_dir_elem(C), axis_elem(A).
 // Some cell of shape Id comes before P.
 .decl trailing(c: DiagDir, a: Axis, id: Ident, p: Position)
 trailing(C, A, Id, P) :-
-    shape.label($U(), P, Id), shape.label($U(), Q, Id), layer.before([C, A], Q, P).
+    shape.label($U(), P, Id), shape.label($U(), Q, Id),
+    layer.rank([C, A], Q, R1), layer.rank([C, A], P, R2), R1 < R2.
 
 // The first cell of each shape.
 .decl lead(c: DiagDir, a: Axis, id: Ident, p: Position)
@@ -307,8 +308,9 @@ lead(C, A, Id, P) :-
 buried(Dc, S, K, Ko, C, A, T, Id, N) :-
     write(Dc, S, K, Ko, T, Id, N, _), write(Dc, S, K, Ko, T, Id2, N2, _),
     lead(C, A, Id, P), lead(C, A, Id2, P2),
-    ( layer.before([C, A], P, P2)                  // a later shape
-    ; Id = Id2, layer.before([C, A], N, N2)        // the same shape, a later near cell
+    ( layer.rank([C, A], P, R1), layer.rank([C, A], P2, R2), R1 < R2   // a later shape
+    ; Id = Id2,                                                         // the same shape,
+      layer.rank([C, A], N, R1), layer.rank([C, A], N2, R2), R1 < R2   // a later near cell
     ).
 
 // --- $EveryKey ---
