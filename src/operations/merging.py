@@ -29,6 +29,9 @@ script's own forms and by `master` (`state.Merge`,
   (`NOT_PUT_ON`) hands the change to the coordinator, with a note that
   gives the call, the script's refusal line and the worktree, since no
   editor may move the branch;
+- a refusal for the main tree's state or for worktrees in different
+  repositories (`MAIN_TREE`) hands the change to the coordinator, with
+  a note that gives the call, the refusal line and the worktree;
 - a refusal because the change's branch holds no change against `master`
   (`NO_CHANGE`) reaches a held-step ruling. A `passes` ruling admits the
   closing sequence; `again` gives the editor the missing work and permits
@@ -206,6 +209,20 @@ NOT_PUT_ON = mctx("the rebase is aborted, putting the change onto {onto}'s commi
 where it could not put the change onto `master`."""
 
 NOT_PUT = re.compile(form(NOT_PUT_ON, {"onto": r"\S+", "commit": r"[0-9a-f]+"}))
+
+MAIN_CHANGED = mctx("the main tree {main} has uncommitted changes the fast-forward would touch:")
+MAIN_OFF_BASE = mctx("the main tree {main} stands on {branch}, not {base}")
+REPOSITORIES = mctx("the worktrees belong to more than one repository: {main}, {others}")
+
+MAIN_TREE = tuple(re.compile("^" + re.escape(REFUSED) + form(text, holes) + "$")
+                  for text, holes in (
+                      (MAIN_CHANGED, {"main": r".+"}),
+                      (MAIN_OFF_BASE, {"main": r".+", "branch": r".+", "base": r"\S+"}),
+                      (REPOSITORIES, {"main": r".+", "others": r".+"}),
+                  ))
+"""The refusals for states no editor of the change may change."""
+
+MAIN_TREE_NOTE = mctx("was refused: {refusal}")
 
 NO_CHANGE = mctx("{branch} holds no change against {base}")
 """The refusal of `scripts/merge_change.py` of a change whose branch
@@ -457,6 +474,10 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent],
                     conflict=Note.CONFLICT, paths=PATHS_SEP.join(last.conflicts)), state.me),
                             f"{t.number} conflict", occasion=str(last.time))
             return message or unreceived(t, last, calls, latest, quotes, staff)
+        case Merge.REFUSED if any(p.fullmatch(refusal_line(last.result or "") or "")
+                                 for p in MAIN_TREE):
+            return hand_off(state, t, command, w, MAIN_TREE_NOTE.format(
+                refusal=refusal_line(last.result or "")))
         case Merge.REFUSED:
             return (refused(state, t, w, last, latest, quotes) or message
                     or unreceived(t, last, calls, latest, quotes, staff))

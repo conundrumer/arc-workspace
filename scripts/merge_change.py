@@ -227,6 +227,7 @@ from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, locked_update, SetupFailed)
 
 from operations.merging import (FAILED_LINE,  # noqa: E402
+                                MAIN_CHANGED, MAIN_OFF_BASE, REPOSITORIES,
                                 MARKERS, MARKER_LINE, NO_CHANGE, NOT_PUT_ON, PATHS_SEP,
                                 PREFIX, REFUSED, REFUSED_TREE, TOOL)
 from operations.merge_outcomes import CONFLICT, LEFT_AFTER, STAYS  # noqa: E402
@@ -336,8 +337,7 @@ def refuse_main_touched(main: Path, touched: Mapping[Path, frozenset[str]]) -> d
     replaced = {p: candidates[p] for p in sorted(kept)}
     hit = sorted([*hit, *(p for p in candidates if p not in kept)])
     if hit:
-        raise Refused(f"the main tree {main} has uncommitted changes the fast-forward "
-                      "would touch:\n" + "\n".join(hit))
+        raise Refused(MAIN_CHANGED.format(main=main) + "\n" + "\n".join(hit))
     return replaced
 
 
@@ -751,11 +751,13 @@ def merge(pairs: Sequence[tuple[Path, str]]) -> bool:
     main = mains[0]
     others = sorted({str(m) for m in mains} - {str(main)})
     if others:
-        raise Refused(mctx("the worktrees belong to more than one repository: {main}, "
-                           "{others}").format(main=main, others=", ".join(others)))
-    main_branch = branch_of(main)
+        raise Refused(REPOSITORIES.format(main=main, others=", ".join(others)))
+    try:
+        main_branch = branch_of(main)
+    except Refused:
+        main_branch = "no branch"
     if main_branch != BASE:
-        raise Refused(f"the main tree {main} stands on {main_branch}, not {BASE}")
+        raise Refused(MAIN_OFF_BASE.format(main=main, branch=main_branch, base=BASE))
     every = True
     with tempfile.TemporaryDirectory(prefix="merge-change-") as tmp:
         changes: list[Change] = []
