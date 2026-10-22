@@ -52,9 +52,13 @@ ROW = mctx("- `{reviewer}`: the item `{item}`, the prefix `{prefix}`.")
 NO_TRANSCRIPT = mctx("no transcript of the agent `{agent}` is found: give your own agent "
                      "id as `<agent id>`")
 
+# Ticket 11-3130: doc editor ad68ab6b18e660953 advanced past
+# write-the-edit after a refusal, then made that item's edit.
 NO_STEP = mctx("the step-call results for `{agent}` do not hold the item `{missing}` "
-               "in order. The tag needs each item through the item after `{item}`. Run "
-               "`{command}` as a Bash call by itself, do the item it prints, then go on "
+               "in order. The tag needs each item through the item after `{item}`. "
+               "If `{command}` has an item argument, first do the work that item's "
+               "previously printed instruction gives. Run that call as a Bash call "
+               "by itself, do the item it prints, then go on "
                "by the call each item ends with up to this command. Run this command again")
 
 

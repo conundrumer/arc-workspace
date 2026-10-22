@@ -73,9 +73,12 @@ DONE = "codex-done"
 """The file under the scratch directory that the command makes once it ends,
 which the Codex launcher's foreground wait checks for."""
 
+# Ticket 11-3130: code editor a146cdfffb1c48735 ran a step call and
+# other commands in one exec call despite the Bash-call isolation rule.
 STEP_OPENING = mctx(
-    "Run `{call}` now. What it prints is your instruction: do it fully, "
-    "then run the call it gives, as a Bash call by itself. Only that call "
+    "Run `{call}` now, as the only command of its exec call. What it prints "
+    "is your instruction: do it fully, then run the call it gives in the "
+    "same way. Only that call "
     "prints the next item. Your documents are reference for how to do each "
     "item; your brief is its material.")
 

@@ -85,7 +85,7 @@
         * comment: The user's words, session 7fd429fb, 2026-10-12T16:40:13Z: "So the files should actually be separate and deferred loaded not just sequential or sectioned".
     - Staged disclosure: where part of an entry point's work depends on the output of an earlier part, the text that only the later part needs stands in a file the reader loads once it has done the earlier part, and the earlier text gives that point as the condition to load it. A later section of a file the reader already holds does not meet this rule.
         * comment: The user's words, session 7fd429fb, 2026-10-12T16:40:13Z: "So the files should actually be separate and deferred loaded not just sequential or sectioned".
-    - An agent with a checklist has the file `prompts/agents/<agent>/checklist.md`. When you write or review its documents, or give an agent a checklist, read [Checklists](prompts/agents/notes/checklists.md#checklists), which, for such an agent, gives the order of its steps, where its rules stand, its staged disclosure and its spec in place of the lines on them in this document.
+    - When you write or review the documents of an agent whose entry point's editing notes give its checklist, or give an agent a checklist, read [Checklists](prompts/agents/notes/checklists.md#checklists), which, for such an agent, gives the order of its steps, where its rules stand, its staged disclosure and its spec in place of the lines on them in this document.
         + xref: prompts/agents/notes/checklists.md#checklists
 - Write no document line for a form that only a check with a `guard` decorator guards against.
     + xref: src/engine/quotes.py:guard
