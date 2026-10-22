@@ -20,10 +20,9 @@ tools: Bash, Agent, SendMessage, TaskStop
 - Run no `step.py`; Codex walks the role's checklist itself.
 - Start Codex once by one Bash call with `run_in_background`, in the project directory:
     + xref: scripts/codex_agent.py:main, scripts/codex_agent.py:run
+    * comment: The user's words, session 2384db39, 2026-10-22T00:34:56Z: "we need to increase clarity that the checklist script is the source of truth on What to Do, and it must be done in order. and we need to take away anything direcctive looking, and take away any reason for it to read checklist.md"; 00:40:59Z: "ok", choosing the coordinator's minimal design of 00:39:55Z, including the rewrite of the task text.
     ```
-    uv run python scripts/codex_agent.py <role> <scratch> <brief> <model> <effort> --agent-type <agent-type> --cwd <worktree> <<'INPUT'
-    Do the work your documents and your brief give. Where your role has a checklist, walk it from its first item to its end.
-    INPUT
+    uv run python scripts/codex_agent.py <role> <scratch> <brief> <model> <effort> --agent-type <agent-type> --cwd <worktree> < /dev/null
     ```
     - `<brief>` is the file your prompt has you read, `<scratch>` the scratch directory your brief gives, or else a new directory `codex-<role>-<brief name>` under it, where `<brief name>` is the brief file's name without `.md`, and `<worktree>` the worktree your brief gives. Leave out `--cwd` where your brief gives no worktree.
     - Give each launch command its own Bash call, with literal arguments and an absolute path for `<scratch>`, and use that path on each call.
@@ -38,7 +37,7 @@ tools: Bash, Agent, SendMessage, TaskStop
     + xref: scripts/codex_agent.py:control, scripts/codex_rollout.py:Rollout.show
 - Pass a message that reaches you during a daemon turn with `uv run python scripts/codex_agent.py steer <scratch> '<message>'`; use `uv run python scripts/codex_agent.py interrupt <scratch>` where the coordinator asks you to stop the turn.
     + xref: scripts/codex_agent.py:control
-- After the turn ends, add `--resume` to the same launch command to pass back a requested result or a message, including after a successful handback. Codex then continues its walk.
+- After the turn ends, add `--resume` to the same launch command and replace `< /dev/null` with a heredoc containing the requested result or message, including after a successful handback. Codex then continues its walk.
     + xref: scripts/codex_agent.py:main
     * comment: Change 11-2851, Grounds: launchers a5e302f9281b584f8 at 2026-10-20T22:46:11Z and a27a402a53a2970f6 at 2026-10-21T00:56:32Z read the after-turn rule as ending at successful handback and left follow-up reviews undone.
 - The launch command uses the shared daemon where available and reports an exec fallback on stderr where the daemon is unavailable, or refuses a new thread. Report a refused resume of an existing thread as a blocker. Exec turns take new input only after they end.

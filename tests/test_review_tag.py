@@ -61,6 +61,9 @@ def test_a_walk_to_the_item_after_lets_the_tag_be_made(checklist: Checklist) -> 
 
 @pytest.mark.parametrize("tool, command", [
     ("Bash", "uv run python scripts/step.py code-editor find-the-line-level-places"),
+    ("Bash", STEP + " | cat"),
+    ("Bash", STEP + "; echo done"),
+    ("Bash", STEP + "; " + STEP),
     ("Bash", "grep -A3 'Judge the places' prompts/agents/code-reviewer/checklist.md"),
     ("Read", "/m/prompts/agents/code-reviewer/checklist.md"),
 ])

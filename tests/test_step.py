@@ -75,8 +75,7 @@ def test_a_part_reentered_but_never_entered_leaves_a_gap_to_the_last_item(root: 
     gap = c.gap(out)
     assert gap is not None
     assert gap.item.heading.text == "Check the split"
-    assert gap.calls == ("uv run python scripts/step.py a --enter review-a-split",
-                         "uv run python scripts/step.py a check-the-split")
+    assert gap.call == "uv run python scripts/step.py a --enter review-a-split"
 
 
 def test_refuses_a_call_that_links_no_part_file(root: Path) -> None:
@@ -106,14 +105,14 @@ def test_a_gap_gives_the_first_unprinted_item_and_its_call(root: Path) -> None:
     gap = c.gap([c.first(), c.after("read-the-ticket")])
     assert gap is not None
     assert gap.item.heading.text == "Report"
-    assert gap.calls == ("uv run python scripts/step.py a review-a-split",)
+    assert gap.call == "uv run python scripts/step.py a review-a-split"
 
 
 def test_an_entered_part_puts_its_items_in_the_walk(root: Path) -> None:
     c = Checklist("a", root)
     gap = c.gap(walk_results(c, True)[:3])
     assert gap is not None
-    assert gap.calls == ("uv run python scripts/step.py a check-the-split",)
+    assert gap.call == "uv run python scripts/step.py a check-the-split"
 
 
 def test_a_result_cut_short_leaves_its_item_unprinted(root: Path) -> None:
@@ -122,8 +121,7 @@ def test_a_result_cut_short_leaves_its_item_unprinted(root: Path) -> None:
     results[0] = results[0].splitlines()[0]
     gap = c.gap(results)
     assert gap is not None
-    assert gap.calls == ("uv run python scripts/step.py a",
-                         "uv run python scripts/step.py a read-the-ticket")
+    assert gap.call == "uv run python scripts/step.py a"
 
 
 def test_a_walk_up_to_an_item_ignores_the_rest(root: Path) -> None:
@@ -136,7 +134,7 @@ def test_a_later_round_that_stops_early_leaves_a_gap(root: Path) -> None:
     gap = c.gap([*walk_results(c, False), c.after("read-the-ticket")])
     assert gap is not None
     assert gap.item.heading.text == "Report"
-    assert gap.calls == ("uv run python scripts/step.py a review-a-split",)
+    assert gap.call == "uv run python scripts/step.py a review-a-split"
 
 
 def test_one_result_holds_each_item_it_prints_in_order(root: Path) -> None:
@@ -156,6 +154,5 @@ def test_a_gap_gives_the_calls_through_a_part_call(root: Path) -> None:
     c = Checklist("a", root)
     gap = c.gap([])
     assert gap is not None
-    assert gap.command == ("uv run python scripts/step.py a ; "
-                           "uv run python scripts/step.py a read-the-ticket")
+    assert gap.call == "uv run python scripts/step.py a"
 

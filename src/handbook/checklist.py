@@ -1,6 +1,7 @@
 """An agent's checklist, `prompts/agents/<agent>/checklist.md`, and the
 step command's walk of it. The form of a checklist and what the command
-prints for each call are as
+prints for each call, including the next isolated step call or the last-item
+line, are as
 [Checklists](prompts/agents/notes/checklists.md#checklists) gives them."""
 
 from __future__ import annotations
@@ -63,20 +64,10 @@ def step_call(agent: str, item: str | None = None, entry: Entry | None = None) -
 
 @dataclass(frozen=True)
 class Gap:
-    """The first item of a walk whose text no step-call result holds, and
-    the step calls that print each item from it, in walk order, through the
-    first item that calls a conditional part's file or through the last item
-    of the walk the gap is found in, with the call of `item` first. The calls
-    after the first enter no part, since the agent chooses at a part call
-    whether to enter it."""
+    """The first item no step-call result holds, and the call that prints it."""
 
     item: Item
-    calls: tuple[str, ...]
-
-    @property
-    def command(self) -> str:
-        """The calls as one shell command, joined by ` ; `."""
-        return " ; ".join(self.calls)
+    call: str
 
 
 def checklist_file(agent: str, root: Path = DOCUMENTS_ROOT) -> Path:
@@ -92,9 +83,11 @@ def checklist_agents(root: Path = DOCUMENTS_ROOT) -> list[str]:
 NO_CHECKLIST = mctx("no agent has a checklist")
 
 ENTER = mctx("""
-    - Where the condition above holds, run `{enter}`, or, where your context still holds this part's file from an earlier entry, `{reenter}`.
-    - Where it does not hold, run `{skip}`.
+    - Where the condition above holds, once this item is done, as a Bash call by itself, run `{enter}`, or, where your context still holds this part's file from an earlier entry, `{reenter}`.
+    - Where it does not hold, once this item is done, as a Bash call by itself, run `{skip}`.
     """)
+
+NEXT = mctx("Once this item is done, run `{call}` as a Bash call by itself.")
 
 NOT_A_CALL = mctx("the item `{item}` calls no conditional part's file")
 
@@ -141,20 +134,6 @@ def _find(items: tuple[Item, ...], want: str, after: Item | None
             if found is not None:
                 return found
     return None
-
-
-def _through(item: Item, walk: Iterator[tuple[Item, str, PartCall | None]],
-             target: Item | None) -> Iterator[str]:
-    """The step calls of the items `walk` gives after `item`, through the
-    first one that calls a conditional part's file or is `target`, or
-    through its last; none where `item` is such an item itself. `walk` is
-    not advanced past such an item, so these calls enter no part."""
-    if isinstance(item, PartCall) or item is target:
-        return
-    for following, call, _ in walk:
-        yield call
-        if isinstance(following, PartCall) or following is target:
-            return
 
 
 class Checklist:
@@ -206,7 +185,8 @@ class Checklist:
     def text(self, item: Item) -> str:
         """An item as the agent receives it: its own text, rendered with its
         links, and, for an item that calls a conditional part's file, the
-        calls that enter and skip that part."""
+        calls that enter and skip that part; each other item ends with its
+        next call or the line that it is the last item."""
         out = nm.render(nm.section_document(self.document, _own(item.heading)),
                         self.registry)
         if isinstance(item, PartCall):
@@ -215,6 +195,12 @@ class Checklist:
                 enter=step_call(self.agent, slug, Entry.ENTER),
                 reenter=step_call(self.agent, slug, Entry.REENTER),
                 skip=step_call(self.agent, slug))
+        else:
+            _, following = self.named(item.heading.text)
+            footer = (LAST.format(item=item.heading.text, path=self._label())
+                      if following is None else NEXT.format(
+                          call=step_call(self.agent, nm.slug(item.heading.text))))
+            out = out.rstrip("\n") + "\n\n" + footer
         return out
 
     def _walked(self, items: tuple[Item, ...], held: Callable[[str], bool],
@@ -272,7 +258,7 @@ class Checklist:
             place = holding(self.text(item))
             if place is None or (opens is not None and not any(
                     self._file(opens) in t for t in texts[:place[0] + 1])):
-                return Gap(item, (call, *_through(item, walk, target)))
+                return Gap(item, call)
             at, end = place
             if item is target:
                 return None

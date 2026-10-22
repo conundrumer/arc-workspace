@@ -2,14 +2,14 @@
 an agent whose type has a checklist (`handbook.checklist.checklist_agents`)
 where the results of the step calls in its own transcript leave an item of
 its walk unprinted (`handbook.checklist.Checklist.gap`), and the reason
-gives, as one command (`handbook.checklist.Gap.command`), the step calls
-that print each item from the first such item.
+gives the call that prints the first such item (`handbook.checklist.Gap.call`).
 
-A result counts where its Bash command runs `scripts/step.py <agent>` for
-the caller's own agent type, however the command pipes or joins it. The
-results are taken in order: an item is held only after the item before
-it, in a later result or later in the same result, so one result may hold
-several items, and a later round is held to each item from the first one
+A result counts only where its Bash command's simple commands, through a
+shell wrapper, are one step call for the caller's agent type and optional
+`cd` commands. A pipe or join with other work, or two step calls, counts
+as no step call. The results are taken in order: an item is held only after
+the item before it, in a later result or later in the same result, so one
+result may hold several items, and a later round is held to each item from the first one
 it repeats.
 
 Where the agent's last step call is a stop, `scripts/step.py <agent>
@@ -34,6 +34,7 @@ allows the call and says why on stderr."""
 
 import sys
 from pathlib import Path
+from shlex import join
 
 from command_labels import segment_program, simple_commands
 
@@ -52,17 +53,20 @@ NO_CALL = "none"
 """The record of an agent denied before it made any step call."""
 
 
+def shell_command(words: list[str]) -> tuple[str | None, list[str]]:
+    """The program and arguments with combined shell command flags normalized."""
+    normalized = ["-c" if w.startswith("-") and "c" in w[1:]
+                  and set(w[1:]) <= set("lic") else w for w in words]
+    return segment_program(normalized)
+
+
 def step_arguments(command: str, agent: str):
     """Executable step calls, including shell command-string wrappers."""
     from handbook.checklist import STEP_SCRIPT
 
     for words in simple_commands(command):
         program, args = segment_program(words)
-        # segment_program treats combined shell flags as interpreter options.
-        # Normalize those flags before asking it for the command string.
-        normalized = ["-c" if w.startswith("-") and "c" in w[1:]
-                      and set(w[1:]) <= set("lic") else w for w in words]
-        shell, rest = segment_program(normalized)
+        shell, rest = shell_command(words)
         if shell in {"bash", "sh", "zsh"} and rest:
             yield from step_arguments(rest[0], agent)
         elif program == Path(STEP_SCRIPT).name and args and args[0] == agent:
@@ -83,6 +87,26 @@ def stop_item(command: str, agent: str) -> str | None:
     return args[1] if len(args) == 2 and args[0] == "--stop" else None
 
 
+def isolated_step(command: str, agent: str) -> bool:
+    """Whether the command contains one step call and only directory changes."""
+    count = 0
+    for words in simple_commands(command):
+        if not words:
+            continue
+        program, args = shell_command(words)
+        if program == "cd":
+            continue
+        if program in {"bash", "sh", "zsh"} and args:
+            if not isolated_step(args[0], agent):
+                return False
+            count += 1
+        elif len(list(step_arguments(join(words), agent))) == 1:
+            count += 1
+        else:
+            return False
+    return count == 1
+
+
 def _calls(entries: Iterable[dict[str, Any]], agent: str) -> list[tuple[str, str, str]]:
     """The id, the command and the result text of each step call of
     `agent` among `entries`, in the order of their results."""
@@ -93,7 +117,7 @@ def _calls(entries: Iterable[dict[str, Any]], agent: str) -> list[tuple[str, str
                 for e in entries if e.get("type") == "assistant"
                 for b in blocks(e, "tool_use") if b.get("name") == "Bash"
                 for command in [str((b.get("input") or {}).get("command", ""))]
-                if runs_step(command, agent)}
+                if isolated_step(command, agent)}
     return [(call, commands[call], result) for e in entries
             for call, _, result in tool_results(e) if call in commands]
 
@@ -119,8 +143,8 @@ def refusal(command: str, agent: str) -> str:
              "step call is a stop and no message has reached you since its result, up "
              "to its item, each after the item before it, in a later result or later "
              "in the same result."),
-        mctx("Run `{command}` in one Bash call, do each item from the first one it prints "
-             "to your checklist's last item, then give your report again."),
+        mctx("Run `{command}` as a Bash call by itself, do the item it prints, then "
+             "go on by the call each item ends with. Then give your report again."),
         mctx("Where you find no way to do the item your walk is at, run "
              "`uv run python scripts/step.py {agent} --stop <item>`, with that item as "
              "`<item>`, then give your report again."),
@@ -205,7 +229,7 @@ def check(hook: dict[str, Any]) -> str | None:
         print(f"{HOOK}: allowed: a handback was denied at step call {last}, "
               "and the agent made no step call since", file=sys.stderr)
         return None
-    reason = refusal(gap.command, kind)
+    reason = refusal(gap.call, kind)
     if codex:
         return mctx("Blocked: resume Codex with this refusal, then hand back its updated reply.") + "\n" + reason
     return reason

@@ -195,9 +195,9 @@ def test_start_resume_and_walk_record(files):
     assert transport.closed
     assert (scratch / "codex-session").read_text() == "thread\n"
     first = transport.calls[1][1]["input"][0]["text"]
-    assert first == "brief body\n\nfirst item"
+    assert first == "brief body\n\n" + agent.WORK_OPENING + "\n\nfirst item"
     assert transport.calls[0][1]["config"]["developer_instructions"] == "\n\n".join(
-        [agent.PREAMBLE, "- repo instructions\n"]
+        [agent.PREAMBLE.format(opening=agent.WORK_OPENING, stop="Where blocked, report what remains unfinished and why."), "- repo instructions\n"]
     )
     # Supply the real walk reader with the record emitted by the daemon path.
     entry = turn(scratch.parent / "launcher", [])
@@ -236,11 +236,11 @@ def test_refusal_falls_back_and_keeps_walk_record(files, refuse, capsys):
     assert "resume" not in calls[0]
     overrides = [arg for arg in calls[0] if arg.startswith("developer_instructions=")]
     assert json.loads(overrides[0].split("=", 1)[1]) == "\n\n".join(
-        [agent.PREAMBLE, "- repo instructions\n"]
+        [agent.PREAMBLE.format(opening=agent.WORK_OPENING, stop="Where blocked, report what remains unfinished and why."), "- repo instructions\n"]
     )
-    assert calls[0][-1] == "brief body\n\nfirst item"
+    assert calls[0][-1] == "brief body\n\n" + agent.WORK_OPENING + "\n\nfirst item"
     record = json.loads((scratch / "codex-events.jsonl").read_text())
-    assert record["ok"] is True and record["input"] == "first item"
+    assert record["ok"] is True and record["input"] == agent.WORK_OPENING + "\n\nfirst item"
     assert json.loads(record["output"].splitlines()[-1])["type"] == "turn.completed"
 
 

@@ -43,7 +43,7 @@ HELP = mctx("""
         - It reads the transcripts of the reviewer `<agent id>`, and checks that the completed results of its commands that run `scripts/step.py <reviewer>` hold, whole, each item the step command gives from the first item of the checklist of the main tree, as it stands at the command's call, up to the item after that item, each after the item before it, in a later result or later in the same result.
             - Where that checklist holds no such item, the command fails and names the item it wants.
         - Where the results hold each of those items, it runs `git tag <prefix><m> <commit>` for the least `<m>` from `<n>` up that git accepts, and prints the tag.
-        - Where they do not, it makes no tag, exits non-zero, and prints, as one command, the step calls that print each item from the first item they do not hold, to be run in one Bash call, with each item from the first one it prints up to this command done, before the command is run again.
+        - Where they do not, it makes no tag, exits non-zero, and prints the call that prints the first item they do not hold, with instructions to resume from that item.
             - Where it finds no transcript of `<agent id>`, it prints that, and that `<agent id>` is the reviewer's own agent id.
     """)
 
@@ -52,12 +52,10 @@ ROW = mctx("- `{reviewer}`: the item `{item}`, the prefix `{prefix}`.")
 NO_TRANSCRIPT = mctx("no transcript of the agent `{agent}` is found: give your own agent "
                      "id as `<agent id>`")
 
-NO_STEP = mctx("the step-call results in the transcripts of `{agent}` do not hold, whole, "
-               "the item `{missing}` of the checklist as it stands now after the item "
-               "before it, in a later result or later in the same result, and the tag needs "
-               "each item the step command gives up to the item after `{item}`: run "
-               "`{command}` in one Bash call, do each item from the first one it prints up "
-               "to this command, then run this command again")
+NO_STEP = mctx("the step-call results for `{agent}` do not hold the item `{missing}` "
+               "in order. The tag needs each item through the item after `{item}`. Run "
+               "`{command}` as a Bash call by itself, do the item it prints, then go on "
+               "by the call each item ends with up to this command. Run this command again")
 
 
 def step_gap(entries: Iterable[Entry], checklist: Checklist, item: str) -> Gap | None:
@@ -118,7 +116,7 @@ def review_tag(review: Review, n: int, commit: str, agent: str) -> str:
     gap = step_gap(entries, checklist, item)
     if gap is not None:
         raise Refused(NO_STEP.format(agent=agent, missing=gap.item.heading.text, item=item,
-                                     command=gap.command))
+                                     command=gap.call))
     return tag(review, n, commit)
 
 

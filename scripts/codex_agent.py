@@ -2,7 +2,7 @@
 
     uv run python scripts/codex_agent.py <agent> <scratch> <brief> <model> <effort> [--cwd <dir>] [--resume]
 
-Give the starting instruction or a later result or message on stdin, closed
+Give optional starting material or a later result or message on stdin, closed
 within five seconds. An open input fails before the launch. The
 first call supplies the rendered agent document and rendered repo and user
 CLAUDE.md files as developer instructions, with the configured Codex style.
@@ -52,6 +52,7 @@ import ticket_numbers
 from controlled_markdown import mctx
 from engine import checkout
 from handbook.agent_documents import agent_dir, agent_doc
+from handbook.checklist import checklist_agents, step_call
 from handbook.context import codex_config_value, codex_permissions, entry_text
 from handbook.listings import listings
 from operations.roles import ANALYST_NAMES, CODEX_ROLES, GENERAL, Role
@@ -66,21 +67,27 @@ DONE = "codex-done"
 """The file under the scratch directory that the command makes once it ends,
 which the Codex launcher's foreground wait checks for."""
 
+STEP_OPENING = mctx(
+    "Run `{call}` now. What it prints is your instruction: do it fully, "
+    "then run the call it gives, as a Bash call by itself. Only that call "
+    "prints the next item. Your documents are reference for how to do each "
+    "item; your brief is its material.")
+
+WORK_OPENING = mctx("Do the work your documents and brief give.")
+
+STEP_STOP = mctx("Where blocked, run `{call} --stop <item>`, and report what remains unfinished and why.")
+WORK_STOP = mctx("Where blocked, report what remains unfinished and why.")
+
 PREAMBLE = mctx(
-    "Do the work your role's documents and brief give. Where your role has a "
-    "checklist, run `uv run python scripts/step.py <role>` yourself, starting "
-    "with its first item, and walk it through its end in this run. Do each "
-    "item and run the step command it gives to go on, including choosing "
-    "whether to enter conditional parts. You have no Agent or SendMessage "
+    "{opening} You have no Agent or SendMessage "
     "tool; make no Agent call and no SendMessage. Where your documents give "
     "one, end your turn with the full call to make, including all arguments "
     "and the full text to send. The Claude launcher makes the call and "
     "passes its result or a message back by resuming this session; then "
-    "continue your walk. Also ask the launcher to run `operate.py review` "
+    "continue your work. Also ask the launcher to run `operate.py review` "
     "in its own foreground Bash call where your documents give it. The "
     "Codex mode procedure is for that launcher; do not run `codex_agent.py` "
-    "yourself. Where blocked, use your checklist's `--stop` call and report "
-    "what remains unfinished and why. Write the report and final reply "
+    "yourself. {stop} Write the report and final reply "
     "your documents give; the launcher delivers your final reply.")
 
 NATIVE_PREAMBLE = mctx(
@@ -139,6 +146,11 @@ NATIVE_RULES = mctx({
 })
 
 
+def opening(kind: str) -> str:
+    return (STEP_OPENING.format(call=step_call(kind))
+            if kind in checklist_agents() else WORK_OPENING)
+
+
 def role_instructions(root: Path, home: Path, agent: str,
                       agent_type: str | None = None) -> str:
     user = home / ".claude" / "CLAUDE.md"
@@ -156,7 +168,10 @@ def role_instructions(root: Path, home: Path, agent: str,
                     raise ValueError(f"{config}: developer_instructions must be a string")
                 styles.append(style)
     return "\n\n".join([
-        *styles, PREAMBLE, *document,
+        *styles, PREAMBLE.format(
+            opening=opening(kind),
+            stop=(STEP_STOP.format(call=step_call(kind))
+                  if kind in checklist_agents() else WORK_STOP)), *document,
         entry_text((root / "CLAUDE.md").resolve(), values=values),
         *([user.read_text()] if user.exists() else [])])
 
@@ -380,6 +395,8 @@ def work(agent: str, scratch: Path, brief: Path, model: str, effort: str, item: 
             "shell_environment_policy.set." + ticket_numbers.SESSION_VAR: ticket_numbers.session_id(),
         }
         instructions = None if thread is not None else role_instructions(root, home, agent, agent_type)
+        if thread is None:
+            item = "\n\n".join(filter(None, [opening(agent_type or Role(agent).agent_type), item]))
         prompt = item if thread is not None else "\n\n".join([brief.read_text(), item])
         last = scratch / "codex-last.md"
         last.unlink(missing_ok=True)

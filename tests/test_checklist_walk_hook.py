@@ -36,7 +36,7 @@ def session(tmp_path: Path, results: list[str], stops: dict[int, str] | None = N
         lines += [{"type": "assistant", "message": {"content": [
                       {"type": "tool_use", "id": f"t{n}", "name": "Bash",
                        "input": {"command": f"{STEP} --stop {stops[n]}" if n in stops
-                                 else f"{STEP} | head -3"}}]}},
+                                 else STEP}}]}},
                   {"type": "user", "toolUseResult": {"stdout": result}, "message": {"content": [
                       {"type": "tool_result", "tool_use_id": f"t{n}", "content": result}]}}]
     if kind == "codex-launcher":
@@ -192,3 +192,24 @@ def test_report_writer_after_a_real_stop_preserves_the_bound(tmp_path, writer):
         out.write(json.dumps({'type': 'user', 'message': {'content': [{
             'type': 'tool_result', 'tool_use_id': 'writer', 'content': ''}]}}) + '\n')
     assert not denied(stdin)
+
+
+@pytest.mark.parametrize("command", [
+    STEP + " | head -3", STEP + "; echo done", STEP + "; " + STEP,
+    "/bin/zsh -lc '" + STEP + "; echo done'",
+    STEP + " --stop report; echo done",
+    "/bin/zsh -lc '" + STEP + "; " + STEP + "'",
+])
+def test_joined_work_does_not_count_as_a_step(command):
+    from tests.conftest import script
+
+    _calls = script("checklist_walk_hook")._calls
+
+    entries = [
+        {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "step", "name": "Bash",
+             "input": {"command": command}}]}},
+        {"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "step", "content": "result"}]}},
+    ]
+    assert _calls(entries, "code-reviewer") == []
