@@ -115,6 +115,7 @@ def test_native_completion_requires_current_receipt(tmp_path: Path, outcome: str
     script("state_reads").new_state()
     assert reads.native_agents(item.operator, tmp_path, tmp_path).agents[0].last_report is None
     ticket.accept(item.scratch, item.agent, tmp_path, outcome)
+    script("state_reads").new_state()
     accepted = reads.native_agents(item.operator, tmp_path, tmp_path).agents[0]
     assert not accepted.pending
     assert (accepted.last_report is not None) == (outcome == "finished")

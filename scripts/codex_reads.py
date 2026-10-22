@@ -34,6 +34,7 @@ from run_reads import blocks, is_prompt
 
 from operations.roles import GENERAL, Role
 from codex_ticket import Assignment
+from state_reads import DERIVED, state_cache
 
 
 @dataclass(frozen=True)
@@ -64,12 +65,19 @@ def rollout_message(row: dict[str, Any]) -> tuple[str, str] | None:
 
 def native_assignments(session_scratch: Path | None = None, *, include_history: bool = False) -> list[Native]:
     """One projection of enrolled operations identities and their current turns."""
-    import codex_ticket
     from ticket_numbers import session_id
     from tree_reads import scratch
-    from file_reads import stat_read
 
     directory = (session_scratch or scratch(session_id())) / "codex-stores"
+    return list(native_projection(directory, include_history))
+
+
+@state_cache(DERIVED)
+def native_projection(directory: Path, include_history: bool) -> tuple[Native, ...]:
+    """The projection of the stores in `directory`, read once per state."""
+    import codex_ticket
+    from file_reads import stat_read
+
     stat_read(directory)
     result = []
     for pointer in sorted(directory.glob("*.json")):
@@ -94,8 +102,8 @@ def native_assignments(session_scratch: Path | None = None, *, include_history: 
     unique = {(item.assignment.agent, item.assignment.revision): item for item in result}
     if len(unique) != len(result):
         raise ValueError("native operations identity occurs in more than one store")
-    return sorted(result, key=lambda item: (item.state["reserved"],
-        item.assignment.subject or item.assignment.ticket, item.assignment.role.value, item.assignment.revision))
+    return tuple(sorted(result, key=lambda item: (item.state["reserved"],
+        item.assignment.subject or item.assignment.ticket, item.assignment.role.value, item.assignment.revision)))
 
 
 def native_find(agent: str, session_scratch: Path | None = None) -> Native | None:
