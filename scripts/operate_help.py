@@ -83,7 +83,7 @@ WAITS_HELP = mctx("""
             - The read of the tracker left it out.
             - It stands in a take's queue, as `uv run python scripts/file_ticket.py log --help-all` gives it, each ticket of its `depends-on` is closed, and the run scripts' `takes`, the `Op pause.` line, the `Op scope: own.` line or the usage pace holds it.
         - A ticket that gives no reason waits in turn.
-    - Where a change waits on its `depends-on`, its log has had no line for `STUCK_SECONDS`, and its paths hold a ticket that stands on a cycle, that waits on nothing that moves it, or that waits on the user and is no entry of the change's own `depends-on` off a cycle, `next` sends the coordinator the change's paths, with the step to take.
+    - Where a change waits on its `depends-on`, its log has had no line for `TICKET_STUCK_SECONDS`, and its paths hold a ticket that stands on a cycle, that waits on nothing that moves it, or that waits on the user and is no entry of the change's own `depends-on` off a cycle, `next` sends the coordinator the change's paths, with the step to take.
         - It sends it once per change and set of such tickets after the change's last log line, or, where the paths reach a cycle of links through such a ticket, once per cycle after the last log line of the cycle's tickets, whichever change waits.
     - The message on a ticket that has had no step gives the paths of each change that waits on it.
     - Where a ticket outside `tickets/closed/` has waited on nothing that moves it for `AGAIN_SECONDS`, `next` sends the coordinator a message on it once, with its log and its agents, and records it in a `bug` ticket; one message gives each such ticket that no earlier message gave.

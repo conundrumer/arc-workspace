@@ -59,7 +59,7 @@ from enum import Enum
 from controlled_markdown import mctx
 from operations import change_take, messages, ticket_stall, waits
 from operations.arrivals import arrived, received
-from operations.constants import COORDINATOR, stuck_reached
+from operations.constants import COORDINATOR, ticket_stuck_reached
 from operations.roles import AGENT_ID
 from operations.state import Agent, LateResume, Message, Report, State, Stuck, Ticket
 from operations.handled import ask_again, held_aside, repeated
@@ -412,7 +412,7 @@ def stuck_waits(state: State) -> Step | None:
     stalls = ticket_stall.stalled(state)
     for n, deps in found:
         t = state.tracker.tickets[n]
-        if not stuck_reached(t.last_time, state.now):
+        if not ticket_stuck_reached(t.last_time, state.now):
             continue
         root = waits.paths(state, n, stalls)
         stuck = [x for x in waits.nodes(root) if told(state, x, deps)]
