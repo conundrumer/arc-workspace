@@ -7,12 +7,13 @@ from tests.test_codex_spends import at, launch, record
 
 reader = script("codex_transcript")
 spends = script("spends")
+measure = script("codex_spends")
 
 
 def fixture(tmp_path, monkeypatch, records, payloads, entries=None):
     launcher = tmp_path / "launcher.jsonl"
     launcher.write_text("")
-    monkeypatch.setattr(spends, "run_entries", lambda _: iter(entries or [launch(tmp_path)]))
+    monkeypatch.setattr(measure, "run_entries", lambda _: iter(entries or [launch(tmp_path)]))
     (tmp_path / "codex-events.jsonl").write_text(
         ''.join(json.dumps(r) + '\n' for r in records))
     directory = tmp_path / ".codex" / "sessions"
@@ -93,7 +94,7 @@ def test_projection_duplicates_and_pagination(tmp_path, monkeypatch, capsys):
 def test_unmatched_record_is_gap_and_no_calls_is_distinct(tmp_path, monkeypatch):
     launcher, _ = fixture(tmp_path, monkeypatch, [record(), record(turn="extra")], [])
     assert reader.read(launcher, tmp_path).coverage is reader.Coverage.GAP
-    monkeypatch.setattr(spends, "run_entries", lambda _: iter([]))
+    monkeypatch.setattr(measure, "run_entries", lambda _: iter([]))
     assert reader.read(launcher, tmp_path).coverage is reader.Coverage.NONE
 
 
@@ -124,3 +125,41 @@ def test_hook_refused_launch_contributes_no_profile_source_or_gap(tmp_path, monk
     assert len(result.spend.sources) == 1
     assert result.spend.totals().total_tokens == 12
     assert len(result.turns) == 1
+
+
+def test_recovery_refuses_ambiguous_or_conflicting_evidence(tmp_path, monkeypatch):
+    launcher, path = fixture(tmp_path, monkeypatch, [], [
+        event('task_started', turn_id='a'), event('task_complete', turn_id='a'),
+        event('task_started', turn_id='b'), event('task_complete', turn_id='b')])
+    (tmp_path / 'codex-session').write_text('thread\n')
+    assert not spends.codex_spend({launcher: 'code-editor'}, before=20, home=tmp_path).sources[0].turn
+    path.write_text('\n'.join(path.read_text().splitlines()[:2]) + '\n')
+    events = tmp_path / 'codex-events.jsonl'
+    for records in ([record(start=11), record(start=11)],
+                    [dict(record(start=30), thread='other')]):
+        events.write_text(''.join(json.dumps(r) + '\n' for r in records))
+        result = spends.codex_spend({launcher: 'code-editor'}, before=20, home=tmp_path)
+        assert result.sources[0].turn is None
+    events.write_text('invalid\n')
+    assert spends.codex_spend({launcher: 'code-editor'}, before=20, home=tmp_path).sources[0].turn is None
+
+
+def test_recovered_usage_gaps_keep_activity_and_unfinished_tail(tmp_path, monkeypatch):
+    launcher, path = fixture(tmp_path, monkeypatch, [], [
+        event('task_started', turn_id='a'),
+        response('function_call_output', call_id='inner', output='visible'),
+        event('task_complete', turn_id='a')])
+    (tmp_path / 'codex-session').write_text('thread\n')
+    # A subsequent call bounds the lost wrapper without proving its completion.
+    monkeypatch.setattr(measure, 'run_entries', lambda _: iter([
+        launch(tmp_path), launch(tmp_path, 20, call='next')]))
+    (tmp_path / 'codex-events.jsonl').unlink()
+    result = reader.read(launcher, tmp_path)
+    assert result.coverage is reader.Coverage.GAP
+    assert result.turns[0][2].turn == 'a'
+    assert result.turns[0][0].usage is None
+    assert 'visible' in json.dumps(reader.activity(result.turns[0][2]))
+    path.write_text('\n'.join(path.read_text().splitlines()[:2]) + '\n{"type":')
+    result = reader.read(launcher, tmp_path)
+    assert result.turns[0][0].running
+    assert result.turns[0][2].ended is None

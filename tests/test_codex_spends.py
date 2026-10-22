@@ -10,6 +10,7 @@ from tests.conftest import script
 
 scripts_importable()
 spends = script("spends")
+measure = script("codex_spends")
 rollout = script("codex_rollout")
 state_reads = script("state_reads")
 
@@ -37,7 +38,7 @@ def record(total=12, turn="turn", start=11):
 def test_ambiguous_reused_scratch_refuses_lifetime_usage(tmp_path, monkeypatch):
     launcher = tmp_path / "launcher.jsonl"
     launcher.write_text("")
-    monkeypatch.setattr(spends, "run_entries", lambda _: iter([launch(tmp_path)]))
+    monkeypatch.setattr(measure, "run_entries", lambda _: iter([launch(tmp_path)]))
     # Historical records give no accepted turn or call interval. An extra record
     # must not be assigned to the launcher's single call.
     (tmp_path / "codex-events.jsonl").write_text(
@@ -86,7 +87,7 @@ def test_legacy_record_refresh_and_source_invalidation(tmp_path, monkeypatch):
     entries = [launch(scratch)]
     events = scratch / "codex-events.jsonl"
     events.write_text(json.dumps(record()) + '\n')
-    monkeypatch.setattr(spends, "run_entries", lambda _: iter(entries))
+    monkeypatch.setattr(measure, "run_entries", lambda _: iter(entries))
     monkeypatch.setattr(spends, "known_owners", lambda *_: {launcher: "code-editor"})
     monkeypatch.setattr(spends, "first_time", lambda _: 10)
     monkeypatch.setattr(spends, "last_time", lambda _: 20)
@@ -230,3 +231,41 @@ def test_shared_owner_walk_refreshes_after_a_source_changes(tmp_path, monkeypatc
     source.write_text("code-reviewer")
     state_reads.new_state()
     assert spends.known_owners(["run"], {}) == {source: "code-reviewer"}
+
+
+def test_recovered_record_refreshes_after_rollout_arrival_and_append(tmp_path, monkeypatch):
+    ticket = tmp_path / 'closed/11-1_change_example_code-editor.md'
+    ticket.parent.mkdir()
+    ticket.write_text('ticket')
+    launcher = tmp_path / 'launcher.jsonl'
+    launcher.write_text('launcher')
+    (tmp_path / 'codex-session').write_text('thread\n')
+    directory = tmp_path / '.codex/sessions'
+    directory.mkdir(parents=True)
+    monkeypatch.setattr(measure, 'run_entries', lambda _: iter([
+        launch(tmp_path), {'type': 'user', 'timestamp': at(30)}]))
+    monkeypatch.setattr(spends, 'known_owners', lambda *_: {launcher: 'code-editor'})
+    monkeypatch.setattr(spends, 'priced', lambda owner, _, before: spends.Spend(
+        2.0, 99.0, {'code-editor': 2.0}, spends.codex_spend(owner, before, tmp_path)))
+    monkeypatch.setattr(spends, 'all_stopped', lambda *_: True)
+    monkeypatch.setattr(spends, 'held_closed', lambda _: SimpleNamespace(log=[SimpleNamespace(
+        status=spends.Status.CLOSED, resolution=spends.Resolution.FIXED,
+        note='fixed 11-1 commit launcher', time=30)]))
+    state_reads.new_state()
+    assert spends.change_spend(ticket, []).codex.status == 'unknown'
+    path = directory / 'rollout-now-thread.jsonl'
+    path.write_text(json.dumps({'type': 'event_msg', 'timestamp': at(11),
+                               'payload': {'type': 'task_started', 'turn_id': 'a'}}) + '\n')
+    state_reads.new_state()
+    assert spends.change_spend(ticket, []).codex.sources[0].turn == 'a'
+    with path.open('a') as out:
+        for second, payload in [(12, {'type': 'token_count', 'info': {
+                'total_token_usage': usage(12), 'last_token_usage': usage(12)}}),
+                (13, {'type': 'task_complete', 'turn_id': 'a'})]:
+            out.write(json.dumps({'type': 'event_msg', 'timestamp': at(second),
+                                  'payload': payload}) + '\n')
+    state_reads.new_state()
+    result = spends.change_spend(ticket, [])
+    assert result.codex.totals().total_tokens == 12
+    assert not result.codex.sources[0].running
+    assert result.dollars == 2.0 and result.seconds == 99.0

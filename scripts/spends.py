@@ -10,14 +10,14 @@ from enum import Enum
 from functools import partial
 from pathlib import Path
 
-import codex_reads
 import codex_rollout
+from codex_spends import codex_spend, fingerprint
 
 import read_interrupts
 from agent_launches import runs_under
 from agent_turns import first_time, has_ended, last_time
 from run_reads import agent_type, run_entries
-from file_reads import file_text, listed, stat_read, state_stat
+from file_reads import file_text, listed, stat_read
 from state_reads import DERIVED, Kept, state_cache
 from ticket_files import listed_tickets, ticket_name
 from ticket_log import moved
@@ -124,150 +124,6 @@ def cost_of(path: Path, undecided: list[str]) -> float | None:
     gives it, held while the run's entries stand."""
     return run_cost(run_entries(path), undecided)
 
-
-def fingerprint(path: Path) -> tuple[str, int | None, int | None]:
-    """A source revision in this state, including a missing source.
-
-    Hundreds of old spends watch the same transcript directories. Share
-    their stats with the other state reads instead of statting each again.
-    """
-    text = str(path)
-    stat = state_stat(text)
-    return (text, None, None) if stat is None else (text, stat.mtime_ns, stat.size)
-
-
-def legacy_turn_records(records: list[dict], home: Path,
-                        inputs: set[Path]) -> list[dict]:
-    """Recover legacy call boundaries only when accepted record order is exact.
-    A partial or unmatched accepted history cannot establish that correspondence.
-    """
-    recovered: list[dict] = []
-    for thread in sorted({r["thread"] for r in records if isinstance(r.get("thread"), str)}):
-        read_interrupts.checkpoint()
-        accepted = []
-        for record in records:
-            read_interrupts.checkpoint()
-            if record.get("thread") != thread or "turn" in record:
-                continue
-            try:
-                events = [json.loads(line) for line in record["output"].splitlines()]
-            except (KeyError, ValueError):
-                continue
-            if any(e.get("type") in ("turn.completed", "turn.failed") for e in events):
-                accepted.append(record)
-        if not accepted:
-            continue
-        try:
-            inputs.add(codex_rollout.rollout_path(thread, home))
-            turns = codex_rollout.turns(thread, home)
-        except (OSError, ValueError, KeyError):
-            continue
-        if len(accepted) != len(turns):
-            continue
-        for record, turn in zip(accepted, turns):
-            read_interrupts.checkpoint()
-            recovered.append({**record, "turn": turn.turn,
-                "usage": None if turn.usage is None else asdict(turn.usage),
-                "running": turn.ended is None, "started": turn.started,
-                "ended": turn.ended})
-    return recovered
-
-
-def codex_spend(owner: dict[Path, str], before: float | None = None,
-                home: Path | None = None) -> CodexSpend:
-    """Count accepted turns once across the change's launcher calls.
-    Missing or ambiguous boundaries remain explicit source components.
-    """
-    home = home or Path.home()
-    sources: list[CodexSource] = []
-    inputs: set[Path] = {p for path in owner for p in chain(path)}
-    launches: dict[Path, list[codex_reads.Call]] = {}
-    for path in owner:
-        read_interrupts.checkpoint()
-        try:
-            gaps: list[str] = []
-            for call in codex_reads.calls(list(run_entries(path)), gaps):
-                read_interrupts.checkpoint()
-                if before is None or call.started is None or call.started <= before:
-                    launches.setdefault(call.scratch, []).append(replace(call, transcript=path))
-            sources.extend(CodexSource(str(path), owner[path], None, None, None, gap)
-                           for gap in gaps)
-        except (OSError, ValueError, KeyError, IndexError) as exc:
-            sources.append(CodexSource(str(path), owner[path], None, None, None,
-                                       "launcher evidence unreadable: " + str(exc)))
-    seen: dict[tuple[str, str], CodexSource] = {}
-    for scratch, calls in launches.items():
-        read_interrupts.checkpoint()
-        calls.sort(key=lambda c: c.started if c.started is not None else float("inf"))
-        record_path = scratch / "codex-events.jsonl"
-        inputs.update((record_path, scratch / "codex-session"))
-        try:
-            records = codex_rollout.rows(record_path)
-        except (OSError, ValueError) as exc:
-            records = []
-        recovered = legacy_turn_records(records, home, inputs)
-        for index, call in enumerate(calls):
-            read_interrupts.checkpoint()
-            source = f"{call.transcript}:{call.call_id}"
-            next_call = calls[index + 1].started if index + 1 < len(calls) else None
-            limits = [t for t in (next_call, before) if t is not None]
-            next_start = min(limits) if limits else None
-            legacy_limits = [t for t in (next_start, call.until) if t is not None]
-            legacy_end = min(legacy_limits) if legacy_limits else None
-            timed = [r for batch, limit in ((records, next_start), (recovered, legacy_end))
-                     for r in batch if isinstance(r.get("started"), (int, float))
-                     and call.started is not None and r["started"] >= call.started
-                     and (limit is None or r["started"] < limit)]
-            if len(timed) == 1:
-                record = timed[0]
-            elif len(records) == len(calls) and not any("started" in r for r in records):
-                record = records[index]
-            else:
-                sources.append(CodexSource(source, call.work_name, None, None, None,
-                                           "call record missing or ambiguous", call.ended is None))
-                continue
-            if record.get("refused") is True:
-                continue
-            thread, turn = record.get("thread"), record.get("turn")
-            usage = codex_rollout.tokens(record.get("usage"))
-            running = record.get("running", False)
-            reason = record.get("usage_reason", "turn usage unavailable")
-            if thread is not None and (usage is None or turn is None or running):
-                try:
-                    rollout = codex_rollout.rollout_path(thread, home)
-                    inputs.add(rollout)
-                    start = record.get("started", call.started)
-                    end = record.get("ended", legacy_end)
-                    evidence = (codex_rollout.call_turn(thread, home, start, end, turn)
-                                if start is not None and end is not None else None)
-                    if evidence is not None:
-                        turn, usage = evidence.turn, evidence.usage
-                        running = evidence.ended is None
-                except (OSError, ValueError, KeyError) as exc:
-                    reason = "rollout evidence unavailable: " + str(exc)
-                    # Watch existing directories for a later rollout arrival.
-                    inputs.add(home / ".codex" / "sessions")
-                    sessions = home / ".codex" / "sessions"
-                    if sessions.exists():
-                        inputs.update(p for p in sessions.rglob("*") if p.is_dir())
-            if turn is None:
-                usage = None
-                reason = "accepted turn identity unavailable"
-            elif usage is not None:
-                reason = codex_rollout.usage_reason(usage, turn)
-            item = CodexSource(source, call.work_name,
-                               thread, turn, usage, reason, running)
-            if thread is None or turn is None:
-                sources.append(item)
-            else:
-                key = thread, turn
-                previous = seen.get(key)
-                if previous is None:
-                    seen[key] = item
-                elif previous.role != item.role or previous.usage != item.usage:
-                    seen[key] = replace(previous, usage=None, reason="conflicting turn evidence")
-    sources.extend(seen.values())
-    return CodexSpend(tuple(sources), tuple(fingerprint(p) for p in sorted(inputs)))
 
 
 def priced(owner: dict[Path, str], undecided: list[str],

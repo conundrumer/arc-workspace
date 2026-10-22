@@ -213,7 +213,14 @@ def read(scratch: Path, home: Path) -> Rollout:
 def call_turn(thread: str, home: Path, started: float, ended: float,
               accepted: str | None = None) -> Turn | None:
     """Locate exactly one accepted turn within a call's recorded interval."""
-    found = [t for t in turns(thread, home)
+    return select_turn(turns(thread, home), started, ended, accepted)
+
+
+def select_turn(turns: list[Turn], started: float, ended: float,
+                accepted: str | None = None, *, include_end: bool = True) -> Turn | None:
+    """Select one accepted identity or one start in the bounded interval."""
+    found = [t for t in turns
              if (t.turn == accepted if accepted is not None
-                 else started <= t.started <= ended)]
+                 else started <= t.started and
+                 (t.started <= ended if include_end else t.started < ended))]
     return found[0] if len(found) == 1 else None
