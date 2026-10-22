@@ -26,7 +26,7 @@ from tree_reads import main_tree
 
 from operations import directives, relay, runs, ticket_stall, waits
 from operations import codex_mode, trial_mode
-from operations.mode_switch import ModeSwitch
+from operations.mode_switch import ModeSwitch, Scope
 from operations.constants import WAKE
 from operations.line_store import record_lines
 from operations.command_words import Action
@@ -181,7 +181,10 @@ def set_trial(args: list[str]) -> int:
 
 def set_mode(args: list[str], switch: ModeSwitch) -> int:
     main = main_tree()
-    path = main / switch.override
+    if switch.scope is Scope.SESSION:
+        session_id()
+    path = switch.path(main)
+    assert path is not None
     match args:
         case []:
             pass
@@ -191,7 +194,7 @@ def set_mode(args: list[str], switch: ModeSwitch) -> int:
             with staged(path.parent, "on\n") as tmp:
                 os.replace(tmp, path)
         case _:
-            print(mctx("operate: {mode} takes nothing, on, or off").format(mode=switch.override.name), file=sys.stderr)
+            print(mctx("operate: {mode} takes nothing, on, or off").format(mode=switch.name), file=sys.stderr)
             return 1
     print("on" if switch.read(main) else "off")
     return 0
