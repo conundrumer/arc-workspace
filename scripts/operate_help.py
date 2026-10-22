@@ -93,6 +93,7 @@ WAITS_HELP = mctx("""
 PARTS = {
     HelpPart.NEXT: mctx("""
     - `next` prints the next step of the operator whose agent id it is given: one call to make, or several launches to make in one message, with their parameters, or the final reply.
+        - Where a call of `next` fails and its output prints no call, it prints instead a step that sends the coordinator that output with the operator's agent id, and then has the operator run the command again. Where the operator's previous call of `next` printed that step, it prints the failure's output alone and the operator hands back.
         - With a launch, it also prints each further launch that it gives on the state with the launches before it made, until one of these holds:
             - A step that `next` prints ahead of every launch is ready and the output does not hold it.
             - The operator is past its context bound.
@@ -239,7 +240,7 @@ PARTS = {
         - Where an operator's final reply ends it for its context, it launches a fresh operator.
             - Where the launcher's context is past the bound `uv run python scripts/operate.py bound` prints, it sends the coordinator instead the launcher's final reply, which asks for a fresh operator launcher whose brief is that of the next operator, and gives it.
         - Where an operator's final reply ends it for a wait, and no message of the coordinator's waits, it prints a call of `wait` in the background and that the launcher ends its turn, or, where that call runs, the end of the turn alone; once that call has completed, or once a message waits, it acts as after a final reply for the operator's context.
-        - Where an operator ends with no final reply after its last call of `next` failed and printed no call, it sends the coordinator the launcher's final reply, with that operator's agent id and that call's output, and launches no other operator; a message of the coordinator's that reaches the launcher after that reply goes into the brief of the next operator it launches.
+        - Where an operator ends with no final reply after its last call of `next` failed and printed no call, it sends the coordinator that call's output with that operator's agent id once, and acts as after a final reply for the operator's context, unless the operator launched before it also ended with no final reply and each of the two ended within {idle} seconds of its launch; in that case it sends the coordinator the launcher's final reply, with that operator's agent id and that call's output, and launches no other operator, and a message of the coordinator's that reaches the launcher after that reply goes into the brief of the next operator it launches.
         - Where an operator ends with no final reply in any other case, it acts as after a final reply for the operator's context, unless the operator launched before it also ended with no final reply and each of the two ended within {idle} seconds of its launch.
         - It sends the coordinator any other final reply of an operator, and the end with no final reply that follows a quick end with none, after a line that gives that operator's agent id.
             - It then prints the launcher's final reply, unless a message of the coordinator's waits for a next operator.

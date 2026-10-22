@@ -36,6 +36,9 @@ START_SECONDS = 30
 FINISH_SECONDS = 5
 """Time left for the kept-read flush and the response after a state read stops."""
 CODE_ENV = "ARC_OPERATE_CODE"
+CODE_CHANGED = 75
+"""The exit status of a resident startup that finds the code changed while it
+started; `ensure` starts another one."""
 
 
 # Request cancellation must escape the state cache's failed-read handlers.
@@ -287,33 +290,41 @@ def ensure(main: Path, session: str, deadline: float) -> socket.socket:
         except OSError:
             pass
         process: subprocess.Popen[bytes] | None = None
-        with path.with_suffix(".owner").open("a") as owner:
-            try:
-                fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                pass
-            else:
-                path.unlink(missing_ok=True)
-                import kept_reads
-                expected = kept_reads.fresh_code("operate")
-                with path.with_suffix(".log").open("w") as errors:
-                    process = subprocess.Popen(
-                        [sys.executable, "-B", "-X", f"pycache_prefix={path.with_suffix('.pyc')}",
-                         str(main / "scripts/operate_service.py"), "startup"], cwd=main,
-                        env={**os.environ, script_calls.SESSION_ENV: session, CODE_ENV: expected},
-                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                        stderr=errors, start_new_session=True)
-        until = min(deadline, time.monotonic() + START_SECONDS)
-        while time.monotonic() < until:
-            if process is not None and process.poll() is not None:
-                detail = path.with_suffix(".log").read_text()[-4096:].strip()
-                raise Unavailable(f"resident startup exited ({process.returncode}): "
-                                  f"{detail or 'no diagnostic from the resident'}")
+        while time.monotonic() < deadline:
+            if process is None:
+                process = spawn(main, session)
+            elif process.poll() is not None:
+                if process.returncode != CODE_CHANGED:
+                    detail = path.with_suffix(".log").read_text()[-4096:].strip()
+                    raise Unavailable(f"resident startup exited ({process.returncode}): "
+                                      f"{detail or 'no diagnostic from the resident'}")
+                process = None
+                continue
             try:
                 return connect(path, deadline - time.monotonic())
             except OSError:
                 time.sleep(0.05)
-        raise Unavailable(f"resident did not open its socket within {START_SECONDS} s")
+        raise Expired
+
+
+def spawn(main: Path, session: str) -> subprocess.Popen[bytes] | None:
+    """Start a resident under the owner lock, or None where another process holds it."""
+    path = endpoint(main, session)
+    with path.with_suffix(".owner").open("a") as owner:
+        try:
+            fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return None
+        path.unlink(missing_ok=True)
+        import kept_reads
+        expected = kept_reads.fresh_code("operate")
+        with path.with_suffix(".log").open("w") as errors:
+            return subprocess.Popen(
+                [sys.executable, "-B", "-X", f"pycache_prefix={path.with_suffix('.pyc')}",
+                 str(main / "scripts/operate_service.py"), "startup"], cwd=main,
+                env={**os.environ, script_calls.SESSION_ENV: session, CODE_ENV: expected},
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=errors, start_new_session=True)
 
 
 def prepare(main: Path, session: str, deadline: float) -> None:
@@ -360,14 +371,43 @@ def client(operator: str) -> int:
         result = request(checkout.ROOT,
                          session_id(), operator, started, deadline, False)
     except (Unavailable, OSError, ValueError) as exc:
-        print(f"operate: {exc}", file=sys.stderr)
-        return 1
+        return failed_next(operator, 1, "", f"operate: {exc}\n")
     except Expired:
         timeout_output(operator)
         return 1
     finally:
         signal.alarm(0)
     status, stdout, stderr = result
+    if status != 0:
+        return failed_next(operator, status, stdout, stderr)
+    sys.stdout.write(stdout)
+    sys.stderr.write(stderr)
+    return status
+
+
+def failed_next(operator: str, status: int, stdout: str, stderr: str) -> int:
+    """Print a failed call's output as it is, or, where it prints no call and the
+    operator's last call of `next` did not print `NEXT_FAILED`, the step that sends
+    the coordinator that output and has the operator run the command again."""
+    from entry_reads import entries_back
+    from operations.command_words import Action
+    from operations.constants import COORDINATOR
+    from operations.printing import printed
+    from operations.printed_forms import AFTER_TIMEOUT, NEXT_FAILED
+    from operations.steps import Send
+    from printed_bash_check import prints_no_call
+    from printed_launch_hook import last_next_call
+    from transcripts import find
+
+    output = stdout + stderr
+    if prints_no_call(output):
+        previous = last_next_call(entries_back(find(operator)), operator, Action.NEXT)
+        report = NEXT_FAILED.format(agent=operator)
+        if previous is None or report not in previous.text:
+            step = Send(COORDINATOR, report + "\n" + output.strip(), "next-failed")
+            print(AFTER_TIMEOUT, flush=True)
+            print(printed(step, operator, Path()), flush=True)
+            return 1
     sys.stdout.write(stdout)
     sys.stderr.write(stderr)
     return status
@@ -542,7 +582,8 @@ def serve() -> None:
         if (kept_reads.fresh_code("operate") != code
                 or os.environ.get(CODE_ENV, code) != code):
             kept_reads.flush()
-            raise Unavailable("code changed during resident startup; no state read was started")
+            script_calls.record()
+            os._exit(CODE_CHANGED)
         script_calls.record()
         with socket.socket(socket.AF_UNIX) as listener:
             path.unlink(missing_ok=True)

@@ -77,5 +77,11 @@ STATE_READ_TIMEOUT = mctx("State read/planning failed for agent {agent}: the for
 id (the editor's for `review`)."""
 
 
+NEXT_FAILED = mctx("A call of `operate.py next` failed for agent {agent} and printed no call. "
+                   "The output of the call is below.")
+"""The report to the coordinator of a failed call of `next` that printed no
+call, with the caller's id, printed after `AFTER_TIMEOUT`."""
+
+
 AFTER_TIMEOUT = mctx("Send the failure below to the coordinator, then run the command again "
                      "to continue your procedure.")

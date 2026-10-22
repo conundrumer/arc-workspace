@@ -20,13 +20,15 @@ coordinator's waits, the launcher's call of the command's `wait` in the
 background and the end of its turn (`steps.Wait`), and, once that call has
 completed or a message waits, the step as after `FOR_CONTEXT`. An operator's
 end with no final reply after a failed call of `next` that printed no call
-gives the launcher's final reply, with that call's output, and launches no
-other operator until a message of the coordinator's reaches the launcher
-after that reply. Any other end with no final reply gives the step as
-after `FOR_CONTEXT` too, other than where the operator launched before it
-also ended with none and each
-of the two ended within `WAIT_SECONDS_IDLE` of its launch. Any other text,
-and an operator's end with none in that case, goes to the coordinator,
+gives a message to the coordinator with that call's output and the
+operator's agent id, then the step as after `FOR_CONTEXT`, other than where
+the operator launched before it also ended with none and each of the two
+ended within `WAIT_SECONDS_IDLE` of its launch: then it gives the launcher's
+final reply, with that call's output, and launches no other operator until a
+message of the coordinator's reaches the launcher after that reply. Any
+other end with no final reply gives the step as after `FOR_CONTEXT` too,
+other than in that same case. Any other text, and an operator's end with
+none in that case, goes to the coordinator,
 after a line that gives the operator's agent id, and the launcher then
 gives its final reply, unless a message of the coordinator's waits for the
 next operator, which gives the next operator's launch, or, past the
@@ -84,6 +86,8 @@ CARRIED = mctx("Operator {operator} ended with the final reply below.")
 NO_REPLY = mctx("Operator {operator} ended with no final reply.")
 FAILED = mctx("Operator {operator} ended after its last call of `operate.py next` failed with "
               "the output below, which prints no call, so I launch no other operator.")
+RELAUNCHED = mctx("Operator {operator} ended after its last call of `operate.py next` failed with "
+                  "the output below, which prints no call. I launch the next operator.")
 
 
 def sent(relay: Relay, to: str, message: str, since: float) -> bool:
@@ -182,7 +186,12 @@ def next_step(relay: Relay) -> Step:
     if run.final is not None and (for_context(run.final) or for_wait(run.final)):
         return after(relay, lines)
     if run.final is None and run.failed is not None:
-        return failed_step(relay, run, lines)
+        if len(relay.runs) > 1 and quick(run) and quick(relay.runs[-2]):
+            return failed_step(relay, run, lines)
+        text = RELAUNCHED.format(operator=run.agent_id) + "\n" + run.failed
+        if not sent(relay, COORDINATOR, text, run.launched):
+            return Send(COORDINATOR, text, f"relaunched {run.agent_id}")
+        return after(relay, lines)
     if run.final is None and not (len(relay.runs) > 1 and quick(run) and quick(relay.runs[-2])):
         return after(relay, lines)
     carried = (CARRIED.format(operator=run.agent_id) + "\n" + run.final if run.final is not None
