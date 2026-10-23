@@ -4,6 +4,11 @@
     "**/programs/witnesses/*.wit.json": "arc-task-json",
     "*.arcpatch": "arc-patch"
   },
+  "files.watcherExclude": {
+    "**/.claude/worktrees/**": true,
+    "**/.venv/**": true,
+    "**/.cache/**": true
+  },
   "editor.tokenColorCustomizations": {
     "textMateRules": [
       { "scope": "constant.numeric.arc.0", "settings": { "foreground": "#6E6E6E", "fontStyle": "bold" } },
