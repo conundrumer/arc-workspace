@@ -192,8 +192,6 @@ out(P, Col, [Dc, S, K, O, C, Kl], [Ko, Lo]) :-
 // The legends of each reading and the stamps they write, under every key
 // order and every reading order.
 .type Shape = [id: Ident]
-.type KeyScan = [dc: DominoColors, s: KeySite, id: Ident, corner: DiagDir, axis: Axis]
-.type Scan = [corner: DiagDir, axis: Axis]
 
 // @claim legend-shape
 .init shape = Components8<Unit>
@@ -270,47 +268,41 @@ key_domino(Dc, $AnchorTouch(), Id, A, N, F) :-
 legend(Dc, S, $EveryKey(), nil, Id, A, N, F) :- key_domino(Dc, S, Id, A, N, F).
 
 // --- $FirstKey ---
-// The near cells of a shape's keys, in each order.
-// @claim key-site
-.init key_scan = LexOrder<KeyScan>
-key_scan.corner([Dc, S, Id, C, A], C) :- key_scan.cell([Dc, S, Id, C, A], _).
-key_scan.axis([Dc, S, Id, C, A], A) :- key_scan.cell([Dc, S, Id, C, A], _).
-key_scan.cell([Dc, S, Id, C, A], N) :-
-    key_domino(Dc, S, Id, _, N, _), diag_dir_elem(C), axis_elem(A).
+// Another key of shape Id has its near cell before N, under a key order in
+// use.
+.decl later_key(dc: DominoColors, s: KeySite, c: DiagDir, a: Axis, id: Ident, n: Position)
+later_key(Dc, S, C, A, Id, N) :-
+    params.key_order(C, A), diag_dirs(C, A, D1, D2),
+    key_domino(Dc, S, Id, _, N, _), key_domino(Dc, S, Id, _, N2, _),
+    ( nearer(D1, N2, N) ; same_dist(D1, N2, N), nearer(D2, N2, N) ).  // N2 comes first
 
 // The first key of each shape under each key order in use.
 legend(Dc, S, $FirstKey(), [C, A_k], Id, A, N, F) :-
-    params.key_order(C, A_k), key_scan.first([Dc, S, Id, C, A_k], N),
-    key_domino(Dc, S, Id, A, N, F).
+    params.key_order(C, A_k), key_domino(Dc, S, Id, A, N, F),
+    !later_key(Dc, S, C, A_k, Id, N).
 
 // --- $ScanOrder ---
-// The grid's cells, in each order.
-// @claim stamp
-.init layer = LexOrder<Scan>
-layer.corner([C, A], C) :- layer.cell([C, A], _).
-layer.axis([C, A], A) :- layer.cell([C, A], _).
-layer.cell([C, A], P) :- in(P, _), diag_dir_elem(C), axis_elem(A).
-
-// Some cell of shape Id comes before P.
+// Some cell of shape Id comes before P, in the order from corner C with
+// primary axis A.
 .decl trailing(c: DiagDir, a: Axis, id: Ident, p: Position)
 trailing(C, A, Id, P) :-
-    shape.label($U(), P, Id), shape.label($U(), Q, Id),
-    layer.rank([C, A], Q, R1), layer.rank([C, A], P, R2), R1 < R2.
+    shape.label($U(), P, Id), shape.label($U(), Q, Id), diag_dirs(C, A, D1, D2),
+    ( nearer(D1, Q, P) ; same_dist(D1, Q, P), nearer(D2, Q, P) ).
 
-// The first cell of each shape.
+// The first cell of each shape, in each order.
 .decl lead(c: DiagDir, a: Axis, id: Ident, p: Position)
 lead(C, A, Id, P) :-
-    shape.label($U(), P, Id), layer.elem([C, A], P), !trailing(C, A, Id, P).
+    shape.label($U(), P, Id), diag_dir_elem(C), axis_elem(A), !trailing(C, A, Id, P).
 
 // A later legend also writes T.
 .decl buried(dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue,
              c: DiagDir, a: Axis, t: Position, id: Ident, n: Position)
 buried(Dc, S, K, Ko, C, A, T, Id, N) :-
     write(Dc, S, K, Ko, T, Id, N, _), write(Dc, S, K, Ko, T, Id2, N2, _),
-    lead(C, A, Id, P), lead(C, A, Id2, P2),
-    ( layer.rank([C, A], P, R1), layer.rank([C, A], P2, R2), R1 < R2   // a later shape
-    ; Id = Id2,                                                         // the same shape,
-      layer.rank([C, A], N, R1), layer.rank([C, A], N2, R2), R1 < R2   // a later near cell
+    lead(C, A, Id, P), lead(C, A, Id2, P2), diag_dirs(C, A, D1, D2),
+    ( nearer(D1, P, P2) ; same_dist(D1, P, P2), nearer(D2, P, P2)     // a later shape
+    ; Id = Id2,                                                       // the same shape,
+      ( nearer(D1, N, N2) ; same_dist(D1, N, N2), nearer(D2, N, N2) ) // a later near cell
     ).
 
 // --- $EveryKey ---

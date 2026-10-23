@@ -90,13 +90,6 @@ reading_elem([D, A]) :- diag_dir_elem(D), axis_elem(A).
 congruent.pattern_member(O, [P_inner, Col]) :- shape(O, P_inner, Col).
 congruent.observed_member(O, [P_inner, Col]) :- shape(O, P_inner, Col).
 
-// The order a reading puts the positions in: where the pieces sit, and
-// where they may go.
-.init reads = LexOrder<Reading>
-reads.cell(R, P) :- reading_elem(R), ( bbox.box(_, P) ; occ.occurrence(_, P) ).
-reads.corner([D, A], D) :- reading_elem([D, A]).
-reads.axis([D, A], A) :- reading_elem([D, A]).
-
 // --- the pruning ---
 
 // A candidate stands while the other pieces still find a joint placement
@@ -106,12 +99,14 @@ reads.axis([D, A], A) :- reading_elem([D, A]).
 pruning.cand(R, [O, P_spot], O) :- reading_elem(R), occ.occurrence(O, P_spot).
 pruning.conflict(R, Cd, Cd2) :-
     reading_elem(R), covers(Cd, P, _), covers(Cd2, P, _).  // over one cell
-pruning.conflict(R, [O, P_spot], [O2, P_spot2]) :-
-    congruent.equals(O, O2), O != O2,                               // interchangeable pieces
-    bbox.box(O, B), bbox.box(O2, B2),
-    reads.rank(R, B, N1), reads.rank(R, B2, N2), N1 < N2,           // O sits first
+pruning.conflict([C, A], [O, P_spot], [O2, P_spot2]) :-
+    congruent.equals(O, O2), O != O2,                                 // interchangeable pieces
+    bbox.box(O, B), bbox.box(O2, B2), diag_dirs(C, A, D1, D2),
+    ( nearer(D1, B, B2) ; same_dist(D1, B, B2), nearer(D2, B, B2) ),  // O sits first
     occ.occurrence(O, P_spot), occ.occurrence(O2, P_spot2),
-    reads.rank(R, P_spot2, N3), reads.rank(R, P_spot, N4), N3 < N4. // but takes the later spot
+    ( nearer(D1, P_spot2, P_spot)                                     // but takes the later spot
+    ; same_dist(D1, P_spot2, P_spot), nearer(D2, P_spot2, P_spot)
+    ).
 
 // --- the output ---
 
