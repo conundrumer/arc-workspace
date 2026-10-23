@@ -26,10 +26,14 @@
     //     @relaxed blanked-patches
   | HoleFromPeriod {}
     // @scene blanked-patches: no cell is known to be blank
+    // @scene periodic-pattern: the period on each axis is that of the tile,
+    //  among those shorter than the grid at which a color holds more than half
+    //  of every class, that states the grid in the fewest things: one color for
+    //  each class, and each cell that lacks its class's color; undefined where
+    //  two such tiles differ on an axis, or where no tile gives every class
+    //  such a color
     // @rule restore-pattern: each cell takes the color that holds more than
-    //  half the cells of its class, under the tile of least area at which every
-    //  class has such a color; undefined where two tiles tie, or where no tile
-    //  shorter than the grid gives every class such a color
+    //  half the cells of its class
     // @witness sparse-dots: variant concept
     // @witness blank-majority: variant concept
   | ClassMode {}
@@ -76,7 +80,9 @@
 .type DamageColor = [d: Damage, col: Color]
 // A line of axis a, among the lines k apart on that axis.
 .type PeriodLine = [a: Axis, k: number, l: Position]
-// A tile of the search: its extent k1 on axis a, and k2 on the other axis.
+// A tile of the search: its extent k1 on axis a, and k2 on the other axis,
+// with a the axis of its shorter extent, or either axis where the two are
+// equal.
 .type Tile = [a: Axis, k1: number, k2: number]
 // A class of the tile search: the tile, and the line class that the class's
 // cells lie in on axis a and on the other axis.
@@ -210,9 +216,10 @@ line_class.edge([A, K, L], [A, K, L2]) :-
 .decl tile_place(k: TileClass, p: Position)
 tile_place([[A, K1, K2], Id1, Id2], P) :-
     in(P, _), perp(A, A2), split(P, A, L1, L2),
-    line_class.id([A, K1, L1], Id1), line_class.id([A2, K2, L2], Id2).
+    line_class.id([A, K1, L1], Id1), line_class.id([A2, K2, L2], Id2),
+    K1 <= K2.                                                   // a: the shorter extent's axis
 
-// @claim restore-pattern
+// @claim periodic-pattern
 .init tile_mode = Mode<TileClass, Color, Position>
 tile_mode.item(K, Col, P) :- tile_place(K, P), in(P, Col).
 
@@ -221,7 +228,7 @@ tile_mode.item(K, Col, P) :- tile_place(K, P), in(P, Col).
 tile_vote(K, Col, P, Col2) :- tile_mode.mode(K, Col), tile_place(K, P), in(P, Col2).
 
 // The commonest color of a class against the class's other cells.
-// @claim restore-pattern
+// @claim periodic-pattern
 .init tile_major = Excess<TileClassColor, Position>
 tile_major.plus([K, Col], P) :- tile_vote(K, Col, P, Col).
 tile_major.minus([K, Col], P) :- tile_vote(K, Col, P, Col2), Col2 != Col.
@@ -234,18 +241,38 @@ major_class(K) :- tile_major.excess([K, _], _).
 .decl split_tile(t: Tile)
 split_tile(T) :- tile_place(K, _), K = [T, _, _], !major_class(K).
 
-// @claim restore-pattern
-.init tile_area = Tally<Tile, TileClass>
-tile_area.item(T, K) :- tile_place(K, _), K = [T, _, _].
+// The cells of each tile's own frame, one for each of its classes.
+.init tile_frame = Frame2D<Tile>
+tile_frame.extent(T, A2, K) :-
+    major_class([T, _, _]), !split_tile(T), T = [A, K1, K2],
+    ( A2 = A, K = K1
+    ; perp(A, A2), K = K2
+    ).
 
-// @claim restore-pattern
+// The things that state the grid under each tile: a color for each cell of
+// the tile, and each cell of the grid that lacks its class's color. A cell of
+// the tile's frame is shorter than the grid on each axis, so no cell of the
+// grid is one.
+// @claim periodic-pattern
+.init tile_things = Tally<Tile, Position>
+tile_things.item(T, P_intile) :- tile_frame.cell(T, P_intile).
+tile_things.item(T, P_grid) :-
+    tile_vote(K, Col, P_grid, Col2), Col2 != Col,                     // lacks its class's color
+    K = [T, _, _], !split_tile(T).
+
+// @claim periodic-pattern
 .init least_tile = ArgExtremes<Unit, Tile>
-least_tile.cand($U(), T, N) :- tile_area.tally(T, N), !split_tile(T).
+least_tile.cand($U(), T, N) :- tile_things.tally(T, N), !split_tile(T).
 
-// The extent on each axis of the tiles of least area.
-// @claim restore-pattern
+// The extent on each axis of the tiles that state the grid in the fewest
+// things.
+// @claim periodic-pattern
 .init one_tile = Unanimous<Axis, number>
-one_tile.item(A, K) :- least_tile.low($U(), [A, K, _], _).
+one_tile.item(A, K) :-
+    least_tile.low($U(), T, _),
+    ( T = [A, K, _]
+    ; T = [A2, _, K], perp(A2, A)
+    ).
 
 period($ClassMode(), A, K) :- one_tile.value(A, K).
 
