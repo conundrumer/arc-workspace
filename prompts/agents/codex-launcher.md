@@ -26,7 +26,9 @@ tools: Bash, Agent, SendMessage, TaskStop
     ```
     uv run python scripts/codex_agent.py <role> <scratch> <brief> <model> <effort> --agent-id <your agent id> --agent-type <agent-type> --cwd <worktree> --operator <operator> --subject <subject> --identity <identity> --report <report> --store <store> < /dev/null
     ```
-    - `<your agent id>` is the id the line `Your agent id is <id>.` in your context gives, `<brief>` the file your prompt has you read, `<scratch>` the scratch directory your brief gives, or else a new directory `codex-<role>-<brief name>` under it, where `<brief name>` is the brief file's name without `.md`, and `<worktree>` the worktree your brief gives. Leave out `--cwd` where your brief gives no worktree.
+    - `<your agent id>` is the id the line `Your agent id is <id>.` in your context gives, `<brief>` the file your prompt has you read, `<scratch>` the scratch directory your brief gives, or else `<store>/scratch/<your agent id>`, and `<worktree>` the worktree your brief gives. Leave out `--cwd` where your brief gives no worktree.
+        + xref: scripts/codex_agent.py:enrollment
+        * comment: Change 11-3796, Intent: the user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-23T18:18:33Z: "like, given their agent id, make a subdir of their id".
     - Use the enrollment data for the enrollment arguments.
         + xref: scripts/codex_agent.py:work_parser, scripts/codex_agent.py:main
     - Give each launch command its own Bash call, with literal arguments and an absolute path for `<scratch>`, and use that path on each call.

@@ -2,7 +2,7 @@
 * comment: when editing this doc
     - Codex agents receive [Native tools](#native-tools) with their rendered role instructions, and read each other section when that section's act is required.
     - Acts, each with its section:
-        - Reading an assignment and choosing a tool: [Native tools](#native-tools).
+        - Reading an assignment, choosing a tool and placing temporary files: [Native tools](#native-tools).
         - Launching an agent: [Launches](#launches).
         - Sending a message or changing a child's assignment: [Messages](#messages).
         - Waiting for children and accepting their reports: [Completion](#completion).
@@ -13,6 +13,9 @@
 
 ## Native tools
 - This render leaves out the linked procedures.
+- Write each temporary file you make in your scratch directory, and in no other directory.
+    + xref: scripts/codex_ticket.py:NATIVE_IDENTITY
+    * comment: Change 11-3796, Intent and Grounds: the user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-23T18:18:33Z: "we need to give codex their own scratchpads and make it clear". Codex root a57f8628a40d36948 in that session wrote its listings to `/tmp/cost-audit-*` and overwrote two existing files, while its first input gave its scratch directory.
 - Run each `scripts/codex_ticket.py` command in the main tree.
 - Use your assignment's operations agent id in commands that take an agent id, and native agent ids in native tools.
 - For an Agent call your role's documents give, read [Launches](#launches).
