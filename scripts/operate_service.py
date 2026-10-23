@@ -756,7 +756,8 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
         connection.sendall(TAKEN)
     with read_interrupts.request_scope(check):
         token = CURRENT.set(current)
-        cutoff = state_assembly.REQUEST_STARTED.set(current.started)
+        cutoff = state_assembly.REQUEST_CUTOFF.set(
+            state_assembly.Cutoff(current.operator, current.started) if kind == Kind.NEXT else None)
         codex_mode.enabled.cache_clear()
         trial_mode.enabled.cache_clear()
         script_calls.start_request(str(checkout.ROOT), "operate.py", ["review" if kind == Kind.REVIEW else "next"],
@@ -851,7 +852,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                 pending.running = None
             script_calls.record()
             CURRENT.reset(token)
-            state_assembly.REQUEST_STARTED.reset(cutoff)
+            state_assembly.REQUEST_CUTOFF.reset(cutoff)
         return keep and kept_reads.fresh_code("operate") == code
 
 

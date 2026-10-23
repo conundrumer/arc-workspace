@@ -84,3 +84,17 @@ def test_request_refuses_nonfinite_deadline(kind):
     with pytest.raises(ValueError):
         service.request_message({"kind": kind, "subject": "editor", "started": 1,
                                  "deadline": float("nan")})
+
+
+def test_cutoff_closes_only_entries_of_the_operator_whose_next_it_bounds():
+    state_assembly = script("state_assembly")
+    from operations.journal import Entry
+    from operations.state import Tool
+    entry = Entry("k", "k", "d", "o", "parent", 100.0, Tool.SEND_MESSAGE, "main", "text", None, None, None)
+    cutoff = state_assembly.Cutoff("parent", 150.0)
+    open_work, ended_work = (lambda: True), (lambda: False)
+    assert not state_assembly.may_still_call(entry, cutoff, open_work)
+    assert state_assembly.may_still_call(entry, state_assembly.Cutoff("editor", 150.0), open_work)
+    assert not state_assembly.may_still_call(entry, state_assembly.Cutoff("editor", 150.0), ended_work)
+    assert state_assembly.may_still_call(entry, None, open_work)
+    assert not state_assembly.may_still_call(entry, None, ended_work)

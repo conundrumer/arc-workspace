@@ -7,7 +7,7 @@ monitor's steps read (`monitor_reads`)."""
 import atexit
 import time
 from contextvars import ContextVar
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -51,6 +51,7 @@ from session_records import DUE_SINCE, UNWAITED_SINCE, record_read
 from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
 from operations import pacing
+from operations.journal import Entry
 from operations.pacing import Usage
 from operations.directives import given_again, named, pace
 from operations.taking import allowed
@@ -73,14 +74,33 @@ from holder_reads import holders_read, read_held, with_quiet_holders
 from operator_state import (EndsRead, closes_of, ends_read, not_given, stuck_read, undecided_lines, watched_read,
                             work_of)
 
-STARTED = time.time()
-REQUEST_STARTED: ContextVar[float] = ContextVar("request_started", default=STARTED)
-"""The call cutoff for journal entries, with process start for standalone reads."""
+
+@dataclass(frozen=True)
+class Cutoff:
+    """The start of the request that serves the `next` call of `operator`."""
+    operator: str
+    started: float
+
+
+REQUEST_CUTOFF: ContextVar[Cutoff | None] = ContextVar("request_cutoff", default=None)
+"""The call cutoff for journal entries: set only while a request serves a
+`next` call, and unset for every other read."""
 
 DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.CONSOLE, ReaderName.SURVEY,
                         ReaderName.WORKFLOW})
 """The readers of the deprecated mechanisms, which no standing doc review
 reads."""
+
+
+def may_still_call(entry: Entry, cutoff: Cutoff | None, work_is_open: Callable[[], bool]) -> bool:
+    """Whether the operator of `entry` may still make its call. In the read
+    that serves the `next` call of that operator, an entry given before
+    that request began is one the operator ran `next` again before it made;
+    in every other read the operator's transcript (`work_is_open`) shows
+    whether its work ended."""
+    if cutoff is not None and entry.operator == cutoff.operator:
+        return entry.given >= cutoff.started
+    return work_is_open()
 
 
 def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState]:
@@ -116,8 +136,8 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     paths = dict(runs.runs)
     journal, journaled = step_journal.read(
         scratch(session), ops.calls,
-        lambda e: e.given >= REQUEST_STARTED.get() if e.operator == me
-        else e.operator in paths and work_open(paths[e.operator], undecided),
+        lambda e: may_still_call(e, REQUEST_CUTOFF.get(), lambda: e.operator in paths
+                                 and work_open(paths[e.operator], undecided)),
         time.time(), since is None)
     ops = replace(ops, calls=(*ops.calls, *step_journal.run_calls(
         journaled, commit_subjects(tree), undecided)))
