@@ -162,7 +162,7 @@ def can_report(entry: Entry) -> bool:
     return bool(entry.get("timestamp")) and entry.get("type") != "assistant"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class AgentEntry:
     """What an entry of session transcripts that can give a report
     (`can_report`) gives of one agent: its time, its reports
@@ -266,7 +266,7 @@ def reports(path: Path, since: float, undecided: list[str]) -> list[Report] | No
                          since, aid, call, undecided)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ReportLine:
     """A line that can give a report or end sign, and its matching ids."""
     line: int

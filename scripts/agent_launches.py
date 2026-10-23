@@ -126,7 +126,7 @@ def runs_under(path: Path, pending: Collection[str] = frozenset(),
     return list(out.values())
 
 
-@dataclass
+@dataclass(slots=True)
 class Launch:
     """An agent a run launched: its agent id, where the run's transcript
     gives it, its transcript, where one gives the call as its launch, the

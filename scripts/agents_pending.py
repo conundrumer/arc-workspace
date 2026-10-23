@@ -48,7 +48,7 @@ def notified_after(found: list[tuple[Path, Launch]],
     return out
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SignEntry:
     """What an entry that can give a notification of an agent or a sign of
     its turn (`may_sign`) gives of them: its time, the ids it notifies

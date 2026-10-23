@@ -40,7 +40,7 @@ def with_facts[F: Sized](session: Path,
     return tuple((p, t, found) for p, t in written(session) if len(found := facts(p)))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Fact[F]:
     """A fact of a transcript of a session (`with_facts`): the place of that
     transcript among the session's transcripts, the fact's own place among
