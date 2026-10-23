@@ -1,7 +1,7 @@
 + lib: none
 + document-size-budget: 3200
 * comment: when editing this doc
-    - The load watch session reads this document whole, by the link of the skill [Load watch](.claude/skills/load-watch/SKILL.md), when the user invokes `/load-watch` on it.
+    - The load watch session reads this document whole, by the link of [Load watch](prompts/agents/notes/coordinator.md#load-watch), when the user invokes `/load-watch` on it.
     - Acts, each with its section:
         - Running the load monitor and responding to its exit: [Load watch](#load-watch).
         - Sending each owning session its part of a report, and settling a rejection: [Reports and rulings](#reports-and-rulings).

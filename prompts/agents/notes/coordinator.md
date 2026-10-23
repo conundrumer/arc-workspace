@@ -13,6 +13,7 @@
         - Launching passes, sending operators lines, batching feedback, and making and merging changes: [Passes on a task](prompts/agents/notes/launching.md#passes-on-a-task), [Operators](prompts/agents/notes/launching.md#operators), [While the user gives feedback](prompts/agents/notes/launching.md#while-the-user-gives-feedback), [Making a change](prompts/agents/notes/changes.md#making-a-change), [Merging a change](prompts/agents/notes/changes.md#merging-a-change), [A denied merge](prompts/agents/notes/changes.md#a-denied-merge).
         - Acting in another agent's worktree: [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
         - Replying to a load incident report or a ruling from the load watch session: [Load incidents](prompts/agents/notes/load-incidents.md#load-incidents).
+        - Acting as the load watch session: [Load watch](prompts/agents/notes/load-watch.md).
         - Resuming the agents the usage limit stopped, once it lifts: [Usage limit watcher](#usage-limit-watcher).
         - Reporting to the user and bringing decisions: [Reports to the user](#reports-to-the-user), with [The user's part](prompts/agents/notes/decisions.md#the-users-part).
         - Cards and Codex: [Cards](prompts/agents/notes/cards.md#cards), [Codex](#codex).
@@ -51,6 +52,9 @@
 - When a load incident report or a ruling reaches you from the load watch session, read [Load incidents](prompts/agents/notes/load-incidents.md#load-incidents) before you reply to it.
 - Stop no process of another owner.
     * comment: The user's words, session 2384db39, 2026-10-17T19:54:37Z: "The short sighted thing is you being ok w killing other processes of my machine", and 19:58:47Z: "Processes have owners. If unowned, I am the owner. Owners are responsible for signals . Main sends signals", with "Go" at 19:59:44Z.
+
+## Load watch
+- Where the user invokes `/load-watch` on this session, read [Load watch](prompts/agents/notes/load-watch.md) whole, and act by it from then on.
 
 ## Usage limit watcher
 - Keep `uv run python scripts/limit_watch.py` running in the background: start it where none of yours runs, and again once you have acted on what it ends with.
