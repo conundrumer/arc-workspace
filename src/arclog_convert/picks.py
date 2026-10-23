@@ -509,8 +509,8 @@ class Rewriter:
         for u in confs:
             k, a, b = u.head.args
             vs = term_vars((u.head.args, u.body), set())
-            m1, s1 = self.unify([(key_s, k), (item_s, a)] if keyed else [(item_s, a)], vs, "")
-            m2, s2 = self.unify([(key_s, k), (item_s, b)] if keyed else [(item_s, b)], vs, "2")
+            m1, s1, _ = self.unify([(key_s, k), (item_s, a)] if keyed else [(item_s, a)], vs, "")
+            m2, s2, _ = self.unify([(key_s, k), (item_s, b)] if keyed else [(item_s, b)], vs, "2")
             body = fix_cmps(tsubst(tuple(u.body), {**s1, **s2}))
             first = [at(fill(m1, pat_s)), at(fill(m2, pat_s))]
             rest = list(body)
@@ -539,7 +539,7 @@ class Rewriter:
             pick.aparts.append((at(ident), at(m2), ne(slot_s, two(slot_s, only_slot))))
         def item_at(k, sl, x, taken: set[str], suffix: str):
             pairs = ([(key_s, k)] if keyed else []) + [(slot_s, sl), (item_s, x)]
-            m, s_ = self.unify(pairs, taken, suffix)
+            m, s_, _ = self.unify(pairs, taken, suffix)
             return at(fill(m, pat_s)), s_
         self.key_plain = not keyed or (self.record(ktype) is not None and self.plain(self.record(ktype))) \
             or not isinstance(self.types.get(((), ktype)), (AdtType, RecordType))
@@ -601,16 +601,39 @@ class Rewriter:
         return units
 
     def unify(self, pairs, taken: set[str], suffix: str):
-        """The binding of pattern variables by actual terms, and the
-        substitution that splits an actual variable spanning a record."""
+        """The binding of pattern variables by actual terms, the
+        substitution that splits an actual variable spanning a record, and
+        the pairs of actual terms that a repeated pattern variable meets and
+        that must be equal. Of two such terms, a variable that a split
+        introduced is replaced by the other one."""
         m: dict = {}
         s: dict = {}
+        eqs: list = []
+        made: set[str] = set()
+
+        def merge(a, b):
+            """Make the terms a (bound earlier) and b equal."""
+            if isinstance(b, Variable) and b.name in made:
+                old, new = b, a
+            elif isinstance(a, Variable) and a.name in made:
+                old, new = a, b
+            else:
+                eqs.append((a, b))
+                return
+            r = {old.name: new}
+            for d in (m, s):
+                for k in d:
+                    d[k] = tsubst(d[k], r)
+            eqs[:] = [tsubst(e, r) for e in eqs]
+            made.discard(old.name)
 
         def go(p, t):
             if isinstance(p, Variable):
                 if p.name in m and m[p.name] != t and not isinstance(t, Wildcard):
                     if isinstance(m[p.name], Wildcard):
                         m[p.name] = t
+                    else:
+                        merge(m[p.name], t)
                     return
                 m.setdefault(p.name, t)
                 return
@@ -623,6 +646,7 @@ class Rewriter:
                 if set(names) & taken:
                     names = [f"{t.name}_{v.lower()}" for v in ordered_vars(p)]
                 taken.update(names)
+                made.update(names)
                 rec = rebuild(p, iter(names))
                 s[t.name] = rec
                 go(p, rec)
@@ -635,7 +659,7 @@ class Rewriter:
                 m.setdefault(v, Wildcard())
         for p, t in pairs:
             go(p, t)
-        return m, s
+        return m, s, eqs
 
     def decl(self, name: str, cols, scope=()) -> RelationDecl:
         self.next_decl += 1
@@ -656,12 +680,14 @@ class Rewriter:
         else:
             return u
         subst: dict = {}
+        equal: list = []   # the equalities the read being converted needs
         taken = term_vars((u.head, u.body), set())
 
         def picked(k, s, x):
             pairs = ([(key_s, k)] if keyed else []) + ([(slot_s, s)] if s is not None else []) + [(item_s, x)]
-            m, s_ = self.unify(pairs, taken, "")
+            m, s_, eqs = self.unify(pairs, taken, "")
             subst.update(s_)
+            equal.extend(Comparison(ComparisonOperator.EQ, x, y, 0) for x, y in eqs)
             val = {v: fill(m, pat_s).get(v, Wildcard()) if not isinstance(spread[v], RecordTerm)
                    else tsubst(spread[v], fill(m, pat_s)) for v in cvars}
             args = tuple(val[v] if v else Wildcard() for v in (pick.fold or cvars))
@@ -675,6 +701,7 @@ class Rewriter:
                 if not (isinstance(l, AtomLiteral) and l.atom.relation.instances == path):
                     out.append(l)
                     continue
+                equal.clear()
                 a, rn = l.atom.args, l.atom.relation.name
                 if comp == "CoverForcing" and rn == "forced":
                     out.append(dc_replace(picked(a[0], None, a[1]), negated=l.negated))
@@ -696,6 +723,8 @@ class Rewriter:
                 else:
                     pick.notes.append(f"read {rn}")
                     out.append(l)
+                if not l.negated:
+                    out.extend(equal)
             return out
 
         body = prune_disj(tuple(map_lits(u.body, fn)))

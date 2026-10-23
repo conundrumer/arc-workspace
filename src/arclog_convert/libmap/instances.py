@@ -661,8 +661,9 @@ class Expander:
                     t = self.target(u, lit.atom, plans)
                     if t is not None:
                         rep = self.replacement(u, lit.atom, *t)
-                        if rep is not None and len(rep) > 1 and not lit.negated:
-                            out.extend(rep)   # the shape's literals, read as they stand
+                        if rep is not None and len(rep) > 1 and not lit.negated \
+                                and set(term_vars(rep, [])) <= set(term_vars(lit.atom.args, [])):
+                            out.extend(rep)   # the shape's literals, read as they stand, no label local to them
                             continue
                 out.append(mapped(lit, fn))
             return tuple(out)
