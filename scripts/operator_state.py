@@ -5,11 +5,14 @@ operators' agents, with the quiet and the stuck ones."""
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Any
 
 from filed_texts import filed_report, gone_line
 from monitor_reads import watched
 from open_agents import Listed, latest_write, turn_ended_idle
 from agent_ends import elsewhere_ended, ended_with, reply_to, stalled_reports
+from file_reads import names_in, stat_of
+from state_reads import DERIVED, state_cache
 from transcripts import launched_find
 from transcript_snapshots import SUBJECT_FAULTS
 
@@ -235,6 +238,50 @@ def attempt_facts(a: Agent, me: str, sends: Mapping[str, Call], undecided: list[
                         outlived=aid is not None and outlived(a, closes), elsewhere=elsewhere)
 
 
+class Unheld(Exception):
+    """A walk that binds a native assignment, which reads the store of its
+    Codex tickets as well, so no read of the launcher's files stands for it."""
+
+
+@state_cache(DERIVED)
+def walk_fault(path: Path) -> tuple[bool, str] | None:
+    """Why the walk of the saved Codex turns of the legacy launcher whose
+    transcript is at `path` (`codex_reads.walk_entries`) faults, as a pair
+    of whether it is the transcript that cannot be read, and the reason, or
+    None where the walk completes. It rests on the transcript and on the files of each
+    scratch directory of the launcher's Codex calls, so a launcher whose
+    walk completed gives that again, with no read of its transcript, while
+    those files are as they were. `Unheld` where a call binds a native
+    assignment."""
+    import codex_reads
+    from codex_ticket import Binding
+    from entry_reads import entries_forward
+    from run_reads import role_type
+
+    try:
+        entries = list(entries_forward(path))
+    except SUBJECT_FAULTS as exc:
+        return True, str(exc)
+    try:
+        kind = role_type(path)
+    except SUBJECT_FAULTS as exc:
+        return False, str(exc)
+    if kind is None:
+        return False, "the Codex role is unknown"
+    dirs = dict.fromkeys(d for e in entries for _, _, d in codex_reads.commands(e))
+    if any(Binding.read(d) is not None for d in dirs):
+        raise Unheld
+    for d in dirs:
+        stat_of(d)
+        for name in names_in(d):
+            stat_of(d / name)
+    try:
+        codex_reads.walk_entries(entries, kind)
+    except SUBJECT_FAULTS as exc:
+        return False, str(exc)
+    return None
+
+
 def codex_end(agent: str, home: Path | None = None) -> CodexRead:
     """An enrolled attempt ends with a current receipt or a terminal store state.
 
@@ -291,22 +338,32 @@ def codex_end(agent: str, home: Path | None = None) -> CodexRead:
     path = launched_find(agent)
     if path is None:
         return CodexRead(CodexEnd.DONE)
+    walked: list[dict[str, Any]] | None = None
     try:
         if agent_type(path) != CODEX_LAUNCHER:
             return CodexRead(CodexEnd.DONE)
-        entries = list(entries_forward(path))
+        try:
+            fault = walk_fault(path)
+        except Unheld:
+            fault, walked = None, list(entries_forward(path))
     except SUBJECT_FAULTS as exc:
         return unknown_read(str(exc), None, None, home)
+    if fault is not None and fault[0]:
+        return unknown_read(fault[1], None, None, home)
     try:
-        kind = role_type(path)
-        if kind is None:
-            raise ValueError("the Codex role is unknown")
-        codex_reads.walk_entries(entries, kind)
+        if fault is not None:
+            raise ValueError(fault[1])
+        if walked is not None:
+            kind = role_type(path)
+            if kind is None:
+                raise ValueError("the Codex role is unknown")
+            codex_reads.walk_entries(walked, kind)
         return CodexRead(CodexEnd.DONE)
     except SUBJECT_FAULTS as exc:
         why = str(exc)
     scratch = None
     try:
+        entries = list(entries_forward(path))
         dirs = [d for e in entries for _, _, d in codex_reads.commands(e)]
         if not dirs:
             return CodexRead(CodexEnd.DEAD, why)
