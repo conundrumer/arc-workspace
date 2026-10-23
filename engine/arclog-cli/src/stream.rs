@@ -19,10 +19,19 @@
 //! each solver's concept case, `--cases all` each case. A solver whose files
 //! do not read or whose cases do not check prints one line
 //! `<task_id>: <fault>`.
+//!
+//! With `--out <file>` as well, the corpus form writes the file one line per
+//! case that streams, in no fixed order: a JSON object
+//! `{"task": <task id>, "case": <case>, "tokens": <the array above>}`, where
+//! `<case>` is the spelling that `--case` takes, so the array equals what the
+//! one-solver form prints for that case.
 
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use arclog::check::{CheckCache, CheckedProgram, SolverClauses};
 use arclog::harness::{print_ended, read_corpus_solver, require_optimized_build, run_over_corpus, SolverResult};
@@ -34,7 +43,7 @@ use crate::concept_case::{case_spelled, check_case, check_cases};
 use crate::replay::decoded_cases;
 use crate::select::selected;
 
-const USAGE: &str = "usage: arclog-cli stream <solver path> [--case <name>]\n       arclog-cli stream --corpus <corpus-dir> [--cases concept|all] [<task_id> ...]";
+const USAGE: &str = "usage: arclog-cli stream <solver path> [--case <name>]\n       arclog-cli stream --corpus <corpus-dir> [--cases concept|all] [--out <file>] [<task_id> ...]";
 
 /// The subcommand on `args`, the arguments after its name.
 pub fn run(args: &[String]) -> ExitCode {
@@ -77,6 +86,11 @@ fn stream_json(path: &Path, case: Option<&str>) -> Result<String, String> {
     let program = check_case(resolved, &clauses, &mut CheckCache::default(), "the case")?;
     let vocabulary = Vocabulary::new(registry, &DecodeSettings::default());
     let stream = case_stream(&program, &vocabulary)?;
+    Ok(tokens_json(&stream, &vocabulary))
+}
+
+/// The JSON array of `stream`, one object per token.
+fn tokens_json(stream: &[(Token, Emitter)], vocabulary: &Vocabulary) -> String {
     let tokens: Vec<String> = stream
         .iter()
         .map(|(token, emitter)| {
@@ -88,7 +102,7 @@ fn stream_json(path: &Path, case: Option<&str>) -> Result<String, String> {
             format!("{{\"id\":{id},\"emitter\":\"{emitter}\"}}")
         })
         .collect();
-    Ok(format!("[{}]", tokens.join(",")))
+    format!("[{}]", tokens.join(","))
 }
 
 /// The token stream of `program`, or the writer's fault.
@@ -101,9 +115,16 @@ fn run_corpus(args: &[String]) -> ExitCode {
     if let Err(code) = require_optimized_build() {
         return code;
     }
-    let Some((corpus, all, task_ids)) = parse_corpus(args) else {
+    let Some((corpus, all, out, task_ids)) = parse_corpus(args) else {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
+    };
+    let sink = match out.map(|path| File::create(&path).map(BufWriter::new).map_err(|error| format!("{path}: {error}"))).transpose() {
+        Ok(file) => file.map(Mutex::new),
+        Err(error) => {
+            eprintln!("the stream file does not open: {error}");
+            return ExitCode::from(2);
+        }
     };
     let selected = selected(&task_ids, &[], Path::new("")).expect("a selection by task id alone reads no file");
     let streamed = AtomicUsize::new(0);
@@ -114,7 +135,7 @@ fn run_corpus(args: &[String]) -> ExitCode {
             if selected.as_ref().is_some_and(|ids| !ids.contains(&solver.task_id)) {
                 return SolverResult::Pass;
             }
-            let lines = match stream_lines(Path::new(&corpus), &solver.task_id, all, &streamed, &faulted) {
+            let lines = match stream_lines(Path::new(&corpus), &solver.task_id, all, sink.as_ref(), &streamed, &faulted) {
                 Ok(lines) => lines,
                 Err(fault) => vec![format!("{}: {fault}", solver.task_id)],
             };
@@ -130,16 +151,23 @@ fn run_corpus(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    if let Some(sink) = sink {
+        if let Err(error) = sink.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner()).flush() {
+            eprintln!("the stream file does not write: {error}");
+            return ExitCode::FAILURE;
+        }
+    }
     println!("corpus: {} cases streamed, {} cases whose stream faults", streamed.load(Ordering::Relaxed), faulted.load(Ordering::Relaxed));
     if report.failures.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
 
-/// The corpus directory, whether `--cases all` is given, and the task ids,
-/// or `None` for arguments of another form.
-fn parse_corpus(args: &[String]) -> Option<(String, bool, Vec<String>)> {
+/// The corpus directory, whether `--cases all` is given, the `--out` file,
+/// and the task ids, or `None` for arguments of another form.
+fn parse_corpus(args: &[String]) -> Option<(String, bool, Option<String>, Vec<String>)> {
     let mut args = args.iter();
     let corpus = args.next()?.clone();
     let mut all = false;
+    let mut out = None;
     let mut task_ids = Vec::new();
     while let Some(arg) = args.next() {
         if arg == "--cases" {
@@ -148,17 +176,20 @@ fn parse_corpus(args: &[String]) -> Option<(String, bool, Vec<String>)> {
                 "all" => true,
                 _ => return None,
             };
+        } else if arg == "--out" {
+            out = Some(args.next()?.clone());
         } else {
             task_ids.push(arg.clone());
         }
     }
-    Some((corpus, all, task_ids))
+    Some((corpus, all, out, task_ids))
 }
 
 /// The line of each case of the solver `id` of `corpus`, the concept case or
 /// every case, with the counts of streams and of faults taken into
-/// `streamed` and `faulted`; or the fault that stops the solver's setup.
-fn stream_lines(corpus: &Path, id: &str, all: bool, streamed: &AtomicUsize, faulted: &AtomicUsize) -> Result<Vec<String>, String> {
+/// `streamed` and `faulted`, and each stream that succeeds written to `sink`
+/// where given; or the fault that stops the solver's setup.
+fn stream_lines(corpus: &Path, id: &str, all: bool, sink: Option<&Mutex<BufWriter<File>>>, streamed: &AtomicUsize, faulted: &AtomicUsize) -> Result<Vec<String>, String> {
     let solver = read_corpus_solver(corpus, id).ok_or("the solver's files do not read")?;
     let registry = Registry::get();
     let cases = resolve_cases(&solver, registry);
@@ -166,22 +197,31 @@ fn stream_lines(corpus: &Path, id: &str, all: bool, streamed: &AtomicUsize, faul
     let wanted = decoded_cases(&cases, all);
     let programs = check_cases(&cases, &clauses, &mut CheckCache::default(), &|name| wanted.contains(name))?;
     let vocabulary = Vocabulary::new(registry, &DecodeSettings::default());
-    let lines = programs
-        .iter()
-        .map(|(name, program)| {
-            let outcome = match case_stream(program, &vocabulary) {
-                Ok(stream) => {
-                    streamed.fetch_add(1, Ordering::Relaxed);
-                    let model = stream.iter().filter(|(_, emitter)| *emitter == Emitter::Model).count();
-                    format!("{} tokens, {model} written by the model", stream.len())
+    let mut lines = Vec::new();
+    for (name, program) in &programs {
+        let outcome = match case_stream(program, &vocabulary) {
+            Ok(stream) => {
+                streamed.fetch_add(1, Ordering::Relaxed);
+                if let Some(sink) = sink {
+                    write_stream(sink, id, &case_spelled(name), &tokens_json(&stream, &vocabulary))?;
                 }
-                Err(fault) => {
-                    faulted.fetch_add(1, Ordering::Relaxed);
-                    fault
-                }
-            };
-            format!("{id} {}: {outcome}", case_spelled(name))
-        })
-        .collect();
+                let model = stream.iter().filter(|(_, emitter)| *emitter == Emitter::Model).count();
+                format!("{} tokens, {model} written by the model", stream.len())
+            }
+            Err(fault) => {
+                faulted.fetch_add(1, Ordering::Relaxed);
+                fault
+            }
+        };
+        lines.push(format!("{id} {}: {outcome}", case_spelled(name)));
+    }
     Ok(lines)
+}
+
+/// Writes to `sink` the line of the stream `tokens` of the case `case` of
+/// the solver `task`.
+fn write_stream(sink: &Mutex<BufWriter<File>>, task: &str, case: &str, tokens: &str) -> Result<(), String> {
+    let line = format!("{{\"task\":{},\"case\":{},\"tokens\":{tokens}}}\n", serde_json::Value::from(task), serde_json::Value::from(case));
+    let mut file = sink.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    file.write_all(line.as_bytes()).map_err(|error| format!("the stream file does not write: {error}"))
 }
