@@ -13,8 +13,9 @@
 * inline: ../../docs/handbook/procedure.md#analyze-after-the-concept
 
 ## Proposers
-- Each proposer, with the column types of its `propose` relation and what it derives.
+- Each proposer, with the column types of its `propose` relation and what it derives from the examples it reads; under a `@derive` branch it reads one input and no output.
     + xref: src/handbook/listings.py:Listing.PROPOSERS, src/handbook/listings.py:_proposer_lines
+    * comment: Observed misread, a rewording of the words the reader misread: the transcript review a03d91106af718c5a of the Analyze pass on e872b94a, in ticket 17-70, read the listing's "a color in every input and no train output" for VanishedColor against the task's train outputs, where a `@derive` branch gives the proposer none, and filed the pass's correct `shape_color=VanishedColor` report as wrong.
 * text: proposers
 
 ## Keywords
