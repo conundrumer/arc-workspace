@@ -153,11 +153,11 @@
 - A default can be undone where git or the ticket tracker reverses its whole effect, such as a merge to `master`, a ticket's move or a filed ticket, and cannot where it sends anything out of the session, deletes work that is not in git, or rewrites git history. Where you cannot tell which holds, it cannot.
     * comment: Without the instances, a coordinator trial of doc reviewer ab593b418d23f9831 on change 6-688, agent a241fd876fa112d54, judged a merge of change 6-700 one it could not tell git reverses, from what `merge_change.py` does beyond the commit, and started no timer.
 - Say in each decision whether its default can be undone, and where it can, that it goes ahead at the end of the delay, with the time that delay ends.
-- The delay is 30 minutes from your first reply, since the user's last message, that gives a decision whose default can be undone. End that reply's turn by running `uv run python scripts/agent_timer.py start budget "$CLAUDE_CODE_SESSION_ID" 1800` in the background.
+- The delay is 30 minutes from your first reply, since the user's last message, that gives a decision. End that reply's turn by running `uv run python scripts/agent_timer.py start budget "$CLAUDE_CODE_SESSION_ID" 1800` in the background.
     + xref: scripts/agent_timer.py:Kind.BUDGET
 - At the user's next message, run `uv run python scripts/agent_timer.py stop budget "$CLAUDE_CODE_SESSION_ID"`.
     + xref: scripts/agent_timer.py:Action.STOP
-- When that start completes and its output ends with `timer completed`, apply the default of each waiting decision that can be undone, and until the user's next message, apply at once the default of each later decision that can be undone, in place of bringing it to the user. Where its output ends otherwise, apply no default.
+- When that start completes and its output ends with `timer completed`, the user is away until their next message: apply the default of each waiting decision that can be undone, and until the user's next message, apply at once the default of each later decision that can be undone, in place of bringing it to the user. Where its output ends otherwise, apply no default.
     + xref: scripts/agent_timer.py:start
 - In your reply to the user's first message after a default went ahead with no message of the user, list each such default, with how to undo it, and with no `**Blocked on you.**` label.
 
