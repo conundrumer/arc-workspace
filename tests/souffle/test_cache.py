@@ -36,22 +36,23 @@ def test_a_clause_is_in_the_key_and_a_comment_is_not(tmp_path: Path):
     assert _rows(engine, text, tmp_path, {IN: ((10,),)}) == ((11,),)
     edited = text.replace("X + 1", "X + 2")
     assert _rows(engine, edited, tmp_path, {IN: ((10,),)}) == ((12,),)
-    stored = sorted((tmp_path / "cache").glob("*.json.z"))
+    stored = sorted((tmp_path / "cache").glob("*/*.json.z"))
     commented = "// a comment\n\n" + edited.replace(".\n", ". // why\n")
     assert _rows(engine, commented, tmp_path, {IN: ((10,),)}) == ((12,),)
-    assert sorted((tmp_path / "cache").glob("*.json.z")) == stored
+    assert sorted((tmp_path / "cache").glob("*/*.json.z")) == stored
 
 
 # One process of the concurrency test: it writes and reads the shared keys
-# with a prune on every write, under a cap that evicts. A read finds the
-# entry missing or finds the whole entry that key stands for.
+# with a prune on every write, under a cap that evicts. The keys all open
+# with `ke`, so they stand in one shard, whose part of the cap is 400,000.
+# A read finds the entry missing or finds the whole entry that key stands
+# for.
 WORKER = """
 import hashlib, random, sys
 from pathlib import Path
 from souffle import run
-run.CACHE_CAP_BYTES = 400_000
+run.CACHE_CAP_BYTES = 400_000 * 16 ** run.CACHE_SHARD_DIGITS
 run.CACHE_PRUNE_EVERY = 1
-run.CACHE_PRUNE_INTERVAL_SECONDS = 0
 runner = run.Runner(None, Path(sys.argv[1]))
 
 def value(key):
@@ -69,19 +70,13 @@ for _ in range(150):
 
 
 def test_concurrent_writers_never_leave_a_partial_entry(tmp_path: Path):
-    import fcntl
     import subprocess
     import sys
-
-    from souffle import run
 
     procs = [subprocess.Popen([sys.executable, "-c", WORKER, str(tmp_path)],
                               stderr=subprocess.PIPE, text=True)
              for _ in range(20)]
     failed = [err for p in procs if (err := p.communicate()[1]) or p.returncode]
     assert failed == []
-    # A prune runs on past its writer, and holds its lock until it ends.
-    with open(tmp_path / run.CACHE_PRUNE_LOCK) as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-    # 50 entries of about 26 KB each overrun the cap, so the prune evicted.
-    assert len(list(tmp_path.glob("*.json.z"))) < 50
+    # 50 entries of about 26 KB each overrun the cap, so the prunes evicted.
+    assert len(list(tmp_path.glob("*/*.json.z"))) < 50

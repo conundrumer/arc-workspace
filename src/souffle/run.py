@@ -4,7 +4,6 @@ back per output relation, and each run stored under the hash of all it
 reads."""
 
 import contextlib
-import fcntl
 import gc
 import hashlib
 import json
@@ -14,7 +13,6 @@ import random
 import re
 import signal
 import subprocess
-import sys
 import tempfile
 import threading
 import time
@@ -79,21 +77,15 @@ CPU_FIELD = "cpu_seconds"
 """The field of a stored record that holds the CPU seconds of its run."""
 
 CACHE_CAP_BYTES = 20 << 30
-"""What the stored runs may take on disk. Now and then a write starts a
-prune (`prune`) that removes the least recently used runs past it."""
-CACHE_PRUNE_EVERY = 200
-"""One write in this many prunes."""
-CACHE_PRUNE_INTERVAL_SECONDS = 300
-"""At most one prune in this interval across processes, which the marker
-file's mtime records."""
-CACHE_PRUNE_MARKER = ".pruned"
-CACHE_PRUNE_LOCK = ".prune.lock"
-"""The file a prune holds through `flock`, from its check of the marker
-in the writer to the end of the process that removes the runs, so that one
-prune at a time runs across processes."""
-CACHE_PRUNE_ERRORS = ".prune.err"
-"""Where the process of the latest prune writes its stderr, since no
-command waits on it."""
+"""What the stored runs may take on disk. Now and then a write prunes its
+shard (`prune`) down to the shard's part of this, which removes the least
+recently used runs past it."""
+CACHE_SHARD_DIGITS = 2
+"""The record of a key stands in the directory of the key's first this many
+hex digits, so the cache has 16 ** this shard directories, and a prune reads
+one of them."""
+CACHE_PRUNE_EVERY = 100
+"""One write in this many prunes its shard."""
 CACHE_STALE_TEMP_SECONDS = 3600
 """A temp file older than this lost its writer before the rename."""
 DONE_CAP_ROWS = 2_000_000
@@ -248,9 +240,10 @@ STORED_SUFFIX = ".json.z"
 """The end of a stored record's file name in the cache directory."""
 
 
-def _stored_name(key: str) -> str:
-    """The file name of the record stored under `key`."""
-    return f"{key}{STORED_SUFFIX}"
+def _stored_path(cache_dir: Path, key: str) -> Path:
+    """The file of the record stored under `key` in `cache_dir`: in the
+    shard directory of the key's prefix."""
+    return cache_dir / key[:CACHE_SHARD_DIGITS] / f"{key}{STORED_SUFFIX}"
 
 
 def _cpu_limit_key(key: str, cpu: int) -> str:
@@ -407,7 +400,7 @@ class Runner:
     def _read(self, key: str) -> dict | None:
         if self.cache_dir is None:
             return None
-        path = self.cache_dir / _stored_name(key)
+        path = _stored_path(self.cache_dir, key)
         try:
             record = json.loads(zlib.decompress(path.read_bytes()))
         except (OSError, ValueError, zlib.error):
@@ -419,12 +412,13 @@ class Runner:
     def _write(self, key: str, record: dict) -> None:
         if self.cache_dir is None:
             return
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        path = _stored_path(self.cache_dir, key)
         data = zlib.compress(json.dumps(record).encode(), 6)
-        with contextlib.suppress(OSError):
-            write_whole(self.cache_dir / _stored_name(key), data)
+        path.parent.mkdir(parents=True, exist_ok=True)
         if random.randrange(CACHE_PRUNE_EVERY) == 0:
-            prune(self.cache_dir, CACHE_CAP_BYTES)
+            prune(path.parent, CACHE_CAP_BYTES // 16 ** CACHE_SHARD_DIGITS)
+        with contextlib.suppress(OSError):
+            write_whole(path, data)
 
     def _cached(self, key: str, text: str, facts: dict[str, str],
                 limits: Limits) -> Ran | CpuLimit | WallLimit:
@@ -513,45 +507,12 @@ def _measured(argv: list[str], wall: float, cwd: Path
             usage.ru_utime + usage.ru_stime)
 
 
-_EVICT = ("import sys; sys.path.insert(0, sys.argv[3]); from pathlib import Path; "
-          "from souffle.run import evict; evict(Path(sys.argv[1]), int(sys.argv[2]))")
-"""The program of a prune's process, given the cache directory, the cap,
-and the directory this module's package stands in, so that it runs this
-code."""
-
-
-def prune(cache_dir: Path, cap: int) -> None:
-    """Start a prune of `cache_dir` down to `cap` bytes (`evict`), where no
-    prune runs and none started in the interval, and return without waiting
-    on it. The prune runs in a process of its own, in a session of its own,
-    so that it runs to its end after the writer exits, and holds
-    `CACHE_PRUNE_LOCK` until it ends."""
-    with open(cache_dir / CACHE_PRUNE_LOCK, "a") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return
-        marker = cache_dir / CACHE_PRUNE_MARKER
-        try:
-            if time.time() - marker.stat().st_mtime < CACHE_PRUNE_INTERVAL_SECONDS:
-                return
-        except FileNotFoundError:
-            pass
-        marker.touch()
-        with open(cache_dir / CACHE_PRUNE_ERRORS, "w") as err:
-            subprocess.run(["/bin/sh", "-c", '"$@" &', "sh", sys.executable, "-c", _EVICT,
-                            str(cache_dir), str(cap), str(Path(__file__).resolve().parents[1])],
-                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=err,
-                           pass_fds=(lock.fileno(),), start_new_session=True,
-                           check=True)
-
-
-def evict(cache_dir: Path, cap: int) -> None:
-    """Remove the least recently used runs under `cache_dir` past `cap`
-    bytes, and temp files their writers left."""
+def prune(shard: Path, cap: int) -> None:
+    """Remove the least recently used runs in the shard directory `shard`
+    past `cap` bytes, and temp files their writers left."""
     now = time.time()
     entries: list[tuple[float, int, Path]] = []
-    for path in cache_dir.iterdir():
+    for path in shard.iterdir():
         try:
             st = path.stat()
         except OSError:
