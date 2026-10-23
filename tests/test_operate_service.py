@@ -143,3 +143,86 @@ def test_a_resident_marks_only_its_first_request_and_its_highest_footprint_is_at
         lines = [json.loads(text) for text in f]
     assert [l["first"] for l in lines] == [True, False]
     assert all(l["high"] >= l["footprint"] > 0 for l in lines)
+
+
+def request_for_child_read():
+    import io
+    a, b = socket.socketpair()
+    c, d = socket.socketpair()
+    current = service.Request("op", 1, time.monotonic() + 30, a, c, "code",
+                              io.StringIO(), io.StringIO())
+    return current, (a, b, c, d)
+
+
+def test_first_state_read_runs_in_a_child_and_its_reads_reach_the_store(tmp_path, monkeypatch):
+    import os
+    kept, assembly = script("kept_reads"), script("state_assembly")
+    monkeypatch.setattr(kept, "_store", None)
+    kept.open_store(tmp_path / "reads.sqlite")
+    monkeypatch.setattr(service, "read_first", True)
+    parent = os.getpid()
+
+    def read(operator):
+        kept.store().keep("fixture:read", operator, os.getpid())
+
+    monkeypatch.setattr(assembly, "read_state", read)
+    current, sockets = request_for_child_read()
+    try:
+        service.child_read(current)
+        service.child_read(current)
+    finally:
+        for s in sockets:
+            s.close()
+    other = kept.Store(kept.store().path)
+    found = other.held("fixture:read", "op")
+    other.close()
+    assert found is not None and found != parent
+
+
+def test_failed_first_state_read_in_the_child_fails_the_request(tmp_path, monkeypatch):
+    kept, assembly = script("kept_reads"), script("state_assembly")
+    monkeypatch.setattr(kept, "_store", None)
+    kept.open_store(tmp_path / "reads.sqlite")
+    monkeypatch.setattr(service, "read_first", True)
+
+    def read(operator):
+        raise ValueError("fixture read failed")
+
+    monkeypatch.setattr(assembly, "read_state", read)
+    current, sockets = request_for_child_read()
+    try:
+        with pytest.raises(RuntimeError, match="fixture read failed"):
+            service.child_read(current)
+    finally:
+        for s in sockets:
+            s.close()
+
+
+def test_child_retries_a_flush_that_fails_on_a_lock(tmp_path, monkeypatch):
+    kept, assembly = script("kept_reads"), script("state_assembly")
+    monkeypatch.setattr(kept, "_store", None)
+    kept.open_store(tmp_path / "reads.sqlite")
+    monkeypatch.setattr(service, "read_first", True)
+    monkeypatch.setattr(service, "CHILD_POLL_SECONDS", 0.01)
+    real = kept.Store.flush
+    failed = []
+
+    def flush(self):
+        if not failed and self.new:
+            failed.append(True)
+            return False
+        return real(self)
+
+    monkeypatch.setattr(kept.Store, "flush", flush)
+    monkeypatch.setattr(assembly, "read_state",
+                        lambda operator: kept.store().keep("fixture:read", operator, "kept"))
+    current, sockets = request_for_child_read()
+    try:
+        service.child_read(current)
+    finally:
+        for s in sockets:
+            s.close()
+    other = kept.Store(kept.store().path)
+    found = other.held("fixture:read", "op")
+    other.close()
+    assert found == "kept"

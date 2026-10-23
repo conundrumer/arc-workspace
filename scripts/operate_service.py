@@ -3,6 +3,9 @@
 The journal owns issued work. Connections own requests and responses; an
 incomplete response is discarded and a retry computes from the journal.
 Only the serving thread accesses held reads. Idle expiry does no state read.
+The resident's first state read runs in a child that exits once the reads are
+in the kept-read store (`child_read`), so that the memory its peak maps ends
+with it; the resident then loads those reads from the store.
 A state read belongs to the resident: a request whose bound arrives first gets
 a response that says the read runs, and the run goes on; the same agent's next
 call of the same kind takes over its result. Where a run ends with no client,
@@ -734,6 +737,66 @@ def arm(current: Request) -> None:
     signal.setitimer(signal.ITIMER_REAL, max(due - now, 0.001))
 
 
+read_first = True
+"""Whether this resident has yet to read the state: its first read runs in a child."""
+
+CHILD_POLL_SECONDS = 0.05
+CHILD_ERROR_BYTES = 8192
+
+
+def child_read(current: Request) -> None:
+    """Read the state of `current.operator` in a forked child that exits once
+    the reads it computed are in the kept-read store, so that the peak memory
+    of this resident's first read ends with the child; the resident's own read
+    then loads those records. Where the resident's first read has run, do
+    nothing. Cancellation of the request kills the child and propagates. A
+    child that fails gives the request the outcome of any failed read."""
+    global read_first
+    if not read_first:
+        return
+    import kept_reads
+    import state_assembly
+    while not kept_reads.flush():  # A lock is transient.
+        current.check()
+        time.sleep(CHILD_POLL_SECONDS)
+    read_first = False
+    errors, written = os.pipe()
+    pid = os.fork()
+    if pid == 0:
+        code = 1
+        try:
+            os.close(errors)
+            CURRENT.set(None)
+            with read_interrupts.request_scope(lambda: None):
+                state_assembly.read_state(current.operator)
+            while not kept_reads.flush():
+                time.sleep(CHILD_POLL_SECONDS)
+            code = 0
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.write(written, traceback.format_exc().encode()[-CHILD_ERROR_BYTES:])
+        finally:
+            os._exit(code)
+    os.close(written)
+    status = None
+    try:
+        while status is None:
+            done, wait_status = os.waitpid(pid, os.WNOHANG)
+            if done:
+                status = wait_status
+            else:
+                current.check()
+                time.sleep(CHILD_POLL_SECONDS)
+        if status:
+            raise RuntimeError("first state read failed in its child:\n"
+                               + os.read(errors, CHILD_ERROR_BYTES).decode(errors="replace"))
+    finally:
+        if status is None:
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
+        os.close(errors)
+
+
 def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                   pending: Pending | None = None) -> bool:
     """Serve one request; false retires this interpreter for a code change or refresh."""
@@ -781,11 +844,13 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                     current.detach()
                     # A client read that began after this request began read the new code.
                     if current.started >= client_began:
+                        child_read(current)
                         state_assembly.read_state(current.operator)
                     status = 0
                 else:
                     client_began = time.time()
                     with executor():
+                        child_read(current)
                         if current.kind == Kind.REVIEW:
                             from operate_review import plan
                             outcome = plan(current.operator)
