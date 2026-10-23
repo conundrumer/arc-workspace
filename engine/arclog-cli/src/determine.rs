@@ -35,7 +35,7 @@ use arclog::resolver::{resolve_cases, DependencyKind, GraphNodeIndex};
 use arclog::session::TaskSession;
 use arclog::solver::{CaseName, Exclusion};
 use arclog::terms::{Ident, Term, TermId};
-use arclog::types::{GraphRelation, ValueType};
+use arclog::types::{AssemblyId, GraphRelation, KeyRow, ValueType};
 
 use crate::concept_case::{case_spelled, check_case, check_cases, corpus_limits, corpus_session, determined_cases, read_corpus_task, CorpusTask};
 use arclog_constructions::shared as constructions;
@@ -226,7 +226,11 @@ impl Comparison<'_> {
                 unreachable!("a parameter that the determination gives is a `DET` of a case it runs")
             };
             let relation = GraphRelation { node, output: None };
-            match self.leaves(program, &relation, record, &value, None) {
+            let Some(types) = program.types.columns(&relation) else {
+                findings.push(Finding::Fault(format!("{name}: the relation's columns have no types")));
+                continue;
+            };
+            match self.leaves(types, record, &rows_of(&value)) {
                 Ok((record, engine)) => {
                     if let Some(what) = differs(record, engine, &mut compared) {
                         findings.push(Finding::Difference { parameter: name.clone(), line: format!("{name}: the determined value differs from its `param` record: {what}") });
@@ -294,7 +298,9 @@ impl Comparison<'_> {
         };
         let parameters = self.determination.values(case.name);
         let evaluation = case.evaluation(&parameters);
-        let mut sides: Vec<(String, GraphRelation, &ParamValue, Arc<Relation>)> = Vec::new();
+        // Each part: its name, its record, and the engine's rows with the
+        // column of the Pose at which each row stands.
+        let mut engine: Vec<(String, &ParamValue, &[ValueType], usize, Vec<Vec<TermId>>)> = Vec::new();
         for (relation, record) in parts {
             let ProgramRelation::Output(output) = relation else { unreachable!("an output of the assembly") };
             let part = relation_spelled(relation);
@@ -307,16 +313,34 @@ impl Comparison<'_> {
                 Ok(other) => return Some(Finding::Fault(format!("{part}: the part at the determined values is {other:?}"))),
                 Err(fault) => return Some(Finding::Fault(format!("{part}: {}", fault_text(&fault)))),
             };
-            sides.push((part, graph, record, value));
+            let Some(types) = case.program.types.columns(&graph) else {
+                return Some(Finding::Fault(format!("{part}: the relation's columns have no types")));
+            };
+            let Some(pose_column) = types.iter().position(|ty| matches!(ty, ValueType::Pose(_))) else {
+                return Some(Finding::Fault(format!("{part}: the part's columns hold no Pose")));
+            };
+            engine.push((part, record, types, pose_column, rows_of(&value)));
+        }
+        // One Pose value for every part: the first that a row holds.
+        let pose = engine.iter().find_map(|(_, _, _, pose_column, rows)| rows.first().map(|row| row[*pose_column]));
+        // A part's record holds its columns without the Pose and, for an
+        // assembly with no key, without the key column.
+        let mut sides: Vec<(String, &ParamValue, Vec<ValueType>, Vec<Vec<TermId>>)> = Vec::new();
+        for (part, record, types, pose_column, rows) in engine {
+            let unkeyed = matches!(types[pose_column], ValueType::Pose(AssemblyId { key: KeyRow::Unkeyed, .. }));
+            let kept = |column: &usize| *column != pose_column && !(unkeyed && *column < pose_column);
+            let rows = rows.into_iter().filter(|row| Some(row[pose_column]) == pose).map(|row| (0..row.len()).filter(kept).map(|column| row[column]).collect()).collect();
+            let types = (0..types.len()).filter(kept).map(|column| types[column].clone()).collect();
+            sides.push((part, record, types, rows));
         }
         let geometry = Geometry::get();
         for &element in geometry.domain(&ValueType::D4) {
             let g = geometry.element(element);
             let mut trial = compared.clone();
             let mut agrees = true;
-            for (part, graph, record, value) in &sides {
-                let moved = |row: &[TermId], types: &[ValueType]| image(geometry, g, row, types).collect();
-                match self.leaves(case.program, graph, record, value, Some(&moved)) {
+            for (part, record, types, rows) in &sides {
+                let moved: Vec<Vec<TermId>> = rows.iter().map(|row| image(geometry, g, row, types).collect()).collect();
+                match self.leaves(types, record, &moved) {
                     Ok((record, engine)) => agrees = differs(record, engine, &mut trial).is_none(),
                     Err(fault) => return Some(Finding::Fault(format!("{part}: {fault}"))),
                 }
@@ -332,19 +356,9 @@ impl Comparison<'_> {
         Some(Finding::Difference { parameter: name.clone(), line: format!("{name}: no one D4 element takes each part of the assembly onto its `param` record") })
     }
 
-    /// The leaves of `record` and of the engine's rows `value` of
-    /// `relation`, a relation of `program`, at its column types, each
-    /// engine row first moved by `moved` where it is given; or the fault
-    /// that keeps them from a comparison.
-    fn leaves(
-        &self,
-        program: &CheckedProgram,
-        relation: &GraphRelation,
-        record: &ParamValue,
-        value: &Relation,
-        moved: Option<&dyn Fn(&[TermId], &[ValueType]) -> Vec<TermId>>,
-    ) -> Result<Compared, String> {
-        let types = program.types.columns(relation).ok_or("the relation's columns have no types")?;
+    /// The leaves of `record` and of the engine's `rows`, at the column
+    /// `types`; or the fault that keeps them from a comparison.
+    fn leaves(&self, types: &[ValueType], record: &ParamValue, rows: &[Vec<TermId>]) -> Result<Compared, String> {
         let encoded = {
             let mut table = self.session.intern.write().expect("an intern table that no panic poisoned");
             arclog::terms::encode_param_value(record, types, self.registry, &mut table)
@@ -367,11 +381,16 @@ impl Comparison<'_> {
             });
             written.insert(leaves.collect());
         }
-        let mut rows: Vec<Vec<TermId>> = Vec::new();
-        each_row(value, &mut |row| rows.push(moved.map_or_else(|| row.to_vec(), |moved| moved(row, types))));
         let engine = rows.iter().map(|row| row_leaves(row)).collect::<Result<_, _>>()?;
         Ok((written, engine))
     }
+}
+
+/// The rows of `relation`.
+fn rows_of(relation: &Relation) -> Vec<Vec<TermId>> {
+    let mut rows = Vec::new();
+    each_row(relation, &mut |row| rows.push(row.to_vec()));
+    rows
 }
 
 /// Whether `relation` is a part of `assembly`: an output of it other than
