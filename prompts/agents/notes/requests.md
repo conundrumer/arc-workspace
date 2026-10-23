@@ -12,7 +12,7 @@
 - The statements on the user's requests for work and on the tickets the coordinator files and tracks, that the coordinator reads at the triggers its document gives.
 
 ## Routes
-- A user's message may open or end with a route directive: `direct`, `op send`, `hotfix`, `expedite <number>`, `op scope: own`, `op scope: all`, `op pause`, `op resume`, `op context bound <tokens>`, `op context bound default`, `op file`, `op draft`, `scratch`, or `re <number>`, a follow-up on that `request`.
+- A user's message may open or end with a route directive: `direct`, `op send`, `hotfix`, `expedite <number>`, `op scope: own`, `op scope: all`, `op pause`, `op resume`, `defer <number>`, `op context bound <tokens>`, `op context bound default`, `op file`, `op draft`, `scratch`, or `re <number>`, a follow-up on that `request`.
     + xref: src/ticketing/vocabulary.py:Route
 - Where a user's message that asks for work gives no route directive, infer its route, the `request` a follow-up concerns, and the span, and infer `hotfix` for a small edit with low risk or a bug that severely breaks operations and `op context bound <tokens>` or `op context bound default` for words that set or clear the context bound of an operator.
     * comment: The user's words, session 129de8fc-2a0d-4d4d-b950-3a0194c762e2, 2026-10-17T15:51:41Z, on a one-line TODO comment inferred `send`: "man. it's just a one line comment. dont burn tokens on it"; session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-17T15:53:22Z: "i asked to add a TODO comment and it inferred route `direct`". Ticket 11-70.
@@ -37,6 +37,9 @@
     + xref: prompts/agents/notes/launching.md#an-operators-brief
 - `op scope: own`, `op scope: all`, `op pause` and `op resume`: write nothing, and send an operator the directive with a capital `Op` and a closing period, as `Op pause.`.
     + xref: prompts/agents/notes/launching.md#an-operators-brief
+- `defer <number>`: write nothing, and send an operator `Op defer: <number>.`.
+    + xref: prompts/agents/notes/launching.md#an-operators-brief
+    * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-23T12:22:15Z: "but I should be able to say to defer it". Change 11-3618.
 - `op context bound <tokens>` and `op context bound default`: write nothing, and run `uv run python scripts/operate.py bound <tokens>`, or `uv run python scripts/operate.py bound default`.
     * comment: The user's words, request 11-2280, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-19T17:49:34Z: "add way to override so we dont have to keep committing etc.". Ticket 11-2286.
 - Run a change yourself only on `direct` and `hotfix`.
@@ -71,7 +74,7 @@
 - Where the user's later words bear on a `request` you filed, append their span to it with `uv run python scripts/spans.py append`, with the new goal where those words change the goal or state one. Send that span to each agent that holds the `request` or the `change` it waits on, and move the `request` to `tickets/reopened/` where it waits on a `change` that has not merged.
     + xref: scripts/spans.py:append
     - Where the `change` of that `request` has merged, file those words as a new `request` in place of the append, with a line under `Grounds` that gives the earlier one, and where those words withdraw the earlier `request`'s need, close it `wontfix` with the new `request`'s number.
-- Where the user rules on a ticket under `tickets/blocked/` that waits on the user and is no `change`, move it to `tickets/reopened/`, and record the ruling on it: as a span where it is a `request`, and otherwise in the note of the line that moves it.
+- Where the user rules on a ticket under `tickets/blocked/` that waits on the user and is no `change`, or gives the word to resume a `change` there whose last move into `tickets/blocked/` was a defer by the user, where an operator takes it, move it to `tickets/reopened/`, and record the ruling on it: as a span where it is a `request`, and otherwise in the note of the line that moves it.
 
 ## Waiting on a ticket
 - To learn when a ticket you wait on closes, run `uv run python scripts/file_ticket.py await-close <number> ...` in the background: its completion notification gives how the ticket closed.

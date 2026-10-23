@@ -100,7 +100,7 @@ from pathlib import Path
 from dataclasses import dataclass, replace
 
 from controlled_markdown import mctx
-from operations import briefs, merging, messages
+from operations import briefs, deferring, merging, messages
 from operations.constants import AGAIN_SECONDS, COORDINATOR
 from operations.journal import AGAIN_LIMIT, backoff, done_of, retired
 from operations.change_agents import (REVIEWER_ROLES, change_editors, editors_in, elsewhere_on,
@@ -327,6 +327,8 @@ def carry(state: State, t: Ticket) -> Step | NoStep:
     if merging.ready_to_close(state, t):
         return merging.close(state, t, of_change(state, t),
                              merging.NO_MERGE_EVIDENCE if not merging.merged(state, t) else None)
+    if (deferral := deferring.held(state, t)) is not None:
+        return deferral
     editors = change_editors(t)
     if not isinstance(editors, tuple):
         return editors
@@ -795,7 +797,7 @@ def step(state: State,
     (`repeated`). `idle` gets the change's `next_step` and the `NoStep`
     `due_step` gives for it. Where each step is such a step, the step is
     that of the message or the take, so the procedure waits on it."""
-    before = [s for s in (give_up(state), take(state)) if s is not None]
+    before = [s for s in (give_up(state), deferring.untaken(state), take(state)) if s is not None]
     for s in before:
         if not repeated(s, state):
             return s

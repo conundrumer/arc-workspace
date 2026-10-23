@@ -68,6 +68,7 @@ FORMS = {
             - It has `# <title>` as its title, and the sections {change_sections} in place of {defect_headings}.
             - Where it adds a mechanism to code, it has a `{design}` section after `## Intent` that gives the existing operations the change uses or extends and each new operation with its module.
             - Where it adds or changes a rule or a fact in the agent-facing documents, it has that section.
+            - It may have a `## Load` section after `## Design`, with one item for each run that [Checks](prompts/agents/ticket-reviewer/review.md#checks) has the section give: the command in backticks, its estimate of the machine it takes (cores, memory, run time), and why no run of less load shows what its Intent item states.
         """),
     FormPart.REQUEST: mctx("""
         - A `request` has `# <target>: <what the user asks for>` as its title, and the sections {request_sections} in place of {defect_headings}.

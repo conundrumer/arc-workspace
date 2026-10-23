@@ -79,7 +79,8 @@ class Ticket:
     `filing_help` gives, `motivation` holds the ticket numbers its
     `## Motivation` section gives, `log` holds the lines of its log other
     than its allow lines, `allowers` the session ids of those allow lines,
-    each once, in the order of their first lines, `holder` is the
+    each once, in the order of their first lines, `load` holds the items of
+    its `## Load` section (`ticket_reads.load`), `holder` is the
     holder `file_ticket.py log --help-all` defines, `goal` is the text
     of its `## Goal` section, None where it has none, and `cost` is the
     dollar figure of the Cost line of its `## Design` section
@@ -108,6 +109,7 @@ class Ticket:
     goal: str | None = None
     cost: float | None = None
     validates: str | None = None
+    load: tuple[str, ...] = ()
 
     @property
     def last_time(self) -> float:

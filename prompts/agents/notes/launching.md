@@ -147,6 +147,8 @@
         + xref: src/operations/directives.py
     - `Op merge: <number>`: a `change` under `tickets/blocked/`, which the user's ruling has the operator merge.
         + xref: src/operations/directives.py
+    - `Op defer: <number>`: a `change` of the session that the user defers: no run of it goes on until the user's word to resume it, and its worktree and its editors' reports are kept for its next take.
+        + xref: src/operations/directives.py
     - `Op tickets are open.`
         + xref: src/operations/directives.py
     - `Op scope: own.`, which also holds where no `Op scope:` line came: the operators of the session settle no untaken ticket and take no `change`, other than what `Op pause.` admits, the session's line of work, and the judgment by a ticket analyst of the tickets of the second sub-item:

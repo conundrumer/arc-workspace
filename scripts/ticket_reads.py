@@ -9,7 +9,8 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from ticket_files import listed_tickets, ticket_files, ticket_name
-from ticket_form import FRONT, VALIDATES, depends_on, front_fields, goal, list_items, section, section_head, title
+from ticket_form import (FRONT, LOAD, VALIDATES, depends_on, front_fields, goal, list_items, section,
+                         section_head, title)
 from state_reads import DERIVED, Kept, state_cache
 from file_reads import stat_of
 from ticket_log import (CLOSED_BY_LINE, DUPLICATE_OF_LINE, WAIT, Wait, allowers, holder_of, is_allow,
@@ -73,6 +74,13 @@ def after_merge(text: str) -> str | None:
     return "\n".join(items) if items else None
 
 
+def load(text: str) -> tuple[str, ...]:
+    """Each top-level item of the `## Load` section of a ticket's `text`,
+    with the lines nested under it, in their order, none where the ticket
+    has no such section."""
+    return section_items(text, heading(LOAD))
+
+
 COST = re.compile(r"\bCost:(?P<cost>.*)")
 """The Cost line of a change's Design, from the words after its `Cost:`."""
 
@@ -129,7 +137,7 @@ def ticket_of(path: Path, text: str, found: list[re.Match[str]]) -> Ticket:
         depends_on=tuple(depends_on(fields)),
         motivation=motivation(text),
         editors=editors_field(fields),
-        after_merge=after_merge(text), mechanical="mechanical" in fields,
+        after_merge=after_merge(text), load=load(text), mechanical="mechanical" in fields,
         log=lines,
         allowers=allowers(found),
         holder=holder_of(found), path=path, goal=goal(text),

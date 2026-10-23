@@ -102,6 +102,17 @@ def merge_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
     return outside_closed(state, NUMBER.findall(ln.rest), mctx("change"))
 
 
+def defer_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
+    """The reasons the `Op defer:` line `ln` stands unfinished: each change it
+    gives that is not yet under `tickets/blocked/` or `tickets/closed/`,
+    where the line came after its last move into its status."""
+    return [mctx("change {n} {stands}").format(n=n, stands=stands_under(t))
+            for n in NUMBER.findall(ln.rest)
+            if (t := state.tracker.tickets.get(n)) is not None
+            and t.status not in (Status.BLOCKED, Status.CLOSED)
+            and ln.message.time > taking.status_since(t)]
+
+
 def open_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
     return [settled_open(n) for n in triage.unsettled(state)]
 
@@ -141,7 +152,7 @@ def run_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
 REASONS: dict[Directive | None, Callable[[State, Line, Outcomes], list[str]]] = {
     Directive.SOLVE: solve_state, Directive.RUN: run_state, Directive.DRAFTS: drafts_state,
     Directive.EXPEDITE: expedite_state,
-    Directive.MERGED: merged_state, Directive.MERGE: merge_state, Directive.OPEN: open_state,
+    Directive.MERGED: merged_state, Directive.MERGE: merge_state, Directive.DEFER: defer_state, Directive.OPEN: open_state,
     Directive.SCOPE: no_state, Directive.PAUSE: no_state, Directive.RESUME: no_state,
     Directive.PACE: no_state,
     Directive.OVERRIDE: no_state, Directive.DECISION: no_state, None: unread_state}

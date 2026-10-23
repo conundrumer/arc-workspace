@@ -184,6 +184,13 @@ def section(text: str, name: str) -> str:
     return text[start:end].strip("\n")
 
 
+LOAD = "Load"
+"""The section a `change` may add after its `## Design`: one item for each
+run still expected to make a load alert rule of `scripts/load_monitor.py`
+hold, each with the command in backticks, its estimate and its reason. The
+`change` form of `FORMS` in `filing_help` gives it."""
+
+
 GOAL = SECTIONS[Kind.REQUEST][0]
 
 

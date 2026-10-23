@@ -4,7 +4,7 @@ its usage forms, and `PARTS` the rest of its help, a part at a time."""
 from enum import StrEnum
 
 from controlled_markdown import mctx
-from operations import concept_faults
+from operations import concept_faults, load_notices
 from operations.monitor import ALERTS
 
 
@@ -266,6 +266,6 @@ PARTS = {
         - It reads the state as that operator's `next` reads it, and blocks as the block of `next` does, until a step is ready other than that the operator runs `next` again and its final reply for a wait, the pace's hold on the operator's steps ends, or {cap} seconds pass.
         - Where a call of `wait` for the same agent id runs, it ends at once.
     """),
-    HelpPart.ALERTS: ALERTS + "\n" + WAITS_HELP + "\n" + concept_faults.HELP,
+    HelpPart.ALERTS: ALERTS + "\n" + WAITS_HELP + "\n" + concept_faults.HELP + "\n" + load_notices.HELP,
 }
 """The text of each part of the help."""

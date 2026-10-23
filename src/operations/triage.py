@@ -90,6 +90,7 @@ from operations.handled import held_aside, repeated, sends_to, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, body, labeled
 from operations.log_commands import AGENT, log
 from operations.decisions import all_closed
+from operations.deferring import DEFER_NOTE
 from operations.tracker import blocked_on_user, coordinator_lines, exits, final_run
 from ticketing.exits import Exit, freed
 
@@ -325,7 +326,7 @@ def decisions(state: State) -> Step | None:
     briefed = {n for _, _, nums in state.analysts() for n in nums}
     for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order):
         line = blocked_on_user(t)
-        if line is None:
+        if line is None or line.note == DEFER_NOTE:
             continue
         by_ours = line.agent_id in known or (
             line.agent in ANALYST_NAMES | {AGENT} and t.number in briefed)

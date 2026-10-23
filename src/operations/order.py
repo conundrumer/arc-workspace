@@ -57,7 +57,7 @@ from dataclasses import replace
 
 from controlled_markdown import mctx
 from operations import (after_profile, alerts, assessment, batches, changes, concept_faults, cost_audit, decisions, drafts,
-                        gate_launch, idle_changes, limit_resume, lineage, merging, monitor, passes, reviews, runs,
+                        gate_launch, idle_changes, limit_resume, lineage, load_notices, merging, monitor, passes, reviews, runs,
                         standing_reviews, start_holds, ticket_stall, triage, taking, unbatched, unwaited)
 from operations.directives import (
     lines,
@@ -338,7 +338,7 @@ def pipelines(state: State) -> Step | None:
 
 
 EARLY: tuple[Callable[[State], Step | None], ...] = (
-    limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.stuck, alerts.late_resumes, concept_faults.step, decisions.asks, triage.decisions, merging.handoffs, triage.main_wanted, triage.for_coordinator,
+    limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.stuck, alerts.late_resumes, concept_faults.step, load_notices.step, decisions.asks, triage.decisions, merging.handoffs, triage.main_wanted, triage.for_coordinator,
     triage.unfinished)
 LATE: tuple[Callable[[State], Step | None], ...] = (
     taking.release, triage.reopen, triage.later_lines, triage.settle, drafts.step,

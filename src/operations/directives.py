@@ -12,6 +12,9 @@ prefix `Op`, the word of its kind and a colon, past a list marker:
   draft requests, as `scripts/operate.py --help send` gives;
 - `Op merged: <number>, ...`, the changes the coordinator gives as merged;
 - `Op merge: <number>`, a change under `tickets/blocked/` whose merge that line rules;
+- `Op defer: <number>`, a `change` of the session that the user defers
+  (`deferring`): an untaken one moves to `tickets/blocked/` at once, and a
+  held one once its running editors and reviewers end;
 - `Op tickets are open.`, which leaves the scope as `own_scope` gives it;
 - `Op scope: own.`, under which no operator of the session settles an untaken
   ticket or takes a change outside the work held, the tickets an allow
@@ -105,6 +108,7 @@ class Directive(StrEnum):
     EXPEDITE = "Op expedite"
     MERGED = "Op merged"
     MERGE = "Op merge"
+    DEFER = "Op defer"
     OPEN = "Op tickets are open"
     PAUSE = "Op pause"
     RESUME = "Op resume"
@@ -436,11 +440,13 @@ def unread(state: State) -> list[Line]:
 def undecided(ln: Line, main_tree: Path) -> bool:
     """Whether `ln` is in no form the command reads, or is a ruling, an
     `Op pace:` or an `Op scope:` line in no fixed form, or an `Op pause:` or
-    `Op resume:` line with text after the colon."""
+    `Op resume:` line with text after the colon, or an `Op defer:` line with
+    no ticket number."""
     return (ln.kind is None or ln.kind in RULINGS and ruling_form(ln) is None
             or ln.kind is Directive.PACE and line_pace(ln.rest, main_tree) is None
             or ln.kind is Directive.SCOPE and line_scope(ln.rest) is None
-            or ln.kind in PAUSE_LINES and bool(ln.rest))
+            or ln.kind in PAUSE_LINES and bool(ln.rest)
+            or ln.kind is Directive.DEFER and not NUMBER.search(ln.rest))
 
 
 def refused(texts: Iterable[str], main_tree: Path) -> list[str]:

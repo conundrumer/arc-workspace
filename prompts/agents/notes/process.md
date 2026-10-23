@@ -64,7 +64,7 @@
     - Each `change` that adds a mechanism to code has a design, made from reading the code, that gives the existing operations it uses or extends, and each new operation with its module.
     - Each `change` that adds or changes a rule or a fact in the agent-facing documents has a design, made from reading those documents, that plans each rule or fact it adds or changes against the rules and facts on the same act that its reader loads for the part of its work that needs it, so that, for each of those, the new rule or fact joins it, replaces it, retires it, or stands beside it as no exception to it.
         - In a document under [agents](prompts/agents), the design puts each rule or fact under the act of that document's spec whose rule it joins, replaces or retires, or revises that spec.
-    - Each design gives what it costs and what it gains against the goal of [The user's goals](prompts/agents/notes/decisions.md#the-users-goals) that its change serves.
+    - Each design gives what it costs, its machine load included, and what it gains against the goal of [The user's goals](prompts/agents/notes/decisions.md#the-users-goals) that its change serves.
     - A part whose estimated gain does not exceed its estimated cost, in each design a reframe of its problem finds, is left out, a requirement included, and leaving out a part that serves a need the user stated is a decline.
     - An agent other than the one that wrote the design checks it before the build, in each revision before the one at the operator's cap of ticket reviews, against the code, or against the documents and the rules for editing them.
     - The Scope covers each file the design gives.
