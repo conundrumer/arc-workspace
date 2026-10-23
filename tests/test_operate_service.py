@@ -278,3 +278,13 @@ def test_wait_reply_carries_the_cpu_of_its_read():
                                "pace": None, "cpu": 1.5}) + "\n").encode())
         reply = service.exchange(a, "op", 1.0, time.monotonic() + 5, service.Kind.WAIT, None)
     assert reply == service.WaitReply(True, False, None, 1.5)
+
+
+def test_a_residents_final_line_gives_its_reason_and_read_leaves_it_out(tmp_path):
+    import script_calls
+    script_calls.start_request(str(tmp_path), "operate_service.py", ["next"])
+    script_calls.record()
+    script_calls.record_end(str(tmp_path), script_calls.End.LOCK_HELD)
+    records = str(tmp_path / script_calls.RECORDS)
+    assert [c.reason for c in script_calls.ends(records, 0.0)] == ["lock held"]
+    assert [c.reason for c in script_calls.read(records, 0.0)] == [""]

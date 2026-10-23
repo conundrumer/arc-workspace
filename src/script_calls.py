@@ -15,6 +15,7 @@ import os
 import resource
 import sys
 import time
+from enum import StrEnum
 
 RECORDS = os.path.join(".cache", "script-calls")
 """The directory of the day files, under the main tree."""
@@ -41,7 +42,19 @@ SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
 _LINE = ('{{"key": "{key}", "start": {start:.3f}, "wall": {wall:.3f}, "cpu": {cpu:.3f}, '
          '"peak": {peak}, "session": "{session}", "lifts": [{lifts}], "retained": {retained}, '
          '"queued": {queued:.3f}, "reads": {reads}, "footprint": {footprint}, '
-         '"first": {first}, "high": {high}}}\n')
+         '"first": {first}, "high": {high}, "reason": "{reason}"}}\n')
+
+
+class End(StrEnum):
+    """Why a resident's interpreter ended, which the final line of its
+    record gives as `reason`."""
+    CODE_CHANGED = "code changed"
+    REPLACED = "replaced"
+    UNAVAILABLE = "unavailable"
+    EXCEPTION = "exception"
+    STORE_FAILURE = "store failure"
+    IDLE = "idle"
+    LOCK_HELD = "lock held"
 
 _KIB = sys.platform != "darwin"
 """Whether `ru_maxrss` counts KiB, as on Linux, in place of bytes, as on
@@ -238,6 +251,16 @@ def day_file(records: str, t: float) -> str:
     return os.path.join(records, time.strftime(DAY_FORM, time.gmtime(t)) + SUFFIX)
 
 
+def _append(path: str, line: str) -> None:
+    """Appends `line` whole to the day file `path`."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    try:
+        os.write(fd, line.encode())
+    finally:
+        os.close(fd)
+
+
 def record() -> None:
     """Writes the line of this process's call, where `start` started its
     record and no line of it is written."""
@@ -252,13 +275,18 @@ def record() -> None:
                         queued=_queued, reads=_reads,
                         footprint=footprint() if _retained else 0,
                         first="true" if _first else "false",
-                        high=highest_footprint() if _retained else 0)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
-    try:
-        os.write(fd, line.encode())
-    finally:
-        os.close(fd)
+                        high=highest_footprint() if _retained else 0, reason="")
+    _append(path, line)
+
+
+def record_end(tree: str, reason: End) -> None:
+    """Writes the final line of this resident, with zero wall and CPU and
+    the `reason` its interpreter ended, whether or not a record is open."""
+    now = time.time()
+    _append(day_file(os.path.join(tree, RECORDS), now),
+            _LINE.format(key=key("operate_service.py", []), start=now, wall=0, cpu=0, peak=peak(),
+                         retained="true", session=os.environ.get(SESSION_ENV, ""), lifts="",
+                         queued=0, reads=0, footprint=0, first="false", high=0, reason=reason))
 
 
 class Call:
@@ -270,13 +298,16 @@ class Call:
     record gave them has 0. `first` is whether the request was the first
     its resident served, and `high` the most bytes the resident has held
     since it started, which on its first request is the peak of the cold
-    read; a line written before the record gave them has `False` and 0."""
-    __slots__ = ("key", "start", "wall", "cpu", "peak", "session", "lifts", "retained", "queued", "reads", "footprint", "first", "high")
+    read; a line written before the record gave them has `False` and 0.
+    `reason` is why a resident ended, on its final line only; any other
+    line has `""`."""
+    __slots__ = ("key", "start", "wall", "cpu", "peak", "session", "lifts", "retained", "queued", "reads", "footprint", "first", "high", "reason")
 
     def __init__(self, key: str, start: float, wall: float, cpu: float, peak: int,
                  session: str, lifts: tuple[tuple[str, int], ...] = (), retained: bool = False,
                  queued: float = 0.0, reads: int = 0, footprint: int = 0,
-                 first: bool = False, high: int = 0) -> None:
+                 first: bool = False, high: int = 0, reason: str = "") -> None:
+        self.reason = reason
         self.retained = retained
         self.first, self.high = first, high
         self.queued, self.reads, self.footprint = queued, reads, footprint
@@ -284,8 +315,8 @@ class Call:
             key, start, wall, cpu, peak, session, lifts)
 
 
-def read(records: str, since: float) -> list[Call]:
-    """The calls `records` holds that started at or after `since`, in the
+def _lines(records: str, since: float) -> list[Call]:
+    """Every line `records` holds that started at or after `since`, in the
     order of their start."""
     import json
     first = os.path.basename(day_file(records, since))
@@ -299,6 +330,18 @@ def read(records: str, since: float) -> list[Call]:
                                           for read_name, rise in line.get("lifts", ()))
                     calls.append(Call(**line))
     return sorted((c for c in calls if c.start >= since), key=lambda c: c.start)
+
+
+def read(records: str, since: float) -> list[Call]:
+    """The calls `records` holds that started at or after `since`, in the
+    order of their start; the final lines of residents are not among them."""
+    return [c for c in _lines(records, since) if not c.reason]
+
+
+def ends(records: str, since: float) -> list[Call]:
+    """The final lines of residents that `records` holds from `since`, in
+    the order of their start."""
+    return [c for c in _lines(records, since) if c.reason]
 
 
 def prune(records: str, before: float) -> list[str]:

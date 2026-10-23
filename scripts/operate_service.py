@@ -859,8 +859,9 @@ def child_read(current: Request) -> None:
 
 
 def serve_request(connection: socket.socket, listener: socket.socket, code: str,
-                  pending: Pending | None = None) -> bool:
-    """Serve one request; false retires this interpreter for a code change or refresh."""
+                  pending: Pending | None = None) -> script_calls.End | None:
+    """Serve one request; gives why this interpreter must end, or `None`
+    where it serves on."""
     import kept_reads
     import operate
     import state_assembly
@@ -870,7 +871,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
     with connection.makefile("rb") as stream:
         line = stream.readline(65537)
     if not line:
-        return True
+        return None
     if not line.endswith(b"\n"):
         raise ValueError("incomplete request")
     message = json.loads(line)
@@ -895,7 +896,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
         stats_stand_but(None)
         status: int | ReviewPlan = 1
         reply: dict[str, object] = {}
-        retry, keep = False, True
+        retry, ended = False, None
         if pending is not None:
             pending.running = current
         try:
@@ -931,11 +932,11 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                             status = operate.main(["next", current.operator])
                 current.check()
         except Replaced:
-            status, retry, keep = 1, True, False
+            status, retry, ended = 1, True, script_calls.End.REPLACED
         except Detached:
             retry = kind is Kind.WAIT
         except (Unavailable, kept_reads.Unavailable) as exc:
-            status, keep = 1, False
+            status, ended = 1, script_calls.End.UNAVAILABLE
             stdout.seek(0)
             stdout.truncate(0)
             print(f"operate: {exc}", file=stderr)
@@ -943,7 +944,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
             stdout.seek(0)
             stdout.truncate(0)
             traceback.print_exc(file=stderr)
-            status, keep = 1, False
+            status, ended = 1, script_calls.End.EXCEPTION
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
             if not kept_reads.flush():
@@ -952,7 +953,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                     # A lock is transient: the records stay held for the next request's flush.
                     stdout.seek(0)
                     stdout.truncate(0)
-                    status, retry, keep = 1, False, False
+                    status, retry, ended = 1, False, script_calls.End.STORE_FAILURE
                     print(f"operate: kept-read store cannot preserve completed reads: "
                           f"{store.path if store is not None else ''}: "
                           f"{store.write_error if store is not None else ''}", file=stderr)
@@ -972,7 +973,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                     with side_effect():
                         current.connection.sendall((json.dumps(response) + "\n").encode())
                 except Replaced:
-                    keep = False
+                    ended = script_calls.End.REPLACED
                     current.connection.sendall((json.dumps({"status": 1, "stdout": "", "stderr": "",
                                                     "retry": True}) + "\n").encode())
                 except Detached:
@@ -994,10 +995,13 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
             script_calls.record()
             CURRENT.reset(token)
             state_assembly.REQUEST_CUTOFF.reset(cutoff)
-        return keep and kept_reads.fresh_code("operate") == code
+        if ended is None and kept_reads.fresh_code("operate") != code:
+            return script_calls.End.CODE_CHANGED
+        return ended
 
 
-def serve() -> None:
+def serve() -> script_calls.End:
+    """Serves requests until this interpreter must end, and gives why."""
     script_calls.start_service(str(checkout.ROOT))
     from relay_reads import session_id
     path = endpoint(checkout.ROOT, session_id())
@@ -1005,7 +1009,7 @@ def serve() -> None:
         try:
             fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            return
+            return script_calls.End.LOCK_HELD
         import kept_reads
         gc.disable()
         kept_reads.open_store(required=True)
@@ -1016,6 +1020,7 @@ def serve() -> None:
                 or os.environ.get(CODE_ENV, code) != code):
             kept_reads.flush()
             script_calls.record()
+            script_calls.record_end(str(checkout.ROOT), script_calls.End.CODE_CHANGED)
             os._exit(CODE_CHANGED)
         script_calls.record()
         with socket.socket(socket.AF_UNIX) as listener:
@@ -1025,6 +1030,7 @@ def serve() -> None:
             listener.settimeout(IDLE_SECONDS)
             pending = Pending(listener)
             idle_until = time.monotonic() + IDLE_SECONDS
+            ended = script_calls.End.IDLE
             try:
                 while time.monotonic() < idle_until:
                     connection = pending.take()
@@ -1034,7 +1040,9 @@ def serve() -> None:
                     idle_until = time.monotonic() + IDLE_SECONDS
                     with connection:
                         try:
-                            if not serve_request(connection, listener, code, pending):
+                            reason = serve_request(connection, listener, code, pending)
+                            if reason is not None:
+                                ended = reason
                                 break
                         except (OSError, ValueError, KeyError, TypeError):
                             continue
@@ -1043,10 +1051,12 @@ def serve() -> None:
                 pending.close()
                 path.unlink(missing_ok=True)
                 kept_reads.flush()
+    return ended
 
 
 if __name__ == "__main__":
     sys.modules["operate_service"] = sys.modules[__name__]
-    serve()
+    reason = serve()
     script_calls.record()
+    script_calls.record_end(str(checkout.ROOT), reason)
     os._exit(0)
