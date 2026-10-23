@@ -83,6 +83,9 @@ struct Sides<'b, 'a> {
 
 impl Sides<'_, '_> {
     fn node(&mut self, node: usize) -> Option<Side> {
+        if node < self.builder.offset() {
+            return Some(self.builder.sides[node]);
+        }
         match &self.builder.nodes[node].kind {
             DependencyKind::Fact(FactRelation::Input) => Some(Side::PerInput),
             DependencyKind::Fact(FactRelation::ExInput | FactRelation::ExOutput) => Some(Side::TaskWide),
@@ -167,6 +170,9 @@ impl Sides<'_, '_> {
     /// that its body binds at a site that holds an Example, as
     /// [`Sides::bound_examples`] gives.
     fn examples(&mut self, node: usize, output: Option<&[OutputStep]>) -> Arc<[ExamplePath]> {
+        if let Some(earlier) = self.builder.earlier.as_ref().filter(|_| node < self.builder.offset()) {
+            return earlier.example_columns_shared(GraphNodeIndex(node as u32), output).clone();
+        }
         let key = (node, output.map(Arc::from));
         if let Some(found) = self.examples.get(&key) {
             return found.clone();

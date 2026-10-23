@@ -144,25 +144,61 @@ pub(super) struct Names {
     /// clause's path, where its node keeps fewer columns than the clause
     /// gives, as [`super::build`] gives them from the reads of the node.
     pub(super) kept: StableHashMap<NodePath, Columns>,
+    /// The resolution of the forms before the last, where these names are
+    /// those of the last form alone, as [`super::resolve_last`] gives them:
+    /// `contents` and `node_columns` then hold the nodes after those of
+    /// `earlier`, and a lookup that finds nothing here is made there.
+    pub(super) earlier: Option<Arc<super::ResolvedProgram>>,
 }
 
 impl Names {
     /// The target of `relation` read in `scope`: its declaration in
     /// `scope`, or in the program's.
     pub(super) fn find(&self, scope: &NameScope, relation: &RelationRef) -> Option<&Target> {
-        let in_scope = |scope: &NameScope| self.scopes.get(scope).and_then(|names| names.get(relation));
-        in_scope(scope).or_else(|| in_scope(&NameScope::Program))
+        self.declared_in(scope, relation).or_else(|| self.declared_in(&NameScope::Program, relation))
+    }
+
+    /// The target of `relation` declared in `scope` alone.
+    fn declared_in(&self, scope: &NameScope, relation: &RelationRef) -> Option<&Target> {
+        let own = self.scopes.get(scope).and_then(|names| names.get(relation));
+        own.or_else(|| self.earlier.as_ref()?.names.declared_in(scope, relation))
+    }
+
+    /// The count of the nodes of the earlier forms' resolution.
+    pub(super) fn first_node(&self) -> usize {
+        self.earlier.as_ref().map_or(0, |earlier| earlier.graph.nodes.len())
+    }
+
+    /// The content of `node`, `Some(None)` where it is not yet written.
+    pub(super) fn node_content(&self, node: usize) -> Option<&Option<CanonicalForm>> {
+        match &self.earlier {
+            Some(earlier) if node < self.first_node() => earlier.names.node_content(node),
+            _ => self.contents.get(node - self.first_node()),
+        }
+    }
+
+    /// The columns of `node`, where they are known.
+    pub(super) fn node_columns_of(&self, node: usize) -> Option<&Columns> {
+        match &self.earlier {
+            Some(earlier) if node < self.first_node() => earlier.names.node_columns_of(node),
+            _ => self.node_columns.get(node - self.first_node())?.as_ref(),
+        }
+    }
+
+    /// The columns that the relation of the clause at `path` keeps.
+    fn kept_at(&self, path: &NodePath) -> Option<&Columns> {
+        self.kept.get(path).or_else(|| self.earlier.as_ref()?.names.kept_at(path))
     }
 
     /// The columns of `relation` read in `scope`, where they are known.
     pub(super) fn columns(&self, scope: &NameScope, relation: &RelationRef) -> Option<&Columns> {
         if let RelationRef::Lib(_) = relation {
-            return self.lib.get(relation);
+            return self.lib.get(relation).or_else(|| self.earlier.as_ref()?.names.columns(scope, relation));
         }
         let target = self.find(scope, relation)?;
         match &target.columns {
             ColumnsOf::Fixed(columns) => Some(columns),
-            ColumnsOf::OfNode => self.node_columns.get(target.node.0 as usize)?.as_ref(),
+            ColumnsOf::OfNode => self.node_columns_of(target.node.0 as usize),
         }
     }
 
@@ -222,7 +258,7 @@ impl Names {
             Some(form) => form.clone(),
             None => written_at(program, node, path, atom, writer)?,
         };
-        Some(match self.kept.get(path) {
+        Some(match self.kept_at(path) {
             Some(columns) => with_columns(&form, columns),
             None => form,
         })
@@ -368,7 +404,7 @@ impl NameWriter for Writer<'_> {
                 RelationRef::Declared(_) | RelationRef::Output(_) => self.names.find(self.scope, relation),
                 RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) => None,
             };
-            match target.map(|target| &self.names.contents[target.node.0 as usize]) {
+            match target.map(|target| self.names.node_content(target.node.0 as usize).expect("a content slot for each node")) {
                 Some(Some(content)) => {
                     out.write(&[Mark::Content as u8]);
                     out.write(&content.hash.0.to_le_bytes());

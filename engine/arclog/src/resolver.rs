@@ -182,7 +182,10 @@ impl ResolvedContent {
     }
 }
 
-/// A case program after name resolution.
+/// A case program after name resolution. From [`resolve_last`] it holds the
+/// entries of the program's last form alone, and the resolution of the
+/// forms before it, which each lookup falls through to for a path or a node
+/// of those forms. The graph holds every node.
 #[derive(Clone, Debug)]
 pub struct ResolvedProgram {
     pub program: Node<Program>,
@@ -212,9 +215,20 @@ pub struct ResolvedProgram {
     proposer_columns: crate::hash::StableHashMap<(NodePath, usize), Box<[ColumnName]>>,
     /// The path of each read that its form reads in its lifted form.
     lifted: crate::hash::StableHashSet<NodePath>,
+    /// For each node of the graph this resolution gives, the column names
+    /// that the sites of the reads of its relation name, for a `DET`
+    /// parameter node that an atom reads, as [`build`] gives them.
+    read_columns: Box<[Option<Vec<ColumnName>>]>,
+    /// The resolutions of this program with more columns of some `DET`
+    /// parameters kept, by the relation and the columns that its reads
+    /// name, which [`resolve_last`] builds on when the last form reads a
+    /// column that no earlier form's read names.
+    widened: Widened,
     names: names::Names,
     concept: Option<ConceptForms>,
 }
+
+type Widened = Arc<std::sync::Mutex<crate::hash::StableHashMap<Vec<(ProgramRelation, Vec<ColumnName>)>, Arc<ResolvedProgram>>>>;
 
 /// The concept program of a case, and the path there of each `DET` form
 /// that the case takes from it, by the form's path in the case.
@@ -229,7 +243,49 @@ impl ResolvedProgram {
     /// `ResolvedProgram` takes walks as [`crate::program::path::node_at`]
     /// gives.
     pub fn resolution(&self, path: &NodePath) -> Option<&Resolution> {
-        self.resolutions.get(path)
+        match self.earlier_of(path) {
+            Some(earlier) => earlier.resolution(path),
+            None => self.resolutions.get(path),
+        }
+    }
+
+    /// This program resolved with the read columns of `widening` in place
+    /// of those its atoms name, made once for each `widening`.
+    fn widened(&self, widening: Vec<(ProgramRelation, Vec<ColumnName>)>, registry: &Registry) -> Arc<ResolvedProgram> {
+        let mut held = self.widened.lock().expect("no thread panics while it holds the cache");
+        if let Some(found) = held.get(&widening) {
+            return Arc::clone(found);
+        }
+        let scope = SolverScope { derived: Default::default(), read_columns: widening.iter().cloned().collect() };
+        let resolved = Arc::new(resolve(&self.program, None, &scope, registry).value);
+        held.insert(widening, Arc::clone(&resolved));
+        resolved
+    }
+
+    /// Whether `path` stands in one of the forms before the last, where
+    /// this resolution is [`resolve_last`]'s.
+    pub(crate) fn in_earlier_forms(&self, path: &NodePath) -> bool {
+        self.earlier_of(path).is_some()
+    }
+
+    /// The resolution of the forms before the last, where this resolution
+    /// is [`resolve_last`]'s and `path` stands in one of those forms.
+    fn earlier_of(&self, path: &NodePath) -> Option<&ResolvedProgram> {
+        let earlier = self.names.earlier.as_deref()?;
+        let top = path.0.first()?;
+        ((top.0 as usize) < earlier.program.value().forms.len()).then_some(earlier)
+    }
+
+    /// The resolution of the forms before the last, where `node` is one of
+    /// their nodes.
+    fn earlier_node(&self, node: GraphNodeIndex) -> Option<&ResolvedProgram> {
+        self.names.earlier.as_deref().filter(|earlier| (node.0 as usize) < earlier.graph.nodes.len())
+    }
+
+    /// The index in this resolution's own per-node entries of `node`, which
+    /// [`ResolvedProgram::earlier_node`] gives no resolution for.
+    fn own_index(&self, node: GraphNodeIndex) -> usize {
+        node.0 as usize - self.names.first_node()
     }
 
     /// The position, in the rows of the relation its atom reads, of the
@@ -244,7 +300,10 @@ impl ResolvedProgram {
     /// `(:key P_intile *Col)` has its own position. The value gives the
     /// field, so the mapping needs no layout.
     pub fn column_position(&self, site: &NodePath) -> Option<ColumnPosition> {
-        self.positions.get(site).copied()
+        match self.earlier_of(site) {
+            Some(earlier) => earlier.column_position(site),
+            None => self.positions.get(site).copied(),
+        }
     }
 
     /// The position in the rows of its node of the column of `label`, a
@@ -254,7 +313,10 @@ impl ResolvedProgram {
     /// column takes the position of the node's column of its name, as a
     /// site that reads the node names it.
     pub fn label_position(&self, form: &NodePath, label: LabelId) -> Option<ColumnPosition> {
-        self.label_positions.get(&(form.clone(), label)).copied()
+        match self.earlier_of(form) {
+            Some(earlier) => earlier.label_position(form, label),
+            None => self.label_positions.get(&(form.clone(), label)).copied(),
+        }
     }
 
     /// The column group that the site at `site` reads, where the site is on
@@ -262,21 +324,39 @@ impl ResolvedProgram {
     /// [`crate::program::SiteArg::NamedLabel`] at `site` maps to a column as
     /// [`ResolvedProgram::column_position`] gives.
     pub fn column_group(&self, site: &NodePath) -> Option<crate::relations::ColumnGroup> {
-        self.groups.get(site).copied()
+        match self.earlier_of(site) {
+            Some(earlier) => earlier.column_group(site),
+            None => self.groups.get(site).copied(),
+        }
+    }
+
+    /// The column names that the sites of the reads of the relation of
+    /// `node` name, for a `DET` parameter node that an atom reads.
+    fn read_columns_of(&self, node: GraphNodeIndex) -> Option<&[ColumnName]> {
+        match self.earlier_node(node) {
+            Some(earlier) => earlier.read_columns_of(node),
+            None => self.read_columns[self.own_index(node)].as_deref(),
+        }
     }
 
     /// The side of `node` of the graph: by the keyword of its clause, and,
     /// for an `INIT`, a `CHOOSE` or a `DEMONSTRATED` form, by its key and
     /// what its bodies read.
     pub fn side(&self, node: GraphNodeIndex) -> Side {
-        self.sides[node.0 as usize]
+        match self.earlier_node(node) {
+            Some(earlier) => earlier.side(node),
+            None => self.sides[self.own_index(node)],
+        }
     }
 
     /// The side of the form at `form`, a form that gives no node of its own
     /// included, by what its reads read, or `None` where `form` is the path
     /// of no form whose reads the resolver resolves.
     pub fn form_side(&self, form: &NodePath) -> Option<Side> {
-        self.form_sides.get(form).copied()
+        match self.earlier_of(form) {
+            Some(earlier) => earlier.form_side(form),
+            None => self.form_sides.get(form).copied(),
+        }
     }
 
     /// The columns that hold an Example of the relation of `node` of the
@@ -285,8 +365,16 @@ impl ResolvedProgram {
     /// at `output`, where one does, and otherwise those of each relation of
     /// `node`. [`output_of`] gives a read's `output`.
     pub fn example_columns(&self, node: GraphNodeIndex, output: Option<&[OutputStep]>) -> &[ExamplePath] {
+        &self.example_columns_shared(node, output)
+    }
+
+    /// [`ResolvedProgram::example_columns`], as the `Arc` that holds them.
+    fn example_columns_shared(&self, node: GraphNodeIndex, output: Option<&[OutputStep]>) -> &std::sync::Arc<[ExamplePath]> {
+        if let Some(earlier) = self.earlier_node(node) {
+            return earlier.example_columns_shared(node, output);
+        }
         let at = output.and_then(|output| self.output_examples.get(&(node, std::sync::Arc::from(output))));
-        at.unwrap_or(&self.examples[node.0 as usize])
+        at.unwrap_or(&self.examples[self.own_index(node)])
     }
 
     /// The name of each row position of the relation of `node`, in row
@@ -295,13 +383,16 @@ impl ResolvedProgram {
     /// its row position. `None` where the columns of `node`
     /// are not known.
     pub fn column_names(&self, node: GraphNodeIndex) -> Option<Vec<String>> {
-        let columns = self.names.node_columns.get(node.0 as usize)?.as_ref()?;
+        let columns = self.names.node_columns_of(node.0 as usize)?;
         Some(columns.row_names())
     }
 
     /// The signature of the name read at `path`.
     pub fn signature(&self, path: &NodePath) -> Option<&Signature> {
-        self.signatures.get(path)
+        match self.earlier_of(path) {
+            Some(earlier) => earlier.signature(path),
+            None => self.signatures.get(path),
+        }
     }
 
     /// The path of the form that gives `node` of the graph, so that the cycle
@@ -316,7 +407,10 @@ impl ResolvedProgram {
     /// the resolver declares them: none for a fact, several for a relation
     /// that several clauses derive.
     pub fn forms_of(&self, node: GraphNodeIndex) -> &[NodePath] {
-        &self.forms[node.0 as usize]
+        match self.earlier_node(node) {
+            Some(earlier) => earlier.forms_of(node),
+            None => &self.forms[self.own_index(node)],
+        }
     }
 
     /// The nodes of the graph that the form at `form` gives, in the order of
@@ -324,19 +418,28 @@ impl ResolvedProgram {
     /// `INIT` form, which gives a node to each output and each input it
     /// writes. The inverse of [`ResolvedProgram::forms_of`].
     pub fn nodes_of(&self, form: &NodePath) -> &[GraphNodeIndex] {
-        self.form_nodes.get(form).map_or(&[], |nodes| nodes)
+        match self.earlier_of(form) {
+            Some(earlier) => earlier.nodes_of(form),
+            None => self.form_nodes.get(form).map_or(&[], |nodes| nodes),
+        }
     }
 
     /// Whether the form that holds the read at `read` reads its relation in
     /// its lifted form, as [`Side`] gives it.
     pub fn reads_lifted(&self, read: &NodePath) -> bool {
-        self.lifted.contains(read)
+        match self.earlier_of(read) {
+            Some(earlier) => earlier.reads_lifted(read),
+            None => self.lifted.contains(read),
+        }
     }
 
     /// The resolved content of the node at `path`, or `None` where `path`
     /// names no node. The empty path names the whole program, whose content
     /// is that of its forms, with no order and no names.
     pub fn content(&self, path: &NodePath) -> Option<ResolvedContent> {
+        if let Some(earlier) = self.earlier_of(path) {
+            return earlier.content(path);
+        }
         self.names.content(&self.program, path).map(|form| ResolvedContent { form })
     }
 
@@ -361,6 +464,9 @@ impl ResolvedProgram {
     /// columns by that order onto the stored parameter's columns, and name
     /// resolution gives each the stored parameter's name.
     pub fn proposer_columns(&self, clause: &NodePath, index: usize) -> Option<&[ColumnName]> {
+        if let Some(earlier) = self.earlier_of(clause) {
+            return earlier.proposer_columns(clause, index);
+        }
         self.proposer_columns.get(&(clause.clone(), index)).map(|columns| &columns[..])
     }
 
@@ -456,6 +562,20 @@ pub fn resolve(
     registry: &Registry,
 ) -> WithDiagnostics<ResolvedProgram> {
     build::resolve(case, concept, scope, registry)
+}
+
+/// The resolution of `program`, whose forms before its last are the forms of
+/// `earlier`'s program, by the passes of [`resolve`] over the last form
+/// alone: the result holds the entries of the last form and `earlier`, and
+/// no operation walks or copies the entries of the earlier forms. A last
+/// form that reads a column of a `DET` parameter that no earlier read names
+/// is resolved over `earlier` resolved again with that column kept, once for
+/// each such set of columns. Where the last form is no clause, `INIT`,
+/// `CHOOSE` or `RIGID_DET` form that declares a relation no earlier form
+/// declares, or `earlier` is itself a layered resolution or was resolved with a
+/// concept program, the result is [`resolve`]'s on `program`.
+pub fn resolve_last(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> ResolvedProgram {
+    build::resolve_last(earlier, program, registry)
 }
 
 /// A case of a solver with its resolution and the diagnostics of that

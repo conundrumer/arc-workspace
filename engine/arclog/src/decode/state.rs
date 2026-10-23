@@ -23,7 +23,9 @@ use crate::program::{
 use crate::read::columns::{key_labels, made_labels};
 use crate::read::is_type_parameter_column;
 use crate::registry::{Component, LibEntry, LibName};
+use crate::registry::Registry;
 use crate::resolver::columns::example;
+use crate::resolver::{resolve, resolve_last, ResolvedProgram, SolverScope};
 use crate::safety::body_labels;
 use crate::resolver::form_columns::rigid_outputs;
 use crate::resolver::registry_columns::{component, proposer_columns, typed_columns};
@@ -55,6 +57,9 @@ pub(super) struct State {
     /// The count of the labels of the form in progress, the next label's id.
     labels: u32,
     stack: Vec<Frame>,
+    /// The resolution of the finished forms, made on its first read, which
+    /// every clone of the state shares until a form finishes.
+    resolved: Arc<std::sync::OnceLock<Arc<ResolvedProgram>>>,
 }
 
 /// An open node of the form in progress, with its children so far.
@@ -277,12 +282,25 @@ enum Offer {
 
 impl State {
     pub(super) fn new() -> State {
-        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), labels: 0, stack: Vec::new() }
+        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), labels: 0, stack: Vec::new(), resolved: Arc::default() }
     }
 
     /// The finished forms.
     pub(super) fn program(&self) -> &Node<Program> {
         &self.program
+    }
+
+    /// The resolution of the finished forms, a synthesized program whose
+    /// names resolve within it.
+    pub(super) fn resolved(&self, registry: &Registry) -> Arc<ResolvedProgram> {
+        let resolved = self.resolved.get_or_init(|| Arc::new(resolve(&self.program, None, &SolverScope::default(), registry).value));
+        Arc::clone(resolved)
+    }
+
+    /// The resolution of `partial`, the finished forms with the form in
+    /// progress as the last form, as [`State::partial`] gives it.
+    fn resolved_partial(&self, partial: &Node<Program>, registry: &Registry) -> ResolvedProgram {
+        resolve_last(&self.resolved(registry), partial, registry)
     }
 
     /// The state after `token`, and the tokens the engine emits after it.
@@ -332,6 +350,7 @@ impl State {
 
     fn finish_form(&mut self, form: Form) {
         self.program = self.with_form(form);
+        self.resolved = Arc::default();
         self.labels = 0;
     }
 
@@ -554,7 +573,7 @@ impl State {
         if let Token::Relation(_) = token {
             let (program, open) = self.partial().expect("a form that shows its atom");
             let at = self.absolute(&open.expect("an open atom"));
-            if reads_example_column(&context.resolved(&program), &at) {
+            if reads_example_column(&self.resolved_partial(&program, context.registry), &at) {
                 let atom = top!(self, Frame::Atom);
                 atom.columns = std::iter::once(example()).chain(atom.columns.iter().cloned()).collect();
             }
@@ -570,7 +589,7 @@ impl State {
         if typed {
             let (program, open) = self.partial().expect("a form that shows its site");
             let at = self.absolute(&open.expect("an open site"));
-            top!(self, Frame::Site).record = context.resolved(&program).column_group(&at).map(|group| group.len);
+            top!(self, Frame::Site).record = self.resolved_partial(&program, context.registry).column_group(&at).map(|group| group.len);
         }
     }
 

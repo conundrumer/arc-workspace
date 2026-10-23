@@ -7,6 +7,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use super::state::State;
 use super::Decoder;
 use crate::check::{check_shared_program, CheckCache, CheckedProgram, SolverClauses};
 use crate::eval::examples::{scope_of, ExampleScope};
@@ -20,7 +21,7 @@ use crate::program::{Body, Choose, ChoosePart, Clause, ClauseKeyword, Conjunct, 
 use crate::relations::Relation;
 use crate::stream::Token;
 use crate::terms::Example;
-use crate::resolver::{DependencyKind, GraphNodeIndex};
+use crate::resolver::{resolve_last, DependencyKind, GraphNodeIndex, ResolvedProgram};
 use crate::trace::{DecodeRecord, RowsSeen};
 use crate::types::{each_site_label, use_label, GraphRelation};
 
@@ -111,7 +112,7 @@ impl<'a> Decoder<'a> {
         self.output.as_ref()?;
         let form = NodePath::top(self.program().value().forms.len() as u32 - 1);
         Some((|| {
-            let checked = self.checked(self.program(), &form)?;
+            let checked = self.checked(self.state.resolved(self.context.registry), &form)?;
             let relation = derived_at(&checked, &form);
             let limits = self.limits();
             let parameters: Vec<_> = self.assignments.iter().map(|values| ParameterValues::determined(values.clone())).collect();
@@ -251,7 +252,9 @@ impl<'a> Decoder<'a> {
         let count = u32::try_from(kept.len()).expect("fewer than 2^32 conjuncts");
         let sub = Clause { body: Node::new(Body { conjuncts: kept.into() }), columns, ..clause };
         let forms = finished.iter().cloned().chain([Form::Clause(Node::new(sub))]).collect();
-        let checked = self.checked(&Node::new(Program { forms }), &form);
+        let registry = self.context.registry;
+        let resolved = resolve_last(&self.state.resolved(registry), &Node::new(Program { forms }), registry);
+        let checked = self.checked(Arc::new(resolved), &form);
         Some(checked.map(|program| {
             let relation = derived_at(&program, &form);
             let scope = scope_of(&program, &relation);
@@ -259,24 +262,25 @@ impl<'a> Decoder<'a> {
         }))
     }
 
-    /// `program`, checked, or a fault at `form` where a check refuses it.
-    fn checked(&self, program: &Node<Program>, form: &NodePath) -> Outcome<CheckedProgram> {
+    /// The program that `resolved` resolves, checked, or a fault at `form`
+    /// where a check refuses it.
+    fn checked(&self, resolved: Arc<ResolvedProgram>, form: &NodePath) -> Outcome<CheckedProgram> {
         let registry = self.context.registry;
-        let resolved = self.context.resolved(program);
-        let clauses = SolverClauses::of_program((*resolved).clone());
+        let clauses = SolverClauses::of_shared_program(Arc::clone(&resolved));
         check_shared_program(resolved, &clauses, registry, &mut CheckCache::default()).map_err(|refusals| {
             let messages: Vec<&str> = refusals.iter().map(|refusal| &*refusal.message).collect();
             RunFault { message: format!("a check refuses the program: {}", messages.join("; ")).into(), form: form.clone() }
         })
     }
 
-    /// The consistency of the relation of the `RULE` clause that ends
-    /// `program`, where `before`, the program before the step, holds fewer
-    /// forms and the decode judges the train pairs.
-    pub(super) fn consistency(&self, before: &Node<Program>, program: &Node<Program>) -> Option<(Consistency, Option<crate::eval::output::GridColumns>)> {
+    /// The consistency of the relation of the `RULE` clause that ends the
+    /// program of `after`, where `before`, the state before the step, holds
+    /// fewer forms and the decode judges the train pairs.
+    pub(super) fn consistency(&self, before: &State, after: &State) -> Option<(Consistency, Option<crate::eval::output::GridColumns>)> {
         let train = self.train.as_ref()?;
+        let program = after.program();
         let forms = &program.value().forms;
-        if forms.len() == before.value().forms.len() {
+        if forms.len() == before.program().value().forms.len() {
             return None;
         }
         let Some(Form::Clause(clause)) = forms.last() else { return None };
@@ -284,7 +288,9 @@ impl<'a> Decoder<'a> {
             return None;
         }
         let form = NodePath::top(forms.len() as u32 - 1);
-        let checked = match self.checked(program, &form) {
+        let registry = self.context.registry;
+        let resolved = Arc::new(resolve_last(&before.resolved(registry), program, registry));
+        let checked = match self.checked(resolved, &form) {
             Ok(checked) => checked,
             Err(fault) => return Some((Consistency::Fault(fault), None)),
         };

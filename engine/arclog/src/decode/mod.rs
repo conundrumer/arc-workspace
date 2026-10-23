@@ -1,17 +1,19 @@
 //! The decoder of `docs/engine/synthesis.md#token-mask`: the automaton that
 //! reads a token stream into a program value, with the token mask at each
 //! state. Its state, in `state`, steps by the grammar of the stream that
-//! [`crate::stream::token_stream`] writes, and its mask, in `mask`, admits
-//! a token where every check of [`crate::check::checks`] holds, by its prefix
-//! form, on the program that the token gives. Its interface beside the
-//! mask, in `interface`, gives the rows of the body so far and the
+//! [`crate::stream::token_stream`] writes, and its mask,
+//! [`Decoder::admissible`], admits a token where every check of
+//! [`crate::check::checks`] holds, by its prefix form, on the program that
+//! the token gives: one [`PrefixChecks`] per state resolves, and infers the
+//! types of, the finished forms once, and each candidate token costs the
+//! resolution and the checks of its form in progress alone. Its interface
+//! beside the mask, in `interface`, gives the rows of the body so far and the
 //! consistency test at a `RULE` clause's end, and its batch form, in
 //! `batch`, steps many decodes at once. The decode keeps a
 //! [`crate::trace::DecodeTrace`] of one record per accepted token.
 
 mod batch;
 mod interface;
-mod mask;
 mod state;
 
 pub use batch::step_batch;
@@ -19,7 +21,8 @@ pub use interface::{Consistency, Step};
 
 use std::sync::Arc;
 
-use crate::check::CheckId;
+use crate::check::prefix::PrefixChecks;
+use crate::check::{CheckId, PrefixResult, SolverClauses};
 use crate::eval::instance::Constructions;
 use crate::eval::Cancellation;
 use crate::judge::candidates::PairCandidates;
@@ -27,7 +30,7 @@ use crate::program::path::NodePath;
 use crate::program::ProgramRelation;
 use crate::program::{Node, Program};
 use crate::registry::Registry;
-use crate::resolver::ResolvedProgram;
+use crate::resolver::resolve_last;
 use crate::session::TaskSession;
 use crate::stream::{DecodeSettings, Emitter, Token, Vocabulary};
 use crate::task::Task;
@@ -69,13 +72,6 @@ pub(crate) struct Context<'a> {
     registry: &'a Registry,
     settings: DecodeSettings,
     vocabulary: Vocabulary<'a>,
-    cache: mask::Cache,
-}
-
-impl Context<'_> {
-    fn resolved(&self, program: &Node<Program>) -> Arc<ResolvedProgram> {
-        self.cache.resolved(program, self.registry)
-    }
 }
 
 /// Why a decode refuses a token: the token is outside the mask.
@@ -119,7 +115,7 @@ impl<'a> Decoder<'a> {
     /// differ.
     pub fn new(task: &'a Task, session: &'a TaskSession, registry: &'a Registry, constructions: &'a Constructions, settings: &DecodeSettings) -> Decoder<'a> {
         assert_eq!(settings.caps, session.caps, "the caps of the decode settings are those of the session");
-        let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings), cache: mask::Cache::default() };
+        let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings) };
         let state = state::State::new();
         Decoder { task, session, constructions, context: Arc::new(context), state, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default() }
     }
@@ -139,13 +135,25 @@ impl<'a> Decoder<'a> {
     pub fn admissible(&self) -> TokenMask {
         let vocabulary = &self.context.vocabulary;
         let mut mask = TokenMask::new(vocabulary.len());
-        for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
-            let token = vocabulary.token(id).expect("an id of the vocabulary");
-            if self.next(token).is_ok() {
-                mask.insert(id);
+        self.with_checks(|checks| {
+            for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
+                let token = vocabulary.token(id).expect("an id of the vocabulary");
+                if self.next(token, checks).is_ok() {
+                    mask.insert(id);
+                }
             }
-        }
+        });
         mask
+    }
+
+    /// Runs `body` with the checks over the prefixes that follow the
+    /// state's finished forms, which resolve, and whose clauses and types
+    /// are made, once.
+    fn with_checks<R>(&self, body: impl FnOnce(&PrefixChecks<'_>) -> R) -> R {
+        let registry = self.context.registry;
+        let resolved = self.state.resolved(registry);
+        let clauses = SolverClauses::of_shared_program(Arc::clone(&resolved));
+        PrefixChecks::with(&resolved, &clauses, registry, body)
     }
 
     /// Advances the decode by `token`, and gives the tokens that the engine
@@ -161,8 +169,8 @@ impl<'a> Decoder<'a> {
     /// The state after `token`, and what the step gives, which
     /// [`Decoder::apply`] makes the decode's.
     fn advance(&self, token: &Token) -> Result<Advanced, Refusal> {
-        let (state, forced) = self.next(token)?;
-        let judged = self.consistency(self.state.program(), state.program());
+        let (state, forced) = self.with_checks(|checks| self.next(token, checks))?;
+        let judged = self.consistency(&self.state, &state);
         let (consistency, columns) = judged.map_or((None, None), |(result, columns)| (Some(result), columns));
         Ok(Advanced { token: token.clone(), state, step: Step { forced: forced.into(), consistency, columns } })
     }
@@ -238,7 +246,7 @@ impl<'a> Decoder<'a> {
 
     /// The state after `token`, and the tokens the engine emits after it,
     /// where `token` is in the mask.
-    fn next(&self, token: &Token) -> Result<(state::State, Vec<Token>), Refusal> {
+    fn next(&self, token: &Token, checks: &PrefixChecks<'_>) -> Result<(state::State, Vec<Token>), Refusal> {
         let vocabulary = &self.context.vocabulary;
         if self.output.is_some() {
             return Err(Refusal::Grammar("the decode has ended at its `&output`"));
@@ -252,7 +260,12 @@ impl<'a> Decoder<'a> {
         }
         if let Some((program, open)) = state.partial() {
             if !program.value().forms.is_empty() {
-                if let Some(refusal) = self.context.cache.verdict(&program, open.as_ref(), self.context.registry) {
+                let resolved = resolve_last(&self.state.resolved(self.context.registry), &program, self.context.registry);
+                let refused = checks.check(&resolved, open.as_ref()).into_iter().find_map(|(check, result)| match result {
+                    PrefixResult::Refuse(refusals) => Some(Refusal::Check { check, refusals }),
+                    PrefixResult::Undecided => None,
+                });
+                if let Some(refusal) = refused {
                     return Err(refusal);
                 }
             }

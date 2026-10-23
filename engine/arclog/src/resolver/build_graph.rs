@@ -35,6 +35,11 @@ impl<'a> Builder<'a> {
     /// form at `form` among its forms.
     pub(super) fn node(&mut self, kind: DependencyKind, scope: &NameScope, form: Option<&NodePath>) -> GraphNodeIndex {
         let key = DependencyNode { kind, scope: scope.clone() };
+        let in_earlier = self.earlier.as_ref().and_then(|earlier| earlier.graph.nodes.iter().position(|node| *node == key));
+        if let Some(node) = in_earlier {
+            self.shared_node = true;
+            return GraphNodeIndex(node as u32);
+        }
         let node = match self.index.get(&key) {
             Some(node) => *node,
             None => {
@@ -60,6 +65,9 @@ impl<'a> Builder<'a> {
     }
 
     pub(super) fn target(&mut self, scope: &NameScope, relation: RelationRef, target: Target) {
+        if let Some(earlier) = &self.earlier {
+            self.shared_node |= earlier.names.find(scope, &relation).is_some();
+        }
         self.names.scopes.entry(scope.clone()).or_default().insert(relation, target);
     }
 

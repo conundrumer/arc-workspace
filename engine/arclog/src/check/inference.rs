@@ -390,9 +390,14 @@ pub(super) struct Inference<'a> {
     cases: &'a CaseInferences<'a>,
     /// The inference of [`ResolvedProgram::concept`].
     concept: Option<Rc<Inference<'a>>>,
+    /// The inference of the forms before the last, where `program` is
+    /// [`crate::resolver::resolve_last`]'s: it infers each form there, as
+    /// [`Inference::in_concept`] gives a form the case takes from the concept
+    /// program.
+    earlier: Option<&'a dyn EarlierForms<'a>>,
     /// The clauses `program` holds, over which a read of the relation's
-    /// other clauses runs.
-    held: HeldClauses,
+    /// other clauses runs, made on the first read.
+    held: std::cell::OnceCell<HeldClauses>,
     /// Each form inferred, or `None` while its inference runs, so that a
     /// read through a cycle of forms gives no type.
     forms: RefCell<StableHashMap<NodePath, Option<Rc<FormInference<'a>>>>>,
@@ -407,10 +412,29 @@ impl std::fmt::Debug for Inference<'_> {
     }
 }
 
+/// The inference of the forms of a program, as an inference of a program
+/// whose last form follows them reads it.
+pub(super) trait EarlierForms<'a> {
+    /// [`Inference::infer`].
+    fn infer(&self, path: &NodePath) -> Option<Rc<FormInference<'a>>>;
+}
+
+impl<'a, 'e: 'a> EarlierForms<'a> for Inference<'e> {
+    fn infer(&self, path: &NodePath) -> Option<Rc<FormInference<'a>>> {
+        Inference::infer(self, path)
+    }
+}
+
 impl<'a> Inference<'a> {
     pub fn new(program: &'a ResolvedProgram, cases: &'a CaseInferences<'a>) -> Self {
         let concept = program.concept().map(|concept| cases.concept(concept));
-        Inference { program, registry: cases.registry, cases, concept, held: HeldClauses::of(program), forms: RefCell::default(), signatures: RefCell::default() }
+        Inference { program, registry: cases.registry, cases, concept, earlier: None, held: std::cell::OnceCell::new(), forms: RefCell::default(), signatures: RefCell::default() }
+    }
+
+    /// The inference of `program`, a resolution by [`crate::resolver::resolve_last`]
+    /// over the forms that `earlier` infers.
+    pub fn layered(program: &'a ResolvedProgram, cases: &'a CaseInferences<'a>, earlier: &'a dyn EarlierForms<'a>) -> Self {
+        Inference { earlier: Some(earlier), ..Inference::new(program, cases) }
     }
 
     /// The signature of the clause at `path` of the program.
@@ -430,6 +454,9 @@ impl<'a> Inference<'a> {
     /// a `DEMO_RULE`, or `None` where no such form stands there or its
     /// inference runs.
     pub fn infer(&self, path: &NodePath) -> Option<Rc<FormInference<'a>>> {
+        if let Some(earlier) = self.earlier.filter(|_| self.program.in_earlier_forms(path)) {
+            return earlier.infer(path);
+        }
         if let Some(found) = self.forms.borrow().get(path) {
             if found.is_none() {
                 self.cases.cycle_reads.set(self.cases.cycle_reads.get() + 1);
@@ -664,7 +691,7 @@ impl<'a> Inference<'a> {
         let own = self.signature(path);
         let reads = self.cases.clauses.column_reads();
         let cycle_reads = &self.cases.cycle_reads;
-        let entries: Vec<&ClauseEntry> = self.cases.clauses.of_relation_in(&clause.derives, &self.held).filter(|entry| entry.signature != own).collect();
+        let entries: Vec<&ClauseEntry> = self.cases.clauses.of_relation_in(&clause.derives, self.held.get_or_init(|| HeldClauses::of(self.program))).filter(|entry| entry.signature != own).collect();
         let others: Box<[Signature]> = entries.iter().map(|entry| entry.signature.clone()).collect();
         reads.get_or_join((&clause.derives, own, others), column, &clause.columns, cycle_reads, || {
             let target = |column: &ColumnName| head_label(clause, column);

@@ -19,10 +19,12 @@ impl Builder<'_> {
     /// The content and the columns of each node, each node after the
     /// nodes it reads, where no cycle holds it.
     pub(super) fn contents(&mut self) {
-        self.names.contents = vec![None; self.nodes.len()];
-        self.names.node_columns = vec![None; self.nodes.len()];
+        let offset = self.offset();
+        self.names.contents = vec![None; self.nodes.len() - offset];
+        self.names.node_columns = vec![None; self.nodes.len() - offset];
         let mut visited = vec![false; self.nodes.len()];
-        for node in 0..self.nodes.len() {
+        visited[..offset].fill(true);
+        for node in offset..self.nodes.len() {
             self.content_of(node, &mut visited);
         }
     }
@@ -40,8 +42,9 @@ impl Builder<'_> {
         if let Some(columns) = &columns {
             self.label_positions(node, columns);
         }
-        self.names.contents[node] = Some(content);
-        self.names.node_columns[node] = columns;
+        let local = node - self.offset();
+        self.names.contents[local] = Some(content);
+        self.names.node_columns[local] = columns;
     }
 
     /// Records the position in `columns`, the rows of `node`, of each

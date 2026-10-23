@@ -78,7 +78,7 @@ impl Builder<'_> {
         match resolution {
             Resolution::Node(node) => {
                 out.write(&[0]);
-                let content = self.names.contents[node.0 as usize].as_ref().expect("the content of each node");
+                let content = self.names.node_content(node.0 as usize).and_then(Option::as_ref).expect("the content of each node");
                 out.write(&content.hash.0.to_le_bytes());
                 write_output_path(&mut out, relation);
             }
@@ -119,15 +119,19 @@ impl Builder<'_> {
         }
     }
 
-    pub(super) fn finish(self, concept: Option<ConceptForms>) -> WithDiagnostics<ResolvedProgram> {
-        let graph = DependencyGraph {
-            nodes: self.nodes.into(),
-            reads: self.reads.into_iter().map(|reads| reads.into_iter().map(GraphNodeIndex).collect()).collect(),
-        };
+    pub(super) fn finish(mut self, concept: Option<ConceptForms>) -> WithDiagnostics<ResolvedProgram> {
+        let offset = self.offset();
+        let earlier_reads = self.names.earlier.iter().flat_map(|earlier| earlier.graph.reads.iter().cloned());
+        let own_reads = self.reads.drain(offset..).map(|reads| reads.into_iter().map(GraphNodeIndex).collect());
+        let graph = DependencyGraph { nodes: self.nodes.into(), reads: earlier_reads.chain(own_reads).collect() };
+        let sides = self.sides.split_off(offset);
+        let examples = self.examples.split_off(offset);
+        let read_columns = self.read_columns.split_off(offset);
+        self.forms.drain(..offset);
         let mut form_nodes: StableHashMap<NodePath, Vec<GraphNodeIndex>> = StableHashMap::default();
         for (node, forms) in self.forms.iter().enumerate() {
             for form in forms {
-                form_nodes.entry(form.clone()).or_default().push(GraphNodeIndex(node as u32));
+                form_nodes.entry(form.clone()).or_default().push(GraphNodeIndex((node + offset) as u32));
             }
         }
         let form_nodes = form_nodes.into_iter().map(|(form, nodes)| (form, Box::from(nodes))).collect();
@@ -138,9 +142,11 @@ impl Builder<'_> {
                 graph,
                 forms,
                 form_nodes,
-                sides: self.sides.into(),
+                sides: sides.into(),
                 form_sides: self.form_sides,
-                examples: self.examples.into(),
+                examples: examples.into(),
+                read_columns: read_columns.into(),
+                widened: Default::default(),
                 output_examples: self.output_examples,
                 resolutions: self.resolutions,
                 signatures: self.signatures,

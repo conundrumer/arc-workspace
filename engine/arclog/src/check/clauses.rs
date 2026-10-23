@@ -75,8 +75,14 @@ impl SolverClauses {
 
     /// The clauses of a synthesized program, its own.
     pub fn of_program(program: ResolvedProgram) -> Self {
+        Self::of_shared_program(Arc::new(program))
+    }
+
+    /// The clauses of a synthesized program, its own, which the index holds
+    /// by its `Arc`.
+    pub fn of_shared_program(program: Arc<ResolvedProgram>) -> Self {
         let mut found = ClausesFound::default();
-        found.add(Arc::new(program), &|path| (FileOwner::Solver, path.clone()));
+        found.add(program, &|path| (FileOwner::Solver, path.clone()));
         found.ordered()
     }
 
