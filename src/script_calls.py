@@ -137,7 +137,7 @@ def footprint() -> int:
         import ctypes.util
 
         class Usage(ctypes.Structure):
-            _fields_ = [("uuid", ctypes.c_ubyte * 16)] + [(f"f{i}", ctypes.c_uint64) for i in range(1, 15)]
+            _fields_ = [("uuid", ctypes.c_ubyte * 16)] + [(f"f{i}", ctypes.c_uint64) for i in range(1, 19)]
             # RUSAGE_INFO_V2 fields from ri_uuid on; f8 is ri_phys_footprint.
         usage = Usage()
         libproc = ctypes.CDLL(ctypes.util.find_library("proc"))
