@@ -37,6 +37,7 @@ from engine.program import (  # noqa: E402
     AtomLiteral,
     BoolLiteral,
     Comparison,
+    Component,
     ConstructorTerm,
     DefinedName,
     Disjunction,
@@ -289,6 +290,10 @@ class Lib:
         self.order: dict[str, list[str]] = {}   # a component's inputs in the order its target declares them
         self.replaced: dict[str, tuple] = {}   # a component of `libmap.REPLACED`: its present relations
         self.top: dict[str, list[tuple[str, str]]] = {}
+        self.clauses: dict[str, list[Unit]] = defaultdict(list)   # a component's own clauses
+        for u in prog.units:
+            if u.scope.components:
+                self.clauses[u.scope.components[-1]].append(u)
         for r in prog.relations:
             cols = [(c.name, c.type.name) for c in r.columns]
             if r.name.startswith("_"):
@@ -327,6 +332,26 @@ class Lib:
             for name, cols, is_in in sig.comp_rels.get(target, []):
                 if name not in have:
                     self.comp_rels[comp].append((name, [(n, sub.get(t, t)) for n, t in cols], is_in))
+
+    def input_clauses(self, comp: str) -> list[Unit]:
+        """The clauses of the component's body, and of the bases it extends,
+        whose head is one of its `@input` relations and whose body reads no
+        relation of the component: the rows the input holds beside the rows
+        a caller's clauses give it. A clause that reads a relation of the
+        component is left out, as arclog has no name for that relation."""
+        _, rels = self.relations(comp)
+        inputs = {r.name for r in rels if r.is_input}
+        own = {r.name for r in rels}
+        out: list[Unit] = []
+        c: Component | None = self.comps[comp]
+        while c is not None:
+            out = [u for u in self.clauses.get(c.name, [])
+                   if u.head.relation.name in inputs and not u.head.relation.instances
+                   and not any(isinstance(l, AtomLiteral) and (l.atom.relation.instances
+                                                               or l.atom.relation.name in own)
+                               for l in walk_lits(u.body or ()))] + out
+            c = self.comps[c.base] if c.base else None
+        return out
 
     def present(self, comp: str) -> tuple[list[str], list[LibRel]]:
         """The component's relations as the present lib declares them, for
@@ -4319,6 +4344,10 @@ class Solver:
         key = (scope, inst.name)
         amp = c.rel_name(scope, inst.name)
         tparams, rels = c.lib.relations(inst.component)
+        written = {u.head.relation.name for u in us}
+        us = us + [dc_replace(u, scope=inst.scope,
+                              head=dc_replace(u.head, relation=RelationName((inst.name,), u.head.relation.name)))
+                   for u in c.lib.input_clauses(inst.component) if u.head.relation.name in written]
         sub = {p: a.name for p, a in zip(tparams, inst.type_args)}
         if scope == ("Parse",):
             sub = {p: c.parse_sub.get(a.name, a.name) for p, a in zip(tparams, inst.type_args)}
