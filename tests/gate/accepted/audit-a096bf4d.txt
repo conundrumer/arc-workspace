@@ -6,7 +6,7 @@
   lone-between: borderline $KeepMarks
     relaxed: every-mark-paired
   separator-1: variant $DerivedSeparator
-    relaxed: tile-lattice
+    relaxed: tiling
 
 5 witness grids run
 witness: ok

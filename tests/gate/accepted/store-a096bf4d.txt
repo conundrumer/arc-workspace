@@ -4,14 +4,6 @@ line_color.value[v]: one color on every input: 0; make it a parameter
 separator: one color on every input: 0
   stored already: on every input the value equals the stored rows of `separator`
 span.axis[a]: no witness: no case that takes the value fits the pairs
-lattice.divider[a]: 2 values, one per `l`
-  no case: the value varies by `l`, an id the runner stores nothing under
-lattice.tile_of[p]: one cell set up to translation on every input
-  # # # #
-  # # # #
-  # # # #
-  # # # #
-  no case: the value stands at another place on each input, and the runner picks no anchor
 tile_box.cell[p]: one cell set up to translation on every input
   # # # #
   # # # #
@@ -20,6 +12,14 @@ tile_box.cell[p]: one cell set up to translation on every input
   no case: the value stands at another place on each input, and the runner picks no anchor
 tile_cell[p_intile]: 16 values, one per `p_tile`, `p_grid`, `col`
   no case: the value varies by `p_tile`, `p_grid`, `col`, an id the runner stores nothing under
+tiling.divider[a]: 2 values, one per `l`
+  no case: the value varies by `l`, an id the runner stores nothing under
+tiling.tile_of[p]: one cell set up to translation on every input
+  # # # #
+  # # # #
+  # # # #
+  # # # #
+  no case: the value stands at another place on each input, and the runner picks no anchor
 in_scope: one cell set on every input; case `$Interior`
   # #
   # #

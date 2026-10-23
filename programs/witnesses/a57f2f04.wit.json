@@ -1,8 +1,8 @@
 {
   "id": "a57f2f04",
   "witnesses": [{
-    "id": "off-lattice",
-    "separates": "A 7x6 panel with a 3x3 motif at its top-left: the motif's height does not divide the panel's. The concept lays the lattice through the motif and cuts the last row short. $CornerAnchor gives a grid for each open corner: from a top corner the concept's grid, and from a bottom corner the lattice laid from the panel's bottom, with the cut row at the top.",
+    "id": "off-tiling",
+    "separates": "A 7x6 panel with a 3x3 motif at its top-left: the motif's height does not divide the panel's. The concept lays the tiling through the motif and cuts the last row short. $CornerAnchor gives a grid for each open corner: from a top corner the concept's grid, and from a bottom corner the tiling laid from the panel's bottom, with the cut row at the top.",
     "input": [
       [8,8,8,8,8,8,8,8,8,8,8,8],
       [8,8,8,8,8,8,8,8,8,8,8,8],
@@ -19,7 +19,7 @@
       [8,8,8,8,8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": ["$TileLattice"],
+      "cases": ["$Tiling"],
       "grid": [
         [8,8,8,8,8,8,8,8,8,8,8,8],
         [8,8,8,8,8,8,8,8,8,8,8,8],
@@ -87,7 +87,7 @@
       [8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": ["$MarkBox & $TileLattice & field=stored"],
+      "cases": ["$MarkBox & $Tiling & field=stored"],
       "grid": [
         [8,8,8,8,8,8,8,8],
         [8,2,2,2,2,2,2,8],
@@ -177,7 +177,7 @@
         ]
       ]
     }, {
-      "cases": ["$CornerBox & $TileLattice & $ComponentBbox"],
+      "cases": ["$CornerBox & $Tiling & $ComponentBbox"],
       "grid": [
         [8,8,8,8,8,8,8,8],
         [8,0,0,0,8,0,0,0],
@@ -192,7 +192,7 @@
         [8,2,0,2,8,2,0,2]
       ]
     }, {
-      "cases": ["$DeriveBlank & $CornerBox & $TileLattice & $PanelCells & field=DominantColor"],
+      "cases": ["$DeriveBlank & $CornerBox & $Tiling & $PanelCells & field=DominantColor"],
       "grid": [
         [8,8,8,8,8,8,8,8],
         [8,0,0,0,0,0,0,0],
@@ -349,7 +349,7 @@
         ]
       ]
     }, {
-      "cases": ["$DeriveBlank & $MarkBox & $TileLattice & $ComponentBbox"],
+      "cases": ["$DeriveBlank & $MarkBox & $Tiling & $ComponentBbox"],
       "grid": [
         [2,2,0,2,2,0,2,2],
         [2,2,2,2,2,2,2,2],
@@ -364,7 +364,7 @@
         [2,2,0,2,2,0,2,2]
       ]
     }, {
-      "cases": ["$DeriveBlank & $MarkBox & $TileLattice & $PanelCells & field=DominantColor"],
+      "cases": ["$DeriveBlank & $MarkBox & $Tiling & $PanelCells & field=DominantColor"],
       "grid": [
         [2,2,0,2,2,0,2,2],
         [2,0,0,0,0,0,0,2],
@@ -689,7 +689,7 @@
         ]
       ]
     }, {
-      "cases": ["$DeriveBlank & $MarkBox & $TileLattice & $ComponentBbox"],
+      "cases": ["$DeriveBlank & $MarkBox & $Tiling & $ComponentBbox"],
       "grid": [
         [2,2,0,2,2,0,2,2],
         [0,2,2,0,2,2,0,2],
@@ -701,7 +701,7 @@
         [0,2,2,0,2,2,0,2]
       ]
     }, {
-      "cases": ["$DeriveBlank & $MarkBox & $TileLattice & $PanelCells & field=DominantColor"],
+      "cases": ["$DeriveBlank & $MarkBox & $Tiling & $PanelCells & field=DominantColor"],
       "grid": [
         [2,2,0,2,2,0,2,2],
         [0,2,2,0,0,0,0,2],
@@ -846,7 +846,7 @@
         ]
       ]
     }, {
-      "cases": ["$DeriveBlank & $MarkBox & $TileLattice & $ComponentBbox"],
+      "cases": ["$DeriveBlank & $MarkBox & $Tiling & $ComponentBbox"],
       "grid": [
         [2,2,6,2,2,6,2,2],
         [6,2,2,6,2,2,6,2],
@@ -858,7 +858,7 @@
         [6,2,2,6,2,2,6,2]
       ]
     }, {
-      "cases": ["$DeriveBlank & $MarkBox & $TileLattice & $PanelCells & field=DominantColor"],
+      "cases": ["$DeriveBlank & $MarkBox & $Tiling & $PanelCells & field=DominantColor"],
       "grid": [
         [2,2,6,2,2,6,2,2],
         [6,2,2,6,6,6,6,2],
@@ -1002,7 +1002,7 @@
     }]
   }, {
     "id": "inset-even",
-    "separates": "A 6x6 panel whose 2x2 motif sits one row and one column in from the top-left corner. The concept tiles the 2x2 box on the lattice through its own position; $CornerAnchor lays it from the panel's corners, a phase off; $CornerBox tiles the 3x3 box from the panel corner, blank row and column included.",
+    "separates": "A 6x6 panel whose 2x2 motif sits one row and one column in from the top-left corner. The concept tiles the 2x2 box on the tiling through its own position; $CornerAnchor lays it from the panel's corners, a phase off; $CornerBox tiles the 3x3 box from the panel corner, blank row and column included.",
     "input": [
       [8,8,8,8,8,8,8,8,8,8],
       [8,8,8,8,8,8,8,8,8,8],
@@ -1016,7 +1016,7 @@
       [8,8,8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": ["$MarkBox & $TileLattice"],
+      "cases": ["$MarkBox & $Tiling"],
       "grid": [
         [8,8,8,8,8,8,8,8,8,8],
         [8,8,8,8,8,8,8,8,8,8],
@@ -1220,7 +1220,7 @@
         ]
       ]
     }, {
-      "cases": ["$DeriveBlank & $CornerBox & $TileLattice & field=stored"],
+      "cases": ["$DeriveBlank & $CornerBox & $Tiling & field=stored"],
       "grid": [
         [1,1,1,1,1,1,1,1,1,1,1,1,1],
         [1,1,1,1,1,1,1,1,1,1,1,1,1],
@@ -1331,7 +1331,7 @@
         ]
       ]
     }, {
-      "cases": ["$DeriveBlank & $AllMarks & $MarkBox & $TileLattice & field=stored"],
+      "cases": ["$DeriveBlank & $AllMarks & $MarkBox & $Tiling & field=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0,0],

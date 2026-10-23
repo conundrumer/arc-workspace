@@ -1,8 +1,8 @@
 // a096bf4d
 // @draft
 // @keywords: decompose markers span
-// @scene tile-lattice: full rows and full columns of params.separator cut the
-//  grid into a lattice of equal tiles, with a separator line along each grid
+// @scene tiling: full rows and full columns of params.separator cut the
+//  grid into a tiling of equal tiles, with a separator line along each grid
 //  edge
 // @scene common-tile: at each tile position, most tiles hold the same color;
 //  together those colors form the common tile (a frame of one color around a
@@ -53,14 +53,14 @@
 
 // where the separator color comes from
 .type SeparatorSource =
-    // @claim tile-lattice
+    // @claim tiling
     StoredSeparator {}
-    // @scene tile-lattice: full rows and full columns of the one color of the
-    //  grid's border ring cut the grid into a lattice of equal tiles, with a
+    // @scene tiling: full rows and full columns of the one color of the
+    //  grid's border ring cut the grid into a tiling of equal tiles, with a
     //  separator line along each grid edge; the branch is undefined where the
     //  border ring is not one color
     // @witness separator-1: variant $DerivedSeparator
-    //     @relaxed tile-lattice
+    //     @relaxed tiling
   | DerivedSeparator {}
 
 .type Choice = [scope: MarkScope, base: MarkBase, target: SpanTarget, sep: SeparatorSource]
@@ -114,32 +114,32 @@ separator($StoredSeparator(), Col) :- params.separator(Col).
 
 // --- $DerivedSeparator ---
 
-// @claim tile-lattice
+// @claim tiling
 .init border = Unanimous<Unit, Color>
 border.item($U(), Col) :- in(P, Col), dir_elem(D), dist(P, D, 0).
 
 separator($DerivedSeparator(), Col) :- border.value($U(), Col).
 
-// --- the lattice ---
+// --- the tiling ---
 
-// @claim tile-lattice
+// @claim tiling
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
-// @claim tile-lattice
-.init lattice = DividerTiles<SeparatorSource>
-lattice.cell(X, P) :- separator(X, _), in(P, _).
-lattice.divider(X, A, L) :- line_color.value([A, L], Col), separator(X, Col).
+// @claim tiling
+.init tiling = DividerTiles<SeparatorSource>
+tiling.cell(X, P) :- separator(X, _), in(P, _).
+tiling.divider(X, A, L) :- line_color.value([A, L], Col), separator(X, Col).
 
 // Some tile reaches the grid's edge, so no separator line runs along it.
 .decl open_edge(x: SeparatorSource)
-open_edge(X) :- lattice.tile_of(X, P, _), dir_elem(D), dist(P, D, 0).
+open_edge(X) :- tiling.tile_of(X, P, _), dir_elem(D), dist(P, D, 0).
 
 // --- the common tile ---
 
 // @claim common-tile
 .init tile_box = Bbox<Tile>
-tile_box.cell([X, P_tile], P_grid) :- lattice.tile_of(X, P_grid, P_tile).
+tile_box.cell([X, P_tile], P_grid) :- tiling.tile_of(X, P_grid, P_tile).
 
 .decl tile_cell(x: SeparatorSource, p_tile: Position, p_intile: Position,
                 p_grid: Position, col: Color)

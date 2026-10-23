@@ -218,7 +218,7 @@
     }]
   }, {
     "id": "middle-cross-line-empty",
-    "separates": "the middle lattice row holds no square: the concept keeps it as an empty row (7 rows); $RankedLines drops it (6 rows)",
+    "separates": "the middle slot row holds no square: the concept keeps it as an empty row (7 rows); $RankedLines drops it (6 rows)",
     "input": [
       [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -252,7 +252,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$LatticeSpan","$FrameLattice"],
+      "cases": ["$TilingSpan","$FrameTiling"],
       "grid": [
         [2,2,2,8,8,8],
         [0,0,0,0,2,8],
@@ -275,7 +275,7 @@
     }]
   }, {
     "id": "first-cross-line-empty",
-    "separates": "the top lattice row holds no square: the concept starts at the first row holding a square (6 rows); $FrameLattice keeps every lattice row that fits in the frame (7 rows, the top one empty)",
+    "separates": "the top slot row holds no square: the concept starts at the first row holding a square (6 rows); $FrameTiling keeps every slot row that fits in the frame (7 rows, the top one empty)",
     "input": [
       [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -309,7 +309,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$TurnFromLine & $LatticeSpan","$RankedLines"],
+      "cases": ["$TurnFromLine & $TilingSpan","$RankedLines"],
       "grid": [
         [0,0,0,0,2,8],
         [0,2,2,2,8,8],
@@ -322,7 +322,7 @@
       "cases": ["$PackTowardColorHalf","$PackTowardUniformHalf"],
       "grid": null
     }, {
-      "cases": ["$FrameLattice"],
+      "cases": ["$FrameTiling"],
       "grid": [
         [0,0,0,0,0,0],
         [0,0,0,0,2,8],
@@ -335,7 +335,7 @@
     }]
   }, {
     "id": "no-full-line",
-    "separates": "no lattice row holds 6 squares: the concept keeps 6 columns, one per lattice column holding a square; $MostRingsExtent sizes the output to the fullest row (5 columns)",
+    "separates": "no slot row holds 6 squares: the concept keeps 6 columns, one per slot column holding a square; $MostRingsExtent sizes the output to the fullest row (5 columns)",
     "input": [
       [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -393,7 +393,7 @@
     }]
   }, {
     "id": "pack-line-empty",
-    "separates": "one lattice column of the quadrants holds no square: the concept drops it (5 columns); $StoredAlongExtent keeps the stored 6 columns",
+    "separates": "one slot column of the quadrants holds no square: the concept drops it (5 columns); $StoredAlongExtent keeps the stored 6 columns",
     "input": [
       [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -551,7 +551,7 @@
     }]
   }, {
     "id": "along-line-overfull",
-    "separates": "a square fills the middle slot of the top lattice row, so that row holds 7 squares: the concept packs 7 columns, one per lattice column holding a square; $StoredAlongExtent has no room for the seventh cell in its stored 6 columns and is undefined",
+    "separates": "a square fills the middle slot of the top slot row, so that row holds 7 squares: the concept packs 7 columns, one per slot column holding a square; $StoredAlongExtent has no room for the seventh cell in its stored 6 columns and is undefined",
     "input": [
       [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],

@@ -172,8 +172,8 @@
       ]
     }]
   }, {
-    "id": "sparse-lattice",
-    "separates": "concept | $LargestPiece & $AnchorNearest & $StepGcd, $LargestPiece & $AnchorNearest & $LatticeRank",
+    "id": "sparse-period",
+    "separates": "concept | $LargestPiece & $AnchorNearest & $StepGcd, $LargestPiece & $AnchorNearest & $PeriodRank",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
@@ -225,7 +225,7 @@
         [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
       ]
     }, {
-      "cases": ["$LatticeRank","$StepGcd"],
+      "cases": ["$PeriodRank","$StepGcd"],
       "grid": [
         [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
         [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
@@ -253,7 +253,7 @@
     }]
   }, {
     "id": "skipped-row",
-    "separates": "concept | $LargestPiece & $AnchorNearest & $LatticeRank",
+    "separates": "concept | $LargestPiece & $AnchorNearest & $PeriodRank",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
@@ -305,7 +305,7 @@
         [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
       ]
     }, {
-      "cases": ["$LatticeRank"],
+      "cases": ["$PeriodRank"],
       "grid": [
         [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
         [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
@@ -333,7 +333,7 @@
     }]
   }, {
     "id": "step-three",
-    "separates": "concept | $LargestPiece & $AnchorNearest & $StepGcd, $LargestPiece & $AnchorNearest & $LatticeRank",
+    "separates": "concept | $LargestPiece & $AnchorNearest & $StepGcd, $LargestPiece & $AnchorNearest & $PeriodRank",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
@@ -362,7 +362,7 @@
       "cases": ["$StoredStep"],
       "grid": null
     }, {
-      "cases": ["$LatticeRank","$StepGcd"],
+      "cases": ["$PeriodRank","$StepGcd"],
       "grid": [
         [4,4,4,4,4,4,4,4,4,4,4,4,4,2,4,4,4,4,4,4,4,4],
         [4,4,4,4,4,4,4,4,4,4,4,4,2,2,2,4,4,4,4,4,4,4],
@@ -442,7 +442,7 @@
         [7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7]
       ]
     }, {
-      "cases": ["$LatticeRank & $BoxStamp"],
+      "cases": ["$PeriodRank & $BoxStamp"],
       "grid": [
         [7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],
         [7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],
@@ -468,7 +468,7 @@
         [7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7]
       ]
     }, {
-      "cases": ["$LatticeRank & $ShapeCells"],
+      "cases": ["$PeriodRank & $ShapeCells"],
       "grid": [
         [7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],
         [7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],
@@ -577,7 +577,7 @@
         [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
       ]
     }, {
-      "cases": ["$MarkersByColor & $LatticeRank"],
+      "cases": ["$MarkersByColor & $PeriodRank"],
       "grid": [
         [4,4,4,4,4,4,4,4,4,4,4,4,4,2,4,4,4,4,4,4,4,4],
         [4,4,4,4,4,4,4,4,4,4,4,4,2,2,2,4,4,4,4,4,4,4],
@@ -888,7 +888,7 @@
       "cases": ["concept","$AnchorMinority"],
       "grid": null
     }, {
-      "cases": ["$AnchorNearest & $LatticeRank & line=derived"],
+      "cases": ["$AnchorNearest & $PeriodRank & line=derived"],
       "grid": [
         [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
         [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
@@ -922,7 +922,7 @@
         [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
       ]
     }, {
-      "cases": ["$LatticeRank & line=stored"],
+      "cases": ["$PeriodRank & line=stored"],
       "grid": [
         [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
         [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],

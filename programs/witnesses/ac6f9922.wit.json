@@ -1,8 +1,8 @@
 {
   "id": "ac6f9922",
   "witnesses": [{
-    "id": "edge-lattice",
-    "separates": "a lattice whose outer bars lie on the grid edge, with windows that outnumber its bars: the concept takes the edge color, the lattice's, as background, reads the background cells as the lattice, finds the mark as the one region they close off, and gives one cell; $CommonestBackground takes the windows' color as background and gives the 2\u00d72 window picture",
+    "id": "edge-bars",
+    "separates": "bars around 2\u00d72 windows, whose outer bars lie on the grid edge, with windows that outnumber the bars: the concept takes the edge color, the bar color, as background, reads the background cells as the bars, finds the mark as the one region they close off, and gives one cell; $CommonestBackground takes the windows' color as background and gives the 2\u00d72 window picture",
     "input": [
       [1,1,1,1,1,1,1,1,1,1,1],
       [1,4,4,4,4,1,4,4,4,4,1],
@@ -33,7 +33,7 @@
     }]
   }, {
     "id": "missing-window",
-    "separates": "one window of the 2\u00d72 lattice filled in with the lattice color: the window readings find three windows and leave a cell of the picture empty, so they are undefined; $DividerTiles cuts the lattice at its full lines into four tiles and gives the filled tile the background color",
+    "separates": "one window of the 2\u00d72 tiling filled in with the bar color: the window readings find three windows and leave a cell of the picture empty, so they are undefined; $DividerTiles cuts the bars at their full lines into four tiles and gives the filled tile the background color",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,1,1,1,1,1,1,1,1,1,1,1,4],
@@ -67,7 +67,7 @@
     }]
   }, {
     "id": "staggered-window",
-    "separates": "one window a row shorter than the window beside it: the concept and the readings that group windows by their exact rows find overlapping rows and are undefined; $WindowBands merges the overlapping rows into one band and $DividerTiles cuts at the full lattice lines, both giving the 2\u00d72 picture",
+    "separates": "one window a row shorter than the window beside it: the concept and the readings that group windows by their exact rows find overlapping rows and are undefined; $WindowBands merges the overlapping rows into one band and $DividerTiles cuts at the full bar lines, both giving the 2\u00d72 picture",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,1,1,1,1,1,1,1,1,1,1,1,4],
@@ -95,7 +95,7 @@
     }]
   }, {
     "id": "split-window",
-    "separates": "marks that span the full width of the two top windows: the concept reads each window as the region the lattice closes off and gives the marks' colors; $BgRegionWindows reads each background strip above and below a mark as a window of its own and gives a 3\u00d72 picture of empty windows",
+    "separates": "marks that span the full width of the two top windows: the concept reads each window as the region the bars close off and gives the marks' colors; $BgRegionWindows reads each background strip above and below a mark as a window of its own and gives a 3\u00d72 picture of empty windows",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,1,1,1,1,1,1,1,1,1,1,1,4],
@@ -130,7 +130,7 @@
     }]
   }, {
     "id": "window-fill",
-    "separates": "windows filled with a color other than the field outside the lattice: the concept and the other readings count that fill as a second mark beside the mark 2 and are undefined; $WindowFill takes each window's own fill as its empty color and gives the fill for the empty windows",
+    "separates": "windows filled with a color other than the field outside the bars: the concept and the other readings count that fill as a second mark beside the mark 2 and are undefined; $WindowFill takes each window's own fill as its empty color and gives the fill for the empty windows",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,1,1,1,1,1,1,1,1,1,1,1,4],
@@ -158,7 +158,7 @@
     }]
   }, {
     "id": "uneven-bars",
-    "separates": "the bar between the two rows of windows sits one row lower in the right column than in the left, so no lattice row runs the full width: $WindowBands merges the overlapping window rows into two bands and gives the 2\u00d72 picture; $DividerTiles finds no full lattice row and cuts one tile per column, giving 2 3; the exact-row reading finds rows that share lines and is undefined",
+    "separates": "the bar between the two rows of windows sits one row lower in the right column than in the left, so no bar row runs the full width: $WindowBands merges the overlapping window rows into two bands and gives the 2\u00d72 picture; $DividerTiles finds no full bar row and cuts one tile per column, giving 2 3; the exact-row reading finds rows that share lines and is undefined",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,1,1,1,1,1,1,1,1,1,1,1,4],

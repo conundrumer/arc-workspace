@@ -250,7 +250,7 @@
     }]
   }, {
     "id": "separator-1",
-    "separates": "The lines that cut the lattice are 1, not 0. The concept finds no lines of the stored separator and is undefined; $DerivedSeparator takes the separator from the grid's edge and fills the middle tile with 7.",
+    "separates": "The lines that cut the tiling are 1, not 0. The concept finds no lines of the stored separator and is undefined; $DerivedSeparator takes the separator from the grid's edge and fills the middle tile with 7.",
     "input": [
       [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
       [1,8,8,8,8,1,8,8,8,8,1,8,8,8,8,1],

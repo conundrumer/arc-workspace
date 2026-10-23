@@ -1,17 +1,17 @@
 // ac6f9922
 // @draft
 // @keywords: decompose enclose rank
-// @scene framed-lattice: every input is a field of the background color with
-//  a lattice of one other color on it; the background shows outside the
-//  lattice, at least along the grid edge
-// @scene window-grid: the lattice encloses rectangular windows of the
+// @scene framed-bars: every input is a field of the background color with
+//  bars of one other color on it; the background shows outside the
+//  bars, at least along the grid edge
+// @scene window-grid: the bars enclose rectangular windows of the
 //  background color; the windows fall into rows that share their top and
 //  bottom rows of cells, and into columns that share their left and right
 //  columns of cells, so each window is at one row and one column of a full
-//  grid of windows; the lattice bars between windows can be wider than one
+//  grid of windows; the bars between windows can be wider than one
 //  cell, and differ in width
 // @scene one-mark: a window holds no mark or one mark: a solid rectangle of
-//  one color that is neither the background nor the lattice color, which
+//  one color that is neither the background nor the bar color, which
 //  touches no edge of the window; marks differ in size and shape, and two
 //  windows can hold marks of one color
 // @rule window-picture: the output has one row per row of windows and one
@@ -21,12 +21,12 @@
 
 // how the background color is found
 .type Background =
-    // @claim framed-lattice
+    // @claim framed-bars
     EdgeColor {}
-    // @scene framed-lattice: the background is the commonest color of the
+    // @scene framed-bars: the background is the commonest color of the
     //  input; undefined where two colors tie for commonest
-    // @witness edge-lattice: variant $CommonestBackground
-    //     @relaxed framed-lattice
+    // @witness edge-bars: variant $CommonestBackground
+    //     @relaxed framed-bars
   | CommonestBackground {}
 
 // which cells make up a window
@@ -34,7 +34,7 @@
     // @claim window-grid
     ClosedRegion {}
     // @scene window-grid: a window is a connected region of background cells
-    //  closed off from the grid edge, and its marks are the non-lattice cells
+    //  closed off from the grid edge, and its marks are the non-bar cells
     //  inside its bounding box
     // @witness split-window: borderline concept
     //     @relaxed one-mark
@@ -56,11 +56,11 @@
 .type CellUnit =
     // @claim window-grid
     Window {region: WindowRegion, grouping: WindowGrouping}
-    // @scene window-grid: the lattice's full lines cut its bounding box into
+    // @scene window-grid: the bars' full lines cut their bounding box into
     //  tiles, one per place of the grid
     // @rule window-picture: the output has one row per row of tiles and one
     //  column per column of tiles; a tile takes its one color that is neither
-    //  the background nor the lattice color, or the background; undefined
+    //  the background nor the bar color, or the background; undefined
     //  where a tile holds two such colors
     // @witness missing-window: borderline $DividerTiles
     //     @relaxed window-grid
@@ -70,9 +70,9 @@
 .type EmptyColor =
     // @claim mark-color
     BackgroundEmpty {}
-    // @scene window-grid: a window may be filled with any non-lattice color
+    // @scene window-grid: a window may be filled with any non-bar color
     // @rule mark-color: an empty window gives its own fill, the one color its
-    //  cells take where they touch the lattice; undefined where they take two
+    //  cells take where they touch the bars; undefined where they take two
     // @witness window-fill: borderline $WindowFill
     //     @relaxed window-grid
   | WindowFill {}
@@ -83,7 +83,7 @@
 .type RegionKey = [bg: Background, r: WindowRegion]
 .type Region = [k: RegionKey, id: Ident]
 
-// A tile of the lattice under one background.
+// A tile that the bars cut, under one background.
 .type Tile = [bg: Background, p_tile: Position]
 
 // The units of one reading, each named by its bounding box.
@@ -105,14 +105,14 @@ window_grouping_choice($SameExtent()). window_grouping_choice($WindowBands()).
 // The background color.
 .decl bg(b: Background, col: Color)
 
-// The lattice: the commonest color other than the background.
-// @claim framed-lattice
-.init lattice_mode = Mode<Background, Color, Position>
-lattice_mode.item(B, Col, P) :- bg(B, C), in(P, Col), Col != C.
+// The bar color: the commonest color other than the background.
+// @claim framed-bars
+.init bar_mode = Mode<Background, Color, Position>
+bar_mode.item(B, Col, P) :- bg(B, C), in(P, Col), Col != C.
 
-// @claim framed-lattice
-.init lattice = Unanimous<Background, Color>
-lattice.item(B, Col) :- lattice_mode.mode(B, Col).
+// @claim framed-bars
+.init bar_color = Unanimous<Background, Color>
+bar_color.item(B, Col) :- bar_mode.mode(B, Col).
 
 // A unit's cells: the cells one output cell reads.
 .decl unit_cell(k: UnitKey, b: Box, p: Position)
@@ -120,12 +120,12 @@ lattice.item(B, Col) :- lattice_mode.mode(B, Col).
 // The color that fills a unit with no mark.
 .decl fill(ch: Choice, b: Box, col: Color)
 
-// The colors of a unit that are neither its fill nor the lattice.
+// The colors of a unit that are neither its fill nor the bar color.
 // @claim mark-color one-mark
 .init mark = Unanimous<ChoiceUnit, Color>
 mark.item([[B, U, E], Bx], Col) :-
     fill([B, U, E], Bx, F), unit_cell([B, U], Bx, P), in(P, Col), Col != F,
-    lattice.value(B, L), Col != L.
+    bar_color.value(B, L), Col != L.
 
 .decl unit_line(k: UnitKey, a: Axis, b: Box, l: Position)
 unit_line(K, A, Bx, L) :- unit_cell(K, Bx, P), axis_elem(A), split(P, A, L, _).
@@ -154,18 +154,18 @@ out(P, Col, Ch) :-
     compose(P1, P2, P).
 
 // --- $EdgeColor ---
-// @claim framed-lattice
+// @claim framed-bars
 .init edge = Unanimous<Unit, Color>
 edge.item($U(), Col) :- in(P, Col), dir_elem(D), dist(P, D, 0).
 
 bg($EdgeColor(), Col) :- edge.value($U(), Col).
 
 // --- $CommonestBackground ---
-// @claim framed-lattice
+// @claim framed-bars
 .init commonest = Mode<Unit, Color, Position>
 commonest.item($U(), Col, P) :- in(P, Col).
 
-// @claim framed-lattice
+// @claim framed-bars
 .init sole_commonest = Unanimous<Unit, Color>
 sole_commonest.item($U(), Col) :- commonest.mode($U(), Col).
 
@@ -185,7 +185,7 @@ region_box.cell([K, Id], P) :- closed.region(K, P, Id).
 unit_cell([B, $Window(R, G)], Bx, P) :- window_cell([B, R], Bx, P), window_grouping_choice(G).
 
 // --- $ClosedRegion ---
-closed.cell([B, $ClosedRegion()], P) :- lattice.value(B, L), in(P, Col), Col != L.
+closed.cell([B, $ClosedRegion()], P) :- bar_color.value(B, L), in(P, Col), Col != L.
 
 window_cell([B, $ClosedRegion()], Bx, P) :-
     closed.region([B, $ClosedRegion()], P, Id), region_box.box([[B, $ClosedRegion()], Id], Bx).
@@ -195,7 +195,7 @@ closed.cell([B, $BgRegionWindows()], P) :- bg(B, Col), in(P, Col).
 
 window_cell([B, $BgRegionWindows()], Bx, P) :-
     region_box.box([[B, $BgRegionWindows()], _], Bx),             // a closed region of background
-    lattice.value(B, L), in(P, Col), Col != L, inside(P, Bx).    // its box's non-lattice cells
+    bar_color.value(B, L), in(P, Col), Col != L, inside(P, Bx).    // its box's non-bar cells
 
 // --- $SameExtent, $DividerTiles ---
 // Units with the same extent along the axis.
@@ -213,22 +213,22 @@ same_band.edge([K, A, Bx], [K, A, Bx2]) :-
 
 // --- $DividerTiles ---
 // @claim window-grid
-.init lattice_box = Bbox<Background>
-lattice_box.cell(B, P) :- lattice.value(B, L), in(P, L).
+.init bar_box = Bbox<Background>
+bar_box.cell(B, P) :- bar_color.value(B, L), in(P, L).
 
-.decl lattice_area(b: Background, p: Position)
-lattice_area(B, P) :- lattice_box.box(B, Bx), in(P, _), inside(P, Bx).
+.decl bar_area(b: Background, p: Position)
+bar_area(B, P) :- bar_box.box(B, Bx), in(P, _), inside(P, Bx).
 
-// A line of the lattice's box that holds a cell of another color.
+// A line of the bars' box that holds a cell of another color.
 .decl broken_line(b: Background, a: Axis, l: Position)
 broken_line(B, A, L) :-
-    lattice_area(B, P), lattice.value(B, C), in(P, Col), Col != C, axis_elem(A), split(P, A, L, _).
+    bar_area(B, P), bar_color.value(B, C), in(P, Col), Col != C, axis_elem(A), split(P, A, L, _).
 
 // @claim window-grid window-picture
 .init tiles = DividerTiles<Background>
-tiles.cell(B, P) :- lattice_area(B, P).
+tiles.cell(B, P) :- bar_area(B, P).
 tiles.divider(B, A, L) :-
-    lattice_area(B, P), axis_elem(A), split(P, A, L, _), !broken_line(B, A, L).
+    bar_area(B, P), axis_elem(A), split(P, A, L, _), !broken_line(B, A, L).
 
 // @claim window-grid
 .init tile_box = Bbox<Tile>
@@ -240,11 +240,11 @@ unit_cell([B, $DividerTiles()], Bx, P) :- tiles.tile_of(B, P, T), tile_box.box([
 fill([B, U, $BackgroundEmpty()], Bx, Col) :- unit_cell([B, U], Bx, _), bg(B, Col).
 
 // --- $WindowFill ---
-// The colors of a unit's cells beside the lattice.
+// The colors of a unit's cells beside the bars.
 // @claim mark-color
 .init rim = Unanimous<UnitOf, Color>
 rim.item([[B, U], Bx], Col) :-
     unit_cell([B, U], Bx, P), in(P, Col),
-    lattice.value(B, L), dir_elem(D), neighbor(P, D, Q), in(Q, L).    // a lattice cell beside it
+    bar_color.value(B, L), dir_elem(D), neighbor(P, D, Q), in(Q, L).    // a bar cell beside it
 
 fill([B, U, $WindowFill()], Bx, Col) :- rim.value([[B, U], Bx], Col).

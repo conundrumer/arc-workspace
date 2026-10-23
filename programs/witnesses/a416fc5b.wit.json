@@ -1588,7 +1588,7 @@
     }]
   }, {
     "id": "hidden-cross",
-    "separates": "turn=SepTileCount and turn=SepTileDim from the stored turn, under $FixedPanels: the middle row and middle column are the only whole lines of one color, 7, so the lattice has 2 panels of size 5 on each axis; a scattered 4 breaks every other line, and 7 is dominant. $FixedPanels cuts its fixed 3x3 panels, finds the corner shape in the center and N panels, and stamps at SE and SW with the stored turn 3, at E and W with the count's turn 2, and at SW and SE, colors swapped, with the size's turn 5. The center panel holds only 7 and 2, so $DeriveShapeColor reads 2 at the stored and the dominant bg alike. The line-reading cases find no center panel.",
+    "separates": "turn=SepTileCount and turn=SepTileDim from the stored turn, under $FixedPanels: the middle row and middle column are the only whole lines of one color, 7, so the tiling has 2 panels of size 5 on each axis; a scattered 4 breaks every other line, and 7 is dominant. $FixedPanels cuts its fixed 3x3 panels, finds the corner shape in the center and N panels, and stamps at SE and SW with the stored turn 3, at E and W with the count's turn 2, and at SW and SE, colors swapped, with the size's turn 5. The center panel holds only 7 and 2, so $DeriveShapeColor reads 2 at the stored and the dominant bg alike. The line-reading cases find no center panel.",
     "input": [
       [4,7,7,7,2,7,2,7,7,7,7],
       [7,4,7,7,7,7,7,7,7,7,7],
@@ -1697,7 +1697,7 @@
       ]
     }]
   }, {
-    "id": "manhattan-lattice",
+    "id": "manhattan-tiling",
     "separates": "turn=SepTileDim from the stored turn, under $ManhattanTargets: a 5x5 array of 4x4 panels, with an X in the center panel and in the panel N of it. The panel size gives 4, and the four panels at taxicab distance 4 from the N panel each lie off the line through the center along N, so the cases that take the size's turn stamp there, or keep the input under $StoredShape. With the stored turn 3, the panel two below the center is at taxicab distance 3 and on that line, so $ManhattanTargets is undefined.",
     "input": [
       [7,7,7,7,6,7,7,7,7,6,7,7,7,7,6,7,7,7,7,6,7,7,7,7],

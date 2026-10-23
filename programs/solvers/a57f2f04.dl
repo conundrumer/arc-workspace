@@ -76,15 +76,15 @@
     //     @relaxed motif
   | CornerBox {}
 
-// where the lattice of copies is laid from
+// where the tiling of copies is laid from
 .type Anchor =
     // @claim tile-panel
-    TileLattice {}
+    Tiling {}
     // @rule tile-panel: each panel is filled with copies of its motif tile,
     //  laid from the corner of the panel's bounding box at params.anchor and
     //  repeated along both axes; blank cells in the tile stay blank; the
     //  output holds each anchor's grid
-    // @witness off-lattice: borderline concept
+    // @witness off-tiling: borderline concept
     //     @relaxed tile
     // @witness inset-even: variant $CornerBox
   | CornerAnchor {}
@@ -233,7 +233,7 @@ mark_set_choice($AllMarks()). mark_set_choice($ColorBox()).
 tile_extent_choice($MarkBox()). tile_extent_choice($CornerBox()).
 
 .decl anchor_choice(a: Anchor)
-anchor_choice($TileLattice()). anchor_choice($CornerAnchor()).
+anchor_choice($Tiling()). anchor_choice($CornerAnchor()).
 
 .decl panel_extent_choice(e: PanelExtent)
 panel_extent_choice($PanelCells()). panel_extent_choice($ComponentBbox()).
@@ -363,11 +363,11 @@ parse.tile(Pn, B) :-
     edge_outset(D2, K2, O2), compose(B1, O2, B).       // and on the other
 broken([F, C, B, M, T, A, E]) :- gap([F, C, B, M, T, A, _], _, K, K), panel_extent_choice(E).
 
-// --- $TileLattice ---
-open_value(Ch, [nil]) :- impl_choice(Ch), Ch = [_, _, _, _, _, $TileLattice(), _].
+// --- $Tiling ---
+open_value(Ch, [nil]) :- impl_choice(Ch), Ch = [_, _, _, _, _, $Tiling(), _].
 
-laid(Pn, [nil], B) :- parse.tile(Pn, B), Pn = [_, _, _, _, _, $TileLattice(), _].
-parse.lay(Pn, B) :- parse.tile(Pn, B), Pn = [_, _, _, _, _, $TileLattice(), _].
+laid(Pn, [nil], B) :- parse.tile(Pn, B), Pn = [_, _, _, _, _, $Tiling(), _].
+parse.lay(Pn, B) :- parse.tile(Pn, B), Pn = [_, _, _, _, _, $Tiling(), _].
 
 // --- $CornerAnchor ---
 open_value(Ch, [[D]]) :-

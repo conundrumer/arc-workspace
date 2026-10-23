@@ -7,8 +7,8 @@
 //  Minority colors that share a count share a rank, colliding at one output
 //  position; a max-count tie drops every tied color.
 
-// $Cells/$Blocks coincide while every block has one size; $Blocks/$Lattice
-// coincide while every block is a lattice tile.
+// $Cells/$Blocks coincide while every block has one size; $Blocks/$Tiling
+// coincide while every block is a tile of the tiling.
 
 // what is counted for each color
 .type Choice =
@@ -16,9 +16,9 @@
     Cells {}
     // connected components of each color
   | Blocks {}
-    // tiles of the separator lattice (the frame inside the border, divided by
+    // tiles of the separator tiling (the frame inside the border, divided by
     // tile size) of each color
-  | Lattice {}
+  | Tiling {}
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -26,13 +26,13 @@
     .decl bg(c: Color) bg(0).
     .decl rank_dir(d: Dir) rank_dir(DIR_T).
 
-    // --- $Lattice ---
+    // --- $Tiling ---
     .decl tile_dim(a: Axis, k: number)
     tile_dim(AXIS_V, 1). tile_dim(AXIS_H, 2).
 
     .decl tile_gap(g: number) tile_gap(1).
 
-    // The separator border around the lattice.
+    // The separator border around the tiling.
     .decl border_width(k: number) border_width(1).
 }
 
@@ -64,7 +64,7 @@ comps.node($U(), P) :- in(P, Col), !params.bg(Col).
 .init block_count = Tally<Color, Ident>
 block_count.item(Col, Id) :- comps.label($U(), P, Id), in(P, Col).
 
-// --- $Lattice: tile detection ---
+// --- $Tiling: tile detection ---
 
 // A cell seen in the frame the border encloses. Non-bg cells never sit on that
 // border, so the frame holds every one of them.
@@ -72,16 +72,16 @@ block_count.item(Col, Id) :- comps.label($U(), P, Id), in(P, Col).
 core_cell(P, P_inner) :-
     in(P, _), params.border_width(K), uniform_inset(K, B), crop(P, B, P_inner).
 
-.init lattice = Tile2D<Unit>
-lattice.cell(P_inner) :- in(P, Col), !params.bg(Col), core_cell(P, P_inner).
-lattice.dim($U(), A, K) :- params.tile_dim(A, K).
-lattice.gap(G) :- params.tile_gap(G).
+.init tiling = Tile2D<Unit>
+tiling.cell(P_inner) :- in(P, Col), !params.bg(Col), core_cell(P, P_inner).
+tiling.dim($U(), A, K) :- params.tile_dim(A, K).
+tiling.gap(G) :- params.tile_gap(G).
 
 .decl tile_color(p_tile: Position, col: Color)
 tile_color(P_tile, Col) :-
     in(P, Col),                              // input cell
     core_cell(P, P_inner),                   // seen in the interior frame
-    lattice.tile($U(), P_inner, P_tile, _).  // its lattice tile
+    tiling.tile($U(), P_inner, P_tile, _).  // its tile
 
 // --- counts per choice ---
 
@@ -94,7 +94,7 @@ tile_count.item(Col, P_tile) :- tile_color(P_tile, Col).
 .init parse = Parse<Choice>
 parse.count_of($Cells(), Col, N)   :- cell_count.tally(Col, N).
 parse.count_of($Blocks(), Col, N)  :- block_count.tally(Col, N).
-parse.count_of($Lattice(), Col, N) :- tile_count.tally(Col, N).
+parse.count_of($Tiling(), Col, N) :- tile_count.tally(Col, N).
 
 // --- place ---
 
@@ -140,7 +140,7 @@ out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
 
     .decl tile_gap(g: number)
     tile_gap(G) :-
-        span.cell(E, P), span.box(E, B), crop(P, B, P_inner),  // the frame the lattice divides
+        span.cell(E, P), span.box(E, B), crop(P, B, P_inner),  // the frame the tiling divides
         tile_count.tally([E, D], N), axis_of(D, A), tile_dim(A, K),
         divide_gap(P_inner, A, N, K, G).
 

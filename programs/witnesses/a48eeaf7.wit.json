@@ -285,7 +285,7 @@
       ]
     }]
   }, {
-    "id": "lattice",
+    "id": "tiling",
     "separates": "$DeriveRoles from DeriveRoles & background=DominantColor: the block color 2 covers most of the grid, with the 0 cells and the marker at (4,4) on isolated cells between its lines. With the stored background 0, $DeriveRoles reads 2 as the block color and the marker as 5, and moves the marker as its approach and block parse say. With the background derived as 2, no other color has a same-colored neighbor, so $DeriveRoles finds no block color and is undefined.",
     "input": [
       [2,2,0,2,0],

@@ -4,38 +4,38 @@
 // @scene edge-line: one full edge of the grid is a line of color
 //  params.line_color; every other cell outside the squares is
 //  params.bg_color
-// @scene ring-lattice: hollow squares of side params.ring_side sit on a
-//  square lattice of 7 by 7 slots, with a gap of params.ring_gap between
+// @scene ring-tiling: hollow squares of side params.ring_side sit on a
+//  square tiling of 7 by 7 slots, with a gap of params.ring_gap between
 //  neighboring slots; each square has one color
-// @scene pack-gap-empty: on the pack axis, the middle lattice line holds no
+// @scene pack-gap-empty: on the pack axis, the middle slot line holds no
 //  square
 // @rule pack-side: the pack side is the line's side turned a quarter turn in
 //  sense params.turn_sense
 // @rule ring-cell: each square stands for one cell of its color at its
-//  lattice slot
-// @rule pack-lines: along each lattice line on the pack axis, the cells keep
+//  slot
+// @rule pack-lines: along each slot line on the pack axis, the cells keep
 //  their order and slide to the pack side with no gaps between them
-// @rule output-extent: the output has one row or column per lattice line
+// @rule output-extent: the output has one row or column per slot line
 //  across the pack axis, from the first line that holds a square to the
-//  last, and along the pack axis it holds the lattice lines that hold a
+//  last, and along the pack axis it holds the slot lines that hold a
 //  square; the rest is params.bg_color
 
 // how the pack side is found
 .type Side =
     // @claim pack-side
     TurnFromLine {}
-    // @rule pack-side: on each axis, the middle lattice line of the squares'
-    //  span cuts the lattice into two halves; the pack side is the side of
+    // @rule pack-side: on each axis, the middle slot line of the squares'
+    //  span cuts the tiling into two halves; the pack side is the side of
     //  the only half whose squares share one color; undefined where an axis
-    //  spans an even number of lattice lines, or where the one-colored halves
+    //  spans an even number of slot lines, or where the one-colored halves
     //  are not exactly one
     // @witness band-opposite-turn: variant $PackTowardUniformHalf
     // @witness quadrants-one-color: ordinary concept
   | PackTowardUniformHalf {}
-    // @rule pack-side: on each axis, the middle lattice line of the squares'
-    //  span cuts the lattice into two halves; the pack side is the side of
+    // @rule pack-side: on each axis, the middle slot line of the squares'
+    //  span cuts the tiling into two halves; the pack side is the side of
     //  the only half whose squares are all params.band_color; undefined where
-    //  an axis spans an even number of lattice lines, or where such halves
+    //  an axis spans an even number of slot lines, or where such halves
     //  are not exactly one
     // @witness band-opposite-turn: variant $PackTowardUniformHalf
     // @witness band-recolored: variant concept
@@ -48,24 +48,24 @@
     // @rule ring-cell: each 4-connected piece of cells off params.bg_color
     //  that fits in a params.ring_side box stands for one cell, at the slot
     //  of its box; undefined where a piece holds two colors, or where the
-    //  pieces are off one lattice
+    //  pieces are off one tiling
     // @witness filled-square: borderline $ComponentUnit
-    //     @relaxed ring-lattice
+    //     @relaxed ring-tiling
   | ComponentUnit {}
 
-// which lattice lines across the pack axis the output holds
+// which slot lines across the pack axis the output holds
 .type CrossLines =
     // @claim output-extent
-    LatticeSpan {}
+    TilingSpan {}
     // @rule output-extent: across the pack axis, one output line per
-    //  lattice line that holds a square
+    //  slot line that holds a square
     // @witness middle-cross-line-empty: ordinary concept
   | RankedLines {}
     // @rule output-extent: across the pack axis, one output line per
-    //  lattice line whose slot fits inside the frame
-    // @witness first-cross-line-empty: borderline $FrameLattice
-    //     @relaxed ring-lattice
-  | FrameLattice {}
+    //  slot line whose slot fits inside the frame
+    // @witness first-cross-line-empty: borderline $FrameTiling
+    //     @relaxed ring-tiling
+  | FrameTiling {}
 
 // how long the output is along the pack axis
 .type AlongExtent =
@@ -118,8 +118,8 @@ side_choice($PackTowardColorHalf()).
 piece_choice($HollowSquare()). piece_choice($ComponentUnit()).
 
 .decl cross_lines_choice(c: CrossLines)
-cross_lines_choice($LatticeSpan()). cross_lines_choice($RankedLines()).
-cross_lines_choice($FrameLattice()).
+cross_lines_choice($TilingSpan()). cross_lines_choice($RankedLines()).
+cross_lines_choice($FrameTiling()).
 
 .decl along_extent_choice(a: AlongExtent)
 along_extent_choice($OccupiedLines()). along_extent_choice($MostRingsExtent()).
@@ -153,7 +153,7 @@ impl_choice([S, P, C, A]) :-
     .type KeyColor = [key: Key, col: Color]
 
     // The rectangle outlines of each color.
-    // @claim ring-lattice ring-cell
+    // @claim ring-tiling ring-cell
     .init outline = Outlines<KeyColor>
     outline.node([Ky, Col], P) :- grid(Ky, P, Col), !params.bg_color(Col).
 
@@ -200,32 +200,32 @@ unit($ComponentUnit(), B, Col) :-
 
 // --- $HollowSquare, $ComponentUnit ---
 // The units' span.
-// @claim ring-lattice
+// @claim ring-tiling
 .init span = Bbox<Piece>
 span.cell(Pc, B) :- unit(Pc, B, _).
 
-// The lines of each lattice slot, the slot counted by its place from the
+// The lines of each slot, the slot counted by its place from the
 // span's edge e: slots of ring_side lines, ring_gap lines apart.
-// @claim ring-lattice
+// @claim ring-tiling
 .init slot = Bbox<SlotKey>
 slot.cell([Pc, E, N], L) :-
     span.box(Pc, B), parse.line($U(), A, L), axis_of(E, A),
     relative(B, L, L_rel), dist(L_rel, E, T),                    // T lines past the span's edge e
     params.ring_side(W), params.ring_gap(G), stride(T, W, G, N, _).
 
-// The lattice lines on axis a whose slot fits inside the frame, each as the
+// The slot lines on axis a whose slot fits inside the frame, each as the
 // slab of its ring_side lines.
-.decl lattice(pc: Piece, a: Axis, s: Box)
-lattice(Pc, A, S) :-
+.decl slot_line(pc: Piece, a: Axis, s: Box)
+slot_line(Pc, A, S) :-
     slot.box([Pc, E, N], S), axis_of(E, A),
     slot.cell([Pc, E, N], L), params.ring_side(W), box_extent(S, L, A, W).
 
-// The lattice lines inside the units' span.
+// The slot lines inside the units' span.
 .decl span_line(pc: Piece, a: Axis, s: Box)
 span_line(Pc, A, S) :-
-    lattice(Pc, A, S), span.box(Pc, B), split(B, A, B_a, _), inside(S, B_a).
+    slot_line(Pc, A, S), span.box(Pc, B), split(B, A, B_a, _), inside(S, B_a).
 
-// The lattice line on axis a that holds unit b.
+// The slot line on axis a that holds unit b.
 .decl unit_line(pc: Piece, b: Box, a: Axis, s: Box)
 unit_line(Pc, B, A, S) :-
     unit(Pc, B, _), span_line(Pc, A, S), split(B, A, B_a, _), inside(B_a, S).
@@ -239,13 +239,13 @@ pack($TurnFromLine(), Pc, D) :-
     params.turn_sense(Sn), turn(Sn, D0, D).
 
 // --- $PackTowardUniformHalf, $PackTowardColorHalf ---
-// The middle lattice line of the span on axis a.
+// The middle slot line of the span on axis a.
 .decl middle(pc: Piece, a: Axis, s: Box)
 middle(Pc, A, S) :-
     span_line(Pc, A, S), span.box(Pc, B), relative(B, S, S_rel),
     axis_of(D, A), dist_pair(S_rel, D, K, K).
 
-// A span with no middle lattice line on some axis.
+// A span with no middle slot line on some axis.
 .decl even(pc: Piece)
 even(Pc) :- span.box(Pc, _), axis_elem(A), !middle(Pc, A, _).
 
@@ -283,7 +283,7 @@ toward($PackTowardColorHalf(), Pc, D) :- half(Pc, D, _), !off_band(Pc, D).
 .decl axes(sd: Side, pc: Piece, a_pack: Axis, a_cross: Axis)
 axes(Sd, Pc, Ap, Ac) :- pack(Sd, Pc, D), axis_of(D, Ap), perp(Ap, Ac).
 
-// The units of each lattice line across the pack axis, in order from the
+// The units of each slot line across the pack axis, in order from the
 // pack side.
 // @claim pack-lines
 .init along_order = Order<LineKey, Box>
@@ -292,19 +292,19 @@ along_order.before(K, B1, B2) :-
     along_order.elem(K, B1), along_order.elem(K, B2), K = [Sd, Pc, _],
     pack(Sd, Pc, D), nearer(D, B1, B2).
 
-// The lattice lines across the pack axis that the output holds.
+// The slot lines across the pack axis that the output holds.
 .decl cross(k: CrossKey, s: Box)
 
-// --- $LatticeSpan ---
-cross([Sd, Pc, $LatticeSpan()], S) :- axes(Sd, Pc, _, Ac), span_line(Pc, Ac, S).
+// --- $TilingSpan ---
+cross([Sd, Pc, $TilingSpan()], S) :- axes(Sd, Pc, _, Ac), span_line(Pc, Ac, S).
 
 // --- $RankedLines ---
 cross([Sd, Pc, $RankedLines()], S) :- axes(Sd, Pc, _, Ac), unit_line(Pc, _, Ac, S).
 
-// --- $FrameLattice ---
-cross([Sd, Pc, $FrameLattice()], S) :- axes(Sd, Pc, _, Ac), lattice(Pc, Ac, S).
+// --- $FrameTiling ---
+cross([Sd, Pc, $FrameTiling()], S) :- axes(Sd, Pc, _, Ac), slot_line(Pc, Ac, S).
 
-// --- $LatticeSpan, $RankedLines, $FrameLattice ---
+// --- $TilingSpan, $RankedLines, $FrameTiling ---
 // Each output line's place across the pack axis.
 // @claim output-extent
 .init cross_frame = OrderFrame<CrossKey, Box>
@@ -315,7 +315,7 @@ cross_frame.member(K, S, S) :- cross(K, S).
 .decl along_extent(k: AlongKey, n: number)
 
 // --- $OccupiedLines ---
-// The lattice lines on the pack axis that hold a unit.
+// The slot lines on the pack axis that hold a unit.
 // @claim output-extent
 .init occupied = Tally<SidePiece, Box>
 occupied.item([Sd, Pc], S) :- axes(Sd, Pc, Ap, _), unit_line(Pc, _, Ap, S).

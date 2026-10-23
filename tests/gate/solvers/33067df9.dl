@@ -1,8 +1,8 @@
 // 33067df9
 // @keywords: decompose scale merge
-// input: The input is a lattice: single-cell tiles ruled off by single-cell
+// input: The input is a tiling: single-cell tiles ruled off by single-cell
 //  lines, with a line on every side.
-// output: The output redraws that lattice on a fixed square canvas, with
+// output: The output redraws that tiling on a fixed square canvas, with
 //  two-cell lines and tiles as large as the canvas admits. Like-colored tiles
 //  join. Along the run axis, neighbors join into a run; across it, a run
 //  joins the run one step over when the two cover the same tiles. A joined
@@ -14,7 +14,7 @@
 .comp Params {
     .decl bg(col: Color) bg(0).
 
-    // Lattice widths.
+    // Tiling widths.
     .decl in_line(k: number) in_line(1).
     .decl in_tile(k: number) in_tile(1).
     .decl out_line(k: number) out_line(2).
@@ -26,9 +26,9 @@
 
 .init params = Params
 
-// --- the input lattice ---
+// --- the input tiling ---
 
-// The color each lattice tile holds.
+// The color each tile holds.
 .decl tile_col(p_tile: Position, col: Color)
 tile_col(P_tile, Col) :-
     in(P_grid_in, Col), params.in_line(G),
@@ -74,7 +74,7 @@ join(P_tile, Q_tile) :-
 group.equiv(P_tile, P_tile) :- ink(P_tile, _).
 group.equiv(P_tile, R_tile) :- group.equiv(P_tile, Q_tile), join(Q_tile, R_tile).
 
-// --- the output lattice ---
+// --- the output tiling ---
 
 .init canvas = Frame2D<Unit>
 canvas.extent($U(), A, N) :- axis_elem(A), params.canvas_side(N).

@@ -13,9 +13,9 @@
     - `bg=SharedColor`: `bg` derived as each color of the input. Fails Fit at train0, because every color of the input becomes `bg`.
     - `bg=RarestColor`: `bg` derived as the rarest color of the input. Fails Fit at train0, because 8 and 9 tie as rarest there and neither is 0.
 - `block-parse`
-    - `concept`: the blocks are the tiles of a lattice, and each tile is one output cell at its tile row and column
-        - `lattice-source`
-            - `concept`: the lattice is cut by the full lines of `bg`
+    - `concept`: the blocks are the tiles of a tiling, and each tile is one output cell at its tile row and column
+        - `tiling-source`
+            - `concept`: the tiling is cut by the full lines of `bg`
             - `tile_size=stored`: tiles stored as 3×2, with a 1-wide edge and gap; undefined where an input extent is not 1 + n·(size + 1). Fits every pair. Witness `tile_size=stored`: 3×5 blocks, which the stored 2-wide tiles cut into four columns, so the output has 4 columns where the dividers give 2. Breaks `block-size`. Plausibility `variant`, verdict `concept`.
             - `tile_count=stored`: tile count stored as 2 rows by 3 columns, with a 1-wide edge and gap, and the tile size derived from the input extent; undefined where the extent does not divide. Fits every pair. Witness `tile_count=stored`: three rows of 3×2 blocks, which the stored count cuts into two rows of 5-high tiles across a divider. Breaks `block-layout` (2 rows by 3 columns of blocks in every input). Plausibility `variant`, verdict `concept`.
         - `mode-domain`
@@ -35,8 +35,8 @@
 - `output-extent`
     - `concept`: the output extent is the block layout plus the margins
     - `out_dims=stored`: output extent stored as 4×5; undefined where the block picture and its border do not fill exactly 4×5. Fits every pair. Fails Subsumption: wherever it is defined, it gives the concept's output. Witness `out_dims=stored`: two columns of 3×2 blocks, where the concept gives a 4×4 output and `out_dims=stored` is undefined. Breaks `block-layout`. Plausibility `variant`, verdict `concept`.
-- `bg` & `block-parse`, `bg` & `lattice-source`, `bg` & `mode-domain`, `bg` & `adjacency`, `bg` & `color-pick`, `bg` & `output-margin`, `bg` & `output-extent`, `block-parse` & `color-pick`, `block-parse` & `output-margin`, `block-parse` & `output-extent`, `lattice-source` & `mode-domain`, `lattice-source` & `color-pick`, `lattice-source` & `output-margin`, `lattice-source` & `output-extent`, `mode-domain` & `color-pick`, `mode-domain` & `output-margin`, `mode-domain` & `output-extent`, `adjacency` & `color-pick`, `adjacency` & `output-margin`, `adjacency` & `output-extent`, `color-pick` & `output-margin`, `color-pick` & `output-extent`, `output-margin` & `output-extent`: the two branches' changes applied together
-- `lattice-source` & `adjacency`, `mode-domain` & `adjacency`: no case takes a non-concept branch at both, because the two points stand under different branches of `block-parse`.
+- `bg` & `block-parse`, `bg` & `tiling-source`, `bg` & `mode-domain`, `bg` & `adjacency`, `bg` & `color-pick`, `bg` & `output-margin`, `bg` & `output-extent`, `block-parse` & `color-pick`, `block-parse` & `output-margin`, `block-parse` & `output-extent`, `tiling-source` & `mode-domain`, `tiling-source` & `color-pick`, `tiling-source` & `output-margin`, `tiling-source` & `output-extent`, `mode-domain` & `color-pick`, `mode-domain` & `output-margin`, `mode-domain` & `output-extent`, `adjacency` & `color-pick`, `adjacency` & `output-margin`, `adjacency` & `output-extent`, `color-pick` & `output-margin`, `color-pick` & `output-extent`, `output-margin` & `output-extent`: the two branches' changes applied together
+- `tiling-source` & `adjacency`, `mode-domain` & `adjacency`: no case takes a non-concept branch at both, because the two points stand under different branches of `block-parse`.
 - `mode-domain` stands under the concept branch of `block-parse`, because `$Components` & `$NonBgMode` is the `$Components` model alone: a component holds no `bg` cell.
 
 ## Open parameters

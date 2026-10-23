@@ -614,10 +614,10 @@
 }
 
 /// The isometries of a valued cell set interpreted as a periodic pattern,
-/// each taken with every translation of its lattice: a candidate is a D4
-/// transform composed with each shift of one coset of the lattice, the
-/// translations by a multiple of the period on each axis that has a
-/// `period` row, and by none on an axis that has none. A candidate is a
+/// each taken with every one of its period translations, the translations
+/// by a multiple of the period on each axis that has a `period` row, and by
+/// none on an axis that has none: a candidate is a D4 transform composed
+/// with each shift of one coset of the period translations. A candidate is a
 /// symmetry when its shifts together take some cell onto another cell and
 /// none of them takes a cell onto a cell of another value.
 .comp Wallpaper<Key, Val> {
@@ -635,7 +635,7 @@
     .decl period(key: Key, a: Axis, k: number)  // @input
 
     // delta is a shift along axis a that stands for one coset of the
-    // lattice on that axis: zero, or, on an axis with a period, less than
+    // period translations on that axis: zero, or, on an axis with a period, less than
     // one period toward the bottom or right edge. The output takes every
     // shift of the coset, so it does not depend on this choice.
     .decl _dom_ax(key: Key, a: Axis, delta: Offset)
@@ -646,13 +646,13 @@
           dir_of(DIAG_BR, A, D), jump_offset(D, K, Delta)
         ).
 
-    // delta stands for one coset of the lattice.
+    // delta stands for one coset of the period translations.
     .decl _dom(key: Key, delta: Offset)
     _dom(Key, Delta) :-
         _dom_ax(Key, A, D1), _dom_ax(Key, A2, D2), perp(A, A2),
         compose(D1, D2, Delta).
 
-    // The translation s lies in the lattice along axis a: its component on
+    // The translation s is a period translation along axis a: its component on
     // a is a multiple of the period there, or zero where a has none.
     .decl _lat_ax(key: Key, a: Axis, s: Offset) inline
     _lat_ax(Key, A, S) :-
@@ -663,10 +663,10 @@
 
     // Transform d followed by the coset of shift delta is a candidate
     // isometry. Where d is its own inverse, the candidate squares to the
-    // translations of one coset, which holds the lattice exactly where the
-    // square of delta lies in it. Where that square lies along an axis, it
-    // must lie in the lattice; where it lies off both axes, the periods do
-    // not determine whether the lattice holds it, and the cell tests decide.
+    // translations of one coset, which holds the period translations exactly
+    // where the square of delta is one of them. Where that square lies along
+    // an axis, it must be a period translation; where it lies off both axes,
+    // the periods do not determine whether it is one, and the cell tests decide.
     .decl _cand(key: Key, d: D4, delta: Offset)
     _cand(Key, D, Delta) :-
         transform(D), _dom(Key, Delta),
@@ -686,10 +686,10 @@
         _cand(Key, D, Delta), grid(Key, P), apply(D, P, P1),
         compose(P1, Delta, X).
 
-    // The class of x under the lattice: on each axis, the margin from the
+    // The period class of x: on each axis, the margin from the
     // top or left edge modulo the period where the axis has one, and the
     // margin itself where it has none, with the margins' sum. Two boxes are
-    // in one class exactly where a translation of the lattice takes one onto
+    // in one class exactly where a period translation takes one onto
     // the other.
     .decl _class(key: Key, x: Box, rv: number, sv: number, rh: number,
                  sh: number)
@@ -703,14 +703,14 @@
         ; !period(Key, AXIS_H, _), Rh = L
         ).
 
-    // The candidate (d, delta) takes the frame position p into the lattice
+    // The candidate (d, delta) takes the frame position p into the period
     // class (rv, sv, rh, sh).
     .decl _image_class(key: Key, d: D4, delta: Offset, p: Position, rv: number,
                        sv: number, rh: number, sh: number) inline
     _image_class(Key, D, Delta, P, Rv, Sv, Rh, Sh) :-
         _image(Key, D, Delta, P, X), _class(Key, X, Rv, Sv, Rh, Sh).
 
-    // The frame position q lies in the lattice class (rv, sv, rh, sh).
+    // The frame position q lies in the period class (rv, sv, rh, sh).
     .decl _class_pos(key: Key, rv: number, sv: number, rh: number,
                      sh: number, q: Position)
     _class_pos(Key, Rv, Sv, Rh, Sh, Q) :-
@@ -723,20 +723,20 @@
         _image_class(Key, D, Delta, P, Rv, Sv, Rh, Sh),
         _class_pos(Key, Rv, Sv, Rh, Sh, Q).
 
-    // A cell lies at the frame position q, in the lattice class
+    // A cell lies at the frame position q, in the period class
     // (rv, sv, rh, sh).
     .decl _class_cell(key: Key, rv: number, sv: number, rh: number,
                       sh: number, q: Position)
     _class_cell(Key, Rv, Sv, Rh, Sh, Q) :-
         _class_pos(Key, Rv, Sv, Rh, Sh, Q), cell(Key, Q, _).
 
-    // A cell of the lattice class (rv, sv, rh, sh) holds v.
+    // A cell of the period class (rv, sv, rh, sh) holds v.
     .decl _class_val(key: Key, rv: number, sv: number, rh: number,
                      sh: number, v: Val)
     _class_val(Key, Rv, Sv, Rh, Sh, V) :-
         _class_cell(Key, Rv, Sv, Rh, Sh, Q), cell(Key, Q, V).
 
-    // The lattice class (rv, sv, rh, sh) holds cells at n frame positions.
+    // The period class (rv, sv, rh, sh) holds cells at n frame positions.
     .decl _class_n(key: Key, rv: number, sv: number, rh: number, sh: number,
                    n: number)
     _class_n(Key, Rv, Sv, Rh, Sh, N) :-
@@ -764,7 +764,7 @@
     _symmetry(Key, D, Delta) :-
         _witnessed(Key, D, Delta), !_mismatch(Key, D, Delta).
 
-    /// A symmetry, or a translation of the lattice, takes the frame position
+    /// A symmetry, or a period translation, takes the frame position
     /// p onto the frame position q.
     .decl action(key: Key, p: Position, q: Position)
     action(Key, P, Q) :-

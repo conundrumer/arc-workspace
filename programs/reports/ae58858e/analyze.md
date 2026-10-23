@@ -33,7 +33,7 @@
 - A recolor table keyed by shape color in place of `shape_color` and `new_color`: every task of the generator has one shape color, so the table has one row, and it is equivalent to the concept case.
 - A recolor test of "more than 3 cells" in place of "at least 4 cells": the same model with the threshold stored one lower, equivalent to the concept case.
 - A recolor test by bounding box (at least 2×2, or area at least 4) or by shape (not a straight line): the 3-cell L of train3 at (1,1), (1,2), (2,2) has a 2×2 box and bends, and it stays 2, so each fails Fit at train3.
-- A `@derive` branch on `min_size`: the number proposers in `programs/proposers.dl` read grid extents, periods, tile counts and separator lattices, and none counts a shape's cells. `ConstInDim` on train2 (6×6) gives 6, under which the 4-cell shapes of train2 stay 2, so it fails Fit there.
+- A `@derive` branch on `min_size`: the number proposers in `programs/proposers.dl` read grid extents, periods, tile counts and separator tilings, and none counts a shape's cells. `ConstInDim` on train2 (6×6) gives 6, under which the 4-cell shapes of train2 stay 2, so it fails Fit there.
 
 ## Tickets filed
 - 10-112_task_ae58858e_analyze.md

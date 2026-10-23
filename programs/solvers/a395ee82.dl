@@ -7,10 +7,11 @@
 // @scene shape: one object has more than one cell, in one color S; its
 //  bounding box is h rows by w columns
 // @scene dots: every other object is a single cell, a dot, and the dots sit
-//  on a lattice with a step of params.dot_step on both axes; exactly one dot
-//  has the color S, and that dot is the anchor; all the other dots are the
-//  markers, in one color C, which is neither S nor the background
-// @rule lattice: each dot takes the lattice offset (di, dj): its row and
+//  on a periodic pattern with a step of params.dot_step on both axes;
+//  exactly one dot has the color S, and that dot is the anchor; all the
+//  other dots are the markers, in one color C, which is neither S nor the
+//  background
+// @rule period: each dot takes the period offset (di, dj): its row and
 //  column distances from the anchor, counted in steps of params.dot_step
 // @rule stamp: for each dot, the output draws the shape's cells moved by
 //  di · (h + params.stamp_gap) rows and dj · (w + params.stamp_gap) columns,
@@ -68,21 +69,21 @@
   | AnchorMinority {}
 
 // how a dot's place gives the block of its stamp
-.type Lattice =
-    // @claim lattice
+.type Period =
+    // @claim period
     StoredStep {}
-    // @rule lattice: the step is the largest at which every marker lies on
-    //  the anchor's lattice
-    // @witness sparse-lattice: borderline concept
+    // @rule period: the step is the largest at which every marker lies in
+    //  the anchor's period class
+    // @witness sparse-period: borderline concept
     // @witness step-three: variant $LargestPiece & $AnchorNearest & $StepGcd
     //     @relaxed dots
   | StepGcd {}
-    // @rule lattice: on each axis, a dot's offset is its line's rank among
+    // @rule period: on each axis, a dot's offset is its line's rank among
     //  the dots' distinct lines, less the anchor's
     // @witness skipped-row: borderline concept
-    // @witness sparse-lattice: borderline concept
+    // @witness sparse-period: borderline concept
     // @witness step-three: variant $LargestPiece & $AnchorNearest & $StepGcd
-  | LatticeRank {}
+  | PeriodRank {}
 
 // what one stamp copies
 .type Content =
@@ -94,7 +95,7 @@
     //     @relaxed dots
   | BoxStamp {}
 
-.type Choice = [shape: Shape, anchor: Anchor, lattice: Lattice, content: Content,
+.type Choice = [shape: Shape, anchor: Anchor, period: Period, content: Content,
                 objects: Adjacency]
 
 // An object under one adjacency.
@@ -122,8 +123,8 @@
 
     // --- $StoredStep ---
     // @ignore: derive — no derivation gives the step 2 alone; at another
-    //  step, a marker of train 0 lies off the lattice or its stamp lands on a
-    //  wrong block
+    //  step, a marker of train 0 lies outside the anchor's period class or its
+    //  stamp lands on a wrong block
     .decl dot_step(k: number) dot_step(2).
 }
 
@@ -191,8 +192,8 @@ markers_choice($SingleDots()). markers_choice($MarkersByColor()).
 .decl anchor_choice(an: Anchor)
 anchor_choice($ShapeColorDot()). anchor_choice($AnchorNearest()). anchor_choice($AnchorMinority()).
 
-.decl lattice_choice(la: Lattice)
-lattice_choice($StoredStep()). lattice_choice($StepGcd()). lattice_choice($LatticeRank()).
+.decl period_choice(la: Period)
+period_choice($StoredStep()). period_choice($StepGcd()). period_choice($PeriodRank()).
 
 .decl content_choice(co: Content)
 content_choice($ShapeCells()). content_choice($BoxStamp()).
@@ -205,10 +206,10 @@ content_choice($ShapeCells()). content_choice($BoxStamp()).
 .decl impl_choice(ch: Choice)
 impl_choice([$OnePiece(), $ShapeColorDot(), $StoredStep(), $ShapeCells(), $CornerJoin()]).
 impl_choice([$LargestPiece($SingleDots()), An, La, Co, J]) :-
-    anchor_choice(An), An != $ShapeColorDot(), lattice_choice(La), content_choice(Co),
+    anchor_choice(An), An != $ShapeColorDot(), period_choice(La), content_choice(Co),
     adjacency_choice(J).
 impl_choice([$LargestPiece($MarkersByColor()), An, La, Co, J]) :-
-    anchor_choice(An), An != $ShapeColorDot(), lattice_choice(La), La != $StoredStep(),
+    anchor_choice(An), An != $ShapeColorDot(), period_choice(La), La != $StoredStep(),
     content_choice(Co), adjacency_choice(J).
 impl_choice([$LargestPiece($MarkersByColor()), $AnchorMinority(), $StoredStep(), Co, J]) :-
     content_choice(Co), adjacency_choice(J).
@@ -330,22 +331,22 @@ marker([Sh, An, J], M) :-
 paint(R, P, C) :- anchor.value(R, P), ink.value(R, C).
 paint([Sh, An, J], M, S) :- marker([Sh, An, J], M), shape(Sh, J, _, S).
 
-// The lattice place each read gives each dot it stamps at: the count of
-// lattice steps from the anchor to the dot toward each side, as an offset in
+// The place each read gives each dot it stamps at: the count of
+// steps from the anchor to the dot toward each side, as an offset in
 // steps.
-.decl place(r: Read, la: Lattice, q: Position, i: Offset)
+.decl place(r: Read, la: Period, q: Position, i: Offset)
 
-// Some marker lies off the lattice.
-.decl astray(r: Read, la: Lattice)
-astray(R, La) :- marker(R, M), lattice_choice(La), !place(R, La, M, _).
+// Some marker lies outside the anchor's period class.
+.decl astray(r: Read, la: Period)
+astray(R, La) :- marker(R, M), period_choice(La), !place(R, La, M, _).
 
 // --- $StoredStep, $StepGcd ---
-// The lattice steps each reading tries.
-.decl pitch(r: Read, la: Lattice, k: number)
+// The steps each reading tries.
+.decl pitch(r: Read, la: Period, k: number)
 
 // Dot q lies a whole number of steps k from the anchor on each axis, and i
 // counts those steps.
-.decl on_step(r: Read, la: Lattice, k: number, q: Position, i: Offset)
+.decl on_step(r: Read, la: Period, k: number, q: Position, i: Offset)
 on_step(R, La, K, Q, I) :-
     pitch(R, La, K), anchor.value(R, P), paint(R, Q, _), relative(P, Q, V),
     diag_dirs(_, _, D1, D2), opposite(D1, O1), opposite(D2, O2),
@@ -361,20 +362,20 @@ place(R, $StoredStep(), Q, I) :- on_step(R, $StoredStep(), _, Q, I).
 // --- $StepGcd ---
 pitch(R, $StepGcd(), K) :- anchor.value(R, P), axis_elem(A), sub_extent(P, A, K).
 
-// Some marker lies off the lattice at step k.
+// Some marker lies outside the anchor's period class at step k.
 .decl off_step(r: Read, k: number)
 off_step(R, K) :- pitch(R, $StepGcd(), K), marker(R, M), !on_step(R, $StepGcd(), K, M, _).
 
-// @claim lattice
+// @claim period
 // @ignore cand: store — the stored reading of the step is StoredStep
 .init steps = Extremes<Read>
 steps.cand(R, K) :- pitch(R, $StepGcd(), K), !off_step(R, K).
 
 place(R, $StepGcd(), Q, I) :- steps.high(R, K), on_step(R, $StepGcd(), K, Q, I).
 
-// --- $LatticeRank ---
+// --- $PeriodRank ---
 // The dot lines past the anchor's line toward d, up to the dot's own.
-// @claim lattice
+// @claim period
 .init rungs = Tally<Rung, Position>
 rungs.domain([R, Q, D]) :-
     anchor.value(R, P), paint(R, Q, _), dir_elem(D), opposite(D, O), !nearer(O, Q, P).
@@ -383,7 +384,7 @@ rungs.item([R, Q, D], L) :-
     split(Q2, A, L, _), split(P, A, L_p, _), split(Q, A, L_q, _),
     nearer(D, L, L_p), !nearer(D, L, L_q).
 
-place(R, $LatticeRank(), Q, I) :-
+place(R, $PeriodRank(), Q, I) :-
     diag_dirs(_, _, D1, D2), rungs.tally([R, Q, D1], N1), rungs.tally([R, Q, D2], N2),
     jump(ZERO, D1, N1, I1), jump(I1, D2, N2, I).
 
@@ -422,8 +423,8 @@ stamped([Sh, An, La, Co, J], P2, Col) :-
     ; C_own != S, Col = C_own
     ).
 
-// The case's shape, anchor, and markers exist, and every marker lies on its
-// lattice.
+// The case's shape, anchor, and markers exist, and every marker lies in its
+// anchor's period class.
 .decl ready(ch: Choice)
 ready([Sh, An, La, Co, J]) :-
     impl_choice([Sh, An, La, Co, J]),

@@ -20,7 +20,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & bg=stored & inked_line=derived & lattice.divider=derived & canvas.extent=derived",
+        "$Dividers & bg=stored & inked_line=derived & tiling.divider=derived & canvas.extent=derived",
         "$Components & bg=stored & canvas.extent=derived"
       ],
       "grid": [
@@ -39,7 +39,7 @@
       ]
     }, {
       "cases": [
-        "lattice.divider=stored",
+        "tiling.divider=stored",
         "inked_line=stored",
         "$StoredTileSize",
         "$StoredTileCount"
@@ -76,7 +76,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & inked_line=derived & lattice.divider=derived & canvas.extent=derived",
+        "$Dividers & inked_line=derived & tiling.divider=derived & canvas.extent=derived",
         "$Components & canvas.extent=derived"
       ],
       "grid": [
@@ -94,7 +94,7 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["lattice.divider=stored","$StoredTileSize"],
+      "cases": ["tiling.divider=stored","$StoredTileSize"],
       "grid": [
         [0,0,0,0,0,0],
         [0,3,3,6,6,0],
@@ -305,7 +305,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & $StoredMargin & inked_line=derived & lattice.divider=derived",
+        "$Dividers & $StoredMargin & inked_line=derived & tiling.divider=derived",
         "region.box=stored",
         "tile_edge=TileDim",
         "$Components"
@@ -317,7 +317,7 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["$AllCells & lattice.divider=stored"],
+      "cases": ["$AllCells & tiling.divider=stored"],
       "grid": [
         [0,0,0,0,0,0],
         [0,0,0,0,0,0],
@@ -330,7 +330,7 @@
     }, {
       "cases": [
         "inked_line=stored",
-        "$NonBgMode & lattice.divider=stored",
+        "$NonBgMode & tiling.divider=stored",
         "$StoredTileSize",
         "$StoredTileCount & tile_edge=stored",
         "tile_edge=SepThickness"
@@ -366,7 +366,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & $StoredMargin & margin=stored & inked_line=derived & lattice.divider=derived",
+        "$Dividers & $StoredMargin & margin=stored & inked_line=derived & tiling.divider=derived",
         "region.box=stored",
         "$Components"
       ],
@@ -378,7 +378,7 @@
       ]
     }, {
       "cases": [
-        "lattice.divider=stored",
+        "tiling.divider=stored",
         "inked_line=stored",
         "$StoredTileSize",
         "$StoredTileCount"
@@ -411,7 +411,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & inked_line=derived & lattice.divider=derived",
+        "$Dividers & inked_line=derived & tiling.divider=derived",
         "$NonBgMode",
         "$Components"
       ],
@@ -423,7 +423,7 @@
       ]
     }, {
       "cases": [
-        "$AllCells & lattice.divider=stored",
+        "$AllCells & tiling.divider=stored",
         "inked_line=stored",
         "$StoredTileSize",
         "$StoredTileCount & $AllCells"
@@ -436,7 +436,7 @@
       ]
     }]
   }, {
-    "id": "lattice.divider=stored",
+    "id": "tiling.divider=stored",
     "separates": "input: blocks of 3 by 5 cells; derived dividers: two columns of blocks; stored dividers, read by their distances to the edges: a line every 3 columns, so four columns of tiles that cut the blocks",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -451,7 +451,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & inked_line=derived & lattice.divider=derived & canvas.extent=derived",
+        "$Dividers & inked_line=derived & tiling.divider=derived & canvas.extent=derived",
         "$Components & canvas.extent=derived"
       ],
       "grid": [
@@ -469,7 +469,7 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["lattice.divider=stored","$StoredTileSize"],
+      "cases": ["tiling.divider=stored","$StoredTileSize"],
       "grid": [
         [0,0,0,0,0,0],
         [0,3,3,6,6,0],
@@ -498,7 +498,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & $StoredMargin & inked_line=derived & lattice.divider=derived",
+        "$Dividers & $StoredMargin & inked_line=derived & tiling.divider=derived",
         "region.box=stored",
         "tile_edge=TileDim",
         "$Components"
@@ -510,7 +510,7 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["$AllCells & lattice.divider=stored"],
+      "cases": ["$AllCells & tiling.divider=stored"],
       "grid": [
         [0,0,0,0,0,0],
         [0,0,0,0,0,0],
@@ -523,7 +523,7 @@
     }, {
       "cases": [
         "inked_line=stored",
-        "$NonBgMode & lattice.divider=stored",
+        "$NonBgMode & tiling.divider=stored",
         "$StoredTileSize",
         "$StoredTileCount & tile_edge=stored",
         "tile_edge=SepThickness"
@@ -557,7 +557,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & inked_line=derived & lattice.divider=derived & canvas.extent=derived",
+        "$Dividers & inked_line=derived & tiling.divider=derived & canvas.extent=derived",
         "$Components & canvas.extent=derived"
       ],
       "grid": [
@@ -577,7 +577,7 @@
       ]
     }, {
       "cases": [
-        "lattice.divider=stored",
+        "tiling.divider=stored",
         "inked_line=stored",
         "$StoredTileSize",
         "$StoredTileCount"
@@ -694,7 +694,7 @@
       ]
     },
     "output": [{
-      "cases": ["$Dividers & lattice.divider=derived","$NonBgMode","$Components"],
+      "cases": ["$Dividers & tiling.divider=derived","$NonBgMode","$Components"],
       "grid": [
         [0,0,0,0,0],
         [0,3,6,7,0],
@@ -703,7 +703,7 @@
       ]
     }, {
       "cases": [
-        "$AllCells & lattice.divider=stored",
+        "$AllCells & tiling.divider=stored",
         "$StoredTileSize",
         "$StoredTileCount & $AllCells"
       ],
@@ -730,7 +730,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & inked_line=derived & lattice.divider=derived & canvas.extent=derived",
+        "$Dividers & inked_line=derived & tiling.divider=derived & canvas.extent=derived",
         "$StoredTileSize",
         "$Components & canvas.extent=derived"
       ],
@@ -749,7 +749,7 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["lattice.divider=stored"],
+      "cases": ["tiling.divider=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0],
         [0,3,6,7,4,2,5,8,0],
@@ -775,7 +775,7 @@
       [0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$Lattice","$DiagonalJoin"],
+      "cases": ["$Tiling","$DiagonalJoin"],
       "grid": [
         [0,0,0,0,0],
         [0,3,6,7,0],
@@ -810,7 +810,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & $AllCells & inked_line=derived & lattice.divider=derived & canvas.extent=derived"
+        "$Dividers & $AllCells & inked_line=derived & tiling.divider=derived & canvas.extent=derived"
       ],
       "grid": [
         [0,0,0],
@@ -828,14 +828,14 @@
       ]
     }, {
       "cases": [
-        "lattice.divider=stored",
+        "tiling.divider=stored",
         "inked_line=stored",
         "$StoredTileSize",
         "$StoredTileCount & $NonBgMode"
       ],
       "grid": null
     }, {
-      "cases": ["$Dividers & $NonBgMode & lattice.divider=derived"],
+      "cases": ["$Dividers & $NonBgMode & tiling.divider=derived"],
       "grid": [
         [0,0,0],
         [0,3,0],
@@ -866,7 +866,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & $AllCells & margin=stored & inked_line=derived & lattice.divider=derived & canvas.extent=derived"
+        "$Dividers & $AllCells & margin=stored & inked_line=derived & tiling.divider=derived & canvas.extent=derived"
       ],
       "grid": [
         [0,0,0],
@@ -883,7 +883,7 @@
       ]
     }, {
       "cases": [
-        "lattice.divider=stored",
+        "tiling.divider=stored",
         "inked_line=stored",
         "margin=SepThickness",
         "$StoredTileSize",
@@ -891,7 +891,7 @@
       ],
       "grid": null
     }, {
-      "cases": ["$Dividers & $NonBgMode & lattice.divider=derived","$DiagonalJoin"],
+      "cases": ["$Dividers & $NonBgMode & tiling.divider=derived","$DiagonalJoin"],
       "grid": [
         [0,0,0],
         [0,3,0],
@@ -924,7 +924,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & $StoredMargin & inked_line=derived & lattice.divider=derived",
+        "$Dividers & $StoredMargin & inked_line=derived & tiling.divider=derived",
         "region.box=stored",
         "tile_edge=TileDim",
         "$Components"
@@ -936,7 +936,7 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["$AllCells & lattice.divider=stored"],
+      "cases": ["$AllCells & tiling.divider=stored"],
       "grid": [
         [0,0,0,0,0,0],
         [0,0,0,0,0,0],
@@ -949,7 +949,7 @@
     }, {
       "cases": [
         "inked_line=stored",
-        "$NonBgMode & lattice.divider=stored",
+        "$NonBgMode & tiling.divider=stored",
         "$StoredTileSize",
         "$StoredTileCount & tile_edge=stored",
         "tile_edge=SepThickness"
@@ -990,7 +990,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & $StoredMargin & margin=stored & inked_line=derived & lattice.divider=derived & canvas.extent=derived",
+        "$Dividers & $StoredMargin & margin=stored & inked_line=derived & tiling.divider=derived & canvas.extent=derived",
         "region.box=stored",
         "$Components & canvas.extent=derived"
       ],
@@ -1010,7 +1010,7 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["$AllCells & lattice.divider=stored"],
+      "cases": ["$AllCells & tiling.divider=stored"],
       "grid": [
         [0,0,0,0,0,0],
         [0,0,3,6,0,0],
@@ -1023,7 +1023,7 @@
       "cases": [
         "inked_line=stored",
         "margin=SepThickness",
-        "$NonBgMode & lattice.divider=stored",
+        "$NonBgMode & tiling.divider=stored",
         "$StoredTileSize",
         "$StoredTileCount & tile_edge=stored"
       ],
@@ -1067,7 +1067,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & $StoredMargin & margin=stored & inked_line=derived & lattice.divider=derived & canvas.extent=derived",
+        "$Dividers & $StoredMargin & margin=stored & inked_line=derived & tiling.divider=derived & canvas.extent=derived",
         "region.box=stored",
         "$Components & canvas.extent=derived"
       ],
@@ -1087,7 +1087,7 @@
       ]
     }, {
       "cases": [
-        "lattice.divider=stored",
+        "tiling.divider=stored",
         "inked_line=stored",
         "$StoredTileSize",
         "$StoredTileCount & tile_gap=stored"
@@ -1129,7 +1129,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & $StoredMargin & margin=stored & inked_line=derived & lattice.divider=derived",
+        "$Dividers & $StoredMargin & margin=stored & inked_line=derived & tiling.divider=derived",
         "region.box=stored",
         "$Components"
       ],
@@ -1140,7 +1140,7 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["$AllCells & lattice.divider=stored"],
+      "cases": ["$AllCells & tiling.divider=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0],
@@ -1152,7 +1152,7 @@
     }, {
       "cases": [
         "inked_line=stored",
-        "$NonBgMode & lattice.divider=stored",
+        "$NonBgMode & tiling.divider=stored",
         "$StoredTileSize",
         "$StoredTileCount & tile_gap=stored",
         "tile_gap=SepThickness"
@@ -1221,7 +1221,7 @@
     ],
     "output": [{
       "cases": [
-        "$Dividers & inked_line=derived & lattice.divider=derived",
+        "$Dividers & inked_line=derived & tiling.divider=derived",
         "$StoredTileCount & tile_edge=stored & tile_gap=stored",
         "tile_gap=SepThickness",
         "tile_edge=SepThickness",
@@ -1234,7 +1234,7 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["lattice.divider=stored","inked_line=stored","$StoredTileSize"],
+      "cases": ["tiling.divider=stored","inked_line=stored","$StoredTileSize"],
       "grid": null
     }, {
       "cases": ["tile_gap=TileDim"],

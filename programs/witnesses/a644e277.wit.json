@@ -2,7 +2,7 @@
   "id": "a644e277",
   "witnesses": [{
     "id": "mark-on-inner-line",
-    "separates": "$Copy vs $RedrawLattice: a mark on an inner separator row; $Copy keeps it, and $RedrawLattice draws the line color over it",
+    "separates": "$Copy vs $RedrawTiling: a mark on an inner separator row; $Copy keeps it, and $RedrawTiling draws the line color over it",
     "input": [
       [3,3,3,1,3,3,3,1,3,3,3,1,3,3,3,1,3,3,3,1,3],
       [3,3,3,1,2,3,3,1,3,3,3,1,3,3,2,1,3,3,3,1,3],
@@ -36,7 +36,7 @@
         [3,1,1,1,1,1,1,1,3]
       ]
     }, {
-      "cases": ["$RedrawLattice"],
+      "cases": ["$RedrawTiling"],
       "grid": [
         [3,1,1,1,1,1,1,1,3],
         [1,3,3,3,1,3,3,3,1],
@@ -102,7 +102,7 @@
         [1,1,3,1,1,1,1,1,1]
       ]
     }, {
-      "cases": ["$SeparatorCell & $RedrawLattice"],
+      "cases": ["$SeparatorCell & $RedrawTiling"],
       "grid": [
         [3,1,1,1,1,1,1,1,3],
         [1,3,3,3,1,3,3,3,1],
@@ -158,7 +158,7 @@
         [1,1,1,1,1,1,1,1,3]
       ]
     }, {
-      "cases": ["$RedrawLattice"],
+      "cases": ["$RedrawTiling"],
       "grid": [
         [3,1,1,1,1,1,1,1,3],
         [1,3,3,3,1,3,3,3,1],
@@ -224,7 +224,7 @@
         [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2]
       ]
     }, {
-      "cases": ["$NonlineGap & $RedrawLattice"],
+      "cases": ["$NonlineGap & $RedrawTiling"],
       "grid": [
         [3,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,3],
         [1,3,3,3,1,3,3,3,1,3,3,3,1,3,3,3,1],
@@ -323,7 +323,7 @@
         [3,1,1,1,1,1,1,1,3,1,1,1,1,1,1,1,1]
       ]
     }, {
-      "cases": ["$BrokenLines & $RedrawLattice"],
+      "cases": ["$BrokenLines & $RedrawTiling"],
       "grid": [
         [3,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,3],
         [1,3,3,3,1,3,3,3,1,3,3,3,1,3,3,3,1],

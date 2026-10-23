@@ -1,8 +1,8 @@
 // a644e277
 // @draft
 // @keywords: decompose markers bbox crop
-// @scene lattice: rows and columns of a line color, one cell wide, cut the
-//  grid into a lattice of cells wider than one cell, on a background color,
+// @scene tiling: rows and columns of a line color, one cell wide, cut the
+//  grid into a tiling of cells wider than one cell, on a background color,
 //  the commonest color other than the line color; a separator line is a line
 //  along which two neighboring cells hold the line color, and some separator
 //  line holds the line color along its whole length; every band between two
@@ -55,7 +55,7 @@
     // @witness two-diagonal-gaps: borderline $GapBbox
   | BrokenLines {}
 
-// which cells a redrawn lattice draws as lines
+// which cells a redrawn tiling draws as lines
 .type BandSource =
     // @claim crop-gap-rectangle
     SeparatorLines {}
@@ -65,7 +65,7 @@
     //  side to the next separator line; undefined where the two sides of an
     //  axis draw different lines
     // @witness uneven-bands: borderline concept
-    //     @relaxed lattice
+    //     @relaxed tiling
   | FirstBand {}
 
 // what fills the cropped rectangle
@@ -77,7 +77,7 @@
     //  the other cells are copied
     // @witness mark-on-inner-line: borderline concept
     //     @relaxed gap-crossings
-  | RedrawLattice {bands: BandSource}
+  | RedrawTiling {bands: BandSource}
 
 .type Choice = [gap: GapColor, site: GapSite, frame: FrameLocator, content: Content]
 
@@ -107,7 +107,7 @@ band_source_choice($SeparatorLines()). band_source_choice($FirstBand()).
 
 .decl content_choice(c: Content)
 content_choice($Copy()).
-content_choice($RedrawLattice(Bs)) :- band_source_choice(Bs).
+content_choice($RedrawTiling(Bs)) :- band_source_choice(Bs).
 
 // The cases. GapCorners with another non-concept branch is subsumed by
 // GapBbox with the same branches, and BrokenLines at Crossing gives the
@@ -124,7 +124,7 @@ impl_choice([G, $SeparatorCell(), $BrokenLines(), C]) :- gap_color_choice(G), co
 .type Edge = [b: Box, d: Dir]
 
 // The color of each line that holds one color along its whole length.
-// @claim lattice
+// @claim tiling
 .init uniform = Unanimous<Line, Color>
 uniform.item([A, P_line], Col) :- in(P, Col), axis_elem(A), split(P, A, P_line, _).
 
@@ -155,7 +155,7 @@ periodic(B, D, P) :-
     first_band.low([B, D], N),
     in(P, _), crop(P, B, P_inner), dist(P_inner, D, K), stride(K, N, 0, _, 0).
 
-// @claim lattice
+// @claim tiling
 .init bg = Mode<Unit, Color, Position>
 bg.item($U(), Col, P) :- in(P, Col), !line_color(Col).
 
@@ -218,15 +218,15 @@ frame(G, S, $BrokenLines(), B) :-
 out(P_inner, Col, [G, S, F, $Copy()]) :-
     impl_choice([G, S, F, $Copy()]), frame(G, S, F, B), in(P, Col), crop(P, B, P_inner).
 
-// --- $RedrawLattice ---
+// --- $RedrawTiling ---
 .decl frame_corner(b: Box, p: Position)
 frame_corner(B, P) :- frame(_, _, _, B), in(P, _), box_corner(P, B, _).
 
 // The color each band source gives a cell of a rectangle.
 .decl redrawn(bs: BandSource, b: Box, p: Position, col: Color)
 
-out(P_inner, Col, [G, S, F, $RedrawLattice(Bs)]) :-
-    impl_choice([G, S, F, $RedrawLattice(Bs)]), frame(G, S, F, B), crop(P, B, P_inner),
+out(P_inner, Col, [G, S, F, $RedrawTiling(Bs)]) :-
+    impl_choice([G, S, F, $RedrawTiling(Bs)]), frame(G, S, F, B), crop(P, B, P_inner),
     ( frame_corner(B, P), bg.mode($U(), Col)
     ; !frame_corner(B, P), redrawn(Bs, B, P, Col) ).
 
@@ -234,7 +234,7 @@ out(P_inner, Col, [G, S, F, $RedrawLattice(Bs)]) :-
 redrawn($SeparatorLines(), B, P, Col) :-
     frame(_, _, _, B), in(P, C), inside(P, B),
     ( on_separator(_, P), line_color(Col)   // a separator cell
-    ; !on_separator(_, P), Col = C ).                   // a lattice cell's content
+    ; !on_separator(_, P), Col = C ).                   // a tile's content
 
 // --- $FirstBand ---
 // The cell's color under each pair of edges, one per axis.

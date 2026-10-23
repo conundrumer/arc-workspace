@@ -8,18 +8,18 @@
     relaxed: occluders
   wallpaper-block: variant concept
   lone-cell: variant concept
-  oblique-hidden: borderline $LatticePeriod
+  oblique-hidden: borderline $ObliquePeriod
     reassigned: fill
-  oblique-wide: borderline $LatticePeriod
+  oblique-wide: borderline $ObliquePeriod
     reassigned: fill
-  lattice-no-axis: borderline $LatticePeriod
+  oblique-no-axis: borderline $ObliquePeriod
     relaxed: wallpaper
   mirror-hidden: borderline $IsometryOrbit
   mirror-wide: borderline $IsometryOrbit
     reassigned: fill
-  oblique-hidden: borderline $LatticePeriod
-  oblique-wide: borderline $LatticePeriod
-  oblique-hidden: borderline $LatticePeriod
+  oblique-hidden: borderline $ObliquePeriod
+  oblique-wide: borderline $ObliquePeriod
+  oblique-hidden: borderline $ObliquePeriod
   mirror-wide: borderline $IsometryOrbit
   asym-fill: borderline other
     reassigned: fill

@@ -744,7 +744,7 @@
     }]
   }, {
     "id": "marker_stride=SepTileCount",
-    "separates": "Markers whose corners are 3 apart, with rows 5 and 11 and columns 5 and 11 empty: the separator lattice gives 3, so marker_stride=SepTileCount reads the markers and copies the template; at the stored stride 2 the concept finds no marker and is undefined.",
+    "separates": "Markers whose corners are 3 apart, with rows 5 and 11 and columns 5 and 11 empty: the separator tiling gives 3, so marker_stride=SepTileCount reads the markers and copies the template; at the stored stride 2 the concept finds no marker and is undefined.",
     "input": [
       [4,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -967,8 +967,8 @@
       "grid": null
     }]
   }, {
-    "id": "lattice-free",
-    "separates": "On an 11x11 grid with ink on every candidate separator line, 4 cells of different markers form rectangle triples at bound 8: the bounds TileCount gives, 2, 3, 4 and 6, read the stride-2 markers and copy the template; SepTileCount finds no separator lattice, so its case is undefined, and so is $RectMarker at the stored bounds.",
+    "id": "tiling-free",
+    "separates": "On an 11x11 grid with ink on every candidate separator line, 4 cells of different markers form rectangle triples at bound 8: the bounds TileCount gives, 2, 3, 4 and 6, read the stride-2 markers and copy the template; SepTileCount finds no separator tiling, so its case is undefined, and so is $RectMarker at the stored bounds.",
     "input": [
       [4,0,4,0,0,0,0,0,4,0,4],
       [0,0,0,0,0,0,0,0,0,0,0],
@@ -1196,8 +1196,8 @@
       ]
     }]
   }, {
-    "id": "two-sizes-lattice",
-    "separates": "Stride-3 markers on a separator lattice of three segments, and one stride-2 triple on the lattice's middle lines: marker_stride=SepTileCount reads stride 3 alone and copies the template; TileCount gives strides 2 to 6, whose readings disagree, and is undefined.",
+    "id": "two-sizes-tiling",
+    "separates": "Stride-3 markers on a separator tiling of three segments, and one stride-2 triple on the tiling's middle lines: marker_stride=SepTileCount reads stride 3 alone and copies the template; TileCount gives strides 2 to 6, whose readings disagree, and is undefined.",
     "input": [
       [4,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],

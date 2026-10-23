@@ -43,11 +43,11 @@
     //  carry to it; a translation counts when it carries some visible cell
     //  onto a visible cell of its color, and no visible cell onto a visible
     //  cell of another color; undefined where a cell takes two colors
-    // @witness oblique-hidden: borderline $LatticePeriod
-    // @witness oblique-wide: borderline $LatticePeriod
-    // @witness lattice-no-axis: borderline $LatticePeriod
+    // @witness oblique-hidden: borderline $ObliquePeriod
+    // @witness oblique-wide: borderline $ObliquePeriod
+    // @witness oblique-no-axis: borderline $ObliquePeriod
     //     @relaxed wallpaper
-  | LatticePeriod {}
+  | ObliquePeriod {}
     // @rule recover: where both axes have a period, a hidden cell also
     //  takes the colors that maps and axis periods carry to it, where a map
     //  applies a D4 isometry and then a translation; a map counts when it
@@ -56,8 +56,8 @@
     //  undefined where a cell takes two colors
     // @witness mirror-hidden: borderline $IsometryOrbit
     // @witness mirror-wide: borderline $IsometryOrbit
-    // @witness oblique-hidden: borderline $LatticePeriod
-    // @witness oblique-wide: borderline $LatticePeriod
+    // @witness oblique-hidden: borderline $ObliquePeriod
+    // @witness oblique-wide: borderline $ObliquePeriod
   | IsometryOrbit {}
 
 // what a hidden cell gets when no visible cell reaches it
@@ -66,7 +66,7 @@
     NoSource {}
     // @rule fill: a hidden cell that no visible cell reaches takes
     //  params.fill
-    // @witness oblique-fill: borderline $LatticePeriod
+    // @witness oblique-fill: borderline $ObliquePeriod
     //     @reassigned fill
     // @witness asym-fill: borderline other
     //     @reassigned fill
@@ -125,8 +125,8 @@
     // --- $HiddenFill ---
     // The pairs hold no hidden cell without a source, so every color stays
     // open.
-    // @derive DominantColor: borderline $LatticePeriod
-    // @derive RarestColor: borderline $LatticePeriod
+    // @derive DominantColor: borderline $ObliquePeriod
+    // @derive RarestColor: borderline $ObliquePeriod
     // @ignore: derive SharedColor — fails Subsumption: on one input it gives every color of that input, so it is undefined wherever a cell takes the fill, and elsewhere it gives the output of the stored fill
     // @ignore: derive VanishedColor — fails Subsumption: on one input it gives every color of that input, so it is undefined wherever a cell takes the fill, and elsewhere it gives the output of the stored fill
     .decl fill(col: Color)
@@ -152,7 +152,7 @@
 occluder_choice($ColorFill()). occluder_choice($MinTwoCells()). occluder_choice($ComponentRect()).
 
 .decl recovery_choice(r: Recovery)
-recovery_choice($AxisPeriods()). recovery_choice($LatticePeriod()). recovery_choice($IsometryOrbit()).
+recovery_choice($AxisPeriods()). recovery_choice($ObliquePeriod()). recovery_choice($IsometryOrbit()).
 
 .decl hidden_orbit_choice(f: HiddenOrbit)
 hidden_orbit_choice($NoSource()). hidden_orbit_choice($HiddenFill()).
@@ -387,7 +387,7 @@ narrow(Id, K) :-
 parse.occluder($ComponentRect(), B) :-
     part_box.box(Id, B), !part_gap(Id), params.min_side(K), !narrow(Id, K).
 
-// --- $LatticePeriod ---
+// --- $ObliquePeriod ---
 // The translation carries a visible cell onto a visible cell of another color.
 // @ignore: comp-idiom — OffsetInvariance tests the axis-aligned translations alone, and these include oblique ones
 .decl clash(s: Occluder, x: Offset)
@@ -395,7 +395,7 @@ clash(S, X) :-
     parse.carried(S, X), parse.visible(S, P, C1),
     compose(P, X, Q), parse.visible(S, Q, C2), C1 != C2.
 
-parse.map_link(S, $LatticePeriod(), P, Q) :-
+parse.map_link(S, $ObliquePeriod(), P, Q) :-
     parse.carried(S, X), !clash(S, X), parse.cell(S, P, _), compose(P, X, Q), parse.hidden(S, Q).
 
 // --- $IsometryOrbit ---

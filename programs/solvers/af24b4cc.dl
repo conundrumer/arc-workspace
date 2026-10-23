@@ -18,7 +18,7 @@
 // how the blocks are found
 .type BlockParse =
     // @claim block-grid
-    Lattice {source: LatticeSource, domain: ModeDomain}
+    Tiling {source: TilingSource, domain: ModeDomain}
     // @scene block-grid: the blocks are the 4-adjacent pieces of cells other
     //  than bg
     // @rule output-frame: a piece's output cell stands, toward each edge, at
@@ -32,8 +32,8 @@
     //     @relaxed block-grid
   | Components {adjacency: Adjacency}
 
-// what cuts the lattice
-.type LatticeSource =
+// what cuts the tiling
+.type TilingSource =
     // @claim block-grid
     Dividers {}
     // @scene block-grid: the blocks are tiles of tile_size (3 by 2), with
@@ -140,7 +140,7 @@
 .decl mode_domain_choice(d: ModeDomain)
 mode_domain_choice($AllCells()). mode_domain_choice($NonBgMode()).
 
-// The lattice the full lines of bg cut.
+// The tiling the full lines of bg cut.
 .comp Parse<Key> {
     .decl cell(key: Key, p: Position, col: Color)
 
@@ -156,9 +156,9 @@ mode_domain_choice($AllCells()). mode_domain_choice($NonBgMode()).
     //  and they name no cell of an input of another frame, so these cases are
     //  equivalent to $Dividers & inked_line=stored
     // @claim block-grid
-    .init lattice = DividerTiles<Key>
-    lattice.cell(Ky, P) :- cell(Ky, P, _).
-    lattice.divider(Ky, A, L) :-
+    .init tiling = DividerTiles<Key>
+    tiling.cell(Ky, P) :- cell(Ky, P, _).
+    tiling.divider(Ky, A, L) :-
         cell(Ky, P, _), axis_elem(A), split(P, A, L, _), !inked_line(Ky, L).
 }
 
@@ -199,7 +199,7 @@ out(Q, Col, [Parse, M]) :-
     ; !occupied(Parse, M, Q), params.bg(Col)                      // border or empty cell
     ).
 
-// --- $Lattice ---
+// --- $Tiling ---
 
 // Input cell p lies in the tile at p_pic of the picture.
 // @ignore: store — the stored tiles are the blocks of the stored input, and
@@ -219,12 +219,12 @@ tile_cell([Parse, Id], P) :- tile(Parse, P, P_pic), tile_id.id([Parse, P_pic], I
 
 // --- $AllCells ---
 
-member(Bl, P, Col) :- tile_cell(Bl, P), Bl = [$Lattice(_, $AllCells()), _], in(P, Col).
+member(Bl, P, Col) :- tile_cell(Bl, P), Bl = [$Tiling(_, $AllCells()), _], in(P, Col).
 
 // --- $NonBgMode ---
 
 member(Bl, P, Col) :-
-    tile_cell(Bl, P), Bl = [$Lattice(_, $NonBgMode()), _], in(P, Col), !params.bg(Col).
+    tile_cell(Bl, P), Bl = [$Tiling(_, $NonBgMode()), _], in(P, Col), !params.bg(Col).
 
 // --- $Dividers ---
 
@@ -235,12 +235,12 @@ parse.cell($U(), P, Col) :- in(P, Col).
 // @claim output-frame
 .init stripe = OrderFrame<Axis, Position>
 stripe.axis(A, A) :- axis_elem(A).
-stripe.member(A, P_part, L) :- parse.lattice.part_of($U(), P, A, P_part), split(P, A, L, _).
+stripe.member(A, P_part, L) :- parse.tiling.part_of($U(), P, A, P_part), split(P, A, L, _).
 
-tile($Lattice($Dividers(), D), P, P_pic) :-
+tile($Tiling($Dividers(), D), P, P_pic) :-
     mode_domain_choice(D),
-    parse.lattice.part_of($U(), P, A, P_part1), stripe.pos(A, P_part1, P1),     // its band on one axis
-    perp(A, A2), parse.lattice.part_of($U(), P, A2, P_part2), stripe.pos(A2, P_part2, P2),  // and on the other
+    parse.tiling.part_of($U(), P, A, P_part1), stripe.pos(A, P_part1, P1),     // its band on one axis
+    perp(A, A2), parse.tiling.part_of($U(), P, A2, P_part2), stripe.pos(A2, P_part2, P2),  // and on the other
     compose(P1, P2, P_pic).
 
 // --- $StoredTileSize, $StoredTileCount ---
@@ -258,7 +258,7 @@ sized.cell(P) :- inset_cell(P, _).
 sized.dim($U(), A, K) :- params.tile_size(A, K).
 sized.gap(G) :- params.tile_gap(G).
 
-tile($Lattice($StoredTileSize(), D), P_grid, P_pic) :-
+tile($Tiling($StoredTileSize(), D), P_grid, P_pic) :-
     mode_domain_choice(D), sized.tile($U(), P_inner, P_pic, _), inset_cell(P_inner, P_grid).
 
 // --- $StoredTileCount ---
@@ -269,7 +269,7 @@ counted.cell(P) :- inset_cell(P, _).
 counted.dim($U(), A, N) :- params.tile_count(A, N).
 counted.gap(G) :- params.tile_gap(G).
 
-tile($Lattice($StoredTileCount(), D), P_grid, P_pic) :-
+tile($Tiling($StoredTileCount(), D), P_grid, P_pic) :-
     mode_domain_choice(D), counted.tile($U(), P_inner, P_pic, _), inset_cell(P_inner, P_grid).
 
 // --- $Components ---
@@ -344,7 +344,7 @@ border($InputMargin(), B) :- region.box($U(), R), relative(R, ZERO, B).
 
     // The lines each band holds.
     .init band_lines = Tally<Band, Position>
-    band_lines.item([E, A, P_part], L) :- ex.lattice.part_of(E, P, A, P_part), split(P, A, L, _).
+    band_lines.item([E, A, P_part], L) :- ex.tiling.part_of(E, P, A, P_part), split(P, A, L, _).
 
     .init band_size = Unanimous<Axis, number>
     band_size.item(A, K) :- band_lines.tally([E, A, _], K), train(E).
@@ -357,7 +357,7 @@ border($InputMargin(), B) :- region.box($U(), R), relative(R, ZERO, B).
 
     // The bands along each axis.
     .init bands = Tally<ExampleAxis, Position>
-    bands.item([E, A], P_part) :- ex.lattice.part_of(E, _, A, P_part).
+    bands.item([E, A], P_part) :- ex.tiling.part_of(E, _, A, P_part).
 
     .init band_count = Unanimous<Axis, number>
     band_count.item(A, N) :- bands.tally([E, A], N), train(E).
