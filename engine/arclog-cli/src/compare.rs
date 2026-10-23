@@ -1,15 +1,20 @@
-//! `compare`: runs the concept case of each solver given, or of every
-//! solver of the corpus, at its stored `param` records, by the judged run,
-//! and compares each pair's set of grids, or `undefined`, with the
-//! snapshot of the Souffle outcomes, in any order, the case's solves
-//! outcome with the snapshot's, and the run's time per solver with
-//! Souffle's time there. It prints each mismatch by solver, case and pair,
-//! with the first relation whose rows differ from those of Souffle's reruns
-//! of the pairs up to that pair where the case gives at most one grid on
-//! the pair,
-//! each solver that runs slower, and each solver whose concept case it does
-//! not compare, with the reason, since the step that builds what that case
-//! reads checks it (`docs/engine/cases.md#every-case`).
+//! `compare`: runs every case of each solver given, or of every solver of
+//! the corpus, less the cases its `exclude` forms leave out, by the judged
+//! run, at the values that the determination gives the case, and compares
+//! each case's set of grids on each pair, or `undefined`, with the snapshot's
+//! record of the case, in any order, the case's solves outcome with the
+//! record's, and the run's time per solver, over the determination and every
+//! case, with Souffle's time there. The snapshot keys a case by its alts, as
+//! `case_name` of `src/parity/__init__.py` gives them.
+//!
+//! It prints, for each solver, first each difference of a determined value
+//! from the solver's `param` records and each fault that keeps a case from
+//! its determination, then each mismatch by case and pair, naming each
+//! parameter with such a difference that the case reads, with the first
+//! relation whose rows differ from those of Souffle's reruns of the pairs up
+//! to that pair where the case gives at most one grid on the pair, each case
+//! that only the engine or only the snapshot holds, and each solver that
+//! runs slower.
 //!
 //! Its arguments: the snapshot's directory, the corpus directory, the
 //! directory of the task files, then the task ids of the solvers to run,
@@ -19,28 +24,30 @@
 //! so the command runs from the root of the tree.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Instant;
 use std::ops::ControlFlow;
 use std::process::ExitCode;
-use std::sync::Mutex;
 
 use arclog::eval::join::each_row;
 use arclog::eval::models::ModelsEnd;
-use arclog::eval::{relation_of, Evaluation, RelationValue};
+use arclog::eval::determinations::{det_node, relation_spelled};
+use arclog::eval::{output_relation, relation_of, Evaluation, RelationValue};
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
-use arclog::judge::run::{Found, JudgedRun};
+use arclog::judge::candidates::World;
+use arclog::judge::run::{judged_run, Depth, Found, JudgedRun};
 use arclog::judge::solves::OutputSet;
-use arclog::program::path::{node_at, NodePath, NodeRef};
-use arclog::program::{ClauseKeyword, DeclaredName, Form, ProgramRelation, RelationName};
+use arclog::program::{DeclaredName, ProgramRelation, RelationName};
 use arclog::relations::Relation;
 use arclog::resolver::Side;
-use arclog::solver::FileOwner;
+use arclog::solver::CaseName;
 use arclog::task::{Grid, Task};
 use arclog::terms::{Example, Term};
 use arclog::types::ValueType;
 use serde_json::Value;
 
 use crate::arguments::Arguments;
-use crate::concept_case::{with_concept_case, ConceptCase};
+use crate::concept_case::case_spelled;
+use crate::determine::{solver_determination, Finding};
 use crate::renaming::{renaming_exists, same_without_idents, term_leaves, EngineLeaf, Leaf};
 use crate::select::{read_json, selected};
 
@@ -62,10 +69,9 @@ pub fn run(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let not_compared: Mutex<BTreeMap<String, &'static str>> = Mutex::default();
     let report = run_over_corpus(&arguments.corpus, |solver| match &selected {
         Some(ids) if !ids.contains(&solver.task_id) => SolverResult::Pass,
-        _ => compare_solver(&arguments, solver, &not_compared),
+        _ => compare_solver(&arguments, solver),
     }, print_ended);
     let report = match report {
         Ok(report) => report,
@@ -74,97 +80,165 @@ pub fn run(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let not_compared = not_compared.into_inner().expect("a map that no panic poisoned");
-    for (id, reason) in &not_compared {
-        println!("{id}: {CONCEPT}: not compared: {reason}");
-    }
     let compared = selected.map_or(report.checked, |ids| ids.len());
-    println!("{} of {compared} solvers differ from the snapshot, and {} are not compared", report.failures.len(), not_compared.len());
+    println!("{} of {compared} solvers differ from the snapshot", report.failures.len());
     if report.failures.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
-
-/// The snapshot's key of the concept case, whatever alts and line
-/// readings its name picks (`src/parity/snapshot.py`).
-const CONCEPT: &str = "concept";
 
 /// The pair names of the task's examples, as the snapshot writes them.
 fn pair_name(task: &Task, example: usize) -> String {
     if example < task.train.len() { format!("train {example}") } else { format!("test {}", example - task.train.len()) }
 }
 
-/// The comparison of the concept case of `solver` with its snapshot
-/// record. A concept case that it does not compare goes into
-/// `not_compared` with the reason, and passes.
-fn compare_solver(arguments: &Arguments, solver: &CorpusSolver, not_compared: &Mutex<BTreeMap<String, &'static str>>) -> SolverResult {
-    match compared(arguments, solver, not_compared) {
+/// The comparison of the cases of `solver` with its snapshot record.
+fn compare_solver(arguments: &Arguments, solver: &CorpusSolver) -> SolverResult {
+    match compared(arguments, solver) {
         Ok(lines) if lines.is_empty() => SolverResult::Pass,
         Ok(lines) => SolverResult::Fail(lines),
         Err(line) => SolverResult::Fail(vec![line]),
     }
 }
 
-/// Each line of the comparison of the concept case of `solver`, or the one
-/// line of the fault that stops it.
-fn compared(arguments: &Arguments, corpus: &CorpusSolver, not_compared: &Mutex<BTreeMap<String, &'static str>>) -> Result<Vec<String>, String> {
+/// The snapshot's key of the reading `<relation>=$Derived` of a line with
+/// one proposer names the proposer, which the case's name does not.
+const DERIVED: &str = "=$Derived";
+
+/// Whether the snapshot's key `key` names the case `name`, whose concept
+/// case is `concept` (`case_name` of `src/parity/__init__.py`): the key
+/// joins with ` & `, in the snapshot's order, each alt of the case that
+/// the concept case does not take, a line's stored reading
+/// `<relation>=$Stored` as `<relation>=stored` and its derived reading by
+/// its one proposer as `<relation>=<proposer>`, and is `concept` where
+/// there is none.
+fn names_case(key: &str, name: &CaseName, concept: &CaseName) -> bool {
+    let mut parts: BTreeSet<&str> = if key == "concept" { BTreeSet::new() } else { key.split(" & ").collect() };
+    for alt in name.0.iter().filter(|alt| !concept.0.contains(alt)) {
+        let found = if let Some(relation) = alt.0.strip_suffix(DERIVED) {
+            parts.iter().find(|part| part.strip_prefix(relation).is_some_and(|rest| rest.starts_with('=') && rest != "=stored")).copied()
+        } else {
+            let stored = alt.0.replace("=$Stored", "=stored");
+            parts.iter().find(|part| **part == stored).copied()
+        };
+        match found {
+            Some(part) => {
+                parts.remove(part);
+            }
+            None => return false,
+        }
+    }
+    parts.is_empty()
+}
+
+/// The record of the case `name` in a solver's snapshot record, with its
+/// key there (`names_case`).
+fn case_record<'r>(record: &'r Value, name: &CaseName, concept: &CaseName) -> Option<(&'r str, &'r Value)> {
+    let cases = record.get("cases")?.as_object()?;
+    cases.iter().find(|(key, _)| names_case(key, name, concept)).map(|(key, value)| (key.as_str(), value))
+}
+
+/// Each line of the comparison of the solver `corpus`: the findings of its
+/// determination, then the comparison of each case, then the cases that
+/// only one side holds, and the time; or the one line of the fault that
+/// stops it.
+fn compared(arguments: &Arguments, corpus: &CorpusSolver) -> Result<Vec<String>, String> {
     let id = &corpus.task_id;
     let record = read_json(&arguments.snapshot.join(format!("{id}.json")))?;
-    with_concept_case(&arguments.corpus, &arguments.tasks, id, |case| {
-        let key = CONCEPT;
-        if let Some(reason) = unjudged(case) {
-            not_compared.lock().expect("a map that no panic poisoned").insert(id.clone(), reason);
-            return Ok(Vec::new());
-        }
-        let case_record = record.get("cases").and_then(|cases| cases.get(key)).ok_or("the snapshot has no record of the concept case")?;
-        let (run, seconds) = case.run();
-        let run = run.map_err(|fault| format!("{key}: a fault of the run at {:?}: {}", fault.form, fault.message))?;
-        let task = case.evaluation.task;
-        let mut lines = Vec::new();
-        let fits = case_record.get("fit").and_then(Value::as_str) == Some("fits");
-        if run.solves_task() != fits {
-            let engine = if run.solves_task() { "solves" } else { "does not solve" };
-            lines.push(format!("{key}: the case {engine} the task in the engine, and Souffle's fit is {}", case_record.get("fit").map_or("absent".to_owned(), Value::to_string)));
-        }
-        let examples: Vec<(String, Example)> = task.examples().enumerate().map(|(index, example)| (pair_name(task, index), example)).collect();
-        let mut reruns: Vec<Option<Rerun>> = Vec::new();
-        for (index, (pair, _)) in examples.iter().enumerate() {
-            let got = &run.pairs[index].set;
-            let expected = case_record.get("pairs").and_then(|pairs| pairs.get(pair));
-            if agrees(got, expected) {
+    let start = Instant::now();
+    let setup = solver_determination(&arguments.corpus, &arguments.tasks, id)?;
+    let mut lines: Vec<String> = setup.findings.iter().map(|finding| finding.line().to_owned()).collect();
+    let differing: Vec<&str> = setup.findings.iter().filter_map(|finding| match finding {
+        Finding::Difference { parameter, .. } => Some(parameter.as_str()),
+        Finding::Fault(_) => None,
+    }).collect();
+    let mut keys: BTreeSet<&str> = BTreeSet::new();
+    for case in setup.cases() {
+        let spelled = case_spelled(case.name);
+        let Some((key, case_record)) = case_record(&record, case.name, &setup.concept_name) else {
+            lines.push(format!("{spelled}: the engine has the case, and the snapshot has no record of it"));
+            continue;
+        };
+        keys.insert(key);
+        let values = match setup.determination.case_values(&case) {
+            Ok(values) => values,
+            Err(fault) => {
+                // A case of the determination has its fault in the findings.
+                if !setup.determination.cases.iter().any(|(name, ..)| name == case.name) {
+                    lines.push(format!("{spelled}: not run: {fault}"));
+                }
                 continue;
             }
-            let mut line = format!("{key}, {pair}: the engine gives {}, Souffle {}", describe(&run, got), expected.map_or("no outcome".to_owned(), Value::to_string));
-            if matches!(got, OutputSet::Grids(grids) if grids.len() > 1) {
-                lines.push(line);
+        };
+        let evaluation = case.evaluation(&values);
+        let output = output_relation(case.program).expect("a checked case program derives `&output`");
+        let run = judged_run(&evaluation, &output, &setup.judged, World::Closed, Depth::Full);
+        let run = match run {
+            Ok(run) => run,
+            Err(fault) => {
+                lines.push(format!("{key}: a fault of the run at {:?}: {}", fault.form, fault.message));
                 continue;
             }
-            while reruns.len() <= index {
-                reruns.push(rerun(id, key, &examples[reruns.len()].0));
-            }
-            let pairs: Option<Vec<PairRows<'_>>> = examples[..=index]
-                .iter()
-                .zip(&reruns)
-                .map(|((pair, example), rerun)| {
-                    let rerun = rerun.as_ref()?;
-                    let example = *example;
-                    let evaluation = &case.evaluation;
-                    let engine: Box<dyn Fn(&str) -> Option<EngineRows> + '_> =
-                        Box::new(move |name| engine_rows(evaluation, name, example, &rerun.orientation_constants));
-                    Some(PairRows { pair, rerun, engine })
-                })
-                .collect();
-            if let Some(comparison) = pairs.map(|pairs| first_difference(&pairs)) {
-                for relation in &comparison.not_compared {
-                    line.push_str(&format!("; {relation}"));
-                }
-                if let Some(difference) = comparison.difference {
-                    line.push_str(&format!("; {difference}"));
-                }
-            }
+        };
+        let named: Vec<String> = setup.determination.parameters.iter().map(|(relation, _)| relation).filter(|relation| det_node(case.program, relation).is_some()).map(relation_spelled).filter(|name| differing.contains(&name.as_str())).collect();
+        let suffix = if named.is_empty() { String::new() } else { format!("; the case reads {}, whose determined value differs from its `param` record", named.join(", ")) };
+        lines.extend(compare_case(id, key, case_record, &evaluation, &run).into_iter().map(|line| line + &suffix));
+    }
+    if let Some(cases) = record.get("cases").and_then(Value::as_object) {
+        for key in cases.keys().filter(|key| !keys.contains(key.as_str())) {
+            lines.push(format!("{key}: the snapshot has the case, and the engine has no case of that name"));
+        }
+    }
+    lines.extend(crate::speed::slower(start.elapsed().as_secs_f64(), &record).ok().flatten());
+    Ok(lines)
+}
+
+/// Each line of the comparison of the judged run `run` of a case, in
+/// `evaluation`, with its snapshot record `case_record` under the key
+/// `key`, for the solver `id`.
+fn compare_case(id: &str, key: &str, case_record: &Value, evaluation: &Evaluation<'_>, run: &JudgedRun) -> Vec<String> {
+    let task = evaluation.task;
+    let mut lines = Vec::new();
+    let fits = case_record.get("fit").and_then(Value::as_str) == Some("fits");
+    if run.solves_task() != fits {
+        let engine = if run.solves_task() { "solves" } else { "does not solve" };
+        lines.push(format!("{key}: the case {engine} the task in the engine, and Souffle's fit is {}", case_record.get("fit").map_or("absent".to_owned(), Value::to_string)));
+    }
+    let examples: Vec<(String, Example)> = task.examples().enumerate().map(|(index, example)| (pair_name(task, index), example)).collect();
+    let mut reruns: Vec<Option<Rerun>> = Vec::new();
+    for (index, (pair, _)) in examples.iter().enumerate() {
+        let got = &run.pairs[index].set;
+        let expected = case_record.get("pairs").and_then(|pairs| pairs.get(pair));
+        if agrees(got, expected) {
+            continue;
+        }
+        let mut line = format!("{key}, {pair}: the engine gives {}, Souffle {}", describe(run, got), expected.map_or("no outcome".to_owned(), Value::to_string));
+        if matches!(got, OutputSet::Grids(grids) if grids.len() > 1) {
             lines.push(line);
+            continue;
         }
-        lines.extend(crate::speed::slower(seconds, &record).ok().flatten());
-        Ok(lines)
-    })
+        while reruns.len() <= index {
+            reruns.push(rerun(id, key, &examples[reruns.len()].0));
+        }
+        let pairs: Option<Vec<PairRows<'_>>> = examples[..=index]
+            .iter()
+            .zip(&reruns)
+            .map(|((pair, example), rerun)| {
+                let rerun = rerun.as_ref()?;
+                let example = *example;
+                let engine: Box<dyn Fn(&str) -> Option<EngineRows> + '_> = Box::new(move |name| engine_rows(evaluation, name, example, &rerun.orientation_constants));
+                Some(PairRows { pair, rerun, engine })
+            })
+            .collect();
+        if let Some(comparison) = pairs.map(|pairs| first_difference(&pairs)) {
+            for relation in &comparison.not_compared {
+                line.push_str(&format!("; {relation}"));
+            }
+            if let Some(difference) = comparison.difference {
+                line.push_str(&format!("; {difference}"));
+            }
+        }
+        lines.push(line);
+    }
+    lines
 }
 
 /// Whether the engine's output set agrees with Souffle's outcome: the same
@@ -178,37 +252,6 @@ fn agrees(got: &OutputSet, expected: Option<&Value>) -> bool {
         (OutputSet::Undefined, Some(expected)) => expected.as_str() == Some("undefined"),
         _ => false,
     }
-}
-
-/// Why the concept case of `case` is not compared, or `None` where it is:
-/// it reads a `DET_OR_RULE` or `RULE_OR_DET` line with `(ONE)` on the
-/// derived reading, an open parameter there.
-fn unjudged(case: &ConceptCase<'_>) -> Option<&'static str> {
-    let forms = case.case.program.value().forms.iter().zip(0u32..);
-    forms.into_iter().find_map(|(form, index)| match form {
-        Form::Clause(clause)
-            if clause.value().keyword == ClauseKeyword::Rule
-                && clause.value().ones.iter().any(|mark| mark.key.is_empty())
-                && is_line(case, &NodePath::top(index)) =>
-        {
-            Some("the case reads a `DET_OR_RULE` or `RULE_OR_DET` line with `(ONE)` on the derived reading")
-        }
-        _ => None,
-    })
-}
-
-/// Whether the form at `path` of the case program of `case` stands in its
-/// file as a `DET_OR_RULE` or `RULE_OR_DET` line.
-fn is_line(case: &ConceptCase<'_>, path: &NodePath) -> bool {
-    let (owner, at) = case.case.file_path(path);
-    let file = match owner {
-        FileOwner::Solver => case.solver,
-        FileOwner::Representative => case.solver.representative.as_deref().expect("a representative's file"),
-    };
-    matches!(
-        node_at(NodeRef::Program(file.program.value()), &at),
-        Some(NodeRef::Clause(line)) if matches!(line.keyword, ClauseKeyword::DetOrRule | ClauseKeyword::RuleOrDet)
-    )
 }
 
 /// The grid as the snapshot writes it: a list of rows of digits.
@@ -539,5 +582,17 @@ mod tests {
         assert_eq!(comparison.not_compared.len(), 1, "{comparison:?}");
         assert!(comparison.not_compared[0].contains("&out on train 0 is not compared: its rows differ between the case's models"), "{comparison:?}");
         assert!(comparison.difference.expect("a difference").contains("is &b on train 0:"));
+    }
+
+    #[test]
+    fn names_a_case_by_the_snapshots_key() {
+        use arclog::program::AltsName;
+        let name = |alts: &[&str]| CaseName(alts.iter().map(|alt| AltsName((*alt).into())).collect());
+        let concept = name(&["&background=$Stored", "&floor_cell=$Derived", "$Clash"]);
+        let case = name(&["&background=$Derived", "&floor_cell=$Stored", "$LargerOnTop"]);
+        assert!(names_case("$LargerOnTop & &background=DominantColor & &floor_cell=stored", &case, &concept));
+        assert!(!names_case("$LargerOnTop & &background=stored & &floor_cell=stored", &case, &concept));
+        assert!(!names_case("$LargerOnTop & &background=DominantColor", &case, &concept));
+        assert!(names_case("concept", &concept, &concept));
     }
 }

@@ -1,6 +1,6 @@
 //! The concept case of a solver of the corpus, checked and set up for its
-//! run on its task at its stored `param` records, which `compare`,
-//! `lib-compare`, `speed` and `determinism` run, and the parts of that
+//! run on its task at its stored `param` records, which `lib-compare`,
+//! `speed` and `determinism` run, and the parts of that
 //! setup that `determine` shares for each base case: the read of the solver
 //! and its task, the check of a case, and the session and limits of a run.
 
@@ -17,19 +17,17 @@ use arclog::eval::instance::Constructions;
 use arclog::judge::determination::DeterminedCase;
 use arclog::resolver::{resolve_cases, ResolvedCase, ResolvedCases};
 use arclog::session::{SessionBound, TaskSession};
-use arclog::solver::{Case, CaseName, Solver};
+use arclog::solver::{CaseName, Solver};
 use arclog::task::{read_judged_task, read_task, JudgedTask, Task};
 
 use arclog::session::SESSION_BYTES;
 use arclog_constructions::shared as constructions;
 
 /// The concept case of a solver, set up for its run at its stored `param`
-/// records, over the table of the lib's constructions, with the solver, the
-/// case and the task's pairs as the judge reads them.
+/// records, over the table of the lib's constructions, with the task's pairs
+/// as the judge reads them.
 pub(crate) struct ConceptCase<'a> {
     pub(crate) evaluation: Evaluation<'a>,
-    pub(crate) solver: &'a Solver,
-    pub(crate) case: &'a Case,
     pub(crate) judged: &'a JudgedTask,
 }
 
@@ -95,7 +93,7 @@ pub(crate) fn with_concept_case<T>(corpus: &Path, tasks: &Path, id: &str, body: 
     let session = corpus_session();
     let limits = corpus_limits();
     let evaluation = Evaluation { program: &program, concept: None, task: &task, parameters: &parameters, session: &session, registry, constructions: constructions()?, limits: &limits };
-    body(&ConceptCase { evaluation, solver: &solver, case: &concept.case, judged: &judged })
+    body(&ConceptCase { evaluation, judged: &judged })
 }
 
 /// The name of a case as a line gives it: its alts, or `concept` for the

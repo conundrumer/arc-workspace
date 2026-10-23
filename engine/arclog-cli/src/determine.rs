@@ -25,6 +25,9 @@ use arclog::hash::StableHashMap;
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::judge::candidates::World;
 use arclog::judge::determination::{determine, CaseOutcome, DeterminedCase, Determination, Parameter};
+use arclog::eval::instance::Constructions;
+use arclog::eval::Limits;
+use arclog::task::{JudgedTask, Task};
 use arclog::program::{OutputOwner, ParamValue, ProgramRelation, RigidDetName};
 use arclog::registry::Registry;
 use arclog::relations::Relation;
@@ -72,44 +75,88 @@ pub fn run(args: &[String]) -> ExitCode {
 }
 
 /// A line of the report on a solver.
-enum Finding {
-    /// A determined value that differs from its `param` record.
-    Difference(String),
+pub(crate) enum Finding {
+    /// A determined value that differs from its `param` record: the
+    /// parameter as a line spells it, and the line.
+    Difference { parameter: String, line: String },
     /// A fault that keeps a case or a parameter from its comparison.
     Fault(String),
+}
+
+impl Finding {
+    /// The line of the finding.
+    pub(crate) fn line(&self) -> &str {
+        match self {
+            Finding::Difference { line, .. } | Finding::Fault(line) => line,
+        }
+    }
 }
 
 /// The report on `solver`, which goes into `differing` where a determined
 /// value differs from its record.
 fn determine_solver(corpus: &Path, tasks: &Path, solver: &CorpusSolver, differing: &Mutex<BTreeSet<String>>) -> SolverResult {
-    let findings = findings(corpus, tasks, &solver.task_id).unwrap_or_else(|fault| vec![Finding::Fault(fault)]);
-    if findings.iter().any(|finding| matches!(finding, Finding::Difference(_))) {
+    let findings = solver_determination(corpus, tasks, &solver.task_id).map_or_else(|fault| vec![Finding::Fault(fault)], |setup| setup.findings);
+    if findings.iter().any(|finding| matches!(finding, Finding::Difference { .. })) {
         differing.lock().expect("a set that no panic poisoned").insert(solver.task_id.clone());
     }
-    let lines: Vec<String> = findings.into_iter().map(|(Finding::Difference(line) | Finding::Fault(line))| line).collect();
+    let lines: Vec<String> = findings.iter().map(|finding| finding.line().to_owned()).collect();
     if lines.is_empty() { SolverResult::Pass } else { SolverResult::Fail(lines) }
 }
 
-/// Each finding of the determination of the solver `id` and its comparison
-/// with the solver's records, or the fault that stops its setup.
-fn findings(corpus: &Path, tasks: &Path, id: &str) -> Result<Vec<Finding>, String> {
+/// A solver's checked cases with the determination run on its base cases
+/// and compared with the solver's `param` records.
+pub(crate) struct SolverDetermination {
+    pub(crate) task: Task,
+    pub(crate) judged: JudgedTask,
+    concept: CheckedProgram,
+    /// The name of the concept case.
+    pub(crate) concept_name: CaseName,
+    /// Every case the `exclude` forms leave, checked once, in the order of
+    /// `Solver::case_names`.
+    programs: Vec<(CaseName, CheckedProgram)>,
+    session: TaskSession,
+    limits: Limits,
+    constructions: &'static Constructions,
+    pub(crate) determination: Determination,
+    /// Each finding of the determination and of its comparison with the
+    /// records.
+    pub(crate) findings: Vec<Finding>,
+}
+
+impl SolverDetermination {
+    /// Every checked case, as the determination takes it.
+    pub(crate) fn cases(&self) -> Vec<DeterminedCase<'_>> {
+        determined_cases(&self.programs, &self.concept, &self.task, &self.session, self.constructions, &self.limits)
+    }
+}
+
+/// The checked cases of the solver `id`, their determination and its
+/// findings, or the fault that stops their setup.
+pub(crate) fn solver_determination(corpus: &Path, tasks: &Path, id: &str) -> Result<SolverDetermination, String> {
     let CorpusTask { solver, task, judged } = read_corpus_task(corpus, tasks, id)?;
     let registry = Registry::get();
     let cases = resolve_cases(&solver, registry);
     let clauses = SolverClauses::of_cases(&cases);
     let mut cache = CheckCache::default();
     let concept = check_case(cases.concept(), &clauses, &mut cache, "the concept case")?;
-    let bases = solver.base_case_names(Exclusion::WithoutExcluded);
-    let programs = check_cases(&cases, &clauses, &mut cache, &|name| bases.contains(name))?;
+    let concept_name = cases.concept().case.name.clone();
+    let names = solver.case_names(Exclusion::WithoutExcluded);
+    let programs = check_cases(&cases, &clauses, &mut cache, &|name| names.contains(name))?;
     let session = corpus_session();
     let limits = corpus_limits();
-    let determined = determined_cases(&programs, &concept, &task, &session, constructions()?, &limits);
-    let determination = determine(&determined, &judged, World::Closed);
-    let mut findings: Vec<Finding> = determination.cases.iter().filter_map(|(name, outcome, _)| case_fault(name, outcome)).collect();
-    let records: Vec<(&ProgramRelation, &ParamValue)> = solver.arcdata.value().params.iter().map(|param| (&param.value().name, &param.value().value)).collect();
-    let comparison = Comparison { determined: &determined, determination: &determination, records: &records, session: &session, registry };
-    findings.extend(comparison.findings());
-    Ok(findings)
+    let constructions = constructions()?;
+    let bases = solver.base_case_names(Exclusion::WithoutExcluded);
+    let (determination, findings) = {
+        let determined = determined_cases(&programs, &concept, &task, &session, constructions, &limits);
+        let base_cases: Vec<DeterminedCase<'_>> = determined.iter().filter(|case| bases.contains(case.name)).copied().collect();
+        let determination = determine(&base_cases, &judged, World::Closed);
+        let mut findings: Vec<Finding> = determination.cases.iter().filter_map(|(name, outcome, _)| case_fault(name, outcome)).collect();
+        let records: Vec<(&ProgramRelation, &ParamValue)> = solver.arcdata.value().params.iter().map(|param| (&param.value().name, &param.value().value)).collect();
+        let comparison = Comparison { determined: &base_cases, determination: &determination, records: &records, session: &session, registry };
+        findings.extend(comparison.findings());
+        (determination, findings)
+    };
+    Ok(SolverDetermination { task, judged, concept, concept_name, programs, session, limits, constructions, determination, findings })
 }
 
 /// The fault line of a case that `outcome` gives, or `None` for a case that
@@ -182,7 +229,7 @@ impl Comparison<'_> {
             match self.leaves(program, &relation, record, &value, None) {
                 Ok((record, engine)) => {
                     if let Some(what) = differs(record, engine, &mut compared) {
-                        findings.push(Finding::Difference(format!("{name}: the determined value differs from its `param` record: {what}")));
+                        findings.push(Finding::Difference { parameter: name.clone(), line: format!("{name}: the determined value differs from its `param` record: {what}") });
                     }
                 }
                 Err(fault) => findings.push(Finding::Fault(format!("{name}: {fault}"))),
@@ -282,7 +329,7 @@ impl Comparison<'_> {
                 return None;
             }
         }
-        Some(Finding::Difference(format!("{name}: no one D4 element takes each part of the assembly onto its `param` record")))
+        Some(Finding::Difference { parameter: name.clone(), line: format!("{name}: no one D4 element takes each part of the assembly onto its `param` record") })
     }
 
     /// The leaves of `record` and of the engine's rows `value` of

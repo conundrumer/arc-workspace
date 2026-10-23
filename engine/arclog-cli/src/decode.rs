@@ -28,13 +28,12 @@ use std::time::Instant;
 
 use arclog::check::{CheckCache, CheckedProgram, SolverClauses};
 use arclog::decode::{Consistency, Decoder};
-use arclog::eval::determinations::{det_node, relation_spelled};
 use arclog::eval::examples::ExampleScope;
-use arclog::eval::join::{each_row, union};
-use arclog::eval::{output_relation, BodyValue, Outcome, ParameterValues, RelationValue, Stop};
+use arclog::eval::join::each_row;
+use arclog::eval::{output_relation, BodyValue, Outcome, RelationValue, Stop};
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, SolverResult};
 use arclog::judge::candidates::{PairCandidates, Section, World};
-use arclog::judge::determination::{determine, CaseOutcome, DeterminedCase, Determination, Parameter};
+use arclog::judge::determination::{determine, DeterminedCase, Determination};
 use arclog::judge::run::{judged_run, Depth};
 use arclog::registry::Registry;
 use arclog::relations::Relation;
@@ -265,36 +264,10 @@ fn decode_cases(corpus: &Path, tasks: &Path, id: &str, all: bool, rows: RowsMode
 }
 
 /// Whether `case` solves every train pair at the values `determination`
-/// determines, closed-world, or why no such outcome stands. A base case
-/// takes its own values; another case takes the values of the parameters it
-/// runs.
+/// gives it (`Determination::case_values`), closed-world, or why no such
+/// outcome stands.
 fn expected_solves(case: &DeterminedCase<'_>, determination: &Determination, judged: &JudgedTask) -> Result<bool, String> {
-    let values = match determination.cases.iter().find(|(name, ..)| name == case.name) {
-        Some((_, outcome, _)) => {
-            match outcome {
-                CaseOutcome::Solved => {}
-                CaseOutcome::Stopped { stop, .. } => return Err(format!("the determination stops at {:?} at the form {:?}", stop.bound, stop.form)),
-                CaseOutcome::Fault(fault) => return Err(format!("the determination faults at {:?}: {}", fault.form, fault.message)),
-                CaseOutcome::Unsolved => return Err("no assignment solves every train pair".to_owned()),
-            }
-            determination.values(case.name)
-        }
-        None => {
-            let mut values = Vec::new();
-            for (relation, parameter) in &determination.parameters {
-                if det_node(case.program, relation).is_none() || determination.reads_demonstrated(relation) {
-                    continue;
-                }
-                match parameter {
-                    Parameter::Determined(rows) => values.push((relation.clone(), rows.clone())),
-                    Parameter::Open(rows) => values.push((relation.clone(), union(rows.clone()))),
-                    Parameter::Underdetermined(_) => return Err(format!("the parameter {} is underdetermined", relation_spelled(relation))),
-                    Parameter::Pick => {}
-                }
-            }
-            ParameterValues::determined(values)
-        }
-    };
+    let values = determination.case_values(case)?;
     let evaluation = case.evaluation(&values);
     let output = output_relation(case.program).expect("a checked case program derives `&output`");
     let run = judged_run(&evaluation, &output, judged, World::Closed, Depth::Full).map_err(|fault| format!("the judged run faults at {:?}: {}", fault.form, fault.message))?;

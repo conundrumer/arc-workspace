@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::ops::ControlFlow;
 
 use crate::check::CheckedProgram;
-use crate::eval::determinations::{det_relation, determinations};
+use crate::eval::determinations::{det_node, det_relation, determinations, relation_spelled};
 use crate::eval::instance::Constructions;
 use crate::eval::join::{each_row, one_part, union};
 use crate::eval::{output_relation, Domain, Evaluation, ModelsEnd, RelationValue, Limits, ParameterValues, ReachedBound, RunFault, Stop};
@@ -170,6 +170,36 @@ impl Determination {
             Parameter::Underdetermined(_) | Parameter::Pick => None,
         });
         ParameterValues::determined(values)
+    }
+
+    /// The values that the case `case` runs at, or why none stand. A case
+    /// of the determination takes its own values, as [`Self::values`]
+    /// gives them, and is refused where it is not solved. Another case
+    /// takes the values of the parameters it runs, except those that a
+    /// case with a `DEMONSTRATED` form reads, and is refused where one of
+    /// them is underdetermined.
+    pub fn case_values(&self, case: &DeterminedCase<'_>) -> Result<ParameterValues, String> {
+        if let Some((_, outcome, _)) = self.cases.iter().find(|(name, ..)| name == case.name) {
+            return match outcome {
+                CaseOutcome::Solved => Ok(self.values(case.name)),
+                CaseOutcome::Stopped { stop, .. } => Err(format!("the determination stops at {:?} at the form {:?}", stop.bound, stop.form)),
+                CaseOutcome::Fault(fault) => Err(format!("the determination faults at {:?}: {}", fault.form, fault.message)),
+                CaseOutcome::Unsolved => Err("no assignment solves every train pair".to_owned()),
+            };
+        }
+        let mut values = Vec::new();
+        for (relation, parameter) in &self.parameters {
+            if det_node(case.program, relation).is_none() || self.reads_demonstrated(relation) {
+                continue;
+            }
+            match parameter {
+                Parameter::Determined(rows) => values.push((relation.clone(), rows.clone())),
+                Parameter::Open(rows) => values.push((relation.clone(), union(rows.clone()))),
+                Parameter::Underdetermined(_) => return Err(format!("the parameter {} is underdetermined", relation_spelled(relation))),
+                Parameter::Pick => {}
+            }
+        }
+        Ok(ParameterValues::determined(values))
     }
 }
 
