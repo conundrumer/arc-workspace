@@ -43,9 +43,10 @@ use arclog::stream::{token_stream, DecodeSettings};
 use arclog::task::{JudgedTask, Task};
 use arclog::terms::{Example, TermId};
 
-use crate::concept_case::{case_spelled, check_case, check_cases, corpus_limits, corpus_session, determined_cases, read_corpus_task, CorpusTask};
+use arclog::stream::corpus::{case_spelled, check_case, check_cases, decoded_cases};
+use crate::concept_case::{corpus_limits, corpus_session, determined_cases, read_corpus_task, CorpusTask};
 use arclog_constructions::shared as constructions;
-use crate::replay::{decoded_cases, holds_demonstrated, replay, Stepped};
+use crate::replay::{holds_demonstrated, replay, Stepped};
 use crate::select::selected;
 
 /// Whether the rows of each prefix are compared with those of a second

@@ -1,11 +1,11 @@
 """Ships the concept case of aba27056 to Kaggle and fetches its run.
 
 Assembles a private dataset of the arclog wheel, the case program's token
-stream and the task file with each test output removed; versions the dataset
+stream (the lines `arclog-cli stream` prints) and the task file with each test output removed; versions the dataset
 (creating it where the account holds none); pushes the notebook as a private
 kernel with no internet; polls the kernel's status; and fetches its output.
 
-    ship.py <wheel> <stream.json> <task.json> <work dir>
+    ship.py <wheel> <stream file> <task.json> <work dir>
 
 The work directory gets `dataset/`, `kernel/` and `out/`. Each `kaggle` call
 runs under a 60 s timeout; the poll of the kernel ends after `WAIT_SECONDS`.
@@ -51,7 +51,7 @@ def assemble(wheel: Path, stream: Path, task: Path, work: Path) -> tuple[Path, P
         shutil.rmtree(directory, ignore_errors=True)
         directory.mkdir(parents=True)
     shutil.copy(wheel, dataset / wheel.name)
-    shutil.copy(stream, dataset / f"{TASK_ID}.stream.json")
+    shutil.copy(stream, dataset / f"{TASK_ID}.stream.txt")
     (dataset / f"{TASK_ID}.json").write_text(held_out(task.read_text()))
     shutil.copy(HERE / "dataset-metadata.json", dataset / "dataset-metadata.json")
     shutil.copy(HERE / "kernel-metadata.json", kernel / "kernel-metadata.json")

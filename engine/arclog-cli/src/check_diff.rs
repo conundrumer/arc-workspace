@@ -14,7 +14,8 @@
 //! Each check runs `check_one` in a child process whose CPU time is limited
 //! to [`BOUND_SECONDS`], and its result is stored in `.cache/check-diff/`
 //! of the main worktree, under the key of the engine's files and the key
-//! of the solver's files. The engine key hashes the code of each Rust
+//! of the solver's files, as a text file whose first line is `checked <seconds>`,
+//! `panicked` or `unfinished` ([`Outcome::to_text`]). The engine key hashes the code of each Rust
 //! source, with its comments left out ([`code_of`]), and the bytes of each
 //! other engine file. A run starts no check whose result is stored at
 //! its keys, and two runs that overlap in time start one check for each
@@ -36,9 +37,8 @@ use std::time::Instant;
 use arclog::harness::{corpus_solvers, corpus_threads, read_corpus_solver, CorpusSolver};
 use arclog::hash::StableHasher;
 use arclog::read::read_solver;
-use serde_json::{json, Value};
 
-use crate::select::{read_json, selected};
+use crate::select::selected;
 
 const USAGE: &str = "usage: arclog-cli check-diff <corpus-dir> [<task_id> ...] [--reads <name> ...] [--base <rev>]";
 
@@ -115,23 +115,31 @@ enum Outcome {
 }
 
 impl Outcome {
-    fn to_json(&self) -> Value {
+    /// The text form of the result: its first line `checked <seconds>`,
+    /// `panicked` or `unfinished`, then, for `checked`, each line `check_one`
+    /// printed, and for `panicked`, the child's line.
+    fn to_text(&self) -> String {
         match self {
-            Outcome::Checked { lines, seconds } => json!({"checked": {"lines": lines, "seconds": seconds}}),
-            Outcome::Panicked(line) => json!({"panicked": line}),
-            Outcome::Unfinished => json!({"unfinished": {}}),
+            Outcome::Checked { lines, seconds } => lines.iter().fold(format!("checked {seconds}\n"), |text, line| text + line + "\n"),
+            Outcome::Panicked(line) => format!("panicked\n{line}\n"),
+            Outcome::Unfinished => "unfinished\n".to_owned(),
         }
     }
 
-    fn from_json(value: &Value) -> Option<Outcome> {
-        if let Some(checked) = value.get("checked") {
-            let lines = checked.get("lines")?.as_array()?.iter().map(|l| l.as_str().map(str::to_owned)).collect::<Option<_>>()?;
-            return Some(Outcome::Checked { lines, seconds: checked.get("seconds")?.as_f64()? });
+    /// The result that [`Outcome::to_text`] wrote as `text`, or `None` for
+    /// text of another form.
+    fn from_text(text: &str) -> Option<Outcome> {
+        let mut lines = text.lines();
+        let first = lines.next()?;
+        let mut rest: Vec<String> = lines.map(str::to_owned).collect();
+        if let Some(seconds) = first.strip_prefix("checked ") {
+            return Some(Outcome::Checked { lines: rest, seconds: seconds.parse().ok()? });
         }
-        if let Some(line) = value.get("panicked") {
-            return Some(Outcome::Panicked(line.as_str()?.to_owned()));
+        match (first, rest.len()) {
+            ("panicked", 1) => rest.pop().map(Outcome::Panicked),
+            ("unfinished", 0) => Some(Outcome::Unfinished),
+            _ => None,
         }
-        value.get("unfinished").map(|_| Outcome::Unfinished)
     }
 
     /// The lines the comparison of two sides compares.
@@ -287,7 +295,7 @@ fn check_diff(arguments: &Arguments) -> Result<Report, String> {
 /// one a check computes, once it holds the lock beside it.
 fn settle(store: &Path, engine: &Engine, corpus: &Path, task_id: &str, solver_key: &str) -> Result<(Outcome, bool), String> {
     let dir = store.join("results").join(&engine.key);
-    let result = dir.join(format!("{task_id}.{solver_key}.json"));
+    let result = dir.join(format!("{task_id}.{solver_key}.result"));
     if let Some(outcome) = stored(&result)? {
         return Ok((outcome, false));
     }
@@ -304,7 +312,7 @@ fn settle(store: &Path, engine: &Engine, corpus: &Path, task_id: &str, solver_ke
         return Ok((outcome, false));
     }
     let outcome = check(&engine.binary.path()?, corpus, task_id)?;
-    write_whole(&result, serde_json::to_string(&outcome.to_json()).expect("an outcome writes as JSON").as_bytes())?;
+    write_whole(&result, outcome.to_text().as_bytes())?;
     drop(lock);
     Ok((outcome, true))
 }
@@ -314,7 +322,8 @@ fn stored(path: &Path) -> Result<Option<Outcome>, String> {
     if !path.exists() {
         return Ok(None);
     }
-    Outcome::from_json(&read_json(path)?).map(Some).ok_or_else(|| format!("{} holds no result", path.display()))
+    let text = std::fs::read_to_string(path).map_err(|error| format!("{} does not read: {error}", path.display()))?;
+    Outcome::from_text(&text).map(Some).ok_or_else(|| format!("{} holds no result", path.display()))
 }
 
 /// Writes `bytes` to `path` by a rename from a temporary name in its
@@ -685,7 +694,7 @@ fn build_check_one(engine: &Path) -> Result<PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{code_of, key_of, solver_files};
+    use super::{code_of, key_of, solver_files, Outcome};
 
     fn same(a: &str, b: &str) {
         assert_eq!(code_of(a.as_bytes()), code_of(b.as_bytes()), "{a:?} against {b:?}");
@@ -693,6 +702,21 @@ mod tests {
 
     fn differ(a: &str, b: &str) {
         assert_ne!(code_of(a.as_bytes()), code_of(b.as_bytes()), "{a:?} against {b:?}");
+    }
+
+    /// Each variant of a result reads back from its text form.
+    #[test]
+    fn an_outcome_reads_back_from_its_text() {
+        let outcomes = [
+            Outcome::Checked { lines: vec!["a: b".to_owned(), String::new(), "c".to_owned()], seconds: 0.125 },
+            Outcome::Checked { lines: Vec::new(), seconds: 3.0 },
+            Outcome::Panicked("thread panicked at x".to_owned()),
+            Outcome::Unfinished,
+        ];
+        for outcome in outcomes {
+            assert_eq!(Outcome::from_text(&outcome.to_text()), Some(outcome));
+        }
+        assert_eq!(Outcome::from_text("{\"unfinished\":{}}"), None);
     }
 
     /// A comment that fills a line or ends one leaves the code unchanged.

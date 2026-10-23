@@ -53,9 +53,10 @@ use arclog::types::ValueType;
 use arclog_constructions::shared as constructions;
 use serde_json::{json, Value};
 
-use crate::concept_case::{case_spelled, check_cases, corpus_session, read_corpus_task, CorpusTask};
+use arclog::stream::corpus::{case_spelled, check_cases, decoded_cases};
+use crate::concept_case::{corpus_session, read_corpus_task, CorpusTask};
 use crate::lib_compare::evaluation::value_json;
-use crate::replay::{decoded_cases, holds_demonstrated, replay};
+use crate::replay::{holds_demonstrated, replay};
 use crate::select::selected;
 
 const USAGE: &str = "usage: arclog-cli tables <corpus-dir> <tasks-dir> <out-dir> [--cases concept|all] [<task_id> ...]";

@@ -9,8 +9,7 @@ use std::time::Instant;
 
 use arclog::check::CheckedProgram;
 use arclog::decode::{Consistency, Decoder};
-use arclog::resolver::{DependencyKind, ResolvedCases};
-use arclog::solver::CaseName;
+use arclog::resolver::DependencyKind;
 use arclog::stream::{Emitter, Token};
 
 /// The step of a token the model emitted.
@@ -83,10 +82,4 @@ pub fn replay(decoder: &mut Decoder<'_>, stream: &[(Token, Emitter)], after: &mu
 /// commands that replay do not decode.
 pub fn holds_demonstrated(program: &CheckedProgram) -> bool {
     program.program.graph.nodes.iter().any(|node| matches!(node.kind, DependencyKind::Demonstrated(_)))
-}
-
-/// The names of the cases a replay command decodes: every case, or the
-/// concept case.
-pub fn decoded_cases(cases: &ResolvedCases, all: bool) -> Vec<CaseName> {
-    if all { cases.cases().map(|case| case.case.name.clone()).collect() } else { vec![cases.concept().case.name.clone()] }
 }

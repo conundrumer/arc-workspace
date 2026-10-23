@@ -3,6 +3,7 @@
 //! the ids of the tokens in [`vocabulary`], and the writer from a case
 //! program to its stream in [`write`](mod@write).
 
+pub mod corpus;
 pub mod settings;
 pub mod token;
 pub mod vocabulary;

@@ -37,7 +37,8 @@ use arclog::solver::{CaseName, Exclusion};
 use arclog::terms::{Ident, Term, TermId};
 use arclog::types::{AssemblyId, GraphRelation, KeyRow, ValueType};
 
-use crate::concept_case::{case_spelled, check_case, check_cases, corpus_limits, corpus_session, determined_cases, read_corpus_task, CorpusTask};
+use arclog::stream::corpus::{case_spelled, check_case, check_cases};
+use crate::concept_case::{corpus_limits, corpus_session, determined_cases, read_corpus_task, CorpusTask};
 use arclog_constructions::shared as constructions;
 use crate::renaming::{renaming_exists, same_without_idents, term_leaves, EngineLeaf, Leaf};
 use crate::select::selected;

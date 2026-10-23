@@ -46,7 +46,7 @@ use arclog::types::ValueType;
 use serde_json::Value;
 
 use crate::arguments::Arguments;
-use crate::concept_case::case_spelled;
+use arclog::stream::corpus::case_spelled;
 use crate::determine::{solver_determination, Finding};
 use crate::renaming::{renaming_exists, same_without_idents, term_leaves, EngineLeaf, Leaf};
 use crate::select::{read_json, selected};

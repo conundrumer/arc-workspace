@@ -6,18 +6,21 @@
 //! holds the session's data beside the decode.
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::path::Path;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use arclog::decode::{step_batch, Consistency, Decoder, Views};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
+use arclog::harness::{run_over_corpus, SolverResult};
 use arclog::eval::{Outcome, RelationValue};
 use arclog::judge::attempts::Attempts;
 use arclog::judge::candidates::{PairCandidates, Section, World};
 use arclog::registry::Registry;
 use arclog::session::{SessionBound, TaskSession, SESSION_BYTES};
-use arclog::stream::{DecodeSettings, Token, Vocabulary, VocabularyCaps};
+use arclog::stream::corpus::{fault_line, solver_streams, token_ids, WantedCases};
+use arclog::stream::{DecodeSettings, Emitter, Token, Vocabulary, VocabularyCaps};
 use arclog::task::{read_judged_train_text, read_task_text, Grid, JudgedTask, Task, TaskError};
 use arclog::terms::Example;
 use arclog::trace::render::{trace_form, TraceFormOptions};
@@ -595,6 +598,85 @@ impl PyDecoder {
     }
 }
 
+// ----------------------------------------------------------------- streams
+
+/// The token stream of one case of a solver of a corpus.
+///
+/// `ids` holds the token ids as `uint32` in native byte order, and `model`
+/// one byte for each token, 1 where the model writes the token and 0 where
+/// the engine does, so `numpy.frombuffer` reads each.
+#[pyclass(name = "CaseStream", frozen, get_all, module = "arclog")]
+struct PyCaseStream {
+    task: String,
+    case: String,
+    concept: bool,
+    ids: Py<PyBytes>,
+    model: Py<PyBytes>,
+}
+
+/// A stream of a case with the ids of its tokens, before it becomes an object.
+struct IdStream {
+    task: String,
+    case: String,
+    concept: bool,
+    ids: Vec<(u32, Emitter)>,
+}
+
+/// The token stream of each case of each solver of `corpus`, the concept
+/// case or, with `all_cases`, every case, over the solvers whose task ids
+/// `task_ids` gives, or every solver where it is `None`, in the order of the
+/// task ids and then of the cases, with the ids of the vocabulary under the
+/// default settings. The second value holds a line for each case that gives no
+/// stream and each solver that gives none, in the form the report of
+/// `arclog-cli stream --corpus` prints it, in the order of the task ids.
+/// The walk runs on the threads of the corpus harness with the GIL released.
+#[pyfunction]
+#[pyo3(signature = (corpus, all_cases=false, task_ids=None))]
+fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Option<Vec<String>>) -> PyResult<(Vec<PyCaseStream>, Vec<String>)> {
+    let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
+    let found: Mutex<Vec<(String, Vec<IdStream>, Vec<String>)>> = Mutex::new(Vec::new());
+    let walked = py.detach(|| {
+        run_over_corpus(
+            Path::new(corpus),
+            |solver| {
+                if task_ids.as_ref().is_some_and(|ids| !ids.contains(&solver.task_id)) {
+                    return SolverResult::Pass;
+                }
+                let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
+                let (mut streams, mut faults) = (Vec::new(), Vec::new());
+                match solver_streams(Path::new(corpus), &solver.task_id, wanted, &vocabulary) {
+                    Ok(cases) => {
+                        for case in cases {
+                            match case.stream {
+                                Ok(stream) => streams.push(IdStream { task: solver.task_id.clone(), case: case.case, concept: case.concept, ids: token_ids(&stream, &vocabulary) }),
+                                Err(fault) => faults.push(fault_line(&solver.task_id, Some(&case.case), &fault)),
+                            }
+                        }
+                    }
+                    Err(fault) => faults.push(fault_line(&solver.task_id, None, &fault)),
+                }
+                found.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push((solver.task_id.clone(), streams, faults));
+                SolverResult::Pass
+            },
+            |_, _| {},
+        )
+    });
+    walked.map_err(|error| Fault::new_err(format!("the corpus does not read: {error:?}")))?;
+    let mut found = found.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner());
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut streams = Vec::new();
+    let mut faults = Vec::new();
+    for (_, solver_streams, solver_faults) in found {
+        for stream in solver_streams {
+            let ids: Vec<u8> = stream.ids.iter().flat_map(|(id, _)| id.to_ne_bytes()).collect();
+            let model: Vec<u8> = stream.ids.iter().map(|(_, emitter)| u8::from(*emitter == Emitter::Model)).collect();
+            streams.push(PyCaseStream { task: stream.task, case: stream.case, concept: stream.concept, ids: PyBytes::new(py, &ids).unbind(), model: PyBytes::new(py, &model).unbind() });
+        }
+        faults.extend(solver_faults);
+    }
+    Ok((streams, faults))
+}
+
 /// Steps each of `decoders` by the token with the id at its index in `ids`,
 /// on the thread pool with the GIL released, and gives what each step
 /// gives, in the order of `decoders`: the pair that `Decoder.step` gives, or,
@@ -645,8 +727,10 @@ fn arclog_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyAssigned>()?;
     module.add_class::<PyView>()?;
     module.add_class::<PyViews>()?;
+    module.add_class::<PyCaseStream>()?;
     module.add("Refusal", module.py().get_type::<Refusal>())?;
     module.add("Fault", module.py().get_type::<Fault>())?;
     module.add_function(wrap_pyfunction!(step_batch_py, module)?)?;
+    module.add_function(wrap_pyfunction!(corpus_streams, module)?)?;
     Ok(())
 }
