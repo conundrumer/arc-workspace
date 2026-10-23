@@ -106,9 +106,10 @@ out(P, Col, Ch) :- paint(P, Ch), params.ink(Col).
 .comp Determine {
     .type Interior = [e: Example, id: Ident]
 
-    // The walls pass through, so each output's interiors are its input's.
+    // The interiors of each train input. The walls pass through, so they are
+    // its output's interiors.
     .init parse = Parse<Example>
-    parse.cell(E, P, Col) :- ex_out(E, P, Col).
+    parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
 
     // Each finished pattern, in its interior's frame.
     .decl ink_out(i: Interior, p_inner: Position)
@@ -125,6 +126,8 @@ out(P, Col, Ch) :- paint(P, Ch), params.ink(Col).
     grp.pattern_member(S, D) :- sym_member(S, D).
     grp.observed_member($U(), D) :- d4_elem(D), !inv.mismatch(_, D).
 
+    // @ignore: determine prediction — the interiors the test reads from each
+    //  input are its output's, as the walls pass through
     .decl sym(s: Sym)
     sym(S) :- grp.equals($U(), S).
 }

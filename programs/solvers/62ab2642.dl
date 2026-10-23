@@ -29,47 +29,48 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Orth()). impl_choice($Diag()).
 
-// The extreme regions of a labeled partition, by cell count.
+// The blank regions under each join, and the extreme ones by cell count.
 .comp Parse<Key> {
-    .decl region(key: Key, p: Position, id: Ident)  // input
+    .decl blank(key: Key, p: Position)  // input
 
-    .type KeyedRegion = [key: Key, id: Ident]
+    .decl region(key: Key, ch: Choice, p: Position, id: Ident)
+
+    .type KeyedRegion = [key: Key, ch: Choice, id: Ident]
+    .type KeyedChoice = [key: Key, ch: Choice]
 
     .init size = Tally<KeyedRegion, Position>
-    size.item([Ky, Id], P) :- region(Ky, P, Id).
+    size.item([Ky, Ch, Id], P) :- region(Ky, Ch, P, Id).
 
-    .init extreme = ArgExtremes<Key, Ident>
-    extreme.cand(Ky, Id, N) :- size.tally([Ky, Id], N).
+    .init extreme = ArgExtremes<KeyedChoice, Ident>
+    extreme.cand([Ky, Ch], Id, N) :- size.tally([Ky, Ch, Id], N).
 
-    .decl biggest(key: Key, p: Position)
-    biggest(Ky, P) :- extreme.high(Ky, Id, _), region(Ky, P, Id).
+    .decl biggest(key: Key, ch: Choice, p: Position)
+    biggest(Ky, Ch, P) :- extreme.high([Ky, Ch], Id, _), region(Ky, Ch, P, Id).
 
-    .decl smallest(key: Key, p: Position)
-    smallest(Ky, P) :- extreme.low(Ky, Id, _), region(Ky, P, Id).
+    .decl smallest(key: Key, ch: Choice, p: Position)
+    smallest(Ky, Ch, P) :- extreme.low([Ky, Ch], Id, _), region(Ky, Ch, P, Id).
+
+    // --- $Orth ---
+
+    .init orth = Components<Key>
+    orth.node(Ky, P) :- blank(Ky, P).
+    region(Ky, $Orth(), P, Id) :- orth.label(Ky, P, Id).
+
+    // --- $Diag ---
+
+    .init diag = Components8<Key>
+    diag.node(Ky, P) :- blank(Ky, P).
+    region(Ky, $Diag(), P, Id) :- diag.label(Ky, P, Id).
 }
 
-.decl blank(p: Position)
-blank(P) :- in(P, Col), params.bg(Col).
-
-.init parse = Parse<Choice>
-
-// --- $Orth ---
-
-.init orth = Components<Unit>
-orth.node($U(), P) :- blank(P).
-parse.region($Orth(), P, Id) :- orth.label($U(), P, Id).
-
-// --- $Diag ---
-
-.init diag = Components8<Unit>
-diag.node($U(), P) :- blank(P).
-parse.region($Diag(), P, Id) :- diag.label($U(), P, Id).
+.init parse = Parse<Unit>
+parse.blank($U(), P) :- in(P, Col), params.bg(Col).
 
 // --- output ---
 
 .decl paint(p: Position, col: Color, ch: Choice)
-paint(P, Col, Ch) :- parse.biggest(Ch, P), params.big_paint(Col).
-paint(P, Col, Ch) :- parse.smallest(Ch, P), params.small_paint(Col).
+paint(P, Col, Ch) :- parse.biggest($U(), Ch, P), params.big_paint(Col).
+paint(P, Col, Ch) :- parse.smallest($U(), Ch, P), params.small_paint(Col).
 
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
@@ -78,15 +79,12 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
     .decl bg(col: Color)
     bg(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col2 != Col.
 
-    .init region = Components<Example>
-    region.node(E, P) :- ex_in(E, P, Col), bg(Col).
-
     .init parse = Parse<Example>
-    parse.region(E, P, Id) :- region.label(E, P, Id).
+    parse.blank(E, P) :- ex_in(E, P, Col), bg(Col).
 
     .decl big_paint(col: Color)
-    big_paint(Col) :- parse.biggest(E, P), ex_out(E, P, Col).
+    big_paint(Col) :- parse.biggest(E, $Orth(), P), ex_out(E, P, Col).
 
     .decl small_paint(col: Color)
-    small_paint(Col) :- parse.smallest(E, P), ex_out(E, P, Col).
+    small_paint(Col) :- parse.smallest(E, $Orth(), P), ex_out(E, P, Col).
 }

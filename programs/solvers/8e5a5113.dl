@@ -121,12 +121,9 @@ out(P_grid, Col, $Lookup()) :-
     .init in_parse = Parse<Example>
     in_parse.cell(E, P) :- ex_in(E, P, _).
 
-    .init out_parse = Parse<Example>
-    out_parse.cell(E, P) :- ex_out(E, P, _).
-
     .decl out_cell(e: Example, p_tile: Position, p_intile: Position, col: Color)
     out_cell(E, P_tile, P_intile, Col) :-
-        ex_out(E, P_grid, Col), out_parse.tile(E, P_grid, P_tile, P_intile).
+        ex_out(E, P_grid, Col), in_parse.tile(E, P_grid, P_tile, P_intile).
 
     .type TileK = [e: Example, p_tile: Position]
 
@@ -143,6 +140,8 @@ out(P_grid, Col, $Lookup()) :-
     .decl step_broken(d: D4)
     step_broken(R) :- step.mismatch([E, T], R), out_cell(E, T, _, _).
 
+    // @ignore: determine prediction — the tiles the test reads from each input
+    //  are its output's, as an output has its input's cell positions
     .decl rot(d: D4)
     rot(R) :- out_cell(_, _, _, _), d4_elem(R), !step_broken(R).
 

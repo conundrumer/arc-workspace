@@ -157,7 +157,6 @@ impl_choice([H, K, C, F, S]) :-
 .decl trail_color(s: ShapeColor, col: Color)
 
 .init parse = Parse<ShapeColor>
-parse.cell(S, P) :- trail_color(S, Col), in(P, Col).
 
 .decl key_cell(s: ShapeColor, p: Position)
 key_cell(S, P) :- trail_color(S, Col2), in(P, Col), !params.background(Col), Col != Col2.
@@ -225,6 +224,7 @@ out(P, Col, [H, K, C, F, S]) :-
 
 // --- $ShapeStored ---
 trail_color($ShapeStored(), Col) :- params.shape_color(Col).
+parse.cell($ShapeStored(), P) :- in(P, Col), params.shape_color(Col).
 
 // --- $ShapeColorBulk ---
 // A color other than the background with more than one cell.
@@ -235,6 +235,7 @@ bulk(Col) :- in(P, Col), in(Q, Col), P != Q, !params.background(Col).
 bulk_clash(Col) :- bulk(Col), bulk(Col2), Col != Col2.
 
 trail_color($ShapeColorBulk(), Col) :- bulk(Col), !bulk_clash(Col).
+parse.cell($ShapeColorBulk(), P) :- in(P, Col), trail_color($ShapeColorBulk(), Col).
 
 // --- $HeadDir ---
 head_corner($HeadDir(), S, I, D) :-

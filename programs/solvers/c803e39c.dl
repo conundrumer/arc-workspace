@@ -103,8 +103,6 @@ panel_axis(A) :- params.panel_from(D), axis_of(D, A).
 
     .decl cell(key: Key, p: Position, col: Color)
     .decl divider_color(key: Key, col: Color)
-    // The ranks of the panels that hold the solid squares.
-    .decl solid(key: Key, k: number)
 
     // Each line across the panel axis, as its place on that axis, with the
     // color that fills it.
@@ -142,12 +140,17 @@ panel_axis(A) :- params.panel_from(D), axis_of(D, A).
     .init ink_box = Bbox<PanelKey>
     ink_box.cell([Ky, K], P) :- ink(Ky, K, P, _).
 
+    // A panel whose ink box holds a cell that the ink leaves out.
+    .decl hole(key: Key, k: number)
+    hole(Ky, K) :-
+        ink_box.box([Ky, K], B), panel_cell(Ky, K, P), inside(P, B), !ink(Ky, K, P, _).
+
     // A panel's square lies where the solid squares lie in their panels: on
     // their lines along the panel axis, at their distances from the near side.
     .decl square_cell(key: Key, k: number, p: Position)
     square_cell(Ky, K, P) :-
         panel_rel(Ky, K, P, P_rel),
-        solid(Ky, K2), ink(Ky, K2, Q, _), panel_rel(Ky, K2, Q, Q_rel),  // a solid square's cell
+        ink(Ky, K2, Q, _), !hole(Ky, K2), panel_rel(Ky, K2, Q, Q_rel),  // a solid square's cell
         panel_axis(A), same_line(A, P, Q), params.panel_from(D), same_dist(D, P_rel, Q_rel).
 
     // @claim four-panels
@@ -202,9 +205,6 @@ map_rank($TileByColor(), Dv, K) :-
     shape_panel(K), parse.shade.value([Dv, K], Col), params.map_color(Col).
 
 // --- $Square ---
-parse.solid(Dv, K) :-
-    divider_choice(Dv), ( params.panel_role(_, _, K, _) ; params.panel_role(_, _, _, K) ).
-
 frame_box($Square(), Dv, K, B) :- parse.square_box.box([Dv, K], B).
 
 // --- $HeightSide ---
@@ -247,7 +247,6 @@ parse.divider_color($DividerByLines(), Col) :- line_ink.value($U(), Col).
     .init ex = Parse<Example>
     ex.cell(E, P, Col) :- ex_in(E, P, Col).
     ex.divider_color(E, Col) :- ex_in(E, _, _), divider_color(Col).
-    ex.solid(E, K) :- ex.panel_cell(E, K, _), !hole(E, K).
 
     // The color of the panels' cells on the edges across the panel axis.
     .decl background(c: Color)
@@ -263,11 +262,6 @@ parse.divider_color($DividerByLines(), Col) :- line_ink.value($U(), Col).
     // The color that fills lines and lies on nothing else.
     .decl divider_color(c: Color)
     divider_color(Col) :- ex.line.value(_, Col), !off_line(Col).
-
-    // A cell inside a panel's ink box that the ink leaves out.
-    .decl hole(e: Example, k: number)
-    hole(E, K) :-
-        ex.ink_box.box([E, K], B), ex.panel_cell(E, K, P), inside(P, B), !ex.ink(E, K, P, _).
 
     // Each cell of a panel's square, in the square's own coordinates, and the
     // cells its ink sets.

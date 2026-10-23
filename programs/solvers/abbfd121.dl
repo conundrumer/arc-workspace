@@ -485,7 +485,7 @@ pick(S, Sel, X, $TieFirst(), [Av, [C, A]], B) :-
     .decl fill_contradicted(col: Color)
     fill_contradicted(Col) :-
         parse.sole.value([E, $Area(), _], B), parse.block_cell(E, B, P),
-        !parse.color(E, $AxisPeriods(), P, _),
+        !parse.axis_color(E, P, _),
         crop(P, B, P_inner), ex_out(E, P_inner, C), palette(Col), Col != C.
 
     .decl fill(col: Color)

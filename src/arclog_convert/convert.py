@@ -1831,12 +1831,28 @@ class Converter:
     def split_det_parse(self, prog):
         """A determination's parse keyed on Example is the program's parse,
         lifted, where the determination feeds each of its inputs as the
-        program does. Each relation and instance of the parse that reads an
-        input fed otherwise is the determination's own: a copy keyed on
-        Example, which the determination's readers read."""
+        program does in the concept case. A feed of the program is its
+        clauses that hold in the concept case: a clause keyed by a constructor
+        outside the concept case, in its head or by an equation, is an
+        alternate of another case, and drops out where the program derives
+        the relation in every case of its point: a clause has no constructor
+        key, or each constructor of the point's ADT keys a clause. A feed of the
+        determination drops the atoms that only test: the example's input
+        or output exists, a relation of the determination that holds the
+        trained examples, a read of the instance's input relation at the
+        example with wildcards. A case relation of the parse, whose columns
+        but its Key are case types, is the program's where the determination
+        feeds it the concept fact alone. An input the determination leaves
+        unfed differs, and its dependents are copied only where the
+        determination reads them. Each relation and instance of the parse
+        that reads an input fed otherwise is the determination's own: a copy
+        keyed on Example, which the determination's readers read."""
         from engine.program import Column, DeclId, Scope, Span, TypeName, UnitId
         det = ("Determine",)
         self.det_parse_copies: dict[tuple[tuple[str, ...], str], str] = {}   # a copy -> the name it is a copy of
+        concept = set(self.concept_of().values())
+        other_ctors = {k.name for _, adt_ in self.point_fields() for k in adt_.constructors} - concept
+
         prog_inst = {i.component: i.name for i in prog.instances if i.scope.components == () and i.component in self.comps}
         parse_rels = {r.name: r for r in prog.relations if r.scope.components == ("Parse",)}
         parse_insts = {i.name: i for i in prog.instances if i.scope.components == ("Parse",)}
@@ -1883,12 +1899,51 @@ class Converter:
         case_rels = {r.name for r in prog.relations if r.scope.components == () and r.columns
                      and all(c_.type.name in self.case_types for c_ in r.columns)} | {"impl_choice"}
 
-        def feed(u: Unit, iname: str, det_side: bool, case_key: bool = False) -> str:
+        # the relations of the parse that the program feeds from its input
+        fed_by_in = {u.head.relation.name for u in prog.units if u.head.relation.instances
+                     and any(a.relation == RelationName((), "in") for a in self._atoms(u.body or ()))}
+        # the determination's relations that hold the trained examples
+        det_heads = Counter(u.head.relation for u in prog.units if u.scope.components == det)
+        trained_rels = {u.head.relation.name for u in prog.units
+                        if u.scope.components == det and not u.head.relation.instances and len(u.head.args) == 1
+                        and det_heads[u.head.relation] == 1 and u.body is not None and len(u.body) == 1
+                        and isinstance(u.body[0], AtomLiteral) and not u.body[0].negated
+                        and u.body[0].atom.relation == RelationName((), "ex_out")
+                        and u.body[0].atom.args[:1] == u.head.args
+                        and all(isinstance(t, Wildcard) for t in u.body[0].atom.args[1:])}
+
+        def keyed_ctors(u: Unit) -> set[str]:
+            # the constructors that key a program clause: in its head key, or
+            # by an equation that binds the key variable
+            hk = key_at(RelationName(u.head.relation.instances[1:], u.head.relation.name))
+            k = u.head.args[hk] if hk is not None and hk < len(u.head.args) else None
+            out = set(ctor_names(k)) if k is not None else set()
+            for l in u.body or ():
+                if isinstance(l, Comparison) and l.op == ComparisonOperator.EQ and isinstance(k, Variable):
+                    for a, b in ((l.lhs, l.rhs), (l.rhs, l.lhs)):
+                        if isinstance(a, Variable) and a.name == k.name:
+                            out |= set(ctor_names(b))
+            return out
+
+        def alternates(clauses: list[Unit]) -> set[int]:
+            # the clauses of one relation that are alternates of other cases,
+            # where the program derives the relation in every case of their
+            # point: each constructor of its ADT keys a clause, or a clause
+            # has no constructor key
+            keyed = [keyed_ctors(u) for u in clauses]
+            if all(keyed) and any(
+                    not all(any(k.name in ks2 for ks2 in keyed) for k in adt_.constructors)
+                    for ks in keyed if ks & other_ctors for _, adt_ in self.point_fields()
+                    if any(k.name in ks for k in adt_.constructors)):
+                return set()
+            return {i for i, ks in enumerate(keyed) if ks & other_ctors}
+
+        def feed(u: Unit, iname: str, det_side: bool, case_key: bool = False) -> tuple[str, Unit]:
             # the clause as the lifted parse reads it: the example at each
             # key column of the parse, `in` that example's input, and no atom
             # that only tests that the example or the case exists; in the
             # determination, a relation of a parameter's name is the
-            # parameter's determination
+            # parameter's determination; and the clause with those atoms dropped
             def fix(x):
                 if isinstance(x, Atom):
                     rn = x.relation
@@ -1927,9 +1982,16 @@ class Converter:
             count((u.head, u.body))
 
             def test_only(l) -> bool:
-                if not isinstance(l, AtomLiteral) or l.negated or l.atom.relation.instances:
+                if not isinstance(l, AtomLiteral) or l.negated:
                     return False
                 a = l.atom
+                if a.relation.instances == ("@parse",):
+                    return a.relation.name in fed_by_in and bool(a.args) and (a.args[0] == E or a.args[0] == k) \
+                        and all(isinstance(t, Wildcard) for t in a.args[1:])
+                if a.relation.instances:
+                    return False
+                if a.relation.name in trained_rels and det_side:
+                    return a.args == (E,) or a.args == (k,)
                 if a.relation.name in ("ex_in", "ex_out"):
                     return bool(a.args) and (a.args[0] == E or a.args[0] == k) \
                         and all(isinstance(t, Wildcard) for t in a.args[1:])
@@ -1938,7 +2000,26 @@ class Converter:
                     isinstance(t, Wildcard) or isinstance(t, Variable) and (uses[t.name] == 1 or t.name == kn and case_key)
                     for t in a.args)
             u = dc_replace(u, body=tuple(l for l in u.body or () if not test_only(l)))
-            return canon(subst(u, {kn: E.name}) if kn else u)
+            return canon(subst(u, {kn: E.name}) if kn else u), u
+
+        def concept_feed(x: str, clauses: list[Unit]) -> bool:
+            # the determination feeds the case relation x the concept fact alone
+            r = parse_rels[x]
+            others = [c_ for c_ in r.columns if c_.type.name != "Key"]
+            if len(clauses) != 1 or not others or any(c_.type.name not in self.case_types for c_ in others):
+                return False
+            u = clauses[0]
+            if u.body is None or len(u.body) != 1 or not isinstance(u.body[0], AtomLiteral) or u.body[0].negated:
+                return False
+            a = u.body[0].atom
+            hk = key_at(RelationName((), x))
+            if a.relation.instances or (det, a.relation.name) not in self.rels or hk is None \
+                    or tuple(t for i, t in enumerate(u.head.args) if i != hk) != a.args \
+                    or not all(isinstance(t, Variable) for t in a.args):
+                return False
+            facts = [f_ for f_ in prog.units if f_.scope.components == det and f_.head.relation == a.relation]
+            names = {m for f_ in facts for t in f_.head.args for m in ctor_names(t)}
+            return len(facts) == 1 and facts[0].body is None and bool(names) and names <= concept
 
         for inst in [i for i in prog.instances if i.scope.components == det and i.component in prog_inst]:
             comp = self.comps[inst.component]
@@ -1949,13 +2030,21 @@ class Converter:
             pinst = next(i for i in prog.instances if i.scope.components == () and i.name == pname)
             case_key = dict(zip(comp.type_params, (a.name for a in pinst.type_args))).get("Key") in self.case_types
             feeds: dict[str, tuple[list[str], list[str]]] = defaultdict(lambda: ([], []))
+            det_feeds: dict[str, list[Unit]] = defaultdict(list)
+            prog_clauses: dict[str, list[Unit]] = defaultdict(list)
             for u in prog.units:
                 rn = u.head.relation
                 if u.scope.components == () and rn.instances == (pname,) and u.head.args:
-                    feeds[rn.name][0].append(feed(u, pname, False, case_key))
+                    prog_clauses[rn.name].append(u)
                 elif u.scope.components == det and rn.instances == (n,) and u.head.args:
-                    feeds[rn.name][1].append(feed(u, n, True))
-            differ = {x for x, (a, b) in feeds.items() if sorted(a) != sorted(b)}
+                    fed = feed(u, n, True)
+                    feeds[rn.name][1].append(fed[0])
+                    det_feeds[rn.name].append(fed[1])
+            for x, clauses in prog_clauses.items():
+                dropped = alternates(clauses)
+                feeds[x][0].extend(feed(u, pname, False, case_key)[0] for i, u in enumerate(clauses) if i not in dropped)
+            differ = {x for x, (a, b) in feeds.items()
+                      if sorted(a) != sorted(b) and not (a and concept_feed(x, det_feeds[x]))}
             if not differ:
                 continue
             # the parse's nodes that read an input fed otherwise
@@ -2146,6 +2235,11 @@ class Converter:
                 for t in (l.lhs, l.rhs):
                     if isinstance(t, Aggregate):
                         yield from Converter._atoms(t.body)
+
+    def concept_of(self) -> dict[str, str]:
+        """The concept case: each point's name and the first constructor of
+        its ADT."""
+        return {f_: adt_.constructors[0].name for f_, adt_ in self.point_fields()}
 
     def point_fields(self) -> list[tuple[str, AdtType]]:
         """Each point: its name and its ADT, the Choice's fields and every ADT
@@ -3218,7 +3312,7 @@ class Solver:
                     self.case_set_rows[r.name] = rows
                     self.case_set_types[r.name] = set().union(*(self.reached_types(col.type.name) for col in r.columns))
         c.skip_rels.discard("out")
-        concept_of = {f_: adt_.constructors[0].name for f_, adt_ in c.point_fields()}
+        concept_of = c.concept_of()
         for name, rows in self.case_set_rows.items():
             if not any(all(row.get(f_, k) == k for f_, k in concept_of.items()) for row in rows):
                 c.case_set_unread.add(name)

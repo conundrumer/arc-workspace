@@ -189,15 +189,14 @@ impl_choice([Kp, B, Sp, $EveryMatch(), Ow, $NoClip()]) :-
 
 .init parse = Parse<Background>
 parse.cell(B, P, Col) :- background_choice(B), in(P, Col).
-parse.bg(B, Col) :- bg(B, Col).
-
-// --- background ---
-
-.decl bg(b: Background, col: Color)
 
 // --- $Commonest ---
 
-bg($Commonest(), Col) :- parse.color_count.mode($Commonest(), Col).
+// The background reading the Determine reads.
+.decl commonest(b: Background)
+commonest($Commonest()).
+
+parse.bg(B, Col) :- commonest(B), parse.color_count.mode(B, Col).
 
 // --- $BackgroundAtCorners ---
 
@@ -205,7 +204,7 @@ bg($Commonest(), Col) :- parse.color_count.mode($Commonest(), Col).
 .init corner_color = Unanimous<Unit, Color>
 corner_color.item($U(), Col) :- in(P, Col), diag_dir_elem(D), box_corner(P, ZERO, D).
 
-bg($BackgroundAtCorners(), Col) :- corner_color.value($U(), Col).
+parse.bg($BackgroundAtCorners(), Col) :- corner_color.value($U(), Col).
 
 // --- objects ---
 
@@ -325,7 +324,7 @@ key_point(B, $BackgroundBlocks(), Q, Col) :- key_box.box(B, Box), in(Q, Col), in
 
 // --- $UnderlayDrawing ---
 
-writable(B, $UnderlayDrawing(), X) :- in(X, C_bg), bg(B, C_bg).
+writable(B, $UnderlayDrawing(), X) :- in(X, C_bg), parse.bg(B, C_bg).
 
 // --- matching ---
 

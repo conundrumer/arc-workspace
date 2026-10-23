@@ -188,10 +188,6 @@ impl_choice([L, Cn, I, Cd, Tc, Tp]) :-
 
 .init parse = Parse<TileColor>
 parse.cell(Tc, P, Col) :- tile_color_choice(Tc), in(P, Col).
-parse.tile_color(Tc, Col) :- tile_color_of(Tc, Col).
-
-// The tile color under each tile-color branch.
-.decl tile_color_of(tc: TileColor, col: Color)
 
 // The tile region.
 // @claim crop-to-tiles
@@ -284,7 +280,7 @@ out(P_inner, Col, Ch) :-
     ).
 
 // --- $StoredTileColor ---
-tile_color_of($StoredTileColor(), Col) :- params.tile_color(Col).
+parse.tile_color($StoredTileColor(), Col) :- params.tile_color(Col).
 
 // --- $TileColorByCount ---
 .decl mode_tie()
@@ -292,7 +288,7 @@ mode_tie() :-
     parse.ink_mode.mode($TileColorByCount(), C1), parse.ink_mode.mode($TileColorByCount(), C2),
     C1 != C2.
 
-tile_color_of($TileColorByCount(), Col) :-
+parse.tile_color($TileColorByCount(), Col) :-
     parse.ink_mode.mode($TileColorByCount(), Col), !mode_tie().
 
 // --- $Pieces ---
@@ -326,12 +322,12 @@ frame(Tc, $Tiling(), B) :- tiling_frame.box(Tc, B).
 
 // --- $OddCell ---
 code_cell(Tc, Tp, $OddCell(), B, P) :-
-    tile_cell(Tc, Tp, B, P), in(P, Col), !tile_color_of(Tc, Col), !params.background(Col).
+    tile_cell(Tc, Tp, B, P), in(P, Col), !parse.tile_color(Tc, Col), !params.background(Col).
 
 // --- $CodeAtCorner ---
 code_cell(Tc, Tp, $CodeAtCorner(), B, P) :-
     tile_cell(Tc, Tp, B, P), params.code_corner(D), box_corner(P, B, D),
-    in(P, Col), !tile_color_of(Tc, Col), !params.background(Col).
+    in(P, Col), !parse.tile_color(Tc, Col), !params.background(Col).
 
 // --- $ShapeColor ---
 shape_ink([L, Cn, $ShapeColor(), Cd, Tc, Tp], Q) :-
@@ -433,7 +429,7 @@ shape_cell(Ch, Col, Q) :-
 .comp Determine {
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
-    parse.tile_color(E, Col) :- ex_in(E, _, Col), params.tile_color(Col).
+    parse.tile_color(E, Col) :- ex_in(E, _, _), params.tile_color(Col).
 
     .decl drawn(e: Example)
     drawn(E) :- ex_out(E, _, _).
