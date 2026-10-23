@@ -1,7 +1,7 @@
 // 65b59efc
 // @draft
 // @keywords: decompose overlay scale markers stamp mapping crop
-// input: dashed separator lines cut the scene into a lattice of N×N tiles: a
+// input: dashed separator lines cut the scene into a tiling of N×N tiles: a
 //  band of templates, one per strip, each drawn in its own color; a band of
 //  markers; and a legend band with one color under each template
 // output: The marker tiles of every strip overlay into one N×N arrangement.
@@ -21,7 +21,7 @@
 
 .init params = Params
 
-// --- the scene and its lattice ---
+// --- the scene and its tiling ---
 
 // The scene: the drawn content, cut from its bg canvas.
 .init scene = Bbox<Unit>
@@ -33,16 +33,16 @@ cell(P_inner, Col) :- scene.box($U(), B), in(P, Col), crop(P, B, P_inner).
 // A separator line is dashed: the separator color runs along it, so two
 // adjacent separator cells lie on it. A lone separator cell is where a tile
 // line crosses one.
-.init lattice = DividerTiles<Unit>
-lattice.cell($U(), P) :- cell(P, _).
-lattice.divider($U(), A, L) :-
+.init tiling = DividerTiles<Unit>
+tiling.cell($U(), P) :- cell(P, _).
+tiling.divider($U(), A, L) :-
     cell(P, Col), params.sep(Col),                       // a separator cell
     axis_of(D, A_run), neighbor(P, D, Q), cell(Q, Col),  // beside another
     perp(A_run, A), split(P, A, L, _).                   // the line they run along
 
 // Each tile's box.
 .init tile = Bbox<Position>
-tile.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
+tile.cell(P_tile, P) :- tiling.tile_of($U(), P, P_tile).
 
 // A tile cell by its band along the template side's axis, its strip across,
 // and its position in the tile.

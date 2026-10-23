@@ -33,17 +33,17 @@
 
 .init params = Params
 
-// The input's cells spread apart by the gap: the output lattice.
-.decl lattice(p_in: Position, p_out: Position)
-lattice(P_in, P_out) :- in(P_in, _), params.gap(G), concat_2d(P_in, ZERO, G, P_out).
+// The input's cells spread apart by the gap, each at its place in the output.
+.decl spread(p_in: Position, p_out: Position)
+spread(P_in, P_out) :- in(P_in, _), params.gap(G), concat_2d(P_in, ZERO, G, P_out).
 
 .init frame = Frame2D<Unit>
-frame.extent($U(), A, N) :- lattice(_, P), axis_elem(A), axis_dim(P, A, N).
+frame.extent($U(), A, N) :- spread(_, P), axis_elem(A), axis_dim(P, A, N).
 
-// The spiral's center: the mark's lattice point, as a degenerate box, with
+// The spiral's center: the mark's spread cell, as a degenerate box, with
 // the mark's color.
 .decl center(b: Position, col: Color)
-center(B, Col) :- in(P_in, Col), !params.bg(Col), lattice(P_in, B).
+center(B, Col) :- in(P_in, Col), !params.bg(Col), spread(P_in, B).
 
 // The two colors of the spiral, each paired with the other.
 .decl palette(col: Color)

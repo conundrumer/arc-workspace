@@ -1,8 +1,8 @@
 // 39e1d7f9
 // @draft
 // @keywords: decompose objects stamp
-// input: Drawn lines cut the grid into a lattice of tiles, each tile holding a
-//  single color, so the lattice reads as a small grid of colored cells. In
+// input: Drawn lines cut the grid into tiles, each tile holding a
+//  single color, so the tiling reads as a small grid of colored cells. In
 //  that small grid, one object spans several cells, the motif, and every
 //  other object is a single cell.
 // output: The output copies the motif onto every single cell.
@@ -41,18 +41,18 @@
 
 .init params = Params
 
-// --- lattice ---
+// --- tiling ---
 
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
 // A divider is a drawn line that spans the grid.
-.init lattice = DividerTiles<Unit>
-lattice.cell($U(), P) :- in(P, _).
-lattice.divider($U(), A, L) :- line_color.value([A, L], Col), !params.bg(Col).
+.init tiling = DividerTiles<Unit>
+tiling.cell($U(), P) :- in(P, _).
+tiling.divider($U(), A, L) :- line_color.value([A, L], Col), !params.bg(Col).
 
 .init tile_color = Unanimous<Position, Color>
-tile_color.item(P_tile, Col) :- lattice.tile_of($U(), P, P_tile), in(P, Col).
+tile_color.item(P_tile, Col) :- tiling.tile_of($U(), P, P_tile), in(P, Col).
 
 // The small grid's drawn cells.
 .decl ink(p_tile: Position, col: Color)
@@ -133,7 +133,7 @@ paint(P_tile, Col, [Sp, St]) :-
     compose(P_tile_seed, V, P_tile).      // laid out from the single cell
 
 .decl paint_cell(p: Position, col: Color, ch: Choice)
-paint_cell(P, Col, Ch) :- lattice.tile_of($U(), P, P_tile), paint(P_tile, Col, Ch).
+paint_cell(P, Col, Ch) :- tiling.tile_of($U(), P, P_tile), paint(P_tile, Col, Ch).
 
 out(P, Col, [Sp, St]) :-
     in(P, Col_in), span_choice(Sp), seat_choice(St),  // a grid cell, under each case

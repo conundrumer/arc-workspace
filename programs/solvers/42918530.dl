@@ -27,19 +27,19 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Fill()). impl_choice($Merge()).
 
-// --- lattice ---
+// --- tiling ---
 
 .decl inked_line(a: Axis, l: Position)
 inked_line(A, L) :- in(P, Col), !params.bg(Col), axis_elem(A), split(P, A, L, _).
 
-.init lattice = DividerTiles<Unit>
-lattice.cell($U(), P) :- in(P, _).
-lattice.divider($U(), A, L) :-
+.init tiling = DividerTiles<Unit>
+tiling.cell($U(), P) :- in(P, _).
+tiling.divider($U(), A, L) :-
     in(P, _), axis_elem(A), split(P, A, L, _),   // a line of the grid
     !inked_line(A, L).                           // that carries no ink
 
 .decl box_of(p: Position, t: Position)
-box_of(P, T) :- lattice.tile_of($U(), P, T).
+box_of(P, T) :- tiling.tile_of($U(), P, T).
 
 .init bbox = Bbox<Position>
 bbox.cell(T, P) :- box_of(P, T).

@@ -1,6 +1,6 @@
 // 17b866bd
 // @keywords: decompose markers stamp
-// input: A lattice of params.line-wide lines cuts the grid into
+// input: params.line-wide lines cut the grid into
 //  params.block-square blocks; line crossings are params.node-colored
 //  junctions.
 // output: A junction holding any other color is a mark: it restores to
@@ -46,21 +46,21 @@ impl_choice($Holes()). impl_choice($Stamp()).
     .decl gap(k: number)
     .decl node(col: Color)
 
-    // Cells on a lattice line dividing axis a.
-    .decl lattice(key: Key, p: Position, a: Axis)
-    lattice(K, P, A) :-
+    // Cells on a line dividing axis a.
+    .decl on_line(key: Key, p: Position, a: Axis)
+    on_line(K, P, A) :-
         cell(K, P, _), axis_elem(A),
         line(W), gap(G), divide_by_size(P, A, W, G, _, _).
 
     .decl junction(key: Key, p: Position)
-    junction(K, P) :- lattice(K, P, A), perp(A, A2), lattice(K, P, A2).
+    junction(K, P) :- on_line(K, P, A), perp(A, A2), on_line(K, P, A2).
 
     .decl mark(key: Key, p: Position, col: Color)
     mark(K, P, Col) :- junction(K, P), cell(K, P, Col), !node(Col).
 
-    // Blocks: connected components of off-lattice cells.
+    // Blocks: connected components of off-line cells.
     .init blocks = Components<Key>
-    blocks.node(K, P) :- cell(K, P, _), !lattice(K, P, _).
+    blocks.node(K, P) :- cell(K, P, _), !on_line(K, P, _).
 
     .decl label(key: Key, p: Position, id: Ident)
     label(K, P, Id) :- blocks.label(K, P, Id).

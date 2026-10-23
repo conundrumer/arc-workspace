@@ -1,6 +1,6 @@
 // 06df4c85
 // @keywords: decompose span cast
-// output: A separator lattice cuts the grid into tiles; non-bg tiles are marks.
+// output: Separator lines cut the grid into tiles; non-bg tiles are marks.
 //  Tiles between two same-colored marks in a tile row or column fill with that
 //  color. Every train span crosses only bg tiles.
 

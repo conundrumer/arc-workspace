@@ -3,7 +3,7 @@
 // input: uniform lines cut the grid into framed panels, and each panel's
 //  interior is a wallpaper damaged in a few cells.
 // output: each axis takes the interior's shortest period; each interior cell
-//  takes the modal color of its orbit under the lattice.
+//  takes the modal color of its period class.
 
 .type PanelAxis = [t: Position, a: Axis]
 .type Line = [a: Axis, l: Position]
@@ -31,7 +31,7 @@ frame.cell(T, P) :- panels.tile_of($U(), P, T).
 .decl inner_cell(t: Position, p: Position)
 inner_cell(T, P) :- panels.tile_of($U(), P, T), !frame.rim(T, P).
 
-// --- lattice ---
+// --- periods ---
 
 .init si = OffsetInvariance<Position, Color>
 si.cell(T, P, Col) :- inner_cell(T, P), in(P, Col).
@@ -43,7 +43,7 @@ period.cand([T, A], K) :- si.period(T, A, K).
 
 // --- repair ---
 
-// Orbits of the lattice: the cells of one interior whose distance on each
+// Period classes: the cells of one interior whose distance on each
 // axis is a whole number of periods.
 .init orbit = Canon<Position>
 orbit.equiv(P, Q) :-

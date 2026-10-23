@@ -2,7 +2,7 @@
   "id": "9f236235",
   "witnesses": [{
     "id": "unequal",
-    "separates": "panels cut by the lines that draw them, against panels read off an even lattice",
+    "separates": "panels cut by the lines that draw them, against panels read off an even tiling",
     "input": [
       [3,3,5,0,0,0,0],
       [5,5,5,5,5,5,5],
@@ -17,7 +17,7 @@
         [4,0]
       ]
     }, {
-      "cases": ["$Lattice"],
+      "cases": ["$EvenTiling"],
       "grid": [
         [0,0,5,3],
         [4,4,5,0],

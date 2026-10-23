@@ -13,10 +13,10 @@
     // @claim cut
     Cut {}
     // @scene cut: the cutting lines are evenly spaced, so the panels are the
-    //  blocks of a lattice
+    //  tiles of an even tiling
     // @witness unequal: borderline concept
     //     @relaxed even
-  | Lattice {}
+  | EvenTiling {}
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -24,7 +24,7 @@
     // how the panel arrangement lands in the output
     .decl pose(d: D4) pose(D4_LR).
 
-    // --- $Lattice ---
+    // --- $EvenTiling ---
     // width of a cutting line
     // @ignore: derive — the concept case never reads gap, so no input
     // separates the derived width from the stored one
@@ -57,18 +57,18 @@ panels.divider($U(), A, L) :- divider(A, L).
 
 panel(P, P_tile, $Cut()) :- panels.tile_of($U(), P, P_tile).
 
-// --- $Lattice ---
+// --- $EvenTiling ---
 
 // The panel size: the shortest run from a grid edge to a cutting line.
 // @claim even
 .init panel_size = Extremes<Unit>
 panel_size.cand($U(), K) :- divider(A, L), axis_of(D, A), dist(L, D, K).
 
-panel(P, P_tile, $Lattice()) :-
+panel(P, P_tile, $EvenTiling()) :-
     in(P, _), panel_size.low($U(), K), params.gap(G),
     divide_by_size_2d(P, K, G, P_tile, _).
 
-// --- $Cut, $Lattice ---
+// --- $Cut, $EvenTiling ---
 
 out(P_grid_out, Col, Ch) :-
     panel(P, P_tile, Ch), in(P, Col),              // a panel's color

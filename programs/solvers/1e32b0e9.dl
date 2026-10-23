@@ -1,12 +1,12 @@
 // 1e32b0e9
 // @draft
 // @keywords: decompose overlay stamp rank select
-// input: a separator lattice cuts the grid into an arrangement of equal
+// input: separator lines cut the grid into an arrangement of equal
 //  square tiles, some holding a shape.
 // output: one footprint stamps into every tile, painting the separator's
 //  color on the bg cells it lands on.
 
-// what the lattice is read by
+// what the tiling is read by
 .type DecChoice =
     // the tile count
     Count {}

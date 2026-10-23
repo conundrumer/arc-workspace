@@ -1,12 +1,12 @@
 // 1c0d0a4b
 // @keywords: decompose wallpaper lines mapping
-// output: 3×3 tiles on a 1-wide bg separator lattice, borders included. Tile
+// output: 3×3 tiles cut by 1-wide bg separator lines, borders included. Tile
 //  content complements: non-bg → bg, bg → params.paint. Separator cells stay
 //  bg.
 
-// which cells belong to the separator lattice; data-equivalent on this task
+// which cells belong to the separator lines; data-equivalent on this task
 .type Choice =
-    // the lattice: sep_w-wide lines every sep_w + tile_w
+    // the period: sep_w-wide lines every sep_w + tile_w
     Period {}
     // all-bg grid lines
   | Blank {}
@@ -34,10 +34,10 @@ ink(P) :- in(P, Col), !params.bg(Col).
 .decl sep(p: Position, ch: Choice)
 
 // --- $Period ---
-// On a lattice line: the seps divide as sep_w-wide tiles with tile_w gaps.
+// On a separator line: the seps divide as sep_w-wide tiles with tile_w gaps.
 sep(P, $Period()) :-
     in(P, _), axis_elem(A),                     // each axis
-    params.sep_w(K), params.tile_w(G),          // lattice dims
+    params.sep_w(K), params.tile_w(G),          // the period
     divide_by_size(P, A, K, G, _, _).           // in a sep band of axis A
 
 // --- $Blank ---

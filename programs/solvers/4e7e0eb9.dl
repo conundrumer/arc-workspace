@@ -1,7 +1,7 @@
 // 4e7e0eb9
 // @draft
 // @keywords: decompose markers d4 count
-// input: The grid lays square sections out in a lattice, a separator between
+// input: The grid lays square sections out in a tiling, a separator between
 //  them. Inside its border, a section's field is quartered by its two halving
 //  lines: four blocks, one solid color each. Ink may sit on a halving line.
 // output: The blocks mirror across each halving line that is a divider. A
@@ -29,7 +29,7 @@
 .comp Params {
     .decl bg(c: Color) bg(0).
 
-    // The section lattice: square sections, params.sep apart.
+    // The section tiling: square sections, params.sep apart.
     .decl section(k: number) section(9).
     .decl sep(g: number) sep(1).
 

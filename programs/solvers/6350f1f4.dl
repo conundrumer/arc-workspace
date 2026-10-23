@@ -38,19 +38,19 @@ content(P, Col) :- in(P, Col), !params.sep(Col), !params.noise(Col).
 .decl content_line(l: Position)
 content_line(L) :- content(P, _), axis_elem(A), split(P, A, L, _).
 
-.init lattice = DividerTiles<Unit>
-lattice.cell($U(), P) :- in(P, _).
-lattice.divider($U(), A, L) :-
+.init tiling = DividerTiles<Unit>
+tiling.cell($U(), P) :- in(P, _).
+tiling.divider($U(), A, L) :-
     in(P, _), axis_elem(A), split(P, A, L, _),  // a line of the grid
     !content_line(L).                           // carrying no content: a separator
 
 .init block = Bbox<Position>
-block.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
+block.cell(P_tile, P) :- tiling.tile_of($U(), P, P_tile).
 
 // A grid cell with its block and its position in that block's frame.
 .decl block_cell(p: Position, p_tile: Position, p_intile: Position)
 block_cell(P, P_tile, P_intile) :-
-    lattice.tile_of($U(), P, P_tile), block.box(P_tile, B), crop(P, B, P_intile).
+    tiling.tile_of($U(), P, P_tile), block.box(P_tile, B), crop(P, B, P_intile).
 
 .decl cell(p_tile: Position, p_intile: Position, col: Color)
 cell(P_tile, P_intile, Col) :- block_cell(P, P_tile, P_intile), content(P, Col).
@@ -68,7 +68,7 @@ template(P_intile, Col) :- block_color.clash(P_tile), cell(P_tile, P_intile, Col
 
 out(P, Sep, Ch) :-
     impl_choice(Ch), in(P, _),
-    !lattice.tile_of($U(), P, _), params.sep(Sep).  // a separator cell
+    !tiling.tile_of($U(), P, _), params.sep(Sep).   // a separator cell
 
 // On every pair here the input is solid exactly at the template's minor
 // cells, so its arrangement is the template itself and the two cases agree.

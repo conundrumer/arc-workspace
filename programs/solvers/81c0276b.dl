@@ -1,8 +1,8 @@
 // 81c0276b
 // @draft
 // @keywords: decompose objects count rank color-class
-// input: a lattice of slots cut by uniform lines in one color; each slot
-//  holds a block in a slot color, or in the lattice color, which marks it
+// input: a tiling of slots cut by uniform lines in one color; each slot
+//  holds a block in a slot color, or in the line color, which marks it
 //  empty
 // output: The output is a bar chart of the slot colors: one row per color
 //  from params.rank_dir in ascending count, each row that many cells of the
@@ -11,7 +11,7 @@
 // what is counted for each color's bar, diverging when a slot holds several
 // pieces of one color
 .type Choice =
-    // the lattice's slots, by the color each shows
+    // the tiling's slots, by the color each shows
     Tiles {}
     // the connected components of each color
   | Objects {}
@@ -34,12 +34,12 @@
 
 .init params = Params
 
-// --- the lattice and its color ---
+// --- the tiling and its line color ---
 
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
-// A cell in the lattice color is no ink: it marks an empty slot.
+// A cell in the line color is no ink: it marks an empty slot.
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !params.bg(Col), !line_color.value(_, Col).
 
@@ -50,12 +50,12 @@ ink(P, Col) :- in(P, Col), !params.bg(Col), !line_color.value(_, Col).
 
 // --- $Tiles ---
 
-.init lattice = DividerTiles<Unit>
-lattice.cell($U(), P) :- in(P, _).
-lattice.divider($U(), A, L) :- line_color.value([A, L], _).
+.init tiling = DividerTiles<Unit>
+tiling.cell($U(), P) :- in(P, _).
+tiling.divider($U(), A, L) :- line_color.value([A, L], _).
 
 .init slots = Tally<Color, Position>
-slots.item(Col, T) :- lattice.tile_of($U(), P, T), ink(P, Col).
+slots.item(Col, T) :- tiling.tile_of($U(), P, T), ink(P, Col).
 
 bar($Tiles(), Col, N) :- slots.tally(Col, N).
 

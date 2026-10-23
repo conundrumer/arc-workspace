@@ -1,7 +1,7 @@
 // 2546ccf6
 // @draft
 // @keywords: decompose d4 repair
-// input: Lines of a single color cut the grid into a lattice of tiles.
+// input: Lines of a single color cut the grid into tiles.
 // output: A shape fills three tiles of a 2x2 block, mirrored in each of
 //  the two cuts between them; the fourth tile takes the image that
 //  completes the block.
@@ -26,18 +26,18 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Shape()). impl_choice($Tile()).
 
-// --- lattice ---
+// --- tiling ---
 
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, L], Col) :- axis_elem(A), in(P, Col), split(P, A, L, _).
 
 // A cut: a line of one drawn color, all the way across.
-.init lattice = DividerTiles<Unit>
-lattice.cell($U(), P) :- in(P, _).
-lattice.divider($U(), A, L) :- line_color.value([A, L], Col), !params.bg(Col).
+.init tiling = DividerTiles<Unit>
+tiling.cell($U(), P) :- in(P, _).
+tiling.divider($U(), A, L) :- line_color.value([A, L], Col), !params.bg(Col).
 
 .init tile_box = Bbox<Position>
-tile_box.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
+tile_box.cell(P_tile, P) :- tiling.tile_of($U(), P, P_tile).
 
 // A tile's cell, in the tile's own frame.
 .decl tile_cell(p_tile: Position, p: Position, p_intile: Position)
@@ -45,7 +45,7 @@ tile_cell(P_tile, P, P_intile) :-
     tile_box.cell(P_tile, P), tile_box.box(P_tile, B), crop(P, B, P_intile).
 
 .decl tile_holds(col: Color, p_tile: Position)
-tile_holds(Col, P_tile) :- lattice.tile_of($U(), P, P_tile), in(P, Col), !params.bg(Col).
+tile_holds(Col, P_tile) :- tiling.tile_of($U(), P, P_tile), in(P, Col), !params.bg(Col).
 
 // --- block ---
 
@@ -60,7 +60,7 @@ block_dir(G, G) :- diag_dir_elem(G).
 // One of those tiles, when it holds col.
 .decl block_tile(col: Color, p_tile: Position, diag: DiagDir, d: Dir8, s: Position)
 block_tile(Col, P_tile, G, D, S) :-
-    lattice.tile_of($U(), _, P_tile), block_dir(G, D),  // a direction of the block
+    tiling.tile_of($U(), _, P_tile), block_dir(G, D),   // a direction of the block
     neighbor(P_tile, D, S), tile_holds(Col, S).         // the tile there, holding col
 
 // Some direction of the block leads to no tile holding col.

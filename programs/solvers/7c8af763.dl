@@ -10,7 +10,7 @@
 .type Choice =
     // the connected components of bg
     Region {}
-    // the tiles of the lattice of full lines, the lines with no bg cell
+    // the tiles of the tiling the full lines cut, the lines with no bg cell
   | Tile {}
 
 .decl out(p: Position, col: Color, c: Choice)

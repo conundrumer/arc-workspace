@@ -1,7 +1,7 @@
 // 20981f0e
 // @keywords: decompose move lookup
-// input: A lattice of dots marks the lines that cut the grid into tiles, one
-//  piece to a tile.
+// input: Dots mark the lines that cut the grid into tiles, one piece to a
+//  tile.
 // output: Each piece translates within its own tile, keeping its shape and
 //  color; the dots stand.
 
@@ -32,24 +32,24 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Center()). impl_choice($Slot()). impl_choice($Clear()).
 
-// --- lattice ---
+// --- tiling ---
 
-.init lattice = DividerTiles<Unit>
-lattice.cell($U(), P) :- in(P, _).
-lattice.divider($U(), A, L) :-
+.init tiling = DividerTiles<Unit>
+tiling.cell($U(), P) :- in(P, _).
+tiling.divider($U(), A, L) :-
     in(P, Col), params.dot(Col),      // a dot
     axis_elem(A), split(P, A, L, _).  // marks its line on each axis
 
 // The content of a tile — the piece that moves. A cell on a cutting line sits
 // in no tile, so a dot is never a piece.
 .decl piece(p_tile: Position, p: Position, col: Color)
-piece(P_tile, P, Col) :- lattice.tile_of($U(), P, P_tile), in(P, Col), !params.bg(Col).
+piece(P_tile, P, Col) :- tiling.tile_of($U(), P, P_tile), in(P, Col), !params.bg(Col).
 
 // --- placement ---
 
 // The box of each tile.
 .init tile_box = Bbox<Position>
-tile_box.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
+tile_box.cell(P_tile, P) :- tiling.tile_of($U(), P, P_tile).
 
 // The piece's box, in the frame of its tile.
 .init piece_box = Bbox<Position>
@@ -103,21 +103,21 @@ out(P, Col, Ch) :-
     ).
 
 .comp Determine {
-    .init ex_lattice = DividerTiles<Example>
-    ex_lattice.cell(E, P) :- ex_in(E, P, _), ex_out(E, _, _).
-    ex_lattice.divider(E, A, L) :-
+    .init ex_tiling = DividerTiles<Example>
+    ex_tiling.cell(E, P) :- ex_in(E, P, _), ex_out(E, _, _).
+    ex_tiling.divider(E, A, L) :-
         ex_in(E, P, Col), params.dot(Col), ex_out(E, _, _),
         axis_elem(A), split(P, A, L, _).
 
     .type ET = [e: Example, p_tile: Position]
 
     .init ex_tile_box = Bbox<ET>
-    ex_tile_box.cell([E, P_tile], P) :- ex_lattice.tile_of(E, P, P_tile).
+    ex_tile_box.cell([E, P_tile], P) :- ex_tiling.tile_of(E, P, P_tile).
 
     // The moved piece's box in each output tile, in the frame of its tile.
     .init landed_box = Bbox<ET>
     landed_box.cell([E, P_tile], P_intile) :-
-        ex_lattice.tile_of(E, P, P_tile), ex_out(E, P, Col), !params.bg(Col),
+        ex_tiling.tile_of(E, P, P_tile), ex_out(E, P, Col), !params.bg(Col),
         ex_tile_box.box([E, P_tile], B), crop(P, B, P_intile).
 
     .decl slot(b: Box)

@@ -1,12 +1,12 @@
 // 29623171
 // @draft
 // @keywords: decompose rank select
-// input: A separator lattice cuts the grid into an arrangement of equal
+// input: Separator lines cut the grid into an arrangement of equal
 //  square tiles, which hold marks on bg.
 // output: The tiles with the most marks fill solid in their mark color; the
 //  rest clear to bg, and separators stay.
 
-// what the lattice is read by
+// what the tiling is read by
 .type Choice =
     // the tile count
     Count {}

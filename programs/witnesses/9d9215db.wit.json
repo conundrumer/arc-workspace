@@ -2,7 +2,7 @@
   "id": "9d9215db",
   "witnesses": [{
     "id": "skipped-ring",
-    "separates": "$Own from $Nest: ink on lattice rings 0 and 2, with ring 1 blank",
+    "separates": "$Own from $Nest: ink on site rings 0 and 2, with ring 1 blank",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,8,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -73,7 +73,7 @@
     }]
   }, {
     "id": "cornerless-ring",
-    "separates": "$AnyInk from $CornerInk: lattice ring 1 holds ink away from its corners and none at them",
+    "separates": "$AnyInk from $CornerInk: site ring 1 holds ink away from its corners and none at them",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,8,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -144,7 +144,7 @@
     }]
   }, {
     "id": "gapped-side",
-    "separates": "$Full from $Span: lattice ring 0 holds ink two steps along the ring from its corner, with the step between blank",
+    "separates": "$Full from $Span: site ring 0 holds ink two steps along the ring from its corner, with the step between blank",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,8,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0],

@@ -41,7 +41,7 @@ impl_choice($Lines()). impl_choice($Period()). impl_choice($Flood()).
 // Two cells of one region. Each case reads the regions its own way.
 .decl same_region(p: Position, q: Position, ch: Choice)
 
-// The tile a cell sits in, where the case cuts a lattice. A cell on a cut
+// The tile a cell sits in, where the case cuts a tiling. A cell on a cut
 // sits in no tile, so it shares a region with nothing.
 .decl tile(p: Position, p_tile: Position, ch: Choice)
 same_region(P, Q, Ch) :- tile(P, P_tile, Ch), tile(Q, P_tile, Ch).
@@ -51,11 +51,11 @@ same_region(P, Q, Ch) :- tile(P, P_tile, Ch), tile(Q, P_tile, Ch).
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
-.init lattice = DividerTiles<Unit>
-lattice.cell($U(), P) :- in(P, _).
-lattice.divider($U(), A, L) :- line_color.value([A, L], Col), params.separator(Col).
+.init tiling = DividerTiles<Unit>
+tiling.cell($U(), P) :- in(P, _).
+tiling.divider($U(), A, L) :- line_color.value([A, L], Col), params.separator(Col).
 
-tile(P, P_tile, $Lines()) :- lattice.tile_of($U(), P, P_tile).
+tile(P, P_tile, $Lines()) :- tiling.tile_of($U(), P, P_tile).
 
 // --- $Period ---
 

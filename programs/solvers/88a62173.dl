@@ -49,13 +49,13 @@ tile_val(T, P_intile, Col, $Size()) :-
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
-.init lattice = DividerTiles<Unit>
-lattice.cell($U(), P) :- in(P, _).
-lattice.divider($U(), A, L) :- line_color.value([A, L], _).
+.init tiling = DividerTiles<Unit>
+tiling.cell($U(), P) :- in(P, _).
+tiling.divider($U(), A, L) :- line_color.value([A, L], _).
 
 // The box each tile spans.
 .init bbox = Bbox<Position>
-bbox.cell(T, P) :- lattice.tile_of($U(), P, T).
+bbox.cell(T, P) :- tiling.tile_of($U(), P, T).
 
 tile_val(T, P_intile, Col, $Cross()) :-
     in(P_grid, Col), bbox.cell(T, P_grid), bbox.box(T, B), crop(P_grid, B, P_intile).

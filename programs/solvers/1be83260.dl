@@ -1,7 +1,7 @@
 // 1be83260
 // @keywords: decompose markers scale rank stamp crop
 // output: Copies of one template block, drawn in a border color, sit in a
-//  lattice of bg separator lines. One copy is the key: it fills the template's
+//  tiling of bg separator lines. One copy is the key: it fills the template's
 //  holes with colors. The hole rows and hole columns cross in a palette grid,
 //  one row per block row and one column per block column, so every block has a
 //  palette color. The output paints the template's body in that color; holes
@@ -27,7 +27,7 @@
 
 .init params = Params
 
-// --- the block region and its lattice ---
+// --- the block region and its tiling ---
 
 .init region = Bbox<Unit>
 region.cell($U(), P) :- in(P, Col), !params.bg(Col).

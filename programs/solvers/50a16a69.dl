@@ -2,10 +2,10 @@
 // @draft
 // @keywords: wallpaper move
 // input: a periodic pattern covering part of the grid, with a filler color
-//  over whole grid lines, and its translation lattice — the shortest
+//  over whole grid lines, and its period translations — the shortest
 //  unbroken shift on each axis
 // output: The output moves the pattern one step and continues it over the
-//  whole grid: every cell takes the color that its lattice class holds
+//  whole grid: every cell takes the color that its period class holds
 //  after the move.
 
 .decl out(p: Position, col: Color)
@@ -26,7 +26,7 @@ pattern(P, Col) :- in(P, Col), !line.value(_, Col).
 .init si = OffsetInvariance<Unit, Color>
 si.cell($U(), P, Col) :- pattern(P, Col).
 
-// A cell's lattice class along the axis of edge D: its distance to D,
+// A cell's period class along the axis of edge D: its distance to D,
 // read within the axis's period where the axis has one.
 .decl phase(p: Position, d: Dir, j: number)
 phase(P, D, J) :-

@@ -23,14 +23,14 @@
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
-// The lattice the separator lines cut.
-.init lattice = DividerTiles<Unit>
-lattice.cell($U(), P) :- in(P, _).
-lattice.divider($U(), A, L) :- line_color.value([A, L], Col), params.sep(Col).
+// The tiling the separator lines cut.
+.init tiling = DividerTiles<Unit>
+tiling.cell($U(), P) :- in(P, _).
+tiling.divider($U(), A, L) :- line_color.value([A, L], Col), params.sep(Col).
 
 // Each tile's own box.
 .init tile = Bbox<Position>
-tile.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
+tile.cell(P_tile, P) :- tiling.tile_of($U(), P, P_tile).
 
 // --- the chain ---
 

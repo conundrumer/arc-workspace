@@ -10,7 +10,7 @@
 .type Choice =
     // the grid is one wallpaper: its period on each axis is the shortest
     // witnessed unbroken shift of the intact cells
-    Lattice {}
+    Periodic {}
     // the grid is a stack of independent lines along a stored axis, each line
     // with its own such shift
   | Lines {}
@@ -30,7 +30,7 @@
 intact(P, Col) :- in(P, Col), !params.hole(Col).
 
 .decl impl_choice(ch: Choice)
-impl_choice($Lattice()). impl_choice($Lines()).
+impl_choice($Periodic()). impl_choice($Lines()).
 
 // The period a cell's pattern repeats under, per case.
 .decl period_at(ch: Choice, p: Position, a: Axis, k: number)
@@ -62,12 +62,12 @@ out(P, Col, Ch) :-
     in(P, Hole), params.hole(Hole),                                 // damaged cell
     orbit(Ch, P, D, R, D2, R2), orbit_color(Ch, D, R, D2, R2, Col).
 
-// --- $Lattice ---
+// --- $Periodic ---
 
 .init si = OffsetInvariance<Unit, Color>
 si.cell($U(), P, Col) :- intact(P, Col).
 
-period_at($Lattice(), P, A, K) :- in(P, _), si.min_period($U(), A, K).
+period_at($Periodic(), P, A, K) :- in(P, _), si.min_period($U(), A, K).
 
 // --- $Lines ---
 

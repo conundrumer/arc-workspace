@@ -58,8 +58,8 @@ rhythm(Ln, Col, P1, P2) :- seed(Ln, Col, P1, P2), !crowded(Ln).
 
 // The rhythm across the whole line: the line's cells in phase with the seed
 // pair, the pair's spacing the period.
-.decl lattice(ln: Line, p: Position)
-lattice([A, Across], Q) :-
+.decl rhythm_cell(ln: Line, p: Position)
+rhythm_cell([A, Across], Q) :-
     rhythm([A, Across], _, P1, P2), relative(P1, P2, V),
     axis_of(D, A), dist(V, D, K), K > 0,                     // the seed's spacing
     in(Q, _), split(Q, A, _, Across),                        // a cell of the line
@@ -69,7 +69,7 @@ lattice([A, Across], Q) :-
 // The other color, when its cell falls on the rhythm.
 .decl intruder(ln: Line, col: Color)
 intruder(Ln, Col2) :-
-    rhythm(Ln, Col, _, _), lattice(Ln, P),                   // a cell of the rhythm
+    rhythm(Ln, Col, _, _), rhythm_cell(Ln, P),               // a cell of the rhythm
     mark(Ln, P, Col2), Col2 != Col.                          // holding another color
 
 // The rhythm cells a line paints.
@@ -89,21 +89,21 @@ paint(P, Col, Ch) :-
 // and no further.
 .init cast = Ray<Line>
 cast.dir([A, Across], D) :- rhythm([A, Across], _, _, _), axis_of(D, A).
-cast.cell(Ln, P) :- lattice(Ln, P).
+cast.cell(Ln, P) :- rhythm_cell(Ln, P).
 cast.mark(Ln, P) :- rhythm(Ln, _, P, _).
-cast.blocked(Ln, P) :- intruder(Ln, Col2), mark(Ln, P, Col2), lattice(Ln, P).   // the intruder's cell on the rhythm
+cast.blocked(Ln, P) :- intruder(Ln, Col2), mark(Ln, P, Col2), rhythm_cell(Ln, P).   // the intruder's cell on the rhythm
 
 fill(Ln, P, $Cast()) :- ( cast.clear(Ln, P, _, _, _) ; cast.stop(Ln, P, _, _, _) ).
 
 // --- $Span ---
 
 .init span = Between<Line>
-span.axis(Ln, A) :- lattice(Ln, _), Ln = [A, _].
-span.cell(Ln, P) :- lattice(Ln, P).
+span.axis(Ln, A) :- rhythm_cell(Ln, _), Ln = [A, _].
+span.cell(Ln, P) :- rhythm_cell(Ln, P).
 span.mark(Ln, P) :- mark(Ln, P, _).
 
 fill(Ln, P, $Span()) :-
-    lattice(Ln, P),
+    rhythm_cell(Ln, P),
     ( !intruder(Ln, _)                                       // the rhythm runs the line
     ; intruder(Ln, _), span.between(Ln, P)                   // or reaches the outermost ink
     ).

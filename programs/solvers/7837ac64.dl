@@ -1,7 +1,7 @@
 // 7837ac64
 // @draft
 // @keywords: decompose markers crop scale span
-// input: Lines of one color cut the grid into a lattice of tiles. Some
+// input: Lines of one color cut the grid into tiles. Some
 //  crossings of those lines carry a mark in another color.
 // output: the tile arrangement in miniature, one cell per tile: a tile whose
 //  four corner crossings carry marks of one color takes that color, and every
@@ -10,7 +10,7 @@
 // which lines frame the tiles
 .type Lines =
     // every cutting line
-    Lattice {}
+    All {}
     // the cutting lines that carry a mark, so an unmarked line between marked
     // ones frames no tile of its own
   | Marked {}
@@ -35,7 +35,7 @@
 
 .init params = Params
 
-// --- $Lattice ---
+// --- $All ---
 
 // A line carrying a bg cell. A line with none is a cutting line.
 .decl gapped_line(l: Position)
@@ -58,14 +58,14 @@ mark(P, Col) :- node(P), in(P, Col), !line_color(Col).
 // --- Lines cases: the lines that frame the tiles ---
 
 .decl lines_choice(l: Lines)
-lines_choice($Lattice()).
+lines_choice($All()).
 lines_choice($Marked()).
 
 .init tiles = DividerTiles<Lines>
 tiles.cell(L, P) :- in(P, _), lines_choice(L).
 
-// $Lattice — every cutting line.
-tiles.divider($Lattice(), A, Ln) :- on_line(P, A), split(P, A, Ln, _).
+// $All — every cutting line.
+tiles.divider($All(), A, Ln) :- on_line(P, A), split(P, A, Ln, _).
 
 // $Marked — the cutting lines a mark sits on.
 tiles.divider($Marked(), A, Ln) :- mark(P, _), axis_elem(A), split(P, A, Ln, _).

@@ -1,10 +1,10 @@
 // 9d9215db
 // @draft
 // @keywords: markers border decompose rank span rings
-// @scene lattice: the ink sits on a lattice of every other cell, held one
-//  blank cell in from the grid's border
-// @scene rings: the lattice peels into square rings, one per distance from
-//  the nearest lattice edge, and each inked cell sits on one of them
+// @scene sites: the ink sits on sites, every other cell on both axes, held
+//  one blank cell in from the grid's border
+// @scene rings: the sites peel into square rings, one per distance from
+//  the nearest edge of the sites, and each inked cell sits on one of them
 // @scene nesting: the inked rings run consecutively from the outermost
 // @scene corner-ink: every inked ring holds ink at one of its four corners
 // @scene patch: a ring's ink away from its corners sits one step along the
@@ -56,12 +56,12 @@
     // @derive DominantColor: variant derived
     .decl bg(col: Color) bg(0).
 
-    // The blank border the lattice sits inside.
+    // The blank border the sites sit inside.
     .decl margin(k: number) margin(1).
 
-    // A lattice cell is one grid cell, with one blank cell to the next.
-    .decl lat_size(k: number) lat_size(1).
-    .decl lat_gap(g: number) lat_gap(1).
+    // A site is one grid cell, with one blank cell to the next.
+    .decl site_size(k: number) site_size(1).
+    .decl site_gap(g: number) site_gap(1).
 }
 
 .init params = Params
@@ -78,71 +78,71 @@ spread_choice($Full()). spread_choice($Span()).
 .decl impl_choice(ch: Choice)
 impl_choice([S, Src, Sp]) :- seat_choice(S), source_choice(Src), spread_choice(Sp).
 
-// The lattice cell a grid cell holds.
-.decl lat(p_grid: Position, p_lat: Position)
-lat(P_grid, P_lat) :-
+// The site a grid cell holds.
+.decl site(p_grid: Position, p_site: Position)
+site(P_grid, P_site) :-
     in(P_grid, _),
     params.margin(M), uniform_inset(M, B), crop(P_grid, B, P_rel),  // inside the border
-    params.lat_size(K), params.lat_gap(G),
-    divide_by_size_2d(P_rel, K, G, P_lat, _).                       // every other cell
+    params.site_size(K), params.site_gap(G),
+    divide_by_size_2d(P_rel, K, G, P_site, _).                      // every other cell
 
-.decl ink(p_lat: Position, col: Color)
-ink(P_lat, Col) :- lat(P_grid, P_lat), in(P_grid, Col), !params.bg(Col).
+.decl ink(p_site: Position, col: Color)
+ink(P_site, Col) :- site(P_grid, P_site), in(P_grid, Col), !params.bg(Col).
 
 // @claim rings
 .init peel = Rim<Unit>
-peel.cell($U(), P_lat) :- lat(_, P_lat).
+peel.cell($U(), P_site) :- site(_, P_site).
 
-// A lattice cell at a corner of its own ring.
-.decl corner(p_lat: Position)
-corner(P_lat) :-
-    peel.depth($U(), P_lat, K), uniform_inset(K, B), diag_dir_elem(Diag), box_corner(P_lat, B, Diag).
+// A site at a corner of its own ring.
+.decl corner(p_site: Position)
+corner(P_site) :-
+    peel.depth($U(), P_site, K), uniform_inset(K, B), diag_dir_elem(Diag), box_corner(P_site, B, Diag).
 
-// Distances from a lattice cell to the four corners of its own ring; the
+// Distances from a site to the four corners of its own ring; the
 // lowest of them runs along that ring.
 // @claim sides
 .init reach = Extremes<Position>
-reach.cand(P_lat, J) :-
-    peel.depth($U(), P_lat, K), uniform_inset(K, B), relative(B, P_lat, P_rel),
+reach.cand(P_site, J) :-
+    peel.depth($U(), P_site, K), uniform_inset(K, B), relative(B, P_site, P_rel),
     diag_dir_elem(Diag), corner_dist(P_rel, Diag, J).
 
-// The ring a lattice cell sits on, and how far along that ring it sits from
+// The ring a site sits on, and how far along that ring it sits from
 // the ring's nearest corner.
-.decl place(p_lat: Position, k: number, j: number)
-place(P_lat, K, J) :- peel.depth($U(), P_lat, K), reach.low(P_lat, J).
+.decl place(p_site: Position, k: number, j: number)
+place(P_site, K, J) :- peel.depth($U(), P_site, K), reach.low(P_site, J).
 
 // The places a ring has away from its corners, each a distance from the
 // ring's nearest corner.
 .decl side_place(j: number)
-side_place(J) :- place(P_lat, _, J), !corner(P_lat).
+side_place(J) :- place(P_site, _, J), !corner(P_site).
 
 // The rings whose ink the output draws.
 .decl source(src: Source, k: number)
-source($AnyInk(), K) :- ink(P_lat, _), place(P_lat, K, _).
-source($CornerInk(), K) :- ink(P_lat, _), corner(P_lat), place(P_lat, K, _).
+source($AnyInk(), K) :- ink(P_site, _), place(P_site, K, _).
+source($CornerInk(), K) :- ink(P_site, _), corner(P_site), place(P_site, K, _).
 
 // The side place of a drawn ring that takes the ink at a side place of the
 // ring it came from.
 // @ignore: store — the correspondence follows the ring's places, which
-// follow the lattice's extent; this task fixes the grid size, so the value
+// follow the extent of the sites; this task fixes the grid size, so the value
 // is constant here alone
 .decl copy(sp: Spread, j_out: number, j_src: number)
 
-// A lattice cell of the drawing, and the ink it copies.
-.decl draw(ch: Choice, p_lat: Position, col: Color)
+// A site of the drawing, and the ink it copies.
+.decl draw(ch: Choice, p_site: Position, col: Color)
 
 .decl drawn(ch: Choice, p_grid: Position)
-drawn(Ch, P_grid) :- lat(P_grid, P_lat), draw(Ch, P_lat, _).
+drawn(Ch, P_grid) :- site(P_grid, P_site), draw(Ch, P_site, _).
 
-out(P_grid, Col, Ch) :- lat(P_grid, P_lat), draw(Ch, P_lat, Col).
+out(P_grid, Col, Ch) :- site(P_grid, P_site), draw(Ch, P_site, Col).
 out(P_grid, Col, Ch) :-
     in(P_grid, _), impl_choice(Ch), !drawn(Ch, P_grid), params.bg(Col).
 
 // --- $Own ---
-draw([$Own(), Src, Sp], P_lat, Col) :-
-    source(Src, K), place(P_lat, K, J_out),           // a place on the ink's own ring
-    ink(Q_lat, Col), place(Q_lat, K, J_src),          // ink on that ring
-    ( corner(P_lat), corner(Q_lat), spread_choice(Sp) // the corners pair off
+draw([$Own(), Src, Sp], P_site, Col) :-
+    source(Src, K), place(P_site, K, J_out),            // a place on the ink's own ring
+    ink(Q_site, Col), place(Q_site, K, J_src),          // ink on that ring
+    ( corner(P_site), corner(Q_site), spread_choice(Sp) // the corners pair off
     ; copy(Sp, J_out, J_src)
     ).
 
@@ -152,10 +152,10 @@ draw([$Own(), Src, Sp], P_lat, Col) :-
 .init order = Ordinal<Source>
 order.idx_set(Src, K) :- source(Src, K).
 
-draw([$Nest(), Src, Sp], P_lat, Col) :-
-    order.rank(Src, K, K_out), place(P_lat, K_out, J_out),  // a place on the seated ring
-    ink(Q_lat, Col), place(Q_lat, K, J_src),                // ink on the ring it draws
-    ( corner(P_lat), corner(Q_lat), spread_choice(Sp)       // the corners pair off
+draw([$Nest(), Src, Sp], P_site, Col) :-
+    order.rank(Src, K, K_out), place(P_site, K_out, J_out), // a place on the seated ring
+    ink(Q_site, Col), place(Q_site, K, J_src),              // ink on the ring it draws
+    ( corner(P_site), corner(Q_site), spread_choice(Sp)     // the corners pair off
     ; copy(Sp, J_out, J_src)
     ).
 

@@ -2,9 +2,9 @@
 // @draft
 // @keywords: wallpaper repair color-class
 // input: a wallpaper pattern damaged by holes of one color. The survivors
-//  identify the translation lattice: per axis, the shortest witnessed shift
+//  identify the period translations: per axis, the shortest witnessed shift
 //  no surviving pair contradicts.
-// output: each cell takes the color of its lattice orbit.
+// output: each cell takes the color of its period class.
 
 .decl out(p: Position, col: Color)
 
@@ -31,7 +31,7 @@ phase(P, D, Ph) :-
     ; !si.min_period($U(), A, _), Ph = T
     ).
 
-// Each cell takes the color of an intact cell of its lattice orbit: one in
+// Each cell takes the color of an intact cell of its period class: one in
 // phase with it on both axes.
 out(Q, Col) :-
     intact(P, Col), in(Q, _),

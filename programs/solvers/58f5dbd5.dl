@@ -120,9 +120,9 @@ lane.idx_set(D, K) :- block_box.box(_, B), dir_elem(D), dist(B, D, K).
 tile.edge(Col, D, R) :- block_box.box(Col, B), dir_elem(D), dist(B, D, K), lane.rank(D, K, R).
 
 view(P, P_out, $Arrange()) :-
-    block_inner(Col, P, P_inner), tile.box(Col, P_tile),      // block cell, its tile
-    params.border(K), concat_2d(P_tile, P_inner, K, P_lat),   // tiles set the border apart
-    uniform_inset(K, B), compose(B, P_lat, P_out).            // the lattice seated inside the border
+    block_inner(Col, P, P_inner), tile.box(Col, P_tile),       // block cell, its tile
+    params.border(K), concat_2d(P_tile, P_inner, K, P_tiling), // tiles set the border apart
+    uniform_inset(K, B), compose(B, P_tiling, P_out).          // the tiling seated inside the border
 
 .init arrange_frame = Frame2D<Unit>
 arrange_frame.extent($U(), A, N) :-

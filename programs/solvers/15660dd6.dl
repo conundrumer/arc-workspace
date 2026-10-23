@@ -1,9 +1,9 @@
 // 15660dd6
 // @keywords: decompose markers select mapping
-// input: bordered panels sit in a lattice, and a label outside the lattice
+// input: bordered panels sit in a tiling, and a label outside the tiling
 //  names each panel band. Every panel column holds one distinguished panel
 //  (the donor) and copies of one stencil.
-// output: one band of the lattice: each column's stencil painted in its
+// output: one band of the tiling: each column's stencil painted in its
 //  donor's color, ringed in the label of the donor's band.
 
 // two hypotheses name the donor of a column
@@ -55,7 +55,7 @@ rings.node($U(), P) :- frame_cell(P).
 .init panel = Bbox<Ident>
 panel.cell(Id, P) :- rings.label($U(), P, Id).
 
-// A panel position on its box's edge. Unkeyed: the lattice's panels share
+// A panel position on its box's edge. Unkeyed: the tiling's panels share
 // one size, so every panel has the same ring.
 .decl ring_pos(p_intile: Position)
 ring_pos(P_intile) :-
@@ -71,21 +71,21 @@ inner_cell(Id, P_intile, Col) :-
 panel_pos(Id, P_col, P_band) :-
     panel.box(Id, B), params.layout_axis(A), split(B, A, P_col, P_band).
 
-// --- lattice ---
+// --- tiling ---
 
-.init lattice = Bbox<Unit>
-lattice.cell($U(), P) :- frame_cell(P).
+.init tiling = Bbox<Unit>
+tiling.cell($U(), P) :- frame_cell(P).
 
-// A cell the lattice's box covers.
-.decl in_lattice(p: Position)
-in_lattice(P) :- in(P, _), lattice.box($U(), B), inside(P, B).
+// A cell the tiling's box covers.
+.decl in_tiling(p: Position)
+in_tiling(P) :- in(P, _), tiling.box($U(), B), inside(P, B).
 
 // --- labels ---
 
-// A colored cell outside the lattice names the band it sits in.
+// A colored cell outside the tiling names the band it sits in.
 .decl band_label(p_band: Position, col: Color)
 band_label(P_band, Col) :-
-    in(P_label, Col), !params.bg(Col), !in_lattice(P_label),  // label cell
+    in(P_label, Col), !params.bg(Col), !in_tiling(P_label),   // label cell
     panel_pos(_, _, P_band), inside(P_label, P_band).         // in the band
 
 // --- donor ---
@@ -123,11 +123,11 @@ stencil(D, P_col, P_intile, Col) :-
 
 // --- output ---
 
-// One band of the lattice.
+// One band of the tiling.
 .init out_frame = Frame2D<Unit>
 out_frame.extent($U(), A, N) :-
     params.layout_axis(A),
-    lattice.box($U(), B), lattice.cell($U(), P), box_extent(B, P, A, N).
+    tiling.box($U(), B), tiling.cell($U(), P), box_extent(B, P, A, N).
 out_frame.extent($U(), A_band, N) :-
     params.layout_axis(A), perp(A, A_band),
     panel.box(Id, B), panel.cell(Id, P), box_extent(B, P, A_band, N).
@@ -137,9 +137,9 @@ out_frame.extent($U(), A_band, N) :-
 out_pos(P_col, P_intile, P) :-
     in(P_grid, _),
     panel.box(Id, B), crop(P_grid, B, P_intile), panel_pos(Id, P_col, _),
-    lattice.box($U(), B_lat), crop(P_grid, B_lat, P_lat),
+    tiling.box($U(), B_tiling), crop(P_grid, B_tiling, P_tiling),
     params.layout_axis(A),
-    split(P_lat, A, P_along, _), split(P_intile, A, _, P_across),
+    split(P_tiling, A, P_along, _), split(P_intile, A, _, P_across),
     compose(P_along, P_across, P).
 
 out(P, Col, [D, R]) :-

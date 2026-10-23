@@ -11,9 +11,9 @@
 .type Dots =
     // the dots the input shows
     Shown {}
-    // a dot lattice of period params.dot_size + params.dot_gap over the whole
-    // box, so a panel carries dots the input hides
-  | Lattice {}
+    // a periodic dot pattern of period params.dot_size + params.dot_gap over
+    // the whole box, so a panel carries dots the input hides
+  | Periodic {}
 
 // what the panel's ring grows around
 .type Panel =
@@ -27,8 +27,8 @@
 .type Stack =
     // the legend's order, its first entry on top
     Legend {}
-    // read off the scene: a panel covering a lattice point another panel does
-    // not show lies over that panel
+    // read off the scene: a panel covering a dot of the periodic pattern that
+    // another panel does not show lies over that panel
   | Occlusion {}
 
 .type Choice = [dots: Dots, panel: Panel, stack: Stack]
@@ -41,7 +41,7 @@
     // The edge the legend's dot colors sit on.
     .decl legend_side(d: Dir) legend_side(DIR_L).
 
-    // --- $Lattice ---
+    // --- $Periodic ---
 
     .decl dot_size(k: number) dot_size(1).
     .decl dot_gap(g: number) dot_gap(1).
@@ -54,14 +54,14 @@
 
 .init params = Params
 
-// $Occlusion reads the dots the input hides, which only $Lattice holds.
+// $Occlusion reads the dots the input hides, which only $Periodic holds.
 .decl impl_choice(ch: Choice)
 impl_choice([$Shown(), $Box(), $Legend()]).
 impl_choice([$Shown(), $Cells(), $Legend()]).
-impl_choice([$Lattice(), $Box(), $Legend()]).
-impl_choice([$Lattice(), $Cells(), $Legend()]).
-impl_choice([$Lattice(), $Box(), $Occlusion()]).
-impl_choice([$Lattice(), $Cells(), $Occlusion()]).
+impl_choice([$Periodic(), $Box(), $Legend()]).
+impl_choice([$Periodic(), $Cells(), $Legend()]).
+impl_choice([$Periodic(), $Box(), $Occlusion()]).
+impl_choice([$Periodic(), $Cells(), $Occlusion()]).
 
 .decl dots_choice(ds: Dots)
 dots_choice(Ds) :- impl_choice([Ds, _, _]).
@@ -85,17 +85,17 @@ panel_cell(Dot, P) :-
 .init bbox = Bbox<Color>
 bbox.cell(Dot, P) :- panel_cell(Dot, P).
 
-// The dot lattice over the box.
-.decl lattice(dot: Color, p: Position)
-lattice(Dot, P) :-
+// The periodic dot pattern over the box.
+.decl periodic_dot(dot: Color, p: Position)
+periodic_dot(Dot, P) :-
     in(P, _), bbox.box(Dot, B), crop(P, B, P_inner),  // the cell in the box's frame
-    params.dot_size(K), params.dot_gap(G),            // the lattice's period
-    divide_by_size_2d(P_inner, K, G, _, _).           // a lattice point
+    params.dot_size(K), params.dot_gap(G),            // the pattern's period
+    divide_by_size_2d(P_inner, K, G, _, _).           // a dot of the pattern
 
 // The dots the panel holds.
 .decl dotted(dot: Color, p: Position, ds: Dots)
 dotted(Dot, P, $Shown()) :- panel_cell(Dot, P).
-dotted(Dot, P, $Lattice()) :- lattice(Dot, P).
+dotted(Dot, P, $Periodic()) :- periodic_dot(Dot, P).
 
 // What the panel's ring grows around.
 .decl core(dot: Color, p: Position, ds: Dots, pn: Panel)
@@ -122,7 +122,7 @@ above(Dot, Dot2, [Ds, Pn, $Legend()]) :-
 
 above(Dot, Dot2, [Ds, Pn, $Occlusion()]) :-
     impl_choice([Ds, Pn, $Occlusion()]),
-    lattice(Dot2, P), !panel_cell(Dot2, P),                     // a lattice point Dot2 does not show
+    periodic_dot(Dot2, P), !panel_cell(Dot2, P),                // a dot of the pattern Dot2 does not show
     panel(Dot, P, Ds, Pn), Dot != Dot2.                         // lies under Dot's panel
 
 // --- output ---

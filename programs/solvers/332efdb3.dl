@@ -8,7 +8,8 @@
     // each axis splits into tiles with a gap between them; a cell on a tile
     // line of either axis is bg, and a cell on neither is the dot color
     Stripes {}
-    // the stored motif seats at every corner and repeats by the lattice period
+    // the stored motif seats at every corner and repeats by the period on each
+    // axis
   | Motif {}
     // a border rings the dot field, and that field splits into tiles on both
     // axes at once; an interior tile cell is the dot color, the border and the
@@ -55,21 +56,21 @@ out(P, Col, $Stripes()) :-
     ).
 
 // --- $Motif ---
-// A cell's place in the lattice, seen from a corner: its distances to the
+// A cell's period class, seen from a corner: its distances to the
 // corner's edges, each within its axis's period. The motif's own cells have
 // one too.
-.decl lattice_phase(dg: DiagDir, a: Axis, p: Position, r: number, r2: number)
-lattice_phase(Dg, A, P, R, R2) :-
+.decl period_phase(dg: DiagDir, a: Axis, p: Position, r: number, r2: number)
+period_phase(Dg, A, P, R, R2) :-
     ( in(P, _) ; params.motif(P, _) ),                       // a grid or motif cell
     diag_dist(P, Dg, A, T, T2), perp(A, A2),                 // its distances to a corner's edges
     params.period(A, K), stride(T, K, 0, _, R),              // within the periods
     params.period(A2, K2), stride(T2, K2, 0, _, R2).
 
 // The motif seats at every corner, and each cell takes the motif cell at
-// its place in the lattice.
+// its period class.
 out(Q, Col, $Motif()) :-
-    params.motif(Pm, Col), lattice_phase(Dg, A, Pm, R, R2),
-    in(Q, _), lattice_phase(Dg, A, Q, R, R2).
+    params.motif(Pm, Col), period_phase(Dg, A, Pm, R, R2),
+    in(Q, _), period_phase(Dg, A, Q, R, R2).
 
 // --- $Inset ---
 .decl interior_tile(p: Position)
@@ -95,7 +96,7 @@ out(P, Col, $Inset()) :-
     .init unbroken = Extremes<Axis>
     unbroken.cand(A, K) :- si.cand(_, A, K, _), !si.mismatch(_, A, K).
 
-    // The lattice period on each axis: the smallest repeating shift.
+    // The period on each axis: the smallest repeating shift.
     .decl period(a: Axis, k: number)
     period(A, K) :- unbroken.low(A, K).
 
