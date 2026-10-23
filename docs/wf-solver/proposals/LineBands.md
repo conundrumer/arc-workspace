@@ -23,7 +23,7 @@ bands.equiv([A, L], [A, L]) :- line(A, L).
 bands.equiv(X, Z) :- bands.equiv(X, Y), uncut(Y, Z).
 ```
 
-Not: maximal runs of cells inside one line (`Runs`); the one color a whole line holds (`LineColor`); the lines a cell set covers whole (`LineCover`); the closure alone, which `Transitive` states and `Canon` consumes; connected components of a cell set, where adjacency alone joins them (`Components`); the equal tiles a dividing lattice cuts (`divide`, `Tile2D`, `DividerTiles`); per-tile offsets for tiles of unequal size (`ConcatPipeline`, closed); the line pairs one shift of a lattice breaks, which compares only where both cells exist and reports no partition (`OffsetInvariance.line_mismatch`).
+Not: maximal runs of cells inside one line (`Runs`); the one color a whole line holds (`LineColor`); the lines a cell set covers whole (`LineCover`); the closure alone, which `Transitive` states and `Canon` consumes; connected components of a cell set, where adjacency alone joins them (`Components`); the equal tiles a dividing tiling cuts (`divide`, `Tile2D`, `DividerTiles`); per-tile offsets for tiles of unequal size (`ConcatPipeline`, closed); the line pairs one shift of a tiling breaks, which compares only where both cells exist and reports no partition (`OffsetInvariance.line_mismatch`).
 
 Match: a rule with one line-valued-cell relation twice positive, the two occurrences sharing the across position and disagreeing on the value, whose head keeps the two line positions; and a second rule that negates that head under an adjacency of the same two lines (`neighbor`, `jump`, or a `dist` comparison on the axis), feeding `Canon.equiv`, `Components.node`, or an `Order`/`OrderFrame` over lines. Also the positive statement of the same test, where a rule derives line agreement from a per-line defect it negates once and the caller ranks the result. State the shape with the parser: the line comparison has no lexical anchor, and the value column may be any type.
 
@@ -38,7 +38,7 @@ Negative evidence over the scope: three signatures ran over every parsed solver.
 
 Near-misses:
 1190e5a7 `bands`, with its family sibling 7039b2d7 `bands` — the band is a run of adjacent lines that pass a per-line test (the line is not filled by one color), so the entry's LineColor exclusion rules it out; two adjacent non-divider lines fuse there whatever they hold across.
-458e3a53 `line_color`/`tiles` and 8e1813be `stripe` — the same per-line color test, feeding a divider lattice and a stripe order; LineColor again.
+458e3a53 `line_color`/`tiles` and 8e1813be `stripe` — the same per-line color test, feeding a divider tiling and a stripe order; LineColor again.
 22a4bbc2 `boundary` and 80214e03 `separated($Content())` — the band breaks where the neighbor line's color set differs from the line's, the second through `KeyedSetCompare`. The test reads each line's set of colors, not its value at each place across, so LineColor excludes both. The other case of 80214e03 is a caller.
 0a1d4ef5 `runs`/`cls` — the band is a run of occupied lines, or a class of rectangles whose spans share a line. Occupancy and span overlap decide it, and no value is compared across two lines.
 2dc579da `differs`, 4e34c42c `disagree`, 16b78196 `clash`, 446ef5d2 `clash`, 73251a56 `differ`, and `beats` in 281123b4, 3d31c5b3, 6a11f6da, 75b8110e, a68b268e, cf98881b, ea9794b1 — pairwise disagreement over members that are tiles, motif fragments, placements, cells, or determination candidates. The members are not a frame's lines, and no adjacency groups them into runs.

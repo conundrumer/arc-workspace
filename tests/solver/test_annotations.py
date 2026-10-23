@@ -20,17 +20,17 @@ BAND = DeclId(9)
 
 def test_forms_and_their_places() -> None:
     parsed = program(
-        types=[adt(1, "Choice", 7, [("Cut", 7), ("Lattice", 11)])],
+        types=[adt(1, "Choice", 7, [("Cut", 7), ("Tiling", 11)])],
         relations=[relation(9, "band", 20)],
         comments=[
             comment(1, "// 0000aaaa"),
             comment(2, "// @keywords: lines panels"),
             comment(3, "// the panels, read off the lines"),
             comment(4, "// @rule cut: panels are cut by the lines"),
-            comment(5, "//     @approximated: an even lattice"),
+            comment(5, "//     @approximated: an even tiling"),
             comment(6, "//     @witness uneven: variant other"),
             comment(8, "// @scene even: the lines stand evenly"),
-            comment(9, "// @witness unequal: ordinary Lattice & Cut"),
+            comment(9, "// @witness unequal: ordinary Tiling & Cut"),
             comment(10, "//     @relaxed even"),
             comment(16, "// @ignore: single-consumer — kept for reading"),
             comment(17, "// @store: variant stored", BAND),
@@ -40,7 +40,7 @@ def test_forms_and_their_places() -> None:
             comment(22, "// @frob x"),
             comment(23, "// @ignore: no such category — x"),
             comment(24, "// @relaxed even"),
-            comment(25, "// --- Cut, Lattice(a=B): the two ---"),
+            comment(25, "// --- Cut, Tiling(a=B): the two ---"),
         ])
     got, problems = annotations.read(SouffleEngine(), parsed)
     assert [(f.word, f.value) for f in got.header] == [
@@ -50,13 +50,13 @@ def test_forms_and_their_places() -> None:
     assert (rule.kind, rule.slug, rule.constructor) == (
         ClaimKind.RULE, "cut", None)
     assert [w.id for w in rule.approximated[0].witnesses] == ["uneven"]
-    assert (scene.kind, scene.constructor) == (ClaimKind.SCENE, "Lattice")
+    assert (scene.kind, scene.constructor) == (ClaimKind.SCENE, "Tiling")
     uneven, unequal = got.witnesses
     assert (uneven.approximates, uneven.verdict) == ("cut", VerdictWord.OTHER)
     assert (unequal.plausibility, unequal.verdict, unequal.relaxed,
             unequal.constructor) == (
-        Plausibility.ORDINARY, NamedVerdict("Lattice & Cut"), ("even",),
-        "Lattice")
+        Plausibility.ORDINARY, NamedVerdict("Tiling & Cut"), ("even",),
+        "Tiling")
     (store,) = got.stores
     assert (store.relation, store.above, store.verdict) == (
         None, BAND, VerdictWord.STORED)
@@ -64,7 +64,7 @@ def test_forms_and_their_places() -> None:
     assert (derive.form, derive.name, derive.above) == (
         IgnoreForm.DERIVE, "p=Q", BAND)
     (marker,) = got.markers
-    assert [p.name for p in marker.parts] == ["Cut", "Lattice(a=B)"]
+    assert [p.name for p in marker.parts] == ["Cut", "Tiling(a=B)"]
     assert marker.gloss == "the two"
     assert [(p.kind, p.place) for p in problems] == [
         (ProblemKind.RETIRED_FORM, InSolver(21)),

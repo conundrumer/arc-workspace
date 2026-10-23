@@ -1,23 +1,23 @@
-# `LatticeOrbit<Key>` — the cells a translation lattice identifies
+# `PeriodOrbit<Key>` — the cells the period translations identify
 
 The positions a run of period-sized shifts reaches from a seed without
 leaving the frame: given the per-axis periods of a pattern, `orbit` pairs
-each seed with the cells that hold the same content under the lattice.
+each seed with the cells that hold the same content under the period translations.
 `ShiftInvariance.min_period` or a stored period feeds `period` directly.
 A caller repairing damage seeds the damaged cells and reads an intact
 counterpart; a caller extending a pattern over the whole frame seeds every
 cell; a caller stamping a motif seeds the stamp.
 
 ```
-.comp LatticeOrbit<Key> {
+.comp PeriodOrbit<Key> {
     // The frame the orbit stays inside, per key.
     .decl cell(key: Key, p: Position)           // input
-    // The lattice's period along each axis, per key.
+    // The period along each axis, per key.
     .decl period(key: Key, a: Axis, k: number)  // input
     // The positions the orbit runs from, per key.
     .decl seed(key: Key, p: Position)           // input
 
-    // One lattice shift, either way along its axis, landing in the frame.
+    // One period shift, either way along its axis, landing in the frame.
     .decl step(key: Key, p: Position, q: Position)
 
     // q is reached from seed p by a run of steps. Reflexive on the seeds.
@@ -25,7 +25,7 @@ cell; a caller stamping a motif seeds the stamp.
 }
 ```
 
-- An axis with no period contributes no shift, so a lattice on one axis
+- An axis with no period contributes no shift, so a period pattern on one axis
   alone is the caller stating one period row.
 - The frame clips every step, so the orbit of a seed is the seed's
   congruence class inside the frame and nothing else.
@@ -43,19 +43,19 @@ period-sized delta and clips the result to the frame — `compose` against a
 Survey: 2026-09-05 13:36
 
 Callers: 017c7c7b `fill`, 13f06aa5 `paint` (served once `cell` is clipped
-to the ray), 135a2760 `orbit.equiv`, 16de56c4 `lattice`/`advance`,
+to the ray), 135a2760 `orbit.equiv`, 16de56c4 `advance` and its rhythm relation,
 1ae2feb7 `claim`, 1d0a4b61 `step` with its recursive `out`, 29ec7d0e
 `restored`, 332efdb3 `$Motif`, 484b58aa `orbit`, 50a16a69 `period_step`
 with `orbit`, 53b68214 `out`, 834ec97d `$Period` `beam`, 8eb1be9a `out`,
 963e52fc `out`, ca8f78db `period_delta` with `peer`, d492a647 `$Period`
-`lattice`, 53fb4810 `pattern` (served once `cell` is clipped to the
+period relation, 53fb4810 `pattern` (served once `cell` is clipped to the
 band's growth side of its anchor), 58490d8a `slot` (served under
 `$FromMark` once `cell` is clipped to the ray), 6a980be1 `strip_out` (the
 strip's content seeded, its `min_period` along the line axis, the whole
 grid as frame).
 
 Near: 0b17323b `$Line`, 05269061 `known`, 3979b1a8 `out`, c1990cce
-`emitter` run a lattice whose generator is diagonal, and 5207a7b5
+`emitter` run a period pattern whose generator is diagonal, and 5207a7b5
 `region` one whose generator is oblique — one cell across an axis and
 `rise` cells along it. 045e512c `copy`, 12422b43 `$Stamp` `copy`,
 13f06aa5 `paint`, c1990cce `emitter`, 3979b1a8 `out` run their period one
@@ -68,8 +68,8 @@ period holds it. 0dfd9992 `Wallpaper.step`, 1b60fb0c `orbit`, 47c1f68c
 Phase-into-a-table sites (ba26e723, 221dfab4, 34cfa167, 97999447,
 c1990cce `$Stripe`, 516b51b7 `$Cycle` over an erosion depth, and seven
 more) read the residue as a number with no seed and no closure, and
-lattice-as-division sites (332efdb3 `$Stripes`/`$Inset`, 305b1341,
-1c0d0a4b, 695367ec) anchor the lattice on the frame with `divide_by_size`.
+tiling-by-division sites (332efdb3 `$Stripes`/`$Inset`, 305b1341,
+1c0d0a4b, 695367ec) anchor the tiling on the frame with `divide_by_size`.
 
 Spec: `period`'s axis column would widen from `Axis` to `Axis4`. Four
 sites state a diagonal generator, and 0b17323b `$Line` is the operation in
@@ -169,14 +169,14 @@ the bar pair onto the other bar's side rather than overshooting one end. That
 is stricter than the 045e512c / 13f06aa5 one-way class, whose unwanted half a
 clip removes. 58c02a16 `phase` folds a cell's two distances from a stored
 corner into the block extent twice with `stride` and reads the residues back
-through `diag_dist`: the lattice-as-division class, anchored on the pattern box
+through `diag_dist`: the tiling-by-division class, anchored on the pattern box
 rather than on the frame, with no seed and no closure. Its coarse level is no
 orbit at any period either — the cells sharing a coarse residue span `N`
 consecutive residues — and the program consumes the quotient, which no orbit
 yields.
 
 Delta spec: the scope adds no support for widening `period`'s axis column to
-`Axis4`; both of its lattices are cardinal. On the generator's type, 58e15b12
+`Axis4`; both of its period patterns are cardinal. On the generator's type, 58e15b12
 `trace` is the second site after 5207a7b5 carrying a constant oblique generator
 through a closure, and unlike 351d6448, 08573cc6, and 234bbc79 it holds that
 generator fixed across steps. It still does not settle the question. A
@@ -191,7 +191,7 @@ would serve.
 Survey: 2026-09-09 00:47, over the 3 solvers postdating the survey above,
 58c02a16 among them for its edit after that survey.
 
-Delta callers: none. The scope holds one head-recursive rule and one lattice,
+Delta callers: none. The scope holds one head-recursive rule and one period pattern,
 each excluded below. `jump_delta`, `period_delta`, `compose`, `ShiftInvariance`,
 and `min_period` appear nowhere in it.
 
@@ -200,15 +200,15 @@ relation pairing an object with the object its port's beam lands on. That
 closure runs over object ids rather than positions, and each edge's length is
 whatever the field leaves between two objects, so no fixed delta generates a
 step — the graph-reachability class. 58c02a16 `phase` stands as the delta above
-records it, and its current form sharpens that exclusion twice: its lattice is
+records it, and its current form sharpens that exclusion twice: its period pattern is
 anchored on the frame corner `params.corner` stores rather than on a seed set,
 and its coarse level takes the fine level's quotient as its own input, so the
-program consumes a quotient, which no orbit yields. 58f5dbd5 runs no lattice and
+program consumes a quotient, which no orbit yields. 58f5dbd5 runs no period pattern and
 no closure; its one delta site lets a bounding box out by the border width with
 `uniform_delta`, a single placement.
 
 Delta spec: the scope adds no support for widening `period`'s axis column to
-`Axis4`. Its one lattice is cardinal on both levels — `diag_dist` splits the
+`Axis4`. Its one period pattern is cardinal on both levels — `diag_dist` splits the
 corner distance into two cardinal-axis components, and each is folded on its own
 axis. That site is mild support for the `(a, k)` period against a `Shift`,
 because it reads its period straight out of `block.extents($U(), A, N1, N2)`,
@@ -236,7 +236,7 @@ share their rows or their columns, the graph-reachability class of 5961cc34
 now through lib's `Slide` — the slide-until-halted class the 00:25 delta
 records for it. 5adee1b2 `outside` floods over adjacency and 1190bc91 `arm`
 casts a blocked ray. 5d588b4d `place` folds a sequence rank into the output
-width and consumes the quotient as a line index, the lattice-as-division class,
+width and consumes the quotient as a line index, the tiling-by-division class,
 which 5ad4f10b and 5a5a2103 also run, anchored on a box or on the grid with
 `divide_by_size`, `divide_2d`, and `Tile2D`. 5af49b42 `stamp`, 5dbc8537
 `covers`, 5b526a93 `covered`, 5b692c0f `mirrored`, 409aa875 `shot`, and
@@ -250,7 +250,7 @@ on its `train0 input` the two `same_line` atoms through the mark give five
 cells against the class's fifteen, so no `same_line` form replaces the closure
 and the degeneration ground does not reach it. Two qualifications sit beside
 it. The widened operation would not serve that case as parameterized: `$Parity`
-stores a period over corner distance, and a diagonal lattice reaches only
+stores a period over corner distance, and a diagonal period pattern reaches only
 displacements whose two coordinate changes differ by an even number, so the
 residue class is an orbit for an even period alone, at `(DAXIS_AD, 1)` and
 `(DAXIS_DG, N/2)`; at this task's period 2 both are 1, which spends the case's
@@ -273,7 +273,7 @@ reads. The grep signature matches 71 lines in 34 files of that scope, 29 of
 them files the entry already names, and the shape signature 16
 head-recursive rules in 13 files plus 9 delta-built rules on an indirect
 positive cycle in 8 files; each unnamed hit is excluded below.
-`period_delta` and `LatticeOrbit` appear nowhere in the scope;
+`period_delta` and `PeriodOrbit` appear nowhere in the scope;
 `ShiftInvariance` and `min_period` appear only in named files.
 
 Delta near: 28e73c20 `walk` closes a spiral one `neighbor` step at a time,
@@ -295,7 +295,7 @@ over bodies rather than positions. 05f2a901 and 11dc524f `shift`, and
 17829a00 `shift` and 47996f11 `cand` as recorded, enumerate every axis-aligned
 `jump_delta` of the frame with `sub_extent` as move candidates, with no seed
 and no closure. 6350f1f4 `template` overlays blocks on their intile position
-under a `DividerFrame` and a `BoxFrame`, the lattice-as-division class
+under a `DividerFrame` and a `BoxFrame`, the tiling-by-division class
 anchored on the separator lines rather than on a seed, with no closure; its
 `repair` sibling 4290ef0e `mirror` repairs through a center reflection.
 22233c11 `echo_cell`, 22208ba4 `moved_cell`, 3631a71a `mirror`, 4364c1c4
@@ -324,7 +324,7 @@ Delta callers: 7447852a `$Stamp` `mark_cell`, the solver that dispatched
 this survey, which stands caller-only. The grep signature matches 87 lines
 in 42 files of that scope, 37 of them files the entry already names, and
 the shape signature 41 rules in 32 files, 21 of them named; each unnamed
-hit is excluded below. `period_delta` and `LatticeOrbit` appear nowhere in
+hit is excluded below. `period_delta` and `PeriodOrbit` appear nowhere in
 the scope; `ShiftInvariance` and `min_period` appear only in 6a980be1 and
 in the caller's Determine comp.
 
@@ -356,8 +356,8 @@ one `neighbor` under a hiding cell when the two cells behind it carry it;
 corners per step, inside the grid; 6df30ad6 `Dilate.depth` grows outward
 from seeds one step per ring — all unit-step walks or floods under no
 period, the 28e73c20 / 142ca369 / `Reach` classes. 6d0160f0 `tile` anchors
-its 3×3 lattice on the grid with `divide_by_size_2d`, the
-lattice-as-division class, with no closure. 6ffbe589 `rot` advances a
+its 3×3 tiling on the grid with `divide_by_size_2d`, the
+tiling-by-division class, with no closure. 6ffbe589 `rot` advances a
 turn count around a rotation cycle with `CycleWalk`, the 30f42897 class.
 6ca952ad `flush` and 6e453dd6 `slid` each compose one displacement with no
 closure.

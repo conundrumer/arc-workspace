@@ -56,13 +56,13 @@ pub(super) fn rows(name: &str, proposer: &Proposer, grids: &Grids<'_>, context: 
         "DivisorRatio" => last(&ratios(grids, &axes, Ratio::Divisor)),
         "DivisorRatioAxis" => ratios(grids, &axes, Ratio::Divisor),
         "DimDiff" => last(&dim_diff(grids, &axes)),
-        "TileCount" => last(&fit_claim(grids, &axes, Lattice::Any, |fit| fit.count)),
-        "TileDim" => last(&fit_claim(grids, &axes, Lattice::Any, |fit| fit.dim)),
+        "TileCount" => last(&fit_claim(grids, &axes, Tiling::Any, |fit| fit.count)),
+        "TileDim" => last(&fit_claim(grids, &axes, Tiling::Any, |fit| fit.dim)),
         "Period" => period(grids, &axes),
-        "SepTileCount" => last(&fit_claim(grids, &axes, Lattice::Separated, |fit| fit.count)),
+        "SepTileCount" => last(&fit_claim(grids, &axes, Tiling::Separated, |fit| fit.count)),
         "SepTileCountAxis" => sep_tile_count_axis(grids, &axes),
-        "SepTileDim" => last(&fit_claim(grids, &axes, Lattice::Separated, |fit| fit.dim)),
-        "SepThickness" => last(&fit_claim(grids, &axes, Lattice::Separated, |fit| fit.gap)),
+        "SepTileDim" => last(&fit_claim(grids, &axes, Tiling::Separated, |fit| fit.dim)),
+        "SepThickness" => last(&fit_claim(grids, &axes, Tiling::Separated, |fit| fit.gap)),
         "CountRankAsc" => count_rank(grids, Extreme::Low),
         "CountRankDesc" => count_rank(grids, Extreme::High),
         "TileD4" => tile_d4(grids, context.registry),
@@ -285,7 +285,7 @@ fn dim_diff(grids: &Grids<'_>, axes: &Axes) -> Rows {
     uniform(holds.collect())
 }
 
-/// A lattice that fits an axis of an input: `count` tiles of extent `dim`,
+/// A tiling that fits an axis of an input: `count` tiles of extent `dim`,
 /// with a gap of `gap` between each two, as `TileFits` gives them.
 #[derive(Clone, Copy)]
 struct Fit {
@@ -294,26 +294,26 @@ struct Fit {
     gap: usize,
 }
 
-/// The lattices a proposer reads: those of `TileFits`, or those of
+/// The tilings a proposer reads: those of `TileFits`, or those of
 /// `SepFits`, whose gap is positive and whose every line of more than one
 /// color lies in a tile.
 #[derive(Clone, Copy, PartialEq)]
-enum Lattice {
+enum Tiling {
     Any,
     Separated,
 }
 
-/// The lattices of `lattice` that fit `axis` of `grid`, over counts 2 to 8
+/// The tilings of `tiling` that fit `axis` of `grid`, over counts 2 to 8
 /// and gaps 0 to 3.
-fn fits(grid: &Grid, axis: Axis, lattice: Lattice) -> Vec<Fit> {
+fn fits(grid: &Grid, axis: Axis, tiling: Tiling) -> Vec<Fit> {
     let extent = axis.extent(grid);
     let all = (2..=8).flat_map(|count| (0..=3).map(move |gap| (count, gap))).filter_map(|(count, gap)| {
         let rest = extent.checked_sub((count - 1) * gap).filter(|&rest| rest > 0)?;
         (rest % count == 0).then_some(Fit { count, dim: rest / count, gap })
     });
-    match lattice {
-        Lattice::Any => all.collect(),
-        Lattice::Separated => {
+    match tiling {
+        Tiling::Any => all.collect(),
+        Tiling::Separated => {
             let multi: Vec<usize> = (0..extent)
                 .filter(|&index| {
                     let line = axis.line(grid, index);
@@ -325,24 +325,24 @@ fn fits(grid: &Grid, axis: Axis, lattice: Lattice) -> Vec<Fit> {
     }
 }
 
-/// The claim over the lattices of `lattice`: each axis with the `field` of
-/// a lattice that fits it, in every input.
-fn fit_claim(grids: &Grids<'_>, axes: &Axes, lattice: Lattice, field: fn(&Fit) -> usize) -> Rows {
-    uniform(fit_holds(grids, axes, lattice, field))
+/// The claim over the tilings of `tiling`: each axis with the `field` of
+/// a tiling that fits it, in every input.
+fn fit_claim(grids: &Grids<'_>, axes: &Axes, tiling: Tiling, field: fn(&Fit) -> usize) -> Rows {
+    uniform(fit_holds(grids, axes, tiling, field))
 }
 
-fn fit_holds(grids: &Grids<'_>, axes: &Axes, lattice: Lattice, field: fn(&Fit) -> usize) -> Vec<Rows> {
+fn fit_holds(grids: &Grids<'_>, axes: &Axes, tiling: Tiling, field: fn(&Fit) -> usize) -> Vec<Rows> {
     let holds = grids.inputs.iter().map(|grid| {
-        axes.each().flat_map(|axis| fits(grid, axis, lattice).into_iter().map(move |fit| Box::from([axis.term, count(field(&fit))]))).collect()
+        axes.each().flat_map(|axis| fits(grid, axis, tiling).into_iter().map(move |fit| Box::from([axis.term, count(field(&fit))]))).collect()
     });
     holds.collect()
 }
 
 /// `SepTileCountAxis`: the claim of `SepTileCount` with its axis, and, for
 /// the axis across a claimed one, a count of 1 where no input has a
-/// separated lattice on it.
+/// separated tiling on it.
 fn sep_tile_count_axis(grids: &Grids<'_>, axes: &Axes) -> Rows {
-    let holds = fit_holds(grids, axes, Lattice::Separated, |fit| fit.count);
+    let holds = fit_holds(grids, axes, Tiling::Separated, |fit| fit.count);
     let held_on = |axis: Axis| holds.iter().any(|rows| rows.iter().any(|row| row[0] == axis.term));
     let mut rows = uniform(holds.clone());
     let across: Vec<Axis> = axes.each().filter(|&axis| rows.iter().any(|row| row[0] == axis.term)).map(|axis| axes.perpendicular(axis)).collect();

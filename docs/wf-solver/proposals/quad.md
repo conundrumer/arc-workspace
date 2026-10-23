@@ -11,7 +11,7 @@ quad(P, G, Q1, Q2, Q3) :-
     neighbor(P, D1, Q1), neighbor(P, D2, Q2), neighbor(P, G, Q3).
 ```
 
-Not: `adjacent8` (the whole 8-neighborhood, one cell per direction); `bend` (set neighbors on both cardinal sides of a corner, with no cell across the corner); `corner_only` (diagonal contact with no cardinal contact); `Occurrences` against a stored 2x2 footprint; a block of a decomposition (`divide` family), whose square is fixed to a lattice rather than anchored at the cell.
+Not: `adjacent8` (the whole 8-neighborhood, one cell per direction); `bend` (set neighbors on both cardinal sides of a corner, with no cell across the corner); `corner_only` (diagonal contact with no cardinal contact); `Occurrences` against a stored 2x2 footprint; a block of a decomposition (`divide` family), whose square is fixed to a tiling rather than anchored at the cell.
 
 Match: a rule binding one position's neighbors across a corner's two cardinal dirs and across the corner itself — three `neighbor` or `jump` atoms sharing their first argument, beside a `diag_dirs` atom. Coarse grep: `diag_dirs` in a rule with three `neighbor(` atoms. The parser scans at `.scratch/5ad4f10b/scan.py` through `scan4.py` widen that to `jump`, `compose`, and `displacement`, to the chain form, and to every corner-binding relation.
 

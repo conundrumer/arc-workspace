@@ -107,7 +107,7 @@ Near-misses:
 8a6d367c blocks — `Divide2D` `dim` is the shape pattern's box extent, so the block size is a scale factor read off two extents (the hole's and the pattern's); `contradicted` tests fill cells against the pattern, not block uniformity.
 0dfd9992 axis_rep — `sub_extent` bounded by `period`, an input: a period (`ShiftInvariance`), which repeats a pattern rather than stretching one cell.
 045e512c span — `sub_extent` yields step lengths for translations of an object; nothing divides.
-88a62173 line_color, lattice — one-colored lines are found by a `Unanimous` and fed as dividers to a `DividerFrame`; the tile size comes from the dividers, not from a sweep tested for uniform blocks.
+88a62173 line_color, its tiling instance — one-colored lines are found by a `Unanimous` and fed as dividers to a `DividerFrame`; the tile size comes from the dividers, not from a sweep tested for uniform blocks.
 8f2ea7aa cell ($Divide), 88a62173 tile_val ($Size), 85b81ff1 decompose ($Size), and the divide_slab family in scope (0520fde7, 0c9aba6e, 195ba7dc, 1b2d62fb, 31d5ba1a, 3428a4f5, 34b99a2b, ce4f8723, cf98881b, d19f7514, dae9d2b5, e133d23d, e345f17b, f2829549, fafffa47) — the tile size or count is stored as a parameter.
 412b6263 tile_dim — a `Unanimous` over axes in `Determine` agrees a tile count across examples, counted from seat offsets, not a block test.
 

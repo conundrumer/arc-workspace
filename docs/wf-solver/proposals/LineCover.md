@@ -110,7 +110,7 @@ Both recorded callers in the scope still write the operation: 137f0df0 `block_li
 Near-misses:
 
 - A per-line defect read positively, never negated: 85b81ff1 `line_hole`, a line holding a bg cell, conjoined with `line_ink` into `sortable`; the rule that keeps the other lines negates `sortable`, so `!sortable(L)` is the union of two covers, by bg and by ink, and the site reads the defect and not the cover.
-- A line that merely holds a member: 20981f0e `lattice.divider`, a dot marking its line on each axis; 8731374e `flaw_line`, the crop cells sharing a line with a flaw, negated for the other cells; 8ba14f53 `block_line`, the lines a block spans, counted into `offset`.
+- A line that merely holds a member: 20981f0e's tiling `divider`, a dot marking its line on each axis; 8731374e `flaw_line`, the crop cells sharing a line with a flaw, negated for the other cells; 8ba14f53 `block_line`, the lines a block spans, counted into `offset`.
 - The converse containment, a set lying inside one line or one outline: 538b439f `reach` with `thin`, a component that reaches one line on some axis; 890034e9 `stray`, a cell of the outline's color off the outline, negated into `frame`.
 - A universal not over a line's cells: 8f215267 `in_hole`, an object with a cell in a rectangle's hole, negated into `frame`.
 - An edge line that merely holds a member: 846bdb03 `bar`, a non-bg non-corner color on a border line, and `touches`, a placed cell of that color on that edge; 8abad3cf `Determine.reaches`, a color at edge d, negated into `short_of`; 22eb0ac0 `edge_match`, which compares the line's two end cells.
@@ -133,8 +133,8 @@ Survey: 2026-09-14 02:35 — the solvers since 2026-09-11 04:13.
 
 Callers:
 
-7837ac64 `gapped_line` — a row or column holding a bg cell is the defect; its negation gives `on_line(P, A)`, the cover read per cell on both axes, and `node` crosses the two axes with `perp` to find the lattice crossings.
-7c8af763 `bg_line` — a line with no bg cell is a full line of the lattice, and the negation feeds `tiles.divider` on the along convention.
+7837ac64 `gapped_line` — a row or column holding a bg cell is the defect; its negation gives `on_line(P, A)`, the cover read per cell on both axes, and `node` crosses the two axes with `perp` to find the tiling crossings.
+7c8af763 `bg_line` — a line with no bg cell is a full line of the tiling, and the negation feeds `tiles.divider` on the along convention.
 7e576d6e `broken` — a line with no bg cell is a divider, bg coming from a `Mode` rather than from a parameter, and the negation feeds `cut.divider`.
 941d9a10 `Parse.off_line` — a line whose every cell carries the separator color cuts the blocks; written inside a keyed `Parse` comp, the negation feeding `cut.divider`.
 
@@ -145,7 +145,7 @@ No further caller: across the 483 solvers the parser pass listed 1666 negated re
 Near-misses:
 
 - A per-line defect read positively and never as the cover: 234bbc79 `inked_line`, the lines holding ink, which packs them through `OrderFrame` so the blank lines close up; 85b81ff1 `line_ink` with `line_hole`, conjoined into `sortable`; ca8f78db `pattern_row`.
-- A line that merely holds a member: 20981f0e `lattice.divider`, a dot marking its line on each axis; 363442ee `panels.divider`, 8597cfd7 `panels.divider`, 9356391f `panel.divider`, and 6e453dd6 `cut.divider`, each a line carrying one cell of a named color; 65b59efc `lattice.divider`, two adjacent separator cells marking the line they run along; 247ef758 `header`, a mark on a border cell naming its line; 9344f635 `Parse.line_col`, a line holding a segment; 21f83797 `on_line`; 412b6263 `copy_line`; 4290ef0e `line_cell`; 8731374e `flaw_line`; 8ba14f53 `block_line`; 6a980be1 `line_cell` and `on_pattern_line`.
+- A line that merely holds a member: 20981f0e's tiling `divider`, a dot marking its line on each axis; 363442ee `panels.divider`, 8597cfd7 `panels.divider`, 9356391f `panel.divider`, and 6e453dd6 `cut.divider`, each a line carrying one cell of a named color; 65b59efc's tiling `divider`, two adjacent separator cells marking the line they run along; 247ef758 `header`, a mark on a border cell naming its line; 9344f635 `Parse.line_col`, a line holding a segment; 21f83797 `on_line`; 412b6263 `copy_line`; 4290ef0e `line_cell`; 8731374e `flaw_line`; 8ba14f53 `block_line`; 6a980be1 `line_cell` and `on_pattern_line`.
 - A line drawn from a member on it: 689c358e `mark`; 54d82841 `mark_cell`; 917bccba `Parse.crossing`; c1990cce `arm`, a diagonal line from the seed; 2281f1f4 `marked` and `selected`; 8403a5d5 `dotted`; 56dc2b01 `back_line`, the grid line one step behind a resting mover's face.
 - Co-occurrence on a line, with no cover: 1efba499 `crossing`; 16b78196 `catch`; 8a371977 `screened`; 84ba50d3 `pierced`; 50aad11f `shared_line`; 3345333e `damaged`; 38007db0 `band_peer`.
 - The converse containment, a set lying inside one line rather than a line inside a set: 12997ef3 `off_axis`; 88bcf3b4 `bent`, an object with cells on two lines, negated into `pole`; and against an edge line, 0a938d79 `on_axis_edge` with `off_axis_edge`, 3979b1a8 `Determine.growth_mismatch`, 3ac3eb23 `Determine.off_edge`, 3bd67248 `off_edge`, 6ad5bdfd `off_wall_edge`, f45f5ca7 `Parse.off_edge`.

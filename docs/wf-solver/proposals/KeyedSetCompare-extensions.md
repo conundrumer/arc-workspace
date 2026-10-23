@@ -1,4 +1,4 @@
-# `KeyedSetCompare` extensions — the set-relationship lattice
+# `KeyedSetCompare` extensions — the set-relationship order
 
 `within`, `disjoint`, `intersects`, and the size projections, beside `covers` and `equals`. Not: a containment test between two unkeyed sets; counting with no pattern.
 

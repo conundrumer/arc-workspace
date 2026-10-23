@@ -42,7 +42,7 @@ Callers:
 7c8af763 touch — a cell beside an ink cell with its color; `region_vote.item` and `tile_vote.item` join it onto regions and tiles.
 800d221b touch — a wire cell beside a region cell with its color; `center_mode.item` is a second statement, a wire cell beside a hub cell.
 8886d717 around — the non-mark color beside a mark cell; consumed per cell and per cluster.
-83302e8f leaky_tile — a lattice tile beside a gap cell, the tile position kept as key.
+83302e8f leaky_tile — a tiling tile beside a gap cell, the tile position kept as key.
 142ca369 Determine.beside_ink — a painted cell beside input ink of its own color; its negation marks the launch cell.
 f0df5ff0 painted — a bg cell beside an ink cell, under `dir8_elem`, the bg cell kept as its own key.
 
@@ -50,10 +50,10 @@ Near-misses:
 The one-step band: a set dilated by one step and clipped to the frame, the second relation the frame domain (`in`, `ex_in`, `cell`, `parse.field`, `concat_2d`) and the head keeping the band cell or painting it. No second structure is named, which the entry's "two structures" rules out — 140c817e corner_cell; 4258a5f9 halo; b60334d2 halo (three rules); dc1df850 halo; ce22a75a grown; 5117e062 region; 31aa019c footprint; 305b1341 panel; 5adee1b2 grown_box; 38007db0 block.cell; 8719f442 cell; 20fb2937 paint; 6c434453 replaced; 71e489b6 halo; 890034e9 outline; 800d221b hub; 67a423a3 ring; 5587a8d0 covers; 14754a24 footprint; 15113be4 Determine.key_block; 3aa6fb7a Determine.piece.seed; 1818057f and 7e02026e flank_covered.
 `Closed.wall`: a closed region beside the set that walls it, joined onto that set's labeling — 0a2355a6 Parse.joint_holes.item; 37d3e8b2 Parse.joint_holes.item; 358ba94e cavity_count.item; 320afe60 encloses; 67e490f4 stencil; 810b9b61 wall; 184a9768 frame (the cell-level `Reach` form).
 `lone` (one set against itself, no key pair kept) — 2c608aff block; 7ddcd7ec block; 88a10436 touching; 67385a82 grouped; aedd82e4 grouped; 42a50994 grouped; 3e980e27 Parse.joined; 7491f3cf Parse.line; 195c6913 swatch_cell; 72322fa7 touch (one-sided, the neighbor untested); 5792cb4d link and 7b5033c1 link (a cell-pair edge in one set); 7b80bb43 chain.
-`Abut` (the direction kept) — 4364c1c4 Parse.side; 414297c0 glyph (the step kept as a Shift); 6a980be1 line_axis, 7e2bad24 wall_axis, 80214e03 separated, 65b59efc lattice.divider, and 4612dd53 line (the step's axis kept, `axis_of` with the axis free).
+`Abut` (the direction kept) — 4364c1c4 Parse.side; 414297c0 glyph (the step kept as a Shift); 6a980be1 line_axis, 7e2bad24 wall_axis, 80214e03 separated, 65b59efc's tiling divider, and 4612dd53 line (the step's axis kept, `axis_of` with the axis free).
 `Surround` (every neighbor, the second set under negation) — d9fac9be defect; d9fac9be gap; 46c35fc7 Parse.gap; 60a26a3e ring_gap; 6c434453 open.
 A step whose direction is bound before the step — 49d1d64f out and 8719f442 copy (D from `dist(P, D, 0)`); 05f2a901 blocked (band then a `move_dir` step); the 17 `unfold_val`/`unfold` tile walks and the `params.*_dir` steps.
-Walk steps, the neighbor a recursion frontier — 2072aba6 checker; 7ec998c9 shade; 447fd412 carry; 89565ca0 line; d492a647 lattice.
+Walk steps, the neighbor a recursion frontier — 2072aba6 checker; 7ec998c9 shade; 447fd412 carry; 89565ca0 line; d492a647's period pattern.
 Contact at range — 3bd292e8 across (two regions across one wall cell, the key pair kept: the touch head form at range 2).
 Diagonal-only contact — 1478ab18 right_angle (a corner candidate beside a mark over `diag_dir_elem`, the corner cell kept); 1d61978c streak and 3eda0437 region (same-set over `diag_dir_elem`).
 Two-sided shape tests (`flanked`, `quad`, `bend`) — 182e5d0f plug; 3ad05f52 door; 4c416de3 outline; a699fb00 flanked; 7b80bb43 flanked; 18419cfa doorway; 5ad4f10b figure; 3aa6fb7a mark; 2546ccf6 gap; 7666fa5d step; 7e0986d6 inside; 54dc2872 bend; 465b7d93 corner.

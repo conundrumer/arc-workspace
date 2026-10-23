@@ -34,8 +34,8 @@ Callers:
 - 2d0172a1 `mark_same` — overlapping marks on one axis take one line; closed, it feeds `Canon.equiv`.
 - 0a1d4ef5 `cls.equiv` — closes `overlap` into bands, written on `cls.equiv`.
 - 33067df9 `group.equiv` — closes `join` into groups, with a reflexive base over `ink`.
-- 135a2760 `orbit.equiv` — closes `si.pair` at the panel's period into lattice orbits, feeding `Canon.equiv`.
-- 50a16a69 `orbit` — closes `period_step` into lattice orbits, read directly by `out`.
+- 135a2760 `orbit.equiv` — closes `si.pair` at the panel's period into period orbits, feeding `Canon.equiv`.
+- 50a16a69 `orbit` — closes `period_step` into period orbits, read directly by `out`.
 - 20a9e565 `anc_drawn`, `anc_ext` — reflexive closures of two parent relations; one keyed instance would hold both.
 - 3bd292e8 `same_side` — closure of the two-step edge `across ∘ across`, with a reflexive base over region ids.
 - 78332cb0 `chain.before`, keyed by direction — closes `link` (a tile's shape leaves through one edge where the next tile's shape enters) into the order along the chain, written on `chain.before` itself.
@@ -58,7 +58,7 @@ Result: delta over the 341 solvers changed after the second survey, matched with
 
 Near-misses: seeded reads of a closure whose head keeps the reached node with a payload, never the pair (045e512c `copy`, 4c7dc4dd `spread`, 5207a7b5 `region`, 53fb4810 `pattern`, 6a980be1 `strip_out`, 7447852a `mark_cell`, 58e15b12 `trace`, 60d73be6 `image`, 762cd429 `copy`, 447fd412 `carry`, 47c1f68c `unfold`); walks whose step depends on the state (28e73c20, 69889d6e, 6bcdb01e); walks with a step count (6df30ad6 and 759f3fd3 `Dilate.depth`); symmetric closure alone (5207a7b5 `Params.slant`); a fixed one-step composition (6165ea8f `slot`); argmin subsumption (5ffb2104 and 6ad5bdfd `Settle.rest`); `Order.before` feeds transitive by construction (3a25b0d8, 694f12f3, 6cbe9eb8, and 1e5d6875 `prec.before` in Determine, the `beats` shape with one color pair, as 281123b4); `Canon.equiv` feeds transitive by construction (142ca369, 269e22fb, 3aa6fb7a, 3d588dc9, 4c177718, 1caeab9d, 5623160b, 67636eac, 5289ad53, 44f52bb0, b1fc8b8e, 281123b4, 494ef9d7, 409aa875); and the two `Components.step` overrides (36fdfd69, 6ffbe589), both `GapComponents`.
 
-Spec: nothing in the delta changes the interface or the definition. When the edge is a bounded spatial nearness, `Components` with a `step` set holds the closure and the ids, so the callers that remain all have non-spatial edges (overlay precedence, span overlap, ancestry, lattice orbits, tile continuation). 60d73be6 `image` is an orbit closure read seeded, which confirms the seeded-read exclusion in `Not:` rather than asking for a second output.
+Spec: nothing in the delta changes the interface or the definition. When the edge is a bounded spatial nearness, `Components` with a `step` set holds the closure and the ids, so the callers that remain all have non-spatial edges (overlay precedence, span overlap, ancestry, period orbits, tile continuation). 60d73be6 `image` is an orbit closure read seeded, which confirms the seeded-read exclusion in `Not:` rather than asking for a second output.
 
 Survey: 2026-09-10 07:00
 

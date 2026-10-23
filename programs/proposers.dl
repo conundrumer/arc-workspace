@@ -245,7 +245,7 @@
     propose(A, N) :- uniform(A, N).
 }
 
-// The lattices that fit an input axis of an example: n tiles of dim d,
+// The tilings that fit an input axis of an example: n tiles of dim d,
 // with a gap of g between each two, fill the axis's dim exactly, over
 // counts 2..8 and gaps 0..3. A helper: no propose relation.
 .comp TileFits {
@@ -294,7 +294,7 @@
     propose(K) :- best.low(_, K).
 }
 
-// Lattice fits whose separator lines are witnessed: the fits of TileFits
+// Tiling fits whose separator lines are witnessed: the fits of TileFits
 // with g > 0 whose every separator line is uniform. A helper: no propose
 // relation.
 .comp SepFits {
@@ -322,7 +322,7 @@
     fits(E, A, N, D, G) :- tiles.fits(E, A, N, D, G), G > 0, !mismatch(E, A, N, G).
 }
 
-// The segment counts of a witnessed separator lattice on each input's
+// The segment counts of a witnessed separator tiling on each input's
 // axes. A helper: no propose relation.
 .comp SepTileCountClaim : Uniform<Axis, number> {
     .init sep = SepFits
@@ -330,21 +330,21 @@
     scope(E) :- ex_in(E, _, _).
 }
 
-/// Segment counts of a witnessed separator lattice on every input.
+/// Segment counts of a witnessed separator tiling on every input.
 .comp SepTileCount : SepTileCountClaim {
     .decl propose(n: number)
     propose(N) :- uniform(_, N).
 }
 
-/// Segment counts of a witnessed separator lattice on every input, tagged
-/// by axis. An axis with no lattice beside a witnessed one counts 1.
+/// Segment counts of a witnessed separator tiling on every input, tagged
+/// by axis. An axis with no tiling beside a witnessed one counts 1.
 .comp SepTileCountAxis : SepTileCountClaim {
     .decl propose(a: Axis, n: number)
     propose(A, N) :- uniform(A, N).
     propose(A2, 1) :- propose(A, _), perp(A, A2), !holds(_, A2, _).
 }
 
-/// Segment dims of a witnessed separator lattice on every input.
+/// Segment dims of a witnessed separator tiling on every input.
 .comp SepTileDim : Uniform<Axis, number> {
     .init sep = SepFits
     holds(E, A, D) :- sep.fits(E, A, _, D, _).
@@ -354,7 +354,7 @@
     propose(D) :- uniform(_, D).
 }
 
-/// Separator thicknesses of a witnessed lattice on every input.
+/// Separator thicknesses of a witnessed tiling on every input.
 .comp SepThickness : Uniform<Axis, number> {
     .init sep = SepFits
     holds(E, A, G) :- sep.fits(E, A, _, _, G).

@@ -1,6 +1,6 @@
 # `run_line` — the line two adjacent members of a set trace
 
-The line of a frame on which two members of a keyed cell set are adjacent, per key: the set runs along it, if only for two cells. It is how a solver finds a dashed line, where the set covers the line in pieces, so `LineCover` and `LineColor` miss it, and where lone members of the set also sit off the line, as a dash color does at the crossings of a lattice. The line is reported as `DividerFrame` reads it: its axis-only position on the axis it is read across.
+The line of a frame on which two members of a keyed cell set are adjacent, per key: the set runs along it, if only for two cells. It is how a solver finds a dashed line, where the set covers the line in pieces, so `LineCover` and `LineColor` miss it, and where lone members of the set also sit off the line, as a dash color does at the crossings of a tiling. The line is reported as `DividerFrame` reads it: its axis-only position on the axis it is read across.
 
 ```
 run_line(K, A, L) :-
@@ -19,7 +19,7 @@ Result: over the 609 solvers, two sites state the operation, and neither hand-wr
 
 ## Callers
 
-- 65b59efc — `lattice.divider`: a separator cell beside another along a line names that line as a divider; a lone separator cell at a crossing does not.
+- 65b59efc — the tiling `divider`: a separator cell beside another along a line names that line as a divider; a lone separator cell at a crossing does not.
 - 4612dd53 — `line`, in the `$Segment` case: two marks adjacent along a box row or column make it a line to repair. The line key comes from `line_cell` (`split` in a separate rule), so the statement crosses rules.
 
 ## Near-misses
@@ -41,7 +41,7 @@ Survey: 2026-09-13 18:32 — the solvers since 2026-09-09 21:07.
 
 Callers:
 9344f635 `segment` — two cells of one color one step apart give that cell with the axis its segment runs along; the next rule, `line_col`, names the line with `same_line`, so the statement crosses two rules inside Parse, and the set is one class per color.
-65b59efc `lattice.divider` — a separator cell beside another along a line names that line as a divider; a lone separator cell at a crossing does not.
+65b59efc's tiling `divider` — a separator cell beside another along a line names that line as a divider; a lone separator cell at a crossing does not.
 4612dd53 `line`, in the `$Segment` case — two marks adjacent along a box row or column make it a line to repair, with the line key from `line_cell`.
 
 Negative evidence: over the 482 solvers of this scope, the adjacency signature (one `neighbor` or `jump` step whose two endpoints are bound by two atoms of one relation) matched 59 rules. All but the three above name no line: they join adjacent members into components, arms, walks, legend pairs, or panel successors. A looser net — any adjacency step with both endpoints bound, in a rule that also holds a line read and an axis atom — added 7 rules, and none states the operation.

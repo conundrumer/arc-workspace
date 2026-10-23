@@ -33,7 +33,7 @@ shade(Q, S2) :-
 
 The closure reaches the seed's connected part of the set. A parity test over corner distances (`same_phase` at period 2) reaches every cell of the set, connected or not, and needs no seed cell, only a corner; which reading the callers need is the spec question.
 
-Not: a lattice of stored period reached by period-sized jumps (`LatticeOrbit`), whose period-2 class on both axes is a quarter of the cells, not a half; alternation along one line (d492a647, 834ec97d, 3ac3eb23 `$Parity`); the residue of one distance read into a table (`stride`); a tiling of 2×2 blocks (`divide_by_size_2d`).
+Not: the cells of a stored period reached by period-sized jumps (`PeriodOrbit`), whose period-2 class on both axes is a quarter of the cells, not a half; alternation along one line (d492a647, 834ec97d, 3ac3eb23 `$Parity`); the residue of one distance read into a table (`stride`); a tiling of 2×2 blocks (`divide_by_size_2d`).
 
 Match: a recursive relation over positions whose step is one cardinal `neighbor` and whose head value or membership swaps each step — a payload swapped through an `alt` relation or a `!=` over a two-element class, or two heads that feed each other. Also a rule testing two cells' corner distances for equal residue at period 2, through `stride` or `same_phase`. Grep `neighbor(` in rules whose head the rule reads, and `stride(.*2,`; match the shape with the parser.
 
@@ -51,7 +51,7 @@ Near-misses:
 
 - The same corner-distance residue form at period 4: c1990cce `echo` under `$Stripe` and `Determine.striped` — diagonal stripes, one class of four.
 - A seeded 2-coloring by even-length walks over region `Ident`s with `across` edges: 3bd292e8 `same_side`. The nodes are not cells and the step is not `neighbor`; it reads both shades as membership and negation.
-- A period-2 lattice or one line, by two unit steps in one direction per closure step: d492a647 `lattice` and 834ec97d `beam` under `$Parity`.
+- A period-2 pattern or one line, by two unit steps in one direction per closure step: d492a647's period pattern and 834ec97d `beam` under `$Parity`.
 - Alternation along one line or along erosion depth: 3ac3eb23 `walk`, 0a938d79 `line`, 1e97544e `flow`, 97999447 `$Toggle`, 759f3fd3's ring cycle.
 - A D4 pose composed per tile step, whose classes are per-axis parity, a quarter of the tiles: the reflect-unfolds (`unfold_val` in 0c786b71, 3af2c5a8, 4c4377d9, 59341089, 62c24649, 67e8384a, 6d0aefbc, 6fa7a44f, 833dafe3, 8be77c9e, 8d5021e8, bc4146bd, c48954c1, c9e6f938, eb281b96; 47c1f68c `unfold`; 8e5a5113 `content`).
 - A payload that advances rather than swaps: the walks, beams, spirals, and dilation depths of 08573cc6, 195c6913, 212895b5, 28e73c20, 351d6448, 4acc7107, 4e34c42c, 508bd3b6, 60d73be6, 69889d6e, 6df30ad6, 72207abc, 7d419a02, 7e2bad24, e179c5f4, 20a9e565.
@@ -82,7 +82,7 @@ The scope holds 437 solvers, all present. The search: a lexical grep for `stride
 3. Alternation along one line (Not line): `97999447` `$Toggle` via `CycleWalk` on a 2-cycle; `1e97544e` `flow` walking a color cycle along a diagonal axis.
 4. D4 pose composed per tile step, a quarter-of-tiles class (Not line, reflect-unfolds): `47c1f68c` `unfold` (lines 106–111), `8e5a5113` `content` (lines 103–108).
 5. A payload that advances rather than swaps (fails the "swaps each step" clause): `08573cc6` `arm`, `195c6913` `walk`/`step`, `212895b5` `turtle` (phase through `IndexCycle`, a cycle of stored length), `28e73c20` `walk`, `4acc7107` `lane`/`slot`, `4e34c42c` `place`, `508bd3b6` `beam`, `69889d6e` `walk`, `6df30ad6` `depth`, `759f3fd3` `Dilate.depth`, `7e2bad24` `enter`, `142ca369` `enter`/`ray`.
-6. Mutual recursion through a step with no membership swap: `16de56c4` `advance`/`lattice` (period jumps, `LatticeOrbit` territory), `1b60fb0c` `turn_step`/`orbit`, `234bbc79` `trail_dest`/`slide`, `5587a8d0` `covers`/`inside` (dilation), `5ffb2104` and `6ad5bdfd` `room`/`rest`, `6cbe9eb8` `anchor`/`obox`, `84551f4c` `toppled`/`landed`, `7447852a` `$Stamp` `mark_cell` (period jumps).
+6. Mutual recursion through a step with no membership swap: `16de56c4` `advance` and its rhythm relation (period jumps, `PeriodOrbit` territory), `1b60fb0c` `turn_step`/`orbit`, `234bbc79` `trail_dest`/`slide`, `5587a8d0` `covers`/`inside` (dilation), `5ffb2104` and `6ad5bdfd` `room`/`rest`, `6cbe9eb8` `anchor`/`obox`, `84551f4c` `toppled`/`landed`, `7447852a` `$Stamp` `mark_cell` (period jumps).
 
 ## 3. Spec
 

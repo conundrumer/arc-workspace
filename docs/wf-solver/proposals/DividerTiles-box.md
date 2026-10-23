@@ -1,6 +1,6 @@
 # `DividerTiles.box` — the box each cut tile occupies
 
-The rectangle each tile of a cut lattice covers, as a box of the grid's frame, per key and tile. The tiles a cut lattice makes are unequal, and `tile_of` reports which tile a cell sits in and nothing about that tile's extent, so a caller that reads a tile's size, its edges, or a cell's place inside it recovers the extent from the tile's own cells. `crop` against the box states the intile position, `box_edge` and `box_corner` the tile's sides and corners.
+The rectangle each tile of a cut tiling covers, as a box of the grid's frame, per key and tile. The tiles a cut tiling makes are unequal, and `tile_of` reports which tile a cell sits in and nothing about that tile's extent, so a caller that reads a tile's size, its edges, or a cell's place inside it recovers the extent from the tile's own cells. `crop` against the box states the intile position, `box_edge` and `box_corner` the tile's sides and corners.
 
 ```
 .comp DividerTiles<Key> {
@@ -23,7 +23,7 @@ Match: a `Bbox` instance whose `cell` rule is fed from a `DividerTiles` instance
 Survey: 2026-09-13 15:45 — every solver.
 
 Callers:
-1be83260 `block` — the box of each block the cut lattice makes, cropped so each block's cells carry an intile position.
+1be83260 `block` — the box of each block the cut tiling makes, cropped so each block's cells carry an intile position.
 20981f0e `tile_box` — the box of each tile the dot lines cut, cropped to put the moving piece in its tile's frame.
 2546ccf6 `tile_box` — the box of each tile, cropped to give every cell its intile position.
 38007db0 `tile_view` — the box of each tile the one-color lines cut, cropped to compare tiles by their content.
@@ -49,7 +49,7 @@ Callers:
 
 Near-misses:
 0bb8deee `hull`, 20981f0e `piece_box`, 4c177718 `pay_box` — each bounds the ink inside a tile, so the box tracks content and not the tile's extent.
-8a371977 `lattice`, 7837ac64 `span_box`, 39e1d7f9 `motif_box` — each bounds tile positions in the arrangement frame, not grid cells, so the result is the arrangement's extent and not a tile's.
+8a371977's tiling instance, 7837ac64 `span_box`, 39e1d7f9 `motif_box` — each bounds tile positions in the arrangement frame, not grid cells, so the result is the arrangement's extent and not a tile's.
 38007db0 `block` — bounds a tile's cells together with the separator cells around it, a set the solver assembles for the output it wants.
 77fdfe62 `fence_box` — bounds the cells a separator screens from every edge, the union of the interior parts rather than one part.
 7d419a02 `unit` under `$Band()` — bounds the band that holds the mark, fed from `part_of`; the cut here can run on both axes, so a band is a slab of tiles.

@@ -6296,8 +6296,8 @@ def ctor_names(t) -> tuple[str, ...]:
 
 MOVED_RELS: dict[str, str] = {}
 """The solver at hand's relations of an expanded instance that a witness
-name spells, `lattice.divider`, by the relation of the shape that stands
-for each, `lattice_divider`."""
+name spells, `tiling.divider`, by the relation of the shape that stands
+for each, `tiling_divider`."""
 
 
 def name_of(n: str, many: set[str] = frozenset()) -> str:

@@ -27,6 +27,8 @@
     - Upstream is pinned via submodules, and corrections live in patches, not in `data/upstream/`.
 - **Type aliases use the `type` keyword** (PEP 695, native to 3.12).
 - **A grid is drawn as a grid**, wherever one is written: one row per line, cells separated by spaces, 0 as `0`.
+* comment: The user's words, session b7409037, 2026-10-23: at 14:22:45Z "also we cannot use \"lattice\" in both senses"; at 14:23:36Z "no more using \"lattice\" to mean lattice-as-grid"; at 14:24:52Z "tell session11 to remove all lattice-as-grid \"lattice\" usages".
+- **"Lattice" names an order alone**. Name a periodic structure by its periods, and a grid of tiles a tiling.
 
 ## Tests
 - Before you write, change, delete or judge a test, read [Tests](prompts/agents/notes/tests.md#tests).

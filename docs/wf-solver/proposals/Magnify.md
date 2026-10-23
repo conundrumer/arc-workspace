@@ -97,7 +97,7 @@ No second caller in the scope. The three-leg parser match (an anchor displacemen
 
 Near-misses:
 - 8719f442 `cell` — a whole-frame scale-up: the input grown by one ring is the tile frame, every tile is input-sized, and `concat_2d` assembles the output over that whole frame. The `seat_delta` shifts the block's tile index inside the tile frame, not a cell seat, and the frame's extent divides. The `concat`-assembles-a-frame exclusion rules it out.
-- 412b6263 `placed` — a lattice of unscaled copies of the input, assembled with `concat_2d` (`$Layout`) and `concat_slab` (`$Count`) across line-width gaps. No factor: each tile is the input under a D4 element.
+- 412b6263 `placed` — a tiling of unscaled copies of the input, assembled with `concat_2d` (`$Layout`) and `concat_slab` (`$Count`) across line-width gaps. No factor: each tile is the input under a D4 element.
 - 291dc1e1 `out` — a stack of unscaled blocks assembled with `concat_slab` along the stack axis. No factor.
 - 85b81ff1 `decompose` and 88a62173 `tile_val` — whole-frame equal-panel decompositions by the divide family (`divide_slab`, `divide_by_size_slab`, `divide_2d`, `divide_by_size_2d`), reordered or selected. The divide-family exclusion rules them out, and nothing is scaled.
 - 11dc524f `mirror` — a box placed one shape-length past its home with `jump` by a `Bbox` extent. A translation of a reflected shape, no factor.

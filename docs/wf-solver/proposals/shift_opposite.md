@@ -24,7 +24,7 @@ Callers:
 Near-misses:
 20981f0e clear_step — `opposite(D, D2), step_delta(D2, Delta)` builds a step away from a wall from a reversed direction; it holds no forward shift, so it is the `opposite` exclusion, which carries no amount.
 3979b1a8 cand — `diag_opposite(Diag, Back), jump_delta(Back, N, Delta)` builds the jump back toward the input from a reversed corner; the same exclusion, `diag_opposite` reverses a direction and no shift is undone.
-332efdb3 period — the wallpaper lattice's generators are stored as facts in both directions per axis; no rule holds one direction and derives the other, so the site states the set as a parameter value rather than writing the operation.
+332efdb3 period — the wallpaper's period generators are stored as facts in both directions per axis; no rule holds one direction and derives the other, so the site states the set as a parameter value rather than writing the operation.
 4290ef0e, 50c07299 — `displacement(P, M, V), compose(M, V, Q)` reflects a cell through a point: the shift is reapplied, not undone, which is the `displacement` exclusion, the shift itself.
 4c177718 placement, 2c181942 dock_cell, 8a004b2b painted — each reads a seating shift as `displacement` between two cells, or composes a placement forward; the shift itself, the `displacement` exclusion.
 

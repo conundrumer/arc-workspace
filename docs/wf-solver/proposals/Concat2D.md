@@ -83,7 +83,7 @@ The unfold case — 67e8384a out ($Unfold) with its family, 4c4377d9 out ($Unfol
 00576224 out ($Alt, $Mid), 46442a0e out ($Rot), 7fe24cdd out ($Spin), 760b3cac mirror: at least one position is an `apply` image, a correspondence.
 47c1f68c cell: both positions come from `divide_2d`, excluded as a divide.
 8ee62060 out: the inner comes from `divide_by_size_2d` and the outer from `apply`.
-8b28cd80 lattice: the inner is the literal `ORIGIN`, so the rule scales input cells by the gap and assembles no inner set.
+8b28cd80's output cell map: the inner is the literal `ORIGIN`, so the rule scales input cells by the gap and assembles no inner set.
 The 1D forms — 12997ef3, 28bf18c6, 291dc1e1, 2d0172a1, 412b6263 (its `$Stack` rule), 4852f2fa, 50aad11f, 652646ff, 6f473927, 78332cb0, 833966f4, 85b81ff1, 963e52fc, a416b8f3, eb281b96, f25ffba3: `concat` and `concat_slab`, excluded as the 1D forms. No solver composes two 1D concats into the 2D frame.
 
 Spec:

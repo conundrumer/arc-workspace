@@ -11,7 +11,7 @@ same_phase(K1, K2, W) :- stride(K1, W, 0, _, R), stride(K2, W, 0, _, R).
 ```
 
 Not: the offset itself, which a solver reads into a table (`stride`); the cells
-a lattice identifies from a seed (`LatticeOrbit`); equality of two distances,
+the period translations identify from a seed (`PeriodOrbit`); equality of two distances,
 which holds under no period.
 
 Match: two positive `stride` atoms of one rule sharing their offset variable,
@@ -60,7 +60,7 @@ Near-misses, by what each one shares:
   atom constructs its cell from that offset instead of testing a given pair,
   and `concat` states that construction.
 - A seed's class as a closure, with no residue and no number test. d492a647
-  `lattice`, 834ec97d, 05269061 `known`, 017c7c7b `fill`, 3979b1a8 `out`, and
+  period pattern, 834ec97d, 05269061 `known`, 017c7c7b `fill`, 3979b1a8 `out`, and
   8eb1be9a `out` run period-sized jumps to closure; 2072aba6 `checker`
   propagates the period-2 class from a corner by unit steps and carries no
   period value.
