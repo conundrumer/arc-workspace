@@ -840,21 +840,6 @@ def cost_audit(since: float, transcripts: Path, operator: str) -> str:
             + "\n" + LAUNCHER.format(operator=operator))
 
 
-LOAD_CHECK = mctx("""
-    - The alert file `{path}` of the machine watcher gives the trouble and the largest processes, each with its pid, parent pid, resident memory, CPU percent, elapsed time, session id and command line. A process's session id is that of the nearest of itself and its ancestors that is a Claude Code session's process or whose environment gives a session id.
-    - For each process it gives that still runs, find the work behind it: its session, its agent and its ticket. Then answer: is this load needed, and is the work done efficiently?
-    - Where the load is not needed or the work is not done efficiently, send by SendMessage the coordinator of the session that owns the process the process's line and what to change. Send it to `main` for a process of your own session, whose id `echo $CLAUDE_CODE_SESSION_ID` prints, and for a process that no live session owns, with the words "no live session owns it".
-    - Stop no process, edit no tracked file, and launch no agent. Send nothing where the load is needed and its work is done efficiently.
-    - Reply with one line per process group: needed and efficient, or what you sent, to whom.
-    """)
-"""The brief of the load check of an alert of the machine watcher
-(`load_check`)."""
-
-
-def load_check(path: Path, operator: str) -> str:
-    return LOAD_CHECK.format(path=path) + "\n" + LAUNCHER.format(operator=operator)
-
-
 AT_BUDGET = mctx("Where your documents give what you do at your budget, do that at it, and "
                  "otherwise do all your work, past your budget where it takes longer.")
 """What an agent does at its budget."""

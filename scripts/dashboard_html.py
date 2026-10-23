@@ -15,11 +15,12 @@ from enum import Enum
 from pathlib import Path
 
 from dashboard_health import health
+from dashboard_stages import Stage, stage
 from dashboard_standings import HOLD_WORD, HELD_HEAD, MOVING, Row, Standing, Standings, merged
 from dashboard_usage import codex_bar, usage_bar
 from dashboard_words import clock, hold_text, start_hold_text
-from dashboard_reads import (DAY, OPEN, CodexWindow, OperatorRecords, Stage, change_of, hits_full,
-                             journal_work, latest, log_work, phrase, spans, stage, users, Span, Work)
+from dashboard_reads import (DAY, OPEN, CodexWindow, OperatorRecords, change_of, hits_full,
+                             journal_work, latest, log_work, phrase, spans, users, Span, Work)
 from dashboard_template import CLEAR_ROUTE, EVENTS, FOLD, QUEUED_TAB, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
 from shown_state import ScriptAdmits, Shown, ShownAgent, ShownParty, Start
 from ticket_reads import read_tickets

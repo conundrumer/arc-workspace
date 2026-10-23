@@ -22,6 +22,13 @@
 - Decide each step an operator holds that your brief gives, as [A held step](prompts/agents/decision-analyst/held-step.md#a-held-step) gives.
     + xref: prompts/agents/decision-analyst/held-step.md#a-held-step
 
+# Rule on the rejected recommendation
+- This part applies where your brief gives a load incident report: [A rejected load recommendation](prompts/agents/decision-analyst/load-incident.md).
+
+## Rule on each rejection
+- Decide between the recommendation and the rejection's reasons, and give the ruling, as [A rejected load recommendation](prompts/agents/decision-analyst/load-incident.md#a-rejected-load-recommendation) gives.
+    + xref: prompts/agents/decision-analyst/load-incident.md#a-rejected-load-recommendation
+
 # Reply
 - Give your final reply, as [Reply](prompts/agents/decision-analyst/reply.md#reply) and [Commands](prompts/agents/decision-analyst.md#commands) give.
     + xref: prompts/agents/decision-analyst/reply.md#reply, prompts/agents/decision-analyst.md#commands

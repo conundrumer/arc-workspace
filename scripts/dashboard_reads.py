@@ -16,11 +16,11 @@ from collections import Counter
 from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass
 from datetime import datetime
-from enum import IntEnum
 from pathlib import Path
 from typing import Any
 
 from codex_rollout import rollout_files
+from dashboard_stages import ROLE_STAGE, Stage
 from idle_sessions import live, named_main
 from open_agents import Listed, running_agents
 from shown_state import Shown, ShownAgent, ShownParty, Start, shown_read
@@ -249,42 +249,6 @@ def users(t: Ticket, expedited: frozenset[str]) -> bool:
     """Whether `t` is the user's: the coordinator filed it, or it is
     expedited."""
     return t.filer == COORDINATOR or t.number in expedited
-
-
-class Stage(IntEnum):
-    """The stages of a ticket's work, in their order."""
-    TRIAGE = 0
-    DESIGN = 1
-    BUILD = 2
-    REVIEW = 3
-    MERGE = 4
-
-
-ROLE_STAGE: Mapping[Role, Stage] = {
-    Role.TICKET_ANALYST: Stage.TRIAGE, Role.TRANSCRIPT_REVIEW: Stage.TRIAGE,
-    Role.COST_AUDIT: Stage.TRIAGE, Role.LISTING_WAIT: Stage.TRIAGE, Role.OPERATOR: Stage.TRIAGE,
-    Role.TICKET_REVIEWER: Stage.DESIGN, Role.DESIGN_REVIEWER: Stage.DESIGN,
-    Role.CODE_EDITOR: Stage.BUILD, Role.DOC_EDITOR: Stage.BUILD, Role.HANDBOOK_EXPANDED: Stage.BUILD,
-    Role.SOLVER_FIX: Stage.BUILD, Role.ANALYZE: Stage.BUILD, Role.CREATE: Stage.BUILD,
-    Role.REFINE: Stage.BUILD,
-    Role.ITEM_CHECKER: Stage.REVIEW, Role.CODE_REVIEWER: Stage.REVIEW, Role.DOC_REVIEWER: Stage.REVIEW,
-    Role.LIB_REVIEWER: Stage.REVIEW, Role.GATE: Stage.REVIEW, Role.BATCH_PROFILE: Stage.REVIEW,
-    Role.LOAD_CHECK: Stage.REVIEW,
-    Role.AFTER_MERGE: Stage.MERGE,
-}
-"""The stage of the work an agent of each role does."""
-
-assert set(ROLE_STAGE) == set(Role), "each role has a stage"
-
-
-def stage(roles: list[Role], change: Ticket | None) -> Stage:
-    """The stage of a ticket at whose work, or that of its change
-    `change`, agents of `roles` are: the highest of theirs, and at least
-    Design for a ticket in `tickets/draft/` and Build for a change past
-    it."""
-    floor = (Stage.DESIGN if change is not None and change.status is Status.DRAFT
-             else Stage.TRIAGE if change is None or change.kind is not Kind.CHANGE else Stage.BUILD)
-    return max([floor, *(ROLE_STAGE[r] for r in roles)])
 
 
 ROLES: Mapping[str, Role] = {**{r.value: r for r in Role}, "draft-analyst": Role.TICKET_ANALYST}

@@ -98,15 +98,6 @@ def test_interrupted_unbatched_work_does_not_advance_its_window(tmp_path: Path) 
     assert opened(s, [a]) == s.started
 
 
-def test_stopped_load_check_does_not_cover_its_alert(tmp_path: Path) -> None:
-    from operations.load_check import load_check
-    a = attempt(Role.LOAD_CHECK, "alert-1")
-    s = with_agents(tmp_path, [a])
-    s = replace(s, sessions=replace(s.sessions, main=True),
-                machine_alerts=(tmp_path / "alert-1.md",))
-    assert isinstance(load_check(s), Launch)
-
-
 def test_stopped_pass_is_not_a_completed_pipeline_stage(tmp_path: Path) -> None:
     from operations.passes import latest
     a = attempt(Role.CREATE, "1234abcd")
@@ -119,7 +110,7 @@ def test_a_done_launch_entry_does_not_hide_the_retry(tmp_path: Path) -> None:
     from operations.order import place
     from operations.state import Tool
     from operations.steps import digest, entry_key, key
-    a = attempt(Role.LOAD_CHECK, "alert-1")
+    a = attempt(Role.COST_AUDIT, "alert-1")
     launch = Launch(a.role, a.subject, "check", occasion="alert-1")
     entry = Entry(key(launch), entry_key(launch), digest(launch), launch.origin, "op", 9.0, Tool.AGENT,
                   None, "", None, None, Close(Outcome.DONE, 10.0, ""))
@@ -322,7 +313,7 @@ def test_a_fragments_editor_is_no_attempt_of_the_documents_editor(tmp_path: Path
 def test_a_replacement_keeps_its_key_and_takes_its_own_entry_key(tmp_path: Path) -> None:
     from operations.completion import replacement
     from operations.steps import entry_key, key
-    a = attempt(Role.LOAD_CHECK, "alert-1")
+    a = attempt(Role.COST_AUDIT, "alert-1")
     launch = Launch(a.role, a.subject, "check", occasion="alert-1")
     s = with_agents(tmp_path, [a])
     again = replacement(s, launch)

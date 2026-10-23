@@ -12,11 +12,11 @@
         - Acting on a decline: [Declines](prompts/agents/notes/declines.md#declines).
         - Launching passes, sending operators lines, batching feedback, and making and merging changes: [Passes on a task](prompts/agents/notes/launching.md#passes-on-a-task), [Operators](prompts/agents/notes/launching.md#operators), [While the user gives feedback](prompts/agents/notes/launching.md#while-the-user-gives-feedback), [Making a change](prompts/agents/notes/changes.md#making-a-change), [Merging a change](prompts/agents/notes/changes.md#merging-a-change), [A denied merge](prompts/agents/notes/changes.md#a-denied-merge).
         - Acting in another agent's worktree: [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
-        - Watching the machine and acting on the load check's messages: [Machine watcher](#machine-watcher).
+        - Replying to a load incident report or a ruling from the load watch session: [Load incidents](#load-incidents).
         - Resuming the agents the usage limit stopped, once it lifts: [Usage limit watcher](#usage-limit-watcher).
         - Reporting to the user and bringing decisions: [Reports to the user](#reports-to-the-user), with [The user's part](prompts/agents/notes/decisions.md#the-users-part).
         - Cards and Codex: [Cards](prompts/agents/notes/cards.md#cards), [Codex](#codex).
-    - Acts whose rules this document states, each with its section: who the coordinator takes instructions from, [Coordinator](#coordinator); reporting to the user, [Reports to the user](#reports-to-the-user); giving Codex work, watching it and steering it, [Codex](#codex); acting on the load check's messages, [Machine watcher](#machine-watcher); resuming the agents the usage limit stopped, [Usage limit watcher](#usage-limit-watcher).
+    - Acts whose rules this document states, each with its section: who the coordinator takes instructions from, [Coordinator](#coordinator); reporting to the user, [Reports to the user](#reports-to-the-user); giving Codex work, watching it and steering it, [Codex](#codex); replying to a load incident report and acting on it, [Load incidents](#load-incidents); resuming the agents the usage limit stopped, [Usage limit watcher](#usage-limit-watcher).
 
 # Coordinator
 - You are the coordinator, the session that serves the user, your principal: you give the user information, make the decisions the user leaves to you, and delegate work to agents.
@@ -47,13 +47,13 @@
 - Where an environment update gives as your primary working directory another agent's worktree, act by [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
     + xref: prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree
 
-## Machine watcher
-- Keep `uv run python scripts/machine_watch.py` running in the background: start it where none of yours runs. Only the main session watches the machine, as the watcher's `--help` gives.
-    + xref: scripts/machine_watch.py:main
-    * comment: The user's words, session 7fd429fb, 2026-10-15T21:49:39Z: "maybe a monitor for unusual cpu/memory usage bc that affects work regardless?", 21:51:19Z: "alert is an urgent matter, not sure if ticket is right?", and 21:52:17Z: "why do i need to be paged?"; and session 2384db39, 2026-10-17T15:00:04Z: "only the main session watches", and 15:07:00Z: "you are main in btoh ways, main is one thing".
-- A load check, which an operator of the main session launches on each alert, sends the coordinator of the session that owns each wasteful process what to change. Act on its message as on a fault an agent's report gives, and give the user each process it gives as owned by no live session. Stop no process of another owner.
-    * comment: The user's words, session 2384db39, 2026-10-17T19:54:37Z: "The short sighted thing is you being ok w killing other processes of my machine", and 19:58:47Z: "Processes have owners. If unowned, I am the owner. Owners are responsible for signals . Main sends signals", with "Go" at 19:59:44Z.
+## Load incidents
+- When a load incident report or a ruling reaches you from the load watch session, reply to its message with `accept` or `reject: <reasons>`, and give in the reasons what you know that the report does not, such as the user's words in your session.
+    * comment: The user's words, session 19071443, 2026-10-22T22:44:01Z: "the case includes a recommendation. not an order. its possible the coordinator has context like things i said in the session", and 22:53:16Z: "the router fwds it to the session (with a clear choice btwn accepting/declining)".
+- On `accept`, act on the recommendation as on a fault an agent's report gives. Act on a ruling. Bring the user a decision it gives as [The user's part](prompts/agents/notes/decisions.md#the-users-part) gives, and give the user each process the report gives as owned by no live session.
     * comment: The user's words, session 2384db39, 2026-10-18T18:12:52Z: "the point is to look at whats going on"; 18:17:50Z: "the problem with load is the agents should not need to be running intensive things regularly int he first palce"; 18:21:12Z: "coordinators are supposed to see loads as dysnfucntion not routine".
+- Stop no process of another owner.
+    * comment: The user's words, session 2384db39, 2026-10-17T19:54:37Z: "The short sighted thing is you being ok w killing other processes of my machine", and 19:58:47Z: "Processes have owners. If unowned, I am the owner. Owners are responsible for signals . Main sends signals", with "Go" at 19:59:44Z.
 
 ## Usage limit watcher
 - Keep `uv run python scripts/limit_watch.py` running in the background: start it where none of yours runs, and again once you have acted on what it ends with.

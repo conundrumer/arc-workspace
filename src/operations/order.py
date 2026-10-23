@@ -2,8 +2,7 @@
 and the batch of launches of one output.
 
 The steps come in this order: the resume of each agent the usage limit
-stopped (`limit_resume`); the load check of the machine watcher's
-newest alert (`load_check`); the coordinator's lines in no form the
+stopped (`limit_resume`); the coordinator's lines in no form the
 command reads, each given back to the coordinator once, and then the
 fault of each run script, once for each text it has (`runs`); the ticket
 files the read of the tracker left out (`decisions.unread_files`); the
@@ -57,7 +56,7 @@ from dataclasses import replace
 
 from controlled_markdown import mctx
 from operations import (after_profile, alerts, assessment, batches, changes, concept_faults, cost_audit, decisions, drafts,
-                        gate_launch, idle_changes, limit_resume, lineage, load_check, merging, monitor, passes, reviews, runs,
+                        gate_launch, idle_changes, limit_resume, lineage, merging, monitor, passes, reviews, runs,
                         standing_reviews, start_holds, ticket_stall, triage, taking, unbatched, unwaited)
 from operations.directives import (
     lines,
@@ -338,7 +337,7 @@ def pipelines(state: State) -> Step | None:
 
 
 EARLY: tuple[Callable[[State], Step | None], ...] = (
-    limit_resume.step, load_check.load_check, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.stuck, alerts.late_resumes, concept_faults.step, decisions.asks, triage.decisions, merging.handoffs, triage.main_wanted, triage.for_coordinator,
+    limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.stuck, alerts.late_resumes, concept_faults.step, decisions.asks, triage.decisions, merging.handoffs, triage.main_wanted, triage.for_coordinator,
     triage.unfinished)
 LATE: tuple[Callable[[State], Step | None], ...] = (
     taking.release, triage.reopen, triage.later_lines, triage.settle, drafts.step,

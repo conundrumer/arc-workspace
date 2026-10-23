@@ -150,7 +150,7 @@
         - A solver pass gets a transcript review at its end, as the module docstring of [passes.py](src/operations/passes.py) gives, and the batch profile launches one on each other run its brief gives. A transcript review looks for what the brief that `transcript_review` in [briefs.py](src/operations/briefs.py) writes asks of it.
             + xref: src/operations/passes.py, src/operations/briefs.py:transcript_review
     - A fault that recurs after a fix is taken as one family: its common cause is removed, and the fixes that removal makes redundant are listed.
-- Owner: the operator's checks and transcript reviews for the runs, the batch profile for the runs and ticket lives, the load check for the processes of an alert of the machine watcher, and the ticket analyst for the causes.
+- Owner: the operator's checks and transcript reviews for the runs, the batch profile for the runs and ticket lives, the load incident analyst for the processes of a load incident, and the ticket analyst for the causes.
     + xref: src/operations/briefs.py:batch_profile
 - Takes from: the runs of every process. Gives to: process assessment, the fault families, and every process, as `change` tickets.
 - How it can fail: one review at a run's end misses what another would have found: these notes give what each review looks for, and the process assessment checks the split.

@@ -51,11 +51,8 @@ ASSESSMENT = Unbatched(Role.TICKET_ANALYST, lambda s: (
 
 COST_AUDIT = Unbatched(Role.COST_AUDIT)
 
-LOAD_CHECK = Unbatched(Role.LOAD_CHECK)
-"""The load check of an alert of the machine watcher."""
-
 KINDS = (PROFILE, *(Unbatched(r.role) for r in Review), GATE, STANDING, ASSESSMENT,
-         COST_AUDIT, LOAD_CHECK)
+         COST_AUDIT)
 
 
 @cache

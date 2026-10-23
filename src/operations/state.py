@@ -912,9 +912,7 @@ class State:
     review rotates over, read at its first use, in the order `context.py contexts` lists them.
     `limit_lifted` is the time of the reading of the usage limit that
     gives it as lifted, or None where the reading gives it in force, as
-    `usage_limit.read_usage` gives it. `machine_alerts` holds the paths of
-    the alert files that the machine watcher of `session` wrote under
-    `main_tree`, in time order (`scripts/machine_watch.py`). `sessions` is the read of the
+    `usage_limit.read_usage` gives it. `sessions` is the read of the
     tracker's sessions, and `computed` the values computed over the
     reads. `aside` holds the keys (`steps.key`) of the steps that
     `order.batch` set aside on this state, each as its procedure gave it,
@@ -953,7 +951,6 @@ class State:
     readers: Deferred[tuple[Reader, ...]] = field(default_factory=lambda: Deferred(tuple))
     recovery: Deferred[Mapping[str, RecoveryEvidence]] = field(default_factory=lambda: Deferred(dict))
     limit_lifted: float | None = None
-    machine_alerts: tuple[Path, ...] = ()
     parents: Mapping[str, str] = field(default_factory=dict)
     computed: Computed = field(default_factory=lambda: Computed())
     aside: frozenset[str] = frozenset()

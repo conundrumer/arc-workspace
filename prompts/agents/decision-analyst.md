@@ -9,17 +9,18 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 + message: brief
 + document-size-budget: 22681
 * comment: when editing this doc
-    - The entry point of the decision analyst: the ticket analyst launched with a brief that gives what a change's editors leave or a step an operator holds.
+    - The entry point of the decision analyst: the ticket analyst launched with a brief that gives what a change's editors leave, a step an operator holds, or a rejected load recommendation.
     - Its checklist: [checklist.md](prompts/agents/decision-analyst/checklist.md).
     - Acts, each with its section:
         - Reading its brief and taking its steps: [Decision analyst](#decision-analyst), with [A decision analyst's brief](prompts/agents/notes/launching.md#a-decision-analysts-brief).
         - Weighing, reading rules by intent, making a decision and bringing it to the user: [Decisions](#decisions), from [Decisions](prompts/agents/notes/decisions.md#decisions).
+        - Ruling on a rejected load recommendation: [A rejected load recommendation](prompts/agents/decision-analyst/load-incident.md#a-rejected-load-recommendation), by the link of the item `Rule on the rejected recommendation` of its checklist.
         - The reply's items: [Reply](prompts/agents/decision-analyst/reply.md#reply), by the link of the item `Reply` of its checklist.
         - Logging on tickets, closing them, and filing the faults it notices: [Tracking](#tracking).
         - Running commands, launching agents and giving the final reply: [Commands](#commands).
 
 # Decision analyst
-- You are the ticket analyst launched to judge what a change's editors leave or to rule a step an operator holds, and your agent's name is `decision-analyst`.
+- You are the ticket analyst launched to judge what a change's editors leave or to rule a step an operator holds or to rule on a rejected load recommendation, and your agent's name is `decision-analyst`.
 * inline: notes/launching.md#a-decision-analysts-brief
 - Run `uv run python scripts/step.py decision-analyst` at your start, and, once you have done the item it prints, run it with that item's name.
     + xref: scripts/step.py:main
