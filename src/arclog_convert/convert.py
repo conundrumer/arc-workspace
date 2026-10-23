@@ -4153,25 +4153,43 @@ class Solver:
     def rigid_forms(self, det_units) -> list[Form]:
         """One RIGID_DET form per block: a part per placed relation, reading the
         determination's table of that name, or the proposer's table where the
-        plan finds the part's value covered."""
+        plan finds the part's value covered. Where the determination relations
+        lead with key columns, the parts stand in an `instance` clause over
+        those columns, and a part with a determination relation reads them
+        bare, then the columns of its stored `param` record."""
         c = self.c
         out: list[Form] = []
         for m in c.prog.macros:
             if not (isinstance(m, RigidCall) and m.scope.components == ("Params",)):
                 continue
             amp = c.wrote("&" + m.block, Written(("Params",), m.block, True))
-            lines, reads = [], set()
+            reads = set()
+            parts: list[tuple[str, list[str], int, list[str]]] = []   # part, determination columns, key width, stored columns
             for n in m.names:
                 part = c.rel_name(("Determine",), n)
                 det = c.rels.get((("Determine",), n))
                 if not det_units.get(n) and n not in self.rigid_proposed:
                     self.todo.add("rigid-part", f"{part}: the determination derives no table")
-                labs = [pascal(col.name) for col in
-                        (det.columns if det else c.rels[(("Params",), n)].columns[1:])]
-                lines.append(f"  ({part}" + "".join(f" *{l}" for l in labs) + ")")
+                stored = [pascal(col.name) for col in c.rels[(("Params",), n)].columns[1:]]
+                dets = [pascal(col.name) for col in det.columns] if det else stored
+                parts.append((part, dets, len(dets) - len(stored) if det else 0, stored))
                 reads.add(part)
-            head = [f"(RIGID_DET {amp}"] + lines
-            close(head, ")")
+            key = next((d[:w] for _, d, w, _ in parts if w > 0), None)
+            if key is None:
+                head = [f"(RIGID_DET {amp}"] + [
+                    f"  ({part}" + "".join(f" *{l}" for l in d) + ")" for part, d, _, _ in parts]
+                close(head, ")")
+            else:
+                reads_key = [(part, d[:w]) for part, d, w, _ in parts if w > 0]
+                branches = [f"({part}" + "".join(f" {'^' if i == 0 else ''}{l}" for l in k) + ")"
+                            for i, (part, k) in enumerate(reads_key)]
+                body = branches[0] if len(branches) == 1 else \
+                    "(OR " + " ".join(f"({b})" for b in branches) + ")"
+                head = [f"(RIGID_DET {amp}", f"  (instance ({body})"]
+                for part, d, w, stored in parts:
+                    head.append(f"    ({part}" + "".join(f" {l}" for l in (key if w > 0 else []))
+                                + "".join(f" *{l}" for l in stored) + ")")
+                close(head, "))")
             f = Form(head, amp, reads, line=m.span.first)
             f.comments = [*(";; " + t for t in self.plain_comments(m.span.first)), *self.todo.take()]
             out.append(f)
