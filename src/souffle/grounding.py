@@ -109,11 +109,14 @@ class _Inline:
                     ) -> tuple[DeclId, Scope] | None:
         """The inline relation `atom` names when read in `scope`, as its
         declaration's id and the scope that declares it; None where it
-        names another relation."""
+        names another relation or gives another number of arguments than
+        the declaration has columns, which Souffle refuses as a
+        redefinition of the relation."""
         if self._tree is None or atom.relation.name not in self._names:
             return None
         hit = self._tree.resolve(atom.relation, scope)
-        if hit is None or Qualifier.INLINE not in hit.decl.qualifiers:
+        if hit is None or Qualifier.INLINE not in hit.decl.qualifiers \
+                or len(atom.args) != len(hit.decl.columns):
             return None
         return hit.decl.id, hit.decl.scope
 

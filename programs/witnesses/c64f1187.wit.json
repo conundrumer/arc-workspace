@@ -308,8 +308,8 @@
       ]
     }]
   }, {
-    "id": "tile_size=stored",
-    "separates": "tiles and shapes are 3 by 3: the concept reads each 3 by 3 box; tile_size=stored reads the 2 by 2 box at the marker and stamps part of each shape",
+    "id": "tile_dim=stored",
+    "separates": "tiles and shapes are 3 by 3: the concept reads each 3 by 3 box; tile_dim=stored reads the 2 by 2 box at the marker and stamps part of each shape",
     "input": [
       [2,0,0,0,0,3,0,0,0,0],
       [0,1,1,1,0,0,0,1,0,0],
@@ -327,7 +327,7 @@
       [0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["tile_size=derived"],
+      "cases": ["tile_dim=derived"],
       "grid": [
         [2,2,2,0,0,3,0],
         [2,0,0,0,3,3,3],
@@ -338,7 +338,7 @@
         [0,0,0,0,2,0,0]
       ]
     }, {
-      "cases": ["tile_size=stored"],
+      "cases": ["tile_dim=stored"],
       "grid": [
         [2,2,0,0,0,3,0],
         [2,0,0,0,3,3,0],

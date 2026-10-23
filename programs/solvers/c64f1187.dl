@@ -207,11 +207,11 @@ tile_extent.item([Tc, A], N) :-
 // The extent of a tile, and of a legend box, on each axis.
 // @store: variant concept
 //     @relaxed tile-grid
-.decl tile_size(tc: TileColor, a: Axis, n: number)
-tile_size(Tc, A, N) :- tile_extent.value([Tc, A], N).
+.decl tile_dim(tc: TileColor, a: Axis, n: number)
+tile_dim(Tc, A, N) :- tile_extent.value([Tc, A], N).
 
 .init box_frame = Frame2D<TileColor>
-box_frame.extent(Tc, A, N) :- tile_size(Tc, A, N).
+box_frame.extent(Tc, A, N) :- tile_dim(Tc, A, N).
 
 // The cell at corner D of a tile-sized frame.
 .decl box_corner_cell(tc: TileColor, d: DiagDir, k: Position)
@@ -307,7 +307,7 @@ tiling_origin(Tc, C) :-
     region.box(Tc, R), in(C, _), crop(C, R, C_rel),
     params.tiling_corner(D), diag_dirs(D, A1, D1, D2), perp(A1, A2),
     dist(C_rel, D1, T1), dist(C_rel, D2, T2),
-    tile_size(Tc, A1, W1), tile_size(Tc, A2, W2), params.gap(G),
+    tile_dim(Tc, A1, W1), tile_dim(Tc, A2, W2), params.gap(G),
     stride(T1, W1, G, _, 0), stride(T2, W2, G, _, 0).
 
 .decl tiling_tile(tc: TileColor, b: Box)
