@@ -253,6 +253,10 @@ class Pending:
     """The end time of each client run that ended with no client, by subject and kind;
     the next request of that subject and kind goes first, once."""
 
+    def waiting(self) -> bool:
+        """Whether a request waits, accepted or still in the listener's backlog."""
+        return bool(self.connections) or bool(select.select([self.listener], [], [], 0)[0])
+
     def poll(self) -> None:
         while select.select([self.listener], [], [], 0)[0]:
             connection, _ = self.listener.accept()
@@ -850,6 +854,8 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                 if kind != Kind.REFRESH and not current.waiting and not current.first:
                     pending.left[(subject, kind)] = time.monotonic()
                 pending.running = None
+            if pending is not None and not pending.waiting():
+                gc.collect()
             script_calls.record()
             CURRENT.reset(token)
             state_assembly.REQUEST_CUTOFF.reset(cutoff)

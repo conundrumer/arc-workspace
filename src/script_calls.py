@@ -40,7 +40,7 @@ SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
 
 _LINE = ('{{"key": "{key}", "start": {start:.3f}, "wall": {wall:.3f}, "cpu": {cpu:.3f}, '
          '"peak": {peak}, "session": "{session}", "lifts": [{lifts}], "retained": {retained}, '
-         '"queued": {queued:.3f}, "reads": {reads}}}\n')
+         '"queued": {queued:.3f}, "reads": {reads}, "footprint": {footprint}}}\n')
 
 _KIB = sys.platform != "darwin"
 """Whether `ru_maxrss` counts KiB, as on Linux, in place of bytes, as on
@@ -129,6 +129,28 @@ def cpu_seconds() -> float:
                                                  resource.getrusage(resource.RUSAGE_CHILDREN)))
 
 
+def footprint() -> int:
+    """The bytes of memory this process holds now: its physical footprint on
+    darwin, its resident set on Linux, and 0 where neither can be read."""
+    if sys.platform == "darwin":
+        import ctypes
+        import ctypes.util
+
+        class Usage(ctypes.Structure):
+            _fields_ = [("uuid", ctypes.c_ubyte * 16)] + [(f"f{i}", ctypes.c_uint64) for i in range(1, 15)]
+            # RUSAGE_INFO_V2 fields from ri_uuid on; f8 is ri_phys_footprint.
+        usage = Usage()
+        libproc = ctypes.CDLL(ctypes.util.find_library("proc"))
+        if libproc.proc_pid_rusage(os.getpid(), 2, ctypes.byref(usage)) != 0:
+            return 0
+        return usage.f8
+    try:
+        with open("/proc/self/statm") as f:
+            return int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE")
+    except (OSError, ValueError):
+        return 0
+
+
 def peak() -> int:
     """The peak memory in bytes of this process and of its children it has
     waited for."""
@@ -186,7 +208,8 @@ def record() -> None:
     line = _LINE.format(key=k, start=begun, wall=time.monotonic() - clock, cpu=cpu_seconds() - _cpu_started,
                         peak=peak(), retained="true" if _retained else "false", session=os.environ.get(SESSION_ENV, ""),
                         lifts=", ".join(f'["{name}", {rise}]' for name, rise in lifts()),
-                        queued=_queued, reads=_reads)
+                        queued=_queued, reads=_reads,
+                        footprint=footprint() if _retained else 0)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
     try:
@@ -199,15 +222,16 @@ class Call:
     """One line of the record. A line written before the record gave
     `lifts` has none. `retained` identifies a resident process peak.
     `queued` is the seconds a resident request waited in the queue, and
-    `reads` the count of its reads of `watched`; a line written before the
+    `reads` the count of its reads of `watched`, and `footprint` the bytes
+    the resident held at the request's end; a line written before the
     record gave them has 0."""
-    __slots__ = ("key", "start", "wall", "cpu", "peak", "session", "lifts", "retained", "queued", "reads")
+    __slots__ = ("key", "start", "wall", "cpu", "peak", "session", "lifts", "retained", "queued", "reads", "footprint")
 
     def __init__(self, key: str, start: float, wall: float, cpu: float, peak: int,
                  session: str, lifts: tuple[tuple[str, int], ...] = (), retained: bool = False,
-                 queued: float = 0.0, reads: int = 0) -> None:
+                 queued: float = 0.0, reads: int = 0, footprint: int = 0) -> None:
         self.retained = retained
-        self.queued, self.reads = queued, reads
+        self.queued, self.reads, self.footprint = queued, reads, footprint
         self.key, self.start, self.wall, self.cpu, self.peak, self.session, self.lifts = (
             key, start, wall, cpu, peak, session, lifts)
 
