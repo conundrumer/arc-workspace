@@ -34,8 +34,8 @@
 ## waiting-on-commands
 * inline: #foreground-commands
 * unless: codex
-    - Before you end your turn, and before your final reply, wait on each command of yours that runs in the background until its completion notification reaches you: run a foreground Bash call and repeat it.
-        * comment: The cases this rule covers: a command you started that has not finished at the end of your turn; a command the harness moved to the background; a command whose completion notification your final reply waits on.
+    - Where the Bash result for a command of yours that runs in the background says that the command is terminated when you give your final response, wait on that command before you end your turn, and before your final reply, until its completion notification reaches you: run a foreground Bash call and repeat it.
+        * comment: Change 11-2889, Grounds: launchers a5a0a428b098e579e and a2a977b91a0321101 ended their turns while Codex ran and stopped without reports; their Bash results warned that a final response terminates the background command.
         - Set a timeout of 240000 ms on the Bash call, and have its until-loop give up just under that timeout.
         - Lead its command with `: 'unattended-wait: <the command you wait on>';`. A command so led is exempt from the PreToolUse hook that blocks waits, unless that command reads the output file the harness gave a command of yours that runs in the background.
             + xref: scripts/pending_wait_hook.py:main
@@ -57,12 +57,10 @@
     + xref: prompts/agents/notes/commands.md#denied-calls
     * comment: Code editor `af224b57041f5ecc8` (ticket 9-788) ended `blocked` on this refusal, and ticket analysts `a907dcfa6dc70ff5d` (ticket 11-1085) and `af8ca0bd59f4bf834` (session `129de8fc`) stopped on it, each led by the text "Do not retry", though slots free within minutes.
 - When you end your turn while a command of yours runs on in the background and no agent you launched is running, the harness reports you to the session that launched you as stopped. It does not while an agent you launched is running.
-- While an agent you launched is running, run each command that can outlast the Bash call's default timeout in the background, and wait on each live background command as [waiting-on-commands](#waiting-on-commands) gives. Once no command of yours runs and no other work is ready, end your turn with a line that gives each agent you launched that is still running. The harness resumes you when an agent sends you a message or when one of them that no agent has resumed by SendMessage completes.
-    + xref: prompts/agents/notes/commands.md#waiting-on-commands
+- While an agent you launched is running, run each command that can outlast the Bash call's default timeout in the background. Once no other work is ready, end your turn with a line that gives each agent you launched that is still running. The harness resumes you when an agent sends you a message or when one of them that no agent has resumed by SendMessage completes.
     * comment: Two agents of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a` ended their turn after a notification that an agent had not reported yet, the harness demanded their report, and each handed back mid-batch: agent `aa217e04abc30c823`, lines 266 to 270, and agent `ad4b827e59837a39f`, lines 228 to 232.
     - Run a call of `operate.py review` in the foreground.
         * comment: Doc editor `ad19de37b20661c0e` on change 9-1704 ran `review` in a background loop and then `cat` on its output; that left its `review` call uncounted for about 30 minutes while the code editor waited on it: ticket 11-2297.
-    * comment: Change 11-2889, Grounds: launchers a5a0a428b098e579e and a2a977b91a0321101 ended their turns while Codex ran and stopped without reports; their Bash results warned that a final response terminates the background command. Waiting applies while a child runs, including to a live keep-alive timer.
 - Once no agent you launched is running, and before anything else, end your keep-alive timer: run `uv run python scripts/agent_timer.py stop keep-alive <agent id>`.
     + xref: scripts/agent_timer.py:Action.STOP
     - Each start of that timer has completed once `pgrep -f 'agent_timer[.]py start keep-alive <agent id>'` prints nothing.
