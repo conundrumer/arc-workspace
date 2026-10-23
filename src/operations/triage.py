@@ -245,19 +245,20 @@ def party(state: State, number: str) -> Party | None:
 
 
 def settle(state: State) -> Step | None:
-    """The next triage launch: admitted refactor tickets on Sonnet first,
-    then the rest on the analyst document's model. The analyst settles
-    those of `judged_apart` only where it judges that the session's line
-    of work needs them."""
+    """The next triage launch. The tickets of `judged_apart` and the
+    refactor tickets run alone on Sonnet, since their judging and settling
+    need no Opus; the rest run on the analyst document's model. The
+    analyst settles a ticket of `judged_apart` only where it judges that
+    the session's line of work needs it."""
     numbers = selected(state)
     if not numbers:
         return None
     apart = judged_apart(state)
-    refactors = [n for n in numbers
-                 if state.tracker.tickets[n].kind is Kind.REFACTOR and not apart(n)]
-    model = Model.SONNET if refactors else None
-    if refactors:
-        numbers = refactors
+    sonnet = [n for n in numbers
+              if apart(n) or state.tracker.tickets[n].kind is Kind.REFACTOR]
+    model = Model.SONNET if sonnet else None
+    if sonnet:
+        numbers = sonnet
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.TRIAGE, joined(numbers)),
                   briefs.settle(numbers, [n for n in numbers if apart(n)], state.me),
                   model=model,
