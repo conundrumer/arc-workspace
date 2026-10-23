@@ -20,13 +20,14 @@ from dashboard_standings import HOLD_WORD, HELD_HEAD, MOVING, Row, Standing, Sta
 from dashboard_usage import codex_bar, usage_bar
 from dashboard_words import clock, hold_text, start_hold_text
 from dashboard_reads import (DAY, OPEN, CodexWindow, OperatorRecords, change_of, hits_full,
-                             journal_work, latest, log_work, phrase, spans, users, Span, Work)
+                             journal_work, latest, log_work, spans, users, Span, Work)
 from dashboard_template import CLEAR_ROUTE, EVENTS, FOLD, QUEUED_TAB, SEARCH_ROUTE, TEMPLATE, TICKET_ROUTE
 from shown_state import ScriptAdmits, Shown, ShownAgent, ShownParty, Start
 from ticket_reads import read_tickets
 from usage_limit import Reading
 
 from operations.change_budget import taken
+from operations.labels import label, phrase, shown_number
 from operations.roles import ANALYST_NAMES, Role
 from operations.pacing import Capped, Until, Usage, WindowName
 from operations.parties import Hold, OnTicket
@@ -104,18 +105,22 @@ def tap(n: str, inner: str, cls: str = "row") -> str:
 class ChangeState:
     """A live change whose row represents an open ticket, the words of its
     state as a row of Active or Queued gives it, and whether an agent is at
-    work on it (`change_states`)."""
+    work on it (`change_states`); `label` is the label of the change
+    (`operations.labels.label`)."""
     change: Ticket
     state: str
     at_work: bool
+    label: str
 
 
 @dataclass(frozen=True)
 class Entry:
-    """A ticket as the search and its sheet give it: its phrase, the plain
+    """A ticket as the search and its sheet give it: its phrase, its label
+    (`operations.labels.label`), the plain
     sentence on its status, and the live changes whose rows represent it."""
     ticket: Ticket
     phrase: str
+    label: str
     status: str
     changes: list[ChangeState]
 
@@ -167,9 +172,9 @@ class View:
         if w := self.working(t):
             return at_work(w, self.now).capitalize()
         if (c := change_of(t, self.all_)) is not None:
-            return f"Waiting on {c.number} ({self.phrase(c)})"
+            return f"Waiting on {label(c, self.all_)}"
         if (h := self.holds.get(t.number)) is not None:
-            return hold_text(h)
+            return hold_text(h, self.all_)
         return STATUS_WORDS[t.status]
 
 
@@ -269,10 +274,10 @@ def row(v: View, t: Ticket, right: str, change: Ticket | None,
     if merged(t):
         right = f'<span>{esc(t.status.value.capitalize())} · merged, awaiting tracker closure</span>'
     star = '<span class="star">★</span>' if t.number in v.expedited else ""
-    under = "" if change is None or change is t else f'<small>{link(change.number)}</small>'
+    under = "" if change is None or change is t else f'<small>{link(change)}</small>'
     bundle = t is change and sum(m.kind is Kind.REQUEST for m in members) > 1
     related = [(m, f'<a class="tk related" data-n="{esc(m.number)}">'
-                f'{esc(m.number)} · {esc(capitalized(v.phrase(m)))}</a>')
+                f'{esc(label(m, v.all_))}</a>')
                for m in members if m.number != t.number]
     texts = [text for _, text in related]
     visible, rest = texts[:3], texts[3:]
@@ -281,12 +286,12 @@ def row(v: View, t: Ticket, right: str, change: Ticket | None,
     title = t.title if bundle else capitalized(v.phrase(t))
     top = f'<span class="wt">{right}</span>' if right else ""
     return tap(t.number,
-               f'{top}<span class="wn">{esc(t.number)}{under}</span><span class="wp">{star}{esc(title)}</span>'
+               f'{top}<span class="wn">{esc(shown_number(t))}{under}</span><span class="wp">{star}{esc(title)}</span>'
                f'{related_html}', "wr" + (" me" if v.mine(t) else ""))
 
 
-def link(n: str) -> str:
-    return f'<a class="tk" data-n="{esc(n)}">{esc(n)} ›</a>'
+def link(t: Ticket) -> str:
+    return f'<a class="tk" data-n="{esc(t.number)}">{esc(shown_number(t))} ›</a>'
 
 
 def active(v: View, st: Standings) -> tuple[str, int]:
@@ -340,7 +345,7 @@ def session_name(s: int | None) -> str:
 def behind(st: Standings, root: Ticket) -> str:
     """The words of a ticket behind held work: the held ticket `root` and
     what holds it."""
-    return f"after {root.number} · {HOLD_WORD[st.own(root)]}"
+    return f"after {shown_number(root)} · {HOLD_WORD[st.own(root)]}"
 
 
 def change_states(v: View, st: Standings, t: Ticket) -> list[ChangeState]:
@@ -357,12 +362,12 @@ def change_states(v: View, st: Standings, t: Ticket) -> list[ChangeState]:
             case Standing.READY:
                 words = "idle" if st.active(Row(c, c, (c,))) else "next to start"
             case Standing.WAITING:
-                words = f"after {root.number}"
+                words = f"after {shown_number(root)}"
             case Standing.BEHIND:
                 words = behind(st, root)
             case _:
                 words = HELD_HEAD[k].lower()
-        out.append(ChangeState(c, words, k is Standing.WORKING))
+        out.append(ChangeState(c, words, k is Standing.WORKING, label(c, v.all_)))
     return sorted(out, key=lambda x: not x.at_work)
 
 
@@ -423,7 +428,7 @@ def queued(v: View, st: Standings) -> str:
                      if s in st.paused else f'<div class="gh">Next</div>{rows}')
         if waiting:
             body += ('<div class="gh">Waiting</div><div class="wl">'
-                     + "".join(row(v, r.lead, f"{stopped_bar(v, r)}<span>after {link(st.state(r.subject)[1].number)}</span>",
+                     + "".join(row(v, r.lead, f"{stopped_bar(v, r)}<span>after {link(st.state(r.subject)[1])}</span>",
                                  r.change, members=r.members) for r in waiting)
                      + "</div>")
         drafts = sorted((r for r, k, _ in items if k is None),
@@ -445,7 +450,7 @@ def queued(v: View, st: Standings) -> str:
         for k, xs in sorted(groups.items(), key=lambda g: list(HELD_HEAD).index(g[0])):
             label = HELD_HEAD[k]
             xs.sort(key=lambda x: (*priority(v, x[0]), -x[0].subject.filed))
-            rows = [row(v, r.lead, stopped_bar(v, r) + (f"<span>after {link(root.number)} · {esc(HOLD_WORD[st.own(root)])}</span>"
+            rows = [row(v, r.lead, stopped_bar(v, r) + (f"<span>after {link(root)} · {esc(HOLD_WORD[st.own(root)])}</span>"
                                                         if k is Standing.BEHIND else ""), r.change, members=r.members)
                     for r, root in xs]
             inner = folded(rows, GROUP_SHOWN)
@@ -480,8 +485,8 @@ def updates(v: View, cleared: float) -> str:
     fresh = sorted((e for e in found if e[1] > cleared and v.now - e[1] <= SINCE_SECONDS),
                    key=lambda e: (e[0], -e[1], -e[4].filed))
     rows = "".join(f'<div class="wr tk{" me" if v.mine(t) else ""}" data-n="{esc(t.number)}">'
-                   f'<span class="wn"><i class="{cls}">{mark}</i> {esc(t.number)}</span>'
-                   f'<span class="wp">{esc(capitalized(v.phrase(t)) + word)}</span><span class="ws">{ago(max(at - t.filed, 60))} · {clock(at, v.now)}</span></div>'
+                   f'<span class="wn"><i class="{cls}">{mark}</i></span>'
+                   f'<span class="wp">{esc(label(t, v.all_) + word)}</span><span class="ws">{ago(max(at - t.filed, 60))} · {clock(at, v.now)}</span></div>'
                    for _, at, (mark, cls), word, t in fresh)
     body = (f'<button class="tab" id="clear" data-t="{max(e[1] for e in fresh)!r}">Clear</button><div class="wl">{rows}</div>'
             if fresh else '<div class="meta">Nothing new.</div>')
@@ -552,7 +557,7 @@ def blocked(v: View) -> tuple[str, int]:
     """The HTML of Blocked, its tickets newest first, and their count."""
     rows = sorted(((t, ln) for t in v.all_.values() if (ln := blocked_on_user(t)) is not None),
                   key=lambda x: -x[0].filed)
-    body = "".join(tap(t.number, f'<span class="num">{esc(t.number)}</span> <span class="sh">{esc(v.phrase(t))}</span>'
+    body = "".join(tap(t.number, f'<span class="num">{esc(label(t, v.all_))}</span>'
                        f'<div class="meta">{esc(cut(ln.note))}</div>') for t, ln in rows)
     return (f"<details><summary>{len(rows)} wait on your decision</summary>"
             + (body or '<div class="meta">Nothing waits on you.</div>') + "</details>"), len(rows)
@@ -584,7 +589,7 @@ def page(tickets: Path, now: float, usage: Reading, records: OperatorRecords,
             + "</main>")
     text = filled(TEMPLATE, {"BODY": body, "EVENTS": EVENTS, "SEARCH": SEARCH_ROUTE, "TICKET": TICKET_ROUTE,
                              "CLEAR": CLEAR_ROUTE, "FOLD": FOLD})
-    entries = {n: Entry(t, v.phrase(t), v.status(t), change_states(v, st, t)) for n, t in all_.items()}
+    entries = {n: Entry(t, v.phrase(t), label(t, all_), v.status(t), change_states(v, st, t)) for n, t in all_.items()}
     return Rendered(text, entries, now)
 
 

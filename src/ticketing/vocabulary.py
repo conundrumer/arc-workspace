@@ -2,6 +2,7 @@
 operator's command (`operations`) share: the statuses a ticket moves
 between, the status of a move into a take's queue (`queued`) and the last
 line of a log that moves it into one, the
+letter of each kind (`LETTER`, `lettered`), the
 resolutions it closes with, the domains of its subject, its kinds, the
 note of the line that files it and the route of a request, and the end
 of the title of a `refactor` ticket on a module that holds more than one subject. What
@@ -62,6 +63,17 @@ class Kind(StrEnum):
     VALIDATION = "validation"
     """The check of a `request`'s need, which `file_ticket.py log` files
     as the request closes."""
+
+
+LETTER = {Kind.REQUEST: "R", Kind.CHANGE: "C", Kind.BUG: "B", Kind.QUESTION: "Q",
+          Kind.PERFORMANCE: "P", Kind.REFACTOR: "F", Kind.INTERFERENCE: "I",
+          Kind.DELAY: "D", Kind.VALIDATION: "V"}
+"""The letter that opens the label of a ticket of each kind."""
+
+
+def lettered(kind: Kind, number: str) -> str:
+    """The kind letter of `kind` joined to `number`, as `C11-3451`."""
+    return LETTER[kind] + number
 
 
 def queued(source: Status | None, kind: Kind) -> Status:

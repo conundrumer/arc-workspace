@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from dashboard_reads import STALE_RECORD, served_request
+from dashboard_reads import STALE_RECORD
 from dashboard_words import clock
+from operations.labels import label, served_request
 from ticketing.vocabulary import Kind
 
 if TYPE_CHECKING:
@@ -24,7 +25,7 @@ def health(v: View) -> str:
         if v.mine(t) or request is not None and v.mine(request):
             age = v.now - since
             minutes = ago(age) if 60 <= age < 3600 else f"{int(age // 60)} min"
-            out.append(tap(n, f"⚠ {esc(v.phrase(t))} · {minutes}", "alert"))
+            out.append(tap(n, f"⚠ {esc(label(t, v.all_))} · {minutes}", "alert"))
     out += [f'<div class="alert">⚠ {"Main" if r.index is None else session_name(r.index)} · No operator · {clock(r.shown.at, v.now)}</div>'
             for r in v.records.records if v.now - r.shown.at > STALE_RECORD]
     if v.records.main_missing is not None:

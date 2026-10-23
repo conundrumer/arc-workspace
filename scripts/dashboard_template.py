@@ -89,7 +89,7 @@ details.grp>summary{font-size:12px;letter-spacing:.04em;text-transform:uppercase
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const sheet=$('sheet'),scrim=$('scrim'),sc=$('sc');let shown=null;
-async function open(n){shown=n;sc.innerHTML='<div class="meta">Loading '+esc(n)+'</div>';sheet.classList.add('on');scrim.classList.add('on');
+async function open(n){shown=n;sc.innerHTML='<div class="meta">Loading</div>';sheet.classList.add('on');scrim.classList.add('on');
 let h;try{const r=await fetch('@TICKET@?n='+encodeURIComponent(n),{cache:'no-store'});h=await r.text();if(!r.ok)h='<div class="meta">'+esc(r.status+' '+h)+'</div>'}
 catch(e){h='<div class="meta">'+esc('load failed: '+e)+'</div>'}
 if(shown===n)sc.innerHTML=h}

@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from controlled_markdown import mctx
+from operations.labels import label
 from operations.roles import EDITORS
 from engine import checkout
 from handbook.paths import scripts_importable
@@ -52,7 +53,8 @@ from ticketing.loss import SECOND_PRICE, loss  # noqa: E402
 from ticketing.text import SECTIONS, VALIDATION, heading  # noqa: E402
 from ticketing.times import TIME_FORM  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
-from ticketing.vocabulary import (ALLOW, DEFECT_SECTIONS, MANY_IDEAS, UNTAKEN, Domain, Kind,  # noqa: E402
+from ticket_reads import read_tickets  # noqa: E402
+from ticketing.vocabulary import (ALLOW, LETTER, DEFECT_SECTIONS, MANY_IDEAS, UNTAKEN, Domain, Kind,  # noqa: E402
                                   Note, Resolution, Status, Verdict, queued)
 from transcript_snapshots import Refused, print_refused  # noqa: E402
 from filing_help import FORM_PURPOSES, FORMS, HELP, RULES, FormPart  # noqa: E402
@@ -115,6 +117,12 @@ SHOW_HELP = mctx("""
 AWAIT_CLOSE_HELP = mctx("""
     - Run it in the background: its completion notification gives what it prints.
     - The command ends once a ticket the call gives stands under `tickets/{closed}/`, and prints, for each ticket that stands there, its number and the log line that closed it.
+    """)
+
+LABEL_HELP = mctx("""
+    - The command prints, for each ticket the call gives, its label, one per line, in the order of the call: the kind letter of the ticket joined to its number, then its plain title in parentheses, as `C11-3451 (…)`.
+    - The letters are {letters}.
+    - A `change` or a `validation` shows after its title the `request` it serves, as `, for R11-3437`.
     """)
 
 AWAIT_CLOSE_INTERVAL = 10
@@ -272,6 +280,20 @@ def show_command(*given: str) -> str:
                         *(f"{heading(name)}\n{section(text, name)}" for name in given[1:])])
 
 
+def label_command(*given: str) -> str:
+    """The label of each ticket of `given`, one per line."""
+    if not given:
+        raise ArgumentsRefused(mctx("the call gives no ticket number"))
+    tickets, _ = read_tickets(main_tickets())
+    lines: list[str] = []
+    for ref in given:
+        number = str(ticket_number(ref))
+        if number not in tickets:
+            raise ArgumentsRefused(mctx("no ticket {number} is readable").format(number=number))
+        lines.append(label(tickets[number], tickets))
+    return "\n".join(lines)
+
+
 def await_close_command(*given: str) -> str:
     """Each ticket of `given` that stands under `closed`, with the line of
     its log that closed it, once one does."""
@@ -411,6 +433,8 @@ SUBCOMMANDS = {
                        " <number> [<section> ...]", SHOW_HELP, "", None, show_command, False),
     "await-close": Subcommand(mctx("ends once a ticket closes, and prints how it closed"),
                               " <number> [<number> ...]", AWAIT_CLOSE_HELP, "", None, await_close_command, False),
+    "label": Subcommand(mctx("prints the label of each ticket the call gives, as the user is to read it"),
+                        " <number> [<number> ...]", LABEL_HELP, "", None, label_command, False),
     "closed-on": Subcommand(mctx("prints the closed tickets whose title refers to a target, with how each closed"),
                             " <name> [<name> ...]", CLOSED_ON_HELP, "", None, named(closed_on_command), False),
     "citing": Subcommand(mctx("prints, for each name, the tickets of any status whose title refers to it, "
@@ -452,6 +476,7 @@ def help_values() -> dict[str, str]:
                 sessions=SESSIONS, invocation=INVOCATION, name_form=NAME_FORM,
                 question=Kind.QUESTION, refactor=Kind.REFACTOR, change_kind=Kind.CHANGE,
                 change_domain=Domain.CHANGE,
+                letters=", ".join(f"{letter} {kind}" for kind, letter in LETTER.items()),
                 full_flag=FULL_FLAG, log_section=LOG_SECTION,
                 many_ideas=MANY_IDEAS, empty=EMPTY, delay=Kind.DELAY, deferred=Status.DEFERRED, request=Kind.REQUEST,
                 validation_kind=Kind.VALIDATION, validates=VALIDATES,

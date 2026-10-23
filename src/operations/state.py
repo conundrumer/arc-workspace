@@ -83,7 +83,9 @@ class Ticket:
     holder `file_ticket.py log --help-all` defines, `goal` is the text
     of its `## Goal` section, None where it has none, and `cost` is the
     dollar figure of the Cost line of its `## Design` section
-    (`ticket_reads.design_cost`), None where none reads."""
+    (`ticket_reads.design_cost`), None where none reads, and `validates` is
+    the number a `validation` gives in its `validates` field, None for
+    another kind."""
     number: str
     order: tuple[int, int]
     session: int | None
@@ -105,6 +107,7 @@ class Ticket:
     path: Path
     goal: str | None = None
     cost: float | None = None
+    validates: str | None = None
 
     @property
     def last_time(self) -> float:

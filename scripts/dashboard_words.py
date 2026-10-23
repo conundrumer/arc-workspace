@@ -1,11 +1,13 @@
 """The dashboard words for local times and scheduling holds."""
 
 import time
+from collections.abc import Mapping
 
 from shown_state import ScriptAdmits, ShownParty
 from operations.pacing import Capped, Until
 from operations.parties import Hold, OnTicket
-from operations.state import NotComputed
+from operations.labels import label
+from operations.state import NotComputed, Ticket
 
 
 def clock(at: float, now: float) -> str:
@@ -14,7 +16,9 @@ def clock(at: float, now: float) -> str:
     return time.strftime("%-I:%M %p" if same else "%a %-I:%M %p", time.localtime(at))
 
 
-def hold_text(h: ShownParty) -> str:
+def hold_text(h: ShownParty, all_: Mapping[str, Ticket]) -> str:
+    """The words of the hold `h`; a ticket it waits on is shown by its label,
+    or by its bare number where `all_` lacks it."""
     match h:
         case Hold.PAUSE:
             return "Held by your pause"
@@ -25,7 +29,7 @@ def hold_text(h: ShownParty) -> str:
         case Hold.TAKES:
             return "Held by the run scripts' takes"
         case OnTicket(number):
-            return f"Starts after {number}"
+            return f"Starts after {label(all_[number], all_) if number in all_ else number}"
 
 
 def start_hold_text(h: ScriptAdmits | Until | NotComputed | Capped, now: float) -> str:

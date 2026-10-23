@@ -1,7 +1,6 @@
 """The reads the ticket dashboard (`ticket_dashboard`) renders from: the
 recorded states of the operators of each session, live agents from their
-transcripts, and of a ticket its phrase,
-the change it waits on, whether it is the user's, the stage of the work
+transcripts, and of a ticket the change it waits on, whether it is the user's, the stage of the work
 on it and the work on its change, from the change's log and the sessions'
 step journals; the Codex weekly account limit from local rollouts; and the
 time a usage window reaches 100% at its rate so far."""
@@ -187,33 +186,6 @@ def operator_records(tickets: Path, now: float, undecided: list[str] | None = No
     running = tuple(x for session in sorted(sessions) for path in mains_named(session)
                     for x in running_agents(path, notes)) if live_agents else None
     return OperatorRecords(tuple(records), missing, running)
-
-
-def served_request(t: Ticket, all_: Mapping[str, Ticket], seen: frozenset[str] = frozenset()) -> Ticket | None:
-    """The first `request` the Motivation of `t` gives, followed through
-    the `change` tickets it gives."""
-    for m in t.motivation:
-        r = all_.get(m)
-        if r is None or m in seen:
-            continue
-        if r.kind is Kind.REQUEST:
-            return r
-        if r.kind is Kind.CHANGE and (found := served_request(r, all_, seen | {t.number, m})) is not None:
-            return found
-    return None
-
-
-def phrase(t: Ticket, all_: Mapping[str, Ticket]) -> str:
-    """The phrase of `t`: its Goal; else the Goal of `served_request`; else
-    its title's text after its first `: `, up to its first `, ` or `;`,
-    with its first letter capitalized."""
-    r = served_request(t, all_)
-    goal = t.goal if t.goal is not None else None if r is None else r.goal
-    if goal is not None:
-        return " ".join(goal.split())
-    _, colon, after = t.title.partition(": ")
-    cut = (after if colon else t.title).split(", ")[0].split(";")[0]
-    return cut[:1].upper() + cut[1:]
 
 
 ABOUT = {Kind.CHANGE: "Intent", Kind.REQUEST: "Goal", Kind.VALIDATION: None}
