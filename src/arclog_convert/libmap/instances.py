@@ -644,9 +644,64 @@ class Expander:
                          None, None)
             lits = self.replacement(probe, head, inst, spec)
             v = replace(probe, body=lits)
-            self.own[v.id] = (inst.scope.components, inst.name)
-            self.pending.append(v)
+            if set(term_vars(lits, [])) <= set(term_vars(v.head, [])):
+                self.own[v.id] = (inst.scope.components, inst.name)
+                self.pending.append(v)
+            else:
+                self.full(inst, rname, v)
         return Atom(RelationName(a.relation.instances[:-1], rname), a.args, a.line)
+
+    def full(self, inst, rname: str, v: Unit) -> None:
+        """The relation derived over every variable of v's body, `<rname>_full`,
+        as a clause of the solver's, and v made a read of it at v's head: a
+        clause has no head label its body leaves out, and a label the head
+        leaves out stays a column of the relation the body derives."""
+        fname = f"{rname}_full"
+        vs = term_vars(v.body, [])
+        types = self.var_types(v.body, inst.scope.components)
+        cols = ", ".join(f"{x.lower()}: {types[x]}" for x in vs)
+        self.rels.append(replace(_parse(f".decl {fname}({cols})").relations[0], id=self.did(),
+                                 scope=inst.scope, span=None))
+        key = (inst.scope.components, inst.name)
+        derive = replace(v, id=self.uid(), head=Atom(RelationName((), fname), tuple(Variable(x) for x in vs), 0))
+        shown = set(term_vars(v.head, []))
+        read = AtomLiteral(Atom(RelationName((), fname), tuple(Variable(x) if x in shown else Wildcard() for x in vs), 0),
+                           False)
+        self.own[derive.id] = key
+        self.pending.append(derive)
+        out = replace(v, body=(read,))
+        self.own[out.id] = key
+        self.pending.append(out)
+
+    def var_types(self, body: tuple, scope: tuple[str, ...]) -> dict[str, str]:
+        """The type of each variable of the body, from the first column of an
+        atom of the body that is that variable."""
+        types: dict[str, str] = {}
+        for lit in body:
+            if not isinstance(lit, AtomLiteral):
+                continue
+            for arg, ty in zip(lit.atom.args, self.column_types(lit.atom, scope)):
+                if isinstance(arg, Variable):
+                    types.setdefault(arg.name, ty)
+        missing = [x for x in term_vars(body, []) if x not in types]
+        if missing:
+            raise ValueError(f"no column of an atom types the variables {missing}")
+        return types
+
+    def column_types(self, a: Atom, scope: tuple[str, ...]) -> list[str]:
+        """The types of the columns of the relation an atom of a clause in
+        `scope` reads: a relation of an instance, the lib's, or the solver's."""
+        r = a.relation
+        if r.instances and r.instances != ("@lib",):
+            inst = self.resolve(scope, r.instances)
+            tparams, lrels = self.lib.present(inst.component)
+            sub = {p: t.text for p, t in zip(tparams, inst.type_args)}
+            return [sub.get(c.type, c.type) for c in next(x for x in lrels if x.name == r.name).cols]
+        if r.instances or r.name in self.lib.top or r.name in self.sig_top:
+            return [t for _, t in self.lib.top.get(r.name) or self.lib.sig_top[r.name]]
+        decl = next(d for d in (*self.prog.relations, *self.rels)
+                    if d.name == r.name and d.scope.components == scope[:len(d.scope.components)])
+        return [c.type.name for c in decl.columns]
 
     def reads(self, u: Unit, plans) -> Unit:
         from arclog_convert.libmap.box import mapped
