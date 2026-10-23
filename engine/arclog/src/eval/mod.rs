@@ -16,7 +16,8 @@
 //! independent entries in parallel, and [`lookup`] finds a relation of the
 //! program by its name. [`values`] holds the values and the
 //! bounds that the driver and the parts share. [`picks`] gives the options
-//! of a pick through the driver's way into the bodies, and [`models`]
+//! of a pick through the driver's way into the bodies, `demonstrated` the
+//! confirmed rules of a `DEMONSTRATED` form, and [`models`]
 //! enumerates the models of a case on an input, through the driver.
 //! [`mod@determinations`] gives the `DET` nodes in dependency order and the
 //! domain of each, which an evaluation at determined values reads.
@@ -28,6 +29,7 @@
 
 pub mod cache;
 pub mod determinations;
+mod demonstrated;
 mod driver;
 pub mod examples;
 pub mod filters;

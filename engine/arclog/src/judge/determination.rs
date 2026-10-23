@@ -110,9 +110,6 @@ pub enum Parameter {
     /// The values of a `DET` without `(ONE)` that differ across the
     /// assignments left, an error.
     Underdetermined(Vec<Arc<Relation>>),
-    /// A parameter that a case with a `DEMONSTRATED` form reads, left to
-    /// Every case.
-    Demonstrated,
     /// A `DET` whose body ends in `ONE` marks and names no proposer, which
     /// the models of the constraint module solve, left to Every case.
     Pick,
@@ -124,8 +121,6 @@ pub enum CaseOutcome {
     /// The case keeps at least one assignment after the restriction across
     /// cases.
     Solved,
-    /// The case holds a `DEMONSTRATED` form, and is not run.
-    Demonstrated,
     /// The case stopped at a bound, the assignment cap or a bound of a run,
     /// with the parameters of several values in a domain it read.
     Stopped { stop: Stop, parameters: Vec<ProgramRelation> },
@@ -146,6 +141,11 @@ pub struct Determination {
     /// Each case, in the order of the cases given, with the parameters it
     /// reads.
     pub cases: Vec<(CaseName, CaseOutcome, Vec<ProgramRelation>)>,
+    /// Each parameter that a case with a `DEMONSTRATED` form reads, in the
+    /// order of `parameters`' first reads. `arclog-cli determine` and
+    /// `arclog-cli decode` leave these to `arclog-cli compare`, as
+    /// `docs/engine/cases.md#every-case` gives.
+    pub demonstrated: Vec<ProgramRelation>,
 }
 
 impl Determination {
@@ -155,6 +155,11 @@ impl Determination {
         self.parameters.iter().find(|(name, _)| name == relation).map(|(_, parameter)| parameter)
     }
 
+    /// Whether a case with a `DEMONSTRATED` form reads `relation`.
+    pub fn reads_demonstrated(&self, relation: &ProgramRelation) -> bool {
+        self.demonstrated.contains(relation)
+    }
+
     /// The values that the case `case` runs at: each `DET` with `(ONE)` its
     /// open values, and each other its determined value.
     pub fn values(&self, case: &CaseName) -> ParameterValues {
@@ -162,7 +167,7 @@ impl Determination {
         let values = reads.iter().filter_map(|relation| match self.parameter(relation)? {
             Parameter::Determined(rows) => Some((relation.clone(), rows.clone())),
             Parameter::Open(values) => Some((relation.clone(), union(values.clone()))),
-            Parameter::Underdetermined(_) | Parameter::Demonstrated | Parameter::Pick => None,
+            Parameter::Underdetermined(_) | Parameter::Pick => None,
         });
         ParameterValues::determined(values)
     }
@@ -274,8 +279,6 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
         let holds_demonstrated = program.graph.nodes.iter().any(|node| matches!(node.kind, DependencyKind::Demonstrated(_)));
         if holds_demonstrated {
             demonstrated.extend(reads.iter().cloned());
-            walked.push((CaseOutcome::Demonstrated, reads, Vec::new()));
-            continue;
         }
         let Walked { kept, branching, end } = walk(case.inputs(), &dets, &output, &train, case.session.caps.assignments);
         let outcome = match end {
@@ -288,11 +291,10 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
         walked.push((outcome, reads, kept));
     }
     restrict(&mut walked);
+    let demonstrated: Vec<ProgramRelation> = order.iter().filter(|relation| demonstrated.contains(*relation)).cloned().collect();
     let mut parameters = Vec::new();
     for relation in order {
-        let parameter = if demonstrated.contains(&relation) {
-            Parameter::Demonstrated
-        } else if picks.contains(&relation) {
+        let parameter = if picks.contains(&relation) {
             Parameter::Pick
         } else {
             let mut values = distinct_values(walked.iter().flat_map(|(_, _, kept)| kept), &relation);
@@ -306,7 +308,7 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
         parameters.push((relation, parameter));
     }
     let cases = cases.iter().zip(walked).map(|(case, (outcome, reads, _))| (case.name.clone(), outcome, reads)).collect();
-    Determination { parameters, cases }
+    Determination { parameters, cases, demonstrated }
 }
 
 /// A value for a `DET`.

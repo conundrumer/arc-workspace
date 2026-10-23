@@ -60,12 +60,46 @@ pub(super) fn key_read(
     shape: &InstanceShape<'_>,
     example: Option<Example>,
 ) -> Outcome<Result<(Vec<Row>, Option<Arc<Relation>>), RelationValue>> {
+    key_rows(evaluation, bodies, form, &shape.key_body, &shape.key_labels(), example)
+}
+
+/// The key groups of a form whose key body is `key_body` with the key
+/// columns `key_labels`, as [`key_read`] gives them: the form is an `INIT`
+/// form or a `DEMONSTRATED` form.
+pub(super) fn key_rows(
+    evaluation: &Evaluation<'_>,
+    bodies: &FormBodies<'_>,
+    form: &NodePath,
+    key_body: &Option<(&Body, NodePath)>,
+    key_labels: &[LabelId],
+    example: Option<Example>,
+) -> Outcome<Result<(Vec<Row>, Option<Arc<Relation>>), RelationValue>> {
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
-    let Some(key_body) = &shape.key_body else { return Ok(Ok((vec![Row::default()], None))) };
-    let key_labels = shape.key_labels();
-    let clause = ir::compile_instance_body(evaluation.program, form, &[key_body.clone()], &key_labels)
+    let Some(key_body) = key_body else { return Ok(Ok((vec![Row::default()], None))) };
+    let clause = ir::compile_instance_body(evaluation.program, form, &[key_body.clone()], key_labels)
         .map_err(|compile| fault(format!("the key body does not compile: {compile:?}")))?;
     Ok(rows_read(bodies.relation(form, &clause, example)?, key_labels.len()).map_err(&fault)?.map(|(rows, relation)| (rows, Some(relation))))
+}
+
+/// The clause of an input whose body is `body` and whose head holds the
+/// labels `head`, in a form whose key body is `key_body`: a keyed input is
+/// its body joined with the key body, its columns the key's labels first,
+/// and the number of those columns. The error is the fault of the compile.
+pub(super) fn joined_clause(
+    evaluation: &Evaluation<'_>,
+    form: &NodePath,
+    key_body: &Option<(&Body, NodePath)>,
+    key_labels: &[LabelId],
+    keyed: bool,
+    body: (&Body, NodePath),
+    head: &[LabelId],
+) -> Result<(ClauseIr, usize), ir::CompileFault> {
+    let (parts, prefix): (Vec<(&Body, NodePath)>, &[LabelId]) = match (key_body, keyed) {
+        (Some(key_body), true) => (vec![key_body.clone(), body], key_labels),
+        _ => (vec![body], &[]),
+    };
+    let columns: Vec<LabelId> = prefix.iter().chain(head).copied().collect();
+    Ok((ir::compile_instance_body(evaluation.program, form, &parts, &columns)?, prefix.len()))
 }
 
 /// What an `INIT` form binds a type parameter of its component to: the
@@ -171,15 +205,10 @@ impl<'p> InstanceShape<'p> {
         let Some((path, keyed, written)) = self.written.iter().find(|(_, _, written)| written.name == *name) else { return Ok(None) };
         let head = self.head_labels(written, &input.port.columns)?;
         let body = (written.body.value(), path.child(written.position(InstanceInputPart::Body)));
-        let key_labels = self.key_labels();
-        let (parts, prefix): (Vec<(&Body, NodePath)>, &[LabelId]) = match (&self.key_body, keyed) {
-            (Some(key_body), true) => (vec![key_body.clone(), body], &key_labels),
-            _ => (vec![body], &[]),
-        };
-        let columns: Vec<LabelId> = prefix.iter().chain(head.iter().flatten()).copied().collect();
-        let clause = ir::compile_instance_body(evaluation.program, form, &parts, &columns)
+        let flat: Vec<LabelId> = head.iter().flatten().copied().collect();
+        let (clause, key) = joined_clause(evaluation, form, &self.key_body, &self.key_labels(), *keyed, body, &flat)
             .map_err(|compile| format!("input `{}` does not compile: {compile:?}", name.0))?;
-        Ok(Some(InputClause { clause, key: prefix.len(), head }))
+        Ok(Some(InputClause { clause, key, head }))
     }
 
     /// The type of `label`.
@@ -367,7 +396,7 @@ impl<'p> InstanceShape<'p> {
 
 
 /// The labels at `site`, each with its column path from the site's column.
-fn site_labels(site: &Site) -> Vec<(Vec<ColumnName>, LabelId)> {
+pub(super) fn site_labels(site: &Site) -> Vec<(Vec<ColumnName>, LabelId)> {
     let mut labels = Vec::new();
     each_site_label(site, &mut Vec::new(), &mut |use_, path| labels.extend(use_label(use_).map(|label| (path.to_vec(), label))));
     labels

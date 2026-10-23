@@ -4,7 +4,7 @@
 //! reached.
 //!
 //! A factor is an entry of a pick, a chosen relation on one example or
-//! task-wide, or of an `Unfold` instance, and a model holds one choice at
+//! task-wide, of a `DEMONSTRATED` relation, or of an `Unfold` instance, and a model holds one choice at
 //! each factor. The driver meets a factor as it evaluates the asked
 //! relation, so it meets only the factors that relation reads, and each
 //! after the factors its options read, which is the dependency order. The
@@ -18,6 +18,7 @@ use std::cell::RefCell;
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
+use super::demonstrated;
 use super::determinations;
 use super::driver::{record_whole, Driver};
 use super::join::{self, Budget};
@@ -67,6 +68,10 @@ enum Options {
     /// The state graph of each key of the instance, and the arity of its
     /// outputs.
     Walks { graphs: Vec<(Row, StateGraph)>, arity: u16 },
+    /// For each key of a `DEMONSTRATED` relation that holds a confirmed
+    /// rule, the distinct predictions of its confirmed rules in the
+    /// canonical order by content, and the arity of the relation.
+    Demonstrated { keys: Vec<Vec<RowSet>>, arity: u16 },
 }
 
 impl Options {
@@ -80,6 +85,7 @@ impl Options {
             Options::Walks { graphs, arity } => {
                 Draw::Walks { walks: JointWalks::of_instance(graphs, *arity), budget: Budget::new(evaluation.limits, evaluation.session) }
             }
+            Options::Demonstrated { keys, arity } => Draw::Demonstrated { keys, arity: *arity, at: Some(vec![0; keys.len()]) },
         }
     }
 }
@@ -88,6 +94,9 @@ impl Options {
 enum Draw<'f> {
     Pick { rows: &'f [Row], arity: u16, models: constraints::Models<'f> },
     Walks { walks: JointWalks<'f>, budget: Budget<'f> },
+    /// The product of the options of the keys, one choice per key, the last
+    /// key's choice changing first; `at` holds the choice of the next model.
+    Demonstrated { keys: &'f [Vec<RowSet>], arity: u16, at: Option<Vec<usize>> },
 }
 
 impl Draw<'_> {
@@ -108,6 +117,21 @@ impl Draw<'_> {
                 }
             },
             Draw::Walks { walks, budget } => Ok(walks.next(budget)?.map(rows)),
+            Draw::Demonstrated { keys, arity, at } => {
+                let Some(mut chosen) = at.take() else { return Ok(None) };
+                let mut kept = RowSet::empty(*arity);
+                for (options, &choice) in keys.iter().zip(&chosen) {
+                    for row in options[choice].rows() {
+                        kept.insert(row.into());
+                    }
+                }
+                let carry = chosen.iter_mut().zip(keys.iter()).rev().find_map(|(choice, options)| {
+                    *choice += 1;
+                    if *choice < options.len() { Some(()) } else { *choice = 0; None }
+                });
+                *at = carry.map(|()| chosen);
+                Ok(Some(rows(vec![kept])))
+            }
         }
     }
 }
@@ -136,8 +160,23 @@ pub(super) fn pick_value(driver: &Driver<'_, '_>, relation: &GraphRelation, exam
         }
         None => "the chosen relation has more than one model, which this evaluation does not enumerate, and a `DET` reads a pick only where the pick has one model".into(),
     };
-    let mut values = choice(driver, (relation.node, example), form, build, 1, &many)?.0.into_vec();
+    let mut values = choice(driver, (relation.node, example), form, build, 1, Some(&many))?.0.into_vec();
     Ok(values.pop().expect("the value of the chosen relation"))
+}
+
+/// The value of `relation`, a `DEMONSTRATED` relation, on `example` at the
+/// current model, as [`choice`] gives it.
+pub(super) fn demonstrated_value(driver: &Driver<'_, '_>, relation: &GraphRelation, example: Option<Example>) -> Outcome<RelationValue> {
+    let form = driver.program().form_of(relation.node);
+    let build = || {
+        let keys = match demonstrated::confirmed(driver, relation, example)? {
+            Ok(keys) => keys,
+            Err(value) => return Ok(Err(value)),
+        };
+        Ok(Ok(Options::Demonstrated { keys, arity: arity(driver, relation, form)? }))
+    };
+    let mut values = choice(driver, (relation.node, example), form, build, 1, None)?.0.into_vec();
+    Ok(values.pop().expect("the value of the `DEMONSTRATED` relation"))
 }
 
 /// The value of `relation`, an output of an `Unfold` instance, on
@@ -158,7 +197,7 @@ pub(super) fn walk_value(driver: &Driver<'_, '_>, relation: &GraphRelation, exam
         Ok(Ok(Options::Walks { graphs, arity: arity(driver, relation, form)? }))
     };
     let many = "the instance gives more than one value, so the case has more than one model";
-    let choice = choice(driver, (relation.node, example), form, build, UnfoldOutput::ALL.len(), many)?;
+    let choice = choice(driver, (relation.node, example), form, build, UnfoldOutput::ALL.len(), Some(many))?;
     Ok(choice.0[at].clone())
 }
 
@@ -177,7 +216,7 @@ fn arity(driver: &Driver<'_, '_>, relation: &GraphRelation, form: &NodePath) -> 
 /// Where the current model holds no choice at `entry`, the factor takes its
 /// first model. In an enumeration, the driver then meets the factor, and
 /// the current model holds that choice. Outside one, a factor of more than
-/// one model is a fault of the run, with the message `many`. A stop in the
+/// one model is a fault of the run, with the message `many`, or, where `many` is `None`, takes its first model. A stop in the
 /// search of the first model, or, outside an enumeration, of the second, is
 /// the value of each relation of the factor.
 fn choice(
@@ -186,7 +225,7 @@ fn choice(
     form: &NodePath,
     build: impl FnOnce() -> Outcome<Result<Options, RelationValue>>,
     relations: usize,
-    many: &str,
+    many: Option<&str>,
 ) -> Outcome<Choice> {
     if let Some(choice) = driver.model.borrow().get(&entry) {
         return Ok(choice.clone());
@@ -200,13 +239,13 @@ fn choice(
     let mut draw = options.draw(driver);
     let first = match draw.next() {
         Ok(Some(first)) => first,
-        Ok(None) => return Err(fault("the instance gives no walk, so the case has no model")),
+        Ok(None) => return Err(fault("the factor gives no model, so the case has no model")),
         Err(bound) => return Ok(stopped(bound)),
     };
     if driver.met.borrow().is_none() {
         return match draw.next() {
             Ok(None) => Ok(first),
-            Ok(Some(_)) => Err(fault(many)),
+            Ok(Some(_)) => many.map_or(Ok(first), |message| Err(fault(message))),
             Err(bound) => Ok(stopped(bound)),
         };
     }

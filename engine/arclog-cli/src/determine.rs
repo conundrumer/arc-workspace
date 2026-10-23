@@ -113,11 +113,11 @@ fn findings(corpus: &Path, tasks: &Path, id: &str) -> Result<Vec<Finding>, Strin
 }
 
 /// The fault line of a case that `outcome` gives, or `None` for a case that
-/// is solved or holds a `DEMONSTRATED` form.
+/// is solved.
 fn case_fault(name: &CaseName, outcome: &CaseOutcome) -> Option<Finding> {
     let case = case_spelled(name);
     let line = match outcome {
-        CaseOutcome::Solved | CaseOutcome::Demonstrated => return None,
+        CaseOutcome::Solved => return None,
         CaseOutcome::Stopped { stop, parameters } => {
             let parameters: Vec<String> = parameters.iter().map(relation_spelled).collect();
             format!("{case}: a stop at {:?} at the form {:?}, with a domain of several values at {}", stop.bound, stop.form, parameters.join(", "))
@@ -156,9 +156,12 @@ impl Comparison<'_> {
         let mut findings = Vec::new();
         let mut compared: Vec<Compared> = Vec::new();
         for (relation, parameter) in &self.determination.parameters {
+            if self.determination.reads_demonstrated(relation) {
+                continue;
+            }
             let name = relation_spelled(relation);
             let value = match parameter {
-                Parameter::Demonstrated | Parameter::Pick => continue,
+                Parameter::Pick => continue,
                 Parameter::Underdetermined(values) => {
                     findings.push(Finding::Fault(format!("{name}: underdetermined: {} values are left after the restriction across cases", values.len())));
                     continue;

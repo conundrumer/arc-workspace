@@ -109,10 +109,7 @@ impl<'e, 'a> Driver<'e, 'a> {
             }
             DependencyKind::RecursiveInstance(_) => models::walk_value(self, relation, example),
             DependencyKind::Chosen(_) => models::pick_value(self, relation, example),
-            DependencyKind::Demonstrated(_) => Err(RunFault {
-                message: "a demonstrated relation, whose models this evaluation does not build".into(),
-                form: form.clone(),
-            }),
+            DependencyKind::Demonstrated(_) => models::demonstrated_value(self, relation, example),
             DependencyKind::Fact(_) => unreachable!("an atom reads a fact relation from the task"),
         }
     }

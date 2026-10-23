@@ -181,13 +181,11 @@ fn agrees(got: &OutputSet, expected: Option<&Value>) -> bool {
 }
 
 /// Why the concept case of `case` is not compared, or `None` where it is:
-/// it holds a `DEMONSTRATED` form, or it reads a `DET_OR_RULE` or
-/// `RULE_OR_DET` line with `(ONE)` on the derived reading, an open
-/// parameter there.
+/// it reads a `DET_OR_RULE` or `RULE_OR_DET` line with `(ONE)` on the
+/// derived reading, an open parameter there.
 fn unjudged(case: &ConceptCase<'_>) -> Option<&'static str> {
     let forms = case.case.program.value().forms.iter().zip(0u32..);
     forms.into_iter().find_map(|(form, index)| match form {
-        Form::Demonstrated(_) => Some("the case holds a `DEMONSTRATED` form"),
         Form::Clause(clause)
             if clause.value().keyword == ClauseKeyword::Rule
                 && clause.value().ones.iter().any(|mark| mark.key.is_empty())

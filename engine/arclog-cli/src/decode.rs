@@ -273,7 +273,6 @@ fn expected_solves(case: &DeterminedCase<'_>, determination: &Determination, jud
         Some((_, outcome, _)) => {
             match outcome {
                 CaseOutcome::Solved => {}
-                CaseOutcome::Demonstrated => return Err("the case holds a `DEMONSTRATED` form".to_owned()),
                 CaseOutcome::Stopped { stop, .. } => return Err(format!("the determination stops at {:?} at the form {:?}", stop.bound, stop.form)),
                 CaseOutcome::Fault(fault) => return Err(format!("the determination faults at {:?}: {}", fault.form, fault.message)),
                 CaseOutcome::Unsolved => return Err("no assignment solves every train pair".to_owned()),
@@ -283,14 +282,14 @@ fn expected_solves(case: &DeterminedCase<'_>, determination: &Determination, jud
         None => {
             let mut values = Vec::new();
             for (relation, parameter) in &determination.parameters {
-                if det_node(case.program, relation).is_none() {
+                if det_node(case.program, relation).is_none() || determination.reads_demonstrated(relation) {
                     continue;
                 }
                 match parameter {
                     Parameter::Determined(rows) => values.push((relation.clone(), rows.clone())),
                     Parameter::Open(rows) => values.push((relation.clone(), union(rows.clone()))),
                     Parameter::Underdetermined(_) => return Err(format!("the parameter {} is underdetermined", relation_spelled(relation))),
-                    Parameter::Demonstrated | Parameter::Pick => {}
+                    Parameter::Pick => {}
                 }
             }
             ParameterValues::determined(values)
