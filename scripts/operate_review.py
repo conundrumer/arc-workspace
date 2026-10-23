@@ -7,9 +7,8 @@ anew where the fingerprint of that work has changed."""
 import sys
 from pathlib import Path
 
-from handbook.paths import console_importable, scripts_importable
+from handbook.paths import scripts_importable
 
-console_importable()
 scripts_importable()
 
 from operator_transcript import read_operator  # noqa: E402

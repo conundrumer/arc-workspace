@@ -15,7 +15,6 @@ docs/_session_*.md
 
 .claude/scheduled_tasks.lock
 
-tools/console/state/
 .scratch
 /.cache/
 /work

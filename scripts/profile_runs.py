@@ -13,9 +13,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from controlled_markdown import mctx
-from handbook.paths import console_importable, scripts_importable
+from handbook.paths import scripts_importable
 
-console_importable()
 scripts_importable()
 
 from agents_pending import pending_agents  # noqa: E402

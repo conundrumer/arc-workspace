@@ -86,8 +86,7 @@ REQUEST_CUTOFF: ContextVar[Cutoff | None] = ContextVar("request_cutoff", default
 """The call cutoff for journal entries: set only while a request serves a
 `next` call, and unset for every other read."""
 
-DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.CONSOLE, ReaderName.SURVEY,
-                        ReaderName.WORKFLOW})
+DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.WORKFLOW})
 """The readers of the deprecated mechanisms, which no standing doc review
 reads."""
 

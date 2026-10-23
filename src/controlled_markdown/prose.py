@@ -14,7 +14,6 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from engine import checkout
 
 from controlled_markdown import (
     check_order,
@@ -111,23 +110,18 @@ def _carry_error(source: str, line: int,
         f"or `takes`")
 
 
-# The deprecated console, whose docstrings and comments `code_prose_lines`
-# passes over.
-DEPRECATED = checkout.console()
-
-
 def code_prose_lines(path: Path) -> list[tuple[int, str]]:
     """Each line of a docstring or of a comment of the Python file `path`,
     with its line, as `python_prose_lines` gives them; none where `path` is
-    no Python file or stands in `DEPRECATED`."""
-    if path.suffix != ".py" or path.resolve().is_relative_to(DEPRECATED):
+    no Python file."""
+    if path.suffix != ".py":
         return []
     return python_prose_lines(path.read_text())
 
 
 def code_carry_errors(path: Path, source: str) -> Iterator[ControlledMarkdownError]:
     """A finding at each line of a fragment, of a lib doc comment, or of a
-    docstring or a comment of a Python file outside `DEPRECATED`, that the
+    docstring or a comment of a Python file, that the
     file `path` holds and whose own words hold a form of `carry`, at its
     line in the file. Where the other rules refuse to read a fragment, or
     the file's fragments past one, this check reads neither: those rules

@@ -8,8 +8,7 @@ input, and ends with a numbered list of options. The user answers by index.
 A card is one file under work/cards/ that the Artifact tool publishes as it
 stands. The tool wraps the file in its own document skeleton, so the page
 opens with its `<title>` and its `<style>`, and holds no `<html>`, `<head>`
-or `<body>` tag. The ARC palette and the grid CSS are copied from the
-console's UI into the page.
+or `<body>` tag. The page holds the ARC palette and the grid CSS.
 """
 
 import html
@@ -29,7 +28,6 @@ from study.card_spec import (Card, CodeSlice, Table, from_root, options_of,
 
 CARDS_DIR = checkout.work() / "cards"
 
-# Copied from tools/console/ui/panels/grid.js.
 ARC = [
     "#000000", "#0074D9", "#FF4136", "#2ECC40", "#FFDC00",
     "#AAAAAA", "#F012BE", "#FF851B", "#7FDBFF", "#870C25",

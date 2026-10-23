@@ -10,12 +10,9 @@ from engine import checkout
 from handbook.context import DOCS_DIR, WORKFLOW_DIR
 from handbook.paths import document, repo_label
 
-CONSOLE_DIR = document(checkout.console())
-
 # The scripts that build a role's brief. A file here that states the role on a
 # line about roles spawns that role.
-SPAWN_GLOBS = ((WORKFLOW_DIR, "*.js"), (document(checkout.scripts()), "*.py"),
-               (CONSOLE_DIR, "*.py"), (CONSOLE_DIR / "solver_console", "*.py"))
+SPAWN_GLOBS = ((WORKFLOW_DIR, "*.js"), (document(checkout.scripts()), "*.py"))
 # The documents that tell a session to spawn a role. A session that reads one
 # of them briefs the role itself.
 SPAWN_DOC_GLOBS = ((DOCS_DIR, "*.md"),

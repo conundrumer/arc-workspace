@@ -39,7 +39,7 @@ from transcripts import agent_id, agent_transcripts, chain
 
 STORE_NAME = "run-records.sqlite"
 
-SOURCES = ("scripts/**/*.py", "src/**/*.py", "tools/console/solver_console/**/*.py")
+SOURCES = ("scripts/**/*.py", "src/**/*.py")
 """The code a held record rests on."""
 
 KEEP_SECONDS = 24 * 3600

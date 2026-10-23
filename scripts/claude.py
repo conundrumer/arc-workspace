@@ -13,22 +13,18 @@ import hashlib
 import os
 import sys
 
-from handbook.paths import console_importable
-
-console_importable()
-
-from handbook.agents import write_agent  # noqa: E402
-from handbook.context import sweep_digests  # noqa: E402
-from handbook.coordinator_document import SESSION_READER_ENV, coordinator_appendix  # noqa: E402
-from handbook.reader_names import ReaderName  # noqa: E402
-from solver_console import config  # noqa: E402
+from engine import checkout
+from handbook.agents import write_agent
+from handbook.context import sweep_digests
+from handbook.coordinator_document import SESSION_READER_ENV, coordinator_appendix
+from handbook.reader_names import ReaderName
 
 
 def main() -> None:
     write_agent()
     text = coordinator_appendix()
     digest = hashlib.sha1(text.encode()).hexdigest()[:10]
-    path = config.STATE_DIR / f"handbook-{digest}.md"
+    path = checkout.caches() / f"handbook-{digest}.md"
     if path.exists():
         # The sweep dates a file by its mtime, and this session takes the file
         # now, so its age starts again here.
@@ -38,7 +34,7 @@ def main() -> None:
         path.write_text(text)
         sweep_digests(path)
     os.environ[SESSION_READER_ENV] = ReaderName.USER_SESSION
-    os.execvp(config.CLAUDE, [config.CLAUDE, "--append-system-prompt-file", str(path),
+    os.execvp("claude", ["claude", "--append-system-prompt-file", str(path),
                               *sys.argv[1:]])
 
 

@@ -403,14 +403,8 @@ def skills() -> Path:
 
 
 def tools() -> Path:
-    """`tools/`: the solver console and the editor extension."""
+    """`tools/`: the editor extension."""
     return ROOT / "tools"
-
-
-def console() -> Path:
-    """`tools/console/`: the solver console, whose modules stand in
-    `solver_console/` under it."""
-    return tools() / "console"
 
 
 def scripts() -> Path:

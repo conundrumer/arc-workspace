@@ -9,8 +9,6 @@ from pathlib import Path
 import controlled_markdown as nm
 from controlled_markdown import mctx
 from engine import checkout
-from handbook import paths
-from handbook.agent_documents import agent_document
 from handbook.agents import (agent_file, agent_names,
                              agent_prompt_text, next_file, next_readers,
                              next_text)
@@ -18,26 +16,17 @@ from handbook.context import (CODEX_DOC, ROLE_DIR, SESSION_DOC, entry_text,
                               first_heading, no_item_named, role_document,
                               role_file, session_text, workflow_file,
                               write_lib_output)
-from handbook.lib import LibForm, lib_form
 from handbook.paths import document, repo_label
 from handbook.role_briefs import spawn_line
 from handbook.workflow_scripts import (Phase, Unplaced, workflow_fragments,
                                       workflow_phases, workflow_roleless_line)
 
 APPENDIX = mctx("the system-prompt appendix")
-"""What the console worker's first section is called."""
+"""What the system-prompt appendix's section is called."""
 
 # A reader's context, printed as the reader receives it. Each section opens
 # with a marker line, so two runs diff line by line.
 MARKER = "==== {what} ====\n"
-
-# The sample values a printed message takes in place of the ones a run fills.
-SAMPLE_TID = "0000abcd"
-SAMPLE_TASK = '{"train": [{"input": [[0]], "output": [[1]]}], "test": []}'
-SAMPLE_REPORTS = "<prior reports>"
-SAMPLE_ENTRY = "docs/wf-solver/proposals/<entry>.md"
-SAMPLE_SCOPE = "every solver"
-SAMPLE_SCRATCH = "work/console/surveys/<entry>/<run time>"
 
 # The session's own skill, which a session at a terminal reads beside the
 # handbook.
@@ -47,14 +36,6 @@ SESSION_SKILL = document(checkout.skills()) / "session" / "SKILL.md"
 def marked_section(what: str, text: str) -> str:
     """One marked section: the marker line, a blank line, and the text."""
     return MARKER.format(what=what) + "\n" + text.rstrip("\n") + "\n"
-
-
-def _console():
-    """The console's prompt builders and its stage chain, imported once
-    `console_importable` puts the console on the path."""
-    paths.console_importable()
-    from solver_console import prompts, store
-    return prompts, store
 
 
 def _body(path: Path) -> str:
@@ -131,92 +112,6 @@ def role_context(name: str, roles: Path = ROLE_DIR,
     if brief:
         parts.append(marked_section(mctx("the brief"), spawn_line(name)))
     return "\n".join(parts)
-
-
-def console_stages() -> list[str]:
-    """The stages of the chain a wave runs when it states none."""
-    _, store = _console()
-    return [st["name"] for st in store.default_chain()]
-
-
-def _stage_messages(stage: str, stages: list[str], prompts) -> list[tuple[str, str]]:
-    """Each message the console sends a worker in that stage: the ordinary
-    ones in order, then each one a condition sends, under the condition."""
-    first, last = stages[0], stages[-1]
-    more = "yes" if stage != last else ""
-    out: list[tuple[str, str]] = []
-    if stage == first:
-        out.append((mctx("message: create"),
-                    prompts.message("create", tid=SAMPLE_TID,
-                                    task=SAMPLE_TASK)))
-    else:
-        out.append((mctx("message: advance, where the stages before it left "
-                         "a solver on disk"),
-                    prompts.message("advance", tid=SAMPLE_TID,
-                                    task=SAMPLE_TASK,
-                                    reports=SAMPLE_REPORTS, more=more)))
-        out.append((mctx("message: no-solver, where the stages before it "
-                         "left no solver on disk"),
-                    prompts.message("no-solver", tid=SAMPLE_TID,
-                                    task=SAMPLE_TASK,
-                                    reports=SAMPLE_REPORTS, more=more)))
-    if stage == last:
-        out.append((mctx("message: finalize, where the pass starts over a "
-                         "committed solver"),
-                    prompts.message("finalize", tid=SAMPLE_TID,
-                                    task=SAMPLE_TASK,
-                                    reports=SAMPLE_REPORTS)))
-    out.append((mctx("message: nudge, where a turn ended at the output limit "
-                     "with nothing run"), prompts.nudge_brief()))
-    # A bail and a handoff ask for the report whose landing hands off, so the
-    # last stage, which hands off to nobody, is sent neither.
-    if stage != last:
-        out.extend([
-            (mctx("message: bail, where two turns ended with nothing run"),
-             prompts.bail_brief()),
-            (mctx("message: handoff, where the console asks for the handoff "
-                  "report"), prompts.handoff_brief()),
-            (mctx("message: refused-handoff, where the worker refuses that "
-                  "ask"), prompts.refused_handoff_brief()),
-        ])
-    out.extend([
-        (mctx("message: callout, where the pass lands and the callouts are "
-              "asked for"), prompts.callout_brief()),
-        (mctx("message: refused-callout, where the worker refuses that ask"),
-         prompts.refused_callout_brief()),
-    ])
-    return out
-
-
-def console_context(stage: str) -> str:
-    """What a console worker reads in one stage: the system-prompt appendix,
-    then each message the console sends it. The stages are the ones
-    `store.default_chain` gives, which is the chain a wave runs when it states
-    none."""
-    prompts, _ = _console()
-    stages = console_stages()
-    if stage not in stages:
-        raise no_item_named("console stage", "stages", stage, stages)
-    parts = [marked_section(APPENDIX, prompts.append_text())]
-    parts += [marked_section(what, text)
-              for what, text in _stage_messages(stage, stages, prompts)]
-    return "\n".join(parts)
-
-
-def survey_context() -> str:
-    """What a survey session reads: the appendix its agent takes as its system
-    prompt, then the role's text and the survey brief."""
-    prompts, _ = _console()
-    agent = agent_document(role_document("survey")[0])
-    return "\n".join([
-        marked_section(APPENDIX, prompts.append_text(
-            index=lib_form(agent) is LibForm.INDEX)),
-        marked_section(repo_label(role_file("survey")),
-                 prompts.role_text("survey")),
-        marked_section(mctx("the `survey` message"),
-                 prompts.survey_brief(entry=SAMPLE_ENTRY, scope=SAMPLE_SCOPE,
-                                      scratch=SAMPLE_SCRATCH)),
-    ])
 
 
 def workflow_context(name: str) -> str:

@@ -482,9 +482,7 @@ REVIEW_FACTS = {
     Review.CODE: ReviewFacts(
         Role.CODE_REVIEWER, mctx("code review"),
         PathSet(("src/", "scripts/", "tests/", "engine/", "theory/", "tools/", ".claude/workflows/",
-                 ".claude/settings.json", "justfile"),
-                # `tools/console/vendor/` holds third-party code the project does not own.
-                ("tools/console/vendor/",)),
+                 ".claude/settings.json", "justfile")),
         "Find the line-level places"),
     Review.LIB: ReviewFacts(
         Role.LIB_REVIEWER, mctx("lib review"),

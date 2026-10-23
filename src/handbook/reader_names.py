@@ -15,7 +15,5 @@ class ReaderName(StrEnum):
     CODEX = "codex"
     AGENT = "agent"
     ROLE = "role"
-    CONSOLE = "console"
-    SURVEY = "survey"
     WORKFLOW = "workflow"
     FRAGMENTS = "fragments"

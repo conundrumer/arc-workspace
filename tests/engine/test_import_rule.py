@@ -22,7 +22,7 @@ ALLOWED: dict[str, frozenset[str]] = {
 """For each package the rule constrains, the packages it may import."""
 
 REFUSED = frozenset({"dl", "study", "tools"})
-"""The old tree, the study scripts and the console, which none of the
+"""The old tree, the study scripts and the tools, which none of the
 packages the rule constrains may import."""
 
 ABOVE = "<a relative import above its package>"

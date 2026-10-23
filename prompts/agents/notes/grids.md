@@ -1,6 +1,6 @@
 + document-size-budget: 960
 * comment: when editing this doc
-    - Readers: the `analyze`, `create` and `refine` agents and [Codex on arc-workspace](prompts/codex.md) inline [grids](#grids) under their Grids heading, and the `scratch-note` message of [Console messages](prompts/console.md) inlines it under its Grids heading.
+    - Readers: the `analyze`, `create` and `refine` agents and [Codex on arc-workspace](prompts/codex.md) inline [grids](#grids) under their Grids heading.
     - Acts, each with its section:
         - Drawing a grid and citing a grid location: [grids](#grids).
 

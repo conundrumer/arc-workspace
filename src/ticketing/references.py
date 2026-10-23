@@ -6,9 +6,9 @@ import re
 from collections.abc import Iterable
 from pathlib import PurePosixPath
 
-MODULE_ROOTS = ("src", "scripts", "tools/console", ".")
+MODULE_ROOTS = ("src", "scripts", ".")
 """The directories under which a file's path names a module: the packages'
-sources, the scripts and the console, which run with their directory on
+sources and the scripts, which run with their directory on
 the import path, and the checkout's root, from which `tests` is a
 package."""
 

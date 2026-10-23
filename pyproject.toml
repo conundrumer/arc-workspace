@@ -53,7 +53,6 @@ pythonVersion = "3.12"
 typeCheckingMode = "basic"
 venvPath = "."
 venv = ".venv"
-extraPaths = ["tools/console"]
 
 [tool.pyrefly]
 search-path = [".", "src"]
@@ -62,4 +61,4 @@ search-path = [".", "src"]
 # The agent-facing documents. `check` and `fmt` read this set when no path is
 # given, so the command that guards them is one word wherever it is written.
 paths = ["CLAUDE.md", "docs/handbook", "prompts", ".claude/skills",
-         "src/controlled_markdown", "tools/console/recal"]
+         "src/controlled_markdown"]

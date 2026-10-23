@@ -10,7 +10,7 @@ each target of an `xref` attribute that refers to nothing, each script,
 module or path a backticked span refers to that the tree does not hold
 (`controlled_markdown.xrefs`), and each line whose own words hold a form
 of `carry` of a document, of an `mctx` fragment, of a lib doc comment, or of a docstring or a comment of a
-Python file outside `tools/console/`, and exits 1 when any does. A run
+Python file, and exits 1 when any does. A run
 given no path also counts, over the whole set, the sites each partial is
 inlined at. `fmt` rewrites each file in canonical form and prints the ones
 it changed. With no path, both read the set under

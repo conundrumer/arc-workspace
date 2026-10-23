@@ -19,9 +19,8 @@ from engine.checkout import ROOT
 
 import script_calls
 from controlled_markdown import mctx
-from handbook.paths import console_importable, scripts_importable
+from handbook.paths import scripts_importable
 
-console_importable()
 scripts_importable()
 
 import kept_reads  # noqa: E402

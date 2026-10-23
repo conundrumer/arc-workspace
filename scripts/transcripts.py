@@ -20,20 +20,10 @@ from claude_config import config_dir
 from entry_reads import entries_back
 from transcript_snapshots import Refused, parse, snapshot
 
-CONSOLE_HOME_ENV = "CONSOLE_CLAUDE_HOME"
-
-
-def console_home() -> Path:
-    """The Claude home the console's workers run under, as
-    `solver_console.config.CLAUDE_HOME` gives it; the kept reads import no
-    module of the console."""
-    return Path(os.environ.get(CONSOLE_HOME_ENV, Path.home() / ".claude-console"))
-
-
 @state_cache(None)
 def project_dirs() -> list[Path]:
     dirs: list[Path] = []
-    for d in (config_dir() / "projects", console_home() / "projects"):
+    for d in (config_dir() / "projects",):
         if d.is_dir() and d.resolve() not in [x.resolve() for x in dirs]:
             dirs.append(d)
     return dirs

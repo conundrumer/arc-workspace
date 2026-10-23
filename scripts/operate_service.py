@@ -866,11 +866,6 @@ def serve() -> None:
         except BlockingIOError:
             return
         import kept_reads
-        from handbook.paths import console_importable
-        # Match operate's import resolution before taking the initial stamp.
-        # Otherwise importing operate adds console dependencies to the closure
-        # and every cold interpreter retires as though its code had changed.
-        console_importable()
         gc.disable()
         kept_reads.open_store(required=True)
         code = kept_reads.fresh_code("operate")

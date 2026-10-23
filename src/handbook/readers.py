@@ -12,9 +12,8 @@ from controlled_markdown import mctx
 from handbook.agent_documents import agent_dir
 from handbook.agents import agent_names
 from handbook.context import role_dir, role_stems, workflow_dir, workflow_names
-from handbook.contexts import (agent_context, codex_context, console_context,
-                               console_stages, role_context, session_context,
-                               survey_context, workflow_context)
+from handbook.contexts import (agent_context, codex_context, role_context,
+                               session_context, workflow_context)
 from handbook.coordinator_document import coordinator_context, user_session_context
 from handbook.fragments import fragment_parts, fragments_context
 from handbook.paths import DOCUMENTS_ROOT
@@ -26,7 +25,6 @@ class ArgumentForm(StrEnum):
     line writes it."""
 
     NAME = "<name>"
-    STAGE = "<stage>"
     PART = "<part>"
 
 
@@ -46,15 +44,6 @@ def _no_values(_root: Path) -> list[str]:
     return []
 
 
-def _console_stages(root: Path) -> list[str]:
-    """The console's stages, which `console_stages` lists only under
-    `DOCUMENTS_ROOT`: another root is a fault."""
-    if root != DOCUMENTS_ROOT:
-        raise ValueError(f"the console's stages are listed under {DOCUMENTS_ROOT} alone, "
-                         f"not under {root}")
-    return console_stages()
-
-
 CONTEXT_READERS = {
     ReaderName.COORDINATOR: Reader(None, _no_values,
                                    lambda _a: coordinator_context()),
@@ -67,9 +56,6 @@ CONTEXT_READERS = {
                              lambda a: agent_context(a[0])),
     ReaderName.ROLE: Reader(ArgumentForm.NAME, lambda r: role_stems(role_dir(r)),
                             lambda a: role_context(a[0])),
-    ReaderName.CONSOLE: Reader(ArgumentForm.STAGE, _console_stages,
-                               lambda a: console_context(a[0])),
-    ReaderName.SURVEY: Reader(None, _no_values, lambda _a: survey_context()),
     ReaderName.WORKFLOW: Reader(ArgumentForm.NAME,
                                 lambda r: workflow_names(workflow_dir(r)),
                                 lambda a: workflow_context(a[0])),

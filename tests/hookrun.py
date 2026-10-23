@@ -1,4 +1,4 @@
-"""Runs a console hook script in this process.
+"""Runs a hook script in this process.
 
 A hook is a script the harness calls with a JSON event on stdin; it answers
 on stdout, or refuses on stderr with a non-zero exit. Each call loads the

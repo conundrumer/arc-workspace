@@ -14,7 +14,7 @@ checks that the change calls for:
 It takes as touched the paths outside `work` whose content differs from
 the merge base of `master` and `HEAD`, committed or not. A check runs
 where the change touches a path whose content its results can depend on:
-a path under src/, scripts/, tests/, data/tasks/ or tools/console/, one
+a path under src/, scripts/, tests/ or data/tasks/, one
 `cli.common.SOURCES` matches, pyproject.toml or uv.lock, apart from each
 Python file that stands at the merge base and whose edits change nothing
 but bare string statements, blank lines, comments that hold no
@@ -60,7 +60,7 @@ from gating.edits import same_code
 from operations.merging import CHECK_FAILED, PREFIX, TOOL, check_name
 from operations.worktrees import BASE
 
-CODE_DIRS = ("src", "scripts", "tests", "data/tasks", "tools/console")
+CODE_DIRS = ("src", "scripts", "tests", "data/tasks")
 """The directories a change under which calls for the code checks."""
 
 CODE_FILES = ("pyproject.toml", "uv.lock")

@@ -29,7 +29,7 @@ STAMP = 19
 """The length of an entry's time as `transcripts.py window` compares it,
 `YYYY-MM-DDTHH:MM:SS`."""
 
-TRANSCRIPT_PATH = re.compile(r"\.claude(?:-console)?/projects/|\.jsonl\b")
+TRANSCRIPT_PATH = re.compile(r"\.claude/projects/|\.jsonl\b")
 
 WINDOW_VALUED = frozenset({"--tool", "--project", "--kinds", "-w", "--width"})
 WINDOW_FLAGS = frozenset({"--main-only"})
@@ -149,8 +149,7 @@ def past_case(command: str, b: Bounds) -> str | None:
     """What the Bash command `command` reads past the case `b` gives, or
     None where it reads nothing past it."""
     if TRANSCRIPT_PATH.search(command):
-        return mctx("it names a `.jsonl` file or a path under `.claude/projects/` or "
-                    "`.claude-console/projects/`")
+        return mctx("it names a `.jsonl` file or a path under `.claude/projects/`")
     for prog, args in programs(command):
         if prog == "transcripts.py":
             options = args[:args.index("--")] if "--" in args else args

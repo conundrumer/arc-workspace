@@ -1,7 +1,7 @@
 + document-size-budget: 26971
 
 # Editing the agent-facing documents
-- The handbook, the console's messages to a worker, the documents that say what each agent reads, and what the tools print to a session.
+- The handbook, the documents that say what each agent reads, and what the tools print to a session.
 
 ## What a file holds
 + rules on lines
@@ -52,7 +52,7 @@
     - The `analyze` agent reads [Analyze after the concept](prompts/agents/analyze-next.md) after it writes the concept.
 - The statements more than one entry point inlines or links: the documents under [notes](prompts/agents/notes), one per subject.
 - What each of the agents' processes must achieve: [Process notes](prompts/agents/notes/process.md).
-- The texts of the solver console, of the roles and of the workflows, all deprecated: where you edit one, or a reader of your change reads one, read [Deprecated texts](prompts/agents/notes/deprecated-texts.md#deprecated-texts).
+- The texts of the roles and of the workflows, all deprecated: where you edit one, or a reader of your change reads one, read [Deprecated texts](prompts/agents/notes/deprecated-texts.md#deprecated-texts).
 - The `deletions` report: [Deletion report](prompts/run_dl.md).
 - Each text a program puts in an agent's context: its `mctx` fragments, as [Prose in code](src/controlled_markdown/writing.md#prose-in-code) gives them.
     + xref: src/controlled_markdown/writing.md#prose-in-code
