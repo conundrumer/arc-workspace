@@ -11,9 +11,13 @@
     * comment: The user's words, session 19071443, 2026-10-22T22:53:16Z: "a main session that's basically a router and listener. it runs the machine load script that, when tripped, it launches an investigator agent", and 23:00:48Z: "this should be a skill too so i can invoke it on a session to watch the load".
 - Start `uv run python scripts/load_monitor.py` in the background.
     + xref: scripts/load_monitor.py:main
-- When the monitor exits with an alert's path, start it again at once. Then launch nothing where each process of the alert is one that a report gave as justified at its load and that its owner accepted, a ruling upheld, or the report alone settled, as a part sent to no owner does. Otherwise launch a `load-incident-analyst` with the brief [A load incident analyst's brief](prompts/agents/notes/launching.md#a-load-incident-analysts-brief) gives.
+- When the monitor exits with an alert's path, start it again at once. Then launch nothing where each process of the alert is one that a report gave as justified at its load and that its owner accepted, a ruling upheld, or the report alone settled, as a part sent to no owner does, or one whose load a report gave a ticket as fixing, until `uv run python scripts/file_ticket.py await-close <number>` on that ticket exits, which you start in the background once that report reaches you.
+    * comment: The user's words, request 14-20, session 19071443, 2026-10-23T02:07:30Z: "there should be some sort of awareness of \"it is being fixed\" but it needs to know when it is fixed", and 02:07:42Z: "it should use the await command".
+- Where a `load-incident-analyst` you launched has not handed back its report, send that analyst the alert's path by SendMessage, ask it to cover that alert in its report, and launch none. The alert joins that analyst's incident.
+    * comment: The user's words, request 14-20, session 19071443, 2026-10-23T02:06:39Z: "if an analyst is running and theres another incidence just send it to the analyst already running.", and 02:05:48Z: "why not just send a message".
+- Otherwise launch a `load-incident-analyst` with the brief [A load incident analyst's brief](prompts/agents/notes/launching.md#a-load-incident-analysts-brief) gives.
 - Where the monitor exits otherwise, give the user its output.
-- Between incidents, end your turn: the harness re-invokes you at the monitor's exit and at each message.
+- Between incidents, end your turn: the harness re-invokes you at the exit of each command you run in the background and at each message.
 - Give a brief in its section's form and launch the type whose description links it, as [Launching](prompts/agents/notes/launching.md#launching) gives.
 
 ## Reports and rulings
