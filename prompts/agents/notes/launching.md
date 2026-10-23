@@ -118,7 +118,8 @@
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### A load incident analyst's brief
-- A load incident analyst's brief gives the alert file, the readings file, and each open incident's report with its owner's answer.
+- A load incident analyst's brief gives the alert file, the readings file, and the report of each incident that is open or whose alert came in the hour before this alert, each with its owner's answer or ruling where it has one.
+    * comment: The user's words, session 19071443-e929-490f-bb8b-cca32c92ba6b, 2026-10-23T00:31:21Z: "are the load analysts aware of past incidents so they can notice a pattern in the short term?"
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### An item checker's brief
