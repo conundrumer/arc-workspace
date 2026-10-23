@@ -156,7 +156,8 @@
 2. Write the solver (`programs/solvers/<task_id>.dl`), and copy `witnesses.json` to the witness file: `cp programs/reports/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`.
     - Write the header's `@scene` and `@rule` lines from the concept file's claims, and `Params` from its Parameters section, under their names. The `@scene` line written from a claim gives the value of each parameter in its Scene parameters section that the claim reads.
     - A rule that `analyze.md` restates takes the restated text, and the concept file's text stands under it as its `@approximated:` line when the restated text has no relational form.
-    - Each branch that `analyze.md` gives a witness, other than one that derives a parameter's value by a built-in derivation or stores a value the program derives, is a constructor, named as `analyze.md` names it and nested as `analyze.md` nests its choice point.
+    - Each branch that `analyze.md` gives a witness, other than one that derives a parameter's value by a built-in derivation or, unless it is a lookup table, stores a value the program derives, is a constructor, named as `analyze.md` names it and nested as `analyze.md` nests its choice point.
+        * comment: The Create pass on cb2d8a2c, agent a70c0a3f6c3d8b832, read this line as making the `analyze.md` branch `clearance_of=stored`, a table from a wall's mark count to its clearance, a `@store` line. The relation it derived for the table differs between inputs, so its `@store` case failed every pair but one, as ticket 17-80 records.
         - [Develop](#develop) step 4 gives which of the branches the line above leaves out you hold.
             + xref: docs/handbook/procedure.md#develop
     - A concept branch's constructor takes a name of your own, and so does the constructor of a branch `analyze.md` names in a form other than a constructor name, such as `<rel>=derived`. In the witness file, rewrite each name of that branch to that name.
@@ -179,7 +180,8 @@
     - A built-in derivation that fits a parameter.
         + xref: src/checker/branches/checks.py:check_two_parameterizations
     - An interpretation that stores a derived value, where a `@store` line stands on that value or `store` prints one to add for it.
-    - An interpretation that stores a derived value and that `analyze.md` gives a witness, whatever `store` reports.
+    - An interpretation that, unless it is a lookup table, stores a derived value and that `analyze.md` gives a witness, whatever `store` reports.
+        * comment: The Create pass on cb2d8a2c, agent a70c0a3f6c3d8b832, read this item as well as the Write step 2 exception as making the `analyze.md` branch `clearance_of=stored`, a table from a wall's mark count to its clearance, a `@store` line, and rewrote it as a constructor after its `@store` case failed, as ticket 17-80 records.
 5. Find and write the branches of step 4 with these:
     - `uv run python scripts/run_dl.py derive <task_id>` lists the built-in derivations that fit.
         + xref: src/checker/derive.py:survey_derive
