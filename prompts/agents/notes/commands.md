@@ -23,8 +23,8 @@
         * comment: Code editor a79711fe1c59dd1f4 on change 9-1741 left unfinished the run its item asked for, of `scripts/corpus_survey.py`, estimated at about 30 minutes, under the `timeout 180` bound of foreground-commands and the 240000 ms foreground timeout: ticket 9-1933.
 
 ## foreground-commands
-- Run each command on only the inputs your work needs, and read an output that a file already holds in place of computing it again.
-    * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-23T12:22:15Z: "Load budget needs to be first class and explicitly managed at all points where applicable. It should avoid unnecessary load". Change 11-3618.
+- Run each command, one you wrote included, at the least load that shows what your work needs: on only the inputs it needs and at the smallest size or cap that shows it. Reuse saved output while it still shows what your work needs.
+    * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-23T12:22:15Z: "Load budget needs to be first class and explicitly managed at all points where applicable. It should avoid unnecessary load". Change 11-3618. Request 11-3751, Grounds: the code editor of change 9-2247 ran large hand-written joins where a small-cap test showed the item, and repeated tool builds; the code editor of change 9-2239 repeated cargo test with no edit between. The user's words in that request's span, 2026-10-23T14:25:24Z: "take action from peers always".
 - Run each command in the foreground, where no other line of your documents has you run it in the background.
     * unless: codex
         - Set a timeout of 240000 ms on the Bash call.
