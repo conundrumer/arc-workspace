@@ -2,7 +2,8 @@
 per key however many threads ask, the most recently used under a cap, a
 file written whole or not at all, a value read from a file or made and
 kept there, and a file's part in the hash a kept
-value is keyed on. Every package may import it."""
+value is keyed on, and whether a file is being read for it. Every package
+may import it."""
 
 import functools
 import hashlib
@@ -216,13 +217,29 @@ def hash_file(h: "hashlib._Hash", path: str, body: bytes | None) -> None:
     h.update(b"\0" if body is None else b"\1" + body)
 
 
+class _Keying(threading.local):
+    reading = False
+
+
+_KEYING = _Keying()
+
+
+def keying() -> bool:
+    """Whether the calling thread is reading a file in `hash_files`. Such a
+    read goes into a key's hash alone."""
+    return _KEYING.reading
+
+
 def hash_files(h: "hashlib._Hash", files: Iterable[tuple[str, Path]]) -> None:
     """Adds to `h` each file of `files`, a name with the path it is read
     from, in the order `files` gives them, as `hash_file` adds it, with no
     bytes where it cannot be read."""
     for name, path in files:
+        _KEYING.reading = True
         try:
             body: bytes | None = path.read_bytes()
         except OSError:
             body = None
+        finally:
+            _KEYING.reading = False
         hash_file(h, name, body)

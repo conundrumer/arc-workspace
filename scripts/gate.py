@@ -70,8 +70,9 @@ stderr and exits 1.
 
 `--coverage` traces each command: it records the lines of each Python
 file under `src/` and `scripts/` the command runs, through coverage.py, and
-the other files of the checkout it opens to read and the directories it
-lists, through an audit hook. `<out-dir>/gate/cov/` then holds each
+the other files of the checkout it opens to read, other than those it
+reads only into a kept value's key (`engine.memo.hash_files`), and the
+directories it lists, through an audit hook. `<out-dir>/gate/cov/` then holds each
 command's coverage data, which `coverage combine` reads, and
 `<out-dir>/gate/deps/` each command's dependencies.
 With `--coverage`, each command given that runs on a stem list chosen from

@@ -13,7 +13,7 @@ import coverage
 from coverage.sysmon import SysMonitor
 
 import souffle.run
-from engine import checkout
+from engine import checkout, memo
 from gating.hunks import PY_SUFFIXES
 
 TRACE = "--trace"
@@ -36,7 +36,8 @@ LIST_EVENTS = frozenset({"os.listdir", "os.scandir"})
 class Deps:
     """What one command depends on, from its traced run: the lines it ran
     of each Python file, the other files of the checkout it opened to read,
-    and the directories of the checkout it listed, each path from the
+    other than those it read only into a kept value's key
+    (`engine.memo.hash_files`), and the directories of the checkout it listed, each path from the
     checkout's root."""
     lines: dict[str, frozenset[int]]
     reads: frozenset[str]
@@ -125,12 +126,15 @@ def pruning_lines() -> dict[str, frozenset[int]]:
 def trace(deps_out: Path, cov_out: Path, script: Path, args: Sequence[str]) -> int:
     """Run `script` with `args` as `__main__`, and write what it depends on
     to `deps_out`, as `Deps`, and its coverage data to `cov_out`; its exit
-    status."""
+    status. A read that `engine.memo.keying` gives is left out of the reads:
+    each command of a gate run computes its keys from the same files, so
+    such a read decides only whether a lookup finds a value that an earlier
+    command wrote."""
     reads: set[str] = set()
     listed: set[str] = set()
 
     def hook(event: str, a: tuple[object, ...]) -> None:
-        if event == "open" and _reading(a[1], a[2]):
+        if event == "open" and not memo.keying() and _reading(a[1], a[2]):
             rel = _in_checkout(a[0])
             if rel is not None and Path(rel).suffix not in PY_SUFFIXES:
                 reads.add(rel)
