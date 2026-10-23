@@ -71,7 +71,7 @@ class ReportKind(Enum):
 TURN_ENDED = frozenset({ReportKind.NOTIFICATION, ReportKind.RESULT})
 
 
-@dataclass
+@dataclass(slots=True)
 class Report:
     """A report of an agent. `file` is the report file its text was read
     from, or None where the text is the received report."""

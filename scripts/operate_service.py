@@ -57,6 +57,12 @@ FINISH_SECONDS = 5
 CARRY_SECONDS = 600
 """How long a request's run may last, from its start, once it has no client."""
 CODE_ENV = "ARC_OPERATE_CODE"
+ALLOCATOR_ENV = {"PYTHONMALLOC": "malloc"}
+"""The allocator a resident runs under: the system allocator, whose free pages
+`script_calls.release_free_memory` returns to the system. The interpreter's own
+small-object allocator keeps an arena mapped while any object in it lives, so
+a resident whose held reads were replaced by later reads held about 200 MB
+more than a fresh process that read the same state."""
 CODE_CHANGED = 75
 """The exit status of a resident startup that finds the code changed while it
 started; `ensure` starts another one."""
@@ -542,7 +548,8 @@ def spawn(main: Path, session: str) -> subprocess.Popen[bytes] | None:
             return subprocess.Popen(
                 [sys.executable, "-B", "-X", f"pycache_prefix={path.with_suffix('.pyc')}",
                  str(main / "scripts/operate_service.py"), "startup"], cwd=main,
-                env={**os.environ, script_calls.SESSION_ENV: session, CODE_ENV: expected},
+                env={**os.environ, **ALLOCATOR_ENV, script_calls.SESSION_ENV: session,
+                     CODE_ENV: expected},
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                 stderr=errors, start_new_session=True)
 

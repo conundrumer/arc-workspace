@@ -49,7 +49,7 @@ def note_latest(times: dict[str, float], agent: str, t: float) -> None:
     times[agent] = max(times.get(agent, t), t)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Send:
     """A SendMessage call: its time, the agent id `resumed` gives for its
     result, and, where `resumed` gives a note for it, the `pin` id of its

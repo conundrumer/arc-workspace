@@ -184,7 +184,7 @@ def fold_lines[S](state: S, step: Step[S], path: Path, snap: Snapshot, lines: ra
             step(state, path, i, e)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Made[T]:
     """An item a read made from a fold's state, with the values it was
     made from (`given`) and the `undecided` lines its making gave."""

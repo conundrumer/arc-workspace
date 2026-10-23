@@ -3,6 +3,7 @@ procedures read."""
 
 import hashlib
 import re
+import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
@@ -40,8 +41,9 @@ def log_line(m: re.Match[str]) -> LogLine:
     change = None if wait is None else waited_change(wait)
     closed = CLOSED_BY_LINE.match(note)
     duplicate = DUPLICATE_OF_LINE.match(note)
-    return LogLine(line_time(m), Status(m["status"]), m["agent"],
-                   m["id"], note, wait is not None and waited(wait) is Wait.USER,
+    return LogLine(line_time(m), Status(m["status"]), sys.intern(m["agent"]),
+                   None if m["id"] is None else sys.intern(m["id"]), note,
+                   wait is not None and waited(wait) is Wait.USER,
                    None if change is None else str(change), wait is not None, resolution_of(note),
                    None if closed is None else str(matched_number(closed)),
                    None if duplicate is None else str(matched_number(duplicate)))

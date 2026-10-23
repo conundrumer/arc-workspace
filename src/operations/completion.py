@@ -3,7 +3,7 @@ message that gives none."""
 
 import json
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 
 from controlled_markdown import mctx
@@ -69,17 +69,26 @@ def refused_message(c: Call) -> bool:
     return c.tool == Tool.SEND_MESSAGE and isinstance(given, dict) and given.get("success") is False
 
 
-def refusal_of(agent_id: str, since: float, reports: Iterable[Report],
-               calls: Iterable[Call]) -> float | None:
-    """The time of the latest SendMessage call of `calls` to `agent_id` that
-    the harness refused (`refused_message`), where that call is later than
-    `since`, the time of its launch or last resume, and no report of
-    `reports` is later than it, and None otherwise."""
-    latest: Call | None = None
+def latest_sends(calls: Iterable[Call]) -> dict[str, Call]:
+    """The latest SendMessage call of `calls` that the harness gave a
+    result and no error, by the agent it went to; of calls at one time, the
+    last of `calls`."""
+    latest: dict[str, Call] = {}
     for c in calls:
-        if (c.tool == Tool.SEND_MESSAGE and not c.error and c.result is not None
-                and str(c.input.get("to")) == agent_id and (latest is None or c.time >= latest.time)):
-            latest = c
+        if c.tool == Tool.SEND_MESSAGE and not c.error and c.result is not None:
+            to = str(c.input.get("to"))
+            if to not in latest or c.time >= latest[to].time:
+                latest[to] = c
+    return latest
+
+
+def refusal_of(agent_id: str, since: float, reports: Iterable[Report],
+               sends: Mapping[str, Call]) -> float | None:
+    """The time of the latest SendMessage call to `agent_id` among `sends`
+    (`latest_sends`) that the harness refused (`refused_message`), where
+    that call is later than `since`, the time of its launch or last resume,
+    and no report of `reports` is later than it, and None otherwise."""
+    latest = sends.get(agent_id)
     if (latest is not None and refused_message(latest) and latest.time > since
             and not any(r.time > latest.time for r in reports)):
         return latest.time

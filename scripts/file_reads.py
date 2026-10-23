@@ -139,7 +139,7 @@ def resolved(path: Path) -> Path:
     return path.resolve()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Named:
     """An entry of a directory, as `os.scandir` gives it: `is_dir` and
     `is_file` follow a link, and `is_link` says whether it is one."""

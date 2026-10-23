@@ -15,7 +15,7 @@ from transcript_snapshots import SUBJECT_FAULTS
 
 from controlled_markdown import mctx
 
-from operations.completion import refusal_of
+from operations.completion import latest_sends, refusal_of
 from operations.constants import STUCK_SECONDS, stuck_reached
 from operations.liveness import (
     AttemptFacts, CodexEnd, CodexRead, Written, attempt_state, unknown_text)
@@ -158,8 +158,9 @@ def attempt_reads(agents: Sequence[Agent], me: str, calls: Sequence[Call], undec
     pending takes the report its end gives (`Ended.report`)."""
     held: set[str] = set()
     out: list[Agent] = []
+    sends = latest_sends(calls)
     for a in agents:
-        state = attempt_state(attempt_facts(a, me, calls, undecided, listing or [], closes or {},
+        state = attempt_state(attempt_facts(a, me, sends, undecided, listing or [], closes or {},
                                             stalls or {}, idle, live, held))
         if isinstance(state, Ended) and a.pending:
             ending = filed_report(ended_with(a, state.report))
@@ -169,11 +170,12 @@ def attempt_reads(agents: Sequence[Agent], me: str, calls: Sequence[Call], undec
     return AttemptsRead(tuple(out), frozenset(held))
 
 
-def attempt_facts(a: Agent, me: str, calls: Sequence[Call], undecided: list[str],
+def attempt_facts(a: Agent, me: str, sends: Mapping[str, Call], undecided: list[str],
                   listing: list[Listed], closes: Mapping[str, float],
                   stalls: Mapping[str, Report], idle: frozenset[str], live: frozenset[str],
                   held: set[str]) -> AttemptFacts:
-    """`AttemptFacts` of `a`, for `attempt_reads`, which `held` gets the
+    """`AttemptFacts` of `a`, for `attempt_reads`, with the latest SendMessage
+    calls `sends` (`completion.latest_sends`), which `held` gets the
     agent id of where its Codex read is `LIVE` or `UNKNOWN`."""
     aid = a.agent_id
     listed = aid is not None and aid in live
@@ -225,9 +227,9 @@ def attempt_facts(a: Agent, me: str, calls: Sequence[Call], undecided: list[str]
         return Written(w.time, (mctx("its transcript cannot be read ({error})").format(error=fault),
                                 *(x for x in w.limits if x != missing)))
 
-    refused = refusal_of(aid, a.since, a.reports, calls) if aid is not None else None
+    refused = refusal_of(aid, a.since, a.reports, sends) if aid is not None else None
     if aid is not None and refused is not None and (ending := report()) is not None:
-        refused = refusal_of(aid, a.since, (*a.reports, ending), calls)
+        refused = refusal_of(aid, a.since, (*a.reports, ending), sends)
     return AttemptFacts(sign, report, codex, written, refused, listed,
                         idle=aid is not None and aid in idle, stalled=stalled,
                         outlived=aid is not None and outlived(a, closes), elsewhere=elsewhere)

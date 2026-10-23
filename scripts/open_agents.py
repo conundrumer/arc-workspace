@@ -145,7 +145,7 @@ def received_reports(r: Run, undecided: list[str],
             else reports(r.path, since, undecided))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Launched:
     """An agent a run launched, as `held_under` holds it: `parent` is the
     label of that run and `launcher` the path of its transcript, `path` the

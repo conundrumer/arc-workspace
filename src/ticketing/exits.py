@@ -36,7 +36,7 @@ class Exit(StrEnum):
     SWEEP = "sweep"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Exits:
     """The steps that take a ticket out of its status, and whether its move
     from that status into `tickets/reopened/` frees it for a fresh ticket
