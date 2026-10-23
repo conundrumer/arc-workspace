@@ -23,6 +23,7 @@
 .functor box_interior(a: Box, b: Box): number stateful
 .functor box_dist(p: Box, d: Dir): number stateful
 .functor box_corner_dist(p: Box, diag: DiagDir): number stateful
+.functor box_dir8_dist(p: Box, d: Dir8): number stateful
 .functor box_axis_dim(p: Box, a: Axis): number stateful
 .functor box_along(p: Box, a: Axis): Box stateful
 .functor box_across(p: Box, a: Axis): Box stateful
@@ -228,8 +229,7 @@ same_line(DA, P, Q) :-
 /// p strictly nearer d than q. At a DiagDir the compared distances are
 /// corner_dist.
 .decl nearer(d: Dir8, p: Position, q: Position) inline
-nearer(D, P, Q) :- dir_elem(D), @box_dist(P, D) < @box_dist(Q, D).
-nearer(D, P, Q) :- diag_dir_elem(D), @box_corner_dist(P, D) < @box_corner_dist(Q, D).
+nearer(D, P, Q) :- dir8_elem(D), @box_dir8_dist(P, D) < @box_dir8_dist(Q, D).
 
 /// Two positions agree on the distances to the two edges of corner d.
 .decl corner_anchor(d: DiagDir, p1: Box, p2: Box) inline

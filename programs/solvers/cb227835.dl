@@ -75,7 +75,7 @@ corner(Ch, A, D1, K1, B, D2, K2) :-
     marker(Ch, A), marker(Ch, B), A != B,
     run.ray(Ch, C, D1, K1, A), dir_elem(D1),
     run.ray(Ch, C, D2, K2, B), diag_dir_elem(D2),
-    dist(C, D1, K_c), dist(B, D1, K_b), K_c >= K_b.
+    !nearer(D1, C, B).
 
 // The outline cells, the markers excluded.
 .decl outline(ch: Choice, p: Position)

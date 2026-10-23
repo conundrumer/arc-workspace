@@ -102,6 +102,28 @@ Tiling tiling(Margins m, RamDomain a, RamDomain k, RamDomain g) {
     return {true, (ext + g) / period, near(m, a) / period, inner, k};
 }
 
+// The distance from a box to its edge at a Dir, and to its corner at a
+// DiagDir. Each returns false, with `out` untouched, at any other value.
+bool edge_dist(Margins m, RamDomain d, RamDomain& out) {
+    switch (d) {
+        case DIR_T: out = m.t; return true;
+        case DIR_B: out = m.b; return true;
+        case DIR_L: out = m.l; return true;
+        case DIR_R: out = m.r; return true;
+    }
+    return false;
+}
+
+bool corner_dist(Margins m, RamDomain diag, RamDomain& out) {
+    switch (diag) {
+        case DIAG_TL: out = m.t + m.l; return true;
+        case DIAG_TR: out = m.t + m.r; return true;
+        case DIAG_BL: out = m.b + m.l; return true;
+        case DIAG_BR: out = m.b + m.r; return true;
+    }
+    return false;
+}
+
 }  // namespace
 
 extern "C" {
@@ -128,25 +150,25 @@ RamDomain box_interior(SymbolTable*, RecordTable* rt, RamDomain a, RamDomain b) 
 
 RamDomain box_dist(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain d) {
     Margins m = margins(rt, p);
-    switch (d) {
-        case DIR_T: return m.t;
-        case DIR_B: return m.b;
-        case DIR_L: return m.l;
-        case DIR_R: return m.r;
-    }
+    RamDomain k;
+    if (edge_dist(m, d, k)) return k;
     no_case("box_dist", d);
 }
 
 // Taxicab distance to corner diag: the sum of its two edge distances.
 RamDomain box_corner_dist(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain diag) {
     Margins m = margins(rt, p);
-    switch (diag) {
-        case DIAG_TL: return m.t + m.l;
-        case DIAG_TR: return m.t + m.r;
-        case DIAG_BL: return m.b + m.l;
-        case DIAG_BR: return m.b + m.r;
-    }
+    RamDomain k;
+    if (corner_dist(m, diag, k)) return k;
     no_case("box_corner_dist", diag);
+}
+
+// The edge distance at a Dir and the corner distance at a DiagDir.
+RamDomain box_dir8_dist(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain d) {
+    Margins m = margins(rt, p);
+    RamDomain k;
+    if (edge_dist(m, d, k) || corner_dist(m, d, k)) return k;
+    no_case("box_dir8_dist", d);
 }
 
 RamDomain box_axis_dim(SymbolTable*, RecordTable* rt, RamDomain p, RamDomain a) {
