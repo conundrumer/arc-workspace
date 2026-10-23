@@ -20,7 +20,6 @@
 - Launch no agent other than the ones your documents give.
 
 ## reads-and-progress
-- Read nothing under `../arc-synth-bun/`.
 - Keep `progress.md` in your scratch directory, with what is done and what is next.
 
 ## unit-kinds

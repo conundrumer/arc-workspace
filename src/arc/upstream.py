@@ -27,6 +27,20 @@ _RESOLUTION: list[tuple[DatasetT, SplitT]] = [
 ]
 
 
+DATASETS: tuple[DatasetT, ...] = ("arc-agi-1", "arc-agi-2")
+SPLITS: tuple[SplitT, ...] = ("training", "evaluation")
+
+
+def task_ids(dataset: DatasetT | None = None, split: SplitT | None = None) -> set[str]:
+    """Ids of the tasks in `dataset` and `split`; None for either means all of them."""
+    return {
+        f.stem
+        for d in ((dataset,) if dataset else DATASETS)
+        for sp in ((split,) if split else SPLITS)
+        for f in (UPSTREAM_DIR / d / "data" / sp).glob("*.json")
+    }
+
+
 @dataclass(frozen=True)
 class UpstreamSource:
     dataset: DatasetT

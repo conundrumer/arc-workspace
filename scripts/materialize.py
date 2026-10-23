@@ -8,7 +8,7 @@ from pathlib import Path
 
 from arc.jsonio import format_file
 from arc.materialize import materialize_default
-from arc.upstream import UPSTREAM_DIR
+from arc.upstream import UPSTREAM_DIR, task_ids
 from controlled_markdown import mctx
 from engine import checkout
 from worktree_submodules import set_up_in_script
@@ -16,25 +16,11 @@ from worktree_submodules import set_up_in_script
 OUT_DIR = Path(__file__).resolve().parents[1] / "data" / "tasks"
 
 
-def all_upstream_ids() -> set[str]:
-    ids: set[str] = set()
-    for dataset_dir in UPSTREAM_DIR.iterdir():
-        data_dir = dataset_dir / "data"
-        if not data_dir.is_dir():
-            continue
-        for split_dir in data_dir.iterdir():
-            if not split_dir.is_dir():
-                continue
-            for f in split_dir.glob("*.json"):
-                ids.add(f.stem)
-    return ids
-
-
 def main() -> int:
     argparse.ArgumentParser(description=__doc__).parse_args()
     if not set_up_in_script(checkout.ROOT):
         return 1
-    ids = sorted(all_upstream_ids())
+    ids = sorted(task_ids())
     if not ids:
         print(mctx("{path} holds no task").format(path=UPSTREAM_DIR), file=sys.stderr)
         return 1

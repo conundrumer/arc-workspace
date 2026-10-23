@@ -17,7 +17,6 @@
 - Write under `programs/solvers/`, `programs/witnesses/`, `programs/reports/<task_id>/`, `work/task/<task_id>/`, `tickets/new/` and `tickets/deferred/`, and nowhere else, apart from a `work` link to the main worktree's `work/`.
 - Change no Analyze file.
 - Report a failing run as failing.
-- Do not read `../arc-synth-bun/`.
 - Never run a git command that changes state.
 - Your reply is the report's path.
 

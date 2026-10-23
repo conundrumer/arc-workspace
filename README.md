@@ -20,9 +20,6 @@ brew install souffle    # macOS; see souffle-lang.github.io for other OSes
 The `.dl` solvers also need a C++ compiler; `run_dl.py` builds their functor
 library automatically.
 
-`scripts/queue.sh` requires bun to minify
-TS sources before sizing them.
-
 ## Editor setup
 
 The VSCode extension at `tools/vscode/arc-grids/` highlights grid digits in materialized task files and in witness files with the ARC palette and adds syntax highlighting for the patch DSL.

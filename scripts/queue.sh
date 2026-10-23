@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
-# Wrapper for queue.ts; see there for details.
-exec bun "${0%.sh}.ts" "$@"
+# Lists the ids of tasks that have no programs/solvers/<id>.dl; see unported_tasks.py.
+exec uv run python "$(dirname "$0")/unported_tasks.py" "$@"
