@@ -19,14 +19,14 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
         - Where it writes and what it reads: the lead.
         - Drawing a grid: [Grids](#grids).
         - Running a command: [Commands](#commands).
-        - Filing a ticket: [Tickets](#tickets).
+        - Noting an issue: [Issues](#issues).
 
 # Analyze agent
 - Your brief gives one task.
 * inline: notes/solver-pass.md#brief-form
 
 - Run Analyze on that task.
-- Put the files you write under `programs/reports/<task_id>/`, `work/task/<task_id>/`, `tickets/new/` and `tickets/deferred/`, and nowhere else, apart from a `work` link to the main worktree's `work/`.
+- Put the files you write under `programs/reports/<task_id>/`, `work/task/<task_id>/`, and nowhere else, apart from a `work` link to the main worktree's `work/`.
 - Read nothing outside `docs/handbook/`, `data/tasks/<task_id>.json` and the files directly in `programs/reports/<task_id>/` and `work/task/<task_id>/`, apart from each file and section a line of your documents has you read.
 - Never run a git command that changes state.
 - Your reply is the path of the Analyze report, `programs/reports/<task_id>/analyze.md`.
@@ -45,12 +45,8 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 ## Commands
 * inline: notes/commands.md#commands
 
-## Tickets
-* inline: notes/tickets.md#pass-tickets
-
-* inline: notes/tickets.md#delay-tickets
-
-* inline: notes/tickets.md#ticket-files
+## Issues
+* inline: notes/tickets.md#pass-issues
 
 ## Analyze
 * inline: ../../docs/handbook/procedure.md#analyze

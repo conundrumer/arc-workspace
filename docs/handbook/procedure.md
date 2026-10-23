@@ -148,7 +148,7 @@
     - <claim>: <why>
 
     ## Tickets filed
-    - <the name of a file the pass wrote under `tickets/new/` or `tickets/deferred/`>
+    - none
     ```
 
 ### Write

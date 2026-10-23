@@ -209,11 +209,11 @@
 - Outcomes:
     - A pass runs its operations on the task its brief gives, and reads what its notes give it to read.
     - A pass writes only under the paths its notes give, and changes no git state.
-    - A pass's report gives its judgments, its open items with their reasons, and the tickets it filed.
-    - A fault of a document or of a tool that a pass meets reaches a ticket.
+    - A pass's report gives its judgments and its open items with their reasons.
+    - A fault of a document or of a tool that a pass meets is noted by the pass in its progress file beside its report, labelled `interference` or `delay`, and the transcript review of the pass files the tickets on it.
 - Owner: the passes, with the operator for their launch and the transcript review for the review at a run's end.
-- Takes from: the operator's launch on a task. Gives to: quality assurance, by its tickets and its transcript.
-- How it can fail: a pass meets a fault and files no ticket on it: the transcript review of the pass reads what the tool and the documents did to its work.
+- Takes from: the operator's launch on a task. Gives to: quality assurance, by its progress notes and its transcript.
+- How it can fail: a pass meets a fault and notes none: the transcript review of the pass reads what the tool and the documents did to its work.
 
 ## Work products
 - A `request`: a ticket analyst writes the `change` tickets that serve it. Its reviews: the ticket reviewer's check of each requirement's trace to its spans or Grounds, and validation.
@@ -222,6 +222,6 @@
     * comment: The user's words, request 9-143, session 129de8fc, 2026-10-14T18:08:21Z: "ok file that item checkers do not apply to solver things since solver things require handbook to judge".
 - A built document change, the text of each `mctx` fragment a change adds or changes included: the doc editor builds it, from a code editor's draft for a fragment's text. Its reviews: the doc reviewer's, the item checker's check of its items, and the `controlled_markdown` check.
 - A solver: the Create pass writes it, each Refine pass reconciles it with the latest report, and, once an `interference` ticket on its task closes, a `handbook-expanded` agent fixes in place what that closure leaves wrong in it. Its review: the transcript review of each pass that writes it.
-- A pass's report: the pass writes it, a ticket analyst takes the tickets it lists that stand outside `tickets/closed/` once its review has returned, and the coordinator gets the concept faults it gives. Its review: the transcript review of that pass, which closes as `duplicate` each `delay` the report lists whose place it records as a case.
+- A pass's report: the pass writes it, and the coordinator gets the concept faults it gives. Its review: the transcript review of that pass, which files the tickets that the pass's run leads to.
 - A `refactor` ticket whose title ends in `many ideas in one place`: a code reviewer files it, the code editor that next edits the module it cites splits that module, and the merge of that editor's change closes the ticket or logs the part left unsplit. Its reviews: the gate at that merge and the code review that follows it.
 - Each other ticket of a fault: a ticket analyst settles it. Its review: the ticket analyst's check of it against the state that produced it.

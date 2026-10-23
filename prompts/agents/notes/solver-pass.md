@@ -14,7 +14,7 @@
 
 ## solver-pass-lead
 - Your report is the review that the operations name: what an operation routes to the review goes in your report, under the section it fits.
-- Write under `programs/solvers/`, `programs/witnesses/`, `programs/reports/<task_id>/`, `work/task/<task_id>/`, `tickets/new/` and `tickets/deferred/`, and nowhere else, apart from a `work` link to the main worktree's `work/`.
+- Write under `programs/solvers/`, `programs/witnesses/`, `programs/reports/<task_id>/`, `work/task/<task_id>/`, and nowhere else, apart from a `work` link to the main worktree's `work/`.
 - Change no Analyze file.
 - Report a failing run as failing.
 - Never run a git command that changes state.
@@ -41,6 +41,6 @@
     - <another task's file, and the line>: <the fix it needs>
 
     ## Tickets filed
-    - <the name of a file the pass wrote under `tickets/new/` or `tickets/deferred/`>
+    - none
     ```
 - A section with nothing holds `none`.

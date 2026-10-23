@@ -1,8 +1,8 @@
 + document-size-budget: 11199
 * comment: when editing this doc
-    - Readers: each agent that files tickets inlines the sections for its work; the coordinator links them from [Tickets](prompts/agents/notes/requests.md#tickets); the ticket analyst, the draft analyst and the ticket reviewer link Change tickets.
+    - Readers: each agent that files tickets inlines the sections for its work; the `analyze`, `create` and `refine` agents inline [pass-issues](#pass-issues); the coordinator links them from [Tickets](prompts/agents/notes/requests.md#tickets); the ticket analyst, the draft analyst and the ticket reviewer link Change tickets.
     - Acts, each with its section:
-        - A solver pass's tickets: [pass-tickets](#pass-tickets).
+        - A solver pass's issues: [pass-issues](#pass-issues).
         - Filing a ticket: [Ticket files](#ticket-files), [Ticket fields](#ticket-fields), and [Ticket subjects](#ticket-subjects) where no other line of its reader's documents gives its `<domain>` and `<subject>`.
         - A `delay` ticket on a slow step: [delay-tickets](#delay-tickets).
         - A noticed fault: [Noticed faults](#noticed-faults).
@@ -10,16 +10,15 @@
         - A `change` ticket's fields: [Change tickets](#change-tickets).
 
 # Ticket notes
-- The statements on filing and tracking a ticket that more than one entry point inlines or links.
+- The statements on filing and tracking a ticket, and on a solver pass's issues, that more than one entry point inlines or links.
 
-## pass-tickets
-- What you file a ticket on is a doc line or a tool behavior that added to the pass's time or token cost, or that made its output wrong, a train pair whose output no interpretation reproduces, or a step that a line below has you file a `delay` ticket for; another problem in the task's own files is not one.
-    - Give in that ticket the output the concept gives the pair, and judge by that output the Fit of the concept and of each branch at that pair, and the verdict of each witness on it.
-- As each one happens, note it in `work/task/<task_id>/progress.md`, under one heading, the file name of this pass's report.
-- When the report's other sections are settled, file a ticket for each one noted under that heading, whether or not an earlier pass hit it, with `task` as `<domain>`, the task id as `<subject>`, and your agent's name as `<agent>`.
-    - Give each ticket the kind `interference` or `delay`.
+## pass-issues
+- What you note is a doc line or a tool behavior that added to the pass's time or token cost, or that made its output wrong, a train pair whose output no interpretation reproduces, or a step whose run time is far out of proportion to the work the step does; another problem in the task's own files is not one.
+    - Give in that note the output the concept gives the pair, and judge by that output the Fit of the concept and of each branch at that pair, and the verdict of each witness on it.
+- As each one happens, note it in `programs/reports/<task_id>/`, in a file named as this pass's report with `progress-` before it.
+    - Label a note `delay` where it is of a step, and `interference` where it is of a doc line, a tool behavior or a train pair.
     - Cite the target as a link as this rendering shows it, a step and the phrase quoted, or a command.
-    - Write under `Impact` what it cost the pass, and for `interference`, what was wrong in the output and whether it still is.
+    - Write what it cost the pass, and for `interference`, what was wrong in the output and whether it still is.
 
 ## Ticket files
 - Where your instructions, your brief or a later message ask you to file a ticket, file it with `uv run python scripts/file_ticket.py`, in the form its `--help` gives, and, where no other line of your documents gives its `<domain>` and `<subject>`, with those that [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects) gives.
@@ -40,7 +39,7 @@
 
 ## Ticket subjects
 - `<domain>` and `<subject>` give what a ticket of another kind than `change` and `request` is about:
-    - `task` and the task id: a solver pass's ticket, and a transcript review's ticket on a pass.
+    - `task` and the task id: a transcript review's ticket on a pass.
     - `change` and the number of the change's ticket: an editor's or a doc reviewer's ticket on its change where its brief gives that number, the ticket the agent that merges a change files on that change, and a transcript review's ticket on such an editor's run.
     - `commit` and the commit's hash: a code reviewer's or a lib reviewer's ticket, on its review's commit, and a ticket a brief has its agent file on a commit of `master` that the brief gives.
     - `ticket` and the ticket's number: a ticket on another ticket.

@@ -11,8 +11,19 @@ from operations.state import Restore
 CLAIM = "claim"
 
 
+REFINE_STEM = r"refine-\d+"
+
+
 def refine_report(name: str) -> bool:
-    return re.fullmatch(r"refine-\d+\.md", name) is not None
+    return re.fullmatch(REFINE_STEM + r"\.md", name) is not None
+
+
+def create_pass_file(name: str) -> bool:
+    """Whether the entry of a reports directory is the Create report, a
+    Refine report, or the issue notes (`progress-<report name>`) of the
+    Create pass or of a Refine pass."""
+    return (name in ("create.md", "progress-create.md") or refine_report(name)
+            or re.fullmatch("progress-" + REFINE_STEM + r"\.md", name) is not None)
 
 
 def tasks_work(main: Path) -> Path:

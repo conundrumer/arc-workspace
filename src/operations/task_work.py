@@ -13,11 +13,8 @@ from pathlib import Path
 from controlled_markdown import mctx
 from engine import checkout
 from operations.roles import Role
-from operations.task_dirs import CLAIM, refine_report, restores_file, task_reports, tasks_work
+from operations.task_dirs import CLAIM, create_pass_file, restores_file, task_reports, tasks_work
 from solver.vocabulary import SOLVER_SUFFIX, WITNESS_SUFFIX
-
-BEFORE_CREATE = ("progress.md",)
-"""The entries of the task's work directory a Create pass sets aside."""
 
 
 CLAIM_HELD = mctx("the claim on task {task} fails: session {holder} holds it")
@@ -52,11 +49,13 @@ def set_aside(main: Path, task: str, role: Role) -> Path:
     numbered one more than the highest numbered one there, or 1 where none
     is. That directory takes `uncommitted.diff`, the diff of the solver and
     the witness file against `HEAD`, and each of those two files that
-    exists. Before an Analyze pass it takes each entry of the task's work
-    directory other than the claim and the numbered directories, and before
-    a Create pass the entries `BEFORE_CREATE` gives. It also takes each
-    report-directory entry before Analyze, or the Create report and each Refine
-    report before Create. Each moved tracked path is marked skip-worktree."""
+    exists. Before an Analyze pass it also takes each entry of the task's
+    work directory other than the claim and the numbered directories, and
+    each entry of the task's reports directory. Before a Create pass it
+    also takes, from the reports directory, the Create report and each
+    Refine report, with the issue notes of each (`progress-create.md`,
+    `progress-refine-<n>.md`), and leaves the Analyze report and its issue
+    notes. Each moved tracked path is marked skip-worktree."""
     work = tasks_work(main) / task
     taken = numbered(work)
     target = work / str((taken[-1] if taken else 0) + 1)
@@ -70,13 +69,13 @@ def set_aside(main: Path, task: str, role: Role) -> Path:
     for entry in sorted(work.iterdir()):
         if entry == target or entry.name == CLAIM or entry.name.isdigit():
             continue
-        if role is Role.ANALYZE or entry.name in BEFORE_CREATE:
+        if role is Role.ANALYZE:
             shutil.move(entry, target / entry.name)
     reports = task_reports(main, task)
     moved_reports: list[Path] = []
     if reports.is_dir():
         for entry in sorted(reports.iterdir()):
-            if role is Role.ANALYZE or entry.name == "create.md" or refine_report(entry.name):
+            if role is Role.ANALYZE or create_pass_file(entry.name):
                 moved_reports.append(entry.relative_to(main))
                 shutil.move(entry, target / entry.name)
     for p in (*paths, *moved_reports):

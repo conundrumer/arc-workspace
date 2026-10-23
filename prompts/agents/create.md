@@ -18,7 +18,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
     - Acts, each with its section:
         - Drawing a grid: [Grids](#grids).
         - Running a command: [Commands](#commands).
-        - Filing a ticket: [Tickets](#tickets).
+        - Noting an issue: [Issues](#issues).
         - Reading the lib: [The lib](#the-lib).
 
 # Create agent
@@ -78,12 +78,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
 ## Commands
 * inline: notes/commands.md#commands
 
-## Tickets
-* inline: notes/tickets.md#pass-tickets
-
-* inline: notes/tickets.md#delay-tickets
-
-* inline: notes/tickets.md#ticket-files
+## Issues
+* inline: notes/tickets.md#pass-issues
 
 ## Report
 - Write the report to `programs/reports/<task_id>/create.md`.
