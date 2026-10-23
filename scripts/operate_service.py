@@ -57,15 +57,6 @@ FINISH_SECONDS = 5
 CARRY_SECONDS = 600
 """How long a request's run may last, from its start, once it has no client."""
 CODE_ENV = "ARC_OPERATE_CODE"
-ALLOCATOR_ENV = {"PYTHONMALLOC": "malloc"}
-"""The allocator a resident runs under: the system allocator, whose free pages
-`script_calls.release_free_memory` returns to the system. The interpreter's own
-small-object allocator keeps an arena mapped while any object in it lives, so
-a resident whose held reads were replaced by later reads held about 200 MB
-more than a fresh process that read the same state."""
-FOOTPRINT_BOUND = 500 * 2**20
-"""The bytes a resident may hold after a request, once it has collected and
-returned its free memory."""
 PEAK_BOUND = 2**30
 """The bytes a resident's own footprint may have reached during a request."""
 CODE_CHANGED = 75
@@ -553,7 +544,7 @@ def spawn(main: Path, session: str) -> subprocess.Popen[bytes] | None:
             return subprocess.Popen(
                 [sys.executable, "-B", "-X", f"pycache_prefix={path.with_suffix('.pyc')}",
                  str(main / "scripts/operate_service.py"), "startup"], cwd=main,
-                env={**os.environ, **ALLOCATOR_ENV, script_calls.SESSION_ENV: session,
+                env={**os.environ, **script_calls.ALLOCATOR_ENV, script_calls.SESSION_ENV: session,
                      CODE_ENV: expected},
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                 stderr=errors, start_new_session=True)
@@ -870,10 +861,10 @@ def child_read(current: Request) -> None:
         os.close(errors)
 
 
-def oversized() -> bool:
-    """Whether this resident holds more than `FOOTPRINT_BOUND` now, or has
-    held more than `PEAK_BOUND` since it started."""
-    return (script_calls.footprint() > FOOTPRINT_BOUND
+def oversized(held: int) -> bool:
+    """Whether `held` bytes are more than `script_calls.FOOTPRINT_BOUND`, or
+    this resident has held more than `PEAK_BOUND` since it started."""
+    return (held > script_calls.FOOTPRINT_BOUND
             or script_calls.highest_footprint() > PEAK_BOUND)
 
 
@@ -1010,9 +1001,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                 pending.running = None
             oversize = False
             if pending is not None and not pending.waiting():
-                gc.collect()
-                script_calls.release_free_memory()
-                oversize = oversized()
+                oversize = oversized(script_calls.collected_footprint())
             script_calls.record()
             CURRENT.reset(token)
             state_assembly.REQUEST_CUTOFF.reset(cutoff)

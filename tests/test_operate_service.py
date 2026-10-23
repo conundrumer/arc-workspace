@@ -291,11 +291,10 @@ def test_a_residents_final_line_gives_its_reason_and_read_leaves_it_out(tmp_path
 
 
 @pytest.mark.parametrize(("now", "highest", "expected"), [
-    (service.FOOTPRINT_BOUND, service.PEAK_BOUND, False),
-    (service.FOOTPRINT_BOUND + 1, 0, True),
+    (service.script_calls.FOOTPRINT_BOUND, service.PEAK_BOUND, False),
+    (service.script_calls.FOOTPRINT_BOUND + 1, 0, True),
     (0, service.PEAK_BOUND + 1, True),
 ])
 def test_a_resident_is_oversized_past_either_bound(monkeypatch, now, highest, expected):
-    monkeypatch.setattr(service.script_calls, "footprint", lambda: now)
     monkeypatch.setattr(service.script_calls, "highest_footprint", lambda: highest)
-    assert service.oversized() is expected
+    assert service.oversized(now) is expected

@@ -8,8 +8,8 @@ most (`enter`, `leave`).
 
 Every call of a script of the main tree imports this module, so it imports
 no module that the interpreter's start has not imported but `resource`,
-and `json` only in `read`. A line is one `os.write` on a file opened with
-`O_APPEND`, so the concurrent calls of every session write whole lines."""
+and `json` only in `read` and `gc` only in `collected_footprint`. A line is
+one `os.write` on a file opened with `O_APPEND`, so the concurrent calls of every session write whole lines."""
 
 import os
 import resource
@@ -149,6 +149,17 @@ def cpu_seconds() -> float:
                                                  resource.getrusage(resource.RUSAGE_CHILDREN)))
 
 
+ALLOCATOR_ENV = {"PYTHONMALLOC": "malloc"}
+"""The allocator a long-lived process of held reads runs under: the system
+allocator, whose free pages `release_free_memory` returns to the system. The interpreter's own
+small-object allocator keeps an arena mapped while any object in it lives, so
+a process whose held reads were replaced by later reads held about 200 MB
+more than a fresh process that read the same state."""
+FOOTPRINT_BOUND = 500 * 2**20
+"""The bytes a long-lived process of held reads may hold after a request, once
+it has collected and returned its free memory."""
+
+
 def release_free_memory() -> int:
     """Return to the system the free memory the allocator holds mapped in
     this process, and give the bytes returned: darwin's `malloc_zone_pressure_relief`
@@ -204,6 +215,15 @@ def highest_footprint() -> int:
     except (OSError, ValueError):
         pass
     return 0
+
+
+def collected_footprint() -> int:
+    """The bytes this process holds once it has collected its garbage and
+    returned its free memory (`release_free_memory`)."""
+    import gc
+    gc.collect()
+    release_free_memory()
+    return footprint()
 
 
 def peak() -> int:

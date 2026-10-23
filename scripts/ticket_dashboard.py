@@ -18,8 +18,14 @@ renders leave the published page in place. `EVENTS` sends each published
 version to connected clients, which fetch `/` and replace their content.
 A hidden page closes its stream. The server serves no ticket file.
 
+The server runs under `script_calls.ALLOCATOR_ENV`, which it adds to its
+environment by running itself again at its start where it is missing.
+
 Where a file of a module the server loaded from the repo's `scripts/` or
-`src/` changes (`code_files`), the server stops taking requests, waits
+`src/` changes (`code_files`), or the render thread finds, after a live
+render, that the server holds more than the larger of
+`script_calls.FOOTPRINT_BOUND` and `GROWTH` over what it held after its
+first live render (`Footprint`), the server stops taking requests, waits
 for those it serves other than streams, and runs itself again in its own
 process with the same arguments; the open page's `EventSource` connects
 again by its own retry.
@@ -35,13 +41,16 @@ import os
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import StrEnum
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import traceback
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import kept_reads
+import script_calls
 from dashboard_html import Rendered, filled, page
 from dashboard_reads import CodexLimits, CodexWindow, clear, cleared, operator_records
 from dashboard_search import results, sheet, words
@@ -76,6 +85,10 @@ WATCH = 1.0
 ROOT = Path(__file__).resolve().parents[1]
 """The root of the tree the server runs from."""
 
+
+GROWTH = 128 * 2**20
+"""The bytes the server may hold after a render over what it held after its
+first live render, before it restarts for size."""
 
 CODEX = CodexLimits(Path.home())
 
@@ -184,8 +197,44 @@ class Latest:
         return max(MIN_EVENT, REST * self.took)
 
 
-def render_loop(tickets: Path, latest: Latest) -> None:
+class Reason(StrEnum):
+    """Why the server stopped, as `main` prints it before it restarts."""
+    CODE = "code changed"
+    MEMORY = "memory over bound"
+
+
+class Stopping:
+    """The reason the server stopped, set by the first thread to stop it."""
+
+    def __init__(self) -> None:
+        self.reason: Reason | None = None
+
+    def stop(self, server: ThreadingHTTPServer, reason: Reason) -> None:
+        """Stops `server`, and keeps `reason` unless one is already kept."""
+        if self.reason is None:
+            self.reason = reason
+        server.shutdown()
+
+
+class Footprint:
+    """The bytes a server may hold after a render: the larger of
+    `script_calls.FOOTPRINT_BOUND` and `GROWTH` over what it held after its
+    first live render. Before that render there is no bound."""
+
+    def __init__(self) -> None:
+        self.first: int | None = None
+
+    def over(self, held: int) -> bool:
+        """Whether `held` bytes, held after a live render, pass the bound."""
+        if self.first is None:
+            self.first = held
+        return held > max(script_calls.FOOTPRINT_BOUND, self.first + GROWTH)
+
+
+def render_loop(tickets: Path, latest: Latest, stop: Callable[[Reason], None]) -> None:
     """Publish startup renders, then changed state while a stream watches.
+    After each live render it calls `stop` with `Reason.MEMORY` and returns
+    where the server holds more than the `Footprint` bound.
     All cached state reads of the server run on this thread."""
     def publish(live_agents: bool) -> tuple[Stamp | CodexWindow | int | None, ...]:
         state = fingerprint(tickets)
@@ -199,12 +248,15 @@ def render_loop(tickets: Path, latest: Latest) -> None:
             latest.condition.notify_all()
         return state
 
+    footprint = Footprint()
     previous = None
     began = time.monotonic()
     for live_agents in (False, True):
         try:
             began = time.monotonic()
             previous = publish(live_agents)
+            if live_agents and footprint.over(script_calls.collected_footprint()):
+                return stop(Reason.MEMORY)
         except Exception:
             traceback.print_exc()
     while True:
@@ -213,12 +265,12 @@ def render_loop(tickets: Path, latest: Latest) -> None:
         try:
             with latest.condition:
                 watched = latest.streams > 0
-            if poked:
+            if poked or (watched and time.monotonic() - began >= latest.gap()
+                         and fingerprint(tickets) != previous):
                 began = time.monotonic()
                 previous = publish(True)
-            elif watched and time.monotonic() - began >= latest.gap() and fingerprint(tickets) != previous:
-                began = time.monotonic()
-                previous = publish(True)
+                if footprint.over(script_calls.collected_footprint()):
+                    return stop(Reason.MEMORY)
         except Exception:
             traceback.print_exc()
 
@@ -391,25 +443,28 @@ class Handler(BaseHTTPRequestHandler):
                 latest.streams -= 1
 
 
-def serve(address: str, port: int, tickets: Path, serving: Serving) -> ThreadingHTTPServer:
+def serve(address: str, port: int, tickets: Path, serving: Serving,
+          stopping: Stopping) -> ThreadingHTTPServer:
     """A server of `tickets` bound to `address` and `port`, not yet
-    serving, that counts its requests in `serving`."""
+    serving, that counts its requests in `serving` and stops by `stopping`
+    when it holds too much."""
     latest = Latest()
     handler = type("Bound", (Handler,), {"tickets": tickets, "latest": latest, "serving": serving})
     server = ThreadingHTTPServer((address, port), handler)
     server.daemon_threads = True
-    threading.Thread(target=render_loop, args=(tickets, latest), daemon=True).start()
+    threading.Thread(target=render_loop, daemon=True,
+                     args=(tickets, latest, lambda reason: stopping.stop(server, reason))).start()
     return server
 
 
-def watch(server: ThreadingHTTPServer, files: list[Path], changed: threading.Event) -> None:
-    """Sets `changed` and stops `server` at the first read, every `WATCH`
-    seconds, of the stamps of `files` that differs from the first."""
+def watch(server: ThreadingHTTPServer, files: list[Path], stopping: Stopping) -> None:
+    """Stops `server` for `Reason.CODE` by `stopping` at the first read,
+    every `WATCH` seconds, of the stamps of `files` that differs from the
+    first."""
     first = code_stamps(files)
     while code_stamps(files) == first:
         time.sleep(WATCH)
-    changed.set()
-    server.shutdown()
+    stopping.stop(server, Reason.CODE)
 
 
 def main(argv: list[str]) -> int:
@@ -420,21 +475,24 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--tickets", type=Path, default=None,
                         help="the tracker to serve; the main tree's `tickets/` where not given")
     args = parser.parse_args(argv)
+    if any(os.environ.get(name) != value for name, value in script_calls.ALLOCATOR_ENV.items()):
+        os.execve(sys.executable, [sys.executable, *sys.orig_argv[1:]],
+                  {**os.environ, **script_calls.ALLOCATOR_ENV})
     serving = Serving()
-    server = serve(args.address, args.port, args.tickets or main_tickets(), serving)
+    stopping = Stopping()
+    server = serve(args.address, args.port, args.tickets or main_tickets(), serving, stopping)
     files = code_files()
-    changed = threading.Event()
-    threading.Thread(target=watch, args=(server, files, changed), daemon=True).start()
+    threading.Thread(target=watch, args=(server, files, stopping), daemon=True).start()
     print(f"serving http://{args.address}:{args.port}/", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         return 0
-    if not changed.is_set():
+    if stopping.reason is None:
         return 0
     serving.wait_idle()
     server.server_close()
-    print("code changed: restarting", flush=True)
+    print(f"{stopping.reason}: restarting", flush=True)
     os.execv(sys.executable, [sys.executable, *sys.orig_argv[1:]])
 
 
