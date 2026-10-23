@@ -150,6 +150,11 @@ def apart(u: Unit, taken: set[str]) -> Unit:
 # ---- the pass
 
 
+def _innermost(table: dict[tuple[tuple[str, ...], str], Instance], scope: tuple[str, ...], name: str) -> Instance | None:
+    """The instance `name` declared in the innermost scope that encloses `scope` and declares it."""
+    return next((table[(scope[:i], name)] for i in range(len(scope), -1, -1) if (scope[:i], name) in table), None)
+
+
 class Expander:
     def __init__(self, prog, lib, specs: dict[str, Callable]) -> None:
         self.prog = prog
@@ -159,6 +164,7 @@ class Expander:
         self.next_unit = 1 + max((u.id.index for u in prog.units), default=0)
         self.insts = {(i.scope.components, i.name): i for i in prog.instances}
         self.comps = {c.name for c in prog.components}
+        self.shape_insts: dict[tuple[tuple[str, ...], str], Instance] = {}   # an instance a planned shape declares
         self.judgment: dict[Atom, str] = {}
         self.pending: list[Unit] = []   # the clauses of the relations derived from inputs
         self.made: dict[tuple, dict[str, str]] = {}   # an instance's relations derived from inputs, by input
@@ -172,8 +178,7 @@ class Expander:
     def resolve(self, scope: tuple[str, ...], path: tuple[str, ...]) -> Instance | None:
         if not path:
             return None
-        inst = next((self.insts[(scope[:i], path[0])] for i in range(len(scope), -1, -1)
-                     if (scope[:i], path[0]) in self.insts), None)
+        inst = _innermost(self.insts, scope, path[0])
         if inst is None or len(path) == 1:
             return inst
         if inst.component in self.comps:
@@ -308,8 +313,9 @@ class Expander:
                 heir = next((i.name for i in d.instances if i.name == inst.name),
                             d.instances[0].name if d.instances else None)
                 for i in d.instances:
-                    insts.append(replace(i, id=self.did(), scope=inst.scope,
-                                         span=inst.span if i.name == heir else None))
+                    new = replace(i, id=self.did(), scope=inst.scope, span=inst.span if i.name == heir else None)
+                    insts.append(new)
+                    self.shape_insts[(new.scope.components, new.name)] = new
                 if heir is not None:
                     # a directive's relation of the instance: the relation of the shape that stands for it
                     moves = {}
@@ -693,8 +699,13 @@ class Expander:
         `scope` reads: a relation of an instance, the lib's, or the solver's."""
         r = a.relation
         if r.instances and r.instances != ("@lib",):
-            inst = self.resolve(scope, r.instances)
-            tparams, lrels = self.lib.present(inst.component)
+            shape = _innermost(self.shape_insts, scope, r.instances[0]) if len(r.instances) == 1 else None
+            inst = shape or self.resolve(scope, r.instances)
+            if shape is None and inst.component in self.comps:
+                decl = next(d for d in (*self.prog.relations, *self.rels)
+                            if d.name == r.name and d.scope.components == (inst.component,))
+                return [c.type.name for c in decl.columns]
+            tparams, lrels = self.lib.relations(inst.component) if shape else self.lib.present(inst.component)
             sub = {p: t.text for p, t in zip(tparams, inst.type_args)}
             return [sub.get(c.type, c.type) for c in next(x for x in lrels if x.name == r.name).cols]
         if r.instances or r.name in self.lib.top or r.name in self.sig_top:
