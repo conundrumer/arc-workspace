@@ -1,13 +1,21 @@
 """One Souffle case run again on one pair with every relation of its
 program written out, each by its arclog name, so that a mismatch report can
-give the first relation whose rows differ."""
+give the first relation whose rows differ; the JSON form of that rerun; and
+the kept JSON of a rerun that gave rows, which stands while each input of
+the rerun is unchanged (`kept_json`)."""
 
+import hashlib
+import json
 from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
 
 from cli.common import LIMITS, engine, solver_path
-from engine import Engine, Program, RelationName, Rows, RunFailure, Scope
-from engine.program import Qualifier, as_grid
-from parity import case_name, name_map, relation_name
+from engine import (AdtValue, Engine, NilValue, Program, RecordValue, RelationName, Rows,
+                    RunFailure, Scope)
+from engine.memo import hash_files, read_or_make
+from engine.program import Qualifier, Value, as_grid
+from parity import case_name, name_map, relation_name, snapshot
 from solver.cases import cases as cases_of
 from solver.load import load
 from solver.outcome import Assignment
@@ -77,3 +85,72 @@ def relations(stem: str, case: str, pair: str
         return got
     return {relation_name(names, r): rows for r, rows in got.items()}
 
+
+def leaves(value: Value) -> list[int | float | str]:
+    """The leaves of `value`, as `rerun --json` writes a row's values."""
+    match value:
+        case RecordValue(fields=fields) | AdtValue(args=fields):
+            return [leaf for field in fields for leaf in leaves(field)]
+        case NilValue():
+            return []
+        case _:
+            return [value]
+
+
+def rerun_json(stem: str, got: Mapping[str, Rows]) -> str:
+    """The JSON object `rerun --json` prints for the rows `got` of a case
+    of `stem`."""
+    lib = load(stem, engine(), solver_path(stem)).lib
+    members = {name for names in lib.orientation_types.values() for name in names}
+    return json.dumps({
+        "relations": [[name, [[leaf for value in row for leaf in leaves(value)] for row in rows]]
+                      for name, rows in got.items()],
+        "orientation_constants": {name: value for name, value in lib.constants.items()
+                                  if name in members},
+    })
+
+
+def _code_digest() -> str:
+    """The sha256 of the files of this package, which `cli.common.stamp`
+    leaves out."""
+    h = hashlib.sha256()
+    hash_files(h, ((path.name, path) for path in sorted(Path(__file__).parent.glob("*.py"))))
+    return h.hexdigest()
+
+
+def kept_path(stem: str, case: str, pair: str) -> Path:
+    """Where the kept JSON of the rerun of `case` of `stem` on `pair`
+    stands: a file per solver, case and pair under `reruns/` of
+    `snapshot.parity_dir`."""
+    digest = hashlib.sha256(f"{case}\0{pair}".encode()).hexdigest()[:16]
+    return snapshot.parity_dir() / "reruns" / stem / f"{digest}.json"
+
+
+def kept_json(stem: str, case: str, pair: str) -> str | Undefined | RunFailure:
+    """The JSON `rerun --json` prints for the rerun of `case` of `stem` on
+    `pair`: the kept JSON of a rerun that gave rows, while the key it was
+    made under is the current one; otherwise the JSON of a rerun now, kept
+    where it gives rows, or the case's undefined outcome or the run's
+    failure, which nothing keeps. The key is `snapshot.record_key`, the
+    case, the pair and the digest of this package's files. Raises
+    `NoSuchCase` and `NoSuchPair`."""
+    key: dict[str, Any] = {**snapshot.record_key(stem), "case": case, "pair": pair,
+                           "parity": _code_digest()}
+
+    def decode(data: bytes) -> str | None:
+        try:
+            held = json.loads(data)
+        except ValueError:
+            return None
+        return held["output"] if held.get("key") == key else None
+
+    def make() -> tuple[str | Undefined | RunFailure, bool]:
+        got = relations(stem, case, pair)
+        if isinstance(got, Mapping):
+            return rerun_json(stem, got), True
+        return got, False
+
+    def encode(output: str | Undefined | RunFailure) -> bytes:
+        return json.dumps({"key": key, "output": output}).encode()
+
+    return read_or_make(kept_path(stem, case, pair), decode, encode, make)

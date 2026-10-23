@@ -55,8 +55,9 @@ RECORDS_WORKERS = 4
 
 
 def parity_dir() -> Path:
-    """`.cache/parity/` of the main worktree: a record per solver and the
-    uses file (`parity.uses`)."""
+    """`.cache/parity/` of the main worktree: a record per solver, the uses
+    file (`parity.uses`), and the kept JSON of the reruns that gave rows,
+    under `reruns/` (`parity.rerun.kept_json`)."""
     return checkout.caches() / "parity"
 
 

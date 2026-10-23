@@ -8,16 +8,12 @@ A sentence a tool prints stands in an `mctx` call where the tool prints it.
 """
 
 import argparse
-import json
 import sys
 from collections.abc import Mapping
 
-from cli.common import all_stems, engine, solver_path
+from cli.common import all_stems, engine
 from controlled_markdown import mctx
-from engine import AdtValue, NilValue, RecordValue, Rows
-from engine.program import Value
 from parity import lib, rerun, snapshot, uses
-from solver.load import load
 
 
 def parser() -> argparse.ArgumentParser:
@@ -44,7 +40,9 @@ def parser() -> argparse.ArgumentParser:
         "`arclog-cli lib-compare` writes the inputs files."))
     again = sub.add_parser("rerun", help=mctx(
         "Run one case of a solver again on one pair with every relation written out, and "
-        "print the rows of each relation under its arclog name. It writes no file."))
+        "print the rows of each relation under its arclog name. With `--json`, a rerun that gives "
+        "rows is kept under `.cache/parity/reruns/` of the main worktree, and printed again "
+        "while each input of the rerun is unchanged; with no `--json`, it writes no file."))
     again.add_argument("stem", help=mctx("The solver's stem."))
     again.add_argument("case", help=mctx("The case's arclog name, as a record keys it."))
     again.add_argument("pair", help=mctx("The pair, as `train 0` or `test 1`."))
@@ -52,30 +50,6 @@ def parser() -> argparse.ArgumentParser:
         "Print the relations' rows and the number of each orientation constant of the lib "
         "as one JSON object, in place of the text."))
     return top
-
-
-def leaves(value: Value) -> list[int | float | str]:
-    """The leaves of `value`, as `rerun --json` writes a row's values."""
-    match value:
-        case RecordValue(fields=fields) | AdtValue(args=fields):
-            return [leaf for field in fields for leaf in leaves(field)]
-        case NilValue():
-            return []
-        case _:
-            return [value]
-
-
-def rerun_json(stem: str, got: Mapping[str, Rows]) -> str:
-    """The JSON object `rerun --json` prints for the rows `got` of a case
-    of `stem`."""
-    lib = load(stem, engine(), solver_path(stem)).lib
-    members = {name for names in lib.orientation_types.values() for name in names}
-    return json.dumps({
-        "relations": [[name, [[leaf for value in row for leaf in leaves(value)] for row in rows]]
-                      for name, rows in got.items()],
-        "orientation_constants": {name: value for name, value in lib.constants.items()
-                                  if name in members},
-    })
 
 
 def main(argv: list[str]) -> int:
@@ -98,7 +72,8 @@ def main(argv: list[str]) -> int:
         print(uses.write_all())
         return 0
     try:
-        got = rerun.relations(args.stem, args.case, args.pair)
+        got = (rerun.kept_json(args.stem, args.case, args.pair) if args.json
+               else rerun.relations(args.stem, args.case, args.pair))
     except rerun.NoSuchCase:
         print(mctx("No case of {stem} has the arclog name `{case}`.").format(
             stem=args.stem, case=args.case), file=sys.stderr)
@@ -107,12 +82,12 @@ def main(argv: list[str]) -> int:
         print(mctx("The task of {stem} has no pair `{pair}`.").format(
             stem=args.stem, pair=args.pair), file=sys.stderr)
         return 2
+    if isinstance(got, str):
+        print(got)
+        return 0
     if not isinstance(got, Mapping):
         print(mctx("The run gives no rows: {got}").format(got=got), file=sys.stderr)
         return 1
-    if args.json:
-        print(rerun_json(args.stem, got))
-        return 0
     eng = engine()
     for name, rows in got.items():
         print(f"{name} {len(rows)}")
