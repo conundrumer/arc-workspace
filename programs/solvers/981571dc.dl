@@ -41,25 +41,27 @@ out(P, Col) :-
         axis_of(D, A), dist(P, D, K),   // each axis, each distance, the center line at 0
         jump_offset(D, K, V).
 
-    // Where a candidate's mirror carries each cell.
-    .decl mirrored(e: Example, a: Axis, v: Offset, p: Position, q: Position)
-    mirrored(E, A, V, P, Q) :-
-        ex_out(E, P, _), cand(A, V), relative(V, P, P_inner),  // a cell seen from the candidate
-        flip_of(A, D), apply(D, P_inner, Q_inner),             // its image across that line
-        compose(V, Q_inner, Q).
+    // Where a candidate's mirror carries each line of the axis, onto a line
+    // of the frame.
+    .decl mirrored(e: Example, a: Axis, v: Offset, l: Position, l2: Position)
+    mirrored(E, A, V, L, L2) :-
+        ex_out(E, P, _), cand(A, V), split(P, A, L, _),    // a line of the axis
+        relative(V, L, L_inner),                           // seen from the candidate
+        flip_of(A, D), apply(D, L_inner, L2_inner),        // its image across that line
+        compose(V, L2_inner, L2), inside(L2, ZERO).        // that image, in the frame
 
     // A candidate whose mirror carries some cell onto a different color.
     .decl mirror_mismatch(a: Axis, v: Offset)
     mirror_mismatch(A, V) :-
-        mirrored(E, A, V, P, Q),
-        ex_out(E, P, Col), ex_out(E, Q, C2), C2 != Col.
+        mirrored(E, A, V, L, L2),
+        ex_out(E, P, Col), split(P, A, L, X),              // a cell of the line
+        compose(L2, X, Q), ex_out(E, Q, C2), C2 != Col.    // its image, across at the same place
 
-    // The axis's mirror line: unbroken, and mirroring some cell onto another
-    // — an offset past the frame pairs nothing and would pass unbroken.
+    // The axis's mirror line: unbroken, and mirroring some line onto a line
+    // of the frame — an offset past the frame pairs nothing and would pass
+    // unbroken.
     .decl axis_center(a: Axis, v: Offset)
-    axis_center(A, V) :-
-        mirrored(E, A, V, _, Q), ex_out(E, Q, _),
-        !mirror_mismatch(A, V).
+    axis_center(A, V) :- mirrored(_, A, V, _, _), !mirror_mismatch(A, V).
 
     // The symmetry center: the mirror line of each axis, crossed.
     .decl center(v: Offset)
