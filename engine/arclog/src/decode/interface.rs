@@ -15,7 +15,7 @@ use crate::eval::ir::atom_modes;
 use crate::eval::{BodyValue, Limits, Outcome, ParameterValues, RelationValue, RunFault, Stop};
 use crate::registry::Registry;
 use crate::judge::candidates::PairCandidates;
-use crate::judge::determination::{dets_read, descend_assignments, distinct_values, walk, Assignment, End, EvaluationInputs, Walked};
+use crate::judge::determination::{dets_read, descend_assignments, distinct_values, walk, Assignment, Det, End, EvaluationInputs, Walked};
 use crate::program::path::{NodePath, PathStep};
 use crate::program::{Body, Choose, ChoosePart, Clause, ClauseKeyword, Conjunct, Form, Node, Program, ProgramRelation};
 use crate::relations::Relation;
@@ -75,13 +75,13 @@ impl<T> Assigned<T> {
 
 /// The sub-body of the clause in progress, as a complete clause of its own
 /// that ends a program of the finished forms.
-struct SubBody {
-    program: CheckedProgram,
+pub(super) struct SubBody {
+    pub(super) program: CheckedProgram,
     /// The path of that clause.
-    form: NodePath,
+    pub(super) form: NodePath,
     /// The indexes of its conjuncts.
     kept: Box<[u32]>,
-    scope: ExampleScope,
+    pub(super) scope: ExampleScope,
 }
 
 impl<'a> Decoder<'a> {
@@ -198,49 +198,67 @@ impl<'a> Decoder<'a> {
             Ok(sub) => sub,
             Err(fault) => return Some(Box::new([Err(fault)])),
         };
-        let examples: Vec<Option<Example>> = match sub.scope {
+        Some(self.values_of(&sub))
+    }
+
+    /// The value of `sub` on each example of the task, or once for a
+    /// task-wide clause, at each assignment.
+    pub(super) fn values_of(&self, sub: &SubBody) -> Box<[Outcome<Assigned<BodyValue>>]> {
+        self.examples_of(sub.scope).into_iter().map(|example| self.assigned_rows(sub, example)).collect()
+    }
+
+    /// The examples a relation of `scope` is evaluated on: each example of
+    /// the task, or the one task-wide request.
+    pub(super) fn examples_of(&self, scope: ExampleScope) -> Vec<Option<Example>> {
+        match scope {
             ExampleScope::PerExample => self.task.examples().map(Some).collect(),
             ExampleScope::TaskWide => vec![None],
-        };
-        Some(examples.into_iter().map(|example| self.assigned_rows(&sub, example)).collect())
+        }
     }
 
     fn assigned_rows(&self, sub: &SubBody, example: Option<Example>) -> Outcome<Assigned<BodyValue>> {
-        let limits = self.limits();
-        let inputs = self.inputs(&sub.program, &limits);
         let root = derived_at(&sub.program, &sub.form).node;
-        let dets: Vec<_> = dets_read(&sub.program, root).into_iter().filter(|det| !det.pick && det.node != root).collect();
-        let mut at = Vec::new();
+        self.assigned(&sub.program, root, &mut |evaluation| evaluation.body(&sub.form, &sub.kept, example).map_err(End::Fault))
+    }
+
+    /// What `at` gives at each joint assignment of the `DET`s that the
+    /// relation at `root` of `program` reads, less the picks and `root`
+    /// itself, in the order of the walk, as [`Decoder::rows`] gives it.
+    pub(super) fn assigned<T>(&self, program: &CheckedProgram, root: GraphNodeIndex, at: &mut dyn FnMut(&crate::eval::Evaluation<'_>) -> Result<T, End>) -> Outcome<Assigned<T>> {
+        let limits = self.limits();
+        let inputs = self.inputs(program, &limits);
+        let dets = walked_dets(program, root);
+        let mut found = Vec::new();
         let mut leaf = |evaluation: &crate::eval::Evaluation<'_>, assigned: &[Assignment]| {
-            at.push((assigned.to_vec(), evaluation.body(&sub.form, &sub.kept, example).map_err(End::Fault)?));
+            found.push((assigned.to_vec(), at(evaluation)?));
             Ok(())
         };
         match descend_assignments(inputs, &dets, root, self.context.settings.caps.assignments, &mut leaf).1 {
-            Ok(()) => Ok(Assigned { at, stop: None }),
-            Err(End::Stop(stop)) => Ok(Assigned { at, stop: Some(stop) }),
+            Ok(()) => Ok(Assigned { at: found, stop: None }),
+            Err(End::Stop(stop)) => Ok(Assigned { at: found, stop: Some(stop) }),
             Err(End::Fault(fault)) => Err(fault),
         }
     }
 
     /// The bounds of one request: the deadline of the decode settings from
     /// now, and the decode's cancellation.
-    fn limits(&self) -> Limits {
+    pub(super) fn limits(&self) -> Limits {
         Limits { deadline: Some(Instant::now() + self.context.settings.deadline), cancellation: self.cancellation.clone() }
     }
 
-    fn inputs<'p>(&'p self, program: &'p CheckedProgram, limits: &'p Limits) -> EvaluationInputs<'p> {
+    pub(super) fn inputs<'p>(&'p self, program: &'p CheckedProgram, limits: &'p Limits) -> EvaluationInputs<'p> {
         let registry = self.context.registry;
         EvaluationInputs { program, concept: None, task: self.task, session: self.session, registry, constructions: self.constructions, limits }
     }
 
     /// The sub-body of the clause in progress, or `None` where none is in
     /// progress.
-    fn sub_body(&self) -> Option<Outcome<SubBody>> {
+    pub(super) fn sub_body(&self) -> Option<Outcome<SubBody>> {
         let (program, open) = self.state.partial()?;
         let open = open?;
         let (last, finished) = program.value().forms.split_last().expect("a partial program holds its partial form");
         let form = NodePath::top(finished.len() as u32);
-        let (clause, kept) = open_clause(last, &open, self.context.registry)?;
+        let OpenClause { clause, kept, .. } = open_clause(last, &open, self.context.registry)?;
         let mut labels = Vec::new();
         for conjunct in &kept {
             if let Conjunct::Atom(atom) = conjunct {
@@ -271,7 +289,7 @@ impl<'a> Decoder<'a> {
 
     /// The program that `resolved` resolves, checked, or a fault at `form`
     /// where a check refuses it.
-    fn checked(&self, resolved: Arc<ResolvedProgram>, form: &NodePath) -> Outcome<CheckedProgram> {
+    pub(super) fn checked(&self, resolved: Arc<ResolvedProgram>, form: &NodePath) -> Outcome<CheckedProgram> {
         let registry = self.context.registry;
         let clauses = SolverClauses::of_shared_program(Arc::clone(&resolved));
         check_shared_program(resolved, &clauses, registry, &mut CheckCache::default()).map_err(|refusals| {
@@ -338,13 +356,22 @@ impl<'a> Decoder<'a> {
     }
 }
 
+/// The clause in progress of a form: the clause to build the sub-body on,
+/// the conjuncts of the sub-body, and the index of the conjunct in
+/// progress in the clause's body, if there is one.
+pub(super) struct OpenClause {
+    pub(super) clause: Clause,
+    pub(super) kept: Vec<Conjunct>,
+    pub(super) open_at: Option<usize>,
+}
+
 /// The clause in progress of `form`, whose innermost open node is at
 /// `open`, as a clause to build the sub-body on, and the conjuncts of the
 /// sub-body: a clause's own body, or the open clause of a `CHOOSE` form,
 /// which a `from` clause inside a `for` clause follows with the conjuncts
 /// of that `for` clause. `None` where `form` is neither or holds no open
 /// clause.
-fn open_clause(form: &Form, open: &NodePath, registry: &Registry) -> Option<(Clause, Vec<Conjunct>)> {
+pub(super) fn open_clause(form: &Form, open: &NodePath, registry: &Registry) -> Option<OpenClause> {
     match form {
         Form::Clause(clause) => {
             let clause = clause.value();
@@ -352,7 +379,7 @@ fn open_clause(form: &Form, open: &NodePath, registry: &Registry) -> Option<(Cla
                 [PathStep(0), PathStep(at), ..] => Some(*at as usize),
                 _ => None,
             };
-            Some((clause.clone(), complete_or_atoms(&clause.body, open_at, registry)))
+            Some(OpenClause { clause: clause.clone(), kept: complete_or_atoms(&clause.body, open_at, registry), open_at })
         }
         Form::Choose(choose) => {
             let choose = choose.value();
@@ -369,7 +396,7 @@ fn open_clause(form: &Form, open: &NodePath, registry: &Registry) -> Option<(Cla
                 ones: Arc::from([]),
                 columns: Arc::from([]),
             };
-            Some((clause, conjuncts))
+            Some(OpenClause { clause, kept: conjuncts, open_at })
         }
         _ => None,
     }
@@ -405,7 +432,7 @@ fn complete_or_atoms(body: &Node<Body>, open_at: Option<usize>, registry: &Regis
 /// The relation that the clause at `form` derives in `program`: a clause
 /// relation, a chosen relation where the clause has `ONE` marks, or the
 /// parameter of a `DET` clause with no `ONE` mark.
-fn derived_at(program: &CheckedProgram, form: &NodePath) -> GraphRelation {
+pub(super) fn derived_at(program: &CheckedProgram, form: &NodePath) -> GraphRelation {
     let resolved = &program.program;
     let node = (0..resolved.graph.nodes.len())
         .map(|index| GraphNodeIndex(u32::try_from(index).expect("fewer than 2^32 nodes")))
@@ -414,6 +441,13 @@ fn derived_at(program: &CheckedProgram, form: &NodePath) -> GraphRelation {
         })
         .expect("a checked clause derives its relation");
     GraphRelation { node, output: None }
+}
+
+/// The `DET`s whose joint assignments a walk over the relation at `root`
+/// of `program` visits: those it reads, less the picks, which no clause
+/// reads before its form ends, and `root` itself.
+pub(super) fn walked_dets(program: &CheckedProgram, root: GraphNodeIndex) -> Vec<Det> {
+    dets_read(program, root).into_iter().filter(|det| !det.pick && det.node != root).collect()
 }
 
 /// The count at the first assignment of `rows`, and the stop of that value
@@ -442,7 +476,7 @@ mod tests {
         let program = solver.concept_case().program.clone();
         let form = program.value().forms.last().expect("a form").clone();
         let open = NodePath(open.iter().copied().map(PathStep).collect());
-        open_clause(&form, &open, Registry::get()).map_or(0, |(_, conjuncts)| conjuncts.len())
+        open_clause(&form, &open, Registry::get()).map_or(0, |open| open.kept.len())
     }
 
     #[test]

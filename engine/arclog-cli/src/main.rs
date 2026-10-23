@@ -13,16 +13,18 @@ mod determine;
 mod determinism;
 mod lib_compare;
 mod renaming;
+mod replay;
 mod row_counts;
 mod select;
 mod speed;
 mod stream;
+mod tables;
 
 use arclog::algebra::tables::OrientationTables;
 use std::process::ExitCode;
 
 /// Each subcommand, by the name the first argument gives it.
-const SUBCOMMANDS: [(&str, fn(&[String]) -> ExitCode); 9] = [
+const SUBCOMMANDS: [(&str, fn(&[String]) -> ExitCode); 10] = [
     ("check-diff", check_diff::run),
     ("compare", compare::run),
     ("decode", decode::run),
@@ -32,6 +34,7 @@ const SUBCOMMANDS: [(&str, fn(&[String]) -> ExitCode); 9] = [
     ("speed", speed::run),
     ("row-counts", row_counts::run),
     ("stream", stream::run),
+    ("tables", tables::run),
 ];
 
 fn main() -> ExitCode {

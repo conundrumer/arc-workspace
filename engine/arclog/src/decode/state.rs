@@ -54,6 +54,9 @@ pub(super) struct State {
     program: Node<Program>,
     /// The relations declared, by slot.
     declared: Arc<[Arc<Declared>]>,
+    /// The count of the relations declared at the last finished form, which
+    /// are those of the finished forms.
+    finished_slots: u32,
     /// The count of the labels of the form in progress, the next label's id.
     labels: u32,
     stack: Vec<Frame>,
@@ -282,7 +285,7 @@ enum Offer {
 
 impl State {
     pub(super) fn new() -> State {
-        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), labels: 0, stack: Vec::new(), resolved: Arc::default() }
+        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default() }
     }
 
     /// The finished forms.
@@ -350,12 +353,30 @@ impl State {
 
     fn finish_form(&mut self, form: Form) {
         self.program = self.with_form(form);
+        self.finished_slots = self.next_slot();
         self.resolved = Arc::default();
         self.labels = 0;
     }
 
     fn next_slot(&self) -> u32 {
         u32::try_from(self.declared.len()).expect("fewer than 2^32 relations")
+    }
+
+    /// The readable relations of the finished forms declared from `first` on,
+    /// each with its slot.
+    pub(super) fn declared_from(&self, first: u32) -> impl Iterator<Item = (u32, &ProgramRelation)> {
+        (first..self.finished_slots).zip(self.declared[first as usize..].iter()).filter(|(_, declared)| declared.readable).map(|(slot, declared)| (slot, &declared.relation))
+    }
+
+    /// The count of the relations that the finished forms declare, which is
+    /// the first slot of the form in progress.
+    pub(super) fn finished_slots(&self) -> u32 {
+        self.finished_slots
+    }
+
+    /// The slot that the clause in progress takes.
+    pub(super) fn open_slot(&self) -> u32 {
+        self.next_slot()
     }
 
     /// Takes the next slot for `relation`, with the columns `columns`, and

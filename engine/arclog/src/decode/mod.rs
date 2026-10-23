@@ -10,16 +10,20 @@
 //! beside the mask, in `interface`, gives the rows of the body so far and the
 //! consistency test at a `RULE` clause's end, and its batch form, in
 //! `batch`, steps many decodes at once, and its views of the body so far, in
-//! `views`, give the largest sets of its columns under the view cap. The decode keeps a
+//! `views`, give the largest sets of its columns under the view cap, and its
+//! tables of the last step, in `tables`, give the body of the clause in
+//! progress or the relations of the form finished. The decode keeps a
 //! [`crate::trace::DecodeTrace`] of one record per accepted token.
 
 mod batch;
 mod interface;
 mod state;
+mod tables;
 mod views;
 
 pub use batch::step_batch;
 pub use interface::{Consistency, Step};
+pub use tables::{Contents, ExampleRows, Point, Table, TableColumn, TableDet};
 pub use views::{View, Views};
 
 use std::sync::Arc;
@@ -47,6 +51,8 @@ pub struct Decoder<'a> {
     constructions: &'a Constructions,
     context: Arc<Context<'a>>,
     state: state::State,
+    /// The state before the last step, none before the first.
+    before: Option<state::State>,
     /// The candidates of the train pairs that the consistency test reads,
     /// where the decode judges them.
     train: Option<Arc<[PairCandidates<'a>]>>,
@@ -120,7 +126,7 @@ impl<'a> Decoder<'a> {
         assert_eq!(settings.caps, session.caps, "the caps of the decode settings are those of the session");
         let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings) };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default() }
+        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default() }
     }
 
     /// The ids of the decode's tokens.
@@ -180,7 +186,7 @@ impl<'a> Decoder<'a> {
 
     fn apply(&mut self, advanced: Result<Advanced, Refusal>) -> StepResult {
         let Advanced { token, state, step } = advanced?;
-        self.state = state;
+        self.before = Some(std::mem::replace(&mut self.state, state));
         self.record(token, &step);
         if let Some(Consistency::Consistent { assignments }) = &step.consistency {
             self.assignments = assignments.clone();

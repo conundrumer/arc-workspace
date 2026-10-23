@@ -20,11 +20,11 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::any::Any;
+use std::ops::ControlFlow;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
 use arclog::check::{CheckCache, CheckedProgram, SolverClauses};
 use arclog::decode::{Consistency, Decoder};
@@ -37,14 +37,15 @@ use arclog::judge::determination::{determine, DeterminedCase, Determination};
 use arclog::judge::run::{judged_run, Depth};
 use arclog::registry::Registry;
 use arclog::relations::Relation;
-use arclog::resolver::{resolve_cases, DependencyKind};
-use arclog::solver::{CaseName, Exclusion};
-use arclog::stream::{token_stream, DecodeSettings, Emitter};
+use arclog::resolver::resolve_cases;
+use arclog::solver::Exclusion;
+use arclog::stream::{token_stream, DecodeSettings};
 use arclog::task::{JudgedTask, Task};
 use arclog::terms::{Example, TermId};
 
 use crate::concept_case::{case_spelled, check_case, check_cases, corpus_limits, corpus_session, determined_cases, read_corpus_task, CorpusTask};
 use arclog_constructions::shared as constructions;
+use crate::replay::{decoded_cases, holds_demonstrated, replay, Stepped};
 use crate::select::selected;
 
 /// Whether the rows of each prefix are compared with those of a second
@@ -232,7 +233,7 @@ fn decode_cases(corpus: &Path, tasks: &Path, id: &str, all: bool, rows: RowsMode
     let mut cache = CheckCache::default();
     let concept = check_case(cases.concept(), &clauses, &mut cache, "the concept case")?;
     let bases = solver.base_case_names(Exclusion::WithoutExcluded);
-    let decoded: Vec<CaseName> = if all { cases.cases().map(|case| case.case.name.clone()).collect() } else { vec![cases.concept().case.name.clone()] };
+    let decoded = decoded_cases(&cases, all);
     let programs = check_cases(&cases, &clauses, &mut cache, &|name| bases.contains(name) || decoded.contains(name))?;
     let session = corpus_session();
     let limits = corpus_limits();
@@ -241,7 +242,7 @@ fn decode_cases(corpus: &Path, tasks: &Path, id: &str, all: bool, rows: RowsMode
     let base_cases: Vec<DeterminedCase<'_>> = determined.iter().filter(|case| bases.contains(case.name)).copied().collect();
     let determination = determine(&base_cases, &judged, World::Closed);
     for case in determined.iter().filter(|case| decoded.contains(case.name)) {
-        if case.program.program.graph.nodes.iter().any(|node| matches!(node.kind, DependencyKind::Demonstrated(_))) {
+        if holds_demonstrated(case.program) {
             gathered.counts.demonstrated += 1;
             continue;
         }
@@ -290,74 +291,45 @@ fn decode_case(program: &CheckedProgram, expected: Result<bool, String>, task: &
         Ok(stream) => stream,
         Err(diagnostic) => return vec![(Kind::Refused, format!("the writer gives no stream: {}", diagnostic.message))],
     };
-    let mut forced: Vec<arclog::stream::Token> = Vec::new();
     let mut consistency = None;
     let mut rows_found = false;
-    for (index, (token, emitter)) in stream.iter().enumerate() {
-        match emitter {
-            Emitter::Engine => {
-                if forced.first() == Some(token) {
-                    forced.remove(0);
-                } else {
-                    findings.push((Kind::Refused, format!("token {index} {token:?}: the engine emits it, and the step before forced {forced:?}")));
-                    break;
-                }
-            }
-            Emitter::Model => {
-                if !forced.is_empty() {
-                    findings.push((Kind::Refused, format!("token {index} {token:?}: the engine forces {forced:?} before it")));
-                    break;
-                }
-                let start = Instant::now();
-                let mask = decoder.admissible();
-                let mask_seconds = start.elapsed().as_secs_f64();
-                let admitted = decoder.vocabulary().id(token).is_some_and(|id| mask.contains(id));
-                let start = Instant::now();
-                let stepped = decoder.step(token.clone());
-                let step_seconds = start.elapsed().as_secs_f64();
-                let step = match stepped {
-                    Ok(step) if admitted => step,
-                    Ok(_) => {
-                        findings.push((Kind::Refused, format!("token {index} {token:?}: the mask refuses it and the step takes it")));
-                        break;
-                    }
-                    Err(refusal) => {
-                        findings.push((Kind::Refused, format!("token {index} {token:?}: {refusal:?}")));
-                        break;
-                    }
-                };
-                gathered.mask.push(mask_seconds);
-                gathered.step.push(step_seconds);
-                gathered.total.push(mask_seconds + step_seconds);
-                forced = step.forced.into();
-                if let Some(result) = step.consistency {
-                    consistency = Some(result);
-                }
-                let Some(mirror) = mirror.as_mut() else { continue };
-                if mirror.step(token.clone()).is_err() {
-                    findings.push((Kind::Rows, format!("token {index} {token:?}: the decode in the second session refuses it")));
-                    break;
-                }
-                if !rows_found {
-                    let checked = catch_unwind(AssertUnwindSafe(|| prefix_rows(&decoder, mirror, task))).unwrap_or_else(|payload| RowsCheck::Differ(format!("the decoder panicked: {}", panic_message(&*payload))));
-                    match checked {
-                        RowsCheck::Same => {}
-                        RowsCheck::Stopped(note) => findings.push((Kind::Stopped, format!("token {index} {token:?}: {note}"))),
-                        RowsCheck::Differ(note) => {
-                            rows_found = true;
-                            findings.push((Kind::Rows, format!("token {index} {token:?}: {note}")));
-                        }
-                    }
+    let replayed = replay(&mut decoder, &stream, &mut |decoder, stepped| {
+        let Stepped { index, token, consistency: result, mask_seconds, step_seconds } = stepped;
+        gathered.mask.push(mask_seconds);
+        gathered.step.push(step_seconds);
+        gathered.total.push(mask_seconds + step_seconds);
+        if let Some(result) = result {
+            consistency = Some(result);
+        }
+        let Some(mirror) = mirror.as_mut() else { return ControlFlow::Continue(()) };
+        if mirror.step(token.clone()).is_err() {
+            findings.push((Kind::Rows, format!("token {index} {token:?}: the decode in the second session refuses it")));
+            return ControlFlow::Break(());
+        }
+        if !rows_found {
+            let checked = catch_unwind(AssertUnwindSafe(|| prefix_rows(decoder, mirror, task))).unwrap_or_else(|payload| RowsCheck::Differ(format!("the decoder panicked: {}", panic_message(&*payload))));
+            match checked {
+                RowsCheck::Same => {}
+                RowsCheck::Stopped(note) => findings.push((Kind::Stopped, format!("token {index} {token:?}: {note}"))),
+                RowsCheck::Differ(note) => {
+                    rows_found = true;
+                    findings.push((Kind::Rows, format!("token {index} {token:?}: {note}")));
                 }
             }
         }
-    }
-    if findings.iter().any(|(kind, _)| *kind == Kind::Refused) {
-        return findings;
-    }
-    if !forced.is_empty() {
-        findings.push((Kind::Refused, format!("the stream ends while the engine forces {forced:?}")));
-        return findings;
+        ControlFlow::Continue(())
+    });
+    match replayed {
+        Err(refusal) => {
+            findings.push((Kind::Refused, refusal));
+            return findings;
+        }
+        Ok(replayed) => {
+            if let Some(refusal) = replayed.unfinished() {
+                findings.push((Kind::Refused, refusal));
+                return findings;
+            }
+        }
     }
     let actual = match consistency {
         Some(Consistency::Consistent { .. }) => Some(true),
