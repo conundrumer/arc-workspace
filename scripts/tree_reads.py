@@ -252,11 +252,15 @@ def fragments_of(text: str, path: Path, name: str) -> tuple[Fragment, ...]:
     return tuple(text_fragments(text, path, name))
 
 
-def scratch(session: str) -> Path:
+SCRATCH_ROOT = Path(f"/private/tmp/claude-{os.getuid()}")
+
+
+def scratch(session: str, project: str | None = None) -> Path:
     """The session's scratchpad directory, as the section `Launching` of
     `prompts/agents/notes/launching.md` gives it, for a session that
-    started in the main worktree, as the coordinator's does."""
-    started = str(main_tree())
-    return (Path(f"/private/tmp/claude-{os.getuid()}") / started.replace("/", "-") / session
+    started in the project directory `project`, which defaults to the main
+    worktree's encoded path."""
+    started = project if project is not None else str(main_tree()).replace("/", "-")
+    return (SCRATCH_ROOT / started / session
             / "scratchpad")
 

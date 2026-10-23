@@ -8,10 +8,8 @@ caller (`hook_entry.run_pre_tool_use`). The argument names the matcher:
 `report_file_hook`, `send`
 for `SendMessage`, whose check is that of `printed_send_hook`, and `agent`
 for `Agent`, whose checks are those of `context_bound_hook` and
-`printed_launch_hook`, and `bash` for `Bash|Monitor`, whose checks are
-those of `pending_wait_hook`, `codex_bash_hook` and
-`detached_bash_hook` and the Bash check of `checklist_walk_hook`. Each runs with the reader update
-(`reader_delivery.reader_update`). Checks that record a denial keep their own guards against
+`printed_launch_hook`, and `bash` for `Bash|Monitor`, including the project-agent delete check.
+Each runs with the reader update (`reader_delivery.reader_update`). Checks that record a denial keep their own guards against
 denying one event twice."""
 
 import sys
@@ -64,11 +62,12 @@ def main() -> int:
         case [arg] if arg == BASH:
             import codex_bash_hook
             import detached_bash_hook
+            import delete_bash_hook
             import pending_wait_hook
             from reader_delivery import reader_update
 
             return run_pre_tool_use(HOOK, [pending_wait_hook.check, codex_bash_hook.check,
-                                           detached_bash_hook.check, checklist_bash],
+                                           detached_bash_hook.check, checklist_bash, delete_bash_hook.check],
                                     reader_update)
         case args:
             raise SystemExit(f"{HOOK}: usage: joined_hooks.py {HANDBACK}|{SEND}|{AGENT}|{BASH}, "
