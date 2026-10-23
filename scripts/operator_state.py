@@ -289,8 +289,9 @@ def codex_end(agent: str, home: Path | None = None) -> CodexRead:
     native one; otherwise its thread decides whether
     it can end: a turn its rollout gives as open runs only where the shared
     Codex daemon gives it in progress (`codex_daemon.turn_status`). A thread
-    or a daemon that cannot be read, or a daemon that gives no such turn,
-    holds the attempt. A native attempt with no accepted turn ends only once
+    or a daemon that cannot be read holds the attempt. Where a successful daemon
+    read omits that turn, another turn in progress holds the attempt; otherwise
+    the attempt ends. A native attempt with no accepted turn ends only once
     its reservation is `STUCK_SECONDS` old."""
     import codex_daemon
     import codex_reads

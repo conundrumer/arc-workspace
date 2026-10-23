@@ -19,6 +19,7 @@ journaled a give answers with its own output, and no bound or message replaces i
 """
 
 import contextlib
+import ctypes
 import fcntl
 import gc
 import hashlib
@@ -489,9 +490,38 @@ def connect(path: Path, seconds: float) -> socket.socket:
         raise
 
 
+def startup_permitted() -> bool:
+    """Whether this process can start a resident outside a sandbox.
+
+    The Codex sandbox marker denies startup. On macOS, a failed or unavailable
+    libSystem sandbox check also denies startup."""
+    if "CODEX_SANDBOX" in os.environ:
+        return False
+    if sys.platform != "darwin":
+        return True
+    try:
+        check = ctypes.CDLL("/usr/lib/libSystem.B.dylib").sandbox_check
+        check.restype = ctypes.c_int
+        check.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        return check(os.getpid(), None, 0) == 0
+    except (OSError, AttributeError):
+        return False
+
+
 def ensure(main: Path, session: str, deadline: float) -> socket.socket:
-    """Connect, starting at most one interpreter under the startup and owner locks."""
+    """A resident connection within the deadline. Where startup is permitted,
+    at most one interpreter starts under the startup and owner locks; otherwise
+    the caller waits for a connection without taking either lock."""
     path = endpoint(main, session)
+    if not startup_permitted():
+        global REQUEST_SENT
+        REQUEST_SENT = False
+        while time.monotonic() < deadline:
+            try:
+                return connect(path, deadline - time.monotonic())
+            except OSError:
+                time.sleep(0.05)
+        raise Expired
     with path.with_suffix(".start").open("a") as lock:
         while True:
             try:
@@ -595,7 +625,8 @@ def exchange(connection: socket.socket, operator: str, started: float, deadline:
 
 
 REQUEST_SENT = False
-"""Whether this client has sent its request line to a resident."""
+"""Whether this client has sent its request line to a resident. A connection-only
+startup attempt resets it, including after an earlier transport attempt sent."""
 
 
 def timeout_output(operator: str) -> None:
@@ -631,8 +662,11 @@ def expired_output(operator: str, repeated: bool = False) -> int:
     """Print the output of an expired call and return its exit status: where the
     request reached a resident and either the last call did not end the same way or
     the resident's beat is less than `BEAT_FRESH` seconds old, the line that has the
-    operator run the command again; else the failure report."""
-    if REQUEST_SENT and (not repeated or resident_beats()):
+    operator run the command again; else the failure report. A caller denied
+    startup whose connection attempt has sent no request also gets that retry,
+    including on repeated calls."""
+    if ((not REQUEST_SENT and not startup_permitted())
+            or (REQUEST_SENT and (not repeated or resident_beats()))):
         from operations.printed_forms import RESIDENT_SILENT
         print(RESIDENT_SILENT.format(seconds=LIMIT_SECONDS), flush=True)
         return 0

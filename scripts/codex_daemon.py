@@ -165,19 +165,28 @@ class Proxy:
         self.errors.close()
 
 
-def turn_status(thread: str, turn: str) -> str:
+def turn_status(thread: str, turn: str) -> str | None:
     """The status the shared daemon gives turn `turn` of thread `thread`
-    (`thread/read`), such as `inProgress`. Raises ValueError where the
-    daemon gives no such turn."""
+    (`thread/read`), such as `inProgress`. Where that turn is absent, another
+    turn in progress gives `inProgress`; otherwise the result is None. A failed,
+    refused or malformed thread read raises."""
     client = Proxy()
     try:
         found = client.call("thread/read", {"threadId": thread, "includeTurns": True})
     finally:
         client.close()
-    for t in found["thread"]["turns"]:
+    turns = found["thread"]["turns"]
+    if not isinstance(turns, list) or any(
+        not isinstance(t, dict)
+        or not isinstance(t["id"], str) or not t["id"]
+        or not isinstance(t["status"], str) or not t["status"]
+        for t in turns
+    ):
+        raise ValueError("invalid Codex daemon turns")
+    for t in turns:
         if t["id"] == turn:
-            return str(t["status"])
-    raise ValueError(f"the Codex daemon gives no turn {turn} on thread {thread}")
+            return t["status"]
+    return "inProgress" if any(t["status"] == "inProgress" for t in turns) else None
 
 
 def start(
