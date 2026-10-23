@@ -74,12 +74,14 @@
 .type OrbitColor = [o: Orbit, col: Color]
 // A color that a case reads as blank.
 .type DamageColor = [d: Damage, col: Color]
-// A class of the tile search: the corner the tile stands at, the tile's far
-// cell, and the tile cell that the class's cells share their place with.
-.type TileClass = [dg: DiagDir, t: Position, q: Position]
+// A line of axis a, among the lines k apart on that axis.
+.type PeriodLine = [a: Axis, k: number, l: Position]
+// A tile of the search: its extent k1 on axis a, and k2 on the other axis.
+.type Tile = [a: Axis, k1: number, k2: number]
+// A class of the tile search: the tile, and the line class that the class's
+// cells lie in on axis a and on the other axis.
+.type TileClass = [t: Tile, id1: Ident, id2: Ident]
 .type TileClassColor = [k: TileClass, col: Color]
-// A tile of the search: the corner it stands at, and its far cell.
-.type Tile = [dg: DiagDir, t: Position]
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -192,34 +194,31 @@ hole($HoleFromPeriod(), C) :- one_hole.value($U(), C).
 
 intact($ClassMode(), P, Col) :- in(P, Col).
 
-// The grid cell at distance k1 from corner dg's edge on axis a, and k2 from
-// its other edge.
-.decl corner_cell(dg: DiagDir, a: Axis, k1: number, k2: number, q: Position)
-corner_cell(Dg, A, K1, K2, Q) :-
-    in(Q, _), diag_dir_elem(Dg), axis_elem(A), diag_dist(Q, Dg, A, K1, K2).
+// A line of axis a.
+.decl line(a: Axis, l: Position)
+line(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
 
-// A tile that stands at corner dg and reaches to the cell t, exclusive: k1
-// rows or columns on axis a and k2 on the other.
-.decl tile_cand(dg: DiagDir, a: Axis, t: Position, k1: number, k2: number)
-tile_cand(Dg, A, T, K1, K2) :- corner_cell(Dg, A, K1, K2, T), K1 > 0, K2 > 0.
+// The lines a whole number of k apart on axis a, as one class, for each k
+// shorter than the grid on that axis.
+.init line_class = Canon<PeriodLine>
+line_class.edge([A, K, L], [A, K, L]) :- line(A, L), sub_extent(L, A, K).
+line_class.edge([A, K, L], [A, K, L2]) :-
+    line(A, L), sub_extent(L, A, K), axis_of(D, A), jump(L, D, K, L2), line(A, L2).
 
-// The place of cell p in tile t: the tile cell q at p's distances to the
-// corner's edges, each within the tile's extent on its axis.
-.decl tile_place(dg: DiagDir, t: Position, p: Position, q: Position)
-tile_place(Dg, T, P, Q) :-
-    tile_cand(Dg, A, T, K1, K2),
-    corner_cell(Dg, A, T1, T2, P),
-    stride(T1, K1, 0, _, R1), stride(T2, K2, 0, _, R2),
-    corner_cell(Dg, A, R1, R2, Q).
+// The class of cell p in the tile of extent k1 on axis a and k2 on the other:
+// the class of its line on each axis.
+.decl tile_place(k: TileClass, p: Position)
+tile_place([[A, K1, K2], Id1, Id2], P) :-
+    in(P, _), perp(A, A2), split(P, A, L1, L2),
+    line_class.id([A, K1, L1], Id1), line_class.id([A2, K2, L2], Id2).
 
 // @claim restore-pattern
 .init tile_mode = Mode<TileClass, Color, Position>
-tile_mode.item([Dg, T, Q], Col, P) :- tile_place(Dg, T, P, Q), in(P, Col).
+tile_mode.item(K, Col, P) :- tile_place(K, P), in(P, Col).
 
 // A cell p of color col2 in class k, whose commonest color is col.
 .decl tile_vote(k: TileClass, col: Color, p: Position, col2: Color)
-tile_vote(K, Col, P, Col2) :-
-    tile_mode.mode(K, Col), K = [Dg, T, Q], tile_place(Dg, T, P, Q), in(P, Col2).
+tile_vote(K, Col, P, Col2) :- tile_mode.mode(K, Col), tile_place(K, P), in(P, Col2).
 
 // The commonest color of a class against the class's other cells.
 // @claim restore-pattern
@@ -232,22 +231,23 @@ tile_major.minus([K, Col], P) :- tile_vote(K, Col, P, Col2), Col2 != Col.
 major_class(K) :- tile_major.excess([K, _], _).
 
 // A tile with a class that no color holds more than half of.
-.decl split_tile(dg: DiagDir, t: Position)
-split_tile(Dg, T) :- tile_place(Dg, T, _, Q), !major_class([Dg, T, Q]).
+.decl split_tile(t: Tile)
+split_tile(T) :- tile_place(K, _), K = [T, _, _], !major_class(K).
 
 // @claim restore-pattern
-.init tile_area = Tally<Tile, Position>
-tile_area.item([Dg, T], Q) :- tile_place(Dg, T, _, Q).
+.init tile_area = Tally<Tile, TileClass>
+tile_area.item(T, K) :- tile_place(K, _), K = [T, _, _].
 
 // @claim restore-pattern
-.init least_tile = ArgExtremes<DiagDir, Position>
-least_tile.cand(Dg, T, N) :- tile_area.tally([Dg, T], N), !split_tile(Dg, T).
+.init least_tile = ArgExtremes<Unit, Tile>
+least_tile.cand($U(), T, N) :- tile_area.tally(T, N), !split_tile(T).
 
+// The extent on each axis of the tiles of least area.
 // @claim restore-pattern
-.init one_tile = Unanimous<DiagDir, Position>
-one_tile.item(Dg, T) :- least_tile.low(Dg, T, _).
+.init one_tile = Unanimous<Axis, number>
+one_tile.item(A, K) :- least_tile.low($U(), [A, K, _], _).
 
-period($ClassMode(), A, K) :- one_tile.value(Dg, T), diag_dist(T, Dg, A, K, _).
+period($ClassMode(), A, K) :- one_tile.value(A, K).
 
 // @claim restore-pattern
 .init orbit_mode = Mode<Orbit, Color, Position>
