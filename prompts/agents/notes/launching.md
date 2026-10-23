@@ -114,7 +114,7 @@
         - With those, it gives the agent id of each editor of the change, with the part that editor's brief gave it, or the whole change where its brief gave none.
         - It gives the change's worktree, and the number of the change's ticket, or, where the change has none, its intent and what is already settled about it.
     - A step that an operator's command cannot decide, which the operator holds.
-    - A load incident report, the owning session's rejection of its recommendation with its reasons, and the owning session's id.
+    - A load incident report, each act of its recommendation that the owning session declined, with its reasons, and the owning session's id.
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### A load incident analyst's brief
