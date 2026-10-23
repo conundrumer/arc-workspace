@@ -367,7 +367,7 @@ impl LabelWalk<'_> {
                     let labels = crate::safety::body_labels(branch);
                     class.iter().any(|label| labels.contains(label))
                 };
-                let holding = branches.iter().filter(|branch| holds(branch.value()));
+                let holding = branches.iter().filter(|branch| holds(branch.value()) && !makes_only_by_zero(branch.value(), class));
                 join_branches(holding.map(|branch| self.body_type(branch.value(), pairs, Some(here))))
             }
             Conjunct::If { test, then, otherwise } => {
@@ -376,8 +376,8 @@ impl LabelWalk<'_> {
                 if self.fresh_in(test.value()) {
                     return meet(test_type, then_type);
                 }
-                let otherwise_type = self.body_type(otherwise.value(), pairs, Some(here));
-                meet(test_type, join_branches([Ok(then_type), otherwise_type].into_iter())?)
+                let otherwise_type = (!makes_only_by_zero(otherwise.value(), class)).then(|| self.body_type(otherwise.value(), pairs, Some(here)));
+                meet(test_type, join_branches([Ok(then_type)].into_iter().chain(otherwise_type))?)
             }
             Conjunct::All { domain, body } => {
                 let domain_type = self.body_type(domain.value(), pairs, Some(here))?;
@@ -456,6 +456,41 @@ pub(crate) fn meet(a: Option<ValueType>, b: Option<ValueType>) -> Result<Option<
             Meet::Empty => Err(LabelFault::EmptyMeet(a, b)),
         },
         (a, b) => Ok(a.or(b)),
+    }
+}
+
+/// Whether `branch` makes the label of `class` only by a `(= X 0)`, with
+/// the label at no site of an atom in `branch`: such a branch adds no
+/// type to the label, as a clause whose head label only `(= *X 0)` gives a
+/// type adds none.
+fn makes_only_by_zero(branch: &crate::program::Body, class: &[crate::program::LabelId]) -> bool {
+    let ZeroMade { zeroed, at_sites } = ZeroMade::of(branch);
+    zeroed.iter().any(|(label, _)| class.contains(label)) && !at_sites.iter().any(|label| class.contains(label))
+}
+
+/// The labels that a body makes by `(= X 0)`, each with whether the
+/// constraint makes it fresh, and the labels that stand at a site of an
+/// atom of the body, at any depth.
+pub(crate) struct ZeroMade {
+    pub zeroed: Vec<(crate::program::LabelId, bool)>,
+    pub at_sites: Vec<crate::program::LabelId>,
+}
+
+impl ZeroMade {
+    pub(crate) fn of(body: &crate::program::Body) -> Self {
+        use crate::program::{Conjunct, Constraint, ConstraintOp, Operand};
+        let mut made = ZeroMade { zeroed: Vec::new(), at_sites: Vec::new() };
+        each_conjunct(body, &mut |conjunct| match conjunct {
+            Conjunct::Constraint(Constraint { op: ConstraintOp::Eq, first, second: Operand::Zero }) => made.zeroed.push((first.label, first.fresh)),
+            _ => {
+                if let Some(atom) = conjunct.atom() {
+                    for site in atom.value().sites.iter() {
+                        each_site_label(site, &mut Vec::new(), &mut |use_, _| made.at_sites.extend(use_label(use_)));
+                    }
+                }
+            }
+        });
+        made
     }
 }
 

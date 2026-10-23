@@ -13,7 +13,7 @@ use super::types::{
     column_type, component, declared_type, demo_rule, form_at, pose_of_fault, project, relation_columns, rule_scope_forms, scope_forms, site_value_type,
     try_map_labels, zero_typed_heads, PoseOr,
 };
-use super::{ClauseEntry, HeldClauses, Refusal, SolverClauses};
+use super::{ClauseEntry, FileScope, HeldClauses, Refusal, SolverClauses};
 use crate::hash::StableHashMap;
 use crate::program::canonical::{form_scope_labels, scope_labels, CanonicalOrder, LabelScope};
 use crate::program::path::{NodePath, NodeRef};
@@ -520,7 +520,10 @@ impl<'a> Inference<'a> {
             for label in zero_typed_heads(clause) {
                 let Some((_, ty)) = types.iter_mut().find(|(found, _)| *found == label) else { continue };
                 let Some(column) = clause.columns.iter().find(|column| column.label == label) else { continue };
-                *ty = self.other_clauses_type(clause, path, &column.name);
+                *ty = match self.other_clauses_type(clause, path, &column.name) {
+                    Ok(None) => Ok(self.solver_clauses_type(clause, &column.name)),
+                    others => others,
+                };
                 zero_typed.push(label);
             }
         }
@@ -695,21 +698,42 @@ impl<'a> Inference<'a> {
         let others: Box<[Signature]> = entries.iter().map(|entry| entry.signature.clone()).collect();
         reads.get_or_join((&clause.derives, own, others), column, &clause.columns, cycle_reads, || {
             let target = |column: &ColumnName| head_label(clause, column);
-            let types = entries.iter().filter_map(|entry| {
-                reads.get_or_read(entry, column, &clause.columns, cycle_reads, || {
-                    let inference = self.cases.of(entry);
-                    let Some(Form::Clause(other)) = form_at(inference.program.program.value(), &entry.at) else {
-                        unreachable!("an entry of a relation in the program's scope stands at a clause of the program it was found in")
-                    };
-                    let other = other.value();
-                    let zero_typed = zero_typed_heads(other);
-                    if other.columns.iter().any(|found| found.name == *column && zero_typed.contains(&found.label)) {
-                        return None;
-                    }
-                    inference.clause_column(&entry.at, other, &NameScope::Program, std::slice::from_ref(column), &target, PoseOr::Given)
-                })
-            });
+            let types = entries.iter().filter_map(|entry| self.entry_column_type(entry, clause, column, &target));
             join_types(types)
+        })
+    }
+
+    /// The join of the types that the clauses of the relation of `clause`
+    /// in the solver's other case programs, those that the case program
+    /// under check does not hold, give its `column`, each in the case
+    /// program it was found in, or `None` where they give none or have no
+    /// join.
+    fn solver_clauses_type(&self, clause: &crate::program::Clause, column: &ColumnName) -> Option<ValueType> {
+        let held = self.held.get_or_init(|| HeldClauses::of(self.program));
+        let in_program: Vec<&Signature> = self.cases.clauses.of_relation_in(&clause.derives, held).map(|entry| &entry.signature).collect();
+        let target = |column: &ColumnName| head_label(clause, column);
+        let entries = self.cases.clauses.of_relation(&FileScope::Program, &clause.derives).iter().filter(|entry| !in_program.contains(&&entry.signature));
+        join_types(entries.filter_map(|entry| self.entry_column_type(entry, clause, column, &target))).ok().flatten()
+    }
+
+    /// The type that the clause of `entry`, typed in the case program it
+    /// was found in, gives `column`, read for `reader`, or `None` where it
+    /// adds no type: a clause whose label at that column only `(= *X 0)`
+    /// gives a type adds none.
+    fn entry_column_type(&self, entry: &ClauseEntry, reader: &crate::program::Clause, column: &ColumnName, target: &dyn Fn(&ColumnName) -> Option<LabelId>) -> Option<ValueType> {
+        let reads = self.cases.clauses.column_reads();
+        let cycle_reads = &self.cases.cycle_reads;
+        reads.get_or_read(entry, column, &reader.columns, cycle_reads, || {
+            let inference = self.cases.of(entry);
+            let Some(Form::Clause(other)) = form_at(inference.program.program.value(), &entry.at) else {
+                unreachable!("an entry of a relation in the program's scope stands at a clause of the program it was found in")
+            };
+            let other = other.value();
+            let zero_typed = zero_typed_heads(other);
+            if other.columns.iter().any(|found| found.name == *column && zero_typed.contains(&found.label)) {
+                return None;
+            }
+            inference.clause_column(&entry.at, other, &NameScope::Program, std::slice::from_ref(column), target, PoseOr::Given)
         })
     }
 

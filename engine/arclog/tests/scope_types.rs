@@ -128,3 +128,18 @@ fn an_unfold_key_that_reads_an_order_input_in_one_branch_types_each_label() {
     );
     assert_eq!(untyped_labels(&checked, 2), Vec::<LabelId>::new());
 }
+
+#[test]
+fn an_or_branch_that_makes_a_label_only_by_zero_adds_no_type() {
+    let checked = checked(
+        "
+(RULE &stretch
+  (OR ((diag_dir_elem (:D *K)))
+      ((= K 0))))
+",
+    );
+    let Form::Clause(clause) = &checked.program.program.value().forms[0] else { panic!("the first form is a clause") };
+    let column = clause.value().columns.iter().find(|column| column.name == ColumnName::Written("K".into())).expect("the clause has a column K");
+    let types = checked.types.form(&path(&[0])).expect("the clause is a label scope");
+    assert_eq!(types.label(column.label), Some(&ValueType::DiagDir));
+}

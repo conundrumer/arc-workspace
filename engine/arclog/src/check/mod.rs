@@ -67,10 +67,20 @@ pub enum CheckId {
     /// [`crate::types::ValueType::join`] gives it, of the types that the
     /// relation's other clauses in the case program under check give its
     /// column, each read from [`SolverClauses`] and typed in the case
-    /// program it was found in, and the check's [`CheckCacheKey`] holds
-    /// their signatures. A clause whose label at that column is
-    /// itself one that only `(= *X 0)` gives a type adds no type. The check
-    /// refuses the label where no type is above those types.
+    /// program it was found in. Where the relation has no such clause that
+    /// gives a type, the label takes the join of the types that the
+    /// relation's clauses in the solver's other case programs give the
+    /// column, and no type where those clauses give none or have no join.
+    /// The check's [`CheckCacheKey`] holds the signatures of the relation's
+    /// clauses in all of the solver's case programs. A clause whose label at
+    /// that column is itself one that only `(= *X 0)` gives a type adds no
+    /// type. The check refuses the label where no type is above the types of
+    /// the case program under check.
+    ///
+    /// A branch of an `OR`, or the else of an `IF`, that makes a label only
+    /// by `(= X 0)`, with the label at no site of an atom in it, adds no
+    /// type to the label; the label takes the join of the types that the
+    /// other branches give it, and no type where none does.
     ///
     /// The check refuses a clause that gives a column of its relation a
     /// type with no join, as [`crate::types::ValueType::join`] gives it,

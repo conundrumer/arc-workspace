@@ -6,20 +6,20 @@
 
 use std::sync::Arc;
 
-use super::{CheckResult, HeldClauses, Refusal, SolverClauses};
+use super::{CheckResult, ClauseEntry, FileScope, HeldClauses, Refusal, SolverClauses};
 use crate::hash::StableHashMap;
 use crate::program::canonical::CanonicalOrder;
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
-    ColumnName, Conjunct, Constraint, ConstraintOp, Form, LabelId, NameScope, Operand, OutputStep, PortName, Site, SiteArg,
+    ColumnName, Form, LabelId, NameScope, OutputStep, PortName, Site, SiteArg,
 };
 use crate::registry::{Column, ColumnType, Registry, TypeParameter};
 use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, ResolvedProgram, Signature};
 use crate::types::{
-    each_conjunct, each_site_label, use_label, AssemblyId, FormTypes,
-    GraphRelation, KeyRow, LabelFault, ProgramTypes, ValueType,
+    use_label, AssemblyId, FormTypes,
+    GraphRelation, KeyRow, LabelFault, ProgramTypes, ValueType, ZeroMade,
 };
 pub(super) use within::{demo_rule, form_at, form_within, rule_scope_forms, scope_forms};
 use within::rule_within;
@@ -155,25 +155,26 @@ fn given_columns(
 /// of the form, as [`CanonicalOrder::label_scopes`] gives them, in their
 /// order, where it has a head label that only `(= *X 0)` gives a type,
 /// those of the clauses of its
-/// relation, each relation's in the order [`SolverClauses`] gives. The
-/// clauses of a relation are those that the case program of `held` holds.
+/// relation in all of the solver's case programs, each relation's in the
+/// order [`SolverClauses`] gives. Otherwise the clauses of a relation are
+/// those that the case program of `held` holds.
 pub fn type_clause_signatures<'a>(form: &Form, order: &CanonicalOrder, clauses: &'a SolverClauses, held: &'a HeldClauses) -> impl Iterator<Item = &'a Signature> {
     let mut signatures: Vec<&'a Signature> = Vec::new();
-    let mut add = |clause: &crate::program::Clause| {
-        for entry in clauses.of_relation_in(&clause.derives, held) {
+    let mut add = |entries: &mut dyn Iterator<Item = &'a ClauseEntry>| {
+        for entry in entries {
             if !signatures.contains(&&entry.signature) {
                 signatures.push(&entry.signature);
             }
         }
     };
     if let Form::Clause(clause) = form {
-        add(clause.value());
+        add(&mut clauses.of_relation_in(&clause.value().derives, held));
     }
     for source in inferred_scopes(order) {
         for (_, found) in scope_forms_within(form, &source) {
             if let Form::Clause(clause) = found {
                 if !zero_typed_heads(clause.value()).is_empty() {
-                    add(clause.value());
+                    add(&mut clauses.of_relation(&FileScope::Program, &clause.value().derives).iter());
                 }
             }
         }
@@ -184,20 +185,9 @@ pub fn type_clause_signatures<'a>(form: &Form, order: &CanonicalOrder, clauses: 
 /// The head labels of `clause` that only `(= *X 0)` gives a type: each
 /// stands at no site of an atom and is made by such a constraint.
 pub(super) fn zero_typed_heads(clause: &crate::program::Clause) -> Vec<LabelId> {
-    let mut at_sites = Vec::new();
-    let mut zeroed = Vec::new();
-    each_conjunct(clause.body.value(), &mut |conjunct| match conjunct {
-        Conjunct::Constraint(Constraint { op: ConstraintOp::Eq, first, second: Operand::Zero }) if first.fresh => zeroed.push(first.label),
-        _ => {
-            if let Some(atom) = conjunct.atom() {
-                for site in atom.value().sites.iter() {
-                    each_site_label(site, &mut Vec::new(), &mut |use_, _| at_sites.extend(use_label(use_)));
-                }
-            }
-        }
-    });
+    let ZeroMade { zeroed, at_sites } = ZeroMade::of(clause.body.value());
     let heads = clause.columns.iter().map(|column| column.label);
-    heads.filter(|label| zeroed.contains(label) && !at_sites.contains(label)).collect()
+    heads.filter(|label| zeroed.contains(&(*label, true)) && !at_sites.contains(label)).collect()
 }
 
 /// A pass, or a refusal of each of `refusals`.
