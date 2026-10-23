@@ -22,7 +22,9 @@ stands under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/` with su
 moves to `tickets/reopened/` first. An analyst that no longer runs
 and was launched before a ticket's last line of the form `taking.NOT_OWN`
 counts as given that ticket no longer once `admission.scope_admits` admits
-it. A ticket of the list that the command launches no analyst with waits
+it. A ticket other than a `request` waits while a triage analyst runs on
+such a ticket (`batching`), and a `request` goes to an analyst alone. A
+ticket of the list that the command launches no analyst with waits
 on the hold that keeps it out, on the analysts it was given to that run,
 or, where none of them runs, on the coordinator's line that the final
 reply asks for (`party`).
@@ -193,11 +195,28 @@ def later_lines(state: State) -> Step | None:
     return None
 
 
-def unsettled_open(state: State) -> list[str]:
+def batching(state: State) -> tuple[Agent, ...]:
+    """The triage analysts that run on a ticket other than a `request`. A
+    ticket other than a `request` waits for them."""
+    return tuple(a for a, purpose, nums in state.analysts()
+                 if a.pending and purpose is Purpose.TRIAGE
+                 and any((t := state.tracker.tickets.get(n)) is not None
+                         and t.kind is not Kind.REQUEST for n in nums))
+
+
+def not_given(state: State) -> list[str]:
     """The tickets of the list that no analyst was given and no solver
     pipeline awaits."""
     return [n for n in state.computed.to_settle
             if not given(state, n) and not awaits_analyst(state, n)]
+
+
+def unsettled_open(state: State) -> list[str]:
+    """The tickets of `not_given`, other than those of a kind other than
+    `request` while `batching` gives an analyst."""
+    batch = batching(state)
+    return [n for n in not_given(state)
+            if not batch or state.tracker.tickets[n].kind is Kind.REQUEST]
 
 
 def judged_apart(state: State) -> Callable[[str], bool]:
@@ -237,27 +256,40 @@ def selected(state: State) -> list[str]:
 
 def party(state: State, number: str) -> Party | None:
     """The party the ticket `number`, of the tickets `selected` leaves out,
-    waits on: the hold of `selection`, or `given_party`; None where
-    neither names one, as for a ticket a solver pipeline awaits
-    (`passes.awaits_analyst`)."""
+    waits on: the hold of `selection`, or `given_party`, or the analysts
+    of `batching` for a ticket it holds back; None where none names one,
+    as for a ticket a solver pipeline awaits (`passes.awaits_analyst`)."""
     held = selection(state)[1].get(number)
-    return held if held is not None else given_party(state, number)
+    if held is not None:
+        return held
+    given_to_analyst = given_party(state, number)
+    if given_to_analyst is not None:
+        return given_to_analyst
+    if number in not_given(state) and number not in unsettled_open(state):
+        return Agents(batching(state))
+    return None
 
 
 def settle(state: State) -> Step | None:
-    """The next triage launch. The tickets of `judged_apart` and the
-    refactor tickets run alone on Sonnet, since their judging and settling
-    need no Opus; the rest run on the analyst document's model. The
-    analyst settles a ticket of `judged_apart` only where it judges that
-    the session's line of work needs it."""
+    """The next triage launch: a `request` alone, on the analyst
+    document's model, since its user's words need one analyst each;
+    otherwise the tickets of `judged_apart` and the refactor tickets on
+    Sonnet, since their judging and settling need no Opus, then the rest
+    on the analyst document's model. The analyst settles a ticket of
+    `judged_apart` only where it judges that the session's line of work
+    needs it."""
     numbers = selected(state)
     if not numbers:
         return None
     apart = judged_apart(state)
+    requests = [n for n in numbers if state.tracker.tickets[n].kind is Kind.REQUEST]
     sonnet = [n for n in numbers
               if apart(n) or state.tracker.tickets[n].kind is Kind.REFACTOR]
-    model = Model.SONNET if sonnet else None
-    if sonnet:
+    model = None
+    if requests:
+        numbers = requests[:1]
+    elif sonnet:
+        model = Model.SONNET
         numbers = sonnet
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.TRIAGE, joined(numbers)),
                   briefs.settle(numbers, [n for n in numbers if apart(n)], state.me),

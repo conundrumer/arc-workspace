@@ -303,3 +303,43 @@ def test_a_replacement_keeps_its_key_and_takes_its_own_entry_key(tmp_path: Path)
     assert isinstance(again, Launch) and again.attempt == 1
     assert key(again) == key(launch) and entry_key(again) != entry_key(launch)
     assert replacement(s, again) == again and entry_key(replacement(s, again)) == entry_key(again)
+
+
+def triage_state(tmp_path: Path, kinds: list[str], running_on: str | None):
+    tickets = [ticket(tmp_path, "new", f"9-{i}_ticket_x_code-reviewer.md",
+                      f"---\nkind: {kind}\n---\n# x: fault\n\n## Log\n"
+                      "2026-10-17T02:00:00Z new [code-reviewer]: filed\n")
+               for i, kind in enumerate(kinds, 1)]
+    agents = [] if running_on is None else [
+        attempt(Role.TICKET_ANALYST, analyst_subject(Purpose.TRIAGE, running_on),
+                pending=True, launched=tickets[0].filed + 60)]
+    s = with_agents(tmp_path, agents, tickets)
+    return replace(s, computed=replace(s.computed, to_settle=tuple(
+        t.number for t in tickets if t.number != running_on))), agents
+
+
+def test_a_running_triage_analyst_holds_back_the_tickets_other_than_requests(
+        tmp_path: Path) -> None:
+    from operations.parties import Agents
+    from operations.triage import party, selected, settle
+    s, agents = triage_state(tmp_path, ["bug", "bug"], "9-1")
+    assert selected(s) == []
+    assert settle(s) is None
+    assert party(s, "9-2") == Agents(tuple(agents))
+
+
+def test_a_running_triage_analyst_does_not_hold_back_a_request(tmp_path: Path) -> None:
+    from operations.triage import selected, settle
+    s, _ = triage_state(tmp_path, ["bug", "request"], "9-1")
+    assert selected(s) == ["9-2"]
+    launch = settle(s)
+    assert isinstance(launch, Launch)
+    assert launch.subject == analyst_subject(Purpose.TRIAGE, "9-2")
+
+
+def test_a_request_goes_to_an_analyst_alone(tmp_path: Path) -> None:
+    from operations.triage import settle
+    s, _ = triage_state(tmp_path, ["bug", "request", "request"], None)
+    launch = settle(s)
+    assert isinstance(launch, Launch)
+    assert launch.subject == analyst_subject(Purpose.TRIAGE, "9-2")
