@@ -41,9 +41,10 @@ class HelpPart(StrEnum):
 
 USAGE = mctx("""
     - Usage:
+        + xref: scripts/profile_runs.py:parser
         ```
-        uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs] [--since DATE] [--active-since DATE] [--price-at MODEL] [--split TIME]
-        uv run python scripts/profile_runs.py --each ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--since DATE] [--active-since DATE] [--price-at MODEL] [--split TIME]
+        uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs] [--run-budgets] [--since DATE] [--active-since DATE] [--price-at MODEL] [--split TIME]
+        uv run python scripts/profile_runs.py --each ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--run-budgets] [--since DATE] [--active-since DATE] [--price-at MODEL] [--split TIME]
         uv run python scripts/profile_runs.py --under ID [--pct P] [--top N] [--since DATE] [--price-at MODEL]
         uv run python scripts/profile_runs.py --running ID [--calls-since TIME]
         uv run python scripts/profile_runs.py --pending ID
@@ -73,6 +74,8 @@ PARTS = {
     HelpPart.RUNS: mctx("""
     - An ID is an agent id, a session id, or the path of a `.jsonl` transcript.
         - A session brings its main transcript, as type `main`, and the run of each of its subagents.
+        - With `--run-budgets`, each ID must name an agent run.
+            + xref: scripts/profile_runs.py:parser, scripts/profile_runs.py:ids_mode, scripts/profile_runs.py:agent_path
     - A run is the transcript of one agent, or where the top-level session takes a new session id while a subagent runs, that subagent's transcripts under each session's directory.
         - Each such transcript under a later session goes on from the one before it, its first entry answering that one's last.
         - A run's agent type, description and launching call are those the earliest of its transcripts' `.meta.json` files that gives each gives.
@@ -120,7 +123,8 @@ PARTS = {
         - Its self time is its active time less the run's waits on agents over that period.
         - A wait on agents is an interval in which an Agent call of the run is in flight, in the foreground or the background, and the run is not generating and blocks on no `tools` call.
         - A run with an unknown message prints no active time and no self time.
-    - Under `--each`, each run also prints its budget, and marks `past budget` each message whose self time is past that budget.
+    - `--run-budgets` includes `--each` detail and prints each run's budget, and marks `past budget` each message whose self time is past that budget.
+        + xref: scripts/profile_runs.py:parser, scripts/profile_runs.py:ids_mode, scripts/profile_runs.py:print_profiles
         - A run's budget is the budget `--help budget` gives its brief, as a brief of the run's type or role, over every run under the project directories.
         - A run with no budget prints none.
     - The Codex section gives the attributable work's role, elapsed time, calls and their timing where recorded, token counts, transcript read command and coverage gaps.
@@ -129,10 +133,10 @@ PARTS = {
             + xref: scripts/run_prints.py:print_codex
         - Its turn start and end times are Unix timestamps in seconds; call times keep the source's ISO timestamps.
             + xref: scripts/run_prints.py:print_codex
-        - Its budget is taken from the work role by the rules of `--help budget`, and its elapsed time is marked `past budget` where it exceeds that budget.
-            + xref: scripts/run_prints.py:print_codex
-        - A `review required` mark means the budget is unknown or the work evidence is incomplete.
-            + xref: scripts/run_prints.py:print_codex
+        - With `--run-budgets`, its budget is taken from the work role by the rules of `--help budget`, and its elapsed time is marked `past budget` where it exceeds that budget.
+            + xref: scripts/profile_runs.py:parser, scripts/run_prints.py:print_codex
+            - A `review required` mark means the budget is unknown or the work evidence is incomplete.
+                + xref: scripts/run_prints.py:print_codex
         - A role, budget, duration or complete cost the evidence cannot establish is unknown.
             + xref: scripts/run_prints.py:print_codex
     - One run of a subagent also prints, after `received report:`, the latest report received after the parent's latest message to it, with the entry's time, its kind and the start of its text.

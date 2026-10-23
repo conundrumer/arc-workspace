@@ -52,7 +52,7 @@ def print_profiles(runs: list[Run], args: argparse.Namespace, each_run: bool,
         # The budgets read every run under the project directories, so of
         # their `undecided` lines, only those on a run taken are kept.
         read: list[str] = []
-        budgets = group_budgets(read)
+        budgets = group_budgets(read) if args.run_budgets else None
         among = call_times(runs)
         for r in runs:
             print(f"{r.label} {r.agent_type} {clock(r.start)}: {r.description}\n"
@@ -62,7 +62,7 @@ def print_profiles(runs: list[Run], args: argparse.Namespace, each_run: bool,
             print_codex(r, budgets)
             if len(runs) == 1 or args.each:
                 print_messages(r, undecided,
-                               run_budget(budgets, r) if args.each else None)
+                               run_budget(budgets, r) if budgets is not None else None)
                 print_report(r, undecided)
                 print_groups(r.groups, args.top, r.wall)
             if args.each and len(runs) > 1:
@@ -92,6 +92,10 @@ def active_since(paths: list[Path], time_: float | None) -> list[Path]:
 
 
 def ids_mode(args: argparse.Namespace, undecided: list[str]) -> int:
+    if args.run_budgets:
+        for ident in args.ids:
+            agent_path(ident)
+        args.each = True
     paths = list(dict.fromkeys(p for ident in args.ids for p in transcripts(ident)))
     runs = profiled(active_since(paths, args.active_since), args, undecided)
     if not runs:
@@ -126,10 +130,15 @@ def pending_mode(args: argparse.Namespace, undecided: list[str]) -> int:
     return 0
 
 
-def open_mode(args: argparse.Namespace, undecided: list[str]) -> int:
-    path = find(args.open)
+def agent_path(ident: str) -> Path:
+    path = find(ident)
     if not is_subagent(path):
-        raise Refused(mctx("`{ident}` names a session, not an agent").format(ident=args.open))
+        raise Refused(mctx("`{ident}` names a session, not an agent").format(ident=ident))
+    return path
+
+
+def open_mode(args: argparse.Namespace, undecided: list[str]) -> int:
+    path = agent_path(args.open)
     print(mctx("open") if work_open(path, undecided) else mctx("not open"))
     return 0
 
@@ -141,6 +150,7 @@ TYPE_OPTION = "--type"
 PRICE_AT = "--price-at"
 CALLS_SINCE = "--calls-since"
 EACH = "--each"
+RUN_BUDGETS = "--run-budgets"
 SPLIT = "--split"
 ACTIVE_SINCE = "--active-since"
 
@@ -175,6 +185,7 @@ FLAGS: dict[str, tuple[Mode, ...]] = {
     PRICE_AT: (IDS, UNDER_MODE),
     CALLS_SINCE: (RUNNING,),
     EACH: (IDS,),
+    RUN_BUDGETS: (IDS,),
     SPLIT: (IDS,),
     ACTIVE_SINCE: (IDS,),
 }
@@ -210,6 +221,10 @@ def parser() -> argparse.ArgumentParser:
                     help=mctx("also print one line per run"))
     ap.add_argument(EACH, action="store_true",
                     help=mctx("print for each run what one run prints"))
+    ap.add_argument(RUN_BUDGETS, action="store_true",
+                    help=mctx("for agent IDs only, print `--each` detail "
+                              "and budgets over every run under the "
+                              "project directories, with budget marks"))
     ap.add_argument(PRICE_AT, choices=sorted(PRICES), metavar="MODEL",
                     help=mctx("one of {models}; `--help runs` gives what it "
                               "does").format(models=", ".join(sorted(PRICES))))

@@ -43,18 +43,20 @@ def print_codex(r: Run, budgets: GroupBudget | None) -> None:
         complete = len(turns) == len(sources) and all(t.ended is not None for _, t in turns)
         elapsed = union_seconds([(t.started, t.ended) for _, t in turns
                                  if t.ended is not None]) if complete else None
-        try:
-            work_role = Role(role)
-        except ValueError:
-            work_role = None
-        group = role_group(work_role) if work_role is not None else role if role in agent_names() else None
-        budget = (budgets(group, brief_items(r))
-                  if budgets is not None and group is not None else None)
-        mark = ("past budget" if elapsed is not None and budget is not None and elapsed > budget
-                else "review required: unknown budget or incomplete work evidence"
-                if budget is None or elapsed is None or result.gaps else "within budget")
-        print(f"    role {role}: elapsed {elapsed if elapsed is not None else 'unknown'} s; "
-              f"budget {budget if budget is not None else 'unknown'} s; {mark}")
+        budget_text = ""
+        if budgets is not None:
+            try:
+                work_role = Role(role)
+            except ValueError:
+                work_role = None
+            group = role_group(work_role) if work_role is not None else role if role in agent_names() else None
+            budget = budgets(group, brief_items(r)) if group is not None else None
+            mark = ("past budget" if elapsed is not None and budget is not None and elapsed > budget
+                    else "review required: unknown budget or incomplete work evidence"
+                    if budget is None or elapsed is None or result.gaps else "within budget")
+            budget_text = f"; budget {budget if budget is not None else 'unknown'} s; {mark}"
+        print(f"    role {role}: elapsed {elapsed if elapsed is not None else 'unknown'} s"
+              f"{budget_text}")
         print(f"      cost: {dollars(codex.dollars(role))} subscription dollars"
               + ("" if all(s.dollars is not None for s in sources) else " (some usage unpriced)"))
         print(f"      tokens: {json.dumps(asdict(result.spend.totals(role)))}")

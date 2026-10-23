@@ -774,7 +774,7 @@ RUN = "<run>"
 
 def batch_profile(runs: list[str], reviewable: list[str], commit: str,
                   tickets: list[str]) -> str:
-    profiles = (mctx("- Run `uv run python scripts/profile_runs.py --each {runs}` once, and judge each run from its launcher profile and its Codex section.").format(runs=" ".join(runs)) if runs else "")
+    profiles = (mctx("- Run `uv run python scripts/profile_runs.py --each --run-budgets {runs}` once, and judge each run from its launcher profile and its Codex section.\n    + xref: scripts/profile_runs.py:parser").format(runs=" ".join(runs)) if runs else "")
     lifetimes = (mctx("- Run `uv run python scripts/lifetimes.py {tickets}` and judge each part of each ticket's life.").format(tickets=" ".join(tickets)) if tickets else "")
     filing = FILE_AS.format(domain_subject=mctx("`commit` and `{commit}`").format(commit=commit),
                             agent=OPERATOR)
