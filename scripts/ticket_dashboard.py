@@ -64,6 +64,11 @@ POLL = 3.0
 MIN_EVENT = 15.0
 """The fewest seconds between the starts of refresh renders."""
 
+REST = 4.0
+"""How many times the length of the last render the render thread rests
+before the next refresh render starts, so that it uses at most 1 / (1 +
+`REST`) of a core while it refreshes."""
+
 
 WATCH = 1.0
 """The seconds between two reads of the stamps of `code_files`."""
@@ -170,6 +175,13 @@ class Latest:
     """Set to make the render thread publish at once."""
     published: float = 0.0
     """The `time.monotonic()` of the last publish."""
+    took: float = 0.0
+    """The seconds the last render took."""
+
+    def gap(self) -> float:
+        """The fewest seconds between the starts of two refresh renders:
+        `MIN_EVENT`, or `REST` times the last render if that is longer."""
+        return max(MIN_EVENT, REST * self.took)
 
 
 def render_loop(tickets: Path, latest: Latest) -> None:
@@ -177,8 +189,10 @@ def render_loop(tickets: Path, latest: Latest) -> None:
     All cached state reads of the server run on this thread."""
     def publish(live_agents: bool) -> tuple[Stamp | CodexWindow | int | None, ...]:
         state = fingerprint(tickets)
+        start = time.monotonic()
         rendered = render(tickets, live_agents)
         with latest.condition:
+            latest.took = time.monotonic() - start
             latest.rendered = rendered
             latest.version += 1
             latest.published = time.monotonic()
@@ -197,13 +211,12 @@ def render_loop(tickets: Path, latest: Latest) -> None:
         poked = latest.poke.wait(POLL)
         latest.poke.clear()
         try:
-            state = fingerprint(tickets)
             with latest.condition:
                 watched = latest.streams > 0
             if poked:
                 began = time.monotonic()
                 previous = publish(True)
-            elif watched and state != previous and time.monotonic() - began >= MIN_EVENT:
+            elif watched and time.monotonic() - began >= latest.gap() and fingerprint(tickets) != previous:
                 began = time.monotonic()
                 previous = publish(True)
         except Exception:
@@ -300,7 +313,7 @@ class Handler(BaseHTTPRequestHandler):
         began = time.monotonic()
         latest = self.latest
         with latest.condition:
-            stale = latest.rendered is not None and time.monotonic() - latest.published >= MIN_EVENT
+            stale = latest.rendered is not None and time.monotonic() - latest.published >= latest.gap()
         if stale:
             # The render thread publishes unasked only while a stream watches.
             # This request serves the older render, and the next one is fresh.
