@@ -77,6 +77,19 @@ pub enum CheckId {
     /// type. The check refuses the label where no type is above the types of
     /// the case program under check.
     ///
+    /// A field of the first projection onto a type parameter of an `INIT`
+    /// form, or its single label, whose label only `(= *X 0)` gives a type
+    /// takes the join of the types that the later sites onto that parameter
+    /// give the same field; the first projection still binds the parameter.
+    /// A label of an input's body that a constraint makes equal to a key label
+    /// of the form takes the type that the key clause's sites give that
+    /// label, as it takes it from a list around the input's body. A read of
+    /// `&<instance>.<input>` where the instance writes no clause for that
+    /// input resolves to the instance's input, whose rows are the port's
+    /// default rows, and takes the port's column types. The check's
+    /// [`CheckCacheKey`] holds the form and the signatures it holds already,
+    /// since the instance and its reads stand in one top-level form.
+    ///
     /// A branch of an `OR`, or the else of an `IF`, that makes a label only
     /// by `(= X 0)`, with the label at no site of an atom in it, adds no
     /// type to the label; the label takes the join of the types that the

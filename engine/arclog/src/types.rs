@@ -211,7 +211,21 @@ pub fn label_type(
     label: crate::program::LabelId,
     site_type: &dyn Fn(&crate::program::Atom, &[crate::program::ColumnName]) -> Option<ValueType>,
 ) -> Result<Option<ValueType>, LabelFault> {
-    LabelWalk { label, site_type, asked: vec![label] }.body_type(body, &[], None)
+    label_type_keyed(body, label, site_type, None)
+}
+
+/// [`label_type`] for a label of an `INIT` form's input, where `key` is the
+/// body of the form's key clause. The key clause is a list around the
+/// input's body: a label that a constraint makes equal to a label of the
+/// key clause takes the type that the key clause's sites give that label
+/// (`docs/arclog/arclog.md#instance`).
+pub fn label_type_keyed(
+    body: &crate::program::Body,
+    label: crate::program::LabelId,
+    site_type: &dyn Fn(&crate::program::Atom, &[crate::program::ColumnName]) -> Option<ValueType>,
+    key: Option<&crate::program::Body>,
+) -> Result<Option<ValueType>, LabelFault> {
+    LabelWalk { label, site_type, asked: vec![label], key }.body_type(body, &[], None)
 }
 
 /// The list of the scope of `label`, a label of `list` that is no head
@@ -259,6 +273,9 @@ struct LabelWalk<'a> {
     label: crate::program::LabelId,
     site_type: &'a dyn Fn(&crate::program::Atom, &[crate::program::ColumnName]) -> Option<ValueType>,
     asked: Vec<crate::program::LabelId>,
+    /// The body of the key clause of the `INIT` form, a list around every
+    /// input's body.
+    key: Option<&'a crate::program::Body>,
 }
 
 /// A list around the list a walk is in: the list, the pairs of labels that
@@ -285,19 +302,29 @@ impl LabelWalk<'_> {
         let pairs = with_constraints(outer, body);
         let class = equal_labels(&pairs, self.label);
         let mut ty = self.list_type(body, &pairs, &class, around, None)?;
-        let Some(around) = around else { return Ok(ty) };
         let before = equal_labels(outer, self.label);
         for &other in class.iter().filter(|label| !before.contains(label) && !self.asked.contains(label)) {
-            ty = meet(ty, self.around_type(other, around)?)?;
+            if let Some(around) = around {
+                ty = meet(ty, self.around_type(other, around)?)?;
+            }
+            ty = meet(ty, self.key_type(other)?)?;
         }
         Ok(ty)
+    }
+
+    /// The type that the sites of `other` give it in the key clause.
+    fn key_type(&self, other: crate::program::LabelId) -> Result<Option<ValueType>, LabelFault> {
+        let Some(key) = self.key else { return Ok(None) };
+        let asked = self.asked.iter().copied().chain(std::iter::once(other)).collect();
+        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: None };
+        walk.list_type(key, &[], &[other], None, None)
     }
 
     /// The type that the sites of `other` give it in `around` and the lists
     /// around it, outside the conjunct of each that holds the inner list.
     fn around_type(&self, other: crate::program::LabelId, around: &Around<'_>) -> Result<Option<ValueType>, LabelFault> {
         let asked = self.asked.iter().copied().chain(std::iter::once(other)).collect();
-        let walk = LabelWalk { label: other, site_type: self.site_type, asked };
+        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: self.key };
         let mut ty = None;
         let mut frame = Some(around);
         while let Some(list) = frame {

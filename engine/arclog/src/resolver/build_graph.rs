@@ -351,20 +351,7 @@ impl<'a> Builder<'a> {
         let stored = matches!(self.nodes[node.0 as usize].kind, DependencyKind::Parameter(_));
         let edges: Vec<(GraphNodeIndex, GraphNodeIndex)> = match (on_input, stored) {
             (true, true) => {
-                let input = match nodes.input(port) {
-                    Some(input) => input,
-                    None => {
-                        let (form, outputs) = (nodes.form.clone(), nodes.outputs.clone());
-                        let kind = DependencyKind::InstanceInput { instance: name.clone(), input: port.clone() };
-                        let input = self.node(kind, scope, Some(&form));
-                        for (_, output) in outputs {
-                            self.read(output, input);
-                        }
-                        let nodes = self.instances.get_mut(&(scope.clone(), name.clone())).expect("the instance's nodes");
-                        nodes.inputs.push((port.clone(), input));
-                        input
-                    }
-                };
+                let input = self.instance_input(scope, name, port).expect("the instance's input");
                 vec![(input, node)]
             }
             (true, false) => nodes.outputs.iter().map(|(_, output)| (*output, node)).collect(),
@@ -376,6 +363,28 @@ impl<'a> Builder<'a> {
                 self.read(reader, read);
             }
         }
+    }
+
+    /// The node of the input `port` of the instance `name` of `scope`, made
+    /// where the `INIT` form writes no clause of that input: the node that
+    /// the outputs read, whose rows are the port's default rows.
+    fn instance_input(&mut self, scope: &NameScope, name: &crate::program::InstanceName, port: &PortName) -> Option<GraphNodeIndex> {
+        let nodes = self.instances.get(&(scope.clone(), name.clone()))?;
+        if let Some(input) = nodes.input(port) {
+            return Some(input);
+        }
+        nodes.component.inputs.iter().find(|input| input.port.name == *port)?;
+        let (form, outputs, columns) = (nodes.form.clone(), nodes.outputs.clone(), nodes.columns[port].clone());
+        let kind = DependencyKind::InstanceInput { instance: name.clone(), input: port.clone() };
+        let input = self.node(kind, scope, Some(&form));
+        for (_, output) in outputs {
+            self.read(output, input);
+        }
+        let nodes = self.instances.get_mut(&(scope.clone(), name.clone())).expect("the instance's nodes");
+        nodes.inputs.push((port.clone(), input));
+        let relation = RelationRef::Output(OutputName { of: OutputOwner::Instance(name.clone()), path: Arc::from([OutputStep::Port(port.clone())]) });
+        self.target(scope, relation, Target { node: input, columns: ColumnsOf::Fixed(columns) });
+        Some(input)
     }
 
     /// Resolves each atom below `node`, at `path`, as read by each node
@@ -427,6 +436,15 @@ impl<'a> Builder<'a> {
         };
         if let Some(target) = self.names.find(scope, relation) {
             return Resolution::Node(target.node);
+        }
+        if let RelationRef::Output(OutputName { of: OutputOwner::Instance(name), path: steps }) = relation {
+            if let [OutputStep::Port(port)] = &steps[..] {
+                for at in [scope, &NameScope::Program] {
+                    if let Some(input) = self.instance_input(at, name, port) {
+                        return Resolution::Node(input);
+                    }
+                }
+            }
         }
         match program_relation {
             Some(program_relation) if self.derived.contains(&program_relation) => Resolution::Undefined(program_relation),

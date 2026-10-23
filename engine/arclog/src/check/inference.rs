@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use super::safety::{bodies, BodyPlace};
 use super::types::{
-    column_type, component, declared_type, demo_rule, form_at, pose_of_fault, project, relation_columns, rule_scope_forms, scope_forms, site_value_type,
+    column_type, component, declared_type, demo_rule, form_at, pose_of_fault, project, relation_columns, rule_scope_forms, scope_forms, site_value_type, site_value_type_or,
     try_map_labels, zero_typed_heads, PoseOr,
 };
 use super::{ClauseEntry, FileScope, HeldClauses, Refusal, SolverClauses};
@@ -26,7 +26,7 @@ use crate::resolver::columns;
 use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Signature};
-use crate::types::{label_type, scope_list, use_label, AssemblyId, KeyRow, LabelFault, ValueType};
+use crate::types::{label_type_keyed, scope_list, use_label, AssemblyId, KeyRow, LabelFault, ValueType};
 
 /// The labels of a form's own scope, with the list each label's sites stand
 /// in: the conjuncts of the form's bodies, each instance input a branch of
@@ -490,11 +490,12 @@ impl<'a> Inference<'a> {
         let scope = ScopeBody::of(form, self.registry);
         let walk = FormWalk::of(form);
         let labels = form_scope_labels(form);
+        let key = scope.instance.and_then(|instance| instance.key.as_ref()).map(|key| key.value().key.body.value());
         let no_bindings = StableHashMap::default();
         let type_all = |bindings: &StableHashMap<TypeParameter, ValueType>, pose_or: PoseOr| -> Vec<(LabelId, Result<Option<ValueType>, LabelFault>)> {
             let reading = SiteReading { path, walk: &walk, component: scope.component, bindings, pose_or };
             let site_type = |atom: &Atom, column: &[ColumnName]| self.site_type(reading, atom, column);
-            labels.iter().map(|label| (*label, label_type(scope.list(*label), *label, &site_type))).collect()
+            labels.iter().map(|label| (*label, label_type_keyed(scope.list(*label), *label, &site_type, key))).collect()
         };
         let mut types = type_all(&no_bindings, PoseOr::Open);
         let mut bindings = StableHashMap::default();
@@ -1009,7 +1010,10 @@ fn bind(instance: &Instance, component: &Component, label: &dyn Fn(LabelId) -> O
                 let field = |column: &RelationColumn| Some((column.name.clone(), label(column.label)?));
                 key.key.columns.iter().map(field).collect::<Option<_>>().map(ValueType::Record)
             }
-            ParameterSite::Head { site, .. } => site_value_type(site, label),
+            ParameterSite::Head { site, .. } => {
+                let later: Vec<&Site> = sites.later.iter().map(|(_, site)| *site).collect();
+                binding_type(site, &later, label)
+            }
         };
         if let Some(ty) = ty {
             bindings.insert(sites.parameter.clone(), ty);
@@ -1019,6 +1023,27 @@ fn bind(instance: &Instance, component: &Component, label: &dyn Fn(LabelId) -> O
         bindings.insert(parameter.clone(), ValueType::Unit);
     }
     bindings
+}
+
+/// The type of the value at `site`, the first projection onto a type
+/// parameter, as [`site_value_type`] gives it, except that a field, or the
+/// single label, whose label has no type takes the join of the types that
+/// `later`, the later sites onto the parameter, give the field at the same
+/// path (`docs/arclog/arclog.md#instance`).
+fn binding_type(site: &Site, later: &[&Site], label: &dyn Fn(LabelId) -> Option<ValueType>) -> Option<ValueType> {
+    let from_later = |at: &[ColumnName]| join_types(later.iter().filter_map(|site| field_type(site, at, label))).ok().flatten();
+    site_value_type_or(site, &[], label, &from_later)
+}
+
+/// The type that `site` gives its field at `path`, `site` itself at an
+/// empty `path`.
+fn field_type(site: &Site, path: &[ColumnName], label: &dyn Fn(LabelId) -> Option<ValueType>) -> Option<ValueType> {
+    let Some((first, rest)) = path.split_first() else { return site_value_type(site, label) };
+    site.value.args.iter().find_map(|arg| match arg {
+        SiteArg::NamedLabel { name, label: use_ } if name == first && rest.is_empty() => label(use_label(*use_)?),
+        SiteArg::Field(inner) if inner.column == *first => field_type(inner, rest, label),
+        _ => None,
+    })
 }
 
 /// The label that `atom` gives the field `field` of its site on the column

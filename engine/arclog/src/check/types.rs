@@ -296,12 +296,24 @@ pub(super) use registry_columns::component;
 /// The type of the value at `site` of a head or of a read: its one bare
 /// label's type, or a record with a field per argument.
 pub(super) fn site_value_type(site: &Site, label: &dyn Fn(LabelId) -> Option<ValueType>) -> Option<ValueType> {
+    site_value_type_or(site, &[], label, &|_| None)
+}
+
+/// [`site_value_type`], except that a label with no type, at the field path
+/// `path` below `site`, takes the type `missing` gives that path.
+pub(super) fn site_value_type_or(
+    site: &Site,
+    path: &[ColumnName],
+    label: &dyn Fn(LabelId) -> Option<ValueType>,
+    missing: &dyn Fn(&[ColumnName]) -> Option<ValueType>,
+) -> Option<ValueType> {
     match &site.value.args[..] {
-        [SiteArg::Label(use_) | SiteArg::NamedLabel { label: use_, .. }] => label(use_label(*use_)?),
+        [SiteArg::Label(use_) | SiteArg::NamedLabel { label: use_, .. }] => label(use_label(*use_)?).or_else(|| missing(path)),
         args => {
+            let at = |name: &ColumnName| -> Vec<ColumnName> { path.iter().chain(std::iter::once(name)).cloned().collect() };
             let field = |arg: &SiteArg| match arg {
-                SiteArg::NamedLabel { name, label: use_ } => Some((name.clone(), label(use_label(*use_)?)?)),
-                SiteArg::Field(field) => Some((field.column.clone(), site_value_type(field, label)?)),
+                SiteArg::NamedLabel { name, label: use_ } => Some((name.clone(), label(use_label(*use_)?).or_else(|| missing(&at(name)))?)),
+                SiteArg::Field(field) => Some((field.column.clone(), site_value_type_or(field, &at(&field.column), label, missing)?)),
                 SiteArg::Label(_) => None,
             };
             Some(ValueType::Record(args.iter().map(field).collect::<Option<_>>()?))
