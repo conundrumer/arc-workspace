@@ -1,0 +1,3 @@
+# c909285e
+
+- interference: `uv run python scripts/run_dl.py witness c909285e --file programs/reports/c909285e/witnesses.json` printed only "the name `$PatternBreak` denotes no case of the solver" for each of the five witnesses, and no comparison of the other groups. `$PatternBreak` fails Relational form and has no case, so the run cannot show whether the other branches' outputs match `witnesses.json`. I settled it from the run without `--file` on a copy of the witness file with `$PatternBreak` taken out, which showed no differing output. Cost: one extra run. The output is still incomplete in that way.

@@ -1,0 +1,121 @@
+// c909285e
+// @draft
+// @keywords: crop color-class border bbox select rank
+// @scene one-outline: one rectangle outline, one cell wide, sits on the pattern;
+//  it is a square in every input.
+// @scene outline-color-unique: the outline's color appears nowhere else in the
+//  input.
+// @rule crop-outline: the output is the input cropped to the outline's box, the
+//  outline included, with every cell copied as it is.
+
+// which cells give the box that is cropped
+.type Choice =
+    // @claim one-outline outline-color-unique
+    Outline {}
+    // @scene one-outline: the box is the bounding box of the color that covers
+    //  the fewest cells; undefined where two colors tie for fewest.
+    // @scene outline-color-unique: no claim; the cells of the rarest color may
+    //  lie anywhere.
+    // @witness sparse-color: ordinary concept
+  | RarestColor {}
+    // @scene one-outline: the box is the bounding box of the one color whose
+    //  cells form one body; undefined where no color does, or more than one
+    //  does.
+    // @witness outline-with-tick: borderline $OneBodyColor
+    //     @relaxed one-outline
+  | OneBodyColor {adjacency: Adjacency}
+    // @scene one-outline: the box is the bounding box of the one color that no
+    //  edge cell holds; undefined where no color, or more than one, keeps off
+    //  the edge.
+    // @witness outline-with-tick: borderline $OneBodyColor
+  | InteriorColor {}
+
+// which cells of one color join into one body
+.type Adjacency =
+    // @claim one-outline
+    CornerContact {}
+    // @scene one-outline: the body is joined by 4-adjacency.
+    // @witness shifted-outline: ordinary concept
+  | EdgeContact {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Outline()). impl_choice($RarestColor()).
+impl_choice($OneBodyColor($CornerContact())). impl_choice($OneBodyColor($EdgeContact())).
+impl_choice($InteriorColor()).
+
+// The colors each case proposes as the one whose box is cropped.
+.decl source_color(ch: Choice, col: Color)
+
+// The one proposed color; two proposed colors leave the case undefined.
+// @claim one-outline
+.init chosen = Unanimous<Choice, Color>
+chosen.item(Ch, Col) :- source_color(Ch, Col).
+
+// @claim crop-outline
+.init box = Bbox<Choice>
+box.cell(Ch, P) :- chosen.value(Ch, Col), in(P, Col).
+
+out(P_inner, Col, Ch) :- box.box(Ch, B), in(P, Col), crop(P, B, P_inner).
+
+// --- $Outline ---
+
+// @claim one-outline
+.init outlines = Outlines<Color>
+outlines.node(Col, P) :- in(P, Col).
+
+// A cell of the color off the border of an outline the color draws.
+.decl stray(col: Color, b: Box)
+stray(Col, B) :- outlines.box(Col, B), in(P, Col), ( !inside(P, B) ; interior(P, B) ).
+
+source_color($Outline(), Col) :- outlines.box(Col, B), !stray(Col, B).
+
+// --- $RarestColor ---
+
+// @claim one-outline
+.init color_size = Tally<Color, Position>
+color_size.item(Col, P) :- in(P, Col).
+
+// @claim one-outline
+.init fewest = ArgExtremes<Unit, Color>
+fewest.cand($U(), Col, N) :- color_size.tally(Col, N).
+
+source_color($RarestColor(), Col) :- fewest.low($U(), Col, _).
+
+// --- $OneBodyColor ---
+
+// Two cells of the color lie in different bodies.
+.decl split_color(ch: Choice, col: Color)
+
+source_color(Ch, Col) :-
+    impl_choice(Ch), Ch = $OneBodyColor(_), in(_, Col), !split_color(Ch, Col).
+
+// --- $CornerContact ---
+
+// @claim one-outline
+.init body8 = Components8<Color>
+body8.node(Col, P) :- in(P, Col).
+
+split_color($OneBodyColor($CornerContact()), Col) :-
+    body8.label(Col, _, Id1), body8.label(Col, _, Id2), Id1 != Id2.
+
+// --- $EdgeContact ---
+
+// @claim one-outline
+.init body4 = Components<Color>
+body4.node(Col, P) :- in(P, Col).
+
+split_color($OneBodyColor($EdgeContact()), Col) :-
+    body4.label(Col, _, Id1), body4.label(Col, _, Id2), Id1 != Id2.
+
+// --- $InteriorColor ---
+
+.decl edge_color(col: Color)
+edge_color(Col) :- in(P, Col), dir_elem(D), dist(P, D, 0).
+
+source_color($InteriorColor(), Col) :- in(_, Col), !edge_color(Col).
