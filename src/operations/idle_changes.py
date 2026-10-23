@@ -12,23 +12,34 @@ only these, and no cause that left the change so, for the decision to
 alert; the reason `changes.due_step` gives (`steps.NoStep`) goes in the
 message to the coordinator and in the line of the bug's instance.
 
+A held change is also overdue (`overdue`) where no agent of it is at work
+and neither its last progress nor the latest step journaled on it stands
+`TICKET_STUCK_SECONDS` or more before the read, whatever `due_step` gives
+for it, unless a step on it is in flight, an agent of it waits on the
+usage limit, the usage pace holds its step (`start_holds.pace_holds`), or
+it waits on the coordinator, as for `idle`. It gets the same message and
+`bug` instance as an idle change. `reason` gives why a held change
+waits: the reason `due_step` gives or, where that is a step, that `next`
+gave it in no call since the change's last progress.
+
 An idle change gets a message to the coordinator once per idle stretch,
 with its log since its last progress and its agents, and is then
 recorded in one `bug` ticket of its own kind (`alerts.BugKind.IDLE`), by
 `step`. `changes.step` gives that step in the place of the step of a
-held change that has none, and `order` passes it `step`.
+held change that has none, and `order` passes it `step`. `order` also
+takes `overdue`, after the changes.
 
 This module stands apart from `changes`, since `alerts` and
 `ticket_stall` import `triage`, which imports `changes`."""
 
 from controlled_markdown import mctx
-from operations import alerts, merging
+from operations import alerts, changes, merging, start_holds
 from operations.change_agents import elsewhere_on, launched_on
-from operations.constants import AGAIN_SECONDS, COORDINATOR
+from operations.constants import AGAIN_SECONDS, COORDINATOR, TICKET_STUCK_SECONDS
 from operations.directives import NUMBER
 from operations.handled import decided_by, held_aside
 from operations.journal import backoff
-from operations.state import State, Ticket
+from operations.state import Agent, State, Ticket
 from operations.steps import NoStep, Send, Step, Undecided, entry_key, key
 from operations.ticket_stall import progress
 from ticketing.times import utc_stamp
@@ -52,26 +63,42 @@ def idle(state: State, t: Ticket, s: Step | NoStep, waiting: NoStep) -> float | 
     since = progress(state, t)
     if since is None:
         return None
+    agents = agents_of(state, t, s)
+    if any(a.pending for a in agents):
+        return None
+    if exempt(state, t, agents, since, message(state, t, since, waiting)):
+        return None
+    return since
+
+
+def agents_of(state: State, t: Ticket, s: Step | NoStep) -> list[Agent]:
+    """The agents on the change `t` whose `next_step` is `s`."""
     agents = [*launched_on(state, t.number), *elsewhere_on(state, t.number)]
     if isinstance(s, Undecided):
         agents += decided_by(state, s)
-    if any(a.pending for a in agents):
-        return None
+    return agents
+
+
+def exempt(state: State, t: Ticket, agents: list[Agent], since: float, sent: Send) -> bool:
+    """Whether the change `t`, whose agents are `agents` and whose last
+    progress is `since`, waits on a party outside the operators or has a
+    step in flight: an agent stopped by the usage limit; a journal entry
+    in flight or closed less than `AGAIN_SECONDS` before; a merge call in
+    flight; a message to the coordinator on it, other than `sent`, closed
+    after `since`; or its hand-off to the coordinator."""
     if any(a.agent_id in state.transcripts.limited for a in agents):
-        return None
+        return True
     if any(e.change == t.number and (e.close is None or state.now - e.close.time < AGAIN_SECONDS)
            for e in state.journal.entries):
-        return None
+        return True
     if any(c.result is None for c in merging.merge_calls(state, t)):
-        return None
-    own = key(message(state, t, since, waiting))
+        return True
+    own = key(sent)
     if any(e.key != own and e.close is not None and e.close.time > since
            and (e.change == t.number or t.number in NUMBER.findall(e.text))
            for e in state.journal.sent(COORDINATOR)):
-        return None
-    if t.log and merging.handed_off(t.log[-1]):
-        return None
-    return since
+        return True
+    return bool(t.log) and merging.handed_off(t.log[-1])
 
 
 def step_waits(state: State, s: Step | NoStep) -> bool:
@@ -98,3 +125,57 @@ def step(state: State, t: Ticket, s: Step | NoStep, waiting: NoStep) -> Step | N
                                     alerts.BugKind.IDLE,
                                     mctx("idle since {time}; {reason}").format(
                                         time=utc_stamp(since), reason=waiting.reason))
+
+
+DUE_UNGIVEN = mctx("its step {key} is due and `next` gave it in no call since {time}")
+"""Why a held change waits where `changes.due_step` gives it a step."""
+
+DUE_AT_WORK = mctx("its step {key} is due and an agent of it is at work")
+"""Why a held change waits where `changes.due_step` gives it a step and an
+agent of it is at work, so that it has no time of last progress."""
+
+
+def reason(state: State, t: Ticket, s: Step | NoStep) -> str:
+    """Why the held change `t`, whose `next_step` is `s`, waits: the reason
+    of the `NoStep` `changes.due_step` gives, or, where that is a step, its
+    key and the time of the last progress from which `next` gave it in no
+    call."""
+    due = changes.due_step(state, t, s)
+    if isinstance(due, NoStep):
+        return due.reason
+    since = progress(state, t)
+    if since is None:
+        return DUE_AT_WORK.format(key=key(due))
+    return DUE_UNGIVEN.format(key=key(due), time=utc_stamp(since))
+
+
+def overdue(state: State) -> Step | None:
+    """The first step on a held change that is overdue: the message that
+    gives the coordinator `message` with `reason`, once after its last
+    progress, then the step `alerts.ticket_step` gives from that time. A
+    change is overdue where it has no agent at work, its last progress and
+    its latest journal entry stand `TICKET_STUCK_SECONDS` or more before
+    this read, `exempt` does not apply, and the usage pace does not hold
+    its step."""
+    for t in changes.held(state):
+        since = progress(state, t)
+        if since is None or state.now - since < TICKET_STUCK_SECONDS:
+            continue
+        if any(e.change == t.number and state.now - e.given < TICKET_STUCK_SECONDS
+               for e in state.journal.entries):
+            continue
+        s = changes.next_step(state, t)
+        due = changes.due_step(state, t, s)
+        given = None if isinstance(due, NoStep) else due
+        if start_holds.pace_holds(state, lambda: given):
+            continue
+        waiting = NoStep(reason(state, t, s))
+        sent = message(state, t, since, waiting)
+        if exempt(state, t, agents_of(state, t, s), since, sent):
+            continue
+        if (found := alerts.ticket_stall_step(
+                state, sent, t, since, alerts.BugKind.IDLE,
+                mctx("idle since {time}; {reason}").format(
+                    time=utc_stamp(since), reason=waiting.reason))) is not None:
+            return found
+    return None

@@ -16,7 +16,8 @@ under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/`; the coordinat
 lines to the ticket analysts that run on their tickets; the ticket
 analysts on open tickets; the review of drafts; the changes, and for a
 held change with no step, the step `idle_changes` gives where it is
-idle; the move to `tickets/draft/` of the changes that a ticket holds up
+idle, and the message on a held change that is overdue
+(`idle_changes.overdue`); the move to `tickets/draft/` of the changes that a ticket holds up
 (`ticket_stall.stall`), so that the take of a change comes before the
 move of the changes that wait on it; the solver pipelines; the cost
 audit (`cost_audit`); the code review and the lib review (`reviews`);
@@ -341,7 +342,7 @@ EARLY: tuple[Callable[[State], Step | None], ...] = (
     triage.unfinished)
 LATE: tuple[Callable[[State], Step | None], ...] = (
     taking.release, triage.reopen, triage.later_lines, triage.settle, drafts.step,
-    held_changes, ticket_stall.stall,
+    held_changes, idle_changes.overdue, ticket_stall.stall,
     pipelines, cost_audit.audit, *reviews.PROCEDURES, standing_reviews.standing_review,
     standing_reviews.overdue_review, gate_launch.gate,
     assessment.assessment, after_profile.validation, after_profile.script_check, batches.step,

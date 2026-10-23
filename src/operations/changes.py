@@ -825,13 +825,6 @@ def due_step(state: State, t: Ticket, s: Step | NoStep) -> Step | NoStep:
     return held_back(state, other)
 
 
-def hold_reason(state: State, t: Ticket, s: Step | NoStep) -> str | None:
-    """Why the change `t` the operator holds waits, where `due_step` gives
-    it, with its `next_step` `s`, a `NoStep`, and otherwise None."""
-    due = due_step(state, t, s)
-    return due.reason if isinstance(due, NoStep) else None
-
-
 def no_step(state: State, t: Ticket, s: Step) -> Step | NoStep:
     """The step in place of `s`, the step of the held change `t` that
     `repeated` passes over, where the journal gives it as done and no

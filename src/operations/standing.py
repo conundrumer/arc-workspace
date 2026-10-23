@@ -6,7 +6,7 @@ procedures wait on, which `holding` gives."""
 from collections.abc import Callable, Iterable
 
 from controlled_markdown import mctx
-from operations import change_take, changes, decisions, drafts, passes, runs, taking, triage
+from operations import change_take, changes, decisions, drafts, idle_changes, passes, runs, taking, triage
 from operations.arrivals import received
 from operations.completion import occupies
 from operations.directives import NUMBER, TASK, Directive, Line, Pipeline, lines
@@ -206,13 +206,13 @@ def held_stands(state: State, t: Ticket) -> tuple[str, bool]:
     """The line of the final reply on the change `t` that stays under
     `tickets/assigned/`, with `stands`' second value: where its step is not
     an undecided step that went to a ticket analyst, the line gives why it
-    waits (`changes.hold_reason`)."""
+    waits (`idle_changes.reason`)."""
     head = "- " + mctx("Change {n} stays under `tickets/assigned/`").format(n=t.number)
     step = changes.next_step(state, t)
     line, asked = stands(state, head, step)
-    if asked or (why := changes.hold_reason(state, t, step)) is None:
+    if asked:
         return line, asked
-    return mctx("{head}: it {why}").format(head=head, why=why), False
+    return mctx("{head}: it {why}").format(head=head, why=idle_changes.reason(state, t, step)), False
 
 
 def final(state: State, held: set[str]) -> str:

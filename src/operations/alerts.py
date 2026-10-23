@@ -45,8 +45,9 @@ ticket is recorded the same way, in one `bug` ticket of its own kind
 message on a change whose paths hold a ticket that does not move goes to
 the coordinator as `scripts/operate.py --help alerts` gives it
 (`stuck_waits`). An idle held change (`idle_changes`) is recorded the
-same way, in one `bug` ticket of its own kind (`idle`), and so is a
-ticket that waits on nothing that moves it (`unwaited`), in one of the
+same way, in one `bug` ticket of its own kind (`idle`), by
+`idle_changes.step` at once or by `idle_changes.overdue` after
+`TICKET_STUCK_SECONDS`, and so is a ticket that waits on nothing that moves it (`unwaited`), in one of the
 kind `unwaited`. A kind's ticket
 and its lines are on an agent, or, for
 that kind, on a ticket."""
@@ -57,7 +58,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from controlled_markdown import mctx
-from operations import change_take, messages, ticket_stall, waits
+from operations import change_take, changes, messages, ticket_stall, waits
 from operations.arrivals import arrived, received
 from operations.constants import COORDINATOR, ticket_stuck_reached
 from operations.roles import AGENT_ID
@@ -363,13 +364,16 @@ idle change that gives the coordinator its step."""
 
 
 def ticket_stalls(state: State) -> Step | None:
-    """The first step on a ticket of `ticket_stall.stalled`: the message that
-    gives the coordinator `ticket_stall_text`, once after the time
+    """The first step on a ticket of `ticket_stall.stalled` that is no change
+    held by this operator (`idle_changes.overdue` covers that): the message
+    that gives the coordinator `ticket_stall_text`, once after the time
     `ticket_stall.stalled` gives for it, then the step `ticket_step`
     gives from that time. The message gives `waiting_paths` on it."""
     stalls = ticket_stall.stalled(state)
     for n, since in sorted(stalls.items()):
         t = state.tracker.tickets[n]
+        if changes.holds(t, state.me):
+            continue
         sent = stall_message(state, t, since, waiting_paths(state, n, stalls), f"ticket stall {n}")
         s = ticket_stall_step(state, sent, t, since, BugKind.TICKET_STALL,
                               mctx("no progress since {time}").format(time=utc_stamp(since)))
