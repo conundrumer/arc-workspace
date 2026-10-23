@@ -129,6 +129,18 @@ def cpu_seconds() -> float:
                                                  resource.getrusage(resource.RUSAGE_CHILDREN)))
 
 
+def release_free_memory() -> int:
+    """Return to the system the free memory the allocator holds mapped in
+    this process, and give the bytes returned: darwin's `malloc_zone_pressure_relief`
+    over every zone, 0 elsewhere."""
+    if sys.platform != "darwin":
+        return 0
+    import ctypes
+    relief = ctypes.CDLL(None).malloc_zone_pressure_relief
+    relief.argtypes, relief.restype = [ctypes.c_void_p, ctypes.c_size_t], ctypes.c_size_t
+    return relief(None, 0)
+
+
 def footprint() -> int:
     """The bytes of memory this process holds now: its physical footprint on
     darwin, its resident set on Linux, and 0 where neither can be read."""

@@ -856,6 +856,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                 pending.running = None
             if pending is not None and not pending.waiting():
                 gc.collect()
+                script_calls.release_free_memory()
             script_calls.record()
             CURRENT.reset(token)
             state_assembly.REQUEST_CUTOFF.reset(cutoff)

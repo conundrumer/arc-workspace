@@ -98,3 +98,21 @@ def test_cutoff_closes_only_entries_of_the_operator_whose_next_it_bounds():
     assert not state_assembly.may_still_call(entry, state_assembly.Cutoff("editor", 150.0), ended_work)
     assert state_assembly.may_still_call(entry, None, open_work)
     assert not state_assembly.may_still_call(entry, None, ended_work)
+
+
+def test_call_lines_read_the_footprint_and_default_it_to_zero(tmp_path):
+    import json
+    import script_calls
+    line = {"key": "operate.py next", "start": 5.0, "wall": 1.0, "cpu": 1.0, "peak": 7, "session": "s",
+            "lifts": [], "retained": True, "queued": 0.5, "reads": 2}
+    with_footprint = {**line, "start": 6.0, "footprint": 123}
+    path = tmp_path / script_calls.day_file(str(tmp_path), 5.0).rsplit("/", 1)[-1]
+    path.write_text(json.dumps(line) + "\n" + json.dumps(with_footprint) + "\n")
+    calls = script_calls.read(str(tmp_path), 0.0)
+    assert [c.footprint for c in calls] == [0, 123]
+
+
+def test_release_free_memory_gives_a_byte_count_and_leaves_the_footprint_readable():
+    import script_calls
+    assert script_calls.release_free_memory() >= 0
+    assert script_calls.footprint() > 0
