@@ -109,20 +109,19 @@ seat(H, O, R) :- seat_flush(H, O, D, R), !loose(H, O, D, R).
 
 // --- the placements a piece can reach ---
 
-// Where an object can lie on the grid: some cell of it on a grid cell, and
-// its box wholly on the grid.
+// Where an object can lie on the grid: every cell of it on a grid cell.
 .type Placed = [o: Ident, delta: Offset]
 
-.decl on_grid(o: Ident, delta: Offset)
-on_grid(O, Delta) :-
-    obj_cell(O, P), in(Q, _), relative(P, Q, Delta),
-    bbox.box(O, B_obj), compose(B_obj, Delta, B_placed), inside(B_placed, ZERO).
+.init on_grid = Occurrences<Ident, Unit>
+on_grid.shape(O, P, $U()) :- obj_cell(O, P).
+on_grid.cell(O, Q, $U()) :- obj_cell(O, _), in(Q, _).
 
 // A seated step between placements: o lands at delta by seating on the host
 // placed at d_host.
 .decl seat_step(h: Ident, d_host: Offset, o: Ident, delta: Offset)
 seat_step(H, D_host, O, Delta) :-
-    on_grid(H, D_host), seat(H, O, R), compose(D_host, R, Delta), on_grid(O, Delta).
+    on_grid.occurrence(H, D_host), seat(H, O, R), compose(D_host, R, Delta),
+    on_grid.occurrence(O, Delta).
 
 // The bar stays where it is; a piece reaches wherever it can seat on
 // something already placed, so long as it lands on the grid.

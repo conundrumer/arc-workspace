@@ -80,7 +80,8 @@ spoiled(B) :- span.box([_, _], B), in(P, Col), !params.hole(Col), inside(P, B).
 
 .decl short(b: Box)
 short(B) :-
-    span.box([P, _], B), box_extent(B, P, _, N), params.min_side(K), N < K.
+    span.box([_, _], B), in(P, _),                 // a cell gives the grid's frame
+    box_extent(B, P, _, N), params.min_side(K), N < K.
 
 .decl rect(b: Box)
 rect(B) :- span.box([_, _], B), !spoiled(B), !short(B).
