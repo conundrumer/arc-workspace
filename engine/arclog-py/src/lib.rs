@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use arclog::decode::{step_batch, Consistency, Decoder};
+use arclog::decode::{step_batch, Consistency, Decoder, Views};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
 use arclog::eval::{Outcome, RelationValue};
@@ -136,6 +136,7 @@ struct PyDecodeSettings {
     columns: u32,
     labels: u32,
     deadline_seconds: f64,
+    view_cap: u64,
 }
 
 impl PyDecodeSettings {
@@ -147,6 +148,7 @@ impl PyDecodeSettings {
             columns: settings.vocabulary.columns,
             labels: settings.vocabulary.labels,
             deadline_seconds: settings.deadline.as_secs_f64(),
+            view_cap: settings.view_cap,
         }
     }
 
@@ -157,6 +159,7 @@ impl PyDecodeSettings {
             type_domain_proposers: self.type_domain_proposers,
             vocabulary: VocabularyCaps { relations: self.relations, columns: self.columns, labels: self.labels },
             deadline,
+            view_cap: self.view_cap,
             ..DecodeSettings::default()
         })
     }
@@ -165,7 +168,7 @@ impl PyDecodeSettings {
 #[pymethods]
 impl PyDecodeSettings {
     #[new]
-    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None))]
+    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, view_cap=None))]
     fn new(
         proposer_tokens: Option<bool>,
         type_domain_proposers: Option<bool>,
@@ -173,6 +176,7 @@ impl PyDecodeSettings {
         columns: Option<u32>,
         labels: Option<u32>,
         deadline_seconds: Option<f64>,
+        view_cap: Option<u64>,
     ) -> PyResult<PyDecodeSettings> {
         let base = PyDecodeSettings::of(&DecodeSettings::default());
         let settings = PyDecodeSettings {
@@ -182,6 +186,7 @@ impl PyDecodeSettings {
             columns: columns.unwrap_or(base.columns),
             labels: labels.unwrap_or(base.labels),
             deadline_seconds: deadline_seconds.unwrap_or(base.deadline_seconds),
+            view_cap: view_cap.unwrap_or(base.view_cap),
         };
         settings.engine()?;
         Ok(settings)
@@ -391,6 +396,21 @@ macro_rules! assigned {
     }};
 }
 
+/// One view of a sub-body: the positions of its columns in the body, and the
+/// count of its rows on each example, in the shape of `counts`.
+#[pyclass(name = "View", frozen, get_all, module = "arclog")]
+struct PyView {
+    columns: Vec<u16>,
+    counts: Vec<Py<PyAssigned>>,
+}
+
+/// The views of a sub-body, or the bound that stopped them.
+#[pyclass(name = "Views", frozen, get_all, module = "arclog")]
+struct PyViews {
+    views: Vec<Py<PyView>>,
+    stop: Option<PyStopKind>,
+}
+
 fn grid_rows(grid: &Grid) -> Vec<Vec<u32>> {
     grid.rows().iter().map(|row| row.iter().map(|color| u32::from(color.digit())).collect()).collect()
 }
@@ -513,6 +533,30 @@ impl PyDecoder {
             .transpose()
     }
 
+    /// The views of the sub-body of the clause in progress, as
+    /// `docs/engine/synthesis.md#decode-interface` gives them, or `None`
+    /// where no clause is in progress. The views are empty and `stop` is set
+    /// where a bound ended the body or the search. The views give no rows.
+    /// Raises `Fault` where the sub-body does not check or compile.
+    fn views(&self, py: Python<'_>) -> PyResult<Option<PyViews>> {
+        let Some(outcome) = self.decoder().views() else { return Ok(None) };
+        let found = match settled(outcome)? {
+            Views::Found(found) => found,
+            Views::Stopped(stop) => return Ok(Some(PyViews { views: Vec::new(), stop: Some(Stop::from(stop.bound).into()) })),
+        };
+        let mut views = Vec::new();
+        for view in found {
+            let counts = view
+                .rows
+                .into_vec()
+                .into_iter()
+                .map(|rows| Py::new(py, assigned!(py, rows, |rows| rows.map(|relation| relation.len()).into_pyobject(py)?.into_any().unbind())?))
+                .collect::<PyResult<Vec<_>>>()?;
+            views.push(Py::new(py, PyView { columns: view.columns.iter().map(|column| column.0).collect(), counts })?);
+        }
+        Ok(Some(PyViews { views, stop: None }))
+    }
+
     /// The attempts on each test input, as lists of at most two grids, or
     /// `None` until the decode ends at a consistent relation.
     fn attempts(&self) -> PyResult<Option<Vec<Vec<Vec<Vec<u32>>>>>> {
@@ -599,6 +643,8 @@ fn arclog_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyValueKind>()?;
     module.add_class::<PyRowsView>()?;
     module.add_class::<PyAssigned>()?;
+    module.add_class::<PyView>()?;
+    module.add_class::<PyViews>()?;
     module.add("Refusal", module.py().get_type::<Refusal>())?;
     module.add("Fault", module.py().get_type::<Fault>())?;
     module.add_function(wrap_pyfunction!(step_batch_py, module)?)?;

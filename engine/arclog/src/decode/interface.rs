@@ -193,7 +193,7 @@ impl<'a> Decoder<'a> {
     /// The value of the sub-body of the clause in progress on each example
     /// of the task, or once for a task-wide clause, at each assignment;
     /// `None` where no clause is in progress.
-    fn sub_body_values(&self) -> Option<Box<[Outcome<Assigned<BodyValue>>]>> {
+    pub(super) fn sub_body_values(&self) -> Option<Box<[Outcome<Assigned<BodyValue>>]>> {
         let sub = match self.sub_body()? {
             Ok(sub) => sub,
             Err(fault) => return Some(Box::new([Err(fault)])),

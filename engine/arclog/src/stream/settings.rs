@@ -36,6 +36,9 @@ pub struct DecodeSettings {
     pub caps: Caps,
     /// The deadline per candidate program.
     pub deadline: Duration,
+    /// The rows a view may hold on one example at one assignment, as
+    /// `docs/engine/synthesis.md#decode-settings` gives it.
+    pub view_cap: u64,
 }
 
 impl Default for DecodeSettings {
@@ -46,6 +49,7 @@ impl Default for DecodeSettings {
             vocabulary: VocabularyCaps::CORPUS,
             caps: Caps::CORPUS,
             deadline: Duration::from_secs(10),
+            view_cap: 10_000,
         }
     }
 }

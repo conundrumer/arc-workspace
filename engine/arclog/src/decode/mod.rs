@@ -9,15 +9,18 @@
 //! resolution and the checks of its form in progress alone. Its interface
 //! beside the mask, in `interface`, gives the rows of the body so far and the
 //! consistency test at a `RULE` clause's end, and its batch form, in
-//! `batch`, steps many decodes at once. The decode keeps a
+//! `batch`, steps many decodes at once, and its views of the body so far, in
+//! `views`, give the largest sets of its columns under the view cap. The decode keeps a
 //! [`crate::trace::DecodeTrace`] of one record per accepted token.
 
 mod batch;
 mod interface;
 mod state;
+mod views;
 
 pub use batch::step_batch;
 pub use interface::{Consistency, Step};
+pub use views::{View, Views};
 
 use std::sync::Arc;
 
