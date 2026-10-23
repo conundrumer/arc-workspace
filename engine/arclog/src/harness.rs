@@ -399,8 +399,31 @@ pub fn require_optimized_build() -> Result<(), ExitCode> {
     }
 }
 
-/// Runs `check` over every solver of `dir`, on as many threads as the
-/// machine has, and gives the report over them. A panic of `check` on a
+/// The number of worker threads of a corpus run: the value of the
+/// environment variable `ARCLOG_THREADS` where it is set, and otherwise the
+/// number of threads the machine has. A set value that is not a positive
+/// integer stops the process with exit code 2, after a message to stderr
+/// that names the variable and the value, so a run never starts on a thread
+/// count no one asked for.
+pub fn corpus_threads() -> usize {
+    match std::env::var("ARCLOG_THREADS") {
+        Ok(value) => match value.parse::<usize>() {
+            Ok(threads) if threads > 0 => threads,
+            _ => refuse_threads(&value),
+        },
+        Err(std::env::VarError::NotUnicode(value)) => refuse_threads(&value.to_string_lossy()),
+        Err(std::env::VarError::NotPresent) => std::thread::available_parallelism().map_or(1, |n| n.get()),
+    }
+}
+
+fn refuse_threads(value: &str) -> ! {
+    eprintln!("ARCLOG_THREADS must be a positive integer, and it holds {value:?}");
+    std::process::exit(2)
+}
+
+/// Runs `check` over every solver of `dir`, on the threads of
+/// [`corpus_threads`] (`ARCLOG_THREADS`, or as many as the machine has), and
+/// gives the report over them. A panic of `check` on a
 /// solver is a failure of that solver, whose report is the panic's message.
 /// As the check of a solver ends, the worker that ran it calls `ended` with
 /// that solver and its result, so a run that stops before its last solver
@@ -412,7 +435,7 @@ where
 {
     let solvers = corpus_solvers(dir)?;
     let next = AtomicUsize::new(0);
-    let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let threads = corpus_threads();
     let mut results: Vec<(usize, SolverResult)> = std::thread::scope(|scope| {
         let workers: Vec<_> = (0..threads)
             .map(|_| {

@@ -33,7 +33,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
-use arclog::harness::{corpus_solvers, read_corpus_solver, CorpusSolver};
+use arclog::harness::{corpus_solvers, corpus_threads, read_corpus_solver, CorpusSolver};
 use arclog::hash::StableHasher;
 use arclog::read::read_solver;
 use serde_json::{json, Value};
@@ -257,7 +257,7 @@ fn check_diff(arguments: &Arguments) -> Result<Report, String> {
     let jobs: Vec<(usize, usize)> = (0..solvers.len()).flat_map(|s| [(s, 0), (s, 1)]).collect();
     let next = AtomicUsize::new(0);
     let results = Mutex::new(BTreeMap::new());
-    let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let threads = corpus_threads();
     std::thread::scope(|scope| {
         for _ in 0..threads {
             scope.spawn(|| {
