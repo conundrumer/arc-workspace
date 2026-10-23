@@ -9,14 +9,13 @@ from pathlib import Path
 
 from agent_turns import latest_time
 from context_bound_hook import context_bound, past_bound
-from agent_launches import children_of, launches
-from agent_reports import AgentEntry, agent_entries, delivery_entry, report_lines
+from agent_launches import children_of, launches, own_entries
 from agent_resumes import resumes
 from operator_transcript import OperatorLines, Uses, calls_of, lines_of
 from printed_bash_check import prints_no_call
 from run_reads import context_size
-from transcripts import chain, find, launched_find
-from entry_reads import entries_back, line_entries
+from transcripts import find, launched_find
+from entry_reads import entries_back
 from transcript_snapshots import Refused
 from tree_reads import main_tree, scratch
 
@@ -35,16 +34,6 @@ def session_id() -> str:
     if not session:
         raise Refused(mctx("the shell gives no `CLAUDE_CODE_SESSION_ID`"))
     return session
-
-
-def own_entries(path: Path, child: Path | None, aid: str | None,
-                call: str) -> tuple[AgentEntry, ...]:
-    """The report and end entries of the agent `aid` launched by `call`,
-    from the transcripts at `path` and `child` alone."""
-    ids = {v for v in (aid, call) if v}
-    return agent_entries((delivery_entry(e) for p in (path, child) if p
-                          for q in chain(p) for r in report_lines(q) if ids & set(r.ids)
-                          for e in line_entries(q, r.line)), aid, call)
 
 
 def operator_launches(path: Path, uses: Uses,

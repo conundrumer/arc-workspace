@@ -9,7 +9,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from agent_reports import ENDED, AgentEntry, Report, last_sign, received_entries, reports_after
+from agent_reports import (ENDED, AgentEntry, Report, agent_entries, delivery_entry, last_sign,
+                           received_entries, report_lines, reports_after)
 from command_labels import AGENT_TOOLS
 from controlled_markdown import mctx
 from run_reads import (blocks, in_background, meta_parent, parent_label, read_meta,
@@ -202,6 +203,16 @@ def session_entries(path: Path, child: Path | None, aid: str | None,
     return received_entries(sessions, aid, call)
 
 
+def own_entries(path: Path, child: Path | None, aid: str | None,
+                call: str) -> tuple[AgentEntry, ...]:
+    """The report and end entries of the agent `aid` launched by `call`,
+    from the transcripts at `path` and `child` alone."""
+    ids = {v for v in (aid, call) if v}
+    return agent_entries((delivery_entry(e) for p in (path, child) if p
+                          for q in chain(p) for r in report_lines(q) if ids & set(r.ids)
+                          for e in line_entries(q, r.line)), aid, call)
+
+
 @state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
 def launches(path: Path, undecided: list[str],
              received: Received = session_entries) -> list[Launch]:
@@ -298,6 +309,6 @@ def launched(path: Path, undecided: list[str]) -> list[Launch]:
 def launched_or_resumed(path: Path, undecided: list[str], before: float | None = None) -> set[str]:
     """Agents this run launched or resumed, optionally before a time.
     Another run's later resume does not remove an agent from this set."""
-    return ({a.agent for a in launches(path, undecided)
+    return ({a.agent for a in launches(path, undecided, own_entries)
              if a.agent and (before is None or a.since < before)}
             | set(resumes(path, undecided, before)))

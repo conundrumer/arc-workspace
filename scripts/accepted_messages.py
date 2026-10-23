@@ -4,6 +4,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import BinaryIO
 
 import operate_service
 
@@ -25,12 +26,53 @@ def listing(path: Path) -> tuple[Named, ...]:
         return ()
 
 
+PAIRING = 600.0
+"""Seconds by which a delivery's result follows its call at most."""
+
+BISECTED = 1 << 16
+"""Bytes at which a bisection for a start stops."""
+
+
+def probe(stream: BinaryIO, at: int) -> tuple[int, float] | None:
+    """The start and timestamp of the first timestamped complete line that
+    starts at or after `at`, or None where the file has none."""
+    stream.seek(at)
+    start = at
+    if at:
+        start += len(stream.readline())
+    for line in stream:
+        if not line.endswith(b"\n"):
+            return None
+        for entry in parse(line):
+            if entry.get("timestamp"):
+                return start, epoch(entry["timestamp"])
+        start += len(line)
+    return None
+
+
+def bisected(stream: BinaryIO, size: int, bound: float) -> tuple[int, float]:
+    """The offset of a line start and its timestamp, such that every line
+    before it has a timestamp below `bound`, found by bisection on byte
+    offsets within `BISECTED` bytes of the first line at or after `bound`.
+    Offset 0 gives timestamp 0.0."""
+    low, high, floor = 0, size, 0.0
+    while high - low > BISECTED:
+        middle = (low + high) // 2
+        found = probe(stream, middle)
+        if found is None or found[1] >= bound:
+            high = middle
+        else:
+            low, floor = found
+    return low, floor
+
+
 @dataclass
 class Tail:
     """Complete own records read from one file, with unmatched calls and results."""
     identity: tuple[int, int] | None = None
     revision: tuple[int, int, int, int] | None = None
     offset: int = 0
+    floor: float = 0.0
     own: bool = False
     calls: dict[str, tuple[Entry, float]] = field(default_factory=dict)
     results: dict[str, tuple[Entry, float]] = field(default_factory=dict)
@@ -52,10 +94,15 @@ class Tail:
         elif entry.get("type") == "user":
             self.last_user = max(self.last_user, at)
             if isinstance(result := entry.get("toolUseResult"), dict):
+                counted = handback_accepted(result) or (
+                    succeeded(result) and delivery(result) is not None)
                 for block in blocks(entry, "tool_result"):
                     ident = block.get("tool_use_id", "")
-                    self.results[ident] = result, at
-                    changed.append(ident)
+                    if counted:
+                        self.results[ident] = result, at
+                        changed.append(ident)
+                    else:
+                        self.calls.pop(ident, None)
         for ident in changed:
             if ident not in self.calls or ident not in self.results:
                 continue
@@ -63,16 +110,24 @@ class Tail:
             result, ended = self.results.pop(ident)
             self.deliveries.append((call, result, started, ended))
 
-    def read(self, path: Path) -> list[Entry]:
+    def read(self, path: Path, since: float = 0.0) -> None:
+        """Read what was appended to `path`. A fresh read of a file that is
+        no fork's starts shortly before `since`, at the latest line whose
+        timestamp is below `since - PAIRING`, so that a call before the
+        start does not pair with a result after it. A `since` that reaches
+        earlier than `floor` starts the read again."""
+        bound = since - PAIRING
         try:
             stat = path.stat()
-            if self.revision == (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns):
-                return []
+            if bound >= self.floor and self.revision == (
+                    stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns):
+                return
             with path.open("rb") as stream:
                 stat = os.fstat(stream.fileno())
                 identity = stat.st_dev, stat.st_ino
-                if self.identity != identity or stat.st_size < self.offset:
-                    self.identity, self.offset = identity, 0
+                if (self.identity != identity or stat.st_size < self.offset
+                        or bound < self.floor):
+                    self.identity, self.offset, self.floor = identity, 0, 0.0
                     self.calls.clear()
                     self.results.clear()
                     self.own = False
@@ -80,9 +135,10 @@ class Tail:
                     self.deliveries.clear()
                 meta = read_meta(path) or {}
                 call = meta.get("toolUseId") if meta.get("isFork") is True else None
+                if self.offset == 0 and bound > 0 and not isinstance(call, str):
+                    self.offset, self.floor = bisected(stream, stat.st_size, bound)
                 self.own = self.own or not isinstance(call, str)
                 stream.seek(self.offset)
-                entries: list[Entry] = []
                 for number, line in enumerate(stream):
                     if number % 128 == 0:
                         operate_service.check()
@@ -94,12 +150,10 @@ class Tail:
                             self.own = own_result(entry, call)
                         if self.own:
                             self.record(entry)
-                            entries.append(entry)
                     self.offset += len(line)
                 self.revision = stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
-                return entries
         except FileNotFoundError:
-            return []
+            return
 
 
 @dataclass
@@ -187,8 +241,13 @@ class Inbox:
                     self.sessions.append(session)
         for session in self.sessions:
             for path in [main_transcript(session), *self.subagents(session).paths]:
+                try:
+                    if path.stat().st_mtime <= self.since:
+                        continue
+                except FileNotFoundError:
+                    continue
                 tail = self.tails.setdefault(path, Tail())
-                tail.read(path)
+                tail.read(path, self.since)
                 for call, result, started, at in tail.deliveries:
                     if at <= self.since or at < started:
                         continue
