@@ -4,7 +4,7 @@ them: the launches of a session's agents by the Agent call of each, the
 launches of a run with the time each was last resumed, and the agents a
 run launched or resumed."""
 
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -188,10 +188,26 @@ _made: Makes[Launch | None] = Makes()
 call."""
 
 
+type Received = Callable[[Path, Path | None, str | None, str], tuple[AgentEntry, ...]]
+"""The report and end entries of the agent a call launched, given the
+launching run's transcript, the agent's transcript where one gives the call
+as its launch, the agent id and the call's id."""
+
+
+def session_entries(path: Path, child: Path | None, aid: str | None,
+                    call: str) -> tuple[AgentEntry, ...]:
+    """`received_entries` over the sessions of the launcher at `path` and of
+    its child at `child`."""
+    sessions = tuple(dict.fromkeys(s for p in (path, child) if p for s in run_sessions(p)))
+    return received_entries(sessions, aid, call)
+
+
 @state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
-def launches(path: Path, undecided: list[str]) -> list[Launch]:
+def launches(path: Path, undecided: list[str],
+             received: Received = session_entries) -> list[Launch]:
     """The agents the run at `path` launched, in the order of their launch.
-    Report and end signs are read across the launcher and child sessions.
+    Report and end signs are read from the entries `received` gives, by
+    default across the launcher and child sessions.
     Launch results remain tied to the launcher's call. An Agent call whose
     result is an error launched no agent,
     unless a transcript gives it as its launch or its result gives an
@@ -213,9 +229,7 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
                             read.answered.get(tid)),
             lambda lines: make_launch(path, read, at, tid, child, lines), undecided)
         if launch is not None:
-            sessions = tuple(dict.fromkeys(s for p in (path, child) if p
-                                           for s in run_sessions(p)))
-            entries = received_entries(sessions, launch.agent, tid)
+            entries = received(path, child, launch.agent, tid)
             sign = last_sign(entries, launch.since, {v for v in (launch.agent, tid) if v})
             done = (sign[1] if sign[0] in ENDED else None) if sign else launch.done
             if child is None and launch.agent is None and done is None and launch.answered:
