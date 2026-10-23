@@ -82,7 +82,7 @@ fn partial_path(form: &Form, at: &NodePath) -> NodePath {
 /// complete, and whose open node is at `open`. `clauses` holds the clauses
 /// of `program`'s solver, or of `program` alone for a synthesized program.
 pub fn check_prefix(program: &ResolvedProgram, clauses: &SolverClauses, registry: &Registry, open: Option<&NodePath>) -> Vec<(CheckId, PrefixResult)> {
-    run_checks(program, clauses, registry, None, open)
+    with_prefix(program, clauses, registry, None, open, |prefix| checks().iter().map(|check| (check.id(), check.check_prefix(prefix))).collect())
 }
 
 /// The checks of the prefixes of a decode's state, each over a program
@@ -105,25 +105,32 @@ impl PrefixChecks<'_> {
         body(&PrefixChecks { clauses, registry, inference: &inference })
     }
 
-    /// The result of each check of [`checks`] on the prefix whose partial
-    /// form is the last form of `program`, a resolution by
-    /// [`crate::resolver::resolve_last`] over the complete forms, and whose
-    /// open node is at `open`.
-    pub fn check(&self, program: &ResolvedProgram, open: Option<&NodePath>) -> Vec<(CheckId, PrefixResult)> {
-        run_checks(program, self.clauses, self.registry, Some(self.inference), open)
+    /// The first check of [`checks`], in their order, that refuses the
+    /// prefix whose partial form is the last form of `program`, a
+    /// resolution by [`crate::resolver::resolve_last`] over the complete
+    /// forms, and whose open node is at `open`, with its refusals; `None`
+    /// where none refuses. No check after it runs.
+    pub fn check(&self, program: &ResolvedProgram, open: Option<&NodePath>) -> Option<(CheckId, Box<[Refusal]>)> {
+        with_prefix(program, self.clauses, self.registry, Some(self.inference), open, |prefix| {
+            checks().iter().find_map(|check| match check.check_prefix(prefix) {
+                PrefixResult::Refuse(refusals) => Some((check.id(), refusals)),
+                PrefixResult::Undecided => None,
+            })
+        })
     }
 }
 
-/// The result of each check of [`checks`] on the prefix of `program`, whose
-/// types are inferred over the forms that `earlier` infers, where it is
-/// given, and from the start otherwise.
-fn run_checks(
+/// Runs `body` over the prefix of `program`, whose types are inferred over
+/// the forms that `earlier` infers, where it is given, and from the start
+/// otherwise.
+fn with_prefix<R>(
     program: &ResolvedProgram,
     clauses: &SolverClauses,
     registry: &Registry,
     earlier: Option<&inference::Inference<'_>>,
     open: Option<&NodePath>,
-) -> Vec<(CheckId, PrefixResult)> {
+    body: impl FnOnce(&Prefix<'_>) -> R,
+) -> R {
     let (partial, complete) = program.program.value().forms.split_last().expect("a prefix's program holds its partial form");
     let path = NodePath::top(complete.len() as u32);
     let cases = inference::CaseInferences::new(clauses, registry);
@@ -138,7 +145,7 @@ fn run_checks(
     let (_, form_types) = types::infer_form(&CheckInput { form: partial, path: &path, scope: scope(&untyped) }, &order);
     let labels = typed_labels(&order, &form_types);
     let prefix = Prefix { complete, partial, path: &path, open, scope: scope(&labels) };
-    checks().iter().map(|check| (check.id(), check.check_prefix(&prefix))).collect()
+    body(&prefix)
 }
 
 /// The input of a check over the whole partial form of `prefix`.

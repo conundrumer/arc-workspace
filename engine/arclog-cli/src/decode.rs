@@ -29,6 +29,7 @@ use std::time::Instant;
 use arclog::check::{CheckCache, CheckedProgram, SolverClauses};
 use arclog::decode::{Consistency, Decoder};
 use arclog::eval::determinations::{det_node, relation_spelled};
+use arclog::eval::examples::ExampleScope;
 use arclog::eval::join::{each_row, union};
 use arclog::eval::{output_relation, BodyValue, Outcome, ParameterValues, RelationValue, Stop};
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, SolverResult};
@@ -432,11 +433,13 @@ macro_rules! flatten {
 /// example or once for a task-wide clause, against those of `mirror`, a
 /// decode of the same prefix in a task session of its own.
 fn prefix_rows(decoder: &Decoder<'_>, mirror: &Decoder<'_>, task: &Task) -> RowsCheck {
-    let Some(counts) = decoder.counts() else {
+    let Some(scope) = decoder.rows_scope() else {
         return RowsCheck::Same;
     };
-    let examples: Vec<Option<Example>> =
-        if counts.len() == 1 && task.examples().count() > 1 { vec![None] } else { task.examples().take(task.train.len()).map(Some).collect() };
+    let examples: Vec<Option<Example>> = match scope {
+        Ok(ExampleScope::TaskWide) | Err(_) => vec![None],
+        Ok(ExampleScope::PerExample) => task.examples().take(task.train.len()).map(Some).collect(),
+    };
     let mut stopped = None;
     for example in examples {
         match compare(&flatten!(decoder.rows(example)), &flatten!(mirror.rows(example))) {

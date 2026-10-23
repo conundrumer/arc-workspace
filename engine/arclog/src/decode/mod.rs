@@ -22,7 +22,7 @@ pub use interface::{Consistency, Step};
 use std::sync::Arc;
 
 use crate::check::prefix::PrefixChecks;
-use crate::check::{CheckId, PrefixResult, SolverClauses};
+use crate::check::{CheckId, SolverClauses};
 use crate::eval::instance::Constructions;
 use crate::eval::Cancellation;
 use crate::judge::candidates::PairCandidates;
@@ -261,12 +261,8 @@ impl<'a> Decoder<'a> {
         if let Some((program, open)) = state.partial() {
             if !program.value().forms.is_empty() {
                 let resolved = resolve_last(&self.state.resolved(self.context.registry), &program, self.context.registry);
-                let refused = checks.check(&resolved, open.as_ref()).into_iter().find_map(|(check, result)| match result {
-                    PrefixResult::Refuse(refusals) => Some(Refusal::Check { check, refusals }),
-                    PrefixResult::Undecided => None,
-                });
-                if let Some(refusal) = refused {
-                    return Err(refusal);
+                if let Some((check, refusals)) = checks.check(&resolved, open.as_ref()) {
+                    return Err(Refusal::Check { check, refusals });
                 }
             }
         }

@@ -143,6 +143,13 @@ impl<'a> Decoder<'a> {
         Some(self.sub_body()?.and_then(|sub| self.assigned_rows(&sub, example)))
     }
 
+    /// The [`ExampleScope`] of the sub-body that [`Decoder::rows`]
+    /// evaluates, or the fault that the sub-body gives; `None` where no
+    /// clause is in progress. It evaluates no body.
+    pub fn rows_scope(&self) -> Option<Outcome<ExampleScope>> {
+        Some(self.sub_body()?.map(|sub| sub.scope))
+    }
+
     /// The count of the rows of the sub-body that [`Decoder::rows`] gives on
     /// each example of the task, or once for a task-wide clause, at each
     /// assignment, `None` in a count where the body is undefined or
