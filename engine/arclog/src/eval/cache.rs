@@ -9,9 +9,27 @@ use super::pool::InFlight;
 use super::{RelationValue, Stop};
 use crate::program::path::NodePath;
 use crate::relations::Relation;
+use super::ir::ClauseIr;
 use crate::resolver::ResolvedContent;
-use crate::session::{CachedValue, RelationId, ResultKey, TaskSession};
+use crate::session::{CachedValue, RelationId, ResultContent, ResultKey, TaskSession};
 use crate::terms::Example;
+
+/// What an entry evaluates, by reference: a form's resolved content, or the
+/// compiled clause of a body of a form over a lib component.
+#[derive(Clone, Copy, Debug)]
+pub enum EntryContent<'a> {
+    Form(&'a ResolvedContent),
+    Body(&'a ClauseIr),
+}
+
+impl EntryContent<'_> {
+    fn owned(self) -> ResultContent {
+        match self {
+            EntryContent::Form(content) => ResultContent::Form(content.clone()),
+            EntryContent::Body(clause) => ResultContent::Body(clause.clone()),
+        }
+    }
+}
 
 /// What an entry reads, from which its [`ResultKey`] is made: the resolved
 /// content of its clause or of its part of a body, the relations it reads in the order of its reads, the
@@ -19,7 +37,7 @@ use crate::terms::Example;
 /// each parameter it reads, in the order of its reads.
 #[derive(Clone, Copy, Debug)]
 pub struct EntryRequest<'a> {
-    pub clause: &'a ResolvedContent,
+    pub clause: EntryContent<'a>,
     pub reads: &'a [Arc<Relation>],
     pub example: Option<Example>,
     pub parameters: &'a [Arc<Relation>],
@@ -34,7 +52,7 @@ pub fn lookup(session: &TaskSession, request: &EntryRequest<'_>, form: &NodePath
         relations.iter().map(|relation| session.results.find_id(relation)).collect()
     };
     let key = ResultKey {
-        clause: request.clause.clone(),
+        clause: request.clause.owned(),
         reads: found(request.reads)?,
         example: request.example,
         parameters: found(request.parameters)?,
@@ -70,7 +88,7 @@ pub fn key(session: &TaskSession, request: &EntryRequest<'_>) -> ResultKey {
         relations.iter().map(|relation| relation_id(session, relation)).collect()
     };
     ResultKey {
-        clause: request.clause.clone(),
+        clause: request.clause.owned(),
         reads: ids(request.reads),
         example: request.example,
         parameters: ids(request.parameters),

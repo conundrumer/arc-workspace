@@ -186,7 +186,7 @@ impl<'e, 'a> Driver<'e, 'a> {
         let content = program.content(form).expect("the resolved content of each form");
         let Some(NodeRef::Clause(written)) = node_at(NodeRef::Program(program.program.value()), form) else { panic!("the path of a clause of the program") };
         if let Some(index) = derivation(written, form)? {
-            let request = cache::EntryRequest { clause: &content, reads: &[], example, parameters: &[] };
+            let request = cache::EntryRequest { clause: cache::EntryContent::Form(&content), reads: &[], example, parameters: &[] };
             return self.cached(form, &request, || self.proposed(form, written, index, example));
         }
         let kept: Vec<u32> = (0..written.body.value().conjuncts.len() as u32).collect();
@@ -587,7 +587,7 @@ impl Reads {
     /// The request of the entry of `content` that reads these relations, on
     /// `example`.
     fn request<'r>(&'r self, content: &'r ResolvedContent, example: Option<Example>) -> cache::EntryRequest<'r> {
-        cache::EntryRequest { clause: content, reads: &self.reads, example, parameters: &self.parameters }
+        cache::EntryRequest { clause: cache::EntryContent::Form(content), reads: &self.reads, example, parameters: &self.parameters }
     }
 }
 
@@ -606,10 +606,19 @@ impl FormBodies<'_> {
     /// of its join.
     pub fn relation(&self, form: &NodePath, clause: &ClauseIr, example: Option<Example>) -> Outcome<RelationValue> {
         let driver = self.driver;
-        match driver.inputs(clause, scope_at(example), example)? {
-            Ok(inputs) => Ok(driver.join(form, clause, &inputs)),
-            Err(value) => Ok(value),
+        let inputs = match driver.inputs(clause, scope_at(example), example)? {
+            Ok(inputs) => inputs,
+            Err(value) => return Ok(value),
+        };
+        let session = driver.evaluation.session;
+        let reads = driver.reads(clause, &(0..clause.nodes.len()).collect::<Vec<_>>(), &inputs);
+        let request = cache::EntryRequest { clause: cache::EntryContent::Body(clause), reads: &reads.reads, example, parameters: &reads.parameters };
+        if let Some(value) = cache::lookup(session, &request, form) {
+            return Ok(value);
         }
+        let value = driver.join(form, clause, &inputs);
+        cache::store(session, &request, &value);
+        Ok(value)
     }
 }
 

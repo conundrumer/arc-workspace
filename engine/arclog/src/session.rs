@@ -16,14 +16,23 @@ use crate::hash::{StableHash, StableHashMap, StableHasher};
 use crate::relations::{Relation, RelationPart, SharedRows};
 use crate::terms::InternTable;
 
-/// The key of a result-cache entry: the resolved content of the conjunction
+/// What a result-cache entry evaluates: a form's resolved content, for a
+/// clause or a part of a body, or the compiled clause of a body of a form
+/// over a lib component. The two variants never compare equal.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum ResultContent {
+    Form(crate::resolver::ResolvedContent),
+    Body(crate::eval::ir::ClauseIr),
+}
+
+/// The key of a result-cache entry: the content of the conjunction
 /// it evaluates, a whole clause or a part of a body, the identity of each
 /// relation it reads, the grid it runs on, where it runs on one, and
 /// the parameter values it reads. It compares as a key of canonical parts
 /// does ([`crate::program`]).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ResultKey {
-    pub clause: crate::resolver::ResolvedContent,
+    pub clause: ResultContent,
     /// The relations the clause reads, in the order of its reads.
     pub reads: Box<[RelationId]>,
     /// The example whose input grid the clause runs on, for an entry

@@ -120,16 +120,41 @@ pub(crate) fn grid_columns_recorded(evaluation: &Evaluation<'_>, relation: &Grap
     (found, observed)
 }
 
+/// The output set of `relation` on `example` by each of `columns`, each
+/// compared as the comparison at its index in `comparisons` gives: a set
+/// that `observed` records for a pair under the rule below is served from
+/// it, and every other pair's is given by one enumeration of the case's
+/// models, [`output_sets`], and recorded. A recorded set serves a request
+/// of the same comparison kind, and a `Full` request where it is a full
+/// set of grids or `undefined`.
 fn recorded_sets(evaluation: &Evaluation<'_>, relation: &GraphRelation, observed: &mut Observed, example: Example, columns: &[GridColumns], comparisons: &[Comparison<'_, '_>]) -> Outcome<Vec<OutputSet>> {
-    columns.iter().zip(comparisons).map(|(&columns, &comparison)| {
+    let mut sets: Vec<Option<OutputSet>> = Vec::with_capacity(columns.len());
+    let (mut missing_columns, mut missing_comparisons) = (Vec::new(), Vec::new());
+    for (&columns, &comparison) in columns.iter().zip(comparisons) {
         let full = matches!(comparison, Comparison::Full);
-        if let Some((_, _, _, set)) = observed.0.iter().find(|(input, cols, all, set)| *input == example && *cols == columns && (*all == full || (full && matches!(set, OutputSet::Grids(_) | OutputSet::Undefined)))) {
-            return Ok(set.clone());
+        let found = observed.0.iter().find(|(input, cols, all, set)| *input == example && *cols == columns && (*all == full || (full && matches!(set, OutputSet::Grids(_) | OutputSet::Undefined))));
+        if found.is_none() {
+            missing_columns.push(columns);
+            missing_comparisons.push(comparison);
         }
-        let set = output_sets(evaluation, relation, example, &[columns], &[comparison])?.pop().expect("one set");
-        observed.0.push((example, columns, full, set.clone()));
-        Ok(set)
-    }).collect()
+        sets.push(found.map(|(_, _, _, set)| set.clone()));
+    }
+    if missing_columns.is_empty() {
+        return Ok(sets.into_iter().flatten().collect());
+    }
+    let mut computed = output_sets(evaluation, relation, example, &missing_columns, &missing_comparisons)?.into_iter();
+    let mut recorded_at = 0;
+    Ok(sets
+        .into_iter()
+        .map(|set| {
+            set.unwrap_or_else(|| {
+                let set = computed.next().expect("one set per missing pair");
+                observed.0.push((example, missing_columns[recorded_at], matches!(missing_comparisons[recorded_at], Comparison::Full), set.clone()));
+                recorded_at += 1;
+                set
+            })
+        })
+        .collect())
 }
 
 pub(crate) fn grid_columns_observed(evaluations: &[Evaluation<'_>], observations: &mut [Observed], relation: &GraphRelation, train: &[PairCandidates<'_>]) -> Outcome<Found> {
@@ -139,24 +164,30 @@ pub(crate) fn grid_columns_observed(evaluations: &[Evaluation<'_>], observations
 }
 
 pub(crate) fn output_sets_observed(evaluations: &[Evaluation<'_>], observations: &mut [Observed], relation: &GraphRelation, example: Example, columns: &[GridColumns], comparisons: &[Comparison<'_, '_>]) -> Outcome<Vec<OutputSet>> {
-        columns.iter().zip(comparisons).map(|(&column, &comparison)| {
-            let mut enumeration = Enumeration::new(comparison);
-            for (evaluation, observed) in evaluations.iter().zip(observations.iter_mut()) {
-                let set = recorded_sets(evaluation, relation, observed, example, &[column], &[comparison])?.pop().expect("one set");
-                let mut next = Next::GoOn;
-                match set {
-                    OutputSet::Grids(grids) => for grid in grids {
-                        next = enumeration.push(GridValue::Grid(grid));
-                        if next == Next::Stop { break; }
-                    },
-                    OutputSet::Undefined => next = enumeration.push(GridValue::Undefined),
-                    OutputSet::Stopped(stop) => next = enumeration.push(GridValue::Stopped(stop)),
-                    OutputSet::Outside => return Ok(OutputSet::Outside),
-                }
-                if next == Next::Stop { break; }
+    let mut enumerations: Vec<(Enumeration<'_, '_>, Next)> = comparisons.iter().map(|&comparison| (Enumeration::new(comparison), Next::GoOn)).collect();
+    let mut outside = vec![false; columns.len()];
+    for (evaluation, observed) in evaluations.iter().zip(observations.iter_mut()) {
+        let live: Vec<usize> = (0..columns.len()).filter(|&at| enumerations[at].1 == Next::GoOn && !outside[at]).collect();
+        if live.is_empty() {
+            break;
+        }
+        let live_columns: Vec<GridColumns> = live.iter().map(|&at| columns[at]).collect();
+        let live_comparisons: Vec<Comparison<'_, '_>> = live.iter().map(|&at| comparisons[at]).collect();
+        let sets = recorded_sets(evaluation, relation, observed, example, &live_columns, &live_comparisons)?;
+        for (&at, set) in live.iter().zip(sets) {
+            let (enumeration, next) = &mut enumerations[at];
+            match set {
+                OutputSet::Grids(grids) => for grid in grids {
+                    *next = enumeration.push(GridValue::Grid(grid));
+                    if *next == Next::Stop { break; }
+                },
+                OutputSet::Undefined => *next = enumeration.push(GridValue::Undefined),
+                OutputSet::Stopped(stop) => *next = enumeration.push(GridValue::Stopped(stop)),
+                OutputSet::Outside => outside[at] = true,
             }
-            Ok(enumeration.finish())
-        }).collect()
+        }
+    }
+    Ok(enumerations.into_iter().zip(outside).map(|((enumeration, _), outside)| if outside { OutputSet::Outside } else { enumeration.finish() }).collect())
 }
 
 fn grid_columns_by(
