@@ -116,3 +116,30 @@ def test_release_free_memory_gives_a_byte_count_and_leaves_the_footprint_readabl
     import script_calls
     assert script_calls.release_free_memory() >= 0
     assert script_calls.footprint() > 0
+
+
+def test_call_lines_read_first_and_high_and_default_them(tmp_path):
+    import json
+    import script_calls
+    line = {"key": "operate.py next", "start": 5.0, "wall": 1.0, "cpu": 1.0, "peak": 7, "session": "s",
+            "lifts": [], "retained": True, "queued": 0.5, "reads": 2, "footprint": 9}
+    marked = {**line, "start": 6.0, "first": True, "high": 456}
+    path = tmp_path / script_calls.day_file(str(tmp_path), 5.0).rsplit("/", 1)[-1]
+    path.write_text(json.dumps(line) + "\n" + json.dumps(marked) + "\n")
+    calls = script_calls.read(str(tmp_path), 0.0)
+    assert [(c.first, c.high) for c in calls] == [(False, 0), (True, 456)]
+
+
+def test_a_resident_marks_only_its_first_request_and_its_highest_footprint_is_at_least_its_footprint(tmp_path, monkeypatch):
+    import json
+    import time
+    import script_calls
+    monkeypatch.setattr(script_calls, "_served", False)
+    for args in (["next"], ["next"]):
+        script_calls.start_request(str(tmp_path), "operate_service.py", args)
+        script_calls.record()
+    path = script_calls.day_file(str(tmp_path / script_calls.RECORDS), time.time())
+    with open(path) as f:
+        lines = [json.loads(text) for text in f]
+    assert [l["first"] for l in lines] == [True, False]
+    assert all(l["high"] >= l["footprint"] > 0 for l in lines)

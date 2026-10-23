@@ -40,7 +40,8 @@ SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
 
 _LINE = ('{{"key": "{key}", "start": {start:.3f}, "wall": {wall:.3f}, "cpu": {cpu:.3f}, '
          '"peak": {peak}, "session": "{session}", "lifts": [{lifts}], "retained": {retained}, '
-         '"queued": {queued:.3f}, "reads": {reads}, "footprint": {footprint}}}\n')
+         '"queued": {queued:.3f}, "reads": {reads}, "footprint": {footprint}, '
+         '"first": {first}, "high": {high}}}\n')
 
 _KIB = sys.platform != "darwin"
 """Whether `ru_maxrss` counts KiB, as on Linux, in place of bytes, as on
@@ -72,6 +73,10 @@ _queued = 0.0
 """The seconds this process's request waited in the resident's queue."""
 _reads = 0
 """The count of the reads of `watched` that this process's call made."""
+_first = False
+"""Whether this process's request is the first its resident served."""
+_served = False
+"""Whether this process has started a request before."""
 
 
 _started: tuple[str, str, float, float] | None = None
@@ -106,10 +111,11 @@ def count_read() -> None:
 def start_request(tree: str, script: str, args: list[str], queued: float = 0.0) -> None:
     """Start a resident request's CPU delta and retained process peak record;
     `queued` is the seconds the request waited in the resident's queue."""
-    global _cpu_started, _retained, _credited, _queued
+    global _cpu_started, _retained, _credited, _queued, _first, _served
     record()
     start(tree, script, args)
     _queued = queued
+    _first, _served = not _served, True
     _cpu_started = cpu_seconds()
     _retained = True
     _lifts.clear()
@@ -141,26 +147,49 @@ def release_free_memory() -> int:
     return relief(None, 0)
 
 
+def _usage() -> tuple[int, int]:
+    """The physical footprint of this process now, and its highest since the
+    process started, on darwin from `proc_pid_rusage` (RUSAGE_INFO_V4: the
+    fields `ri_phys_footprint` and `ri_lifetime_max_phys_footprint`);
+    (0, 0) where it cannot be read."""
+    import ctypes
+    import ctypes.util
+
+    class Usage(ctypes.Structure):
+        _fields_ = [("uuid", ctypes.c_ubyte * 16)] + [(f"f{i}", ctypes.c_uint64) for i in range(1, 36)]
+    usage = Usage()
+    libproc = ctypes.CDLL(ctypes.util.find_library("proc"))
+    if libproc.proc_pid_rusage(os.getpid(), 4, ctypes.byref(usage)) != 0:
+        return 0, 0
+    return usage.f8, usage.f29
+
+
 def footprint() -> int:
     """The bytes of memory this process holds now: its physical footprint on
     darwin, its resident set on Linux, and 0 where neither can be read."""
     if sys.platform == "darwin":
-        import ctypes
-        import ctypes.util
-
-        class Usage(ctypes.Structure):
-            _fields_ = [("uuid", ctypes.c_ubyte * 16)] + [(f"f{i}", ctypes.c_uint64) for i in range(1, 19)]
-            # RUSAGE_INFO_V2 fields from ri_uuid on; f8 is ri_phys_footprint.
-        usage = Usage()
-        libproc = ctypes.CDLL(ctypes.util.find_library("proc"))
-        if libproc.proc_pid_rusage(os.getpid(), 2, ctypes.byref(usage)) != 0:
-            return 0
-        return usage.f8
+        return _usage()[0]
     try:
         with open("/proc/self/statm") as f:
             return int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE")
     except (OSError, ValueError):
         return 0
+
+
+def highest_footprint() -> int:
+    """The most bytes of memory this process has held since it started: its
+    highest physical footprint on darwin, its peak resident set (`VmHWM`) on
+    Linux, and 0 where neither can be read."""
+    if sys.platform == "darwin":
+        return _usage()[1]
+    try:
+        with open("/proc/self/status") as f:
+            for text in f:
+                if text.startswith("VmHWM:"):
+                    return int(text.split()[1]) * 1024
+    except (OSError, ValueError):
+        pass
+    return 0
 
 
 def peak() -> int:
@@ -221,7 +250,9 @@ def record() -> None:
                         peak=peak(), retained="true" if _retained else "false", session=os.environ.get(SESSION_ENV, ""),
                         lifts=", ".join(f'["{name}", {rise}]' for name, rise in lifts()),
                         queued=_queued, reads=_reads,
-                        footprint=footprint() if _retained else 0)
+                        footprint=footprint() if _retained else 0,
+                        first="true" if _first else "false",
+                        high=highest_footprint() if _retained else 0)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
     try:
@@ -236,13 +267,18 @@ class Call:
     `queued` is the seconds a resident request waited in the queue, and
     `reads` the count of its reads of `watched`, and `footprint` the bytes
     the resident held at the request's end; a line written before the
-    record gave them has 0."""
-    __slots__ = ("key", "start", "wall", "cpu", "peak", "session", "lifts", "retained", "queued", "reads", "footprint")
+    record gave them has 0. `first` is whether the request was the first
+    its resident served, and `high` the most bytes the resident has held
+    since it started, which on its first request is the peak of the cold
+    read; a line written before the record gave them has `False` and 0."""
+    __slots__ = ("key", "start", "wall", "cpu", "peak", "session", "lifts", "retained", "queued", "reads", "footprint", "first", "high")
 
     def __init__(self, key: str, start: float, wall: float, cpu: float, peak: int,
                  session: str, lifts: tuple[tuple[str, int], ...] = (), retained: bool = False,
-                 queued: float = 0.0, reads: int = 0, footprint: int = 0) -> None:
+                 queued: float = 0.0, reads: int = 0, footprint: int = 0,
+                 first: bool = False, high: int = 0) -> None:
         self.retained = retained
+        self.first, self.high = first, high
         self.queued, self.reads, self.footprint = queued, reads, footprint
         self.key, self.start, self.wall, self.cpu, self.peak, self.session, self.lifts = (
             key, start, wall, cpu, peak, session, lifts)
