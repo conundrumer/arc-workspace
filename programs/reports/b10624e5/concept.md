@@ -13,7 +13,7 @@
 - `template`: the template is the one quadrant that holds a color other than `background` and `core_color`.
 - `keep-input`: each input cell stays in the output unless a rule below paints it.
 - `mirror`: the figure a lone core gets is the template quadrant reflected across each divider that lies between the template quadrant and that core's quadrant: one reflection for a side neighbor, both for the diagonal quadrant.
-- `scale`: on each axis, the template's blocks of side u, the largest side on whose lattice aligned to the template core the template quadrant is constant, number k = t / u across the template core. Each such block becomes a block of side s / k, where s is the lone core's extent on that axis, laid out so that the template core's blocks land on the lone core. The model is undefined where k does not divide s.
+- `scale`: on each axis, the template's blocks of side u, the largest side whose tiling aligned to the template core leaves the template quadrant constant on each block, number k = t / u across the template core. Each such block becomes a block of side s / k, where s is the lone core's extent on that axis, laid out so that the template core's blocks land on the lone core. The model is undefined where k does not divide s.
 - `paint`: each cell of a lone core's quadrant that the scaled figure covers with a block of a color other than `background` takes that color. A block's part outside the quadrant is dropped.
 
 ## Parameters

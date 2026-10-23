@@ -2,8 +2,8 @@
 
 ## Concept
 - Fits every pair (train0, train1, test0), as `scripts/check_concept.py` and `scripts/probe.py` show.
-- Each rule has a relational form. The block side u in `scale` is the largest divisor of the template core's extent on whose aligned lattice the template quadrant is constant, which is a count of cells. On each axis, the scale ratio is the lone core's extent over the template core's extent.
-- The concept model is undefined where k does not divide a lone core's extent, which breaks `scalable`. Off that lattice, no rounding of a fractional block side is equivariant, so the concept case stays undefined there (see Not formed).
+- Each rule has a relational form. The block side u in `scale` is the largest divisor of the template core's extent whose aligned tiling leaves the template quadrant constant on each block, which is a count of cells. On each axis, the scale ratio is the lone core's extent over the template core's extent.
+- The concept model is undefined where k does not divide a lone core's extent, which breaks `scalable`. Off that tiling, no rounding of a fractional block side is equivariant, so the concept case stays undefined there (see Not formed).
 - No witness has the verdict `other`.
 
 ## Choice points
@@ -47,7 +47,7 @@
 - none
 
 ## Not formed
-- Resampling a fractional block side off the `scalable` lattice (sample from the core's near edge, from its far edge, or at cell centers): a reflection of the task changes which cells round which way, so none of these readings gives an equivariant model.
+- Resampling a fractional block side off the `scalable` tiling (sample from the core's near edge, from its far edge, or at cell centers): a reflection of the task changes which cells round which way, so none of these readings gives an equivariant model.
 - A template at a different scale on each lone core's two axes, from a non-square template core: the template core is square in every input, and per-axis scaling (the concept) already reads each axis's extents separately. No reading differs from the concept here.
 - The cross found away from the grid center: the concept finds the cross by its full row and column of `divider_color` wherever they lie, and no reading reads its position.
 

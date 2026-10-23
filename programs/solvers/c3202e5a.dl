@@ -1,7 +1,7 @@
 // c3202e5a
 // @draft
 // @keywords: decompose crop select count rank
-// @scene divider-lattice: full rows and full columns of one color, evenly
+// @scene divider-tiling: full rows and full columns of one color, evenly
 //  spaced, cut the grid into equal square tiles, with no line on the grid's
 //  edge
 // @scene one-mono-tile: exactly one tile has marks of a single color; every
@@ -75,11 +75,11 @@ impl_choice([$MostOfOneColor(), $IgnoreDividerInk()]).
 .type Line = [a: Axis, l: Position]
 
 // The one color of each line that holds one color.
-// @claim divider-lattice
+// @claim divider-tiling
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
-// @claim divider-lattice
+// @claim divider-tiling
 .init cut = DividerTiles<Unit>
 cut.cell($U(), P) :- in(P, _).
 cut.divider($U(), A, L) :- line_color.value([A, L], _).

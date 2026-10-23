@@ -1,7 +1,7 @@
 // b71a7747
 // @draft
 // @keywords: objects lines select noise cross
-// @scene lattice: a background crossed by evenly spaced full rows and full
+// @scene tiling: a background crossed by evenly spaced full rows and full
 //  columns of a line color
 // @scene tiles: equal solid squares of a tile color, one centered on each
 //  line crossing where the whole square fits in the frame, so they form a
@@ -34,7 +34,7 @@
     //  those cells hold; undefined where the tiles are not equal squares
     // @witness missing-band: borderline concept
     //     @relaxed tiles
-  | LatticeBands {}
+  | TilingBands {}
 
 // where the kept rows and columns are read from
 .type Choice =
@@ -122,7 +122,7 @@ tile_fill.item($U(), Col, P) :- in(P, Col), tile_color(Col).
 
 tile_cell($TileColorOnly(), P) :- in(P, Col), tile_fill.mode($U(), Col).
 
-// --- $LatticeBands, $LineBreaks ---
+// --- $TilingBands, $LineBreaks ---
 
 // Line l of axis a holds a cell of col.
 .decl holds(a: Axis, l: Position, col: Color)
@@ -156,7 +156,7 @@ gapped(Col) :- color(Col), line(A, L), !holds(A, L, Col).
 .decl line_color(col: Color)
 line_color(Col) :- color(Col), !tile_color(Col), !gapped(Col).
 
-// --- $LatticeBands ---
+// --- $TilingBands ---
 
 // The square a tile fills when moved to a line crossing, where it fits in the
 // frame.
@@ -166,7 +166,7 @@ band_square(B2) :-
     tile_box(B), tile_center(C), crop(C, B, _), relative(C, P, V),         // a tile's move onto it
     compose(B, V, B2), inside(B2, ZERO).
 
-kept($FromTiles($LatticeBands()), A, L) :-
+kept($FromTiles($TilingBands()), A, L) :-
     band_square(B), in(P, _), crop(P, B, _), axis_elem(A), split(P, A, L, _).
 
 // --- $LineBreaks ---

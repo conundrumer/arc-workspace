@@ -2,7 +2,7 @@
 
 ## Departures
 - The solver adds the parameter `halves_axis` (AXIS_V) under `$PictureByBlocks` and `$PictureByColors`: these branches replace `pattern_side`, and the Analyze report gives them nothing that fixes the axis the two halves lie along. Under `$StoredSide` the axis comes from `pattern_side`, so it is derived there and not stored a second time.
-- The solver adds the branch `pattern_scale=SepTileCount` (`@derive SepTileCount: variant concept`), which the Analyze report does not have: `run_dl.py derive` lists it as fitting, because the separator lattice has two segments and the scale is 2. Its witness `pattern_scale=SepTileCount` (a 2×2 picture in 3×3 blocks, at `pattern_scale` 3) shows the concept defined and the branch undefined.
+- The solver adds the branch `pattern_scale=SepTileCount` (`@derive SepTileCount: variant concept`), which the Analyze report does not have: `run_dl.py derive` lists it as fitting, because the separator tiling has two segments and the scale is 2. Its witness `pattern_scale=SepTileCount` (a 2×2 picture in 3×3 blocks, at `pattern_scale` 3) shows the concept defined and the branch undefined.
 - The witness file has three witnesses that the Analyze file does not have: `pattern_scale=SepTileCount`, `separator-count-scale-3` and `halves-4x4`. The last two resolve the `witness` findings that no run showed the SepTileCount case defined and differing from the stored-scale case, or from the `$StoredPictureExtent` case.
 - `record --all` rewrote the group names of the Analyze witnesses to the listed forms. `witness --file work/task/b4a43f3b/witnesses.json` reports no difference.
 

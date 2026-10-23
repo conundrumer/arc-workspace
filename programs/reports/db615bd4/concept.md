@@ -4,9 +4,9 @@
 - A dotted rectangle is a box, and the dotted pieces lying outside it are packed into it as solid blocks, in one line along the box's long side and in their order along that side, a `gap` apart.
 
 ## Scene
-- `dot-lattice`: a background field with a dot of one dot color at each cell on the dot lattice, the cells whose row and column both have the `lattice-parity`.
-- `frame`: one color draws the outline of a rectangle on the dot lattice, a dot at each lattice cell of that outline, in place of the dot color.
-- `frame-interior`: inside the frame outline, the lattice cells hold the dot color, and the other cells the background.
+- `dot-class`: a background field with a dot of one dot color at each cell on the dot class, the cells whose row and column both have the `dot-parity`.
+- `frame`: one color draws the outline of a rectangle on the dot class, a dot at each dot-class cell of that outline, in place of the dot color.
+- `frame-interior`: inside the frame outline, the dot-class cells hold the dot color, and the other cells the background.
 - `pieces`: two or more pieces, each in its own color, distinct from the background, the dot color and the frame color; each piece has a dot at each cell of a rectangle whose row and column both have the `piece-parity`, at a spacing of 2, and no other cell.
 - `pieces-outside`: every piece lies outside the frame's bounding box.
 - `pieces-apart`: along the frame's long axis, the spans of the pieces' bounding boxes are pairwise disjoint.
@@ -26,7 +26,7 @@
     - the background cells between consecutive blocks along the stack
 
 ## Scene parameters
-- `lattice-parity`: odd row, odd column
+- `dot-parity`: odd row, odd column
 - `piece-parity`: even row, even column
 - `margin`: 1
     - the background cells between the end blocks of the stack and the frame outline

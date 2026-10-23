@@ -2,7 +2,7 @@
   "id": "b71a7747",
   "witnesses": [{
     "id": "missing-band",
-    "separates": "train1 with its bottom row of tiles erased to background and lines: the concept and the other readings drop the empty band and give 6x9; $LatticeBands keeps the band at the lattice crossings and gives 9x9 with background and lines in its last three rows",
+    "separates": "train1 with its bottom row of tiles erased to background and lines: the concept and the other readings drop the empty band and give 6x9; $TilingBands keeps the band at the line crossings and gives 9x9 with background and lines in its last three rows",
     "input": [
       [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
       [2,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,2],
@@ -41,7 +41,7 @@
         [3,3,3,3,8,3,3,3,3]
       ]
     }, {
-      "cases": ["$LatticeBands"],
+      "cases": ["$TilingBands"],
       "grid": [
         [3,3,3,3,3,3,3,3,3],
         [3,8,8,8,8,8,8,8,8],
@@ -143,7 +143,7 @@
       [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]
     ],
     "output": [{
-      "cases": ["concept","$LatticeBands","$LineBreaks"],
+      "cases": ["concept","$TilingBands","$LineBreaks"],
       "grid": [
         [8,8,8,8,8,8,8,8,8],
         [3,8,8,8,8,8,8,8,8],

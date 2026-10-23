@@ -103,7 +103,7 @@
     }]
   }, {
     "id": "marked-outnumber-base",
-    "separates": "A 3-by-3 lattice holds five marked tiles in a plus and four base tiles at the corners, and the new color draws the plus with its top-left cell: the concept takes the commoner marked pattern as the base, finds no placement of the base color's diamond that holds the corner tiles, and is undefined; $CornerBase takes the corner tiles' pattern as the base and completes the shape at tile (0,0).",
+    "separates": "A 3-by-3 tiling holds five marked tiles in a plus and four base tiles at the corners, and the new color draws the plus with its top-left cell: the concept takes the commoner marked pattern as the base, finds no placement of the base color's diamond that holds the corner tiles, and is undefined; $CornerBase takes the corner tiles' pattern as the base and completes the shape at tile (0,0).",
     "input": [
       [1,1,1,1,1,1,1,1,1,1,1,1,1],
       [1,4,2,4,1,8,8,4,1,4,2,4,1],
@@ -120,7 +120,7 @@
       [1,1,1,1,1,1,1,1,1,1,1,1,1]
     ],
     "output": [{
-      "cases": ["$Commoner & $NewColor & $InLattice"],
+      "cases": ["$Commoner & $NewColor & $InTiling"],
       "grid": null
     }, {
       "cases": ["$MajorityColor","$ClippedPlacement & $UnionOfPlacements"],
@@ -222,8 +222,8 @@
       ]
     }]
   }, {
-    "id": "lattice.tile_of=stored",
-    "separates": "A 5-by-5 lattice of 3-by-3 tiles: the concept reads the lattice off the divider lines and completes the shape, and lattice.tile_of=stored, which stores the cells of the 29-by-29 grid's 7-by-7 lattice, finds no tile and is undefined.",
+    "id": "tiling.tile_of=stored",
+    "separates": "A 5-by-5 tiling of 3-by-3 tiles: the concept reads the tiling off the divider lines and completes the shape, and tiling.tile_of=stored, which stores the cells of the 29-by-29 grid's 7-by-7 tiling, finds no tile and is undefined.",
     "input": [
       [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
       [1,4,2,4,1,4,2,4,1,4,2,4,1,4,2,4,1,4,2,4,1],
@@ -248,7 +248,7 @@
       [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
     ],
     "output": [{
-      "cases": ["lattice.tile_of=derived"],
+      "cases": ["tiling.tile_of=derived"],
       "grid": [
         [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
         [1,4,2,4,1,4,2,4,1,4,2,4,1,4,2,4,1,4,2,4,1],
@@ -273,12 +273,12 @@
         [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
       ]
     }, {
-      "cases": ["lattice.tile_of=stored"],
+      "cases": ["tiling.tile_of=stored"],
       "grid": null
     }]
   }, {
     "id": "placement-past-edge",
-    "separates": "The marked tiles fit the shape only where the shape runs past the right edge of the lattice: the concept finds no placement inside the lattice and is undefined, and $ClippedPlacement draws the part inside the lattice, adding tile (2,5).",
+    "separates": "The marked tiles fit the shape only where the shape runs past the right edge of the tiling: the concept finds no placement inside the tiling and is undefined, and $ClippedPlacement draws the part inside the tiling, adding tile (2,5).",
     "input": [
       [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
       [2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2],
@@ -314,7 +314,7 @@
       "cases": ["concept"],
       "grid": null
     }, {
-      "cases": ["$InLattice & $EachPlacement"],
+      "cases": ["$InTiling & $EachPlacement"],
       "grid": [
         [
           [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
@@ -411,7 +411,7 @@
         ]
       ]
     }, {
-      "cases": ["$InLattice & $UnionOfPlacements"],
+      "cases": ["$InTiling & $UnionOfPlacements"],
       "grid": [
         [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
         [2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2],
@@ -687,7 +687,7 @@
     }]
   }, {
     "id": "broken-divider",
-    "separates": "Train0's input with one cell of the divider row above the marked tiles in a base color: the concept finds that row non-uniform, reads no divider there, merges the tiles across it, and finds no placement, so it is undefined; lattice.tile_of=stored keeps the 7-by-7 lattice and completes the shape.",
+    "separates": "Train0's input with one cell of the divider row above the marked tiles in a base color: the concept finds that row non-uniform, reads no divider there, merges the tiles across it, and finds no placement, so it is undefined; tiling.tile_of=stored keeps the 7-by-7 tiling and completes the shape.",
     "input": [
       [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
       [2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2],
@@ -720,10 +720,10 @@
       [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]
     ],
     "output": [{
-      "cases": ["lattice.tile_of=derived"],
+      "cases": ["tiling.tile_of=derived"],
       "grid": null
     }, {
-      "cases": ["lattice.tile_of=stored"],
+      "cases": ["tiling.tile_of=stored"],
       "grid": [
         [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
         [2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2,4,4,4,2],

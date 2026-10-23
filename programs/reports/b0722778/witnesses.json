@@ -3,7 +3,7 @@
  "witnesses": [
   {
    "id": "wide-query-gap",
-   "separates": "the query sits three blank columns past the image, and a second band has the usual layout; the concept finds the blocks as components and gives each band's result, and the lattice reading takes the query from the stored columns",
+   "separates": "the query sits three blank columns past the image, and a second band has the usual layout; the concept finds the blocks as components and gives each band's result, and the tiling reading takes the query from the stored columns",
    "input": [
     [
      1,
@@ -105,8 +105,8 @@
     },
     {
      "cases": [
-      "$LatticeBlocks",
-      "$LatticeBlocks & band-gap=SepThickness"
+      "$TilingBlocks",
+      "$TilingBlocks & band-gap=SepThickness"
      ],
      "grid": [
       [
@@ -198,8 +198,8 @@
     {
      "cases": [
       "concept",
-      "$LatticeBlocks",
-      "$LatticeBlocks & band-gap=SepThickness",
+      "$TilingBlocks",
+      "$TilingBlocks & band-gap=SepThickness",
       "background=DominantColor",
       "$RecolorLast",
       "$DiagMirror",
@@ -271,7 +271,7 @@
     {
      "cases": [
       "concept",
-      "$LatticeBlocks",
+      "$TilingBlocks",
       "$QueryByGap",
       "$RecolorLast",
       "$DiagMirror",
@@ -293,7 +293,7 @@
     },
     {
      "cases": [
-      "$LatticeBlocks & band-gap=SepThickness",
+      "$TilingBlocks & band-gap=SepThickness",
       "background=DominantColor"
      ],
      "grid": null
@@ -302,7 +302,7 @@
   },
   {
    "id": "band-gap=SepThickness",
-   "separates": "one band, so no separator lattice runs on either axis; the stored band gap reads the blocks, and the derived gap finds no value",
+   "separates": "one band, so no separator tiling runs on either axis; the stored band gap reads the blocks, and the derived gap finds no value",
    "input": [
     [
      2,
@@ -332,7 +332,7 @@
     {
      "cases": [
       "concept",
-      "$LatticeBlocks",
+      "$TilingBlocks",
       "$QueryByGap",
       "$RecolorLast",
       "$DiagMirror",
@@ -354,7 +354,7 @@
     },
     {
      "cases": [
-      "$LatticeBlocks & band-gap=SepThickness",
+      "$TilingBlocks & band-gap=SepThickness",
       "background=DominantColor"
      ],
      "grid": null
@@ -426,8 +426,8 @@
     {
      "cases": [
       "concept",
-      "$LatticeBlocks",
-      "$LatticeBlocks & band-gap=SepThickness",
+      "$TilingBlocks",
+      "$TilingBlocks & band-gap=SepThickness",
       "$QueryByGap",
       "background=DominantColor",
       "$DiagMirror",
@@ -553,8 +553,8 @@
     {
      "cases": [
       "concept",
-      "$LatticeBlocks",
-      "$LatticeBlocks & band-gap=SepThickness",
+      "$TilingBlocks",
+      "$TilingBlocks & band-gap=SepThickness",
       "$QueryByGap",
       "background=DominantColor",
       "$RecolorLast",
@@ -659,8 +659,8 @@
     {
      "cases": [
       "concept",
-      "$LatticeBlocks",
-      "$LatticeBlocks & band-gap=SepThickness",
+      "$TilingBlocks",
+      "$TilingBlocks & band-gap=SepThickness",
       "$QueryByGap",
       "background=DominantColor",
       "$RecolorLast",
@@ -773,8 +773,8 @@
     {
      "cases": [
       "concept",
-      "$LatticeBlocks",
-      "$LatticeBlocks & band-gap=SepThickness",
+      "$TilingBlocks",
+      "$TilingBlocks & band-gap=SepThickness",
       "$QueryByGap",
       "background=DominantColor",
       "$RecolorLast",
@@ -874,8 +874,8 @@
     {
      "cases": [
       "concept",
-      "$LatticeBlocks",
-      "$LatticeBlocks & band-gap=SepThickness",
+      "$TilingBlocks",
+      "$TilingBlocks & band-gap=SepThickness",
       "$QueryByGap",
       "background=DominantColor",
       "$RecolorLast",
@@ -980,8 +980,8 @@
     {
      "cases": [
       "concept",
-      "$LatticeBlocks",
-      "$LatticeBlocks & band-gap=SepThickness",
+      "$TilingBlocks",
+      "$TilingBlocks & band-gap=SepThickness",
       "$QueryByGap",
       "background=DominantColor",
       "$RecolorLast",

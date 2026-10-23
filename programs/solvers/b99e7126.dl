@@ -1,15 +1,15 @@
 // b99e7126
 // @draft
 // @keywords: decompose scale rank color-class
-// @scene tile-lattice: divider lines of one color, one cell wide, cut the
-//  grid into a 7 by 7 lattice of 3 by 3 tiles, with a divider line along
+// @scene tiling: divider lines of one color, one cell wide, cut the
+//  grid into a 7 by 7 tiling of 3 by 3 tiles, with a divider line along
 //  each edge of the grid
 // @scene base-tile: most tiles hold one same two-color pattern, the base tile
 // @scene marked-tile: every other tile holds one same pattern, the marked
 //  tile, made of one color of the base tile and one color that the base tile
 //  does not have, the new color
 // @scene partial-shape: the marked tiles sit, at the tile scale, on cells of
-//  exactly one placement of the new color's shape in the lattice, and do not
+//  exactly one placement of the new color's shape in the tiling, and do not
 //  fill it
 // @rule shape-of-new-color: the shape is the set of cells of the marked tile
 //  whose color the base tile does not have, read as a mask of the tile's size
@@ -21,10 +21,10 @@
 .type BaseTile =
     // @claim base-tile
     Commoner {}
-    // @scene base-tile: the base tile is the pattern of the lattice's four
+    // @scene base-tile: the base tile is the pattern of the tiling's four
     //  corner tiles; undefined where they hold different patterns
     // @witness marked-outnumber-base: borderline $CornerBase
-    //     @relaxed tile-lattice
+    //     @relaxed tiling
     //     @relaxed base-tile
   | CornerBase {}
 
@@ -37,12 +37,12 @@
     // @witness minority-shape: variant concept
   | MajorityColor {}
 
-// whether a placement of the shape lies wholly inside the lattice
+// whether a placement of the shape lies wholly inside the tiling
 .type PlacementBounds =
     // @claim partial-shape
-    InLattice {}
-    // @scene partial-shape: a placement may run past the lattice edge, and
-    //  only its part inside the lattice is drawn
+    InTiling {}
+    // @scene partial-shape: a placement may run past the tiling's edge, and
+    //  only its part inside the tiling is drawn
     // @witness placement-past-edge: foreign $ClippedPlacement
     //     @relaxed partial-shape
   | ClippedPlacement {}
@@ -97,7 +97,7 @@ base_tile_choice($Commoner()). base_tile_choice($CornerBase()).
 shape_source_choice($NewColor()). shape_source_choice($MajorityColor()).
 
 .decl placement_bounds_choice(bound: PlacementBounds)
-placement_bounds_choice($InLattice()). placement_bounds_choice($ClippedPlacement()).
+placement_bounds_choice($InTiling()). placement_bounds_choice($ClippedPlacement()).
 
 .decl several_placements_choice(many: SeveralPlacements)
 several_placements_choice($OnePlacement()).
@@ -105,27 +105,27 @@ several_placements_choice($UnionOfPlacements()).
 several_placements_choice($EachPlacement()).
 
 .decl impl_choice(ch: Choice)
-impl_choice([$Commoner(), $NewColor(), $InLattice(), $OnePlacement(), $AllMarked()]).
+impl_choice([$Commoner(), $NewColor(), $InTiling(), $OnePlacement(), $AllMarked()]).
 impl_choice([Base, Src, Bound, Many, $MostMarked()]) :-
     base_tile_choice(Base), shape_source_choice(Src), placement_bounds_choice(Bound),
     several_placements_choice(Many), Many != $OnePlacement().
 
-// --- the lattice ---
+// --- the tiling ---
 
-// @claim tile-lattice
+// @claim tiling
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
-// @claim tile-lattice
+// @claim tiling
 // @store tile_of: variant concept
-//     @relaxed tile-lattice
-.init lattice = DividerTiles<Unit>
-lattice.cell($U(), P) :- in(P, _).
-lattice.divider($U(), A, L) :- line_color.value([A, L], _).
+//     @relaxed tiling
+.init tiling = DividerTiles<Unit>
+tiling.cell($U(), P) :- in(P, _).
+tiling.divider($U(), A, L) :- line_color.value([A, L], _).
 
-// @claim tile-lattice
+// @claim tiling
 .init block = Bbox<Position>
-block.cell(T, P) :- lattice.tile_of($U(), P, T).
+block.cell(T, P) :- tiling.tile_of($U(), P, T).
 
 // A grid cell, with its tile and its place in that tile.
 .decl tile_at(p: Position, t: Position, p_intile: Position)
@@ -202,7 +202,7 @@ shape([Base, $MajorityColor()], P) :-
 
 // --- the placements ---
 
-// The shape laid on the lattice at the tile scale.
+// The shape laid on the tiling at the tile scale.
 // @claim partial-shape complete-shape
 .init fit = Occurrences<ShapeKey, Unit>
 fit.cell(K, T, $U()) :- shape(K, _), pattern.id(T, _).
@@ -210,9 +210,9 @@ fit.shape(K, P, $U()) :- shape(K, P).
 
 .decl placement(k: PlaceKey, b: Box)
 
-// --- $InLattice ---
+// --- $InTiling ---
 
-placement([Base, Src, $InLattice()], B) :- fit.occurrence([Base, Src], B).
+placement([Base, Src, $InTiling()], B) :- fit.occurrence([Base, Src], B).
 
 // --- $ClippedPlacement ---
 

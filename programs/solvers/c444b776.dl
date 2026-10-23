@@ -22,7 +22,7 @@
     //  wide between them, cut the grid, whatever the lines' color; undefined
     //  where an extent of the grid is not a whole number of panels and gaps
     // @witness small-panels: variant concept
-  | StoredLattice {}
+  | StoredTiling {}
 
 // what each panel of the output takes
 .type Source =
@@ -58,7 +58,7 @@
     // --- $DividerLines ---
     .decl divider(c: Color) divider(4).
 
-    // --- $StoredLattice ---
+    // --- $StoredTiling ---
     .decl panel_size(a: Axis, k: number)
     panel_size(AXIS_V, 9). panel_size(AXIS_H, 9).
 
@@ -71,7 +71,7 @@
 .init params = Params
 
 .decl panels_choice(pn: Panels)
-panels_choice($DividerLines()). panels_choice($DividerFromLines()). panels_choice($StoredLattice()).
+panels_choice($DividerLines()). panels_choice($DividerFromLines()). panels_choice($StoredTiling()).
 
 .decl source_choice(s: Source)
 source_choice($OneDrawn()). source_choice($Overlay()). source_choice($MostDrawn()).
@@ -95,19 +95,19 @@ impl_choice([Pn, S]) :- panels_choice(Pn), source_choice(S).
     line_color.item([Ky, A, L], Col) :- cell(Ky, P, Col), axis_elem(A), split(P, A, L, _).
 
     // @claim divider-lines
-    .init lattice = DividerTiles<Key>
-    lattice.cell(Ky, P) :- cut(Ky, _), cell(Ky, P, _).
-    lattice.divider(Ky, A, L) :- cut(Ky, Col), line_color.value([Ky, A, L], Col).
+    .init tiling = DividerTiles<Key>
+    tiling.cell(Ky, P) :- cut(Ky, _), cell(Ky, P, _).
+    tiling.divider(Ky, A, L) :- cut(Ky, Col), line_color.value([Ky, A, L], Col).
 
     // @claim copy-to-every-panel
     .init tile_box = Bbox<KeyTile>
-    tile_box.cell([Ky, P_tile], P) :- lattice.tile_of(Ky, P, P_tile).
+    tile_box.cell([Ky, P_tile], P) :- tiling.tile_of(Ky, P, P_tile).
 
     // Each cell of a panel: the panel's place, and the cell's place within
     // the panel.
     .decl panel(key: Key, p: Position, p_tile: Position, p_intile: Position)
     panel(Ky, P, P_tile, P_intile) :-
-        lattice.tile_of(Ky, P, P_tile), tile_box.box([Ky, P_tile], B), crop(P, B, P_intile).
+        tiling.tile_of(Ky, P, P_tile), tile_box.box([Ky, P_tile], B), crop(P, B, P_intile).
 }
 
 // Parse<Key>'s panel, under each way of finding the panels.
@@ -152,7 +152,7 @@ line_divider.item($U(), Col) :-
 
 parse.cut($DividerFromLines(), Col) :- line_divider.value($U(), Col).
 
-// --- $StoredLattice ---
+// --- $StoredTiling ---
 
 // @claim divider-lines
 .init stored = Tile2D<Unit>
@@ -160,7 +160,7 @@ stored.cell(P) :- in(P, _).
 stored.dim($U(), A, K) :- params.panel_size(A, K).
 stored.gap(G) :- params.gap(G).
 
-panel($StoredLattice(), P, P_tile, P_intile) :- stored.tile($U(), P, P_tile, P_intile).
+panel($StoredTiling(), P, P_tile, P_intile) :- stored.tile($U(), P, P_tile, P_intile).
 
 // --- $OneDrawn ---
 
@@ -240,7 +240,7 @@ source([Pn, $MostDrawn()], P_tile) :- most_drawn.value(Pn, P_tile).
 
     // The runs of adjacent divider lines.
     .init divider_run = Components<ExampleAxis>
-    divider_run.node([E, A], L) :- ex.lattice.divider(E, A, L).
+    divider_run.node([E, A], L) :- ex.tiling.divider(E, A, L).
 
     .init band_width = Tally<Band, Position>
     band_width.item([E, A, Id], L) :- divider_run.label([E, A], L, Id).

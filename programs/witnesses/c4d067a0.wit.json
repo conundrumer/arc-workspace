@@ -2,7 +2,7 @@
   "id": "c4d067a0",
   "witnesses": [{
     "id": "key-pitch-three",
-    "separates": "The key's dots stand three cells apart. Reading the lattice at the stored pitch of two finds no run that matches the two given blocks, so the stored pitch is undefined; the pitch read off the key's dots draws the key's lower row, 1 and 3, under the given blocks.",
+    "separates": "The key's dots stand three cells apart. Reading the key at the stored pitch of two finds no run that matches the two given blocks, so the stored pitch is undefined; the pitch read off the key's dots draws the key's lower row, 1 and 3, under the given blocks.",
     "input": [
       [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8],
       [8,2,8,8,2,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8],
@@ -540,7 +540,7 @@
     }]
   }, {
     "id": "corner-dots",
-    "separates": "Train0's input with its four corner cells in the key's color 1. The commonest color, 8, is the background, the corner cells lie off the key's lattice, and the key's rows of 1s are drawn under the given blocks; the corners' shared color, 1, makes those rows background points, which draw nothing, so the output is the input.",
+    "separates": "Train0's input with its four corner cells in the key's color 1. The commonest color, 8, is the background, the corner cells lie off the key's period class, and the key's rows of 1s are drawn under the given blocks; the corners' shared color, 1, makes those rows background points, which draw nothing, so the output is the input.",
     "input": [
       [1,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,1],
       [8,4,8,4,8,8,8,8,4,4,4,8,8,4,4,4,8,8,8,8,8,8,8],

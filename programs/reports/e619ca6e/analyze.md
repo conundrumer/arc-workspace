@@ -34,7 +34,7 @@
 - Copies stepped by any amount other than the block's own height and width: the blocks of the pairs are 2×3, 3×3, 4×2 and 2×5, and every other step fails train 0 or train 1.
 - Only the copies that lie wholly inside the grid: train 1 output keeps the clipped copy at rows 13–14, col 0, and train 0 output keeps clipped copies at rows 7–8, col 0.
 - A staircase that stops where it meets another block or copy: in train 0, the staircase of the block at rows 3–4 crosses the one of the block at rows 6–8 at (12,16), (12,17), and both go on.
-- Each copy casting both diagonals again, which fills a whole lattice of copies: train 1 output holds only the two staircases.
+- Each copy casting both diagonals again, which fills the grid with a periodic pattern of copies: train 1 output holds only the two staircases.
 - Copies cast up as well as down: no output holds a copy above its block.
 - `cast_dirs` stored as one cardinal direction whose two corners give the diagonals: every value the generator gives is a pair of adjacent corners, so that encoding is equivalent to the stored set.
 - `SharedColor` and `RarestColor` for `background`: `SharedColor` on one input gives both `0` and `3`, and `RarestColor` gives `3`, so each fails Fit at train 0.

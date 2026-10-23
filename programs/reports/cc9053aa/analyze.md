@@ -26,7 +26,7 @@
     - `concept`: stored
     - `wall_color=DominantColor`: on train0 alone this derivation gives 0. It fails Fit at train0: marker (1,8) touches two cells of color 0, so the model is undefined.
     - `wall_color=SharedColor`: on train0 alone this derivation gives 0, 7, 8 and 9. It fails Fit at train0: the model is undefined there.
-    - `$WallColorCommonest`: replaces the stored `wall_color` with the commonest color other than `background_color`, which becomes a parameter. It is undefined on a tie. It fits every pair. Witness `recolored-walls`: it breaks `wall-lattice`, plausibility `variant`, verdict `$WallColorCommonest`.
+    - `$WallColorCommonest`: replaces the stored `wall_color` with the commonest color other than `background_color`, which becomes a parameter. It is undefined on a tie. It fits every pair. Witness `recolored-walls`: it breaks `wall-network`, plausibility `variant`, verdict `$WallColorCommonest`.
 - `marker-color`: the value of `marker_color`
     - `concept`: stored
     - `marker_color=RarestColor`: on train0 alone this derivation gives 7 and 9. It fails Fit at train0: four marker cells, so the model is undefined.

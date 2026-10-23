@@ -1,11 +1,11 @@
 # cc9053aa
 
 ## Concept
-- Two markers outside a lattice of walls are the ends of a wire: lay the wire along the walls from one marker to the other, keeping clear of every hazard cell, even at a corner.
+- Two markers outside a network of walls are the ends of a wire: lay the wire along the walls from one marker to the other, keeping clear of every hazard cell, even at a corner.
 
 ## Scene
 - `background`: every cell outside the walls, the markers and the hazards is `background_color`.
-- `wall-lattice`: the cells of `wall_color` form one 4-connected structure of 1-wide straight wall lines.
+- `wall-network`: the cells of `wall_color` form one 4-connected structure of 1-wide straight wall lines.
 - `two-markers`: exactly two cells are `marker_color`, each on the grid edge outside the walls and 4-adjacent to exactly one wall cell, its contact cell.
 - `hazards`: one or more cells are `hazard_color`, each inside the structure's bounding box, in a wall line or in a room between walls.
 - `one-clear-route`: of the wall cells that touch no hazard cell in their 8-neighborhood, the 4-connected walks from one contact cell to the other all visit the same cells, so one simple route joins them.

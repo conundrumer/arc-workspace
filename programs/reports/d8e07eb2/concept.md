@@ -5,7 +5,7 @@
 
 ## Scene
 - `three-panels`: two full lines of the `divider` color cut the `background` grid into three panels across one axis: a key panel, a card panel, and an empty status panel, with the card panel between the other two.
-- `slot-lattice`: the card's shapes sit in square slots of side `slot_size`, laid out on a lattice whose bands on each axis are the maximal runs of card-panel lines that hold a non-background cell.
+- `slot-tiling`: the card's shapes sit in square slots of side `slot_size`, laid out on a tiling whose bands on each axis are the maximal runs of card-panel lines that hold a non-background cell.
 - `card`: the card panel holds `card_size` by `card_size` slots, each with one single-color shape, and no two slots of the card hold the same shape in the same color.
 - `key`: the key panel holds one band of slots: its rows are the key panel's run of lines that hold a non-background cell, and its columns are the card's column bands; each key slot holds one single-color shape or nothing.
 - `key-on-card`: each key shape occurs exactly once on the card, as a slot whose content equals the key slot's content: the same color at the same cells of the slot.

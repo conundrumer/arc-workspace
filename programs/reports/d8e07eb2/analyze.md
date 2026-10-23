@@ -22,7 +22,7 @@
 - `halo-box`
     - `concept`: the slot's box grown by `halo_margin`
     - `$ShapeBboxHalo`: replaces `ring-called`; the halo is the bounding box of the slot's shape grown by `halo_margin`. Fails Fit at train0: the 6 shape at cols 13-14 leaves col 11 of rows 12-16 at 8.
-    - `$HaloLatticeCell`: replaces `ring-called` and `halo_margin`; the halo is the slot's lattice cell, the box grown by half the gap between neighboring bands. Fits every pair. Witness `halo-lattice-cell`: breaks `card` at `card_size` 4; plausibility `variant`; verdict `concept`; it breaks the invariant that the card is 4 by 4 with slots 2 apart.
+    - `$HaloTilingCell`: replaces `ring-called` and `halo_margin`; the halo is the slot's tiling cell, the box grown by half the gap between neighboring bands. Fits every pair. Witness `halo-tiling-cell`: breaks `card` at `card_size` 4; plausibility `variant`; verdict `concept`; it breaks the invariant that the card is 4 by 4 with slots 2 apart.
 - `line`
     - `concept`: the called slots include every slot of one card row band or one card column band
     - `$Collinear`: replaces `bingo`; the card has a line when every called slot lies in one row band or one column band. Fits every pair. Witness `three-in-column`: breaks no scene claim; plausibility `ordinary`; verdict `concept`.
@@ -44,8 +44,8 @@
     - `halo_color=OutNewColor`: derives `halo_color` as a color in every train output and no input. Fails Fit at train0: on an input alone `ex_out` is empty, so the derivation gives no value and the case is undefined.
 - `card-source`
     - `concept`: the slot bands and the slot contents are read from the input
-    - `slot_bands=stored`: stores the card's row and column bands and the key's row band, and replaces `slot-lattice`. Fits every pair. Witness `slot_bands=stored`: breaks no scene claim; plausibility `variant`; verdict `concept`; it breaks the invariant that the slot layout is the same in every input.
-    - `card_slots=stored`: stores the card's slot boxes with each slot's content, and replaces `slot-lattice` and `card`. Fits every pair. Witness `card_slots=stored`: breaks no scene claim; plausibility `variant`; verdict `concept`; it breaks the invariant that the card is the same in every input.
+    - `slot_bands=stored`: stores the card's row and column bands and the key's row band, and replaces `slot-tiling`. Fits every pair. Witness `slot_bands=stored`: breaks no scene claim; plausibility `variant`; verdict `concept`; it breaks the invariant that the slot layout is the same in every input.
+    - `card_slots=stored`: stores the card's slot boxes with each slot's content, and replaces `slot-tiling` and `card`. Fits every pair. Witness `card_slots=stored`: breaks no scene claim; plausibility `variant`; verdict `concept`; it breaks the invariant that the card is the same in every input.
 - `key-side`
     - `concept`: the key panel is the inked outer panel and the status panel is the empty one
     - `key_side=stored`: stores the key panel as the top outer panel and the status panel as the bottom one, and replaces `three-panels`. Undefined where the top panel has no run of inked lines. Fits every pair. Witness `key_side=stored`: breaks no scene claim; plausibility `variant`; verdict `concept`; it breaks the invariant that the key panel is at the top.

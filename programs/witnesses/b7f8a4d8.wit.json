@@ -510,7 +510,7 @@
     }]
   }, {
     "id": "missing-crossing",
-    "separates": "the middle tile of the lattice is missing, and the bridge of 1 along tile row 2 crosses the bridge of 3 along tile column 2 at the center of that empty place, a cell no tile of another odd color blocks: the cases that leave a cell of two claimants undefined give no grid, and a color drawn later covers the earlier one there",
+    "separates": "the middle tile of the tiling is missing, and the bridge of 1 along tile row 2 crosses the bridge of 3 along tile column 2 at the center of that empty place, a cell no tile of another odd color blocks: the cases that leave a cell of two claimants undefined give no grid, and a color drawn later covers the earlier one there",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,2,2,2,0,0,2,2,2,0,0,2,2,2,0,0,2,2,2,0,0,2,2,2,0,0],

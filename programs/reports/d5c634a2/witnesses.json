@@ -130,7 +130,7 @@
      "cases": [
       "concept",
       "$StoredSlotList",
-      "$LatticeSlots",
+      "$PeriodSlots",
       "$SlotOrderPerDir",
       "$ShapeOccurrences",
       "$ShapeTable"
@@ -282,7 +282,7 @@
      "cases": [
       "concept",
       "$CountTable",
-      "$LatticeSlots",
+      "$PeriodSlots",
       "$SlotOrderPerDir",
       "$ShapeOccurrences",
       "$ShapeTable"
@@ -349,7 +349,7 @@
   },
   {
    "id": "five-in-a-wide-panel",
-   "separates": "five up-Ts at a 5x5 panel: the lattice of every other cell holds nine slots and marks the first five, column by column, while the panel's corners hold four and the corner models are undefined",
+   "separates": "five up-Ts at a 5x5 panel: the cells at even offsets hold nine slots and marks the first five, column by column, while the panel's corners hold four and the corner models are undefined",
    "input": [
     [
      0,
@@ -459,7 +459,7 @@
     },
     {
      "cases": [
-      "$LatticeSlots"
+      "$PeriodSlots"
      ],
      "grid": [
       [
@@ -596,7 +596,7 @@
       "concept",
       "$StoredSlotList",
       "$CountTable",
-      "$LatticeSlots",
+      "$PeriodSlots",
       "$ShapeOccurrences",
       "$ShapeTable"
      ],
@@ -717,7 +717,7 @@
       "concept",
       "$StoredSlotList",
       "$CountTable",
-      "$LatticeSlots",
+      "$PeriodSlots",
       "$SlotOrderPerDir",
       "$ShapeTable"
      ],
@@ -904,7 +904,7 @@
       "concept",
       "$StoredSlotList",
       "$CountTable",
-      "$LatticeSlots",
+      "$PeriodSlots",
       "$SlotOrderPerDir",
       "$ShapeOccurrences"
      ],

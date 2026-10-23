@@ -3,10 +3,10 @@
 // @keywords: objects scale match
 // @scene background: one color fills most of the grid; it is the commonest
 //  color of the input
-// @scene key-lattice: the key is a set of single cells of non-background
-//  colors, on a lattice of pitch params.key_pitch along each axis, with a
-//  background cell between neighboring dots; a lattice point inside the key's
-//  bounding box can hold the background color
+// @scene key-period: the key is a set of single cells of non-background
+//  colors, on the points of one period class of period params.key_pitch
+//  along each axis, with a background cell between neighboring dots; a key
+//  point inside the key's bounding box can hold the background color
 // @scene given-blocks: two solid squares of one size k (k at least 2), each
 //  of a non-background color, lie on one line along the horizontal axis, with
 //  the same gap g between neighbors
@@ -16,7 +16,7 @@
 // @scene fits-grid: the large drawing of the whole key, placed by that match,
 //  lies inside the grid
 // @rule enlarge-key: each key dot of a non-background color becomes a k×k
-//  block of that color, and key dots one lattice step apart become blocks at
+//  block of that color, and key dots one pitch apart become blocks at
 //  a pitch of k+g along either axis, with the gap g read from the given
 //  blocks used on both axes
 // @rule anchor-by-match: the large drawing is placed so that the blocks of
@@ -26,15 +26,15 @@
 // @rule keep-input: every other cell keeps its input color, the key and the
 //  given blocks included
 
-// where the key's lattice pitch comes from
+// where the key's pitch comes from
 .type KeyPitch =
-    // @claim key-lattice
+    // @claim key-period
     StoredPitch {}
-    // @scene key-lattice: the key is a set of single cells of non-background
-    //  colors on a lattice whose pitch is the greatest common divisor of the
+    // @scene key-period: the key is a set of single cells of non-background
+    //  colors at a pitch that is the greatest common divisor of the
     //  dots' row and column offsets; undefined where the key has one dot
     // @witness key-pitch-three: variant $KeyPitchFromKey
-    //     @relaxed key-lattice
+    //     @relaxed key-period
   | KeyPitchFromKey {}
 
 // which color is the background
@@ -45,7 +45,7 @@
     //  the four grid corners share; undefined where the corners differ
     // @witness block-at-grid-corner: borderline concept
     // @witness corner-dots: borderline concept
-    //     @relaxed key-lattice
+    //     @relaxed key-period
   | BackgroundAtCorners {}
 
 // how far apart in the key the dots of the given blocks stand
@@ -53,7 +53,7 @@
     // @claim blocks-match-key
     NeighborRun {}
     // @scene blocks-match-key: the given blocks are the large drawing of two
-    //  key dots m lattice steps apart along the blocks' line, block for dot
+    //  key dots m pitches apart along the blocks' line, block for dot
     //  and color for color, with the drawing's pitch the distance between the
     //  blocks over m and a gap of at least one cell
     // @witness blocks-skip-a-dot: borderline $JointPitchMatch
@@ -96,16 +96,16 @@
                 overlap: Overlap, edge: Edge]
 
 // The placement a grid is drawn by: the anchor block, the key dot drawn on
-// it, the drawing's pitch, and the key lattice's pitch.
+// it, the drawing's pitch, and the key's pitch.
 .type TiebreakResolution = Run {a: Box, q: Position, step: number, pitch: number}
 
 .decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
 
 .comp Params {
     // --- $StoredPitch ---
-    // The distance between neighboring lattice points of the key.
+    // The distance between neighboring key points.
     // @derive TileDim: variant derived
-    //     @relaxed key-lattice
+    //     @relaxed key-period
     .decl key_pitch(n: number) key_pitch(2).
 }
 
@@ -148,11 +148,11 @@ impl_choice([Kp, B, Sp, $EveryMatch(), Ow, $NoClip()]) :-
     color_count.item(K, Col, P) :- cell(K, P, Col).
 
     // The one-color pieces of the grid.
-    // @claim key-lattice given-blocks
+    // @claim key-period given-blocks
     .init piece = Components<Piece>
     piece.node([K, Col], P) :- cell(K, P, Col).
 
-    // @claim key-lattice given-blocks
+    // @claim key-period given-blocks
     .init piece_box = Bbox<PieceId>
     piece_box.cell([K, Id], P) :- piece.label([K, _], P, Id).
 
@@ -182,9 +182,9 @@ impl_choice([Kp, B, Sp, $EveryMatch(), Ow, $NoClip()]) :-
     off_pitch(K, N) :- pitch_cand(K, N), key_offset(K, T), stride(T, N, 0, _, R), R > 0.
 
     // The greatest pitch that divides every key offset.
-    // @claim key-lattice
-    .init key_lattice = Extremes<Key>
-    key_lattice.cand(K, N) :- pitch_cand(K, N), !off_pitch(K, N).
+    // @claim key-period
+    .init common_pitch = Extremes<Key>
+    common_pitch.cand(K, N) :- pitch_cand(K, N), !off_pitch(K, N).
 }
 
 .init parse = Parse<Background>
@@ -225,11 +225,11 @@ pitch($StoredPitch(), B, N) :- background_choice(B), params.key_pitch(N).
 
 // --- $KeyPitchFromKey ---
 
-pitch($KeyPitchFromKey(), B, N) :- parse.key_lattice.high(B, N).
+pitch($KeyPitchFromKey(), B, N) :- parse.common_pitch.high(B, N).
 
 // --- runs ---
 
-// Block Id1 receives key dot Q1 on the key lattice of pitch N, and the
+// Block Id1 receives key dot Q1 at the key pitch N, and the
 // drawing's blocks stand S cells apart.
 .decl run_match(kp: KeyPitch, b: Background, sp: Spacing, id1: Ident, q1: Position, s: number,
                 n: number)
@@ -246,13 +246,13 @@ run_match(Kp, B, $JointPitchMatch(), Id1, Q1, S2, N) :-
     block_pair(B, Id1, Id2, D, S), parse.block(B, Id1, C1, _, K), parse.block(B, Id2, C2, _, _),
     pitch(Kp, B, N), parse.key_dot(B, Q1, C1), parse.key_dot(B, Q2, C2),
     relative(Q1, Q2, R), opposite(D, O), dist(R, O, T), jump(Q1, D, T, Q2),
-    stride(T, N, 0, M, 0), M > 0,                          // M lattice steps apart
+    stride(T, N, 0, M, 0), M > 0,                          // M pitches apart
     axis_of(D, A), sub_extent(Q1, A, S2), stride(S, S2, 0, M, 0), S2 > K.
 
 // --- placements ---
 
 // The drawing that puts key dot Q on block box A, with blocks of side K at
-// pitch S, for the key lattice of pitch N.
+// pitch S, for the key pitch N.
 .decl placement(kp: KeyPitch, b: Background, sp: Spacing, a: Box, q: Position, s: number, n: number,
                 k: number)
 placement(Kp, B, Sp, A, Q, S, N, K) :-
@@ -281,7 +281,7 @@ block_slot(Kp, B, Sp, A, Q0, S, L, X, D, N) :-
 // A key point, with the color whose block the drawing holds.
 .decl key_point(b: Background, o: Overlap, q: Position, col: Color)
 
-// Key point Q lies N lattice steps from key dot Q0 toward D.
+// Key point Q lies N pitches from key dot Q0 toward D.
 .decl key_slot(kp: KeyPitch, b: Background, sp: Spacing, o: Overlap, a: Box, q0: Position,
                s: number, pitch: number, q: Position, d: Dir, n: number)
 key_slot(Kp, B, Sp, Ow, A, Q0, S, L, Q, D, N) :-
@@ -354,10 +354,10 @@ kept([Kp, B, Sp, Mt, Ow, $Clip()], A, Q0, S, L) :-
 
 // --- $NoClip ---
 
-// Key point Q has a place on the drawing's lattice.
-.decl on_lattice(kp: KeyPitch, b: Background, sp: Spacing, o: Overlap, a: Box, q0: Position,
+// Key point Q lies a whole number of pitches from key dot Q0 on both axes.
+.decl on_drawing(kp: KeyPitch, b: Background, sp: Spacing, o: Overlap, a: Box, q0: Position,
                  s: number, pitch: number, q: Position)
-on_lattice(Kp, B, Sp, Ow, A, Q0, S, L, Q) :-
+on_drawing(Kp, B, Sp, Ow, A, Q0, S, L, Q) :-
     key_slot(Kp, B, Sp, Ow, A, Q0, S, L, Q, D1, _), key_slot(Kp, B, Sp, Ow, A, Q0, S, L, Q, D2, _),
     axis_of(D1, A1), axis_of(D2, A2), perp(A1, A2).
 
@@ -372,7 +372,7 @@ on_grid(Kp, B, Sp, Ow, A, Q0, S, L, Q) :- drawn(Kp, B, Sp, Ow, A, Q0, S, L, X, Q
                s: number, pitch: number)
 runs_off(Kp, B, Sp, Ow, A, Q0, S, L) :- drawn(Kp, B, Sp, Ow, A, Q0, S, L, X, _), !in(X, _).
 runs_off(Kp, B, Sp, Ow, A, Q0, S, L) :-
-    on_lattice(Kp, B, Sp, Ow, A, Q0, S, L, Q), !on_grid(Kp, B, Sp, Ow, A, Q0, S, L, Q).
+    on_drawing(Kp, B, Sp, Ow, A, Q0, S, L, Q), !on_grid(Kp, B, Sp, Ow, A, Q0, S, L, Q).
 
 kept([Kp, B, Sp, Mt, Ow, $NoClip()], A, Q0, S, L) :-
     impl_choice([Kp, B, Sp, Mt, Ow, $NoClip()]), admitted(Kp, B, Sp, Mt, A, Q0, S, L),
@@ -390,10 +390,10 @@ out(X, Col, [Kp, B, Sp, Mt, Ow, Eg], $Run(A, Q0, S, L)) :-
     ex.cell(E, P, Col) :- ex_in(E, P, Col).
     ex.bg(E, Col) :- ex.color_count.mode(E, Col).
 
-    // A pitch of some input's key lattice that another input's lacks.
+    // A common pitch of some input's key that another input's key lacks.
     .decl split_pitch(n: number)
-    split_pitch(N) :- ex.key_lattice.high(_, N), ex_in(E, _, _), !ex.key_lattice.high(E, N).
+    split_pitch(N) :- ex.common_pitch.high(_, N), ex_in(E, _, _), !ex.common_pitch.high(E, N).
 
     .decl key_pitch(n: number)
-    key_pitch(N) :- ex.key_lattice.high(_, N), !split_pitch(N).
+    key_pitch(N) :- ex.common_pitch.high(_, N), !split_pitch(N).
 }

@@ -4,7 +4,7 @@
 - A grid of framed squares, most of them filled with one color: the few squares filled with an odd color are joined to the other squares of that color in their row or column of squares by bridges of that color across the gaps.
 
 ## Scene
-- `tile-lattice`: on a field of `background`, a lattice of equal square tiles at one period on both axes, each a frame `frame-width` cells thick of one frame color around a solid interior of one color; the tiles at the right and bottom edges may be cut off.
+- `tiling`: on a field of `background`, a tiling of equal square tiles at one period on both axes, each a frame `frame-width` cells thick of one frame color around a solid interior of one color; the tiles at the right and bottom edges may be cut off.
 - `common-interior`: one interior color, the commonest, fills most tiles.
 - `odd-rectangle`: the tiles of each other interior color sit at the four corners of a rectangle of tiles: two tile rows by two tile columns.
 

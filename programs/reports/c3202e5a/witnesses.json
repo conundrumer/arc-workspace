@@ -978,7 +978,7 @@
    ]
   },
   {
-   "id": "uneven-lattice",
+   "id": "uneven-tiling",
    "separates": "The divider rows space the tiles unevenly. The concept crops the one-color tile; the equal-tiles reading is undefined.",
    "input": [
     [

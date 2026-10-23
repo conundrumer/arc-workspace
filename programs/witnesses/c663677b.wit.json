@@ -39,7 +39,7 @@
     }]
   }, {
     "id": "oblique-stripes",
-    "separates": "slanted stripes, each cell's color set by (col + 2*row) mod 5, so the pattern repeats along (1,3) as well as every 5 cells on each axis; a 6x6 hole at rows 0-5, cols 0-5 blanks every cell of the axis lattice's class at (0,0): $ObliqueLattice fills it along the slanted shift, and the concept, which repeats only along the axes, is undefined",
+    "separates": "slanted stripes, each cell's color set by (col + 2*row) mod 5, so the pattern repeats along (1,3) as well as every 5 cells on each axis; a 6x6 hole at rows 0-5, cols 0-5 blanks every cell of the period class of (0,0) under the axis periods: $ObliquePeriod fills it along the slanted shift, and the concept, which repeats only along the axes, is undefined",
     "input": [
       [0,0,0,0,0,0,2,3,4,5],
       [0,0,0,0,0,0,4,5,1,2],
@@ -56,7 +56,7 @@
       "cases": ["$AxisShifts"],
       "grid": null
     }, {
-      "cases": ["$ObliqueLattice"],
+      "cases": ["$ObliquePeriod"],
       "grid": [
         [1,2,3,4,5,1,2,3,4,5],
         [3,4,5,1,2,3,4,5,1,2],
@@ -72,7 +72,7 @@
     }]
   }, {
     "id": "mirror-class-blank",
-    "separates": "a 3x3 tile symmetric about its main diagonal, a hole at rows 0-3, cols 1-4 that blanks every copy of tile cell (0,1) and leaves its mirror cell (1,0) seen: the mirror branches fill it with the mirror cell's color, and the concept and $ObliqueLattice are undefined",
+    "separates": "a 3x3 tile symmetric about its main diagonal, a hole at rows 0-3, cols 1-4 that blanks every copy of tile cell (0,1) and leaves its mirror cell (1,0) seen: the mirror branches fill it with the mirror cell's color, and the concept and $ObliquePeriod are undefined",
     "input": [
       [1,0,0,0,0,3],
       [2,0,0,0,0,5],

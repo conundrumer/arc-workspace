@@ -87,13 +87,13 @@
 .type TileParse =
     // @claim tile-grid
     Pieces {}
-    // @scene tile-grid: the tiles lie on a lattice that runs from the
-    //  params.lattice_corner corner of the tile region, each of the tile
+    // @scene tile-grid: the tiles lie on a tiling that runs from the
+    //  params.tiling_corner corner of the tile region, each of the tile
     //  extent, at a stride of that extent plus params.gap; the tiles are the
-    //  lattice boxes that lie wholly in the region
+    //  tiling boxes that lie wholly in the region
     // @witness wide-gaps: variant concept
     //     @relaxed tile-grid
-  | Lattice {}
+  | Tiling {}
 
 .type Choice = [legend: Legend, corner: Corner, ink: Ink, code: Code,
                 tcol: TileColor, parse: TileParse]
@@ -127,10 +127,10 @@
     // --- $CodeAtCorner ---
     .decl code_corner(d: DiagDir) code_corner(DIAG_BR).
 
-    // --- $Lattice ---
+    // --- $Tiling ---
     .decl gap(k: number) gap(1).
-    // The corner of the tile region the lattice runs from.
-    .decl lattice_corner(d: DiagDir) lattice_corner(DIAG_TL).
+    // The corner of the tile region the tiling runs from.
+    .decl tiling_corner(d: DiagDir) tiling_corner(DIAG_TL).
 }
 
 .init params = Params
@@ -152,7 +152,7 @@ code_choice($OddCell()). code_choice($CodeAtCorner()).
 tile_color_choice($StoredTileColor()). tile_color_choice($TileColorByCount()).
 
 .decl tile_parse_choice(t: TileParse)
-tile_parse_choice($Pieces()). tile_parse_choice($Lattice()).
+tile_parse_choice($Pieces()). tile_parse_choice($Tiling()).
 
 .decl impl_choice(ch: Choice)
 impl_choice([L, Cn, I, Cd, Tc, Tp]) :-
@@ -300,29 +300,29 @@ tile_cell(Tc, $Pieces(), B, P) :-
     parse.tile_piece(Tc, Id), parse.piece_box.box([Tc, Id], B), parse.piece.label(Tc, P, Id).
 frame(Tc, $Pieces(), B) :- region.box(Tc, B).
 
-// --- $Lattice ---
-// A corner cell of a lattice box: on both axes, the first cell of a period.
-.decl lattice_origin(tc: TileColor, c: Position)
-lattice_origin(Tc, C) :-
+// --- $Tiling ---
+// A corner cell of a tiling box: on both axes, the first cell of a period.
+.decl tiling_origin(tc: TileColor, c: Position)
+tiling_origin(Tc, C) :-
     region.box(Tc, R), in(C, _), crop(C, R, C_rel),
-    params.lattice_corner(D), diag_dirs(D, A1, D1, D2), perp(A1, A2),
+    params.tiling_corner(D), diag_dirs(D, A1, D1, D2), perp(A1, A2),
     dist(C_rel, D1, T1), dist(C_rel, D2, T2),
     tile_size(Tc, A1, W1), tile_size(Tc, A2, W2), params.gap(G),
     stride(T1, W1, G, _, 0), stride(T2, W2, G, _, 0).
 
-.decl lattice_tile(tc: TileColor, b: Box)
-lattice_tile(Tc, B) :-
-    lattice_origin(Tc, C), params.lattice_corner(D), box_corner_cell(Tc, D, K),
+.decl tiling_tile(tc: TileColor, b: Box)
+tiling_tile(Tc, B) :-
+    tiling_origin(Tc, C), params.tiling_corner(D), box_corner_cell(Tc, D, K),
     relative(K, C, B),                            // the tile-sized box with corner cell C
     region.box(Tc, R), inside(B, R).
 
-tile_cell(Tc, $Lattice(), B, P) :- lattice_tile(Tc, B), in(P, _), inside(P, B).
+tile_cell(Tc, $Tiling(), B, P) :- tiling_tile(Tc, B), in(P, _), inside(P, B).
 
 // @claim crop-to-tiles
-.init lattice_frame = Bbox<TileColor>
-lattice_frame.cell(Tc, B) :- lattice_tile(Tc, B).
+.init tiling_frame = Bbox<TileColor>
+tiling_frame.cell(Tc, B) :- tiling_tile(Tc, B).
 
-frame(Tc, $Lattice(), B) :- lattice_frame.box(Tc, B).
+frame(Tc, $Tiling(), B) :- tiling_frame.box(Tc, B).
 
 // --- $OddCell ---
 code_cell(Tc, Tp, $OddCell(), B, P) :-

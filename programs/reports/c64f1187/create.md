@@ -1,11 +1,11 @@
 # c64f1187
 
 ## Departures
-- The branch `gap=stored` is the constructor `$Lattice` of the `TileParse` point, and its name is rewritten in the witness file: the concept derives no gap, so no `@store` line can stand for it, and its lattice parse has clauses of its own.
-- `$Lattice` reads the common extent of the tile pieces (`tile_size`) in place of the extent of the piece at the corner, and runs from `params.lattice_corner` (top-left) in place of a fixed top-left corner: the two extents differ only where the pieces differ in extent, where the concept is undefined, and a stored corner keeps the program free of a fixed orientation.
+- The branch `gap=stored` is the constructor `$Tiling` of the `TileParse` point, and its name is rewritten in the witness file: the concept derives no gap, so no `@store` line can stand for it, and its tiling parse has clauses of its own.
+- `$Tiling` reads the common extent of the tile pieces (`tile_size`) in place of the extent of the piece at the corner, and runs from `params.tiling_corner` (top-left) in place of a fixed top-left corner: the two extents differ only where the pieces differ in extent, where the concept is undefined, and a stored corner keeps the program free of a fixed orientation.
 - `$ByOrder` ranks the markers and the pieces with `LexOrder` from `params.marker_corner` along a new parameter `params.order_axis` (H), and ranks a piece by the corner cell of its bounding box: the report's left-to-right order fixes an orientation that the program reads from Params.
-- `$CodeAtCorner` takes no background cell as a code. The Analyze probe took any color other than the tile color, background included. They differ only on a lattice tile whose corner cell is background, which no single-branch witness shows.
-- The concept is undefined on a tile with two code cells (`code_clash`), and `$DerivedCorner` is undefined where no single corner fits (the `corner_of(Ch, _)` guard on `out`). The first draft gave a blank grid on `background=DominantColor` and on `shape-in-other-color`, where the Analyze file gives undefined. With the fix, every branch gives the Analyze file's output on its 9 witnesses. That was checked against a copy of the Analyze file with `gap=stored` rewritten to `$Lattice`.
+- `$CodeAtCorner` takes no background cell as a code. The Analyze probe took any color other than the tile color, background included. They differ only on a tile of the tiling whose corner cell is background, which no single-branch witness shows.
+- The concept is undefined on a tile with two code cells (`code_clash`), and `$DerivedCorner` is undefined where no single corner fits (the `corner_of(Ch, _)` guard on `out`). The first draft gave a blank grid on `background=DominantColor` and on `shape-in-other-color`, where the Analyze file gives undefined. With the fix, every branch gives the Analyze file's output on its 9 witnesses. That was checked against a copy of the Analyze file with `gap=stored` rewritten to `$Tiling`.
 - Two witnesses are added beyond the Analyze file: `legend-mirrored` and `recolored-tiles` (see Judgments).
 
 ## Judgments
@@ -25,13 +25,13 @@
     - `order_axis`: the axis of a line that holds every marker.
     - `shape_color`: the ink color outside the tiles and markers that no output shows.
 - `tile_piece` moved into `Parse` (keyed by `TileColor` in the program and by `Example` in `Determine`), as did the ink `Mode` that `$TileColorByCount` and the determination share. `Determine`'s code and marker relations stay local, because the program keys them by the `Code` and `TileParse` branches.
-- `order_axis` and `lattice_corner` keep one stored value each, though the sweep finds the pairs admit the others. The report states `$ByOrder` as ranked left to right and `$Lattice` as running from the top-left corner, and gives no open parameter.
+- `order_axis` and `tiling_corner` keep one stored value each, though the sweep finds the pairs admit the others. The report states `$ByOrder` as ranked left to right and `$Tiling` as running from the top-left corner, and gives no open parameter.
 - Deletions: the atoms whose removal changes nothing are guards of undefinedness, branch-only structure, or bounds the pairs do not reach, such as `inside(B, R)` and `box_corner(K, ZERO, D)`, and they stay. Two redundancies were removed: `impl_choice(Ch)` in `out`, which `corner_of(Ch, _)` already grounds, and the `mixed` filter in the `tile_color` candidates.
 - Keywords `crop objects markers stamp decompose`: the output crops to the tile grid, the tiles and shapes are pieces, the legend markers fix which shape a color takes, each code stamps a footprint, and the gaps cut the grid into tiles.
 - Performance: the solver has 96 bases and runs in 5 to 7 s. `sweep` and `deletions` took 49 s each. One run took 67 s (ticket below).
 
 ## Open
-- Whether `lattice_corner` is an open parameter: any corner fits the pairs and the test, and only a misaligned region such as `wide-gaps` separates them. A reviewer's reading of `$Lattice` would settle it. `determination-plan` still lists it, because no fact of the evidence singles out the top-left corner.
+- Whether `tiling_corner` is an open parameter: any corner fits the pairs and the test, and only a misaligned region such as `wide-gaps` separates them. A reviewer's reading of `$Tiling` would settle it. `determination-plan` still lists it, because no fact of the evidence singles out the top-left corner.
 - Whether `order_axis` is an open parameter: the pairs admit V as well. A legend whose piece corners stand on different rows would separate them, and so would a reviewer's reading of "ranked left to right".
 
 ## Concept faults

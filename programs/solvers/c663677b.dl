@@ -39,15 +39,16 @@
   | ClassMode {}
 
 // which shifts relate cells
-.type Lattice =
+.type Periods =
     // @claim periodic-pattern
     AxisShifts {}
-    // @scene periodic-pattern: the lattice also takes each shift shorter than
-    //  the axis periods, in any direction, under which the unblanked cells
-    //  agree and at least one pair of unblanked cells meets
-    // @witness oblique-stripes: borderline $ObliqueLattice
+    // @scene periodic-pattern: the shifts that relate cells also include
+    //  each shift shorter than the axis periods, in any direction, under
+    //  which the unblanked cells agree and at least one pair of unblanked
+    //  cells meets
+    // @witness oblique-stripes: borderline $ObliquePeriod
     //     @relaxed each-class-seen
-  | ObliqueLattice {}
+  | ObliquePeriod {}
 
 // which further cells join a class
 .type Isometry =
@@ -69,7 +70,7 @@
     //     @relaxed each-class-seen
   | StoredMirror {}
 
-.type Choice = [d: Damage, l: Lattice, i: Isometry]
+.type Choice = [d: Damage, p: Periods, i: Isometry]
 
 // A cell of one case.
 .type CaseCell = [ch: Choice, p: Position]
@@ -101,19 +102,19 @@
 .decl damage_choice(d: Damage)
 damage_choice($StoredHole()). damage_choice($HoleFromPeriod()). damage_choice($ClassMode()).
 
-.decl lattice_choice(l: Lattice)
-lattice_choice($AxisShifts()). lattice_choice($ObliqueLattice()).
+.decl periods_choice(p: Periods)
+periods_choice($AxisShifts()). periods_choice($ObliquePeriod()).
 
 .decl isometry_choice(i: Isometry)
 isometry_choice($Translations()). isometry_choice($WitnessedMirror()). isometry_choice($StoredMirror()).
 
 .decl impl_choice(ch: Choice)
-impl_choice([D, L, I]) :- damage_choice(D), lattice_choice(L), isometry_choice(I).
+impl_choice([D, Pd, I]) :- damage_choice(D), periods_choice(Pd), isometry_choice(I).
 
 // The cells each case reads as unblanked.
 .decl intact(d: Damage, p: Position, col: Color)
 
-// The lattice's period on each axis.
+// The pattern's period on each axis.
 // @store: variant concept
 .decl period(d: Damage, a: Axis, k: number)
 
@@ -121,17 +122,17 @@ impl_choice([D, L, I]) :- damage_choice(D), lattice_choice(L), isometry_choice(I
 .decl aperiodic(d: Damage)
 aperiodic(D) :- damage_choice(D), axis_elem(A), !period(D, A, _).
 
-// The classes of the lattice.
+// The period classes.
 // @claim periodic-pattern
-.init lattice = Wallpaper<Damage, Color>
-lattice.grid(D, P) :- damage_choice(D), in(P, _).
-lattice.period(D, A, K) :- period(D, A, K).
+.init periodic = Wallpaper<Damage, Color>
+periodic.grid(D, P) :- damage_choice(D), in(P, _).
+periodic.period(D, A, K) :- period(D, A, K).
 
-// The classes of each case: the lattice's, joined by the case's further
+// The classes of each case: the period classes, joined by the case's further
 // shifts and isometries.
 .init orbit = Canon<CaseCell>
 orbit.edge([Ch, P], [Ch, P]) :- impl_choice(Ch), in(P, _).
-orbit.edge([Ch, P], [Ch, Q]) :- impl_choice(Ch), Ch = [D, _, _], lattice.action(D, P, Q).
+orbit.edge([Ch, P], [Ch, Q]) :- impl_choice(Ch), Ch = [D, _, _], periodic.action(D, P, Q).
 
 // A case undefined on the input.
 .decl broken(ch: Choice)
@@ -272,7 +273,7 @@ out(P, Col, Ch) :-
     Ch = [$ClassMode(), _, _], orbit.id([Ch, P], Id), !broken(Ch),
     orbit_major.excess([[Ch, Id], Col], _).
 
-// --- $ObliqueLattice ---
+// --- $ObliquePeriod ---
 
 // A shift's component on axis a, shorter than the period there.
 .decl short_step(d: Damage, a: Axis, v: Offset)
@@ -296,13 +297,13 @@ oblique_clash(D, V) :- oblique_pair(D, V, Col, Col2), Col != Col2.
 
 // Each shift under which the unblanked cells agree, and some pair meets.
 orbit.edge([Ch, P], [Ch, Q]) :-
-    impl_choice(Ch), Ch = [D, $ObliqueLattice(), _],
+    impl_choice(Ch), Ch = [D, $ObliquePeriod(), _],
     oblique_pair(D, V, _, _), !oblique_clash(D, V),
     in(P, _), compose(P, V, Q), in(Q, _).
 
 // --- $WitnessedMirror ---
 
-// The classes of the lattice joined under the tile's witnessed isometries.
+// The period classes joined under the tile's witnessed isometries.
 // @claim restore-pattern
 .init mirror = Wallpaper<Damage, Color>
 mirror.transform(T) :- d4_compose(T, U, V), U != V.    // each transform but the identity

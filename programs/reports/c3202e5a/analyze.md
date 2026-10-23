@@ -17,9 +17,9 @@
 - `divider-ink`
     - `concept`: divider-colored cells inside a tile count as marks.
     - `$IgnoreDividerInk`: adds the claim that divider-colored cells inside a tile are not marks. Fails Fit at train1, where rows 6–10, cols 12–16 and rows 18–22, cols 6–10 both hold marks of one color.
-- `lattice-spacing`
+- `tiling-spacing`
     - `concept`: the tiles are the spans between the full divider lines, at any spacing.
-    - `$EqualTiles`: replaces the read of `divider-lattice` with equal square tiles, cut at the count the lines give; undefined where the lines are unevenly spaced. Fits every pair. Witness `uneven-lattice` (this branch undefined): it breaks `divider-lattice`, plausibility `variant`, verdict `concept`, and it breaks the invariant that the lines are evenly spaced. No witness exists on which it is defined and differs: where it is defined, its output is the concept's, so it fails Subsumption.
+    - `$EqualTiles`: replaces the read of `divider-tiling` with equal square tiles, cut at the count the lines give; undefined where the lines are unevenly spaced. Fits every pair. Witness `uneven-tiling` (this branch undefined): it breaks `divider-tiling`, plausibility `variant`, verdict `concept`, and it breaks the invariant that the lines are evenly spaced. No witness exists on which it is defined and differs: where it is defined, its output is the concept's, so it fails Subsumption.
         - `tile-extent`
             - `concept`: the tile size and count derive from the divider lines.
             - `tile_size=stored`: fails Fit at train2, with tile size 3 against 5 in train0.
@@ -35,7 +35,7 @@
 - `output-frame`
     - `concept`: the tile alone.
     - `$FramedTile`: the tile with the divider ring around it, as in 38007db0's header. Fails Fit at train0, where the output is 5×5 and the framed tile is 7×7.
-- `tile-selection` & `divider-ink`, `tile-selection` & `lattice-spacing`, `tile-selection` & `divider-color`, `tile-selection` & `background`, `tile-selection` & `output-frame`, `divider-ink` & `lattice-spacing`, `divider-ink` & `divider-color`, `divider-ink` & `background`, `divider-ink` & `output-frame`, `lattice-spacing` & `divider-color`, `lattice-spacing` & `background`, `lattice-spacing` & `output-frame`, `divider-color` & `background`, `divider-color` & `output-frame`, `background` & `output-frame`: the two branches' changes applied together
+- `tile-selection` & `divider-ink`, `tile-selection` & `tiling-spacing`, `tile-selection` & `divider-color`, `tile-selection` & `background`, `tile-selection` & `output-frame`, `divider-ink` & `tiling-spacing`, `divider-ink` & `divider-color`, `divider-ink` & `background`, `divider-ink` & `output-frame`, `tiling-spacing` & `divider-color`, `tiling-spacing` & `background`, `tiling-spacing` & `output-frame`, `divider-color` & `background`, `divider-color` & `output-frame`, `background` & `output-frame`: the two branches' changes applied together
     - `$MostOfOneColor & $IgnoreDividerInk` fits every pair. Witness `divider-ink-heavy` separates it from `$MostOfOneColor`: it breaks no scene claim, plausibility `ordinary`, verdict `concept`. Witness `sparse-mono-tile` separates it from the concept.
     - `$FewestColors & $IgnoreDividerInk` and `$NoBackground & $IgnoreDividerInk` fail Fit at train1, with the same two one-color tiles as `$IgnoreDividerInk`.
 

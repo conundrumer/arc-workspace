@@ -99,7 +99,7 @@
         [0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$DividerFromLines","$StoredLattice"],
+      "cases": ["$DividerFromLines","$StoredTiling"],
       "grid": [
         [0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,5,0,2,0],
@@ -150,7 +150,7 @@
         [0,0,0,7,4,0,0,0,7]
       ]
     }, {
-      "cases": ["$StoredLattice"],
+      "cases": ["$StoredTiling"],
       "grid": [
         [0,2,0,0,4,0,0,0,0],
         [0,0,3,0,4,0,0,0,0],
@@ -287,7 +287,7 @@
         [0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$StoredLattice & gap=stored"],
+      "cases": ["$StoredTiling & gap=stored"],
       "grid": null
     }]
   }, {
@@ -340,7 +340,7 @@
         [0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$StoredLattice & gap=stored"],
+      "cases": ["$StoredTiling & gap=stored"],
       "grid": null
     }]
   }, {
@@ -394,7 +394,7 @@
       "cases": ["$DividerFromLines","gap=SepThickness"],
       "grid": null
     }, {
-      "cases": ["$StoredLattice & gap=stored","gap=TileDim"],
+      "cases": ["$StoredTiling & gap=stored","gap=TileDim"],
       "grid": [
         [0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,5,0,2,0],

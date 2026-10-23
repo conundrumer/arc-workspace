@@ -3,7 +3,7 @@
 ## Concept
 - Fits every pair (`check_concept.py`). No witness with verdict `other` was found, and the rules have a relational form as written.
 - The concept is undefined on an input where no tile, or more than one tile, holds `key_color`.
-- The pairs never put three key-shape tiles on one lattice line, so which color a key-shape tile between two others takes is left open by the pairs (`match-link-precedence`).
+- The pairs never put three key-shape tiles on one line of the tiling, so which color a key-shape tile between two others takes is left open by the pairs (`match-link-precedence`).
 - Every key shape in the evidence fills its tile's 3×3 box, so exact matching and matching up to a shift within the tile agree on every pair (`shape-identity`).
 
 ## Choice points
@@ -13,8 +13,8 @@
     - `$TranslateMatch`: replaces `match-takes-key-color`, a tile matches when its cells are a translate of the key tile's within the tile; fits every pair
         - witness `shifted-copy`, at the stored assignment: the key holds a 2×2 square at its top-left, and tile (2,2) holds it at its bottom-right; breaks no scene claim; plausibility `ordinary`; verdict `concept`
 - `span-lines`
-    - `concept`: links run along lattice rows and lattice columns
-    - `$DiagonalSpans`: replaces `between-takes-link-color`, links also run along lattice diagonals; fails Fit at train1 (tile (1,2) lies diagonally between copies (0,1) and (2,3), and train1 output keeps it in 1 at (6,10))
+    - `concept`: links run along tiling rows and tiling columns
+    - `$DiagonalSpans`: replaces `between-takes-link-color`, links also run along tiling diagonals; fails Fit at train1 (tile (1,2) lies diagonally between copies (0,1) and (2,3), and train1 output keeps it in 1 at (6,10))
 - `span-endpoints`
     - `concept`: any two key-shape tiles on a line, the key tile included, end a link
     - `$KeyEndpointSpan`: replaces `between-takes-link-color`, a link has the key tile as one end; fails Fit at train0 (tiles (2,2)–(2,4) lie between copies (2,1) and (2,5), and train0 output paints them 7, e.g. (10,9))
@@ -34,11 +34,11 @@
 - `background`
     - `concept`: stored, 0
     - `background=DominantColor`: the commonest input color; fits every pair (it gives 0 on each)
-        - witness `background=DominantColor`, at the stored assignment: train0 with 3 for 0; breaks `tile-lattice` and `shape-tiles`; plausibility `variant`; breaks the invariant that the background is 0; verdict `background=DominantColor`
+        - witness `background=DominantColor`, at the stored assignment: train0 with 3 for 0; breaks `tiling` and `shape-tiles`; plausibility `variant`; breaks the invariant that the background is 0; verdict `background=DominantColor`
 - `gap`
     - `concept`: stored, 1
-    - `gap=SepThickness`: the separator thickness of a witnessed lattice; fits every pair (on each it gives 1, from the fit of two 8-row and two 12-column segments around the middle line); undefined where no lattice fit is witnessed
-        - witness `gap=SepThickness`, at the stored assignment: the left 4×4 tiles of train0 laid out with lines 2 wide, 22×22; breaks `tile-lattice`; plausibility `variant`; breaks the invariant that every input is 17×25 with lines 1 wide; verdict `gap=SepThickness`
+    - `gap=SepThickness`: the separator thickness of a witnessed tiling; fits every pair (on each it gives 1, from the fit of two 8-row and two 12-column segments around the middle line); undefined where no tiling fit is witnessed
+        - witness `gap=SepThickness`, at the stored assignment: the left 4×4 tiles of train0 laid out with lines 2 wide, 22×22; breaks `tiling`; plausibility `variant`; breaks the invariant that every input is 17×25 with lines 1 wide; verdict `gap=SepThickness`
 - `tile_size`
     - `concept`: stored, 3
     - `tile_size=SepTileDim`: fails Fit at train0 (it gives 8 and 12)
@@ -54,8 +54,8 @@
 ## Not formed
 - Links only between consecutive key-shape tiles on a line: the union of their spans, less the key-shape tiles, is the union of the spans of every two key-shape tiles, so the model is equivalent to the concept.
 - Links along rows alone, or along columns alone: the program enumerates both axes, and no variant narrows the set; train0 links on both (row 0 at (0,3), column 4 at (1,4)).
-- Shapes found as connected components in place of lattice tiles: the link rule reads lattice rows and columns, which a component parse does not give, and a shape such as train1's lone center cell matches by its place in the tile.
-- `shape_color`, `lattice_rows`, `lattice_cols`: scene parameters; the program reads the shape as the non-background cells, and the lattice size as the grid size over `tile_size` and `gap`.
+- Shapes found as connected components in place of tiles of the tiling: the link rule reads tiling rows and columns, which a component parse does not give, and a shape such as train1's lone center cell matches by its place in the tile.
+- `shape_color`, `tiling_rows`, `tiling_cols`: scene parameters; the program reads the shape as the non-background cells, and the tiling size as the grid size over `tile_size` and `gap`.
 
 ## Tickets filed
 - none

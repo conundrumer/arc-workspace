@@ -4,9 +4,10 @@
 //  color. The seed's color paints every bg cell offset from it by an even
 //  count on both axes. Noise cells stay.
 
-// two models of the lattice, tagged on out's Choice; coincide at period 2
+// two models of the seed's period class, tagged on out's Choice; coincide at
+// period 2
 .type Choice =
-    // the lattice jump is task data in the parameters
+    // the period is task data in the parameters
     Period {}
     // every-other-cell alternation: two unit steps over a skipped cell, no
     // parameter
@@ -37,27 +38,27 @@ lines.dir(A, D) :- axis_of(D, A).
 lines.cell(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
 lines.mark(A, L) :- seed(P, _), axis_elem(A), split(P, A, L, _).
 
-// A line on axis a that the lattice the seed anchors crosses.
-.decl lattice_line(a: Axis, l: Position, ch: Choice)
+// A line on axis a that the seed's period class crosses.
+.decl period_line(a: Axis, l: Position, ch: Choice)
 
 // --- $Period ---
-// A whole number of jumps from the seed's line.
-lattice_line(A, L, $Period()) :- lines.ray(A, L, _, K, _), params.period(W), stride(K, W, 0, _, 0).
+// A whole number of periods from the seed's line.
+period_line(A, L, $Period()) :- lines.ray(A, L, _, K, _), params.period(W), stride(K, W, 0, _, 0).
 
 // --- $Parity ---
 // An even count of lines from the seed's: a line lies midway.
-lattice_line(A, L, $Parity()) :- lines.ray(A, M, D, K, _), jump(M, D, K, L), lines.cell(A, L).
+period_line(A, L, $Parity()) :- lines.ray(A, M, D, K, _), jump(M, D, K, L), lines.cell(A, L).
 
 // --- $Period, $Parity ---
-// The lattice: a cell on a lattice line of each axis.
-.decl lattice(p: Position, ch: Choice)
-lattice(P, Ch) :-
+// The seed's period class: a cell on a period line of each axis.
+.decl seed_class(p: Position, ch: Choice)
+seed_class(P, Ch) :-
     in(P, _), perp(A1, A2),
-    split(P, A1, L1, _), lattice_line(A1, L1, Ch),
-    split(P, A2, L2, _), lattice_line(A2, L2, Ch).
+    split(P, A1, L1, _), period_line(A1, L1, Ch),
+    split(P, A2, L2, _), period_line(A2, L2, Ch).
 
 .decl painted(p: Position, ch: Choice)
-painted(P, Ch) :- lattice(P, Ch), in(P, Col), params.bg(Col).
+painted(P, Ch) :- seed_class(P, Ch), in(P, Col), params.bg(Col).
 
 out(P, Col, Ch) :- painted(P, Ch), seed(_, Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, Ch).

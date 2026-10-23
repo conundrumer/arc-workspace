@@ -33,7 +33,7 @@
 - Ranking by the count of cells that are not `other_color`: it is the open value (2, top-right), whose model ranks by the count of 2.
 - A stored permutation of tile positions: each pair moves its tiles by a different permutation, so no one permutation fits the train pairs.
 - A derived `order_corner` or `fill_axis`: no proposer gives an orientation value.
-- A tile layout derived by `SepTileCount`, `SepTileDim` and `SepThickness`: it reads the lattice of uniform lines with no reading of their color, which is the model of `divider_color=SharedColor`.
+- A tile layout derived by `SepTileCount`, `SepTileDim` and `SepThickness`: it reads the tiling of uniform lines with no reading of their color, which is the model of `divider_color=SharedColor`.
 - A derived `counted_color` or `divider_color` by `OutNewColor`, `AnyOutNewColor`, `VanishedColor`, `ChangedColor`, `UnchangedColor`, `ChangedPairs` or `VanishedNewPairs`: each reads `ex_out`, which is empty in a run on one input, so it gives no value. `CountRankAsc` and `CountRankDesc` give a rank per color, not one color.
 
 ## Tickets filed

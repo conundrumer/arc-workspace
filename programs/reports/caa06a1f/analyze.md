@@ -30,7 +30,7 @@
 - A stored color-to-color table in place of `shift-one`: the test0 colors 8, 5 and 7 are keys that no train pair contains, so the table fails Fit (Unseen key).
 - A swap of the two pattern colors: undefined on test0, which has three pattern colors, so it fails Fit. Where it is defined, it is `$ColorSuccessor` on a two-color pattern.
 - The background color from another source, such as the color that fills a whole edge row and a whole edge column: it gives the same color as the opposite corner wherever the block sits at `block_corner`. Where the block sits elsewhere, it is the `block-corner` point.
-- Continuation along the pattern's own translation lattice in place of its per-axis periods: the lattice and the per-axis tile give one continuation wherever the block holds two full periods on each axis, as `periodic-block` states.
+- Continuation along every period translation of the pattern, oblique ones included, in place of its per-axis periods: those translations and the per-axis tile give one continuation wherever the block holds two full periods on each axis, as `periodic-block` states.
 
 ## Tickets filed
 - 10-577_task_caa06a1f_analyze.md

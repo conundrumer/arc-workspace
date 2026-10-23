@@ -374,7 +374,7 @@
       "cases": ["$DerivedCorner & $TileColorByCount"],
       "grid": null
     }, {
-      "cases": ["$TileColorByCount & $Lattice"],
+      "cases": ["$TileColorByCount & $Tiling"],
       "grid": [
         [0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0]
@@ -388,7 +388,7 @@
     }]
   }, {
     "id": "wide-gaps",
-    "separates": "the tiles stand two cells apart and only the top row of tiles holds codes: the concept reads each tile as a piece and keeps the two-cell gaps; $Lattice reads tiles on a stride of three, so it finds the codes of the first, third and fourth tiles in the first, fourth and fifth lattice tiles, stamps there and crops to the lattice tiles' box, eight rows",
+    "separates": "the tiles stand two cells apart and only the top row of tiles holds codes: the concept reads each tile as a piece and keeps the two-cell gaps; $Tiling reads tiles on a stride of three, so it finds the codes of the first, third and fourth tiles in the first, fourth and fifth tiles of the tiling, stamps there and crops to those tiles' box, eight rows",
     "input": [
       [2,0,0,0,0,3,0,0,0,0,4,0,0,0,0,8,0,0,0,0],
       [0,1,1,0,0,0,1,1,0,0,0,1,1,0,0,0,1,0,0,0],
@@ -424,7 +424,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$Lattice"],
+      "cases": ["$Tiling"],
       "grid": [
         [2,2,0,0,0,0,0,0,0,3,3,0,4,4],
         [2,0,0,0,0,0,0,0,0,0,3,0,4,4],

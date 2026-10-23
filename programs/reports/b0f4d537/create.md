@@ -30,7 +30,7 @@
 - `$LineByEitherEnd & $GapToEnd` is a witnessed case only because the runner tells two undefined outputs apart by their missing cells, on `header-edge`: a runner that counts every undefined output as one output would settle it (ticket 10-234).
 
 ## Lib
-- Full lines of one value: the lines (axis, index) whose cells hold no value other than a given one, or hold one value. Solver-local form: `broken_line(A, X, V) :- divider(_, V), in(P, C), !divider(C, V), axis_elem(A), split(P, A, X, _).`, then `divider_line` takes the cells of a line with no `broken_line`; `mixed_line` does the same with two cells of different colors. The grep found the same shape in `ac6f9922` (`broken_line` over the lattice color) and in `a416fc5b` (`parse.line_color.clash` per line). Both are drafts.
+- Full lines of one value: the lines (axis, index) whose cells hold no value other than a given one, or hold one value. Solver-local form: `broken_line(A, X, V) :- divider(_, V), in(P, C), !divider(C, V), axis_elem(A), split(P, A, X, _).`, then `divider_line` takes the cells of a line with no `broken_line`; `mixed_line` does the same with two cells of different colors. The grep found the same shape in `ac6f9922` (`broken_line` over the divider color) and in `a416fc5b` (`parse.line_color.clash` per line). Both are drafts.
 
 ## Fixes elsewhere
 - none
