@@ -5,6 +5,8 @@
 //! written input at each key group, and the rows of an input it does not
 //! write.
 
+use std::sync::Arc;
+
 use crate::check::instance_inputs::inputs_at;
 use crate::eval::ir::{self, ClauseIr};
 use crate::eval::join;
@@ -14,7 +16,7 @@ use crate::hash::StableHashMap;
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Body, ColumnName, Instance, InstanceInput, InstanceInputPart, InstancePart, KeyClausePart, LabelId, PortName, Site};
 use crate::registry::{is_key, Column, ColumnType, Component, InputPort, LibEntry, TypeParameter};
-use crate::relations::{Row, RowSet};
+use crate::relations::{Relation, Row, RowSet};
 use crate::resolver::columns::projection;
 use crate::terms::{Example, TermId};
 use crate::types::{each_site_label, use_label, FormTypes, ValueType};
@@ -46,12 +48,24 @@ pub(super) fn key_groups(
     shape: &InstanceShape<'_>,
     example: Option<Example>,
 ) -> Outcome<Result<Vec<Row>, RelationValue>> {
+    Ok(key_read(evaluation, bodies, form, shape, example)?.map(|(groups, _)| groups))
+}
+
+/// The key groups as [`key_groups`] gives them, with the relation of the
+/// key clause where the instance has one.
+pub(super) fn key_read(
+    evaluation: &Evaluation<'_>,
+    bodies: &FormBodies<'_>,
+    form: &NodePath,
+    shape: &InstanceShape<'_>,
+    example: Option<Example>,
+) -> Outcome<Result<(Vec<Row>, Option<Arc<Relation>>), RelationValue>> {
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
-    let Some(key_body) = &shape.key_body else { return Ok(Ok(vec![Row::default()])) };
+    let Some(key_body) = &shape.key_body else { return Ok(Ok((vec![Row::default()], None))) };
     let key_labels = shape.key_labels();
     let clause = ir::compile_instance_body(evaluation.program, form, &[key_body.clone()], &key_labels)
         .map_err(|compile| fault(format!("the key body does not compile: {compile:?}")))?;
-    rows_of(bodies.relation(form, &clause, example)?, key_labels.len()).map_err(&fault)
+    Ok(rows_read(bodies.relation(form, &clause, example)?, key_labels.len()).map_err(&fault)?.map(|(rows, relation)| (rows, Some(relation))))
 }
 
 /// What an `INIT` form binds a type parameter of its component to: the
@@ -378,13 +392,19 @@ fn with_unit(prefix: usize, head: &[Option<LabelId>], row: &Row) -> Row {
 /// The rows of `value`, of `arity` columns, or the value where it holds no
 /// rows.
 pub(super) fn rows_of(value: RelationValue, arity: usize) -> Result<Result<Vec<Row>, RelationValue>, String> {
+    Ok(rows_read(value, arity)?.map(|(rows, _)| rows))
+}
+
+/// The rows of `value` as [`rows_of`] gives them, with the relation that
+/// holds them.
+pub(super) fn rows_read(value: RelationValue, arity: usize) -> Result<Result<(Vec<Row>, Arc<Relation>), RelationValue>, String> {
     let RelationValue::Rows(relation) = value else { return Ok(Err(value)) };
     if relation.arity() as usize != arity {
         return Err(format!("a body gives {} columns, where {arity} are read", relation.arity()));
     }
     let mut rows = Vec::new();
     join::each_row(&relation, &mut |row| rows.push(row.into()));
-    Ok(Ok(rows))
+    Ok(Ok((rows, relation)))
 }
 
 /// `rows`, whose first `key` columns are a key and whose other `width`

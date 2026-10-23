@@ -101,20 +101,7 @@ impl<'e, 'a> Driver<'e, 'a> {
             DependencyKind::Clause(_) => self.clauses(relation.node, example),
             DependencyKind::InstanceInput { input, .. } => instance::evaluate_input(evaluation, &self.bodies(), form, input, example),
             DependencyKind::Parameter(name) => self.parameter(relation, name),
-            DependencyKind::InstanceOutput { .. } => {
-                let outputs = instance::evaluate_instance(evaluation, &self.bodies(), form, example, &mut budget)?;
-                record_whole(&budget, outputs.iter().map(|(_, value)| value));
-                let mut asked = None;
-                let mut values = self.values.borrow_mut();
-                for (output, value) in outputs {
-                    if output == *relation {
-                        asked = Some(value);
-                    } else {
-                        values.insert((output, example), value);
-                    }
-                }
-                Ok(asked.expect("the value of each output of the instance"))
-            }
+            DependencyKind::InstanceOutput { .. } => instance::evaluate_instance(evaluation, &self.bodies(), form, example, relation, &mut budget),
             DependencyKind::RigidAssembly(_) => {
                 let output = relation.output.as_ref().and_then(|path| path.first()).expect("an output of the assembly");
                 let value = rigid::evaluate_assembly(evaluation, &self.bodies(), form, output, example, &mut budget);
@@ -619,6 +606,13 @@ impl FormBodies<'_> {
         let value = driver.join(form, clause, &inputs);
         cache::store(session, &request, &value);
         Ok(value)
+    }
+
+    /// The value the result cache holds for `request`, made at `form`, or,
+    /// where it holds none, the value of `compute`, which the cache then
+    /// stores, as the driver does for a clause.
+    pub fn cached(&self, form: &NodePath, request: &cache::EntryRequest<'_>, compute: impl FnOnce() -> Outcome<RelationValue>) -> Outcome<RelationValue> {
+        self.driver.cached(form, request, compute)
     }
 }
 

@@ -6,23 +6,33 @@
 use std::sync::Arc;
 
 use super::{ConstructionContext, GroupInputs};
-use crate::eval::init_form::{grouped, instance_at, key_groups, rows_of, unevaluated, InstanceShape};
+use crate::eval::cache::{self, EntryContent, EntryRequest};
+use crate::eval::driver::record_whole;
+use crate::eval::init_form::{grouped, instance_at, key_groups, key_read, rows_read, unevaluated, InstanceShape};
 use crate::eval::join::{self, Budget};
 use crate::eval::{Evaluation, FormBodies, Outcome, RelationValue, RunFault, Stop};
 use crate::program::path::NodePath;
 use crate::program::{Instance, PortName};
 use crate::registry::{Component, ComponentKind, InputPort};
-use crate::relations::{Row, RowSet};
+use crate::relations::{Relation, Row, RowSet};
 use crate::resolver::DependencyKind;
 use crate::terms::{Example, TermId};
 use crate::types::GraphRelation;
 
-/// The value of each output of the instance whose `INIT` form stands at
-/// `form`, on `example`, or task-wide where it is `None`, with its relation,
-/// from one run of its component's construction over each key group of
-/// the instance's inputs, each input's rows as `input_groups` gives them,
-/// with `bodies` evaluating the form's bodies. A body whose value holds no
-/// rows gives that value to each output.
+/// The value of the output `asked` of the instance whose `INIT` form stands
+/// at `form`, on `example`, or task-wide where it is `None`, from one run of
+/// its component's construction over each key group of the instance's
+/// inputs, each input's rows as `input_groups` gives them, with `bodies`
+/// evaluating the form's bodies. A body whose value holds no rows gives that
+/// value.
+///
+/// The value stands in the result cache as an entry of the output's node,
+/// which reads the relation of the key clause and the relation of each
+/// input in the order of the component's inputs, the relations of the
+/// `DET`s that store inputs as parameters, and the example. A run of the
+/// construction stores the entry of each output of the instance. An
+/// output whose node has no resolved content has no entry, and its value is
+/// that of the run.
 ///
 /// The key clause's rows are the groups, and an instance with no key
 /// clause has one group, at the `Unit` key. A type parameter onto which no
@@ -36,8 +46,9 @@ pub fn evaluate_instance<'a>(
     bodies: &FormBodies<'_>,
     form: &NodePath,
     example: Option<Example>,
+    asked: &GraphRelation,
     budget: &mut Budget<'a>,
-) -> Outcome<Vec<(GraphRelation, RelationValue)>> {
+) -> Outcome<RelationValue> {
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
     let (instance, component) = instance_at(evaluation, form)?;
     let unevaluated = || unevaluated(form, instance);
@@ -47,20 +58,31 @@ pub fn evaluate_instance<'a>(
     let construction = evaluation.constructions.get(&instance.component).ok_or_else(unevaluated)?;
     let relations = output_relations(evaluation, form, instance, component);
     let each = |value: RelationValue| relations.iter().map(|relation| (relation.clone(), value.clone())).collect();
+    let whole = |budget: &Budget<'_>, value: RelationValue| {
+        record_whole(budget, [&value]);
+        Ok(value)
+    };
     let shape = InstanceShape::of(evaluation, form, instance, component);
-    let groups = match key_groups(evaluation, bodies, form, &shape, example)? {
-        Ok(groups) => groups,
-        Err(value) => return Ok(each(value)),
+    let (groups, key) = match key_read(evaluation, bodies, form, &shape, example)? {
+        Ok(read) => read,
+        Err(value) => return whole(budget, value),
     };
 
+    let mut reads: Vec<Arc<Relation>> = key.into_iter().collect();
+    let mut parameters: Vec<Arc<Relation>> = Vec::new();
     let mut group_inputs: Vec<Vec<RowSet>> = vec![Vec::with_capacity(component.inputs.len()); groups.len()];
     let mut types = Vec::with_capacity(component.inputs.len());
     let mut columns = Vec::with_capacity(component.inputs.len());
     for input in component.inputs.iter() {
-        let per_group = match input_groups(evaluation, bodies, form, instance, &shape, input, &groups, example)? {
-            Ok(per_group) => per_group,
-            Err(value) => return Ok(each(value)),
+        let (per_group, read) = match input_groups(evaluation, bodies, form, instance, &shape, input, &groups, example)? {
+            Ok(read) => read,
+            Err(value) => return whole(budget, value),
         };
+        match read {
+            InputRead::Clause(relation) => reads.push(relation),
+            InputRead::Stored(relation) => parameters.push(relation),
+            InputRead::Default => {}
+        }
         for (inputs, rows) in group_inputs.iter_mut().zip(per_group) {
             inputs.push(rows);
         }
@@ -70,23 +92,48 @@ pub fn evaluate_instance<'a>(
 
     let widths: Vec<Vec<Option<usize>>> = component.outputs.iter().map(|output| shape.widths(&output.columns)).collect::<Result<_, _>>().map_err(&fault)?;
     let output_key = shape.output_key();
-    let mut rows: Vec<RowSet> = widths.iter().map(|widths| RowSet::empty(shape.arity(widths) as u16)).collect();
-    let mut context = ConstructionContext { session: evaluation.session, registry: evaluation.registry, budget };
-    for (key, inputs) in groups.iter().zip(&group_inputs) {
-        let group = GroupInputs { inputs, types: &types, columns: &columns };
-        let outputs = match construction.evaluate(&group, &mut context) {
-            Ok(outputs) => outputs,
-            Err(bound) => return Ok(each(RelationValue::Stopped(Stop { bound, form: form.clone() }))),
-        };
-        let key_columns = output_key.columns(key);
-        for ((rows, widths), values) in rows.iter_mut().zip(&widths).zip(&outputs.outputs) {
-            for values in values.rows() {
-                rows.insert(laid_out(widths, &key_columns, values));
+    let construct = |budget: &mut Budget<'a>| -> Outcome<Vec<(GraphRelation, RelationValue)>> {
+        let mut rows: Vec<RowSet> = widths.iter().map(|widths| RowSet::empty(shape.arity(widths) as u16)).collect();
+        let mut context = ConstructionContext { session: evaluation.session, registry: evaluation.registry, budget };
+        for (key, inputs) in groups.iter().zip(&group_inputs) {
+            let group = GroupInputs { inputs, types: &types, columns: &columns };
+            let outputs = match construction.evaluate(&group, &mut context) {
+                Ok(outputs) => outputs,
+                Err(bound) => return Ok(each(RelationValue::Stopped(Stop { bound, form: form.clone() }))),
+            };
+            let key_columns = output_key.columns(key);
+            for ((rows, widths), values) in rows.iter_mut().zip(&widths).zip(&outputs.outputs) {
+                for values in values.rows() {
+                    rows.insert(laid_out(widths, &key_columns, values));
+                }
             }
         }
+        let values = rows.into_iter().map(|rows| RelationValue::Rows(Arc::new(join::one_part(rows))));
+        Ok(relations.iter().cloned().zip(values).collect())
+    };
+    let program = &evaluation.program.program;
+    let session = evaluation.session;
+    let run = |budget: &mut Budget<'a>, store: bool| -> Outcome<RelationValue> {
+        let outputs = construct(budget)?;
+        record_whole(budget, outputs.iter().map(|(_, value)| value));
+        let mut found = None;
+        for (output, value) in outputs {
+            if output == *asked {
+                found = Some(value);
+            } else if let Some(content) = store.then(|| program.node_content(output.node)).flatten() {
+                let request = EntryRequest { clause: EntryContent::Node(&content), reads: &reads, example, parameters: &parameters };
+                cache::store(session, &request, &value);
+            }
+        }
+        Ok(found.expect("the value of each output of the instance"))
+    };
+    match program.node_content(asked.node) {
+        None => run(budget, false),
+        Some(content) => {
+            let request = EntryRequest { clause: EntryContent::Node(&content), reads: &reads, example, parameters: &parameters };
+            bodies.cached(form, &request, || run(budget, true))
+        }
     }
-    let values = rows.into_iter().map(|rows| RelationValue::Rows(Arc::new(join::one_part(rows))));
-    Ok(relations.into_iter().zip(values).collect())
 }
 
 /// The rows of the input `port` of the instance whose `INIT` form stands
@@ -111,7 +158,7 @@ pub fn evaluate_input(
         Err(value) => return Ok(value),
     };
     let per_group = match input_groups(evaluation, bodies, form, instance, &shape, input, &groups, example)? {
-        Ok(per_group) => per_group,
+        Ok((per_group, _)) => per_group,
         Err(value) => return Ok(value),
     };
     let widths = shape.widths(&input.port.columns).map_err(&fault)?;
@@ -124,6 +171,14 @@ pub fn evaluate_input(
         }
     }
     Ok(RelationValue::Rows(Arc::new(join::one_part(rows))))
+}
+
+/// What the rows of an input came from: the relation of its clause, the
+/// relation of the `DET` that stores it, or its default.
+enum InputRead {
+    Clause(Arc<Relation>),
+    Stored(Arc<Relation>),
+    Default,
 }
 
 /// The rows of `input` of `instance`, the `INIT` form at `form` of `shape`,
@@ -144,20 +199,25 @@ fn input_groups(
     input: &InputPort,
     groups: &[Row],
     example: Option<Example>,
-) -> Outcome<Result<Vec<RowSet>, RelationValue>> {
+) -> Outcome<Result<(Vec<RowSet>, InputRead), RelationValue>> {
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
     let input_types = shape.port_types(&input.port.columns).map_err(&fault)?;
     match shape.input_clause(evaluation, form, input).map_err(&fault)? {
-        Some(written) => Ok(rows_of(bodies.relation(form, &written.clause, example)?, written.arity()).map_err(&fault)?.map(|rows| written.grouped(groups, rows))),
+        Some(written) => Ok(rows_read(bodies.relation(form, &written.clause, example)?, written.arity())
+            .map_err(&fault)?
+            .map(|(rows, relation)| (written.grouped(groups, rows), InputRead::Clause(relation)))),
         None => match stored_input(evaluation, form, instance, &input.port.name) {
             Some(parameter) => {
                 let widths = shape.widths(&input.port.columns).map_err(&fault)?;
                 let prefix = if shape.key_body.is_some() { shape.key_labels().len() } else { 0 };
-                Ok(rows_of(evaluation.relation(&parameter, None)?, shape.arity(&widths))
+                Ok(rows_read(evaluation.relation(&parameter, None)?, shape.arity(&widths))
                     .map_err(&fault)?
-                    .map(|rows| grouped(groups, prefix, input_types.len(), rows.iter().map(|row| shape.key_first(&widths, row)).collect())))
+                    .map(|(rows, relation)| {
+                        let per_group = grouped(groups, prefix, input_types.len(), rows.iter().map(|row| shape.key_first(&widths, row)).collect());
+                        (per_group, InputRead::Stored(relation))
+                    }))
             }
-            None => Ok(Ok(shape.unwritten(input, &input_types, groups, evaluation).map_err(&fault)?)),
+            None => Ok(Ok((shape.unwritten(input, &input_types, groups, evaluation).map_err(&fault)?, InputRead::Default))),
         },
     }
 }

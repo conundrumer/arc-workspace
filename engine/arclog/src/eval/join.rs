@@ -7,7 +7,14 @@
 //! An algebra relation is evaluated at the point in the order where one of
 //! its modes is satisfied, and its outputs are variables that later atoms
 //! join on through an index.
+//!
+//! The evaluation of one clause or part serves a lib atom, a filter and a
+//! branch at bound values it has evaluated them at from its [`SearchMemo`],
+//! with the counts of their evaluation, and builds the plan of each nested
+//! clause once per set of bound variables.
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use super::ir::{Argument, Arguments, ClauseIr, Comparison, Filter, IrNode, Operand, Variable};
@@ -19,7 +26,7 @@ use super::{Caps, Limits, ReachedBound};
 use crate::algebra::geometry::domain;
 use crate::hash::StableHashMap;
 use crate::program::ConstraintOp;
-use crate::registry::Registry;
+use crate::registry::{LibName, Registry};
 use crate::relations::{ColumnIndex, ColumnOrder, Index, Relation, RelationPart, Row, RowSet};
 use crate::session::{Counts, TaskSession};
 use crate::terms::{Term, TermId};
@@ -37,13 +44,22 @@ pub struct Budget<'a> {
     session: &'a TaskSession,
     bindings: u64,
     rows: u64,
+    /// The charges made since [`Budget::log`] began a log, in order.
+    log: Option<Vec<Charge>>,
+}
+
+/// A charge to a [`Budget`]: bindings tried, or rows held.
+#[derive(Clone, Copy, Debug)]
+enum Charge {
+    Work(u64),
+    Rows(u64),
 }
 
 impl<'a> Budget<'a> {
     /// A budget with no work and no rows counted, under `limits` and the
     /// caps of `session`.
     pub fn new(limits: &'a Limits, session: &'a TaskSession) -> Self {
-        Budget { limits, session, bindings: 0, rows: 0 }
+        Budget { limits, session, bindings: 0, rows: 0, log: None }
     }
 
     /// The caps of the session.
@@ -54,6 +70,12 @@ impl<'a> Budget<'a> {
     /// Counts a batch of `bindings` tried, and checks the caps, the
     /// session's byte bound, the deadline and the cancellation.
     pub fn charge_work(&mut self, bindings: u64) -> Result<(), ReachedBound> {
+        if let Some(log) = &mut self.log {
+            match log.last_mut() {
+                Some(Charge::Work(last)) => *last += bindings,
+                _ => log.push(Charge::Work(bindings)),
+            }
+        }
         self.bindings += bindings;
         let caps = self.session.caps;
         if self.bindings > caps.bindings {
@@ -74,9 +96,42 @@ impl<'a> Budget<'a> {
 
     /// Counts `rows` more rows held, and checks the row cap.
     pub fn charge_rows(&mut self, rows: u64) -> Result<(), ReachedBound> {
+        if let Some(log) = &mut self.log {
+            match log.last_mut() {
+                Some(Charge::Rows(last)) => *last += rows,
+                _ => log.push(Charge::Rows(rows)),
+            }
+        }
         self.rows += rows;
         let cap = self.session.caps.rows;
         if self.rows > cap { Err(ReachedBound::Rows { cap }) } else { Ok(()) }
+    }
+
+    /// Runs `evaluate` and gives its result with the charges it made, in
+    /// order, so that [`Budget::replay`] charges them again as they were
+    /// made. The charges also stand in the log of an enclosing call.
+    fn logged<T>(&mut self, evaluate: impl FnOnce(&mut Self) -> Result<T, ReachedBound>) -> Result<(T, Charges), ReachedBound> {
+        let outer = self.log.replace(Vec::new());
+        let result = evaluate(self);
+        let inner = std::mem::replace(&mut self.log, outer).expect("the log this call began");
+        if let Some(outer) = &mut self.log {
+            outer.extend_from_slice(&inner);
+        }
+        Ok((result?, inner.into()))
+    }
+
+    /// Charges `charges` in order, as they were made.
+    fn replay(&mut self, charges: &Charges) -> Result<(), ReachedBound> {
+        if charges.is_empty() {
+            return self.charge_work(0);
+        }
+        for charge in charges.iter() {
+            match *charge {
+                Charge::Work(bindings) => self.charge_work(bindings)?,
+                Charge::Rows(rows) => self.charge_rows(rows)?,
+            }
+        }
+        Ok(())
     }
 
     /// Records the budget's counts in its session, as
@@ -159,13 +214,25 @@ pub fn join_at(
     bound: &[(Variable, TermId)],
     budget: &mut Budget<'_>,
 ) -> Result<Relation, ReachedBound> {
-    let nodes: Vec<usize> = (0..clause.nodes.len()).collect();
+    join_in(&SearchMemo::default(), clause, order, inputs, registry, bound, budget)
+}
+
+/// The relation of `clause` as [`join_at`] gives it, in the evaluation whose
+/// memo is `memo`.
+pub fn join_in(
+    memo: &SearchMemo,
+    clause: &ClauseIr,
+    order: &VariableOrder,
+    inputs: &JoinInputs,
+    registry: &crate::registry::Registry,
+    bound: &[(Variable, TermId)],
+    budget: &mut Budget<'_>,
+) -> Result<Relation, ReachedBound> {
+    let plan = memo.plan(clause, order, inputs, bound);
     let mut found = Vec::new();
-    for part in parts(clause, &nodes, &|node| node) {
-        let columns = part.columns(clause);
-        let order = part.order(order, bound);
-        let rows = search(clause, &part.nodes, &[], order, bound, inputs, registry, &columns, budget)?;
-        found.push(RelationPart { columns: columns.into(), rows });
+    for part in &plan.parts {
+        let rows = Search::new(clause, &part.plan, inputs, registry, memo, bound).run(&part.projected, budget)?;
+        found.push(RelationPart { columns: part.columns.clone().into(), rows });
     }
     Ok(product(clause, found))
 }
@@ -196,7 +263,9 @@ pub fn search(
     budget: &mut Budget<'_>,
 ) -> Result<RowSet, ReachedBound> {
     let projected: Vec<Variable> = columns.iter().map(|c| clause.columns[usize::from(c.0)]).collect();
-    Search::new(clause, nodes, tries, order, bound, inputs, registry).run(&projected, budget)
+    let variables: Vec<Variable> = bound.iter().map(|&(variable, _)| variable).collect();
+    let plan = Plan::new(clause, nodes, tries, order, &variables, inputs);
+    Search::new(clause, &plan, inputs, registry, &SearchMemo::default(), bound).run(&projected, budget)
 }
 
 /// Calls `visit` on each row of `relation`, the product of its parts, in an
@@ -273,8 +342,8 @@ impl Part {
 
     /// The variables of `order` that the part holds and `bound` leaves
     /// unbound, in their order.
-    pub fn order(&self, order: &VariableOrder, bound: &[(Variable, TermId)]) -> Vec<Variable> {
-        order.0.iter().copied().filter(|v| self.variables.contains(v) && bound.iter().all(|(b, _)| b != v)).collect()
+    pub fn order(&self, order: &VariableOrder, bound: &[Variable]) -> Vec<Variable> {
+        order.0.iter().copied().filter(|v| self.variables.contains(v) && !bound.contains(v)).collect()
     }
 
     /// Whether each variable that a node of `nodes` holds and the part
@@ -336,18 +405,18 @@ pub fn parts<G: Eq + Copy>(clause: &ClauseIr, nodes: &[usize], group: &dyn Fn(us
 }
 
 /// An atom's trie in the join's order: its relation's index over the
-/// atom's columns, a term's column first, then each variable's in the order
-/// it is bound.
+/// atom's columns, a term's column first, then the column of each variable
+/// bound before the search, then each other variable's in the order it is
+/// bound.
 struct AtomTrie {
     index: Arc<Index>,
     levels: Vec<Argument>,
 }
 
-/// The generic join of one connected set of a clause's nodes.
-struct Search<'c> {
-    clause: &'c ClauseIr,
-    registry: &'c Registry,
-    inputs: &'c JoinInputs,
+/// What the search of one connected set of a clause's nodes builds that
+/// depends on no bound value, for one set of variables bound before the
+/// search.
+struct Plan {
     order: Vec<Variable>,
     atoms: Vec<AtomTrie>,
     /// The nodes checked once the variable at each rank is bound, and, last,
@@ -362,43 +431,29 @@ struct Search<'c> {
     branch_orders: StableHashMap<(usize, usize), VariableOrder>,
     /// The nodes of the unions.
     unions: Vec<usize>,
-    binding: Vec<Option<TermId>>,
-    tried: Batch,
     /// The rank from which no variable left in the order is projected,
     /// where the early stop of [`join_at`] begins.
     stop_from: usize,
 }
 
-impl<'c> Search<'c> {
+impl Plan {
     fn new(
-        clause: &'c ClauseIr,
+        clause: &ClauseIr,
         nodes: &[usize],
         tries: &[(Arc<Relation>, Arguments)],
         order: Vec<Variable>,
-        bound: &[(Variable, TermId)],
-        inputs: &'c JoinInputs,
-        registry: &'c Registry,
+        bound: &[Variable],
+        inputs: &JoinInputs,
     ) -> Self {
-        let mut binding = vec![None; clause.variables.len()];
-        for &(variable, value) in bound {
-            binding[usize::from(variable.0)] = Some(value);
-        }
         let mut rank = vec![usize::MAX; clause.variables.len()];
         for (r, v) in order.iter().enumerate() {
             rank[usize::from(v.0)] = r;
         }
         let trie = |relation: &Relation, arguments: &Arguments| {
-            let mut columns: Vec<(ColumnIndex, Argument)> = arguments
-                .0
-                .iter()
-                .map(|&(column, argument)| match argument {
-                    Argument::Variable(v) => (column, binding[usize::from(v.0)].map_or(argument, Argument::Term)),
-                    Argument::Term(_) => (column, argument),
-                })
-                .collect();
+            let mut columns: Vec<(ColumnIndex, Argument)> = arguments.0.iter().copied().collect();
             columns.sort_by_key(|(column, argument)| match argument {
-                Argument::Term(_) => (0, column.0 as usize),
-                Argument::Variable(v) => (1 + rank[usize::from(v.0)], column.0 as usize),
+                Argument::Variable(v) if !bound.contains(v) => (1 + rank[usize::from(v.0)], column.0 as usize),
+                _ => (0, column.0 as usize),
             });
             let index = relation.index(&ColumnOrder(columns.iter().map(|(c, _)| *c).collect()));
             AtomTrie { index, levels: columns.into_iter().map(|(_, a)| a).collect() }
@@ -411,12 +466,7 @@ impl<'c> Search<'c> {
         let mut unions = Vec::new();
         for &node in nodes {
             let held = node_variables(&clause.nodes[node]);
-            let last = held
-                .iter()
-                .filter(|v| binding[usize::from(v.0)].is_none())
-                .map(|v| rank[usize::from(v.0)])
-                .max()
-                .unwrap_or(order.len());
+            let last = held.iter().filter(|v| !bound.contains(v)).map(|v| rank[usize::from(v.0)]).max().unwrap_or(order.len());
             match &clause.nodes[node] {
                 IrNode::Atom(atom) => {
                     let NodeInput::Relation(relation) = &inputs.0[node] else { panic!("the relation of each atom") };
@@ -446,19 +496,176 @@ impl<'c> Search<'c> {
             }
         }
         let stop_from = order.len() - order.iter().rev().take_while(|v| !clause.columns.contains(v)).count();
-        Search { clause, registry, inputs, order, atoms, checks, libs, filter_orders, branch_orders, unions, binding, tried: Batch::default(), stop_from }
+        Plan { order, atoms, checks, libs, filter_orders, branch_orders, unions, stop_from }
+    }
+}
+
+/// The plan of one part of a clause.
+struct PartPlan {
+    columns: Vec<ColumnIndex>,
+    /// The variables of the part's columns.
+    projected: Vec<Variable>,
+    plan: Plan,
+}
+
+/// The plans of the parts of a clause, for one set of variables bound
+/// before its search.
+struct ClausePlan {
+    parts: Vec<PartPlan>,
+}
+
+/// The bytes of entries that a [`SearchMemo`] takes, past which it takes no
+/// new entry. A provisional bound, which changes no output.
+const MEMO_BYTES: usize = 256 << 20;
+
+/// What an evaluation charged to its budget, in order.
+type Charges = Rc<[Charge]>;
+
+/// The rows of a lib atom's algebra relation at bound values.
+type LibRows = Rc<Vec<Box<[TermId]>>>;
+
+#[derive(Default)]
+struct MemoTables {
+    bytes: usize,
+    plans: StableHashMap<(usize, Vec<Variable>), Rc<ClausePlan>>,
+    libs: StableHashMap<LibName, StableHashMap<Vec<Option<TermId>>, LibRows>>,
+    probes: StableHashMap<(usize, Vec<TermId>), (bool, Charges)>,
+    branches: StableHashMap<(usize, Vec<(Variable, TermId)>), (Arc<Relation>, Charges)>,
+}
+
+impl MemoTables {
+    /// Takes `size` more bytes and gives whether the memo took them.
+    fn take(&mut self, size: usize) -> bool {
+        let fits = self.bytes.saturating_add(size) <= MEMO_BYTES;
+        if fits {
+            self.bytes += size;
+        }
+        fits
+    }
+}
+
+/// What the evaluation of one clause or part keeps, for the searches it
+/// starts: the rows of a lib atom, whether a filter holds and the relation
+/// of an `OR` branch at the values they were evaluated at, with the counts
+/// of a filter's and a branch's evaluation, and the plan of each nested
+/// clause at each set of bound variables. A clause, a filter and a branch
+/// stand in the memo by their address, and stand at one address in one
+/// evaluation.
+#[derive(Default)]
+pub struct SearchMemo {
+    tables: RefCell<MemoTables>,
+}
+
+impl SearchMemo {
+    /// The plan of `clause` with `bound` bound before its search, made at
+    /// its first use.
+    fn plan(&self, clause: &ClauseIr, order: &VariableOrder, inputs: &JoinInputs, bound: &[(Variable, TermId)]) -> Rc<ClausePlan> {
+        let mut variables: Vec<Variable> = bound.iter().map(|&(variable, _)| variable).collect();
+        variables.sort_by_key(|variable| variable.0);
+        let key = (std::ptr::from_ref(clause) as usize, variables);
+        if let Some(plan) = self.tables.borrow().plans.get(&key) {
+            return plan.clone();
+        }
+        let nodes: Vec<usize> = (0..clause.nodes.len()).collect();
+        let parts = parts(clause, &nodes, &|node| node)
+            .into_iter()
+            .map(|part| PartPlan {
+                columns: part.columns(clause),
+                projected: clause.columns.iter().copied().filter(|v| part.variables.contains(v)).collect(),
+                plan: Plan::new(clause, &part.nodes, &[], part.order(order, &key.1), &key.1, inputs),
+            })
+            .collect();
+        let plan = Rc::new(ClausePlan { parts });
+        self.tables.borrow_mut().plans.insert(key, plan.clone());
+        plan
+    }
+
+    /// The rows of the algebra relation `relation` at `bound`, if held.
+    fn lib(&self, relation: &LibName, bound: &[Option<TermId>]) -> Option<LibRows> {
+        self.tables.borrow().libs.get(relation)?.get(bound).cloned()
+    }
+
+    fn keep_lib(&self, relation: &LibName, bound: &[Option<TermId>], rows: &LibRows) {
+        let mut tables = self.tables.borrow_mut();
+        let size = 64 + bound.len() * 8 + rows.iter().map(|row| 24 + row.len() * 8).sum::<usize>();
+        if tables.take(size) {
+            tables.libs.entry(relation.clone()).or_default().insert(bound.to_vec(), rows.clone());
+        }
+    }
+
+    /// Whether the filter at `key` holds, with the counts of its probe, if
+    /// held.
+    fn probe(&self, key: &(usize, Vec<TermId>)) -> Option<(bool, Charges)> {
+        self.tables.borrow().probes.get(key).cloned()
+    }
+
+    fn keep_probe(&self, key: (usize, Vec<TermId>), entry: (bool, Charges)) {
+        let mut tables = self.tables.borrow_mut();
+        if tables.take(64 + key.1.len() * 8 + entry.1.len() * 16) {
+            tables.probes.insert(key, entry);
+        }
+    }
+
+    /// The relation of the branch at `key`, with the counts of its join, if
+    /// held.
+    fn branch(&self, key: &(usize, Vec<(Variable, TermId)>)) -> Option<(Arc<Relation>, Charges)> {
+        self.tables.borrow().branches.get(key).cloned()
+    }
+
+    fn keep_branch(&self, key: (usize, Vec<(Variable, TermId)>), entry: (Arc<Relation>, Charges)) {
+        let mut tables = self.tables.borrow_mut();
+        let size = 96 + key.1.len() * 16 + entry.1.len() * 16 + usize::from(entry.0.arity()) * 8 * (entry.0.len().min(1 << 20) as usize);
+        if tables.take(size) {
+            tables.branches.insert(key, entry);
+        }
+    }
+}
+
+/// The generic join of one connected set of a clause's nodes.
+struct Search<'c> {
+    clause: &'c ClauseIr,
+    registry: &'c Registry,
+    inputs: &'c JoinInputs,
+    plan: &'c Plan,
+    memo: &'c SearchMemo,
+    binding: Vec<Option<TermId>>,
+    tried: Batch,
+}
+
+impl<'c> Search<'c> {
+    /// The search over `plan` at the values `bound` gives some variables.
+    fn new(
+        clause: &'c ClauseIr,
+        plan: &'c Plan,
+        inputs: &'c JoinInputs,
+        registry: &'c Registry,
+        memo: &'c SearchMemo,
+        bound: &[(Variable, TermId)],
+    ) -> Self {
+        let mut binding = vec![None; clause.variables.len()];
+        for &(variable, value) in bound {
+            binding[usize::from(variable.0)] = Some(value);
+        }
+        Search { clause, registry, inputs, plan, memo, binding, tried: Batch::default() }
     }
 
     /// The rows of `projected` over each binding that passes every node.
     fn run(mut self, projected: &[Variable], budget: &mut Budget<'_>) -> Result<RowSet, ReachedBound> {
         let mut rows = RowSet::empty(projected.len() as u16);
-        let atoms = std::mem::take(&mut self.atoms);
-        let mut cursors: Vec<(&Index, usize)> = Vec::with_capacity(atoms.len());
-        for atom in &atoms {
+        let plan = self.plan;
+        let mut cursors: Vec<(&Index, usize)> = Vec::with_capacity(plan.atoms.len());
+        for atom in &plan.atoms {
             let mut at: &Index = &atom.index;
             let mut depth = 0;
-            while let Some(Argument::Term(term)) = atom.levels.get(depth) {
-                match at.child(*term) {
+            while let Some(&argument) = atom.levels.get(depth) {
+                let term = match argument {
+                    Argument::Term(term) => term,
+                    Argument::Variable(v) => match self.binding[usize::from(v.0)] {
+                        Some(term) => term,
+                        None => break,
+                    },
+                };
+                match at.child(term) {
                     Some(child) => at = child,
                     None => return Ok(rows),
                 }
@@ -466,9 +673,9 @@ impl<'c> Search<'c> {
             }
             cursors.push((at, depth));
         }
-        let unbound = self.checks.len() - 1;
+        let unbound = plan.checks.len() - 1;
         if self.passes(unbound, budget)? {
-            self.step(0, &atoms, &mut cursors, projected, &mut rows, budget)?;
+            self.step(0, &plan.atoms, &mut cursors, projected, &mut rows, budget)?;
         }
         self.tried.finish(budget)?;
         Ok(rows)
@@ -485,7 +692,7 @@ impl<'c> Search<'c> {
         rows: &mut RowSet,
         budget: &mut Budget<'_>,
     ) -> Result<bool, ReachedBound> {
-        let Some(&variable) = self.order.get(rank) else {
+        let Some(&variable) = self.plan.order.get(rank) else {
             let row: Row = projected.iter().map(|v| self.binding[usize::from(v.0)].expect("a bound column")).collect();
             if rows.insert(row) {
                 budget.charge_rows(1)?;
@@ -506,7 +713,7 @@ impl<'c> Search<'c> {
             let ty = &self.clause.variables[usize::from(variable.0)].ty;
             domain(self.registry, ty).expect("a variable of the order that a node of the clause binds")
         };
-        let early = rank >= self.stop_from;
+        let early = rank >= self.plan.stop_from;
         let mut candidates = candidates;
         if early {
             candidates.sort_by_key(|value| value.encoding());
@@ -542,7 +749,7 @@ impl<'c> Search<'c> {
 
     /// The value an `=` gives `variable` from a bound variable or `0`.
     fn equal_value(&self, variable: Variable) -> Option<TermId> {
-        self.checks.iter().flatten().find_map(|&node| match &self.clause.nodes[node] {
+        self.plan.checks.iter().flatten().find_map(|&node| match &self.clause.nodes[node] {
             IrNode::Comparison(Comparison { op: ConstraintOp::Eq, first, second, .. }) => match (*first == variable, second) {
                 (true, Operand::Zero) => Some(TermId::from_encoding(0)),
                 (true, Operand::Variable(other)) => self.binding[usize::from(other.0)],
@@ -558,7 +765,7 @@ impl<'c> Search<'c> {
     /// lib atom that holds it is satisfied.
     fn lib_values(&self, variable: Variable) -> Result<Option<Vec<TermId>>, ReachedBound> {
         let bound: Vec<bool> = self.binding.iter().map(Option::is_some).collect();
-        for &node in &self.libs[usize::from(variable.0)] {
+        for &node in &self.plan.libs[usize::from(variable.0)] {
             let IrNode::Lib(atom) = &self.clause.nodes[node] else { unreachable!("a lib atom") };
             let relation = algebra_relation(self.registry, &atom.relation);
             if !mode_holds(relation, &atom.arguments, self.clause, &bound) {
@@ -589,7 +796,7 @@ impl<'c> Search<'c> {
     /// each branch joined at the bound values of its columns, or `None`
     /// where no union exports it.
     fn union_values(&self, variable: Variable, budget: &mut Budget<'_>) -> Result<Option<Vec<TermId>>, ReachedBound> {
-        let found = self.unions.iter().find_map(|&node| match &self.clause.nodes[node] {
+        let found = self.plan.unions.iter().find_map(|&node| match &self.clause.nodes[node] {
             IrNode::Or(union) if union.exported.contains(&variable) => Some((node, union)),
             _ => None,
         });
@@ -603,7 +810,7 @@ impl<'c> Search<'c> {
                 );
             }
             let at = branch.columns.iter().position(|column| *column == variable).expect("each branch holds each export");
-            each_row(&self.branch(node, index, branch, budget)?, &mut |row| values.push(row[at]));
+            each_row(&*self.branch(node, index, branch, budget)?, &mut |row| values.push(row[at]));
         }
         values.sort_by_key(|value| value.encoding());
         values.dedup();
@@ -622,16 +829,28 @@ impl<'c> Search<'c> {
     }
 
     /// The relation of `branch`, the branch at `index` of the union of the
-    /// node at `node`, at the bound values of its columns.
-    fn branch(&self, node: usize, index: usize, branch: &ClauseIr, budget: &mut Budget<'_>) -> Result<Relation, ReachedBound> {
+    /// node at `node`, at the bound values of its columns. The memo serves
+    /// a branch joined at those values before, and counts what its join
+    /// counted.
+    fn branch(&self, node: usize, index: usize, branch: &ClauseIr, budget: &mut Budget<'_>) -> Result<Arc<Relation>, ReachedBound> {
         let NodeInput::Clauses(bodies) = &self.inputs.0[node] else { unreachable!("the inputs of a union's branches") };
         let bound: Vec<(Variable, TermId)> =
             branch.columns.iter().filter_map(|&column| Some((column, self.binding[usize::from(column.0)]?))).collect();
-        join_at(branch, &self.branch_orders[&(node, index)], &bodies[index], self.registry, &bound, budget)
+        let key = (std::ptr::from_ref(branch) as usize, bound);
+        if let Some((relation, charges)) = self.memo.branch(&key) {
+            budget.replay(&charges)?;
+            return Ok(relation);
+        }
+        let order = &self.plan.branch_orders[&(node, index)];
+        let (relation, charges) = budget.logged(|budget| join_in(self.memo, branch, order, &bodies[index], self.registry, &key.1, budget))?;
+        let relation = Arc::new(relation);
+        self.memo.keep_branch(key, (relation.clone(), charges));
+        Ok(relation)
     }
 
     /// Calls `emit` on each row of the lib atom at `node` that agrees with
-    /// the atom's terms and bound variables.
+    /// the atom's terms and bound variables. The memo serves an atom
+    /// evaluated at those values before.
     fn evaluate_lib(&self, node: usize, emit: &mut dyn FnMut(&[TermId])) -> Result<(), ReachedBound> {
         let IrNode::Lib(atom) = &self.clause.nodes[node] else { unreachable!("a lib atom") };
         let relation = algebra_relation(self.registry, &atom.relation);
@@ -642,18 +861,32 @@ impl<'c> Search<'c> {
                 Argument::Variable(v) => self.binding[usize::from(v.0)],
             };
         }
-        let algebra = crate::algebra::algebra(&atom.relation).expect("a native form of each algebra relation");
-        algebra.evaluate(&bound, self.registry, &mut |row| {
-            if bound.iter().zip(row).all(|(b, value)| b.is_none_or(|b| b == *value)) {
-                emit(row);
+        let rows = match self.memo.lib(&atom.relation, &bound) {
+            Some(rows) => rows,
+            None => {
+                let algebra = crate::algebra::algebra(&atom.relation).expect("a native form of each algebra relation");
+                let mut found = Vec::new();
+                algebra
+                    .evaluate(&bound, self.registry, &mut |row| {
+                        if bound.iter().zip(row).all(|(b, value)| b.is_none_or(|b| b == *value)) {
+                            found.push(row.into());
+                        }
+                    })
+                    .map_err(ReachedBound::Margin)?;
+                let rows = Rc::new(found);
+                self.memo.keep_lib(&atom.relation, &bound, &rows);
+                rows
             }
-        })
-        .map_err(ReachedBound::Margin)
+        };
+        for row in rows.iter() {
+            emit(row);
+        }
+        Ok(())
     }
 
     /// Whether the binding passes each node checked at `rank`.
     fn passes(&self, rank: usize, budget: &mut Budget<'_>) -> Result<bool, ReachedBound> {
-        for &node in &self.checks[rank] {
+        for &node in &self.plan.checks[rank] {
             let holds = match &self.clause.nodes[node] {
                 IrNode::Comparison(comparison) => self.compare(comparison),
                 IrNode::Lib(_) => {
@@ -673,11 +906,20 @@ impl<'c> Search<'c> {
     }
 
     /// Whether `filter`, the filter of the node at `node`, holds a binding
-    /// at the bound values of its outer variables.
+    /// at the bound values of its outer variables. The memo serves a filter
+    /// probed at those values before, and counts what its probe counted.
     fn probe(&self, node: usize, filter: &Filter, budget: &mut Budget<'_>) -> Result<bool, ReachedBound> {
         let outer: Vec<TermId> = filter.outer.iter().map(|v| self.binding[usize::from(v.0)].expect("a bound outer variable")).collect();
+        let key = (std::ptr::from_ref(filter) as usize, outer);
+        if let Some((holds, charges)) = self.memo.probe(&key) {
+            budget.replay(&charges)?;
+            return Ok(holds);
+        }
         let NodeInput::Clauses(bodies) = &self.inputs.0[node] else { unreachable!("the inputs of a filter's body") };
-        super::filters::probe(filter, &outer, &self.filter_orders[&node], &bodies[0], self.registry, budget)
+        let (holds, charges) = budget
+            .logged(|budget| super::filters::probe(self.memo, filter, &key.1, &self.plan.filter_orders[&node], &bodies[0], self.registry, budget))?;
+        self.memo.keep_probe(key, (holds, charges));
+        Ok(holds)
     }
 
     /// Whether the bound operands of `comparison` satisfy it. An order

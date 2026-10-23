@@ -182,8 +182,9 @@ pub fn is_filter_form(conjunct: &Conjunct) -> bool {
 /// Whether `filter` holds a binding at `outer`, the values of its outer
 /// variables in the order of [`Filter::outer`], over `inputs`, the inputs
 /// of its body, searched in `order` with the early stop on local
-/// variables.
+/// variables, in the evaluation whose memo is `memo`.
 pub fn probe(
+    memo: &super::join::SearchMemo,
     filter: &Filter,
     outer: &[TermId],
     order: &VariableOrder,
@@ -192,7 +193,7 @@ pub fn probe(
     budget: &mut Budget<'_>,
 ) -> Result<bool, ReachedBound> {
     let bound: Vec<(Variable, TermId)> = filter.outer.iter().copied().zip(outer.iter().copied()).collect();
-    let relation = super::join::join_at(&filter.body, order, inputs, registry, &bound, budget)?;
+    let relation = super::join::join_in(memo, &filter.body, order, inputs, registry, &bound, budget)?;
     Ok(!relation.is_empty())
 }
 

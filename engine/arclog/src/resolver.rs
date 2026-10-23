@@ -443,6 +443,13 @@ impl ResolvedProgram {
         self.names.content(&self.program, path).map(|form| ResolvedContent { form })
     }
 
+    /// The resolved content of the node `node` of the dependency graph, or
+    /// `None` where the program holds none for it.
+    pub fn node_content(&self, node: GraphNodeIndex) -> Option<ResolvedContent> {
+        let form = self.names.contents.get(node.0 as usize)?.clone()?;
+        Some(ResolvedContent { form })
+    }
+
     /// The resolved content of the part of the body of the clause at
     /// `clause` that the conjuncts at `conjuncts`, indexes into the body,
     /// make, whose relation's columns are those of the clause whose labels

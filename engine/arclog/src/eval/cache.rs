@@ -14,12 +14,14 @@ use crate::resolver::ResolvedContent;
 use crate::session::{CachedValue, RelationId, ResultContent, ResultKey, TaskSession};
 use crate::terms::Example;
 
-/// What an entry evaluates, by reference: a form's resolved content, or the
-/// compiled clause of a body of a form over a lib component.
+/// What an entry evaluates, by reference: a form's resolved content, the
+/// compiled clause of a body of a form over a lib component, or the resolved
+/// content of a node of the dependency graph.
 #[derive(Clone, Copy, Debug)]
 pub enum EntryContent<'a> {
     Form(&'a ResolvedContent),
     Body(&'a ClauseIr),
+    Node(&'a ResolvedContent),
 }
 
 impl EntryContent<'_> {
@@ -27,6 +29,7 @@ impl EntryContent<'_> {
         match self {
             EntryContent::Form(content) => ResultContent::Form(content.clone()),
             EntryContent::Body(clause) => ResultContent::Body(clause.clone()),
+            EntryContent::Node(content) => ResultContent::Node(content.clone()),
         }
     }
 }

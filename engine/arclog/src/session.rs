@@ -17,12 +17,15 @@ use crate::relations::{Relation, RelationPart, SharedRows};
 use crate::terms::InternTable;
 
 /// What a result-cache entry evaluates: a form's resolved content, for a
-/// clause or a part of a body, or the compiled clause of a body of a form
-/// over a lib component. The two variants never compare equal.
+/// clause or a part of a body, the compiled clause of a body of a form
+/// over a lib component, or the resolved content of a node of the
+/// dependency graph, for an output of an instance. The variants never
+/// compare equal.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ResultContent {
     Form(crate::resolver::ResolvedContent),
     Body(crate::eval::ir::ClauseIr),
+    Node(crate::resolver::ResolvedContent),
 }
 
 /// The key of a result-cache entry: the content of the conjunction
