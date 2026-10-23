@@ -16,8 +16,8 @@ use crate::resolver::SolverScope;
 use std::sync::Arc;
 
 use crate::program::{
-    written_inputs, Alt, Alts, AltsName, Block, Arcdata, Body, Clause, ClauseKeyword, ColumnName, DemoRule, Demonstrated, DemonstratedPart, Form, Instance,
-    InstanceInput, InstanceName, KeyClause, Node, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationRef, RigidDetName,
+    written_inputs, Alt, Alts, AltsName, Block, Arcdata, Body, Clause, ClauseKeyword, ColumnName, DeclaredName, DemoRule, Demonstrated, DemonstratedPart, Form, Instance,
+    InstanceInput, InstanceName, KeyClause, Node, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationName, RelationRef, RigidDetName,
 };
 
 /// A solver read from its two files: the claims, the tree of alts, the
@@ -353,6 +353,26 @@ impl Solver {
         self.build(name).expect("the concept case takes an alt at each `ALTS` form it reaches")
     }
 
+    /// The alts that a case takes without departing from the concept case:
+    /// each alt of the concept case's name, and the first reading of each
+    /// `DET_OR_RULE` and `RULE_OR_DET` line that some base reads, the
+    /// concept case's reading of that line, including a line that the
+    /// concept case's own base does not reach.
+    pub fn concept_alts(&self) -> Vec<AltsName> {
+        let mut alts = self.all_case_names().swap_remove(0).0.into_vec();
+        for base in alts_product(&self.program.value().forms) {
+            for placed in &self.walk(&base).placed {
+                if let Some(line) = line_of(&placed.form) {
+                    let first = readings(line).swap_remove(0).0;
+                    if !alts.contains(&first) {
+                        alts.push(first);
+                    }
+                }
+            }
+        }
+        alts
+    }
+
     /// The cases of `case_names(exclusion)`, each built when the iterator
     /// reaches it, so a run builds only the cases it runs.
     pub fn cases(&self, exclusion: Exclusion) -> Cases<'_> {
@@ -449,19 +469,58 @@ impl<'a> Walk<'a> {
         }
     }
 
-    /// Whether a form of the walk other than `line` reads its relation: an
+    /// Whether a form of the case other than `line` reads its relation: an
     /// atom that names it, or, for an input of an instance, the instance's
-    /// `INIT` form, which holds that input.
+    /// `INIT` form, which holds that input. A form that a deeper block
+    /// derives again (`rederived`) is not a form of the case, and a form
+    /// that no read leads from to `&output` (`reaching_output`) reads
+    /// nothing the case needs.
     fn read_elsewhere(&self, line: &Placed, clause: &Clause) -> bool {
         if port_of(clause, &self.placed).is_some_and(|port| port.input) {
             return true;
         }
         let relation = relation_of(&clause.derives);
-        self.placed.iter().filter(|p| !std::ptr::eq(*p, line)).any(|p| {
+        let kept: Vec<&Placed> = rederived(&self.placed).into_iter().map(|taken| taken.placed).collect();
+        let reaching = reaching_output(&kept);
+        kept.iter().zip(reaching).filter(|(p, reaches)| *reaches && !std::ptr::eq(**p, line)).any(|(p, _)| {
             let mut reads = false;
             each_read(NodeRef::from(&p.form), &mut |read| reads |= *read == relation);
             reads
         })
+    }
+}
+
+/// For each of `forms`, whether the thing it derives reaches `&output`: it
+/// is `&output`, or an instance or a rigid determination, or a form that
+/// reaches `&output` reads it.
+fn reaching_output(forms: &[&Placed]) -> Vec<bool> {
+    let output = relation_of(&ProgramRelation::Declared(RelationName(DeclaredName::Written("&output".into()))));
+    let derived: Vec<Option<RelationRef>> = forms
+        .iter()
+        .map(|p| match derives(&p.form) {
+            Some(Derives::Relation(relation)) => Some(relation_of(&relation)),
+            _ => None,
+        })
+        .collect();
+    let mut reaching: Vec<bool> = derived.iter().map(|relation| relation.as_ref().is_none_or(|relation| *relation == output)).collect();
+    loop {
+        let mut changed = false;
+        for reader in 0..forms.len() {
+            if !reaching[reader] {
+                continue;
+            }
+            each_read(NodeRef::from(&forms[reader].form), &mut |read| {
+                for (index, relation) in derived.iter().enumerate() {
+                    if !reaching[index] && relation.as_ref() == Some(read) {
+                        reaching[index] = true;
+                        changed = true;
+                    }
+                }
+            });
+        }
+        if !changed {
+            return reaching;
+        }
     }
 }
 
@@ -605,7 +664,10 @@ fn read_as(line: &Clause, reading: Reading) -> Clause {
         }
     };
     let body = if owns_body { line.body.clone() } else { Node::new(Body { conjuncts: Arc::from([]) }) };
-    Clause { keyword, proposers, body, set: line.set && reading == Reading::Stored, ..line.clone() }
+    // A reading with no body has no labels for the body's columns: its
+    // proposer declares the columns.
+    let columns = if body.value().conjuncts.is_empty() && !proposers.is_empty() { Arc::from([]) } else { line.columns.clone() };
+    Clause { keyword, proposers, body, columns, set: line.set && reading == Reading::Stored, ..line.clone() }
 }
 
 /// The relation, instance or rigid `DET` that a form derives. A case keeps,

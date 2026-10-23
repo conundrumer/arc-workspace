@@ -36,7 +36,7 @@ use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, Cor
 use arclog::judge::candidates::World;
 use arclog::judge::run::{judged_run, Depth, Found, JudgedRun};
 use arclog::judge::solves::OutputSet;
-use arclog::program::{DeclaredName, ProgramRelation, RelationName};
+use arclog::program::{AltsName, DeclaredName, ProgramRelation, RelationName};
 use arclog::relations::Relation;
 use arclog::resolver::Side;
 use arclog::solver::CaseName;
@@ -103,16 +103,17 @@ fn compare_solver(arguments: &Arguments, solver: &CorpusSolver) -> SolverResult 
 /// one proposer names the proposer, which the case's name does not.
 const DERIVED: &str = "=$Derived";
 
-/// Whether the snapshot's key `key` names the case `name`, whose concept
-/// case is `concept` (`case_name` of `src/parity/__init__.py`): the key
-/// joins with ` & `, in the snapshot's order, each alt of the case that
-/// the concept case does not take, a line's stored reading
+/// Whether the snapshot's key `key` names the case `name`, where `concept`
+/// holds the alts that depart from the concept case in no way
+/// (`Solver::concept_alts`; `case_name` of `src/parity/__init__.py`): the
+/// key joins with ` & `, in the snapshot's order, each alt of the case that
+/// is not in `concept`, a line's stored reading
 /// `<relation>=$Stored` as `<relation>=stored` and its derived reading by
 /// its one proposer as `<relation>=<proposer>`, and is `concept` where
 /// there is none.
-fn names_case(key: &str, name: &CaseName, concept: &CaseName) -> bool {
+fn names_case(key: &str, name: &CaseName, concept: &[AltsName]) -> bool {
     let mut parts: BTreeSet<&str> = if key == "concept" { BTreeSet::new() } else { key.split(" & ").collect() };
-    for alt in name.0.iter().filter(|alt| !concept.0.contains(alt)) {
+    for alt in name.0.iter().filter(|alt| !concept.contains(alt)) {
         let found = if let Some(relation) = alt.0.strip_suffix(DERIVED) {
             parts.iter().find(|part| part.strip_prefix(relation).is_some_and(|rest| rest.starts_with('=') && rest != "=stored")).copied()
         } else {
@@ -131,7 +132,7 @@ fn names_case(key: &str, name: &CaseName, concept: &CaseName) -> bool {
 
 /// The record of the case `name` in a solver's snapshot record, with its
 /// key there (`names_case`).
-fn case_record<'r>(record: &'r Value, name: &CaseName, concept: &CaseName) -> Option<(&'r str, &'r Value)> {
+fn case_record<'r>(record: &'r Value, name: &CaseName, concept: &[AltsName]) -> Option<(&'r str, &'r Value)> {
     let cases = record.get("cases")?.as_object()?;
     cases.iter().find(|(key, _)| names_case(key, name, concept)).map(|(key, value)| (key.as_str(), value))
 }
@@ -153,7 +154,7 @@ fn compared(arguments: &Arguments, corpus: &CorpusSolver) -> Result<Vec<String>,
     let mut keys: BTreeSet<&str> = BTreeSet::new();
     for case in setup.cases() {
         let spelled = case_spelled(case.name);
-        let Some((key, case_record)) = case_record(&record, case.name, &setup.concept_name) else {
+        let Some((key, case_record)) = case_record(&record, case.name, &setup.concept_alts) else {
             lines.push(format!("{spelled}: the engine has the case, and the snapshot has no record of it"));
             continue;
         };
@@ -590,9 +591,15 @@ mod tests {
         let name = |alts: &[&str]| CaseName(alts.iter().map(|alt| AltsName((*alt).into())).collect());
         let concept = name(&["&background=$Stored", "&floor_cell=$Derived", "$Clash"]);
         let case = name(&["&background=$Derived", "&floor_cell=$Stored", "$LargerOnTop"]);
-        assert!(names_case("$LargerOnTop & &background=DominantColor & &floor_cell=stored", &case, &concept));
-        assert!(!names_case("$LargerOnTop & &background=stored & &floor_cell=stored", &case, &concept));
-        assert!(!names_case("$LargerOnTop & &background=DominantColor", &case, &concept));
-        assert!(names_case("concept", &concept, &concept));
+        let concept = &concept.0;
+        assert!(names_case("$LargerOnTop & &background=DominantColor & &floor_cell=stored", &case, concept));
+        assert!(!names_case("$LargerOnTop & &background=stored & &floor_cell=stored", &case, concept));
+        assert!(!names_case("$LargerOnTop & &background=DominantColor", &case, concept));
+        assert!(names_case("concept", &CaseName(concept.clone()), concept));
+        // A line that only a nested base reads is absent from the concept case's name, and its first reading names no departure from it.
+        let under_alt = name(&["&background=$Stored", "&floor_cell=$Derived", "&margin=$Stored", "$LargerOnTop"]);
+        let with_margin: Vec<AltsName> = concept.iter().cloned().chain([AltsName("&margin=$Stored".into())]).collect();
+        assert!(names_case("$LargerOnTop", &under_alt, &with_margin));
+        assert!(!names_case("$LargerOnTop", &under_alt, concept));
     }
 }

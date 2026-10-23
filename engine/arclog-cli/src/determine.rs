@@ -28,7 +28,7 @@ use arclog::judge::determination::{determine, CaseOutcome, DeterminedCase, Deter
 use arclog::eval::instance::Constructions;
 use arclog::eval::Limits;
 use arclog::task::{JudgedTask, Task};
-use arclog::program::{OutputOwner, ParamValue, ProgramRelation, RigidDetName};
+use arclog::program::{AltsName, OutputOwner, ParamValue, ProgramRelation, RigidDetName};
 use arclog::registry::Registry;
 use arclog::relations::Relation;
 use arclog::resolver::{resolve_cases, DependencyKind, GraphNodeIndex};
@@ -109,8 +109,9 @@ pub(crate) struct SolverDetermination {
     pub(crate) task: Task,
     pub(crate) judged: JudgedTask,
     concept: CheckedProgram,
-    /// The name of the concept case.
-    pub(crate) concept_name: CaseName,
+    /// The alts that a case takes without departing from the concept
+    /// case, as `Solver::concept_alts` gives them.
+    pub(crate) concept_alts: Vec<AltsName>,
     /// Every case the `exclude` forms leave, checked once, in the order of
     /// `Solver::case_names`.
     programs: Vec<(CaseName, CheckedProgram)>,
@@ -139,7 +140,7 @@ pub(crate) fn solver_determination(corpus: &Path, tasks: &Path, id: &str) -> Res
     let clauses = SolverClauses::of_cases(&cases);
     let mut cache = CheckCache::default();
     let concept = check_case(cases.concept(), &clauses, &mut cache, "the concept case")?;
-    let concept_name = cases.concept().case.name.clone();
+    let concept_alts = solver.concept_alts();
     let names = solver.case_names(Exclusion::WithoutExcluded);
     let programs = check_cases(&cases, &clauses, &mut cache, &|name| names.contains(name))?;
     let session = corpus_session();
@@ -156,7 +157,7 @@ pub(crate) fn solver_determination(corpus: &Path, tasks: &Path, id: &str) -> Res
         findings.extend(comparison.findings());
         (determination, findings)
     };
-    Ok(SolverDetermination { task, judged, concept, concept_name, programs, session, limits, constructions, determination, findings })
+    Ok(SolverDetermination { task, judged, concept, concept_alts, programs, session, limits, constructions, determination, findings })
 }
 
 /// The fault line of a case that `outcome` gives, or `None` for a case that
