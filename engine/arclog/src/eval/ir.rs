@@ -59,6 +59,18 @@ pub enum AtomSource {
     /// A relation that no block of the case derives: the clause's relation
     /// is `undefined` wherever the clause reads it.
     Undefined(ProgramRelation),
+    /// The rows of an `INIT` or `DEMONSTRATED` form's key clause, whose
+    /// columns are the key's labels in order.
+    Key(Box<KeyRead>),
+}
+
+/// The key clause of the form at `form`, which a keyed input of the form
+/// reads in place of the key body: a label of the key body with no `^` is
+/// local to it, and the input reads the key's columns alone.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct KeyRead {
+    pub form: NodePath,
+    pub clause: ClauseIr,
 }
 
 /// An atom of a relation with rows: a fact relation or a relation of the
@@ -400,15 +412,14 @@ pub struct CompiledBody {
 pub fn compile_body(program: &CheckedProgram, clause: &NodePath, kept: &[u32]) -> Result<CompiledBody, CompileFault> {
     let (body, body_path, columns) = form_body(program, clause);
     let conjuncts = kept.iter().map(|&index| (&body.conjuncts[index as usize], body_path.child(index))).collect();
-    let (compiled, of_node, columns) = compile_mapped(program, clause, conjuncts, &columns)?;
+    let (compiled, of_node, columns) = compile_mapped(program, clause, None, conjuncts, &columns)?;
     Ok(CompiledBody { clause: compiled, conjuncts: of_node.into_iter().map(|at| kept[at]).collect(), columns })
 }
 
 /// The IR of the bodies `bodies` of the `INIT` form at `instance`, each with
 /// its path, as one clause whose relation's columns are the labels
-/// `columns`, in their order: the key body alone, whose columns are the
-/// key's labels, or a keyed input's body joined with the key body, whose
-/// columns are the key's labels and then the input's. A label of `columns`
+/// `columns`, in their order: a key body alone, whose columns are the
+/// key's labels, or an input's body. A label of `columns`
 /// that no body holds is no column of the relation. Where the bodies leave
 /// a label unbound, this refuses them with those labels, as
 /// [`compile_conjuncts`] does.
@@ -418,11 +429,37 @@ pub fn compile_instance_body(
     bodies: &[(&Body, NodePath)],
     columns: &[LabelId],
 ) -> Result<ClauseIr, CompileFault> {
+    compile_instance_conjuncts(program, instance, None, bodies, columns)
+}
+
+/// The IR of a keyed input's body at `instance`: the clause
+/// [`compile_instance_body`] gives, joined with `key`, the rows of the key
+/// clause at the key's labels `key_labels`, which are bound in the body, and
+/// are columns of the relation where `columns` holds them.
+pub fn compile_keyed_body(
+    program: &CheckedProgram,
+    instance: &NodePath,
+    key: (KeyRead, &[LabelId]),
+    body: (&Body, NodePath),
+    columns: &[LabelId],
+) -> Result<ClauseIr, CompileFault> {
+    compile_instance_conjuncts(program, instance, Some(key), &[body], columns)
+}
+
+/// The IR of the instance bodies `bodies`, as [`compile_instance_body`] and
+/// [`compile_keyed_body`] give it.
+fn compile_instance_conjuncts(
+    program: &CheckedProgram,
+    instance: &NodePath,
+    key: Option<(KeyRead, &[LabelId])>,
+    bodies: &[(&Body, NodePath)],
+    columns: &[LabelId],
+) -> Result<ClauseIr, CompileFault> {
     let conjuncts = bodies
         .iter()
         .flat_map(|(body, path)| body.conjuncts.iter().zip(0u32..).map(|(conjunct, index)| (conjunct, path.child(index))))
         .collect();
-    compile_safe(program, instance, conjuncts, columns)
+    compile_mapped(program, instance, key, conjuncts, columns).map(|(clause, _, _)| clause)
 }
 
 /// The types of the labels of the scope that holds the labels of the form
@@ -440,15 +477,17 @@ pub fn compile_safe(
     conjuncts: Vec<(&Conjunct, NodePath)>,
     columns: &[LabelId],
 ) -> Result<ClauseIr, CompileFault> {
-    compile_mapped(program, form, conjuncts, columns).map(|(clause, _, _)| clause)
+    compile_mapped(program, form, None, conjuncts, columns).map(|(clause, _, _)| clause)
 }
 
 /// The IR of `conjuncts`, as [`compile_safe`] gives it, with the index in
 /// `conjuncts` of the conjunct that each node compiles and the label of
-/// each column.
+/// each column. A `key` is a node that precedes the conjuncts, an atom of
+/// the key clause's rows at the labels, which it binds.
 fn compile_mapped(
     program: &CheckedProgram,
     form: &NodePath,
+    key: Option<(KeyRead, &[LabelId])>,
     conjuncts: Vec<(&Conjunct, NodePath)>,
     columns: &[LabelId],
 ) -> Result<(ClauseIr, Vec<usize>, Box<[LabelId]>), CompileFault> {
@@ -456,14 +495,16 @@ fn compile_mapped(
     let types = form_types(program, &scope);
     let subset = Body { conjuncts: conjuncts.iter().map(|(conjunct, _)| (*conjunct).clone()).collect() };
     let registry = Registry::get();
+    let key_labels: &[LabelId] = key.as_ref().map_or(&[], |(_, labels)| labels);
     let bound = crate::safety::bound_labels(
         &subset,
-        &StableHashSet::default(),
+        &key_labels.iter().copied().collect(),
         &StableHashSet::default(),
         &|atom| atom_modes(registry, atom),
         &|label| types.label(label).cloned(),
     );
-    let held = crate::safety::body_labels(&subset);
+    let mut held = crate::safety::body_labels(&subset);
+    held.extend(key_labels.iter().copied());
     let mut unbound_labels: Vec<LabelId> = held.iter().copied().filter(|label| !bound.contains(label)).collect();
     if !unbound_labels.is_empty() {
         unbound_labels.sort_by_key(|label| label.0);
@@ -475,6 +516,11 @@ fn compile_mapped(
     };
     let mut builder = IrBuilder::new(program, scope, Rc::new(compiled))?;
     let mut of_node = Vec::new();
+    if let Some((read, labels)) = key {
+        let arguments = labels.iter().zip(0u16..).map(|(&label, column)| (ColumnIndex(column), Argument::Variable(builder.variable(label)))).collect();
+        builder.push(IrNode::Atom(RelationAtom { source: AtomSource::Key(Box::new(read)), arguments: Arguments(arguments) }));
+        of_node.push(0);
+    }
     for (at, (conjunct, path)) in conjuncts.iter().enumerate() {
         builder.conjunct(conjunct, path)?;
         of_node.resize(builder.nodes.len(), at);

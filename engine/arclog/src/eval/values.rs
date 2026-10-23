@@ -49,24 +49,22 @@ impl Caps {
     /// tried go with a Souffle run of 124 s, and `3ad05f52`, `c3f564a4` and
     /// `ca8f78db`, whose runs stopped at the row cap of `1 << 24`.
     ///
-    /// The node cap is about twice the largest count that `arclog-cli
-    /// compare` gave over the concept cases of `work/arclog/gen/` on
-    /// 2026-10-19, in a run under a model cap of 1 000 000 and a node cap of
-    /// 10 000 000: 14 search nodes of one cluster, of `9f8de559`, whose
-    /// largest count of models of one case on one input is 8, the largest of
-    /// that run. Those counts are of the 840 solvers of 953 whose concept
-    /// case ran to its end. Of the others, 88 stopped at a fault of the run
-    /// or at the binding cap or the row cap, 19 faulted before the run, and 6
-    /// hold a `DEMONSTRATED` form, so are not compared. The counts leave out
-    /// the outlier `97a05b5b`, whose 4 147 798 search nodes for its one model
-    /// go with an engine run of 22.6 s against Souffle's 0.7 s.
+    /// The model cap is about twice 256, the largest count of the models of
+    /// one case on one input that `arclog-cli row-counts` gave over the 18
+    /// solvers of `work/arclog/gen/` with a `CHOOSE` form, on 2026-10-23, in
+    /// runs under a model cap of `1 << 24`: 256 models of `&pruning`, of
+    /// `b7cb93ac` on `train/2`. The `1 << 7` of 2026-10-19 was about twice 64,
+    /// the bound of the models per case per input that
+    /// `docs/engine/corpus-survey.md#open-values-and-constraint-search` gives
+    /// from Souffle's `out`, which covers `a2d730bd` and `abc82100`, each two
+    /// D4 parameters of 8 open values.
     ///
-    /// The model cap is about twice 64, the bound of the models per case per
-    /// input that `docs/engine/corpus-survey.md#open-values-and-constraint-search`
-    /// gives from Souffle's `out`. That bound covers `a2d730bd` and
-    /// `abc82100`, each two D4 parameters of 8 open values, which give no
-    /// count of their concept in the engine: `a2d730bd` stops at a fault of
-    /// the run, and the rows of `abc82100` differ from its first relation on.
+    /// The node cap is about twice the largest count of the same runs: at most
+    /// 512 search nodes of one cluster, of `b7cb93ac` on `train/2`, which a
+    /// run under `1 << 9` ends with no stop and a run under `1 << 8` stops. A
+    /// cluster searches by the group with the fewest open options, one node
+    /// per child, so its nodes are at least its models. The 17 other solvers
+    /// with a `CHOOSE` form need at most 12.
     ///
     /// The assignment cap is the least power of two above twice the largest
     /// count that `arclog-cli determine` gave over the base cases of
@@ -75,7 +73,7 @@ impl Caps {
     /// counts are of the 939 solvers of 953 whose determination ran to its
     /// end before the run's bound of 30 minutes; the next largest are 72, of
     /// `ba26e723`, and 64, of `abc82100`.
-    pub const CORPUS: Caps = Caps { bindings: 1 << 30, rows: 1 << 21, models: 1 << 7, nodes: 1 << 5, assignments: 1 << 8 };
+    pub const CORPUS: Caps = Caps { bindings: 1 << 30, rows: 1 << 21, models: 1 << 9, nodes: 1 << 10, assignments: 1 << 8 };
 }
 
 /// The bound an evaluation reached.

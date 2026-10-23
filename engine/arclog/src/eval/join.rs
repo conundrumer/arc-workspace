@@ -411,6 +411,9 @@ pub fn parts<G: Eq + Copy>(clause: &ClauseIr, nodes: &[usize], group: &dyn Fn(us
 struct AtomTrie {
     index: Arc<Index>,
     levels: Vec<Argument>,
+    /// Whether the relation holds no row, which its trie shows at a level
+    /// only, and so shows for an atom that reads no column at none.
+    empty: bool,
 }
 
 /// What the search of one connected set of a clause's nodes builds that
@@ -456,7 +459,7 @@ impl Plan {
                 _ => (0, column.0 as usize),
             });
             let index = relation.index(&ColumnOrder(columns.iter().map(|(c, _)| *c).collect()));
-            AtomTrie { index, levels: columns.into_iter().map(|(_, a)| a).collect() }
+            AtomTrie { index, levels: columns.into_iter().map(|(_, a)| a).collect(), empty: relation.is_empty() }
         };
         let mut atoms: Vec<AtomTrie> = tries.iter().map(|(relation, arguments)| trie(relation, arguments)).collect();
         let mut checks = vec![Vec::new(); order.len() + 1];
@@ -495,8 +498,25 @@ impl Plan {
                 IrNode::Comparison(_) => checks[last].push(node),
             }
         }
+        for slot in &mut checks {
+            slot.sort_by_key(|&node| (check_cost(&clause.nodes[node]), node));
+        }
         let stop_from = order.len() - order.iter().rev().take_while(|v| !clause.columns.contains(v)).count();
         Plan { order, atoms, checks, libs, filter_orders, branch_orders, unions, stop_from }
+    }
+}
+
+/// The place of a node among the nodes checked at one variable, cheapest
+/// first: a comparison, an algebra relation, a filter's probe, a union's
+/// branches. A check that fails ends the binding, so the order depends on
+/// the kinds of the nodes and not on where they stand in the body.
+fn check_cost(node: &IrNode) -> u8 {
+    match node {
+        IrNode::Comparison(_) => 0,
+        IrNode::Lib(_) => 1,
+        IrNode::Not(_) | IrNode::Counterexample(_) => 2,
+        IrNode::Or(_) => 3,
+        IrNode::Atom(_) => unreachable!("an atom is joined, not checked"),
     }
 }
 
@@ -655,6 +675,9 @@ impl<'c> Search<'c> {
         let plan = self.plan;
         let mut cursors: Vec<(&Index, usize)> = Vec::with_capacity(plan.atoms.len());
         for atom in &plan.atoms {
+            if atom.empty {
+                return Ok(rows);
+            }
             let mut at: &Index = &atom.index;
             let mut depth = 0;
             while let Some(&argument) = atom.levels.get(depth) {

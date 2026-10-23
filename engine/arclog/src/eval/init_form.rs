@@ -75,16 +75,24 @@ pub(super) fn key_rows(
     example: Option<Example>,
 ) -> Outcome<Result<(Vec<Row>, Option<Arc<Relation>>), RelationValue>> {
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
-    let Some(key_body) = key_body else { return Ok(Ok((vec![Row::default()], None))) };
-    let clause = ir::compile_instance_body(evaluation.program, form, &[key_body.clone()], key_labels)
-        .map_err(|compile| fault(format!("the key body does not compile: {compile:?}")))?;
+    let Some(clause) = key_clause(evaluation, form, key_body, key_labels).map_err(|compile| fault(format!("the key body does not compile: {compile:?}")))? else {
+        return Ok(Ok((vec![Row::default()], None)));
+    };
     Ok(rows_read(bodies.relation(form, &clause, example)?, key_labels.len()).map_err(&fault)?.map(|(rows, relation)| (rows, Some(relation))))
+}
+
+/// The clause of the key body `key_body` of the form at `form`, whose
+/// columns are the key's labels `key_labels`, or `None` where the form has
+/// no key clause.
+fn key_clause(evaluation: &Evaluation<'_>, form: &NodePath, key_body: &Option<(&Body, NodePath)>, key_labels: &[LabelId]) -> Result<Option<ClauseIr>, ir::CompileFault> {
+    key_body.as_ref().map(|key_body| ir::compile_instance_body(evaluation.program, form, std::slice::from_ref(key_body), key_labels)).transpose()
 }
 
 /// The clause of an input whose body is `body` and whose head holds the
 /// labels `head`, in a form whose key body is `key_body`: a keyed input is
-/// its body joined with the key body, its columns the key's labels first,
-/// and the number of those columns. The error is the fault of the compile.
+/// its body joined with the rows of the key clause at the key's labels,
+/// its columns the key's labels first, and the number of those columns.
+/// The error is the fault of the compile.
 pub(super) fn joined_clause(
     evaluation: &Evaluation<'_>,
     form: &NodePath,
@@ -94,12 +102,13 @@ pub(super) fn joined_clause(
     body: (&Body, NodePath),
     head: &[LabelId],
 ) -> Result<(ClauseIr, usize), ir::CompileFault> {
-    let (parts, prefix): (Vec<(&Body, NodePath)>, &[LabelId]) = match (key_body, keyed) {
-        (Some(key_body), true) => (vec![key_body.clone(), body], key_labels),
-        _ => (vec![body], &[]),
+    let key = if keyed { key_clause(evaluation, form, key_body, key_labels)? } else { None };
+    let Some(clause) = key else {
+        return Ok((ir::compile_instance_body(evaluation.program, form, &[body], head)?, 0));
     };
-    let columns: Vec<LabelId> = prefix.iter().chain(head).copied().collect();
-    Ok((ir::compile_instance_body(evaluation.program, form, &parts, &columns)?, prefix.len()))
+    let columns: Vec<LabelId> = key_labels.iter().chain(head).copied().collect();
+    let read = ir::KeyRead { form: form.clone(), clause };
+    Ok((ir::compile_keyed_body(evaluation.program, form, (read, key_labels), body, &columns)?, key_labels.len()))
 }
 
 /// What an `INIT` form binds a type parameter of its component to: the

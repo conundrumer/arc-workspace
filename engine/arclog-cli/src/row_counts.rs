@@ -13,12 +13,13 @@
 //! `{"name", "type"}`, the name the solver's program gives the column, a record's field `<record>.<field>`, or `c<i>` for a column of an output of a shared node) and `rows` (each row an array of values as
 //! `value_json` gives them, in the order of the rows' JSON text). Where a
 //! clause makes the relation, one line per form of the clause follows the
-//! relation's line:
+//! relation's line, where a model holds more than `n` rows or stopped at a
+//! bound:
 //! `<task_id> <example> <relation> clause <path> <body> <reads>`. `<path>`
 //! is the form's `NodePath` as dot-separated indices; `<body>` is the
 //! count of the rows of the body over all its conjuncts, which exceeds the
 //! rows the clause gives its head where the head leaves columns out,
-//! `undefined`, or `stopped:<bound>`; `<reads>` is the comma-separated
+//! `undefined`, `fault` where the body's evaluation faults, such as a clause over a pick with several models, or `stopped:<bound>`; `<reads>` is the comma-separated
 //! relations that the clause's node reads, or `-`. A relation that an
 //! instance makes is attributed by its `<instance>.<port>` name.
 
@@ -212,11 +213,14 @@ fn clause_line(evaluation: &Evaluation<'_>, input: &str, name: &str, node: Graph
     let program = &evaluation.program.program;
     let Some(NodeRef::Clause(written)) = node_at(NodeRef::Program(program.program.value()), form) else { return Err("a clause node has a form that is no clause".to_owned()) };
     let kept: Vec<u32> = (0..written.body.value().conjuncts.len() as u32).collect();
-    let body = evaluation.body(form, &kept, example).map_err(|fault| format!("a fault of the run at {:?}: {}", fault.form, fault.message))?;
-    let body = match &body.0 {
-        RelationValue::Rows(_) => body.count().map_or_else(|| "undefined".to_owned(), |count| count.to_string()),
-        RelationValue::Undefined => "undefined".to_owned(),
-        RelationValue::Stopped(stop) => stopped(stop.bound),
+    let body = evaluation.body(form, &kept, example);
+    let body = match body.as_ref().map(|body| (&body.0, body)) {
+        Err(_) => "fault".to_owned(),
+        Ok((value, body)) => match value {
+            RelationValue::Rows(_) => body.count().map_or_else(|| "undefined".to_owned(), |count| count.to_string()),
+            RelationValue::Undefined => "undefined".to_owned(),
+            RelationValue::Stopped(stop) => stopped(stop.bound),
+        },
     };
     let mut reads = Vec::new();
     for &read in &program.graph.reads[node.0 as usize] {
@@ -230,8 +234,8 @@ fn clause_line(evaluation: &Evaluation<'_>, input: &str, name: &str, node: Graph
 }
 
 /// Each model's count or non-row value, followed by an enumeration stop,
-/// and whether some model holds more rows than `at` gives as its
-/// threshold, whose rows `at` then writes.
+/// and whether `at` is given and some model holds more rows than its
+/// threshold, whose rows `at` then writes, or some model stopped at a bound.
 fn model_counts(evaluation: &Evaluation<'_>, relation: &GraphRelation, example: Option<Example>, at: Option<&Dump<'_>>) -> Result<(String, bool), String> {
     let mut counts = Vec::new();
     let mut over = false;
@@ -246,12 +250,16 @@ fn model_counts(evaluation: &Evaluation<'_>, relation: &GraphRelation, example: 
                 rows.len().to_string()
             }
             RelationValue::Undefined => "undefined".to_owned(),
-            RelationValue::Stopped(stop) => stopped(stop.bound),
+            RelationValue::Stopped(stop) => {
+                over |= at.is_some();
+                stopped(stop.bound)
+            }
         });
         if written.is_err() { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
     }).map_err(|fault| format!("a fault of the run at {:?}: {}", fault.form, fault.message))?;
     written?;
     if let ModelsEnd::Stopped(stop) = end {
+        over |= at.is_some();
         counts.push(stopped(stop.bound));
     }
     Ok((counts.join(","), over))
@@ -310,5 +318,42 @@ fn names(evaluation: &Evaluation<'_>, node: GraphNodeIndex, kind: &DependencyKin
             };
             paths.into_iter().map(|path| Ok((relation_spelled(&ProgramRelation::Output(OutputName { of: owner.clone(), path: path.clone() })), Some(path)))).collect()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arclog::check::{check_program, CheckCache, SolverClauses};
+    use arclog::eval::{Cancellation, Caps, Limits, ParameterValues};
+    use arclog::read::read_solver;
+    use arclog::registry::Registry;
+    use arclog::resolver::resolve;
+    use arclog::session::{SessionBound, TaskSession};
+    use arclog::task::{Grid, Task, TrainPair};
+    use arclog::terms::Color;
+
+    #[test]
+    fn a_relation_that_stops_at_a_bound_is_followed_by_its_clause_lines() {
+        let text = "(RULE &big (input *P) (input (:P *Q)) (input (:P *R)))\n";
+        let solver = read_solver("stops", text, "", &|_| None).expect("a solver").value;
+        let registry = Registry::get();
+        let case = solver.concept_case();
+        let program = resolve(&case.program, None, &solver.derived_relations(), registry).value;
+        let program = check_program(program, &SolverClauses::of(&solver, registry), registry, &mut CheckCache::default()).expect("every check passes");
+        let rows = [[1, 2, 0], [2, 2, 1], [0, 3, 3]].iter().map(|row| row.iter().map(|&digit| Color::from_digit(digit).expect("a color")).collect()).collect();
+        let input = Grid::from_rows(rows).expect("a grid");
+        let task = Task { train: Box::new([TrainPair { input: input.clone(), output: input }]), test: Box::new([]) };
+        let caps = Caps { bindings: 3, ..Caps::CORPUS };
+        let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, caps);
+        let parameters = ParameterValues::default();
+        let limits = Limits { deadline: None, cancellation: Cancellation::default() };
+        let constructions = arclog_constructions::shared().expect("the table of constructions");
+        let evaluation = Evaluation { program: &program, concept: None, task: &task, parameters: &parameters, session: &session, registry, constructions, limits: &limits };
+        let dir = std::env::temp_dir().join(format!("row-counts-stopped-{}", std::process::id()));
+        let lines = counts(&evaluation, "stops", Some(&RowDump { over: u64::MAX, dir: dir.clone() })).expect("counts");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(lines.iter().any(|line| line.starts_with("train/0 &big stopped:bindings:3")), "{lines:?}");
+        assert!(lines.iter().any(|line| line.starts_with("train/0 &big clause ") && line.contains(" stopped:bindings:3 ")), "{lines:?}");
     }
 }

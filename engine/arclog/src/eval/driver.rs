@@ -508,6 +508,10 @@ impl<'e, 'a> Driver<'e, 'a> {
                             Arc::new(self.evaluation.task.fact_rows(*fact, on))
                         }
                         AtomSource::Undefined(_) => return Ok(Err(RelationValue::Undefined)),
+                        AtomSource::Key(key) => match self.bodies().relation(&key.form, &key.clause, example)? {
+                            RelationValue::Rows(relation) => relation,
+                            other => return Ok(Err(other)),
+                        },
                         AtomSource::Relation(read) => match self.read(read, scope, example)? {
                             RelationValue::Rows(relation) => relation,
                             other => return Ok(Err(other)),

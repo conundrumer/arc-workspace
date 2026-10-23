@@ -1,9 +1,10 @@
 //! The search of one cluster: propagation to a fixpoint, and then a
-//! depth-first search over the options still open, in index order, that
-//! keeps an option before it excludes it and propagates after each choice.
+//! depth-first search that branches on a group with the fewest open options
+//! (the first such group) and visits one child per open option, with that
+//! option kept and propagated, in index order.
 //!
-//! A node is one choice of the search, the keep or the exclusion of one open
-//! option, and the search counts its nodes against the node cap.
+//! A node is one child of the search, and the search counts its nodes
+//! against the node cap.
 
 use super::cluster::Cluster;
 use super::NodeCapReached;
@@ -12,6 +13,18 @@ use super::NodeCapReached;
 enum Choice {
     Keep,
     Exclude,
+}
+
+/// The open options of the group of `cluster` with the fewest open options,
+/// the least group where several have as few, or `None` where no option of
+/// `state` is open.
+fn branch_group(cluster: &Cluster, state: &[Mark]) -> Option<Vec<usize>> {
+    cluster
+        .groups
+        .iter()
+        .map(|group| group.iter().copied().filter(|&option| state[option].is_none()).collect::<Vec<usize>>())
+        .filter(|open| !open.is_empty())
+        .min_by_key(Vec::len)
 }
 
 /// The choice made for an option, `None` while it is open.
@@ -39,18 +52,18 @@ impl<'a> Search<'a> {
     /// keeps, or `None` once the search has visited every state.
     pub(super) fn next_model(&mut self) -> Result<Option<Box<[usize]>>, NodeCapReached> {
         while let Some(state) = self.pending.pop() {
-            let Some(open) = state.iter().position(|&mark| mark == None) else {
+            let Some(open) = branch_group(self.cluster, &state) else {
                 return Ok(Some((0..state.len()).filter(|&option| state[option] == Some(Choice::Keep)).collect()));
             };
-            // The exclusion is pushed first, so the keep is visited first.
-            for choice in [Choice::Exclude, Choice::Keep] {
+            // The children are pushed last first, so the first option is visited first.
+            for &option in open.iter().rev() {
                 self.nodes += 1;
                 if self.nodes > self.node_cap {
                     self.pending.clear();
                     return Err(NodeCapReached { cap: self.node_cap });
                 }
                 let mut child = state.clone();
-                if propagate(self.cluster, &mut child, vec![(open, choice)]) {
+                if propagate(self.cluster, &mut child, vec![(option, Choice::Keep)]) {
                     self.pending.push(child);
                 }
             }
