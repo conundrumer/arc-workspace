@@ -222,15 +222,11 @@ impl_choice([C, B, F, N, NA, TA]) :-
 }
 
 .init parse = Parse<Figure>
-parse.figure(K, P) :- figure(K, P).
 
 // The background color under each reading; undefined when the reading gives
 // two colors.
 // @claim erase-noise
 .init background = Unanimous<Background, Color>
-
-// The figure cells under each reading.
-.decl figure(k: Figure, p: Position)
 
 // The components each noise reading erases, and the ones it keeps as shapes.
 .decl noise(k: Figure, c: Connectivity, id: Ident, n: NoiseSelection)
@@ -273,7 +269,7 @@ out(P, Col, [C, B, F, N, NA, TA], V) :-
         ; no_axis_color([B, F], C, Id, NA, Col)
         ; two_axis_color([B, F], C, Id, TA, Col)
         ; first_axis_color([B, F], C, Id, TA, V, Col) ) )
-    ; !figure([B, F], P), Col = Col_in ).
+    ; !parse.figure([B, F], P), Col = Col_in ).
 
 // --- $Commonest ---
 // @claim erase-noise
@@ -286,10 +282,11 @@ background.item($Commonest(), Col) :- commonest.mode($U(), Col).
 background.item($CornerBg(), Col) :- in(P, Col), diag_dir_elem(D), box_corner(P, ZERO, D).
 
 // --- $StoredFigure ---
-figure([B, $StoredFigure()], P) :- background_choice(B), in(P, Col), params.figure_color(Col).
+parse.figure([B, $StoredFigure()], P) :- background_choice(B), in(P, Col), params.figure_color(Col).
 
 // --- $NonbgFigure ---
-figure([B, $NonbgFigure()], P) :- background.value(B, _), in(P, Col), !background.value(B, Col).
+parse.figure([B, $NonbgFigure()], P) :-
+    background.value(B, _), in(P, Col), !background.value(B, Col).
 
 // --- $SizeBound ---
 noise(K, C, Id, $SizeBound()) :- parse.size.tally([K, C, Id], N), params.noise_size(M), N <= M.

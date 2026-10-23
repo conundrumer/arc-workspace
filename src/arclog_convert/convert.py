@@ -1842,7 +1842,9 @@ class Converter:
         trained examples, a read of the instance's input relation at the
         example with wildcards. A case relation of the parse, whose columns
         but its Key are case types, is the program's where the determination
-        feeds it the concept fact alone. An input the determination leaves
+        feeds it the concept fact alone. A read of a nested instance of the
+        program's parse at the literal key of the concept case is a read at
+        the example. An input the determination leaves
         unfed differs, and its dependents are copied only where the
         determination reads them. Each relation and instance of the parse
         that reads an input fed otherwise is the determination's own: a copy
@@ -1938,6 +1940,19 @@ class Converter:
                 return set()
             return {i for i, ks in enumerate(keyed) if ks & other_ctors}
 
+        def concept_key(t):
+            # the literal key of the concept case, as the example; a record
+            # that opens with it, with that key replaced
+            def literal(t) -> bool:
+                names: list[str] = []
+                walk_vars(t, names)
+                return not names and bool(ctor_names(t)) and set(ctor_names(t)) <= concept
+            if literal(t):
+                return E
+            if isinstance(t, RecordTerm) and t.args and literal(t.args[0]):
+                return RecordTerm((E,) + t.args[1:])
+            return t
+
         def feed(u: Unit, iname: str, det_side: bool, case_key: bool = False) -> tuple[str, Unit]:
             # the clause as the lifted parse reads it: the example at each
             # key column of the parse, `in` that example's input, and no atom
@@ -1952,6 +1967,9 @@ class Converter:
                     if rn.instances[:1] == (iname,):
                         i = key_at(RelationName(rn.instances[1:], rn.name))
                         args = x.args if i is None or i >= len(x.args) else x.args[:i] + (E,) + x.args[i + 1:]
+                        if len(rn.instances) > 1 and not det_side:
+                            # a nested instance's key is the example where the determination reads it
+                            args = tuple(concept_key(t) for t in args)
                         return dc_replace(x, relation=RelationName(("@parse",) + rn.instances[1:], rn.name), args=args)
                     if det_side and not rn.instances and (det, rn.name) in self.rels and (("Params",), rn.name) in self.rels:
                         return dc_replace(x, relation=RelationName(("params",), rn.name))
@@ -2648,11 +2666,7 @@ class ClauseWriter:
                 names_by_leaf = dict(zip(map(id, (l for l, _ in kept)), kn_all)) if len(kn_all) == len(kept) else \
                     dict(zip(map(id, nonex), kn_all)) if len(kn_all) == len(nonex) else \
                     {id(l): by_path[l.path] for l in nonex} if all(l.path in by_path for l in nonex) else {}
-                for leaf, t in kept:
-                    if leaf.kind == "example" and not isinstance(t, Wildcard):
-                        s_ = self.one(t, bound)
-                        out.append(s_ if s_.lstrip("*^") == "E" else f"(:E {s_})")
-                kept = [(l, t) for l, t in kept if l.kind != "example"]
+                kept = self.example_sites(kept, bound, out)
                 if not kept:
                     continue
                 names = [names_by_leaf[id(l)] for l, _ in kept] if names_by_leaf else \
@@ -2672,6 +2686,11 @@ class ClauseWriter:
                 if inner:
                     out.append("(:key " + " ".join(inner) + ")")
                 continue
+            if inst is not None:
+                # the Example label is its own site, whichever column of the instance's relation holds it
+                kept = self.example_sites(kept, bound, out)
+                if not kept:
+                    continue
             if col.tparam and len(kept) > 1:
                 fnames = field_names([l for l, _ in kept])
                 inner = field_sites([n for n, (_, t) in zip(fnames, kept) if not isinstance(t, Wildcard)],
@@ -2691,6 +2710,15 @@ class ClauseWriter:
                 else:
                     out.append(f"(:{colname} {s})")
         return name, out
+
+    def example_sites(self, kept, bound: set[str] | None, out: list[str]):
+        """Append to `out` the site of each Example leaf of `kept`, and give
+        the other leaves."""
+        for leaf, t in kept:
+            if leaf.kind == "example" and not isinstance(t, Wildcard):
+                s = self.one(t, bound)
+                out.append(s if s.lstrip("*^") == "E" else f"(:E {s})")
+        return [(l, t) for l, t in kept if l.kind != "example"]
 
     def one(self, t, bound: set[str] | None) -> str:
         if isinstance(t, Variable):
