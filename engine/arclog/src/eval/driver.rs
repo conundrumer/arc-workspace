@@ -117,30 +117,27 @@ impl<'e, 'a> Driver<'e, 'a> {
         }
     }
 
-    /// The rows of the `DET` relation `name`: at stored values its stored
-    /// rows, typed by its columns; at determined values the rows the
-    /// assignment gives it, or else its one value.
+    /// The rows of the `DET` relation `name`: the stored rows of its record,
+    /// typed by its columns, or the rows the assignment gives it. A `DET` that
+    /// no record and no assignment gives takes its one value, as
+    /// [`Driver::one_value`] gives it.
     pub(super) fn parameter(&self, relation: &GraphRelation, name: &ProgramRelation) -> Outcome<RelationValue> {
         self.determined.set(self.determined.get() + 1);
         let evaluation = self.evaluation;
         let form = self.program().form_of(relation.node);
         let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
-        let stored = match evaluation.parameters.source() {
-            ParameterSource::Stored(stored) => stored,
+        let value = match evaluation.parameters.source() {
+            ParameterSource::Stored(stored) => match stored.get(name) {
+                Some(value) => value,
+                None => return self.one_value(relation),
+            },
             ParameterSource::Determined(assigned) => {
-                if let Some(rows) = assigned.get(name) {
-                    return Ok(RelationValue::Rows(rows.clone()));
-                }
-                return match evaluation.domain(relation.node)? {
-                    Domain::Rows(mut values) if values.len() == 1 => Ok(RelationValue::Rows(values.pop().expect("one value in the domain"))),
-                    Domain::Rows(values) if values.is_empty() => Err(fault("the `DET` has an empty domain".into())),
-                    Domain::Rows(_) => Err(fault("the assignment gives no value to a `DET` with several values in its domain".into())),
-                    Domain::Undefined => Ok(RelationValue::Undefined),
-                    Domain::Stopped(stop) => Ok(RelationValue::Stopped(stop)),
+                return match assigned.get(name) {
+                    Some(rows) => Ok(RelationValue::Rows(rows.clone())),
+                    None => self.one_value(relation),
                 };
             }
         };
-        let value = stored.get(name).ok_or_else(|| fault("no stored record gives the parameter's rows".into()))?;
         let types = evaluation.program.types.columns(relation).ok_or_else(|| fault("the parameter's columns have no types".into()))?;
         let mut table = evaluation.session.intern.write().expect("an intern table that no panic poisoned");
         let rows = crate::terms::encode_param_value(value, types, evaluation.registry, &mut table)
@@ -150,6 +147,20 @@ impl<'e, 'a> Driver<'e, 'a> {
             set.insert(row);
         }
         Ok(RelationValue::Rows(Arc::new(join::one_part(set))))
+    }
+
+    /// The one value in the domain of the `DET` relation `relation`, for a
+    /// `DET` that neither a stored record nor an assignment gives.
+    fn one_value(&self, relation: &GraphRelation) -> Outcome<RelationValue> {
+        let form = self.program().form_of(relation.node);
+        let fault = |message: &str| RunFault { message: message.into(), form: form.clone() };
+        match self.evaluation.domain(relation.node)? {
+            Domain::Rows(mut values) if values.len() == 1 => Ok(RelationValue::Rows(values.pop().expect("one value in the domain"))),
+            Domain::Rows(values) if values.is_empty() => Err(fault("the `DET` has an empty domain")),
+            Domain::Rows(_) => Err(fault("the assignment gives no value to a `DET` with several values in its domain")),
+            Domain::Undefined => Ok(RelationValue::Undefined),
+            Domain::Stopped(stop) => Ok(RelationValue::Stopped(stop)),
+        }
     }
 
     /// The relation of `node`, the union of the relations of its forms, each

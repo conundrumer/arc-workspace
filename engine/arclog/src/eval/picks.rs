@@ -73,7 +73,7 @@ pub fn pick_options(bodies: &FormBodies<'_>, node: GraphNodeIndex, example: Opti
         let shape = node_at(root, at).expect("the path of a form of the program");
         match shape {
             NodeRef::Clause(clause) => {
-                let stored = matches!(evaluation.parameters.source(), ParameterSource::Stored(_));
+                let stored = evaluation.parameters.get(&ProgramRelation::Declared(name.clone())).is_some();
                 let assigned = matches!(evaluation.parameters.source(), ParameterSource::Determined(values) if values.contains_key(&ProgramRelation::Declared(name.clone())));
                 if let Some(fault) = super::determinations::conversion_fault(clause, at).filter(|_| !stored) {
                     return Err(fault);

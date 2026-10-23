@@ -65,7 +65,10 @@ use crate::types::GraphRelation;
 use driver::Driver;
 
 /// The values of the case program's parameters, from one source, so a run
-/// reads either the stored records or the evidence and never a mix.
+/// reads either the stored records or the evidence and never a mix. The
+/// stored records play the part of an assignment: a `DET` they give reads its
+/// record, and a `DET` they leave out reads as a `DET` that an assignment
+/// leaves out.
 #[derive(Clone, Debug)]
 pub struct ParameterValues {
     source: ParameterSource,
@@ -88,7 +91,8 @@ impl Default for ParameterValues {
 }
 
 impl ParameterValues {
-    /// The values of the solver's stored `param` records.
+    /// The values of the solver's stored `param` records. A `DET` with no
+    /// record takes the value it takes at determined values that leave it out.
     pub fn stored(arcdata: &crate::program::Arcdata) -> Self {
         let values = arcdata.params.iter().map(|param| (param.value().name.clone(), param.value().value.clone())).collect();
         ParameterValues { source: ParameterSource::Stored(values) }
