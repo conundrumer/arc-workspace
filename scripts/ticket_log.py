@@ -256,7 +256,10 @@ def check_take(text: str, agent_id: str) -> None:
     another agent took is the move that fails."""
     held = holder(text)
     if held != agent_id:
-        raise Refused(mctx("the ticket stands under `assigned`, held by {holder}").format(
+        raise Refused(mctx(
+            "the ticket stands under `assigned`, held by {holder}: a line with no"
+            " `--id` and a note that does not begin with an agent id or a session id"
+            " writes the note on it and leaves its holder").format(
             holder=f"`{held}`" if held else "no agent"))
 
 
