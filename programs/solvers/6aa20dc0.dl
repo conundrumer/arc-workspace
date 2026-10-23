@@ -52,29 +52,45 @@ pair_box.cell([A, B], P) :-
     square(_, A), square(_, B), A != B,
     ( square(P, A) ; square(P, B) ).
 
-// A grid cell a pair's box covers, in that box's frame.
-.decl pair_cell(pair: Pair, p: Position, p_inner: Position)
-pair_cell(Pair, P, P_inner) :- pair_box.box(Pair, B), in(P, _), crop(P, B, P_inner).
-
-// The box divided as the template is: one tile per template cell.
-.init tiles = Divide2D<Unit>
-tiles.cell(P_inner) :- pair_cell(_, _, P_inner).
-tiles.dim($U(), A, N) :-
+// The template's extent on each axis: the count of tiles a box divides into.
+.decl tmpl_dim(a: Axis, n: number)
+tmpl_dim(A, N) :-
     tmpl_box.cell($U(), P), tmpl_box.box($U(), B), box_extent(B, P, A, N).
-tiles.gap(0).
+
+// A square's cell in the frame of a box it spans with another square.
+.decl square_cell(pair: Pair, id: Ident, p: Position, p_inner: Position)
+square_cell(Pair, Id, P, P_inner) :-
+    pair_box.cell(Pair, P), square(P, Id), pair_box.box(Pair, B), crop(P, B, P_inner).
+
+// Those boxes divided as the template is: one tile per template cell.
+.init square_tiles = Divide2D<Unit>
+square_tiles.cell(P_inner) :- square_cell(_, _, _, P_inner).
+square_tiles.dim($U(), A, N) :- tmpl_dim(A, N).
+square_tiles.gap(0).
 
 // The tile a pair's square sits in: the square fills it.
 .decl square_tile(pair: Pair, id: Ident, p_tile: Position)
 square_tile(Pair, Id, P_tile) :-
-    pair_box.cell(Pair, P), square(P, Id), pair_cell(Pair, P, P_inner),
-    tiles.tile($U(), P_inner, P_tile, P_intile),      // the tile it lies in
+    square_cell(Pair, Id, P, P_inner),
+    square_tiles.tile($U(), P_inner, P_tile, P_intile),  // the tile it lies in
     sq_box.box(Id, B_sq), box_extent(B_sq, P, A, N1),
     perp(A, A2), box_extent(B_sq, P, A2, N2),
-    axis_dims(P_intile, A, N1, N2).                   // the square fills the tile
+    axis_dims(P_intile, A, N1, N2).                      // the square fills the tile
 
 // A pair: both squares fill a tile of their box.
 .decl pair(pair: Pair)
 pair([A, B]) :- square_tile([A, B], A, _), square_tile([A, B], B, _).
+
+// A grid cell a pair's box covers, in that box's frame.
+.decl pair_cell(pair: Pair, p: Position, p_inner: Position)
+pair_cell(Pair, P, P_inner) :-
+    pair(Pair), pair_box.box(Pair, B), in(P, _), crop(P, B, P_inner).
+
+// The pair's box divided as the template is.
+.init tiles = Divide2D<Unit>
+tiles.cell(P_inner) :- pair_cell(_, _, P_inner).
+tiles.dim($U(), A, N) :- tmpl_dim(A, N).
+tiles.gap(0).
 
 // The turns that carry the template's marks onto the pair's squares.
 .init fit = D4Map<Pair, Color>

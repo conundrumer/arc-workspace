@@ -87,16 +87,21 @@ near_arm($Clear(), P, D) :- pointed(P, D), neighbor(P, D, G), !ink(G).
 
 // --- $Centered, $Midpoint ---
 
+// Each domino casts from its near end away from itself, keyed by the
+// direction in which it lies from the cells the cast reaches.
 // @claim cross
-.init see = Ray<Unit>
-see.dir($U(), D) :- dir_elem(D).
-see.mark($U(), P) :- in(P, _).
-see.blocked($U(), P) :- ink(P).
+.init see = Ray<Dir>
+see.dir(D, O) :- opposite(D, O).
+see.mark(D, E) :- domino_end(E, D).
+see.blocked(D, P) :- ink(P), dir_elem(D).
 
 // A domino points at P from direction D, its near end K cells away.
 .decl arm(s: Sight, p: Position, d: Dir, k: number)
-arm($Any(), P, D, K) :- see.cast($U(), E, D, K, P), K > 0, domino_end(E, D).
-arm($Clear(), P, D, K) :- see.stop($U(), E, D, K, P), domino_end(E, D).
+arm($Any(), P, D, K) :- see.cast(D, P, _, K, _), K > 0.
+arm($Clear(), P, D, K) :-
+    ( see.clear_cast(D, P, _, K, _), K > 0   // P and the cells between hold no ink
+    ; see.stop(D, P, _, K, _)                 // P is the first ink
+    ).
 
 // Dominoes point at P from both sides of axis A, both near ends K cells away.
 .decl balanced(s: Sight, p: Position, a: Axis, k: number)
