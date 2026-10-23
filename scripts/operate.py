@@ -123,6 +123,8 @@ def main(argv: list[str]) -> int:
             case OperateAction.WAITS:
                 if args.rest or NUMBER.fullmatch(args.ident) is None:
                     parser.error(mctx("waits takes a ticket number alone"))
+                if operate_service.CURRENT.get() is None:
+                    return operate_service.client(args.ident, operate_service.Kind.WAITS)
                 return print_waits(args.ident)
             case OperateAction.BOUND:
                 if args.run is not None:

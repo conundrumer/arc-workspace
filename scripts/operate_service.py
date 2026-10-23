@@ -1,4 +1,4 @@
-"""Session and checkout scoped transport for resident next, review and refresh reads.
+"""Session and checkout scoped transport for resident next, review, wait, waits and refresh reads.
 
 The journal owns issued work. Connections own requests and responses; an
 incomplete response is discarded and a retry computes from the journal.
@@ -10,8 +10,9 @@ A state read belongs to the resident: a request whose bound arrives first gets
 a response that says the read runs, and the run goes on; the same agent's next
 call of the same kind takes over its result. Where a run ends with no client,
 that agent's next call of the same kind goes first once in the queue.
-A refresh request gives way to a client request: the queue serves each `next`
-or `review` request first, and a refresh read ends where one arrives. A call
+A refresh request and a `wait` request give way to a client request: the queue
+serves each `next`, `review` and `waits` request first, and a refresh or `wait`
+read ends where one arrives (the `wait` client sends its request again). A call
 that waits in the queue waits for its response or its bound. Once the
 resident serves a call, the resident alone decides the output. A run that has
 journaled a give answers with its own output, and no bound or message replaces it.
@@ -47,6 +48,7 @@ import script_calls
 
 from engine import checkout
 from operations.constants import LIMIT_SECONDS
+from operations.pacing import Capped, Pace, pace_fields, pace_of
 
 IDLE_SECONDS = 1800
 START_SECONDS = 30
@@ -81,19 +83,50 @@ class Kind(StrEnum):
     NEXT = "next"
     REVIEW = "review"
     REFRESH = "refresh"
+    WAIT = "wait"
+    WAITS = "waits"
+
+
+YIELDING = (Kind.REFRESH, Kind.WAIT)
+"""The kinds whose request gives way to a client request."""
 
 
 def request_message(message: object) -> tuple[Kind, str, float, float]:
     """Validate the same request form in the queue and serving path."""
-    if not isinstance(message, dict) or set(message) != {"kind", "subject", "started", "deadline"}:
+    if not isinstance(message, dict) or not {"kind", "subject", "started", "deadline"} <= set(message):
         raise ValueError("invalid request")
     kind = Kind(message["kind"])
+    if set(message) != {"kind", "subject", "started", "deadline", *(["pace"] if kind is Kind.WAIT else [])}:
+        raise ValueError("invalid request")
+    if kind is Kind.WAIT:
+        known_pace(message)
     if not isinstance(message["subject"], str) or not message["subject"]:
         raise ValueError("invalid request subject")
     for name in ("started", "deadline"):
         if type(message[name]) not in (int, float) or not math.isfinite(message[name]):
             raise ValueError("invalid request time")
     return kind, message["subject"], float(message["started"]), float(message["deadline"])
+
+
+def known_pace(message: dict) -> tuple[Pace | Capped | None] | None:
+    """The pace that a `wait` request gives, as a one-tuple, or None where the
+    request gives none (the client's first request)."""
+    given = message["pace"]
+    if not isinstance(given, list) or len(given) > 1:
+        raise ValueError("invalid request pace")
+    return (pace_of(given[0]),) if given else None
+
+
+@dataclass(frozen=True)
+class WaitReply:
+    """The resident's answer to a `wait` request: `read` whether a state read
+    gave it, `ended` whether that read gives a ready step or a pace other than
+    the one the request gave, and the `pace` of a step that is a poll."""
+    read: bool
+    ended: bool
+    pace: Pace | Capped | None
+    cpu: float = 0.0
+    """The CPU seconds of the read."""
 
 
 @dataclass(frozen=True)
@@ -176,7 +209,7 @@ class Request:
         lock.close()
         if self.pending is not None:
             self.pending.poll()
-            if self.kind is Kind.REFRESH and self.pending.client_queued():
+            if self.kind in YIELDING and self.pending.client_queued():
                 raise Detached
         if self.waiting:
             readable, _, _ = select.select([self.connection], [], [], 0)
@@ -296,7 +329,7 @@ class Pending:
         """Give the connection of a complete request to the run of `running` where that run
         has no client and the request has its subject and kind; true where it did."""
         running = self.running
-        if (running is None or running.waiting or running.kind is Kind.REFRESH
+        if (running is None or running.waiting or running.kind in YIELDING
                 or message["kind"] != running.kind or message["subject"] != running.operator):
             return False
         peeked = connection.recv(65537, socket.MSG_PEEK)
@@ -313,14 +346,14 @@ class Pending:
         return True
 
     def client_queued(self) -> bool:
-        """Whether a complete `next` or `review` request waits in the queue."""
-        return any(message is not None and message["kind"] != Kind.REFRESH
+        """Whether a complete request of a kind that is no yielding kind waits in the queue."""
+        return any(message is not None and Kind(message["kind"]) not in YIELDING
                    for _, message in self.connections.values())
 
     def take(self) -> socket.socket | None:
         """The first complete request of a subject and kind whose run ended with no client,
-        within `START_SECONDS` + `LIMIT_SECONDS` of that end; else the first complete `next`
-        or `review` request, else the first complete refresh request."""
+        within `START_SECONDS` + `LIMIT_SECONDS` of that end; else the first complete request
+        of a kind that is no yielding kind, else the first of the others."""
         self.poll()
         now = time.monotonic()
         self.left = {key: end for key, end in self.left.items()
@@ -330,7 +363,7 @@ class Pending:
             message = entry[2]
             if (message["subject"], message["kind"]) in self.left:
                 return 0
-            return 2 if message["kind"] == Kind.REFRESH else 1
+            return 2 if Kind(message["kind"]) in YIELDING else 1
 
         complete = [(connection, arrived, message) for connection, (arrived, message)
                     in self.connections.items() if message is not None]
@@ -525,15 +558,18 @@ def prepare(main: Path, session: str, deadline: float) -> None:
     ensure(main, session, deadline).close()
 
 
-def exchange(connection: socket.socket, operator: str, started: float,
-             deadline: float, kind: Kind) -> tuple[int, str, str] | ReviewPlan | None:
+def exchange(connection: socket.socket, operator: str, started: float, deadline: float, kind: Kind,
+             known: tuple[Pace | Capped | None] | None = None
+             ) -> tuple[int, str, str] | ReviewPlan | WaitReply | None:
     """A complete response, or None when transport or request validation needs a retry.
     The call waits for the response or its bound. The resident sends `TAKEN` once it
     serves the request, or takes over the run of an earlier request."""
     with connection:
         connection.settimeout(max(deadline - time.monotonic(), 0.001))
-        connection.sendall((json.dumps({"subject": operator, "started": started,
-                                       "deadline": deadline, "kind": kind}) + "\n").encode())
+        message = {"subject": operator, "started": started, "deadline": deadline, "kind": kind}
+        if kind is Kind.WAIT:
+            message["pace"] = [] if known is None else [pace_fields(known[0])]
+        connection.sendall((json.dumps(message) + "\n").encode())
         global REQUEST_SENT
         REQUEST_SENT = True
         while not select.select([connection], [], [], 1.0)[0]:
@@ -552,6 +588,10 @@ def exchange(connection: socket.socket, operator: str, started: float,
             if kind != Kind.REVIEW or response["status"] != 0:
                 raise ValueError("unexpected review plan")
             return review_plan(response["plan"])
+        if kind is Kind.WAIT and response["status"] == 0:
+            if "ended" not in response:
+                return WaitReply(False, False, None)
+            return WaitReply(True, response["ended"], pace_of(response["pace"]), float(response["cpu"]))
         if type(response["status"]) is not int or not all(isinstance(response[k], str) for k in ("stdout", "stderr")):
             raise ValueError("invalid response")
         return response["status"], response["stdout"], response["stderr"]
@@ -604,7 +644,9 @@ def expired_output(operator: str, repeated: bool = False) -> int:
 
 
 def client(operator: str, kind: Kind = Kind.NEXT) -> int:
-    """Return resident output and publish review plans within the foreground bound."""
+    """Return resident output and publish review plans within the foreground bound;
+    `kind` is `NEXT`, `REVIEW` or `WAITS`, and `operator` the request's subject: for
+    `WAITS`, the ticket number."""
     from operate_loop import arm_watchdog, single_instance
     from relay_reads import session_id
     from transcript_snapshots import Refused
@@ -617,9 +659,10 @@ def client(operator: str, kind: Kind = Kind.NEXT) -> int:
                 return 0
         import kept_reads
         loaded_code = kept_reads.fresh_code("operate")
-        single_instance(operator)
+        if kind in (Kind.NEXT, Kind.REVIEW):
+            single_instance(operator)
         REQUEST_SENT = False
-        repeated = silent_before(operator, kind)
+        repeated = kind in (Kind.NEXT, Kind.REVIEW) and silent_before(operator, kind)
         arm_watchdog(operator, lambda me: expired_output(me, repeated))
         started, deadline = time.time(), time.monotonic() + LIMIT_SECONDS
         result = request(checkout.ROOT, session_id(), operator, started, deadline, kind)
@@ -638,6 +681,7 @@ def client(operator: str, kind: Kind = Kind.NEXT) -> int:
                     print(POLL_AGAIN)
                     return 0
                 return publish(operator, result.launch, result.scratch)
+        assert isinstance(result, tuple)
         status, stdout, stderr = result
         if status != 0 and kind == Kind.NEXT:
             return failed_next(operator, status, stdout, stderr)
@@ -691,15 +735,16 @@ def failed_next(operator: str, status: int, stdout: str, stderr: str) -> int:
     return status
 
 
-def request(main: Path, session: str, operator: str, started: float,
-            deadline: float, kind: Kind) -> tuple[int, str, str] | ReviewPlan:
+def request(main: Path, session: str, operator: str, started: float, deadline: float, kind: Kind,
+            known: tuple[Pace | Capped | None] | None = None
+            ) -> tuple[int, str, str] | ReviewPlan | WaitReply:
     """Retry transport failures from journal state within the original deadline."""
     from refresh_locks import wait_free
     while time.monotonic() < deadline:
         if not wait_free(session, deadline):
             raise Expired
         try:
-            result = exchange(ensure(main, session, deadline), operator, started, deadline, kind)
+            result = exchange(ensure(main, session, deadline), operator, started, deadline, kind, known)
             if result is not None:
                 return result
         except (ConnectionError, FileNotFoundError):
@@ -710,13 +755,29 @@ def request(main: Path, session: str, operator: str, started: float,
     raise Expired
 
 
+def poll_wait(operator: str, known: tuple[Pace | Capped | None] | None) -> WaitReply:
+    """The resident's answer to a `wait` request for `operator` that gives the pace
+    `known`, or none; `Unavailable` where the resident fails the read, and a reply
+    of no read where the request reaches its bound."""
+    from relay_reads import session_id
+    try:
+        result = request(checkout.ROOT, session_id(), operator, time.time(),
+                         time.monotonic() + LIMIT_SECONDS, Kind.WAIT, known)
+    except Expired:
+        return WaitReply(False, False, None)
+    if not isinstance(result, WaitReply):
+        assert isinstance(result, tuple)
+        raise Unavailable(result[2].strip() or result[1].strip() or "the resident failed a wait read")
+    return result
+
+
 def refresh_resident(main: Path, session: str, operator: str) -> None:
     """Have the resident of `session`, started where none runs, read the state
     of `operator`. The resident answers once it accepts the request, and the
     read goes on in it."""
     result = request(main, session, operator, time.time(),
                            time.monotonic() + LIMIT_SECONDS, Kind.REFRESH)
-    if isinstance(result, ReviewPlan) or result[0]:
+    if not isinstance(result, tuple) or result[0]:
         raise RuntimeError("resident refresh failed")
 
 
@@ -827,11 +888,13 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
             state_assembly.Cutoff(current.operator, current.started) if kind == Kind.NEXT else None)
         codex_mode.enabled.cache_clear()
         trial_mode.enabled.cache_clear()
-        script_calls.start_request(str(checkout.ROOT), "operate.py", ["review" if kind == Kind.REVIEW else "next"],
+        script_calls.start_request(str(checkout.ROOT), "operate.py",
+                                   [kind if kind in (Kind.REVIEW, Kind.WAIT, Kind.WAITS) else "next"],
                                    pending.queued if pending is not None else 0.0)
         from file_reads import stats_stand_but
         stats_stand_but(None)
         status: int | ReviewPlan = 1
+        reply: dict[str, object] = {}
         retry, keep = False, True
         if pending is not None:
             pending.running = current
@@ -847,6 +910,12 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                         child_read(current)
                         state_assembly.read_state(current.operator)
                     status = 0
+                elif current.kind is Kind.WAIT:
+                    from operate_loop import ready_read
+                    reply = ready_read(current.operator, known_pace(message))
+                    status = 0
+                elif current.kind is Kind.WAITS:
+                    status = operate.main(["waits", current.operator])
                 else:
                     client_began = time.time()
                     with executor():
@@ -864,7 +933,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
         except Replaced:
             status, retry, keep = 1, True, False
         except Detached:
-            pass
+            retry = kind is Kind.WAIT
         except (Unavailable, kept_reads.Unavailable) as exc:
             status, keep = 1, False
             stdout.seek(0)
@@ -890,7 +959,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
         response = {"status": 0 if isinstance(status, ReviewPlan) else status,
                     "stdout": "" if retry else stdout.getvalue(),
                     "stderr": "" if retry else stderr.getvalue(),
-                    "retry": retry}
+                    "retry": retry, **reply}
         if isinstance(status, ReviewPlan):
             response["plan"] = {"tag": "review-plan", "launch": asdict(status.launch),
                                 "scratch": str(status.scratch), "code": status.code}
@@ -916,7 +985,7 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
             if current.connection is not connection:
                 current.connection.close()
             if pending is not None:
-                if kind != Kind.REFRESH and not current.waiting and not current.first:
+                if kind not in YIELDING and not current.waiting and not current.first:
                     pending.left[(subject, kind)] = time.monotonic()
                 pending.running = None
             if pending is not None and not pending.waiting():

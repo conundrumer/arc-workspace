@@ -9,6 +9,7 @@ import fcntl
 import math
 import os
 import signal
+import sys
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -38,7 +39,7 @@ from transcripts import find
 from operations import briefs, order, plan, ticket_stall, unwaited
 from operations.command_words import Action
 from operations.constants import BLOCK_SECONDS, COORDINATOR, LIMIT_SECONDS, WAIT_CAP
-from operations.pacing import Until
+from operations.pacing import Capped, Pace, Until, pace_fields
 from operations.filing import filed, with_report
 from operations.printing import batch_line, key_line, listing_line, printed
 from operations.printed_forms import AFTER_TIMEOUT, STATE_READ_TIMEOUT
@@ -475,10 +476,24 @@ def ran(scratch: Path, deadline: float) -> bool:
 RUN_POLL_SECONDS = 1.0
 
 
+def ready_read(operator: str, known: tuple[Pace | Capped | None] | None) -> dict[str, object]:
+    """The fields of a `wait` reply (`operate_service.WaitReply`) from one read of the
+    state of `operator`: `ended` is whether `plan.ready_step` gives a step other than a
+    poll or, where `known` gives a pace, a poll of another pace, `pace` is the pace
+    of a poll, as `pacing.pace_fields` gives it, and `cpu` the CPU seconds of the read."""
+    cpu = cpu_seconds()
+    state, watch = read_state(operator)
+    step = plan.ready_step(state, watch)
+    pace = step.pace if isinstance(step, Poll) else None
+    ended = not isinstance(step, Poll) or (known is not None and pace != known[0])
+    return {"ended": ended, "pace": pace_fields(pace), "cpu": cpu_seconds() - cpu}
+
+
 def wait(me: str) -> int:
     """Block, as `operate.py --help wait` gives it, for the operator `me`,
     or, where `me` is an operator launcher, for the last operator it
-    launched, while holding the lock of `wait_lock` for `me`; where
+    launched, while holding the lock of `wait_lock` for `me`, with one request
+    to the resident each `POLL_SECONDS` (the client holds no paths to watch); where
     another call holds that lock, or the launcher launched no operator
     with a known agent id, return at once."""
     fd = os.open(wait_lock(me), os.O_RDWR | os.O_CREAT, 0o600)
@@ -493,15 +508,27 @@ def wait(me: str) -> int:
     if operator is None:
         return 0
 
-    def ready_at(_deadline: float) -> Step:
-        state, watch = read_state(operator)
-        return plan.ready_step(state, watch)
-
-    first = ready_at(0.0)
-    if not isinstance(first, Poll):
-        return 0
-    seconds = float(WAIT_CAP)
-    if isinstance(first.pace, Until):
-        seconds = min(seconds, first.pace.time - time.time())
-    watched(ready_at, lambda s: not isinstance(s, Poll) or s.pace != first.pace, seconds)
+    try:
+        first = operate_service.poll_wait(operator, None)
+        while not first.read:
+            first = operate_service.poll_wait(operator, None)
+        if first.ended:
+            return 0
+        seconds = float(WAIT_CAP)
+        if isinstance(first.pace, Until):
+            seconds = min(seconds, first.pace.time - time.time())
+        end = time.monotonic() + seconds
+        started, spent = time.monotonic(), first.cpu
+        while time.monotonic() < end:
+            due = min(started + max(POLL_SECONDS, READ_SHARE * spent), end)
+            read_interrupts.sleep(max(due - time.monotonic(), 0), operate_service.pause)
+            read_interrupts.checkpoint()
+            started = time.monotonic()
+            reply = operate_service.poll_wait(operator, (first.pace,))
+            if reply.ended:
+                break
+            spent = reply.cpu
+    except operate_service.Unavailable as exc:
+        print(f"operate: {exc}", file=sys.stderr)
+        return 1
     return 0

@@ -86,6 +86,48 @@ def test_request_refuses_nonfinite_deadline(kind):
                                  "deadline": float("nan")})
 
 
+def test_wait_request_gives_its_pace_and_other_kinds_give_none():
+    base = {"subject": "editor", "started": 1, "deadline": 2.0}
+    assert service.request_message({**base, "kind": "wait", "pace": []})[0] is service.Kind.WAIT
+    with pytest.raises(ValueError):
+        service.request_message({**base, "kind": "wait"})
+    with pytest.raises(ValueError):
+        service.request_message({**base, "kind": "waits", "pace": []})
+    assert service.known_pace({"pace": []}) is None
+    assert service.known_pace({"pace": [None]}) == (None,)
+
+
+@pytest.mark.parametrize("pace", [None, "until", "capped", "scripted", "uncomputed"])
+def test_pace_survives_the_request_form(pace):
+    import json
+    from operations import pacing
+    from operations.state import NotComputed
+    given = {None: None, "until": pacing.Until(5.0, 2), "capped": pacing.Capped(3),
+             "scripted": pacing.Scripted(Path("/x/paces.py"), True),
+             "uncomputed": NotComputed("why")}[pace]
+    assert pacing.pace_of(json.loads(json.dumps(pacing.pace_fields(given)))) == given
+
+
+def test_queue_serves_waits_before_wait_and_refresh():
+    listener = socket.socket(socket.AF_UNIX)
+    pending = service.Pending(listener)
+    base = {"subject": "s", "started": 1.0, "deadline": 9.0}
+    kept = []
+    for message in ({**base, "kind": "wait", "pace": []}, {**base, "kind": "refresh"},
+                    {**base, "kind": "waits"}):
+        a, b = socket.socketpair()
+        kept += [a, b]
+        pending.connections[a] = time.monotonic(), message
+    assert pending.client_queued()
+    order = []
+    while (connection := pending.take()) is not None:
+        order.append(connection)
+    assert order[0] is kept[4]
+    for c in kept:
+        c.close()
+    listener.close()
+
+
 def test_cutoff_closes_only_entries_of_the_operator_whose_next_it_bounds():
     state_assembly = script("state_assembly")
     from operations.journal import Entry
@@ -226,3 +268,13 @@ def test_child_retries_a_flush_that_fails_on_a_lock(tmp_path, monkeypatch):
     found = other.held("fixture:read", "op")
     other.close()
     assert found == "kept"
+
+
+def test_wait_reply_carries_the_cpu_of_its_read():
+    import json
+    a, b = socket.socketpair()
+    with a, b:
+        b.sendall((json.dumps({"status": 0, "stdout": "", "stderr": "", "retry": False, "ended": False,
+                               "pace": None, "cpu": 1.5}) + "\n").encode())
+        reply = service.exchange(a, "op", 1.0, time.monotonic() + 5, service.Kind.WAIT, None)
+    assert reply == service.WaitReply(True, False, None, 1.5)

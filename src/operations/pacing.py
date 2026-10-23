@@ -16,7 +16,7 @@ import argparse
 import math
 import shlex
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
@@ -90,6 +90,37 @@ class Scripted:
 
 
 type Pace = Until | Scripted | NotComputed
+
+PACE_TYPES: Mapping[str, type] = {c.__name__: c for c in (Until, Capped, Scripted, NotComputed)}
+"""The class of each pace that `pace_fields` gives a `tag` to."""
+
+
+def pace_fields(pace: Pace | Capped | None) -> dict[str, object] | None:
+    """The fields of `pace` as JSON values, with its class name as `tag`, or
+    None for no pace; `pace_of` is the inverse."""
+    if pace is None:
+        return None
+    fields = asdict(pace)
+    if isinstance(pace, Scripted):
+        fields["path"] = str(pace.path)
+    return {"tag": type(pace).__name__, **fields}
+
+
+def pace_of(fields: object) -> Pace | Capped | None:
+    """The pace that `pace_fields` gave `fields`; raises ValueError for
+    other fields."""
+    if fields is None:
+        return None
+    if not isinstance(fields, dict) or fields.get("tag") not in PACE_TYPES:
+        raise ValueError("invalid pace")
+    cls = PACE_TYPES[fields["tag"]]
+    values = {k: v for k, v in fields.items() if k != "tag"}
+    if cls is Scripted and isinstance(values.get("path"), str):
+        values["path"] = Path(values["path"])
+    try:
+        return cls(**values)
+    except TypeError as exc:
+        raise ValueError("invalid pace") from exc
 
 
 def admits(pace: Pace, now: float) -> bool:
