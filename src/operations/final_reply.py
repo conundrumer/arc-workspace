@@ -3,7 +3,8 @@
 gives, whether that text ends the operator for
 its context (`for_context`) or for a wait (`for_wait`) or hands its lines to the operator launched
 after it (`hands_over`) or to one operator by name (`hands_to`), the calls that sent its text to its parent
-(`final_sends`), the calls of each operator (`OwnCalls`), whether an operator has ended (`ended`), which of two
+(`final_sends`), the calls of each operator (`OwnCalls`), whether an operator has ended (`ended`) or made the SubagentHandback call last
+(`handed_back`), which of two
 operators continues the lines one hands the other (`takes_up`), whether a holder
 of a change is live (`live_holder`), the operators launched before and
 after one (`split_at`),
@@ -178,15 +179,26 @@ def first_next(own: OwnCalls, after: float) -> float | None:
     return own.nexts[i] if i < len(own.nexts) else None
 
 
+def handed_back(own: OwnCalls) -> bool:
+    """Whether the last call of `own` is a SubagentHandback call. A call of
+    `next` or any other call after it makes this false again; the text
+    turns that messages give the operator make no call."""
+    return bool(own.calls) and own.calls[-1].tool == Tool.SUBAGENT_HANDBACK
+
+
 def live_holder(state: State, holder: str) -> bool:
     """Whether `holder` holds its changes live: it stands in
     `open_holders`, and it is not an operator launched before `me` that
-    has `ended`. An earlier operator whose step is in flight when `me`
-    starts has made no final send yet, and holds its changes until its
-    next call of `next` ends it."""
+    has `ended` or has `handed_back`. An earlier operator whose step is in
+    flight when `me` starts has made no final send yet, and holds its
+    changes until its next call of `next` ends it. The messages and
+    notifications that reach an operator after its run ended give its
+    transcript turns that keep it in `open_holders`."""
     if holder not in state.open_holders:
         return False
-    return holder not in split_at(state.operators, state.me)[0] or not ended(state, holder)
+    if holder not in split_at(state.operators, state.me)[0]:
+        return True
+    return not (ended(state, holder) or handed_back(operator_calls(state)[holder]))
 
 
 @memoized

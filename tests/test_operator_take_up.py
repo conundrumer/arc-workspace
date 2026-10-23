@@ -57,3 +57,16 @@ def test_a_stored_line_holds_for_the_next_operator_from_the_main_tree_alone(
                        messages=(Message(EARLY, 10.0, None, "brief"),
                                  Message(LATE, 100.0, None, "brief")))
     assert paused(s)
+
+
+def handback(time: float):
+    from operations.state import Call, Tool
+    return Call(EARLY, time, Tool.SUBAGENT_HANDBACK, {}, "sent", False)
+
+
+def test_an_earlier_operator_that_handed_back_last_holds_no_changes_live(tmp_path: Path) -> None:
+    import dataclasses
+    from operations.final_reply import live_holder
+    s = operator_state(tmp_path, LATE, (EARLY, LATE), (handback(100.0),))
+    s = dataclasses.replace(s, open_holders=frozenset({EARLY}))
+    assert not live_holder(s, EARLY)
