@@ -44,12 +44,12 @@ def with_facts[F: Sized](session: Path,
 class Fact[F]:
     """A fact of a transcript of a session (`with_facts`): the place of that
     transcript among the session's transcripts, the fact's own place among
-    that transcript's facts, the transcript, the time of its last write,
-    and the fact."""
+    that transcript's facts, the transcript, and the fact. It holds no
+    write time, so that a read of it sees a change only where the facts
+    change, not where a transcript is added to."""
     transcript: int
     entry: int
     path: Path
-    written: float
     fact: F
 
 
@@ -60,11 +60,19 @@ def facts_by_agent[F](session: Path, facts: Callable[[Path], Sequence[F]],
     id `agents_of` gives of it, so that a read of the facts that name a few
     agents reads only those facts."""
     out: dict[str, list[Fact[F]]] = {}
-    for k, (p, written_at, found) in enumerate(with_facts(session, facts)):
+    for k, (p, _, found) in enumerate(with_facts(session, facts)):
         for j, fact in enumerate(found):
             for v in dict.fromkeys(agents_of(fact)):
-                out.setdefault(v, []).append(Fact(k, j, p, written_at, fact))
+                out.setdefault(v, []).append(Fact(k, j, p, fact))
     return {v: tuple(at) for v, at in out.items()}
+
+
+@state_cache(DERIVED)
+def facts_of[F](session: Path, facts: Callable[[Path], Sequence[F]],
+                agents_of: Callable[[F], Iterable[str]], agent: str) -> tuple[Fact[F], ...]:
+    """The facts of `facts_by_agent` of `session` that name `agent`, so that
+    a read of them sees a change only where those facts change."""
+    return facts_by_agent(session, facts, agents_of).get(agent, ())
 
 
 def agents_facts[F](sessions: Iterable[Path], since: float, facts: Callable[[Path], Sequence[F]],
@@ -76,9 +84,9 @@ def agents_facts[F](sessions: Iterable[Path], since: float, facts: Callable[[Pat
     each."""
     out: list[Fact[F]] = []
     for session in sessions:
-        index = facts_by_agent(session, facts, agents_of)
+        times = dict(written(session)) if since > 0.0 else None
         named = {(at.transcript, at.entry): at for v in agents
-                 for at in index.get(v, ()) if at.written >= since}
+                 for at in facts_of(session, facts, agents_of, v) if times is None or times[at.path] >= since}
         out += [named[k] for k in sorted(named)]
     return out
 
