@@ -10,7 +10,7 @@ The step ends when the concept case of each solver, at the stored `param` record
 
 - Each relation of the [dependency graph](reader.md#the-dependency-graph) is evaluated once from its inputs, in topological order. A checked case program is acyclic, so negation and `ALL` need no stratification beyond that order.
 - Fixpoints exist only inside native constructions and in the rounds of `Unfold`.
-- A `RIGID_DET` assembly at its stored records gives its placements, as [Semantics](../../docs/arclog/rigid.md#semantics) gives.
+- A `RIGID_DET` assembly gives its placements, as [Semantics](../../docs/arclog/rigid.md#semantics) gives.
 
 ### Joins
 

@@ -8,18 +8,25 @@
 //! rows of each part, in the form's order of parts. At each key, the frame,
 //! the common reading of the key's instances, is the reading of the instance
 //! whose reading is least by content, as `docs/engine/determination.md#rigid_det`
-//! gives, so the frame depends on no order of encodings. Where some instance
-//! has no D4 element that takes its key's frame onto its reading at every
-//! part at once, the assembly has no value, and each output is `undefined`.
+//! gives, so the frame depends on no order of encodings. An element takes a
+//! frame onto an instance's reading where, for some one-to-one renaming of
+//! the assembly's own Idents, the same at every part, the frame's image
+//! under the element, with those Idents renamed, is the reading
+//! (`docs/arclog/rigid.md#semantics`). Where some instance has no D4
+//! element that does, the assembly has no value, and each output is
+//! `undefined`.
 //!
 //! A part's site that holds a bare label of the `instance` clause selects
 //! the part's rows at an instance and gives the part no column, so an
 //! instance's reading of the part is the part's rows at that instance's
 //! row, without those columns.
 
+pub mod renaming;
+
 use std::cmp::Ordering;
 use std::sync::Arc;
 
+use self::renaming::{renaming_between, IdentRowsBuilder};
 use super::join::{self, Budget};
 use super::values::OutputKey;
 use super::{ir, Evaluation, FormBodies, Outcome, RelationValue, RunFault, Stop};
@@ -62,13 +69,14 @@ pub fn evaluate_assembly(
 }
 
 /// One part of an assembly: its atom with its path, the labels of its
-/// sites that give it a column, in the order of its columns, and their
-/// types.
+/// sites that give it a column, in the order of its columns, their types,
+/// and whether each column holds the assembly's own Idents.
 struct Part<'p> {
     atom: &'p Node<Atom>,
     path: NodePath,
     labels: Vec<LabelId>,
     types: Vec<ValueType>,
+    own: Vec<bool>,
 }
 
 /// An instance of an assembly: its row of the key and instance clauses,
@@ -101,7 +109,8 @@ impl<'e, 'p> Assembly<'e, 'p> {
     /// The assembly of `rigid`, the `RIGID_DET` form at `form`.
     fn of(evaluation: &'e Evaluation<'p>, form: &'e NodePath, rigid: &'p RigidDet) -> Outcome<Self> {
         let fault = |message: String| fault(form, message);
-        let types = ir::label_types(evaluation.program, form);
+        let types_of = ir::label_types(evaluation.program, form);
+        let types = types_of;
         let typed = |labels: &[LabelId]| -> Outcome<Vec<ValueType>> {
             labels.iter().map(|&label| label_type(types, label).map_err(&fault)).collect()
         };
@@ -126,7 +135,8 @@ impl<'e, 'p> Assembly<'e, 'p> {
                 return Err(fault("a part's site holds a label of the `instance` clause inside a term of other labels, whose column `docs/arclog/rigid.md#semantics` gives no value in the part's output".into()));
             }
             let types = typed(&labels)?;
-            parts.push(Part { atom, path: form.child(index), labels, types });
+            let own = labels.iter().zip(&types).map(|(&label, ty)| *ty == ValueType::Ident && types_of.is_own_ident(label)).collect();
+            parts.push(Part { atom, path: form.child(index), labels, types, own });
         }
         Ok(Assembly { evaluation, form, key, key_labels, instance, instance_labels, parts })
     }
@@ -210,11 +220,46 @@ impl<'e, 'p> Assembly<'e, 'p> {
         Ordering::Equal
     }
 
+    /// Whether some column of some part holds the assembly's own Idents.
+    fn has_own_idents(&self) -> bool {
+        self.parts.iter().any(|part| part.own.contains(&true))
+    }
+
+    /// Whether the element `g` takes `frame`, the rows of each part in the
+    /// order of the parts, onto `observed` at every part at once: the image
+    /// of the frame under `g` is `observed`, up to one one-to-one renaming
+    /// of the assembly's own Idents, the same at every part.
+    fn takes_onto(&self, geometry: &Geometry, g: D4Element, frame: &[RowSet], observed: &[RowSet]) -> bool {
+        if !self.has_own_idents() {
+            return self.parts.iter().zip(frame).zip(observed).all(|((part, frame), observed)| {
+                let images: StableHashSet<Row> = frame.rows().map(|values| image(geometry, g, values, &part.types).collect()).collect();
+                images.len() == observed.len() && observed.rows().all(|values| images.contains(values))
+            });
+        }
+        let mut images: IdentRowsBuilder<u32, TermId> = IdentRowsBuilder::default();
+        let mut readings: IdentRowsBuilder<u32, TermId> = IdentRowsBuilder::default();
+        for (index, part) in self.parts.iter().enumerate() {
+            let split = |values: &[TermId], builder: &mut IdentRowsBuilder<u32, TermId>| {
+                let leaves = values.iter().zip(&part.own).map(|(&value, &own)| (!own).then_some(value.encoding())).collect();
+                let idents = values.iter().zip(&part.own).filter(|(_, own)| **own).map(|(&value, _)| value);
+                builder.push(index, leaves, idents);
+            };
+            for values in frame[index].rows() {
+                let moved: Vec<TermId> = image(geometry, g, values, &part.types).collect();
+                split(&moved, &mut images);
+            }
+            for values in observed[index].rows() {
+                split(values, &mut readings);
+            }
+        }
+        renaming_between(&images.finish(), &readings.finish())
+    }
+
     /// The assembly's frames and poses: at each key, the reading of the
     /// instance at that key whose reading is least by
     /// [`Assembly::reading_order`], and for each instance, the D4 elements
-    /// that take its key's frame onto its reading at every part at once;
-    /// or `undefined`, where some instance has no such element, or the
+    /// that take its key's frame onto its reading at every part at once,
+    /// as [`Assembly::takes_onto`] gives; or `undefined`, where some instance has no such element, or the
     /// value of a body of the form that is `undefined` or stopped, or of a
     /// stop.
     fn solve(&self, bodies: &FormBodies<'_>, example: Option<Example>, budget: &mut Budget<'_>) -> Outcome<Result<Solution, RelationValue>> {
@@ -243,17 +288,18 @@ impl<'e, 'p> Assembly<'e, 'p> {
                 return Ok(Err(self.stopped(bound)));
             }
             let frame = &frames[&instance.row[..self.key_labels.len()]];
-            let found: Vec<TermId> = elements
-                .iter()
-                .copied()
-                .filter(|&element| {
-                    let g = geometry.element(element);
-                    self.parts.iter().zip(frame).zip(&instance.reading).all(|((part, frame), observed)| {
-                        let images: StableHashSet<Row> = frame.rows().map(|values| image(geometry, g, values, &part.types).collect()).collect();
-                        images.len() == observed.len() && observed.rows().all(|values| images.contains(values))
-                    })
-                })
-                .collect();
+            let mut found = Vec::new();
+            for &element in elements {
+                if self.has_own_idents() {
+                    let searched = frame.iter().chain(&instance.reading).map(|rows| rows.len() as u64).sum();
+                    if let Err(bound) = budget.charge_work(searched) {
+                        return Ok(Err(self.stopped(bound)));
+                    }
+                }
+                if self.takes_onto(geometry, geometry.element(element), frame, &instance.reading) {
+                    found.push(element);
+                }
+            }
             if found.is_empty() {
                 return Ok(Err(RelationValue::Undefined));
             }
@@ -294,7 +340,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
 
     /// The rows of `&marker.pose`: for each instance, each D4 element that
     /// takes its key's frame onto the instance's reading at every part at
-    /// once, or the value of [`Assembly::solve`] where it gives no
+    /// once, as [`Assembly::takes_onto`] gives, or the value of [`Assembly::solve`] where it gives no
     /// solution.
     fn poses(&self, bodies: &FormBodies<'_>, example: Option<Example>, budget: &mut Budget<'_>) -> Outcome<Result<RowSet, RelationValue>> {
         let solution = match self.solve(bodies, example, budget)? {

@@ -46,8 +46,8 @@ The step of the [build order](overview.md#build-order) that builds it ends when 
 
 - The engine computes `RIGID_DET` by the method of [Implementation](../../docs/arclog/rigid.md#implementation). The frame of each assembly is the reading of its instance whose reading is least by content, in the canonical order of terms, so the frame depends on no order of encodings.
 - An assembly's instances are those its `instance` clause gives, and a form with none has one instance, as [rigid](../../docs/arclog/rigid.md) gives. The engine infers no instance from a part's columns: a part column the `instance` clause does not name is a column of the part.
-- No output observes that choice, as [Invariance](../../docs/handbook/principles.md#invariance) requires: the checker gives each `:Pose` column the type Pose, and refuses every read that would see the frame, as [The `RIGID_DET` frame](equivariance.md#the-rigid_det-frame) gives.
-- A record of an assembly's parts was written in Souffle's frame, so the parts compare with the records up to one D4 element, the same element for every part of the assembly.
+- No output observes that choice, as [Invariance](../../docs/handbook/principles.md#invariance) requires: the checker gives each `:Pose` column the type Pose, and refuses every read that would see the frame, as [The `RIGID_DET` frame](equivariance.md#the-rigid_det-frame) gives, and the assembly's own Idents are as unobservable as the pose, as [The pose](../../docs/arclog/rigid.md#the-pose) gives.
+- A record of an assembly's parts was written in Souffle's frame, so the parts compare with the records up to one D4 element, the same element for every part of the assembly, and, through the renaming of Idents, one renaming.
 
 ## End check
 

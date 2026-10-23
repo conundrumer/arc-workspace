@@ -62,9 +62,11 @@ A form may also hold an `instance` clause, and a `key` clause:
 
 ## Semantics
 
-An instance's reading is, for each part, the part's rows at that instance. A model of one assembly is a common reading, one set of rows per part, together with, for each instance, the D4 elements that take the common reading onto the instance's reading. One element acts on every part of an instance at once.
+An instance's reading is, for each part, the part's rows at that instance. A model of one assembly is a common reading, one set of rows per part, together with, for each instance, the D4 elements that, each with one one-to-one renaming of the assembly's own Idents, take the common reading onto the instance's reading. One element and one renaming act on every part of an instance at once.
 
-An element acts by type. A `Box`, `Position` or `Offset` goes through `apply`, and a `Dir`, `DiagDir` or `Dir8` goes through the direction actions. An `Axis` or `DiagAxis` goes through the swap the element induces on its directions, and a reflection reverses a `Sense`. Every other type is left as it is.
+An element acts by type. A `Box`, `Position` or `Offset` goes through `apply`, and a `Dir`, `DiagDir` or `Dir8` goes through the direction actions. An `Axis` or `DiagAxis` goes through the swap the element induces on its directions, and a reflection reverses a `Sense`. A renaming moves the assembly's own Idents. Every other type is left as it is.
+
+An `Ident` column of a part is the assembly's own where no label at it stands at an `Ident` site outside the assembly's parts and the relations that take their types from them, other than a site in the body of a determination relation that an `instance` clause of the assembly reads. That body gives each instance its reading, which the model takes up to the renaming. Every other `Ident` column is a plain `Ident`, and a renaming leaves it as it is.
 
 If the instances of an assembly admit no common reading, the assembly has no value. Where a common reading `R` exists, every image of `R` under D4 is one too. The choice among them is the assembly's frame. Nothing in the task makes that choice, and the outputs are defined so that no read observes it.
 
@@ -84,6 +86,14 @@ A change of frame relabels every pose of an assembly in the same way, by composi
 - `pose_difference(a, b, d)`, where d is the element that takes the placement at pose a onto the placement at pose b. It is the same in every frame, a D4 value in the grid frame, and it is the one way from a Pose to a D4 value.
 
 The checker refuses a Pose label at any other site. So `(d4_identity D)` and `(c4_elem D)` on a pose, which would test a single pose, are type errors, and every body that reads a pose gives the same rows in every frame of its assembly.
+
+The assembly's own Idents have a type of their own, and a label at such a column stands only at these sites:
+
+- A column of the assembly's own Idents of the same assembly.
+- A column of a derived relation, or a column of an `INIT` form's key, input or output that its component types by a type parameter, which then takes the type.
+- `=` and `!=`.
+
+A site in the body of a determination relation that an `instance` clause reads is not counted, since that body gives the instance its reading. In 269e22fb, `&cell_class` joins `&class_id.class`, and in 150deff5, `&member` joins `&color_id.class`. A label that stands at any other `Ident` site makes the column a plain `Ident`, a later read of the part included: in 150deff5, `&piece_color` reads `&piece.member`'s `Id` in `&output`. The checker refuses nothing for it.
 
 ## Subgroups
 
@@ -127,4 +137,4 @@ Note from principal: It seems RIGID was not used as often as it should have beca
 
 ## Implementation
 
-The Souffle backend takes one instance's reading as each assembly's frame. For each instance, it finds the elements that take the frame's reading onto that instance's reading over every part at once, as `Agreement` does for one cell set with its D4 images as the correspondences. When every instance has such an element, it writes `&marker.<part>` as the closure of the frame's reading over D4, and `&marker.pose` as the elements it found. The choice of the frame instance is arbitrary, and the Pose type of [The pose](#the-pose) makes it unobservable.
+The Souffle backend takes one instance's reading as each assembly's frame. For each instance, it finds the elements that take the frame's reading onto that instance's reading over every part at once, as `Agreement` does for one cell set with its D4 images as the correspondences. When every instance has such an element, it writes `&marker.<part>` as the closure of the frame's reading over D4, and `&marker.pose` as the elements it found. An element is found for an instance where the image of the frame under it, at the part columns that are the assembly's own Idents, maps onto the instance's reading by one one-to-one renaming of those Idents, the same renaming at every part. The choice of the frame instance is arbitrary, and the Pose type and the own-Ident type of [The pose](#the-pose) make it unobservable.
