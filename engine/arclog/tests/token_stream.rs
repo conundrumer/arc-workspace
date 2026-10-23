@@ -3,12 +3,14 @@
 //! site on a record-valued column gives one `END`, after its field sites, and
 //! a program that passes a vocabulary cap is refused.
 
-use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
+use std::sync::Arc;
+
+use arclog::check::{check_program, check_shared_program, CheckCache, CheckedProgram, SolverClauses};
 use arclog::diagnostic::DiagnosticKind;
 use arclog::program::{ConstraintOp, FactRelation};
 use arclog::read::read_solver;
 use arclog::registry::{LibName, Registry};
-use arclog::resolver::resolve;
+use arclog::resolver::{resolve, resolve_cases};
 use arclog::stream::{token_stream, Control, DecodeSettings, Emitter, Token, Vocabulary, VocabularyCaps};
 
 /// The checked program of the concept case of the arclog file `arclog`.
@@ -156,4 +158,18 @@ fn a_site_on_a_record_gives_its_field_sites_and_one_end() {
     want.extend([(control(Control::End), M), (Token::Relation(2), E)]);
     assert_eq!(after(&got, prefix), &want[..]);
     assert_eq!(got, elided);
+}
+
+#[test]
+fn a_case_program_from_alts_is_written_after_what_its_forms_read() {
+    let alts = "(RULE &fill (input *P))\n\n(ALTS $choice \"whether &fill reads &box\" $Plain\n  (ALT $Boxed\n    (RULE &box (input *P))\n    (RULE &fill (&box *P))))\n";
+    let solver = read_solver("alts", alts, "", &|_| None).expect("the file reads").value;
+    let registry = Registry::get();
+    let cases = resolve_cases(&solver, registry);
+    let clauses = SolverClauses::of_cases(&cases);
+    let boxed = cases.cases().find(|resolved| resolved.case.name != cases.concept().case.name).expect("the case of `$Boxed`");
+    let program = check_shared_program(Arc::clone(&boxed.resolved.value), &clauses, registry, &mut CheckCache::default()).expect("every check passes");
+    let vocabulary = Vocabulary::new(registry, &DecodeSettings::default());
+    let got = token_stream(&program, &vocabulary).expect("the case program has a stream");
+    assert_eq!(got, stream("(RULE &box (input *P))\n(RULE &fill (&box *P))\n"));
 }

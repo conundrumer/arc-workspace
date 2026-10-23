@@ -20,7 +20,7 @@
 
 use crate::check::CheckedProgram;
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
-use crate::hash::StableHashMap;
+use crate::hash::{StableHashMap, StableHashSet};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
     Body, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, ConstraintLabel, Form, Instance, InstanceInput, LabelId, LabelUse, Negated,
@@ -35,8 +35,10 @@ use crate::resolver::{DependencyKind, Resolution, ResolvedProgram, Side};
 
 use super::{Control, Emitter, Token, Vocabulary};
 
-/// The token stream of `program`'s forms, in declaration order, the forms
-/// of each claim in its place. Each relation the program declares takes the
+/// The token stream of `program`'s forms, the forms of each claim in its
+/// place, in the case program's order where that order puts each form after
+/// the first form that declares each relation it reads, and otherwise with
+/// each form after the forms it reads from. Each relation the program declares takes the
 /// next relation slot at its declaration, and each label the next label
 /// slot of its top-level form at its first use.
 ///
@@ -65,8 +67,113 @@ pub fn token_stream_with_paths(program: &CheckedProgram, vocabulary: &Vocabulary
         labels: StableHashMap::default(),
         stream: Vec::new(),
     };
-    writer.forms(&program.program.program.value().forms, &NodePath::default())?;
+    writer.forms(&program.program.program.value().forms)?;
     Ok(writer.stream)
+}
+
+/// The forms of `forms` that hold no form, each with its path under `path`,
+/// the forms of a claim in the claim's place.
+fn leaf_forms<'a>(forms: &'a [Form], path: &NodePath, out: &mut Vec<(&'a Form, NodePath)>) {
+    for (index, form) in forms.iter().enumerate() {
+        let at = path.child(index as u32);
+        match form {
+            Form::Claim(claim) => leaf_forms(&claim.value().forms, &at, out),
+            _ => out.push((form, at)),
+        }
+    }
+}
+
+/// The relations, with their columns, that `instance` of `component`
+/// declares, one for each relation port, in the component's order.
+fn instance_outputs(component: &Component, instance: &Instance) -> Vec<(ProgramRelation, Box<[ColumnName]>)> {
+    let every: Vec<_> = component.inputs.iter().map(|input| &input.port.name).collect();
+    component
+        .relation_ports(&every)
+        .map(|port| {
+            let output = OutputName { of: OutputOwner::Instance(instance.name.clone()), path: [OutputStep::Port(port.name.clone())].into() };
+            (ProgramRelation::Output(output), port.columns.iter().map(|column| column.name.clone()).collect())
+        })
+        .collect()
+}
+
+/// The program relation that a read of `relation` looks up, `None` for a
+/// read of a fact, a lib relation or an input port.
+fn read_relation(relation: &RelationRef) -> Option<ProgramRelation> {
+    match relation {
+        RelationRef::Declared(name) => Some(ProgramRelation::Declared(name.clone())),
+        RelationRef::Output(output) => Some(ProgramRelation::Output(output.clone())),
+        _ => None,
+    }
+}
+
+/// The relation that `choose` declares.
+fn choose_relation(choose: &Choose) -> ProgramRelation {
+    ProgramRelation::Declared(choose.name.clone())
+}
+
+/// The relations, with their columns, that `rigid` declares, in the order
+/// `rigid_outputs` gives.
+fn rigid_det_outputs(rigid: &RigidDet) -> Vec<(ProgramRelation, Box<[ColumnName]>)> {
+    rigid_outputs(rigid)
+        .into_iter()
+        .map(|(steps, columns)| (ProgramRelation::Output(OutputName { of: OutputOwner::RigidDet(rigid.name.clone()), path: steps }), columns.names().cloned().collect()))
+        .collect()
+}
+
+/// The relations that `form` declares.
+fn declarations(registry: &Registry, form: &Form) -> Vec<ProgramRelation> {
+    match form {
+        Form::Clause(clause) => vec![clause.value().derives.clone()],
+        Form::Choose(choose) => vec![choose_relation(choose.value())],
+        Form::Instance(instance) => {
+            let instance = instance.value();
+            component(registry, &instance.component).map_or_else(Vec::new, |component| instance_outputs(component, instance).into_iter().map(|(relation, _)| relation).collect())
+        }
+        Form::RigidDet(rigid) => rigid_det_outputs(rigid.value()).into_iter().map(|(relation, _)| relation).collect(),
+        Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) => Vec::new(),
+    }
+}
+
+/// The relations that the atoms below `node` read and that a form declares.
+fn reads_below(node: NodeRef<'_>, reads: &mut Vec<ProgramRelation>) {
+    if let Some(atom) = node.atom() {
+        reads.extend(read_relation(&atom.relation));
+    }
+    for child in node.children() {
+        reads_below(child, reads);
+    }
+}
+
+/// The indexes of `forms` in the order the writer writes them: at each
+/// step the earliest form, in the given order, each of whose reads, other
+/// than of what it declares itself, is of a relation that a form already
+/// written declares or that no form of `forms` declares. Where no form is
+/// ready, as in a cycle, the earliest form left. A list whose forms follow
+/// what they read keeps its order.
+fn write_order(registry: &Registry, forms: &[(&Form, NodePath)]) -> Vec<usize> {
+    let declares: Vec<Vec<ProgramRelation>> = forms.iter().map(|(form, _)| declarations(registry, form)).collect();
+    let reads: Vec<Vec<ProgramRelation>> = forms
+        .iter()
+        .zip(&declares)
+        .map(|((form, _), own)| {
+            let mut reads = Vec::new();
+            reads_below(NodeRef::from(*form), &mut reads);
+            reads.retain(|relation| !own.contains(relation));
+            reads
+        })
+        .collect();
+    let mut waiting: StableHashSet<&ProgramRelation> = declares.iter().flatten().collect();
+    let mut order = Vec::with_capacity(forms.len());
+    let mut left: Vec<usize> = (0..forms.len()).collect();
+    while !left.is_empty() {
+        let ready = left.iter().position(|&index| reads[index].iter().all(|relation| !waiting.contains(relation)));
+        let index = left.remove(ready.unwrap_or(0));
+        for relation in &declares[index] {
+            waiting.remove(relation);
+        }
+        order.push(index);
+    }
+    order
 }
 
 /// A relation the program has declared: its slot and the names of its
@@ -116,29 +223,21 @@ impl Writer<'_> {
         diagnostic(kind, severity, message, path)
     }
 
-    fn forms(&mut self, forms: &[Form], path: &NodePath) -> Written {
-        for (index, form) in forms.iter().enumerate() {
-            let at = path.child(index as u32);
+    /// Writes the forms in the order of [`write_order`].
+    fn forms(&mut self, forms: &[Form]) -> Written {
+        let mut leaves = Vec::new();
+        leaf_forms(forms, &NodePath::default(), &mut leaves);
+        for index in write_order(self.registry, &leaves) {
+            let (form, at) = &leaves[index];
+            self.labels.clear();
             match form {
-                Form::Claim(claim) => self.forms(&claim.value().forms, &at)?,
-                Form::Clause(clause) => {
-                    self.labels.clear();
-                    self.clause(clause.value(), &at)?;
-                }
-                Form::Instance(instance) => {
-                    self.labels.clear();
-                    self.instance(instance.value(), &at)?;
-                }
-                Form::Choose(choose) => {
-                    self.labels.clear();
-                    self.choose(choose.value(), &at)?;
-                }
-                Form::RigidDet(rigid) => {
-                    self.labels.clear();
-                    self.rigid_det(rigid.value(), &at)?;
-                }
-                Form::Demonstrated(_) => return Err(no_form("a `DEMONSTRATED` form", &at)),
-                Form::Alts(_) => return Err(no_form("an `ALTS` form", &at)),
+                Form::Claim(_) => unreachable!("leaf forms hold no claim"),
+                Form::Clause(clause) => self.clause(clause.value(), at)?,
+                Form::Instance(instance) => self.instance(instance.value(), at)?,
+                Form::Choose(choose) => self.choose(choose.value(), at)?,
+                Form::RigidDet(rigid) => self.rigid_det(rigid.value(), at)?,
+                Form::Demonstrated(_) => return Err(no_form("a `DEMONSTRATED` form", at)),
+                Form::Alts(_) => return Err(no_form("an `ALTS` form", at)),
             }
         }
         Ok(())
@@ -279,8 +378,7 @@ impl Writer<'_> {
                 };
                 (token, self.lib_columns(&atom.relation, path)?)
             }
-            RelationRef::Declared(name) => self.declared_relation(&ProgramRelation::Declared(name.clone()), path)?,
-            RelationRef::Output(output) => self.declared_relation(&ProgramRelation::Output(output.clone()), path)?,
+            RelationRef::Declared(_) | RelationRef::Output(_) => self.declared_relation(&read_relation(&atom.relation).expect("a declared or output read names a program relation"), path)?,
             RelationRef::DefinedPort(_) => return Err(no_form("a read of an input port", path)),
         };
         let columns: Box<[ColumnName]> = match reads_example_column(self.resolved, path) {
@@ -345,15 +443,7 @@ impl Writer<'_> {
         self.push(Token::Lib(instance.component.clone()), Emitter::Model, path)?;
         let component = component(self.registry, &instance.component).ok_or_else(|| run_fault(format!("the lib names no component `{}`", instance.component.0), path))?;
         let keyed: &[_] = instance.key.as_ref().map_or(&[], |key| &key.value().inputs);
-        let every: Vec<_> = component.inputs.iter().map(|input| &input.port.name).collect();
-        let outputs: Vec<u32> = component
-            .relation_ports(&every)
-            .map(|port| {
-                let output = OutputName { of: OutputOwner::Instance(instance.name.clone()), path: [OutputStep::Port(port.name.clone())].into() };
-                let columns = port.columns.iter().map(|column| column.name.clone()).collect();
-                self.reserve(ProgramRelation::Output(output), columns)
-            })
-            .collect();
+        let outputs: Vec<u32> = instance_outputs(component, instance).into_iter().map(|(relation, columns)| self.reserve(relation, columns)).collect();
         self.push(Token::Column(0), Emitter::Engine, path)?;
         match &instance.key {
             None => self.model(Control::Skip, path)?,
@@ -466,9 +556,8 @@ impl Writer<'_> {
             self.atom(part.value(), &path.child(child + index as u32))?;
         }
         self.model(Control::End, path)?;
-        for (steps, columns) in rigid_outputs(rigid) {
-            let output = OutputName { of: OutputOwner::RigidDet(rigid.name.clone()), path: steps };
-            self.declare(ProgramRelation::Output(output), columns.names().cloned().collect(), path)?;
+        for (relation, columns) in rigid_det_outputs(rigid) {
+            self.declare(relation, columns, path)?;
         }
         Ok(())
     }
@@ -503,7 +592,7 @@ impl Writer<'_> {
         }
         let row_columns = choose.rows.iter().flat_map(|rows| rows.columns.iter());
         let columns = row_columns.chain(choose.candidate_columns.iter()).map(|column| column.name.clone()).collect();
-        self.declare(ProgramRelation::Declared(choose.name.clone()), columns, path)
+        self.declare(choose_relation(choose), columns, path)
     }
 }
 
