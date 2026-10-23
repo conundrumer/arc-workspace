@@ -1844,7 +1844,10 @@ class Converter:
         but its Key are case types, is the program's where the determination
         feeds it the concept fact alone. A read of a nested instance of the
         program's parse at the literal key of the concept case is a read at
-        the example. An input the determination leaves
+        the example. A read of a relation that the concept case derives from
+        one parameter alone, such as `wall` from `params.frame_color`, at the
+        key variable of the program's parse is a read of that parameter, and
+        the parameter's variable takes the key variable's other uses. An input the determination leaves
         unfed differs, and its dependents are copied only where the
         determination reads them. Each relation and instance of the parse
         that reads an input fed otherwise is the determination's own: a copy
@@ -1953,6 +1956,78 @@ class Converter:
                 return RecordTerm((E,) + t.args[1:])
             return t
 
+        def stands_for(x: str) -> tuple[RelationName, int] | None:
+            # the parameter that the relation x holds at the concept case, and
+            # the column it holds it in: its one clause of the concept case
+            # reads a parameter and relations of case values alone, and puts
+            # the parameter's value in one column of its head
+            cs = [u for u in prog.units if u.scope.components == () and u.head.relation == RelationName((), x)
+                  and not {m for t in u.head.args for m in ctor_names(t)} & other_ctors]
+            if len(cs) != 1 or cs[0].body is None:
+                return None
+            u = cs[0]
+            lits = u.body
+            if not all(isinstance(l, AtomLiteral) and not l.negated for l in lits):
+                return None
+            atoms_ = [l.atom for l in lits if isinstance(l, AtomLiteral)]
+            reads = [a for a in atoms_ if a.relation.instances == ("params",)]
+            if len(reads) != 1 or len(reads[0].args) != 1 or not isinstance(reads[0].args[0], Variable) \
+                    or any(a.relation.instances or a.relation.name not in case_rels for a in atoms_ if a is not reads[0]):
+                return None
+            at = [i for i, t in enumerate(u.head.args) if t == reads[0].args[0]]
+            names: list[str] = []
+            walk_vars(tuple(t for i, t in enumerate(u.head.args) if i not in at), names)
+            return (reads[0].relation, at[0]) if len(at) == 1 and reads[0].args[0].name not in names else None
+
+        standing = {x: sf for x in {u.head.relation.name for u in prog.units
+                                    if u.scope.components == () and not u.head.relation.instances and u.head.args}
+                    if (sf := stands_for(x)) is not None}
+
+        def stand(u: Unit, kn: str) -> Unit:
+            # a read of a relation that stands for a parameter, at the key
+            # variable of the parse, reads the parameter instead, and the
+            # parameter's variable takes the key variable's other uses: the
+            # key variable is a value of the parameter where the concept case
+            # is the parameter's stored value
+            for l in u.body or ():
+                if isinstance(l, AtomLiteral) and not l.negated and not l.atom.relation.instances \
+                        and l.atom.relation.name in standing:
+                    prel, j = standing[l.atom.relation.name]
+                    a = l.atom
+                    if j < len(a.args) and a.args[j] == Variable(kn) \
+                            and all(isinstance(t, Wildcard) for i, t in enumerate(a.args) if i != j):
+                        v = f"@{prel.name}"
+                        body = tuple(dc_replace(m, atom=dc_replace(a, relation=prel, args=(Variable(v),))) if m is l else m
+                                     for m in u.body)
+                        return complement(subst(dc_replace(u, body=body), {kn: v}), v)
+            return u
+
+        def complement(u: Unit, v: str) -> Unit:
+            # the parameter's variable v, read by one atom and compared by
+            # one `!=` with a variable x, as the negated read of x: the
+            # parameter holds one value, so `params.p(V), X != V` is
+            # `!params.p(X)`
+            count: Counter[str] = Counter()
+
+            def tally(x) -> None:
+                if isinstance(x, Variable):
+                    count[x.name] += 1
+                elif isinstance(x, tuple):
+                    for y in x:
+                        tally(y)
+                elif is_dataclass(x) and not isinstance(x, type):
+                    for f_ in dc_fields(x):
+                        tally(getattr(x, f_.name))
+            tally((u.head, u.body))
+            read = next(l for l in u.body if isinstance(l, AtomLiteral) and l.atom.args == (Variable(v),))
+            for l in u.body:
+                if isinstance(l, Comparison) and l.op == ComparisonOperator.NE and count[v] == 2:
+                    for a, b in ((l.lhs, l.rhs), (l.rhs, l.lhs)):
+                        if b == Variable(v) and isinstance(a, Variable) and a.name != v:
+                            neg = AtomLiteral(dc_replace(read.atom, args=(a,)), True)
+                            return dc_replace(u, body=tuple(neg if m is l else m for m in u.body if m is not read))
+            return u
+
         def feed(u: Unit, iname: str, det_side: bool, case_key: bool = False) -> tuple[str, Unit]:
             # the clause as the lifted parse reads it: the example at each
             # key column of the parse, `in` that example's input, and no atom
@@ -1986,6 +2061,8 @@ class Converter:
             k = u.head.args[hk] if hk is not None and hk < len(u.head.args) else None
             kn = k.name if isinstance(k, Variable) else None
             u = dc_replace(u, head=fix(u.head), body=fix(u.body))
+            if kn is not None and not det_side:
+                u = stand(u, kn)
             uses: Counter[str] = Counter()
 
             def count(x) -> None:
