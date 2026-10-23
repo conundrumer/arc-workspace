@@ -45,7 +45,7 @@ HELP = mctx("""
         - The swap-in rate over {swap_in} pages a second for {swap_in_samples} samples in a row.
         - The memory pressure level at warn or critical for {pressure_samples} samples in a row.
         - The CPU over {busy}% busy for {cpu} samples in a row.
-    - A rule counts only once {realert} s have passed since the last alert of the monitor's folder that gave it, or after a sample without it, so that a load that stays gives a load re-alert once in {realert} s, the command having exited at each alert.
+    - A rule counts only once {realert} s have passed since the last alert of the monitor's folder that gave it, so that a load that stays gives a load re-alert once in {realert} s, the command having exited at each alert.
     - On a rule that holds the command writes an alert to a new file `{alerts}/<session id>/<time>{suffix}` of the main tree, the session id being the monitor's own and the time the UTC time of the alert, prints the file's path, and exits 0. The alert gives the rules that held, then the {top} processes of the largest physical footprint, the memory the process takes from the machine, and the {top} of the most CPU, each with its pid, parent pid, footprint, CPU percent, elapsed time, session id and command line.
     - It appends each sample's readings to `{alerts}/<session id>/{readings}` of the main tree, one line a sample of tab-separated fields: the UTC time, the CPU busy percent, the memory pressure level, the swap-in rate, the page-in rate and the swap in use in MB. It keeps the last {keep} hours of them.
     - One monitor watches the machine. Where another `load_monitor.py` process runs for a session that runs, the command exits with a message that gives that process's pid and session id. It exits as well at the first check, made every {check} s, at which its own session is not among the sessions that run.
@@ -217,8 +217,6 @@ class Rule:
     def held(self, now: bool, at: float) -> bool:
         """Whether the rule holds at the sample made at wall-clock time
         `at`, `now` being whether its condition stands at the sample."""
-        if not now:
-            self.not_before = None
         self.run = self.run + 1 if now else 0
         return self.run >= self.samples and (self.not_before is None or at >= self.not_before)
 
