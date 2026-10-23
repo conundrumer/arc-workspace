@@ -12,7 +12,7 @@ from monitor_reads import watched
 from open_agents import Listed, latest_write, turn_ended_idle
 from agent_ends import elsewhere_ended, ended_with, reply_to, stalled_reports
 from file_reads import names_in, stat_of
-from state_reads import DERIVED, state_cache
+from state_reads import DERIVED, Kept, state_cache
 from transcripts import launched_find
 from transcript_snapshots import SUBJECT_FAULTS
 
@@ -243,7 +243,7 @@ class Unheld(Exception):
     Codex tickets as well, so no read of the launcher's files stands for it."""
 
 
-@state_cache(DERIVED)
+@state_cache(DERIVED, kept=Kept.DISK)
 def walk_fault(path: Path) -> tuple[bool, str] | None:
     """Why the walk of the saved Codex turns of the legacy launcher whose
     transcript is at `path` (`codex_reads.walk_entries`) faults, as a pair

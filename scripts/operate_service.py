@@ -63,6 +63,11 @@ ALLOCATOR_ENV = {"PYTHONMALLOC": "malloc"}
 small-object allocator keeps an arena mapped while any object in it lives, so
 a resident whose held reads were replaced by later reads held about 200 MB
 more than a fresh process that read the same state."""
+FOOTPRINT_BOUND = 500 * 2**20
+"""The bytes a resident may hold after a request, once it has collected and
+returned its free memory."""
+PEAK_BOUND = 2**30
+"""The bytes a resident's own footprint may have reached during a request."""
 CODE_CHANGED = 75
 """The exit status of a resident startup that finds the code changed while it
 started; `ensure` starts another one."""
@@ -865,6 +870,13 @@ def child_read(current: Request) -> None:
         os.close(errors)
 
 
+def oversized() -> bool:
+    """Whether this resident holds more than `FOOTPRINT_BOUND` now, or has
+    held more than `PEAK_BOUND` since it started."""
+    return (script_calls.footprint() > FOOTPRINT_BOUND
+            or script_calls.highest_footprint() > PEAK_BOUND)
+
+
 def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                   pending: Pending | None = None) -> script_calls.End | None:
     """Serve one request; gives why this interpreter must end, or `None`
@@ -996,14 +1008,18 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                 if kind not in YIELDING and not current.waiting and not current.first:
                     pending.left[(subject, kind)] = time.monotonic()
                 pending.running = None
+            oversize = False
             if pending is not None and not pending.waiting():
                 gc.collect()
                 script_calls.release_free_memory()
+                oversize = oversized()
             script_calls.record()
             CURRENT.reset(token)
             state_assembly.REQUEST_CUTOFF.reset(cutoff)
         if ended is None and kept_reads.fresh_code("operate") != code:
             return script_calls.End.CODE_CHANGED
+        if ended is None and oversize:
+            return script_calls.End.OVERSIZE
         return ended
 
 
