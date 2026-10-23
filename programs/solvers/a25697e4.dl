@@ -5,7 +5,10 @@
 // @scene hosts: each host is a solid rectangle of one color with a notch cut
 //  into it from one side. The notch is the set of background cells inside the
 //  rectangle, and it may cut the rectangle into separate components of the
-//  host color.
+//  host color. Two components of one color are parts of one host when a row
+//  or a column holds cells of both and the box around both holds only that
+//  color and background; the box around a host's parts holds only its color
+//  and background.
 // @scene pieces: each piece is a 4-connected object of exactly two colors, and
 //  each color forms one part of it. Pieces do not touch hosts.
 // @scene one-plug: for each host, one piece has a part with the shape of the
@@ -78,14 +81,18 @@
 .type Choice = [transform: Transform, host: HostParse, host_join: HostJoin, lone: LoneShape,
                connect: Connect]
 
-// An object under one host reading.
+// An object, or a host, under one host reading.
 .type HostObject = [hj: HostJoin, h: Ident]
+
+// Two objects of one color under one host reading.
+.type HostPair = [hj: HostJoin, h: Ident, h2: Ident]
 
 // One part of an object under one D4 transform: the object, the part's color,
 // and the transform.
 .type Pose = [cn: Connect, id: Ident, k: Color, d: D4]
 
-// A pose at one placement, beside host components of color c joined under hj.
+// A pose laid on the notch of a host of color c joined under hj, by the frame
+// change sh.
 .type Seat = [hj: HostJoin, pose: Pose, sh: Box, c: Color]
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -148,41 +155,87 @@ host_color.item([Hj, H], C) :- host_object(Hj, H, P), in(P, C).
 .decl host_cell(hj: HostJoin, h: Ident, p: Position, c: Color)
 host_cell(Hj, H, P, C) :- host_color.value([Hj, H], C), host_object(Hj, H, P).
 
+// @claim hosts
+.init part_box = Bbox<HostObject>
+part_box.cell([Hj, H], P) :- host_cell(Hj, H, P, _).
+
+// Two objects of one color with cells on one row or one column.
+.decl facing(pr: HostPair, c: Color)
+facing([Hj, H, H2], C) :-
+    host_cell(Hj, H, P, C), host_cell(Hj, H2, Q, C), H != H2, axis_elem(A), same_line(A, P, Q).
+
+// @claim hosts
+.init pair_box = Bbox<HostPair>
+pair_box.cell([Hj, H, H2], B) :-
+    facing([Hj, H, H2], _), ( part_box.box([Hj, H], B) ; part_box.box([Hj, H2], B) ).
+
+// The box around two facing objects holds a cell of another color than theirs
+// and the background.
+.decl pair_foul(pr: HostPair)
+pair_foul(Pr) :-
+    pair_box.box(Pr, B), facing(Pr, C), in(P, Col), inside(P, B), Col != C, !bg(Col).
+
+// The parts of each host.
+.init hosts = Canon<HostObject>
+hosts.equiv([Hj, H], [Hj, H]) :- host_cell(Hj, H, _, _).
+hosts.edge([Hj, H], [Hj, H2]) :- facing([Hj, H, H2], _), !pair_foul([Hj, H, H2]).
+
+.decl host_color_of(hj: HostJoin, g: Ident, c: Color)
+host_color_of(Hj, G, C) :- hosts.id([Hj, H], G), host_cell(Hj, H, _, C).
+
+// @claim hosts
+.init host_box = Bbox<HostObject>
+host_box.cell([Hj, G], B) :- hosts.id([Hj, H], G), part_box.box([Hj, H], B).
+
+// The box around a host's parts holds a cell of another color than the host's
+// and the background.
+// @ignore: common-subexpr — the boxes are those of two facing objects and
+//  those of a host's parts, and a host's parts follow from the pairs
+.decl host_foul(hj: HostJoin, g: Ident)
+host_foul(Hj, G) :-
+    host_box.box([Hj, G], B), host_color_of(Hj, G, C), in(P, Col), inside(P, B), Col != C,
+    !bg(Col).
+
+// The host's rectangle.
+.decl host_rect(hj: HostJoin, g: Ident, c: Color, b: Box)
+host_rect(Hj, G, C, B) :- host_box.box([Hj, G], B), host_color_of(Hj, G, C), !host_foul(Hj, G).
+
+// The notch of the host whose rectangle is b.
+.decl notch(b: Box, p: Position)
+notch(B, P) :- host_rect(_, _, _, B), in(P, Col), bg(Col), inside(P, B).
+
+// @claim hosts plug
+.init notch_box = Bbox<Box>
+notch_box.cell(B, P) :- notch(B, P).
+
 .decl pose(ps: Pose)
 pose([Cn, Id, K, D]) :- piece(Cn, Id), object_color(Cn, Id, K), d4_elem(D).
 
-// Each pose's part laid on background cells.
+// Each pose's part, under its transform.
+.decl shape(ps: Pose, p: Position)
+shape([Cn, Id, K, D], P_img) :- pose([Cn, Id, K, D]), object(Cn, Id, P, K), apply(D, P, P_img).
+
 // @claim one-plug plug
-.init seat = Occurrences<Pose, Unit>
-seat.shape([Cn, Id, K, D], P_img, $U()) :-
-    pose([Cn, Id, K, D]), object(Cn, Id, P, K), apply(D, P, P_img).
-seat.cell(Ps, P, $U()) :- pose(Ps), in(P, Col), bg(Col).
+.init pose_box = Bbox<Pose>
+pose_box.cell(Ps, P) :- shape(Ps, P).
 
-.decl image(ps: Pose, sh: Box, p: Position)
-image(Ps, Sh, P) :- seat.occurrence(Ps, Sh), seat.shape(Ps, S, _), compose(Sh, S, P).
+// Each pose laid on each notch, its box on the notch's box.
+.decl seat(s: Seat, b: Box)
+seat([Hj, Ps, Sh, C], B) :-
+    host_rect(Hj, _, C, B), notch_box.box(B, B_n), pose_box.box(Ps, B_s), relative(B_s, B_n, Sh).
 
-// A host component beside a laid part.
-.decl touch(s: Seat, h: Ident)
-touch([Hj, Ps, Sh, C], H) :-
-    image(Ps, Sh, P), dir_elem(D), neighbor(P, D, Q), host_cell(Hj, H, Q, C).
+.decl image(s: Seat, p: Position)
+image([Hj, Ps, Sh, C], P) :- seat([Hj, Ps, Sh, C], _), shape(Ps, Q), compose(Sh, Q, P).
 
-// The host's rectangle: the box of the components beside the laid part.
-// @claim hosts plug
-.init rect = Bbox<Seat>
-rect.cell([Hj, Ps, Sh, C], P) :- touch([Hj, Ps, Sh, C], H), host_cell(Hj, H, P, _).
-
-// A cell of the rectangle outside both the part and the host color, or a cell
-// of the part outside the rectangle.
-.decl gap(s: Seat)
-gap([Hj, Ps, Sh, C]) :-
-    rect.box([Hj, Ps, Sh, C], B),
-    ( in(P, _), inside(P, B), !image(Ps, Sh, P), !host_cell(Hj, _, P, C)
-    ; image(Ps, Sh, P), !inside(P, B)
-    ).
+// The laid part against the notches.
+// @claim plug
+.init cover = KeyedSetCompare<Seat, Box, Position>
+cover.pattern_member(B, P) :- notch(B, P).
+cover.observed_member(S, P) :- image(S, P).
 
 // The part covers exactly the notch of the host.
 .decl filled(s: Seat, b: Box)
-filled(S, B) :- rect.box(S, B), !gap(S).
+filled(S, B) :- seat(S, B), cover.equals(S, B).
 
 .decl fit(h: HostParse, s: Seat, b: Box)
 
@@ -275,11 +328,14 @@ take($PreferRotation(), H, L, [Hj, [Cn, Id, K, D], Sh, C], B) :-
 fit($NotchRect(), S, B) :- filled(S, B).
 
 // --- $TwoPartHost ---
-.decl third_part(s: Seat)
-third_part(S) :- touch(S, H), touch(S, H2), touch(S, H3), H != H2, H != H3, H2 != H3.
+.decl third_part(hj: HostJoin, g: Ident)
+third_part(Hj, G) :-
+    hosts.id([Hj, H], G), hosts.id([Hj, H2], G), hosts.id([Hj, H3], G), H != H2, H != H3,
+    H2 != H3.
 
-fit($TwoPartHost(), S, B) :-
-    filled(S, B), touch(S, H), touch(S, H2), H != H2, !third_part(S).
+fit($TwoPartHost(), [Hj, Ps, Sh, C], B) :-
+    filled([Hj, Ps, Sh, C], B), host_rect(Hj, G, C, B), hosts.id([Hj, H], G),
+    hosts.id([Hj, H2], G), H != H2, !third_part(Hj, G).
 
 // --- $BarePlug ---
 // A one-color object.
