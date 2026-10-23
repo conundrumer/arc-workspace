@@ -61,7 +61,8 @@ of `{parts}`."""
 FORMS = {
     FormPart.CHANGE: mctx("""
         - A `change` takes `kind: change` and `editors: <editor>, <editor>`, with each editor whose part, as [Making a change](prompts/agents/notes/changes.md#making-a-change) gives it, holds a file of its Scope, among {editors}.
-            - It may add `depends-on: <number>, <number>` and `mechanical: {mechanical}` to the front matter.
+            - It may add `depends-on: <number>, <number>` and `mechanical: {mechanical}` to the front matter, and no operator takes it while a ticket `depends-on` gives stands outside `tickets/closed/`.
+                * comment: Ticket 11-3475: a coordinator read this line as saying a change cannot depend on a request.
             - It gives `mechanical` where its Intent and its `Design` settle each choice of the code editor's part other than how the code is written.
             - Where it gives steps or checks at or after its merge, it places them in one item of its Scope that opens `After the merge`.
             - It has `# <title>` as its title, and the sections {change_sections} in place of {defect_headings}.
