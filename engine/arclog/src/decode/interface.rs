@@ -218,22 +218,22 @@ impl<'a> Decoder<'a> {
 
     fn assigned_rows(&self, sub: &SubBody, example: Option<Example>) -> Outcome<Assigned<BodyValue>> {
         let root = derived_at(&sub.program, &sub.form).node;
-        self.assigned(&sub.program, root, &mut |evaluation| evaluation.body(&sub.form, &sub.kept, example).map_err(End::Fault))
+        self.assigned(&sub.program, root, &walked_dets(&sub.program, root), &mut |evaluation| evaluation.body(&sub.form, &sub.kept, example).map_err(End::Fault))
     }
 
-    /// What `at` gives at each joint assignment of the `DET`s that the
-    /// relation at `root` of `program` reads, less the picks and `root`
-    /// itself, in the order of the walk, as [`Decoder::rows`] gives it.
-    pub(super) fn assigned<T>(&self, program: &CheckedProgram, root: GraphNodeIndex, at: &mut dyn FnMut(&crate::eval::Evaluation<'_>) -> Result<T, End>) -> Outcome<Assigned<T>> {
+    /// What `at` gives at each joint assignment of `dets`, in the order of
+    /// the walk, for the relation at `root` of `program`. `dets` is the
+    /// list of [`walked_dets`] for a body, as [`Decoder::rows`] gives it, and
+    /// that of [`relation_dets`] for a relation table.
+    pub(super) fn assigned<T>(&self, program: &CheckedProgram, root: GraphNodeIndex, dets: &[Det], at: &mut dyn FnMut(&crate::eval::Evaluation<'_>) -> Result<T, End>) -> Outcome<Assigned<T>> {
         let limits = self.limits();
         let inputs = self.inputs(program, &limits);
-        let dets = walked_dets(program, root);
         let mut found = Vec::new();
         let mut leaf = |evaluation: &crate::eval::Evaluation<'_>, assigned: &[Assignment]| {
             found.push((assigned.to_vec(), at(evaluation)?));
             Ok(())
         };
-        match descend_assignments(inputs, &dets, root, self.context.settings.caps.assignments, &mut leaf).1 {
+        match descend_assignments(inputs, dets, root, self.context.settings.caps.assignments, &mut leaf).1 {
             Ok(()) => Ok(Assigned { at: found, stop: None }),
             Err(End::Stop(stop)) => Ok(Assigned { at: found, stop: Some(stop) }),
             Err(End::Fault(fault)) => Err(fault),
@@ -444,11 +444,20 @@ pub(super) fn derived_at(program: &CheckedProgram, form: &NodePath) -> GraphRela
     GraphRelation { node, output: None }
 }
 
-/// The `DET`s whose joint assignments a walk over the relation at `root`
-/// of `program` visits: those it reads, less the picks, which no clause
-/// reads before its form ends, and `root` itself.
+/// The `DET`s whose joint assignments a walk over the body of the clause
+/// that derives the relation at `root` of `program` visits: those it
+/// reads, less the picks, which no clause reads before its form ends, and
+/// `root` itself, which that body does not read.
 pub(super) fn walked_dets(program: &CheckedProgram, root: GraphNodeIndex) -> Vec<Det> {
     dets_read(program, root).into_iter().filter(|det| !det.pick && det.node != root).collect()
+}
+
+/// The `DET`s whose joint assignments a walk over the relation at `node`
+/// of a finished form visits: those it reads, less the picks, with `node`
+/// itself, which the walk assigns each value of its domain where it is a
+/// `DET`'s parameter.
+pub(super) fn relation_dets(program: &CheckedProgram, node: GraphNodeIndex) -> Vec<Det> {
+    dets_read(program, node).into_iter().filter(|det| !det.pick).collect()
 }
 
 /// The count at the first assignment of `rows`, and the stop of that value

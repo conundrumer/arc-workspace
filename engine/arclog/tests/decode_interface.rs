@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
-use arclog::decode::{step_batch, Consistency, Decoder, Refusal, Views};
+use arclog::decode::{step_batch, Consistency, Decoder, Point, Refusal, Views};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
 use arclog::eval::{Caps, ReachedBound, RelationValue};
@@ -271,4 +271,29 @@ fn a_body_under_the_view_cap_is_its_one_view_with_the_rows_of_the_body() {
     let [(_, Some(projected))] = &viewed.at[..] else { panic!("one projection: {viewed:?}") };
     assert_eq!((projected.arity(), projected.len()), (body.arity(), body.len()));
     assert!(self::decoder(&inputs).views().is_none(), "no clause is in progress before the first token");
+}
+
+#[test]
+fn the_table_of_a_det_at_the_end_of_its_form_gives_its_rows_at_each_value() {
+    let inputs = inputs(&[2, 2], Caps::CORPUS);
+    let tokens = model_tokens("(DET &c ColorDomain)\n(RULE &output (input *P) (&c (:C *Col)))\n");
+    let mut decoder = decoder(&inputs);
+    let mut found = None;
+    for token in &tokens {
+        decoder.step(token.clone()).unwrap_or_else(|refusal| panic!("{token:?}: {refusal:?}"));
+        let tables = decoder.tables();
+        if tables.iter().any(|table| table.point == Point::Relation) {
+            found = Some(tables);
+            break;
+        }
+    }
+    let tables = found.expect("the DET form ends");
+    let [table] = &tables[..] else { panic!("one relation: {tables:?}") };
+    let contents = table.contents.as_ref().expect("the table has contents");
+    assert_eq!(contents.dets.len(), 1, "the DET's own table gives that DET");
+    let [example] = &*contents.examples else { panic!("one example: {contents:?}") };
+    let rows = example.rows.as_ref().expect("the example gives no fault");
+    assert!(rows.stop.is_none());
+    assert!(rows.at.len() > 1, "one entry for each value of `&c`: {rows:?}");
+    assert!(rows.at.iter().all(|(assigned, models)| assigned.len() == 1 && !models.is_empty()));
 }

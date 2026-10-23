@@ -11,7 +11,7 @@
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
-use super::interface::{derived_at, open_clause, walked_dets, Assigned, OpenClause};
+use super::interface::{derived_at, open_clause, relation_dets, walked_dets, Assigned, OpenClause};
 use super::state::State;
 use super::views::{views, Views};
 use super::Decoder;
@@ -19,7 +19,7 @@ use crate::check::CheckedProgram;
 use crate::eval::examples::scope_of;
 use crate::eval::join::Budget;
 use crate::eval::{BodyValue, ModelsEnd, Outcome, RelationValue, RunFault};
-use crate::judge::determination::{Assignment, End};
+use crate::judge::determination::{Assignment, Det, End};
 use crate::program::path::NodePath;
 use crate::program::{Conjunct, OutputOwner, OutputStep, ProgramRelation};
 use crate::resolver::{resolve_last, DependencyKind, GraphNodeIndex};
@@ -126,7 +126,7 @@ impl Decoder<'_> {
             let relation = derived_at(&sub.program, &sub.form);
             let slot = self.state.open_slot();
             let examples = self.examples_of(sub.scope).into_iter().zip(self.values_of(&sub).into_vec()).map(|(example, rows)| ExampleRows { example, rows: rows.map(|rows| models_of_body(&rows)) }).collect();
-            self.contents(&sub.program, &sub.form, &relation, slot, examples)
+            self.contents(&sub.program, &sub.form, &relation, slot, &walked_dets(&sub.program, relation.node), examples)
         });
         Some(Table { form, point, contents: contents.and_then(|contents| contents) })
     }
@@ -146,12 +146,13 @@ impl Decoder<'_> {
             .map(|(slot, declared)| {
                 let contents = match graph_relation(&checked, &form, declared) {
                     Some(relation) => {
+                        let dets = relation_dets(&checked, relation.node);
                         let examples = self
                             .examples_of(scope_of(&checked, &relation))
                             .into_iter()
-                            .map(|example| ExampleRows { example, rows: self.assigned(&checked, relation.node, &mut |evaluation| models_at(evaluation, &relation, example)) })
+                            .map(|example| ExampleRows { example, rows: self.assigned(&checked, relation.node, &dets, &mut |evaluation| models_at(evaluation, &relation, example)) })
                             .collect();
-                        self.contents(&checked, &form, &relation, slot, examples)
+                        self.contents(&checked, &form, &relation, slot, &dets, examples)
                     }
                     None => Err(RunFault { message: "the graph holds no node for a relation the form declares".into(), form: form.clone() }),
                 };
@@ -163,7 +164,7 @@ impl Decoder<'_> {
     /// The contents of the table of `relation` in `program`, from its rows
     /// on each example: its slot, its columns, its `DET`s, and its views
     /// where a relation holds more rows than the view cap.
-    fn contents(&self, program: &CheckedProgram, form: &NodePath, relation: &GraphRelation, slot: u32, examples: Vec<ExampleRows>) -> Outcome<Contents> {
+    fn contents(&self, program: &CheckedProgram, form: &NodePath, relation: &GraphRelation, slot: u32, dets: &[Det], examples: Vec<ExampleRows>) -> Outcome<Contents> {
         let fault = |message: &str| RunFault { message: message.into(), form: form.clone() };
         let types = program.types.columns(relation).ok_or_else(|| fault("the columns of the relation have no types"))?;
         let names = match &relation.output {
@@ -172,11 +173,11 @@ impl Decoder<'_> {
         };
         let names = names.unwrap_or_else(|| (0..types.len()).map(|index| format!("c{index}")).collect());
         let columns = names.into_iter().zip(types).map(|(name, ty)| TableColumn { name, ty: ty.clone() }).collect();
-        let dets = walked_dets(program, relation.node)
-            .into_iter()
+        let dets = dets
+            .iter()
             .map(|det| {
                 let types = program.types.columns(&GraphRelation { node: det.node, output: None }).ok_or_else(|| fault("the columns of a `DET` have no types"))?;
-                Ok(TableDet { relation: det.relation, types: types.into() })
+                Ok(TableDet { relation: det.relation.clone(), types: types.into() })
             })
             .collect::<Outcome<Box<[_]>>>()?;
         let cap = self.context.settings.view_cap;
