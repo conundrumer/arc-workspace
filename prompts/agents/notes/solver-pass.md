@@ -31,8 +31,8 @@
     ## Judgments
     - <a judgment>: <what it rests on>
 
-    ## Open
-    - <what the pass leaves unsettled>: <what would settle it>
+    ## Unsettled
+    - <what the pass leaves unsettled, other than the open values the solver stores>: <what would settle it>
 
     ## Concept faults
     - <task_id> `<claim slug>`: <the form the program bans that the claim needs>
