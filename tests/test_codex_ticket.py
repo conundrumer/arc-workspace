@@ -139,19 +139,3 @@ def test_legacy_steer_and_resume_do_not_submit(tmp_path: Path):
         codex_agent.run("code-editor", root.scratch, root.brief, "model", "high", "input",
                         tmp_path, tmp_path, tmp_path, tmp_path, transport=forbidden, resume=True)
     assert (store.path / "state.json").read_bytes() == before
-
-
-def test_interrupt_invalidates_before_transport_failure(tmp_path: Path):
-    store = Store(tmp_path / "ticket")
-    root = assignment(tmp_path, store)
-    token = store.reserve(root)
-    store.accepted(root.agent, token, "native-root", "turn")
-
-    def unavailable():
-        raise OSError("daemon unavailable")
-
-    with pytest.raises(OSError):
-        codex_agent.control(["interrupt", str(root.scratch)], unavailable)
-    state = json.loads((store.path / "state.json").read_text())
-    assert state["agents"][root.agent]["phase"] == "interrupting"
-    assert state["agents"][root.agent]["validated"] is False

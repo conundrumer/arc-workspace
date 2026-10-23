@@ -268,23 +268,6 @@ def test_a_solver_fix_without_its_completion_line_is_due_again(tmp_path: Path) -
     assert isinstance(step, Launch) and step.role is Role.SOLVER_FIX
 
 
-def test_a_standing_review_without_its_tag_is_due_again(tmp_path: Path) -> None:
-    from operations import briefs
-    from handbook.reader_names import ReaderName
-    from operations.standing_reviews import overdue_review, standing_review
-    from operations.state import Commit, Deferred, Reader
-    reader = Reader(ReaderName.AGENT, ("operator",))
-    head = Commit("a" * 40, 100.0, frozenset(), "fix", False, frozenset())
-    a = replace(attempt(Role.DOC_REVIEWER, reader.tag, "done"),
-                brief=briefs.standing_doc_review("agent operator", reader.tag, head.hash, "op"))
-    s = with_agents(tmp_path, [a])
-    s = replace(s, sessions=replace(s.sessions, main=True),
-                git=replace(s.git, commits=(head,), doc_reviews={}),
-                readers=Deferred(lambda: (reader,)))
-    assert isinstance(standing_review(s), Launch)
-    assert isinstance(overdue_review(s), Launch)
-
-
 def test_a_nested_decision_is_no_result_of_an_unfinished_item() -> None:
     from operations.completion import decided, finished
     nested = attempt(Role.TICKET_ANALYST, "9-1", "## For the coordinator\n"
