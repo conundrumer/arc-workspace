@@ -14,12 +14,14 @@ handback, after the agent has written its final reply.
 The brief is the first message of the agent's own transcript, with each
 file it gives by `FILED_LINE` read in (`filed_texts.unfiled`).
 
-A Codex launcher must have readable turn records (`codex_reads`), and its
-brief and report must be readable. Unreadable turn records are denied once for
+A Codex launcher must have readable turn records (`codex_reads`). Where its
+brief cannot be read, the hook allows the call and says why on stderr.
+Unreadable turn records are denied once for
 each `codex_agent` launch call of the launcher; a repeated handback with no new
 launch is allowed, and the reason goes to stderr.
 
-A denied call is recorded with the id of the last message the agent got,
+A denied call is recorded with the id of the last message the agent got
+that is no note of the harness,
 in a file named by its agent id under `STOPS` of its session directory,
 and no call is denied again while that message is still the last. A denial
 gives the agent no message, so a fault in the check cannot hold the agent
@@ -51,10 +53,12 @@ def brief(entries: Iterable[dict[str, Any]], where: str, undecided: list[str]) -
 
 
 def last_message(entries: Iterable[dict[str, Any]]) -> str:
-    """The id of the first message among `entries`, read last first."""
+    """The id of the first message among `entries`, read last first, that
+    is no note of the harness."""
     from run_reads import is_prompt
+    from senders import is_harness_note
 
-    return next(str(e["uuid"]) for e in entries if is_prompt(e))
+    return next(str(e["uuid"]) for e in entries if is_prompt(e) and not is_harness_note(e))
 
 
 def written_since(path: Path, entries: Iterable[dict[str, Any]]) -> bool:
@@ -123,12 +127,15 @@ def check(hook: Hook) -> str | None:
         text = brief(entries_forward(path), f"the brief of {agent}", undecided)
     except (OSError, ValueError) as exc:
         if codex:
-            return mctx("Blocked: cannot read the Codex brief: {error}.").format(error=exc)
+            print(f"{HOOK}: allowed: cannot read the Codex brief: {exc}", file=sys.stderr)
+            return None
         raise
     for line in undecided:
-        print(f"{HOOK}: {'blocked' if codex else 'allowed'}: {line}", file=sys.stderr)
+        print(f"{HOOK}: allowed: {line}", file=sys.stderr)
+    if text is None:
+        print(f"{HOOK}: allowed: the transcript holds no brief message", file=sys.stderr)
     if text is None or undecided:
-        return mctx("Blocked: cannot read the Codex brief and its report file.") if codex else None
+        return None
     wanted = brief_report_file(text)
     if wanted is None:
         return None

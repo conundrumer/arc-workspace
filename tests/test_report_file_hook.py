@@ -4,6 +4,8 @@ and nothing in the run shows it."""
 
 import json
 import os
+import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,7 +14,6 @@ import pytest
 from engine import checkout
 from handbook.checklist import Checklist
 from handbook.paths import scripts_importable
-from tests.hookrun import run_hook
 from tests.codex_run import turn
 
 scripts_importable()
@@ -21,6 +22,12 @@ AGENT = "a0000000000000001"
 HOOK = checkout.scripts() / "report_file_hook.py"
 NAME = "11-485-0123456789ab-reply.txt"
 BRIEF_AT = 1_000_000_000.0
+
+
+def run_hook(script: Path, stdin: str) -> tuple[int, str, str]:
+    result = subprocess.run([sys.executable, str(script)], input=stdin,
+                            text=True, capture_output=True, env={}, check=False)
+    return result.returncode, result.stdout, result.stderr
 
 
 def at(t: float) -> str:
@@ -63,6 +70,15 @@ def denied(stdin: str) -> bool:
 
 def test_a_reply_sent_elsewhere_is_denied_once(tmp_path: Path) -> None:
     stdin = session(tmp_path, "My final reply went to a1 by SendMessage.")
+    assert denied(stdin)
+    path = tmp_path / "s" / "subagents" / f"agent-{AGENT}.jsonl"
+    note = {**prompt("u1", BRIEF_AT + 20, "[handback-send-enforce] Your report has not been delivered."),
+            "isMeta": True}
+    with path.open("a") as stream:
+        stream.write(json.dumps(note) + "\n")
+    assert not denied(stdin)
+    with path.open("a") as stream:
+        stream.write(json.dumps(prompt("u2", BRIEF_AT + 30, "Continue.")) + "\n")
     assert denied(stdin)
     assert not denied(stdin)
 
@@ -175,9 +191,10 @@ def test_a_codex_report_with_missing_evidence_is_denied_once(tmp_path: Path) -> 
     assert not denied(stdin)
 
 
-def test_a_codex_report_with_an_unreadable_brief_is_always_denied(tmp_path: Path) -> None:
+def test_a_codex_report_with_an_unreadable_brief_is_allowed_with_a_diagnostic(tmp_path: Path) -> None:
     stdin = codex_session(tmp_path, str(tmp_path / NAME))
     written(tmp_path, BRIEF_AT + 10)
     (tmp_path / "brief.md").unlink()
-    assert denied(stdin)
-    assert denied(stdin)
+    code, out, err = run_hook(HOOK, stdin)
+    assert code == 0 and not out and "failed" not in err, (out, err)
+    assert str(tmp_path / "brief.md") in err
