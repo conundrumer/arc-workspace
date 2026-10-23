@@ -4,7 +4,7 @@
     - Acts, each with its section:
         - Running a command: [commands](#commands) and [foreground-commands](#foreground-commands).
         - Waiting on a command: [waiting-on-commands](#waiting-on-commands).
-        - Ending a command: [ending-commands](#ending-commands), and [process-trees](#process-trees) where it calls `TaskStop` or starts a process with `&` or `nohup`.
+        - Ending a command: [ending-commands](#ending-commands), and [process-trees](#process-trees) where it calls `TaskStop`.
         - Launching a background agent: [Background agents](#background-agents).
         - Reporting a denied call in the reply: [denied-calls](#denied-calls).
         - Waiting on an agent resumed by SendMessage, and resuming it after a usage-limit stop: [resumed-agents](#resumed-agents).
@@ -44,12 +44,11 @@
 
 ## ending-commands
 - End a command of yours that runs in the background with the command a line of your documents gives to end it, and where none does, with `TaskStop` and the ID the harness gave that command. Call `TaskStop` on nothing else, and signal no process that you pick by its name or by its command line.
-- When you call `TaskStop`, or start a process with `&` or `nohup`, read [process-trees](prompts/agents/notes/commands.md#process-trees).
+- When you call `TaskStop`, read [process-trees](prompts/agents/notes/commands.md#process-trees).
 
 ## process-trees
 - The process tree of a process ID is that process ID, and each process ID that `pgrep -P <process ID>` prints for a process ID of the tree.
 - Before you call `TaskStop`, take the process tree of each process ID that `lsof -t <the command's output file>` prints. Once `TaskStop` returns, end each process of those trees that still runs with `kill <process ID>`.
-- Where you start a process with `&` or `nohup`, print its process ID with `echo $!` in that Bash call. To end it, take the process tree of that process ID, and end each process of that tree with `kill <process ID>`.
 
 ## Background agents
 - Where the harness refuses an Agent call of yours with "Concurrent subagent limit reached", whatever the refusal's text says, wait about a minute and make that call again: run a foreground Bash call that runs `: 'unattended-wait: concurrent subagent limit'; sleep 60`. After ten refusals in a row of that call, treat it as denied, as [denied-calls](#denied-calls) gives.

@@ -824,7 +824,7 @@ def process_assessment(operator: str) -> str:
 
 COST_AUDIT = mctx("""
     - Audit the cost of the runs of each session in `{transcripts}` that were active in the window from {since} to now.
-    - Profile the runs with `uv run python scripts/profile_runs.py` and its `--each`, `--runs`, `--type` and `--top` options, read a run's transcript where a line of its profile looks suspect, and read a ticket's log for what an agent was launched for.
+    - Profile the runs with `uv run python scripts/profile_runs.py` and its `--each`, `--runs`, `--type` and `--top` options, with `--active-since {since}`, read a run's transcript where a line of its profile looks suspect, and read a ticket's log for what an agent was launched for.
     - Where a run has entries before the window's start, count only the share of its cost from its entries in the window, as an estimated figure with that basis.
     - Find each kind of step whose summed cost in dollars over the window exceeds the value in dollars of what it finds: the sum, over its findings in the window, of the cost each finding saves, with time priced at the rate [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences) gives. Find each cost that bought no work, and each cost that a cheaper path would have cut.
     - Run `uv run python scripts/bottlenecks.py --since <the window's start>`. Each row of its output whose cost, with its hours priced at the rate [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences) gives for time, exceeds the cost of the change that would remove its cause is a finding, and no churn figure is one.

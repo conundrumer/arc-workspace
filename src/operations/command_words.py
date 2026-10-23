@@ -52,30 +52,98 @@ def simple_commands(command: str) -> list[list[str]]:
     return [list(words) for words in command_words(command)]
 
 
+MASKED = {c: chr(0xE000 + i) for i, c in enumerate(OPERATORS)}
+"""The private-use character that stands for each operator character
+inside quotes or after a backslash while the lexer reads, so a quoted
+operator character is part of a word."""
+
+UNMASKED = str.maketrans({m: c for c, m in MASKED.items()})
+
+
+def masked(command: str) -> str:
+    """The Bash command `command` with each operator character inside quotes
+    or after a backslash replaced by its `MASKED` character."""
+    return QUOTED_OR_ESCAPED.sub(lambda m: m[0].translate(str.maketrans(MASKED)), command)
+
+
+def lexed(command: str) -> shlex.shlex:
+    """The shell lexer over the Bash command `command` without its
+    heredocs and continued lines, which gives a word, or a run of operator
+    characters, at each read, and raises `ValueError` where the quoting is
+    unbalanced."""
+    lexer = shlex.shlex(masked(joined(without_heredocs(command))), posix=True, punctuation_chars=OPERATORS)
+    lexer.whitespace = " \t\r"
+    lexer.whitespace_split = True
+    return lexer
+
+
+OPERATOR = re.compile(r"&&|\|\||\|&|;;&?|;&|&>>|&>|>>|>&|<&|<<<|<>|>\||[();|&<>\n]")
+"""One control or redirection operator, longest form first, out of a run of
+`OPERATORS` characters."""
+
+
+def segments(command: str) -> list[tuple[list[str], str]]:
+    """Each simple command of the Bash command `command`, as its words
+    without its redirections, with the control operator that ends it, or
+    `""` for the last one. A redirection is an operator with `<` or `>`,
+    the word after it, and a number word before it. A quoted empty word is
+    a word, not an operator. The list is empty where the quoting is
+    unbalanced."""
+    out: list[tuple[list[str], str]] = []
+    words: list[str] = []
+    redirect = False
+    try:
+        for token in lexed(command):
+            if token and set(token) <= set(OPERATORS):
+                for operator in OPERATOR.findall(token):
+                    if redirect:
+                        continue
+                    if set(operator) & set("<>"):
+                        if words and words[-1].isdigit():
+                            words.pop()
+                        redirect = True
+                    else:
+                        out.append((words, operator))
+                        words = []
+            elif redirect:
+                redirect = False
+            else:
+                words.append(token.translate(UNMASKED))
+    except ValueError:
+        return []
+    out.append((words, ""))
+    return out
+
+
 @cache
 def command_words(command: str) -> tuple[tuple[str, ...], ...]:
     """`simple_commands`, parsed once for each command: the state gives
     each operator's commands at each read."""
-    lexer = shlex.shlex(joined(without_heredocs(command)), posix=True, punctuation_chars=OPERATORS)
-    lexer.whitespace = " \t\r"
-    lexer.whitespace_split = True
-    out: list[list[str]] = [[]]
-    redirect = False
-    try:
-        for word in lexer:
-            if redirect:
-                redirect = False
-            elif word and set(word) <= set(OPERATORS) and set(word) & set("<>"):
-                if out[-1] and out[-1][-1].isdigit():
-                    out[-1].pop()
-                redirect = True
-            elif word and set(word) <= set(OPERATORS):
-                out.append([])
-            else:
-                out[-1].append(word)
-    except ValueError:
-        return ()
-    return tuple(tuple(words) for words in out if words)
+    return tuple(tuple(words) for words, _ in segments(command) if words)
+
+
+DETACHING_PROGRAMS = frozenset({"nohup", "disown", "setsid"})
+"""The programs whose simple command leaves a process running past the call."""
+
+
+@cache
+def detaches(command: str) -> bool:
+    """Whether the Bash command `command`, outside its heredocs and quotes,
+    starts a process that outlives the call: a simple command whose
+    program is in `DETACHING_PROGRAMS`, or a `&` control operator with no
+    simple command `wait` after it. A `&` inside `&&`, `&>` or `>&` is no
+    such operator. Where the quoting is unbalanced it is False, as
+    `simple_commands` gives no command there."""
+    background = False
+    for words, operator in segments(command):
+        program = PurePosixPath(words[0]).name if words else ""
+        if program in DETACHING_PROGRAMS:
+            return True
+        if program == "wait":
+            background = False
+        if operator == "&":
+            background = True
+    return background
 
 
 class Action(StrEnum):

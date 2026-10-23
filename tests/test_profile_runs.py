@@ -218,3 +218,18 @@ def test_hook_denies(tmp_path: Path) -> None:
     assert done.stdout, done.stderr
     decision = json.loads(done.stdout)["hookSpecificOutput"]
     assert decision["permissionDecision"] == "deny", done.stderr
+
+
+def test_active_since(tmp_path: Path) -> None:
+    """`--active-since` keeps the runs with an entry at or after its time,
+    before any profile is read."""
+    early, late = tmp_path / "early.jsonl", tmp_path / "late.jsonl"
+    write_jsonl(early, [user(0, "brief"), assistant(30, {"type": "text", "text": "x"})])
+    write_jsonl(late, [user(0, "brief"), assistant(90, {"type": "text", "text": "x"})])
+    paths = [early, late]
+    boundary = profile_runs.utc_time(at(60))
+    assert profile_runs.active_since(paths, boundary) == [late]
+    assert profile_runs.active_since(paths, profile_runs.utc_time(at(30))) == paths
+    assert profile_runs.active_since(paths, None) == paths
+    args = profile_runs.parser().parse_args(["--under", "x", "--active-since", at(0)])
+    assert "--active-since" in (profile_runs.refusal(args) or "")

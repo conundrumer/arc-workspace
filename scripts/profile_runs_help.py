@@ -42,8 +42,8 @@ class HelpPart(StrEnum):
 USAGE = mctx("""
     - Usage:
         ```
-        uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs] [--since DATE] [--price-at MODEL] [--split TIME]
-        uv run python scripts/profile_runs.py --each ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--since DATE] [--price-at MODEL] [--split TIME]
+        uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs] [--since DATE] [--active-since DATE] [--price-at MODEL] [--split TIME]
+        uv run python scripts/profile_runs.py --each ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--since DATE] [--active-since DATE] [--price-at MODEL] [--split TIME]
         uv run python scripts/profile_runs.py --under ID [--pct P] [--top N] [--since DATE] [--price-at MODEL]
         uv run python scripts/profile_runs.py --running ID [--calls-since TIME]
         uv run python scripts/profile_runs.py --pending ID
@@ -179,7 +179,7 @@ PARTS = {
         - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed one of its prompt's sources.
             - A type's prompt's sources are its agent document, each document that document includes or inlines, each lib file its rendered prompt holds, each script under `scripts/` its rendered prompt names, and each package under `src/` its rendered prompt runs with `-m`.
             - A module such a script or package imports is no source of the prompt.
-        - `--since DATE` sets the window of every type to the runs whose first entry is at or after DATE.
+        - `--since DATE` sets the window of every type to the runs whose first entry is at or after DATE; it selects no run to profile, which `--active-since DATE` does.
         - A type with no agent document has a window only with `--since`.
         - A type or role whose paths no commit changed has no window.
         - Where the window of a type or role holds at least {median_runs} of the runs that median is taken over, the median is taken over the runs in the window.

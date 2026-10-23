@@ -17,6 +17,7 @@ from handbook.paths import scripts_importable
 
 scripts_importable()
 
+from agent_turns import latest_time  # noqa: E402
 from agents_pending import pending_agents  # noqa: E402
 import kept_reads  # noqa: E402
 from budgets import group_budgets, print_budgets, run_budget  # noqa: E402
@@ -82,9 +83,17 @@ def profiled(paths: list[Path], args: argparse.Namespace, undecided: list[str]) 
             if not types or run_type(p)[0] in types]
 
 
+def active_since(paths: list[Path], time_: float | None) -> list[Path]:
+    """The runs at `paths` with an entry at or after `time_`, or all of
+    them where `time_` is None."""
+    if time_ is None:
+        return paths
+    return [p for p in paths if (last := latest_time(p)) is not None and last >= time_]
+
+
 def ids_mode(args: argparse.Namespace, undecided: list[str]) -> int:
-    runs = profiled(list(dict.fromkeys(p for ident in args.ids for p in transcripts(ident))),
-                    args, undecided)
+    paths = list(dict.fromkeys(p for ident in args.ids for p in transcripts(ident)))
+    runs = profiled(active_since(paths, args.active_since), args, undecided)
     if not runs:
         print_refused(mctx("no run to profile"))
         return 2
@@ -133,6 +142,7 @@ PRICE_AT = "--price-at"
 CALLS_SINCE = "--calls-since"
 EACH = "--each"
 SPLIT = "--split"
+ACTIVE_SINCE = "--active-since"
 
 
 def dest(option: str) -> str:
@@ -166,6 +176,7 @@ FLAGS: dict[str, tuple[Mode, ...]] = {
     CALLS_SINCE: (RUNNING,),
     EACH: (IDS,),
     SPLIT: (IDS,),
+    ACTIVE_SINCE: (IDS,),
 }
 """Each flag that goes with only some modes, with those modes."""
 
@@ -205,7 +216,10 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--since", type=utc_time, metavar="DATE",
                     help=mctx("start of the window of runs each type's "
                               "budget is taken over, in place of the type's "
-                              "own: ") + ISO_TIME)
+                              "own; it selects no run to profile: ") + ISO_TIME)
+    ap.add_argument(ACTIVE_SINCE, type=utc_time, metavar="DATE",
+                    help=mctx("profile only the runs with an entry at or "
+                              "after DATE: ") + ISO_TIME)
     ap.add_argument(SPLIT, type=utc_time, metavar="TIME",
                     help=mctx("print per agent type the runs before TIME and "
                               "those at or after it apart: ") + ISO_TIME)
