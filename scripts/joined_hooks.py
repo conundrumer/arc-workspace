@@ -1,27 +1,23 @@
-"""PreToolUse hook: runs, as one command, the checks of the hooks that
-`.claude/settings.json` registers on one matcher and that can deny, so the
+"""PreToolUse and SubagentStop hook: runs, as one command, the checks that
+`.claude/settings.json` registers on one event or matcher and that can deny, so the
 caller gets the reason of each check that denies, in the order of the
-list, and a check that denies is recorded only when its reason reaches the
-caller (`hook_entry.run_pre_tool_use`). The argument names the matcher:
-`handback` for `SubagentHandback`, whose checks are those of
-`operator_stop_hook`, `codex_relay_hook`, `checklist_walk_hook` and
-`report_file_hook`, `send`
-for `SendMessage`, whose check is that of `printed_send_hook`, and `agent`
-for `Agent`, whose checks are those of `context_bound_hook` and
-`printed_launch_hook`, and `bash` for `Bash|Monitor`, including the project-agent delete check.
-Each runs with the reader update (`reader_delivery.reader_update`). Checks that record a denial keep their own guards against
-denying one event twice."""
+list. The argument selects the event or matcher: `stop` for `SubagentStop`,
+`handback` for `SubagentHandback`, `send` for `SendMessage`, `agent` for
+`Agent`, and `bash` for `Bash|Monitor`. PreToolUse runs with the reader
+update (`reader_delivery.reader_update`). Checks that record a denial
+keep their own guards against denying one event twice."""
 
 import sys
 from typing import Any
 
-from hook_entry import run_pre_tool_use
+from hook_entry import run_pre_tool_use, run_subagent_stop
 
 HOOK = "joined_hooks"
 HANDBACK = "handback"
 SEND = "send"
 AGENT = "agent"
 BASH = "bash"
+STOP = "stop"
 
 
 def checklist_bash(hook: dict[str, Any]) -> str | None:
@@ -37,6 +33,11 @@ def checklist_bash(hook: dict[str, Any]) -> str | None:
 
 def main() -> int:
     match sys.argv[1:]:
+        case [arg] if arg == STOP:
+            import codex_relay_hook
+            import operator_stop_hook
+
+            return run_subagent_stop(HOOK, [operator_stop_hook.check, codex_relay_hook.check])
         case [arg] if arg == HANDBACK:
             import checklist_walk_hook
             import codex_relay_hook
@@ -70,7 +71,7 @@ def main() -> int:
                                            detached_bash_hook.check, checklist_bash, delete_bash_hook.check],
                                     reader_update)
         case args:
-            raise SystemExit(f"{HOOK}: usage: joined_hooks.py {HANDBACK}|{SEND}|{AGENT}|{BASH}, "
+            raise SystemExit(f"{HOOK}: usage: joined_hooks.py {HANDBACK}|{SEND}|{AGENT}|{BASH}|{STOP}, "
                              f"given `{' '.join(args)}`")
 
 

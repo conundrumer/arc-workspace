@@ -102,10 +102,25 @@ def run_hook(hook: str, failure: str, act: Callable[[Hook], None]) -> int:
     return 0
 
 
-def run_subagent_stop(hook: str, check: Callable[[Hook], str | None]) -> int:
-    """Run the SubagentStop hook `hook` on the input on stdin: `check` gives
-    the reason to block the stop, or None to let it pass."""
-    reason = run_part(hook, CHECK_FAILED, lambda: check(json.loads(sys.stdin.read())))
+def checked_input(hook: str, checks: Sequence[Callable[[Hook], str | None]]
+                  ) -> tuple[Hook, str | None] | None:
+    """The hook input on stdin and the joined reasons from `checks`, in
+    order, or None where reading the input fails. Each check that raises
+    fails open alone."""
+    data = run_part(hook, CHECK_FAILED, lambda: json.loads(sys.stdin.read()))
+    if data is None:
+        return None
+    reason = joined(run_part(hook, CHECK_FAILED, partial(check, data)) for check in checks)
+    return data, reason
+
+
+def run_subagent_stop(hook: str, checks: Sequence[Callable[[Hook], str | None]]) -> int:
+    """Run the SubagentStop hook `hook`, printing the reasons to block
+    the stop as one hook's output."""
+    checked = checked_input(hook, checks)
+    if checked is None:
+        return 0
+    _, reason = checked
     if reason is not None:
         print(json.dumps({"decision": "block", "reason": reason}), flush=True)
     return 0
@@ -143,12 +158,11 @@ def run_pre_tool_use(
     `checks`, in order, gives the reason to deny the call or None, and the
     call is denied with the reasons of all that give one, which Claude
     Code shows as one hook's output; `update` gives the caller's update,
-    inside a block that the printed output ends. A check that raises
-    fails open alone, as the module docstring gives."""
-    data = run_part(hook, CHECK_FAILED, lambda: json.loads(sys.stdin.read()))
-    if data is None:
+    inside a block that the printed output ends."""
+    checked = checked_input(hook, checks)
+    if checked is None:
         return 0
-    reason = joined(run_part(hook, CHECK_FAILED, partial(check, data)) for check in checks)
+    data, reason = checked
     given = False
     try:
         with update(data) as given_update:

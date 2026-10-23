@@ -1,4 +1,4 @@
-"""SubagentStop hook, and PreToolUse hook on SubagentHandback: blocks the
+"""Check run by `joined_hooks.py` at SubagentStop and SubagentHandback: blocks the
 stop, or denies the SubagentHandback call, of an operator subagent where the
 result of the last call of `operate.py next` in its own transcript is not
 the text of its final reply (`printing.printed_reply`), or prints a
@@ -30,13 +30,12 @@ says why on stderr."""
 import sys
 from typing import Any
 
-from hook_entry import not_registered, run_pre_tool_use, run_subagent_stop
+from hook_entry import not_registered
 from printed_launch_hook import first_at, operator_next
 from printed_bash_check import prints_no_call
 
 HOOK = "operator_stop_hook"
 STOPS = "operator-stops"
-PRE_TOOL_USE = "pre-tool-use"
 
 
 def stop_reason(command: str) -> str:
@@ -77,19 +76,3 @@ def check(hook: dict[str, Any]) -> str | None:
               "and the operator made no call of `next` since", file=sys.stderr)
         return None
     return stop_reason(command)
-
-
-def main() -> int:
-    args = sys.argv[1:]
-    if not args:
-        return run_subagent_stop(HOOK, check)
-    if args == [PRE_TOOL_USE]:
-        return run_pre_tool_use(HOOK, [check])
-    from controlled_markdown import mctx
-
-    raise SystemExit(mctx("{hook}: usage: operator_stop_hook.py [{pre}]").format(
-        hook=HOOK, pre=PRE_TOOL_USE))
-
-
-if __name__ == "__main__":
-    sys.exit(main())

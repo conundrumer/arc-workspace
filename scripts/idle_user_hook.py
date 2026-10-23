@@ -135,4 +135,4 @@ def check(hook: Hook) -> str | None:
 
 
 if __name__ == "__main__":
-    sys.exit(run_subagent_stop(HOOK, check))
+    sys.exit(run_subagent_stop(HOOK, [check]))
