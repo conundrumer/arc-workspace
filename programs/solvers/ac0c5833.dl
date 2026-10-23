@@ -149,6 +149,13 @@
     .decl side(key: Key, k: number)
     side(Ky, K) :- cell(Ky, P, _), dir_elem(D), dist(P, D, K), K > 0.
 
+    // The cells of the family colors in line with each such cell.
+    // @claim markers
+    .init line = Ray<Key>
+    line.dir(Ky, D) :- hue(Ky, _, _), dir_elem(D).
+    line.cell(Ky, P) :- hue(Ky, _, Col), cell(Ky, P, Col).
+    line.mark(Ky, P) :- hue(Ky, _, Col), cell(Ky, P, Col).
+
     // Cells of color Col at corners C, P and Q of a box whose fourth corner E
     // holds another color. E lies toward X from C; P is K1 from C toward D1,
     // and Q is K2 from C toward D2.
@@ -156,8 +163,8 @@
                  q: Position, k1: number, k2: number)
     triple(Ky, Col, E, X, C, P, Q, K1, K2) :-
         hue(Ky, _, Col), cell(Ky, C, Col), diag_dirs(X, _, D1, D2),
-        side(Ky, K1), jump(C, D1, K1, P), cell(Ky, P, Col),
-        side(Ky, K2), jump(C, D2, K2, Q), cell(Ky, Q, Col),
+        line.ray(Ky, P, D1, K1, C), K1 > 0, cell(Ky, P, Col),
+        line.ray(Ky, Q, D2, K2, C), K2 > 0, cell(Ky, Q, Col),
         jump(P, D2, K2, E), cell(Ky, E, _), !cell(Ky, E, Col).
 
     .decl box_triple(key: Key, fam: Fam, n: number, col: Color, e: Position, x: DiagDir,
