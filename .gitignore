@@ -43,3 +43,5 @@ theory/.lake/
 # Cargo build output
 /engine/target/
 node_modules/
+
+tools/console/
