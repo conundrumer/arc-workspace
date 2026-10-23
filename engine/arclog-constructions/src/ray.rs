@@ -40,13 +40,17 @@ impl Construction for Ray {
                 let mut p = origin;
                 let mut k = 0;
                 loop {
-                    ray.insert(Box::new([p, d, Term::encode_count(k), origin]));
+                    if group.wanted[0] {
+                        ray.insert(Box::new([p, d, Term::encode_count(k), origin]));
+                    }
                     match step(context.registry, node, p, offset) {
                         Some(q) => (p, k) = (q, k + 1),
                         None => break,
                     }
                 }
-                end.insert(Box::new([p, d, Term::encode_count(k), origin]));
+                if group.wanted[1] {
+                    end.insert(Box::new([p, d, Term::encode_count(k), origin]));
+                }
                 context.budget.charge_work(k as u64 + 1)?;
             }
         }
@@ -125,8 +129,12 @@ impl Construction for Boundary {
         for p in cell.rows() {
             for &(d, offset) in &offsets {
                 if step(context.registry, cell, p[0], offset).is_none() {
-                    boundary.insert(Box::new([p[0]]));
-                    exposed.insert(Box::new([p[0], d]));
+                    if group.wanted[0] {
+                        boundary.insert(Box::new([p[0]]));
+                    }
+                    if group.wanted[1] {
+                        exposed.insert(Box::new([p[0], d]));
+                    }
                 }
             }
         }

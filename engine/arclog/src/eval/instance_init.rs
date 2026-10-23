@@ -30,9 +30,12 @@ use crate::types::GraphRelation;
 /// which reads the relation of the key clause and the relation of each
 /// input in the order of the component's inputs, the relations of the
 /// `DET`s that store inputs as parameters, and the example. A run of the
-/// construction stores the entry of each output of the instance. An
-/// output whose node has no resolved content has no entry, and its value is
-/// that of the run.
+/// construction builds and stores the entry of `asked` and of each other
+/// output whose node some node of the program's dependency graph reads.
+/// It builds the rows of no other output, and stores no entry for one, so a
+/// later request that asks for such an output runs the construction again.
+/// An output whose node has no resolved content has no entry, and its value
+/// is that of the run.
 ///
 /// The key clause's rows are the groups, and an instance with no key
 /// clause has one group, at the `Unit` key. A type parameter onto which no
@@ -57,7 +60,9 @@ pub fn evaluate_instance<'a>(
     }
     let construction = evaluation.constructions.get(&instance.component).ok_or_else(unevaluated)?;
     let relations = output_relations(evaluation, form, instance, component);
-    let each = |value: RelationValue| relations.iter().map(|relation| (relation.clone(), value.clone())).collect();
+    let wanted = wanted_outputs(evaluation, &relations, asked);
+    let built: Vec<&GraphRelation> = relations.iter().zip(&wanted).filter(|(_, wanted)| **wanted).map(|(relation, _)| relation).collect();
+    let each = |value: RelationValue| built.iter().map(|relation| ((*relation).clone(), value.clone())).collect();
     let whole = |budget: &Budget<'_>, value: RelationValue| {
         record_whole(budget, [&value]);
         Ok(value)
@@ -96,20 +101,23 @@ pub fn evaluate_instance<'a>(
         let mut rows: Vec<RowSet> = widths.iter().map(|widths| RowSet::empty(shape.arity(widths) as u16)).collect();
         let mut context = ConstructionContext { session: evaluation.session, registry: evaluation.registry, budget };
         for (key, inputs) in groups.iter().zip(&group_inputs) {
-            let group = GroupInputs { inputs, types: &types, columns: &columns };
+            let group = GroupInputs { inputs, types: &types, columns: &columns, wanted: &wanted };
             let outputs = match construction.evaluate(&group, &mut context) {
                 Ok(outputs) => outputs,
                 Err(bound) => return Ok(each(RelationValue::Stopped(Stop { bound, form: form.clone() }))),
             };
             let key_columns = output_key.columns(key);
-            for ((rows, widths), values) in rows.iter_mut().zip(&widths).zip(&outputs.outputs) {
+            for (((rows, widths), values), wanted) in rows.iter_mut().zip(&widths).zip(&outputs.outputs).zip(&wanted) {
+                if !wanted {
+                    continue;
+                }
                 for values in values.rows() {
                     rows.insert(laid_out(widths, &key_columns, values));
                 }
             }
         }
-        let values = rows.into_iter().map(|rows| RelationValue::Rows(Arc::new(join::one_part(rows))));
-        Ok(relations.iter().cloned().zip(values).collect())
+        let values = rows.into_iter().zip(&wanted).filter(|(_, wanted)| **wanted).map(|(rows, _)| RelationValue::Rows(Arc::new(join::one_part(rows))));
+        Ok(built.iter().map(|relation| (*relation).clone()).zip(values).collect())
     };
     let program = &evaluation.program.program;
     let session = evaluation.session;
@@ -238,6 +246,19 @@ fn laid_out(widths: &[Option<usize>], key_columns: &[TermId], values: &[TermId])
         }
     }
     row.into()
+}
+
+/// For each of `relations`, the outputs of an instance in the order its
+/// component declares them, whether the caller needs its rows: it is `asked`,
+/// or some node of the program's dependency graph reads its node.
+fn wanted_outputs(evaluation: &Evaluation<'_>, relations: &[GraphRelation], asked: &GraphRelation) -> Vec<bool> {
+    let mut wanted: Vec<bool> = relations.iter().map(|relation| relation == asked).collect();
+    for read in evaluation.program.program.graph.reads.iter().flat_map(|reads| reads.iter()) {
+        for (relation, wanted) in relations.iter().zip(&mut wanted) {
+            *wanted |= relation.node == *read;
+        }
+    }
+    wanted
 }
 
 /// The relation of each output of `instance`, the `INIT` form at `form`, of

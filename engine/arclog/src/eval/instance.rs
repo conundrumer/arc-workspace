@@ -31,11 +31,17 @@ use crate::types::ValueType;
 /// A column's type is its fixed type, or the instance's binding of the
 /// column's type parameter, a record whole with its field names, whose
 /// fields take a row position each.
+///
+/// `wanted` holds one flag per output of the component, in the order the
+/// registry declares its outputs, true for each output whose rows the
+/// caller needs. A construction may leave the rows of an output whose flag
+/// is false empty, and the budget is charged nothing for them.
 #[derive(Debug)]
 pub struct GroupInputs<'a> {
     pub inputs: &'a [RowSet],
     pub types: &'a [Box<[ValueType]>],
     pub columns: &'a [Box<[ValueType]>],
+    pub wanted: &'a [bool],
 }
 
 impl GroupInputs<'_> {
@@ -88,7 +94,9 @@ pub trait Construction: Send + Sync {
     fn name(&self) -> &'static str;
 
     /// The outputs of the component on one key group. A bound reached
-    /// while it builds them stops it.
+    /// while it builds them stops it. The rows of an output whose flag in
+    /// `group.wanted` is false may be left empty, and the budget is charged
+    /// nothing for them.
     fn evaluate(
         &self,
         group: &GroupInputs<'_>,

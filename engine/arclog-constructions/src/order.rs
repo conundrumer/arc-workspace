@@ -155,24 +155,37 @@ impl Construction for Order {
             empty_outputs(&[width + 1, width + 1, width, width, 2 * width, 2 * width])
                 .try_into()
                 .expect("six outputs");
+        let [wants_rank, wants_dual_rank, wants_minimal, wants_maximal, wants_successor, wants_cyclic_successor] = group.wanted else {
+            panic!("Order's six outputs")
+        };
         for &(t, r, d) in &ranking.ranks {
-            rank.insert(t.iter().copied().chain([Term::encode_count(r)]).collect());
-            dual_rank.insert(t.iter().copied().chain([Term::encode_count(d)]).collect());
+            if *wants_rank {
+                rank.insert(t.iter().copied().chain([Term::encode_count(r)]).collect());
+            }
+            if *wants_dual_rank {
+                dual_rank.insert(t.iter().copied().chain([Term::encode_count(d)]).collect());
+            }
         }
-        for &t in &ranking.minimal {
+        for &t in ranking.minimal.iter().filter(|_| *wants_minimal) {
             minimal.insert(t.into());
         }
-        for &t in &ranking.maximal {
+        for &t in ranking.maximal.iter().filter(|_| *wants_maximal) {
             maximal.insert(t.into());
         }
         let pair = |a: Element<'_>, b: Element<'_>| a.iter().chain(b).copied().collect();
         for &(a, b) in &ranking.successors {
-            successor.insert(pair(a, b));
-            cyclic_successor.insert(pair(a, b));
+            if *wants_successor {
+                successor.insert(pair(a, b));
+            }
+            if *wants_cyclic_successor {
+                cyclic_successor.insert(pair(a, b));
+            }
         }
-        for &last in &ranking.maximal {
-            for &first in &ranking.minimal {
-                cyclic_successor.insert(pair(last, first));
+        if *wants_cyclic_successor {
+            for &last in &ranking.maximal {
+                for &first in &ranking.minimal {
+                    cyclic_successor.insert(pair(last, first));
+                }
             }
         }
         let outputs = vec![rank, dual_rank, minimal, maximal, successor, cyclic_successor];
@@ -277,10 +290,14 @@ impl Construction for Singleton {
             0 => {}
             1 => {
                 let value = member.rows().next().expect("one row");
-                outputs[0].insert(value.into());
+                if group.wanted[0] {
+                    outputs[0].insert(value.into());
+                }
             }
             _ => {
-                outputs[1].insert([].into());
+                if group.wanted[1] {
+                    outputs[1].insert([].into());
+                }
             }
         }
         charged(outputs, input_rows(group), context)
@@ -340,10 +357,12 @@ impl Construction for Inclusion {
                 let size = patterns[pattern].len();
                 if count == size {
                     let row: Box<[TermId]> = id.iter().chain(pattern).copied().collect();
-                    if size == members.len() {
+                    if size == members.len() && group.wanted[1] {
                         equal.insert(row.clone());
                     }
-                    superset.insert(row);
+                    if group.wanted[0] {
+                        superset.insert(row);
+                    }
                 }
             }
         }

@@ -61,7 +61,7 @@ impl Construction for Wallpaper {
         }
 
         let (mut symmetry, mut action) = (RowSet::empty(2), RowSet::empty(2));
-        for members in by_class.values() {
+        for members in by_class.values().filter(|_| group.wanted[1]) {
             for &p in members {
                 for &q in members.iter().filter(|&&q| q != p) {
                     action.insert([p, q].into());
@@ -94,8 +94,12 @@ impl Construction for Wallpaper {
                 }
                 for &(p, image, landed) in &reach {
                     for &q in landed {
-                        action.insert([p, q].into());
-                        symmetry.insert([d, lib.relative(image, q)?].into());
+                        if group.wanted[1] {
+                            action.insert([p, q].into());
+                        }
+                        if group.wanted[0] {
+                            symmetry.insert([d, lib.relative(image, q)?].into());
+                        }
                     }
                 }
             }

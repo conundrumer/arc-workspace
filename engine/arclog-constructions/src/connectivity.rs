@@ -35,10 +35,10 @@ impl Construction for Connectivity {
     ) -> Result<GroupOutputs, ReachedBound> {
         let [node, step] = group.inputs else { panic!("Connectivity's inputs `node` and `step`") };
         let mut work = Batch::default();
-        let (classes, adjacent) = components(&column(node), &column(step), &mut work, context)?;
+        let (classes, adjacent) = components(&column(node), &column(step), group.wanted[2], &mut work, context)?;
         let component = identified(context, &group.types[0], &classes);
         let mut connected = RowSet::empty(2);
-        for members in &classes {
+        for members in classes.iter().filter(|_| group.wanted[1]) {
             for p in members {
                 for q in members {
                     connected.insert(p.iter().chain(q.iter()).copied().collect());
@@ -168,7 +168,7 @@ impl Construction for Enclosure {
         let mut work = Batch::default();
         let open = flood(&cells, edge, &steps, &mut work, context)?;
         let closed: StableHashSet<TermId> = cells.difference(&open).copied().collect();
-        let (classes, _) = components(&closed, &steps, &mut work, context)?;
+        let (classes, _) = components(&closed, &steps, false, &mut work, context)?;
         let enclosed = identified(context, &group.types[0], &classes);
         rows_held(context, [&enclosed])?;
         Ok(GroupOutputs { outputs: Box::new([enclosed]) })
@@ -205,10 +205,12 @@ impl Construction for Flood {
 }
 
 /// The connected components of `nodes` under `steps`, each step taken
-/// both ways, with each pair of nodes one of `steps` joins.
+/// both ways, with each pair of nodes one of `steps` joins, which are left
+/// out where `with_adjacent` is false.
 fn components(
     nodes: &StableHashSet<TermId>,
     steps: &StableHashSet<TermId>,
+    with_adjacent: bool,
     work: &mut Batch,
     context: &mut ConstructionContext<'_, '_>,
 ) -> Result<(Vec<Vec<Row>>, RowSet), ReachedBound> {
@@ -218,7 +220,9 @@ fn components(
         classes.insert(Row::from([p]));
         for q in stepped(p, steps, nodes, work, context)? {
             classes.union(Row::from([p]), Row::from([q]));
-            adjacent.insert([p, q].into());
+            if with_adjacent {
+                adjacent.insert([p, q].into());
+            }
         }
     }
     Ok((classes.classes(), adjacent))

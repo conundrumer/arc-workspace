@@ -47,10 +47,10 @@ impl Construction for Agreement {
         let mut conflict = RowSet::empty(corr as u16);
         for (m, pairs) in pairs {
             let verdict = compare(&source, &target, pairs, context.budget)?;
-            if verdict.mismatch {
+            if verdict.mismatch && group.wanted[0] {
                 mismatch.insert(m.into());
             }
-            if verdict.conflict {
+            if verdict.conflict && group.wanted[1] {
                 conflict.insert(m.into());
             }
         }
@@ -105,13 +105,15 @@ impl Construction for Periods {
             }
             let row: Row = [axis, Term::encode_number(k)].into();
             if broken == 0 {
-                period.insert(row.clone());
-                if witnessed {
+                if group.wanted[0] {
+                    period.insert(row.clone());
+                }
+                if witnessed && group.wanted[1] {
                     let at = least.entry(axis).or_insert(k);
                     *at = (*at).min(k);
                 }
             }
-            if broken <= lines.len() - broken {
+            if broken <= lines.len() - broken && group.wanted[2] {
                 approximate.insert(row);
             }
         }
@@ -169,8 +171,10 @@ impl Construction for Occurrences {
                 for &(s, image) in &images {
                     pairs.push(([s], [lib.compose(m, image)?]));
                 }
-                candidate.insert([d, m].into());
-                if !compare(&shape, &cells, pairs, context.budget)?.mismatch {
+                if group.wanted[0] {
+                    candidate.insert([d, m].into());
+                }
+                if group.wanted[1] && !compare(&shape, &cells, pairs, context.budget)?.mismatch {
                     occurrence.insert([d, m].into());
                 }
             }

@@ -48,7 +48,7 @@ impl Construction for Distance {
         for row in source_distance.rows() {
             graph.start(&row[..width], i64::from(Term::decode_number(row[width])));
         }
-        graph.distances(context.budget)
+        graph.distances(context.budget, group.wanted)
     }
 }
 
@@ -83,7 +83,7 @@ impl Construction for CellDistance {
         for row in source.rows() {
             graph.start(row, 0);
         }
-        graph.distances(context.budget)
+        graph.distances(context.budget, group.wanted)
     }
 }
 
@@ -130,8 +130,9 @@ impl Graph {
         least(self.starts.entry(node).or_insert(cost), cost);
     }
 
-    /// The `distance` and `predecessor` rows of the graph.
-    fn distances(self, budget: &mut Budget<'_>) -> Result<GroupOutputs, ReachedBound> {
+    /// The `distance` and `predecessor` rows of the graph, each left empty
+    /// where its flag in `wanted` is false.
+    fn distances(self, budget: &mut Budget<'_>, wanted: &[bool]) -> Result<GroupOutputs, ReachedBound> {
         let mut out = vec![Vec::new(); self.nodes.len()];
         for (&(a, b), &cost) in &self.edges {
             out[a].push((b, cost));
@@ -141,13 +142,13 @@ impl Graph {
         let costs = if unit { search.breadth_first(&self.starts, &out)? } else { search.dijkstra(&self.starts, &out)? };
         search.steps.finish(search.budget)?;
         let mut distance = RowSet::empty(self.width as u16 + 1);
-        for (node, cost) in self.nodes.iter().zip(&costs) {
+        for (node, cost) in self.nodes.iter().zip(&costs).filter(|_| wanted[0]) {
             if let Some(cost) = cost {
                 distance.insert(row(node, &[Term::encode_number(i32::try_from(*cost).expect("a least cost within a number"))]));
             }
         }
         let mut predecessor = RowSet::empty(2 * self.width as u16);
-        for (&(a, b), &cost) in &self.edges {
+        for (&(a, b), &cost) in self.edges.iter().filter(|_| wanted[1]) {
             if let (Some(at_a), Some(at_b)) = (costs[a], costs[b])
                 && at_a + cost == at_b
             {

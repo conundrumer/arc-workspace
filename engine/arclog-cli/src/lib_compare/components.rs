@@ -109,17 +109,18 @@ fn cells(output: &Port, row: &[TermId]) -> Vec<Cell> {
     row.iter().zip(output.columns.iter()).map(|(&id, column)| cell(id, &component_type(column))).collect()
 }
 
-/// The construction's rows of each output of the component's inputs, over
-/// each key group of the inputs, or the stop of the run.
+/// The construction's rows of each output of the component's inputs, all
+/// outputs asked for, over each key group of the inputs, or the stop of the run.
 pub(super) fn constructed(construction: &dyn Construction, component: &Component, inputs: &Value) -> Result<Vec<Rows>, String> {
     let (types, groups) = key_groups(component, inputs)?;
     let (session, limits) = bounds();
     let mut out: Vec<Rows> = vec![Rows::new(); component.outputs.len()];
+    let wanted = vec![true; component.outputs.len()];
     for (key, group) in groups {
         let mut budget = Budget::new(&limits, &session);
         let mut context = ConstructionContext { session: &session, registry: Registry::get(), budget: &mut budget };
         let outputs = construction
-            .evaluate(&GroupInputs { inputs: &group, types: &types, columns: &types }, &mut context)
+            .evaluate(&GroupInputs { inputs: &group, types: &types, columns: &types, wanted: &wanted }, &mut context)
             .map_err(|reached| format!("a stop at {reached:?}"))?;
         for ((output, rows), set) in component.outputs.iter().zip(&outputs.outputs).zip(&mut out) {
             let at = output.columns.iter().position(is_key);
