@@ -21,7 +21,7 @@ from operations.state import Review
 
 scripts_importable()
 
-from checklist_walk_hook import step_calls  # noqa: E402
+from checklist_walk_hook import STEP_NO_ITEM, step_calls  # noqa: E402
 from entry_reads import read_entries  # noqa: E402
 from transcript_snapshots import Entry, Refused, print_refused  # noqa: E402
 from transcripts import transcripts_of  # noqa: E402
@@ -54,16 +54,13 @@ NO_TRANSCRIPT = mctx("no transcript of the agent `{agent}` is found: give your o
 
 # Ticket 11-3130: doc editor ad68ab6b18e660953 advanced past
 # write-the-edit after a refusal, then made that item's edit.
-# Request 11-3448: ticket reviewer ae30ef4e377e4d07d read the call as
-# run, though it ran it joined with other work, and ran other calls.
 NO_STEP = mctx("the step-call results for `{agent}` do not hold the item `{missing}` "
                "in order. The tag needs each item through the item after `{item}`. "
                "If `{command}` has an item argument, first do the work that item's "
                "previously printed instruction gives. Run that call again, even "
-               "where you ran it before: a step call joined with other work or "
-               "piped holds no item. Run it as a Bash call "
+               "where you ran it before: {step_no_item}. Run it as a Bash call "
                "by itself, do the item it prints, then go on "
-               "by the call each item ends with up to this command. Run this command again")
+               "by the call each item ends with up to this command. Run this command again").replace("{step_no_item}", STEP_NO_ITEM)
 
 
 def step_gap(entries: Iterable[Entry], checklist: Checklist, item: str) -> Gap | None:

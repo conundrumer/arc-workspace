@@ -4,6 +4,10 @@ where the results of the step calls in its own transcript leave an item of
 its walk unprinted (`handbook.checklist.Checklist.gap`), and the reason
 gives the call that prints the first such item (`handbook.checklist.Gap.call`).
 
+The Bash check, called by `joined_hooks.checklist_bash`, refuses a checklist
+agent's own step call where `_calls` would count no step call. A command
+it refused is allowed when made again.
+
 A result counts only where its Bash command's simple commands, through a
 shell wrapper, are one step call for the caller's agent type and optional
 `cd` commands. A pipe or join with other work, or two step calls, counts
@@ -52,6 +56,10 @@ if TYPE_CHECKING:
 
 HOOK = "checklist_walk_hook"
 STOPS = "checklist-walk-stops"
+BASH_STOPS = "checklist-bash-stops"
+# Request 11-3448: ticket reviewer ae30ef4e377e4d07d read the call as
+# run, though it ran it joined with other work, and ran other calls.
+STEP_NO_ITEM = mctx("a step call joined with other work or piped holds no item")
 NO_CALL = "none"
 """The record of an agent denied before it made any step call."""
 
@@ -148,18 +156,15 @@ def refusal(command: str, agent: str) -> str:
              "in the same result."),
         # Ticket 11-3130: doc editor ad68ab6b18e660953 advanced past
         # write-the-edit after a refusal, then made that item's edit.
-        # Request 11-3448: ticket reviewer ae30ef4e377e4d07d read the call as
-        # run, though it ran it joined with other work, and ran other calls.
         mctx("If `{command}` has an item argument, first do the work that item's "
              "previously printed instruction gives. Run that call again, even "
-             "where you ran it before: a step call joined with other work or "
-             "piped holds no item. Run it as the whole command of a Bash call, "
+             "where you ran it before: {step_no_item}. Run it as the whole command of a Bash call, "
              "with no pipe, do the item it prints, then "
              "go on by the call each item ends with. Then give your report again."),
         mctx("Where you find no way to do the item your walk is at, run "
              "`uv run python scripts/step.py {agent} --stop <item>`, with that item as "
              "`<item>`, then give your report again."),
-    ]).format(command=command, agent=agent)
+    ]).format(command=command, agent=agent, step_no_item=STEP_NO_ITEM)
 
 
 def stop_bound(entries: list[dict[str, Any]], calls: list[tuple[str, str, str]],
@@ -196,6 +201,32 @@ def walk_gap(kind: str, calls: list[tuple[str, str, str]], stop: str | None) -> 
             continue
         return gap
     raise AssertionError("the walk with no bound raised")
+
+
+def bash_check(hook: dict[str, Any]) -> str | None:
+    from handbook.checklist import checklist_agents, step_call
+    from printed_launch_hook import first_at
+    from run_reads import caller_id, caller_type
+
+    agent = caller_id(hook)
+    if agent is None:
+        return None
+    _, kind = caller_type(HOOK, hook)
+    if kind is None or kind not in checklist_agents():
+        return None
+    command = str((hook.get("tool_input") or {}).get("command", ""))
+    if not runs_step(command, kind) or isolated_step(command, kind):
+        return None
+    if not first_at(hook, BASH_STOPS, agent, command):
+        return None
+    arguments = next(step_arguments(command, kind))
+    call = step_call(kind, join(arguments) if arguments else None)
+    # Ticket 11-3685 Grounds: after isolated-call footers and hand-back
+    # refusals, 123 checklist runs still joined or piped a step call.
+    return mctx("Blocked: this call runs `{call}` with other work or through a pipe: "
+                "{step_no_item}. Run `{call}` as the whole command of a Bash call, "
+                "with no pipe, and run the other work in a call of its own.").format(
+                    call=call, step_no_item=STEP_NO_ITEM)
 
 
 def check(hook: dict[str, Any]) -> str | None:

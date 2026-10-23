@@ -213,3 +213,55 @@ def test_joined_work_does_not_count_as_a_step(command):
             {"type": "tool_result", "tool_use_id": "step", "content": "result"}]}},
     ]
     assert _calls(entries, "code-reviewer") == []
+
+
+@pytest.mark.parametrize("command", [
+    STEP + "; echo done", STEP + " && echo done", STEP + " | head -3",
+    STEP + "; " + STEP,
+])
+def test_joined_bash_step_is_denied_once(tmp_path: Path, command: str) -> None:
+    from tests.conftest import script
+
+    checklist_bash = script("joined_hooks").checklist_bash
+
+    hook = json.loads(session(tmp_path, []))
+    hook.update(tool_name="Bash", tool_input={"command": command})
+    assert checklist_bash(hook) is not None
+    assert checklist_bash(hook) is None
+
+
+@pytest.mark.parametrize("command", [
+    STEP, "cd /tmp && " + STEP, "uv run python scripts/step.py doc-editor; echo done",
+    "cat <<'REPORT'\n" + STEP + "; echo done\nREPORT",
+    "echo '" + STEP + "'", "rg '" + STEP + "' file",
+])
+def test_bash_step_forms_that_are_allowed(tmp_path: Path, command: str) -> None:
+    from tests.conftest import script
+
+    checklist_bash = script("joined_hooks").checklist_bash
+
+    hook = json.loads(session(tmp_path, []))
+    hook.update(tool_name="Bash", tool_input={"command": command})
+    assert checklist_bash(hook) is None
+
+
+@pytest.mark.parametrize("kind", ["general-purpose", "unknown-role"])
+def test_agent_without_checklist_is_allowed(tmp_path: Path, kind: str) -> None:
+    from tests.conftest import script
+
+    checklist_bash = script("joined_hooks").checklist_bash
+
+    hook = json.loads(session(tmp_path, [], kind=kind))
+    hook.update(tool_name="Bash", tool_input={"command": STEP + "; echo done"})
+    assert checklist_bash(hook) is None
+
+
+def test_main_session_is_allowed(tmp_path: Path) -> None:
+    from tests.conftest import script
+
+    checklist_bash = script("joined_hooks").checklist_bash
+
+    hook = json.loads(session(tmp_path, []))
+    hook.pop("agent_id")
+    hook.update(tool_name="Bash", tool_input={"command": STEP + "; echo done"})
+    assert checklist_bash(hook) is None
