@@ -1,0 +1,124 @@
+// c92b942c
+// @draft
+// @keywords: tile-arrangement lines markers stamp
+// @scene marks-on-background: the input is a field of params.background with
+//  one or more marks, all of one color other than params.line_color and
+//  params.diag_color, and the marks are fewer than the params.background cells
+// @rule tile: the output frame is the input repeated params.tile_count times on
+//  each axis
+// @rule row-line: in the tiled grid, each params.background cell on a line
+//  along params.line_axis that holds a mark takes params.line_color
+// @rule diag-corners: in the tiled grid, each params.background cell one
+//  diagonal step from a mark toward a corner in params.diag_dirs takes
+//  params.diag_color, over the line; a step that leaves the tiled grid paints
+//  nothing
+// @rule marks-kept: each mark keeps its color, and every other cell keeps
+//  params.background
+
+// the color of a cell that is both on a line and at a corner
+.type LineCorner =
+    // @claim diag-corners
+    CornerOverLine {}
+    // @rule diag-corners: a corner paints only a cell the line leaves
+    //  params.background; defined on every input
+    // @witness adjacent-mark-rows: variant concept
+  | LineOverCorner {}
+
+// the color of a mark at another mark's corner
+.type CornerMark =
+    // @claim marks-kept
+    MarkKept {}
+    // @rule marks-kept: a corner paints params.diag_color over a mark; defined
+    //  on every input
+    // @witness diagonal-marks: variant concept
+  | CornerOverMark {}
+
+.type Choice = [lc: LineCorner, cm: CornerMark]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    //     @relaxed marks-on-background
+    .decl background(c: Color) background(0).
+    .decl tile_count(n: number) tile_count(3).
+    .decl line_axis(a: Axis) line_axis(AXIS_H).
+    .decl line_color(c: Color) line_color(1).
+    .decl diag_dirs(d: DiagDir) diag_dirs(DIAG_TL). diag_dirs(DIAG_BR).
+    .decl diag_color(c: Color) diag_color(3).
+}
+
+.init params = Params
+
+.decl line_corner_choice(lc: LineCorner)
+line_corner_choice($CornerOverLine()). line_corner_choice($LineOverCorner()).
+
+.decl corner_mark_choice(cm: CornerMark)
+corner_mark_choice($MarkKept()). corner_mark_choice($CornerOverMark()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([LC, CM]) :- line_corner_choice(LC), corner_mark_choice(CM).
+
+// The input tiled, and its marks, lines and corners.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+
+    .init arrangement = Frame2D<Unit>
+    arrangement.extent($U(), A, N) :- axis_elem(A), params.tile_count(N).
+
+    // The input repeated params.tile_count times on each axis.
+    .decl tiled(key: Key, p: Position, col: Color)
+    tiled(K, P_grid_out, Col) :-
+        arrangement.cell($U(), P_tile), cell(K, P_intile, Col),
+        concat_2d(P_tile, P_intile, 0, P_grid_out).  // one copy of the input per tile
+
+    .decl mark(key: Key, p: Position)
+    mark(K, P) :- tiled(K, P, Col), !params.background(Col).
+
+    // A params.background cell on a line along params.line_axis that holds a
+    // mark.
+    .decl line_cell(key: Key, p: Position)
+    line_cell(K, P) :-
+        tiled(K, P, Col), params.background(Col),
+        mark(K, Q), params.line_axis(A), same_line(A, P, Q).
+
+    // A cell one diagonal step from a mark toward a corner in params.diag_dirs.
+    .decl corner_cell(key: Key, p: Position)
+    corner_cell(K, P) :- mark(K, Q), params.diag_dirs(D), neighbor(Q, D, P).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// A cell that a corner leaves as it is.
+.decl shielded(p: Position, ch: Choice)
+
+// A corner cell that takes params.diag_color.
+.decl painted(p: Position, ch: Choice)
+painted(P, Ch) :- parse.corner_cell($U(), P), impl_choice(Ch), !shielded(P, Ch).
+
+out(P, Col, Ch) :-
+    parse.tiled($U(), P, Col0), impl_choice(Ch),
+    ( painted(P, Ch), params.diag_color(Col)
+    ; !painted(P, Ch), parse.line_cell($U(), P), params.line_color(Col)
+    ; !painted(P, Ch), !parse.line_cell($U(), P), Col = Col0
+    ).
+
+// --- $LineOverCorner ---
+shielded(P, [$LineOverCorner(), CM]) :- parse.line_cell($U(), P), corner_mark_choice(CM).
+
+// --- $MarkKept ---
+shielded(P, [LC, $MarkKept()]) :- parse.mark($U(), P), line_corner_choice(LC).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The color a train output gives a line cell that no corner takes.
+    .decl line_color(c: Color)
+    line_color(Col) :- ex.line_cell(E, P), !ex.corner_cell(E, P), ex_out(E, P, Col).
+
+    // The color a train output gives a corner cell that is no mark.
+    .decl diag_color(c: Color)
+    diag_color(Col) :- ex.corner_cell(E, P), !ex.mark(E, P), ex_out(E, P, Col).
+}

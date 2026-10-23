@@ -1,0 +1,32 @@
+{ "id": "e69241bd",
+  "witnesses": [{
+    "id": "background=DominantColor",
+    "separates": "the wall color 5 outnumbers the floor color 0; the stored background floods the floor of the room of the 3 seed, and the derived background takes 5, finds no floor cell, and returns the input",
+    "input": [[5,5,0,5,5],[5,0,0,5,0],[5,5,5,5,0],[0,0,5,3,0],[5,0,5,5,5]],
+    "output": [
+      {"cases": ["concept", "$NearestSeed", "$StoredSeedColors"],
+       "grid": [[5,5,0,5,5],[5,0,0,5,3],[5,5,5,5,3],[0,0,5,3,3],[5,0,5,5,5]]},
+      {"cases": ["background=DominantColor"],
+       "grid": [[5,5,0,5,5],[5,0,0,5,0],[5,5,5,5,0],[0,0,5,3,0],[5,0,5,5,5]]}
+    ]
+  }, {
+    "id": "two-seeds-one-room",
+    "separates": "one room holds two seeds of different colors; the room fill gives each floor cell both colors and is undefined, and the nearest-seed fill splits the room between the two seeds",
+    "input": [[1,0,0,0,0,4],[0,0,0,0,0,0],[5,5,5,5,5,5],[0,0,0,0,0,0]],
+    "output": [
+      {"cases": ["concept", "$StoredSeedColors", "background=DominantColor"], "grid": null},
+      {"cases": ["$NearestSeed"],
+       "grid": [[1,1,1,4,4,4],[1,1,1,4,4,4],[5,5,5,5,5,5],[0,0,0,0,0,0]]}
+    ]
+  }, {
+    "id": "unseen-seed-color",
+    "separates": "a seed has the color 2, which no train input holds; any non-floor non-wall color floods its room, and the stored seed colors leave the 2 room unfilled",
+    "input": [[0,0,5,0,0],[0,2,5,0,6],[5,5,5,5,5],[0,0,0,5,0]],
+    "output": [
+      {"cases": ["concept", "$NearestSeed", "background=DominantColor"],
+       "grid": [[2,2,5,6,6],[2,2,5,6,6],[5,5,5,5,5],[0,0,0,5,0]]},
+      {"cases": ["$StoredSeedColors"],
+       "grid": [[0,0,5,6,6],[0,2,5,6,6],[5,5,5,5,5],[0,0,0,5,0]]}
+    ]
+  }]
+}

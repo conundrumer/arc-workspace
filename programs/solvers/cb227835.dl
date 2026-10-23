@@ -1,0 +1,90 @@
+// cb227835
+// @draft
+// @keywords: markers cast span
+// @scene two-markers: on a field of background 0, the input holds exactly two
+//  cells of params.marker_color, and no other cell
+// @scene markers-off-lines: the two markers share no row, no column and no
+//  diagonal, so the row offset and the column offset between them are both
+//  nonzero and differ in size
+// @rule two-king-paths: from each marker, the output draws the two shortest
+//  king-move paths to the other marker that are one straight run and one
+//  diagonal run: a straight run of |dr − dc| cells along the axis of the
+//  larger offset and a diagonal run of min(dr, dc) cells toward the other
+//  marker, in each of the two orders. The cells of those paths, the markers
+//  excluded, take params.path_color
+// @rule markers-kept: the markers keep params.marker_color, and every other
+//  cell keeps its input color
+
+// which cells are the two markers
+.type Choice =
+    // @claim two-markers
+    Colored {}
+    // @scene two-markers: the input holds exactly two cells not of
+    //  params.background, of any colors; undefined where it holds more than two
+    // @witness markers-mixed-colors: borderline $NonBackground
+    //     @relaxed two-markers
+  | NonBackground {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl path_color(col: Color) path_color(3).
+
+    // --- $Colored ---
+    // @derive RarestColor: variant derived
+    //     @relaxed two-markers
+    .decl marker_color(col: Color) marker_color(8).
+
+    // --- $NonBackground ---
+    // @derive DominantColor: variant concept
+    //     @relaxed two-markers
+    .decl background(col: Color) background(0).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Colored()). impl_choice($NonBackground()).
+
+.decl marker(ch: Choice, p: Position)
+
+// --- $Colored ---
+marker($Colored(), P) :- in(P, Col), params.marker_color(Col).
+
+// --- $NonBackground ---
+marker($NonBackground(), P) :- in(P, Col), !params.background(Col).
+
+// --- $Colored, $NonBackground ---
+
+// A case with a third marker gives no output.
+.decl crowded(ch: Choice)
+crowded(Ch) :- marker(Ch, A), marker(Ch, B), marker(Ch, C), A != B, A != C, B != C.
+
+// The lines from each marker toward the eight directions.
+// @claim two-king-paths
+.init run = Ray<Choice>
+run.dir(Ch, D) :- impl_choice(Ch), dir8_elem(D).
+run.cell(Ch, P) :- impl_choice(Ch), in(P, _).
+run.mark(Ch, P) :- marker(Ch, P).
+
+// A corner of the outline: K1 cells from marker A toward D1, the straight
+// run's direction, and K2 cells from the other marker B toward D2, the
+// diagonal run's, and no farther toward D1 than B.
+.decl corner(ch: Choice, a: Position, d1: Dir, k1: number, b: Position, d2: DiagDir, k2: number)
+corner(Ch, A, D1, K1, B, D2, K2) :-
+    marker(Ch, A), marker(Ch, B), A != B,
+    run.ray(Ch, C, D1, K1, A), dir_elem(D1),
+    run.ray(Ch, C, D2, K2, B), diag_dir_elem(D2),
+    dist(C, D1, K_c), dist(B, D1, K_b), K_c >= K_b.
+
+// The outline cells, the markers excluded.
+.decl outline(ch: Choice, p: Position)
+outline(Ch, P) :-
+    corner(Ch, A, D1, K1, B, D2, K2), !marker(Ch, P),
+    ( run.ray(Ch, P, D1, K, A), K <= K1      // the straight run from A to the corner
+    ; run.ray(Ch, P, D2, K, B), K <= K2 ).   // the diagonal run from B to the corner
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), !crowded(Ch), in(P, Col_in),
+    ( outline(Ch, P), params.path_color(Col)
+    ; !outline(Ch, P), Col = Col_in ).

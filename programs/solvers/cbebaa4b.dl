@@ -1,0 +1,397 @@
+// cbebaa4b
+// @draft
+// @keywords: objects markers move assemble
+// @scene pieces: on a field of `background`, the input holds several pieces,
+//  each a 4-connected shape of one color other than `background` and
+//  `connector`, with single `connector` cells beside it, each 4-adjacent to
+//  that piece and to no other.
+// @scene one-anchor: exactly one piece has the color `anchor`.
+// @scene pieces-fit: there is exactly one way to translate each piece other
+//  than the anchor piece, the anchor piece fixed, such that each `connector`
+//  cell lands on a `connector` cell of exactly one other piece, no other cells
+//  of two pieces share a place, and the whole assembly lies inside the grid.
+// @rule anchor-stays: the anchor piece and its `connector` cells keep their
+//  places.
+// @rule assemble: every other piece, with its `connector` cells, moves by its
+//  translation in that fit.
+//     @approximated: first, two pieces join at an offset at which two or more
+//      of their `connector` cells meet and no other cells of the two share a
+//      place, where a `connector` cell has one such join left; then the
+//      `connector` cells no join took pair up in the same way, one cell meeting
+//      one cell; each piece moves by the offsets of the joins on its way from
+//      the anchor piece, and the output stands where the result is a fit
+//     @witness twin-pairs: borderline other
+// @rule rest-background: every other output cell is `background`.
+
+// which piece stays in place
+.type Anchor =
+    // @claim one-anchor
+    ByColor {}
+    // @scene one-anchor: exactly one piece fills its bounding box, and the box
+    //  spans more than one cell on each axis; undefined where no piece or more
+    //  than one does
+    // @rule anchor-stays: that piece and its `connector` cells keep their
+    //  places
+    // @witness anchor-not-solid: borderline concept
+  | AnchorSolidBlock {}
+
+// the color of the dots
+.type Connector =
+    // @claim pieces
+    StoredConnector {}
+    // @scene pieces: the `connector` color is the one color other than
+    //  `background` whose cells touch every piece of every other color;
+    //  undefined where no color, or more than one, does
+    // @witness connector-recolored: variant $ConnectorDerived
+    //     @relaxed pieces
+  | ConnectorDerived {}
+
+// whether placed pieces may share cells
+.type Overlap =
+    // @claim pieces-fit
+    Disjoint {}
+    // @scene pieces-fit: the cells of two pieces may share a place; undefined
+    //  where a shared place would take two colors
+    // @witness shared-cell: foreign $OverlapAllowed
+    //     @relaxed pieces-fit
+  | OverlapAllowed {}
+
+// whether the assembly must lie inside the grid
+.type Bounds =
+    // @claim pieces-fit
+    Inside {}
+    // @scene pieces-fit: the assembly may reach past the grid
+    // @rule assemble: the output draws the part of the assembly inside the
+    //  grid
+    // @witness assembly-past-edge: foreign $ClipAssembly
+    //     @relaxed pieces-fit
+  | ClipAssembly {}
+
+.type Choice = [a: Anchor, c: Connector, o: Overlap, b: Bounds]
+
+// Two pieces under one dot color, and an offset of the second from the first.
+.type Join = [c: Connector, a: Ident, b: Ident, v: Offset]
+
+// A piece moved by an offset.
+.type Place = [o: Ident, v: Offset]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed pieces
+    // @ignore: derive $Disjoint — subsumed by the case that takes $OverlapAllowed and $ClipAssembly
+    .decl bg(col: Color) bg(0).
+
+    // --- $StoredConnector ---
+    // The color of the dots that mark the joins.
+    .decl connector(col: Color) connector(2).
+
+    // --- $ByColor ---
+    // The color of the piece that does not move.
+    .decl anchor(col: Color) anchor(4).
+}
+
+.init params = Params
+
+.decl anchor_choice(a: Anchor)
+anchor_choice($ByColor()). anchor_choice($AnchorSolidBlock()).
+
+.decl connector_choice(c: Connector)
+connector_choice($StoredConnector()). connector_choice($ConnectorDerived()).
+
+.decl impl_choice(ch: Choice)
+// $Disjoint and $Inside each only reject an assembly, so wherever a case that
+// takes one of them gives a grid, the case that takes $OverlapAllowed and
+// $ClipAssembly in its place gives the same grid. The concept case is the one
+// case that takes either.
+impl_choice([$ByColor(), $StoredConnector(), $Disjoint(), $Inside()]).
+impl_choice([A, C, $OverlapAllowed(), $ClipAssembly()]) :- anchor_choice(A), connector_choice(C).
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+
+    .type KeyColor = [key: Key, col: Color]
+
+    // The one-color parts of the ink. Under each dot color, the parts of the
+    // other colors are the pieces.
+    // @claim pieces
+    .init comps = Components<KeyColor>
+    comps.node([K, Col], P) :- cell(K, P, Col), !params.bg(Col).
+
+    .decl part(key: Key, o: Ident, p: Position, col: Color)
+    part(K, O, P, Col) :- comps.label([K, Col], P, O).
+
+    .type KeyPart = [key: Key, o: Ident]
+
+    // @claim one-anchor
+    .init box = Bbox<KeyPart>
+    box.cell([K, O], P) :- part(K, O, P, _).
+
+    // A cell of the part's box that the part leaves out.
+    .decl gap(key: Key, o: Ident)
+    gap(K, O) :- box.box([K, O], B), cell(K, P, _), inside(P, B), !part(K, O, P, _).
+
+    // Two cells of the part lie side by side along axis a.
+    .decl spans(key: Key, o: Ident, a: Axis)
+    spans(K, O, A) :-
+        part(K, O, P, _), dir_elem(D), axis_of(D, A), neighbor(P, D, Q), part(K, O, Q, _).
+
+    // The part's box is one cell across on some axis.
+    .decl thin(key: Key, o: Ident)
+    thin(K, O) :- part(K, O, _, _), axis_elem(A), !spans(K, O, A).
+
+    // The part fills its box, which spans more than one cell on each axis.
+    .decl solid(key: Key, o: Ident)
+    solid(K, O) :- part(K, O, _, _), !gap(K, O), !thin(K, O).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- the pieces ---
+
+.decl dot_color(c: Connector, col: Color)
+
+.decl body(c: Connector, o: Ident, p: Position, col: Color)
+body(C, O, P, Col) :- parse.part($U(), O, P, Col), connector_choice(C), !dot_color(C, Col).
+
+.decl dot(c: Connector, o: Ident, p: Position)
+dot(C, O, P) :-
+    dot_color(C, Col), in(P, Col), dir_elem(D), neighbor(P, D, Q), body(C, O, Q, _).
+
+// A dot beside two pieces.
+.decl shared_dot(c: Connector)
+shared_dot(C) :- dot(C, O, P), dot(C, O2, P), O != O2.
+
+// A piece's cells: its body and its dots.
+.decl shape(c: Connector, o: Ident, p: Position, col: Color)
+shape(C, O, P, Col) :- body(C, O, P, Col).
+shape(C, O, P, Col) :- dot(C, O, P), dot_color(C, Col).
+
+.decl anchor_piece(a: Anchor, c: Connector, o: Ident)
+
+.decl anchor_rival(a: Anchor, c: Connector)
+anchor_rival(A, C) :- anchor_piece(A, C, O), anchor_piece(A, C, O2), O != O2.
+
+// --- the places a piece can take ---
+
+// The anchor piece stays where it is.
+// @ignore: head-zero — the anchor piece does not move
+.decl place(ch: Choice, o: Ident, v: Offset)
+place([A, C, O, B], Ob, ZERO) :- impl_choice([A, C, O, B]), anchor_piece(A, C, Ob).
+
+// --- the joins ---
+
+// Piece b moved by v puts its dot e on dot d of piece a.
+.decl meet(c: Connector, a: Ident, b: Ident, v: Offset, d: Position, e: Position)
+meet(C, Oa, Ob, V, D, E) :- dot(C, Oa, D), dot(C, Ob, E), Oa != Ob, relative(E, D, V).
+
+// A join: two pieces at an offset, the same join seen from either piece.
+.init join = Canon<Join>
+join.equiv([C, Oa, Ob, V], [C, Ob, Oa, W]) :- meet(C, Oa, Ob, V, D, E), meet(C, Ob, Oa, W, E, D).
+
+// The join puts a cell of one piece on a cell of the other, other than a dot on
+// a dot.
+.decl overlap(c: Connector, j: Ident)
+overlap(C, J) :-
+    join.id([C, Oa, Ob, V], J), shape(C, Ob, E, _), compose(E, V, P), shape(C, Oa, P, _),
+    ( body(C, Ob, E, _) ; body(C, Oa, P, _) ).
+
+// The dots a join puts on one another.
+.decl join_dot(c: Connector, j: Ident, d: Position)
+join_dot(C, J, D) :- meet(C, Oa, Ob, V, D, _), join.id([C, Oa, Ob, V], J), !overlap(C, J).
+
+// Two joins of the same two pieces at different offsets.
+.decl rival(c: Connector, j: Ident, j2: Ident)
+rival(C, J, J2) :- join.id([C, Oa, Ob, V], J), join.id([C, Oa, Ob, V2], J2), V != V2.
+
+// First the joins at which two or more dots of each piece meet: a dot that
+// only one of them can take takes it, and a join that shares a dot or a pair of
+// pieces with a taken join is out.
+// @claim pieces-fit assemble
+.init matched = CoverForcing<Connector, Ident>
+matched.covers(C, J, D) :-
+    join_dot(C, J, D), meet(C, Oa, Ob, V, D, _), join.id([C, Oa, Ob, V], J),
+    meet(C, Oa, Ob, V, D2, _), D2 != D.
+matched.conflict(C, J, J2) :- rival(C, J, J2).
+
+// A dot that a join of the first step took.
+.decl taken(c: Connector, d: Position)
+taken(C, D) :- matched.forced(C, J), !matched.ruled_out(C, J), matched.covers(C, J, D).
+
+// A join that puts a dot already taken on another dot.
+.decl stale(c: Connector, j: Ident)
+stale(C, J) :- join_dot(C, J, D), taken(C, D).
+
+// Then the dots left pair up in the same way.
+// @claim pieces-fit assemble
+.init paired_up = CoverForcing<Connector, Ident>
+paired_up.covers(C, J, D) :- join_dot(C, J, D), !stale(C, J).
+paired_up.conflict(C, J, J2) :- rival(C, J, J2).
+
+// --- the assembly ---
+
+// The places the chosen joins lead to from the anchor piece.
+.init lead = Propagation<Choice, Place>
+lead.source(Ch, [Ob, V]) :- place(Ch, Ob, V), Ch = [A, C, _, _], anchor_piece(A, C, Ob).
+lead.edge(Ch, [Oa, V], [Ob, W]) :-
+    place(Ch, Oa, V), Ch = [_, C, _, _],
+    ( matched.forced(C, J), !matched.ruled_out(C, J)
+    ; paired_up.forced(C, J), !paired_up.ruled_out(C, J)
+    ),
+    join.id([C, Oa, Ob, V2], J), compose(V, V2, W), place(Ch, Ob, W).    // b moved by v2 from a
+
+// A piece the joins lead to two places.
+.decl doubled(ch: Choice)
+doubled(Ch) :- lead.reached(Ch, [Ob, V]), lead.reached(Ch, [Ob, V2]), V != V2.
+
+// The places of the pieces, where no piece takes two.
+.decl placed(ch: Choice, x: Place)
+placed(Ch, X) :- lead.reached(Ch, X), !doubled(Ch).
+
+.decl placed_piece(ch: Choice, o: Ident)
+placed_piece(Ch, Ob) :- placed(Ch, [Ob, _]).
+
+// The cells and dots of a placed piece.
+.decl cell(ch: Choice, x: Place, p: Position, col: Color)
+cell(Ch, [Ob, V], Q, Col) :-
+    placed(Ch, [Ob, V]), Ch = [_, C, _, _], shape(C, Ob, P, Col), compose(P, V, Q).
+
+.decl spot(ch: Choice, x: Place, p: Position)
+spot(Ch, [Ob, V], Q) :-
+    placed(Ch, [Ob, V]), Ch = [_, C, _, _], dot(C, Ob, P), compose(P, V, Q).
+
+.decl paired(ch: Choice, x: Place, p: Position)
+paired(Ch, X, P) :- spot(Ch, X, P), spot(Ch, Y, P), X != Y.
+
+// The assembly is no fit: a dot touches two pieces, two pieces are anchors,
+// a piece takes no place or two, a dot meets no other dot or two, or, for
+// $Disjoint, two pieces share another cell.
+.decl broken(ch: Choice)
+broken(Ch) :-
+    impl_choice(Ch), Ch = [A, C, _, _],
+    ( shared_dot(C)
+    ; anchor_rival(A, C)
+    ; body(C, Ob, _, _), !placed_piece(Ch, Ob)
+    ).
+broken(Ch) :- doubled(Ch).
+broken(Ch) :- spot(Ch, X, P), !paired(Ch, X, P).
+broken(Ch) :- spot(Ch, X, P), spot(Ch, Y, P), spot(Ch, Z, P), X != Y, X != Z, Y != Z.
+
+.decl drawn(ch: Choice, p: Position, col: Color)
+drawn(Ch, P, Col) :- cell(Ch, _, P, Col), in(P, _), !broken(Ch).
+
+out(P, Col, Ch) :- drawn(Ch, P, Col).
+out(P, Col, Ch) :- impl_choice(Ch), !broken(Ch), in(P, _), !drawn(Ch, P, _), params.bg(Col).
+
+// --- $StoredConnector ---
+dot_color($StoredConnector(), Col) :- params.connector(Col).
+
+// --- $ConnectorDerived ---
+
+// Part o lies beside a cell of color col.
+.decl touches(o: Ident, col: Color)
+touches(O, Col) :- parse.part($U(), O, P, _), dir_elem(D), neighbor(P, D, Q), in(Q, Col).
+
+// Some part of another color lies beside no cell of col.
+.decl misses(col: Color)
+misses(Col) :-
+    parse.part($U(), _, _, Col), parse.part($U(), O, _, Col2), Col2 != Col, !touches(O, Col).
+
+.decl touches_all(col: Color)
+touches_all(Col) :- parse.part($U(), _, _, Col), !misses(Col).
+
+.decl rival_color(col: Color)
+rival_color(Col) :- touches_all(Col), touches_all(Col2), Col2 != Col.
+
+dot_color($ConnectorDerived(), Col) :- touches_all(Col), !rival_color(Col).
+
+// --- $ByColor ---
+anchor_piece($ByColor(), C, O) :- body(C, O, _, Col), params.anchor(Col).
+
+// --- $AnchorSolidBlock ---
+anchor_piece($AnchorSolidBlock(), C, O) :- body(C, O, _, _), parse.solid($U(), O).
+
+// --- $Inside ---
+
+// An offset that puts some cell of the piece on a grid cell.
+.decl shift(c: Connector, o: Ident, v: Offset)
+shift(C, O, V) :- shape(C, O, P, _), in(Q, _), relative(P, Q, V).
+
+// The offset puts some cell of the piece off the grid.
+.decl off_grid(c: Connector, o: Ident, v: Offset)
+off_grid(C, O, V) :- shift(C, O, V), shape(C, O, P, _), compose(P, V, Q), !in(Q, _).
+
+place([A, C, O, $Inside()], Ob, V) :-
+    impl_choice([A, C, O, $Inside()]), shift(C, Ob, V), !off_grid(C, Ob, V),
+    !anchor_piece(A, C, Ob).
+
+// --- $ClipAssembly ---
+
+// A cell of a copy of the grid that lies one grid extent away along axis a.
+.decl beyond(p: Position, a: Axis)
+beyond(Q, A) :- in(P, _), dir_elem(D), axis_of(D, A), axis_dim(P, A, K), jump(P, D, K, Q).
+
+// The cells of the grid and of the eight copies around it.
+// @ignore: common-subexpr — the second jump starts from the cells of the first
+.decl near(p: Position)
+near(P) :- in(P, _).
+near(Q) :- beyond(Q, _).
+near(R) :-
+    beyond(Q, A), perp(A, A2), dir_elem(D), axis_of(D, A2), axis_dim(Q, A2, K),
+    jump(Q, D, K, R).
+
+place([A, C, O, $ClipAssembly()], Ob, V) :-
+    impl_choice([A, C, O, $ClipAssembly()]), shape(C, Ob, P, _), near(Q), relative(P, Q, V),
+    !anchor_piece(A, C, Ob).
+
+// --- $Disjoint ---
+
+.decl both_dots(ch: Choice, x: Place, y: Place, p: Position)
+both_dots(Ch, X, Y, P) :- spot(Ch, X, P), spot(Ch, Y, P).
+
+broken([A, C, $Disjoint(), B]) :-
+    cell([A, C, $Disjoint(), B], X, P, _), cell([A, C, $Disjoint(), B], Y, P, _), X != Y,
+    !both_dots([A, C, $Disjoint(), B], X, Y, P).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init counts = Mode<Example, Color, Position>
+    counts.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A color that is not the commonest of some example.
+    .decl uncommon(col: Color)
+    uncommon(Col) :- counts.mode(_, Col), ex_out(E, _, _), !counts.mode(E, Col).
+
+    .decl bg(col: Color)
+    bg(Col) :- counts.mode(_, Col), !uncommon(Col).
+
+    // A cell of the input beside a cell of another color, other than the
+    // background.
+    .decl beside_other(e: Example, p: Position)
+    beside_other(E, P) :-
+        ex_in(E, P, Col), dir_elem(D), neighbor(P, D, Q), ex_in(E, Q, Col2), Col2 != Col,
+        !bg(Col2).
+
+    // A color some cell of which lies beside no other color.
+    .decl lone(col: Color)
+    lone(Col) :- ex_in(E, P, Col), ex_out(E, _, _), !beside_other(E, P).
+
+    .decl connector(col: Color)
+    connector(Col) :- ex_in(E, _, Col), ex_out(E, _, _), !bg(Col), !lone(Col).
+
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl holds(e: Example, col: Color)
+    holds(E, Col) :- ex_in(E, _, Col).
+
+    // A color the input of some example lacks.
+    .decl absent(col: Color)
+    absent(Col) :- holds(_, Col), ex_out(E, _, _), !holds(E, Col).
+
+    // The color of a part that fills its box, which every input holds.
+    .decl anchor(col: Color)
+    anchor(Col) :- parse.solid(E, O), parse.part(E, O, _, Col), !absent(Col).
+}

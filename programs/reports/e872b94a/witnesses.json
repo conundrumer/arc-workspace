@@ -1,0 +1,675 @@
+{
+ "id": "e872b94a",
+ "witnesses": [
+  {
+   "id": "snake-off-edge",
+   "separates": "one snake touches one grid edge only, so it cuts the field into no extra region: counting snakes gives a strip of 2, counting background regions gives a strip of 1, and the axis taken from the snakes has no value",
+   "input": [
+    [
+     0,
+     5,
+     0
+    ],
+    [
+     0,
+     5,
+     0
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$NonBackground",
+      "background=DominantColor",
+      "$Adjacency8",
+      "shape_color=RarestColor",
+      "fill_color=DominantColor",
+      "$CountTable"
+     ],
+     "grid": [
+      [
+       0
+      ],
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$BackgroundRegions"
+     ],
+     "grid": [
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$AxisFromSnakes"
+     ],
+     "grid": null
+    }
+   ]
+  },
+  {
+   "id": "corner-contact",
+   "separates": "two side-connected parts touch at a corner: 4-adjacency counts two snakes and gives a strip of 3, 8-adjacency counts one and gives a strip of 2",
+   "input": [
+    [
+     5,
+     0,
+     0
+    ],
+    [
+     5,
+     0,
+     0
+    ],
+    [
+     0,
+     5,
+     0
+    ],
+    [
+     0,
+     5,
+     0
+    ]
+   ],
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$NonBackground",
+      "background=DominantColor",
+      "shape_color=RarestColor",
+      "fill_color=DominantColor",
+      "$CountTable"
+     ],
+     "grid": [
+      [
+       0
+      ],
+      [
+       0
+      ],
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$BackgroundRegions",
+      "$Adjacency8"
+     ],
+     "grid": [
+      [
+       0
+      ],
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$AxisFromSnakes"
+     ],
+     "grid": null
+    }
+   ]
+  },
+  {
+   "id": "second-color-snake",
+   "separates": "a snake of a color other than the shape color: the shape-color snakes give a strip of 2, the non-background snakes give a strip of 3",
+   "input": [
+    [
+     5,
+     0,
+     3
+    ],
+    [
+     5,
+     0,
+     3
+    ],
+    [
+     5,
+     0,
+     0
+    ]
+   ],
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$Adjacency8",
+      "shape_color=RarestColor",
+      "fill_color=DominantColor",
+      "$AxisFromSnakes",
+      "$CountTable"
+     ],
+     "grid": [
+      [
+       0
+      ],
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$NonBackground",
+      "background=DominantColor"
+     ],
+     "grid": [
+      [
+       0
+      ],
+      [
+       0
+      ],
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$BackgroundRegions"
+     ],
+     "grid": [
+      [
+       0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "shape_color=RarestColor",
+   "separates": "the snake cells outnumber the background cells: the stored shape color counts two snakes and gives a strip of 3, the rarest color is the background and gives a strip of 2",
+   "input": [
+    [
+     5,
+     0,
+     5
+    ],
+    [
+     5,
+     0,
+     5
+    ],
+    [
+     5,
+     0,
+     5
+    ]
+   ],
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$NonBackground",
+      "$Adjacency8",
+      "$AxisFromSnakes",
+      "$CountTable"
+     ],
+     "grid": [
+      [
+       0
+      ],
+      [
+       0
+      ],
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "background=DominantColor",
+      "shape_color=RarestColor"
+     ],
+     "grid": [
+      [
+       0
+      ],
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$BackgroundRegions"
+     ],
+     "grid": [
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "fill_color=DominantColor"
+     ],
+     "grid": [
+      [
+       5
+      ],
+      [
+       5
+      ],
+      [
+       5
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "fill_color=DominantColor",
+   "separates": "the snake cells outnumber the background cells: the stored fill color gives a strip of 0, the commonest color gives a strip of 5",
+   "input": [
+    [
+     5,
+     0,
+     5
+    ],
+    [
+     5,
+     0,
+     5
+    ],
+    [
+     5,
+     0,
+     5
+    ]
+   ],
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$NonBackground",
+      "$Adjacency8",
+      "$AxisFromSnakes",
+      "$CountTable"
+     ],
+     "grid": [
+      [
+       0
+      ],
+      [
+       0
+      ],
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "background=DominantColor",
+      "shape_color=RarestColor"
+     ],
+     "grid": [
+      [
+       0
+      ],
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$BackgroundRegions"
+     ],
+     "grid": [
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "fill_color=DominantColor"
+     ],
+     "grid": [
+      [
+       5
+      ],
+      [
+       5
+      ],
+      [
+       5
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "background=DominantColor",
+   "separates": "the snake cells outnumber the background cells: the stored background makes the 5 cells the snakes and gives a strip of 3, the commonest color makes the 0 cells the snakes and gives a strip of 2",
+   "input": [
+    [
+     5,
+     0,
+     5
+    ],
+    [
+     5,
+     0,
+     5
+    ],
+    [
+     5,
+     0,
+     5
+    ]
+   ],
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$NonBackground",
+      "$Adjacency8",
+      "$AxisFromSnakes",
+      "$CountTable"
+     ],
+     "grid": [
+      [
+       0
+      ],
+      [
+       0
+      ],
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "background=DominantColor",
+      "shape_color=RarestColor"
+     ],
+     "grid": [
+      [
+       0
+      ],
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$BackgroundRegions"
+     ],
+     "grid": [
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "fill_color=DominantColor"
+     ],
+     "grid": [
+      [
+       5
+      ],
+      [
+       5
+      ],
+      [
+       5
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "sideways-snake",
+   "separates": "the one snake spans the grid from left to right and not from top to bottom: the stored axis gives a column of 2, the axis taken from the snakes gives a row of 2",
+   "input": [
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     5,
+     5,
+     0
+    ],
+    [
+     0,
+     5,
+     5
+    ]
+   ],
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$NonBackground",
+      "background=DominantColor",
+      "$BackgroundRegions",
+      "$Adjacency8",
+      "shape_color=RarestColor",
+      "fill_color=DominantColor",
+      "$CountTable"
+     ],
+     "grid": [
+      [
+       0
+      ],
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$AxisFromSnakes"
+     ],
+     "grid": [
+      [
+       0,
+       0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "table-entry-off-form",
+   "separates": "a count table whose entry for one snake is a grid no strip draws: the table gives that entry, the derived strip gives a black column of 2",
+   "input": [
+    [
+     0,
+     5,
+     0
+    ],
+    [
+     0,
+     5,
+     5
+    ],
+    [
+     0,
+     0,
+     5
+    ]
+   ],
+   "assign": {
+    "count_table": [
+     [
+      1,
+      [
+       0,
+       0
+      ],
+      5
+     ],
+     [
+      1,
+      [
+       1,
+       0
+      ],
+      0
+     ],
+     [
+      2,
+      [
+       0,
+       0
+      ],
+      0
+     ],
+     [
+      2,
+      [
+       1,
+       0
+      ],
+      0
+     ],
+     [
+      2,
+      [
+       2,
+       0
+      ],
+      0
+     ],
+     [
+      3,
+      [
+       0,
+       0
+      ],
+      0
+     ],
+     [
+      3,
+      [
+       1,
+       0
+      ],
+      0
+     ],
+     [
+      3,
+      [
+       2,
+       0
+      ],
+      0
+     ],
+     [
+      3,
+      [
+       3,
+       0
+      ],
+      0
+     ],
+     [
+      4,
+      [
+       0,
+       0
+      ],
+      0
+     ],
+     [
+      4,
+      [
+       1,
+       0
+      ],
+      0
+     ],
+     [
+      4,
+      [
+       2,
+       0
+      ],
+      0
+     ],
+     [
+      4,
+      [
+       3,
+       0
+      ],
+      0
+     ],
+     [
+      4,
+      [
+       4,
+       0
+      ],
+      0
+     ]
+    ]
+   },
+   "output": [
+    {
+     "cases": [
+      "concept",
+      "$NonBackground",
+      "background=DominantColor",
+      "$BackgroundRegions",
+      "$Adjacency8",
+      "shape_color=RarestColor",
+      "fill_color=DominantColor",
+      "$AxisFromSnakes"
+     ],
+     "grid": [
+      [
+       0
+      ],
+      [
+       0
+      ]
+     ]
+    },
+    {
+     "cases": [
+      "$CountTable"
+     ],
+     "grid": [
+      [
+       5
+      ],
+      [
+       0
+      ]
+     ]
+    }
+   ]
+  }
+ ]
+}

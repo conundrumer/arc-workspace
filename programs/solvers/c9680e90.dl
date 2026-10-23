@@ -1,0 +1,277 @@
+// c9680e90
+// @draft
+// @keywords: symmetry move markers
+// @scene center-divider: one full line of params.divider_color runs along
+//  params.divider_axis through the center of the grid, so the two halves have
+//  the same extent
+// @scene heads-on-one-side: every params.head_color cell and every
+//  params.tail_color cell is in the half on the bottom side of the divider
+// @scene straight-tail: each head has one straight run of params.tail_color
+//  cells that starts at a 4-neighbor of the head and goes away from it in one
+//  direction, with length 1 or more
+// @scene mirror-twins: the other half has a params.mark_color cell at the
+//  mirror image across the divider of each head cell, and no other mark cells
+// @rule crawl-to-tail-end: each head moves to the last cell of its tail; the
+//  tail cells and the head's old cell become params.background
+// @rule twin-follows: each mark moves to the mirror image across the divider
+//  of its head's new cell; the mark's old cell becomes params.background
+// @rule divider-kept: the divider line stays as it is
+
+// which cells the head crawls along
+.type Tail =
+    // @claim straight-tail crawl-to-tail-end
+    StraightTail {}
+    // @scene straight-tail: the tail is the 4-connected component of
+    //  params.tail_color cells that touches the head
+    // @rule crawl-to-tail-end: the head moves to the component cell farthest
+    //  from it along the component, and the whole component becomes
+    //  params.background
+    // @witness bent-tail: foreign $PathTail
+    //     @relaxed straight-tail
+  | PathTail {}
+    // @scene straight-tail: runs start along the four diagonals as well, and a
+    //  head with runs in several directions is drawn at the end of each run
+    // @witness diagonal-tail-cell: ordinary concept
+  | Dir8Tail {}
+
+// which mark moves with a head
+.type Twin =
+    // @claim twin-follows
+    MirrorTwin {}
+    // @rule twin-follows: every mark on the head's line across the divider
+    //  moves to the mirror image of that head's new cell
+    // @witness column-lonely-mark: foreign concept
+    //     @relaxed mirror-twins
+  | ColumnTwin {}
+    // @rule twin-follows: every mark becomes params.background, and a mark is
+    //  drawn at the mirror image of each head's new cell
+    // @witness lonely-mark: foreign concept
+    //     @relaxed mirror-twins
+  | MirrorRedraw {}
+
+// how the program finds the divider
+.type Locate =
+    // @claim center-divider
+    StoredDivider {}
+    // @scene center-divider: the divider is the one full line of a single
+    //  color other than params.background, along either axis
+    // @witness recolored-divider: variant $DividerDerived
+    //     @relaxed center-divider
+  | DividerDerived {}
+
+// the line the twins mirror across
+.type Mirror =
+    // @claim twin-follows
+    DividerMirror {locate: Locate}
+    // @rule twin-follows: the twins mirror across the grid's center line along
+    //  params.divider_axis; defined where no divider line exists
+    // @witness off-center-divider: foreign concept
+    //     @relaxed center-divider
+  | CenterMirror {}
+
+.type Choice = [tail: Tail, twin: Twin, mirror: Mirror]
+
+// The line along axis a through l.
+.type Line = [a: Axis, l: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: foreign concept
+    .decl background(c: Color) background(7).
+    .decl head_color(c: Color) head_color(2).
+    .decl tail_color(c: Color) tail_color(6).
+    .decl mark_color(c: Color) mark_color(5).
+
+    // --- $StoredDivider ---
+    .decl divider_color(c: Color) divider_color(9).
+
+    // --- $StoredDivider, $CenterMirror ---
+    // the axis the divider runs along
+    .decl divider_axis(a: Axis) divider_axis(AXIS_H).
+}
+
+.init params = Params
+
+.decl tail_choice(t: Tail)
+tail_choice($StraightTail()). tail_choice($PathTail()). tail_choice($Dir8Tail()).
+
+.decl twin_choice(t: Twin)
+twin_choice($MirrorTwin()). twin_choice($ColumnTwin()). twin_choice($MirrorRedraw()).
+
+.decl mirror_choice(m: Mirror)
+mirror_choice($DividerMirror($StoredDivider())).
+mirror_choice($DividerMirror($DividerDerived())).
+mirror_choice($CenterMirror()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Tl, Tw, Mr]) :- tail_choice(Tl), twin_choice(Tw), mirror_choice(Mr).
+
+.decl head(p: Position)
+head(P) :- in(P, Col), params.head_color(Col).
+
+.decl tail(p: Position)
+tail(P) :- in(P, Col), params.tail_color(Col).
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), params.mark_color(Col).
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+
+    .type KeyLine = [k: Key, a: Axis, l: Position]
+
+    // The color that fills each full line: the line along axis a through l.
+    // @claim center-divider
+    .init line_fill = Unanimous<KeyLine, Color>
+    line_fill.item([K, A, L], Col) :- cell(K, P, Col), axis_elem(A), split(P, A, _, L).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The one divider line of each way of finding it.
+// @claim center-divider
+.init divider_line = Unanimous<Locate, Line>
+
+// The axis the mirror line runs along.
+.decl mirror_axis(mr: Mirror, a: Axis)
+mirror_axis($DividerMirror(Loc), A) :- divider_line.value(Loc, [A, _]).
+
+// q is the mirror image of p.
+.decl mirror(mr: Mirror, p: Position, q: Position)
+mirror($DividerMirror(Loc), P, Q) :-
+    divider_line.value(Loc, [A, L]), perp(A, A2), flip_of(A2, F),
+    in(D, _), split(D, A, _, L),                                // a divider cell
+    in(P, _), relative(D, P, P_rel), apply(F, P_rel, Q_rel),
+    compose(D, Q_rel, Q).                                       // p reflected across d's line
+
+// The cases whose mirror line exists on this input.
+.decl ready(ch: Choice)
+ready([Tl, Tw, Mr]) :- impl_choice([Tl, Tw, Mr]), mirror_axis(Mr, _).
+
+// A head moves from h to e.
+.decl move(tl: Tail, h: Position, e: Position)
+
+// A tail cell, or a head's old cell.
+.decl vacated(tl: Tail, p: Position)
+
+// Mark m moves with head h.
+.decl twin(tw: Twin, mr: Mirror, m: Position, h: Position)
+
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(E, Col, [Tl, Tw, Mr]) :- ready([Tl, Tw, Mr]), move(Tl, _, E), params.head_color(Col).
+paint(Q, Col, [Tl, Tw, Mr]) :-
+    twin(Tw, Mr, _, H), move(Tl, H, E), mirror(Mr, E, Q), params.mark_color(Col).
+
+.decl cleared(p: Position, ch: Choice)
+cleared(P, [Tl, Tw, Mr]) :- ready([Tl, Tw, Mr]), vacated(Tl, P).
+cleared(M, [Tl, Tw, Mr]) :- twin(Tw, Mr, M, H), move(Tl, H, _).
+
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :-
+    in(P, Col0), ready(Ch), !paint(P, _, Ch),
+    ( cleared(P, Ch), params.background(Col)
+    ; !cleared(P, Ch), Col = Col0
+    ).
+
+// --- $StraightTail, $Dir8Tail ---
+// The straight runs of params.tail_color cells.
+// @claim straight-tail crawl-to-tail-end
+.init run = Slide<Tail>
+run.node(Tl, P) :- run.dir(Tl, _), tail(P).
+
+// A head's tail starts at its neighbor t toward d.
+.decl tail_start(tl: Tail, h: Position, d: Dir8, t: Position)
+tail_start(Tl, H, D, T) :- head(H), run.dir(Tl, D), neighbor(H, D, T), tail(T).
+
+move(Tl, H, E) :- tail_start(Tl, H, D, T), run.rest(Tl, T, D, E).
+vacated(Tl, P) :-
+    tail_start(Tl, H, D, T),
+    ( P = H ; P = T ; run.run(Tl, T, D, P) ).
+
+// --- $StraightTail ---
+run.dir($StraightTail(), D) :- dir_elem(D).
+
+// --- $Dir8Tail ---
+run.dir($Dir8Tail(), D) :- dir8_elem(D).
+
+// --- $PathTail ---
+// Each head's walk along the 4-connected params.tail_color cells it touches.
+// @claim straight-tail crawl-to-tail-end
+.init walk = GraphDistance<Position, Position>
+walk.seed(H, H) :- head(H).
+walk.edge(H, P, Q) :- head(H), ( P = H ; tail(P) ), dir_elem(D), neighbor(P, D, Q), tail(Q).
+
+// The cell farthest along each head's walk.
+// @claim crawl-to-tail-end
+.init far = ArgExtremes<Position, Position>
+far.cand(H, P, K) :- walk.distance(H, P, K).
+
+move($PathTail(), H, E) :- far.high(H, E, _).
+vacated($PathTail(), P) :- walk.distance(_, P, _).
+
+// --- $MirrorTwin ---
+twin($MirrorTwin(), Mr, M, H) :- head(H), mirror(Mr, H, M), mark(M).
+
+// --- $ColumnTwin ---
+twin($ColumnTwin(), Mr, M, H) :-
+    head(H), mark(M), mirror_axis(Mr, A), perp(A, A2), same_line(A2, M, H).
+
+// --- $MirrorRedraw ---
+paint(Q, Col, [Tl, $MirrorRedraw(), Mr]) :-
+    move(Tl, _, E), mirror(Mr, E, Q), params.mark_color(Col).
+cleared(M, [Tl, $MirrorRedraw(), Mr]) :- ready([Tl, $MirrorRedraw(), Mr]), mark(M).
+
+// --- $StoredDivider ---
+divider_line.item($StoredDivider(), [A, L]) :-
+    parse.line_fill.value([$U(), A, L], Col), params.divider_axis(A), params.divider_color(Col).
+
+// --- $DividerDerived ---
+divider_line.item($DividerDerived(), [A, L]) :-
+    parse.line_fill.value([$U(), A, L], Col), !params.background(Col).
+
+// --- $CenterMirror ---
+mirror_axis($CenterMirror(), A) :- params.divider_axis(A).
+mirror($CenterMirror(), P, Q) :-
+    in(P, _), params.divider_axis(A), perp(A, A2), flip_of(A2, F), apply(F, P, Q).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A full line along a of a color other than params.background, in a
+    // trained example.
+    .decl divider_fill(e: Example, a: Axis, col: Color)
+    divider_fill(E, A, Col) :-
+        parse.line_fill.value([E, A, _], Col), !params.background(Col), ex_out(E, _, _).
+
+    // A trained example that has no such line.
+    .decl divider_defect(a: Axis, col: Color)
+    divider_defect(A, Col) :- divider_fill(_, A, Col), ex_out(E, _, _), !divider_fill(E, A, Col).
+
+    .decl divider_color(c: Color)
+    divider_color(Col) :- divider_fill(_, A, Col), !divider_defect(A, Col).
+
+    .decl divider_axis(a: Axis)
+    divider_axis(A) :- divider_fill(_, A, Col), !divider_defect(A, Col).
+
+    // A color that leaves a cell beside a tail and is no tail color: a head,
+    // which crawls away.
+    .decl head_color(c: Color)
+    head_color(Col) :-
+        ex_in(E, P, Col), ex_out(E, P, _), !ex_out(E, P, Col), !params.tail_color(Col),
+        dir_elem(D), neighbor(P, D, Q), ex_in(E, Q, Col_q), params.tail_color(Col_q).
+
+    // The color a train output gives a tail cell that no head lands on.
+    .decl background(c: Color)
+    background(Col) :-
+        ex_in(E, P, Col_in), params.tail_color(Col_in), ex_out(E, P, Col), !params.head_color(Col).
+
+    // An input color that is none of the background, divider, head and tail
+    // colors.
+    .decl mark_color(c: Color)
+    mark_color(Col) :-
+        ex_in(_, _, Col), !params.background(Col), !params.divider_color(Col),
+        !params.head_color(Col), !params.tail_color(Col).
+}

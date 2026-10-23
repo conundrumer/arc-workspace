@@ -1,0 +1,261 @@
+// cb2d8a2c
+// @draft
+// @keywords: objects markers count walk
+// @scene source: one cell of path_color (3) lies on one edge of the grid; the
+//  direction from that edge to the opposite edge is the direction of travel
+// @scene walls: each wall is a straight segment one cell wide, perpendicular
+//  to the direction of travel, that touches one of the two edges parallel to
+//  the direction of travel and ends inside the grid
+// @scene wall-marks: each wall is wall_color (2) with mark_color (1) cells at
+//  every second cell, starting at the cell on the edge; the count of
+//  mark_color cells is the wall's clearance
+// @scene walls-in-order: the walls lie at distinct distances from the
+//  source's edge, and each one crosses the line the path follows when it
+//  comes to that wall
+// @rule erase-marks: each mark_color cell becomes wall_color; the walls are
+//  otherwise unchanged
+// @rule clearance: the gap the path keeps from a wall, before the wall and
+//  past its free end, is the count of mark_color cells on that wall
+// @rule path: a line of path_color runs from the source in the direction of
+//  travel. When the path comes to a wall, it stops on the line with clearance
+//  cells between it and the wall, turns toward the wall's free end, runs past
+//  that end until clearance cells lie between it and the end, and turns back
+//  to the direction of travel. After the last wall, it runs on to the
+//  opposite edge
+// @rule keep-rest: every other cell keeps its input color
+
+// how the path meets a wall
+.type Meet =
+    // @claim path
+    DetourEach {}
+    // @rule path: the path detours only when its line crosses the wall or
+    //  passes the free end with fewer than clearance free cells between them;
+    //  otherwise it runs straight on
+    // @witness short-wall-far: borderline $KeepClearance
+    //     @relaxed walls-in-order
+  | KeepClearance {}
+    // @rule path: the path detours only at a wall that crosses its line; at
+    //  any other wall it runs straight on, even where that leaves fewer than
+    //  clearance free cells to the free end
+    // @witness short-wall-far: borderline $KeepClearance
+    // @witness short-wall-near: borderline concept
+    //     @relaxed walls-in-order
+  | PassClearWall {}
+
+// how a wall's clearance comes from its marks
+.type Gap =
+    // @claim clearance
+    MarkCount {}
+    // @rule clearance: the clearance is half the length of the run from the
+    //  wall's cell on the edge to its farthest mark, rounded up
+    // @witness adjacent-marks: foreign concept
+    //     @relaxed wall-marks
+  | MarkedRunClearance {}
+    // @rule clearance: a stored table clearance_of maps a wall's mark count to
+    //  its clearance; undefined on a wall whose mark count is not a key
+    // @witness stored-clearance: ordinary concept
+    //     @reassigned clearance_of
+  | StoredClearance {}
+
+.type Choice = [m: Meet, g: Gap]
+
+// A leg of the path, from one corner of the walk to the next.
+.type Leg = [ch: Choice, p: Position, q: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive RarestColor: ordinary concept
+    .decl path_color(c: Color) path_color(3).
+    .decl wall_color(c: Color) wall_color(2).
+    .decl mark_color(c: Color) mark_color(1).
+
+    // --- $MarkedRunClearance ---
+    // The cells a mark and the wall cell after it span.
+    // @derive SepTileCount: borderline concept
+    //     @relaxed walls-in-order
+    // @ignore: derive TileCount — every tile count it derives is above 1 and
+    //  includes 2, so the pairs it counts are those that 2 counts, and the
+    //  branch's model is subsumed by the stored value
+    .decl mark_period(k: number) mark_period(2).
+
+    // --- $StoredClearance ---
+    // The clearance of a wall of n marks.
+    .decl clearance_of(n: number, k: number)
+    clearance_of(1, 1). clearance_of(2, 2). clearance_of(3, 3). clearance_of(4, 4).
+}
+
+.init params = Params
+
+.decl meet_choice(m: Meet)
+meet_choice($DetourEach()). meet_choice($KeepClearance()). meet_choice($PassClearWall()).
+
+.decl gap_choice(g: Gap)
+gap_choice($MarkCount()). gap_choice($MarkedRunClearance()). gap_choice($StoredClearance()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([M, G]) :- meet_choice(M), gap_choice(G).
+
+// --- shared: source, walls, wall order, lanes ---
+
+.decl source(p: Position)
+source(P) :- in(P, Col), params.path_color(Col), dir_elem(D), dist(P, D, 0).
+
+// The edge the source stands on.
+.decl back(d: Dir)
+back(D) :- source(P), dir_elem(D), dist(P, D, 0).
+
+.decl travel_axis(a: Axis)
+travel_axis(A) :- back(D), axis_of(D, A).
+
+// @claim walls
+.init wall = Components<Unit>
+wall.node($U(), P) :- in(P, Col), ( params.wall_color(Col) ; params.mark_color(Col) ).
+
+.decl mark(w: Ident, p: Position)
+mark(W, P) :- wall.label($U(), P, W), in(P, Col), params.mark_color(Col).
+
+// The edge each wall touches.
+.decl wall_edge(w: Ident, d: Dir)
+wall_edge(W, D) :- wall.label($U(), P, W), back(D0), perp_dir(D0, D), dist(P, D, 0).
+
+// The wall cell farthest from that edge.
+.decl free_end(w: Ident, p: Position)
+free_end(W, P) :-
+    wall.label($U(), P, W), wall_edge(W, D), opposite(D, D2),
+    neighbor(P, D2, Q), !wall.label($U(), Q, W).
+
+// @claim walls-in-order
+.init order = Order<Unit, Ident>
+order.elem($U(), W) :- free_end(W, _).
+order.before($U(), W1, W2) :-
+    free_end(W1, P1), free_end(W2, P2), back(D), dist(P1, D, K1), dist(P2, D, K2), K1 < K2.
+
+.decl clearance(g: Gap, w: Ident, k: number)
+
+// The detour at wall w: the line across the direction of travel where the
+// path turns, clearance cells short of the wall, and the lane it takes past
+// the wall, clearance cells beyond its free end.
+.decl detour(g: Gap, w: Ident, row: Position, lane: Position)
+detour(G, W, Row, L) :-
+    clearance(G, W, K), free_end(W, P), travel_axis(A),
+    back(D), jump(P, D, K, Q), neighbor(Q, D, R), split(R, A, Row, _),
+    wall_edge(W, D2), opposite(D2, D3), jump(P, D3, K, Q2), neighbor(Q2, D3, R2),
+    split(R2, A, _, L).
+
+// The lines along the direction of travel.
+.decl lane(lane: Position)
+lane(L) :- in(P, _), travel_axis(A), split(P, A, _, L).
+
+// The cell of lane l on the edge opposite the source.
+.decl far_end(lane: Position, p: Position)
+far_end(L, P) :-
+    in(P, _), back(D), opposite(D, D2), dist(P, D2, 0), travel_axis(A), split(P, A, _, L).
+
+// The lane the path leaves wall w's turn row in, when it arrives in lane l.
+.decl lane_out(ch: Choice, w: Ident, lane: Position, lane2: Position)
+
+// The cell of lane l on wall w's turn row.
+.decl turn_cell(g: Gap, w: Ident, lane: Position, p: Position)
+turn_cell(G, W, L, P) :- detour(G, W, Row, _), lane(L), compose(Row, L, P).
+
+// The corners of the path: the source, the cells where it arrives at and
+// leaves each wall's turn row, and its end on the far edge.
+.init walk = Propagation<Choice, Position>
+walk.source(Ch, P) :- impl_choice(Ch), source(P).
+walk.edge([M, G], P, Q) :-
+    impl_choice([M, G]), source(P), travel_axis(A), split(P, A, _, L),
+    order.first($U(), W), turn_cell(G, W, L, Q).               // arrives at the first wall
+walk.edge([M, G], P, Q) :-
+    lane_out([M, G], W, L, L2), turn_cell(G, W, L2, P_leave),
+    ( turn_cell(G, W, L, P), Q = P_leave                       // turns from lane l into lane l2
+    ; P = P_leave, order.next($U(), W, W2), turn_cell(G, W2, L2, Q)  // arrives at the next wall
+    ; P = P_leave, order.last($U(), W), far_end(L2, Q)         // runs to the far edge
+    ).
+
+// @claim path
+.init leg = Bbox<Leg>
+leg.cell([Ch, P, Q], R) :- walk.reached(Ch, P), walk.edge(Ch, P, Q), ( R = P ; R = Q ).
+
+.decl path(ch: Choice, p: Position)
+path(Ch, P) :- leg.box([Ch, _, _], B), in(P, _), inside(P, B).
+
+out(P, Col, Ch) :- path(Ch, P), params.path_color(Col).
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, Col_in), !path(Ch, P),
+    ( params.mark_color(Col_in), params.wall_color(Col)   // a mark, erased into its wall
+    ; !params.mark_color(Col_in), Col = Col_in            // kept
+    ).
+
+// --- $DetourEach ---
+lane_out([$DetourEach(), G], W, L, L2) :-
+    lane(L), detour(G, W, _, L2).
+
+// --- $KeepClearance ---
+lane_out([$KeepClearance(), G], W, L, L2) :-
+    lane(L), detour(G, W, _, L_past),
+    wall_edge(W, D), dist(L, D, K), dist(L_past, D, K_past),
+    ( K < K_past, L2 = L_past     // short of the lane past the free end
+    ; K >= K_past, L2 = L         // clear of the wall
+    ).
+
+// --- $PassClearWall ---
+
+// A lane that meets wall w.
+.decl crosses(w: Ident, lane: Position)
+crosses(W, L) :- wall.label($U(), P, W), travel_axis(A), split(P, A, _, L).
+
+lane_out([$PassClearWall(), G], W, L, L2) :-
+    lane(L), detour(G, W, _, L_past),
+    ( crosses(W, L), L2 = L_past ; !crosses(W, L), L2 = L ).
+
+// --- $MarkCount, $StoredClearance ---
+
+// @claim clearance
+.init marks = Tally<Ident, Position>
+marks.domain(W) :- free_end(W, _).
+marks.item(W, P) :- mark(W, P).
+
+// --- $MarkCount ---
+clearance($MarkCount(), W, K) :- marks.tally(W, K).
+
+// --- $StoredClearance ---
+clearance($StoredClearance(), W, K) :- marks.tally(W, N), params.clearance_of(N, K).
+
+// --- $MarkedRunClearance ---
+
+// The pairs of cells that the run from a wall's cell on the edge to its
+// farthest mark covers.
+// @claim clearance
+.init run = Tally<Ident, number>
+run.domain(W) :- free_end(W, _).
+run.item(W, N) :-
+    mark(W, M), wall_edge(W, D), dist(M, D, K_m),
+    wall.label($U(), P, W), dist(P, D, K), K <= K_m,         // a wall cell up to the mark
+    params.mark_period(K_p), stride(K, K_p, 0, N, _).        // the pair it falls in
+
+clearance($MarkedRunClearance(), W, K) :- run.tally(W, K).
+
+.comp Determine {
+    // The color no train output holds.
+    .decl mark_color(c: Color)
+    mark_color(Col) :- ex_in(E, _, Col), ex_out(E, _, _), !ex_out(_, _, Col).
+
+    // The color the marks take.
+    .decl wall_color(c: Color)
+    wall_color(Col) :- ex_in(E, P, Col_in), mark_color(Col_in), ex_out(E, P, Col).
+
+    // The color the output paints over a cell other than a mark.
+    .decl path_color(c: Color)
+    path_color(Col) :- ex_in(E, P, Col_in), !mark_color(Col_in), ex_out(E, P, Col), Col != Col_in.
+
+    // The steps from each mark along its wall to the first cell off the wall
+    // or to the next mark.
+    .init gap = Ray<Example>
+    gap.dir(E, D) :- ex_in(E, _, _), dir_elem(D).
+    gap.mark(E, P) :- ex_in(E, P, Col), mark_color(Col).
+    gap.blocked(E, P) :- ex_in(E, P, Col), !wall_color(Col).
+
+    .decl mark_period(k: number)
+    mark_period(K) :- gap.stop(E, Q, _, K, _), gap.mark(E, Q).   // the next mark
+}

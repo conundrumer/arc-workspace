@@ -1,0 +1,246 @@
+// caa06a1f
+// @draft
+// @keywords: wallpaper move mapping
+// @scene periodic-block: a rectangular block at the `block_corner` corner of
+//  the grid holds a pattern of two or more colors that repeats along each
+//  axis, with at least two full periods along each axis.
+// @scene background-band: every cell outside the block holds one color that
+//  the pattern does not use, so the band lies along the two edges away from
+//  `block_corner`.
+// @rule extend-pattern: the output has the input's size, and each output cell
+//  takes the color that the block's pattern, continued without end, has at
+//  that cell after the shift.
+// @rule shift-one: the continued pattern moves `shift_step` cells toward
+//  `shift_dir`: for left, output cell (r, c) takes the pattern's color at
+//  (r, c + 1), and for up, at (r + 1, c).
+
+// how each output cell takes its color from the continued pattern
+.type Recolor =
+    // @claim shift-one
+    Shift {}
+    // @rule shift-one: each cell of the continued pattern takes the color
+    //  that follows its own color toward `follow_dir` (right) in the block,
+    //  derived per input; undefined where a color is followed by two
+    //  different colors.
+    // @witness three-color-cycle: ordinary any
+  | ColorSuccessor {}
+
+// where the block's corner comes from
+.type Corner =
+    // @claim periodic-block
+    StoredCorner {}
+    // @scene periodic-block: the block's corner is derived per input as the
+    //  one corner where the color at the opposite corner fills every cell
+    //  outside a rectangle that holds that corner's cell; undefined where no
+    //  corner, or more than one, gives that rectangle.
+    // @scene background-band: the band color is the color at the corner
+    //  opposite the derived corner.
+    // @witness block-bottom-left: variant $DeriveCorner
+    //     @relaxed periodic-block
+    //     @relaxed background-band
+  | DeriveCorner {frame: Frame}
+
+// the frame the shift's direction is read in
+.type Frame =
+    // @claim shift-one
+    Absolute {}
+    // @rule shift-one: on the axis of each value of `shift_axis`, the pattern
+    //  moves toward the derived corner.
+    // @witness block-bottom-right: variant $ShiftTowardCorner
+    //     @relaxed periodic-block
+    //     @relaxed background-band
+  | ShiftTowardCorner {}
+
+.type Choice = [r: Recolor, c: Corner]
+
+.type ShiftDirValue = [d: Dir]
+.type ShiftAxisValue = [a: Axis]
+.type OpenValue = [shift_dir: ShiftDirValue, shift_axis: ShiftAxisValue]
+
+// A block's corner with one of its colors.
+.type CornerColor = [d: DiagDir, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
+
+.comp Params {
+    // --- $StoredCorner ---
+    .decl block_corner(d: DiagDir) block_corner(DIAG_TL).
+
+    // --- $Shift ---
+    .decl shift_step(k: number) shift_step(1).
+
+    // --- concept, $Shift & $Absolute ---
+    // @open
+    .decl shift_dir(d: Dir) shift_dir(DIR_L). shift_dir(DIR_T).
+
+    // --- $ShiftTowardCorner ---
+    // @open
+    .decl shift_axis(a: Axis) shift_axis(AXIS_H). shift_axis(AXIS_V).
+
+    // --- $ColorSuccessor ---
+    // the direction toward which a color's successor follows it
+    .decl follow_dir(d: Dir) follow_dir(DIR_R).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Shift(), $StoredCorner()]).
+impl_choice([$ColorSuccessor(), $StoredCorner()]).
+impl_choice([$Shift(), $DeriveCorner($Absolute())]).
+impl_choice([$ColorSuccessor(), $DeriveCorner($Absolute())]).
+impl_choice([$Shift(), $DeriveCorner($ShiftTowardCorner())]).
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // The cells that do not hold the band color of a block at corner c: the
+    // color at the opposite corner.
+    .decl off_band(key: Key, c: DiagDir, p: Position, col: Color)
+    off_band(K, C, P, Col) :-
+        cell(K, P, Col), diag_opposite(C, O),
+        cell(K, Q, Bg), corner_dist(Q, O, 0), Col != Bg.     // the opposite corner's color
+
+    // An off-band cell of corner c lies on the edge of the opposite corner on
+    // axis a.
+    .decl far_edge(key: Key, c: DiagDir, a: Axis)
+    far_edge(K, C, A) :-
+        off_band(K, C, P, _), diag_opposite(C, O), dir_of(O, A, D), dist(P, D, 0).
+
+    // A block sits at corner c: the corner's cell is off the band, and the
+    // off-band cells lie in a rectangle that leaves the opposite corner to the
+    // band, so on some axis none of them reaches the opposite corner's edge.
+    .decl block_at(key: Key, c: DiagDir)
+    block_at(K, C) :-
+        off_band(K, C, P, _), corner_dist(P, C, 0),     // the corner's cell
+        axis_elem(A), !far_edge(K, C, A).
+}
+
+// @store block_at: variant stored
+//     @relaxed periodic-block
+//     @relaxed background-band
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// @claim periodic-block
+.init period = OffsetInvariance<DiagDir, Color>
+period.cell(C, P, Col) :- parse.off_band($U(), C, P, Col).
+
+// A cell's place toward d: its index within the period on d's axis, or its
+// distance from d's edge where the axis has no period.
+.decl place(c: DiagDir, p: Position, d: Dir, r: number)
+place(C, P, D, R) :-
+    parse.block_at($U(), C), in(P, _), axis_of(D, A), dist(P, D, T),
+    ( period.min_period(C, A, K), stride(T, K, 0, _, R)    // within the period
+    ; !period.min_period(C, A, _), R = T                   // or the line
+    ).
+
+// A cell's class under the periods: its places toward d and toward d2, on the
+// two axes.
+.decl orbit(c: DiagDir, p: Position, d: Dir, r: number, d2: Dir, r2: number)
+orbit(C, P, D, R, D2, R2) :-
+    place(C, P, D, R), axis_of(D, A), perp(A, A2), axis_of(D2, A2), place(C, P, D2, R2).
+
+// The block's corner, per case.
+.decl corner(ch: Choice, d: DiagDir)
+
+// --- $Shift ---
+
+// The direction the pattern moves in, per case and open value.
+// @ignore: head-repeat — the open value is the stored direction itself, where the case stores a direction
+.decl shift(ch: Choice, d: Dir, ov: OpenValue)
+
+// Each cell takes the color of a block cell whose move lands in its class.
+out(P, Col, Ch, Ov) :-
+    corner(Ch, C), parse.off_band($U(), C, S, Col),               // block cell
+    shift(Ch, D, Ov), params.shift_step(K), jump(S, D, K, Q),     // where the move takes it
+    orbit(C, Q, D1, R1, D2, R2), orbit(C, P, D1, R1, D2, R2).     // a cell of that class
+
+// --- $StoredCorner ---
+
+corner([R, $StoredCorner()], C) :-
+    impl_choice([R, $StoredCorner()]), params.block_corner(C), parse.block_at($U(), C).
+
+// --- concept ---
+
+shift([$Shift(), $StoredCorner()], D, [[D], nil]) :- params.shift_dir(D).
+
+// --- $DeriveCorner ---
+
+// @claim periodic-block
+.init corner_pick = Unanimous<Unit, DiagDir>
+corner_pick.item($U(), C) :- parse.block_at($U(), C).
+
+corner([R, $DeriveCorner(F)], C) :-
+    impl_choice([R, $DeriveCorner(F)]), corner_pick.value($U(), C).
+
+// --- $Shift & $Absolute ---
+
+shift([$Shift(), $DeriveCorner($Absolute())], D, [[D], nil]) :- params.shift_dir(D).
+
+// --- $ShiftTowardCorner ---
+
+shift(Ch, D, [nil, [A]]) :-
+    Ch = [$Shift(), $DeriveCorner($ShiftTowardCorner())],
+    corner(Ch, C), params.shift_axis(A), dir_of(C, A, D).
+
+// --- $ColorSuccessor ---
+
+// The color that a block cell's pattern class holds.
+// @ignore: single-consumer — one row per class, where a join in `out` holds one per pair of cells in a class
+.decl class_color(c: DiagDir, d: Dir, r: number, d2: Dir, r2: number, col: Color)
+class_color(C, D, R, D2, R2, Col) :- orbit(C, Q, D, R, D2, R2), parse.off_band($U(), C, Q, Col).
+
+// The color that follows each block color toward follow_dir.
+// @claim shift-one
+.init successor = Unanimous<CornerColor, Color>
+successor.item([C, Col], Col2) :-
+    parse.off_band($U(), C, P, Col),
+    params.follow_dir(F), neighbor(P, F, Q), parse.off_band($U(), C, Q, Col2).
+
+out(P, Col, Ch, [nil, nil]) :-
+    Ch = [$ColorSuccessor(), _], corner(Ch, C),
+    orbit(C, P, D, R, D2, R2), class_color(C, D, R, D2, R2, Col0),   // the continued pattern
+    successor.value([C, Col0], Col).
+
+.comp Determine {
+    .init ex_parse = Parse<Example>
+    ex_parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A corner at which some example's input holds no block.
+    .decl corner_defect(c: DiagDir)
+    corner_defect(C) :- diag_dir_elem(C), ex_in(E, _, _), !ex_parse.block_at(E, C).
+
+    .decl block_corner(d: DiagDir)
+    block_corner(C) :- diag_dir_elem(C), !corner_defect(C).
+
+    // A step k at which some train output disagrees with the input's block
+    // moved k toward a value of shift_dir.
+    .decl step_defect(k: number)
+    step_defect(K) :-
+        block_corner(C), ex_parse.off_band(E, C, S, Col),          // a block cell
+        params.shift_dir(D), axis_of(D, A), sub_extent(S, A, K),
+        jump(S, D, K, Q), ex_out(E, Q, Col2), Col2 != Col.          // where the move takes it
+
+    // The least step that every train output agrees with.
+    .init steps = Extremes<Unit>
+    steps.cand($U(), K) :- ex_out(_, P, _), axis_elem(A), sub_extent(P, A, K), !step_defect(K).
+
+    .decl shift_step(k: number)
+    shift_step(K) :- steps.low($U(), K).
+
+    // Some example's block holds a color followed by two different colors
+    // toward d.
+    .decl follow_defect(d: Dir)
+    follow_defect(D) :-
+        block_corner(C), dir_elem(D),
+        ex_parse.off_band(E, C, P1, Col), neighbor(P1, D, Q1), ex_parse.off_band(E, C, Q1, Col1),
+        ex_parse.off_band(E, C, P2, Col), neighbor(P2, D, Q2), ex_parse.off_band(E, C, Q2, Col2),
+        Col1 != Col2.
+
+    // A direction away from the block's corner along which each block color
+    // has one successor in every input.
+    .decl follow_dir(d: Dir)
+    follow_dir(D) :-
+        block_corner(C), dir_of(C, _, D_corner), opposite(D_corner, D), !follow_defect(D).
+}

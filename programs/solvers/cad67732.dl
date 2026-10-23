@@ -1,0 +1,148 @@
+// cad67732
+// @draft
+// @keywords: wallpaper grow
+// @scene diagonal-band: A square grid of params.background holds a band of
+//  colored cells along one corner-to-corner diagonal, the main diagonal or
+//  the anti-diagonal.
+// @scene periodic-band: The band repeats under a translation of some number
+//  of cells along its diagonal, the period, wherever both cells lie in the
+//  grid.
+// @rule scaled-frame: The output is params.scale times the input's extent on
+//  each axis.
+// @rule anchored-input: The input sits in the output at the corner where the
+//  band's diagonal meets the params.anchor_edge edge.
+// @rule least-period: The period is the least positive translation along the
+//  band's diagonal under which the input is unchanged where both cells lie
+//  in the grid.
+// @rule continue-band: Each output cell takes the color of the cell a whole
+//  number of periods back along the band toward the anchored input, where
+//  that cell lies in the input; a cell that no such input cell reaches is
+//  params.background.
+
+// How the program finds the diagonal the band runs along.
+.type Choice =
+    // @claim diagonal-band
+    CornerDiagonal {}
+    // @scene diagonal-band: the band's diagonal is the one whose least
+    //  period is smaller; undefined where the two least periods tie.
+    // @witness short-anti-shift: variant concept
+  | LeastPeriodDiagonal {}
+
+.type AnchorEdgeValue = [d: Dir]
+.type OpenValue = [anchor_edge: AnchorEdgeValue]
+
+.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed diagonal-band
+    .decl background(col: Color) background(0).
+
+    .decl scale(n: number) scale(2).
+
+    // The output edge the input touches.
+    // @open
+    .decl anchor_edge(d: Dir) anchor_edge(DIR_T). anchor_edge(DIR_L).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($CornerDiagonal()). impl_choice($LeastPeriodDiagonal()).
+
+// The output frame: params.scale copies of the input frame on each axis.
+.init copies = Frame2D<Unit>
+copies.extent($U(), A, N) :- axis_elem(A), params.scale(N).
+
+.decl out_cell(p: Position)
+out_cell(P_grid_out) :-
+    copies.cell($U(), P_outer), in(P_grid_in, _),
+    concat_2d(P_outer, P_grid_in, 0, P_grid_out).
+
+// The shifts an input cell can take within the input.
+.decl shift(k: number)
+shift(K) :- in(P, _), dir_elem(D), dist(P, D, K), K > 0.
+
+// A shift of k cells along diagonal da takes some input cell onto a cell of
+// another color.
+.decl mismatch(da: DiagAxis, k: number)
+mismatch(DA, K) :-
+    in(P, Col), shift(K), diag_axis_of(D, DA), jump(P, D, K, Q),
+    in(Q, Col2), Col != Col2.
+
+// @claim least-period
+.init period = Extremes<DiagAxis>
+period.cand(DA, K) :- shift(K), diag_axis_elem(DA), !mismatch(DA, K).
+
+// The diagonal each case takes as the band's.
+.decl band_axis(ch: Choice, da: DiagAxis)
+
+// The output corner the input sits at, for each anchor edge, with the
+// band's period.
+.decl course(ch: Choice, e: Dir, c: DiagDir, k: number)
+course(Ch, E, C, K) :-
+    band_axis(Ch, DA), period.low(DA, K),
+    params.anchor_edge(E), diag_axis_of(C, DA), dir_of(C, _, E).
+
+// The input placed at the anchor corner.
+.decl placed(ch: Choice, e: Dir, p: Position, col: Color)
+placed(Ch, E, P_grid_out, Col) :-
+    course(Ch, E, C, _), out_cell(P_grid_out), in(P_grid_in, Col),
+    corner_anchor(C, P_grid_in, P_grid_out).
+
+// Output cell q takes the color of placed cell p on its line along the
+// band, a whole number of periods back toward the corner.
+.decl reach(ch: Choice, e: Dir, q: Position, col: Color)
+reach(Ch, E, Q, Col) :-
+    placed(Ch, E, P, Col), course(Ch, E, C, K), diag_axis_of(C, DA),
+    out_cell(Q), same_line(DA, P, Q),
+    dist(P, E, S), stride(S, K, 0, _, R),            // p's place within the period
+    dist(Q, E, T), S <= T, stride(T, K, 0, _, R).    // q at that place, no nearer the corner
+
+out(Q, Col, Ch, [[E]]) :-
+    course(Ch, E, _, _), out_cell(Q),
+    ( reach(Ch, E, Q, Col)
+    ; !reach(Ch, E, Q, _), params.background(Col)
+    ).
+
+// --- $CornerDiagonal ---
+
+// A corner of the input holds a band color.
+.decl inked_corner(d: DiagDir)
+inked_corner(D) :- in(P, Col), !params.background(Col), corner_dist(P, D, 0).
+
+// Both corners of diagonal da hold band colors.
+.decl inked_diagonal(da: DiagAxis)
+inked_diagonal(DA) :-
+    inked_corner(D), diag_opposite(D, D2), inked_corner(D2), diag_axis_of(D, DA).
+
+band_axis($CornerDiagonal(), DA) :-
+    inked_diagonal(DA), diag_perp(DA, DA2), !inked_diagonal(DA2).
+
+// --- $LeastPeriodDiagonal ---
+
+// The other diagonal's least period is no larger than da's.
+.decl matched(da: DiagAxis)
+matched(DA) :- period.low(DA, K), diag_perp(DA, DA2), period.low(DA2, K2), K2 <= K.
+
+band_axis($LeastPeriodDiagonal(), DA) :- period.low(DA, _), !matched(DA).
+
+.comp Determine {
+    // The commonest colors of each input.
+    .init common = Mode<Example, Color, Position>
+    common.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A color that is not the commonest of some input.
+    .decl background_defect(col: Color)
+    background_defect(Col) :- common.mode(_, Col), ex_in(E, _, _), !common.mode(E, Col).
+
+    .decl background(col: Color)
+    background(Col) :- common.mode(_, Col), !background_defect(Col).
+
+    // The count of input-sized tiles that cut each output along each axis.
+    .decl scale(n: number)
+    scale(N) :-
+        ex_out(E, P_grid_out, _), ex_in(E, P_grid_in, _),
+        axis_elem(A), axis_dim(P_grid_in, A, K),
+        divide_by_size(P_grid_out, A, K, 0, P_outer, _), axis_dim(P_outer, A, N).
+}

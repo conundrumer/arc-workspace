@@ -1,0 +1,215 @@
+// c97c0139
+// @draft
+// @keywords: objects span
+// @scene segments: every input holds, on a field of params.background (0), one
+//  or more straight segments of line_color (2), each one cell wide, horizontal
+//  or vertical, and at least two cells long
+// @scene apart: the diamond of each segment lies inside the grid, and it meets
+//  no cell of another segment or of another segment's diamond
+// @rule diamond-fill: a params.background cell at distance d from a segment's
+//  line, measured across the line, takes params.fill_color when both cells d
+//  steps along the line from the cell's foot on the line are cells of that
+//  segment; the foot is the cell of the line nearest the cell, and d is at
+//  least 1
+// @rule keep: every other cell keeps its input color, so each segment stays
+
+// which cells form the lines
+.type LineCells =
+    // @claim segments
+    Ink {f: FillSource}
+    // @scene segments: the lines are the cells of params.line_color; a cell
+    //  of another color that is not params.background is no line
+    // @witness two-colors: borderline concept
+    //     @relaxed segments
+  | LineColorCells {}
+
+// where a diamond's fill color comes from
+.type FillSource =
+    // @claim diamond-fill
+    OneFill {}
+    // @rule diamond-fill: the fill color is params.fill_by_line of the
+    //  segment's color; undefined on an input with a segment whose color is
+    //  no key of params.fill_by_line
+    // @witness mapped-second-color: borderline concept
+    //     @relaxed segments
+    //     @reassigned fill_by_line
+  | FillByLineColor {}
+
+// what makes line cells one segment
+.type Segments =
+    // @claim segments
+    StraightComponents {}
+    // @scene segments: a segment is each maximal straight run of line cells
+    //  in a row or a column, whatever its component
+    // @witness bent-line: foreign $StraightRuns
+    //     @relaxed segments
+  | StraightRuns {}
+    // @scene segments: line cells join into components by side or by corner,
+    //  so two segments that touch at a corner form one bent component, which
+    //  is no segment
+    // @witness corner-touch: ordinary concept
+  | Components8 {}
+
+// which cells of a diamond take the fill
+.type Target =
+    // @claim diamond-fill
+    KeepLines {}
+    // @rule diamond-fill: every cell of the diamond takes the fill, a cell
+    //  of another segment included
+    // @witness line-in-diamond: borderline concept
+    //     @relaxed apart
+  | PaintOverLines {}
+
+.type Choice = [cells: LineCells, seg: Segments, target: Target]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $Ink, $KeepLines ---
+    // @derive DominantColor: variant derived
+    //     @relaxed segments
+    .decl background(c: Color) background(0).
+
+    // --- $OneFill, $LineColorCells ---
+    .decl fill_color(c: Color) fill_color(8).
+
+    // --- $FillByLineColor ---
+    // a segment's color -> its fill color
+    .decl fill_by_line(c_line: Color, c_fill: Color) fill_by_line(2, 8).
+
+    // --- $LineColorCells ---
+    // @derive RarestColor: borderline concept
+    //     @relaxed segments
+    .decl line_color(c: Color) line_color(2).
+}
+
+.init params = Params
+
+.decl fill_source_choice(f: FillSource)
+fill_source_choice($OneFill()). fill_source_choice($FillByLineColor()).
+
+.decl line_cells_choice(l: LineCells)
+line_cells_choice($Ink(F)) :- fill_source_choice(F).
+line_cells_choice($LineColorCells()).
+
+.decl segments_choice(s: Segments)
+segments_choice($StraightComponents()). segments_choice($StraightRuns()). segments_choice($Components8()).
+
+.decl target_choice(t: Target)
+target_choice($KeepLines()). target_choice($PaintOverLines()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([L, S, T]) :- line_cells_choice(L), segments_choice(S), target_choice(T).
+
+// The line cells, with their colors.
+.decl line(l: LineCells, p: Position, col: Color)
+
+// E lies in F's segment, on F's line of axis A.
+.decl seg_line(l: LineCells, s: Segments, a: Axis, f: Position, e: Position)
+
+// The cells K across the line from each line cell.
+// @claim diamond-fill
+.init across = Ray<LineCells>
+across.dir(L, D) :- line_cells_choice(L), dir_elem(D).
+across.cell(L, P) :- line_cells_choice(L), in(P, _).
+across.mark(L, P) :- line(L, P, _).
+
+// Q lies in the diamond of the segment through its foot F: K cells across the
+// line from F, with the cells K steps along the line from F both ways in F's
+// segment.
+.decl diamond(l: LineCells, s: Segments, q: Position, f: Position)
+diamond(L, S, Q, F) :-
+    perp(A, A_x), axis_of(D_x, A_x), across.ray(L, Q, D_x, K, F), K > 0,   // across the line
+    axis_of(D, A), opposite(D, O), jump(F, D, K, E1), jump(F, O, K, E2),
+    seg_line(L, S, A, F, E1), seg_line(L, S, A, F, E2).                   // both ends in the segment
+
+// The diamond cells that take the fill, with their feet.
+.decl painted(ch: Choice, q: Position, f: Position)
+
+// The fill color of the diamond through F.
+.decl fill(l: LineCells, f: Position, c: Color)
+
+out(Q, C, [L, S, T]) :- painted([L, S, T], Q, F), fill(L, F, C).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(Ch, P, _).
+
+// --- $Ink ---
+line($Ink(F), P, Col) :- in(P, Col), !params.background(Col), fill_source_choice(F).
+
+// --- $OneFill ---
+fill($Ink($OneFill()), F, C) :- line($Ink($OneFill()), F, _), params.fill_color(C).
+
+// --- $FillByLineColor ---
+fill($Ink($FillByLineColor()), F, C) :-
+    line($Ink($FillByLineColor()), F, Col), params.fill_by_line(Col, C).
+
+// --- $LineColorCells ---
+line($LineColorCells(), P, Col) :- in(P, Col), params.line_color(Col).
+fill($LineColorCells(), F, C) :- line($LineColorCells(), F, _), params.fill_color(C).
+
+// --- $StraightComponents, $Components8 ---
+// The cells of each line-cell component.
+.decl comp_cell(l: LineCells, s: Segments, id: Ident, p: Position)
+
+// Two cells of the component lie on different lines of axis A.
+.decl bent(l: LineCells, s: Segments, id: Ident, a: Axis)
+bent(L, S, Id, A) :-
+    comp_cell(L, S, Id, P), comp_cell(L, S, Id, Q),
+    perp(A, A_x), axis_of(D_x, A_x), !same_dist(D_x, P, Q).   // apart across axis A
+
+seg_line(L, S, A, F, E) :-
+    comp_cell(L, S, Id, F), comp_cell(L, S, Id, E), axis_elem(A), !bent(L, S, Id, A).
+
+// --- $StraightComponents ---
+// @claim segments
+.init comps4 = Components<LineCells>
+comps4.node(L, P) :- line(L, P, _).
+
+comp_cell(L, $StraightComponents(), Id, P) :- comps4.label(L, P, Id).
+
+// --- $Components8 ---
+// @claim segments
+.init comps8 = Components8<LineCells>
+comps8.node(L, P) :- line(L, P, _).
+
+comp_cell(L, $Components8(), Id, P) :- comps8.label(L, P, Id).
+
+// --- $StraightRuns ---
+// @claim segments
+.init runs = Slide<LineCells>
+runs.node(L, P) :- line(L, P, _).
+runs.dir(L, D) :- line_cells_choice(L), dir_elem(D).
+
+seg_line(L, $StraightRuns(), A, F, E) :- runs.run(L, F, D, E), axis_of(D, A).
+
+// --- $KeepLines ---
+painted([L, S, $KeepLines()], Q, F) :- diamond(L, S, Q, F), in(Q, Col), params.background(Col).
+
+// --- $PaintOverLines ---
+painted([L, S, $PaintOverLines()], Q, F) :- diamond(L, S, Q, F).
+
+.comp Determine {
+    .init field = Mode<Example, Color, Position>
+    field.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // Some train input's commonest color is another.
+    .decl field_miss(c: Color)
+    field_miss(Col) :- field.mode(_, Col), ex_out(E, _, _), !field.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- field.mode(_, Col), !field_miss(Col).
+
+    // A field cell that the output paints, beside a line cell.
+    .decl beside(c_line: Color, c_fill: Color)
+    beside(C_line, C_fill) :-
+        ex_in(E, Q, Bg), params.background(Bg), ex_out(E, Q, C_fill), !params.background(C_fill),
+        neighbor(Q, _, F), ex_in(E, F, C_line), !params.background(C_line).
+
+    .decl fill_color(c: Color)
+    fill_color(C) :- beside(_, C).
+
+    .decl fill_by_line(c_line: Color, c_fill: Color)
+    fill_by_line(C_line, C_fill) :- beside(C_line, C_fill).
+
+    .decl line_color(c: Color)
+    line_color(C) :- beside(C, _).
+}
