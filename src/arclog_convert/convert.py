@@ -636,6 +636,7 @@ class Form:
     src_inst: tuple | None = None
     body: list[str] | None = None     # a clause's body lines, for a merge
     cols: list[str] = field(default_factory=list)   # a clause's head columns
+    col_labels: list[list[str]] = field(default_factory=list)   # per column of the relation, the head columns its leaves make
     side: str = ""
     concept_dead: bool = False        # reads at its top level a relation only alts derive
     concept_form: "Form | None" = None   # an instance without its inputs that are dead in the concept
@@ -3176,9 +3177,13 @@ class Solver:
         self.case_set_types: dict[str, set[str]] = {}
         c.case_set_unread = set()
         for r in prog.relations:
-            if r.scope.components in ((), ("Parse",)) and r.columns and all(col.type.name in c.case_types for col in r.columns) \
+            own = [u for u in prog.units if u.head.relation.name == r.name and u.scope == r.scope
+                   and not u.head.relation.instances]
+            if r.scope.components in ((), ("Parse",), ("Determine",), ("Params",)) and r.columns \
+                    and all(col.type.name in c.case_types for col in r.columns) \
                     and (r.name == "impl_choice" or not [u for u in prog.units if u.head.relation.name == r.name
-                                                         and u.body is not None and u.scope.components == r.scope.components]):
+                                                         and u.body is not None and u.scope.components == r.scope.components]) \
+                    and (r.scope.components in ((), ("Parse",)) or own):
                 c.skip_rels.add(r.name)
                 facts = [u for u in prog.units if u.head.relation.name == r.name and u.body is None]
                 full = len(r.columns) == 1 and not [u for u in prog.units if u.head.relation.name == r.name
@@ -3449,9 +3454,12 @@ class Solver:
                 c.names[(("Params",), n)] = kt.name
                 c.proposer_cols[n] = cols
                 keyed[n] = kt
+        self.param_order: dict[str, list[int]] = {}
         for r in params_decls:
             if r.name in dropped:
                 det_units.pop(r.name, None)
+                continue
+            if r.name in c.skip_rels:
                 continue
             if r.name in fielded:
                 forms.extend(self.field_forms(r, fielded[r.name]))
@@ -3537,12 +3545,15 @@ class Solver:
                 f.comments = [f";; {params_to_amp(gloss)}"] if gloss else []
                 forms.append(f)
             elif r.name in param_rules:
-                for u in param_rules[r.name]:
-                    forms.append(self.clause(u, "RULE" if self.derives_from_params(u) else "DET", ("Params",), {}))
+                made = [self.clause(u, "RULE" if self.derives_from_params(u) else "DET", ("Params",), {})
+                        for u in param_rules[r.name]]
+                forms.extend(made)
+                self.set_param_order(amp, r, made)
             elif r.name in det_units:
-                for u in det_units.pop(r.name):
-                    f = self.clause(u, "DET", ("Determine",), {}, name_scope=("Params",))
-                    forms.append(f)
+                made = [self.clause(u, "DET", ("Determine",), {}, name_scope=("Params",))
+                        for u in det_units.pop(r.name)]
+                forms.extend(made)
+                self.set_param_order(amp, r, made)
             elif r.name in c.orders:
                 forms.append(self.order_form(r, amp, gloss))
             else:
@@ -3568,6 +3579,7 @@ class Solver:
 
         # each parameter's types, after its name
         self.param_types: dict[str, list[str]] = {}
+        self.type_order: dict[str, list[int]] = {}   # per reordered parameter, its types' indices in the order of its record
         decl_of = {c.rel_name(("Params",), r.name): r for r in params_decls}
         for r in params_decls:
             if r.name.startswith("_rigid_") and r.name[len("_rigid_"):] in c.rigid:
@@ -3578,10 +3590,15 @@ class Solver:
             if r is None:
                 continue
             kt = keyed.get(r.name)
-            columns = r.columns if kt is None else keyed_row(decls[kt.parent].columns, decls[kt.child].columns)
+            columns = self.ordered(m.group(1), r.columns) if kt is None else \
+                keyed_row(decls[kt.parent].columns, decls[kt.child].columns)
             ts = [self.type_text(col.type.name) for col in columns
                   if col.type.name not in c.case_types and col.type.name not in c.open_types]
             self.param_types[m.group(1)] = ts
+            if m.group(1) in self.param_order:
+                kept = [i for i, col in enumerate(r.columns)
+                        if col.type.name not in c.case_types and col.type.name not in c.open_types]
+                self.type_order[m.group(1)] = [kept.index(i) for i in self.param_order[m.group(1)] if i in kept]
             types = ts[0] if len(ts) == 1 else "(" + " ".join(ts) + ")"
             arcdata_params[i] = grid_param(text[:m.end()] + " " + types, ts, text[m.end():]) or \
                 wrap_param(text[:m.end()] + " " + types, text[m.end():])
@@ -3599,7 +3616,7 @@ class Solver:
             if u.scope.components == ("Determine",):
                 if u.head.relation.instances:
                     det_inst_units[u.head.relation.instances].append(u)
-                elif u.head.relation.name in det_units:
+                elif u.head.relation.name in det_units and u.head.relation.name not in c.skip_rels:
                     forms.append(self.clause(u, "DET", ("Determine",), {}))
 
         # instances and clauses, in program order
@@ -3956,12 +3973,84 @@ class Solver:
 
     # ---- param lines
 
+    def set_param_order(self, amp: str, r, made: list[Form]) -> None:
+        """Record the order of the columns of the `param` of `r`, whose `DET`
+        the forms `made` write: the order of the first `*` mark of each
+        column's labels in the body, as the engine makes the `DET`'s columns.
+        A parameter none of whose forms is a `DET` keeps the relation's
+        order."""
+        orders = [self.column_order(r, f) for f in made if f.side == "DET"]
+        if not orders:
+            return
+        if any(o != orders[0] for o in orders):
+            raise ValueError(f"{amp}: its DET forms make their columns in different orders")
+        if orders[0] != list(range(len(r.columns))):
+            self.param_order[amp] = orders[0]
+
+    @staticmethod
+    def column_order(r, f: Form) -> list[int]:
+        """The indices of `r`'s columns in the order the body of `f` makes
+        their labels. A column with no label (a case or dropped column)
+        keeps its place."""
+        if len(f.col_labels) != len(r.columns):
+            raise ValueError(f"{f.name}: the head gives {len(f.col_labels)} columns for the {len(r.columns)} of {r.name}")
+        first: dict[str, int] = {}
+        for i, m in enumerate(re.finditer(r"\*(\w+)", "\n".join(f.body or []))):
+            first.setdefault(m.group(1), i)
+        missing = [x for labels in f.col_labels for x in labels if x not in first]
+        if missing:
+            raise ValueError(f"{f.name}: no mark makes the labels {missing}")
+        labelled = [i for i, labels in enumerate(f.col_labels) if labels]
+        by_mark = sorted(labelled, key=lambda i: min(first[x] for x in f.col_labels[i]))
+        order = list(range(len(r.columns)))
+        for slot, i in zip(labelled, by_mark):
+            order[slot] = i
+        return order
+
+    def ordered(self, amp: str, seq) -> list:
+        """`seq`, one item per column of the parameter `amp` in its relation's
+        order, in the order of the parameter's record."""
+        order = self.param_order.get(amp)
+        return list(seq) if order is None else [seq[i] for i in order]
+
+    def grid_rows(self, g, r) -> list[list[str]]:
+        """The rows, in the relation's order, that the grid call `g` of `r`
+        states: for each cell that holds a value, the values before the
+        position, the cell's position in the grid's frame, or, in a grid with
+        an anchor, its offset from the anchor cell, and its value where the
+        layout gives one."""
+        pi = next((i for i, col in enumerate(r.columns) if col.type.name in ("Position", "Offset")), None)
+        if pi is None or len(g.keys) != pi:
+            raise ValueError(f"{r.name}: a grid call that no row form states")
+        h, w = len(g.cells), len(g.cells[0])
+        anchor = g.anchor
+        rows = []
+        for i, line in enumerate(g.cells):
+            for j, cell in enumerate(line):
+                text = souffle_term(cell.term)
+                if text == "_":
+                    continue
+                if anchor is None:
+                    place = f"({i} {h - 1 - i} {j} {w - 1 - j})"
+                else:
+                    di, dj = i - anchor[0], j - anchor[1]
+                    place = f"({di} {-di} {dj} {-dj})"
+                rows.append([*(self.value_text(k) for k in g.keys), place, *([text] if g.layout.valued else [])])
+        return rows
+
     def param_line(self, amp, r, facts, grids) -> str:
         """The `param` form of `r`'s stored rows, with no column of an open
-        type, each row once."""
-        kept = [col.type.name not in self.c.open_types for col in r.columns]
+        type, each row once, the values of a row in the order of
+        `Solver.ordered`."""
+        kept = self.ordered(amp, [col.type.name not in self.c.open_types for col in r.columns])
         rows = list(dict.fromkeys(
-            "(" + " ".join(self.value_text(a) for a, k in zip(u.head.args, kept) if k) + ")" for u in facts))
+            "(" + " ".join(self.value_text(a) for a, k in zip(self.ordered(amp, u.head.args), kept) if k) + ")"
+            for u in facts))
+        if amp in self.param_order:
+            rows.extend(dict.fromkeys(
+                "(" + " ".join(v for v, k in zip(self.ordered(amp, row), kept) if k) + ")"
+                for g in grids for row in self.grid_rows(g, r)))
+            grids = []
         if not grids:
             return f"(param {amp} " + " ".join(rows) + ")"
         lines = [f"(param {amp}"] + ["  " + r for r in rows]
@@ -4203,6 +4292,7 @@ class Solver:
         f.body = list(lines)
         f.marks = marks
         f.cols = [n for n, _ in head_cols]
+        f.col_labels = col_names
         f.side = side
         if len(f.lines) == 1:
             pass
@@ -6216,6 +6306,9 @@ class Solver:
                 and not all(len(r) == len(ts) for r in v):
             # a picture of the relation's frame
             return "\n".join([head, "  (grid", *("    " + arg(r) for r in v)]) + "))"
+        order = self.type_order.get(amp)
+        if order is not None:
+            v = [[r[i] for i in order] if isinstance(r, list) and len(r) == len(order) else r for r in v]
         rest = " " + " ".join(arg(r) for r in v) + ")"
         return grid_param(head, ts, rest) or head + rest
 
