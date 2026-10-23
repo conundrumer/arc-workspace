@@ -274,7 +274,7 @@ def row(v: View, t: Ticket, right: str, change: Ticket | None,
     if merged(t):
         right = f'<span>{esc(t.status.value.capitalize())} · merged, awaiting tracker closure</span>'
     star = '<span class="star">★</span>' if t.number in v.expedited else ""
-    under = "" if change is None or change is t else f'<small>{link(change)}</small>'
+    under = "" if change is None or change is t else f'<small>{link(change, v.all_)}</small>'
     bundle = t is change and sum(m.kind is Kind.REQUEST for m in members) > 1
     related = [(m, f'<a class="tk related" data-n="{esc(m.number)}">'
                 f'{esc(label(m, v.all_))}</a>')
@@ -286,12 +286,12 @@ def row(v: View, t: Ticket, right: str, change: Ticket | None,
     title = t.title if bundle else capitalized(v.phrase(t))
     top = f'<span class="wt">{right}</span>' if right else ""
     return tap(t.number,
-               f'{top}<span class="wn">{esc(shown_number(t))}{under}</span><span class="wp">{star}{esc(title)}</span>'
-               f'{related_html}', "wr" + (" me" if v.mine(t) else ""))
+               f'{top}<span class="wn">{esc(shown_number(t))}</span><span class="wp">{star}{esc(title)}</span>'
+               f'{under}{related_html}', "wr" + (" me" if v.mine(t) else ""))
 
 
-def link(t: Ticket) -> str:
-    return f'<a class="tk" data-n="{esc(t.number)}">{esc(shown_number(t))} ›</a>'
+def link(t: Ticket, all_: Mapping[str, Ticket]) -> str:
+    return f'<a class="tk" data-n="{esc(t.number)}">{esc(label(t, all_))} ›</a>'
 
 
 def active(v: View, st: Standings) -> tuple[str, int]:
@@ -342,10 +342,10 @@ def session_name(s: int | None) -> str:
     return "No session" if s is None else f"S{s}"
 
 
-def behind(st: Standings, root: Ticket) -> str:
+def behind(st: Standings, root: Ticket, all_: Mapping[str, Ticket]) -> str:
     """The words of a ticket behind held work: the held ticket `root` and
     what holds it."""
-    return f"after {shown_number(root)} · {HOLD_WORD[st.own(root)]}"
+    return f"after {label(root, all_)} · {HOLD_WORD[st.own(root)]}"
 
 
 def change_states(v: View, st: Standings, t: Ticket) -> list[ChangeState]:
@@ -362,9 +362,9 @@ def change_states(v: View, st: Standings, t: Ticket) -> list[ChangeState]:
             case Standing.READY:
                 words = "idle" if st.active(Row(c, c, (c,))) else "next to start"
             case Standing.WAITING:
-                words = f"after {shown_number(root)}"
+                words = f"after {label(root, v.all_)}"
             case Standing.BEHIND:
-                words = behind(st, root)
+                words = behind(st, root, v.all_)
             case _:
                 words = HELD_HEAD[k].lower()
         out.append(ChangeState(c, words, k is Standing.WORKING, label(c, v.all_)))
@@ -428,7 +428,7 @@ def queued(v: View, st: Standings) -> str:
                      if s in st.paused else f'<div class="gh">Next</div>{rows}')
         if waiting:
             body += ('<div class="gh">Waiting</div><div class="wl">'
-                     + "".join(row(v, r.lead, f"{stopped_bar(v, r)}<span>after {link(st.state(r.subject)[1])}</span>",
+                     + "".join(row(v, r.lead, f"{stopped_bar(v, r)}<span class=\"af\">after {link(st.state(r.subject)[1], v.all_)}</span>",
                                  r.change, members=r.members) for r in waiting)
                      + "</div>")
         drafts = sorted((r for r, k, _ in items if k is None),
@@ -448,14 +448,14 @@ def queued(v: View, st: Standings) -> str:
             if k is not None and k not in MOVING:
                 groups.setdefault(k, []).append((r, root))
         for k, xs in sorted(groups.items(), key=lambda g: list(HELD_HEAD).index(g[0])):
-            label = HELD_HEAD[k]
+            head = HELD_HEAD[k]
             xs.sort(key=lambda x: (*priority(v, x[0]), -x[0].subject.filed))
-            rows = [row(v, r.lead, stopped_bar(v, r) + (f"<span>after {link(root)} · {esc(HOLD_WORD[st.own(root)])}</span>"
+            rows = [row(v, r.lead, stopped_bar(v, r) + (f"<span class=\"af\">after {link(root, v.all_)} · {esc(HOLD_WORD[st.own(root)])}</span>"
                                                         if k is Standing.BEHIND else ""), r.change, members=r.members)
                     for r, root in xs]
             inner = folded(rows, GROUP_SHOWN)
-            opened = " open" if label == HELD_HEAD[Standing.ON_HOLD] or any(v.mine(r.lead) for r, _ in xs) else ""
-            body += f'<details class="grp"{opened}><summary>{esc(label)} · {len(xs)}</summary>{inner}</details>'
+            opened = " open" if head == HELD_HEAD[Standing.ON_HOLD] or any(v.mine(r.lead) for r, _ in xs) else ""
+            body += f'<details class="grp"{opened}><summary>{esc(head)} · {len(xs)}</summary>{inner}</details>'
         panes.append((s, tab_word(st, s), body))
     return tab_set(QUEUED_TAB, panes)
 

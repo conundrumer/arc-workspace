@@ -8,6 +8,7 @@ from xml.etree import ElementTree as ET
 import pytest
 
 from handbook.paths import scripts_importable
+from operations import labels
 from operations.pacing import Usage
 from operations.roles import Role
 from operations.state import LogLine, Ticket
@@ -101,6 +102,10 @@ def test_waiting_work_keeps_its_blocker(draft, start_hold):
                 None if start_hold else blocker.number, True, None, None, None),))
     v = view([t, blocker], starts=[shown.Start(t.number, shown.OnTicket(blocker.number))] if start_hold else [])
     assert standings.Standings(v).state(t) == (standings.Standing.WAITING, blocker)
+    st = standings.Standings(v)
+    root = ET.fromstring(dashboard.queued(v, st).replace(" open>", ' open="">'))
+    row = element(root, f".//div[@data-n='{t.number}']")
+    assert labels.label(blocker, v.all_) in "".join(row.itertext())
 
 
 @pytest.mark.parametrize("status, hold", [
@@ -157,7 +162,7 @@ def test_single_request_keeps_its_row_form():
     root = ET.fromstring(dashboard.active(v, standings.Standings(v))[0])
     row = element(root, f".//div[@data-n='{request.number}']")
     assert element(row, "./span[@class='wp']").text == request.goal
-    assert element(row, "./span[@class='wn']/small/a").get("data-n") == change.number
+    assert element(row, "./small/a").get("data-n") == change.number
 
 
 def test_bundle_folds_members_after_three():
