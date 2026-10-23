@@ -55,7 +55,6 @@ class End(StrEnum):
     STORE_FAILURE = "store failure"
     IDLE = "idle"
     LOCK_HELD = "lock held"
-    OVERSIZE = "oversize"
 
 _KIB = sys.platform != "darwin"
 """Whether `ru_maxrss` counts KiB, as on Linux, in place of bytes, as on

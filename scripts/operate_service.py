@@ -57,8 +57,6 @@ FINISH_SECONDS = 5
 CARRY_SECONDS = 600
 """How long a request's run may last, from its start, once it has no client."""
 CODE_ENV = "ARC_OPERATE_CODE"
-PEAK_BOUND = 2**30
-"""The bytes a resident's own footprint may have reached during a request."""
 CODE_CHANGED = 75
 """The exit status of a resident startup that finds the code changed while it
 started; `ensure` starts another one."""
@@ -290,10 +288,6 @@ class Pending:
     left: dict[tuple[str, str], float] = field(default_factory=dict)
     """The end time of each client run that ended with no client, by subject and kind;
     the next request of that subject and kind goes first, once."""
-
-    def waiting(self) -> bool:
-        """Whether a request waits, accepted or still in the listener's backlog."""
-        return bool(self.connections) or bool(select.select([self.listener], [], [], 0)[0])
 
     def poll(self) -> None:
         while select.select([self.listener], [], [], 0)[0]:
@@ -861,13 +855,6 @@ def child_read(current: Request) -> None:
         os.close(errors)
 
 
-def oversized(held: int) -> bool:
-    """Whether `held` bytes are more than `script_calls.FOOTPRINT_BOUND`, or
-    this resident has held more than `PEAK_BOUND` since it started."""
-    return (held > script_calls.FOOTPRINT_BOUND
-            or script_calls.highest_footprint() > PEAK_BOUND)
-
-
 def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                   pending: Pending | None = None) -> script_calls.End | None:
     """Serve one request; gives why this interpreter must end, or `None`
@@ -999,16 +986,12 @@ def serve_request(connection: socket.socket, listener: socket.socket, code: str,
                 if kind not in YIELDING and not current.waiting and not current.first:
                     pending.left[(subject, kind)] = time.monotonic()
                 pending.running = None
-            oversize = False
-            if pending is not None and not pending.waiting():
-                oversize = oversized(script_calls.collected_footprint())
+            script_calls.collected_footprint()
             script_calls.record()
             CURRENT.reset(token)
             state_assembly.REQUEST_CUTOFF.reset(cutoff)
         if ended is None and kept_reads.fresh_code("operate") != code:
             return script_calls.End.CODE_CHANGED
-        if ended is None and oversize:
-            return script_calls.End.OVERSIZE
         return ended
 
 
