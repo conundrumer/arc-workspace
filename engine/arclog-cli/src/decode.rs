@@ -5,7 +5,8 @@
 //! at the stream's last `END` equals the case's solves outcome at the values
 //! the determination determines; and the rows of each prefix equal the rows
 //! of a decode in a task session of its own. A difference prints by solver,
-//! with the first of each kind.
+//! with the first of each kind. With `--no-rows` the decode builds no second
+//! session and checks no rows, and the report says the rows are not checked.
 //!
 //! It prints, for each solver, one line with its counts of cases decoded,
 //! refused, differing in consistency, differing in rows and stopped at a
@@ -14,8 +15,8 @@
 //! and of the step that the token takes.
 //!
 //! Its arguments: the corpus directory, the directory of the task files,
-//! `--cases concept` (the default) or `--cases all`, then the task ids of
-//! the solvers to run; every solver of the corpus where it is given none.
+//! `--cases concept` (the default) or `--cases all`, `--no-rows` for no
+//! check of the prefix rows, then the task ids of the solvers to run; every solver of the corpus where it is given none.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::any::Any;
@@ -46,14 +47,22 @@ use crate::concept_case::{case_spelled, check_case, check_cases, corpus_limits, 
 use arclog_constructions::shared as constructions;
 use crate::select::selected;
 
-const USAGE: &str = "usage: arclog-cli decode <corpus-dir> <tasks-dir> [--cases concept|all] [<task_id> ...]";
+/// Whether the rows of each prefix are compared with those of a second
+/// session.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RowsMode {
+    Checked,
+    NotChecked,
+}
+
+const USAGE: &str = "usage: arclog-cli decode <corpus-dir> <tasks-dir> [--cases concept|all] [--no-rows] [<task_id> ...]";
 
 /// The subcommand on `args`, the arguments after its name.
 pub fn run(args: &[String]) -> ExitCode {
     if let Err(code) = require_optimized_build() {
         return code;
     }
-    let Some((corpus, tasks, all, task_ids)) = parse(args) else {
+    let Some((corpus, tasks, all, rows, task_ids)) = parse(args) else {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
@@ -61,7 +70,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let totals: Mutex<Totals> = Mutex::default();
     let report = run_over_corpus(&corpus, |solver| match &selected {
         Some(ids) if !ids.contains(&solver.task_id) => SolverResult::Pass,
-        _ => decode_solver(&corpus, &tasks, &solver.task_id, all, &totals),
+        _ => decode_solver(&corpus, &tasks, &solver.task_id, all, rows, &totals),
     }, print_ended);
     let report = match report {
         Ok(report) => report,
@@ -71,7 +80,7 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
     let totals = totals.into_inner().expect("totals that no panic poisoned");
-    println!("corpus: {}", totals.counts.line());
+    println!("corpus: {}", totals.counts.line(rows));
     println!(
         "time per token over {} tokens: median {}, 99th percentile {}; of the token mask, median {} and 99th percentile {}; of the step, median {} and 99th percentile {}",
         totals.total.len(),
@@ -86,9 +95,11 @@ pub fn run(args: &[String]) -> ExitCode {
 }
 
 /// The corpus directory, the tasks directory, whether `--cases all` is
-/// given, and the task ids, or `None` for arguments of another form.
-fn parse(args: &[String]) -> Option<(PathBuf, PathBuf, bool, Vec<String>)> {
+/// given, whether the rows are checked (not with `--no-rows`), and the task
+/// ids, or `None` for arguments of another form.
+fn parse(args: &[String]) -> Option<(PathBuf, PathBuf, bool, RowsMode, Vec<String>)> {
     let mut all = false;
+    let mut rows = RowsMode::Checked;
     let mut positional = Vec::new();
     let mut args = args.iter();
     while let Some(arg) = args.next() {
@@ -98,13 +109,15 @@ fn parse(args: &[String]) -> Option<(PathBuf, PathBuf, bool, Vec<String>)> {
                 "all" => true,
                 _ => return None,
             };
+        } else if arg == "--no-rows" {
+            rows = RowsMode::NotChecked;
         } else {
             positional.push(arg.clone());
         }
     }
     let mut positional = positional.into_iter();
     let (corpus, tasks) = (positional.next()?, positional.next()?);
-    Some((corpus.into(), tasks.into(), all, positional.collect()))
+    Some((corpus.into(), tasks.into(), all, rows, positional.collect()))
 }
 
 /// The kinds of finding on a case.
@@ -153,10 +166,13 @@ impl Counts {
         }
     }
 
-    fn line(&self) -> String {
+    fn line(&self, rows: RowsMode) -> String {
         let found = |kind: Kind| self.found.get(&kind).copied().unwrap_or(0);
         let kinds = [Kind::Refused, Kind::Consistency, Kind::Rows, Kind::Stopped, Kind::Unjudged];
-        let others: Vec<String> = kinds.iter().map(|kind| format!("{} {}", found(*kind), kind.label())).collect();
+        let others: Vec<String> = kinds
+            .iter()
+            .map(|kind| if *kind == Kind::Rows && rows == RowsMode::NotChecked { "rows not checked".to_owned() } else { format!("{} {}", found(*kind), kind.label()) })
+            .collect();
         format!("{} cases decoded in full, {} skipped for a `DEMONSTRATED` form, {}", self.decoded, self.demonstrated, others.join(", "))
     }
 }
@@ -186,12 +202,12 @@ fn micros(seconds: Option<f64>) -> String {
 /// The report on the solver `id`: its summary line printed, and its first
 /// finding of each kind as the failure lines; or the one line of the fault
 /// that stops its setup.
-fn decode_solver(corpus: &Path, tasks: &Path, id: &str, all: bool, totals: &Mutex<Totals>) -> SolverResult {
+fn decode_solver(corpus: &Path, tasks: &Path, id: &str, all: bool, rows: RowsMode, totals: &Mutex<Totals>) -> SolverResult {
     let mut gathered = Totals::default();
     let mut first: BTreeMap<Kind, String> = BTreeMap::new();
-    let result = decode_cases(corpus, tasks, id, all, &mut gathered, &mut first);
+    let result = decode_cases(corpus, tasks, id, all, rows, &mut gathered, &mut first);
     let line = match result {
-        Ok(()) => gathered.counts.line(),
+        Ok(()) => gathered.counts.line(rows),
         Err(fault) => return SolverResult::Fail(vec![format!("a fault that stops the decode: {fault}")]),
     };
     println!("{id}: {line}");
@@ -208,7 +224,7 @@ fn decode_solver(corpus: &Path, tasks: &Path, id: &str, all: bool, totals: &Mute
 
 /// Decodes the cases of the solver `id`, the concept case or every case,
 /// into `gathered`, with the first finding of each kind in `first`.
-fn decode_cases(corpus: &Path, tasks: &Path, id: &str, all: bool, gathered: &mut Totals, first: &mut BTreeMap<Kind, String>) -> Result<(), String> {
+fn decode_cases(corpus: &Path, tasks: &Path, id: &str, all: bool, rows: RowsMode, gathered: &mut Totals, first: &mut BTreeMap<Kind, String>) -> Result<(), String> {
     let CorpusTask { solver, task, judged } = read_corpus_task(corpus, tasks, id)?;
     let registry = Registry::get();
     let cases = resolve_cases(&solver, registry);
@@ -230,7 +246,7 @@ fn decode_cases(corpus: &Path, tasks: &Path, id: &str, all: bool, gathered: &mut
             continue;
         }
         let expected = expected_solves(case, &determination, &judged);
-        let case_run = catch_unwind(AssertUnwindSafe(|| decode_case(case.program, expected, &task, &judged, gathered)))
+        let case_run = catch_unwind(AssertUnwindSafe(|| decode_case(case.program, expected, &task, &judged, rows, gathered)))
             .unwrap_or_else(|payload| vec![(Kind::Refused, format!("the decoder panicked: {}", panic_message(&*payload)))]);
         let mut found = BTreeSet::new();
         for (kind, line) in case_run {
@@ -287,15 +303,16 @@ fn expected_solves(case: &DeterminedCase<'_>, determination: &Determination, jud
 
 /// The findings of the decode of `program`'s token stream, and the time of
 /// each token into `gathered`.
-fn decode_case(program: &CheckedProgram, expected: Result<bool, String>, task: &Task, judged: &JudgedTask, gathered: &mut Totals) -> Vec<(Kind, String)> {
+fn decode_case(program: &CheckedProgram, expected: Result<bool, String>, task: &Task, judged: &JudgedTask, rows: RowsMode, gathered: &mut Totals) -> Vec<(Kind, String)> {
     let mut findings: Vec<(Kind, String)> = Vec::new();
     let constructions = constructions().expect("the table of constructions built for the determination");
     let registry = Registry::get();
     let settings = DecodeSettings::default();
-    let (session, mirror_session) = (corpus_session(), corpus_session());
+    let session = corpus_session();
+    let mirror_session = (rows == RowsMode::Checked).then(corpus_session);
     let train: Arc<[PairCandidates<'_>]> = judged.train.iter().map(|pair| PairCandidates::of(pair, Section::Train, World::Closed)).collect();
     let mut decoder = Decoder::new(task, &session, registry, constructions, &settings).judging(train);
-    let mut mirror = Decoder::new(task, &mirror_session, registry, constructions, &settings);
+    let mut mirror = mirror_session.as_ref().map(|session| Decoder::new(task, session, registry, constructions, &settings));
     let stream = match token_stream(program, decoder.vocabulary()) {
         Ok(stream) => stream,
         Err(diagnostic) => return vec![(Kind::Refused, format!("the writer gives no stream: {}", diagnostic.message))],
@@ -343,12 +360,13 @@ fn decode_case(program: &CheckedProgram, expected: Result<bool, String>, task: &
                 if let Some(result) = step.consistency {
                     consistency = Some(result);
                 }
+                let Some(mirror) = mirror.as_mut() else { continue };
                 if mirror.step(token.clone()).is_err() {
                     findings.push((Kind::Rows, format!("token {index} {token:?}: the decode in the second session refuses it")));
                     break;
                 }
                 if !rows_found {
-                    let checked = catch_unwind(AssertUnwindSafe(|| prefix_rows(&decoder, &mirror, task))).unwrap_or_else(|payload| RowsCheck::Differ(format!("the decoder panicked: {}", panic_message(&*payload))));
+                    let checked = catch_unwind(AssertUnwindSafe(|| prefix_rows(&decoder, mirror, task))).unwrap_or_else(|payload| RowsCheck::Differ(format!("the decoder panicked: {}", panic_message(&*payload))));
                     match checked {
                         RowsCheck::Same => {}
                         RowsCheck::Stopped(note) => findings.push((Kind::Stopped, format!("token {index} {token:?}: {note}"))),
